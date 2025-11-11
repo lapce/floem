@@ -81,31 +81,21 @@ pub fn inspect() {
     add_update_message(UpdateMessage::Inspect);
 }
 
-/// Set global theme in all windows to `Light`.
-pub fn set_theme_to_light() {
-    add_app_update_event(AppUpdateEvent::ThemeChanged {
-        theme: Theme::Light,
-    });
-}
-
-/// Set global theme in all windows to `dark`.
-pub fn set_theme_to_dark() {
-    add_app_update_event(AppUpdateEvent::ThemeChanged { theme: Theme::Dark });
-}
-
-/// Set global theme in all windows (toggles both floem and window themes).
+/// Set the **global** app theme in all windows.
+///
+/// Toggles both floem and window themes.
 pub fn set_global_theme(theme: Theme) {
     add_app_update_event(AppUpdateEvent::ThemeChanged { theme });
 }
 
-/// Set the window theme.
+/// Set the **window** theme.
 ///
 /// Specify `None` to reset the theme to the system default.
 pub fn set_theme(theme: Option<Theme>) {
     add_update_message(UpdateMessage::SetTheme(theme));
 }
 
-/// Toggle global theme in all windows (toggles both floem and window themes).
+/// Toggle **global** app theme.
 pub fn toggle_global_theme() {
     let theme = current_theme().unwrap_or(Theme::Dark);
     let theme = match theme {
@@ -115,7 +105,7 @@ pub fn toggle_global_theme() {
     add_app_update_event(AppUpdateEvent::ThemeChanged { theme });
 }
 
-/// Toggle global theme in all windows (toggles both floem and window themes).
+/// Toggle **window** theme.
 pub fn toggle_window_theme() {
     let theme = current_theme().unwrap_or(Theme::Dark);
     let theme = match theme {

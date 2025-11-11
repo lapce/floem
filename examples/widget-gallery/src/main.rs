@@ -19,7 +19,7 @@ pub mod tabs;
 pub mod texteditor;
 
 use floem::{
-    action::{add_overlay, set_window_menu, toggle_global_theme, toggle_window_theme},
+    action::{add_overlay, set_theme, set_window_menu, toggle_global_theme, toggle_window_theme},
     event::{Event, EventListener},
     kurbo::Size,
     menu::*,
@@ -29,7 +29,7 @@ use floem::{
     style::{Background, CursorStyle, TextColor, Transition},
     theme::StyleThemeExt,
     ui_events::keyboard::{Key, KeyState, KeyboardEvent, Modifiers, NamedKey},
-    window::{WindowConfig, WindowId},
+    window::{Theme, WindowConfig, WindowId},
 };
 
 fn app_view(window_id: WindowId) -> impl IntoView {
@@ -215,6 +215,18 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         })
     };
 
+    let theme_submenu = |m: SubMenu| {
+        m.item("Toggle Global Theme", |i| i.action(toggle_global_theme))
+            .item("Toggle Window Theme", |i| i.action(toggle_window_theme))
+            .separator()
+            .item("Set Light Theme", |i| {
+                i.action(|| set_theme(Some(Theme::Light)))
+            })
+            .item("Set Dark Theme", |i| {
+                i.action(|| set_theme(Some(Theme::Dark)))
+            })
+    };
+
     let window_submenu = |m: SubMenu| {
         m.item("Open Current Tab in New Window", |i| {
             i.action(move || {
@@ -264,6 +276,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
             .submenu("File", file_submenu)
             .submenu("View", view_submenu)
             .submenu("Window", window_submenu)
+            .submenu("Theme", theme_submenu)
             .submenu("Help", help_submenu)
             .submenu("About", |s| {
                 s.predefined(&PredefinedMenuItem::about(
@@ -287,18 +300,6 @@ fn app_view(window_id: WindowId) -> impl IntoView {
             .inset_bottom(20.)
             .inset_right(15.)
     }));
-
-    add_overlay(
-        button("toggle global theme")
-            .action(toggle_global_theme)
-            .style(|s| s.absolute().inset_top(10.).inset_right(22.)),
-    );
-   
-    add_overlay(
-        button("toggle window theme")
-            .action(toggle_window_theme)
-            .style(|s| s.absolute().inset_top(40.).inset_right(22.)),
-    );
 
     view.on_event_stop(EventListener::KeyUp, move |e| {
         if let Event::Key(KeyboardEvent {

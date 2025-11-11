@@ -630,7 +630,7 @@ pub fn new_window<V: IntoView + 'static>(
     add_app_update_event(AppUpdateEvent::NewWindow {
         window_creation: WindowCreation {
             view_fn: Box::new(|window_id| app_view(window_id).into_any()),
-            config
+            config,
         },
     });
 }

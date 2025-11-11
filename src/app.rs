@@ -46,7 +46,7 @@ impl Default for AppConfig {
         Self {
             exit_on_close: !cfg!(target_os = "macos"),
             wgpu_features: wgpu::Features::default(),
-            global_theme_override: None
+            global_theme_override: None,
         }
     }
 }
@@ -58,14 +58,14 @@ impl AppConfig {
         self.exit_on_close = exit_on_close;
         self
     }
-    
+
     /// Sets the WGPU features to be used by the application.
     #[inline]
     pub fn wgpu_features(mut self, features: wgpu::Features) -> Self {
         self.wgpu_features = features;
         self
     }
-    
+
     /// Sets the global theme.
     #[inline]
     pub fn set_global_theme(mut self, theme: Theme) -> Self {

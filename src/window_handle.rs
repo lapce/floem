@@ -213,7 +213,7 @@ impl WindowHandle {
 
         window_handle.window_state.light_dark_theme =
             os_theme.unwrap_or(winit::window::Theme::Light);
-        
+
         window_handle.event(Event::ThemeChanged(
             window_handle.window_state.light_dark_theme,
         ));
@@ -1079,7 +1079,7 @@ impl WindowHandle {
                         if let Some(new) = theme {
                             self.set_menu_theme_for_windows(new);
                         }
-                    },
+                    }
                 }
             }
         }
