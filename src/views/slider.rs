@@ -698,7 +698,7 @@ mod test {
 
     // Test helper to create a minimal WindowState
     fn create_test_window_state(view_id: ViewId) -> WindowState {
-        WindowState::new(view_id)
+        WindowState::new(view_id, None)
     }
 
     // Test helper to create UpdateCx

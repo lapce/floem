@@ -16,7 +16,7 @@ use winit::{
     dpi::{LogicalPosition, LogicalSize},
     event::WindowEvent,
     event_loop::{ActiveEventLoop, ControlFlow},
-    window::WindowId,
+    window::{Theme, WindowId},
 };
 
 use crate::app::AppConfig;
@@ -113,6 +113,7 @@ impl ApplicationHandle {
                 AppUpdateEvent::NewWindow { window_creation } => self.new_window(
                     event_loop,
                     window_creation.view_fn,
+                    self.config.global_theme_override,
                     window_creation.config.unwrap_or_default(),
                 ),
                 AppUpdateEvent::CloseWindow { window_id } => {
@@ -151,6 +152,13 @@ impl ApplicationHandle {
                             handle.menu_action(&action_id);
                             break;
                         }
+                    }
+                }
+                AppUpdateEvent::ThemeChanged { theme } => {
+                    self.config.global_theme_override = Some(theme);
+                    for window_handle in self.window_handles.values_mut() {
+                        window_handle.window_state.light_dark_theme = theme;
+                        window_handle.set_theme(Some(theme), false);
                     }
                 }
             }
@@ -290,7 +298,7 @@ impl ApplicationHandle {
                 window_handle.scale(scale_factor);
             }
             WindowEvent::ThemeChanged(theme) => {
-                window_handle.theme_changed(theme);
+                window_handle.set_theme(Some(theme), true);
             }
             WindowEvent::Occluded(_) => {}
             WindowEvent::RedrawRequested => {
@@ -336,6 +344,7 @@ impl ApplicationHandle {
         &mut self,
         event_loop: &dyn ActiveEventLoop,
         view_fn: Box<dyn FnOnce(WindowId) -> Box<dyn View>>,
+        override_theme: Option<Theme>,
         #[allow(unused_variables)] WindowConfig {
             size,
             min_size,
@@ -351,7 +360,8 @@ impl ApplicationHandle {
             undecorated,
             undecorated_shadow,
             window_level,
-            with_theme,
+            theme_override,
+            apply_default_theme,
             mac_os_config,
             win_os_config,
             web_config,
@@ -374,8 +384,13 @@ impl ApplicationHandle {
             .with_window_level(window_level)
             .with_window_icon(window_icon)
             .with_resizable(resizable)
-            .with_theme(with_theme)
+            // .with_theme(theme_override)
             .with_enabled_buttons(enabled_buttons);
+        if theme_override.is_none() {
+            window_attributes = window_attributes.with_theme(override_theme);
+        } else {
+            window_attributes = window_attributes.with_theme(theme_override);
+        }
 
         #[cfg(target_arch = "wasm32")]
         {
@@ -531,7 +546,7 @@ impl ApplicationHandle {
             self.config.wgpu_features,
             view_fn,
             transparent,
-            with_theme,
+            apply_default_theme,
             font_embolden,
         );
         self.window_handles.insert(window_id, window_handle);

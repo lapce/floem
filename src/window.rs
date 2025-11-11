@@ -9,7 +9,6 @@ pub use winit::window::WindowId;
 pub use winit::window::WindowLevel;
 
 use crate::AnyView;
-use crate::action::current_theme;
 use crate::app::{AppUpdateEvent, add_app_update_event};
 use crate::view::IntoView;
 
@@ -19,7 +18,6 @@ pub struct WindowCreation {
 }
 
 /// Configures various attributes (e.g. size, position, transparency, etc.) of a window.
-#[derive(Debug, Clone)]
 pub struct WindowConfig {
     pub(crate) size: Option<Size>,
     pub(crate) min_size: Option<Size>,
@@ -36,7 +34,8 @@ pub struct WindowConfig {
     pub(crate) undecorated_shadow: bool,
     pub(crate) window_level: WindowLevel,
     /// Applies chosen theme or os theme, when `None` is provided.
-    pub(crate) with_theme: Option<Theme>,
+    pub(crate) theme_override: Option<Theme>,
+    pub(crate) apply_default_theme: bool,
     pub(crate) font_embolden: f32,
     #[allow(dead_code)]
     pub(crate) mac_os_config: Option<MacOSWindowConfig>,
@@ -64,7 +63,8 @@ impl Default for WindowConfig {
             undecorated: false,
             undecorated_shadow: false,
             window_level: WindowLevel::Normal,
-            with_theme: None,
+            theme_override: None,
+            apply_default_theme: true,
             font_embolden: if cfg!(target_os = "macos") { 0.2 } else { 0. },
             mac_os_config: None,
             win_os_config: None,
@@ -198,12 +198,19 @@ impl WindowConfig {
         self
     }
 
-    /// Set theme for window.
+    /// Set a theme override for the window.
     ///
-    /// If not provided, window will follow OS theme.
+    /// If not provided, the window will follow OS theme.
     #[inline]
-    pub fn apply_theme(mut self, theme: Theme) -> Self {
-        self.with_theme = Some(theme);
+    pub fn theme_override(mut self, theme_override: Theme) -> Self {
+        self.theme_override = Some(theme_override);
+        self
+    }
+
+    /// .
+    #[inline]
+    pub fn apply_default_theme(mut self, apply: bool) -> Self {
+        self.apply_default_theme = apply;
         self
     }
 
@@ -623,10 +630,7 @@ pub fn new_window<V: IntoView + 'static>(
     add_app_update_event(AppUpdateEvent::NewWindow {
         window_creation: WindowCreation {
             view_fn: Box::new(|window_id| app_view(window_id).into_any()),
-            config: match current_theme() {
-                Some(theme) => Some(config.unwrap_or_default().apply_theme(theme)),
-                None => config,
-            },
+            config,
         },
     });
 }
