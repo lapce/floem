@@ -161,6 +161,14 @@ impl ApplicationHandle {
                         window_handle.set_theme(Some(theme), false);
                     }
                 }
+                AppUpdateEvent::AccessibilityAction { request } => {
+                    // Find which window contains the target node and handle the action
+                    for (_, handle) in self.window_handles.iter_mut() {
+                        if handle.handle_accessibility_action(&request) {
+                            break;
+                        }
+                    }
+                }
             }
         }
     }
@@ -212,6 +220,9 @@ impl ApplicationHandle {
                 matches!(event, WindowEvent::RedrawRequested),
             )
         });
+
+        // Process accessibility events first
+        window_handle.process_accessibility_event(&event);
 
         match window_handle
             .event_reducer
@@ -540,7 +551,7 @@ impl ApplicationHandle {
             }
         }
         let window_id = window.id();
-        let window_handle = WindowHandle::new(
+        let mut window_handle = WindowHandle::new(
             window,
             self.gpu_resources.clone(),
             self.config.wgpu_features,
@@ -549,6 +560,7 @@ impl ApplicationHandle {
             apply_default_theme,
             font_embolden,
         );
+        window_handle.init_accessibility_with_event_loop(event_loop);
         self.window_handles.insert(window_id, window_handle);
     }
 

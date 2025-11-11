@@ -230,6 +230,7 @@ impl View for ToolTipOverlay {
             if self.offset != new_offset {
                 self.offset = new_offset;
                 self.id().request_style();
+                self.id().request_view_style();
             }
         }
 

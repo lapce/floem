@@ -1,5 +1,8 @@
 #![deny(missing_docs)]
-use crate::{IntoView, View, ViewId, style_class, views::Decorators};
+use accesskit::{Action, Role};
+use smallvec::smallvec;
+
+use crate::{IntoView, View, ViewId, style::Style, style_class, views::Decorators};
 
 style_class!(
     /// The style class that is applied to buttons.
@@ -44,6 +47,14 @@ pub struct Button {
 impl View for Button {
     fn id(&self) -> ViewId {
         self.id
+    }
+
+    fn view_style(&self) -> Option<crate::style::Style> {
+        Some(
+            Style::new()
+                .role(Role::Button)
+                .actions(smallvec![Action::Click]),
+        )
     }
 }
 

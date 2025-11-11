@@ -16,6 +16,7 @@ use crate::{
     unit::PxPct,
     view::View,
 };
+use accesskit::Role;
 use floem_reactive::create_updater;
 use floem_renderer::{Renderer, text::Cursor};
 use peniko::{
@@ -302,6 +303,15 @@ impl View for Label {
         format!("Label: {:?}", self.label).into()
     }
 
+    fn view_style(&self) -> Option<Style> {
+        Some(
+            Style::new()
+                .role(Role::Label)
+                .label("Label".to_string())
+                .value(self.label.clone()),
+        )
+    }
+
     fn update(&mut self, _cx: &mut UpdateCx, state: Box<dyn Any>) {
         if let Ok(state) = state.downcast() {
             self.label = *state;
@@ -310,6 +320,7 @@ impl View for Label {
             self.available_width = None;
             self.available_text_layout = None;
             self.id.request_layout();
+            self.id.request_view_style();
         }
     }
 

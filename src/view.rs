@@ -257,6 +257,7 @@ pub fn recursively_layout_view(id: ViewId, cx: &mut LayoutCx) -> NodeId {
 pub trait View {
     fn id(&self) -> ViewId;
 
+    /// View style will be rerun only if you use `id.request_view_style()`.
     fn view_style(&self) -> Option<Style> {
         None
     }
@@ -336,6 +337,17 @@ pub trait View {
         cx.paint_children(self.id());
     }
 
+    /// Handle an accessbiliity event
+    fn accessibility_action(
+        &mut self,
+        action: accesskit::Action,
+        data: Option<&accesskit::ActionData>,
+    ) -> bool {
+        let _action = action;
+        let _data = data;
+        false
+    }
+
     /// Scrolls the view and all direct and indirect children to bring the `target` view to be
     /// visible. Returns true if this view contains or is the target.
     fn scroll_to(&mut self, cx: &mut WindowState, target: ViewId, rect: Option<Rect>) -> bool {
@@ -398,6 +410,14 @@ impl View for Box<dyn View> {
 
     fn scroll_to(&mut self, cx: &mut WindowState, target: ViewId, rect: Option<Rect>) -> bool {
         (**self).scroll_to(cx, target, rect)
+    }
+
+    fn accessibility_action(
+        &mut self,
+        action: accesskit::Action,
+        data: Option<&accesskit::ActionData>,
+    ) -> bool {
+        (**self).accessibility_action(action, data)
     }
 }
 

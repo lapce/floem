@@ -10,6 +10,7 @@ use crate::{
     event::{Event, EventListener},
     view::View,
 };
+use accesskit::Role;
 use floem_reactive::{RwSignal, SignalGet, SignalUpdate, create_rw_signal};
 use ui_events::keyboard::{Key, KeyState, KeyboardEvent};
 use winit::keyboard::NamedKey;
@@ -187,6 +188,10 @@ impl View for List {
         self.id
     }
 
+    fn view_style(&self) -> Option<Style> {
+        Some(Style::new().role(Role::List).label("List".to_string()))
+    }
+
     fn update(&mut self, _cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(change) = state.downcast::<ListUpdate>() {
             match *change {
@@ -217,7 +222,12 @@ impl View for Item {
     }
 
     fn view_style(&self) -> Option<crate::style::Style> {
-        Some(Style::new().flex_col())
+        Some(
+            Style::new()
+                .flex_col()
+                .role(Role::ListItem)
+                .label("List Item".to_string()),
+        )
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {

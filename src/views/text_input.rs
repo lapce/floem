@@ -8,6 +8,7 @@ use crate::style::{FontStyle, FontWeight, TextColor};
 use crate::unit::{PxPct, PxPctAuto};
 use crate::views::editor::text::Preedit;
 use crate::{Clipboard, prop_extractor, style_class};
+use accesskit::Role;
 use floem_reactive::{SignalGet, SignalUpdate, SignalWith, create_rw_signal};
 use taffy::prelude::{Layout, NodeId};
 
@@ -1130,6 +1131,17 @@ impl View for TextInput {
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
         format!("TextInput: {:?}", self.buffer.get_untracked()).into()
+    }
+
+    fn view_style(&self) -> Option<Style> {
+        Some(
+            Style::new()
+                .role(Role::TextInput)
+                .value(self.buffer.get_untracked())
+                .apply_opt(self.placeholder_text.as_ref(), |s, v| {
+                    s.label(v.to_string())
+                }),
+        )
     }
 
     fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) {

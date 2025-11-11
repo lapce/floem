@@ -642,17 +642,30 @@ impl<'a> StyleCx<'a> {
         let view_state = view_id.state();
         {
             let mut view_state = view_state.borrow_mut();
-            if !view_state.requested_changes.contains(ChangeFlags::STYLE) {
+            if !view_state.requested_changes.contains(ChangeFlags::STYLE)
+                && !view_state
+                    .requested_changes
+                    .contains(ChangeFlags::VIEW_STYLE)
+            {
                 self.restore();
                 return;
             }
             view_state.requested_changes.remove(ChangeFlags::STYLE);
         }
 
-        let view_style = view.borrow().view_style();
         let view_class = view.borrow().view_class();
         {
             let mut view_state = view_state.borrow_mut();
+            if view_state
+                .requested_changes
+                .contains(ChangeFlags::VIEW_STYLE)
+            {
+                view_state.requested_changes.remove(ChangeFlags::VIEW_STYLE);
+                if let Some(view_style) = view.borrow().view_style() {
+                    let offest = view_state.view_style_offset;
+                    view_state.style.set(offest, view_style);
+                }
+            }
 
             // Propagate style requests to children if needed.
             if view_state.request_style_recursive {
@@ -670,7 +683,6 @@ impl<'a> StyleCx<'a> {
         let view_interact_state = self.get_interact_state(&view_id);
         self.disabled = view_interact_state.is_disabled;
         let (mut new_frame, classes_applied) = view_id.state().borrow_mut().compute_combined(
-            view_style,
             view_interact_state,
             self.window_state.screen_size_bp,
             view_class,
@@ -702,13 +714,20 @@ impl<'a> StyleCx<'a> {
             self.window_state.focusable.remove(&view_id);
         }
         view_state.borrow_mut().computed_style = computed_style;
-        self.hidden |= view_id.is_hidden();
+        let view_hidden = view_id.is_hidden();
+        self.hidden |= view_hidden;
 
         // This is used by the `request_transition` and `style` methods below.
         self.current_view = view_id;
 
         {
             let mut view_state = view_state.borrow_mut();
+            if view_hidden {
+                view_state.accessibility_node.set_hidden();
+            } else {
+                view_state.accessibility_node.clear_hidden();
+            }
+
             // Extract the relevant layout properties so the content rect can be calculated
             // when painting.
             view_state.layout_props.read_explicit(
@@ -730,6 +749,30 @@ impl<'a> StyleCx<'a> {
             );
             if new_frame && !self.hidden {
                 self.window_state.schedule_style(view_id);
+            }
+
+            if view_state.accessibility_props.read_explicit(
+                &self.direct,
+                &self.current,
+                &self.now,
+                &mut false,
+            ) {
+                view_id.request_accessibility_update();
+                if let Some(role) = view_state.accessibility_props.role() {
+                    view_state.accessibility_node.set_role(role);
+                }
+                if let Some(label) = view_state.accessibility_props.label() {
+                    view_state.accessibility_node.set_label(label);
+                }
+                if let Some(value) = view_state.accessibility_props.value() {
+                    view_state.accessibility_node.set_value(value);
+                }
+                if let Some(actions) = view_state.accessibility_props.actions() {
+                    view_state.accessibility_node.clear_actions();
+                    for action in actions {
+                        view_state.accessibility_node.add_action(action);
+                    }
+                }
             }
         }
         // If there's any changes to the Taffy style, request layout.
@@ -849,6 +892,7 @@ impl<'a> StyleCx<'a> {
 }
 
 pub struct ComputeLayoutCx<'a> {
+    pub scale: f64,
     pub window_state: &'a mut WindowState,
     pub(crate) viewport: Rect,
     pub(crate) window_origin: Point,
@@ -857,8 +901,9 @@ pub struct ComputeLayoutCx<'a> {
 }
 
 impl<'a> ComputeLayoutCx<'a> {
-    pub(crate) fn new(window_state: &'a mut WindowState, viewport: Rect) -> Self {
+    pub(crate) fn new(window_state: &'a mut WindowState, viewport: Rect, scale: f64) -> Self {
         Self {
+            scale,
             window_state,
             viewport,
             window_origin: Point::ZERO,
@@ -977,7 +1022,19 @@ impl<'a> ComputeLayoutCx<'a> {
         let transform = view_state.borrow().transform;
         let layout_rect = transform.transform_rect_bbox(layout_rect);
 
-        view_state.borrow_mut().layout_rect = layout_rect;
+        {
+            let mut view_state_ref = view_state.borrow_mut();
+            let scale = self.window_state.scale * self.scale;
+            view_state_ref.layout_rect = layout_rect;
+            view_state_ref
+                .accessibility_node
+                .set_bounds(accesskit::Rect {
+                    x0: layout_rect.x0 * scale,
+                    y0: layout_rect.y0 * scale,
+                    x1: layout_rect.x1 * scale,
+                    y1: layout_rect.y1 * scale,
+                });
+        }
 
         self.restore();
 

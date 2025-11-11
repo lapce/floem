@@ -128,6 +128,7 @@
 //!
 //! You can create custom extractors and embed them in your custom views so that you can get out any built in prop, or any of your custom props from the final combined style that is applied to your `View`.
 
+use accesskit::{Action, Role};
 use floem_reactive::{RwSignal, SignalGet, SignalUpdate as _, create_updater};
 use floem_renderer::Renderer;
 use floem_renderer::text::{LineHeightValue, Weight};
@@ -3463,6 +3464,17 @@ impl StylePropValue for Margin {
         }
     }
 }
+impl StylePropValue for Role {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        Some(text(format!("{self:?}")).into_any())
+    }
+}
+
+impl StylePropValue for Action {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        Some(text(format!("{self:?}")).into_any())
+    }
+}
 
 /// The value for a [`Style`] property
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -3628,6 +3640,10 @@ define_builtin_props!(
     Hidden set_hidden: bool { inherited } = false,
     Focusable focusable: bool { } = false,
     Draggable draggable: bool { } = false,
+    AccessibilityRole role: Option<Role> { } = None,
+    AccessibilityLabel label: Option<String> {} = None,
+    AccessibilityValue value: Option<String> {} = None,
+    AccessibilityActions actions: Option<SmallVec<[Action; 2]>> {} = None,
 );
 
 impl BuiltinStyle<'_> {
@@ -3751,6 +3767,15 @@ impl LayoutProps {
             .row_gap(self.row_gap())
     }
 }
+
+prop_extractor!(
+    pub AccessibilityProps {
+        pub role: AccessibilityRole,
+        pub label: AccessibilityLabel,
+        pub value: AccessibilityValue,
+        pub actions: AccessibilityActions,
+    }
+);
 
 prop_extractor! {
     pub SelectionStyle {

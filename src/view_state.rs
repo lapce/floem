@@ -8,8 +8,9 @@ use crate::{
     prop_extractor,
     responsive::ScreenSizeBp,
     style::{
-        Background, BorderColorProp, BorderRadiusProp, BoxShadowProp, LayoutProps, Outline,
-        OutlineColor, Style, StyleClassRef, StyleSelectors, resolve_nested_maps,
+        AccessibilityProps, Background, BorderColorProp, BorderRadiusProp, BoxShadowProp,
+        LayoutProps, Outline, OutlineColor, Style, StyleClassRef, StyleSelectors,
+        resolve_nested_maps,
     },
 };
 use bitflags::bitflags;
@@ -104,6 +105,8 @@ bitflags! {
     pub(crate) struct ChangeFlags: u8 {
         const STYLE = 1;
         const LAYOUT = 1 << 1;
+        const VIEW_STYLE = 1 << 2;
+        const ACCESSIBILITY = 1 << 3;
     }
 }
 
@@ -170,14 +173,18 @@ impl IsHiddenState {
 /// View state stores internal state associated with a view which is owned and managed by Floem.
 pub struct ViewState {
     pub(crate) node: NodeId,
+    pub(crate) accessibility_node: accesskit::Node,
     pub(crate) requested_changes: ChangeFlags,
     pub(crate) style: Stack<Style>,
+    /// we store the stack offset to the view style to keep the api consistent but it should always be the first offset
+    pub(crate) view_style_offset: StackOffset<Style>,
     /// Layout is requested on all direct and indirect children.
     pub(crate) request_style_recursive: bool,
     pub(crate) has_style_selectors: StyleSelectors,
     pub(crate) viewport: Option<Rect>,
     pub(crate) layout_rect: Rect,
     pub(crate) layout_props: LayoutProps,
+    pub(crate) accessibility_props: AccessibilityProps,
     pub(crate) view_style_props: ViewStyleProps,
     pub(crate) animations: Stack<Animation>,
     pub(crate) classes: Vec<StyleClassRef>,
@@ -204,13 +211,19 @@ pub struct ViewState {
 
 impl ViewState {
     pub(crate) fn new(taffy: &mut taffy::TaffyTree) -> Self {
+        let mut style = Stack::<Style>::default();
+        let view_style_offset = style.next_offset();
+        style.push(Style::new());
         Self {
             node: taffy.new_leaf(taffy::style::Style::DEFAULT).unwrap(),
+            accessibility_node: accesskit::Node::new(accesskit::Role::Group),
             viewport: None,
-            style: Default::default(),
+            style,
+            view_style_offset,
             layout_rect: Rect::ZERO,
             layout_props: Default::default(),
             view_style_props: Default::default(),
+            accessibility_props: Default::default(),
             requested_changes: ChangeFlags::all(),
             request_style_recursive: false,
             has_style_selectors: StyleSelectors::default(),
@@ -243,7 +256,6 @@ impl ViewState {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn compute_combined(
         &mut self,
-        view_style: Option<Style>,
         interact_state: InteractionState,
         screen_size_bp: ScreenSizeBp,
         view_class: Option<StyleClassRef>,
@@ -278,10 +290,6 @@ impl ViewState {
         );
         combined_style = resolved_style;
         new_classes |= classes_applied;
-
-        if let Some(view_style) = &view_style {
-            combined_style.apply_mut(view_style.clone());
-        }
 
         let self_style = self.style();
 
