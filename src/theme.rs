@@ -19,7 +19,7 @@ use crate::{
     },
 };
 use floem_renderer::text::Weight;
-use peniko::{Brush, Color, color::palette::css};
+use peniko::{Brush, Color, color::{palette::css}};
 use smallvec::smallvec;
 
 style_class!(pub HoverTargetClass);
@@ -41,17 +41,96 @@ pub struct DesignSystem {
 // const BORDER_RADIUS: f32 = 5.0;
 // const FONT_SIZE: f32 = 12.0;
 
+// const BG_DARK: Color = hsl([60., 3., 90.]);
+// const BG: Color = hsl([60., 3., 95.]);
+// const BG_LIGHT: Color = hsl([60., 3., 100.]);
+
+// const BORDER: Color = hsl([60., 3., 60.]);
+// const HIGHLIGHT: Color = hsl([60., 3., 100.]);
+
+// const TEXT: Color = hsl([60., 3., 5.]);
+// const TEXT_MUTED: Color = hsl([60., 3., 30.]);
+
+
+/// Contruct sRGB [Color] from HSL values.
+pub const fn hsl(h: f32, s: f32, l: f32) -> Color {
+    let hue = transform(0., [h, s, l]);
+    let sat = transform(8., [h, s, l]);
+    let lum = transform(4., [h, s, l]);
+    Color::new([hue, sat, lum, 1.])
+}
+
+const fn transform(n: f32, [h, s, l]: [f32; 3]) -> f32 {
+    let sat = s * 0.01;
+    let light = l * 0.01;
+    let a = sat * light.min(1.0 - light);
+
+    let x = n + h * (1.0 / 30.0);
+    let k = x - 12.0 * (x * (1.0 / 12.0)).floor();
+    light - a * (k - 3.0).min(9.0 - k).clamp(-1.0, 1.0)
+}
+
+pub const fn hsl_map_lightness(c: Color, adjustment: f32) -> Color {
+    let [r, g, b, _] = c.components;
+    let [h, s, l] = rgb_to_hsl([r, g, b], true);
+    let l = ((l * 0.01) + adjustment) * 100.;
+    hsl(h, s, l)
+}
+
+const fn rgb_to_hsl([r, g, b]: [f32; 3], hue_hack: bool) -> [f32; 3] {
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let mut hue = 0.0;
+    let mut sat = 0.0;
+    let light = 0.5 * (min + max);
+    let d = max - min;
+
+    const EPSILON: f32 = 1e-6;
+    if d > EPSILON {
+        let denom = light.min(1.0 - light);
+        if denom.abs() > EPSILON {
+            sat = (max - light) / denom;
+        }
+        hue = if max == r {
+            (g - b) / d
+        } else if max == g {
+            (b - r) / d + 2.0
+        } else {
+            // max == b
+            (r - g) / d + 4.0
+        };
+        hue *= 60.0;
+        // Deal with negative saturation from out of gamut colors
+        if hue_hack && sat < 0.0 {
+            hue += 180.0;
+            sat = sat.abs();
+        }
+        hue -= 360. * (hue * (1.0 / 360.0)).floor();
+    }
+    [hue, sat * 100.0, light * 100.0]
+}
+
+pub(crate) const LIGHT_THEME: DesignSystem = DesignSystem::light();
+pub(crate) const DARK_THEME: DesignSystem = DesignSystem::dark();
+
 impl DesignSystem {
     /// Create a light mode design system.
-    pub fn light() -> Self {
+    pub const fn light() -> Self {
         Self {
-            bg_base: Color::from_rgb8(248, 248, 248),
-            text_base: Color::from_rgb8(0, 0, 0),
+            bg_base: hsl(60., 3., 95.),
+            text_base: hsl(60., 3., 10.),
             text_lightness: 0.05,
-            primary_base: Color::from_rgb8(0x18, 0x96, 0xC2),
-            success_base: Color::from_rgb8(0x2D, 0x9D, 0x67),
-            warning_base: Color::from_rgb8(0xE5, 0xA2, 0x23),
-            danger_base: Color::from_rgb8(0xD7, 0x37, 0x45),
+            primary_base: hsl(196., 78., 43.),
+            success_base: hsl(151., 55., 40.),
+            warning_base: hsl(39., 79., 52.),
+            danger_base: hsl(355., 67., 53.),
+            // bg_base: Color::from_rgb8(248, 248, 248),
+            // text_base: Color::from_rgb8(0, 0, 0),
+            // text_lightness: 0.05,
+            // primary_base: Color::from_rgb8(0x18, 0x96, 0xC2),
+            // success_base: Color::from_rgb8(0x2D, 0x9D, 0x67),
+            // warning_base: Color::from_rgb8(0xE5, 0xA2, 0x23),
+            // danger_base: Color::from_rgb8(0xD7, 0x37, 0x45),
             padding: 5.,
             border_radius: 5.,
             font_size: 14.,
@@ -60,15 +139,22 @@ impl DesignSystem {
     }
 
     /// Create a dark mode design system.
-    pub fn dark() -> Self {
+    pub const fn dark() -> Self {
         Self {
-            bg_base: Color::from_rgb8(0x24, 0x24, 0x24),
-            text_base: Color::from_rgb8(255, 255, 255),
+            bg_base: hsl(0., 0., 14.),
+            text_base: hsl(0., 0., 0.),
             text_lightness: 0.95,
-            primary_base: Color::from_rgb8(0x3A, 0xAA, 0xD8),
-            success_base: Color::from_rgb8(0x4A, 0xBE, 0x8A),
-            warning_base: Color::from_rgb8(0xF5, 0xB8, 0x4E),
-            danger_base: Color::from_rgb8(0xF0, 0x56, 0x54),
+            primary_base: hsl(197., 67., 54.),
+            success_base: hsl(153., 47., 52.),
+            warning_base: hsl(38., 89., 63.),
+            danger_base: hsl(1., 84., 64.),
+            // bg_base: Color::from_rgb8(0x24, 0x24, 0x24),
+            // text_base: Color::from_rgb8(255, 255, 255),
+            // text_lightness: 0.95,
+            // primary_base: Color::from_rgb8(0x3A, 0xAA, 0xD8),
+            // success_base: Color::from_rgb8(0x4A, 0xBE, 0x8A),
+            // warning_base: Color::from_rgb8(0xF5, 0xB8, 0x4E),
+            // danger_base: Color::from_rgb8(0xF0, 0x56, 0x54),
             padding: 5.,
             border_radius: 5.,
             font_size: 14.,
@@ -78,89 +164,106 @@ impl DesignSystem {
 
     // Background levels
 
-    pub fn bg_base(&self) -> Color {
+    pub const fn bg_base(&self) -> Color {
         self.bg_base
     }
 
-    pub fn bg_elevated(&self) -> Color {
-        let adjustment = 0.05;
-        self.bg_base.map_lightness(|l| l + adjustment)
+    pub const fn bg_elevated(&self) -> Color {
+        // let adjustment = 0.05;
+        // self.bg_base.map_lightness(|l| l + adjustment)
+        hsl_map_lightness(self.bg_base, 0.05)
     }
 
-    pub fn bg_overlay(&self) -> Color {
-        let adjustment = 0.10;
-        self.bg_base.map_lightness(|l| l + adjustment)
+    // pub const fn bg_overlay(&self) -> Color {
+    //     // let adjustment = 0.10;
+    //     let adjustment = if self.is_dark { 0.1 } else { -0.1 };
+    //     // self.bg_base.map_lightness(|l| l + adjustment)
+    //     hsl_map_lightness(self.bg_base, adjustment)
+    // }
+
+    pub const fn bg_overlay(&self) -> Color {
+        let adjustment = if self.is_dark { 0.1 } else { -0.1 };
+        // println!("com:             {:?}", &self.bg_base.components);
+        // println!("com mapped:      {:?}", &self.bg_base.map_lightness(|l| l + adjustment));
+        // println!("com mapped mine: {:?}", hsl_map_lightness(self.bg_base, adjustment));
+        hsl_map_lightness(self.bg_base, adjustment)
     }
 
-    pub fn bg_disabled(&self) -> Color {
-        let adjustment = if self.is_dark { -0.05 } else { -0.1 };
-        self.bg_base.map_lightness(|l| l + adjustment)
+    pub const fn bg_disabled(&self) -> Color {
+        let adjustment = if self.is_dark { -0.05 } else { -0.2 };
+        // self.bg_base.map_lightness(|l| l + adjustment)
+        hsl_map_lightness(self.bg_base, adjustment)
     }
 
     // Border
 
-    pub fn border(&self) -> Color {
+    pub const fn border(&self) -> Color {
         let adjustment = if self.is_dark { 0.15 } else { -0.15 };
-        self.bg_base.map_lightness(|l| l + adjustment)
+        hsl_map_lightness(self.bg_base, adjustment)
+        // self.bg_base.map_lightness(|l| l + adjustment)
     }
 
-    pub fn border_muted(&self) -> Color {
+    pub const fn border_muted(&self) -> Color {
         let adjustment = if self.is_dark { 0.15 } else { -0.15 };
-        self.border()
-            .map_lightness(|l| l + adjustment)
+        hsl_map_lightness(self.border(), adjustment)
+        // self.border()
+        //     .map_lightness(|l| l + adjustment)
             .with_alpha(0.8)
     }
 
     // Text
 
-    pub fn text(&self) -> Color {
-        self.text_base.map_lightness(|_| self.text_lightness)
+    pub const fn text(&self) -> Color {
+        // self.text_base.map_lightness(|_| self.text_lightness)
+        hsl_map_lightness(self.text_base, self.text_lightness)
     }
 
-    pub fn text_muted(&self) -> Color {
+    pub const fn text_muted(&self) -> Color {
         let adjustment = if self.is_dark { -0.25 } else { 0.25 };
-        self.text_base
-            .map_lightness(|l| l + adjustment)
+        hsl_map_lightness(self.text_base, adjustment)
+        // self.text_base
+            // .map_lightness(|l| l + adjustment)
             .with_alpha(0.5)
     }
 
     // Primary
 
-    pub fn primary(&self) -> Color {
+    pub const fn primary(&self) -> Color {
         self.primary_base
     }
 
-    pub fn primary_muted(&self) -> Color {
-        self.primary_base.map_lightness(|l| l - 0.05)
+    pub const fn primary_muted(&self) -> Color {
+        hsl_map_lightness(self.primary_base, -0.05)
+        // self.primary_base.map_lightness(|l| l - 0.05)
     }
 
     // Semantic colors
 
-    pub fn success(&self) -> Color {
+    pub const fn success(&self) -> Color {
         self.success_base
     }
 
-    pub fn warning(&self) -> Color {
+    pub const fn warning(&self) -> Color {
         self.warning_base
     }
 
-    pub fn danger(&self) -> Color {
+    pub const fn danger(&self) -> Color {
         self.danger_base
     }
 
-    pub fn info(&self) -> Color {
+    pub const fn info(&self) -> Color {
         self.primary_base
     }
 
-    pub fn padding(&self) -> f32 {
+    pub const fn padding(&self) -> f32 {
         self.padding
     }
 
-    pub fn border_radius(&self) -> f32 {
+    pub const fn border_radius(&self) -> f32 {
         self.border_radius
     }
 
-    pub fn font_size(&self) -> f32 {
+    pub const fn font_size(&self) -> f32 {
         self.font_size
     }
 }
@@ -290,7 +393,7 @@ impl StylePropValue for DesignSystem {
 }
 
 prop!(
-    pub Theme: DesignSystem { inherited } = DesignSystem::light()
+    pub Theme: DesignSystem { inherited } = LIGHT_THEME
 );
 pub trait StyleThemeExt {
     fn theme(self, theme: DesignSystem) -> Self;
@@ -553,7 +656,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
 
     Style::new()
         .apply_if(os_theme == winit::window::Theme::Light, |s| {
-            let light = DesignSystem::light();
+            let light = LIGHT_THEME;
             s.color(light.text())
                 .font_size(light.font_size())
                 .background(light.bg_base())
@@ -561,7 +664,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
                 .theme(light)
         })
         .apply_if(os_theme == winit::window::Theme::Dark, |s| {
-            let dark = DesignSystem::dark();
+            let dark = DARK_THEME;
             s.color(dark.text())
                 .font_size(dark.font_size())
                 .background(dark.bg_base())
