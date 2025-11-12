@@ -924,8 +924,6 @@ impl View for Scroll {
         self.track_style.read_style(cx, &track_style);
         self.track_hover_style
             .read_style(cx, &track_style.apply_selectors(&[StyleSelector::Hover]));
-
-        cx.style_view(self.child);
     }
 
     fn compute_layout(&mut self, cx: &mut ComputeLayoutCx) -> Option<Rect> {

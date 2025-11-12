@@ -222,15 +222,12 @@ impl View for Item {
         "List Item".into()
     }
 
-    fn style_pass(&mut self, cx: &mut StyleCx<'_>) {
+    fn style_pass(&mut self, _cx: &mut StyleCx<'_>) {
         let selected = self.selection.get_untracked();
         if Some(self.index) == selected {
-            cx.save();
-            cx.selected();
-            cx.style_view(self.child);
-            cx.restore();
+            self.child.parent_set_selected();
         } else {
-            cx.style_view(self.child);
+            self.child.parent_clear_selected();
         }
     }
 }

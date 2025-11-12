@@ -130,9 +130,6 @@ impl View for ResizableStack {
             HandleState::Active(_) => style.apply_selectors(&[StyleSelector::Active]),
         };
         self.hovered_handle_style.read_style(cx, &handle_style);
-        for child in self.id().children() {
-            cx.style_view(child);
-        }
     }
 
     fn update(&mut self, _cx: &mut UpdateCx, state: Box<dyn std::any::Any>) {

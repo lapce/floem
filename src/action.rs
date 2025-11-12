@@ -31,6 +31,7 @@ use crate::{
 #[cfg(any(feature = "rfd-async-std", feature = "rfd-tokio"))]
 pub use crate::file_action::*;
 
+/// Add an update message
 pub(crate) fn add_update_message(msg: UpdateMessage) {
     let current_view = get_current_view();
     let _ = UPDATE_MESSAGES.try_with(|msgs| {

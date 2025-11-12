@@ -6,18 +6,19 @@
 
 use std::{any::Any, cell::RefCell, rc::Rc};
 
-use peniko::kurbo::{Insets, Point, Rect, Size};
+use peniko::kurbo::{Affine, Insets, Point, Rect, Size};
 use slotmap::new_key_type;
-use taffy::{Display, Layout, NodeId, TaffyTree};
+use taffy::{Layout, NodeId, TaffyTree};
 use winit::window::WindowId;
 
 use crate::{
     ScreenLayout,
+    action::add_update_message,
     animate::{AnimStateCommand, Animation},
     context::{EventCallback, ResizeCallback},
     event::{EventListener, EventPropagation},
     menu::Menu,
-    style::{Disabled, DisplayProp, Draggable, Focusable, Hidden, Style, StyleClassRef},
+    style::{Draggable, Focusable, PointerEvents, Style, StyleClassRef},
     unit::PxPct,
     update::{CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES, UpdateMessage},
     view::{IntoView, View},
@@ -77,9 +78,20 @@ impl ViewId {
         self.taffy().borrow().layout(node).cloned().ok()
     }
 
+    /// Mark the taffy node associated with this view as dirty.
+    pub fn mark_view_layout_dirty(&self) -> taffy::TaffyResult<()> {
+        let node = self.taffy_node();
+        self.taffy().borrow_mut().mark_dirty(node)
+    }
     /// Get the taffy node associated with this Id
     pub fn taffy_node(&self) -> NodeId {
         self.state().borrow().node
+    }
+
+    /// set the transform on a view that is applied after style transforms
+    pub fn set_transform(&self, transform: Affine) {
+        self.state().borrow_mut().transform = transform;
+        self.request_layout();
     }
 
     pub(crate) fn state(&self) -> Rc<RefCell<ViewState>> {
@@ -93,7 +105,10 @@ impl ViewId {
                     .entry(*self)
                     .unwrap()
                     .or_insert_with(|| {
-                        Rc::new(RefCell::new(ViewState::new(&mut s.taffy.borrow_mut())))
+                        Rc::new(RefCell::new(ViewState::new(
+                            *self,
+                            &mut s.taffy.borrow_mut(),
+                        )))
                     })
                     .clone()
             }
@@ -270,7 +285,6 @@ impl ViewId {
                 + pixels(padding.bottom.unwrap_or(PxPct::Px(0.0)), rect.height()),
         })
     }
-
     /// This gets the Taffy Layout and adjusts it to be relative to the parent `View`.
     pub fn get_layout(&self) -> Option<Layout> {
         let widget_parent = self.parent().map(|id| id.state().borrow().node);
@@ -326,27 +340,34 @@ impl ViewId {
 
     /// Returns true if the computed style for this view is marked as hidden by setting in this view, or any parent, `Hidden` to true. For hiding views, you should prefer to set `Hidden` to true rather than using `Display::None` as checking for `Hidden` is cheaper, more correct, and used for optimizations in Floem
     pub fn is_hidden(&self) -> bool {
+        self.state().borrow_mut().style_interaction_cx.hidden
+    }
+
+    /// if the view has pointer events none
+    pub fn pointer_events_none(&self) -> bool {
         let state = self.state();
         let state = state.borrow();
-        state.computed_style.get(Hidden) || state.computed_style.get(DisplayProp) == Display::None
+        state.computed_style.builtin().set_hidden()
+            || state
+                .computed_style
+                .builtin()
+                .pointer_events()
+                .map(|p| p == PointerEvents::None)
+                .unwrap_or(false)
     }
 
     /// Returns true if the view is disabled
     ///
     /// This is done by checking if the style for this view has `Disabled` set to true.
     pub fn is_disabled(&self) -> bool {
-        let state = self.state();
-        let state = state.borrow();
-        state.computed_style.get(Disabled)
+        self.state().borrow_mut().style_interaction_cx.disabled
     }
 
     /// Returns true if the view is selected
     ///
     /// This is done by checking if the style for this view has `Selected` set to true.
     pub fn is_selected(&self) -> bool {
-        let state = self.state();
-        let state = state.borrow();
-        state.computed_style.get(Disabled)
+        self.state().borrow_mut().style_interaction_cx.selected
     }
 
     /// Check if this id can be focused.
@@ -366,7 +387,10 @@ impl ViewId {
     /// Request that this the `id` view be styled, laid out and painted again.
     /// This will recursively request this for all parents.
     pub fn request_all(&self) {
-        self.request_changes(ChangeFlags::all());
+        add_update_message(UpdateMessage::RequestStyle(*self));
+        add_update_message(UpdateMessage::RequestViewStyle(*self));
+        self.request_layout();
+        self.add_update_message(UpdateMessage::RequestPaint);
     }
 
     /// Request that this view have it's layout pass run
@@ -387,12 +411,12 @@ impl ViewId {
     /// request that this node be styled again
     /// This will recursively request style for all parents.
     pub fn request_style(&self) {
-        self.request_changes(ChangeFlags::STYLE)
+        self.add_update_message(UpdateMessage::RequestStyle(*self));
     }
 
     /// Use this when you want the `view_style` method from the `View` trait to be rerun.
     pub fn request_view_style(&self) {
-        self.request_changes(ChangeFlags::VIEW_STYLE)
+        self.add_update_message(UpdateMessage::RequestViewStyle(*self));
     }
 
     pub(crate) fn request_changes(&self, flags: ChangeFlags) {
@@ -548,13 +572,15 @@ impl ViewId {
     }
 
     pub(crate) fn update_style(&self, offset: StackOffset<Style>, style: Style) {
-        let state = self.state();
-        let old_any_inherited = state.borrow().style().any_inherited();
-        state.borrow_mut().style.set(offset, style);
-        if state.borrow().style().any_inherited() || old_any_inherited {
-            self.request_style_recursive();
-        } else {
-            self.request_style();
+        let state = VIEW_STORAGE.with_borrow(|s| s.states.get(*self).cloned());
+        if let Some(state) = state {
+            let old_any_inherited = state.borrow().style().any_inherited();
+            state.borrow_mut().style.set(offset, style);
+            if state.borrow().style().any_inherited() || old_any_inherited {
+                self.request_style_recursive();
+            } else {
+                self.request_style();
+            }
         }
     }
 
@@ -621,5 +647,130 @@ impl ViewId {
     /// Get a layout in screen-coordinates for this view, if possible.
     pub fn screen_layout(&self) -> Option<ScreenLayout> {
         crate::screen_layout::try_create_screen_layout(self)
+    }
+
+    /// Set the custom style parent to make it so that a view will pull it's style context from a different parent.
+    /// This is useful for overlays that are children of the window root but should pull their style cx from the creating view
+    pub fn set_style_parent(&self, parent_id: ViewId) {
+        self.state().borrow_mut().style_cx_parent = Some(parent_id);
+    }
+
+    /// Clear the custom style parent
+    pub fn clear_style_parent(&self) {
+        self.state().borrow_mut().style_cx_parent = None;
+    }
+
+    /// Set the selected state for child views during styling.
+    /// This should be used by parent views to propagate selected state to their children.
+    /// Only requests a style update if the state actually changes.
+    pub fn parent_set_selected(&self) {
+        let changed = {
+            let state = self.state();
+            let mut state = state.borrow_mut();
+            if !state.parent_set_style_interaction.selected {
+                state.parent_set_style_interaction.selected = true;
+                true
+            } else {
+                false
+            }
+        };
+        if changed {
+            self.request_style();
+        }
+    }
+
+    /// Clear the selected state for child views during styling.
+    /// This should be used by parent views to clear selected state propagation to their children.
+    /// Only requests a style update if the state actually changes.
+    pub fn parent_clear_selected(&self) {
+        let changed = {
+            let state = self.state();
+            let mut state = state.borrow_mut();
+            if state.parent_set_style_interaction.selected {
+                state.parent_set_style_interaction.selected = false;
+                true
+            } else {
+                false
+            }
+        };
+        if changed {
+            self.request_style();
+        }
+    }
+
+    /// Set the disabled state for child views during styling.
+    /// This should be used by parent views to propagate disabled state to their children.
+    /// Only requests a style update if the state actually changes.
+    pub fn parent_set_disabled(&self) {
+        let changed = {
+            let state = self.state();
+            let mut state = state.borrow_mut();
+            if !state.parent_set_style_interaction.disabled {
+                state.parent_set_style_interaction.disabled = true;
+                true
+            } else {
+                false
+            }
+        };
+        if changed {
+            self.request_style();
+        }
+    }
+
+    /// Clear the disabled state for child views during styling.
+    /// This should be used by parent views to clear disabled state propagation to their children.
+    /// Only requests a style update if the state actually changes.
+    pub fn parent_clear_disabled(&self) {
+        let changed = {
+            let state = self.state();
+            let mut state = state.borrow_mut();
+            if state.parent_set_style_interaction.disabled {
+                state.parent_set_style_interaction.disabled = false;
+                true
+            } else {
+                false
+            }
+        };
+        if changed {
+            self.request_style();
+        }
+    }
+
+    /// Set the hidden state for child views during styling.
+    /// This should be used by parent views to propagate hidden state to their children.
+    /// Only requests a style update if the state actually changes.
+    pub fn parent_set_hidden(&self) {
+        let changed = {
+            let state = self.state();
+            let mut state = state.borrow_mut();
+            if !state.parent_set_style_interaction.hidden {
+                state.parent_set_style_interaction.hidden = true;
+                true
+            } else {
+                false
+            }
+        };
+        if changed {
+            self.request_style();
+        }
+    }
+
+    /// Clear the hidden state for child views during styling.
+    /// This should be used by parent views to clear hidden state propagation to their children.
+    /// Only requests a style update if the state actually changes.
+    pub fn parent_clear_hidden(&self) {
+        let changed = {
+            let state = self.state();
+            let mut state = state.borrow_mut();
+            if state.parent_set_style_interaction.hidden {
+                state.parent_set_style_interaction.hidden = false;
+                true
+            } else {
+                false
+            }
+        };
+        if changed {
+            self.request_style();
+        }
     }
 }

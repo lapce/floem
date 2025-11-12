@@ -134,7 +134,7 @@ use floem_renderer::text::{LineHeightValue, Weight};
 use imbl::hashmap::Entry;
 use imbl::shared_ptr::DefaultSharedPtr;
 use peniko::color::{HueDirection, palette};
-use peniko::kurbo::{self, Point, Stroke};
+use peniko::kurbo::{self, Affine, Point, RoundedRect, Stroke, Vec2};
 use peniko::{
     Brush, Color, ColorStop, ColorStops, Gradient, GradientKind, InterpolationAlphaSpace,
     LinearGradientPosition,
@@ -173,7 +173,7 @@ use crate::context::InteractionState;
 use crate::prelude::ViewTuple;
 use crate::responsive::{ScreenSize, ScreenSizeBp};
 use crate::theme::StyleThemeExt;
-use crate::unit::{Pct, Px, PxPct, PxPctAuto, UnitExt};
+use crate::unit::{Angle, Pct, Px, PxPct, PxPctAuto, UnitExt};
 use crate::view::{IntoView, View};
 use crate::view_tuple::ViewTupleFlat;
 use crate::views::{
@@ -554,6 +554,77 @@ impl StylePropValue for PxPctAuto {
         }
     }
 }
+
+impl StylePropValue for Angle {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        let label = match self {
+            Self::Deg(v) => format!("{v}°"),
+            Self::Rad(v) => format!("{v} rad"),
+        };
+        Some(crate::views::Label::new(label).into_any())
+    }
+
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        // Convert both to radians for interpolation, then return in the target format
+        let self_rad = self.to_radians();
+        let other_rad = other.to_radians();
+        let interpolated_rad = self_rad + (other_rad - self_rad) * value;
+
+        // Return in the format of the target (other) angle
+        match other {
+            Angle::Deg(_) => Some(Angle::Deg(interpolated_rad.to_degrees())),
+            Angle::Rad(_) => Some(Angle::Rad(interpolated_rad)),
+        }
+    }
+}
+
+impl StylePropValue for AnchorAbout {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        let label = if *self == AnchorAbout::TOP_LEFT {
+            "Top Left".to_string()
+        } else if *self == AnchorAbout::TOP_CENTER {
+            "Top Center".to_string()
+        } else if *self == AnchorAbout::TOP_RIGHT {
+            "Top Right".to_string()
+        } else if *self == AnchorAbout::CENTER_LEFT {
+            "Center Left".to_string()
+        } else if *self == AnchorAbout::CENTER {
+            "Center".to_string()
+        } else if *self == AnchorAbout::CENTER_RIGHT {
+            "Center Right".to_string()
+        } else if *self == AnchorAbout::BOTTOM_LEFT {
+            "Bottom Left".to_string()
+        } else if *self == AnchorAbout::BOTTOM_CENTER {
+            "Bottom Center".to_string()
+        } else if *self == AnchorAbout::BOTTOM_RIGHT {
+            "Bottom Right".to_string()
+        } else {
+            format!(
+                "({}, {})",
+                match self.x {
+                    PxPct::Px(v) => format!("{}px", v),
+                    PxPct::Pct(v) => format!("{}%", v),
+                },
+                match self.y {
+                    PxPct::Px(v) => format!("{}px", v),
+                    PxPct::Pct(v) => format!("{}%", v),
+                }
+            )
+        };
+        Some(crate::views::Label::new(label).into_any())
+    }
+
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        let x = self.x.interpolate(&other.x, value);
+        let y = self.x.interpolate(&other.y, value);
+        if let (Some(x), Some(y)) = (x, y) {
+            Some(Self { x, y })
+        } else {
+            None
+        }
+    }
+}
+
 impl StylePropValue for PxPct {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         let label = match self {
@@ -2022,7 +2093,7 @@ pub(crate) fn screen_size_bp_to_key(breakpoint: ScreenSizeBp) -> StyleKey {
 }
 
 /// the bool in the return is a classes_applied flag. if a new class has been applied, we need to do a request_style_recursive
-pub(crate) fn resolve_nested_maps(
+pub fn resolve_nested_maps(
     style: Style,
     interact_state: &InteractionState,
     screen_size_bp: ScreenSizeBp,
@@ -2095,12 +2166,7 @@ fn resolve_nested_maps_internal(
     // This handles:
     // 1. The view's own set_disabled() calls (reactive or static)
     // 2. Inherited disabled state from parent views (passed via context)
-    //
-    // Note: We use style.get(Disabled) instead of interact_state.is_disabled
-    // because interact_state is computed from the PREVIOUS pass's computed_style,
-    // which would cause the disabled selector to be incorrectly applied when
-    // transitioning from disabled to enabled via reactive set_disabled() calls.
-    if style.get(Disabled) {
+    if interact_state.is_disabled || style.get(Disabled) {
         if let Some(map) = style.get_nested_map(StyleSelector::Disabled.to_key()) {
             classes_applied |= map.any_inherited();
             style.apply_mut(map);
@@ -2458,15 +2524,6 @@ impl Style {
 
     pub(crate) fn any_inherited(&self) -> bool {
         self.map.iter().any(|(p, _)| p.inherited())
-    }
-
-    pub(crate) fn apply_only_inherited(this: &mut Rc<Style>, over: &Style) {
-        if over.any_inherited() {
-            let inherited = over.map.iter().filter(|(p, _)| p.inherited());
-
-            let this = Rc::make_mut(this);
-            this.apply_iter(inherited);
-        }
     }
 
     pub(crate) fn inherited(&self) -> Style {
@@ -2862,6 +2919,67 @@ pub enum TextOverflow {
     Ellipsis,
 }
 
+/// Defines anchor points for transformations like rotation and scaling
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AnchorAbout {
+    /// X position of the anchor point
+    pub x: PxPct,
+    /// Y position of the anchor point  
+    pub y: PxPct,
+}
+
+impl AnchorAbout {
+    /// Create a new anchor point
+    pub fn new(x: impl Into<PxPct>, y: impl Into<PxPct>) -> Self {
+        Self {
+            x: x.into(),
+            y: y.into(),
+        }
+    }
+
+    pub const fn new_const(x: PxPct, y: PxPct) -> Self {
+        Self { x, y }
+    }
+
+    /// Top-left corner (0%, 0%)
+    pub const TOP_LEFT: Self = Self::new_const(PxPct::Pct(0.0), PxPct::Pct(0.0));
+    /// Top-center (50%, 0%)
+    pub const TOP_CENTER: Self = Self::new_const(PxPct::Pct(50.0), PxPct::Pct(0.0));
+    /// Top-right corner (100%, 0%)
+    pub const TOP_RIGHT: Self = Self::new_const(PxPct::Pct(100.0), PxPct::Pct(0.0));
+    /// Center-left (0%, 50%)
+    pub const CENTER_LEFT: Self = Self::new_const(PxPct::Pct(0.0), PxPct::Pct(50.0));
+    /// Center of the element (50%, 50%)
+    pub const CENTER: Self = Self::new_const(PxPct::Pct(50.0), PxPct::Pct(50.0));
+    /// Center-right (100%, 50%)
+    pub const CENTER_RIGHT: Self = Self::new_const(PxPct::Pct(100.0), PxPct::Pct(50.0));
+    /// Bottom-left corner (0%, 100%)
+    pub const BOTTOM_LEFT: Self = Self::new_const(PxPct::Pct(0.0), PxPct::Pct(100.0));
+    /// Bottom-center (50%, 100%)
+    pub const BOTTOM_CENTER: Self = Self::new_const(PxPct::Pct(50.0), PxPct::Pct(100.0));
+    /// Bottom-right corner (100%, 100%)
+    pub const BOTTOM_RIGHT: Self = Self::new_const(PxPct::Pct(100.0), PxPct::Pct(100.0));
+
+    /// Get the position as fractions (0.0 to 1.0) for x and y axes
+    pub fn as_fractions(self, size: kurbo::Size) -> (f64, f64) {
+        let x = match self.x {
+            PxPct::Px(px) => px / size.width,
+            PxPct::Pct(pct) => pct / 100.0,
+        };
+        let y = match self.y {
+            PxPct::Px(px) => px / size.height,
+            PxPct::Pct(pct) => pct / 100.0,
+        };
+        (x, y)
+    }
+}
+
+impl Default for AnchorAbout {
+    fn default() -> Self {
+        Self::CENTER
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum CursorStyle {
     #[default]
@@ -3221,6 +3339,21 @@ pub struct BorderRadius {
 impl BorderRadius {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn resolve_border_radii(&self, min_side: f64) -> kurbo::RoundedRectRadii {
+        fn border_radius(radius: crate::unit::PxPct, size: f64) -> f64 {
+            match radius {
+                crate::unit::PxPct::Px(px) => px,
+                crate::unit::PxPct::Pct(pct) => size * (pct / 100.),
+            }
+        }
+        kurbo::RoundedRectRadii {
+            top_left: border_radius(self.top_left.unwrap_or(PxPct::Px(0.0)), min_side),
+            top_right: border_radius(self.top_right.unwrap_or(PxPct::Px(0.0)), min_side),
+            bottom_left: border_radius(self.bottom_left.unwrap_or(PxPct::Px(0.0)), min_side),
+            bottom_right: border_radius(self.bottom_right.unwrap_or(PxPct::Px(0.0)), min_side),
+        }
     }
 
     pub fn all(radius: impl Into<PxPct>) -> Self {
@@ -4040,12 +4173,31 @@ define_builtin_props!(
     /// Moves the view up (negative) or down (positive).
     TranslateY translate_y {tr}: PxPct {} = PxPct::Px(0.),
 
-    /// Sets the rotation transform in radians.
+    /// Sets the rotation transform angle.
     ///
     /// Positive values rotate clockwise, negative values rotate counter-clockwise.
-    Rotation rotate {tr}: Px {} = Px(0.),
+    /// Use `.deg()` or `.rad()` methods to specify the angle unit.
+    Rotation rotate {tr}: Angle {} = Angle::Rad(0.0),
 
-    /// Controls the selected state of the view.
+    /// Sets the anchor point for rotation transformations.
+    ///
+    /// Determines the point around which the view rotates. Use predefined constants
+    /// like `AnchorAbout::CENTER` or create custom anchor points with pixel or percentage values.
+    RotateAbout rotate_about {}: AnchorAbout {} = AnchorAbout::CENTER,
+
+    /// Sets the anchor point for scaling transformations.
+    ///
+    /// Determines the point around which the view scales. Use predefined constants
+    /// like `AnchorAbout::CENTER` or create custom anchor points with pixel or percentage values.
+    ScaleAbout scale_about {tr}: AnchorAbout {} = AnchorAbout::CENTER,
+
+    /// Sets the opacity of the view.
+    ///
+    /// Values range from 0.0 (fully transparent) to 1.0 (fully opaque).
+    /// This affects the entire view including its children.
+    Opacity opacity {tr}: f32 {} = 1.0,
+
+    /// Sets the selected state of the view.
     ///
     /// This property is inherited by child views.
     Selected set_selected {}: bool { inherited } = false,
@@ -4155,7 +4307,11 @@ prop_extractor! {
 
         pub row_gap: RowGap,
         pub col_gap: ColGap,
+    }
+}
 
+prop_extractor! {
+    pub TransformProps {
         pub scale_x: ScaleX,
         pub scale_y: ScaleY,
 
@@ -4163,6 +4319,135 @@ prop_extractor! {
         pub translate_y: TranslateY,
 
         pub rotation: Rotation,
+        pub rotate_about: RotateAbout,
+        pub scale_about: ScaleAbout,
+    }
+}
+impl TransformProps {
+    pub fn affine(&self, size: kurbo::Size) -> Affine {
+        let mut transform = Affine::IDENTITY;
+
+        let transform_x = match self.translate_x() {
+            crate::unit::PxPct::Px(px) => px,
+            crate::unit::PxPct::Pct(pct) => pct / 100.,
+        };
+        let transform_y = match self.translate_y() {
+            crate::unit::PxPct::Px(px) => px,
+            crate::unit::PxPct::Pct(pct) => pct / 100.,
+        };
+        transform *= Affine::translate(Vec2 {
+            x: transform_x,
+            y: transform_y,
+        });
+
+        let scale_x = self.scale_x().0 / 100.;
+        let scale_y = self.scale_y().0 / 100.;
+        let rotation = self.rotation().to_radians();
+
+        // Get rotation and scale anchor points
+        let rotate_about = self.rotate_about();
+        let scale_about = self.scale_about();
+
+        // Convert anchor points to absolute positions
+        let (rotate_x_frac, rotate_y_frac) = rotate_about.as_fractions(size);
+        let (scale_x_frac, scale_y_frac) = scale_about.as_fractions(size);
+
+        let rotate_point = Vec2 {
+            x: rotate_x_frac * size.width,
+            y: rotate_y_frac * size.height,
+        };
+
+        let scale_point = Vec2 {
+            x: scale_x_frac * size.width,
+            y: scale_y_frac * size.height,
+        };
+
+        // Apply transformations using the specified anchor points
+        if scale_x != 1.0 || scale_y != 1.0 {
+            // Manual non-uniform scaling about a point: translate -> scale -> translate back
+            let scale_center = scale_point;
+            transform = transform
+                .then_translate(-scale_center)
+                .then_scale_non_uniform(scale_x, scale_y)
+                .then_translate(scale_center);
+        }
+        if rotation != 0.0 {
+            // Manual rotation about a point: translate -> rotate -> translate back
+            let rotate_center = rotate_point;
+            transform = transform
+                .then_translate(-rotate_center)
+                .then_rotate(rotation)
+                .then_translate(rotate_center);
+        }
+
+        transform
+    }
+}
+
+prop_extractor! {
+    pub BoxTreeProps {
+        pub scale_about: ScaleAbout,
+        pub z_index: ZIndex,
+        pub pointer_events: PointerEventsProp,
+        pub focusable: Focusable,
+        pub hidden: Hidden,
+        pub disabled: Disabled,
+        pub display: DisplayProp,
+        pub overflow_x: OverflowX,
+        pub overflow_y: OverflowY,
+        pub border_radius: BorderRadiusProp,
+    }
+}
+impl BoxTreeProps {
+    pub fn pickable(&self) -> bool {
+        self.pointer_events() != Some(PointerEvents::None)
+    }
+
+    // pub fn set_box_tree(
+    //     &self,
+    //     node_id: understory_box_tree::NodeId,
+    //     box_tree: &mut understory_box_tree::Tree,
+    // ) {
+    //     box_tree.set_z_index(node_id, self.z_index().unwrap_or(0));
+    //     let mut flags = NodeFlags::empty();
+    //     if self.pickable() {
+    //         flags |= NodeFlags::PICKABLE;
+    //     }
+    //     if self.focusable() && !self.hidden() && self.display() != Display::None && !self.disabled()
+    //     {
+    //         flags |= NodeFlags::FOCUSABLE;
+    //     }
+    //     if !self.hidden() {
+    //         flags |= NodeFlags::VISIBLE;
+    //     }
+    //     box_tree.set_flags(node_id, flags);
+    // }
+
+    pub fn clip_rect(&self, mut rect: kurbo::Rect) -> Option<RoundedRect> {
+        use Overflow::*;
+
+        let (overflow_x, overflow_y) = (self.overflow_x(), self.overflow_y());
+
+        // No clipping if both are visible
+        if overflow_x == Visible && overflow_y == Visible {
+            return None;
+        }
+
+        let border_radius = self
+            .border_radius()
+            .resolve_border_radii(rect.size().min_side());
+
+        // Extend to infinity on visible axes
+        if overflow_x == Visible {
+            rect.x0 = f64::NEG_INFINITY;
+            rect.x1 = f64::INFINITY;
+        }
+        if overflow_y == Visible {
+            rect.y0 = f64::NEG_INFINITY;
+            rect.y1 = f64::INFINITY;
+        }
+
+        Some(RoundedRect::from_rect(rect, border_radius))
     }
 }
 

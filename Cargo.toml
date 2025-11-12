@@ -20,6 +20,7 @@ default-members = [
   "reactive",
   "editor-core",
   "ui-events-winit",
+  "test"
 ]
 
 [workspace.package]
@@ -172,5 +173,3 @@ rfd-tokio = ["dep:rfd", "rfd/tokio"]
 crossbeam = ["dep:crossbeam", "floem_renderer/crossbeam"]
 localization = ["dep:fluent-bundle", "dep:unic-langid", "dep:sys-locale"]
 
-[profile.dev]
-opt-level = 1
