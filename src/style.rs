@@ -5187,16 +5187,16 @@ impl Style {
 }
 
 /// A trait for custom styling of specific view types.
-/// 
+///
 /// This trait allows views to have specialized styling methods beyond the basic Style properties.
 /// Each implementing type provides custom styling capabilities for a particular view type.
-/// 
+///
 /// # Example
 /// ```rust
 /// use floem::prelude::*;
 /// use floem::style::CustomStylable;
 /// use palette::css;
-/// 
+///
 /// // Using custom styling on a text view
 /// text("Hello").custom_style(|s: LabelCustomStyle| {
 ///     s.selection_color(css::BLUE)
@@ -5207,10 +5207,10 @@ pub trait CustomStyle: Default + Clone + Into<Style> + From<Style> {
     type StyleClass: StyleClass;
 
     /// Applies standard styling methods to this custom style.
-    /// 
+    ///
     /// This method allows you to use any of the standard Style methods while working
     /// within a custom style context.
-    /// 
+    ///
     /// # Example
     /// ```rust
     /// # use floem::prelude::*;
@@ -5227,10 +5227,10 @@ pub trait CustomStyle: Default + Clone + Into<Style> + From<Style> {
     }
 
     /// Applies custom styling when the element is hovered.
-    /// 
+    ///
     /// This method allows you to define how the custom style should change
     /// when the mouse hovers over the element.
-    /// 
+    ///
     /// # Example
     /// ```rust
     /// # use floem::prelude::*;
@@ -5247,10 +5247,10 @@ pub trait CustomStyle: Default + Clone + Into<Style> + From<Style> {
     }
 
     /// Applies custom styling when the element has keyboard focus.
-    /// 
+    ///
     /// This method allows you to define how the custom style should change
     /// when the element gains keyboard focus.
-    /// 
+    ///
     /// # Example
     /// ```rust
     /// # use floem::prelude::*;
@@ -5276,10 +5276,10 @@ pub trait CustomStyle: Default + Clone + Into<Style> + From<Style> {
     }
 
     /// Applies custom styling when the element is in a selected state.
-    /// 
+    ///
     /// This method allows you to define how the custom style should change
     /// when the element is selected.
-    /// 
+    ///
     /// # Example
     /// ```rust
     /// # use floem::prelude::*;
@@ -5296,10 +5296,10 @@ pub trait CustomStyle: Default + Clone + Into<Style> + From<Style> {
     }
 
     /// Applies custom styling when the element is disabled.
-    /// 
+    ///
     /// This method allows you to define how the custom style should change
     /// when the element is in a disabled state.
-    /// 
+    ///
     /// # Example
     /// ```rust
     /// # use floem::prelude::*;
@@ -5316,10 +5316,10 @@ pub trait CustomStyle: Default + Clone + Into<Style> + From<Style> {
     }
 
     /// Applies custom styling when the application is in dark mode.
-    /// 
+    ///
     /// This method allows you to define how the custom style should change
     /// when the application switches to dark mode.
-    /// 
+    ///
     /// # Example
     /// ```rust
     /// # use floem::prelude::*;
@@ -5336,10 +5336,10 @@ pub trait CustomStyle: Default + Clone + Into<Style> + From<Style> {
     }
 
     /// Applies custom styling when the element is being actively pressed.
-    /// 
+    ///
     /// This method allows you to define how the custom style should change
     /// when the element is being actively pressed (e.g., mouse button down).
-    /// 
+    ///
     /// # Example
     /// ```rust
     /// # use floem::prelude::*;
@@ -5356,10 +5356,10 @@ pub trait CustomStyle: Default + Clone + Into<Style> + From<Style> {
     }
 
     /// Applies custom styling that activates at specific screen sizes (responsive design).
-    /// 
+    ///
     /// This method allows you to define how the custom style should change
     /// based on the screen size, enabling responsive custom styling.
-    /// 
+    ///
     /// # Example
     /// ```rust
     /// # use floem::prelude::*;
@@ -5381,10 +5381,10 @@ pub trait CustomStyle: Default + Clone + Into<Style> + From<Style> {
     }
 
     /// Conditionally applies custom styling based on a boolean condition.
-    /// 
+    ///
     /// This method allows you to apply custom styling only when a condition is true,
     /// providing a convenient way to chain conditional styling operations.
-    /// 
+    ///
     /// # Example
     /// ```rust
     /// # use floem::prelude::*;
@@ -5400,10 +5400,10 @@ pub trait CustomStyle: Default + Clone + Into<Style> + From<Style> {
     }
 
     /// Conditionally applies custom styling based on an optional value.
-    /// 
+    ///
     /// This method allows you to apply custom styling only when an optional value is Some,
     /// passing the unwrapped value to the styling function.
-    /// 
+    ///
     /// # Example
     /// ```rust
     /// # use floem::prelude::*;
@@ -5419,10 +5419,10 @@ pub trait CustomStyle: Default + Clone + Into<Style> + From<Style> {
     }
 
     /// Sets a transition animation for a specific custom style property.
-    /// 
+    ///
     /// This method allows you to animate changes to custom style properties,
     /// creating smooth transitions when the property values change.
-    /// 
+    ///
     /// # Example
     /// ```rust
     /// # use floem::prelude::*;
@@ -5442,22 +5442,22 @@ pub trait CustomStyle: Default + Clone + Into<Style> + From<Style> {
 }
 
 /// A trait that enables views to accept custom styling beyond the standard Style properties.
-/// 
+///
 /// This trait allows specific view types to provide their own specialized styling methods
 /// that are tailored to their functionality. For example, a label might have custom
 /// selection styling, or a button might have custom press animations.
-/// 
+///
 /// # Type Parameters
-/// 
+///
 /// * `S` - The custom style type associated with this view (e.g., `LabelCustomStyle`)
-/// 
+///
 /// # Example
-/// 
+///
 /// ```rust
 /// use floem::prelude::*;
 /// use floem::style::CustomStylable;
 /// use palette::css;
-/// 
+///
 /// // Using custom styling on a view that implements CustomStylable
 /// text("Hello World")
 ///     .custom_style(|s: LabelCustomStyle| {
@@ -5473,23 +5473,23 @@ pub trait CustomStylable<S: CustomStyle + 'static>: IntoView<V = Self::DV> + Siz
     ///
     /// This method allows you to use custom styling methods that are specific to this
     /// view type, going beyond the standard styling properties available on all views.
-    /// 
+    ///
     /// # Parameters
-    /// 
+    ///
     /// * `style` - A closure that takes the custom style type and returns the modified style
-    /// 
+    ///
     /// # Implementation Note
-    /// 
-    /// For trait implementors: Don't implement this method yourself, just use the trait's 
+    ///
+    /// For trait implementors: Don't implement this method yourself, just use the trait's
     /// default implementation. The default implementation properly handles style registration
     /// and updates.
-    /// 
+    ///
     /// # Example
-    /// 
+    ///
     /// ```rust
     /// use floem::prelude::*;
     /// use floem::style::CustomStylable;
-    /// 
+    ///
     /// // Custom styling with theme integration
     /// text("Status")
     ///     .custom_style(|s: LabelCustomStyle| {

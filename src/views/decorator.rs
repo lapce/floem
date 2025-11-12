@@ -28,31 +28,31 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     /// Alter the style of the view.
     ///
     /// The Floem style system provides comprehensive styling capabilities including:
-    /// 
+    ///
     /// ## Layout & Sizing
     /// - **Flexbox & Grid**: Full CSS-style layout with `flex()`, `grid()`, alignment, and gap controls
     /// - **Dimensions**: Width, height, min/max sizes with pixels, percentages, or auto sizing
     /// - **Spacing**: Padding, margins with individual side control or shorthand methods
     /// - **Positioning**: Absolute positioning with inset controls
-    /// 
+    ///
     /// ## Visual Styling  
     /// - **Colors & Brushes**: Solid colors, gradients, and custom brushes for backgrounds and text
     /// - **Borders**: Individual border styling per side with colors, widths, and radius
     /// - **Shadows**: Box shadows with blur, spread, offset, and color customization
     /// - **Typography**: Font family, size, weight, style, and line height control
-    /// 
+    ///
     /// ## Interactive States
     /// - **Pseudo-states**: Styling for hover, focus, active, disabled, and selected states
     /// - **Dark Mode**: Automatic dark mode styling support
     /// - **Responsive Design**: Breakpoint-based styling for different screen sizes
-    /// 
+    ///
     /// ## Advanced Features
     /// - **Animations**: Smooth transitions between style changes with easing functions
     /// - **Custom Properties**: Define and use custom style properties for specialized views
     /// - **Style Classes**: Reusable style definitions that can be applied across views
     /// - **Conditional Styling**: Apply styles based on conditions using `apply_if()` and `apply_opt()`
     /// - **Transform**: Scale, translate, and rotate transformations
-    /// 
+    ///
     /// ## Style Application
     /// Styles are reactive and will automatically update when dependencies change.
     /// Subsequent calls to `style` will overwrite previous ones.
