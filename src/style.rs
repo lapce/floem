@@ -3596,7 +3596,6 @@ macro_rules! define_builtin_props {
     (unset: $(#[$meta:meta])* $type_name:ident $name:ident) => {
         paste::paste! {
             #[doc = "Unsets the `" $name "` property."]
-            $(#[$meta])*
             pub fn [<unset_ $name>](self) -> Self {
                 self.set_style_value($type_name, $crate::style::StyleValue::Unset)
             }
@@ -3634,354 +3633,346 @@ pub struct BuiltinStyle<'a> {
 }
 
 define_builtin_props!(
-    /// Controls the display type of the element.
-    /// 
-    /// This determines how the element participates in layout.
+    /// Controls the display type of the view.
+    ///
+    /// This determines how the view participates in layout.
     DisplayProp display {}: Display {} = Display::Flex,
-    
-    /// Sets the positioning scheme for the element.
-    /// 
-    /// This affects how the element is positioned relative to its normal position in the document flow.
+
+    /// Sets the positioning scheme for the view.
+    ///
+    /// This affects how the view is positioned relative to its normal position in the document flow.
     PositionProp position {}: Position {} = Position::Relative,
-    
-    /// Sets the width of the element.
-    /// 
+
+    /// Sets the width of the view.
+    ///
     /// Can be specified in pixels, percentages, or auto.
     Width width {tr}: PxPctAuto {} = PxPctAuto::Auto,
-    
-    /// Sets the height of the element.
-    /// 
+
+    /// Sets the height of the view.
+    ///
     /// Can be specified in pixels, percentages, or auto.
     Height height {tr}: PxPctAuto {} = PxPctAuto::Auto,
-    
-    /// Sets the minimum width of the element.
-    /// 
-    /// The element will not shrink below this width.
+
+    /// Sets the minimum width of the view.
+    ///
+    /// The view will not shrink below this width.
     MinWidth min_width {tr}: PxPctAuto {} = PxPctAuto::Auto,
-    
-    /// Sets the minimum height of the element.
-    /// 
-    /// The element will not shrink below this height.
+
+    /// Sets the minimum height of the view.
+    ///
+    /// The view will not shrink below this height.
     MinHeight min_height {tr}: PxPctAuto {} = PxPctAuto::Auto,
-    
-    /// Sets the maximum width of the element.
-    /// 
-    /// The element will not grow beyond this width.
+
+    /// Sets the maximum width of the view.
+    ///
+    /// The view will not grow beyond this width.
     MaxWidth max_width {tr}: PxPctAuto {} = PxPctAuto::Auto,
-    
-    /// Sets the maximum height of the element.
-    /// 
-    /// The element will not grow beyond this height.
+
+    /// Sets the maximum height of the view.
+    ///
+    /// The view will not grow beyond this height.
     MaxHeight max_height {tr}: PxPctAuto {} = PxPctAuto::Auto,
-    
+
     /// Sets the direction of the main axis for flex items.
-    /// 
+    ///
     /// Determines whether flex items are laid out in rows or columns.
     FlexDirectionProp flex_direction {}: FlexDirection {} = FlexDirection::Row,
-    
+
     /// Controls whether flex items wrap to new lines.
-    /// 
+    ///
     /// When enabled, items that don't fit will wrap to the next line.
     FlexWrapProp flex_wrap {}: FlexWrap {} = FlexWrap::NoWrap,
-    
+
     /// Sets the flex grow factor for the flex item.
-    /// 
+    ///
     /// Determines how much the item should grow relative to other items.
     FlexGrow flex_grow {}: f32 {} = 0.0,
-    
+
     /// Sets the flex shrink factor for the flex item.
-    /// 
+    ///
     /// Determines how much the item should shrink relative to other items.
     FlexShrink flex_shrink {}: f32 {} = 1.0,
-    
+
     /// Sets the initial main size of a flex item.
-    /// 
+    ///
     /// This is the size of the item before free space is distributed.
     FlexBasis flex_basis {tr}: PxPctAuto {} = PxPctAuto::Auto,
-    
+
     /// Controls alignment of flex items along the main axis.
-    /// 
+    ///
     /// Determines how extra space is distributed between and around items.
     JustifyContentProp justify_content {}: Option<JustifyContent> {} = None,
-    
+
     /// Controls default alignment of grid items along the inline axis.
-    /// 
+    ///
     /// Sets the default justify-self value for all items in the container.
     JustifyItemsProp justify_items {}: Option<JustifyItems> {} = None,
-    
+
     /// Controls how the total width and height are calculated.
-    /// 
-    /// Determines whether borders and padding are included in the element's size.
+    ///
+    /// Determines whether borders and padding are included in the view's size.
     BoxSizingProp box_sizing {}: Option<BoxSizing> {} = None,
-    
+
     /// Controls individual alignment along the inline axis.
-    /// 
+    ///
     /// Overrides the container's justify-items value for this specific item.
     JustifySelf justify_self {}: Option<AlignItems> {} = None,
-    
+
     /// Controls alignment of flex items along the cross axis.
-    /// 
+    ///
     /// Determines how items are aligned when they don't fill the container's cross axis.
     AlignItemsProp align_items {}: Option<AlignItems> {} = None,
-    
+
     /// Controls alignment of wrapped flex lines.
-    /// 
+    ///
     /// Only has an effect when flex-wrap is enabled and there are multiple lines.
     AlignContentProp align_content {}: Option<AlignContent> {} = None,
-    
+
     /// Defines the line names and track sizing functions of the grid rows.
-    /// 
+    ///
     /// Specifies the size and names of the rows in a grid layout.
     GridTemplateRows grid_template_rows {}: Vec<GridTemplateComponent<String>> {} = Vec::new(),
-    
+
     /// Defines the line names and track sizing functions of the grid columns.
-    /// 
+    ///
     /// Specifies the size and names of the columns in a grid layout.
     GridTemplateColumns grid_template_columns {}: Vec<GridTemplateComponent<String>> {} = Vec::new(),
-    
+
     /// Specifies the size of implicitly-created grid rows.
-    /// 
+    ///
     /// Sets the default size for rows that are created automatically.
     GridAutoRows grid_auto_rows {}: Vec<MinMax<MinTrackSizingFunction, MaxTrackSizingFunction>> {} = Vec::new(),
-    
+
     /// Specifies the size of implicitly-created grid columns.
-    /// 
+    ///
     /// Sets the default size for columns that are created automatically.
     GridAutoColumns grid_auto_columns {}: Vec<MinMax<MinTrackSizingFunction, MaxTrackSizingFunction>> {} = Vec::new(),
-    
+
     /// Controls how auto-placed items get flowed into the grid.
-    /// 
+    ///
     /// Determines the direction that grid items are placed when not explicitly positioned.
     GridAutoFlow grid_auto_flow {}: taffy::GridAutoFlow {} = taffy::GridAutoFlow::Row,
-    
+
     /// Specifies a grid item's location within the grid row.
-    /// 
+    ///
     /// Determines which grid rows the item spans.
     GridRow grid_row {}: Line<GridPlacement> {} = Line::default(),
-    
+
     /// Specifies a grid item's location within the grid column.
-    /// 
+    ///
     /// Determines which grid columns the item spans.
     GridColumn grid_column {}: Line<GridPlacement> {} = Line::default(),
-    
+
     /// Controls individual alignment along the cross axis.
-    /// 
+    ///
     /// Overrides the container's align-items value for this specific item.
     AlignSelf align_self {}: Option<AlignItems> {} = None,
-    
-    /// Sets the color of the element's outline.
-    /// 
+
+    /// Sets the color of the view's outline.
+    ///
     /// The outline is drawn outside the border and doesn't affect layout.
     OutlineColor outline_color {tr}: Brush {} = Brush::Solid(palette::css::TRANSPARENT),
-    
+
     /// Sets the outline stroke properties.
-    /// 
+    ///
     /// Defines the width, style, and other properties of the outline.
     Outline outline {nocb, tr}: StrokeWrap {} = StrokeWrap::new(0.),
-    
+
     /// Controls the progress/completion of the outline animation.
-    /// 
+    ///
     /// Useful for creating animated outline effects.
     OutlineProgress outline_progress {tr}: Pct {} = Pct(100.),
-    
+
     /// Controls the progress/completion of the border animation.
-    /// 
+    ///
     /// Useful for creating animated border effects.
     BorderProgress border_progress {tr}: Pct {} = Pct(100.),
-    
+
     /// Sets the border properties for all sides.
-    /// 
+    ///
     /// Defines width, style, and other border characteristics.
     BorderProp border_combined {nocb, tr}: Border {} = Border::default(),
-    
+
     /// Sets the border color for all sides.
-    /// 
+    ///
     /// Can be set individually for each side or all at once.
     BorderColorProp border_color_combined { nocb, tr }: BorderColor {} = BorderColor::default(),
-    
+
     /// Sets the border radius for all corners.
-    /// 
-    /// Controls how rounded the corners of the element are.
+    ///
+    /// Controls how rounded the corners of the view are.
     BorderRadiusProp border_radius_combined { nocb, tr }: BorderRadius {} = BorderRadius::default(),
-    
+
     /// Sets the padding for all sides.
-    /// 
-    /// Padding is the space between the element's content and its border.
+    ///
+    /// Padding is the space between the view's content and its border.
     PaddingProp padding_combined { nocb, tr }: Padding {} = Padding::default(),
-    
+
     /// Sets the margin for all sides.
-    /// 
-    /// Margin is the space outside the element's border.
+    ///
+    /// Margin is the space outside the view's border.
     MarginProp margin_combined { nocb, tr }: Margin {} = Margin::default(),
-    
-    /// Sets the left offset for positioned elements.
-    /// 
-    /// Only affects elements with non-static positioning.
+
+    /// Sets the left offset for positioned views.
     InsetLeft inset_left {tr}: PxPctAuto {} = PxPctAuto::Auto,
-    
-    /// Sets the top offset for positioned elements.
-    /// 
-    /// Only affects elements with non-static positioning.
+
+    /// Sets the top offset for positioned views.
     InsetTop inset_top {tr}: PxPctAuto {} = PxPctAuto::Auto,
-    
-    /// Sets the right offset for positioned elements.
-    /// 
-    /// Only affects elements with non-static positioning.
+
+    /// Sets the right offset for positioned views.
     InsetRight inset_right {tr}: PxPctAuto {} = PxPctAuto::Auto,
-    
-    /// Sets the bottom offset for positioned elements.
-    /// 
-    /// Only affects elements with non-static positioning.
+
+    /// Sets the bottom offset for positioned views.
     InsetBottom inset_bottom {tr}: PxPctAuto {} = PxPctAuto::Auto,
-    
-    /// Controls whether the element can be the target of mouse events.
-    /// 
-    /// When disabled, mouse events pass through to elements behind.
+
+    /// Controls whether the view can be the target of mouse events.
+    ///
+    /// When disabled, mouse events pass through to views behind.
     PointerEventsProp pointer_events {}: Option<PointerEvents> { inherited } = None,
-    
-    /// Controls the stack order of positioned elements.
-    /// 
+
+    /// Controls the stack order of positioned views.
+    ///
     /// Higher values appear in front of lower values.
     ZIndex z_index { nocb, tr }: Option<i32> {} = None,
-    
-    /// Sets the cursor style when hovering over the element.
-    /// 
+
+    /// Sets the cursor style when hovering over the view.
+    ///
     /// Changes the appearance of the mouse cursor.
     Cursor cursor { nocb }: Option<CursorStyle> {} = None,
-    
+
     /// Sets the text color.
-    /// 
-    /// This property is inherited by child elements.
+    ///
+    /// This property is inherited by child views.
     TextColor color { nocb, tr }: Option<Color> { inherited } = None,
-    
+
     /// Sets the background color or image.
-    /// 
+    ///
     /// Can be a solid color, gradient, or image.
     Background background { nocb, tr }: Option<Brush> {} = None,
-    
+
     /// Sets the foreground color or pattern.
-    /// 
+    ///
     /// Used for drawing content like icons or shapes.
     Foreground foreground { nocb, tr }: Option<Brush> {} = None,
-    
-    /// Adds one or more drop shadows to the element.
-    /// 
+
+    /// Adds one or more drop shadows to the view.
+    ///
     /// Can create depth and visual separation effects.
     BoxShadowProp box_shadow { nocb, tr }: SmallVec<[BoxShadow; 3]> {} = SmallVec::new(),
-    
+
     /// Sets the font size for text content.
-    /// 
-    /// This property is inherited by child elements.
+    ///
+    /// This property is inherited by child views.
     FontSize font_size { nocb, tr }: Option<f32> { inherited } = None,
-    
+
     /// Sets the font family for text content.
-    /// 
-    /// This property is inherited by child elements.
+    ///
+    /// This property is inherited by child views.
     FontFamily font_family { nocb }: Option<String> { inherited } = None,
-    
+
     /// Sets the font weight (boldness) for text content.
-    /// 
-    /// This property is inherited by child elements.
+    ///
+    /// This property is inherited by child views.
     FontWeight font_weight { nocb }: Option<Weight> { inherited } = None,
-    
+
     /// Sets the font style (italic, normal) for text content.
-    /// 
-    /// This property is inherited by child elements.
+    ///
+    /// This property is inherited by child views.
     FontStyle font_style { nocb }: Option<crate::text::Style> { inherited } = None,
-    
+
     /// Sets the color of the text cursor.
-    /// 
-    /// Visible when text input elements have focus.
+    ///
+    /// Visible when text input views have focus.
     CursorColor cursor_color { nocb, tr }: Brush {} = Brush::Solid(palette::css::BLACK.with_alpha(0.3)),
-    
+
     /// Sets the corner radius of text selections.
-    /// 
+    ///
     /// Controls how rounded the corners of selected text appear.
     SelectionCornerRadius selection_corer_radius { nocb, tr }: f64 {} = 1.,
-    
-    /// Controls whether the element's text can be selected.
-    /// 
-    /// This property is inherited by child elements.
+
+    /// Controls whether the view's text can be selected.
+    ///
+    /// This property is inherited by child views.
     Selectable selectable {}: bool { inherited } = true,
-    
+
     /// Controls how overflowed text content is handled.
-    /// 
+    ///
     /// Determines whether text wraps or gets clipped.
     TextOverflowProp text_overflow {}: TextOverflow {} = TextOverflow::Wrap,
-    
-    /// Sets text alignment within the element.
-    /// 
+
+    /// Sets text alignment within the view.
+    ///
     /// Controls horizontal alignment of text content.
     TextAlignProp text_align {}: Option<crate::text::Align> {} = None,
-    
+
     /// Sets the line height for text content.
-    /// 
-    /// This property is inherited by child elements.
+    ///
+    /// This property is inherited by child views.
     LineHeight line_height { nocb, tr }: Option<LineHeightValue> { inherited } = None,
-    
-    /// Sets the preferred aspect ratio for the element.
-    /// 
+
+    /// Sets the preferred aspect ratio for the view.
+    ///
     /// Maintains width-to-height proportions during layout.
     AspectRatio aspect_ratio {tr}: Option<f32> {} = None,
-    
+
     /// Sets the gap between columns in grid or flex layouts.
-    /// 
+    ///
     /// Creates space between items in the horizontal direction.
     ColGap col_gap { nocb, tr }: PxPct {} = PxPct::Px(0.),
-    
+
     /// Sets the gap between rows in grid or flex layouts.
-    /// 
+    ///
     /// Creates space between items in the vertical direction.
     RowGap row_gap { nocb, tr }: PxPct {} = PxPct::Px(0.),
-    
+
     /// Sets the horizontal scale transform.
-    /// 
-    /// Values less than 100% shrink the element, greater than 100% enlarge it.
+    ///
+    /// Values less than 100% shrink the view, greater than 100% enlarge it.
     ScaleX scale_x {tr}: Pct {} = Pct(100.),
-    
+
     /// Sets the vertical scale transform.
-    /// 
-    /// Values less than 100% shrink the element, greater than 100% enlarge it.
+    ///
+    /// Values less than 100% shrink the view, greater than 100% enlarge it.
     ScaleY scale_y {tr}: Pct {} = Pct(100.),
-    
+
     /// Sets the horizontal translation transform.
-    /// 
-    /// Moves the element left (negative) or right (positive).
+    ///
+    /// Moves the view left (negative) or right (positive).
     TranslateX translate_x {tr}: PxPct {} = PxPct::Px(0.),
-    
+
     /// Sets the vertical translation transform.
-    /// 
-    /// Moves the element up (negative) or down (positive).
+    ///
+    /// Moves the view up (negative) or down (positive).
     TranslateY translate_y {tr}: PxPct {} = PxPct::Px(0.),
-    
+
     /// Sets the rotation transform in radians.
-    /// 
+    ///
     /// Positive values rotate clockwise, negative values rotate counter-clockwise.
     Rotation rotate {tr}: Px {} = Px(0.),
-    
-    /// Controls the selected state of the element.
-    /// 
-    /// This property is inherited by child elements.
+
+    /// Controls the selected state of the view.
+    ///
+    /// This property is inherited by child views.
     Selected set_selected {}: bool { inherited } = false,
-    
-    /// Controls the disabled state of the element.
-    /// 
-    /// This property is inherited by child elements.
+
+    /// Controls the disabled state of the view.
+    ///
+    /// This property is inherited by child views.
     Disabled set_disabled {}: bool { inherited } = false,
-    
-    /// Controls the visibility of the element.
-    /// 
-    /// This property is inherited by child elements.
+
+    /// Controls the visibility of the view.
+    ///
+    /// This property is inherited by child views.
     Hidden set_hidden {}: bool { inherited } = false,
-    
-    /// Controls whether the element can receive focus.
-    /// 
+
+    /// Controls whether the view can receive focus.
+    ///
     /// Focus is necessary for keyboard interaction.
     Focusable focusable {}: bool { } = false,
-    
-    /// Controls whether the element can be dragged.
-    /// 
-    /// Enables drag-and-drop functionality for the element.
+
+    /// Controls whether the view can be dragged.
+    ///
+    /// Enables drag-and-drop functionality for the view.
     Draggable draggable {}: bool { } = false,
 );
 
@@ -4115,14 +4106,17 @@ prop_extractor! {
 }
 
 impl Style {
+    /// Gets the value of a style property, returning the default if not set.
     pub fn get<P: StyleProp>(&self, _prop: P) -> P::Type {
         self.get_prop_or_default::<P>()
     }
 
+    /// Gets the raw style value of a property, including unset and base states.
     pub fn get_style_value<P: StyleProp>(&self, _prop: P) -> StyleValue<P::Type> {
         self.get_prop_style_value::<P>()
     }
 
+    /// Sets a style property to a specific value.
     pub fn set<P: StyleProp>(self, prop: P, value: impl Into<P::Type>) -> Self {
         self.set_style_value(prop, StyleValue::Val(value.into()))
     }
@@ -4141,6 +4135,7 @@ impl Style {
         self
     }
 
+    /// Sets a transition animation for a specific style property.
     pub fn transition<P: StyleProp>(mut self, _prop: P, transition: Transition) -> Self {
         self.map
             .insert(P::prop_ref().info().transition_key, Rc::new(transition));
@@ -4153,11 +4148,12 @@ impl Style {
         self
     }
 
-    /// The visual style to apply when the mouse hovers over the element
+    /// The visual style to apply when the mouse hovers over the view
     pub fn hover(self, style: impl FnOnce(Style) -> Style) -> Self {
         self.selector(StyleSelector::Hover, style)
     }
 
+    /// The visual style to apply when the view has keyboard focus.
     pub fn focus(self, style: impl FnOnce(Style) -> Style) -> Self {
         self.selector(StyleSelector::Focus, style)
     }
@@ -4167,6 +4163,7 @@ impl Style {
         self.selector(StyleSelector::FocusVisible, style)
     }
 
+    /// The visual style to apply when the view is in a selected state.
     pub fn selected(self, style: impl FnOnce(Style) -> Style) -> Self {
         self.selector(StyleSelector::Selected, style)
     }
@@ -4176,22 +4173,27 @@ impl Style {
         self.selector(StyleSelector::Dragging, style)
     }
 
+    /// The visual style to apply when the view is disabled.
     pub fn disabled(self, style: impl FnOnce(Style) -> Style) -> Self {
         self.selector(StyleSelector::Disabled, style)
     }
 
+    /// The visual style to apply when the application is in dark mode.
     pub fn dark_mode(self, style: impl FnOnce(Style) -> Style) -> Self {
         self.selector(StyleSelector::DarkMode, style)
     }
 
+    /// The visual style to apply when a file is being dragged over the view.
     pub fn file_hover(self, style: impl FnOnce(Style) -> Style) -> Self {
         self.selector(StyleSelector::FileHover, style)
     }
 
+    /// The visual style to apply when the view is being actively pressed.
     pub fn active(self, style: impl FnOnce(Style) -> Style) -> Self {
         self.selector(StyleSelector::Active, style)
     }
 
+    /// Applies styles that activate at specific screen sizes (responsive design).
     pub fn responsive(mut self, size: ScreenSize, style: impl FnOnce(Style) -> Style) -> Self {
         let over = style(Style::default());
         for breakpoint in size.breakpoints() {
@@ -4200,6 +4202,7 @@ impl Style {
         self
     }
 
+    /// Applies styles to views with a specific CSS class.
     pub fn class<C: StyleClass>(mut self, _class: C, style: impl FnOnce(Style) -> Style) -> Self {
         let over = style(Style::default());
         self.set_class(C::class_ref(), over);
@@ -4230,71 +4233,88 @@ impl Style {
         self
     }
 
+    /// Sets the width to 100% of the parent container.
     pub fn width_full(self) -> Self {
         self.width_pct(100.0)
     }
 
+    /// Sets the width as a percentage of the parent container.
     pub fn width_pct(self, width: f64) -> Self {
         self.width(width.pct())
     }
 
+    /// Sets the height to 100% of the parent container.
     pub fn height_full(self) -> Self {
         self.height_pct(100.0)
     }
 
+    /// Sets the height as a percentage of the parent container.
     pub fn height_pct(self, height: f64) -> Self {
         self.height(height.pct())
     }
 
+    /// Sets the gap between columns in grid or flex layouts.
     pub fn col_gap(self, width: impl Into<PxPct>) -> Self {
         self.set(ColGap, width.into())
     }
 
+    /// Sets the gap between rows in grid or flex layouts.
     pub fn row_gap(self, height: impl Into<PxPct>) -> Self {
         self.set(RowGap, height.into())
     }
 
+    /// Sets different gaps for rows and columns in grid or flex layouts.
     pub fn row_col_gap(self, width: impl Into<PxPct>, height: impl Into<PxPct>) -> Self {
         self.col_gap(width).row_gap(height)
     }
 
+    /// Sets the same gap for both rows and columns in grid or flex layouts.
     pub fn gap(self, gap: impl Into<PxPct>) -> Self {
         let gap = gap.into();
         self.col_gap(gap).row_gap(gap)
     }
 
+    /// Sets both width and height of the view.
     pub fn size(self, width: impl Into<PxPctAuto>, height: impl Into<PxPctAuto>) -> Self {
         self.width(width).height(height)
     }
 
+    /// Sets both width and height to 100% of the parent container.
     pub fn size_full(self) -> Self {
         self.size_pct(100.0, 100.0)
     }
 
+    /// Sets both width and height as percentages of the parent container.
     pub fn size_pct(self, width: f64, height: f64) -> Self {
         self.width(width.pct()).height(height.pct())
     }
 
+    /// Sets the minimum width to 100% of the parent container.
     pub fn min_width_full(self) -> Self {
         self.min_width_pct(100.0)
     }
 
+    /// Sets the minimum width as a percentage of the parent container.
     pub fn min_width_pct(self, min_width: f64) -> Self {
         self.min_width(min_width.pct())
     }
 
+    /// Sets the minimum height to 100% of the parent container.
     pub fn min_height_full(self) -> Self {
         self.min_height_pct(100.0)
     }
 
+    /// Sets the minimum height as a percentage of the parent container.
     pub fn min_height_pct(self, min_height: f64) -> Self {
         self.min_height(min_height.pct())
     }
 
+    /// Sets both minimum width and height to 100% of the parent container.
     pub fn min_size_full(self) -> Self {
         self.min_size_pct(100.0, 100.0)
     }
 
+    /// Sets both minimum width and height of the view.
     pub fn min_size(
         self,
         min_width: impl Into<PxPctAuto>,
@@ -4303,26 +4323,32 @@ impl Style {
         self.min_width(min_width).min_height(min_height)
     }
 
+    /// Sets both minimum width and height as percentages of the parent container.
     pub fn min_size_pct(self, min_width: f64, min_height: f64) -> Self {
         self.min_size(min_width.pct(), min_height.pct())
     }
 
+    /// Sets the maximum width to 100% of the parent container.
     pub fn max_width_full(self) -> Self {
         self.max_width_pct(100.0)
     }
 
+    /// Sets the maximum width as a percentage of the parent container.
     pub fn max_width_pct(self, max_width: f64) -> Self {
         self.max_width(max_width.pct())
     }
 
+    /// Sets the maximum height to 100% of the parent container.
     pub fn max_height_full(self) -> Self {
         self.max_height_pct(100.0)
     }
 
+    /// Sets the maximum height as a percentage of the parent container.
     pub fn max_height_pct(self, max_height: f64) -> Self {
         self.max_height(max_height.pct())
     }
 
+    /// Sets both maximum width and height of the view.
     pub fn max_size(
         self,
         max_width: impl Into<PxPctAuto>,
@@ -4331,22 +4357,27 @@ impl Style {
         self.max_width(max_width).max_height(max_height)
     }
 
+    /// Sets both maximum width and height to 100% of the parent container.
     pub fn max_size_full(self) -> Self {
         self.max_size_pct(100.0, 100.0)
     }
 
+    /// Sets both maximum width and height as percentages of the parent container.
     pub fn max_size_pct(self, max_width: f64, max_height: f64) -> Self {
         self.max_size(max_width.pct(), max_height.pct())
     }
 
+    /// Sets the border color for all sides of the view.
     pub fn border_color(self, color: impl Into<Brush>) -> Self {
         self.set(BorderColorProp, BorderColor::all(color))
     }
 
+    /// Sets the border properties for all sides of the view.
     pub fn border(self, border: impl Into<StrokeWrap>) -> Self {
         self.set(BorderProp, Border::all(border))
     }
 
+    /// Sets the outline properties of the view.
     pub fn outline(self, outline: impl Into<StrokeWrap>) -> Self {
         self.set_style_value(Outline, StyleValue::Val(outline.into()))
     }
@@ -4369,18 +4400,22 @@ impl Style {
         self.set(BorderProp, current)
     }
 
+    /// Sets the left padding as a percentage of the parent container width.
     pub fn padding_left_pct(self, padding: f64) -> Self {
         self.padding_left(padding.pct())
     }
 
+    /// Sets the right padding as a percentage of the parent container width.
     pub fn padding_right_pct(self, padding: f64) -> Self {
         self.padding_right(padding.pct())
     }
 
+    /// Sets the top padding as a percentage of the parent container width.
     pub fn padding_top_pct(self, padding: f64) -> Self {
         self.padding_top(padding.pct())
     }
 
+    /// Sets the bottom padding as a percentage of the parent container width.
     pub fn padding_bottom_pct(self, padding: f64) -> Self {
         self.padding_bottom(padding.pct())
     }
@@ -4390,6 +4425,7 @@ impl Style {
         self.set(PaddingProp, Padding::all(padding))
     }
 
+    /// Sets padding on all sides as a percentage of the parent container width.
     pub fn padding_pct(self, padding: f64) -> Self {
         self.set(PaddingProp, Padding::all(padding.pct()))
     }
@@ -4403,6 +4439,7 @@ impl Style {
         self.set(PaddingProp, current)
     }
 
+    /// Sets horizontal padding as a percentage of the parent container width.
     pub fn padding_horiz_pct(self, padding: f64) -> Self {
         self.padding_horiz(padding.pct())
     }
@@ -4416,30 +4453,37 @@ impl Style {
         self.set(PaddingProp, current)
     }
 
+    /// Sets vertical padding as a percentage of the parent container width.
     pub fn padding_vert_pct(self, padding: f64) -> Self {
         self.padding_vert(padding.pct())
     }
 
+    /// Sets the left margin as a percentage of the parent container width.
     pub fn margin_left_pct(self, margin: f64) -> Self {
         self.margin_left(margin.pct())
     }
 
+    /// Sets the right margin as a percentage of the parent container width.
     pub fn margin_right_pct(self, margin: f64) -> Self {
         self.margin_right(margin.pct())
     }
 
+    /// Sets the top margin as a percentage of the parent container width.
     pub fn margin_top_pct(self, margin: f64) -> Self {
         self.margin_top(margin.pct())
     }
 
+    /// Sets the bottom margin as a percentage of the parent container width.
     pub fn margin_bottom_pct(self, margin: f64) -> Self {
         self.margin_bottom(margin.pct())
     }
 
+    /// Sets margin on all sides of the view.
     pub fn margin(self, margin: impl Into<PxPctAuto>) -> Self {
         self.set(MarginProp, Margin::all(margin))
     }
 
+    /// Sets margin on all sides as a percentage of the parent container width.
     pub fn margin_pct(self, margin: f64) -> Self {
         self.set(MarginProp, Margin::all(margin.pct()))
     }
@@ -4453,6 +4497,7 @@ impl Style {
         self.set(MarginProp, current)
     }
 
+    /// Sets horizontal margin as a percentage of the parent container width.
     pub fn margin_horiz_pct(self, margin: f64) -> Self {
         self.margin_horiz(margin.pct())
     }
@@ -4466,159 +4511,184 @@ impl Style {
         self.set(MarginProp, current)
     }
 
+    /// Sets vertical margin as a percentage of the parent container width.
     pub fn margin_vert_pct(self, margin: f64) -> Self {
         self.margin_vert(margin.pct())
     }
 
-    // Individual padding methods using the combined struct
+    /// Sets the left padding of the view.
     pub fn padding_left(self, padding: impl Into<PxPct>) -> Self {
         let mut current = self.get(PaddingProp);
         current.left = Some(padding.into());
         self.set(PaddingProp, current)
     }
+    /// Sets the right padding of the view.
     pub fn padding_right(self, padding: impl Into<PxPct>) -> Self {
         let mut current = self.get(PaddingProp);
         current.right = Some(padding.into());
         self.set(PaddingProp, current)
     }
+    /// Sets the top padding of the view.
     pub fn padding_top(self, padding: impl Into<PxPct>) -> Self {
         let mut current = self.get(PaddingProp);
         current.top = Some(padding.into());
         self.set(PaddingProp, current)
     }
+    /// Sets the bottom padding of the view.
     pub fn padding_bottom(self, padding: impl Into<PxPct>) -> Self {
         let mut current = self.get(PaddingProp);
         current.bottom = Some(padding.into());
         self.set(PaddingProp, current)
     }
 
-    // Individual margin methods using the combined struct
+    /// Sets the left margin of the view.
     pub fn margin_left(self, margin: impl Into<PxPctAuto>) -> Self {
         let mut current = self.get(MarginProp);
         current.left = Some(margin.into());
         self.set(MarginProp, current)
     }
+    /// Sets the right margin of the view.
     pub fn margin_right(self, margin: impl Into<PxPctAuto>) -> Self {
         let mut current = self.get(MarginProp);
         current.right = Some(margin.into());
         self.set(MarginProp, current)
     }
+    /// Sets the top margin of the view.
     pub fn margin_top(self, margin: impl Into<PxPctAuto>) -> Self {
         let mut current = self.get(MarginProp);
         current.top = Some(margin.into());
         self.set(MarginProp, current)
     }
+    /// Sets the bottom margin of the view.
     pub fn margin_bottom(self, margin: impl Into<PxPctAuto>) -> Self {
         let mut current = self.get(MarginProp);
         current.bottom = Some(margin.into());
         self.set(MarginProp, current)
     }
 
-    // Convenience methods for combined padding and margin properties
+    /// Applies a complete padding configuration to the view.
     pub fn apply_padding(self, padding: Padding) -> Self {
         self.set(PaddingProp, padding)
     }
+    /// Applies a complete margin configuration to the view.
     pub fn apply_margin(self, margin: Margin) -> Self {
         self.set(MarginProp, margin)
     }
 
+    /// Sets the border radius for all corners of the view.
     pub fn border_radius(self, radius: impl Into<PxPct>) -> Self {
         self.set(BorderRadiusProp, BorderRadius::all(radius))
     }
 
-    // Individual border methods using the combined structs
+    /// Sets the left border of the view.
     pub fn border_left(self, border: impl Into<StrokeWrap>) -> Self {
         let mut current = self.get(BorderProp);
         current.left = Some(border.into());
         self.set(BorderProp, current)
     }
+    /// Sets the right border of the view.
     pub fn border_right(self, border: impl Into<StrokeWrap>) -> Self {
         let mut current = self.get(BorderProp);
         current.right = Some(border.into());
         self.set(BorderProp, current)
     }
+    /// Sets the top border of the view.
     pub fn border_top(self, border: impl Into<StrokeWrap>) -> Self {
         let mut current = self.get(BorderProp);
         current.top = Some(border.into());
         self.set(BorderProp, current)
     }
+    /// Sets the bottom border of the view.
     pub fn border_bottom(self, border: impl Into<StrokeWrap>) -> Self {
         let mut current = self.get(BorderProp);
         current.bottom = Some(border.into());
         self.set(BorderProp, current)
     }
 
-    // Individual border color methods
+    /// Sets the left border color of the view.
     pub fn border_left_color(self, color: impl Into<Brush>) -> Self {
         let mut current = self.get(BorderColorProp);
         current.left = Some(color.into());
         self.set(BorderColorProp, current)
     }
+    /// Sets the right border color of the view.
     pub fn border_right_color(self, color: impl Into<Brush>) -> Self {
         let mut current = self.get(BorderColorProp);
         current.right = Some(color.into());
         self.set(BorderColorProp, current)
     }
+    /// Sets the top border color of the view.
     pub fn border_top_color(self, color: impl Into<Brush>) -> Self {
         let mut current = self.get(BorderColorProp);
         current.top = Some(color.into());
         self.set(BorderColorProp, current)
     }
+    /// Sets the bottom border color of the view.
     pub fn border_bottom_color(self, color: impl Into<Brush>) -> Self {
         let mut current = self.get(BorderColorProp);
         current.bottom = Some(color.into());
         self.set(BorderColorProp, current)
     }
 
-    // Individual border radius methods
+    /// Sets the top-left border radius of the view.
     pub fn border_top_left_radius(self, radius: impl Into<PxPct>) -> Self {
         let mut current = self.get(BorderRadiusProp);
         current.top_left = Some(radius.into());
         self.set(BorderRadiusProp, current)
     }
+    /// Sets the top-right border radius of the view.
     pub fn border_top_right_radius(self, radius: impl Into<PxPct>) -> Self {
         let mut current = self.get(BorderRadiusProp);
         current.top_right = Some(radius.into());
         self.set(BorderRadiusProp, current)
     }
+    /// Sets the bottom-left border radius of the view.
     pub fn border_bottom_left_radius(self, radius: impl Into<PxPct>) -> Self {
         let mut current = self.get(BorderRadiusProp);
         current.bottom_left = Some(radius.into());
         self.set(BorderRadiusProp, current)
     }
+    /// Sets the bottom-right border radius of the view.
     pub fn border_bottom_right_radius(self, radius: impl Into<PxPct>) -> Self {
         let mut current = self.get(BorderRadiusProp);
         current.bottom_right = Some(radius.into());
         self.set(BorderRadiusProp, current)
     }
 
-    // Convenience methods for combined border properties
+    /// Applies a complete border configuration to the view.
     pub fn apply_border(self, border: Border) -> Self {
         self.set(BorderProp, border)
     }
+    /// Applies a complete border color configuration to the view.
     pub fn apply_border_color(self, border_color: BorderColor) -> Self {
         self.set(BorderColorProp, border_color)
     }
+    /// Applies a complete border radius configuration to the view.
     pub fn apply_border_radius(self, border_radius: BorderRadius) -> Self {
         self.set(BorderRadiusProp, border_radius)
     }
 
+    /// Sets the left inset as a percentage of the parent container width.
     pub fn inset_left_pct(self, inset: f64) -> Self {
         self.inset_left(inset.pct())
     }
 
+    /// Sets the right inset as a percentage of the parent container width.
     pub fn inset_right_pct(self, inset: f64) -> Self {
         self.inset_right(inset.pct())
     }
 
+    /// Sets the top inset as a percentage of the parent container height.
     pub fn inset_top_pct(self, inset: f64) -> Self {
         self.inset_top(inset.pct())
     }
 
+    /// Sets the bottom inset as a percentage of the parent container height.
     pub fn inset_bottom_pct(self, inset: f64) -> Self {
         self.inset_bottom(inset.pct())
     }
 
+    /// Sets all insets (left, top, right, bottom) to the same value.
     pub fn inset(self, inset: impl Into<PxPctAuto>) -> Self {
         let inset = inset.into();
         self.inset_left(inset)
@@ -4627,6 +4697,7 @@ impl Style {
             .inset_bottom(inset)
     }
 
+    /// Sets all insets as percentages of the parent container.
     pub fn inset_pct(self, inset: f64) -> Self {
         let inset = inset.pct();
         self.inset_left(inset)
@@ -4635,15 +4706,17 @@ impl Style {
             .inset_bottom(inset)
     }
 
+    /// Sets the cursor style when hovering over the view.
     pub fn cursor(self, cursor: impl Into<StyleValue<CursorStyle>>) -> Self {
         self.set_style_value(Cursor, cursor.into().map(Some))
     }
 
-    /// Specifies text color for the element.
+    /// Specifies text color for the view.
     pub fn color(self, color: impl Into<StyleValue<Color>>) -> Self {
         self.set_style_value(TextColor, color.into().map(Some))
     }
 
+    /// Sets the background color or pattern of the view.
     pub fn background(self, color: impl Into<Brush>) -> Self {
         let brush = StyleValue::Val(Some(color.into()));
         self.set_style_value(Background, brush)
@@ -4693,7 +4766,7 @@ impl Style {
         self.set(BoxShadowProp, value)
     }
 
-    /// Applies a shadow for the stylized element. Use [BoxShadow] builder
+    /// Applies a shadow for the stylized view. Use [BoxShadow] builder
     /// to construct each shadow.
     /// ```rust
     /// use floem::prelude::*;
@@ -4712,7 +4785,7 @@ impl Style {
     /// ]));
     /// ```
     /// ### Info
-    /// If you only specify one shadow on the element, use standard style methods directly
+    /// If you only specify one shadow on the view, use standard style methods directly
     /// on [Style] struct:
     /// ```rust
     /// use floem::prelude::*;
@@ -4730,7 +4803,7 @@ impl Style {
     }
 
     /// Specifies the offset on horizontal axis.
-    /// Negative offset value places the shadow to the left of the element.
+    /// Negative offset value places the shadow to the left of the view.
     pub fn box_shadow_h_offset(self, h_offset: impl Into<PxPct>) -> Self {
         let mut value = self.get(BoxShadowProp);
         let offset = h_offset.into();
@@ -4748,7 +4821,7 @@ impl Style {
     }
 
     /// Specifies the offset on vertical axis.
-    /// Negative offset value places the shadow above the element.
+    /// Negative offset value places the shadow above the view.
     pub fn box_shadow_v_offset(self, v_offset: impl Into<PxPct>) -> Self {
         let mut value = self.get(BoxShadowProp);
         let offset = v_offset.into();
@@ -4821,60 +4894,74 @@ impl Style {
         self.set(BoxShadowProp, value)
     }
 
+    /// Sets the font size for text content.
     pub fn font_size(self, size: impl Into<Px>) -> Self {
         let px = size.into();
         self.set_style_value(FontSize, StyleValue::Val(Some(px.0 as f32)))
     }
 
+    /// Sets the font family for text content.
     pub fn font_family(self, family: impl Into<StyleValue<String>>) -> Self {
         self.set_style_value(FontFamily, family.into().map(Some))
     }
 
+    /// Sets the font weight (boldness) for text content.
     pub fn font_weight(self, weight: impl Into<StyleValue<Weight>>) -> Self {
         self.set_style_value(FontWeight, weight.into().map(Some))
     }
 
+    /// Sets the font weight to bold.
     pub fn font_bold(self) -> Self {
         self.font_weight(Weight::BOLD)
     }
 
+    /// Sets the font style (italic, normal) for text content.
     pub fn font_style(self, style: impl Into<StyleValue<crate::text::Style>>) -> Self {
         self.set_style_value(FontStyle, style.into().map(Some))
     }
 
+    /// Sets the color of the text cursor.
     pub fn cursor_color(self, color: impl Into<Brush>) -> Self {
         let brush = StyleValue::Val(color.into());
         self.set_style_value(CursorColor, brush)
     }
 
+    /// Sets the line height for text content.
     pub fn line_height(self, normal: f32) -> Self {
         self.set(LineHeight, Some(LineHeightValue::Normal(normal)))
     }
 
+    /// Enables pointer events for the view (allows mouse interaction).
     pub fn pointer_events_auto(self) -> Self {
         self.pointer_events(PointerEvents::Auto)
     }
 
+    /// Disables pointer events for the view (mouse events pass through).
     pub fn pointer_events_none(self) -> Self {
         self.pointer_events(PointerEvents::None)
     }
 
+    /// Sets text overflow to show ellipsis (...) when text is clipped.
     pub fn text_ellipsis(self) -> Self {
         self.text_overflow(TextOverflow::Ellipsis)
     }
 
+    /// Sets text overflow to clip text without showing ellipsis.
     pub fn text_clip(self) -> Self {
         self.text_overflow(TextOverflow::Clip)
     }
 
+    /// Sets the view to absolute positioning.
     pub fn absolute(self) -> Self {
         self.position(taffy::style::Position::Absolute)
     }
 
+    /// Aligns flex items to stretch and fill the cross axis.
     pub fn items_stretch(self) -> Self {
         self.align_items(Some(taffy::style::AlignItems::Stretch))
     }
 
+    /// Aligns flex items to the start of the cross axis.
     pub fn items_start(self) -> Self {
         self.align_items(Some(taffy::style::AlignItems::FlexStart))
     }
@@ -4884,18 +4971,22 @@ impl Style {
         self.align_items(Some(taffy::style::AlignItems::Center))
     }
 
+    /// Aligns flex items to the end of the cross axis.
     pub fn items_end(self) -> Self {
         self.align_items(Some(taffy::style::AlignItems::FlexEnd))
     }
 
+    /// Aligns flex items along their baselines.
     pub fn items_baseline(self) -> Self {
         self.align_items(Some(taffy::style::AlignItems::Baseline))
     }
 
+    /// Aligns flex items to the start of the main axis.
     pub fn justify_start(self) -> Self {
         self.justify_content(Some(taffy::style::JustifyContent::FlexStart))
     }
 
+    /// Aligns flex items to the end of the main axis.
     pub fn justify_end(self) -> Self {
         self.justify_content(Some(taffy::style::JustifyContent::FlexEnd))
     }
@@ -4905,42 +4996,52 @@ impl Style {
         self.justify_content(Some(taffy::style::JustifyContent::Center))
     }
 
+    /// Distributes flex items with space between them.
     pub fn justify_between(self) -> Self {
         self.justify_content(Some(taffy::style::JustifyContent::SpaceBetween))
     }
 
+    /// Distributes flex items with space around them.
     pub fn justify_around(self) -> Self {
         self.justify_content(Some(taffy::style::JustifyContent::SpaceAround))
     }
 
+    /// Distributes flex items with equal space around them.
     pub fn justify_evenly(self) -> Self {
         self.justify_content(Some(taffy::style::JustifyContent::SpaceEvenly))
     }
 
+    /// Hides the view from view and layout.
     pub fn hide(self) -> Self {
         self.set(Hidden, true).set(DisplayProp, Display::None)
     }
 
+    /// Sets the view to use flexbox layout.
     pub fn flex(self) -> Self {
         self.display(taffy::style::Display::Flex)
     }
 
+    /// Sets the view to use grid layout.
     pub fn grid(self) -> Self {
         self.display(taffy::style::Display::Grid)
     }
 
+    /// Sets flex direction to row (horizontal).
     pub fn flex_row(self) -> Self {
         self.flex_direction(taffy::style::FlexDirection::Row)
     }
 
+    /// Sets flex direction to column (vertical).
     pub fn flex_col(self) -> Self {
         self.flex_direction(taffy::style::FlexDirection::Column)
     }
 
+    /// Sets the stack order of the view.
     pub fn z_index(self, z_index: i32) -> Self {
         self.set(ZIndex, Some(z_index))
     }
 
+    /// Sets uniform scaling for both X and Y axes.
     pub fn scale(self, scale: impl Into<Pct>) -> Self {
         let val = scale.into();
         self.scale_x(val).scale_y(val)
@@ -5085,22 +5186,80 @@ impl Style {
     }
 }
 
+/// A trait for custom styling of specific view types.
+/// 
+/// This trait allows views to have specialized styling methods beyond the basic Style properties.
+/// Each implementing type provides custom styling capabilities for a particular view type.
+/// 
+/// # Example
+/// ```rust
+/// use floem::prelude::*;
+/// use floem::style::CustomStylable;
+/// use palette::css;
+/// 
+/// // Using custom styling on a text view
+/// text("Hello").custom_style(|s: LabelCustomStyle| {
+///     s.selection_color(css::BLUE)
+/// });
+/// ```
 pub trait CustomStyle: Default + Clone + Into<Style> + From<Style> {
+    /// The CSS class associated with this custom style type.
     type StyleClass: StyleClass;
 
-    /// Get access to a normal style
+    /// Applies standard styling methods to this custom style.
+    /// 
+    /// This method allows you to use any of the standard Style methods while working
+    /// within a custom style context.
+    /// 
+    /// # Example
+    /// ```rust
+    /// # use floem::prelude::*;
+    /// # use floem::style::CustomStyle;
+    /// # use palette::css;
+    /// # let label_custom_style = LabelCustomStyle::new();
+    /// label_custom_style.style(|s| s.padding(10.0).background(css::RED))
+    /// # ;
+    /// ```
     fn style(self, style: impl FnOnce(Style) -> Style) -> Self {
         let self_style = self.into();
         let new = style(self_style);
         new.into()
     }
 
+    /// Applies custom styling when the element is hovered.
+    /// 
+    /// This method allows you to define how the custom style should change
+    /// when the mouse hovers over the element.
+    /// 
+    /// # Example
+    /// ```rust
+    /// # use floem::prelude::*;
+    /// # use floem::style::CustomStyle;
+    /// # use palette::css;
+    /// # let label_custom_style = LabelCustomStyle::new();
+    /// label_custom_style.hover(|s| s.selection_color(css::BLUE))
+    /// # ;
+    /// ```
     fn hover(self, style: impl FnOnce(Self) -> Self) -> Self {
         let self_style: Style = self.into();
         let new = self_style.selector(StyleSelector::Hover, |_| style(Self::default()).into());
         new.into()
     }
 
+    /// Applies custom styling when the element has keyboard focus.
+    /// 
+    /// This method allows you to define how the custom style should change
+    /// when the element gains keyboard focus.
+    /// 
+    /// # Example
+    /// ```rust
+    /// # use floem::prelude::*;
+    /// # use floem::style::CustomStyle;
+    /// # use palette::css;
+    /// # let label_custom_style = LabelCustomStyle::new();
+    /// label_custom_style.focus(|s| s.selection_color(css::GREEN))
+    /// # ;
+    /// ```
     fn focus(self, style: impl FnOnce(Self) -> Self) -> Self {
         let self_style: Style = self.into();
         let new = self_style.selector(StyleSelector::Focus, |_| style(Self::default()).into());
@@ -5116,30 +5275,101 @@ pub trait CustomStyle: Default + Clone + Into<Style> + From<Style> {
         new.into()
     }
 
+    /// Applies custom styling when the element is in a selected state.
+    /// 
+    /// This method allows you to define how the custom style should change
+    /// when the element is selected.
+    /// 
+    /// # Example
+    /// ```rust
+    /// # use floem::prelude::*;
+    /// # use floem::style::CustomStyle;
+    /// # use palette::css;
+    /// # let label_custom_style = LabelCustomStyle::new();
+    /// label_custom_style.selected(|s| s.selection_color(css::ORANGE))
+    /// # ;
+    /// ```
     fn selected(self, style: impl FnOnce(Self) -> Self) -> Self {
         let self_style: Style = self.into();
         let new = self_style.selector(StyleSelector::Selected, |_| style(Self::default()).into());
         new.into()
     }
 
+    /// Applies custom styling when the element is disabled.
+    /// 
+    /// This method allows you to define how the custom style should change
+    /// when the element is in a disabled state.
+    /// 
+    /// # Example
+    /// ```rust
+    /// # use floem::prelude::*;
+    /// # use floem::style::CustomStyle;
+    /// # use palette::css;
+    /// # let label_custom_style = LabelCustomStyle::new();
+    /// label_custom_style.disabled(|s| s.selection_color(css::GRAY))
+    /// # ;
+    /// ```
     fn disabled(self, style: impl FnOnce(Self) -> Self) -> Self {
         let self_style: Style = self.into();
         let new = self_style.selector(StyleSelector::Disabled, |_| style(Self::default()).into());
         new.into()
     }
 
+    /// Applies custom styling when the application is in dark mode.
+    /// 
+    /// This method allows you to define how the custom style should change
+    /// when the application switches to dark mode.
+    /// 
+    /// # Example
+    /// ```rust
+    /// # use floem::prelude::*;
+    /// # use floem::style::CustomStyle;
+    /// # use palette::css;
+    /// # let label_custom_style = LabelCustomStyle::new();
+    /// label_custom_style.dark_mode(|s| s.selection_color(css::WHITE))
+    /// # ;
+    /// ```
     fn dark_mode(self, style: impl FnOnce(Self) -> Self) -> Self {
         let self_style: Style = self.into();
         let new = self_style.selector(StyleSelector::DarkMode, |_| style(Self::default()).into());
         new.into()
     }
 
+    /// Applies custom styling when the element is being actively pressed.
+    /// 
+    /// This method allows you to define how the custom style should change
+    /// when the element is being actively pressed (e.g., mouse button down).
+    /// 
+    /// # Example
+    /// ```rust
+    /// # use floem::prelude::*;
+    /// # use floem::style::CustomStyle;
+    /// # use palette::css;
+    /// # let label_custom_style = LabelCustomStyle::new();
+    /// label_custom_style.active(|s| s.selection_color(css::RED))
+    /// # ;
+    /// ```
     fn active(self, style: impl FnOnce(Self) -> Self) -> Self {
         let self_style: Style = self.into();
         let new = self_style.selector(StyleSelector::Active, |_| style(Self::default()).into());
         new.into()
     }
 
+    /// Applies custom styling that activates at specific screen sizes (responsive design).
+    /// 
+    /// This method allows you to define how the custom style should change
+    /// based on the screen size, enabling responsive custom styling.
+    /// 
+    /// # Example
+    /// ```rust
+    /// # use floem::prelude::*;
+    /// # use floem::style::CustomStyle;
+    /// # use floem::responsive::ScreenSize;
+    /// # use palette::css;
+    /// # let label_custom_style = LabelCustomStyle::new();
+    /// label_custom_style.responsive(ScreenSize::SM, |s| s.selection_color(css::PURPLE))
+    /// # ;
+    /// ```
     fn responsive(self, size: ScreenSize, style: impl FnOnce(Self) -> Self) -> Self {
         let over = style(Self::default());
         let over_style: Style = over.into();
@@ -5150,9 +5380,58 @@ pub trait CustomStyle: Default + Clone + Into<Style> + From<Style> {
         self_style.into()
     }
 
+    /// Conditionally applies custom styling based on a boolean condition.
+    /// 
+    /// This method allows you to apply custom styling only when a condition is true,
+    /// providing a convenient way to chain conditional styling operations.
+    /// 
+    /// # Example
+    /// ```rust
+    /// # use floem::prelude::*;
+    /// # use floem::style::CustomStyle;
+    /// # use palette::css;
+    /// # let label_custom_style = LabelCustomStyle::new();
+    /// # let is_highlighted = true;
+    /// label_custom_style.apply_if(is_highlighted, |s| s.selection_color(css::YELLOW))
+    /// # ;
+    /// ```
     fn apply_if(self, cond: bool, style: impl FnOnce(Self) -> Self) -> Self {
         if cond { style(self) } else { self }
     }
+
+    /// Conditionally applies custom styling based on an optional value.
+    /// 
+    /// This method allows you to apply custom styling only when an optional value is Some,
+    /// passing the unwrapped value to the styling function.
+    /// 
+    /// # Example
+    /// ```rust
+    /// # use floem::prelude::*;
+    /// # use floem::style::CustomStyle;
+    /// # use palette::css;
+    /// # let label_custom_style = LabelCustomStyle::new();
+    /// # let maybe_color = Some(css::BLUE);
+    /// label_custom_style.apply_opt(maybe_color, |s, color| s.selection_color(color))
+    /// # ;
+    /// ```
+    fn apply_opt<T>(self, opt: Option<T>, f: impl FnOnce(Self, T) -> Self) -> Self {
+        if let Some(t) = opt { f(self, t) } else { self }
+    }
+
+    /// Sets a transition animation for a specific custom style property.
+    /// 
+    /// This method allows you to animate changes to custom style properties,
+    /// creating smooth transitions when the property values change.
+    /// 
+    /// # Example
+    /// ```rust
+    /// # use floem::prelude::*;
+    /// # use floem::style::CustomStyle;
+    /// # use std::time::Duration;
+    /// # let label_custom_style = LabelCustomStyle::new();
+    /// // Note: Actual property types vary by custom style implementation
+    /// # let _ = label_custom_style;
+    /// ```
     fn transition<P: StyleProp>(self, _prop: P, transition: Transition) -> Self {
         let mut self_style: Style = self.into();
         self_style
@@ -5162,14 +5441,62 @@ pub trait CustomStyle: Default + Clone + Into<Style> + From<Style> {
     }
 }
 
+/// A trait that enables views to accept custom styling beyond the standard Style properties.
+/// 
+/// This trait allows specific view types to provide their own specialized styling methods
+/// that are tailored to their functionality. For example, a label might have custom
+/// selection styling, or a button might have custom press animations.
+/// 
+/// # Type Parameters
+/// 
+/// * `S` - The custom style type associated with this view (e.g., `LabelCustomStyle`)
+/// 
+/// # Example
+/// 
+/// ```rust
+/// use floem::prelude::*;
+/// use floem::style::CustomStylable;
+/// use palette::css;
+/// 
+/// // Using custom styling on a view that implements CustomStylable
+/// text("Hello World")
+///     .custom_style(|s: LabelCustomStyle| {
+///         s.selection_color(css::BLUE)
+///          .selectable(false)
+///     });
+/// ```
 pub trait CustomStylable<S: CustomStyle + 'static>: IntoView<V = Self::DV> + Sized {
+    /// The view type that this custom stylable converts to.
     type DV: View;
 
-    /// #  Add a custom style to the view with access to this view's specialized custom style.
+    /// Applies custom styling to the view with access to specialized custom style methods.
     ///
-    /// A note for implementors of the trait:
-    ///
-    /// _Don't try to implement this method yourself, just use the trait's default implementation._
+    /// This method allows you to use custom styling methods that are specific to this
+    /// view type, going beyond the standard styling properties available on all views.
+    /// 
+    /// # Parameters
+    /// 
+    /// * `style` - A closure that takes the custom style type and returns the modified style
+    /// 
+    /// # Implementation Note
+    /// 
+    /// For trait implementors: Don't implement this method yourself, just use the trait's 
+    /// default implementation. The default implementation properly handles style registration
+    /// and updates.
+    /// 
+    /// # Example
+    /// 
+    /// ```rust
+    /// use floem::prelude::*;
+    /// use floem::style::CustomStylable;
+    /// 
+    /// // Custom styling with theme integration
+    /// text("Status")
+    ///     .custom_style(|s: LabelCustomStyle| {
+    ///         s.selection_color(Color::from_rgb8(100, 150, 255))
+    ///          .selectable(true)
+    ///     });
+    /// ```
     fn custom_style(self, style: impl Fn(S) -> S + 'static) -> Self::DV {
         let view = self.into_view();
         let id = view.id();
