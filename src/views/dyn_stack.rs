@@ -1,4 +1,5 @@
 use std::{
+    any::Any,
     hash::{BuildHasherDefault, Hash},
     marker::PhantomData,
 };
@@ -143,8 +144,17 @@ impl<T> View for DynStack<T> {
                 &mut self.children,
                 &self.view_fn,
             );
+            cx.window_state.schedule_layout();
             self.id.request_all();
         }
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 

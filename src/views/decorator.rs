@@ -6,13 +6,14 @@
 
 use floem_reactive::{Effect, SignalUpdate, UpdaterEffect};
 use peniko::kurbo::{Point, Rect};
-use std::rc::Rc;
+use std::{any::Any, cell::RefCell, rc::Rc};
 use ui_events::keyboard::{Key, KeyState, KeyboardEvent, Modifiers};
+use understory_responder::types::Outcome;
 
 use crate::{
     action::{set_window_menu, set_window_scale, set_window_title},
     animate::Animation,
-    event::{Event, EventListener, EventPropagation},
+    event::{Event, EventListener},
     menu::Menu,
     style::{Style, StyleClass},
     view::{IntoView, View},
@@ -218,10 +219,22 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     fn on_event(
         self,
         listener: EventListener,
-        action: impl FnMut(&Event) -> EventPropagation + 'static,
-    ) -> Self::DV {
+        mut action: impl FnMut(&mut Self::DV, &Event) -> Outcome + 'static,
+    ) -> Self::DV
+    where
+        Self::DV: 'static,
+    {
         let view = self.into_view();
-        view.id().add_event_listener(listener, Box::new(action));
+        view.id().add_event_listener(
+            listener,
+            Box::new(move |v: &mut dyn View, e| {
+                if let Some(concrete_view) = v.as_any_mut().downcast_mut::<Self::DV>() {
+                    action(concrete_view, e)
+                } else {
+                    Outcome::Continue
+                }
+            }),
+        );
         view
     }
 
@@ -232,9 +245,12 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
         self,
         key: Key,
         cmp: impl Fn(Modifiers) -> bool + 'static,
-        action: impl Fn(&Event) + 'static,
-    ) -> Self::DV {
-        self.on_event(EventListener::KeyDown, move |e| {
+        mut action: impl FnMut(&mut Self::DV, &Event) + 'static,
+    ) -> Self::DV
+    where
+        Self::DV: 'static,
+    {
+        self.on_event(EventListener::KeyDown, move |v, e| {
             if let Event::Key(KeyboardEvent {
                 state: KeyState::Down,
                 key: event_key,
@@ -243,11 +259,11 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
             }) = e
             {
                 if *event_key == key && cmp(*modifiers) {
-                    action(e);
-                    return EventPropagation::Stop;
+                    action(v, e);
+                    return Outcome::Stop;
                 }
             }
-            EventPropagation::Continue
+            Outcome::Continue
         })
     }
 
@@ -258,9 +274,12 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
         self,
         key: Key,
         cmp: impl Fn(Modifiers) -> bool + 'static,
-        action: impl Fn(&Event) + 'static,
-    ) -> Self::DV {
-        self.on_event(EventListener::KeyUp, move |e| {
+        mut action: impl FnMut(&mut Self::DV, &Event) + 'static,
+    ) -> Self::DV
+    where
+        Self::DV: 'static,
+    {
+        self.on_event(EventListener::KeyUp, move |v, e| {
             if let Event::Key(KeyboardEvent {
                 state: KeyState::Up,
                 key: event_key,
@@ -269,106 +288,172 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
             }) = e
             {
                 if *event_key == key && cmp(*modifiers) {
-                    action(e);
-                    return EventPropagation::Stop;
+                    action(v, e);
+                    return Outcome::Stop;
                 }
             }
-            EventPropagation::Continue
+            Outcome::Continue
         })
     }
 
     /// Add an event handler for the given [`EventListener`]. This event will be handled with
     /// the given handler and the event will continue propagating.
-    fn on_event_cont(self, listener: EventListener, action: impl Fn(&Event) + 'static) -> Self::DV {
-        self.on_event(listener, move |e| {
-            action(e);
-            EventPropagation::Continue
+    fn on_event_cont(
+        self,
+        listener: EventListener,
+        mut action: impl FnMut(&mut Self::DV, &Event) + 'static,
+    ) -> Self::DV
+    where
+        Self::DV: 'static,
+    {
+        self.on_event(listener, move |v, e| {
+            action(v, e);
+            Outcome::Continue
         })
     }
 
     /// Add an event handler for the given [`EventListener`]. This event will be handled with
     /// the given handler and the event will stop propagating.
-    fn on_event_stop(self, listener: EventListener, action: impl Fn(&Event) + 'static) -> Self::DV {
-        self.on_event(listener, move |e| {
-            action(e);
-            EventPropagation::Stop
+    fn on_event_stop(
+        self,
+        listener: EventListener,
+        mut action: impl FnMut(&mut Self::DV, &Event) + 'static,
+    ) -> Self::DV
+    where
+        Self::DV: 'static,
+    {
+        self.on_event(listener, move |v, e| {
+            action(v, e);
+            Outcome::Stop
         })
     }
 
     /// Add an event handler for [`EventListener::Click`].
-    fn on_click(self, action: impl FnMut(&Event) -> EventPropagation + 'static) -> Self::DV {
-        self.on_event(EventListener::Click, action)
+    fn on_click(
+        self,
+        mut action: impl FnMut(&mut Self::DV, &Event) -> Outcome + 'static,
+    ) -> Self::DV
+    where
+        Self::DV: 'static,
+    {
+        self.on_event(EventListener::Click, move |view, event| action(view, event))
     }
 
     /// Add an event handler for [`EventListener::Click`]. This event will be handled with
     /// the given handler and the event will continue propagating.
-    fn on_click_cont(self, action: impl Fn(&Event) + 'static) -> Self::DV {
-        self.on_click(move |e| {
-            action(e);
-            EventPropagation::Continue
+    fn on_click_cont(self, mut action: impl FnMut(&mut Self::DV, &Event) + 'static) -> Self::DV
+    where
+        Self::DV: 'static,
+    {
+        self.on_click(move |v, e| {
+            action(v, e);
+            Outcome::Continue
         })
     }
 
     /// Add an event handler for [`EventListener::Click`]. This event will be handled with
     /// the given handler and the event will stop propagating.
-    fn on_click_stop(self, mut action: impl FnMut(&Event) + 'static) -> Self::DV {
-        self.on_click(move |e| {
-            action(e);
-            EventPropagation::Stop
+    fn on_click_stop(self, mut action: impl FnMut(&mut Self::DV, &Event) + 'static) -> Self::DV
+    where
+        Self::DV: 'static,
+    {
+        self.on_click(move |v, e| {
+            action(v, e);
+            Outcome::Stop
         })
     }
 
     /// Attach action executed on button click or Enter or Space Key.
-    fn action(self, mut action: impl FnMut() + 'static) -> Self::DV {
-        self.on_click(move |_| {
+    // #[deprecated(note = "use Decorators::on_click")]
+    fn action(self, mut action: impl FnMut() + 'static) -> Self::DV
+    where
+        Self::DV: 'static,
+    {
+        self.on_click(move |_, _| {
             action();
-            EventPropagation::Stop
+            Outcome::Stop
         })
     }
 
     /// Add an event handler for [`EventListener::DoubleClick`]
-    fn on_double_click(self, action: impl Fn(&Event) -> EventPropagation + 'static) -> Self::DV {
+    fn on_double_click(
+        self,
+        action: impl FnMut(&mut Self::DV, &Event) -> Outcome + 'static,
+    ) -> Self::DV
+    where
+        Self::DV: 'static,
+    {
         self.on_event(EventListener::DoubleClick, action)
     }
 
     /// Add an event handler for [`EventListener::DoubleClick`]. This event will be handled with
     /// the given handler and the event will continue propagating.
-    fn on_double_click_cont(self, action: impl Fn(&Event) + 'static) -> Self::DV {
-        self.on_double_click(move |e| {
-            action(e);
-            EventPropagation::Continue
+    fn on_double_click_cont(
+        self,
+        mut action: impl FnMut(&mut Self::DV, &Event) + 'static,
+    ) -> Self::DV
+    where
+        Self::DV: 'static,
+    {
+        self.on_double_click(move |v, e| {
+            action(v, e);
+            Outcome::Continue
         })
     }
 
     /// Add an event handler for [`EventListener::DoubleClick`]. This event will be handled with
     /// the given handler and the event will stop propagating.
-    fn on_double_click_stop(self, action: impl Fn(&Event) + 'static) -> Self::DV {
-        self.on_double_click(move |e| {
-            action(e);
-            EventPropagation::Stop
+    fn on_double_click_stop(
+        self,
+        mut action: impl FnMut(&mut Self::DV, &Event) + 'static,
+    ) -> Self::DV
+    where
+        Self::DV: 'static,
+    {
+        self.on_double_click(move |v, e| {
+            action(v, e);
+            Outcome::Stop
         })
     }
 
     /// Add an event handler for [`EventListener::SecondaryClick`]. This is most often the "Right" click.
-    fn on_secondary_click(self, action: impl Fn(&Event) -> EventPropagation + 'static) -> Self::DV {
+    fn on_secondary_click(
+        self,
+        action: impl FnMut(&mut Self::DV, &Event) -> Outcome + 'static,
+    ) -> Self::DV
+    where
+        Self::DV: 'static,
+    {
         self.on_event(EventListener::SecondaryClick, action)
     }
 
     /// Add an event handler for [`EventListener::SecondaryClick`]. This is most often the "Right" click.
     /// This event will be handled with the given handler and the event will continue propagating.
-    fn on_secondary_click_cont(self, action: impl Fn(&Event) + 'static) -> Self::DV {
-        self.on_secondary_click(move |e| {
-            action(e);
-            EventPropagation::Continue
+    fn on_secondary_click_cont(
+        self,
+        mut action: impl FnMut(&mut Self::DV, &Event) + 'static,
+    ) -> Self::DV
+    where
+        Self::DV: 'static,
+    {
+        self.on_secondary_click(move |v, e| {
+            action(v, e);
+            Outcome::Continue
         })
     }
 
     /// Add an event handler for [`EventListener::SecondaryClick`]. This is most often the "Right" click.
     /// This event will be handled with the given handler and the event will stop propagating.
-    fn on_secondary_click_stop(self, action: impl Fn(&Event) + 'static) -> Self::DV {
-        self.on_secondary_click(move |e| {
-            action(e);
-            EventPropagation::Stop
+    fn on_secondary_click_stop(
+        self,
+        mut action: impl FnMut(&Self::DV, &Event) + 'static,
+    ) -> Self::DV
+    where
+        Self::DV: 'static,
+    {
+        self.on_secondary_click(move |v, e| {
+            action(v, e);
+            Outcome::Stop
         })
     }
 

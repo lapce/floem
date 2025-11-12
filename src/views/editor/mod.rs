@@ -18,7 +18,7 @@ use crate::{
     style::{CursorColor, StylePropValue, TextColor},
     text::{Attrs, AttrsList, LineHeightValue, TextLayout, Wrap},
     view::{IntoView, View},
-    views::text,
+    views::{Preedit, text},
 };
 use floem_editor_core::{
     buffer::rope_text::{RopeText, RopeTextVal},
@@ -58,7 +58,7 @@ use self::{
     id::EditorId,
     layout::TextLayoutLine,
     phantom_text::PhantomTextLine,
-    text::{Document, Preedit, PreeditData, RenderWhitespace, Styling, WrapMethod},
+    text::{Document, PreeditData, RenderWhitespace, Styling, WrapMethod},
     view::{LineInfo, ScreenLines, ScreenLinesBase},
     visual_line::{
         ConfigId, FontSizeCacheId, LayoutEvent, LineFontSizeProvider, Lines, RVLine, ResolvedWrap,

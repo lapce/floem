@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use floem_reactive::Effect;
 use floem_renderer::{
     Renderer,
@@ -187,7 +189,7 @@ impl View for Svg {
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         if let Some(tree) = self.svg_tree.as_ref() {
             let hash = self.svg_hash.as_ref().unwrap();
-            let layout = self.id.get_layout().unwrap_or_default();
+            let layout = self.id.layout().unwrap_or_default();
             let rect = Size::new(layout.size.width as f64, layout.size.height as f64).to_rect();
             let color = if let Some(brush) = self.svg_style.svg_color() {
                 Some(brush)
@@ -196,6 +198,14 @@ impl View for Svg {
             };
             cx.draw_svg(crate::RendererSvg { tree, hash }, rect, color.as_ref());
         }
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 

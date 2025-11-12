@@ -2,15 +2,20 @@
 //! A toggle button widget. An example can be found in [widget-gallery/button](https://github.com/lapce/floem/tree/main/examples/widget-gallery)
 //! in the floem examples.
 
+use std::any::Any;
+
+use std::any::Any;
 use floem_reactive::{Effect, SignalGet, SignalUpdate};
 use peniko::Brush;
 use peniko::kurbo::{Point, Size};
 use ui_events::keyboard::{Key, KeyState, KeyboardEvent, NamedKey};
 use ui_events::pointer::PointerEvent;
+use understory_responder::types::Phase;
 
+use crate::event::EventPropagation;
 use crate::{
     Renderer,
-    event::EventPropagation,
+    context::EventCx,
     id::ViewId,
     prop, prop_extractor,
     style::{self, Foreground, Style},
@@ -132,14 +137,19 @@ impl View for ToggleButton {
         }
     }
 
-    fn event_before_children(
+    fn event(
         &mut self,
-        cx: &mut crate::context::EventCx,
+        cx: &mut EventCx,
         event: &crate::event::Event,
+        phase: Phase,
     ) -> EventPropagation {
+        if phase != Phase::Bubble {
+            return EventPropagation::Continue;
+        }
+
         match event {
             crate::event::Event::Pointer(PointerEvent::Down { .. }) => {
-                cx.update_active(self.id);
+                cx.window_state.update_active(self.id);
                 self.held = ToggleState::Held;
             }
             crate::event::Event::Pointer(PointerEvent::Up { .. }) => {
@@ -229,22 +239,22 @@ impl View for ToggleButton {
         EventPropagation::Continue
     }
 
-    fn compute_layout(
-        &mut self,
-        _cx: &mut crate::context::ComputeLayoutCx,
-    ) -> Option<peniko::kurbo::Rect> {
-        let layout = self.id.get_layout().unwrap_or_default();
-        let size = layout.size;
-        self.width = size.width;
-        let circle_radius = match self.style.circle_rad() {
-            PxPct::Px(px) => px as f32,
-            PxPct::Pct(pct) => size.width.min(size.height) / 2. * (pct as f32 / 100.),
-        };
-        self.radius = circle_radius;
-        self.update_restrict_position(false);
+    // fn compute_layout(
+    //     &mut self,
+    //     _cx: &mut crate::context::ComputeLayoutCx,
+    // ) -> Option<peniko::kurbo::Rect> {
+    //     let layout = self.id.get_taffy_layout().unwrap_or_default();
+    //     let size = layout.size;
+    //     self.width = size.width;
+    //     let circle_radius = match self.style.circle_rad() {
+    //         PxPct::Px(px) => px as f32,
+    //         PxPct::Pct(pct) => size.width.min(size.height) / 2. * (pct as f32 / 100.),
+    //     };
+    //     self.radius = circle_radius;
+    //     self.update_restrict_position(false);
 
-        None
-    }
+    //     None
+    // }
 
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         if self.style.read(cx) {
@@ -253,13 +263,21 @@ impl View for ToggleButton {
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        let layout = self.id.get_layout().unwrap_or_default();
+        let layout = self.id.layout().unwrap_or_default();
         let size = Size::new(layout.size.width as f64, layout.size.height as f64);
         let circle_point = Point::new(self.position as f64, size.to_rect().center().y);
         let circle = crate::kurbo::Circle::new(circle_point, self.radius as f64);
         if let Some(color) = self.style.foreground() {
             cx.fill(&circle, &color, 0.);
         }
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 

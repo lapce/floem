@@ -1,7 +1,7 @@
 use floem::prelude::palette::css;
 use floem::prelude::*;
 use floem::reactive::Effect;
-use floem::style::BoxShadow;
+use floem::style::{BoxShadow, CustomStylable};
 use floem::taffy::AlignContent;
 use floem::theme::StyleThemeExt;
 
@@ -63,7 +63,7 @@ pub fn tab_view() -> impl IntoView {
         }
     })
     .style(|s| s.size_full().padding(5.).padding_right(7.))
-    .scroll_style(|s| s.handle_thickness(6.).shrink_to_fit())
+    .custom_style(|s| s.handle_thickness(6.).shrink_to_fit())
     .style(|s| {
         s.width(140.)
             .min_width(140.)

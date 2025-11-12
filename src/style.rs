@@ -134,7 +134,7 @@ use floem_renderer::text::{LineHeightValue, Weight};
 use imbl::hashmap::Entry;
 use imbl::shared_ptr::DefaultSharedPtr;
 use peniko::color::{HueDirection, palette};
-use peniko::kurbo::{self, Point, Stroke};
+use peniko::kurbo::{self, Affine, Point, Stroke, Vec2};
 use peniko::{
     Brush, Color, ColorStop, ColorStops, Gradient, GradientKind, InterpolationAlphaSpace,
     LinearGradientPosition,
@@ -148,8 +148,8 @@ use std::hash::Hasher;
 use std::hash::{BuildHasherDefault, Hash};
 use std::ptr;
 use std::rc::Rc;
-use taffy::GridTemplateComponent;
 use taffy::prelude::{auto, fr};
+use taffy::{GridTemplateComponent, Layout};
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
@@ -173,7 +173,7 @@ use crate::context::InteractionState;
 use crate::prelude::ViewTuple;
 use crate::responsive::{ScreenSize, ScreenSizeBp};
 use crate::theme::StyleThemeExt;
-use crate::unit::{Pct, Px, PxPct, PxPctAuto, UnitExt};
+use crate::unit::{Angle, Pct, Px, PxPct, PxPctAuto, UnitExt};
 use crate::view::{IntoView, View};
 use crate::view_tuple::ViewTupleFlat;
 use crate::views::{
@@ -555,6 +555,77 @@ impl StylePropValue for PxPctAuto {
         }
     }
 }
+
+impl StylePropValue for Angle {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        let label = match self {
+            Self::Deg(v) => format!("{v}°"),
+            Self::Rad(v) => format!("{v} rad"),
+        };
+        Some(text(label).into_any())
+    }
+
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        // Convert both to radians for interpolation, then return in the target format
+        let self_rad = self.to_radians();
+        let other_rad = other.to_radians();
+        let interpolated_rad = self_rad + (other_rad - self_rad) * value;
+
+        // Return in the format of the target (other) angle
+        match other {
+            Angle::Deg(_) => Some(Angle::Deg(interpolated_rad.to_degrees())),
+            Angle::Rad(_) => Some(Angle::Rad(interpolated_rad)),
+        }
+    }
+}
+
+impl StylePropValue for AnchorAbout {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        let label = if *self == AnchorAbout::TOP_LEFT {
+            "Top Left".to_string()
+        } else if *self == AnchorAbout::TOP_CENTER {
+            "Top Center".to_string()
+        } else if *self == AnchorAbout::TOP_RIGHT {
+            "Top Right".to_string()
+        } else if *self == AnchorAbout::CENTER_LEFT {
+            "Center Left".to_string()
+        } else if *self == AnchorAbout::CENTER {
+            "Center".to_string()
+        } else if *self == AnchorAbout::CENTER_RIGHT {
+            "Center Right".to_string()
+        } else if *self == AnchorAbout::BOTTOM_LEFT {
+            "Bottom Left".to_string()
+        } else if *self == AnchorAbout::BOTTOM_CENTER {
+            "Bottom Center".to_string()
+        } else if *self == AnchorAbout::BOTTOM_RIGHT {
+            "Bottom Right".to_string()
+        } else {
+            format!(
+                "({}, {})",
+                match self.x {
+                    PxPct::Px(v) => format!("{}px", v),
+                    PxPct::Pct(v) => format!("{}%", v),
+                },
+                match self.y {
+                    PxPct::Px(v) => format!("{}px", v),
+                    PxPct::Pct(v) => format!("{}%", v),
+                }
+            )
+        };
+        Some(text(label).into_any())
+    }
+
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        let x = self.x.interpolate(&other.x, value);
+        let y = self.x.interpolate(&other.y, value);
+        if let (Some(x), Some(y)) = (x, y) {
+            Some(Self { x, y })
+        } else {
+            None
+        }
+    }
+}
+
 impl StylePropValue for PxPct {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         let label = match self {
@@ -2141,10 +2212,10 @@ fn resolve_nested_maps_internal(
                 }
 
                 if interact_state.is_clicking {
-                    if let Some(map) = style.get_nested_map(StyleSelector::Active.to_key()) {
+                    if let Some(map) = style.get_nested_map(StyleSelector::Clicking.to_key()) {
                         classes_applied |= map.any_inherited();
                         style.apply_mut(map);
-                        style.remove_nested_map(StyleSelector::Active.to_key());
+                        style.remove_nested_map(StyleSelector::Clicking.to_key());
                         changed = true;
                     }
                 }
@@ -2153,10 +2224,10 @@ fn resolve_nested_maps_internal(
 
         // Active (mouse)
         if interact_state.is_clicking && !interact_state.using_keyboard_navigation {
-            if let Some(map) = style.get_nested_map(StyleSelector::Active.to_key()) {
+            if let Some(map) = style.get_nested_map(StyleSelector::Clicking.to_key()) {
                 classes_applied |= map.any_inherited();
                 style.apply_mut(map);
-                style.remove_nested_map(StyleSelector::Active.to_key());
+                style.remove_nested_map(StyleSelector::Clicking.to_key());
                 changed = true;
             }
         }
@@ -2590,7 +2661,7 @@ pub enum StyleSelector {
     FocusVisible,
     Disabled,
     DarkMode,
-    Active,
+    Clicking,
     Dragging,
     Selected,
     FileHover,
@@ -2602,7 +2673,7 @@ impl StyleSelector {
             StyleSelector::Focus,
             StyleSelector::FocusVisible,
             StyleSelector::Disabled,
-            StyleSelector::Active,
+            StyleSelector::Clicking,
             StyleSelector::Dragging,
             StyleSelector::Selected,
             StyleSelector::DarkMode,
@@ -2616,7 +2687,7 @@ impl StyleSelector {
             StyleSelector::Focus => "Focus",
             StyleSelector::FocusVisible => "FocusVisible",
             StyleSelector::Disabled => "Disabled",
-            StyleSelector::Active => "Active",
+            StyleSelector::Clicking => "Clicking",
             StyleSelector::Dragging => "Dragging",
             StyleSelector::Selected => "Selected",
             StyleSelector::DarkMode => "DarkMode",
@@ -2641,7 +2712,7 @@ style_key_selector!(
 );
 style_key_selector!(
     active,
-    StyleSelectors::new().set(StyleSelector::Active, true)
+    StyleSelectors::new().set(StyleSelector::Clicking, true)
 );
 style_key_selector!(
     dragging,
@@ -2663,7 +2734,7 @@ impl StyleSelector {
             StyleSelector::Focus => focus(),
             StyleSelector::FocusVisible => focus_visible(),
             StyleSelector::Disabled => disabled(),
-            StyleSelector::Active => active(),
+            StyleSelector::Clicking => active(),
             StyleSelector::Dragging => dragging(),
             StyleSelector::Selected => selected(),
             StyleSelector::DarkMode => darkmode(),
@@ -2765,6 +2836,67 @@ pub enum TextOverflow {
     Wrap,
     Clip,
     Ellipsis,
+}
+
+/// Defines anchor points for transformations like rotation and scaling
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AnchorAbout {
+    /// X position of the anchor point
+    pub x: PxPct,
+    /// Y position of the anchor point  
+    pub y: PxPct,
+}
+
+impl AnchorAbout {
+    /// Create a new anchor point
+    pub fn new(x: impl Into<PxPct>, y: impl Into<PxPct>) -> Self {
+        Self {
+            x: x.into(),
+            y: y.into(),
+        }
+    }
+
+    pub const fn new_const(x: PxPct, y: PxPct) -> Self {
+        Self { x, y }
+    }
+
+    /// Top-left corner (0%, 0%)
+    pub const TOP_LEFT: Self = Self::new_const(PxPct::Pct(0.0), PxPct::Pct(0.0));
+    /// Top-center (50%, 0%)
+    pub const TOP_CENTER: Self = Self::new_const(PxPct::Pct(50.0), PxPct::Pct(0.0));
+    /// Top-right corner (100%, 0%)
+    pub const TOP_RIGHT: Self = Self::new_const(PxPct::Pct(100.0), PxPct::Pct(0.0));
+    /// Center-left (0%, 50%)
+    pub const CENTER_LEFT: Self = Self::new_const(PxPct::Pct(0.0), PxPct::Pct(50.0));
+    /// Center of the element (50%, 50%)
+    pub const CENTER: Self = Self::new_const(PxPct::Pct(50.0), PxPct::Pct(50.0));
+    /// Center-right (100%, 50%)
+    pub const CENTER_RIGHT: Self = Self::new_const(PxPct::Pct(100.0), PxPct::Pct(50.0));
+    /// Bottom-left corner (0%, 100%)
+    pub const BOTTOM_LEFT: Self = Self::new_const(PxPct::Pct(0.0), PxPct::Pct(100.0));
+    /// Bottom-center (50%, 100%)
+    pub const BOTTOM_CENTER: Self = Self::new_const(PxPct::Pct(50.0), PxPct::Pct(100.0));
+    /// Bottom-right corner (100%, 100%)
+    pub const BOTTOM_RIGHT: Self = Self::new_const(PxPct::Pct(100.0), PxPct::Pct(100.0));
+
+    /// Get the position as fractions (0.0 to 1.0) for x and y axes
+    pub fn as_fractions(self, size: kurbo::Size) -> (f64, f64) {
+        let x = match self.x {
+            PxPct::Px(px) => px / size.width,
+            PxPct::Pct(pct) => pct / 100.0,
+        };
+        let y = match self.y {
+            PxPct::Px(px) => px / size.height,
+            PxPct::Pct(pct) => pct / 100.0,
+        };
+        (x, y)
+    }
+}
+
+impl Default for AnchorAbout {
+    fn default() -> Self {
+        Self::CENTER
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -3883,6 +4015,58 @@ define_builtin_props!(
     /// This property is inherited by child views.
     Selectable selectable {}: bool { inherited } = true,
 
+    /// Controls how children overflowing their container in the X axis (horizontally) affect layout.
+    ///
+    /// This property has two main effects on layout:
+    /// 1. **Automatic minimum size**: In Flexbox/Grid, items with `Hidden` or `Scroll` overflow have an automatic
+    ///    minimum size of `0`, allowing them to shrink below their content size. Items with `Visible` or `Clip`
+    ///    overflow have a content-based minimum size, preventing them from shrinking.
+    /// 2. **Scrollbar space**: `Scroll` reserves space for a scrollbar (controlled by `scrollbar_width`).
+    ///
+    /// Common use case: Set to `Hidden` on a fixed-width container to allow text children to wrap instead of overflow.
+    ///
+    /// Note: Taffy only implements layout effects. Visual clipping/scrolling must be handled separately.
+    OverflowX overflow_x {}: Overflow {} = Overflow::default(),
+
+    /// Controls how children overflowing their container in the Y axis (vertically) affect layout.
+    ///
+    /// This property has two main effects on layout:
+    /// 1. **Automatic minimum size**: In Flexbox/Grid, items with `Hidden` or `Scroll` overflow have an automatic
+    ///    minimum size of `0`, allowing them to shrink below their content size. Items with `Visible` or `Clip`
+    ///    overflow have a content-based minimum size, preventing them from shrinking.
+    /// 2. **Scrollbar space**: `Scroll` reserves space for a scrollbar (controlled by `scrollbar_width`).
+    ///
+    /// Common use case: Set to `Hidden` or `Scroll` on a fixed-height container to enable vertical scrolling.
+    ///
+    /// Note: Taffy only implements layout effects. Visual clipping/scrolling must be handled separately.
+    OverflowY overflow_y {}: Overflow {} = Overflow::default(),
+
+    /// Width of the scrollbar track in pixels.
+    ///
+    /// This property reserves space for scrollbars when `overflow_x` or `overflow_y` is set to `Scroll`.
+    /// The reserved space reduces the available content area but ensures content doesn't flow under the scrollbar.
+    ///
+    /// **Layout behavior:**
+    /// - When `overflow_y: Scroll`, reserves `scrollbar_width` from the right side of the container
+    /// - When `overflow_x: Scroll`, reserves `scrollbar_width` from the bottom of the container
+    /// - Space is reserved inside the container's bounds, reducing the content rect size
+    /// - No space is reserved for `overflow: Hidden`, `Visible`, or `Clip`
+    ///
+    /// **Example:**
+    /// ```rust,ignore
+    /// // Reserve 10px for scrollbar
+    /// .scrollbar_width(10.0)
+    ///
+    /// // Thinner scrollbar for compact UI
+    /// .scrollbar_width(6.0)
+    /// ```
+    ///
+    /// **Default:** `6px`
+    ///
+    /// **Note:** This property only affects layout space reservation. Actual scrollbar rendering
+    /// (position, styling, thumb size) must be handled separately by the rendering layer.
+    ScrollbarWidth scrollbar_width {tr}: Px {} = Px(6.),
+
     /// Controls how overflowed text content is handled.
     ///
     /// Determines whether text wraps, gets clipped, or is shorted and tailed with ellipsis(...).
@@ -3933,10 +4117,23 @@ define_builtin_props!(
     /// Moves the view up (negative) or down (positive).
     TranslateY translate_y {tr}: PxPct {} = PxPct::Px(0.),
 
-    /// Sets the rotation transform in radians.
+    /// Sets the rotation transform angle.
     ///
     /// Positive values rotate clockwise, negative values rotate counter-clockwise.
-    Rotation rotate {tr}: Px {} = Px(0.),
+    /// Use `.deg()` or `.rad()` methods to specify the angle unit.
+    Rotation rotate {tr}: Angle {} = Angle::Rad(0.0),
+
+    /// Sets the anchor point for rotation transformations.
+    ///
+    /// Determines the point around which the view rotates. Use predefined constants
+    /// like `AnchorAbout::CENTER` or create custom anchor points with pixel or percentage values.
+    RotateAbout rotate_about {}: AnchorAbout {} = AnchorAbout::CENTER,
+
+    /// Sets the anchor point for scaling transformations.
+    ///
+    /// Determines the point around which the view scales. Use predefined constants
+    /// like `AnchorAbout::CENTER` or create custom anchor points with pixel or percentage values.
+    ScaleAbout scale_about {tr}: AnchorAbout {} = AnchorAbout::CENTER,
 
     /// Controls the selected state of the view.
     ///
@@ -4003,16 +4200,6 @@ impl BuiltinStyle<'_> {
     }
 }
 
-prop!(
-    /// How children overflowing their container in Y axis should affect layout
-    pub OverflowX: Overflow {} = Overflow::default()
-);
-
-prop!(
-    /// How children overflowing their container in X axis should affect layout
-    pub OverflowY: Overflow {} = Overflow::default()
-);
-
 prop_extractor! {
     pub FontProps {
         pub size: FontSize,
@@ -4048,7 +4235,11 @@ prop_extractor! {
 
         pub row_gap: RowGap,
         pub col_gap: ColGap,
+    }
+}
 
+prop_extractor! {
+    pub TransformProps {
         pub scale_x: ScaleX,
         pub scale_y: ScaleY,
 
@@ -4056,6 +4247,70 @@ prop_extractor! {
         pub translate_y: TranslateY,
 
         pub rotation: Rotation,
+        pub rotate_about: RotateAbout,
+        pub scale_about: ScaleAbout,
+    }
+}
+impl TransformProps {
+    pub fn affine(&self, layout: &Layout) -> Affine {
+        let size = kurbo::Size::new(layout.size.width as f64, layout.size.height as f64);
+
+        let mut transform = Affine::IDENTITY;
+
+        let transform_x = match self.translate_x() {
+            crate::unit::PxPct::Px(px) => px,
+            crate::unit::PxPct::Pct(pct) => pct / 100.,
+        };
+        let transform_y = match self.translate_y() {
+            crate::unit::PxPct::Px(px) => px,
+            crate::unit::PxPct::Pct(pct) => pct / 100.,
+        };
+        transform *= Affine::translate(Vec2 {
+            x: transform_x,
+            y: transform_y,
+        });
+
+        let scale_x = self.scale_x().0 / 100.;
+        let scale_y = self.scale_y().0 / 100.;
+        let rotation = self.rotation().to_radians();
+
+        // Get rotation and scale anchor points
+        let rotate_about = self.rotate_about();
+        let scale_about = self.scale_about();
+
+        // Convert anchor points to absolute positions
+        let (rotate_x_frac, rotate_y_frac) = rotate_about.as_fractions(size);
+        let (scale_x_frac, scale_y_frac) = scale_about.as_fractions(size);
+
+        let rotate_point = Vec2 {
+            x: rotate_x_frac * size.width,
+            y: rotate_y_frac * size.height,
+        };
+
+        let scale_point = Vec2 {
+            x: scale_x_frac * size.width,
+            y: scale_y_frac * size.height,
+        };
+
+        // Apply transformations using the specified anchor points
+        if scale_x != 1.0 || scale_y != 1.0 {
+            // Manual non-uniform scaling about a point: translate -> scale -> translate back
+            let scale_center = scale_point;
+            transform = transform
+                .then_translate(-scale_center)
+                .then_scale_non_uniform(scale_x, scale_y)
+                .then_translate(scale_center);
+        }
+        if rotation != 0.0 {
+            // Manual rotation about a point: translate -> rotate -> translate back
+            let rotate_center = rotate_point;
+            transform = transform
+                .then_translate(-rotate_center)
+                .then_rotate(rotation)
+                .then_translate(rotate_center);
+        }
+
+        transform
     }
 }
 
@@ -4178,7 +4433,7 @@ impl Style {
 
     /// The visual style to apply when the view is being actively pressed.
     pub fn active(self, style: impl FnOnce(Style) -> Style) -> Self {
-        self.selector(StyleSelector::Active, style)
+        self.selector(StyleSelector::Clicking, style)
     }
 
     /// Applies styles that activate at specific screen sizes (responsive design).
@@ -5169,6 +5424,7 @@ impl Style {
             grid_auto_rows: style.grid_auto_rows(),
             grid_auto_columns: style.grid_auto_columns(),
             grid_auto_flow: style.grid_auto_flow(),
+            scrollbar_width: style.scrollbar_width().0 as f32,
             ..Default::default()
         }
     }
@@ -5339,7 +5595,7 @@ pub trait CustomStyle: Default + Clone + Into<Style> + From<Style> {
     /// ```
     fn active(self, style: impl FnOnce(Self) -> Self) -> Self {
         let self_style: Style = self.into();
-        let new = self_style.selector(StyleSelector::Active, |_| style(Self::default()).into());
+        let new = self_style.selector(StyleSelector::Clicking, |_| style(Self::default()).into());
         new.into()
     }
 

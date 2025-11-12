@@ -66,12 +66,7 @@ impl Clipboard for SystemClipboard {
     }
 }
 
-#[derive(Clone)]
-pub struct Preedit {
-    pub text: String,
-    pub cursor: Option<(usize, usize)>,
-    pub offset: usize,
-}
+use crate::views::text_input::Preedit;
 
 /// IME Preedit
 ///

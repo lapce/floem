@@ -1,14 +1,13 @@
 use floem::{
     animate::Animation,
-    peniko::color::palette,
-    peniko::{Brush, Color},
+    peniko::{color::palette, Brush, Color},
     reactive::{RwSignal, SignalGet, SignalUpdate},
-    style::{ScaleX, ScaleY, Style, Transition},
+    style::{AnchorAbout, ScaleX, ScaleY, Style, Transition},
     text::Weight,
     unit::{DurationUnitExt, UnitExt},
     views::{
-        container, dyn_container, empty, h_stack, slider, svg, v_stack, ButtonClass, Decorators,
-        Stack, SvgClass,
+        container, dyn_container, empty, h_stack, slider, svg, v_stack, ButtonClass, ContainerExt,
+        Decorators, Stack, SvgClass,
     },
     AnyView, IntoView,
 };
@@ -91,7 +90,7 @@ pub fn music_player() -> impl IntoView {
     let play_pause_button = container(
         dyn_container(move || play_pause_state.get(), PlayPause::view).class(ButtonClass),
     )
-    .on_click_stop(move |_| play_pause_state.update(PlayPause::toggle));
+    .action(move || play_pause_state.update(PlayPause::toggle));
 
     let media_buttons = h_stack((
         container(svg(svg::BACKWARD)).class(ButtonClass),
@@ -144,7 +143,7 @@ pub fn music_player() -> impl IntoView {
             })
     };
 
-    container(card).style(move |s| {
+    card.container().style(move |s| {
         s.size(300, 175)
             .items_center()
             .justify_center()
@@ -152,6 +151,7 @@ pub fn music_player() -> impl IntoView {
             .color(TEXT_COLOR)
             .class(SvgClass, |s| {
                 s.size(20, 20)
+                    .scale_about(AnchorAbout::new(75.pct(), 75.pct()))
                     .items_center()
                     .justify_center()
                     .scale(100.pct())

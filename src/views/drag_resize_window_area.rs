@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use winit::window::ResizeDirection;
 
 use crate::{
@@ -33,7 +35,7 @@ pub fn drag_resize_window_area<V: IntoView + 'static>(
     let id = ViewId::new();
     id.set_children([child.into_view()]);
     DragResizeWindowArea { id }
-        .on_event_stop(EventListener::PointerDown, move |_| {
+        .on_event_stop(EventListener::PointerDown, move |_, _| {
             drag_resize_window(direction)
         })
         .style(move |s| {
@@ -58,5 +60,13 @@ impl View for DragResizeWindowArea {
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
         "Drag-Resize Window Area".into()
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }

@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use taffy::style::FlexDirection;
 
 use crate::{
@@ -122,6 +124,14 @@ impl View for Stack {
             self.id.set_children_vec(*state);
             self.id.request_all();
         }
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 

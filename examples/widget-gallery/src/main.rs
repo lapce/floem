@@ -26,7 +26,8 @@ use floem::{
     muda::{AboutMetadataBuilder, PredefinedMenuItem},
     new_window,
     prelude::*,
-    style::{Background, CursorStyle, Transition},
+    receiver_signal::ChannelSignal,
+    style::{Background, CursorStyle, CustomStylable, Transition},
     theme::StyleThemeExt,
     ui_events::keyboard::{Key, KeyState, KeyboardEvent, Modifiers, NamedKey},
     window::{Theme, WindowConfig, WindowId},
@@ -111,7 +112,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
     let side_tab_bar = side_bar_list
         .scroll()
         .debug_name("Side Tab Bar")
-        .scroll_style(|s| s.shrink_to_fit().handle_thickness(8.))
+        .custom_style(|s| s.shrink_to_fit().handle_thickness(8.))
         .style(|s| {
             s.border(1.)
                 .flex_col()

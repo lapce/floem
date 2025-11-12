@@ -51,7 +51,7 @@ impl RadioButton {
         value_container(
             radio_button_svg(represented_value.clone(), inbound_signal.read_only())
                 .style(|s| s.focusable(true))
-                .on_click_stop(move |_| {
+                .on_click_stop(move |_v, _| {
                     outbound_signal.set(represented_value.clone());
                 }),
             move || outbound_signal.get(),
@@ -97,7 +97,7 @@ impl RadioButton {
                         s.set_selected(true)
                     })
             })
-            .on_click_stop(move |_| {
+            .on_click_stop(move |_, _| {
                 actual_value.set(cloneable_represented_value.clone());
             })
     }
@@ -130,7 +130,7 @@ impl RadioButton {
                         s.apply_selectors(&[StyleSelector::Selected])
                     })
             })
-            .on_click_stop(move |_| {
+            .on_click_stop(move |_, _| {
                 outbound_signal.set(represented_value.clone());
             }),
             move || outbound_signal.get(),
@@ -188,7 +188,7 @@ impl RadioButton {
                 |s| s.set_selected(true),
             )
         })
-        .on_click_stop(move |_| {
+        .on_click_stop(move |_, _| {
             actual_value.set(cloneable_represented_value.clone());
         })
     }

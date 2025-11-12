@@ -1,6 +1,7 @@
 use crate::app::{AppUpdateEvent, add_app_update_event};
-use crate::event::{EventListener, EventPropagation};
+use crate::event::EventListener;
 use crate::inspector::header;
+use crate::style::CustomStylable;
 use crate::theme::StyleThemeExt;
 use crate::unit::UnitExt;
 use crate::view::IntoView;
@@ -14,6 +15,7 @@ use std::mem;
 use std::rc::Rc;
 use taffy::AlignItems;
 use taffy::style::FlexDirection;
+use understory_responder::types::Outcome;
 use winit::window::WindowId;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -113,7 +115,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
                 static_label(format!("{:.4} ms", frame.sum.as_secs_f64() * 1000.0))
                     .style(|s| s.margin_right(16)),
             ))
-            .on_click_stop(move |_| {
+            .on_click_stop(move |_, _| {
                 selected_frame.set(Some(frame.clone()));
                 zoom.set(1.0);
             })
@@ -161,14 +163,12 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
 
     let frames = v_stack((
         header("Frames"),
-        scroll(v_stack_from_iter(frames).style(|s| s.width_full()))
-            .style(|s| {
-                s.flex_basis(0)
-                    .min_height(0)
-                    .flex_grow(1.0)
-                    .with_theme(|s, t| s.background(t.bg_base()))
-            })
-            .scroll_style(|s| s.handle_thickness(6.)),
+        scroll(v_stack_from_iter(frames).style(|s| s.width_full())).style(|s| {
+            s.flex_basis(0)
+                .min_height(0)
+                .flex_grow(1.0)
+                .with_theme(|s, t| s.background(t.bg_base()))
+        }),
         header("Event").style(|s| {
             s.with_theme(|s, t| {
                 s.border_top(1)
@@ -226,7 +226,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
                                     .hover(|s| s.background(t.primary().with_alpha(0.5)))
                             })
                     })
-                    .on_event_cont(EventListener::PointerEnter, move |_| {
+                    .on_event_cont(EventListener::PointerEnter, move |_, _| {
                         hovered_event.set(Some(event_.clone()))
                     })
                 });
@@ -234,18 +234,14 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
                     v_stack_from_iter(list)
                         .style(move |s| s.min_width_pct(zoom.get() * 100.0).height_full()),
                 )
-                .scroll_style(|s| {
-                    s.handle_thickness(6.)
-                        .vertical_track_inset(5.)
-                        .show_bars_when_idle(false)
-                })
+                .custom_style(|s| s.vertical_track_inset(5.).show_bars_when_idle(false))
                 .style(|s| s.height_full().min_width(0).flex_basis(0).flex_grow(1.0))
-                .on_event(EventListener::PointerWheel, move |e| {
+                .on_event(EventListener::PointerWheel, move |_, e| {
                     if let Some(delta) = e.pixel_scroll_delta_vec2() {
                         zoom.set(zoom.get() * (1.0 - delta.y / 400.0));
-                        EventPropagation::Stop
+                        Outcome::Stop
                     } else {
-                        EventPropagation::Continue
+                        Outcome::Continue
                     }
                 })
                 .into_any()
@@ -288,7 +284,7 @@ pub fn profiler(window_id: WindowId) -> impl IntoView {
                 "Start Profiling"
             }
         }))
-        .on_click_stop(move |_| {
+        .on_click_stop(move |_, _| {
             add_app_update_event(AppUpdateEvent::ProfileWindow {
                 window_id,
                 end_profile: if profiling.get() {
@@ -325,7 +321,7 @@ pub fn profiler(window_id: WindowId) -> impl IntoView {
     // FIXME: This needs an extra `container` or the `v_stack` ends up horizontal.
     container(v_stack((button, separator, lower)).style(|s| s.size_full()))
         .style(|s| s.size_full())
-        .on_event_cont(EventListener::WindowClosed, move |_| {
+        .on_event_cont(EventListener::WindowClosed, move |_, _| {
             if profiling.get() {
                 add_app_update_event(AppUpdateEvent::ProfileWindow {
                     window_id,

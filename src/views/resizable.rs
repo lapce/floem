@@ -1,6 +1,8 @@
+use std::any::Any;
+
 use crate::{
     ViewId,
-    context::{ComputeLayoutCx, EventCx, PaintCx, UpdateCx},
+    context::{EventCx, PaintCx, UpdateCx},
     event::{Event, EventPropagation},
     prelude::*,
     prop, prop_extractor,
@@ -21,6 +23,7 @@ use taffy::FlexDirection;
 use ui_events::pointer::{
     PointerButton, PointerButtonEvent, PointerEvent, PointerState, PointerUpdate,
 };
+use understory_responder::types::{Outcome, Phase};
 
 style_class!(
     /// The style class that is applied to all [`ResizableStack`] views.
@@ -127,7 +130,7 @@ impl View for ResizableStack {
         let handle_style = match self.handle_state {
             HandleState::None => Style::new(),
             HandleState::Hovered(_) => style.apply_selectors(&[StyleSelector::Hover]),
-            HandleState::Active(_) => style.apply_selectors(&[StyleSelector::Active]),
+            HandleState::Active(_) => style.apply_selectors(&[StyleSelector::Clicking]),
         };
         self.hovered_handle_style.read_style(cx, &handle_style);
         for child in self.id().children() {
@@ -145,33 +148,37 @@ impl View for ResizableStack {
         }
     }
 
-    fn compute_layout(&mut self, cx: &mut ComputeLayoutCx) -> Option<kurbo::Rect> {
-        self.layouts.clear();
-        let mut layout_rect: Option<Rect> = None;
-        for child in self.id.children().iter() {
-            if !child.is_hidden() {
-                let child_layout = cx.compute_view_layout(*child);
-                if let Some(child_layout) = child_layout {
-                    let layout = child.get_layout().map(|v| {
-                        Rect::from_origin_size(
-                            (v.location.x, v.location.y),
-                            (v.size.width as f64, v.size.height as f64),
-                        )
-                    });
-                    self.layouts.push(layout.unwrap());
-                    if let Some(rect) = layout_rect {
-                        layout_rect = Some(rect.union(child_layout));
-                    } else {
-                        layout_rect = Some(child_layout);
-                    }
-                }
-            }
-        }
-        self.reapply_current_sizes();
-        layout_rect
-    }
+    // fn compute_layout(&mut self, cx: &mut ComputeLayoutCx) -> Option<kurbo::Rect> {
+    //     self.layouts.clear();
+    //     let mut layout_rect: Option<Rect> = None;
+    //     for child in self.id.children().iter() {
+    //         if !child.is_hidden() {
+    //             let child_layout = cx.layout_view(*child);
+    //             if let Some(child_layout) = child_layout {
+    //                 let layout = child.get_taffy_layout().map(|v| {
+    //                     Rect::from_origin_size(
+    //                         (v.location.x, v.location.y),
+    //                         (v.size.width as f64, v.size.height as f64),
+    //                     )
+    //                 });
+    //                 self.layouts.push(layout.unwrap());
+    //                 if let Some(rect) = layout_rect {
+    //                     layout_rect = Some(rect.union(child_layout));
+    //                 } else {
+    //                     layout_rect = Some(child_layout);
+    //                 }
+    //             }
+    //         }
+    //     }
+    //     self.reapply_current_sizes();
+    //     layout_rect
+    // }
 
-    fn event_before_children(&mut self, _cx: &mut EventCx, event: &Event) -> EventPropagation {
+    fn event(&mut self, _cx: &mut EventCx, event: &Event, phase: Phase) -> EventPropagation {
+        if phase != Phase::Bubble {
+            return EventPropagation::Continue;
+        }
+
         match event {
             Event::Pointer(PointerEvent::Down(PointerButtonEvent {
                 button: Some(PointerButton::Primary),
@@ -299,6 +306,14 @@ impl View for ResizableStack {
                 );
             }
         }
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 

@@ -34,6 +34,7 @@ pub(crate) enum UpdateMessage {
     ClearActive(ViewId),
     WindowScale(f64),
     RequestPaint,
+    RequestLayout,
     State { id: ViewId, state: Box<dyn Any> },
     ToggleWindowMaximized,
     SetWindowMaximized(bool),

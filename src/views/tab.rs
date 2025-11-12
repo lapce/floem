@@ -1,5 +1,5 @@
 #![deny(missing_docs)]
-use std::{hash::Hash, marker::PhantomData};
+use std::{any::Any, hash::Hash, marker::PhantomData};
 
 use floem_reactive::{Effect, Scope};
 use smallvec::SmallVec;
@@ -143,8 +143,8 @@ where
 ///         active_tab.set(None)
 ///     }
 /// })
-/// .style(|s| s.size_full().padding(5.).padding_right(7.))
-/// .scroll_style(|s| s.handle_thickness(6.).shrink_to_fit()),))
+/// .style(|s| s.size_full().padding(5.).padding_right(7.).scrollbar_width(6.))
+/// .custom_style(|s| s.shrink_to_fit()),))
 /// .style(|s| s
 ///     .width(140.)
 ///     .min_width(140.)
@@ -301,5 +301,13 @@ impl<T> View for Tab<T> {
                 cx.paint_view(*active);
             }
         }
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }

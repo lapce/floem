@@ -2,7 +2,7 @@ mod data;
 mod view;
 
 use crate::context::StyleCx;
-use crate::event::{Event, EventListener, EventPropagation};
+use crate::event::{Event, EventListener};
 use crate::id::ViewId;
 use crate::prelude::ViewTuple;
 use crate::style::{
@@ -27,6 +27,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::rc::Rc;
 use ui_events::keyboard::{self, KeyboardEvent, NamedKey};
+use understory_responder::types::Outcome;
 pub use view::capture;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -57,12 +58,12 @@ pub struct CapturedView {
 impl CapturedView {
     pub fn capture(id: ViewId, window_state: &mut WindowState, clip: Rect) -> Self {
         let layout = id.layout_rect();
-        let taffy = id.get_layout().unwrap_or_default();
+        let taffy = id.layout().unwrap_or_default();
         let view_state = id.state();
         let view_state = view_state.borrow();
         let combined_style = view_state.combined_style.clone();
         let keyboard_navigable = view_state.combined_style.get(Focusable);
-        let focused = window_state.focus == Some(id);
+        let focused = window_state.focus_state.current_path().last() == Some(&id.box_node());
         let clipped = layout.intersect(clip);
         let custom_name = &view_state.debug_name;
         let classes = view_state.classes.clone();
@@ -181,17 +182,17 @@ fn add_event<T: View + 'static>(
     let capture = capture.clone();
     row.on_secondary_click({
         let name = name.clone();
-        move |_| {
+        move |_v, _| {
             if !name.is_empty() {
                 // TODO: Log error
                 let _ = Clipboard::set_contents(name.clone());
             }
-            EventPropagation::Stop
+            Outcome::Stop
         }
     })
     .on_event_stop(EventListener::KeyDown, {
         let capture = capture.clone();
-        move |event| {
+        move |_v, event| {
             if let Event::Key(KeyboardEvent { key, modifiers, .. }) = event {
                 match key {
                     keyboard::Key::Named(NamedKey::ArrowUp) => {

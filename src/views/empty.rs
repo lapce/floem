@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use crate::{id::ViewId, view::View};
 
 /// An empty View. See [`empty`].
@@ -16,5 +18,13 @@ pub fn empty() -> Empty {
 impl View for Empty {
     fn id(&self) -> ViewId {
         self.id
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }

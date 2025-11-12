@@ -79,7 +79,7 @@ fn app_view() -> impl IntoView {
             .items_center()
             .justify_center()
     })
-    .on_key_down(Key::Named(NamedKey::F11), |_| true, |_| inspect())
+    .on_key_down(Key::Named(NamedKey::F11), |_| true, |_, _| inspect())
 }
 
 /// A slider with a thin bar instead of the default thick bar.

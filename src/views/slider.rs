@@ -1,5 +1,6 @@
 //! A toggle button widget. An example can be found in widget-gallery/button in the floem examples.
 
+use std::any::Any;
 use std::ops::RangeInclusive;
 
 use floem_reactive::{SignalGet, SignalUpdate, UpdaterEffect};
@@ -8,12 +9,14 @@ use peniko::color::palette;
 use peniko::kurbo::{Circle, Point, RoundedRect, RoundedRectRadii};
 use ui_events::keyboard::{Key, KeyState, KeyboardEvent, NamedKey};
 use ui_events::pointer::{PointerButtonEvent, PointerEvent};
+use understory_responder::types::{Outcome, Phase};
 
+use crate::event::EventPropagation;
 use crate::style::{BorderRadiusProp, CustomStyle};
 use crate::unit::Pct;
 use crate::{
     Renderer,
-    event::EventPropagation,
+    context::EventCx,
     id::ViewId,
     prop, prop_extractor,
     style::{Background, CustomStylable, Foreground, Height, Style},
@@ -144,16 +147,21 @@ impl View for Slider {
         }
     }
 
-    fn event_before_children(
+    fn event(
         &mut self,
-        cx: &mut crate::context::EventCx,
+        cx: &mut EventCx,
         event: &crate::event::Event,
+        phase: Phase,
     ) -> EventPropagation {
+        if phase != Phase::Bubble {
+            return EventPropagation::Continue;
+        }
+
         let pos_changed = match event {
             crate::event::Event::Pointer(PointerEvent::Down(PointerButtonEvent {
                 state, ..
             })) => {
-                cx.update_active(self.id());
+                cx.window_state.update_active(self.id());
                 self.id.request_layout();
                 self.held = true;
                 self.percent = self.mouse_pos_to_percent(state.logical_point().x);
@@ -250,68 +258,68 @@ impl View for Slider {
         }
     }
 
-    fn compute_layout(
-        &mut self,
-        _cx: &mut crate::context::ComputeLayoutCx,
-    ) -> Option<peniko::kurbo::Rect> {
-        self.update_restrict_position();
-        let layout = self.id.get_layout().unwrap_or_default();
+    // fn compute_layout(
+    //     &mut self,
+    //     _cx: &mut crate::context::ComputeLayoutCx,
+    // ) -> Option<peniko::kurbo::Rect> {
+    //     self.update_restrict_position();
+    //     let layout = self.id.get_taffy_layout().unwrap_or_default();
 
-        self.size = layout.size;
+    //     self.size = layout.size;
 
-        let circle_radius = self.calculate_handle_radius();
-        let width = self.size.width as f64 - circle_radius * 2.;
-        let center = width * (self.percent / 100.) + circle_radius;
-        let circle_point = Point::new(center, (self.size.height / 2.) as f64);
-        self.handle = crate::kurbo::Circle::new(circle_point, circle_radius);
+    //     let circle_radius = self.calculate_handle_radius();
+    //     let width = self.size.width as f64 - circle_radius * 2.;
+    //     let center = width * (self.percent / 100.) + circle_radius;
+    //     let circle_point = Point::new(center, (self.size.height / 2.) as f64);
+    //     self.handle = crate::kurbo::Circle::new(circle_point, circle_radius);
 
-        let base_bar_height = match self.base_bar_style.height() {
-            PxPctAuto::Px(px) => px,
-            PxPctAuto::Pct(pct) => self.size.height as f64 * (pct / 100.),
-            PxPctAuto::Auto => self.size.height as f64,
-        };
-        let accent_bar_height = match self.accent_bar_style.height() {
-            PxPctAuto::Px(px) => px,
-            PxPctAuto::Pct(pct) => self.size.height as f64 * (pct / 100.),
-            PxPctAuto::Auto => self.size.height as f64,
-        };
+    //     let base_bar_height = match self.base_bar_style.height() {
+    //         PxPctAuto::Px(px) => px,
+    //         PxPctAuto::Pct(pct) => self.size.height as f64 * (pct / 100.),
+    //         PxPctAuto::Auto => self.size.height as f64,
+    //     };
+    //     let accent_bar_height = match self.accent_bar_style.height() {
+    //         PxPctAuto::Px(px) => px,
+    //         PxPctAuto::Pct(pct) => self.size.height as f64 * (pct / 100.),
+    //         PxPctAuto::Auto => self.size.height as f64,
+    //     };
 
-        let base_bar_radii = border_radius(&self.base_bar_style, base_bar_height / 2.);
-        let accent_bar_radii = border_radius(&self.accent_bar_style, accent_bar_height / 2.);
+    //     let base_bar_radii = border_radius(&self.base_bar_style, base_bar_height / 2.);
+    //     let accent_bar_radii = border_radius(&self.accent_bar_style, accent_bar_height / 2.);
 
-        let mut base_bar_length = self.size.width as f64;
-        if !self.style.edge_align() {
-            base_bar_length -= self.handle.radius * 2.;
-        }
+    //     let mut base_bar_length = self.size.width as f64;
+    //     if !self.style.edge_align() {
+    //         base_bar_length -= self.handle.radius * 2.;
+    //     }
 
-        let base_bar_y_start = self.size.height as f64 / 2. - base_bar_height / 2.;
-        let accent_bar_y_start = self.size.height as f64 / 2. - accent_bar_height / 2.;
+    //     let base_bar_y_start = self.size.height as f64 / 2. - base_bar_height / 2.;
+    //     let accent_bar_y_start = self.size.height as f64 / 2. - accent_bar_height / 2.;
 
-        let bar_x_start = if self.style.edge_align() {
-            0.
-        } else {
-            self.handle.radius
-        };
+    //     let bar_x_start = if self.style.edge_align() {
+    //         0.
+    //     } else {
+    //         self.handle.radius
+    //     };
 
-        self.base_bar = peniko::kurbo::Rect::new(
-            bar_x_start,
-            base_bar_y_start,
-            bar_x_start + base_bar_length,
-            base_bar_y_start + base_bar_height,
-        )
-        .to_rounded_rect(base_bar_radii);
-        self.accent_bar = peniko::kurbo::Rect::new(
-            bar_x_start,
-            accent_bar_y_start,
-            self.handle_center(),
-            accent_bar_y_start + accent_bar_height,
-        )
-        .to_rounded_rect(accent_bar_radii);
+    //     self.base_bar = peniko::kurbo::Rect::new(
+    //         bar_x_start,
+    //         base_bar_y_start,
+    //         bar_x_start + base_bar_length,
+    //         base_bar_y_start + base_bar_height,
+    //     )
+    //     .to_rounded_rect(base_bar_radii);
+    //     self.accent_bar = peniko::kurbo::Rect::new(
+    //         bar_x_start,
+    //         accent_bar_y_start,
+    //         self.handle_center(),
+    //         accent_bar_y_start + accent_bar_height,
+    //     )
+    //     .to_rounded_rect(accent_bar_radii);
 
-        self.prev_percent = self.percent;
+    //     self.prev_percent = self.percent;
 
-        None
-    }
+    //     None
+    // }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         cx.fill(
@@ -338,6 +346,14 @@ impl View for Slider {
         if let Some(color) = self.style.foreground() {
             cx.fill(&self.handle, &color, 0.);
         }
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 impl Slider {

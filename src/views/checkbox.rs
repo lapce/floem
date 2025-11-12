@@ -80,7 +80,7 @@ impl Checkbox {
         let (inbound_signal, outbound_signal) = create_value_container_signals(checked);
 
         value_container(
-            checkbox_svg(inbound_signal.read_only(), custom_check).on_click_stop(move |_| {
+            checkbox_svg(inbound_signal.read_only(), custom_check).on_click_stop(move |_, _| {
                 let checked = inbound_signal.get_untracked();
                 outbound_signal.set(!checked);
             }),
@@ -106,7 +106,7 @@ impl Checkbox {
         checked: impl SignalGet<bool> + SignalUpdate<bool> + Copy + 'static,
         custom_check: impl Into<String> + Clone + 'static,
     ) -> impl IntoView {
-        checkbox_svg(checked, custom_check).on_click_stop(move |_| {
+        checkbox_svg(checked, custom_check).on_click_stop(move |_, _| {
             checked.update(|val| *val = !*val);
         })
     }
@@ -135,14 +135,16 @@ impl Checkbox {
 
         value_container(
             h_stack((
-                checkbox_svg(inbound_signal.read_only(), custom_check).on_click_stop(move |_| {
-                    let checked = inbound_signal.get_untracked();
-                    outbound_signal.set(!checked);
-                }),
+                checkbox_svg(inbound_signal.read_only(), custom_check).on_click_stop(
+                    move |_, _| {
+                        let checked = inbound_signal.get_untracked();
+                        outbound_signal.set(!checked);
+                    },
+                ),
                 views::label(label),
             ))
             .class(LabeledCheckboxClass)
-            .on_click_stop(move |_| {
+            .on_click_stop(move |_, _| {
                 let checked = inbound_signal.get_untracked();
                 outbound_signal.set(!checked);
             })
@@ -172,12 +174,12 @@ impl Checkbox {
         custom_check: impl Into<String> + Clone + 'static,
     ) -> impl IntoView {
         h_stack((
-            checkbox_svg(checked, custom_check).on_click_stop(move |_| {
+            checkbox_svg(checked, custom_check).on_click_stop(move |_, _| {
                 checked.update(|val| *val = !*val);
             }),
             views::label(label),
         ))
-        .on_click_stop(move |_| {
+        .on_click_stop(move |_, _| {
             checked.update(|val| *val = !*val);
         })
         .class(LabeledCheckboxClass)

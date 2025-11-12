@@ -2,7 +2,7 @@ use floem_reactive::Effect;
 use taffy::FlexDirection;
 use ui_events::keyboard::{Key, NamedKey};
 
-use crate::event::{Event, EventListener, EventPropagation};
+use crate::event::{Event, EventListener};
 use crate::{ViewId, prelude::*};
 
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -163,7 +163,7 @@ where
         move |(index, e)| {
             let child = view_fn(index, e).class(ListItemClass);
             let child_id = child.id();
-            child.on_click_cont(move |_| {
+            child.on_click_cont(move |_, _| {
                 if selection.get_untracked() != Some(index) {
                     selection.set(Some(index));
                     child_id.scroll_to(None);
@@ -190,7 +190,7 @@ where
 
     let stack = stack
         .class(ListClass)
-        .on_event(EventListener::KeyDown, move |e| {
+        .on_event(EventListener::KeyDown, move |_v, e| {
             if let Event::Key(key_event) = e {
                 match key_event.key {
                     Key::Named(NamedKey::Home) => {
@@ -198,7 +198,7 @@ where
                             selection.set(Some(0));
                             stack_id.update_state(0_usize); // Must be usize to match state type
                         }
-                        EventPropagation::Stop
+                        Outcome::Stop
                     }
                     Key::Named(NamedKey::End) => {
                         let len = length.get_untracked();
@@ -206,7 +206,7 @@ where
                             selection.set(Some(len - 1));
                             stack_id.update_state(len - 1);
                         }
-                        EventPropagation::Stop
+                        Outcome::Stop
                     }
                     Key::Named(
                         named_key @ (NamedKey::ArrowUp
@@ -220,10 +220,10 @@ where
                         stack_id,
                         named_key,
                     ),
-                    _ => EventPropagation::Continue,
+                    _ => Outcome::Continue,
                 }
             } else {
-                EventPropagation::Continue
+                Outcome::Continue
             }
         });
     VirtualList { stack, selection }
@@ -235,7 +235,7 @@ fn handle_arrow_key(
     direction: FlexDirection,
     stack_id: ViewId,
     key: NamedKey,
-) -> EventPropagation {
+) -> Outcome {
     let current = selection.get();
 
     // Determine if we should move forward or backward based on direction and key
@@ -268,7 +268,7 @@ fn handle_arrow_key(
     );
 
     if is_cross_axis {
-        return EventPropagation::Continue;
+        return Outcome::Continue;
     }
 
     match current {
@@ -289,7 +289,7 @@ fn handle_arrow_key(
             }
         }
     }
-    EventPropagation::Stop
+    Outcome::Stop
 }
 
 impl<T: 'static> IntoView for VirtualList<T> {

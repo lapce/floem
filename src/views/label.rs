@@ -1,8 +1,8 @@
-use std::{any::Any, fmt::Display, mem::swap};
+use std::{any::Any, cell::RefCell, fmt::Display, mem::swap, rc::Rc};
 
 use crate::{
     Clipboard,
-    context::{PaintCx, UpdateCx},
+    context::{EventCx, PaintCx, UpdateCx},
     event::{Event, EventListener, EventPropagation},
     id::ViewId,
     prop_extractor,
@@ -13,23 +13,262 @@ use crate::{
     },
     style_class,
     text::{Attrs, AttrsList, FamilyOwned, TextLayout},
-    unit::PxPct,
     view::View,
+    view_storage::NodeContext,
 };
 use floem_reactive::UpdaterEffect;
-use floem_renderer::{Renderer, text::Cursor};
+use floem_renderer::{
+    Renderer,
+    text::{Align, Cursor},
+};
 use peniko::{
     Brush,
     color::palette,
     kurbo::{Point, Rect},
 };
-use taffy::tree::NodeId;
 use ui_events::{
     keyboard::{Key, KeyState, KeyboardEvent},
     pointer::{PointerButtonEvent, PointerEvent},
 };
+use understory_responder::types::Phase;
 
 use super::{Decorators, TextCommand};
+
+/// A reusable struct containing all layout-related data for text rendering.
+/// This struct can be wrapped in Rc<RefCell<>> and shared between the taffy layout
+/// function and other text rendering operations without needing to roundtrip through update.
+#[derive(Clone)]
+pub struct LabelLayoutData {
+    /// The base text layout created from the original text.
+    /// This is always created with no width constraint and represents
+    /// the natural, unwrapped size of the text.
+    text_layout: Option<TextLayout>,
+    /// The original text string
+    original_text: String,
+    /// The truncated text string used for ellipsis overflow.
+    available_text: Option<String>,
+    /// The width that was available for text rendering when available_text_layout was computed.
+    available_width: Option<f32>,
+    /// The computed text layout used for rendering when text overflows.
+    available_text_layout: Option<TextLayout>,
+    /// Cached attributes list for creating new text layouts
+    attrs_list: AttrsList,
+    /// Text alignment for layout
+    text_align: Option<Align>,
+    /// Text overflow behavior
+    text_overflow: TextOverflow,
+}
+
+impl LabelLayoutData {
+    pub fn new() -> Self {
+        Self {
+            text_layout: None,
+            original_text: String::new(),
+            available_text: None,
+            available_width: None,
+            available_text_layout: None,
+            attrs_list: AttrsList::new(Attrs::new()),
+            text_align: None,
+            text_overflow: TextOverflow::Clip,
+        }
+    }
+
+    pub fn set_text(&mut self, text: &str, attrs_list: AttrsList, text_align: Option<Align>) {
+        self.original_text = text.to_string();
+        self.attrs_list = attrs_list.clone();
+        self.text_align = text_align;
+
+        let mut text_layout = TextLayout::new();
+        text_layout.set_text(text, attrs_list, text_align);
+        self.text_layout = Some(text_layout);
+
+        // Clear overflow layouts when base text changes
+        self.available_text = None;
+        self.available_width = None;
+        self.available_text_layout = None;
+    }
+
+    pub fn set_text_overflow(&mut self, text_overflow: crate::style::TextOverflow) {
+        if self.text_overflow != text_overflow {
+            self.text_overflow = text_overflow;
+            // Clear cached overflow layouts when overflow mode changes
+            self.available_text = None;
+            self.available_width = None;
+            self.available_text_layout = None;
+        }
+    }
+
+    pub fn get_effective_text_layout(&self) -> Option<&TextLayout> {
+        self.available_text_layout
+            .as_ref()
+            .or(self.text_layout.as_ref())
+    }
+
+    pub fn with_effective_text_layout<O>(&self, with: impl FnOnce(&TextLayout) -> O) -> O {
+        if let Some(layout) = self.available_text_layout.as_ref() {
+            with(layout)
+        } else {
+            with(self.text_layout.as_ref().unwrap_or(&TextLayout::new()))
+        }
+    }
+
+    fn handle_ellipsis_overflow(&mut self, available_width: f32) {
+        if self.available_width == Some(available_width) {
+            return; // Already computed for this width
+        }
+
+        let Some(text_layout) = self.text_layout.as_ref() else {
+            return;
+        };
+
+        let mut dots_text = TextLayout::new();
+        dots_text.set_text("...", self.attrs_list.clone(), self.text_align);
+        let dots_width = dots_text.size().width as f32;
+        let width_left = available_width - dots_width;
+
+        let hit_point = text_layout.hit_point(Point::new(width_left as f64, 0.0));
+        let index = hit_point.index;
+
+        let new_text = if index > 0 {
+            format!("{}...", &self.original_text[..index])
+        } else {
+            "".to_string()
+        };
+
+        self.available_text = Some(new_text.clone());
+        self.available_width = Some(available_width);
+
+        let mut available_layout = TextLayout::new();
+        available_layout.set_text(&new_text, self.attrs_list.clone(), self.text_align);
+        self.available_text_layout = Some(available_layout);
+    }
+
+    fn handle_wrap_overflow(&mut self, available_width: f32) {
+        if self.available_width == Some(available_width) {
+            return; // Already computed for this width
+        }
+
+        let Some(text_layout) = self.text_layout.as_ref() else {
+            return;
+        };
+
+        let mut wrapped_layout = text_layout.clone();
+        wrapped_layout.set_size(available_width, f32::MAX);
+        self.available_text_layout = Some(wrapped_layout);
+        self.available_width = Some(available_width);
+    }
+
+    pub fn clear_overflow_state(&mut self) {
+        self.available_text = None;
+        self.available_width = None;
+        self.available_text_layout = None;
+    }
+
+    pub fn get_text_layout(&self) -> Option<&TextLayout> {
+        self.text_layout.as_ref()
+    }
+
+    /// Create a taffy layout function that can be used with NodeContext::custom
+    /// This function handles all ellipsis and wrap logic internally without requiring updates
+    pub fn create_taffy_layout_fn(
+        layout_data: Rc<RefCell<Self>>,
+    ) -> impl Fn(
+        taffy::Size<Option<f32>>,
+        taffy::Size<taffy::AvailableSpace>,
+        taffy::NodeId,
+        &taffy::Style,
+    ) -> taffy::Size<f32> {
+        move |known_dimensions, available_space, _node_id, _style| {
+            use taffy::*;
+
+            // First, check if we have text layout and get basic info
+            let (has_text_layout, natural_size, text_overflow) = {
+                let layout_data = layout_data.borrow();
+                let has_text = layout_data.text_layout.is_some();
+                let size = layout_data
+                    .text_layout
+                    .as_ref()
+                    .map(|tl| tl.size())
+                    .unwrap_or_else(|| peniko::kurbo::Size::new(0.0, 14.0));
+                (has_text, size, layout_data.text_overflow)
+            };
+
+            if !has_text_layout {
+                let height = known_dimensions.height.unwrap_or(14.0);
+                return Size {
+                    width: known_dimensions.width.unwrap_or(0.0),
+                    height,
+                };
+            }
+
+            let width_constraint = match available_space.width {
+                AvailableSpace::Definite(w) => Some(w),
+                _ => None,
+            };
+
+            let text_size = if let Some(width) = width_constraint {
+                let natural_width = natural_size.width as f32;
+                let overflows = natural_width > width;
+
+                if overflows {
+                    match text_overflow {
+                        crate::style::TextOverflow::Ellipsis => {
+                            let mut layout_data = layout_data.borrow_mut();
+                            layout_data.handle_ellipsis_overflow(width);
+                            // Use the ellipsis layout size
+                            layout_data
+                                .available_text_layout
+                                .as_ref()
+                                .map(|l| l.size())
+                                .unwrap_or(natural_size)
+                        }
+                        crate::style::TextOverflow::Wrap => {
+                            let mut layout_data = layout_data.borrow_mut();
+                            layout_data.handle_wrap_overflow(width);
+                            // Use the wrapped layout size
+                            layout_data
+                                .available_text_layout
+                                .as_ref()
+                                .map(|l| l.size())
+                                .unwrap_or(natural_size)
+                        }
+                        _ => {
+                            // For clip mode, just constrain to available width
+                            let mut layout_data = layout_data.borrow_mut();
+                            layout_data.clear_overflow_state();
+
+                            let text_layout = layout_data.text_layout.as_ref().unwrap();
+                            let mut constrained_layout = text_layout.clone();
+                            constrained_layout.set_size(width, f32::MAX);
+                            constrained_layout.size()
+                        }
+                    }
+                } else {
+                    // Text fits, clear any overflow state
+                    let mut layout_data = layout_data.borrow_mut();
+                    layout_data.clear_overflow_state();
+                    natural_size
+                }
+            } else {
+                // No width constraint, use natural size
+                let mut layout_data = layout_data.borrow_mut();
+                layout_data.clear_overflow_state();
+                natural_size
+            };
+
+            Size {
+                width: known_dimensions.width.unwrap_or(text_size.width as f32),
+                height: known_dimensions.height.unwrap_or(text_size.height as f32),
+            }
+        }
+    }
+}
+
+impl Default for LabelLayoutData {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 prop_extractor! {
     Extractor {
@@ -63,11 +302,8 @@ enum SelectionState {
 pub struct Label {
     id: ViewId,
     label: String,
-    text_layout: Option<TextLayout>,
-    text_node: Option<NodeId>,
-    available_text: Option<String>,
-    available_width: Option<f32>,
-    available_text_layout: Option<TextLayout>,
+    /// Layout data containing text layouts and overflow handling logic
+    layout_data: Rc<RefCell<LabelLayoutData>>,
     text_overflow_listener: Option<TextOverflowListener>,
     selection_state: SelectionState,
     selection_range: Option<(Cursor, Cursor)>,
@@ -78,28 +314,25 @@ pub struct Label {
 
 impl Label {
     fn new(id: ViewId, label: String) -> Self {
-        Label {
+        let layout_data = Rc::new(RefCell::new(LabelLayoutData::new()));
+        let mut label = Label {
             id,
             label,
-            text_layout: None,
-            text_node: None,
-            available_text: None,
-            available_width: None,
-            available_text_layout: None,
+            layout_data,
             text_overflow_listener: None,
             selection_state: SelectionState::None,
             selection_range: None,
             selection_style: Default::default(),
             font: FontProps::default(),
             style: Default::default(),
-        }
-        .class(LabelClass)
+        };
+        label.set_text_layout();
+        label.set_taffy_layout();
+        label.class(LabelClass)
     }
 
-    fn effective_text_layout(&self) -> &TextLayout {
-        self.available_text_layout
-            .as_ref()
-            .unwrap_or_else(|| self.text_layout.as_ref().unwrap())
+    fn with_effective_text_layout<O>(&self, with: impl FnOnce(&TextLayout) -> O) -> O {
+        self.layout_data.borrow().with_effective_text_layout(with)
     }
 }
 
@@ -139,7 +372,7 @@ pub fn label<S: Display + 'static>(label: impl Fn() -> S + 'static) -> Label {
         move || label().to_string(),
         move |new_label| id.update_state(new_label),
     );
-    Label::new(id, initial_label).on_event_cont(EventListener::FocusLost, move |_| {
+    Label::new(id, initial_label).on_event_cont(EventListener::FocusLost, move |_, _| {
         id.request_layout();
     })
 }
@@ -178,33 +411,28 @@ impl Label {
     }
 
     fn set_text_layout(&mut self) {
-        let mut text_layout = TextLayout::new();
         let attrs_list = self.get_attrs_list();
         let align = self.style.text_align();
-        text_layout.set_text(self.label.as_str(), attrs_list.clone(), align);
-        self.text_layout = Some(text_layout);
+        let text_overflow = self.style.text_overflow();
 
-        if let Some(new_text) = self.available_text.as_ref() {
-            let mut text_layout = TextLayout::new();
-            text_layout.set_text(new_text, attrs_list, align);
-            self.available_text_layout = Some(text_layout);
-        }
+        let mut layout_data = self.layout_data.borrow_mut();
+        layout_data.set_text(&self.label, attrs_list, align);
+        layout_data.set_text_overflow(text_overflow);
+        drop(layout_data);
+
+        let _ = self.id.mark_view_layout_dirty();
     }
 
     fn get_hit_point(&self, point: Point) -> Option<Cursor> {
-        let text_node = self.text_node?;
-        let location = self
-            .id
-            .taffy()
-            .borrow()
-            .layout(text_node)
-            .map_or(taffy::Layout::new().location, |layout| layout.location);
-        self.effective_text_layout().hit(
-            point.x as f32 - location.x,
-            // TODO: prevent cursor incorrectly going to end of buffer when clicking
-            // slightly below the text
-            point.y as f32 - location.y,
-        )
+        let location = self.id.content_rect_local().origin();
+        self.with_effective_text_layout(|l| {
+            l.hit(
+                point.x as f32 - location.x as f32,
+                // TODO: prevent cursor incorrectly going to end of buffer when clicking
+                // slightly below the text
+                point.y as f32 - location.y as f32,
+            )
+        })
     }
 
     fn set_selection_range(&mut self) {
@@ -233,7 +461,8 @@ impl Label {
         match command {
             TextCommand::Copy => {
                 if let Some((start_c, end_c)) = &self.selection_range {
-                    if let Some(ref text_layout) = self.text_layout {
+                    let layout_data = self.layout_data.borrow();
+                    if let Some(text_layout) = layout_data.get_text_layout() {
                         let start_line_idx = text_layout.lines_range()[start_c.line].start;
                         let end_line_idx = text_layout.lines_range()[end_c.line].start;
                         let start_idx = start_line_idx + start_c.index;
@@ -260,22 +489,15 @@ impl Label {
 
     fn paint_selection(&self, text_layout: &TextLayout, paint_cx: &mut PaintCx) {
         if let Some((start_c, end_c)) = &self.selection_range {
-            let location = self
-                .id
-                .taffy()
-                .borrow()
-                .layout(self.text_node.unwrap())
-                .cloned()
-                .unwrap_or_default()
-                .location;
+            let location = self.id.content_rect_local().origin();
             let ss = &self.selection_style;
             let selection_color = ss.selection_color();
 
             for run in text_layout.layout_runs() {
                 if let Some((mut start_x, width)) = run.highlight(*start_c, *end_c) {
-                    start_x += location.x;
+                    start_x += location.x as f32;
                     let end_x = width + start_x;
-                    let start_y = location.y as f64 + run.line_top as f64;
+                    let start_y = location.y + run.line_top as f64;
                     let end_y = start_y + run.line_height as f64;
                     let rect = Rect::new(start_x.into(), start_y, end_x.into(), end_y)
                         .to_rounded_rect(ss.corner_radius());
@@ -285,11 +507,14 @@ impl Label {
         }
     }
 
-    pub fn label_style(
-        self,
-        style: impl Fn(LabelCustomStyle) -> LabelCustomStyle + 'static,
-    ) -> Self {
-        self.custom_style(style)
+    fn set_taffy_layout(&mut self) {
+        let taffy = self.id.taffy();
+        let taffy_node = self.id.taffy_node();
+        let mut taffy = taffy.borrow_mut();
+
+        let layout_fn = LabelLayoutData::create_taffy_layout_fn(self.layout_data.clone());
+
+        let _ = taffy.set_node_context(taffy_node, Some(NodeContext::Custom(Box::new(layout_fn))));
     }
 }
 
@@ -298,32 +523,25 @@ impl View for Label {
         self.id
     }
 
+    fn view_style(&self) -> Option<Style> {
+        Some(Style::new().min_width(0.))
+    }
+
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
         format!("Label: {:?}", self.label).into()
     }
 
-    fn update(&mut self, _cx: &mut UpdateCx, state: Box<dyn Any>) {
-        if let Ok(state) = state.downcast() {
-            self.label = *state;
-            self.text_layout = None;
-            self.available_text = None;
-            self.available_width = None;
-            self.available_text_layout = None;
-            self.id.request_layout();
+    fn event(&mut self, _cx: &mut EventCx, event: &Event, phase: Phase) -> EventPropagation {
+        if phase == Phase::Capture {
+            return EventPropagation::Continue;
         }
-    }
 
-    fn event_before_children(
-        &mut self,
-        _cx: &mut crate::context::EventCx,
-        event: &Event,
-    ) -> crate::event::EventPropagation {
         match event {
             Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. })) => {
                 if self.style.text_selectable() {
                     self.selection_range = None;
                     self.selection_state = SelectionState::Ready(state.logical_point());
-                    self.id.request_layout();
+                    self.id.request_paint();
                 }
             }
             Event::Pointer(PointerEvent::Move(pu)) => {
@@ -331,7 +549,7 @@ impl View for Label {
                     if self.selection_range.is_some() {
                         self.selection_state = SelectionState::None;
                         self.selection_range = None;
-                        self.id.request_layout();
+                        self.id.request_paint();
                     }
                 } else {
                     let (SelectionState::Selecting(start, _) | SelectionState::Ready(start)) =
@@ -343,9 +561,10 @@ impl View for Label {
                     if start.distance(pu.current.logical_point()).abs() > 2. {
                         self.selection_state =
                             SelectionState::Selecting(start, pu.current.logical_point());
+                        self.set_selection_range();
                         self.id.request_active();
+                        self.id.request_paint();
                         self.id.request_focus();
-                        self.id.request_layout();
                     }
                 }
             }
@@ -356,7 +575,7 @@ impl View for Label {
                     self.selection_state = SelectionState::None;
                 }
                 self.id.clear_active();
-                self.id.request_layout();
+                self.id.request_paint();
             }
             Event::Key(
                 ke @ KeyboardEvent {
@@ -375,137 +594,24 @@ impl View for Label {
 
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         if self.font.read(cx) | self.style.read(cx) {
-            self.text_layout = None;
-            self.available_text = None;
-            self.available_width = None;
-            self.available_text_layout = None;
-            self.id.request_layout();
+            self.layout_data.borrow_mut().clear_overflow_state();
+            self.set_text_layout();
+            cx.window_state.schedule_layout();
         }
         if self.selection_style.read(cx) {
             self.id.request_paint();
         }
     }
 
-    fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::tree::NodeId {
-        cx.layout_node(self.id(), true, |_cx| {
-            let (width, height) = if self.label.is_empty() {
-                (0.0, self.font.size().unwrap_or(14.0))
-            } else {
-                if self.text_layout.is_none() {
-                    self.set_text_layout();
-                }
-                let text_layout = self.text_layout.as_ref().unwrap();
-                let size = text_layout.size();
-                let width = size.width.ceil() as f32;
-                let mut height = size.height as f32;
-
-                if self.style.text_overflow() == TextOverflow::Wrap {
-                    if let Some(t) = self.available_text_layout.as_ref() {
-                        height = height.max(t.size().height as f32);
-                    }
-                }
-
-                (width, height)
-            };
-
-            if self.text_node.is_none() {
-                self.text_node = Some(
-                    self.id
-                        .taffy()
-                        .borrow_mut()
-                        .new_leaf(taffy::style::Style::DEFAULT)
-                        .unwrap(),
-                );
-            }
-            let text_node = self.text_node.unwrap();
-
-            let style = Style::new().width(width).height(height).to_taffy_style();
-            let _ = self.id.taffy().borrow_mut().set_style(text_node, style);
-
-            vec![text_node]
-        })
-    }
-
-    fn compute_layout(&mut self, _cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
-        if self.label.is_empty() {
-            return None;
-        }
-
-        let layout = self.id.get_layout().unwrap_or_default();
-        let (text_overflow, padding) = {
-            let view_state = self.id.state();
-            let view_state = view_state.borrow();
-            let style = view_state.combined_style.builtin();
-            let padding_left = match style.padding_left() {
-                PxPct::Px(padding) => padding as f32,
-                PxPct::Pct(pct) => (pct / 100.) as f32 * layout.size.width,
-            };
-            let padding_right = match style.padding_right() {
-                PxPct::Px(padding) => padding as f32,
-                PxPct::Pct(pct) => (pct / 100.) as f32 * layout.size.width,
-            };
-            let text_overflow = style.text_overflow();
-            (text_overflow, padding_left + padding_right)
-        };
-        let text_layout = self.text_layout.as_ref().unwrap();
-        let width = text_layout.size().width as f32;
-        let available_width = layout.size.width - padding;
-        if text_overflow == TextOverflow::Ellipsis {
-            if width > available_width {
-                if self.available_width != Some(available_width) {
-                    let mut dots_text = TextLayout::new();
-                    dots_text.set_text("...", self.get_attrs_list(), self.style.text_align());
-
-                    let dots_width = dots_text.size().width as f32;
-                    let width_left = available_width - dots_width;
-                    let hit_point = text_layout.hit_point(Point::new(width_left as f64, 0.0));
-                    let index = hit_point.index;
-
-                    let new_text = if index > 0 {
-                        format!("{}...", &self.label[..index])
-                    } else {
-                        "".to_string()
-                    };
-                    self.available_text = Some(new_text);
-                    self.available_width = Some(available_width);
-                    self.set_text_layout();
-                }
-            } else {
-                self.available_text = None;
-                self.available_width = None;
-                self.available_text_layout = None;
-            }
-        } else if text_overflow == TextOverflow::Wrap {
-            if width > available_width {
-                if self.available_width != Some(available_width) {
-                    let mut text_layout = text_layout.clone();
-                    text_layout.set_size(available_width, f32::MAX);
-                    self.available_text_layout = Some(text_layout);
-                    self.available_width = Some(available_width);
-                    self.id.request_layout();
-                }
-            } else {
-                if self.available_text_layout.is_some() {
-                    self.id.request_layout();
-                }
-                self.available_text = None;
-                self.available_width = None;
-                self.available_text_layout = None;
+    fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) {
+        if state.is::<String>() {
+            if let Ok(state) = state.downcast::<String>() {
+                self.label = *state;
+                self.layout_data.borrow_mut().clear_overflow_state();
+                self.set_text_layout();
+                cx.window_state.schedule_layout();
             }
         }
-
-        self.set_selection_range();
-
-        if let Some(listener) = self.text_overflow_listener.as_mut() {
-            let was_overflown = listener.last_is_overflown;
-            let now_overflown = width > available_width;
-
-            if was_overflown != Some(now_overflown) {
-                (listener.on_change_fn)(now_overflown);
-                listener.last_is_overflown = Some(now_overflown);
-            }
-        }
-        None
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
@@ -513,21 +619,22 @@ impl View for Label {
             return;
         }
 
-        let text_node = self.text_node.unwrap();
-        let location = self
-            .id
-            .taffy()
-            .borrow()
-            .layout(text_node)
-            .map_or(taffy::Layout::new().location, |layout| layout.location);
+        let text_loc = self.id.content_rect_local().origin();
 
-        let point = Point::new(location.x as f64, location.y as f64);
+        self.with_effective_text_layout(|l| {
+            cx.draw_text(l, text_loc);
+            if cx.window_state.is_focused(&self.id()) {
+                self.paint_selection(l, cx);
+            }
+        });
+    }
 
-        let text_layout = self.effective_text_layout();
-        cx.draw_text(text_layout, point);
-        if cx.window_state.is_focused(&self.id()) {
-            self.paint_selection(text_layout, cx);
-        }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 

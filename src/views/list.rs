@@ -1,6 +1,7 @@
+use std::any::Any;
+
 use super::{Decorators, v_stack_from_iter};
 use crate::context::StyleCx;
-use crate::event::EventPropagation;
 use crate::id::ViewId;
 use crate::style::Style;
 use crate::style_class;
@@ -11,6 +12,7 @@ use crate::{
 };
 use floem_reactive::{Effect, RwSignal, SignalGet, SignalUpdate};
 use ui_events::keyboard::{Key, KeyState, KeyboardEvent, NamedKey};
+use understory_responder::types::Outcome;
 
 style_class!(pub ListClass);
 style_class!(pub ListItemClass);
@@ -94,7 +96,7 @@ where
             index,
             child,
         }
-        .on_click_stop(move |_| {
+        .on_click_stop(move |_, _| {
             if selection.get_untracked() != Some(index) {
                 selection.set(Some(index));
                 list_id.update_state(ListUpdate::Accept);
@@ -111,7 +113,7 @@ where
         child,
         onaccept: None,
     }
-    .on_event(EventListener::KeyDown, move |e| {
+    .on_event(EventListener::KeyDown, move |_v, e| {
         if let Event::Key(KeyboardEvent {
             state: KeyState::Down,
             key,
@@ -123,13 +125,13 @@ where
                     if length > 0 {
                         selection.set(Some(0));
                     }
-                    EventPropagation::Stop
+                    Outcome::Stop
                 }
                 Key::Named(NamedKey::End) => {
                     if length > 0 {
                         selection.set(Some(length - 1));
                     }
-                    EventPropagation::Stop
+                    Outcome::Stop
                 }
                 Key::Named(NamedKey::ArrowUp) => {
                     let current = selection.get_untracked();
@@ -145,15 +147,15 @@ where
                             }
                         }
                     }
-                    EventPropagation::Stop
+                    Outcome::Stop
                 }
                 Key::Named(NamedKey::Enter) => {
                     list_id.update_state(ListUpdate::Accept);
-                    EventPropagation::Stop
+                    Outcome::Stop
                 }
                 Key::Character(c) if c == " " => {
                     list_id.update_state(ListUpdate::Accept);
-                    EventPropagation::Stop
+                    Outcome::Stop
                 }
                 Key::Named(NamedKey::ArrowDown) => {
                     let current = selection.get_untracked();
@@ -169,12 +171,12 @@ where
                             }
                         }
                     }
-                    EventPropagation::Stop
+                    Outcome::Stop
                 }
-                _ => EventPropagation::Continue,
+                _ => Outcome::Continue,
             }
         } else {
-            EventPropagation::Continue
+            Outcome::Continue
         }
     })
     .class(ListClass)
@@ -207,6 +209,14 @@ impl View for List {
             }
         }
     }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 }
 
 impl View for Item {
@@ -232,6 +242,14 @@ impl View for Item {
         } else {
             cx.style_view(self.child);
         }
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 

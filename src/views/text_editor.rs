@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{any::Any, rc::Rc};
 
 use floem_editor_core::{buffer::rope_text::RopeTextVal, indent::IndentStyle};
 use floem_reactive::{RwSignal, Scope, SignalUpdate, SignalWith, UpdaterEffect};
@@ -153,7 +153,7 @@ impl View for TextEditor {
         cx.save();
         let size = self
             .id
-            .get_layout()
+            .layout()
             .map(|layout| {
                 peniko::kurbo::Size::new(layout.size.width as f64, layout.size.height as f64)
             })
@@ -169,6 +169,14 @@ impl View for TextEditor {
         }
         cx.paint_view(self.child);
         cx.restore();
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 

@@ -1,10 +1,10 @@
 use std::{cell::RefCell, rc::Rc};
 
 #[cfg(feature = "crossbeam")]
-use crossbeam::channel::{Receiver, Sender, unbounded as channel};
+use crossbeam::channel::{unbounded as channel, Receiver, Sender};
 use muda::MenuId;
 #[cfg(not(feature = "crossbeam"))]
-use std::sync::mpsc::{Receiver, Sender, channel};
+use std::sync::mpsc::{channel, Receiver, Sender};
 
 use floem_reactive::{Runtime, WriteSignal};
 use parking_lot::Mutex;
@@ -276,6 +276,7 @@ impl Application {
         // Nudge UI when sync signals are updated from other threads.
         Runtime::set_sync_effect_waker(|| Application::send_proxy_event(UserEvent::Idle));
         let event_loop = self.event_loop.take().unwrap();
+        event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
         let _ = event_loop.run_app(self);
     }
 

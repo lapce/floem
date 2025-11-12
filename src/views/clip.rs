@@ -1,5 +1,7 @@
 #![deny(missing_docs)]
 
+use std::any::Any;
+
 use peniko::kurbo::Size;
 
 use crate::{
@@ -36,7 +38,7 @@ impl View for Clip {
         let view_state = self.id.state();
         let size = self
             .id
-            .get_layout()
+            .layout()
             .map(|layout| Size::new(layout.size.width as f64, layout.size.height as f64))
             .unwrap_or_default();
 
@@ -50,6 +52,14 @@ impl View for Clip {
         }
         cx.paint_children(self.id);
         cx.restore();
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 

@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::collections::HashMap;
 use std::{cell::RefCell, mem, rc::Rc, sync::Arc};
 
@@ -7,6 +8,7 @@ use std::time::{Duration, Instant};
 use ui_events::keyboard::{Key, KeyState, KeyboardEvent, Modifiers, NamedKey};
 use ui_events::pointer::PointerEvent;
 use ui_events_winit::WindowEventReducer;
+use understory_responder::types::WidgetLookup;
 
 use winit::window::{
     ImeCapabilities, ImeEnableRequest, ImeHint, ImePurpose, ImeRequest, ImeRequestData,
@@ -24,6 +26,7 @@ use winit::{
     window::{Window, WindowId},
 };
 
+use crate::context::{BoxNodeLookup, WidgetLookupExt};
 use crate::dropped_file::FileDragEvent;
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use crate::menu::MudaMenu;
@@ -31,18 +34,16 @@ use crate::menu::MudaMenu;
 use crate::reactive::SignalWith;
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use crate::unit::UnitExt;
+use crate::view_storage::NodeContext;
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use crate::views::{Decorators, container, stack};
 use crate::{
     Application,
     app::UserEvent,
-    context::{
-        ComputeLayoutCx, EventCx, FrameUpdate, LayoutCx, PaintCx, PaintState, StyleCx, UpdateCx,
-    },
+    context::{EventCx, FrameUpdate, PaintCx, PaintState, StyleCx, UpdateCx},
     event::{Event, EventListener},
     id::ViewId,
     inspector::{self, Capture, CaptureState, CapturedView},
-    nav::view_arrow_navigation,
     profiler::Profile,
     style::{CursorStyle, Style, StyleSelector},
     theme::default_theme,
@@ -50,7 +51,7 @@ use crate::{
         CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES, CURRENT_RUNNING_VIEW_HANDLE,
         DEFERRED_UPDATE_MESSAGES, UPDATE_MESSAGES, UpdateMessage,
     },
-    view::{IntoView, View, view_tab_navigation},
+    view::{IntoView, View},
     view_state::ChangeFlags,
     window_state::WindowState,
     window_tracking::{remove_window_id_mapping, store_window_id_mapping},
@@ -249,229 +250,25 @@ impl WindowHandle {
         set_current_view(self.id);
         let event = event.transform(Affine::scale(self.window_state.scale));
 
-        let mut cx = EventCx {
-            window_state: &mut self.window_state,
-        };
+        let mut cx = EventCx::new(&mut self.window_state);
+        cx.window_event(event.clone());
 
-        let is_pointer_move = if let Event::Pointer(PointerEvent::Move(pu)) = &event {
-            let pos = pu.current.logical_point();
-            cx.window_state.last_cursor_location = pos;
-            Some(pu.pointer)
-        } else {
-            None
-        };
-        let (was_hovered, was_dragging_over) = if is_pointer_move.is_some() {
-            cx.window_state.cursor = None;
-            let was_hovered = std::mem::take(&mut cx.window_state.hovered);
-            let was_dragging_over = std::mem::take(&mut cx.window_state.dragging_over);
-
-            (Some(was_hovered), Some(was_dragging_over))
-        } else {
-            (None, None)
-        };
-
-        let was_file_hovered = if matches!(event, Event::FileDrag(FileDragEvent::DragMoved { .. }))
-            || is_pointer_move.is_some()
+        // Platform-specific context menu handling
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
         {
-            if !cx.window_state.file_hovered.is_empty() {
-                Some(std::mem::take(&mut cx.window_state.file_hovered))
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        let is_pointer_down = matches!(&event, Event::Pointer(PointerEvent::Down { .. }));
-        let was_focused = if is_pointer_down {
-            cx.window_state.clicking.clear();
-            cx.window_state.focus.take()
-        } else {
-            cx.window_state.focus
-        };
-
-        if event.needs_focus() {
-            let mut processed = false;
-
-            if !processed {
-                if let Some(id) = cx.window_state.focus {
-                    processed |= cx
-                        .unconditional_view_event(id, event.clone(), true)
-                        .0
-                        .is_processed();
-                }
-
-                if !processed {
-                    if let Some(listener) = event.listener() {
-                        processed |= self
-                            .main_view
-                            .apply_event(&listener, &event)
-                            .is_some_and(|prop| prop.is_processed());
-                    }
-                }
-
-                if !processed {
-                    if let Event::Key(KeyboardEvent {
-                        key,
-                        modifiers,
-                        state: KeyState::Down,
-                        ..
-                    }) = &event
-                    {
-                        if *key == Key::Named(NamedKey::Tab)
-                            && (modifiers.is_empty() || *modifiers == Modifiers::SHIFT)
-                        {
-                            let backwards = modifiers.contains(Modifiers::SHIFT);
-                            view_tab_navigation(self.id, cx.window_state, backwards);
-                            // view_debug_tree(&self.view);
-                        } else if *modifiers == Modifiers::ALT {
-                            if let Key::Named(
-                                name @ (NamedKey::ArrowUp
-                                | NamedKey::ArrowDown
-                                | NamedKey::ArrowLeft
-                                | NamedKey::ArrowRight),
-                            ) = key
-                            {
-                                view_arrow_navigation(*name, cx.window_state, self.id);
-                            }
-                        }
-                    }
-
-                    let keyboard_trigger_end = cx.window_state.keyboard_navigation
-                        && event.is_keyboard_trigger()
-                        && matches!(
-                            event,
-                            Event::Key(KeyboardEvent {
-                                state: KeyState::Up,
-                                ..
-                            })
-                        );
-                    if keyboard_trigger_end {
-                        if let Some(id) = cx.window_state.active {
-                            // To remove the styles applied by the Active selector
-                            if cx.window_state.has_style_for_sel(id, StyleSelector::Active) {
-                                id.request_style_recursive();
-                            }
-
-                            cx.window_state.active = None;
-                        }
-                    }
+            if matches!(&event, Event::Pointer(PointerEvent::Down { .. })) {
+                if self.context_menu.with_untracked(|c| {
+                    c.as_ref()
+                        .map(|(_, _, had_pointer_down)| !*had_pointer_down)
+                        .unwrap_or(false)
+                }) {
+                    self.context_menu.set(None);
                 }
             }
-        } else if cx.window_state.active.is_some() && event.is_pointer() {
-            if cx.window_state.is_dragging() {
-                cx.unconditional_view_event(self.id, event.clone(), false);
-            }
-
-            let id = cx.window_state.active.unwrap();
-
-            {
-                let window_origin = id.state().borrow().window_origin;
-                let layout = id.get_layout().unwrap_or_default();
-                let viewport = id.state().borrow().viewport.unwrap_or_default();
-                let transform = Affine::translate((
-                    window_origin.x - layout.location.x as f64 + viewport.x0,
-                    window_origin.y - layout.location.y as f64 + viewport.y0,
-                ));
-                cx.unconditional_view_event(id, event.clone().transform(transform), true);
-            }
-
-            if let Event::Pointer(PointerEvent::Up { .. }) = &event {
-                // To remove the styles applied by the Active selector
-                if cx.window_state.has_style_for_sel(id, StyleSelector::Active) {
-                    id.request_style_recursive();
+            if matches!(&event, Event::Pointer(PointerEvent::Up { .. })) {
+                if self.context_menu.with_untracked(|c| c.is_some()) {
+                    self.context_menu.set(None);
                 }
-
-                cx.window_state.active = None;
-            }
-        } else {
-            cx.unconditional_view_event(self.id, event.clone(), false);
-        }
-
-        if let Event::Pointer(PointerEvent::Up { .. }) = &event {
-            cx.window_state.drag_start = None;
-        }
-        if let Some(info) = is_pointer_move {
-            let hovered = &cx.window_state.hovered.clone();
-            for id in was_hovered.unwrap().symmetric_difference(hovered) {
-                let view_state = id.state();
-                if view_state.borrow().has_active_animation()
-                    || view_state
-                        .borrow()
-                        .has_style_selectors
-                        .has(StyleSelector::Hover)
-                    || view_state
-                        .borrow()
-                        .has_style_selectors
-                        .has(StyleSelector::Active)
-                {
-                    id.request_style();
-                }
-                if hovered.contains(id) {
-                    id.apply_event(&EventListener::PointerEnter, &event);
-                } else {
-                    cx.unconditional_view_event(
-                        *id,
-                        Event::Pointer(PointerEvent::Leave(info)),
-                        true,
-                    );
-                }
-            }
-            let dragging_over = &cx.window_state.dragging_over.clone();
-            for id in was_dragging_over
-                .unwrap()
-                .symmetric_difference(dragging_over)
-            {
-                if dragging_over.contains(id) {
-                    id.apply_event(&EventListener::DragEnter, &event);
-                } else {
-                    id.apply_event(&EventListener::DragLeave, &event);
-                }
-            }
-        }
-        if let Some(was_file_hovered) = was_file_hovered {
-            for id in was_file_hovered.symmetric_difference(&cx.window_state.file_hovered) {
-                id.request_style();
-            }
-        }
-        if was_focused != cx.window_state.focus {
-            cx.window_state
-                .focus_changed(was_focused, cx.window_state.focus);
-        }
-
-        if is_pointer_down {
-            for id in cx.window_state.clicking.clone() {
-                if cx.window_state.has_style_for_sel(id, StyleSelector::Active) {
-                    id.request_style_recursive();
-                }
-            }
-
-            #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-            if self.context_menu.with_untracked(|c| {
-                c.as_ref()
-                    .map(|(_, _, had_pointer_down)| !*had_pointer_down)
-                    .unwrap_or(false)
-            }) {
-                // we had a pointer down event
-                // if context menu is still shown
-                // we should hide it
-                self.context_menu.set(None);
-            }
-        }
-        if matches!(&event, Event::Pointer(PointerEvent::Up { .. })) {
-            for id in cx.window_state.clicking.clone() {
-                if cx.window_state.has_style_for_sel(id, StyleSelector::Active) {
-                    id.request_style_recursive();
-                }
-            }
-            cx.window_state.clicking.clear();
-
-            #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-            if self.context_menu.with_untracked(|c| c.is_some()) {
-                // we had a pointer up event
-                // if context menu is still shown
-                // we should hide it
-                self.context_menu.set(None);
             }
         }
 
@@ -530,9 +327,8 @@ impl WindowHandle {
             self.is_maximized = is_maximized;
             self.event(Event::WindowMaximizeChanged(is_maximized));
         }
-
         self.style();
-        self.layout();
+        self.compute_taffy();
         self.process_update();
         self.schedule_repaint();
     }
@@ -559,39 +355,6 @@ impl WindowHandle {
     }
 
     pub(crate) fn pointer_event(&mut self, pointer_event: PointerEvent) {
-        match &pointer_event {
-            PointerEvent::Move(pointer_update) => {
-                let pos = pointer_update.current.logical_point();
-                if self.cursor_position != pos {
-                    self.cursor_position = pos;
-                }
-            }
-            PointerEvent::Leave(_pointer_info) => {
-                set_current_view(self.id);
-                let cx = EventCx {
-                    window_state: &mut self.window_state,
-                };
-                let was_hovered = std::mem::take(&mut cx.window_state.hovered);
-                for id in was_hovered {
-                    let view_state = id.state();
-                    if view_state
-                        .borrow()
-                        .has_style_selectors
-                        .has(StyleSelector::Hover)
-                        || view_state
-                            .borrow()
-                            .has_style_selectors
-                            .has(StyleSelector::Active)
-                        || view_state.borrow().has_active_animation()
-                    {
-                        id.request_style();
-                    }
-                }
-                self.process_update();
-            }
-            _ => {}
-        }
-
         self.event(Event::Pointer(pointer_event));
     }
 
@@ -615,29 +378,17 @@ impl WindowHandle {
         cx.style_view(self.id);
     }
 
-    fn layout(&mut self) -> Duration {
-        let mut cx = LayoutCx::new(&mut self.window_state);
-
-        cx.window_state.root = {
+    fn compute_taffy(&mut self) -> Duration {
+        self.window_state.root = {
             let view = self.id.view();
-            let mut view = view.borrow_mut();
-            Some(cx.layout_view(view.as_mut()))
+            let view = view.borrow_mut();
+            Some(view.id().taffy_node())
         };
 
         let start = Instant::now();
-        cx.window_state.compute_layout();
-        let taffy_duration = Instant::now().saturating_duration_since(start);
+        self.window_state.compute_taffy();
 
-        self.compute_layout();
-
-        taffy_duration
-    }
-
-    fn compute_layout(&mut self) {
-        self.window_state.request_compute_layout = false;
-        let viewport = (self.window_state.root_size / self.window_state.scale).to_rect();
-        let mut cx = ComputeLayoutCx::new(&mut self.window_state, viewport);
-        cx.compute_view_layout(self.id);
+        Instant::now().saturating_duration_since(start)
     }
 
     pub(crate) fn render_frame(&mut self, gpu_resources: Option<GpuResources>) {
@@ -645,7 +396,7 @@ impl WindowHandle {
         for update in mem::take(&mut self.window_state.scheduled_updates) {
             match update {
                 FrameUpdate::Style(id) => id.request_style(),
-                FrameUpdate::Layout(id) => id.request_layout(),
+                FrameUpdate::Layout => self.id.request_layout(),
                 FrameUpdate::Paint(id) => self.window_state.request_paint(id),
             }
         }
@@ -666,7 +417,6 @@ impl WindowHandle {
             transform: Affine::IDENTITY,
             clip: None,
             z_index: None,
-            saved_transforms: Vec::new(),
             saved_clips: Vec::new(),
             saved_z_indexes: Vec::new(),
             gpu_resources,
@@ -728,7 +478,7 @@ impl WindowHandle {
         request_changes(self.id);
 
         fn get_taffy_depth(
-            taffy: Rc<RefCell<taffy::TaffyTree>>,
+            taffy: Rc<RefCell<taffy::TaffyTree<NodeContext>>>,
             root: taffy::tree::NodeId,
         ) -> usize {
             let children = taffy.borrow().children(root).unwrap();
@@ -749,7 +499,7 @@ impl WindowHandle {
         let post_style = Instant::now();
 
         let taffy_root_node = self.id.state().borrow().node;
-        let taffy_duration = self.layout();
+        let taffy_duration = self.compute_taffy();
         let post_layout = Instant::now();
         let window = self.paint(gpu_resources);
         let end = Instant::now();
@@ -789,10 +539,7 @@ impl WindowHandle {
         loop {
             loop {
                 self.process_update_messages();
-                if !self.needs_layout()
-                    && !self.needs_style()
-                    && !self.window_state.request_compute_layout
-                {
+                if !self.window_state.request_layout && !self.needs_style() {
                     break;
                 }
 
@@ -801,18 +548,16 @@ impl WindowHandle {
                     self.style();
                 }
 
-                if self.needs_layout() {
+                if self.window_state.request_layout {
                     paint = true;
-                    self.layout();
-                }
-
-                if self.window_state.request_compute_layout {
-                    self.compute_layout();
+                    self.compute_taffy();
+                    self.window_state.request_layout = false;
                 }
             }
             if !self.has_deferred_update_messages() {
                 break;
             }
+
             self.process_deferred_update_messages();
         }
 
@@ -892,47 +637,71 @@ impl WindowHandle {
                     UpdateMessage::RequestPaint => {
                         cx.window_state.request_paint = true;
                     }
+                    UpdateMessage::RequestLayout => {
+                        cx.window_state.request_layout = true;
+                    }
                     UpdateMessage::Focus(id) => {
-                        if cx.window_state.focus != Some(id) {
-                            let old = cx.window_state.focus;
-                            cx.window_state.focus = Some(id);
-                            cx.window_state.focus_changed(old, cx.window_state.focus);
-                        }
+                        EventCx::new(cx.window_state).update_focus(
+                            id.box_node(),
+                            false,
+                            Event::FocusGained,
+                        );
                     }
                     UpdateMessage::ClearFocus(id) => {
-                        if cx.window_state.focus == Some(id) {
-                            cx.window_state.clear_focus();
-                            cx.window_state.focus_changed(Some(id), None);
-                        }
+                        cx.window_state.focus_state.clear();
+                        EventCx::new(cx.window_state).update_focus_from_path(
+                            &[],
+                            false,
+                            Event::FocusLost,
+                        );
                     }
                     UpdateMessage::ClearAppFocus => {
-                        let focus = cx.window_state.focus;
-                        cx.window_state.clear_focus();
-                        if let Some(id) = focus {
-                            cx.window_state.focus_changed(Some(id), None);
-                        }
+                        cx.window_state.focus_state.clear();
+                        EventCx::new(cx.window_state).update_focus_from_path(
+                            &[],
+                            false,
+                            Event::FocusLost,
+                        );
                     }
                     UpdateMessage::Active(id) => {
                         let old = cx.window_state.active;
-                        cx.window_state.active = Some(id);
+                        cx.window_state.active = Some(id.box_node());
 
-                        if let Some(old_id) = old {
+                        if let Some(old_id) = old.and_then(|old| old.widget_of()) {
                             // To remove the styles applied by the Active selector
                             if cx
                                 .window_state
-                                .has_style_for_sel(old_id, StyleSelector::Active)
+                                .has_style_for_sel(old_id, StyleSelector::Clicking)
                             {
                                 old_id.request_style_recursive();
                             }
                         }
 
-                        if cx.window_state.has_style_for_sel(id, StyleSelector::Active) {
+                        if cx
+                            .window_state
+                            .has_style_for_sel(id, StyleSelector::Clicking)
+                        {
                             id.request_style_recursive();
                         }
                     }
                     UpdateMessage::ClearActive(id) => {
-                        if Some(id) == cx.window_state.active {
-                            cx.window_state.active = None;
+                        let old = cx.window_state.active;
+                        cx.window_state.active = None;
+                        if let Some(old_id) = old.and_then(|old| old.widget_of()) {
+                            // To remove the styles applied by the Active selector
+                            if cx
+                                .window_state
+                                .has_style_for_sel(old_id, StyleSelector::Clicking)
+                            {
+                                old_id.request_style_recursive();
+                            }
+                        }
+
+                        if cx
+                            .window_state
+                            .has_style_for_sel(id, StyleSelector::Clicking)
+                        {
+                            id.request_style_recursive();
                         }
                     }
                     UpdateMessage::ScrollTo { id, rect } => {
@@ -1096,14 +865,6 @@ impl WindowHandle {
             let view = id.view();
             view.borrow_mut().update(&mut cx, state);
         }
-    }
-
-    fn needs_layout(&mut self) -> bool {
-        self.id
-            .state()
-            .borrow()
-            .requested_changes
-            .contains(ChangeFlags::LAYOUT)
     }
 
     fn needs_style(&mut self) -> bool {
@@ -1648,5 +1409,13 @@ impl View for WindowView {
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
         "Window".into()
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }

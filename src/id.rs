@@ -4,33 +4,64 @@
 //! [`ViewId`]s are unique identifiers for views.
 //! They're used to identify views in the view tree.
 
-use std::{any::Any, cell::RefCell, rc::Rc};
+use std::{any::Any, cell::RefCell, marker::PhantomData, rc::Rc};
 
-use peniko::kurbo::{Insets, Point, Rect, Size};
-use slotmap::new_key_type;
-use taffy::{Display, Layout, NodeId, TaffyTree};
+use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Vec2};
+use smallvec::SmallVec;
+use taffy::{Display, Layout, NodeId, TaffyResult, TaffyTree};
+use understory_responder::types::Outcome;
 use winit::window::WindowId;
 
 use crate::{
     ScreenLayout,
     animate::{AnimStateCommand, Animation},
     context::{EventCallback, ResizeCallback},
-    event::{EventListener, EventPropagation},
+    event::EventListener,
     menu::Menu,
-    style::{Disabled, DisplayProp, Draggable, Focusable, Hidden, Style, StyleClassRef},
-    unit::PxPct,
+    style::{
+        Disabled, DisplayProp, Draggable, Focusable, Hidden, PointerEvents, PointerEventsProp,
+        Style, StyleClassRef,
+    },
     update::{CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES, UpdateMessage},
     view::{IntoView, View},
     view_state::{ChangeFlags, StackOffset, ViewState},
-    view_storage::VIEW_STORAGE,
+    view_storage::{NodeContext, VIEW_STORAGE},
     window_tracking::{is_known_root, window_id_for_root},
 };
+pub struct NotThreadSafe(*const ());
 
-new_key_type! {
-    /// A small unique identifier for an instance of a [View](crate::View).
-    ///
-    /// This id is how you can access and modify a view, including accessing children views and updating state.
-   pub struct ViewId;
+/// A small unique identifier, and handle, for an instance of a [View](crate::View).
+///
+/// Through this handle, you can access the associated view [ViewState](crate::view_state::ViewState).
+/// You can also use this handle to access the children ViewId's which allows you access to their states.
+///
+/// This type is not thread safe and can only be used from the main thread.
+#[derive(Copy, Clone, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[repr(transparent)]
+pub struct ViewId(slotmap::KeyData, PhantomData<NotThreadSafe>);
+impl std::fmt::Debug for ViewId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let debug_name = self.debug_name();
+        let mut start = f.debug_struct("ViewId");
+
+        if !debug_name.is_empty() {
+            start.field("id", &self.0).field("debug_name", &debug_name)
+        } else {
+            start.field("id", &self.0)
+        }
+        .finish()
+    }
+}
+
+impl slotmap::__impl::From<slotmap::KeyData> for ViewId {
+    fn from(k: slotmap::KeyData) -> Self {
+        ViewId(k, PhantomData)
+    }
+}
+unsafe impl slotmap::Key for ViewId {
+    fn data(&self) -> slotmap::KeyData {
+        self.0
+    }
 }
 
 impl ViewId {
@@ -55,7 +86,7 @@ impl ViewId {
     }
 
     /// Get access to the taffy tree
-    pub fn taffy(&self) -> Rc<RefCell<TaffyTree>> {
+    pub fn taffy(&self) -> Rc<RefCell<TaffyTree<NodeContext>>> {
         VIEW_STORAGE.with_borrow(|s| s.taffy.clone())
     }
 
@@ -72,9 +103,15 @@ impl ViewId {
         let _ = self.taffy().borrow_mut().set_style(node, style);
     }
 
-    /// Get the layout for a taffy node relative to it's parent
+    /// Get the layout for a taffy node
     pub fn taffy_layout(&self, node: NodeId) -> Option<taffy::Layout> {
         self.taffy().borrow().layout(node).cloned().ok()
+    }
+
+    /// Mark the taffy node associated with this view as dirty.
+    pub fn mark_view_layout_dirty(&self) -> TaffyResult<()> {
+        let node = self.taffy_node();
+        self.taffy().borrow_mut().mark_dirty(node)
     }
 
     /// Get the taffy node associated with this Id
@@ -82,22 +119,24 @@ impl ViewId {
         self.state().borrow().node
     }
 
-    pub(crate) fn state(&self) -> Rc<RefCell<ViewState>> {
+    /// set the clip rectange in local coordinates in the box tree
+    pub fn set_box_tree_clip(&self, clip: Option<RoundedRect>) {
         VIEW_STORAGE.with_borrow_mut(|s| {
-            if !s.view_ids.contains_key(*self) {
-                // if view_ids doesn't have this view id, that means it's been cleaned up,
-                // so we shouldn't create a new ViewState for this Id.
-                s.stale_view_state.clone()
-            } else {
-                s.states
-                    .entry(*self)
-                    .unwrap()
-                    .or_insert_with(|| {
-                        Rc::new(RefCell::new(ViewState::new(&mut s.taffy.borrow_mut())))
-                    })
-                    .clone()
-            }
+            let node_id = s.state(*self).borrow().box_node;
+            s.box_tree.borrow_mut().set_local_clip(node_id, clip)
         })
+    }
+
+    /// set the clip rectange in local coordinates in the box tree
+    pub fn set_box_tree_clip_behavior(&self, behavior: understory_box_tree::ClipBehavior) {
+        VIEW_STORAGE.with_borrow_mut(|s| {
+            let node_id = s.state(*self).borrow().box_node;
+            s.box_tree.borrow_mut().set_clip_behavior(node_id, behavior)
+        })
+    }
+
+    pub(crate) fn state(&self) -> Rc<RefCell<ViewState>> {
+        VIEW_STORAGE.with_borrow_mut(|s| s.state(*self))
     }
 
     /// Get access to the View
@@ -117,6 +156,17 @@ impl ViewId {
             s.children.entry(*self).unwrap().or_default().push(child_id);
             s.parent.insert(child_id, Some(*self));
             s.views.insert(child_id, Rc::new(RefCell::new(child)));
+            let child_taffy_node = s.state(child_id).borrow().node;
+            let this_taffy_node = s.state(*self).borrow().node;
+            let _ = s
+                .taffy
+                .borrow_mut()
+                .set_children(this_taffy_node, &[child_taffy_node]);
+            let child_box_node = s.state(child_id).borrow().box_node;
+            let this_box_node = s.state(*self).borrow().box_node;
+            s.box_tree
+                .borrow_mut()
+                .reparent(child_box_node, Some(this_box_node));
         });
     }
 
@@ -124,16 +174,29 @@ impl ViewId {
     /// See also [`Self::set_children_vec`]
     pub fn set_children<const N: usize, V: IntoView>(&self, children: [V; N]) {
         VIEW_STORAGE.with_borrow_mut(|s| {
-            let mut children_ids = Vec::new();
+            let this_box_node = s.state(*self).borrow().box_node;
+            let mut children_ids = Vec::with_capacity(N);
+            let mut children_nodes = Vec::with_capacity(N);
             for child in children {
                 let child_view = child.into_view();
                 let child_view_id = child_view.id();
+                let child_taffy_node = s.state(child_view_id).borrow().node;
+                children_nodes.push(child_taffy_node);
                 children_ids.push(child_view_id);
                 s.parent.insert(child_view_id, Some(*self));
+                let child_box_node = s.state(child_view_id).borrow().box_node;
+                s.box_tree
+                    .borrow_mut()
+                    .reparent(child_box_node, Some(this_box_node));
                 s.views
                     .insert(child_view_id, Rc::new(RefCell::new(child_view.into_any())));
             }
             s.children.insert(*self, children_ids);
+            let this_taffy_node = s.state(*self).borrow().node;
+            let _ = s
+                .taffy
+                .borrow_mut()
+                .set_children(this_taffy_node, &children_nodes);
         });
     }
 
@@ -141,16 +204,29 @@ impl ViewId {
     /// See also [`Self::set_children`]
     pub fn set_children_vec(&self, children: Vec<impl IntoView>) {
         VIEW_STORAGE.with_borrow_mut(|s| {
-            let mut children_ids = Vec::new();
+            let this_box_node = s.state(*self).borrow().box_node;
+            let mut children_ids = Vec::with_capacity(children.len());
+            let mut children_nodes = Vec::with_capacity(children.len());
             for child in children {
                 let child_view = child.into_view();
                 let child_view_id = child_view.id();
+                let child_taffy_node = s.state(child_view_id).borrow().node;
+                children_nodes.push(child_taffy_node);
                 children_ids.push(child_view_id);
                 s.parent.insert(child_view_id, Some(*self));
+                let child_box_node = s.state(child_view_id).borrow().box_node;
+                s.box_tree
+                    .borrow_mut()
+                    .reparent(child_box_node, Some(this_box_node));
                 s.views
                     .insert(child_view_id, Rc::new(RefCell::new(child_view.into_any())));
             }
             s.children.insert(*self, children_ids);
+            let this_taffy_node = s.state(*self).borrow().node;
+            let _ = s
+                .taffy
+                .borrow_mut()
+                .set_children(this_taffy_node, &children_nodes);
         });
     }
 
@@ -168,6 +244,28 @@ impl ViewId {
         VIEW_STORAGE.with_borrow_mut(|s| {
             if s.view_ids.contains_key(*self) {
                 s.parent.insert(*self, Some(parent));
+                let parent_box_node = s.state(parent).borrow().box_node;
+                let this_box_node = s.state(*self).borrow().box_node;
+                s.box_tree
+                    .borrow_mut()
+                    .reparent(this_box_node, Some(parent_box_node));
+
+                // Update taffy tree
+                let parent_taffy_node = s.state(parent).borrow().node;
+                let this_taffy_node = s.state(*self).borrow().node;
+                let mut taffy = s.taffy.borrow_mut();
+
+                // Get parent's current children
+                let mut parent_children = taffy
+                    .children(parent_taffy_node)
+                    .unwrap_or_default()
+                    .to_vec();
+
+                // Add this node if not already present
+                if !parent_children.contains(&this_taffy_node) {
+                    parent_children.push(this_taffy_node);
+                    let _ = taffy.set_children(parent_taffy_node, &parent_children);
+                }
             }
         });
     }
@@ -175,9 +273,56 @@ impl ViewId {
     /// Set the Ids that should be used as the children of this Id
     pub fn set_children_ids(&self, children: Vec<ViewId>) {
         VIEW_STORAGE.with_borrow_mut(|s| {
-            if s.view_ids.contains_key(*self) {
-                s.children.insert(*self, children);
+            let this_taffy_node = s.state(*self).borrow().node;
+            let this_box_node = s.state(*self).borrow().box_node;
+
+            if !s.view_ids.contains_key(*self) {
+                return; // Early return if this view doesn't exist
             }
+
+            // Get current children from Taffy
+            let current_taffy_children = s
+                .taffy
+                .borrow()
+                .children(this_taffy_node)
+                .unwrap_or_default();
+
+            // Use SmallVec to avoid heap allocations for common cases (up to 64 children)
+            let mut new_taffy_children: SmallVec<[_; 64]> = SmallVec::with_capacity(children.len());
+
+            // Fill the SmallVec with taffy nodes and update parent mapping + box tree
+            for child in &children {
+                new_taffy_children.push(s.state(*child).borrow().node);
+                s.parent.insert(*child, Some(*self));
+
+                let child_box_node = s.state(*child).borrow().box_node;
+                s.box_tree
+                    .borrow_mut()
+                    .reparent(child_box_node, Some(this_box_node));
+            }
+
+            // If the child lists are different, update Taffy
+            if current_taffy_children[..] != new_taffy_children[..] {
+                // Clear existing children first by removing each child node
+                let mut taffy = s.taffy.borrow_mut();
+                // Remove all existing child nodes
+                // We need to use the actual child NodeId, not an index
+                while let Some(first_child) = taffy
+                    .children(this_taffy_node)
+                    .unwrap_or_default()
+                    .first()
+                    .copied()
+                {
+                    let _ = taffy.remove_child(this_taffy_node, first_child);
+                }
+                // Add children in the correct order
+                for child_node in &new_taffy_children {
+                    let _ = taffy.add_child(this_taffy_node, *child_node);
+                }
+            }
+
+            // Update the children map regardless
+            s.children.insert(*self, children);
         });
     }
 
@@ -217,102 +362,133 @@ impl ViewId {
         })
     }
 
-    /// Get the computed rectangle that covers the area of this View
+    /// Get the chain of debug names that have been applied to this view.
+    pub fn debug_name(&self) -> String {
+        self.state()
+            .borrow()
+            .debug_name
+            .iter()
+            .rev()
+            .chain(std::iter::once(
+                &View::debug_name(self.view().borrow().as_ref()).to_string(),
+            ))
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(" - ")
+    }
+
+    /// Returns the layout rect relative to the parent view.
+    ///
+    /// The position is relative to the parent view's origin. This is the raw layout
+    /// as computed by Taffy, useful for measuring and positioning views within their
+    /// parent's coordinate space.
     pub fn layout_rect(&self) -> Rect {
-        self.state().borrow().layout_rect
+        self.layout()
+            .map(|l| Rect {
+                x0: f64::from(l.location.x),
+                y0: f64::from(l.location.y),
+                x1: f64::from(l.location.x + l.size.width),
+                y1: f64::from(l.location.y + l.size.height),
+            })
+            .unwrap_or_default()
     }
 
-    /// Get the size of this View
-    pub fn get_size(&self) -> Option<Size> {
-        self.get_layout()
-            .map(|l| Size::new(l.size.width as f64, l.size.height as f64))
+    /// Returns the content rect relative to the parent view.
+    ///
+    /// The content rect excludes borders and padding, representing the area where
+    /// child content is positioned. The position is relative to the parent view's
+    /// origin, useful for parent-driven layout calculations.
+    pub fn content_rect(&self) -> Rect {
+        self.layout()
+            .map(|r| Rect {
+                x0: f64::from(r.content_box_x()),
+                y0: f64::from(r.content_box_y()),
+                x1: f64::from(r.content_box_x() + r.content_box_width()),
+                y1: f64::from(r.content_box_y() + r.content_box_height()),
+            })
+            .unwrap_or_default()
     }
 
-    /// Get the Size of the parent View
-    pub fn parent_size(&self) -> Option<Size> {
-        let parent_id = self.parent()?;
-        parent_id.get_size()
+    /// Returns the view rect relative to the parent view.
+    ///
+    /// This provides the full visual bounds of the view. The position is relative
+    /// to the parent view's origin.
+    pub fn view_rect(&self) -> Rect {
+        self.layout()
+            .map(|r| Rect {
+                x0: f64::from(r.location.x),
+                y0: f64::from(r.location.y),
+                x1: f64::from(r.location.x + r.size.width),
+                y1: f64::from(r.location.y + r.size.height),
+            })
+            .unwrap_or_default()
     }
 
-    /// Returns the layout rect excluding borders, padding and position.
-    /// This is relative to the view.
-    pub fn get_content_rect(&self) -> Rect {
-        let size = self
-            .get_layout()
-            .map(|layout| layout.size)
-            .unwrap_or_default();
-        let rect = Size::new(size.width as f64, size.height as f64).to_rect();
-        let view_state = self.state();
-        let props = &view_state.borrow().layout_props;
-        let pixels = |px_pct, abs| match px_pct {
-            PxPct::Px(v) => v,
-            PxPct::Pct(pct) => pct * abs,
-        };
-        let border = props.border();
-        let padding = props.padding();
-        rect.inset(-Insets {
-            x0: border.left.map_or(0.0, |b| b.0.width)
-                + pixels(padding.left.unwrap_or(PxPct::Px(0.0)), rect.width()),
-            x1: border.right.map_or(0.0, |b| b.0.width)
-                + pixels(padding.right.unwrap_or(PxPct::Px(0.0)), rect.width()),
-            y0: border.top.map_or(0.0, |b| b.0.width)
-                + pixels(padding.top.unwrap_or(PxPct::Px(0.0)), rect.height()),
-            y1: border.bottom.map_or(0.0, |b| b.0.width)
-                + pixels(padding.bottom.unwrap_or(PxPct::Px(0.0)), rect.height()),
-        })
+    /// Returns the layout rect in the view's local coordinate space.
+    ///
+    /// This is the correct rect to use for hit testing against events that have been
+    /// transformed through `window_event_to_view()`. Here's why:
+    ///
+    /// When an event is transformed from window space to view-local space via
+    /// `window_event_to_view()`, it applies the inverse of the view's accumulated transform.
+    /// This accumulated transform includes:
+    /// 1. All ancestor translations (from layout positions)
+    /// 2. All ancestor transforms (affine transformations)
+    /// 3. All ancestor scroll offsets
+    /// 4. This view's own layout position
+    /// 5. This view's own transform
+    /// 6. This view's own scroll offset (if it's a scroll view)
+    ///
+    /// After applying the inverse, the event point is in this view's "natural" coordinate
+    /// space - the space where (0, 0) is at the view's top-left corner and the view extends
+    /// to (width, height) at its bottom-right corner. This is exactly the coordinate space
+    /// that `layout_rect_local()` describes.
+    ///
+    /// In summary: transformed events → use layout_rect_local() for hit testing.
+    pub fn layout_rect_local(&self) -> Rect {
+        self.layout()
+            .map(|l| Rect {
+                x0: 0.0,
+                y0: 0.0,
+                x1: f64::from(l.size.width),
+                y1: f64::from(l.size.height),
+            })
+            .unwrap_or_default()
     }
 
-    /// This gets the Taffy Layout and adjusts it to be relative to the parent `View`.
-    pub fn get_layout(&self) -> Option<Layout> {
-        let widget_parent = self.parent().map(|id| id.state().borrow().node);
-
-        let taffy = self.taffy();
-        let mut node = self.state().borrow().node;
-        let mut layout = *taffy.borrow().layout(node).ok()?;
-
-        loop {
-            let parent = taffy.borrow().parent(node);
-
-            if parent == widget_parent {
-                break;
-            }
-
-            node = parent?;
-
-            layout.location = layout.location + taffy.borrow().layout(node).ok()?.location;
-        }
-
-        Some(layout)
+    /// Returns the content rect in the view's local coordinate space.
+    ///
+    /// The content rect excludes borders and padding, representing the area where
+    /// child content should be positioned. This is in the view's local coordinate
+    /// space, with an offset that accounts for borders and padding.
+    ///
+    /// Like `layout_rect_local()`, this is in the same coordinate space as events
+    /// transformed via `window_event_to_view()`.
+    pub fn content_rect_local(&self) -> Rect {
+        self.layout()
+            .map(|r| {
+                let x0 = f64::from(r.border.left + r.padding.left);
+                let y0 = f64::from(r.border.top + r.padding.top);
+                let x1 = x0 + f64::from(r.content_box_width());
+                let y1 = y0 + f64::from(r.content_box_height());
+                Rect { x0, y0, x1, y1 }
+            })
+            .unwrap_or_default()
     }
 
-    /// Get the taffy layout of this id relative to a parent/ancestor ID
-    pub fn get_layout_relative_to(&self, relative_to: ViewId) -> Option<Layout> {
-        let taffy = self.taffy();
-        let target_node = relative_to.state().borrow().node;
-        let mut node = self.state().borrow().node;
-        let mut layout = *taffy.borrow().layout(node).ok()?;
-
-        loop {
-            let parent = taffy.borrow().parent(node);
-            if parent == Some(target_node) {
-                break;
-            }
-
-            // If we've reached the root without finding the target, return None
-            node = parent?;
-            layout.location = layout.location + taffy.borrow().layout(node).ok()?.location;
-        }
-
-        Some(layout)
-    }
-
-    /// Get the taffy layout of this id relative to the root
-    pub fn get_layout_relative_to_root(&self) -> Option<Layout> {
+    /// Returns the Taffy layout for this view.
+    ///
+    /// The layout includes the view's size and position relative to its parent view.
+    /// This is the layout information from Taffy without any adjustments for
+    /// borders, padding, or other styling properties.
+    ///
+    /// # Returns
+    /// - `Some(Layout)` containing size and position information
+    /// - `None` if layout information is unavailable
+    pub fn layout(&self) -> Option<Layout> {
         let taffy = self.taffy();
         let node = self.state().borrow().node;
-        let layout = *taffy.borrow().layout(node).ok()?;
-
-        Some(layout)
+        taffy.borrow().layout(node).ok().copied()
     }
 
     /// Returns true if the computed style for this view is marked as hidden by setting in this view, or any parent, `Hidden` to true. For hiding views, you should prefer to set `Hidden` to true rather than using `Display::None` as checking for `Hidden` is cheaper, more correct, and used for optimizations in Floem
@@ -320,6 +496,17 @@ impl ViewId {
         let state = self.state();
         let state = state.borrow();
         state.computed_style.get(Hidden) || state.computed_style.get(DisplayProp) == Display::None
+    }
+
+    /// if the view has pointer events none
+    pub fn pointer_events_none(&self) -> bool {
+        let state = self.state();
+        let state = state.borrow();
+        state
+            .computed_style
+            .get(PointerEventsProp)
+            .map(|p| p == PointerEvents::None)
+            .unwrap_or(false)
     }
 
     /// Returns true if the view is disabled
@@ -362,7 +549,7 @@ impl ViewId {
 
     /// Request that this view have it's layout pass run
     pub fn request_layout(&self) {
-        self.request_changes(ChangeFlags::LAYOUT)
+        self.add_update_message(UpdateMessage::RequestLayout)
     }
 
     /// Get the window id of the window containing this view, if there is one.
@@ -482,10 +669,15 @@ impl ViewId {
         });
     }
 
-    /// `viewport` is relative to the `id` view.
-    pub(crate) fn set_viewport(&self, viewport: Rect) {
+    /// Set a scroll offset that will affect children.
+    /// If you have a view that visually affects how far children should scroll, set it here.
+    pub fn set_scroll_offset(&self, scroll_offset: Vec2) {
         let state = self.state();
-        state.borrow_mut().viewport = Some(viewport);
+        let mut state = state.borrow_mut();
+        if state.scroll_offset != scroll_offset {
+            state.scroll_offset = scroll_offset;
+            self.request_layout();
+        }
     }
 
     /// Add an callback on an action for a given `EventListener`
@@ -549,27 +741,6 @@ impl ViewId {
         }
     }
 
-    pub(crate) fn apply_event(
-        &self,
-        listener: &EventListener,
-        event: &crate::event::Event,
-    ) -> Option<EventPropagation> {
-        let mut handled = false;
-        let event_listeners = self.state().borrow().event_listeners.clone();
-        if let Some(handlers) = event_listeners.get(listener) {
-            for handler in handlers {
-                handled |= (handler.borrow_mut())(event).is_processed();
-            }
-        } else {
-            return None;
-        }
-        if handled {
-            Some(EventPropagation::Stop)
-        } else {
-            Some(EventPropagation::Continue)
-        }
-    }
-
     /// Disables the default view behavior for the specified event.
     ///
     /// Children will still see the event, but the view event function will not be called nor the event listeners on the view
@@ -612,5 +783,20 @@ impl ViewId {
     /// Get a layout in screen-coordinates for this view, if possible.
     pub fn screen_layout(&self) -> Option<ScreenLayout> {
         crate::screen_layout::try_create_screen_layout(self)
+    }
+
+    /// get the understory box node associated with this View
+    pub fn box_node(&self) -> understory_box_tree::NodeId {
+        VIEW_STORAGE.with_borrow_mut(|s| s.state(*self).borrow().box_node)
+    }
+
+    /// get the world transform from the box tree for this view.
+    /// Returns none if the node is dirty
+    pub fn world_transform(&self) -> Option<Affine> {
+        let node_id = self.box_node();
+        VIEW_STORAGE.with_borrow(|s| {
+            let box_tree = s.box_tree.borrow();
+            box_tree.world_transform(node_id)
+        })
     }
 }

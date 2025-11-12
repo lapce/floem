@@ -1,4 +1,5 @@
 use std::{
+    any::Any,
     collections::HashSet,
     hash::{DefaultHasher, Hash, Hasher},
     marker::PhantomData,
@@ -10,16 +11,15 @@ use floem_reactive::{
     Effect, ReadSignal, RwSignal, Scope, SignalGet, SignalTrack, SignalUpdate, SignalWith,
     WriteSignal,
 };
-use peniko::kurbo::{Rect, Size};
+use peniko::kurbo::Rect;
 use smallvec::SmallVec;
-use taffy::{FlexDirection, style::Dimension, tree::NodeId};
+use taffy::{FlexDirection, tree::NodeId};
 
 use crate::{
-    context::ComputeLayoutCx,
     id::ViewId,
     prop_extractor,
-    style::{FlexDirectionProp, Style},
-    view::{self, IntoView, View},
+    style::FlexDirectionProp,
+    view::{IntoView, View},
 };
 
 use super::{Diff, DiffOpAdd, FxIndexSet, HashRun, apply_diff, diff};
@@ -433,97 +433,109 @@ impl<T> View for VirtualStack<T> {
         }
     }
 
-    fn view_style(&self) -> Option<crate::style::Style> {
-        let style = match self.direction.get_untracked() {
-            // using min width and height because we strongly assume that these are respected
-            FlexDirection::Column | FlexDirection::ColumnReverse => {
-                Style::new().min_height(self.content_size)
-            }
-            FlexDirection::Row | FlexDirection::RowReverse => {
-                Style::new().min_width(self.content_size)
-            }
-        };
-        Some(style)
+    // fn taffy_layout(&mut self, cx: &mut crate::context::BoxLayoutCx) -> taffy::tree::NodeId {
+    //     let node = cx.layout(self.id(), true, |cx| {
+    //         let mut content_nodes = self
+    //             .id
+    //             .children()
+    //             .into_iter()
+    //             .map(|id| id.view().borrow_mut().taffy_layout(cx))
+    //             .collect::<Vec<_>>();
+
+    //         if self.before_node.is_none() {
+    //             self.before_node = Some(
+    //                 self.id
+    //                     .taffy()
+    //                     .borrow_mut()
+    //                     .new_leaf(taffy::style::Style::DEFAULT)
+    //                     .unwrap(),
+    //             );
+    //         }
+    //         let before_node = self.before_node.unwrap();
+    //         let _ = self.id.taffy().borrow_mut().set_style(
+    //             before_node,
+    //             taffy::style::Style {
+    //                 size: match self.direction.get_untracked() {
+    //                     FlexDirection::Column | FlexDirection::ColumnReverse => {
+    //                         taffy::prelude::Size {
+    //                             width: Dimension::auto(),
+    //                             height: Dimension::length(self.before_size as f32),
+    //                         }
+    //                     }
+    //                     FlexDirection::Row | FlexDirection::RowReverse => taffy::prelude::Size {
+    //                         width: Dimension::length(self.before_size as f32),
+    //                         height: Dimension::auto(),
+    //                     },
+    //                 },
+    //                 ..Default::default()
+    //             },
+    //         );
+    //         self.first_content_id = self.id.children().first().copied();
+    //         let mut nodes = vec![before_node];
+    //         nodes.append(&mut content_nodes);
+    //         nodes
+    //     });
+    //     let taffy = self.id.taffy();
+    //     let mut taffy = taffy.borrow_mut();
+    //     if let Ok(mut node_style) = taffy.style(node).cloned() {
+    //         let mut min_size = node_style.min_size;
+    //         match self.direction.get_untracked() {
+    //             FlexDirection::Column | FlexDirection::ColumnReverse => {
+    //                 min_size.height = taffy::Dimension::length(self.content_size as f32);
+    //             }
+    //             FlexDirection::Row | FlexDirection::RowReverse => {
+    //                 min_size.width = taffy::Dimension::length(self.content_size as f32);
+    //             }
+    //         }
+    //         node_style.min_size = min_size;
+    //         taffy.set_style(node, node_style);
+    //     }
+    //     node
+    // }
+
+    // fn compute_layout(&mut self, cx: &mut ComputeLayoutCx<'_>) -> Option<Rect> {
+    //     self.id.get_taffy_layout().unwrap().content_size
+    //     let viewport = cx.current_viewport();
+    //     if self.viewport != viewport {
+    //         self.viewport = viewport;
+    //         self.set_viewport.set(viewport);
+    //     }
+
+    //     let layout = cx.layout_view(self.id);
+
+    //     let new_size = self.item_size.with(|s| match s {
+    //         VirtualItemSize::Assume(None) => {
+    //             if let Some(first_content) = self.first_content_id {
+    //                 let taffy_layout = first_content.get_taffy_layout()?;
+    //                 let size = taffy_layout.size;
+    //                 if size.width == 0. || size.height == 0. {
+    //                     return None;
+    //                 }
+    //                 let rect = Size::new(size.width as f64, size.height as f64).to_rect();
+    //                 let relevant_size = match self.direction.get_untracked() {
+    //                     FlexDirection::Column | FlexDirection::ColumnReverse => rect.height(),
+    //                     FlexDirection::Row | FlexDirection::RowReverse => rect.width(),
+    //                 };
+    //                 Some(relevant_size)
+    //             } else {
+    //                 None
+    //             }
+    //         }
+    //         _ => None,
+    //     });
+    //     if let Some(new_size) = new_size {
+    //         self.item_size.set(VirtualItemSize::Assume(Some(new_size)));
+    //     }
+
+    //     layout
+    // }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 
-    fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::tree::NodeId {
-        cx.layout_node(self.id(), true, |cx| {
-            let mut content_nodes = self
-                .id
-                .children()
-                .into_iter()
-                .map(|id| id.view().borrow_mut().layout(cx))
-                .collect::<Vec<_>>();
-
-            if self.before_node.is_none() {
-                self.before_node = Some(
-                    self.id
-                        .taffy()
-                        .borrow_mut()
-                        .new_leaf(taffy::style::Style::DEFAULT)
-                        .unwrap(),
-                );
-            }
-            let before_node = self.before_node.unwrap();
-            let _ = self.id.taffy().borrow_mut().set_style(
-                before_node,
-                taffy::style::Style {
-                    size: match self.direction.get_untracked() {
-                        FlexDirection::Column | FlexDirection::ColumnReverse => {
-                            taffy::prelude::Size {
-                                width: Dimension::auto(),
-                                height: Dimension::length(self.before_size as f32),
-                            }
-                        }
-                        FlexDirection::Row | FlexDirection::RowReverse => taffy::prelude::Size {
-                            width: Dimension::length(self.before_size as f32),
-                            height: Dimension::auto(),
-                        },
-                    },
-                    ..Default::default()
-                },
-            );
-            self.first_content_id = self.id.children().first().copied();
-            let mut nodes = vec![before_node];
-            nodes.append(&mut content_nodes);
-            nodes
-        })
-    }
-
-    fn compute_layout(&mut self, cx: &mut ComputeLayoutCx<'_>) -> Option<Rect> {
-        let viewport = cx.current_viewport();
-        if self.viewport != viewport {
-            self.viewport = viewport;
-            self.set_viewport.set(viewport);
-        }
-
-        let layout = view::default_compute_layout(self.id, cx);
-
-        let new_size = self.item_size.with(|s| match s {
-            VirtualItemSize::Assume(None) => {
-                if let Some(first_content) = self.first_content_id {
-                    let taffy_layout = first_content.get_layout()?;
-                    let size = taffy_layout.size;
-                    if size.width == 0. || size.height == 0. {
-                        return None;
-                    }
-                    let rect = Size::new(size.width as f64, size.height as f64).to_rect();
-                    let relevant_size = match self.direction.get_untracked() {
-                        FlexDirection::Column | FlexDirection::ColumnReverse => rect.height(),
-                        FlexDirection::Row | FlexDirection::RowReverse => rect.width(),
-                    };
-                    Some(relevant_size)
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        });
-        if let Some(new_size) = new_size {
-            self.item_size.set(VirtualItemSize::Assume(Some(new_size)));
-        }
-
-        layout
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 

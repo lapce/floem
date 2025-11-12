@@ -1,5 +1,5 @@
 use crate::app::{AppUpdateEvent, add_app_update_event};
-use crate::event::{Event, EventListener, EventPropagation};
+use crate::event::{Event, EventListener};
 use crate::inspector::data::{CapturedData, CapturedDatas};
 use crate::inspector::{
     CAPTURE, Capture, CaptureView, RUNNING, add_event, find_view, header, selected_view, stats,
@@ -10,7 +10,7 @@ use crate::prelude::{
     tab, text, text_input, v_stack, virtual_stack,
 };
 use crate::profiler::profiler;
-use crate::style::{FontSize, OverflowX, OverflowY, TextColor};
+use crate::style::{CustomStylable, FontSize, OverflowX, OverflowY, TextColor};
 use crate::theme::StyleThemeExt as _;
 use crate::unit::PxPctAuto;
 use crate::views::{
@@ -25,6 +25,7 @@ use peniko::color::palette;
 use std::rc::Rc;
 use ui_events::keyboard::{self, KeyState, KeyboardEvent, NamedKey};
 use ui_events::pointer::{PointerButtonEvent, PointerEvent, PointerUpdate};
+use understory_responder::types::Outcome;
 use winit::window::WindowId;
 
 pub fn capture(window_id: WindowId) {
@@ -38,7 +39,7 @@ pub fn capture(window_id: WindowId) {
                 let tab_item = |name, index| {
                     text(name)
                         .class(TabSelectorClass)
-                        .on_click_stop(move |_| selected.set(index))
+                        .on_click_stop(move |_, _| selected.set(index))
                         .style(move |s| s.set_selected(selected.get() == index))
                 };
 
@@ -75,18 +76,18 @@ pub fn capture(window_id: WindowId) {
                 let id = stack.id();
                 stack
                     .style(|s| s.width_full().height_full())
-                    .on_event(EventListener::KeyUp, move |e| {
+                    .on_event(EventListener::KeyUp, move |_v, e| {
                         if let Event::Key(e) = e {
                             if e.key == keyboard::Key::Named(NamedKey::F11) && e.modifiers.shift() {
                                 id.inspect();
-                                return EventPropagation::Stop;
+                                return Outcome::Stop;
                             }
                         }
-                        EventPropagation::Continue
+                        Outcome::Continue
                     })
-                    .on_event(EventListener::WindowClosed, |_| {
+                    .on_event(EventListener::WindowClosed, |_, _| {
                         RUNNING.set(false);
-                        EventPropagation::Continue
+                        Outcome::Continue
                     })
             },
             Some(WindowConfig::default().size((1200.0, 800.0))),
@@ -119,8 +120,6 @@ fn inspector_view(
                 .class(scroll::Handle, |s| {
                     s.border_radius(4.0)
                         .background(Color::from_rgba8(166, 166, 166, 140))
-                        .set(scroll::Thickness, 16.0)
-                        .set(scroll::Rounded, false)
                         .active(|s| s.background(Color::from_rgb8(166, 166, 166)))
                         .hover(|s| s.background(Color::from_rgb8(184, 184, 184)))
                 })
@@ -177,7 +176,7 @@ fn capture_view(
             .focusable(true)
     })
     .on_event_stop(EventListener::KeyUp, {
-        move |event: &Event| {
+        move |_v, event: &Event| {
             if let Event::Key(KeyboardEvent {
                 state: KeyState::Up,
                 key,
@@ -218,7 +217,7 @@ fn capture_view(
     })
     .on_event_stop(EventListener::PointerUp, {
         let capture_ = capture_.clone();
-        move |event: &Event| {
+        move |_v, event: &Event| {
             if let Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. })) = event {
                 let find_ids = capture_
                     .root
@@ -241,7 +240,7 @@ fn capture_view(
         }
     })
     .on_event_stop(EventListener::PointerMove, {
-        move |event: &Event| {
+        move |_v, event: &Event| {
             if let Event::Pointer(PointerEvent::Move(PointerUpdate { current: state, .. })) = event
             {
                 let find_ids = capture_
@@ -269,7 +268,7 @@ fn capture_view(
             }
         }
     })
-    .on_event_cont(EventListener::PointerLeave, move |_| {
+    .on_event_cont(EventListener::PointerLeave, move |_, _| {
         capture_view.highlighted.set(None)
     });
 
@@ -322,7 +321,7 @@ fn capture_view(
 
     let image = stack((image, selected_overlay, highlighted_overlay));
 
-    let recapture = button("Recapture").on_click_stop(move |_| {
+    let recapture = button("Recapture").on_click_stop(move |_v, _| {
         add_app_update_event(AppUpdateEvent::CaptureWindow {
             window_id,
             capture: capture_s.write_only(),
@@ -354,7 +353,7 @@ fn capture_view(
             }
             .style(|s| s.width_full())
             .scroll()
-            .scroll_style(|s| s.handle_thickness(6.).shrink_to_fit())
+            .custom_style(|s| s.shrink_to_fit())
             .style(|s| {
                 s.set(OverflowX, taffy::Overflow::Visible)
                     .set(OverflowY, taffy::Overflow::Scroll)
@@ -377,14 +376,14 @@ fn capture_view(
                         .margin_left(PxPctAuto::Auto)
                 })
                 .class(TabSelectorClass)
-                .on_click_stop(move |_| active_tab.set(0)),
+                .on_click_stop(move |_, _| active_tab.set(0)),
             "stats"
                 .style(move |s| {
                     s.apply_if(active_tab.get() == 1, |s| s.set_selected(true))
                         .margin_right(PxPctAuto::Auto)
                 })
                 .class(TabSelectorClass)
-                .on_click_stop(move |_| active_tab.set(1)),
+                .on_click_stop(move |_, _| active_tab.set(1)),
         ))
         .style(|s| s.items_end().gap(10).padding_top(5)),
         tab,
@@ -408,7 +407,7 @@ fn capture_view(
     let search = text_input(search_str)
         .style(|s| s.width_full())
         .placeholder("View Search...")
-        .on_event_stop(EventListener::KeyUp, move |event: &Event| {
+        .on_event_stop(EventListener::KeyUp, move |_v, event: &Event| {
             if let Event::Key(KeyboardEvent { key, .. }) = event {
                 match key {
                     keyboard::Key::Named(NamedKey::ArrowUp) => {
@@ -496,11 +495,11 @@ fn view_tree(
     })
     .scroll()
     .style(|s| s.flex_grow(1.0))
-    .scroll_style(|s| s.shrink_to_fit())
-    .on_event_cont(EventListener::PointerLeave, move |_| {
+    .custom_style(|s| s.shrink_to_fit())
+    .on_event_cont(EventListener::PointerLeave, move |_v, _| {
         capture_signal_clone.highlighted.set(None)
     })
-    .on_click_stop(move |_| capture_signal_clone.selected.set(None))
+    .on_click_stop(move |_v, _| capture_signal_clone.selected.set(None))
     .scroll_to(move || {
         let focus_line = focus_line.get();
         Some((0.0, focus_line as f64 * 20.0).into())
@@ -543,8 +542,8 @@ fn tree_node(
                     // }
                 })
         })
-        .on_click_stop(move |_| selected.set(Some(id)))
-        .on_event_cont(EventListener::PointerEnter, move |_| {
+        .on_click_stop(move |_, _| selected.set(Some(id)))
+        .on_event_cont(EventListener::PointerEnter, move |_, _| {
             highlighted.set(Some(id))
         });
     let row = add_event(
@@ -636,7 +635,7 @@ fn tree_node_name(view: &CapturedData, marge_left: f64) -> impl IntoView {
             }
             None => s.width(12.0).height(12.0).margin_right(4.0),
         })
-        .on_click_stop(move |_| {
+        .on_click_stop(move |_, _| {
             if let Some(expanded) = ty {
                 expanded.set(!expanded.get_untracked());
             }

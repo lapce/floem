@@ -9,16 +9,18 @@ use crate::{
     responsive::ScreenSizeBp,
     style::{
         Background, BorderColorProp, BorderRadiusProp, BoxShadowProp, LayoutProps, Outline,
-        OutlineColor, Style, StyleClassRef, StyleSelectors, resolve_nested_maps,
+        OutlineColor, Style, StyleClassRef, StyleSelectors, TransformProps, resolve_nested_maps,
     },
+    view_storage::NodeContext,
 };
 use bitflags::bitflags;
 use imbl::HashSet;
-use peniko::kurbo::{Affine, Point, Rect};
+use peniko::kurbo::{Affine, Point, Rect, Vec2};
 use smallvec::SmallVec;
 use std::{cell::RefCell, collections::HashMap, marker::PhantomData, rc::Rc};
 use taffy::tree::NodeId;
 use ui_events::pointer::PointerState;
+use understory_box_tree::LocalNode;
 
 /// A stack of view attributes. Each entry is associated with a view decorator call.
 #[derive(Debug)]
@@ -103,8 +105,7 @@ bitflags! {
     #[must_use]
     pub(crate) struct ChangeFlags: u8 {
         const STYLE = 1;
-        const LAYOUT = 1 << 1;
-        const VIEW_STYLE = 1 << 2;
+        const VIEW_STYLE = 1 << 1;
     }
 }
 
@@ -171,6 +172,7 @@ impl IsHiddenState {
 /// View state stores internal state associated with a view which is owned and managed by Floem.
 pub struct ViewState {
     pub(crate) node: NodeId,
+    pub(crate) box_node: understory_box_tree::NodeId,
     pub(crate) requested_changes: ChangeFlags,
     pub(crate) style: Stack<Style>,
     /// We store the stack offset to the view style to keep the api consistent but it should
@@ -179,10 +181,10 @@ pub struct ViewState {
     /// Layout is requested on all direct and indirect children.
     pub(crate) request_style_recursive: bool,
     pub(crate) has_style_selectors: StyleSelectors,
-    pub(crate) viewport: Option<Rect>,
-    pub(crate) layout_rect: Rect,
+    pub(crate) scroll_offset: Vec2,
     pub(crate) layout_props: LayoutProps,
     pub(crate) view_style_props: ViewStyleProps,
+    pub(crate) view_transform_props: TransformProps,
     pub(crate) animations: Stack<Animation>,
     pub(crate) classes: Vec<StyleClassRef>,
     pub(crate) dragging_style: Option<Style>,
@@ -195,10 +197,8 @@ pub struct ViewState {
     pub(crate) context_menu: Option<Rc<MenuCallback>>,
     pub(crate) popout_menu: Option<Rc<MenuCallback>>,
     pub(crate) resize_listeners: Rc<RefCell<ResizeListeners>>,
-    pub(crate) window_origin: Point,
     pub(crate) move_listeners: Rc<RefCell<MoveListeners>>,
     pub(crate) cleanup_listeners: Rc<RefCell<CleanupListeners>>,
-    pub(crate) last_pointer_down: Option<PointerState>,
     pub(crate) is_hidden_state: IsHiddenState,
     pub(crate) num_waiting_animations: u16,
     pub(crate) disable_default_events: HashSet<EventListener>,
@@ -207,19 +207,23 @@ pub struct ViewState {
 }
 
 impl ViewState {
-    pub(crate) fn new(taffy: &mut taffy::TaffyTree) -> Self {
+    pub(crate) fn new(
+        taffy: &mut taffy::TaffyTree<NodeContext>,
+        under_tree: &mut understory_box_tree::Tree,
+    ) -> Self {
         let mut style = Stack::<Style>::default();
         let view_style_offset = style.next_offset();
         style.push(Style::new());
 
         Self {
             node: taffy.new_leaf(taffy::style::Style::DEFAULT).unwrap(),
-            viewport: None,
+            box_node: under_tree.insert(None, LocalNode::default()),
             style,
             view_style_offset,
-            layout_rect: Rect::ZERO,
+            scroll_offset: Default::default(),
             layout_props: Default::default(),
             view_style_props: Default::default(),
+            view_transform_props: Default::default(),
             requested_changes: ChangeFlags::all(),
             request_style_recursive: false,
             has_style_selectors: StyleSelectors::default(),
@@ -235,8 +239,6 @@ impl ViewState {
             resize_listeners: Default::default(),
             move_listeners: Default::default(),
             cleanup_listeners: Default::default(),
-            last_pointer_down: None,
-            window_origin: Point::ZERO,
             is_hidden_state: IsHiddenState::None,
             num_waiting_animations: 0,
             disable_default_events: HashSet::new(),

@@ -208,7 +208,7 @@ impl StylePropValue for DesignSystem {
                 .to_string()
                 .style(|s| s.font_size(14.0).font_weight(Weight::SEMIBOLD)),
         ))
-        .on_click_stop(move |_| {
+        .on_click_stop(move |_, _| {
             is_expanded.update(|v| *v = !*v);
         })
         .style(|s| {
@@ -597,11 +597,8 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
         .class(TabSelectorClass, |_| tab_selector_style)
         .custom_style_class(|s: scroll::ScrollCustomStyle| {
             s.handle_border_radius(4.0)
-                .handle_thickness(16.0)
                 .handle_rounded(false)
-                .apply_if(cfg!(target_os = "macos"), |s| {
-                    s.handle_rounded(true).handle_thickness(10)
-                })
+                .apply_if(cfg!(target_os = "macos"), |s| s.handle_rounded(true))
         })
         .class(scroll::Handle, |s| {
             s.with_theme(|s, t| {

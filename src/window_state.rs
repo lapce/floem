@@ -1,44 +1,51 @@
 use std::collections::{HashMap, HashSet};
 
 use muda::MenuId;
-use peniko::kurbo::{Point, Size};
-use taffy::{AvailableSpace, NodeId};
+use peniko::kurbo::{Affine, Point, Rect, Size, Vec2};
+use taffy::{AvailableSpace, Display, NodeId};
+use understory_box_tree::{ClipBehavior, Hit, LocalNode, NodeFlags};
+use understory_responder::{
+    adapters::box_tree::PathAwareClickState, click::ClickState, focus::FocusState,
+    hover::HoverState,
+};
 use winit::cursor::CursorIcon;
 use winit::window::Theme;
 
 use crate::{
+    action::add_update_message,
     context::{DragState, FrameUpdate},
     event::{Event, EventListener},
     id::ViewId,
     inspector::CaptureState,
     responsive::{GridBreakpoints, ScreenSizeBp},
-    style::{CursorStyle, StyleSelector},
+    style::{
+        CursorStyle, DisplayProp, Focusable, Hidden, PointerEvents, PointerEventsProp,
+        StyleSelector, ZIndex,
+    },
     view_storage::VIEW_STORAGE,
 };
 
 /// Encapsulates and owns the global state of the application,
 pub struct WindowState {
-    /// keyboard focus
-    pub(crate) focus: Option<ViewId>,
-    pub(crate) prev_focus: Option<ViewId>,
     /// when a view is active, it gets mouse event even when the mouse is
     /// not on it
-    pub(crate) active: Option<ViewId>,
+    pub(crate) active: Option<understory_box_tree::NodeId>,
     pub(crate) root_view_id: ViewId,
     pub(crate) root: Option<NodeId>,
     pub(crate) root_size: Size,
     pub(crate) scale: f64,
     pub(crate) scheduled_updates: Vec<FrameUpdate>,
-    pub(crate) request_compute_layout: bool,
     pub(crate) request_paint: bool,
+    pub(crate) request_layout: bool,
     pub(crate) dragging: Option<DragState>,
     pub(crate) drag_start: Option<(ViewId, Point)>,
     pub(crate) dragging_over: HashSet<ViewId>,
     pub(crate) screen_size_bp: ScreenSizeBp,
     pub(crate) grid_bps: GridBreakpoints,
-    pub(crate) clicking: HashSet<ViewId>,
-    pub(crate) hovered: HashSet<ViewId>,
-    pub(crate) focusable: HashSet<ViewId>,
+    pub(crate) hover_state: HoverState<understory_box_tree::NodeId>,
+    pub(crate) click_state: PathAwareClickState,
+    pub(crate) focus_state: FocusState<understory_box_tree::NodeId>,
+    pub(crate) focusable: HashSet<understory_box_tree::NodeId>,
     pub(crate) file_hovered: HashSet<ViewId>,
     // whether the window is in light or dark mode
     pub(crate) light_dark_theme: winit::window::Theme,
@@ -61,20 +68,19 @@ impl WindowState {
         Self {
             root: None,
             root_view_id,
-            focus: None,
-            prev_focus: None,
             active: None,
             scale: 1.0,
             root_size: Size::ZERO,
             screen_size_bp: ScreenSizeBp::Xs,
             scheduled_updates: Vec::new(),
-            request_paint: false,
-            request_compute_layout: false,
+            request_paint: true,
+            request_layout: true,
             dragging: None,
             drag_start: None,
             dragging_over: HashSet::new(),
-            clicking: HashSet::new(),
-            hovered: HashSet::new(),
+            hover_state: HoverState::new(),
+            click_state: PathAwareClickState::default(),
+            focus_state: FocusState::new(),
             focusable: HashSet::new(),
             file_hovered: HashSet::new(),
             theme_overriden: false,
@@ -120,37 +126,34 @@ impl WindowState {
         let _ = taffy.remove(node);
         id.remove();
         self.dragging_over.remove(&id);
-        self.clicking.remove(&id);
-        self.hovered.remove(&id);
         self.file_hovered.remove(&id);
-        self.clicking.remove(&id);
-        self.focusable.remove(&id);
-        if self.focus == Some(id) {
-            self.focus = None;
-        }
-        if self.prev_focus == Some(id) {
-            self.prev_focus = None;
-        }
+        self.focusable.remove(&id.box_node());
 
-        if self.active == Some(id) {
+        if self.active == Some(id.box_node()) {
             self.active = None;
         }
     }
 
     pub fn is_hovered(&self, id: &ViewId) -> bool {
-        self.hovered.contains(id)
+        self.hover_state.current_path().contains(&id.box_node())
     }
 
     pub fn is_focused(&self, id: &ViewId) -> bool {
-        self.focus.map(|f| &f == id).unwrap_or(false)
+        self.focus_state
+            .current_path()
+            .last()
+            .map(|f| *f == id.box_node())
+            .unwrap_or(false)
     }
 
     pub fn is_active(&self, id: &ViewId) -> bool {
-        self.active.map(|a| &a == id).unwrap_or(false)
+        self.active.map(|a| a == id.box_node()).unwrap_or(false)
     }
 
     pub fn is_clicking(&self, id: &ViewId) -> bool {
-        self.clicking.contains(id)
+        let node = id.box_node();
+
+        self.click_state.is_clicking(&node)
     }
 
     pub fn is_dark_mode(&self) -> bool {
@@ -170,18 +173,36 @@ impl WindowState {
 
     pub fn set_root_size(&mut self, size: Size) {
         self.root_size = size;
-        self.compute_layout();
+        self.compute_taffy();
     }
 
-    pub fn compute_layout(&mut self) {
+    pub fn compute_taffy(&mut self) {
         if let Some(root) = self.root {
-            let _ = self.root_view_id.taffy().borrow_mut().compute_layout(
-                root,
-                taffy::prelude::Size {
-                    width: AvailableSpace::Definite((self.root_size.width / self.scale) as f32),
-                    height: AvailableSpace::Definite((self.root_size.height / self.scale) as f32),
-                },
-            );
+            let _ = self
+                .root_view_id
+                .taffy()
+                .borrow_mut()
+                .compute_layout_with_measure(
+                    root,
+                    taffy::prelude::Size {
+                        width: AvailableSpace::Definite((self.root_size.width / self.scale) as f32),
+                        height: AvailableSpace::Definite(
+                            (self.root_size.height / self.scale) as f32,
+                        ),
+                    },
+                    |known_dimensions, available_space, node_id, node_context, style| {
+                        match node_context {
+                            Some(crate::view_storage::NodeContext::None) => taffy::Size::ZERO,
+                            Some(crate::view_storage::NodeContext::Custom(c)) => {
+                                c(known_dimensions, available_space, node_id, style)
+                            }
+                            None => taffy::Size::ZERO,
+                        }
+                    },
+                );
+
+            compute_absolute_transforms_and_boxes(root, Affine::IDENTITY, None);
+            let _damage = VIEW_STORAGE.with_borrow(|s| s.box_tree.borrow_mut().commit());
         }
     }
 
@@ -193,19 +214,15 @@ impl WindowState {
 
     /// Requests that the layout pass will run for `id` on the next frame, and ensures new frame is
     /// scheduled to happen.
-    pub fn schedule_layout(&mut self, id: ViewId) {
-        self.scheduled_updates.push(FrameUpdate::Layout(id));
+    pub fn schedule_layout(&mut self) {
+        add_update_message(crate::update::UpdateMessage::RequestPaint);
+        self.scheduled_updates.push(FrameUpdate::Layout);
     }
 
     /// Requests that the paint pass will run for `id` on the next frame, and ensures new frame is
     /// scheduled to happen.
     pub fn schedule_paint(&mut self, id: ViewId) {
         self.scheduled_updates.push(FrameUpdate::Paint(id));
-    }
-
-    /// Requests that `compute_layout` will run for `_id` and all direct and indirect children.
-    pub fn request_compute_layout_recursive(&mut self, _id: ViewId) {
-        self.request_compute_layout = true;
     }
 
     // `Id` is unused currently, but could be used to calculate damage regions.
@@ -219,48 +236,21 @@ impl WindowState {
             // don't do anything.
             return;
         }
-        self.active = Some(id);
+        self.active = Some(id.box_node());
 
         // To apply the styles of the Active selector
-        if self.has_style_for_sel(id, StyleSelector::Active) {
+        if self.has_style_for_sel(id, StyleSelector::Clicking) {
             id.request_style();
         }
+    }
+
+    pub fn clear_focus(&mut self) {
+        self.focus_state.clear();
     }
 
     pub(crate) fn update_screen_size_bp(&mut self, size: Size) {
         let bp = self.grid_bps.get_width_bp(size.width);
         self.screen_size_bp = bp;
-    }
-
-    pub(crate) fn clear_focus(&mut self) {
-        if let Some(old_id) = self.focus {
-            // To remove the styles applied by the Focus selector
-            if self.has_style_for_sel(old_id, StyleSelector::Focus)
-                || self.has_style_for_sel(old_id, StyleSelector::FocusVisible)
-            {
-                old_id.request_style();
-            }
-        }
-
-        if self.focus.is_some() {
-            self.prev_focus = self.focus;
-        }
-        self.focus = None;
-    }
-
-    pub(crate) fn update_focus(&mut self, id: ViewId, keyboard_navigation: bool) {
-        if self.focus.is_some() {
-            return;
-        }
-
-        self.focus = Some(id);
-        self.keyboard_navigation = keyboard_navigation;
-
-        if self.has_style_for_sel(id, StyleSelector::Focus)
-            || self.has_style_for_sel(id, StyleSelector::FocusVisible)
-        {
-            id.request_style();
-        }
     }
 
     pub(crate) fn has_style_for_sel(&mut self, id: ViewId, selector_kind: StyleSelector) -> bool {
@@ -276,27 +266,123 @@ impl WindowState {
     ) {
         self.context_menu = actions;
     }
+}
 
-    pub(crate) fn focus_changed(&mut self, old: Option<ViewId>, new: Option<ViewId>) {
-        if let Some(old_id) = old {
-            // To remove the styles applied by the Focus selector
-            if self.has_style_for_sel(old_id, StyleSelector::Focus)
-                || self.has_style_for_sel(old_id, StyleSelector::FocusVisible)
-            {
-                old_id.request_style_recursive();
-            }
-            old_id.apply_event(&EventListener::FocusLost, &Event::FocusLost);
-        }
+fn compute_absolute_transforms_and_boxes(
+    node: NodeId,
+    parent_transform_for_children: Affine, // What my parent wants MY children to see
+    parent_box_node: Option<understory_box_tree::NodeId>,
+) {
+    VIEW_STORAGE.with_borrow(|s| {
+        let taffy = s.taffy.borrow();
+        let layout = taffy.layout(node).unwrap();
 
-        if let Some(id) = new {
-            // To apply the styles of the Focus selector
-            if self.has_style_for_sel(id, StyleSelector::Focus)
-                || self.has_style_for_sel(id, StyleSelector::FocusVisible)
-            {
-                id.request_style_recursive();
+        let local_pos = Point::new(layout.location.x as f64, layout.location.y as f64);
+        let size = Size::new(layout.size.width as f64, layout.size.height as f64);
+
+        let (view_id, local_transform, scroll_offset) =
+            if let Some(&view_id) = s.node_to_view.get(&node) {
+                let state = s.states.get(view_id);
+                let transform = state
+                    .as_ref()
+                    .map(|s| s.borrow().view_transform_props.affine(layout))
+                    .unwrap_or_default();
+                let scroll = state
+                    .as_ref()
+                    .map(|s| s.borrow().scroll_offset)
+                    .unwrap_or_default();
+                (Some(view_id), transform, scroll)
+            } else {
+                (None, Affine::IDENTITY, Vec2::ZERO)
+            };
+
+        let local_transform = local_transform
+            * parent_transform_for_children
+            * Affine::translate(local_pos.to_vec2());
+
+        // What this views children should use as their parent transform (includes scroll )
+        let children_parent_transform = Affine::translate(-scroll_offset);
+
+        let current_box_node = if let Some(view_id) = view_id {
+            let local_rect = Rect::from_origin_size(Point::ZERO, size);
+
+            let style = s
+                .states
+                .get(view_id)
+                .map(|s| s.borrow().combined_style.clone())
+                .unwrap_or_default();
+            let z_index = style.get(ZIndex).unwrap_or(0);
+
+            let hidden = style.get(Hidden);
+            let display_none = style.get(DisplayProp) == Display::None;
+
+            let flags = if hidden || display_none {
+                NodeFlags::empty()
+            } else {
+                let pickable = s
+                    .states
+                    .get(view_id)
+                    .map(|s| {
+                        s.borrow().computed_style.get(PointerEventsProp)
+                            != Some(PointerEvents::None)
+                    })
+                    .unwrap_or(true);
+                let focusable = s
+                    .states
+                    .get(view_id)
+                    .map(|s| s.borrow().computed_style.get(Focusable))
+                    .unwrap_or(false);
+
+                let mut flags = NodeFlags::VISIBLE;
+                if pickable {
+                    flags |= NodeFlags::PICKABLE;
+                }
+                if focusable {
+                    flags |= NodeFlags::FOCUSABLE;
+                }
+                flags
+            };
+
+            // Insert or update in box tree
+            let box_node_opt = s.states.get(view_id).map(|s| s.borrow().box_node);
+            let box_node_id = if let Some(box_node_id) = box_node_opt {
+                s.box_tree
+                    .borrow_mut()
+                    .set_local_bounds(box_node_id, local_rect);
+                s.box_tree
+                    .borrow_mut()
+                    .set_local_transform(box_node_id, local_transform);
+                s.box_tree.borrow_mut().set_z_index(box_node_id, z_index); // TODO: do in style pass
+                s.box_tree.borrow_mut().set_flags(box_node_id, flags);
+                box_node_id
+            } else {
+                let local_node = LocalNode {
+                    local_bounds: local_rect,
+                    local_transform,
+                    local_clip: None, // TODO: Add clip support if needed
+                    clip_behavior: ClipBehavior::default(),
+                    z_index,
+                    flags,
+                };
+                let box_node_id = s.box_tree.borrow_mut().insert(parent_box_node, local_node);
+                s.box_node_to_view.borrow_mut().insert(box_node_id, view_id);
+                box_node_id
+            };
+
+            Some(box_node_id)
+        } else {
+            parent_box_node
+        };
+
+        // Traverse children with the current box node as their parent
+        if let Ok(children) = taffy.children(node) {
+            for &child in &children {
+                compute_absolute_transforms_and_boxes(
+                    child,
+                    children_parent_transform, // They pass this to THEIR children
+                    current_box_node,
+                );
             }
-            id.apply_event(&EventListener::FocusGained, &Event::FocusGained);
-            id.scroll_to(None);
         }
-    }
+    });
 }

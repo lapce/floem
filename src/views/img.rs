@@ -1,6 +1,6 @@
 //! Module defining image view and its properties: style, position and fit.
 #![deny(missing_docs)]
-use std::{path::PathBuf, sync::Arc};
+use std::{any::Any, path::PathBuf, sync::Arc};
 
 use floem_reactive::Effect;
 use peniko::{Blob, ImageAlphaType, ImageData};
@@ -236,38 +236,38 @@ impl View for Img {
         }
     }
 
-    fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::tree::NodeId {
-        cx.layout_node(self.id(), true, |_cx| {
-            if self.content_node.is_none() {
-                self.content_node = Some(
-                    self.id
-                        .taffy()
-                        .borrow_mut()
-                        .new_leaf(taffy::style::Style::DEFAULT)
-                        .unwrap(),
-                );
-            }
-            let content_node = self.content_node.unwrap();
+    // fn taffy_layout(&mut self, cx: &mut crate::context::BoxLayoutCx) -> taffy::tree::NodeId {
+    //     cx.layout(self.id(), true, |_cx| {
+    //         if self.content_node.is_none() {
+    //             self.content_node = Some(
+    //                 self.id
+    //                     .taffy()
+    //                     .borrow_mut()
+    //                     .new_leaf(taffy::style::Style::DEFAULT)
+    //                     .unwrap(),
+    //             );
+    //         }
+    //         let content_node = self.content_node.unwrap();
 
-            let (width, height) = self
-                .img
-                .as_ref()
-                .map(|img| (img.image.width, img.image.height))
-                .unwrap_or((0, 0));
+    //         let (width, height) = self
+    //             .img
+    //             .as_ref()
+    //             .map(|img| (img.image.width, img.image.height))
+    //             .unwrap_or((0, 0));
 
-            let style = Style::new()
-                .width((width as f64).px())
-                .height((height as f64).px())
-                .to_taffy_style();
-            let _ = self.id.taffy().borrow_mut().set_style(content_node, style);
+    //         let style = Style::new()
+    //             .width((width as f64).px())
+    //             .height((height as f64).px())
+    //             .to_taffy_style();
+    //         let _ = self.id.taffy().borrow_mut().set_style(content_node, style);
 
-            vec![content_node]
-        })
-    }
+    //         vec![content_node]
+    //     })
+    // }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         if let Some(ref img) = self.img {
-            let rect = self.id.get_content_rect();
+            let rect = self.id.content_rect();
             cx.draw_img(
                 floem_renderer::Img {
                     img: img.clone(),
@@ -276,5 +276,13 @@ impl View for Img {
                 rect,
             );
         }
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }

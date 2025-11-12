@@ -3,9 +3,11 @@ use ui_events::{
     ScrollDelta,
     keyboard::{Code, KeyState, KeyboardEvent},
     pointer::{
-        PointerButtonEvent, PointerEvent, PointerGestureEvent, PointerScrollEvent, PointerUpdate,
+        PointerButton, PointerButtonEvent, PointerEvent, PointerGestureEvent, PointerInfo,
+        PointerScrollEvent, PointerState, PointerUpdate,
     },
 };
+use understory_responder::types::Outcome;
 use winit::window::Theme;
 
 use crate::dropped_file::{self, FileDragEvent};
@@ -30,6 +32,22 @@ impl EventPropagation {
 
     pub fn is_processed(&self) -> bool {
         matches!(self, EventPropagation::Stop)
+    }
+}
+impl From<Outcome> for EventPropagation {
+    fn from(value: Outcome) -> Self {
+        match value {
+            Outcome::Continue => Self::Continue,
+            Outcome::Stop => Self::Stop,
+        }
+    }
+}
+impl From<EventPropagation> for Outcome {
+    fn from(value: EventPropagation) -> Self {
+        match value {
+            EventPropagation::Continue => Self::Continue,
+            EventPropagation::Stop => Self::Stop,
+        }
     }
 }
 
@@ -84,6 +102,10 @@ pub enum EventListener {
     FocusGained,
     /// Receives [`Event::FocusLost`]
     FocusLost,
+    ///
+    FocusEnteredSubtree,
+    ///
+    FocusLeftSubtree,
     /// Receives [`Event::ThemeChanged`]
     ThemeChanged,
     /// Receives [`Event::WindowClosed`]
@@ -126,6 +148,7 @@ pub enum Event {
     FocusGained,
     FocusLost,
     WindowScaleChanged(f64),
+    Click(Option<Point>),
 }
 
 impl Event {
@@ -176,6 +199,7 @@ impl Event {
             | Event::ImeDisabled
             | Event::ImePreedit { .. }
             | Event::ImeCommit(_)
+            | Event::Click(_)
             | Event::FileDrag(
                 FileDragEvent::DragEntered { .. }
                 | FileDragEvent::DragMoved { .. }
@@ -207,6 +231,7 @@ impl Event {
             | Event::Pointer(PointerEvent::Scroll(PointerScrollEvent { state, .. })) => {
                 Some(state.logical_point())
             }
+            Self::Click(point) => *point,
             Event::FileDrag(
                 FileDragEvent::DragEntered {
                     position,
@@ -253,6 +278,10 @@ impl Event {
                     .to_physical(state.scale_factor);
                 state.position = phys_pos;
             }
+            Event::Click(Some(point)) => {
+                let transformed_point = transform.inverse() * *point;
+                self = Event::Click(Some(transformed_point));
+            }
             Event::FileDrag(
                 FileDragEvent::DragEntered {
                     position,
@@ -286,6 +315,7 @@ impl Event {
             )
             | Event::FileDrag(FileDragEvent::DragLeft { position: None, .. })
             | Event::Key(_)
+            | Event::Click(None)
             | Event::FocusGained
             | Event::FocusLost
             | Event::ImeEnabled
@@ -322,6 +352,7 @@ impl Event {
                 state: KeyState::Up,
                 ..
             }) => Some(EventListener::KeyUp),
+            Event::Click(_) => Some(EventListener::Click),
             Event::ImeEnabled => Some(EventListener::ImeEnabled),
             Event::ImeDisabled => Some(EventListener::ImeDisabled),
             Event::ImePreedit { .. } => Some(EventListener::ImePreedit),
@@ -339,5 +370,125 @@ impl Event {
             Event::FileDrag(FileDragEvent::DragDropped { .. }) => Some(EventListener::DroppedFiles),
             _ => None, // TODO
         }
+    }
+
+    /// Returns true if this event should be routed spatially (via hit testing)
+    pub fn is_spatial(&self) -> bool {
+        self.point().is_some()
+    }
+
+    /// Returns true if this event should be directed to a specific view (like focused view)
+    pub fn is_directed(&self) -> bool {
+        self.needs_focus()
+    }
+
+    /// Returns true if this event should be broadcast to all views
+    pub fn is_broadcast(&self) -> bool {
+        matches!(
+            self,
+            Event::WindowResized(_)
+                | Event::WindowMoved(_)
+                | Event::WindowMaximizeChanged(_)
+                | Event::WindowScaleChanged(_)
+                | Event::WindowGotFocus
+                | Event::WindowLostFocus
+                | Event::WindowClosed
+                | Event::ThemeChanged(_)
+        )
+    }
+
+    /// Returns true if this event type should update responsive styles
+    pub fn triggers_responsive_style(&self) -> bool {
+        matches!(self, Event::WindowResized(_))
+    }
+
+    /// Returns true if this is a pointer event that should update hover state
+    pub fn updates_hover(&self) -> bool {
+        matches!(self, Event::Pointer(PointerEvent::Move(_)))
+    }
+
+    /// Returns true if this is a potential click (pointer down)
+    pub fn is_click_start(&self) -> bool {
+        matches!(
+            self,
+            Event::Pointer(PointerEvent::Down(PointerButtonEvent {
+                button: None | Some(PointerButton::Primary),
+                ..
+            }))
+        )
+    }
+
+    /// Returns true if this is a potential click end (pointer up)
+    pub fn is_click_end(&self) -> bool {
+        matches!(
+            self,
+            Event::Pointer(PointerEvent::Up(PointerButtonEvent {
+                button: None | Some(PointerButton::Primary),
+                ..
+            }))
+        )
+    }
+
+    /// Returns true if this is a secondary (right) click
+    pub fn is_secondary_click(&self) -> bool {
+        matches!(
+            self,
+            Event::Pointer(
+                PointerEvent::Down(PointerButtonEvent {
+                    button: Some(PointerButton::Secondary),
+                    ..
+                }) | PointerEvent::Up(PointerButtonEvent {
+                    button: Some(PointerButton::Secondary),
+                    ..
+                })
+            )
+        )
+    }
+
+    /// Returns the pointer state if this is a pointer event
+    pub fn pointer_state(&self) -> Option<&PointerState> {
+        match self {
+            Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. }))
+            | Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. }))
+            | Event::Pointer(PointerEvent::Move(PointerUpdate { current: state, .. }))
+            | Event::Pointer(PointerEvent::Scroll(PointerScrollEvent { state, .. })) => Some(state),
+            _ => None,
+        }
+    }
+
+    /// Returns the click count if this is a pointer down/up event
+    pub fn click_count(&self) -> Option<u8> {
+        match self {
+            Event::Pointer(
+                PointerEvent::Down(PointerButtonEvent { state, .. })
+                | PointerEvent::Up(PointerButtonEvent { state, .. }),
+            ) => Some(state.count),
+            _ => None,
+        }
+    }
+
+    /// Returns true if this is a double-click event
+    pub fn is_double_click(&self) -> bool {
+        self.click_count() == Some(2)
+    }
+
+    /// Returns the primary pointer for this event
+    pub fn primary_pointer(&self) -> Option<&PointerInfo> {
+        match self {
+            Event::Pointer(
+                PointerEvent::Down(PointerButtonEvent { pointer, .. })
+                | PointerEvent::Up(PointerButtonEvent { pointer, .. })
+                | PointerEvent::Move(PointerUpdate { pointer, .. })
+                | PointerEvent::Scroll(PointerScrollEvent { pointer, .. }),
+            ) => Some(pointer),
+            _ => None,
+        }
+    }
+
+    /// Returns true if this event has a primary pointer
+    pub fn is_primary_pointer(&self) -> bool {
+        self.primary_pointer()
+            .map(|p| p.is_primary_pointer())
+            .unwrap_or(false)
     }
 }

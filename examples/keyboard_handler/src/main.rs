@@ -17,7 +17,7 @@ fn app_view() -> impl IntoView {
                 .justify_center()
                 .focusable(true) // Focusable is needed for a view to be able to receive keyboard events
         });
-    view.on_event_stop(EventListener::KeyDown, move |e| {
+    view.on_event_stop(EventListener::KeyDown, move |_v, e| {
         if let Event::Key(KeyboardEvent {
             state: KeyState::Down,
             code,

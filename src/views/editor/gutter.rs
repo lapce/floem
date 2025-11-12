@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use crate::{
     Renderer,
     context::PaintCx,
@@ -79,54 +81,54 @@ impl View for EditorGutterView {
         }
     }
 
-    fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::NodeId {
-        cx.layout_node(self.id(), true, |_cx| {
-            let (width, height) = (self.text_width, 10.0);
-            let layout_node = self
-                .id
-                .taffy()
-                .borrow_mut()
-                .new_leaf(taffy::style::Style::DEFAULT)
-                .unwrap();
+    // fn taffy_layout(&mut self, cx: &mut crate::context::BoxLayoutCx) -> taffy::prelude::NodeId {
+    //     cx.layout(self.id(), true, |_cx| {
+    //         let (width, height) = (self.text_width, 10.0);
+    //         let layout_node = self
+    //             .id
+    //             .taffy()
+    //             .borrow_mut()
+    //             .new_leaf(taffy::style::Style::DEFAULT)
+    //             .unwrap();
 
-            let style = Style::new()
-                .width(self.gutter_style.left_padding() + width + self.gutter_style.right_padding())
-                .height(height)
-                .to_taffy_style();
-            let _ = self.id.taffy().borrow_mut().set_style(layout_node, style);
-            vec![layout_node]
-        })
-    }
+    //         let style = Style::new()
+    //             .width(self.gutter_style.left_padding() + width + self.gutter_style.right_padding())
+    //             .height(height)
+    //             .to_taffy_style();
+    //         let _ = self.id.taffy().borrow_mut().set_style(layout_node, style);
+    //         vec![layout_node]
+    //     })
+    // }
 
-    fn compute_layout(&mut self, _cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
-        if let Some(width) = self.id.get_layout().map(|l| l.size.width as f64) {
-            self.full_width = width;
-        }
+    // fn compute_layout(&mut self, _cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
+    //     if let Some(width) = self.id.get_taffy_layout().map(|l| l.size.width as f64) {
+    //         self.full_width = width;
+    //     }
 
-        let editor = self.editor.get_untracked();
-        let edid = editor.id();
-        let style = editor.style();
-        // TODO: don't assume font family is constant for each line
-        let family = style.font_family(edid, 0);
-        let attrs = Attrs::new()
-            .family(&family)
-            .font_size(style.font_size(edid, 0) as f32);
+    //     let editor = self.editor.get_untracked();
+    //     let edid = editor.id();
+    //     let style = editor.style();
+    //     // TODO: don't assume font family is constant for each line
+    //     let family = style.font_family(edid, 0);
+    //     let attrs = Attrs::new()
+    //         .family(&family)
+    //         .font_size(style.font_size(edid, 0) as f32);
 
-        let attrs_list = AttrsList::new(attrs);
+    //     let attrs_list = AttrsList::new(attrs);
 
-        let widest_text_width = self.compute_widest_text_width(&attrs_list);
-        if (self.full_width
-            - widest_text_width
-            - self.gutter_style.left_padding()
-            - self.gutter_style.right_padding())
-        .abs()
-            > 1e-2
-        {
-            self.text_width = widest_text_width;
-            self.id.request_layout();
-        }
-        None
-    }
+    //     let widest_text_width = self.compute_widest_text_width(&attrs_list);
+    //     if (self.full_width
+    //         - widest_text_width
+    //         - self.gutter_style.left_padding()
+    //         - self.gutter_style.right_padding())
+    //     .abs()
+    //         > 1e-2
+    //     {
+    //         self.text_width = widest_text_width;
+    //         self.id.request_layout();
+    //     }
+    //     None
+    // }
 
     fn paint(&mut self, cx: &mut PaintCx) {
         let editor = self.editor.get_untracked();
@@ -223,6 +225,14 @@ impl View for EditorGutterView {
                 cx.draw_text(&text_layout, pos);
             }
         });
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 

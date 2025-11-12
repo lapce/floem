@@ -13,7 +13,7 @@ pub fn virtual_stack_view() -> impl IntoView {
     let virtual_stack = VirtualStack::new(move || long_list.get())
         .style(|s| s.flex_col().width_full())
         .scroll()
-        .style(|s| s.width(100).height(200).border(1));
+        .style(|s| s.flex_grow(1.).height(200).border(1));
 
     (button, virtual_stack)
         .h_stack()

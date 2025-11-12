@@ -1,4 +1,6 @@
 #![deny(missing_docs)]
+use std::any::Any;
+
 use crate::{IntoView, View, ViewId, style_class, views::Decorators};
 
 style_class!(
@@ -44,6 +46,14 @@ pub struct Button {
 impl View for Button {
     fn id(&self) -> ViewId {
         self.id
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 

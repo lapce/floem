@@ -46,16 +46,21 @@
 use floem_reactive::{ReadSignal, RwSignal, SignalGet};
 use peniko::kurbo::*;
 use std::any::Any;
-use taffy::tree::NodeId;
+use understory_box_tree::{NodeId, QueryFilter};
+use understory_responder::{
+    adapters::box_tree::navigation::{next_depth_first_filtered, prev_depth_first_filtered},
+    types::{Outcome, Phase},
+};
 
 use crate::{
     Renderer,
-    context::{ComputeLayoutCx, EventCx, LayoutCx, PaintCx, StyleCx, UpdateCx},
+    context::{EventCx, PaintCx, StyleCx, UpdateCx},
     event::{Event, EventPropagation},
     id::ViewId,
     style::{LayoutProps, Style, StyleClassRef},
     unit::PxPct,
     view_state::ViewStyleProps,
+    view_storage::VIEW_STORAGE,
     views::{DynamicView, dyn_view},
     window_state::WindowState,
 };
@@ -195,21 +200,6 @@ impl<IV: IntoView + 'static> IntoView for Vec<IV> {
     }
 }
 
-/// Default implementation of `View::layout()` which can be used by
-/// view implementations that need the default behavior and also need
-/// to implement that method to do additional work.
-pub fn recursively_layout_view(id: ViewId, cx: &mut LayoutCx) -> NodeId {
-    cx.layout_node(id, true, |cx| {
-        let mut nodes = Vec::new();
-        for child in id.children() {
-            let view = child.view();
-            let mut view = view.borrow_mut();
-            nodes.push(view.layout(cx));
-        }
-        nodes
-    })
-}
-
 /// The View trait contains the methods for implementing updates, styling, layout, events, and painting.
 ///
 /// The [`id`](View::id) method must be implemented.
@@ -296,36 +286,8 @@ pub trait View {
         }
     }
 
-    /// Use this method to layout the view's children.
-    /// Usually you'll do this by calling [`LayoutCx::layout_node`].
-    ///
-    /// If the layout changes needs other passes to run you're expected to call
-    /// `cx.window_state_mut().request_changes`.
-    fn layout(&mut self, cx: &mut LayoutCx) -> NodeId {
-        recursively_layout_view(self.id(), cx)
-    }
-
-    /// Responsible for computing the layout of the view's children.
-    ///
-    /// If the layout changes needs other passes to run you're expected to call
-    /// `cx.window_state_mut().request_changes`.
-    fn compute_layout(&mut self, cx: &mut ComputeLayoutCx) -> Option<Rect> {
-        default_compute_layout(self.id(), cx)
-    }
-
-    fn event_before_children(&mut self, cx: &mut EventCx, event: &Event) -> EventPropagation {
-        // these are here to just ignore these arguments in the default case
-        let _ = cx;
-        let _ = event;
-
-        EventPropagation::Continue
-    }
-
-    fn event_after_children(&mut self, cx: &mut EventCx, event: &Event) -> EventPropagation {
-        // these are here to just ignore these arguments in the default case
-        let _ = cx;
-        let _ = event;
-
+    fn event(&mut self, cx: &mut EventCx, event: &Event, phase: Phase) -> EventPropagation {
+        let _ = (cx, event, phase);
         EventPropagation::Continue
     }
 
@@ -349,6 +311,10 @@ pub trait View {
         }
         found
     }
+
+    fn as_any(&self) -> &dyn Any;
+
+    fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
 impl View for Box<dyn View> {
@@ -376,20 +342,8 @@ impl View for Box<dyn View> {
         (**self).style_pass(cx)
     }
 
-    fn layout(&mut self, cx: &mut LayoutCx) -> NodeId {
-        (**self).layout(cx)
-    }
-
-    fn event_before_children(&mut self, cx: &mut EventCx, event: &Event) -> EventPropagation {
-        (**self).event_before_children(cx, event)
-    }
-
-    fn event_after_children(&mut self, cx: &mut EventCx, event: &Event) -> EventPropagation {
-        (**self).event_after_children(cx, event)
-    }
-
-    fn compute_layout(&mut self, cx: &mut ComputeLayoutCx) -> Option<Rect> {
-        (**self).compute_layout(cx)
+    fn event(&mut self, cx: &mut EventCx, event: &Event, phase: Phase) -> EventPropagation {
+        (**self).event(cx, event, phase)
     }
 
     fn paint(&mut self, cx: &mut PaintCx) {
@@ -399,24 +353,14 @@ impl View for Box<dyn View> {
     fn scroll_to(&mut self, cx: &mut WindowState, target: ViewId, rect: Option<Rect>) -> bool {
         (**self).scroll_to(cx, target, rect)
     }
-}
 
-/// Computes the layout of the view's children, if any.
-pub fn default_compute_layout(id: ViewId, cx: &mut ComputeLayoutCx) -> Option<Rect> {
-    let mut layout_rect: Option<Rect> = None;
-    for child in id.children() {
-        if !child.is_hidden() {
-            let child_layout = cx.compute_view_layout(child);
-            if let Some(child_layout) = child_layout {
-                if let Some(rect) = layout_rect {
-                    layout_rect = Some(rect.union(child_layout));
-                } else {
-                    layout_rect = Some(child_layout);
-                }
-            }
-        }
+    fn as_any(&self) -> &dyn Any {
+        (**self).as_any()
     }
-    layout_rect
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        (**self).as_any_mut()
+    }
 }
 
 pub(crate) fn border_radius(radius: crate::unit::PxPct, size: f64) -> f64 {
@@ -784,99 +728,6 @@ pub(crate) fn paint_border(
         }
     }
     assert!(current_path.is_empty());
-}
-
-/// Tab navigation finds the next or previous view with the `keyboard_navigatable` status in the tree.
-pub(crate) fn view_tab_navigation(
-    root_view: ViewId,
-    window_state: &mut WindowState,
-    backwards: bool,
-) {
-    let start = window_state
-        .focus
-        .unwrap_or(window_state.prev_focus.unwrap_or(root_view));
-
-    let tree_iter = |id: ViewId| {
-        if backwards {
-            view_tree_previous(root_view, id).unwrap_or_else(|| view_nested_last_child(root_view))
-        } else {
-            view_tree_next(id).unwrap_or(root_view)
-        }
-    };
-
-    let mut new_focus = tree_iter(start);
-    while new_focus != start && !window_state.focusable.contains(&new_focus) {
-        new_focus = tree_iter(new_focus);
-    }
-
-    window_state.clear_focus();
-    window_state.update_focus(new_focus, true);
-}
-
-/// Get the next item in the tree, either the first child or the next sibling of this view or of the first parent view
-fn view_tree_next(id: ViewId) -> Option<ViewId> {
-    if let Some(child) = id.children().into_iter().next() {
-        return Some(child);
-    }
-
-    let mut ancestor = id;
-    loop {
-        if let Some(next_sibling) = view_next_sibling(ancestor) {
-            return Some(next_sibling);
-        }
-        ancestor = ancestor.parent()?;
-    }
-}
-
-/// Get the id of the view after this one (but with the same parent and level of nesting)
-fn view_next_sibling(id: ViewId) -> Option<ViewId> {
-    let parent = id.parent();
-
-    let Some(parent) = parent else {
-        // We're the root, which has no sibling
-        return None;
-    };
-
-    let children = parent.children();
-    //TODO: Log a warning if the child isn't found. This shouldn't happen (error in floem if it does), but this shouldn't panic if that does happen
-    let pos = children.iter().position(|v| v == &id)?;
-
-    if pos + 1 < children.len() {
-        Some(children[pos + 1])
-    } else {
-        None
-    }
-}
-
-/// Get the next item in the tree, the deepest last child of the previous sibling of this view or the parent
-fn view_tree_previous(root_view: ViewId, id: ViewId) -> Option<ViewId> {
-    view_previous_sibling(id)
-        .map(view_nested_last_child)
-        .or_else(|| {
-            (root_view != id).then_some(
-                id.parent()
-                    .unwrap_or_else(|| view_nested_last_child(root_view)),
-            )
-        })
-}
-
-/// Get the id of the view before this one (but with the same parent and level of nesting)
-fn view_previous_sibling(id: ViewId) -> Option<ViewId> {
-    let parent = id.parent();
-
-    let Some(parent) = parent else {
-        // We're the root, which has no sibling
-        return None;
-    };
-
-    let children = parent.children();
-    let pos = children.iter().position(|v| v == &id).unwrap();
-
-    if pos > 0 {
-        Some(children[pos - 1])
-    } else {
-        None
-    }
 }
 
 fn view_nested_last_child(view: ViewId) -> ViewId {

@@ -235,7 +235,7 @@ fn find_window_origin(view: &ViewId) -> Point {
 }
 
 fn recursively_find_window_origin(view: ViewId, point: &mut Point) {
-    if let Some(layout) = view.get_layout() {
+    if let Some(layout) = view.layout() {
         point.x += layout.location.x as f64;
         point.y += layout.location.y as f64;
         if let Some(parent) = view.parent() {

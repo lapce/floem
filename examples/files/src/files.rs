@@ -10,7 +10,7 @@ use floem::{
 pub fn files_view() -> impl IntoView {
     let files = RwSignal::new(String::new());
     let view = h_stack((
-        button("Select file").on_click_cont(move |_| {
+        button("Select file").action(move || {
             open_file(
                 FileDialogOptions::new()
                     .force_starting_directory("/")
@@ -27,7 +27,7 @@ pub fn files_view() -> impl IntoView {
                 },
             );
         }),
-        button("Select multiple files").on_click_cont(move |_| {
+        button("Select multiple files").action(move || {
             open_file(
                 FileDialogOptions::new()
                     .multi_selection()
@@ -44,7 +44,7 @@ pub fn files_view() -> impl IntoView {
                 },
             );
         }),
-        button("Select folder").on_click_cont(move |_| {
+        button("Select folder").action(move || {
             open_file(
                 FileDialogOptions::new()
                     .select_directories()
@@ -57,7 +57,7 @@ pub fn files_view() -> impl IntoView {
                 },
             );
         }),
-        button("Select multiple folder").on_click_cont(move |_| {
+        button("Select multiple folder").action(move || {
             open_file(
                 FileDialogOptions::new()
                     .select_directories()
@@ -71,7 +71,7 @@ pub fn files_view() -> impl IntoView {
                 },
             );
         }),
-        button("Save file").on_click_cont(move |_| {
+        button("Save file").action(move || {
             save_as(
                 FileDialogOptions::new()
                     .default_name("floem.file")

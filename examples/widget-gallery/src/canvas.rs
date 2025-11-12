@@ -164,10 +164,10 @@ impl View for SatValuePicker {
         self.id
     }
 
-    fn compute_layout(&mut self, _cx: &mut floem::context::ComputeLayoutCx) -> Option<Rect> {
-        self.size = self.id.get_size().unwrap_or_default();
-        None
-    }
+    // fn compute_layout(&mut self, _cx: &mut floem::context::ComputeLayoutCx) -> Option<Rect> {
+    //     self.size = self.id.get_size().unwrap_or_default();
+    //     None
+    // }
 
     fn update(&mut self, _cx: &mut floem::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(color) = state.downcast::<Color>() {
@@ -291,10 +291,10 @@ impl View for HuePicker {
         self.id
     }
 
-    fn compute_layout(&mut self, _cx: &mut floem::context::ComputeLayoutCx) -> Option<Rect> {
-        self.size = self.id.get_size().unwrap_or_default();
-        None
-    }
+    // fn compute_layout(&mut self, _cx: &mut floem::context::ComputeLayoutCx) -> Option<Rect> {
+    //     self.size = self.id.get_size().unwrap_or_default();
+    //     None
+    // }
 
     fn update(&mut self, _cx: &mut floem::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(color) = state.downcast::<Color>() {
@@ -416,10 +416,10 @@ impl View for OpacityPicker {
         self.id
     }
 
-    fn compute_layout(&mut self, _cx: &mut floem::context::ComputeLayoutCx) -> Option<Rect> {
-        self.size = self.id.get_size().unwrap_or_default();
-        None
-    }
+    // fn compute_layout(&mut self, _cx: &mut floem::context::ComputeLayoutCx) -> Option<Rect> {
+    //     self.size = self.id.get_size().unwrap_or_default();
+    //     None
+    // }
 
     fn update(&mut self, _cx: &mut floem::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(color) = state.downcast::<Color>() {

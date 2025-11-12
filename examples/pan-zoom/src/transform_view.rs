@@ -110,7 +110,7 @@ impl View for TransformView {
 
     fn compute_layout(&mut self, cx: &mut ComputeLayoutCx) -> Option<kurbo::Rect> {
         self.update_size();
-        cx.compute_view_layout(self.child_id);
+        cx.layout_view(self.id);
         None
     }
 }

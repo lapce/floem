@@ -1,4 +1,4 @@
-use floem::prelude::*;
+use floem::{prelude::*, style::AnchorAbout};
 
 use crate::form::{form, form_item};
 
@@ -17,7 +17,10 @@ pub fn img_view() -> impl IntoView {
         ),
         form_item(
             "PNG(resized):",
-            img(move || ferris_png.to_vec()).style(|s| s.width(230.px()).height(153.px())),
+            img(move || ferris_png.to_vec()).style(|s| {
+                s.width(230.px()).height(153.px()).rotate(90.deg())
+                // .rotate_about(AnchorAbout::TOP_LEFT)
+            }),
         ),
         form_item(
             "SVG(from file):",

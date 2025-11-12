@@ -10,10 +10,12 @@ use floem_reactive::{Effect, RwSignal, Scope, SignalGet, SignalUpdate, UpdaterEf
 use imbl::OrdMap;
 use peniko::kurbo::{Point, Rect, Size};
 use ui_events::keyboard::{Key, NamedKey};
+use understory_responder::types::{Outcome, Phase};
 
 use crate::{
     AnyView,
     action::{add_overlay, remove_overlay},
+    context::EventCx,
     event::{Event, EventListener, EventPropagation},
     id::ViewId,
     prelude::ViewTuple,
@@ -21,7 +23,7 @@ use crate::{
     style::{CustomStylable, CustomStyle, Style, StyleClass, Width},
     style_class,
     unit::PxPctAuto,
-    view::{IntoView, View, default_compute_layout},
+    view::{IntoView, View},
     views::{ContainerExt, Decorators, ScrollExt, scroll, svg, text},
 };
 
@@ -209,11 +211,10 @@ impl<T: 'static + Clone + PartialEq> View for Dropdown<T> {
         }
     }
 
-    fn compute_layout(&mut self, cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
-        self.window_origin = Some(cx.window_origin);
-
-        default_compute_layout(self.id, cx)
-    }
+    // fn compute_layout(&mut self, cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
+    //     self.window_origin = Some(cx.window_origin);
+    //     cx.layout_children(self.id)
+    // }
 
     fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(state) = state.downcast::<Message>() {
@@ -251,11 +252,11 @@ impl<T: 'static + Clone + PartialEq> View for Dropdown<T> {
         }
     }
 
-    fn event_before_children(
-        &mut self,
-        _cx: &mut crate::context::EventCx,
-        event: &Event,
-    ) -> EventPropagation {
+    fn event(&mut self, _cx: &mut EventCx, event: &Event, phase: Phase) -> EventPropagation {
+        if phase != Phase::Bubble {
+            return EventPropagation::Continue;
+        }
+
         match event {
             e if e.is_pointer_down() => {
                 self.swap_state();
@@ -274,6 +275,14 @@ impl<T: 'static + Clone + PartialEq> View for Dropdown<T> {
         }
 
         EventPropagation::Continue
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 
@@ -378,10 +387,10 @@ impl<T: Clone + std::cmp::PartialEq> Dropdown<T> {
                         }
                     })
                     .style(|s| s.width_full())
-                    .on_event_stop(EventListener::FocusLost, move |_| {
+                    .on_event_stop(EventListener::FocusLost, move |_, _| {
                         dropdown_id.update_state(Message::ListFocusLost);
                     })
-                    .on_event_stop(EventListener::PointerMove, |_| {});
+                    .on_event_stop(EventListener::PointerMove, |_, _| {});
 
                 list.selection().set(active);
 
@@ -543,8 +552,8 @@ impl<T: Clone + std::cmp::PartialEq> Dropdown<T> {
     fn open_dropdown(&mut self, cx: &mut crate::context::UpdateCx) {
         if self.overlay_id.is_none() {
             self.id.request_layout();
-            cx.window_state.compute_layout();
-            if let Some(layout) = self.id.get_layout() {
+            cx.window_state.compute_taffy();
+            if let Some(layout) = self.id.layout() {
                 self.update_list_style(layout.size.width as f64);
                 let point =
                     self.window_origin.unwrap_or_default() + (0., layout.size.height as f64);
@@ -609,7 +618,7 @@ impl<T: Clone + std::cmp::PartialEq> Dropdown<T> {
             let list_id = list.id();
 
             let list = list.on_resize(move |rect| {
-                if let Some(parent_layout) = list_id.parent().and_then(|p| p.get_layout()) {
+                if let Some(parent_layout) = list_id.parent().and_then(|p| p.layout()) {
                     // resolve size of the scroll view if it wasn't squished
                     let margin = parent_layout.margin;
                     let padding = parent_layout.padding;

@@ -74,74 +74,74 @@ impl View for RichText {
         }
     }
 
-    fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::tree::NodeId {
-        cx.layout_node(self.id(), true, |_cx| {
-            let size = self.text_layout.size();
-            let width = size.width as f32;
-            let mut height = size.height as f32;
+    // fn taffy_layout(&mut self, cx: &mut crate::context::BoxLayoutCx) -> taffy::tree::NodeId {
+    //     cx.layout(self.id(), true, |_cx| {
+    //         let size = self.text_layout.size();
+    //         let width = size.width as f32;
+    //         let mut height = size.height as f32;
 
-            if let Some(t) = self.available_text_layout.as_ref() {
-                height = height.max(t.size().height as f32);
-            }
+    //         if let Some(t) = self.available_text_layout.as_ref() {
+    //             height = height.max(t.size().height as f32);
+    //         }
 
-            if self.text_node.is_none() {
-                self.text_node = Some(
-                    self.id
-                        .taffy()
-                        .borrow_mut()
-                        .new_leaf(taffy::style::Style::DEFAULT)
-                        .unwrap(),
-                );
-            }
-            let text_node = self.text_node.unwrap();
+    //         if self.text_node.is_none() {
+    //             self.text_node = Some(
+    //                 self.id
+    //                     .taffy()
+    //                     .borrow_mut()
+    //                     .new_leaf(taffy::style::Style::DEFAULT)
+    //                     .unwrap(),
+    //             );
+    //         }
+    //         let text_node = self.text_node.unwrap();
 
-            let style = Style::new().width(width).height(height).to_taffy_style();
-            let _ = self.id.taffy().borrow_mut().set_style(text_node, style);
-            vec![text_node]
-        })
-    }
+    //         let style = Style::new().width(width).height(height).to_taffy_style();
+    //         let _ = self.id.taffy().borrow_mut().set_style(text_node, style);
+    //         vec![text_node]
+    //     })
+    // }
 
-    fn compute_layout(&mut self, _cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
-        let layout = self.id.get_layout().unwrap_or_default();
-        let view_state = self.id.state();
-        let (padding_left, padding_right) = {
-            let view_state = view_state.borrow();
-            let style = view_state.combined_style.builtin();
-            let padding_left = match style.padding_left() {
-                PxPct::Px(padding) => padding as f32,
-                PxPct::Pct(pct) => pct as f32 * layout.size.width,
-            };
-            let padding_right = match style.padding_right() {
-                PxPct::Px(padding) => padding as f32,
-                PxPct::Pct(pct) => pct as f32 * layout.size.width,
-            };
-            self.text_overflow = style.text_overflow();
-            (padding_left, padding_right)
-        };
+    // fn compute_layout(&mut self, _cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
+    //     let layout = self.id.get_taffy_layout().unwrap_or_default();
+    //     let view_state = self.id.state();
+    //     let (padding_left, padding_right) = {
+    //         let view_state = view_state.borrow();
+    //         let style = view_state.combined_style.builtin();
+    //         let padding_left = match style.padding_left() {
+    //             PxPct::Px(padding) => padding as f32,
+    //             PxPct::Pct(pct) => pct as f32 * layout.size.width,
+    //         };
+    //         let padding_right = match style.padding_right() {
+    //             PxPct::Px(padding) => padding as f32,
+    //             PxPct::Pct(pct) => pct as f32 * layout.size.width,
+    //         };
+    //         self.text_overflow = style.text_overflow();
+    //         (padding_left, padding_right)
+    //     };
 
-        let padding = padding_left + padding_right;
-        let width = self.text_layout.size().width as f32;
-        let available_width = layout.size.width - padding;
-        if self.text_overflow == TextOverflow::Wrap {
-            if width > available_width {
-                if self.available_width != Some(available_width) {
-                    let mut text_layout = self.text_layout.clone();
-                    text_layout.set_size(available_width, f32::MAX);
-                    self.available_text_layout = Some(text_layout);
-                    self.available_width = Some(available_width);
-                    self.id.request_layout();
-                }
-            } else {
-                if self.available_text_layout.is_some() {
-                    self.id.request_layout();
-                }
-                self.available_text_layout = None;
-                self.available_width = None;
-            }
-        }
+    //     let padding = padding_left + padding_right;
+    //     let width = self.text_layout.size().width as f32;
+    //     let available_width = layout.size.width - padding;
+    //     if self.text_overflow == TextOverflow::Wrap {
+    //         if width > available_width {
+    //             if self.available_width != Some(available_width) {
+    //                 let mut text_layout = self.text_layout.clone();
+    //                 text_layout.set_size(available_width, f32::MAX);
+    //                 self.available_text_layout = Some(text_layout);
+    //                 self.available_width = Some(available_width);
+    //                 self.id.request_layout();
+    //             }
+    //         } else {
+    //             if self.available_text_layout.is_some() {
+    //                 self.id.request_layout();
+    //             }
+    //             self.available_text_layout = None;
+    //             self.available_width = None;
+    //         }
+    //     }
 
-        None
-    }
+    //     None
+    // }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         let text_node = self.text_node.unwrap();
@@ -159,6 +159,14 @@ impl View for RichText {
         } else {
             cx.draw_text(&self.text_layout, point);
         }
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 

@@ -1,23 +1,25 @@
 #![deny(missing_docs)]
 use peniko::kurbo::Point;
-use std::cell::RefCell;
 use std::rc::Rc;
+use std::{any::Any, cell::RefCell};
 use ui_events::pointer::PointerEvent;
+use understory_responder::types::{Outcome, Phase};
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Duration;
 #[cfg(target_arch = "wasm32")]
 use web_time::Duration;
 
-use crate::style::{Style, StyleClass as _};
-use crate::views::Decorators;
 use crate::{
     action::{TimerToken, add_overlay, exec_after, remove_overlay},
     context::{EventCx, UpdateCx},
     event::{Event, EventPropagation},
     id::ViewId,
-    prop, prop_extractor, style_class,
-    view::{IntoView, View, default_compute_layout},
+    prop, prop_extractor,
+    style::{Style, StyleClass as _},
+    style_class,
+    view::{IntoView, View},
+    views::Decorators,
 };
 
 style_class!(
@@ -121,7 +123,11 @@ impl View for Tooltip {
         }
     }
 
-    fn event_before_children(&mut self, cx: &mut EventCx, event: &Event) -> EventPropagation {
+    fn event(&mut self, cx: &mut EventCx, event: &Event, phase: Phase) -> EventPropagation {
+        if phase != Phase::Bubble {
+            return EventPropagation::Continue;
+        }
+
         match &event {
             Event::Pointer(PointerEvent::Move(pu)) => {
                 if self.overlay.borrow().is_none() && cx.window_state.dragging.is_none() {
@@ -143,12 +149,19 @@ impl View for Tooltip {
         EventPropagation::Continue
     }
 
-    fn compute_layout(
-        &mut self,
-        cx: &mut crate::context::ComputeLayoutCx,
-    ) -> Option<peniko::kurbo::Rect> {
-        self.window_origin = Some(cx.window_origin);
-        default_compute_layout(self.id, cx)
+    // fn compute_layout(
+    //     &mut self,
+    //     cx: &mut crate::context::ComputeLayoutCx,
+    // ) -> Option<peniko::kurbo::Rect> {
+    //     self.window_origin = Some(cx.window_origin);
+    //     cx.layout_view(self.id)
+    // }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 
@@ -214,25 +227,36 @@ impl View for ToolTipOverlay {
         )
     }
 
-    fn compute_layout(
-        &mut self,
-        cx: &mut crate::context::ComputeLayoutCx,
-    ) -> Option<peniko::kurbo::Rect> {
-        if let (Some(parent_size), Some(layout)) = (self.id.parent_size(), self.id.get_layout()) {
-            use crate::kurbo::Size;
+    // fn compute_layout(
+    //     &mut self,
+    //     cx: &mut crate::context::ComputeLayoutCx,
+    // ) -> Option<peniko::kurbo::Rect> {
+    //     let node = cx.layout_view(self.id);
+    //     if let (Some(parent_size), Some(layout)) =
+    //         (self.id.parent_size(), self.id.get_taffy_layout())
+    //     {
+    //         use crate::kurbo::Size;
 
-            let bottom_right = taffy::Size::from(layout.location) + layout.size;
-            let bottom_right = Size::new(bottom_right.width as _, bottom_right.height as _);
+    //         let bottom_right = taffy::Size::from(layout.location) + layout.size;
+    //         let bottom_right = Size::new(bottom_right.width as _, bottom_right.height as _);
 
-            let new_offset = (parent_size - bottom_right).min(Size::ZERO);
-            let new_offset = Point::new(new_offset.width, new_offset.height);
+    //         let new_offset = (parent_size - bottom_right).min(Size::ZERO);
+    //         let new_offset = Point::new(new_offset.width, new_offset.height);
 
-            if self.offset != new_offset {
-                self.offset = new_offset;
-                self.id().request_style();
-            }
-        }
+    //         if self.offset != new_offset {
+    //             self.offset = new_offset;
+    //             self.id().request_style();
+    //         }
+    //     }
 
-        default_compute_layout(self.id, cx)
+    //     node
+    // }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }

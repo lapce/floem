@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use floem_reactive::SignalTracker;
 use peniko::kurbo::Size;
 
@@ -55,13 +57,13 @@ impl View for Canvas {
         "Canvas".into()
     }
 
-    fn compute_layout(
-        &mut self,
-        _cx: &mut crate::context::ComputeLayoutCx,
-    ) -> Option<peniko::kurbo::Rect> {
-        self.size = self.id.get_size().unwrap_or_default();
-        None
-    }
+    // fn compute_layout(
+    //     &mut self,
+    //     _cx: &mut crate::context::ComputeLayoutCx,
+    // ) -> Option<peniko::kurbo::Rect> {
+    //     self.size = self.id.get_size().unwrap_or_default();
+    //     None
+    // }
 
     fn paint(&mut self, cx: &mut PaintCx) {
         let id = self.id;
@@ -77,5 +79,13 @@ impl View for Canvas {
         tracker.track(|| {
             paint(cx, self.size);
         });
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
