@@ -7,7 +7,6 @@
 use std::{any::Any, cell::RefCell, rc::Rc};
 
 use peniko::kurbo::{Insets, Point, Rect, Size};
-use slotmap::new_key_type;
 use taffy::{Display, Layout, NodeId, TaffyTree};
 use winit::window::WindowId;
 
@@ -26,11 +25,40 @@ use crate::{
     window_tracking::{is_known_root, window_id_for_root},
 };
 
-new_key_type! {
-    /// A small unique identifier for an instance of a [View](crate::View).
-    ///
-    /// This id is how you can access and modify a view, including accessing children views and updating state.
-   pub struct ViewId;
+#[allow(unused)]
+pub struct NotThreadSafe(*const ());
+
+/// A small unique identifier, and handle, for an instance of a [View](crate::View).
+///
+/// Through this handle, you can access the associated view [ViewState](crate::view_state::ViewState).
+/// You can also use this handle to access the children ViewId's which allows you access to their states.
+///
+/// This type is not thread safe and can only be used from the main thread.
+#[derive(Copy, Clone, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[repr(transparent)]
+pub struct ViewId(slotmap::KeyData, std::marker::PhantomData<NotThreadSafe>);
+impl std::fmt::Debug for ViewId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let debug_name = self.debug_name();
+        let mut start = f.debug_struct("ViewId");
+
+        if !debug_name.is_empty() {
+            start.field("id", &self.0).field("debug_name", &debug_name)
+        } else {
+            start.field("id", &self.0)
+        }
+        .finish()
+    }
+}
+impl slotmap::__impl::From<slotmap::KeyData> for ViewId {
+    fn from(k: slotmap::KeyData) -> Self {
+        ViewId(k, std::marker::PhantomData)
+    }
+}
+unsafe impl slotmap::Key for ViewId {
+    fn data(&self) -> slotmap::KeyData {
+        self.0
+    }
 }
 
 impl ViewId {
@@ -224,6 +252,31 @@ impl ViewId {
             }
             None
         })
+    }
+
+    /// Get the chain of debug names that have been applied to this view.
+    ///
+    /// This uses try_borrow on the view state so if the view state has already been borrowed when using this method, it won't crash and it will just return an empty string.
+    pub fn debug_name(&self) -> String {
+        let state_names = self
+            .state()
+            .try_borrow()
+            .ok()
+            .map(|state| state.debug_name.iter().rev().cloned().collect::<Vec<_>>())
+            .unwrap_or_default();
+
+        let view_name = self
+            .view()
+            .try_borrow()
+            .ok()
+            .map(|view| View::debug_name(view.as_ref()).to_string())
+            .unwrap_or_default();
+
+        state_names
+            .into_iter()
+            .chain(std::iter::once(view_name))
+            .collect::<Vec<_>>()
+            .join(" - ")
     }
 
     /// Get the computed rectangle that covers the area of this View
