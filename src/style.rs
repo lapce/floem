@@ -3522,9 +3522,20 @@ impl<T> From<T> for StyleValue<T> {
     }
 }
 
+/// Defines built-in style properties with optional builder methods.
+///
+/// Properties can be marked with flags in braces:
+/// - `nocb` (no callback/no chain builder) - no fluent builder method generated
+/// - `tr` (transition) - generates a `transition_property_name()` method
+///
+/// Examples: `{}`, `{nocb}`, `{tr}`, `{nocb, tr}`, `{tr, nocb}`
+///
+/// All properties get:
+/// - A getter method in `BuiltinStyle`
+/// - An `unset_property_name()` method
 macro_rules! define_builtin_props {
     (
-        $($type_name:ident $name:ident $($opt:ident)?:
+        $($type_name:ident $name:ident { $($flags:ident),* }:
             $typ:ty { $($options:tt)* } = $val:expr),*
         $(,)?
     ) => {
@@ -3533,10 +3544,15 @@ macro_rules! define_builtin_props {
         )*
         impl Style {
             $(
-                define_builtin_props!(decl: $type_name $name $($opt)?: $typ = $val);
+                define_builtin_props!(decl: $type_name $name { $($flags),* }: $typ = $val);
+            )*
+            $(
+                define_builtin_props!(unset: $type_name $name);
+            )*
+            $(
+                define_builtin_props!(transition: $type_name $name { $($flags),* });
             )*
         }
-
         impl BuiltinStyle<'_> {
             $(
                 pub fn $name(&self) -> $typ {
@@ -3545,12 +3561,52 @@ macro_rules! define_builtin_props {
             )*
         }
     };
-    (decl: $type_name:ident $name:ident nocb: $typ:ty = $val:expr) => {};
-    (decl: $type_name:ident $name:ident: $typ:ty = $val:expr) => {
+
+    // Check if nocb is present in flags
+    (decl: $type_name:ident $name:ident { $($flags:ident),* }: $typ:ty = $val:expr) => {
+        define_builtin_props!(@check_nocb $type_name $name [$($flags)*]: $typ);
+    };
+
+    // Helper: if nocb found, don't generate setter
+    (@check_nocb $type_name:ident $name:ident [nocb $($rest:ident)*]: $typ:ty) => {};
+    (@check_nocb $type_name:ident $name:ident [$first:ident $($rest:ident)*]: $typ:ty) => {
+        define_builtin_props!(@check_nocb $type_name $name [$($rest)*]: $typ);
+    };
+    (@check_nocb $type_name:ident $name:ident []: $typ:ty) => {
+        // No nocb found, generate the setter
         pub fn $name(self, v: impl Into<$typ>) -> Self {
             self.set($type_name, v.into())
         }
-    }
+    };
+
+    // Unset method - generated for all properties
+    (unset: $type_name:ident $name:ident) => {
+        paste::paste! {
+            pub fn [<unset_ $name>](self) -> Self {
+                self.set_style_value($type_name, $crate::style::StyleValue::Unset)
+            }
+        }
+    };
+
+    // Transition method - check if 'tr' is present in flags
+    (transition: $type_name:ident $name:ident { $($flags:ident),* }) => {
+        define_builtin_props!(@check_tr $type_name $name [$($flags)*]);
+    };
+
+    // Helper: if tr found, generate transition method
+    (@check_tr $type_name:ident $name:ident [tr $($rest:ident)*]) => {
+        paste::paste! {
+            pub fn [<transition_ $name>](self, transition: impl Into<Transition>) -> Self {
+                self.transition($type_name, transition.into())
+            }
+        }
+    };
+    (@check_tr $type_name:ident $name:ident [$first:ident $($rest:ident)*]) => {
+        define_builtin_props!(@check_tr $type_name $name [$($rest)*]);
+    };
+    (@check_tr $type_name:ident $name:ident []) => {
+        // No tr flag found, don't generate transition method
+    };
 }
 
 pub struct BuiltinStyle<'a> {
@@ -3558,76 +3614,76 @@ pub struct BuiltinStyle<'a> {
 }
 
 define_builtin_props!(
-    DisplayProp display: Display {} = Display::Flex,
-    PositionProp position: Position {} = Position::Relative,
-    Width width: PxPctAuto {} = PxPctAuto::Auto,
-    Height height: PxPctAuto {} = PxPctAuto::Auto,
-    MinWidth min_width: PxPctAuto {} = PxPctAuto::Auto,
-    MinHeight min_height: PxPctAuto {} = PxPctAuto::Auto,
-    MaxWidth max_width: PxPctAuto {} = PxPctAuto::Auto,
-    MaxHeight max_height: PxPctAuto {} = PxPctAuto::Auto,
-    FlexDirectionProp flex_direction: FlexDirection {} = FlexDirection::Row,
-    FlexWrapProp flex_wrap: FlexWrap {} = FlexWrap::NoWrap,
-    FlexGrow flex_grow: f32 {} = 0.0,
-    FlexShrink flex_shrink: f32 {} = 1.0,
-    FlexBasis flex_basis: PxPctAuto {} = PxPctAuto::Auto,
-    JustifyContentProp justify_content: Option<JustifyContent> {} = None,
-    JustifyItemsProp justify_items: Option<JustifyItems> {} = None,
-    BoxSizingProp box_sizing: Option<BoxSizing> {} = None,
-    JustifySelf justify_self: Option<AlignItems> {} = None,
-    AlignItemsProp align_items: Option<AlignItems> {} = None,
-    AlignContentProp align_content: Option<AlignContent> {} = None,
-    GridTemplateRows grid_template_rows: Vec<GridTemplateComponent<String>> {} = Vec::new(),
-    GridTemplateColumns grid_template_columns: Vec<GridTemplateComponent<String>> {} = Vec::new(),
-    GridAutoRows grid_auto_rows: Vec<MinMax<MinTrackSizingFunction, MaxTrackSizingFunction>> {} = Vec::new(),
-    GridAutoColumns grid_auto_columns: Vec<MinMax<MinTrackSizingFunction, MaxTrackSizingFunction>> {} = Vec::new(),
-    GridAutoFlow grid_auto_flow: taffy::GridAutoFlow {} = taffy::GridAutoFlow::Row,
-    GridRow grid_row: Line<GridPlacement> {} = Line::default(),
-    GridColumn grid_column: Line<GridPlacement> {} = Line::default(),
-    AlignSelf align_self: Option<AlignItems> {} = None,
-    OutlineColor outline_color: Brush {} = Brush::Solid(palette::css::TRANSPARENT),
-    Outline outline nocb: StrokeWrap {} = StrokeWrap::new(0.),
-    OutlineProgress outline_progress: Pct {} = Pct(100.),
-    BorderProgress border_progress: Pct {} = Pct(100.),
-    BorderProp border_combined nocb: Border {} = Border::default(),
-    BorderColorProp border_color_combined nocb: BorderColor {} = BorderColor::default(),
-    BorderRadiusProp border_radius_combined nocb: BorderRadius {} = BorderRadius::default(),
-    PaddingProp padding_combined nocb: Padding {} = Padding::default(),
-    MarginProp margin_combined nocb: Margin {} = Margin::default(),
-    InsetLeft inset_left: PxPctAuto {} = PxPctAuto::Auto,
-    InsetTop inset_top: PxPctAuto {} = PxPctAuto::Auto,
-    InsetRight inset_right: PxPctAuto {} = PxPctAuto::Auto,
-    InsetBottom inset_bottom: PxPctAuto {} = PxPctAuto::Auto,
-    PointerEventsProp pointer_events: Option<PointerEvents> { inherited } = None,
-    ZIndex z_index nocb: Option<i32> {} = None,
-    Cursor cursor nocb: Option<CursorStyle> {} = None,
-    TextColor color nocb: Option<Color> { inherited } = None,
-    Background background nocb: Option<Brush> {} = None,
-    Foreground foreground nocb: Option<Brush> {} = None,
-    BoxShadowProp box_shadow nocb: SmallVec<[BoxShadow; 3]> {} = SmallVec::new(),
-    FontSize font_size nocb: Option<f32> { inherited } = None,
-    FontFamily font_family nocb: Option<String> { inherited } = None,
-    FontWeight font_weight nocb: Option<Weight> { inherited } = None,
-    FontStyle font_style nocb: Option<crate::text::Style> { inherited } = None,
-    CursorColor cursor_color nocb: Brush {} = Brush::Solid(palette::css::BLACK.with_alpha(0.3)),
-    SelectionCornerRadius selection_corer_radius nocb: f64 {} = 1.,
-    Selectable selectable: bool { inherited } = true,
-    TextOverflowProp text_overflow: TextOverflow {} = TextOverflow::Wrap,
-    TextAlignProp text_align: Option<crate::text::Align> {} = None,
-    LineHeight line_height nocb: Option<LineHeightValue> { inherited } = None,
-    AspectRatio aspect_ratio: Option<f32> {} = None,
-    ColGap col_gap nocb: PxPct {} = PxPct::Px(0.),
-    RowGap row_gap nocb: PxPct {} = PxPct::Px(0.),
-    ScaleX scale_x: Pct {} = Pct(100.),
-    ScaleY scale_y: Pct {} = Pct(100.),
-    TranslateX translate_x: PxPct {} = PxPct::Px(0.),
-    TranslateY translate_y: PxPct {} = PxPct::Px(0.),
-    Rotation rotate: Px {} = Px(0.),
-    Selected set_selected: bool { inherited } = false,
-    Disabled set_disabled: bool { inherited } = false,
-    Hidden set_hidden: bool { inherited } = false,
-    Focusable focusable: bool { } = false,
-    Draggable draggable: bool { } = false,
+    DisplayProp display {}: Display {} = Display::Flex,
+    PositionProp position {}: Position {} = Position::Relative,
+    Width width {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    Height height {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    MinWidth min_width {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    MinHeight min_height {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    MaxWidth max_width {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    MaxHeight max_height {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    FlexDirectionProp flex_direction {}: FlexDirection {} = FlexDirection::Row,
+    FlexWrapProp flex_wrap {}: FlexWrap {} = FlexWrap::NoWrap,
+    FlexGrow flex_grow {}: f32 {} = 0.0,
+    FlexShrink flex_shrink {}: f32 {} = 1.0,
+    FlexBasis flex_basis {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    JustifyContentProp justify_content {}: Option<JustifyContent> {} = None,
+    JustifyItemsProp justify_items {}: Option<JustifyItems> {} = None,
+    BoxSizingProp box_sizing {}: Option<BoxSizing> {} = None,
+    JustifySelf justify_self {}: Option<AlignItems> {} = None,
+    AlignItemsProp align_items {}: Option<AlignItems> {} = None,
+    AlignContentProp align_content {}: Option<AlignContent> {} = None,
+    GridTemplateRows grid_template_rows {}: Vec<GridTemplateComponent<String>> {} = Vec::new(),
+    GridTemplateColumns grid_template_columns {}: Vec<GridTemplateComponent<String>> {} = Vec::new(),
+    GridAutoRows grid_auto_rows {}: Vec<MinMax<MinTrackSizingFunction, MaxTrackSizingFunction>> {} = Vec::new(),
+    GridAutoColumns grid_auto_columns {}: Vec<MinMax<MinTrackSizingFunction, MaxTrackSizingFunction>> {} = Vec::new(),
+    GridAutoFlow grid_auto_flow {}: taffy::GridAutoFlow {} = taffy::GridAutoFlow::Row,
+    GridRow grid_row {}: Line<GridPlacement> {} = Line::default(),
+    GridColumn grid_column {}: Line<GridPlacement> {} = Line::default(),
+    AlignSelf align_self {}: Option<AlignItems> {} = None,
+    OutlineColor outline_color {tr}: Brush {} = Brush::Solid(palette::css::TRANSPARENT),
+    Outline outline {nocb, tr}: StrokeWrap {} = StrokeWrap::new(0.),
+    OutlineProgress outline_progress {tr}: Pct {} = Pct(100.),
+    BorderProgress border_progress {tr}: Pct {} = Pct(100.),
+    BorderProp border_combined {nocb, tr}: Border {} = Border::default(),
+    BorderColorProp border_color_combined { nocb, tr }: BorderColor {} = BorderColor::default(),
+    BorderRadiusProp border_radius_combined { nocb, tr }: BorderRadius {} = BorderRadius::default(),
+    PaddingProp padding_combined { nocb, tr }: Padding {} = Padding::default(),
+    MarginProp margin_combined { nocb, tr }: Margin {} = Margin::default(),
+    InsetLeft inset_left {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    InsetTop inset_top {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    InsetRight inset_right {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    InsetBottom inset_bottom {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    PointerEventsProp pointer_events {}: Option<PointerEvents> { inherited } = None,
+    ZIndex z_index { nocb, tr }: Option<i32> {} = None,
+    Cursor cursor { nocb }: Option<CursorStyle> {} = None,
+    TextColor color { nocb, tr }: Option<Color> { inherited } = None,
+    Background background { nocb, tr }: Option<Brush> {} = None,
+    Foreground foreground { nocb, tr }: Option<Brush> {} = None,
+    BoxShadowProp box_shadow { nocb, tr }: SmallVec<[BoxShadow; 3]> {} = SmallVec::new(),
+    FontSize font_size { nocb, tr }: Option<f32> { inherited } = None,
+    FontFamily font_family { nocb }: Option<String> { inherited } = None,
+    FontWeight font_weight { nocb }: Option<Weight> { inherited } = None,
+    FontStyle font_style { nocb }: Option<crate::text::Style> { inherited } = None,
+    CursorColor cursor_color { nocb, tr }: Brush {} = Brush::Solid(palette::css::BLACK.with_alpha(0.3)),
+    SelectionCornerRadius selection_corer_radius { nocb, tr }: f64 {} = 1.,
+    Selectable selectable {}: bool { inherited } = true,
+    TextOverflowProp text_overflow {}: TextOverflow {} = TextOverflow::Wrap,
+    TextAlignProp text_align {}: Option<crate::text::Align> {} = None,
+    LineHeight line_height { nocb, tr }: Option<LineHeightValue> { inherited } = None,
+    AspectRatio aspect_ratio {tr}: Option<f32> {} = None,
+    ColGap col_gap { nocb, tr }: PxPct {} = PxPct::Px(0.),
+    RowGap row_gap { nocb, tr }: PxPct {} = PxPct::Px(0.),
+    ScaleX scale_x {tr}: Pct {} = Pct(100.),
+    ScaleY scale_y {tr}: Pct {} = Pct(100.),
+    TranslateX translate_x {tr}: PxPct {} = PxPct::Px(0.),
+    TranslateY translate_y {tr}: PxPct {} = PxPct::Px(0.),
+    Rotation rotate {tr}: Px {} = Px(0.),
+    Selected set_selected {}: bool { inherited } = false,
+    Disabled set_disabled {}: bool { inherited } = false,
+    Hidden set_hidden {}: bool { inherited } = false,
+    Focusable focusable {}: bool { } = false,
+    Draggable draggable {}: bool { } = false,
 );
 
 impl BuiltinStyle<'_> {
@@ -4642,26 +4698,6 @@ impl Style {
     /// See also: [`custom`](Self::custom), [`custom_style_class`](Self::custom_style_class)
     pub fn apply_custom<CS: Into<Style>>(self, custom_style: CS) -> Self {
         self.apply(custom_style.into())
-    }
-
-    pub fn transition_width(self, transition: Transition) -> Self {
-        self.transition(Width, transition)
-    }
-
-    pub fn transition_height(self, transition: Transition) -> Self {
-        self.transition(Height, transition)
-    }
-
-    pub fn transition_size(self, transition: Transition) -> Self {
-        self.transition_width(transition.clone())
-            .transition_height(transition)
-    }
-
-    pub fn transition_color(self, transition: Transition) -> Self {
-        self.transition(TextColor, transition)
-    }
-    pub fn transition_background(self, transition: Transition) -> Self {
-        self.transition(Background, transition)
     }
 }
 

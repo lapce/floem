@@ -1,7 +1,4 @@
-use floem::{
-    prelude::*,
-    style::{StyleValue, TextColor},
-};
+use floem::prelude::*;
 
 use crate::form::{form, form_item};
 
@@ -24,11 +21,7 @@ pub fn img_view() -> impl IntoView {
         ),
         form_item(
             "SVG(from file):",
-            svg(ferris_svg).style(|s| {
-                s.set_style_value(TextColor, StyleValue::Unset)
-                    .width(230.px())
-                    .height(153.px())
-            }),
+            svg(ferris_svg).style(|s| s.unset_color().width(230.px()).height(153.px())),
         ),
         form_item(
             "SVG(from string):",

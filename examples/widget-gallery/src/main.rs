@@ -26,7 +26,7 @@ use floem::{
     muda::{AboutMetadataBuilder, PredefinedMenuItem},
     new_window,
     prelude::*,
-    style::{Background, CursorStyle, TextColor, Transition},
+    style::{Background, CursorStyle, Transition},
     theme::StyleThemeExt,
     ui_events::keyboard::{Key, KeyState, KeyboardEvent, Modifiers, NamedKey},
     window::{Theme, WindowConfig, WindowId},
@@ -295,7 +295,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
     );
 
     add_overlay(svg(include_str!("../assets/floem.svg")).style(|s| {
-        s.set_style_value(TextColor, floem::style::StyleValue::Unset)
+        s.unset_color()
             .size(50, 50)
             .absolute()
             .inset_bottom(20.)

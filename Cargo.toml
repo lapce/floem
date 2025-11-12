@@ -71,6 +71,7 @@ serde = { workspace = true, optional = true }
 lapce-xi-rope = { workspace = true, optional = true }
 strum = { workspace = true, optional = true }
 strum_macros = { workspace = true, optional = true }
+paste = "1.0"
 floem_renderer = { path = "renderer", version = "0.2.0" }
 floem_vello_renderer = { path = "vello", version = "0.2.0", optional = true }
 floem_vger_renderer = { path = "vger", version = "0.2.0", optional = true }
