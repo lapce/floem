@@ -3644,33 +3644,21 @@ define_builtin_props!(
     PositionProp position {}: Position {} = Position::Relative,
 
     /// Sets the width of the view.
-    ///
-    /// Can be specified in pixels, percentages, or auto.
     Width width {tr}: PxPctAuto {} = PxPctAuto::Auto,
 
     /// Sets the height of the view.
-    ///
-    /// Can be specified in pixels, percentages, or auto.
     Height height {tr}: PxPctAuto {} = PxPctAuto::Auto,
 
     /// Sets the minimum width of the view.
-    ///
-    /// The view will not shrink below this width.
     MinWidth min_width {tr}: PxPctAuto {} = PxPctAuto::Auto,
 
     /// Sets the minimum height of the view.
-    ///
-    /// The view will not shrink below this height.
     MinHeight min_height {tr}: PxPctAuto {} = PxPctAuto::Auto,
 
     /// Sets the maximum width of the view.
-    ///
-    /// The view will not grow beyond this width.
     MaxWidth max_width {tr}: PxPctAuto {} = PxPctAuto::Auto,
 
     /// Sets the maximum height of the view.
-    ///
-    /// The view will not grow beyond this height.
     MaxHeight max_height {tr}: PxPctAuto {} = PxPctAuto::Auto,
 
     /// Sets the direction of the main axis for flex items.
@@ -3897,7 +3885,7 @@ define_builtin_props!(
 
     /// Controls how overflowed text content is handled.
     ///
-    /// Determines whether text wraps or gets clipped.
+    /// Determines whether text wraps, gets clipped, or is shorted and tailed with ellipsis(...).
     TextOverflowProp text_overflow {}: TextOverflow {} = TextOverflow::Wrap,
 
     /// Sets text alignment within the view.
