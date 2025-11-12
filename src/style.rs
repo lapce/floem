@@ -3528,33 +3528,37 @@ impl<T> From<T> for StyleValue<T> {
 /// - `nocb` (no callback/no chain builder) - no fluent builder method generated
 /// - `tr` (transition) - generates a `transition_property_name()` method
 ///
-/// Examples: `{}`, `{nocb}`, `{tr}`, `{nocb, tr}`, `{tr, nocb}`
+/// Examples: `name: Type {}`, `name {nocb}: Type {}`, `name {tr}: Type {}`, `name {nocb, tr}: Type {}`
 ///
 /// All properties get:
 /// - A getter method in `BuiltinStyle`
 /// - An `unset_property_name()` method
 macro_rules! define_builtin_props {
     (
-        $($type_name:ident $name:ident { $($flags:ident),* }:
-            $typ:ty { $($options:tt)* } = $val:expr),*
+        $(
+            $(#[$meta:meta])*
+            $type_name:ident $name:ident $({ $($flags:ident),* })? :
+            $typ:ty { $($options:tt)* } = $val:expr
+        ),*
         $(,)?
     ) => {
         $(
-            prop!(pub $type_name: $typ { $($options)* } = $val);
+            prop!($(#[$meta])* pub $type_name: $typ { $($options)* } = $val);
         )*
         impl Style {
             $(
-                define_builtin_props!(decl: $type_name $name { $($flags),* }: $typ = $val);
+                define_builtin_props!(decl: $(#[$meta])* $type_name $name $({ $($flags),* })?: $typ = $val);
             )*
             $(
-                define_builtin_props!(unset: $type_name $name);
+                define_builtin_props!(unset: $(#[$meta])* $type_name $name);
             )*
             $(
-                define_builtin_props!(transition: $type_name $name { $($flags),* });
+                define_builtin_props!(transition: $(#[$meta])* $type_name $name $({ $($flags),* })?);
             )*
         }
         impl BuiltinStyle<'_> {
             $(
+                $(#[$meta])*
                 pub fn $name(&self) -> $typ {
                     self.style.get($type_name)
                 }
@@ -3562,49 +3566,65 @@ macro_rules! define_builtin_props {
         }
     };
 
-    // Check if nocb is present in flags
-    (decl: $type_name:ident $name:ident { $($flags:ident),* }: $typ:ty = $val:expr) => {
-        define_builtin_props!(@check_nocb $type_name $name [$($flags)*]: $typ);
+    // With flags - check if nocb is present
+    (decl: $(#[$meta:meta])* $type_name:ident $name:ident { $($flags:ident),* }: $typ:ty = $val:expr) => {
+        define_builtin_props!(@check_nocb $(#[$meta])* $type_name $name [$($flags)*]: $typ);
+    };
+
+    // Without flags - always generate setter
+    (decl: $(#[$meta:meta])* $type_name:ident $name:ident: $typ:ty = $val:expr) => {
+        $(#[$meta])*
+        pub fn $name(self, v: impl Into<$typ>) -> Self {
+            self.set($type_name, v.into())
+        }
     };
 
     // Helper: if nocb found, don't generate setter
-    (@check_nocb $type_name:ident $name:ident [nocb $($rest:ident)*]: $typ:ty) => {};
-    (@check_nocb $type_name:ident $name:ident [$first:ident $($rest:ident)*]: $typ:ty) => {
-        define_builtin_props!(@check_nocb $type_name $name [$($rest)*]: $typ);
+    (@check_nocb $(#[$meta:meta])* $type_name:ident $name:ident [nocb $($rest:ident)*]: $typ:ty) => {};
+    (@check_nocb $(#[$meta:meta])* $type_name:ident $name:ident [$first:ident $($rest:ident)*]: $typ:ty) => {
+        define_builtin_props!(@check_nocb $(#[$meta])* $type_name $name [$($rest)*]: $typ);
     };
-    (@check_nocb $type_name:ident $name:ident []: $typ:ty) => {
+    (@check_nocb $(#[$meta:meta])* $type_name:ident $name:ident []: $typ:ty) => {
         // No nocb found, generate the setter
+        $(#[$meta])*
         pub fn $name(self, v: impl Into<$typ>) -> Self {
             self.set($type_name, v.into())
         }
     };
 
     // Unset method - generated for all properties
-    (unset: $type_name:ident $name:ident) => {
+    (unset: $(#[$meta:meta])* $type_name:ident $name:ident) => {
         paste::paste! {
+            #[doc = "Unsets the `" $name "` property."]
+            $(#[$meta])*
             pub fn [<unset_ $name>](self) -> Self {
                 self.set_style_value($type_name, $crate::style::StyleValue::Unset)
             }
         }
     };
 
-    // Transition method - check if 'tr' is present in flags
-    (transition: $type_name:ident $name:ident { $($flags:ident),* }) => {
-        define_builtin_props!(@check_tr $type_name $name [$($flags)*]);
+    // Transition method - with flags, check if 'tr' is present
+    (transition: $(#[$meta:meta])* $type_name:ident $name:ident { $($flags:ident),* }) => {
+        define_builtin_props!(@check_tr $(#[$meta])* $type_name $name [$($flags)*]);
     };
 
+    // Transition method - without flags, don't generate
+    (transition: $(#[$meta:meta])* $type_name:ident $name:ident) => {};
+
     // Helper: if tr found, generate transition method
-    (@check_tr $type_name:ident $name:ident [tr $($rest:ident)*]) => {
+    (@check_tr $(#[$meta:meta])* $type_name:ident $name:ident [tr $($rest:ident)*]) => {
         paste::paste! {
+            #[doc = "Sets a transition for the `" $name "` property."]
+            $(#[$meta])*
             pub fn [<transition_ $name>](self, transition: impl Into<Transition>) -> Self {
                 self.transition($type_name, transition.into())
             }
         }
     };
-    (@check_tr $type_name:ident $name:ident [$first:ident $($rest:ident)*]) => {
-        define_builtin_props!(@check_tr $type_name $name [$($rest)*]);
+    (@check_tr $(#[$meta:meta])* $type_name:ident $name:ident [$first:ident $($rest:ident)*]) => {
+        define_builtin_props!(@check_tr $(#[$meta])* $type_name $name [$($rest)*]);
     };
-    (@check_tr $type_name:ident $name:ident []) => {
+    (@check_tr $(#[$meta:meta])* $type_name:ident $name:ident []) => {
         // No tr flag found, don't generate transition method
     };
 }
@@ -3614,75 +3634,354 @@ pub struct BuiltinStyle<'a> {
 }
 
 define_builtin_props!(
+    /// Controls the display type of the element.
+    /// 
+    /// This determines how the element participates in layout.
     DisplayProp display {}: Display {} = Display::Flex,
+    
+    /// Sets the positioning scheme for the element.
+    /// 
+    /// This affects how the element is positioned relative to its normal position in the document flow.
     PositionProp position {}: Position {} = Position::Relative,
+    
+    /// Sets the width of the element.
+    /// 
+    /// Can be specified in pixels, percentages, or auto.
     Width width {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    
+    /// Sets the height of the element.
+    /// 
+    /// Can be specified in pixels, percentages, or auto.
     Height height {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    
+    /// Sets the minimum width of the element.
+    /// 
+    /// The element will not shrink below this width.
     MinWidth min_width {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    
+    /// Sets the minimum height of the element.
+    /// 
+    /// The element will not shrink below this height.
     MinHeight min_height {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    
+    /// Sets the maximum width of the element.
+    /// 
+    /// The element will not grow beyond this width.
     MaxWidth max_width {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    
+    /// Sets the maximum height of the element.
+    /// 
+    /// The element will not grow beyond this height.
     MaxHeight max_height {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    
+    /// Sets the direction of the main axis for flex items.
+    /// 
+    /// Determines whether flex items are laid out in rows or columns.
     FlexDirectionProp flex_direction {}: FlexDirection {} = FlexDirection::Row,
+    
+    /// Controls whether flex items wrap to new lines.
+    /// 
+    /// When enabled, items that don't fit will wrap to the next line.
     FlexWrapProp flex_wrap {}: FlexWrap {} = FlexWrap::NoWrap,
+    
+    /// Sets the flex grow factor for the flex item.
+    /// 
+    /// Determines how much the item should grow relative to other items.
     FlexGrow flex_grow {}: f32 {} = 0.0,
+    
+    /// Sets the flex shrink factor for the flex item.
+    /// 
+    /// Determines how much the item should shrink relative to other items.
     FlexShrink flex_shrink {}: f32 {} = 1.0,
+    
+    /// Sets the initial main size of a flex item.
+    /// 
+    /// This is the size of the item before free space is distributed.
     FlexBasis flex_basis {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    
+    /// Controls alignment of flex items along the main axis.
+    /// 
+    /// Determines how extra space is distributed between and around items.
     JustifyContentProp justify_content {}: Option<JustifyContent> {} = None,
+    
+    /// Controls default alignment of grid items along the inline axis.
+    /// 
+    /// Sets the default justify-self value for all items in the container.
     JustifyItemsProp justify_items {}: Option<JustifyItems> {} = None,
+    
+    /// Controls how the total width and height are calculated.
+    /// 
+    /// Determines whether borders and padding are included in the element's size.
     BoxSizingProp box_sizing {}: Option<BoxSizing> {} = None,
+    
+    /// Controls individual alignment along the inline axis.
+    /// 
+    /// Overrides the container's justify-items value for this specific item.
     JustifySelf justify_self {}: Option<AlignItems> {} = None,
+    
+    /// Controls alignment of flex items along the cross axis.
+    /// 
+    /// Determines how items are aligned when they don't fill the container's cross axis.
     AlignItemsProp align_items {}: Option<AlignItems> {} = None,
+    
+    /// Controls alignment of wrapped flex lines.
+    /// 
+    /// Only has an effect when flex-wrap is enabled and there are multiple lines.
     AlignContentProp align_content {}: Option<AlignContent> {} = None,
+    
+    /// Defines the line names and track sizing functions of the grid rows.
+    /// 
+    /// Specifies the size and names of the rows in a grid layout.
     GridTemplateRows grid_template_rows {}: Vec<GridTemplateComponent<String>> {} = Vec::new(),
+    
+    /// Defines the line names and track sizing functions of the grid columns.
+    /// 
+    /// Specifies the size and names of the columns in a grid layout.
     GridTemplateColumns grid_template_columns {}: Vec<GridTemplateComponent<String>> {} = Vec::new(),
+    
+    /// Specifies the size of implicitly-created grid rows.
+    /// 
+    /// Sets the default size for rows that are created automatically.
     GridAutoRows grid_auto_rows {}: Vec<MinMax<MinTrackSizingFunction, MaxTrackSizingFunction>> {} = Vec::new(),
+    
+    /// Specifies the size of implicitly-created grid columns.
+    /// 
+    /// Sets the default size for columns that are created automatically.
     GridAutoColumns grid_auto_columns {}: Vec<MinMax<MinTrackSizingFunction, MaxTrackSizingFunction>> {} = Vec::new(),
+    
+    /// Controls how auto-placed items get flowed into the grid.
+    /// 
+    /// Determines the direction that grid items are placed when not explicitly positioned.
     GridAutoFlow grid_auto_flow {}: taffy::GridAutoFlow {} = taffy::GridAutoFlow::Row,
+    
+    /// Specifies a grid item's location within the grid row.
+    /// 
+    /// Determines which grid rows the item spans.
     GridRow grid_row {}: Line<GridPlacement> {} = Line::default(),
+    
+    /// Specifies a grid item's location within the grid column.
+    /// 
+    /// Determines which grid columns the item spans.
     GridColumn grid_column {}: Line<GridPlacement> {} = Line::default(),
+    
+    /// Controls individual alignment along the cross axis.
+    /// 
+    /// Overrides the container's align-items value for this specific item.
     AlignSelf align_self {}: Option<AlignItems> {} = None,
+    
+    /// Sets the color of the element's outline.
+    /// 
+    /// The outline is drawn outside the border and doesn't affect layout.
     OutlineColor outline_color {tr}: Brush {} = Brush::Solid(palette::css::TRANSPARENT),
+    
+    /// Sets the outline stroke properties.
+    /// 
+    /// Defines the width, style, and other properties of the outline.
     Outline outline {nocb, tr}: StrokeWrap {} = StrokeWrap::new(0.),
+    
+    /// Controls the progress/completion of the outline animation.
+    /// 
+    /// Useful for creating animated outline effects.
     OutlineProgress outline_progress {tr}: Pct {} = Pct(100.),
+    
+    /// Controls the progress/completion of the border animation.
+    /// 
+    /// Useful for creating animated border effects.
     BorderProgress border_progress {tr}: Pct {} = Pct(100.),
+    
+    /// Sets the border properties for all sides.
+    /// 
+    /// Defines width, style, and other border characteristics.
     BorderProp border_combined {nocb, tr}: Border {} = Border::default(),
+    
+    /// Sets the border color for all sides.
+    /// 
+    /// Can be set individually for each side or all at once.
     BorderColorProp border_color_combined { nocb, tr }: BorderColor {} = BorderColor::default(),
+    
+    /// Sets the border radius for all corners.
+    /// 
+    /// Controls how rounded the corners of the element are.
     BorderRadiusProp border_radius_combined { nocb, tr }: BorderRadius {} = BorderRadius::default(),
+    
+    /// Sets the padding for all sides.
+    /// 
+    /// Padding is the space between the element's content and its border.
     PaddingProp padding_combined { nocb, tr }: Padding {} = Padding::default(),
+    
+    /// Sets the margin for all sides.
+    /// 
+    /// Margin is the space outside the element's border.
     MarginProp margin_combined { nocb, tr }: Margin {} = Margin::default(),
+    
+    /// Sets the left offset for positioned elements.
+    /// 
+    /// Only affects elements with non-static positioning.
     InsetLeft inset_left {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    
+    /// Sets the top offset for positioned elements.
+    /// 
+    /// Only affects elements with non-static positioning.
     InsetTop inset_top {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    
+    /// Sets the right offset for positioned elements.
+    /// 
+    /// Only affects elements with non-static positioning.
     InsetRight inset_right {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    
+    /// Sets the bottom offset for positioned elements.
+    /// 
+    /// Only affects elements with non-static positioning.
     InsetBottom inset_bottom {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    
+    /// Controls whether the element can be the target of mouse events.
+    /// 
+    /// When disabled, mouse events pass through to elements behind.
     PointerEventsProp pointer_events {}: Option<PointerEvents> { inherited } = None,
+    
+    /// Controls the stack order of positioned elements.
+    /// 
+    /// Higher values appear in front of lower values.
     ZIndex z_index { nocb, tr }: Option<i32> {} = None,
+    
+    /// Sets the cursor style when hovering over the element.
+    /// 
+    /// Changes the appearance of the mouse cursor.
     Cursor cursor { nocb }: Option<CursorStyle> {} = None,
+    
+    /// Sets the text color.
+    /// 
+    /// This property is inherited by child elements.
     TextColor color { nocb, tr }: Option<Color> { inherited } = None,
+    
+    /// Sets the background color or image.
+    /// 
+    /// Can be a solid color, gradient, or image.
     Background background { nocb, tr }: Option<Brush> {} = None,
+    
+    /// Sets the foreground color or pattern.
+    /// 
+    /// Used for drawing content like icons or shapes.
     Foreground foreground { nocb, tr }: Option<Brush> {} = None,
+    
+    /// Adds one or more drop shadows to the element.
+    /// 
+    /// Can create depth and visual separation effects.
     BoxShadowProp box_shadow { nocb, tr }: SmallVec<[BoxShadow; 3]> {} = SmallVec::new(),
+    
+    /// Sets the font size for text content.
+    /// 
+    /// This property is inherited by child elements.
     FontSize font_size { nocb, tr }: Option<f32> { inherited } = None,
+    
+    /// Sets the font family for text content.
+    /// 
+    /// This property is inherited by child elements.
     FontFamily font_family { nocb }: Option<String> { inherited } = None,
+    
+    /// Sets the font weight (boldness) for text content.
+    /// 
+    /// This property is inherited by child elements.
     FontWeight font_weight { nocb }: Option<Weight> { inherited } = None,
+    
+    /// Sets the font style (italic, normal) for text content.
+    /// 
+    /// This property is inherited by child elements.
     FontStyle font_style { nocb }: Option<crate::text::Style> { inherited } = None,
+    
+    /// Sets the color of the text cursor.
+    /// 
+    /// Visible when text input elements have focus.
     CursorColor cursor_color { nocb, tr }: Brush {} = Brush::Solid(palette::css::BLACK.with_alpha(0.3)),
+    
+    /// Sets the corner radius of text selections.
+    /// 
+    /// Controls how rounded the corners of selected text appear.
     SelectionCornerRadius selection_corer_radius { nocb, tr }: f64 {} = 1.,
+    
+    /// Controls whether the element's text can be selected.
+    /// 
+    /// This property is inherited by child elements.
     Selectable selectable {}: bool { inherited } = true,
+    
+    /// Controls how overflowed text content is handled.
+    /// 
+    /// Determines whether text wraps or gets clipped.
     TextOverflowProp text_overflow {}: TextOverflow {} = TextOverflow::Wrap,
+    
+    /// Sets text alignment within the element.
+    /// 
+    /// Controls horizontal alignment of text content.
     TextAlignProp text_align {}: Option<crate::text::Align> {} = None,
+    
+    /// Sets the line height for text content.
+    /// 
+    /// This property is inherited by child elements.
     LineHeight line_height { nocb, tr }: Option<LineHeightValue> { inherited } = None,
+    
+    /// Sets the preferred aspect ratio for the element.
+    /// 
+    /// Maintains width-to-height proportions during layout.
     AspectRatio aspect_ratio {tr}: Option<f32> {} = None,
+    
+    /// Sets the gap between columns in grid or flex layouts.
+    /// 
+    /// Creates space between items in the horizontal direction.
     ColGap col_gap { nocb, tr }: PxPct {} = PxPct::Px(0.),
+    
+    /// Sets the gap between rows in grid or flex layouts.
+    /// 
+    /// Creates space between items in the vertical direction.
     RowGap row_gap { nocb, tr }: PxPct {} = PxPct::Px(0.),
+    
+    /// Sets the horizontal scale transform.
+    /// 
+    /// Values less than 100% shrink the element, greater than 100% enlarge it.
     ScaleX scale_x {tr}: Pct {} = Pct(100.),
+    
+    /// Sets the vertical scale transform.
+    /// 
+    /// Values less than 100% shrink the element, greater than 100% enlarge it.
     ScaleY scale_y {tr}: Pct {} = Pct(100.),
+    
+    /// Sets the horizontal translation transform.
+    /// 
+    /// Moves the element left (negative) or right (positive).
     TranslateX translate_x {tr}: PxPct {} = PxPct::Px(0.),
+    
+    /// Sets the vertical translation transform.
+    /// 
+    /// Moves the element up (negative) or down (positive).
     TranslateY translate_y {tr}: PxPct {} = PxPct::Px(0.),
+    
+    /// Sets the rotation transform in radians.
+    /// 
+    /// Positive values rotate clockwise, negative values rotate counter-clockwise.
     Rotation rotate {tr}: Px {} = Px(0.),
+    
+    /// Controls the selected state of the element.
+    /// 
+    /// This property is inherited by child elements.
     Selected set_selected {}: bool { inherited } = false,
+    
+    /// Controls the disabled state of the element.
+    /// 
+    /// This property is inherited by child elements.
     Disabled set_disabled {}: bool { inherited } = false,
+    
+    /// Controls the visibility of the element.
+    /// 
+    /// This property is inherited by child elements.
     Hidden set_hidden {}: bool { inherited } = false,
+    
+    /// Controls whether the element can receive focus.
+    /// 
+    /// Focus is necessary for keyboard interaction.
     Focusable focusable {}: bool { } = false,
+    
+    /// Controls whether the element can be dragged.
+    /// 
+    /// Enables drag-and-drop functionality for the element.
     Draggable draggable {}: bool { } = false,
 );
 
