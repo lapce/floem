@@ -247,6 +247,10 @@ impl View for SatValuePicker {
         }
         cx.restore();
     }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
 
 pub struct HuePicker {
@@ -376,6 +380,10 @@ impl View for HuePicker {
             cx.restore();
         }
     }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
 
 pub struct OpacityPicker {
@@ -496,5 +504,9 @@ impl View for OpacityPicker {
             cx.fill(&indicator_rect, css::BLACK, 0.);
             cx.restore();
         }
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }

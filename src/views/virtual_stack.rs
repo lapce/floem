@@ -1,4 +1,5 @@
 use std::{
+    any::Any,
     collections::HashSet,
     hash::{DefaultHasher, Hash, Hasher},
     marker::PhantomData,
@@ -524,6 +525,10 @@ impl<T> View for VirtualStack<T> {
         }
 
         layout
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 

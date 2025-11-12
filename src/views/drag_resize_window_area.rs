@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use winit::window::ResizeDirection;
 
 use crate::{
@@ -58,5 +60,9 @@ impl View for DragResizeWindowArea {
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
         "Drag-Resize Window Area".into()
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }

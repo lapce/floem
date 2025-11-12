@@ -1,4 +1,5 @@
 use std::{
+    any::Any,
     hash::{BuildHasherDefault, Hash},
     marker::PhantomData,
 };
@@ -145,6 +146,10 @@ impl<T> View for DynStack<T> {
             );
             self.id.request_all();
         }
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 

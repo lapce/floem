@@ -80,4 +80,8 @@ impl<T: 'static> View for ValueContainer<T> {
             }
         }
     }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 }

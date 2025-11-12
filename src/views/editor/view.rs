@@ -939,6 +939,10 @@ impl View for EditorView {
             &screen_lines,
         );
     }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
 
 style_class!(pub EditorViewClass);

@@ -172,6 +172,10 @@ impl View for PanZoomView {
             self.schedule_update();
         }
     }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
 
 impl PanZoomView {

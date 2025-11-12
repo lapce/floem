@@ -246,6 +246,10 @@ pub fn recursively_layout_view(id: ViewId, cx: &mut LayoutCx) -> NodeId {
 ///         self.id
 ///     }
 ///
+///     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+///         self
+///     }
+///
 ///     fn update(&mut self, cx: &mut floem::context::UpdateCx, state: Box<dyn std::any::Any>) {
 ///         if let Ok(percent) = state.downcast::<f32>() {
 ///             self.percent = *percent;
@@ -349,6 +353,8 @@ pub trait View {
         }
         found
     }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
 impl View for Box<dyn View> {
@@ -398,6 +404,10 @@ impl View for Box<dyn View> {
 
     fn scroll_to(&mut self, cx: &mut WindowState, target: ViewId, rect: Option<Rect>) -> bool {
         (**self).scroll_to(cx, target, rect)
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        (**self).as_any_mut()
     }
 }
 

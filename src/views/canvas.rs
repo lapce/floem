@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use floem_reactive::SignalTracker;
 use peniko::kurbo::Size;
 
@@ -77,5 +79,9 @@ impl View for Canvas {
         tracker.track(|| {
             paint(cx, self.size);
         });
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }

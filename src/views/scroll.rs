@@ -1,6 +1,8 @@
 #![deny(missing_docs)]
 //! Scroll View
 
+use std::any::Any;
+
 use floem_reactive::Effect;
 use peniko::kurbo::{Point, Rect, RoundedRectRadii, Size, Stroke, Vec2};
 use peniko::{Brush, Color};
@@ -1087,6 +1089,10 @@ impl View for Scroll {
         if !self.scroll_style.hide_bar() {
             self.draw_bars(cx);
         }
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 /// Represents a custom style for a `Scroll`.

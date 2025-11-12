@@ -1,6 +1,7 @@
 #![deny(missing_docs)]
 
 use peniko::kurbo::Size;
+use std::any::Any;
 
 use crate::{
     id::ViewId,
@@ -50,6 +51,9 @@ impl View for Clip {
         }
         cx.paint_children(self.id);
         cx.restore();
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 

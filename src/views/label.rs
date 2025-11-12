@@ -529,6 +529,10 @@ impl View for Label {
             self.paint_selection(text_layout, cx);
         }
     }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 }
 
 /// Represents a custom style for a `Label`.

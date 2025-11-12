@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use super::{Decorators, v_stack_from_iter};
 use crate::context::StyleCx;
 use crate::event::EventPropagation;
@@ -207,6 +209,10 @@ impl View for List {
             }
         }
     }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 }
 
 impl View for Item {
@@ -232,6 +238,10 @@ impl View for Item {
         } else {
             cx.style_view(self.child);
         }
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 

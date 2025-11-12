@@ -1440,6 +1440,10 @@ impl View for TextInput {
             id.request_paint();
         });
     }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 }
 
 #[cfg(test)]

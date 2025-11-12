@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use ui_events::pointer::{PointerButton, PointerButtonEvent, PointerEvent};
 
 use crate::{
@@ -37,5 +39,9 @@ impl View for DragWindowArea {
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
         "Drag Window Area".into()
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }

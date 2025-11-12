@@ -1,6 +1,6 @@
 //! Module defining image view and its properties: style, position and fit.
 #![deny(missing_docs)]
-use std::{path::PathBuf, sync::Arc};
+use std::{any::Any, path::PathBuf, sync::Arc};
 
 use floem_reactive::Effect;
 use peniko::{Blob, ImageAlphaType, ImageData};
@@ -276,5 +276,9 @@ impl View for Img {
                 rect,
             );
         }
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }

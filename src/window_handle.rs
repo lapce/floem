@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::collections::HashMap;
 use std::{cell::RefCell, mem, rc::Rc, sync::Arc};
 
@@ -1648,5 +1649,9 @@ impl View for WindowView {
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
         "Window".into()
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }

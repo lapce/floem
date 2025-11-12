@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{any::Any, rc::Rc};
 
 use floem_editor_core::{buffer::rope_text::RopeTextVal, indent::IndentStyle};
 use floem_reactive::{RwSignal, Scope, SignalUpdate, SignalWith, UpdaterEffect};
@@ -169,6 +169,10 @@ impl View for TextEditor {
         }
         cx.paint_view(self.child);
         cx.restore();
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 

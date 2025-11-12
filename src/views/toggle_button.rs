@@ -5,6 +5,7 @@
 use floem_reactive::{Effect, SignalGet, SignalUpdate};
 use peniko::Brush;
 use peniko::kurbo::{Point, Size};
+use std::any::Any;
 use ui_events::keyboard::{Key, KeyState, KeyboardEvent, NamedKey};
 use ui_events::pointer::PointerEvent;
 
@@ -260,6 +261,10 @@ impl View for ToggleButton {
         if let Some(color) = self.style.foreground() {
             cx.fill(&circle, &color, 0.);
         }
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 

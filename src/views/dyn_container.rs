@@ -9,29 +9,6 @@ use crate::{
     view::{AnyView, View},
 };
 
-#[macro_export]
-macro_rules! dyn_view {
-    ($signal:ident, $new:ident => $body:expr) => {
-        dyn_container(
-            move || {
-                use floem::reactive::SignalGet;
-                $signal.get()
-            },
-            move |$new| $body,
-        )
-    };
-
-    ($signal:ident => $body:expr) => {
-        dyn_container(
-            move || {
-                use floem::reactive::SignalGet;
-                $signal.get()
-            },
-            move |$signal| $body,
-        )
-    };
-}
-
 type ChildFn<T> = dyn Fn(T) -> (AnyView, Scope);
 
 /// A container for a dynamically updating View. See [`dyn_container`]
@@ -146,6 +123,10 @@ impl<T: 'static> View for DynamicContainer<T> {
                 }
             }
         }
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 impl<T> DynamicContainer<T> {

@@ -1,5 +1,6 @@
 //! A toggle button widget. An example can be found in widget-gallery/button in the floem examples.
 
+use std::any::Any;
 use std::ops::RangeInclusive;
 
 use floem_reactive::{SignalGet, SignalUpdate, UpdaterEffect};
@@ -338,6 +339,10 @@ impl View for Slider {
         if let Some(color) = self.style.foreground() {
             cx.fill(&self.handle, &color, 0.);
         }
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 impl Slider {

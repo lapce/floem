@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use floem_reactive::{Scope, UpdaterEffect};
 
 use crate::{
@@ -49,5 +51,9 @@ impl View for DynamicView {
             old_child_scope.dispose();
             self.id.request_all();
         }
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }

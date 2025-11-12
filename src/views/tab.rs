@@ -1,5 +1,5 @@
 #![deny(missing_docs)]
-use std::{hash::Hash, marker::PhantomData};
+use std::{any::Any, hash::Hash, marker::PhantomData};
 
 use floem_reactive::{Effect, Scope};
 use smallvec::SmallVec;
@@ -301,5 +301,9 @@ impl<T> View for Tab<T> {
                 cx.paint_view(*active);
             }
         }
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }

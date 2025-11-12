@@ -160,6 +160,10 @@ impl View for RichText {
             cx.draw_text(&self.text_layout, point);
         }
     }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 }
 
 #[derive(Clone, Debug)]

@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use floem_reactive::Effect;
 use floem_renderer::{
     Renderer,
@@ -196,6 +198,10 @@ impl View for Svg {
             };
             cx.draw_svg(crate::RendererSvg { tree, hash }, rect, color.as_ref());
         }
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 

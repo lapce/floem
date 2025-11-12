@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use crate::{
     ViewId,
     context::{ComputeLayoutCx, EventCx, PaintCx, UpdateCx},
@@ -299,6 +301,9 @@ impl View for ResizableStack {
                 );
             }
         }
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 

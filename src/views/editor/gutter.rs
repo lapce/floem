@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use crate::{
     Renderer,
     context::PaintCx,
@@ -223,6 +225,10 @@ impl View for EditorGutterView {
                 cx.draw_text(&text_layout, pos);
             }
         });
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 

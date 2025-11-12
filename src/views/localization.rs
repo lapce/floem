@@ -1,5 +1,6 @@
 #![deny(missing_docs)]
 //! Localization privitives.
+use std::any::Any;
 use std::borrow::Cow;
 use std::pin::Pin;
 use std::rc::Rc;
@@ -466,6 +467,10 @@ impl View for L10n {
                 }
             }
         }
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 

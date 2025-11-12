@@ -1,7 +1,7 @@
 #![deny(missing_docs)]
 use peniko::kurbo::Point;
-use std::cell::RefCell;
 use std::rc::Rc;
+use std::{any::Any, cell::RefCell};
 use ui_events::pointer::PointerEvent;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -150,6 +150,10 @@ impl View for Tooltip {
         self.window_origin = Some(cx.window_origin);
         default_compute_layout(self.id, cx)
     }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 }
 
 /// Adds a [tooltip] function to a type that implements [`IntoView`].
@@ -234,5 +238,9 @@ impl View for ToolTipOverlay {
         }
 
         default_compute_layout(self.id, cx)
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }

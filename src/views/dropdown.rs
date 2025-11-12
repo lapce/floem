@@ -275,6 +275,10 @@ impl<T: 'static + Clone + PartialEq> View for Dropdown<T> {
 
         EventPropagation::Continue
     }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 }
 
 impl<T: Clone + std::cmp::PartialEq> Dropdown<T> {

@@ -1,5 +1,7 @@
 #![deny(missing_docs)]
 
+use std::any::Any;
+
 use crate::{
     id::ViewId,
     view::{IntoView, View},
@@ -28,6 +30,10 @@ impl View for Container {
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
         "Container".into()
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 
