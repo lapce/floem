@@ -1,14 +1,9 @@
-use floem::{
-    kurbo,
-    prelude::*,
-    style::{StyleValue, TextColor},
-};
+use floem::{kurbo, prelude::*};
 
 mod pan_zoom_view;
 mod transform_view;
 
-use crate::pan_zoom_view::pan_zoom_view;
-use crate::transform_view::transform_view;
+use crate::{pan_zoom_view::pan_zoom_view, transform_view::transform_view};
 
 fn child_view() -> impl IntoView {
     let button = button("Click me").on_click_stop(|_| {
@@ -34,11 +29,7 @@ fn child_view() -> impl IntoView {
                 "PNG".style(|s| s.justify_center()),
             )),
             v_stack((
-                svg(ferris_svg).style(|s| {
-                    s.set_style_value(TextColor, StyleValue::Unset)
-                        .width(69.px())
-                        .height(45.9.px())
-                }),
+                svg(ferris_svg).style(|s| s.unset_color().width(69.px()).height(45.9.px())),
                 "SVG".style(|s| s.justify_center()),
             )),
         ))
