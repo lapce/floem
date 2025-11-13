@@ -130,10 +130,9 @@ impl ExtractTransform for kurbo::Affine {
     /// The affine transformation matrix scales the child from the origin.
     /// Hence, we need to adjust the translation to achieve the desired effect.
     fn adjusted_translate(&self, center: kurbo::Point) -> (f64, f64) {
-        let scale = self.scale();
-        let translation = self.translation();
-        let adjusted_tx = translation.x - center.x * (1.0 - (scale.0 / 100.0));
-        let adjusted_ty = translation.y - center.y * (1.0 - (scale.0 / 100.0));
-        (adjusted_tx, adjusted_ty)
+        let scale = 1.0 - (self.scale().0 / 100.0);
+        let transform = self.pre_translate((-center.x * scale, -center.y * scale).into());
+        let translation = transform.translation();
+        (translation.x, translation.y)
     }
 }
