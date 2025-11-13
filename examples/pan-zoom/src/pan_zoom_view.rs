@@ -142,7 +142,7 @@ impl View for PanZoomView {
             }
             e @ Event::Pointer(PointerEvent::Scroll(_)) => {
                 if let Some(delta) = e.pixel_scroll_delta_vec2() {
-                    let scale = 1. + delta.y / 250.;
+                    let scale = 1. - delta.y / 40.;
 
                     self.target_scale *= scale;
                     if self.zoom_start_time.is_none() {
