@@ -1,7 +1,7 @@
 use floem::{
     IntoView, View, ViewId,
     context::{ComputeLayoutCx, UpdateCx},
-    kurbo,
+    kurbo::{self, Rect},
     reactive::{RwSignal, SignalGet, SignalUpdate, create_updater},
     unit::Pct,
     views::{Decorators, clip},
@@ -77,7 +77,19 @@ pub struct TransformView {
 
 impl TransformView {
     fn update_size(&mut self) {
-        let child_rect = self.child_id.layout_rect().with_origin(kurbo::Point::ZERO);
+        let child_rect = self
+            .child_id
+            .get_layout()
+            .map(|l| {
+                Rect::new(
+                    l.location.x.into(),
+                    l.location.y.into(),
+                    l.size.width.into(),
+                    l.size.height.into(),
+                )
+            })
+            .unwrap_or_default()
+            .with_origin(kurbo::Point::ZERO);
         self.child_center.set(child_rect.center());
     }
 }
@@ -118,10 +130,9 @@ impl ExtractTransform for kurbo::Affine {
     /// The affine transformation matrix scales the child from the origin.
     /// Hence, we need to adjust the translation to achieve the desired effect.
     fn adjusted_translate(&self, center: kurbo::Point) -> (f64, f64) {
-        let scale = self.scale();
-        let translation = self.translation();
-        let adjusted_tx = translation.x - center.x * (1.0 - (scale.0 / 100.0));
-        let adjusted_ty = translation.y - center.y * (1.0 - (scale.0 / 100.0));
-        (adjusted_tx, adjusted_ty)
+        let scale = 1.0 - (self.scale().0 / 100.0);
+        let transform = self.pre_translate((-center.x * scale, -center.y * scale).into());
+        let translation = transform.translation();
+        (translation.x, translation.y)
     }
 }
