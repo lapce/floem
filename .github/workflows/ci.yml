@@ -51,6 +51,8 @@ jobs:
         run: cargo test --workspace
 
       - name: Run doc tests
+        # Only run doctests on macOS to improve CI times - macOS is currently the fastest runner
+        if: startsWith(matrix.os, 'macos')
         run: cargo test --doc --workspace
 
 
