@@ -40,6 +40,13 @@ jobs:
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.event_name != 'merge_group' }}
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
 
       - name: Fetch dependencies
         run: cargo fetch
@@ -48,12 +55,12 @@ jobs:
         run: cargo build
 
       - name: Run tests
-        run: cargo test --workspace
+        run: cargo nextest run --workspace --no-fail-fast
 
       - name: Run doc tests
         # Only run doctests on macOS to improve CI times - macOS is currently the fastest runner
         if: startsWith(matrix.os, 'macos')
-        run: cargo test --doc --workspace
+        run: cargo test --doc --workspace --no-fail-fast
 
 
   fmt:
@@ -99,6 +106,8 @@ jobs:
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.event_name != 'merge_group' }}
 
       - name: Fetch dependencies
         run: cargo fetch
