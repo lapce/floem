@@ -10,6 +10,16 @@ members = [
   "examples/*",
   "ui-events-winit",
 ]
+default-members = [
+  ".",
+  "renderer",
+  "vello",
+  "vger",
+  "tiny_skia",
+  "reactive",
+  "editor-core",
+  "ui-events-winit",
+]
 
 [workspace.package]
 license = "MIT"
