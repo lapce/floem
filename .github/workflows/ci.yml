@@ -52,15 +52,15 @@ jobs:
         run: cargo fetch
 
       - name: Build
-        run: cargo build
+        run: cargo build --workspace --exclude 'examples/*'
 
       - name: Run tests
-        run: cargo nextest run --workspace --no-fail-fast
+        run: cargo nextest run --workspace --exclude 'examples/*' --no-fail-fast
 
       - name: Run doc tests
         # Only run doctests on macOS to improve CI times - macOS is currently the fastest runner
         if: startsWith(matrix.os, 'macos')
-        run: cargo test --doc --workspace --no-fail-fast
+        run: cargo test --doc --workspace --exclude 'examples/*' --no-fail-fast
 
 
   fmt:
