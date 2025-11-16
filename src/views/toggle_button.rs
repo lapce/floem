@@ -5,9 +5,8 @@
 use floem_reactive::{SignalGet, SignalUpdate, create_effect};
 use peniko::Brush;
 use peniko::kurbo::{Point, Size};
-use ui_events::keyboard::{Key, KeyState, KeyboardEvent};
+use ui_events::keyboard::{Key, KeyState, KeyboardEvent, NamedKey};
 use ui_events::pointer::PointerEvent;
-use winit::keyboard::NamedKey;
 
 use crate::{
     Renderer,

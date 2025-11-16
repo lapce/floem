@@ -6,9 +6,8 @@ use floem_reactive::{SignalGet, SignalUpdate, create_updater};
 use peniko::Brush;
 use peniko::color::palette;
 use peniko::kurbo::{Circle, Point, RoundedRect, RoundedRectRadii};
-use ui_events::keyboard::{Key, KeyState, KeyboardEvent};
+use ui_events::keyboard::{Key, KeyState, KeyboardEvent, NamedKey};
 use ui_events::pointer::{PointerButtonEvent, PointerEvent};
-use winit::keyboard::NamedKey;
 
 use crate::style::{BorderRadiusProp, CustomStyle};
 use crate::unit::Pct;
