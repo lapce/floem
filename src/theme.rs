@@ -19,7 +19,7 @@ use crate::{
     },
 };
 use floem_renderer::text::Weight;
-use peniko::{Brush, Color, color::{palette::css}};
+use peniko::{Brush, Color, color::palette::css};
 use smallvec::smallvec;
 
 style_class!(pub HoverTargetClass);
@@ -38,77 +38,6 @@ pub struct DesignSystem {
     pub border_radius: f32,
     pub font_size: f32,
 }
-// const BORDER_RADIUS: f32 = 5.0;
-// const FONT_SIZE: f32 = 12.0;
-
-// const BG_DARK: Color = hsl([60., 3., 90.]);
-// const BG: Color = hsl([60., 3., 95.]);
-// const BG_LIGHT: Color = hsl([60., 3., 100.]);
-
-// const BORDER: Color = hsl([60., 3., 60.]);
-// const HIGHLIGHT: Color = hsl([60., 3., 100.]);
-
-// const TEXT: Color = hsl([60., 3., 5.]);
-// const TEXT_MUTED: Color = hsl([60., 3., 30.]);
-
-
-/// Contruct sRGB [Color] from HSL values.
-pub const fn hsl(h: f32, s: f32, l: f32) -> Color {
-    let hue = transform(0., [h, s, l]);
-    let sat = transform(8., [h, s, l]);
-    let lum = transform(4., [h, s, l]);
-    Color::new([hue, sat, lum, 1.])
-}
-
-const fn transform(n: f32, [h, s, l]: [f32; 3]) -> f32 {
-    let sat = s * 0.01;
-    let light = l * 0.01;
-    let a = sat * light.min(1.0 - light);
-
-    let x = n + h * (1.0 / 30.0);
-    let k = x - 12.0 * (x * (1.0 / 12.0)).floor();
-    light - a * (k - 3.0).min(9.0 - k).clamp(-1.0, 1.0)
-}
-
-pub const fn hsl_map_lightness(c: Color, adjustment: f32) -> Color {
-    let [r, g, b, _] = c.components;
-    let [h, s, l] = rgb_to_hsl([r, g, b], true);
-    let l = ((l * 0.01) + adjustment) * 100.;
-    hsl(h, s, l)
-}
-
-const fn rgb_to_hsl([r, g, b]: [f32; 3], hue_hack: bool) -> [f32; 3] {
-    let max = r.max(g).max(b);
-    let min = r.min(g).min(b);
-    let mut hue = 0.0;
-    let mut sat = 0.0;
-    let light = 0.5 * (min + max);
-    let d = max - min;
-
-    const EPSILON: f32 = 1e-6;
-    if d > EPSILON {
-        let denom = light.min(1.0 - light);
-        if denom.abs() > EPSILON {
-            sat = (max - light) / denom;
-        }
-        hue = if max == r {
-            (g - b) / d
-        } else if max == g {
-            (b - r) / d + 2.0
-        } else {
-            // max == b
-            (r - g) / d + 4.0
-        };
-        hue *= 60.0;
-        // Deal with negative saturation from out of gamut colors
-        if hue_hack && sat < 0.0 {
-            hue += 180.0;
-            sat = sat.abs();
-        }
-        hue -= 360. * (hue * (1.0 / 360.0)).floor();
-    }
-    [hue, sat * 100.0, light * 100.0]
-}
 
 pub(crate) const LIGHT_THEME: DesignSystem = DesignSystem::light();
 pub(crate) const DARK_THEME: DesignSystem = DesignSystem::dark();
@@ -117,20 +46,13 @@ impl DesignSystem {
     /// Create a light mode design system.
     pub const fn light() -> Self {
         Self {
-            bg_base: hsl(60., 3., 95.),
-            text_base: hsl(60., 3., 10.),
+            bg_base: hsl(0., 0., 95.),
+            text_base: hsl(0., 0., 10.),
             text_lightness: 0.05,
-            primary_base: hsl(196., 78., 43.),
+            primary_base: hsl(196., 78., 42.),
             success_base: hsl(151., 55., 40.),
             warning_base: hsl(39., 79., 52.),
             danger_base: hsl(355., 67., 53.),
-            // bg_base: Color::from_rgb8(248, 248, 248),
-            // text_base: Color::from_rgb8(0, 0, 0),
-            // text_lightness: 0.05,
-            // primary_base: Color::from_rgb8(0x18, 0x96, 0xC2),
-            // success_base: Color::from_rgb8(0x2D, 0x9D, 0x67),
-            // warning_base: Color::from_rgb8(0xE5, 0xA2, 0x23),
-            // danger_base: Color::from_rgb8(0xD7, 0x37, 0x45),
             padding: 5.,
             border_radius: 5.,
             font_size: 14.,
@@ -141,20 +63,13 @@ impl DesignSystem {
     /// Create a dark mode design system.
     pub const fn dark() -> Self {
         Self {
-            bg_base: hsl(0., 0., 14.),
+            bg_base: hsl(0., 0., 15.),
             text_base: hsl(0., 0., 0.),
             text_lightness: 0.95,
             primary_base: hsl(197., 67., 54.),
             success_base: hsl(153., 47., 52.),
             warning_base: hsl(38., 89., 63.),
             danger_base: hsl(1., 84., 64.),
-            // bg_base: Color::from_rgb8(0x24, 0x24, 0x24),
-            // text_base: Color::from_rgb8(255, 255, 255),
-            // text_lightness: 0.95,
-            // primary_base: Color::from_rgb8(0x3A, 0xAA, 0xD8),
-            // success_base: Color::from_rgb8(0x4A, 0xBE, 0x8A),
-            // warning_base: Color::from_rgb8(0xF5, 0xB8, 0x4E),
-            // danger_base: Color::from_rgb8(0xF0, 0x56, 0x54),
             padding: 5.,
             border_radius: 5.,
             font_size: 14.,
@@ -169,29 +84,16 @@ impl DesignSystem {
     }
 
     pub const fn bg_elevated(&self) -> Color {
-        // let adjustment = 0.05;
-        // self.bg_base.map_lightness(|l| l + adjustment)
         hsl_map_lightness(self.bg_base, 0.05)
     }
 
-    // pub const fn bg_overlay(&self) -> Color {
-    //     // let adjustment = 0.10;
-    //     let adjustment = if self.is_dark { 0.1 } else { -0.1 };
-    //     // self.bg_base.map_lightness(|l| l + adjustment)
-    //     hsl_map_lightness(self.bg_base, adjustment)
-    // }
-
     pub const fn bg_overlay(&self) -> Color {
         let adjustment = if self.is_dark { 0.1 } else { -0.1 };
-        // println!("com:             {:?}", &self.bg_base.components);
-        // println!("com mapped:      {:?}", &self.bg_base.map_lightness(|l| l + adjustment));
-        // println!("com mapped mine: {:?}", hsl_map_lightness(self.bg_base, adjustment));
         hsl_map_lightness(self.bg_base, adjustment)
     }
 
     pub const fn bg_disabled(&self) -> Color {
         let adjustment = if self.is_dark { -0.05 } else { -0.2 };
-        // self.bg_base.map_lightness(|l| l + adjustment)
         hsl_map_lightness(self.bg_base, adjustment)
     }
 
@@ -200,30 +102,22 @@ impl DesignSystem {
     pub const fn border(&self) -> Color {
         let adjustment = if self.is_dark { 0.15 } else { -0.15 };
         hsl_map_lightness(self.bg_base, adjustment)
-        // self.bg_base.map_lightness(|l| l + adjustment)
     }
 
     pub const fn border_muted(&self) -> Color {
         let adjustment = if self.is_dark { 0.15 } else { -0.15 };
-        hsl_map_lightness(self.border(), adjustment)
-        // self.border()
-        //     .map_lightness(|l| l + adjustment)
-            .with_alpha(0.8)
+        hsl_map_lightness(self.border(), adjustment).with_alpha(0.8)
     }
 
     // Text
 
     pub const fn text(&self) -> Color {
-        // self.text_base.map_lightness(|_| self.text_lightness)
         hsl_map_lightness(self.text_base, self.text_lightness)
     }
 
     pub const fn text_muted(&self) -> Color {
         let adjustment = if self.is_dark { -0.25 } else { 0.25 };
-        hsl_map_lightness(self.text_base, adjustment)
-        // self.text_base
-            // .map_lightness(|l| l + adjustment)
-            .with_alpha(0.5)
+        hsl_map_lightness(self.text_base, adjustment).with_alpha(0.5)
     }
 
     // Primary
@@ -234,7 +128,6 @@ impl DesignSystem {
 
     pub const fn primary_muted(&self) -> Color {
         hsl_map_lightness(self.primary_base, -0.05)
-        // self.primary_base.map_lightness(|l| l - 0.05)
     }
 
     // Semantic colors
@@ -790,4 +683,94 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
             })
             .transition(Background, Transition::linear(100.millis()))
         })
+}
+
+/// Contruct sRGB [Color] from HSL values.
+pub const fn hsl(h: f32, s: f32, l: f32) -> Color {
+    let sat = s * 0.01;
+    let light = l * 0.01;
+    let a = sat * light.min(1.0 - light);
+
+    let hue = transform(0., h, light, a);
+    let sat = transform(8., h, light, a);
+    let lum = transform(4., h, light, a);
+    Color::new([hue, sat, lum, 1.])
+}
+
+/// Map lightness using hsl colorspace.
+pub const fn hsl_map_lightness(c: Color, adjustment: f32) -> Color {
+    let [r, g, b, _] = c.components;
+    let [h, s, l] = rgb_to_hsl([r, g, b], true);
+    let l = ((l * 0.01) + adjustment) * 100.;
+    hsl(h, s, l)
+}
+
+const fn transform(n: f32, h: f32, light: f32, a: f32) -> f32 {
+    let x = n + h * (1.0 / 30.0);
+    let k = x - 12.0 * (x * (1.0 / 12.0)).floor();
+    light - a * (k - 3.0).min(9.0 - k).clamp(-1.0, 1.0)
+}
+
+const fn rgb_to_hsl([r, g, b]: [f32; 3], hue_hack: bool) -> [f32; 3] {
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let mut hue = 0.0;
+    let mut sat = 0.0;
+    let light = 0.5 * (min + max);
+    let d = max - min;
+
+    const EPSILON: f32 = 1e-6;
+    if d > EPSILON {
+        let denom = light.min(1.0 - light);
+        if denom.abs() > EPSILON {
+            sat = (max - light) / denom;
+        }
+        hue = if max == r {
+            (g - b) / d
+        } else if max == g {
+            (b - r) / d + 2.0
+        } else {
+            // max == b
+            (r - g) / d + 4.0
+        };
+        hue *= 60.0;
+        // Deal with negative saturation from out of gamut colors
+        if hue_hack && sat < 0.0 {
+            hue += 180.0;
+            sat = sat.abs();
+        }
+        hue -= 360. * (hue * (1.0 / 360.0)).floor();
+    }
+    [hue, sat * 100.0, light * 100.0]
+}
+
+#[test]
+fn rgb_hsl_conversion() {
+    let rgb_bg_base = Color::from_rgb8(242, 242, 242);
+    let hsl_bg_base = hsl(0., 0., 95.);
+    assert_eq!(rgb_bg_base.to_rgba8(), hsl_bg_base.to_rgba8());
+
+    let rgb_text_base = Color::from_rgb8(0, 0, 0);
+    let hsl_text_base = hsl(0., 0., 0.);
+    assert_eq!(rgb_text_base.to_rgba8(), hsl_text_base.to_rgba8());
+
+    let rgb_text_lightness = Color::from_rgb8(0, 0, 0);
+    let hsl_text_lightness = hsl(0., 0., 0.);
+    assert_eq!(rgb_text_lightness.to_rgba8(), hsl_text_lightness.to_rgba8());
+
+    let rgb_primary_base = Color::from_rgb8(24, 146, 191);
+    let hsl_primary_base = hsl(196., 78., 42.);
+    assert_eq!(rgb_primary_base.to_rgba8(), hsl_primary_base.to_rgba8());
+
+    let rgb_success_base = Color::from_rgb8(46, 158, 104);
+    let hsl_success_base = hsl(151., 55., 40.);
+    assert_eq!(rgb_success_base.to_rgba8(), hsl_success_base.to_rgba8());
+
+    let rgb_warning_base = Color::from_rgb8(229, 162, 36);
+    let hsl_warning_base = hsl(39., 79., 52.);
+    assert_eq!(rgb_warning_base.to_rgba8(), hsl_warning_base.to_rgba8());
+
+    let rgb_danger_base = Color::from_rgb8(215, 55, 68);
+    let hsl_danger_base = hsl(355., 67., 53.);
+    assert_eq!(rgb_danger_base.to_rgba8(), hsl_danger_base.to_rgba8());
 }
