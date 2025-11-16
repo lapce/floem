@@ -301,13 +301,11 @@ impl WindowHandle {
                         .is_processed();
                 }
 
-                if !processed {
-                    if let Some(listener) = event.listener() {
-                        processed |= self
-                            .main_view
-                            .apply_event(&listener, &event)
-                            .is_some_and(|prop| prop.is_processed());
-                    }
+                if !processed && let Some(listener) = event.listener() {
+                    processed |= self
+                        .main_view
+                        .apply_event(&listener, &event)
+                        .is_some_and(|prop| prop.is_processed());
                 }
 
                 if !processed {
@@ -324,16 +322,15 @@ impl WindowHandle {
                             let backwards = modifiers.contains(Modifiers::SHIFT);
                             view_tab_navigation(self.id, cx.window_state, backwards);
                             // view_debug_tree(&self.view);
-                        } else if *modifiers == Modifiers::ALT {
-                            if let Key::Named(
+                        } else if *modifiers == Modifiers::ALT
+                            && let Key::Named(
                                 name @ (NamedKey::ArrowUp
                                 | NamedKey::ArrowDown
                                 | NamedKey::ArrowLeft
                                 | NamedKey::ArrowRight),
                             ) = key
-                            {
-                                view_arrow_navigation(*name, cx.window_state, self.id);
-                            }
+                        {
+                            view_arrow_navigation(*name, cx.window_state, self.id);
                         }
                     }
 
@@ -346,15 +343,13 @@ impl WindowHandle {
                                 ..
                             })
                         );
-                    if keyboard_trigger_end {
-                        if let Some(id) = cx.window_state.active {
-                            // To remove the styles applied by the Active selector
-                            if cx.window_state.has_style_for_sel(id, StyleSelector::Active) {
-                                id.request_style_recursive();
-                            }
-
-                            cx.window_state.active = None;
+                    if keyboard_trigger_end && let Some(id) = cx.window_state.active {
+                        // To remove the styles applied by the Active selector
+                        if cx.window_state.has_style_for_sel(id, StyleSelector::Active) {
+                            id.request_style_recursive();
                         }
+
+                        cx.window_state.active = None;
                     }
                 }
             }
@@ -1234,15 +1229,15 @@ impl WindowHandle {
     pub(crate) fn set_menu_theme_for_windows(&self, theme: winit::window::Theme) {
         use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
-        if let RawWindowHandle::Win32(handle) = self.window.window_handle().unwrap().as_raw() {
-            if let Some(menu) = &self.window_menu {
-                unsafe {
-                    let menu_theme = match theme {
-                        winit::window::Theme::Light => muda::MenuTheme::Light,
-                        winit::window::Theme::Dark => muda::MenuTheme::Dark,
-                    };
-                    let _ = menu.set_theme_for_hwnd(handle.hwnd.into(), menu_theme);
-                }
+        if let RawWindowHandle::Win32(handle) = self.window.window_handle().unwrap().as_raw()
+            && let Some(menu) = &self.window_menu
+        {
+            unsafe {
+                let menu_theme = match theme {
+                    winit::window::Theme::Light => muda::MenuTheme::Light,
+                    winit::window::Theme::Dark => muda::MenuTheme::Dark,
+                };
+                let _ = menu.set_theme_for_hwnd(handle.hwnd.into(), menu_theme);
             }
         }
     }

@@ -218,10 +218,10 @@ impl ApplicationHandle {
             .reduce(window_handle.scale, &event)
         {
             Some(WindowEventTranslation::Keyboard(ke)) => {
-                if let WindowEvent::KeyboardInput { is_synthetic, .. } = event {
-                    if !is_synthetic {
-                        window_handle.key_event(ke)
-                    }
+                if let WindowEvent::KeyboardInput { is_synthetic, .. } = event
+                    && !is_synthetic
+                {
+                    window_handle.key_event(ke)
                 }
             }
             Some(WindowEventTranslation::Pointer(pe)) => {

@@ -22,10 +22,10 @@ pub fn drag_window_area<V: IntoView + 'static>(child: V) -> DragWindowArea {
     id.set_children([child]);
     DragWindowArea { id }
         .on_event_stop(EventListener::PointerDown, |e| {
-            if let Event::Pointer(PointerEvent::Down(PointerButtonEvent { button, .. })) = e {
-                if button.is_some_and(|b| b == PointerButton::Primary) {
-                    drag_window();
-                }
+            if let Event::Pointer(PointerEvent::Down(PointerButtonEvent { button, .. })) = e
+                && button.is_some_and(|b| b == PointerButton::Primary)
+            {
+                drag_window();
             }
         })
         .on_double_click_stop(|_| toggle_window_maximized())

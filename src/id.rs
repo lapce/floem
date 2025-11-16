@@ -45,10 +45,10 @@ impl ViewId {
             // Remove the cached root, in the (unlikely) case that this view is
             // re-added to a different window
             s.root.remove(*self);
-            if let Some(Some(parent)) = s.parent.get(*self) {
-                if let Some(children) = s.children.get_mut(*parent) {
-                    children.retain(|c| c != self);
-                }
+            if let Some(Some(parent)) = s.parent.get(*self)
+                && let Some(children) = s.children.get_mut(*parent)
+            {
+                children.retain(|c| c != self);
             }
             s.view_ids.remove(*self);
         });
@@ -207,11 +207,11 @@ impl ViewId {
             // root_view_id() always returns SOMETHING.  If the view is not yet added
             // to a window, it can be itself or its nearest ancestor, which means we
             // will store garbage permanently.
-            if let Some(root) = root_view_id {
-                if is_known_root(&root) {
-                    s.root.insert(*self, root_view_id);
-                    return Some(root);
-                }
+            if let Some(root) = root_view_id
+                && is_known_root(&root)
+            {
+                s.root.insert(*self, root_view_id);
+                return Some(root);
             }
             None
         })
