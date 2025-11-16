@@ -12,8 +12,7 @@ use floem_reactive::{
 };
 use imbl::OrdMap;
 use peniko::kurbo::{Point, Rect, Size};
-use ui_events::keyboard::Key;
-use winit::keyboard::NamedKey;
+use ui_events::keyboard::{Key, NamedKey};
 
 use crate::{
     AnyView,

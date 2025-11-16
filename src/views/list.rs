@@ -11,8 +11,7 @@ use crate::{
     view::View,
 };
 use floem_reactive::{RwSignal, SignalGet, SignalUpdate, create_rw_signal};
-use ui_events::keyboard::{Key, KeyState, KeyboardEvent};
-use winit::keyboard::NamedKey;
+use ui_events::keyboard::{Key, KeyState, KeyboardEvent, NamedKey};
 
 style_class!(pub ListClass);
 style_class!(pub ListItemClass);
