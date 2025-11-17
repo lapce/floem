@@ -34,12 +34,9 @@ pub struct DesignSystem {
     pub bg_elevate: f32,
     /// Lightness of the background overlays from 0-1.
     pub bg_overlay: f32,
-    /// Lightness of the border (0-1) based on background.
-    pub border: f32,
-    /// Theme border radius.
-    pub border_radius: f32,
     /// Lightness of the disabled elements (0-1) based on background.
     pub disabled: f32,
+
     /// Base text color.
     pub text_base: Color,
     /// Lightness of the text color (0-1).
@@ -48,6 +45,7 @@ pub struct DesignSystem {
     pub text_muted: f32,
     /// Size of the font.
     pub font_size: f32,
+
     /// The primary theme accent color.
     pub primary_base: Color,
     /// The success theme accent color.
@@ -56,6 +54,11 @@ pub struct DesignSystem {
     pub warning_base: Color,
     /// The danger theme accent color.
     pub danger_base: Color,
+
+    /// Lightness of the border (0-1) based on background.
+    pub border: f32,
+    /// Theme border radius.
+    pub border_radius: f32,
     /// Default theme padding.
     pub padding: f32,
     /// Is the theme a dark variant.
@@ -79,7 +82,7 @@ impl DesignSystem {
             is_dark: false,
             bg_elevate: -0.03,
             bg_overlay: 0.1,
-            border: 0.15,
+            border: -0.15,
             disabled: -0.1,
             text_muted: 0.25,
         }
@@ -133,15 +136,13 @@ impl DesignSystem {
 
     /// The theme border color.
     pub fn border(&self) -> Color {
-        let adjustment = if self.is_dark { 0.15 } else { -0.15 };
-        self.bg_base.map_lightness(|c| c + adjustment)
+        self.bg_base.map_lightness(|c| c + self.border)
     }
 
     /// The theme muted border color.
     pub fn border_muted(&self) -> Color {
-        let adjustment = if self.is_dark { 0.15 } else { -0.15 };
         self.border()
-            .map_lightness(|c| c + adjustment)
+            .map_lightness(|c| c + self.border)
             .with_alpha(0.8)
     }
 
@@ -154,9 +155,8 @@ impl DesignSystem {
 
     /// The theme muted text color.
     pub fn text_muted(&self) -> Color {
-        let adjustment = if self.is_dark { -0.25 } else { 0.25 };
         self.text_base
-            .map_lightness(|c| c + adjustment)
+            .map_lightness(|c| c + self.text_muted)
             .with_alpha(0.5)
     }
 
