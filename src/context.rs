@@ -652,7 +652,6 @@ impl<'a> StyleCx<'a> {
             }
             view_state.requested_changes.remove(ChangeFlags::STYLE);
         }
-
         let view_class = view.borrow().view_class();
         {
             let mut view_state = view_state.borrow_mut();
@@ -662,8 +661,8 @@ impl<'a> StyleCx<'a> {
             {
                 view_state.requested_changes.remove(ChangeFlags::VIEW_STYLE);
                 if let Some(view_style) = view.borrow().view_style() {
-                    let offest = view_state.view_style_offset;
-                    view_state.style.set(offest, view_style);
+                    let offset = view_state.view_style_offset;
+                    view_state.style.set(offset, view_style);
                 }
             }
             // Propagate style requests to children if needed.
@@ -729,7 +728,7 @@ impl<'a> StyleCx<'a> {
                 &mut new_frame,
             );
             if new_frame {
-                // if any transitioning layout props, shedule layout
+                // If any transitioning layout props, schedule layout.
                 self.window_state.schedule_layout(view_id);
             }
 

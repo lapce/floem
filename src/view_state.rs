@@ -249,7 +249,6 @@ impl ViewState {
     /// Returns `true` if a new frame is requested.
     ///
     // The context has the nested maps of classes and inherited properties
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn compute_combined(
         &mut self,
         interact_state: InteractionState,
