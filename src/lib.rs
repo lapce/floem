@@ -191,7 +191,21 @@ pub mod easing;
 pub mod event;
 pub mod ext_event;
 pub mod file;
-#[cfg(any(feature = "rfd-async-std", feature = "rfd-tokio"))]
+#[cfg(all(
+    target_os = "linux",
+    feature = "rfd",
+    not(any(feature = "rfd-async-std", feature = "rfd-tokio"))
+))]
+compile_error!(
+    "On Linux, rfd requires an async runtime. \
+     Please enable either the 'rfd-async-std' or 'rfd-tokio' feature."
+);
+#[cfg(all(feature = "rfd-async-std", feature = "rfd-tokio"))]
+compile_error!(
+    "Cannot enable both 'rfd-async-std' and 'rfd-tokio' features simultaneously. \
+     Please choose only one async runtime."
+);
+#[cfg(any(feature = "rfd-async-std", feature = "rfd-tokio", feature = "rfd"))]
 pub mod file_action;
 pub(crate) mod id;
 mod inspector;
