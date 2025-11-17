@@ -1111,7 +1111,7 @@ impl WindowHandle {
             .state()
             .borrow()
             .requested_changes
-            .contains(ChangeFlags::STYLE)
+            .contains(ChangeFlags::STYLE | ChangeFlags::VIEW_STYLE)
     }
 
     fn has_deferred_update_messages(&self) -> bool {

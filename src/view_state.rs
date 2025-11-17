@@ -104,6 +104,7 @@ bitflags! {
     pub(crate) struct ChangeFlags: u8 {
         const STYLE = 1;
         const LAYOUT = 1 << 1;
+        const VIEW_STYLE = 1 << 2;
     }
 }
 
@@ -172,6 +173,9 @@ pub struct ViewState {
     pub(crate) node: NodeId,
     pub(crate) requested_changes: ChangeFlags,
     pub(crate) style: Stack<Style>,
+    /// We store the stack offset to the view style to keep the api consistent but it should
+    /// always be the first offset.
+    pub(crate) view_style_offset: StackOffset<Style>,
     /// Layout is requested on all direct and indirect children.
     pub(crate) request_style_recursive: bool,
     pub(crate) has_style_selectors: StyleSelectors,
@@ -182,9 +186,9 @@ pub struct ViewState {
     pub(crate) animations: Stack<Animation>,
     pub(crate) classes: Vec<StyleClassRef>,
     pub(crate) dragging_style: Option<Style>,
-    /// Combine the stacked style into one style, and apply the interact state
+    /// Combine the stacked style into one style, and apply the interact state.
     pub(crate) combined_style: Style,
-    /// The final style including inherited style from parent
+    /// The final style including inherited style from parent.
     pub(crate) computed_style: Style,
     pub(crate) taffy_style: taffy::style::Style,
     pub(crate) event_listeners: HashMap<EventListener, Vec<Rc<RefCell<EventCallback>>>>,
@@ -204,10 +208,15 @@ pub struct ViewState {
 
 impl ViewState {
     pub(crate) fn new(taffy: &mut taffy::TaffyTree) -> Self {
+        let mut style = Stack::<Style>::default();
+        let view_style_offset = style.next_offset();
+        style.push(Style::new());
+
         Self {
             node: taffy.new_leaf(taffy::style::Style::DEFAULT).unwrap(),
             viewport: None,
-            style: Default::default(),
+            style,
+            view_style_offset,
             layout_rect: Rect::ZERO,
             layout_props: Default::default(),
             view_style_props: Default::default(),
@@ -243,7 +252,6 @@ impl ViewState {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn compute_combined(
         &mut self,
-        view_style: Option<Style>,
         interact_state: InteractionState,
         screen_size_bp: ScreenSizeBp,
         view_class: Option<StyleClassRef>,
@@ -278,10 +286,6 @@ impl ViewState {
         );
         combined_style = resolved_style;
         new_classes |= classes_applied;
-
-        if let Some(view_style) = &view_style {
-            combined_style.apply_mut(view_style.clone());
-        }
 
         let self_style = self.style();
 
