@@ -27,6 +27,9 @@ style_class!(pub HoverTargetClass);
 #[derive(Debug, Clone, PartialEq)]
 pub struct DesignSystem {
     pub bg_base: Color,
+    pub bg_elevate1: f32,
+    pub bg_elevate2: f32,
+    pub bg_darken: f32,
     pub text_base: Color,
     pub text_lightness: f32,
     pub primary_base: Color,
@@ -39,20 +42,23 @@ pub struct DesignSystem {
     pub font_size: f32,
 }
 
-pub(crate) const LIGHT_THEME: DesignSystem = DesignSystem::light();
-pub(crate) const DARK_THEME: DesignSystem = DesignSystem::dark();
+// pub(crate) const LIGHT_THEME: DesignSystem = DesignSystem::light();
+// pub(crate) const DARK_THEME: DesignSystem = DesignSystem::dark();
 
 impl DesignSystem {
     /// Create a light mode design system.
-    pub const fn light() -> Self {
+    pub fn light() -> Self {
         Self {
             bg_base: hsl(0., 0., 95.),
-            text_base: hsl(0., 0., 10.),
+            bg_elevate1: 0.05,
+            bg_elevate2: 0.1,
+            bg_darken: -0.1,
+            text_base: hsl(0., 0., 0.),
             text_lightness: 0.05,
-            primary_base: hsl(196., 78., 42.),
-            success_base: hsl(151., 55., 40.),
-            warning_base: hsl(39., 79., 52.),
-            danger_base: hsl(355., 67., 53.),
+            primary_base: Color::from_rgb8(24, 150, 194),
+            success_base: Color::from_rgb8(45, 157, 103),
+            warning_base: Color::from_rgb8(229, 162, 35),
+            danger_base: Color::from_rgb8(215, 55, 69),
             padding: 5.,
             border_radius: 5.,
             font_size: 14.,
@@ -61,15 +67,18 @@ impl DesignSystem {
     }
 
     /// Create a dark mode design system.
-    pub const fn dark() -> Self {
+    pub fn dark() -> Self {
         Self {
             bg_base: hsl(0., 0., 15.),
-            text_base: hsl(0., 0., 0.),
+            bg_elevate1: 0.05,
+            bg_elevate2: 0.1,
+            bg_darken: -0.1,
+            text_base: hsl(0., 0., 100.),
             text_lightness: 0.95,
-            primary_base: hsl(197., 67., 54.),
-            success_base: hsl(153., 47., 52.),
-            warning_base: hsl(38., 89., 63.),
-            danger_base: hsl(1., 84., 64.),
+            primary_base: Color::from_rgb8(58, 170, 216),
+            success_base: Color::from_rgb8(74, 190, 138),
+            warning_base: Color::from_rgb8(245, 184, 78),
+            danger_base: Color::from_rgb8(240, 86, 84),
             padding: 5.,
             border_radius: 5.,
             font_size: 14.,
@@ -83,41 +92,45 @@ impl DesignSystem {
         self.bg_base
     }
 
-    pub const fn bg_elevated(&self) -> Color {
-        hsl_map_lightness(self.bg_base, 0.05)
+    pub fn bg_elevated(&self) -> Color {
+        self.bg_base.map_lightness(|c| c + self.bg_elevate1)
+    }
+    
+    pub fn bg_elevated2(&self) -> Color {
+        self.bg_base.map_lightness(|c| c + self.bg_elevate2)
     }
 
-    pub const fn bg_overlay(&self) -> Color {
+    pub fn bg_overlay(&self) -> Color {
         let adjustment = if self.is_dark { 0.1 } else { -0.1 };
-        hsl_map_lightness(self.bg_base, adjustment)
+        self.bg_base.map_lightness(|c| c + adjustment)
     }
 
-    pub const fn bg_disabled(&self) -> Color {
-        let adjustment = if self.is_dark { -0.05 } else { -0.2 };
-        hsl_map_lightness(self.bg_base, adjustment)
+    pub fn bg_disabled(&self) -> Color {
+        let adjustment = if self.is_dark { -0.05 } else { -0.1 };
+        self.bg_base.map_lightness(|c| c + adjustment)
     }
 
     // Border
 
-    pub const fn border(&self) -> Color {
+    pub fn border(&self) -> Color {
         let adjustment = if self.is_dark { 0.15 } else { -0.15 };
-        hsl_map_lightness(self.bg_base, adjustment)
+        self.bg_base.map_lightness(|c| c + adjustment)
     }
-
-    pub const fn border_muted(&self) -> Color {
+    
+    pub fn border_muted(&self) -> Color {
         let adjustment = if self.is_dark { 0.15 } else { -0.15 };
-        hsl_map_lightness(self.border(), adjustment).with_alpha(0.8)
+        self.border().map_lightness(|c| c + adjustment).with_alpha(0.8)
     }
 
     // Text
 
-    pub const fn text(&self) -> Color {
-        hsl_map_lightness(self.text_base, self.text_lightness)
+    pub fn text(&self) -> Color {
+        self.text_base.map_lightness(|_| self.text_lightness)
     }
 
-    pub const fn text_muted(&self) -> Color {
+    pub fn text_muted(&self) -> Color {
         let adjustment = if self.is_dark { -0.25 } else { 0.25 };
-        hsl_map_lightness(self.text_base, adjustment).with_alpha(0.5)
+        self.text_base.map_lightness(|c| c + adjustment).with_alpha(0.5)
     }
 
     // Primary
@@ -126,8 +139,8 @@ impl DesignSystem {
         self.primary_base
     }
 
-    pub const fn primary_muted(&self) -> Color {
-        hsl_map_lightness(self.primary_base, -0.05)
+    pub fn primary_muted(&self) -> Color {
+        self.primary_base.map_lightness(|c| c - 0.05)
     }
 
     // Semantic colors
@@ -281,12 +294,15 @@ impl StylePropValue for DesignSystem {
             padding: self.padding * inv_t + other.padding * t,
             border_radius: self.border_radius * inv_t + other.border_radius * t,
             font_size: self.font_size * inv_t + other.font_size * t,
+            bg_elevate1: self.bg_elevate1 * inv_t + other.bg_elevate1 * t,
+            bg_elevate2: self.bg_elevate2 * inv_t + other.bg_elevate2 * t,
+            bg_darken: self.bg_darken * inv_t + other.bg_darken * t,
         })
     }
 }
 
 prop!(
-    pub Theme: DesignSystem { inherited } = LIGHT_THEME
+    pub Theme: DesignSystem { inherited } = DesignSystem::light()
 );
 pub trait StyleThemeExt {
     fn theme(self, theme: DesignSystem) -> Self;
@@ -549,7 +565,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
 
     Style::new()
         .apply_if(os_theme == winit::window::Theme::Light, |s| {
-            let light = LIGHT_THEME;
+            let light = DesignSystem::light();
             s.color(light.text())
                 .font_size(light.font_size())
                 .background(light.bg_base())
@@ -557,7 +573,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
                 .theme(light)
         })
         .apply_if(os_theme == winit::window::Theme::Dark, |s| {
-            let dark = DARK_THEME;
+            let dark = DesignSystem::dark();
             s.color(dark.text())
                 .font_size(dark.font_size())
                 .background(dark.bg_base())
@@ -697,51 +713,10 @@ pub const fn hsl(h: f32, s: f32, l: f32) -> Color {
     Color::new([hue, sat, lum, 1.])
 }
 
-/// Map lightness using hsl colorspace.
-pub const fn hsl_map_lightness(c: Color, adjustment: f32) -> Color {
-    let [r, g, b, _] = c.components;
-    let [h, s, l] = rgb_to_hsl([r, g, b], true);
-    let l = ((l * 0.01) + adjustment) * 100.;
-    hsl(h, s, l)
-}
-
 const fn transform(n: f32, h: f32, light: f32, a: f32) -> f32 {
     let x = n + h * (1.0 / 30.0);
     let k = x - 12.0 * (x * (1.0 / 12.0)).floor();
     light - a * (k - 3.0).min(9.0 - k).clamp(-1.0, 1.0)
-}
-
-const fn rgb_to_hsl([r, g, b]: [f32; 3], hue_hack: bool) -> [f32; 3] {
-    let max = r.max(g).max(b);
-    let min = r.min(g).min(b);
-    let mut hue = 0.0;
-    let mut sat = 0.0;
-    let light = 0.5 * (min + max);
-    let d = max - min;
-
-    const EPSILON: f32 = 1e-6;
-    if d > EPSILON {
-        let denom = light.min(1.0 - light);
-        if denom.abs() > EPSILON {
-            sat = (max - light) / denom;
-        }
-        hue = if max == r {
-            (g - b) / d
-        } else if max == g {
-            (b - r) / d + 2.0
-        } else {
-            // max == b
-            (r - g) / d + 4.0
-        };
-        hue *= 60.0;
-        // Deal with negative saturation from out of gamut colors
-        if hue_hack && sat < 0.0 {
-            hue += 180.0;
-            sat = sat.abs();
-        }
-        hue -= 360. * (hue * (1.0 / 360.0)).floor();
-    }
-    [hue, sat * 100.0, light * 100.0]
 }
 
 #[test]
