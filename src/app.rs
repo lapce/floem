@@ -188,7 +188,7 @@ impl ApplicationHandler for Application {
         for event in self.receiver.try_iter() {
             self.handle.handle_user_event(event_loop, event);
         }
-        self.handle.handle_updates_for_all_windows();
+        self.handle.handle_updates_for_all_windows(true);
     }
 
     fn destroy_surfaces(&mut self, _event_loop: &dyn ActiveEventLoop) {
