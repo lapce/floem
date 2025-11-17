@@ -1107,11 +1107,8 @@ impl WindowHandle {
     }
 
     fn needs_style(&mut self) -> bool {
-        self.id
-            .state()
-            .borrow()
-            .requested_changes
-            .contains(ChangeFlags::STYLE | ChangeFlags::VIEW_STYLE)
+        let flags = self.id.state().borrow().requested_changes;
+        flags.contains(ChangeFlags::STYLE) || flags.contains(ChangeFlags::VIEW_STYLE)
     }
 
     fn has_deferred_update_messages(&self) -> bool {
