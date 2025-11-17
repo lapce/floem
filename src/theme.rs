@@ -24,35 +24,49 @@ use smallvec::smallvec;
 
 style_class!(pub HoverTargetClass);
 
+/// A theme builder. Create your own or use provided default [light](DesignSystem::light)
+/// and [dark](DesignSystem::dark) default themes.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DesignSystem {
+    /// The base background color.
     pub bg_base: Color,
-    pub bg_elevate1: f32,
-    pub bg_elevate2: f32,
-    pub bg_darken: f32,
-    pub text_base: Color,
-    pub text_lightness: f32,
-    pub primary_base: Color,
-    pub success_base: Color,
-    pub warning_base: Color,
-    pub danger_base: Color,
-    pub is_dark: bool,
-    pub padding: f32,
+    /// Lightness of the background elevation from 0-1.
+    pub bg_elevate: f32,
+    /// Lightness of the background overlays from 0-1.
+    pub bg_overlay: f32,
+    /// Lightness of the border (0-1) based on background.
+    pub border: f32,
+    /// Theme border radius.
     pub border_radius: f32,
+    /// Lightness of the disabled elements (0-1) based on background.
+    pub disabled: f32,
+    /// Base text color.
+    pub text_base: Color,
+    /// Lightness of the text color (0-1).
+    pub text_lightness: f32,
+    /// Lightness of the text color (0-1) when muted.
+    pub text_muted: f32,
+    /// Size of the font.
     pub font_size: f32,
+    /// The primary theme accent color.
+    pub primary_base: Color,
+    /// The success theme accent color.
+    pub success_base: Color,
+    /// The warning theme accent color.
+    pub warning_base: Color,
+    /// The danger theme accent color.
+    pub danger_base: Color,
+    /// Default theme padding.
+    pub padding: f32,
+    /// Is the theme a dark variant.
+    pub is_dark: bool,
 }
 
-// pub(crate) const LIGHT_THEME: DesignSystem = DesignSystem::light();
-// pub(crate) const DARK_THEME: DesignSystem = DesignSystem::dark();
-
 impl DesignSystem {
-    /// Create a light mode design system.
+    /// Create a default light mode design system.
     pub fn light() -> Self {
         Self {
-            bg_base: hsl(0., 0., 95.),
-            bg_elevate1: 0.05,
-            bg_elevate2: 0.1,
-            bg_darken: -0.1,
+            bg_base: hsl(0., 0., 97.),
             text_base: hsl(0., 0., 0.),
             text_lightness: 0.05,
             primary_base: Color::from_rgb8(24, 150, 194),
@@ -63,16 +77,18 @@ impl DesignSystem {
             border_radius: 5.,
             font_size: 14.,
             is_dark: false,
+            bg_elevate: -0.03,
+            bg_overlay: 0.1,
+            border: 0.15,
+            disabled: -0.1,
+            text_muted: 0.25,
         }
     }
 
-    /// Create a dark mode design system.
+    /// Create a default dark mode design system.
     pub fn dark() -> Self {
         Self {
             bg_base: hsl(0., 0., 15.),
-            bg_elevate1: 0.05,
-            bg_elevate2: 0.1,
-            bg_darken: -0.1,
             text_base: hsl(0., 0., 100.),
             text_lightness: 0.95,
             primary_base: Color::from_rgb8(58, 170, 216),
@@ -83,92 +99,112 @@ impl DesignSystem {
             border_radius: 5.,
             font_size: 14.,
             is_dark: true,
+            bg_elevate: 0.05,
+            bg_overlay: 0.1,
+            border: 0.15,
+            disabled: -0.05,
+            text_muted: -0.25,
         }
     }
 
     // Background levels
 
+    /// The base background theme color.
     pub const fn bg_base(&self) -> Color {
         self.bg_base
     }
 
+    /// The theme background elevated color.
     pub fn bg_elevated(&self) -> Color {
-        self.bg_base.map_lightness(|c| c + self.bg_elevate1)
-    }
-    
-    pub fn bg_elevated2(&self) -> Color {
-        self.bg_base.map_lightness(|c| c + self.bg_elevate2)
+        self.bg_base.map_lightness(|c| c + self.bg_elevate)
     }
 
+    /// The theme background overlay color.
     pub fn bg_overlay(&self) -> Color {
-        let adjustment = if self.is_dark { 0.1 } else { -0.1 };
-        self.bg_base.map_lightness(|c| c + adjustment)
+        self.bg_base.map_lightness(|c| c + self.bg_overlay)
     }
 
+    /// The theme background overlay color for disabled elements.
     pub fn bg_disabled(&self) -> Color {
-        let adjustment = if self.is_dark { -0.05 } else { -0.1 };
-        self.bg_base.map_lightness(|c| c + adjustment)
+        self.bg_base.map_lightness(|c| c + self.disabled)
     }
 
     // Border
 
+    /// The theme border color.
     pub fn border(&self) -> Color {
         let adjustment = if self.is_dark { 0.15 } else { -0.15 };
         self.bg_base.map_lightness(|c| c + adjustment)
     }
-    
+
+    /// The theme muted border color.
     pub fn border_muted(&self) -> Color {
         let adjustment = if self.is_dark { 0.15 } else { -0.15 };
-        self.border().map_lightness(|c| c + adjustment).with_alpha(0.8)
+        self.border()
+            .map_lightness(|c| c + adjustment)
+            .with_alpha(0.8)
     }
 
     // Text
 
+    /// The theme text color.
     pub fn text(&self) -> Color {
         self.text_base.map_lightness(|_| self.text_lightness)
     }
 
+    /// The theme muted text color.
     pub fn text_muted(&self) -> Color {
         let adjustment = if self.is_dark { -0.25 } else { 0.25 };
-        self.text_base.map_lightness(|c| c + adjustment).with_alpha(0.5)
+        self.text_base
+            .map_lightness(|c| c + adjustment)
+            .with_alpha(0.5)
     }
 
     // Primary
 
+    /// The primary theme accent color.
     pub const fn primary(&self) -> Color {
         self.primary_base
     }
 
+    /// The muted primary theme accent color.
     pub fn primary_muted(&self) -> Color {
         self.primary_base.map_lightness(|c| c - 0.05)
     }
 
     // Semantic colors
 
+    /// The success theme accent color.
     pub const fn success(&self) -> Color {
         self.success_base
     }
 
+    /// The warning theme accent color.
     pub const fn warning(&self) -> Color {
         self.warning_base
     }
 
+    /// The danger theme accent color.
     pub const fn danger(&self) -> Color {
         self.danger_base
     }
 
+    /// The info theme accent color.
     pub const fn info(&self) -> Color {
         self.primary_base
     }
 
+    /// The theme default padding.
     pub const fn padding(&self) -> f32 {
         self.padding
     }
 
+    /// The theme default border radius.
     pub const fn border_radius(&self) -> f32 {
         self.border_radius
     }
 
+    /// The theme default font size.
     pub const fn font_size(&self) -> f32 {
         self.font_size
     }
@@ -251,8 +287,8 @@ impl StylePropValue for DesignSystem {
             }),
         ))
         .style(|s| {
-            // this view here should be getting set to have a height of just the two children combined
-            // I think this is a bug in taffy
+            // This view here should be getting set to have a height of just the two
+            // children combined, I think this is a bug in taffy.
             s.flex_col()
                 .padding(8.0)
                 .border(1.)
@@ -294,9 +330,11 @@ impl StylePropValue for DesignSystem {
             padding: self.padding * inv_t + other.padding * t,
             border_radius: self.border_radius * inv_t + other.border_radius * t,
             font_size: self.font_size * inv_t + other.font_size * t,
-            bg_elevate1: self.bg_elevate1 * inv_t + other.bg_elevate1 * t,
-            bg_elevate2: self.bg_elevate2 * inv_t + other.bg_elevate2 * t,
-            bg_darken: self.bg_darken * inv_t + other.bg_darken * t,
+            bg_elevate: self.bg_elevate * inv_t + other.bg_elevate * t,
+            bg_overlay: self.bg_overlay * inv_t + other.bg_overlay * t,
+            disabled: self.disabled * inv_t + other.disabled * t,
+            text_muted: self.text_muted * inv_t + other.text_muted * t,
+            border: self.border + inv_t + other.border * t,
         })
     }
 }
