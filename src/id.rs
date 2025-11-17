@@ -381,6 +381,11 @@ impl ViewId {
         self.request_changes(ChangeFlags::STYLE)
     }
 
+    /// Use this when you want the `view_style` method from the `View` trait to be rerun.
+    pub fn request_view_style(&self) {
+        self.request_changes(ChangeFlags::VIEW_STYLE)
+    }
+
     pub(crate) fn request_changes(&self, flags: ChangeFlags) {
         let state = self.state();
         if state.borrow().requested_changes.contains(flags) {

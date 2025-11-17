@@ -244,7 +244,7 @@ pub use peniko::kurbo;
 pub use screen_layout::ScreenLayout;
 pub use taffy;
 pub use ui_events;
-pub use view::{AnyView, IntoView, View, recursively_layout_view};
+pub use view::{AnyView, IntoView, View, default_compute_layout, recursively_layout_view};
 pub use view_state::{Stack, StackOffset};
 pub use window::{close_window, new_window};
 pub use window_id::{Urgency, WindowIdExt};

@@ -642,18 +642,30 @@ impl<'a> StyleCx<'a> {
         let view_state = view_id.state();
         {
             let mut view_state = view_state.borrow_mut();
-            if !view_state.requested_changes.contains(ChangeFlags::STYLE) {
+            if !view_state.requested_changes.contains(ChangeFlags::STYLE)
+                && !view_state
+                    .requested_changes
+                    .contains(ChangeFlags::VIEW_STYLE)
+            {
                 self.restore();
                 return;
             }
             view_state.requested_changes.remove(ChangeFlags::STYLE);
         }
 
-        let view_style = view.borrow().view_style();
         let view_class = view.borrow().view_class();
         {
             let mut view_state = view_state.borrow_mut();
-
+            if view_state
+                .requested_changes
+                .contains(ChangeFlags::VIEW_STYLE)
+            {
+                view_state.requested_changes.remove(ChangeFlags::VIEW_STYLE);
+                if let Some(view_style) = view.borrow().view_style() {
+                    let offest = view_state.view_style_offset;
+                    view_state.style.set(offest, view_style);
+                }
+            }
             // Propagate style requests to children if needed.
             if view_state.request_style_recursive {
                 view_state.request_style_recursive = false;
@@ -670,7 +682,6 @@ impl<'a> StyleCx<'a> {
         let view_interact_state = self.get_interact_state(&view_id);
         self.disabled = view_interact_state.is_disabled;
         let (mut new_frame, classes_applied) = view_id.state().borrow_mut().compute_combined(
-            view_style,
             view_interact_state,
             self.window_state.screen_size_bp,
             view_class,
