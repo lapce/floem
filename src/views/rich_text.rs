@@ -1,10 +1,6 @@
 use std::any::Any;
 
 use floem_reactive::create_effect;
-use floem_renderer::{
-    Renderer,
-    text::{Attrs, AttrsList, AttrsOwned, TextLayout},
-};
 use peniko::{
     Color,
     color::palette,
@@ -18,6 +14,7 @@ use crate::{
     context::UpdateCx,
     id::ViewId,
     style::{Style, TextOverflow},
+    text::{Attrs, AttrsList, AttrsOwned, TextLayout},
     unit::PxPct,
     view::View,
 };

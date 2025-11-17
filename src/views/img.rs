@@ -7,7 +7,7 @@ use peniko::{Blob, ImageAlphaType, ImageData};
 use sha2::{Digest, Sha256};
 use taffy::NodeId;
 
-use crate::{Renderer, id::ViewId, style::Style, unit::UnitExt, view::View};
+use crate::{id::ViewId, style::Style, unit::UnitExt, view::View};
 
 /// Holds information about image position and size inside container.
 pub struct ImageStyle {

@@ -1,37 +1,43 @@
 #![deny(missing_docs)]
 use crate::action::{exec_after, set_ime_allowed, set_ime_cursor_area};
-use crate::event::{EventListener, EventPropagation};
-use crate::id::ViewId;
-use crate::reactive::{RwSignal, create_effect};
-use crate::style::{FontFamily, FontProps, PaddingProp, SelectionStyle, TextAlignProp};
-use crate::style::{FontStyle, FontWeight, TextColor};
-use crate::unit::{PxPct, PxPctAuto};
-use crate::views::editor::text::Preedit;
-use crate::{Clipboard, prop_extractor, style_class};
+use crate::{
+    Clipboard,
+    context::{EventCx, UpdateCx},
+    event::{Event, EventListener, EventPropagation},
+    id::ViewId,
+    peniko::color::palette,
+    prop_extractor,
+    reactive::{RwSignal, create_effect},
+    style::{
+        FontFamily, FontProps, FontStyle, FontWeight, PaddingProp, SelectionStyle, Style,
+        TextAlignProp, TextColor,
+    },
+    style_class,
+    text::{Attrs, AttrsList, FamilyOwned, TextLayout},
+    unit::{PxPct, PxPctAuto},
+    view::View,
+    views::editor::text::Preedit,
+};
+
 use floem_reactive::{SignalGet, SignalUpdate, SignalWith, create_rw_signal};
 use taffy::prelude::{Layout, NodeId};
 
-use floem_renderer::Renderer;
-use ui_events::keyboard::{Key, KeyState, KeyboardEvent, Modifiers, NamedKey};
-use ui_events::pointer::{PointerButton, PointerButtonEvent, PointerEvent};
+use ui_events::{
+    keyboard::{Key, KeyState, KeyboardEvent, Modifiers, NamedKey},
+    pointer::{PointerButton, PointerButtonEvent, PointerEvent},
+};
 use unicode_segmentation::UnicodeSegmentation;
-
-use crate::{peniko::color::palette, style::Style, view::View};
 
 use std::{any::Any, ops::Range};
 
-use crate::text::{Attrs, AttrsList, FamilyOwned, TextLayout};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
 use web_time::{Duration, Instant};
 
-use peniko::Brush;
-use peniko::kurbo::{Point, Rect, Size};
-
-use crate::{
-    context::{EventCx, UpdateCx},
-    event::Event,
+use peniko::{
+    Brush,
+    kurbo::{Point, Rect, Size},
 };
 
 use super::Decorators;

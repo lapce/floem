@@ -11,9 +11,9 @@
 use std::{future::Future, sync::Arc};
 
 #[cfg(feature = "crossbeam")]
-use crossbeam::channel::{bounded as sync_channel, Receiver};
+use crossbeam::channel::{Receiver, bounded as sync_channel};
 #[cfg(not(feature = "crossbeam"))]
-use std::sync::mpsc::{sync_channel, Receiver};
+use std::sync::mpsc::{Receiver, sync_channel};
 use wgpu::Backends;
 
 use winit::window::{Window, WindowId};
@@ -70,7 +70,7 @@ impl GpuResources {
                     }
                 };
 
-                let Ok(adapter) = instance
+                let Some(adapter) = instance
                     .request_adapter(&wgpu::RequestAdapterOptions {
                         power_preference: wgpu::PowerPreference::default(),
                         compatible_surface: Some(&surface),
@@ -86,11 +86,14 @@ impl GpuResources {
 
                 tx.send(
                     adapter
-                        .request_device(&wgpu::DeviceDescriptor {
-                            label: None,
-                            required_features,
-                            ..Default::default()
-                        })
+                        .request_device(
+                            &wgpu::DeviceDescriptor {
+                                label: None,
+                                required_features,
+                                ..Default::default()
+                            },
+                            None,
+                        )
                         .await
                         .map_err(GpuResourceError::DeviceRequestError)
                         .map(|(device, queue)| Self {

@@ -13,8 +13,6 @@ use winit::window::{
 };
 
 use floem_reactive::{RwSignal, Scope, SignalGet, SignalUpdate, with_scope};
-use floem_renderer::Renderer;
-use floem_renderer::gpu_resources::GpuResources;
 use peniko::color::palette;
 use peniko::kurbo::{Affine, Point, Size};
 use winit::{
@@ -24,6 +22,7 @@ use winit::{
     window::{Window, WindowId},
 };
 
+use crate::app_handle::GpuResources;
 use crate::dropped_file::FileDragEvent;
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use crate::menu::MudaMenu;
@@ -663,18 +662,8 @@ impl WindowHandle {
         let mut cx = PaintCx {
             window_state: &mut self.window_state,
             paint_state: &mut self.paint_state,
-            transform: Affine::IDENTITY,
-            clip: None,
-            z_index: None,
-            saved_transforms: Vec::new(),
-            saved_clips: Vec::new(),
-            saved_z_indexes: Vec::new(),
             gpu_resources,
             window: self.window.clone(),
-            #[cfg(feature = "vello")]
-            saved_layer_counts: Vec::new(),
-            #[cfg(feature = "vello")]
-            layer_count: 0,
         };
         cx.paint_state
             .renderer_mut()

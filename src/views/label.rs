@@ -12,12 +12,11 @@ use crate::{
         TextOverflowProp,
     },
     style_class,
-    text::{Attrs, AttrsList, FamilyOwned, TextLayout},
+    text::{Attrs, AttrsList, Cursor, FamilyOwned, TextLayout},
     unit::PxPct,
     view::View,
 };
 use floem_reactive::create_updater;
-use floem_renderer::{Renderer, text::Cursor};
 use peniko::{
     Brush,
     color::palette,

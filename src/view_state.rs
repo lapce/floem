@@ -70,7 +70,6 @@ impl<T> Stack<T> {
     }
 }
 
-#[cfg(feature = "vello")]
 prop_extractor! {
     pub(crate) ViewStyleProps {
         pub border_radius: BorderRadiusProp,
@@ -79,19 +78,6 @@ prop_extractor! {
         pub outline: Outline,
         pub outline_color: OutlineColor,
         pub outline_progress: crate::style::OutlineProgress,
-        pub border_color: BorderColorProp,
-        pub background: Background,
-        pub shadow: BoxShadowProp,
-    }
-}
-// removing outlines to make clippy happy about progress fields not being read
-#[cfg(not(feature = "vello"))]
-prop_extractor! {
-    pub(crate) ViewStyleProps {
-        pub border_radius: BorderRadiusProp,
-
-        pub outline: Outline,
-        pub outline_color: OutlineColor,
         pub border_color: BorderColorProp,
         pub background: Background,
         pub shadow: BoxShadowProp,

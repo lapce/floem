@@ -9,7 +9,6 @@ use ui_events::keyboard::{Key, KeyState, KeyboardEvent, NamedKey};
 use ui_events::pointer::PointerEvent;
 
 use crate::{
-    Renderer,
     event::EventPropagation,
     id::ViewId,
     prop, prop_extractor,

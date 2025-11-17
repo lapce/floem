@@ -12,7 +12,6 @@ use ui_events::pointer::{PointerButtonEvent, PointerEvent};
 use crate::style::{BorderRadiusProp, CustomStyle};
 use crate::unit::Pct;
 use crate::{
-    Renderer,
     event::EventPropagation,
     id::ViewId,
     prop, prop_extractor,

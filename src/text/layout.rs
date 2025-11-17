@@ -1,13 +1,14 @@
 use std::{ops::Range, sync::LazyLock};
 
-use crate::text::AttrsList;
-use cosmic_text::{
+pub use cosmic_text::{
     Affinity, Align, Buffer, BufferLine, Cursor, FontSystem, LayoutCursor, LayoutGlyph, LineEnding,
     LineIter, Metrics, Scroll, Shaping, Wrap,
 };
 use parking_lot::Mutex;
 use peniko::kurbo::{Point, Size};
 use unicode_segmentation::UnicodeSegmentation;
+
+use crate::text::attrs::AttrsList;
 
 pub static FONT_SYSTEM: LazyLock<Mutex<FontSystem>> = LazyLock::new(|| {
     let mut font_system = FontSystem::new();

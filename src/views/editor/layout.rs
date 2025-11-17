@@ -1,7 +1,5 @@
-use crate::{
-    peniko::Color,
-    text::{LayoutLine, TextLayout},
-};
+use crate::{peniko::Color, text::TextLayout};
+use cosmic_text::LayoutLine;
 use floem_editor_core::buffer::rope_text::RopeText;
 
 use super::{phantom_text::PhantomTextLine, visual_line::TextLayoutProvider};
