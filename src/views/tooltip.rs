@@ -87,23 +87,22 @@ impl View for Tooltip {
     }
 
     fn update(&mut self, _cx: &mut UpdateCx, state: Box<dyn std::any::Any>) {
-        if let Ok(token) = state.downcast::<TimerToken>() {
-            if let Some(window_origin) = self.window_origin {
-                if self.hover.map(|(_, t)| t) == Some(*token) {
-                    let tip = self.tip.clone();
+        if let Ok(token) = state.downcast::<TimerToken>()
+            && let Some(window_origin) = self.window_origin
+            && self.hover.map(|(_, t)| t) == Some(*token)
+        {
+            let tip = self.tip.clone();
 
-                    let tip_style = self.tip_style.clone();
-                    let point = window_origin
-                        + self.hover.unwrap().0.to_vec2()
-                        + (10. / self.scale, 10. / self.scale);
-                    let overlay_id = add_overlay(
-                        ToolTipOverlay::new(tip().style(move |_| tip_style.clone()))
-                            .style(move |s| s.inset_left(point.x).inset_top(point.y)),
-                    );
-                    // overlay_id.request_all();
-                    *self.overlay.borrow_mut() = Some(overlay_id);
-                }
-            }
+            let tip_style = self.tip_style.clone();
+            let point = window_origin
+                + self.hover.unwrap().0.to_vec2()
+                + (10. / self.scale, 10. / self.scale);
+            let overlay_id = add_overlay(
+                ToolTipOverlay::new(tip().style(move |_| tip_style.clone()))
+                    .style(move |s| s.inset_left(point.x).inset_top(point.y)),
+            );
+            // overlay_id.request_all();
+            *self.overlay.borrow_mut() = Some(overlay_id);
         }
     }
 

@@ -146,23 +146,23 @@ impl EventCx<'_> {
                 .event_before_children(self, &event)
                 .is_processed()
         {
-            if let Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. })) = &event {
-                if view_state.borrow().computed_style.get(Focusable) {
-                    let rect = view_id.get_size().unwrap_or_default().to_rect();
-                    let point = state.logical_point();
-                    let now_focused = rect.contains(point);
-                    if now_focused {
-                        self.window_state.update_focus(view_id, false);
-                    }
+            if let Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. })) = &event
+                && view_state.borrow().computed_style.get(Focusable)
+            {
+                let rect = view_id.get_size().unwrap_or_default().to_rect();
+                let point = state.logical_point();
+                let now_focused = rect.contains(point);
+                if now_focused {
+                    self.window_state.update_focus(view_id, false);
                 }
             }
             if let Event::Pointer(PointerEvent::Move(_)) = &event {
                 let view_state = view_state.borrow();
                 let style = view_state.combined_style.builtin();
-                if let Some(cursor) = style.cursor() {
-                    if self.window_state.cursor.is_none() {
-                        self.window_state.cursor = Some(cursor);
-                    }
+                if let Some(cursor) = style.cursor()
+                    && self.window_state.cursor.is_none()
+                {
+                    self.window_state.cursor = Some(cursor);
                 }
             }
             return (EventPropagation::Stop, PointerEventConsumed::Yes);
@@ -303,43 +303,42 @@ impl EventCx<'_> {
                             self.window_state.hovered.insert(view_id);
                             let view_state = view_state.borrow();
                             let style = view_state.combined_style.builtin();
-                            if let Some(cursor) = style.cursor() {
-                                if self.window_state.cursor.is_none() {
-                                    self.window_state.cursor = Some(cursor);
-                                }
+                            if let Some(cursor) = style.cursor()
+                                && self.window_state.cursor.is_none()
+                            {
+                                self.window_state.cursor = Some(cursor);
                             }
                         }
                     }
-                    if view_id.can_drag() {
-                        if let Some((_, drag_start)) = self
+                    if view_id.can_drag()
+                        && let Some((_, drag_start)) = self
                             .window_state
                             .drag_start
                             .as_ref()
                             .filter(|(drag_id, _)| drag_id == &view_id)
+                    {
+                        let offset = current.logical_point() - *drag_start;
+                        if let Some(dragging) = self
+                            .window_state
+                            .dragging
+                            .as_mut()
+                            .filter(|d| d.id == view_id && d.released_at.is_none())
                         {
-                            let offset = current.logical_point() - *drag_start;
-                            if let Some(dragging) = self
-                                .window_state
-                                .dragging
-                                .as_mut()
-                                .filter(|d| d.id == view_id && d.released_at.is_none())
-                            {
-                                // update the mouse position if the view is dragging and not released
-                                dragging.offset = drag_start.to_vec2();
-                                self.window_state.request_paint(view_id);
-                            } else if offset.x.abs() + offset.y.abs() > 1.0 {
-                                // start dragging when moved 1 px
-                                self.window_state.active = None;
-                                self.window_state.dragging = Some(DragState {
-                                    id: view_id,
-                                    offset: drag_start.to_vec2(),
-                                    released_at: None,
-                                    release_location: None,
-                                });
-                                self.update_active(view_id);
-                                self.window_state.request_paint(view_id);
-                                view_id.apply_event(&EventListener::DragStart, &event);
-                            }
+                            // update the mouse position if the view is dragging and not released
+                            dragging.offset = drag_start.to_vec2();
+                            self.window_state.request_paint(view_id);
+                        } else if offset.x.abs() + offset.y.abs() > 1.0 {
+                            // start dragging when moved 1 px
+                            self.window_state.active = None;
+                            self.window_state.dragging = Some(DragState {
+                                id: view_id,
+                                offset: drag_start.to_vec2(),
+                                released_at: None,
+                                release_location: None,
+                            });
+                            self.update_active(view_id);
+                            self.window_state.request_paint(view_id);
+                            view_id.apply_event(&EventListener::DragStart, &event);
                         }
                     }
                     if view_id
@@ -361,26 +360,22 @@ impl EventCx<'_> {
                         let on_view = rect.contains(state.logical_point());
 
                         #[cfg(not(target_os = "macos"))]
-                        if on_view {
-                            if let Some((ep, pec)) = popout_menu() {
-                                return (ep, pec);
-                            };
-                        }
+                        if on_view && let Some((ep, pec)) = popout_menu() {
+                            return (ep, pec);
+                        };
 
                         if !directed {
-                            if on_view {
-                                if let Some(dragging) = self.window_state.dragging.as_mut() {
-                                    let dragging_id = dragging.id;
-                                    if view_id
-                                        .apply_event(&EventListener::Drop, &event)
-                                        .is_some_and(|prop| prop.is_processed())
-                                    {
-                                        // if the drop is processed, we set dragging to none so that the animation
-                                        // for the dragged view back to its original position isn't played.
-                                        self.window_state.dragging = None;
-                                        self.window_state.request_paint(view_id);
-                                        dragging_id.apply_event(&EventListener::DragEnd, &event);
-                                    }
+                            if on_view && let Some(dragging) = self.window_state.dragging.as_mut() {
+                                let dragging_id = dragging.id;
+                                if view_id
+                                    .apply_event(&EventListener::Drop, &event)
+                                    .is_some_and(|prop| prop.is_processed())
+                                {
+                                    // if the drop is processed, we set dragging to none so that the animation
+                                    // for the dragged view back to its original position isn't played.
+                                    self.window_state.dragging = None;
+                                    self.window_state.request_paint(view_id);
+                                    dragging_id.apply_event(&EventListener::DragEnd, &event);
                                 }
                             }
                         } else if let Some(dragging) = self
@@ -415,16 +410,15 @@ impl EventCx<'_> {
                             }
                         }
 
-                        if let Some(handlers) = event_listeners.get(&EventListener::Click) {
-                            if on_view
-                                && self.window_state.is_clicking(&view_id)
-                                && last_pointer_down.is_some()
-                                && handlers.iter().fold(false, |handled, handler| {
-                                    handled | (handler.borrow_mut())(&event).is_processed()
-                                })
-                            {
-                                return (EventPropagation::Stop, PointerEventConsumed::Yes);
-                            }
+                        if let Some(handlers) = event_listeners.get(&EventListener::Click)
+                            && on_view
+                            && self.window_state.is_clicking(&view_id)
+                            && last_pointer_down.is_some()
+                            && handlers.iter().fold(false, |handled, handler| {
+                                handled | (handler.borrow_mut())(&event).is_processed()
+                            })
+                        {
+                            return (EventPropagation::Stop, PointerEventConsumed::Yes);
                         }
 
                         if view_id
@@ -440,15 +434,13 @@ impl EventCx<'_> {
                         let last_pointer_down = view_state.borrow_mut().last_pointer_down.take();
                         let event_listeners = view_state.borrow().event_listeners.clone();
                         if let Some(handlers) = event_listeners.get(&EventListener::SecondaryClick)
+                            && on_view
+                            && last_pointer_down.is_some()
+                            && handlers.iter().fold(false, |handled, handler| {
+                                handled | (handler.borrow_mut())(&event).is_processed()
+                            })
                         {
-                            if on_view
-                                && last_pointer_down.is_some()
-                                && handlers.iter().fold(false, |handled, handler| {
-                                    handled | (handler.borrow_mut())(&event).is_processed()
-                                })
-                            {
-                                return (EventPropagation::Stop, PointerEventConsumed::Yes);
-                            }
+                            return (EventPropagation::Stop, PointerEventConsumed::Yes);
                         }
 
                         let viewport_event_position = {
@@ -492,23 +484,21 @@ impl EventCx<'_> {
             }
         }
 
-        if !disable_default {
-            if let Some(listener) = event.listener() {
-                let event_listeners = view_state.borrow().event_listeners.clone();
-                if let Some(handlers) = event_listeners.get(&listener).cloned() {
-                    let should_run = if let Some(pos) = event.point() {
-                        let rect = view_id.get_size().unwrap_or_default().to_rect();
-                        rect.contains(pos)
-                    } else {
-                        true
-                    };
-                    if should_run
-                        && handlers.iter().fold(false, |handled, handler| {
-                            handled | (handler.borrow_mut())(&event).is_processed()
-                        })
-                    {
-                        return (EventPropagation::Stop, PointerEventConsumed::Yes);
-                    }
+        if !disable_default && let Some(listener) = event.listener() {
+            let event_listeners = view_state.borrow().event_listeners.clone();
+            if let Some(handlers) = event_listeners.get(&listener).cloned() {
+                let should_run = if let Some(pos) = event.point() {
+                    let rect = view_id.get_size().unwrap_or_default().to_rect();
+                    rect.contains(pos)
+                } else {
+                    true
+                };
+                if should_run
+                    && handlers.iter().fold(false, |handled, handler| {
+                        handled | (handler.borrow_mut())(&event).is_processed()
+                    })
+                {
+                    return (EventPropagation::Stop, PointerEventConsumed::Yes);
                 }
             }
         }
@@ -1182,79 +1172,79 @@ impl PaintCx<'_> {
         }
         let mut drag_set_to_none = false;
 
-        if let Some(dragging) = self.window_state.dragging.as_ref() {
-            if dragging.id == id {
-                let transform = if let Some((released_at, release_location)) =
-                    dragging.released_at.zip(dragging.release_location)
-                {
-                    let easing = Linear;
-                    const ANIMATION_DURATION_MS: f64 = 300.0;
-                    let elapsed = released_at.elapsed().as_millis() as f64;
-                    let progress = elapsed / ANIMATION_DURATION_MS;
+        if let Some(dragging) = self.window_state.dragging.as_ref()
+            && dragging.id == id
+        {
+            let transform = if let Some((released_at, release_location)) =
+                dragging.released_at.zip(dragging.release_location)
+            {
+                let easing = Linear;
+                const ANIMATION_DURATION_MS: f64 = 300.0;
+                let elapsed = released_at.elapsed().as_millis() as f64;
+                let progress = elapsed / ANIMATION_DURATION_MS;
 
-                    if !(easing.finished(progress)) {
-                        let offset_scale = 1.0 - easing.eval(progress);
-                        let release_offset = release_location.to_vec2() - dragging.offset;
+                if !(easing.finished(progress)) {
+                    let offset_scale = 1.0 - easing.eval(progress);
+                    let release_offset = release_location.to_vec2() - dragging.offset;
 
-                        // Schedule next animation frame
-                        exec_after(Duration::from_millis(8), move |_| {
-                            id.request_paint();
-                        });
+                    // Schedule next animation frame
+                    exec_after(Duration::from_millis(8), move |_| {
+                        id.request_paint();
+                    });
 
-                        Some(self.transform * Affine::translate(release_offset * offset_scale))
-                    } else {
-                        drag_set_to_none = true;
-                        None
-                    }
+                    Some(self.transform * Affine::translate(release_offset * offset_scale))
                 } else {
-                    // Handle active dragging
-                    let translation =
-                        self.window_state.last_cursor_location.to_vec2() - dragging.offset;
-                    Some(self.transform.with_translation(translation))
-                };
-
-                if let Some(transform) = transform {
-                    self.save();
-                    self.transform = transform;
-                    self.paint_state
-                        .renderer_mut()
-                        .set_transform(self.transform);
-                    self.set_z_index(1000);
-                    self.clear_clip();
-
-                    // Apply styles
-                    let style = view_state.borrow().combined_style.clone();
-                    let mut view_style_props = view_state.borrow().view_style_props.clone();
-
-                    if let Some(dragging_style) = view_state.borrow().dragging_style.clone() {
-                        let style = style.apply(dragging_style);
-                        let mut _new_frame = false;
-                        view_style_props.read_explicit(
-                            &style,
-                            &style,
-                            &Instant::now(),
-                            &mut _new_frame,
-                        );
-                    }
-
-                    // Paint with drag styling
-                    let layout_props = view_state.borrow().layout_props.clone();
-
-                    // Important: If any method early exit points are added in this
-                    // code block, they MUST call CURRENT_DRAG_PAINTING_ID.take() before
-                    // returning.
-
-                    CURRENT_DRAG_PAINTING_ID.set(Some(id));
-
-                    paint_bg(self, &view_style_props, size);
-                    view.borrow_mut().paint(self);
-                    paint_border(self, &layout_props, &view_style_props, size);
-                    paint_outline(self, &view_style_props, size);
-
-                    self.restore();
-
-                    CURRENT_DRAG_PAINTING_ID.take();
+                    drag_set_to_none = true;
+                    None
                 }
+            } else {
+                // Handle active dragging
+                let translation =
+                    self.window_state.last_cursor_location.to_vec2() - dragging.offset;
+                Some(self.transform.with_translation(translation))
+            };
+
+            if let Some(transform) = transform {
+                self.save();
+                self.transform = transform;
+                self.paint_state
+                    .renderer_mut()
+                    .set_transform(self.transform);
+                self.set_z_index(1000);
+                self.clear_clip();
+
+                // Apply styles
+                let style = view_state.borrow().combined_style.clone();
+                let mut view_style_props = view_state.borrow().view_style_props.clone();
+
+                if let Some(dragging_style) = view_state.borrow().dragging_style.clone() {
+                    let style = style.apply(dragging_style);
+                    let mut _new_frame = false;
+                    view_style_props.read_explicit(
+                        &style,
+                        &style,
+                        &Instant::now(),
+                        &mut _new_frame,
+                    );
+                }
+
+                // Paint with drag styling
+                let layout_props = view_state.borrow().layout_props.clone();
+
+                // Important: If any method early exit points are added in this
+                // code block, they MUST call CURRENT_DRAG_PAINTING_ID.take() before
+                // returning.
+
+                CURRENT_DRAG_PAINTING_ID.set(Some(id));
+
+                paint_bg(self, &view_style_props, size);
+                view.borrow_mut().paint(self);
+                paint_border(self, &layout_props, &view_style_props, size);
+                paint_outline(self, &view_style_props, size);
+
+                self.restore();
+
+                CURRENT_DRAG_PAINTING_ID.take();
             }
         }
 

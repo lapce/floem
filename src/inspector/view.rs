@@ -76,11 +76,12 @@ pub fn capture(window_id: WindowId) {
                 stack
                     .style(|s| s.width_full().height_full())
                     .on_event(EventListener::KeyUp, move |e| {
-                        if let Event::Key(e) = e {
-                            if e.key == keyboard::Key::Named(NamedKey::F11) && e.modifiers.shift() {
-                                id.inspect();
-                                return EventPropagation::Stop;
-                            }
+                        if let Event::Key(e) = e
+                            && e.key == keyboard::Key::Named(NamedKey::F11)
+                            && e.modifiers.shift()
+                        {
+                            id.inspect();
+                            return EventPropagation::Stop;
                         }
                         EventPropagation::Continue
                     })
@@ -559,14 +560,14 @@ fn tree_node(
     let scroll_to = capture_signal.scroll_to;
     let expanding_selection = capture_signal.expanding_selection;
     create_effect(move |_| {
-        if let Some((selection, request_focus)) = expanding_selection.get() {
-            if selection == id {
-                // Scroll to the row, then to the name part of the row.
-                scroll_to.set(Some(row_id));
-                scroll_to.set(Some(name_id));
-                if request_focus {
-                    row_id.request_focus();
-                }
+        if let Some((selection, request_focus)) = expanding_selection.get()
+            && selection == id
+        {
+            // Scroll to the row, then to the name part of the row.
+            scroll_to.set(Some(row_id));
+            scroll_to.set(Some(name_id));
+            if request_focus {
+                row_id.request_focus();
             }
         }
     });

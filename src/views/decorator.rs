@@ -241,11 +241,11 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
                 modifiers,
                 ..
             }) = e
+                && *event_key == key
+                && cmp(*modifiers)
             {
-                if *event_key == key && cmp(*modifiers) {
-                    action(e);
-                    return EventPropagation::Stop;
-                }
+                action(e);
+                return EventPropagation::Stop;
             }
             EventPropagation::Continue
         })
@@ -267,11 +267,11 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
                 modifiers,
                 ..
             }) = e
+                && *event_key == key
+                && cmp(*modifiers)
             {
-                if *event_key == key && cmp(*modifiers) {
-                    action(e);
-                    return EventPropagation::Stop;
-                }
+                action(e);
+                return EventPropagation::Stop;
             }
             EventPropagation::Continue
         })

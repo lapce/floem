@@ -1546,16 +1546,16 @@ impl<T: StylePropValue> TransitionState<T> {
             if let Some(transition) = &self.transition {
                 let time = now.saturating_duration_since(active.start);
                 let time_percent = time.as_secs_f64() / transition.duration.as_secs_f64();
-                if time < transition.duration || !transition.easing.finished(time_percent) {
-                    if let Some(i) = T::interpolate(
+                if (time < transition.duration || !transition.easing.finished(time_percent))
+                    && let Some(i) = T::interpolate(
                         &active.before,
                         &active.after,
                         transition.easing.eval(time_percent),
-                    ) {
-                        active.current = i;
-                        *request_transition = true;
-                        return true;
-                    }
+                    )
+                {
+                    active.current = i;
+                    *request_transition = true;
+                    return true;
                 }
             }
             // time has past duration, or the value is not interpolatable
@@ -2073,13 +2073,13 @@ fn resolve_nested_maps_internal(
     }
 
     // DarkMode
-    if interact_state.is_dark_mode {
-        if let Some(map) = style.get_nested_map(StyleSelector::DarkMode.to_key()) {
-            classes_applied |= map.any_inherited();
-            style.apply_mut(map);
-            style.remove_nested_map(StyleSelector::DarkMode.to_key());
-            changed = true;
-        }
+    if interact_state.is_dark_mode
+        && let Some(map) = style.get_nested_map(StyleSelector::DarkMode.to_key())
+    {
+        classes_applied |= map.any_inherited();
+        style.apply_mut(map);
+        style.remove_nested_map(StyleSelector::DarkMode.to_key());
+        changed = true;
     }
 
     // Disabled state (takes precedence)
@@ -2094,33 +2094,33 @@ fn resolve_nested_maps_internal(
         // Other states only apply if not disabled
 
         // Selected
-        if interact_state.is_selected || style.get(Selected) {
-            if let Some(map) = style.get_nested_map(StyleSelector::Selected.to_key()) {
-                classes_applied |= map.any_inherited();
-                style.apply_mut(map);
-                style.remove_nested_map(StyleSelector::Selected.to_key());
-                changed = true;
-            }
+        if (interact_state.is_selected || style.get(Selected))
+            && let Some(map) = style.get_nested_map(StyleSelector::Selected.to_key())
+        {
+            classes_applied |= map.any_inherited();
+            style.apply_mut(map);
+            style.remove_nested_map(StyleSelector::Selected.to_key());
+            changed = true;
         }
 
         // Hover
-        if interact_state.is_hovered {
-            if let Some(map) = style.get_nested_map(StyleSelector::Hover.to_key()) {
-                classes_applied |= map.any_inherited();
-                style.apply_mut(map);
-                style.remove_nested_map(StyleSelector::Hover.to_key());
-                changed = true;
-            }
+        if interact_state.is_hovered
+            && let Some(map) = style.get_nested_map(StyleSelector::Hover.to_key())
+        {
+            classes_applied |= map.any_inherited();
+            style.apply_mut(map);
+            style.remove_nested_map(StyleSelector::Hover.to_key());
+            changed = true;
         }
 
         // File Hover
-        if interact_state.is_file_hover {
-            if let Some(map) = style.get_nested_map(StyleSelector::FileHover.to_key()) {
-                classes_applied |= map.any_inherited();
-                style.apply_mut(map);
-                style.remove_nested_map(StyleSelector::FileHover.to_key());
-                changed = true;
-            }
+        if interact_state.is_file_hover
+            && let Some(map) = style.get_nested_map(StyleSelector::FileHover.to_key())
+        {
+            classes_applied |= map.any_inherited();
+            style.apply_mut(map);
+            style.remove_nested_map(StyleSelector::FileHover.to_key());
+            changed = true;
         }
 
         // Focus states
@@ -2140,25 +2140,26 @@ fn resolve_nested_maps_internal(
                     changed = true;
                 }
 
-                if interact_state.is_clicking {
-                    if let Some(map) = style.get_nested_map(StyleSelector::Active.to_key()) {
-                        classes_applied |= map.any_inherited();
-                        style.apply_mut(map);
-                        style.remove_nested_map(StyleSelector::Active.to_key());
-                        changed = true;
-                    }
+                if interact_state.is_clicking
+                    && let Some(map) = style.get_nested_map(StyleSelector::Active.to_key())
+                {
+                    classes_applied |= map.any_inherited();
+                    style.apply_mut(map);
+                    style.remove_nested_map(StyleSelector::Active.to_key());
+                    changed = true;
                 }
             }
         }
 
         // Active (mouse)
-        if interact_state.is_clicking && !interact_state.using_keyboard_navigation {
-            if let Some(map) = style.get_nested_map(StyleSelector::Active.to_key()) {
-                classes_applied |= map.any_inherited();
-                style.apply_mut(map);
-                style.remove_nested_map(StyleSelector::Active.to_key());
-                changed = true;
-            }
+        if interact_state.is_clicking
+            && !interact_state.using_keyboard_navigation
+            && let Some(map) = style.get_nested_map(StyleSelector::Active.to_key())
+        {
+            classes_applied |= map.any_inherited();
+            style.apply_mut(map);
+            style.remove_nested_map(StyleSelector::Active.to_key());
+            changed = true;
         }
     }
 
@@ -2272,11 +2273,11 @@ impl Style {
                 self.apply_context_mappings_mut();
             }
         }
-        if self.get(Selected) {
-            if let Some(map) = self.get_nested_map(StyleSelector::Selected.to_key()) {
-                self.apply_mut(map.apply_selectors(&[StyleSelector::Selected]));
-                self.apply_context_mappings_mut();
-            }
+        if self.get(Selected)
+            && let Some(map) = self.get_nested_map(StyleSelector::Selected.to_key())
+        {
+            self.apply_mut(map.apply_selectors(&[StyleSelector::Selected]));
+            self.apply_context_mappings_mut();
         }
         self
     }

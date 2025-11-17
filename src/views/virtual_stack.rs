@@ -403,13 +403,13 @@ impl<T> View for VirtualStack<T> {
                 );
                 self.id.request_all();
             }
-        } else if state.is::<usize>() {
-            if let Ok(idx) = state.downcast::<usize>() {
-                self.id.request_style_recursive();
-                self.scroll_to_idx(*idx);
-                self.selected_idx.clear();
-                self.selected_idx.insert(*idx);
-            }
+        } else if state.is::<usize>()
+            && let Ok(idx) = state.downcast::<usize>()
+        {
+            self.id.request_style_recursive();
+            self.scroll_to_idx(*idx);
+            self.selected_idx.clear();
+            self.selected_idx.insert(*idx);
         }
     }
 

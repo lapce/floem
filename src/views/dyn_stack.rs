@@ -227,12 +227,12 @@ pub(crate) fn diff<K: Eq + Hash, V>(from: &FxIndexSet<K>, to: &FxIndexSet<K>) ->
     let mut removed_idx = removed.next().map(|k| from.get_full(k).unwrap().0);
 
     for (idx, k) in to.iter().enumerate() {
-        if let Some(added_idx) = added_idx.as_mut().filter(|r_i| **r_i == idx) {
-            if let Some(next_added) = added.next().map(|k| to.get_full(k).unwrap().0) {
-                *added_idx = next_added;
+        if let Some(added_idx) = added_idx.as_mut().filter(|r_i| **r_i == idx)
+            && let Some(next_added) = added.next().map(|k| to.get_full(k).unwrap().0)
+        {
+            *added_idx = next_added;
 
-                normalized_idx = usize::wrapping_sub(normalized_idx, 1);
-            }
+            normalized_idx = usize::wrapping_sub(normalized_idx, 1);
         }
 
         if let Some(removed_idx) = removed_idx.as_mut().filter(|r_i| **r_i == idx) {
@@ -243,13 +243,13 @@ pub(crate) fn diff<K: Eq + Hash, V>(from: &FxIndexSet<K>, to: &FxIndexSet<K>) ->
             }
         }
 
-        if let Some((from_idx, _)) = from.get_full(k) {
-            if from_idx != normalized_idx || from_idx != idx {
-                move_cmds.push(DiffOpMove {
-                    from: from_idx,
-                    to: idx,
-                });
-            }
+        if let Some((from_idx, _)) = from.get_full(k)
+            && (from_idx != normalized_idx || from_idx != idx)
+        {
+            move_cmds.push(DiffOpMove {
+                from: from_idx,
+                to: idx,
+            });
         }
 
         normalized_idx = normalized_idx.wrapping_add(1);
