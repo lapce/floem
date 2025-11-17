@@ -526,8 +526,8 @@ impl ApplicationHandle {
             return;
         };
         #[cfg(target_os = "macos")]
-        if let Some(mac) = &mac_os_config {
-            if let Some((x, y)) = mac.traffic_lights_offset {
+        if let Some(mac) = &mac_os_config
+            && let Some((x, y)) = mac.traffic_lights_offset {
                 use raw_window_handle::HasWindowHandle;
 
                 if let Ok(wh) = window.window_handle() {
@@ -538,7 +538,6 @@ impl ApplicationHandle {
                     }
                 }
             }
-        }
         let window_id = window.id();
         let window_handle = WindowHandle::new(
             window,
