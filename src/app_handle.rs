@@ -527,17 +527,18 @@ impl ApplicationHandle {
         };
         #[cfg(target_os = "macos")]
         if let Some(mac) = &mac_os_config
-            && let Some((x, y)) = mac.traffic_lights_offset {
-                use raw_window_handle::HasWindowHandle;
+            && let Some((x, y)) = mac.traffic_lights_offset
+        {
+            use raw_window_handle::HasWindowHandle;
 
-                if let Ok(wh) = window.window_handle() {
-                    use raw_window_handle::RawWindowHandle;
+            if let Ok(wh) = window.window_handle() {
+                use raw_window_handle::RawWindowHandle;
 
-                    if let RawWindowHandle::AppKit(app_kit) = wh.as_raw() {
-                        let _ = setup_traffic_light_constraints_all_pixels(&app_kit, x, y, 6.);
-                    }
+                if let RawWindowHandle::AppKit(app_kit) = wh.as_raw() {
+                    let _ = setup_traffic_light_constraints_all_pixels(&app_kit, x, y, 6.);
                 }
             }
+        }
         let window_id = window.id();
         let window_handle = WindowHandle::new(
             window,

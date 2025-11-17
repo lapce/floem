@@ -1500,10 +1500,10 @@ fn context_menu_view(
                             move |menu| view_fn(menu, context_menu, on_child_submenu),
                         )
                         .on_event_stop(EventListener::KeyDown, move |event| {
-                            if let Event::Key(KeyboardEvent { key, .. }) = event {
-                                if *key == Key::Named(NamedKey::Escape) {
-                                    context_menu.set(None);
-                                }
+                            if let Event::Key(KeyboardEvent { key, .. }) = event
+                                && *key == Key::Named(NamedKey::Escape)
+                            {
+                                context_menu.set(None);
                             }
                         })
                         .on_event_stop(EventListener::PointerEnter, move |_| {
@@ -1581,10 +1581,10 @@ fn context_menu_view(
     })
     .on_event_stop(EventListener::PointerMove, move |_| {})
     .on_event_stop(EventListener::KeyDown, move |event| {
-        if let Event::Key(KeyboardEvent { key, .. }) = event {
-            if *key == Key::Named(NamedKey::Escape) {
-                context_menu.set(None);
-            }
+        if let Event::Key(KeyboardEvent { key, .. }) = event
+            && *key == Key::Named(NamedKey::Escape)
+        {
+            context_menu.set(None);
         }
     })
     .style(move |s| {
