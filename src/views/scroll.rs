@@ -573,10 +573,10 @@ impl Scroll {
             let rect = (bounds - scroll_offset).inset(-edge_width / 2.0);
             let rect = rect.to_rounded_rect(radius(style, rect, true));
             cx.fill(&rect, &style.color().unwrap_or(HANDLE_COLOR), 0.0);
-            if edge_width > 0.0 {
-                if let Some(color) = style.border_color().right {
-                    cx.stroke(&rect, &color, &Stroke::new(edge_width));
-                }
+            if edge_width > 0.0
+                && let Some(color) = style.border_color().right
+            {
+                cx.stroke(&rect, &color, &Stroke::new(edge_width));
             }
         }
 
@@ -600,10 +600,10 @@ impl Scroll {
             let rect = (bounds - scroll_offset).inset(-edge_width / 2.0);
             let rect = rect.to_rounded_rect(radius(style, rect, false));
             cx.fill(&rect, &style.color().unwrap_or(HANDLE_COLOR), 0.0);
-            if edge_width > 0.0 {
-                if let Some(color) = style.border_color().right {
-                    cx.stroke(&rect, &color, &Stroke::new(edge_width));
-                }
+            if edge_width > 0.0
+                && let Some(color) = style.border_color().right
+            {
+                cx.stroke(&rect, &color, &Stroke::new(edge_width));
             }
         }
     }
@@ -1031,14 +1031,13 @@ impl View for Scroll {
         event: &Event,
     ) -> EventPropagation {
         if let Event::Pointer(PointerEvent::Scroll(PointerScrollEvent { state, .. })) = &event {
-            if let Some(listener) = event.listener() {
-                if self
+            if let Some(listener) = event.listener()
+                && self
                     .id
                     .apply_event(&listener, event)
                     .is_some_and(|prop| prop.is_processed())
-                {
-                    return EventPropagation::Stop;
-                }
+            {
+                return EventPropagation::Stop;
             }
             if let Some(delta) = event.pixel_scroll_delta_vec2() {
                 let delta = -if self.scroll_style.vertical_scroll_as_horizontal()

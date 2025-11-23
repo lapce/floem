@@ -24,143 +24,188 @@ use smallvec::smallvec;
 
 style_class!(pub HoverTargetClass);
 
+/// A theme builder. Create your own or use provided default [light](DesignSystem::light)
+/// and [dark](DesignSystem::dark) default themes.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DesignSystem {
+    /// The base background color.
     pub bg_base: Color,
+    /// Lightness of the background elevation from 0-1.
+    pub bg_elevate: f32,
+    /// Lightness of the background overlays from 0-1.
+    pub bg_overlay: f32,
+    /// Lightness of the disabled elements (0-1) based on background.
+    pub disabled: f32,
+
+    /// Base text color.
     pub text_base: Color,
+    /// Lightness of the text color (0-1).
     pub text_lightness: f32,
-    pub primary_base: Color,
-    pub success_base: Color,
-    pub warning_base: Color,
-    pub danger_base: Color,
-    pub is_dark: bool,
-    pub padding: f32,
-    pub border_radius: f32,
+    /// Lightness of the text color (0-1) when muted.
+    pub text_muted: f32,
+    /// Size of the font.
     pub font_size: f32,
+
+    /// The primary theme accent color.
+    pub primary_base: Color,
+    /// The success theme accent color.
+    pub success_base: Color,
+    /// The warning theme accent color.
+    pub warning_base: Color,
+    /// The danger theme accent color.
+    pub danger_base: Color,
+
+    /// Lightness of the border (0-1) based on background.
+    pub border: f32,
+    /// Theme border radius.
+    pub border_radius: f32,
+    /// Default theme padding.
+    pub padding: f32,
+    /// Is the theme a dark variant.
+    pub is_dark: bool,
 }
-// const BORDER_RADIUS: f32 = 5.0;
-// const FONT_SIZE: f32 = 12.0;
 
 impl DesignSystem {
-    /// Create a light mode design system.
+    /// Create a default light mode design system.
     pub fn light() -> Self {
         Self {
-            bg_base: Color::from_rgb8(248, 248, 248),
-            text_base: Color::from_rgb8(0, 0, 0),
+            bg_base: hsl(0., 0., 97.),
+            text_base: hsl(0., 0., 0.),
             text_lightness: 0.05,
-            primary_base: Color::from_rgb8(0x18, 0x96, 0xC2),
-            success_base: Color::from_rgb8(0x2D, 0x9D, 0x67),
-            warning_base: Color::from_rgb8(0xE5, 0xA2, 0x23),
-            danger_base: Color::from_rgb8(0xD7, 0x37, 0x45),
+            primary_base: Color::from_rgb8(24, 150, 194),
+            success_base: Color::from_rgb8(45, 157, 103),
+            warning_base: Color::from_rgb8(229, 162, 35),
+            danger_base: Color::from_rgb8(215, 55, 69),
             padding: 5.,
             border_radius: 5.,
             font_size: 14.,
             is_dark: false,
+            bg_elevate: -0.03,
+            bg_overlay: 0.1,
+            border: -0.15,
+            disabled: -0.1,
+            text_muted: 0.25,
         }
     }
 
-    /// Create a dark mode design system.
+    /// Create a default dark mode design system.
     pub fn dark() -> Self {
         Self {
-            bg_base: Color::from_rgb8(0x24, 0x24, 0x24),
-            text_base: Color::from_rgb8(255, 255, 255),
+            bg_base: hsl(0., 0., 15.),
+            text_base: hsl(0., 0., 100.),
             text_lightness: 0.95,
-            primary_base: Color::from_rgb8(0x3A, 0xAA, 0xD8),
-            success_base: Color::from_rgb8(0x4A, 0xBE, 0x8A),
-            warning_base: Color::from_rgb8(0xF5, 0xB8, 0x4E),
-            danger_base: Color::from_rgb8(0xF0, 0x56, 0x54),
+            primary_base: Color::from_rgb8(58, 170, 216),
+            success_base: Color::from_rgb8(74, 190, 138),
+            warning_base: Color::from_rgb8(245, 184, 78),
+            danger_base: Color::from_rgb8(240, 86, 84),
             padding: 5.,
             border_radius: 5.,
             font_size: 14.,
             is_dark: true,
+            bg_elevate: 0.05,
+            bg_overlay: 0.1,
+            border: 0.15,
+            disabled: -0.05,
+            text_muted: -0.25,
         }
     }
 
     // Background levels
 
-    pub fn bg_base(&self) -> Color {
+    /// The base background theme color.
+    pub const fn bg_base(&self) -> Color {
         self.bg_base
     }
 
+    /// The theme background elevated color.
     pub fn bg_elevated(&self) -> Color {
-        let adjustment = 0.05;
-        self.bg_base.map_lightness(|l| l + adjustment)
+        self.bg_base.map_lightness(|c| c + self.bg_elevate)
     }
 
+    /// The theme background overlay color.
     pub fn bg_overlay(&self) -> Color {
-        let adjustment = 0.10;
-        self.bg_base.map_lightness(|l| l + adjustment)
+        self.bg_base.map_lightness(|c| c + self.bg_overlay)
     }
 
+    /// The theme background overlay color for disabled elements.
     pub fn bg_disabled(&self) -> Color {
-        let adjustment = if self.is_dark { -0.05 } else { -0.1 };
-        self.bg_base.map_lightness(|l| l + adjustment)
+        self.bg_base.map_lightness(|c| c + self.disabled)
     }
 
     // Border
 
+    /// The theme border color.
     pub fn border(&self) -> Color {
-        let adjustment = if self.is_dark { 0.15 } else { -0.15 };
-        self.bg_base.map_lightness(|l| l + adjustment)
+        self.bg_base.map_lightness(|c| c + self.border)
     }
 
+    /// The theme muted border color.
     pub fn border_muted(&self) -> Color {
-        let adjustment = if self.is_dark { 0.15 } else { -0.15 };
         self.border()
-            .map_lightness(|l| l + adjustment)
+            .map_lightness(|c| c + self.border)
             .with_alpha(0.8)
     }
 
     // Text
 
+    /// The theme text color.
     pub fn text(&self) -> Color {
         self.text_base.map_lightness(|_| self.text_lightness)
     }
 
+    /// The theme muted text color.
     pub fn text_muted(&self) -> Color {
-        let adjustment = if self.is_dark { -0.25 } else { 0.25 };
         self.text_base
-            .map_lightness(|l| l + adjustment)
+            .map_lightness(|c| c + self.text_muted)
             .with_alpha(0.5)
     }
 
     // Primary
 
-    pub fn primary(&self) -> Color {
+    /// The primary theme accent color.
+    pub const fn primary(&self) -> Color {
         self.primary_base
     }
 
+    /// The muted primary theme accent color.
     pub fn primary_muted(&self) -> Color {
-        self.primary_base.map_lightness(|l| l - 0.05)
+        self.primary_base.map_lightness(|c| c - 0.05)
     }
 
     // Semantic colors
 
-    pub fn success(&self) -> Color {
+    /// The success theme accent color.
+    pub const fn success(&self) -> Color {
         self.success_base
     }
 
-    pub fn warning(&self) -> Color {
+    /// The warning theme accent color.
+    pub const fn warning(&self) -> Color {
         self.warning_base
     }
 
-    pub fn danger(&self) -> Color {
+    /// The danger theme accent color.
+    pub const fn danger(&self) -> Color {
         self.danger_base
     }
 
-    pub fn info(&self) -> Color {
+    /// The info theme accent color.
+    pub const fn info(&self) -> Color {
         self.primary_base
     }
 
-    pub fn padding(&self) -> f32 {
+    /// The theme default padding.
+    pub const fn padding(&self) -> f32 {
         self.padding
     }
 
-    pub fn border_radius(&self) -> f32 {
+    /// The theme default border radius.
+    pub const fn border_radius(&self) -> f32 {
         self.border_radius
     }
 
-    pub fn font_size(&self) -> f32 {
+    /// The theme default font size.
+    pub const fn font_size(&self) -> f32 {
         self.font_size
     }
 }
@@ -242,8 +287,8 @@ impl StylePropValue for DesignSystem {
             }),
         ))
         .style(|s| {
-            // this view here should be getting set to have a height of just the two children combined
-            // I think this is a bug in taffy
+            // This view here should be getting set to have a height of just the two
+            // children combined, I think this is a bug in taffy.
             s.flex_col()
                 .padding(8.0)
                 .border(1.)
@@ -285,6 +330,11 @@ impl StylePropValue for DesignSystem {
             padding: self.padding * inv_t + other.padding * t,
             border_radius: self.border_radius * inv_t + other.border_radius * t,
             font_size: self.font_size * inv_t + other.font_size * t,
+            bg_elevate: self.bg_elevate * inv_t + other.bg_elevate * t,
+            bg_overlay: self.bg_overlay * inv_t + other.bg_overlay * t,
+            disabled: self.disabled * inv_t + other.disabled * t,
+            text_muted: self.text_muted * inv_t + other.text_muted * t,
+            border: self.border + inv_t + other.border * t,
         })
     }
 }
@@ -687,4 +737,53 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
             })
             .transition(Background, Transition::linear(100.millis()))
         })
+}
+
+/// Contruct sRGB [Color] from HSL values.
+pub const fn hsl(h: f32, s: f32, l: f32) -> Color {
+    let sat = s * 0.01;
+    let light = l * 0.01;
+    let a = sat * light.min(1.0 - light);
+
+    let hue = transform(0., h, light, a);
+    let sat = transform(8., h, light, a);
+    let lum = transform(4., h, light, a);
+    Color::new([hue, sat, lum, 1.])
+}
+
+const fn transform(n: f32, h: f32, light: f32, a: f32) -> f32 {
+    let x = n + h * (1.0 / 30.0);
+    let k = x - 12.0 * (x * (1.0 / 12.0)).floor();
+    light - a * (k - 3.0).min(9.0 - k).clamp(-1.0, 1.0)
+}
+
+#[test]
+fn rgb_hsl_conversion() {
+    let rgb_bg_base = Color::from_rgb8(242, 242, 242);
+    let hsl_bg_base = hsl(0., 0., 95.);
+    assert_eq!(rgb_bg_base.to_rgba8(), hsl_bg_base.to_rgba8());
+
+    let rgb_text_base = Color::from_rgb8(0, 0, 0);
+    let hsl_text_base = hsl(0., 0., 0.);
+    assert_eq!(rgb_text_base.to_rgba8(), hsl_text_base.to_rgba8());
+
+    let rgb_text_lightness = Color::from_rgb8(0, 0, 0);
+    let hsl_text_lightness = hsl(0., 0., 0.);
+    assert_eq!(rgb_text_lightness.to_rgba8(), hsl_text_lightness.to_rgba8());
+
+    let rgb_primary_base = Color::from_rgb8(24, 146, 191);
+    let hsl_primary_base = hsl(196., 78., 42.);
+    assert_eq!(rgb_primary_base.to_rgba8(), hsl_primary_base.to_rgba8());
+
+    let rgb_success_base = Color::from_rgb8(46, 158, 104);
+    let hsl_success_base = hsl(151., 55., 40.);
+    assert_eq!(rgb_success_base.to_rgba8(), hsl_success_base.to_rgba8());
+
+    let rgb_warning_base = Color::from_rgb8(229, 162, 36);
+    let hsl_warning_base = hsl(39., 79., 52.);
+    assert_eq!(rgb_warning_base.to_rgba8(), hsl_warning_base.to_rgba8());
+
+    let rgb_danger_base = Color::from_rgb8(215, 55, 68);
+    let hsl_danger_base = hsl(355., 67., 53.);
+    assert_eq!(rgb_danger_base.to_rgba8(), hsl_danger_base.to_rgba8());
 }
