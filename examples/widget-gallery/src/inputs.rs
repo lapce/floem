@@ -40,7 +40,7 @@ pub fn text_input_view() -> impl IntoView {
                     .border_color(MEDIUM_GRAY_189)
                     .padding(10.0)
                     .hover(|s| s.background(LIGHT_GRAY_BG_HOVER).border_color(DARK_GRAY_66))
-                    .set(SelectionCornerRadius, 4.0)
+                    .set(SelectionCornerRadius, 2.0)
                     .focus(|s| {
                         s.border_color(SKY_BLUE_FOCUS)
                             .hover(|s| s.border_color(SKY_BLUE))
