@@ -10,75 +10,75 @@ use floem::{
 pub fn files_view() -> impl IntoView {
     let files = create_rw_signal("".to_string());
     let view = h_stack((
-        button("Select file").on_click_cont(move |_| {
+        button("Select file").action(move || {
             open_file(
                 FileDialogOptions::new()
                     .force_starting_directory("/")
-                    .title("Select file")
+                    .title("Select file (txt, rs, md)")
                     .allowed_types(vec![FileSpec {
                         name: "text",
                         extensions: &["txt", "rs", "md"],
                     }]),
                 move |file_info| {
                     if let Some(file) = file_info {
-                        println!("Selected file: {:?}", file.path);
+                        println!("Selected file: {:?}", file.paths);
                         files.set(display_files(file));
                     }
                 },
             );
         }),
-        button("Select multiple files").on_click_cont(move |_| {
+        button("Select multiple files").action(move || {
             open_file(
                 FileDialogOptions::new()
                     .multi_selection()
-                    .title("Select file")
+                    .title("Select multiple files (txt, rs, md)")
                     .allowed_types(vec![FileSpec {
                         name: "text",
                         extensions: &["txt", "rs", "md"],
                     }]),
                 move |file_info| {
                     if let Some(file) = file_info {
-                        println!("Selected file: {:?}", file.path);
+                        println!("Selected file: {:?}", file.paths);
                         files.set(display_files(file));
                     }
                 },
             );
         }),
-        button("Select folder").on_click_cont(move |_| {
+        button("Select folder").action(move || {
             open_file(
                 FileDialogOptions::new()
                     .select_directories()
                     .title("Select Folder"),
                 move |file_info| {
                     if let Some(file) = file_info {
-                        println!("Selected folder: {:?}", file.path);
+                        println!("Selected folder: {:?}", file.paths);
                         files.set(display_files(file));
                     }
                 },
             );
         }),
-        button("Select multiple folder").on_click_cont(move |_| {
+        button("Select multiple folders").action(move || {
             open_file(
                 FileDialogOptions::new()
                     .select_directories()
                     .multi_selection()
-                    .title("Select multiple Folder"),
+                    .title("Select multiple folders"),
                 move |file_info| {
                     if let Some(file) = file_info {
-                        println!("Selected folder: {:?}", file.path);
+                        println!("Selected folder: {:?}", file.paths);
                         files.set(display_files(file));
                     }
                 },
             );
         }),
-        button("Save file").on_click_cont(move |_| {
+        button("Save file").action(move || {
             save_as(
                 FileDialogOptions::new()
                     .default_name("floem.file")
                     .title("Save file"),
                 move |file_info| {
                     if let Some(file) = file_info {
-                        println!("Save file to: {:?}", file.path);
+                        println!("Save file to: {:?}", file.paths);
                         files.set(display_files(file));
                     }
                 },
@@ -105,6 +105,6 @@ pub fn files_view() -> impl IntoView {
 }
 
 fn display_files(file: FileInfo) -> String {
-    let paths: Vec<&str> = file.path.iter().filter_map(|p| p.to_str()).collect();
+    let paths: Vec<&str> = file.paths.iter().filter_map(|p| p.to_str()).collect();
     paths.join("\n")
 }
