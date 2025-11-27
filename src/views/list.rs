@@ -2,7 +2,6 @@ use super::{Decorators, v_stack_from_iter};
 use crate::context::StyleCx;
 use crate::event::EventPropagation;
 use crate::id::ViewId;
-use crate::reactive::create_effect;
 use crate::style::Style;
 use crate::style_class;
 use crate::view::IntoView;
@@ -10,7 +9,7 @@ use crate::{
     event::{Event, EventListener},
     view::View,
 };
-use floem_reactive::{RwSignal, SignalGet, SignalUpdate, create_rw_signal};
+use floem_reactive::{Effect, RwSignal, SignalGet, SignalUpdate};
 use ui_events::keyboard::{Key, KeyState, KeyboardEvent, NamedKey};
 
 style_class!(pub ListClass);
@@ -44,7 +43,7 @@ impl List {
 
     /// Adds a callback to the [List] that is updated when the current selected item changes.
     pub fn on_select(self, on_select: impl Fn(Option<usize>) + 'static) -> Self {
-        create_effect(move |_| {
+        Effect::new(move |_| {
             let selection = self.selection.get();
             on_select(selection);
         });
@@ -78,8 +77,8 @@ where
     V: IntoView + 'static,
 {
     let list_id = ViewId::new();
-    let selection = create_rw_signal(Some(0));
-    create_effect(move |old_idx: Option<Option<usize>>| {
+    let selection = RwSignal::new(Some(0));
+    Effect::new(move |old_idx: Option<Option<usize>>| {
         let selection = selection.get();
         list_id.update_state(ListUpdate::SelectionChanged(old_idx.flatten()));
         selection

@@ -46,8 +46,8 @@ impl<'a, T> Deref for WriteBorrow<'a, T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
         match self {
-            WriteBorrow::Sync(v) => &*v,
-            WriteBorrow::Local(v) => &*v,
+            WriteBorrow::Sync(v) => v,
+            WriteBorrow::Local(v) => v,
         }
     }
 }

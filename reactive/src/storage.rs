@@ -11,6 +11,7 @@ pub struct SyncStorage;
 /// Internal abstraction over how signals are stored.
 pub(crate) trait Storage<T: Any + 'static> {
     fn create(value: T) -> Id;
+    #[allow(dead_code)]
     fn get(id: Id) -> Option<Self::Signal>
     where
         Self: Sized;

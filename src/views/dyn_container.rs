@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use floem_reactive::{Scope, as_child_of_current_scope, create_updater};
+use floem_reactive::{Scope, UpdaterEffect};
 
 use crate::{
     IntoView, ViewId,
@@ -95,11 +95,11 @@ pub fn dyn_container<CF: Fn(T) -> IV + 'static, T: 'static, IV: IntoView>(
 ) -> DynamicContainer<T> {
     let id = ViewId::new();
 
-    let initial = create_updater(update_view, move |new_state| {
+    let initial = UpdaterEffect::new(update_view, move |new_state| {
         id.update_state(DynMessage::Val(Box::new(new_state)));
     });
 
-    let child_fn = Box::new(as_child_of_current_scope(move |e| child_fn(e).into_any()));
+    let child_fn = Box::new(Scope::current().enter_child(move |e| child_fn(e).into_any()));
     let (child, child_scope) = child_fn(initial);
     let child_id = child.id();
     id.set_children([child]);

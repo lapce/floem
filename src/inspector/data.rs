@@ -1,7 +1,7 @@
 use crate::ViewId;
 use crate::inspector::CapturedView;
 use crate::views::VirtualVector;
-use floem_reactive::{RwSignal, SignalGet, SignalUpdate, create_rw_signal};
+use floem_reactive::{RwSignal, SignalGet, SignalUpdate};
 use std::ops::AddAssign;
 use std::rc::Rc;
 
@@ -16,7 +16,7 @@ impl CapturedDatas {
         let root = CapturedData::init_from_view(view);
         Self {
             root,
-            focus_line: create_rw_signal(0),
+            focus_line: RwSignal::new(0),
         }
     }
 
@@ -74,7 +74,7 @@ impl CapturedData {
             for child in &view.children {
                 children.push(CapturedData::init_from_view(child.clone()));
             }
-            let expanded = create_rw_signal(false);
+            let expanded = RwSignal::new(false);
             Self {
                 id: view.id,
                 view_conf: view,

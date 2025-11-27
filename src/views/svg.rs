@@ -1,4 +1,4 @@
-use floem_reactive::create_effect;
+use floem_reactive::Effect;
 use floem_renderer::{
     Renderer,
     usvg::{self, Tree},
@@ -88,7 +88,7 @@ pub enum SvgOrStyle {
 impl Svg {
     pub fn update_value<S: Into<String>>(self, svg_str: impl Fn() -> S + 'static) -> Self {
         let id = self.id;
-        create_effect(move |_| {
+        Effect::new(move |_| {
             let new_svg_str = svg_str();
             id.update_state(SvgOrStyle::Svg(new_svg_str.into()));
         });
@@ -104,7 +104,7 @@ impl Svg {
 pub fn svg(svg_str_fn: impl Into<SvgStrFn> + 'static) -> Svg {
     let id = ViewId::new();
     let svg_str_fn: SvgStrFn = svg_str_fn.into();
-    create_effect(move |_| {
+    Effect::new(move |_| {
         let new_svg_str = (svg_str_fn.str_fn)();
         id.update_state(SvgOrStyle::Svg(new_svg_str));
     });

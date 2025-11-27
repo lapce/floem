@@ -256,6 +256,7 @@ pub mod prelude {
     pub use crate::view_tuple::ViewTuple;
     pub use crate::views::*;
     pub use crate::{IntoView, View};
+    #[allow(deprecated)]
     pub use floem_reactive::{
         RwSignal, SignalGet, SignalTrack, SignalUpdate, SignalWith, create_rw_signal, create_signal,
     };

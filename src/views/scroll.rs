@@ -1,7 +1,7 @@
 #![deny(missing_docs)]
 //! Scroll View
 
-use floem_reactive::create_effect;
+use floem_reactive::Effect;
 use peniko::kurbo::{Point, Rect, RoundedRectRadii, Size, Stroke, Vec2};
 use peniko::{Brush, Color};
 use ui_events::pointer::{PointerButton, PointerButtonEvent, PointerEvent, PointerScrollEvent};
@@ -222,7 +222,7 @@ impl Scroll {
     /// changes in the signals that it depends on.
     pub fn ensure_visible(self, to: impl Fn() -> Rect + 'static) -> Self {
         let id = self.id();
-        create_effect(move |_| {
+        Effect::new(move |_| {
             let rect = to();
             id.update_state_deferred(ScrollState::EnsureVisible(rect));
         });
@@ -237,7 +237,7 @@ impl Scroll {
     /// as determined by the `delta` function which will update any time there are changes in the signals that it depends on.
     pub fn scroll_delta(self, delta: impl Fn() -> Vec2 + 'static) -> Self {
         let id = self.id();
-        create_effect(move |_| {
+        Effect::new(move |_| {
             let delta = delta();
             id.update_state(ScrollState::ScrollDelta(delta));
         });
@@ -252,7 +252,7 @@ impl Scroll {
     /// as determined by the `origin` function which will update any time there are changes in the signals that it depends on.
     pub fn scroll_to(self, origin: impl Fn() -> Option<Point> + 'static) -> Self {
         let id = self.id();
-        create_effect(move |_| {
+        Effect::new(move |_| {
             if let Some(origin) = origin() {
                 id.update_state_deferred(ScrollState::ScrollTo(origin));
             }
@@ -268,7 +268,7 @@ impl Scroll {
     /// as determined by the `percent` function which will update any time there are changes in the signals that it depends on.
     pub fn scroll_to_percent(self, percent: impl Fn() -> f32 + 'static) -> Self {
         let id = self.id();
-        create_effect(move |_| {
+        Effect::new(move |_| {
             let percent = percent() / 100.;
             id.update_state_deferred(ScrollState::ScrollToPercent(percent));
         });
@@ -282,7 +282,7 @@ impl Scroll {
     /// as determined by the `view` function which will update any time there are changes in the signals that it depends on.
     pub fn scroll_to_view(self, view: impl Fn() -> Option<ViewId> + 'static) -> Self {
         let id = self.id();
-        create_effect(move |_| {
+        Effect::new(move |_| {
             if let Some(view) = view() {
                 id.update_state_deferred(ScrollState::ScrollToView(view));
             }

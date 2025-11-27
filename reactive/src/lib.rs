@@ -4,6 +4,8 @@
 //! An existing `RwSignal` may be converted using [`RwSignal::read_only`](RwSignal::read_only)
 //! and [`RwSignal::write_only`](RwSignal::write_only) where necessary, but the reverse is not possible.
 
+#![allow(deprecated)]
+
 mod base;
 mod context;
 mod derived;

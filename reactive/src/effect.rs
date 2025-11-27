@@ -3,7 +3,7 @@ use std::{any::Any, cell::RefCell, collections::HashSet, marker::PhantomData, me
 use crate::{
     id::Id,
     runtime::{Runtime, RUNTIME},
-    scope::{with_scope, Scope},
+    scope::Scope,
 };
 
 pub(crate) trait EffectTrait {
@@ -32,7 +32,10 @@ where
     F: Fn(Option<T>) -> T,
 {
     fn drop(&mut self) {
-        if let Ok(_) = RUNTIME.try_with(|runtime| runtime.remove_effect(self.id)) {
+        if RUNTIME
+            .try_with(|runtime| runtime.remove_effect(self.id))
+            .is_ok()
+        {
             self.id.dispose();
         }
     }
@@ -60,6 +63,7 @@ where
     T: Any + 'static,
     F: Fn(Option<T>) -> T + 'static,
 {
+    #[allow(clippy::new_ret_no_self)]
     pub fn new(f: F) {
         Runtime::assert_ui_thread();
         let id = Id::next();
@@ -89,7 +93,10 @@ pub struct UpdaterEffect<T, I, C, U> {
 
 impl<T, I, C, U> Drop for UpdaterEffect<T, I, C, U> {
     fn drop(&mut self) {
-        if let Ok(_) = RUNTIME.try_with(|runtime| runtime.remove_effect(self.id)) {
+        if RUNTIME
+            .try_with(|runtime| runtime.remove_effect(self.id))
+            .is_ok()
+        {
             self.id.dispose();
         }
     }
@@ -102,6 +109,7 @@ impl UpdaterEffect<(), (), (), ()> {
     /// Create an effect updater that runs `on_change` when any signals that subscribe during the
     /// run of `compute` are updated. `compute` is immediately run only once, and its value is returned
     /// from the call to `create_updater`.
+    #[allow(clippy::new_ret_no_self)]
     pub fn new<R>(
         compute: impl Fn() -> R + 'static,
         on_change: impl Fn(R) + 'static,
@@ -114,6 +122,7 @@ impl UpdaterEffect<(), (), (), ()> {
 
     /// Create an effect updater that runs `on_change` when any signals within `compute` subscribe to
     /// changes. `compute` is immediately run and its return value is returned.
+    #[allow(clippy::new_ret_no_self)]
     pub fn new_stateful<T, R>(
         compute: impl Fn(Option<T>) -> (R, T) + 'static,
         on_change: impl Fn(R, T) -> T + 'static,
@@ -173,6 +182,7 @@ where
 
 /// Signals that are wrapped with `untrack` will not subscribe to any effect.
 impl Effect<(), fn(Option<()>) -> ()> {
+    #[allow(clippy::new_ret_no_self)]
     pub fn untrack<T>(f: impl FnOnce() -> T) -> T {
         Runtime::assert_ui_thread();
         let prev_effect = RUNTIME.with(|runtime| runtime.current_effect.borrow_mut().take());
@@ -183,6 +193,7 @@ impl Effect<(), fn(Option<()>) -> ()> {
         result
     }
 
+    #[allow(clippy::new_ret_no_self)]
     pub fn batch<T>(f: impl FnOnce() -> T) -> T {
         let already_batching = RUNTIME.with(|runtime| {
             let batching = runtime.batching.get();
@@ -229,7 +240,7 @@ pub(crate) fn run_initial_effect(effect: Rc<dyn EffectTrait>) {
         *runtime.current_effect.borrow_mut() = Some(effect.clone());
 
         let effect_scope = Scope(effect_id, PhantomData);
-        with_scope(effect_scope, || {
+        effect_scope.enter(|| {
             effect.run();
         });
 
@@ -248,7 +259,7 @@ pub(crate) fn run_effect(effect: Rc<dyn EffectTrait>) {
         *runtime.current_effect.borrow_mut() = Some(effect.clone());
 
         let effect_scope = Scope(effect_id, PhantomData);
-        with_scope(effect_scope, move || {
+        effect_scope.enter(move || {
             effect.run();
         });
 
@@ -270,7 +281,7 @@ where
         *runtime.current_effect.borrow_mut() = Some(effect.clone());
 
         let effect_scope = Scope(effect_id, PhantomData);
-        let (result, new_value) = with_scope(effect_scope, || {
+        let (result, new_value) = effect_scope.enter(|| {
             (effect.compute)(None)
         });
 
@@ -408,7 +419,7 @@ impl SignalTracker {
         });
 
         let effect_scope = Scope(self.id, PhantomData);
-        let result = with_scope(effect_scope, || {
+        let result = effect_scope.enter(|| {
             effect_scope.track();
             f()
         });

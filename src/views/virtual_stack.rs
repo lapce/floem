@@ -7,8 +7,8 @@ use std::{
 };
 
 use floem_reactive::{
-    ReadSignal, RwSignal, Scope, SignalGet, SignalTrack, SignalUpdate, SignalWith, WriteSignal,
-    as_child_of_current_scope, create_effect,
+    Effect, ReadSignal, RwSignal, Scope, SignalGet, SignalTrack, SignalUpdate, SignalWith,
+    WriteSignal,
 };
 use peniko::kurbo::{Rect, Size};
 use smallvec::SmallVec;
@@ -220,12 +220,12 @@ where
     let item_size = RwSignal::new(VirtualItemSize::Assume(None));
 
     let direction = RwSignal::new(FlexDirection::Row);
-    create_effect(move |_| {
+    Effect::new(move |_| {
         direction.track();
         id.request_style();
     });
 
-    create_effect(move |prev| {
+    Effect::new(move |prev| {
         let mut items_vector = each_fn();
         let viewport = viewport.get();
         let min = match direction.get() {
@@ -353,7 +353,7 @@ where
         (before_size, content_size, HashRun(hashed_items))
     });
 
-    let view_fn = Box::new(as_child_of_current_scope(move |e| view_fn(e).into_any()));
+    let view_fn = Box::new(Scope::current().enter_child(move |e| view_fn(e).into_any()));
 
     VirtualStack {
         id,

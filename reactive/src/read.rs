@@ -37,8 +37,8 @@ impl<'a, T> Deref for ReadBorrow<'a, T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
         match self {
-            ReadBorrow::Sync(v) => &*v,
-            ReadBorrow::Local(v) => &*v,
+            ReadBorrow::Sync(v) => v,
+            ReadBorrow::Local(v) => v,
         }
     }
 }

@@ -465,10 +465,10 @@ where
     F: Fn(Fut, floem_reactive::WriteSignal<T>, floem_reactive::WriteSignal<bool>, ExtSendTrigger)
         + 'static,
 {
-    use floem_reactive::{Scope, SignalGet, SignalUpdate, with_scope};
+    use floem_reactive::{Scope, SignalGet, SignalUpdate};
 
     let cx = Scope::current();
-    let trigger = with_scope(cx, ExtSendTrigger::new);
+    let trigger = cx.enter(ExtSendTrigger::new);
     let (data_read, data_write) = cx.create_signal(initial);
     let (finished_read, finished_write) = cx.create_signal(false);
     let refetch_trigger = cx.create_rw_signal(0);
@@ -522,10 +522,10 @@ where
             ExtSendTrigger,
         ) + 'static,
 {
-    use floem_reactive::{Scope, SignalGet, SignalUpdate, with_scope};
+    use floem_reactive::{Scope, SignalGet, SignalUpdate};
 
     let cx = Scope::current();
-    let trigger = with_scope(cx, ExtSendTrigger::new);
+    let trigger = cx.enter(ExtSendTrigger::new);
     let (data_read, data_write) = cx.create_signal(None);
     let (finished_read, finished_write) = cx.create_signal(false);
     let refetch_trigger = cx.create_rw_signal(0);
@@ -574,10 +574,10 @@ where
     F: Fn(Fut, floem_reactive::WriteSignal<T>, floem_reactive::WriteSignal<bool>, ExtSendTrigger)
         + 'static,
 {
-    use floem_reactive::{Scope, SignalGet, SignalUpdate, with_scope};
+    use floem_reactive::{Scope, SignalGet, SignalUpdate};
 
     let cx = Scope::current();
-    let trigger = with_scope(cx, ExtSendTrigger::new);
+    let trigger = cx.enter(ExtSendTrigger::new);
     let (data_read, data_write) = cx.create_signal(initial);
     let (finished_read, finished_write) = cx.create_signal(false);
     let refetch_trigger = cx.create_rw_signal(0);
@@ -614,10 +614,10 @@ where
             ExtSendTrigger,
         ) + 'static,
 {
-    use floem_reactive::{Scope, SignalGet, SignalUpdate, with_scope};
+    use floem_reactive::{Scope, SignalGet, SignalUpdate};
 
     let cx = Scope::current();
-    let trigger = with_scope(cx, ExtSendTrigger::new);
+    let trigger = cx.enter(ExtSendTrigger::new);
     let (data_read, data_write) = cx.create_signal(None);
     let (finished_read, finished_write) = cx.create_signal(false);
     let refetch_trigger = cx.create_rw_signal(0);

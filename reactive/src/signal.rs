@@ -266,12 +266,14 @@ pub(crate) enum SignalValue {
     Local(Rc<dyn Any>),
 }
 
+#[allow(dead_code)]
 pub enum SignalBorrow<'a, T> {
     Sync(MutexGuard<'a, T>),
     Local(Ref<'a, T>),
 }
 
 impl Signal {
+    #[allow(clippy::new_ret_no_self)]
     pub fn new<T>(value: T) -> Id
     where
         T: Any + 'static,
@@ -311,6 +313,7 @@ impl Signal {
         since = "0.2.0",
         note = "Use Signal::new_sync for sync signals or Signal::new for local ones"
     )]
+    #[allow(dead_code)]
     pub fn create<T>(value: T) -> Id
     where
         T: Any + Send + Sync + 'static,
@@ -318,6 +321,7 @@ impl Signal {
         Self::new_sync(value)
     }
 
+    #[allow(dead_code)]
     pub fn borrow<T: 'static>(&self) -> SignalBorrow<'_, T> {
         match &self.value {
             SignalValue::Sync(v) => {

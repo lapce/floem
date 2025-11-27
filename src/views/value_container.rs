@@ -1,8 +1,6 @@
 use std::any::Any;
 
-use floem_reactive::{
-    RwSignal, SignalGet, SignalUpdate, create_effect, create_rw_signal, create_updater,
-};
+use floem_reactive::{Effect, RwSignal, SignalGet, SignalUpdate, UpdaterEffect};
 
 use crate::{
     context::UpdateCx,
@@ -29,14 +27,14 @@ where
 {
     let initial_value = producer();
 
-    let inbound_signal = create_rw_signal(initial_value.clone());
-    create_effect(move |_| {
+    let inbound_signal = RwSignal::new(initial_value.clone());
+    Effect::new(move |_| {
         let checked = producer();
         inbound_signal.set(checked);
     });
 
-    let outbound_signal = create_rw_signal(initial_value.clone());
-    create_effect(move |_| {
+    let outbound_signal = RwSignal::new(initial_value.clone());
+    Effect::new(move |_| {
         let checked = outbound_signal.get();
         inbound_signal.set(checked);
     });
@@ -56,7 +54,7 @@ pub fn value_container<T: 'static, V: IntoView + 'static>(
     let id = ViewId::new();
     let child = child.into_view();
     id.set_children([child]);
-    create_updater(value_update, move |new_value| id.update_state(new_value));
+    UpdaterEffect::new(value_update, move |new_value| id.update_state(new_value));
     ValueContainer {
         id,
         on_update: None,

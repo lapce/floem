@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use floem_editor_core::{buffer::rope_text::RopeTextVal, indent::IndentStyle};
-use floem_reactive::{RwSignal, Scope, SignalUpdate, SignalWith, create_updater, with_scope};
+use floem_reactive::{RwSignal, Scope, SignalUpdate, SignalWith, UpdaterEffect};
 use peniko::Color;
 
 use lapce_xi_rope::Rope;
@@ -85,7 +85,7 @@ pub fn text_editor(text: impl Into<Rope>) -> TextEditor {
     let editor = Editor::new(cx, doc, style, false);
 
     let editor_sig = cx.create_rw_signal(editor.clone());
-    let child = with_scope(cx, || {
+    let child = cx.enter(|| {
         editor_container_view(editor_sig, |_| true, default_key_handler(editor_sig))
     })
     .into_view();
@@ -116,7 +116,7 @@ pub fn text_editor_keys(
     let editor = Editor::new(cx, doc, style, false);
 
     let editor_sig = cx.create_rw_signal(editor.clone());
-    let child = with_scope(cx, || {
+    let child = cx.enter(|| {
         editor_container_view(
             editor_sig,
             |_| true,
@@ -369,7 +369,7 @@ impl TextEditor {
         let id = self.id();
         let view_state = id.state();
         let offset = view_state.borrow_mut().style.next_offset();
-        let style = create_updater(
+        let style = UpdaterEffect::new(
             move || style(EditorCustomStyle(Style::new())),
             move |style| id.update_style(offset, style.0),
         );
@@ -464,7 +464,7 @@ impl TextEditor {
         let editor = Editor::new(self.cx, doc, style, false);
 
         let editor_sig = self.cx.create_rw_signal(editor.clone());
-        let child = with_scope(self.cx, || {
+        let child = self.cx.enter(|| {
             editor_container_view(editor_sig, |_| true, default_key_handler(editor_sig))
         })
         .into_view();

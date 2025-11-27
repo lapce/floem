@@ -47,12 +47,11 @@ impl Id {
 
     /// Dispose only the children of this Id without removing resources tied to the Id itself.
     pub(crate) fn dispose_children(&self) {
-        if let Ok(children) = RUNTIME.try_with(|runtime| runtime.children.borrow_mut().remove(self))
+        if let Ok(Some(children)) =
+            RUNTIME.try_with(|runtime| runtime.children.borrow_mut().remove(self))
         {
-            if let Some(children) = children {
-                for child in children {
-                    child.dispose();
-                }
+            for child in children {
+                child.dispose();
             }
         }
     }
@@ -111,7 +110,7 @@ mod tests {
     use crate::{
         create_effect, create_rw_signal,
         runtime::{Runtime, RUNTIME},
-        scope::{with_scope, Scope},
+        scope::Scope,
         SignalTrack, SignalUpdate,
     };
 
@@ -122,7 +121,7 @@ mod tests {
         let (signal, setter) = signal_scope.create_signal(0);
 
         let count = Rc::new(Cell::new(0));
-        with_scope(parent, || {
+        parent.enter(|| {
             let count = count.clone();
             create_effect(move |_| {
                 signal.track();
@@ -153,7 +152,7 @@ mod tests {
         let created_signal = Rc::new(std::cell::RefCell::new(None));
         let run_count = Rc::new(Cell::new(0));
 
-        with_scope(parent, || {
+        parent.enter(|| {
             let created_signal = created_signal.clone();
             let run_count = run_count.clone();
             create_effect(move |_| {
@@ -189,7 +188,7 @@ mod tests {
         let signal_id = signal.id();
 
         let run_count = Rc::new(Cell::new(0));
-        with_scope(scope, || {
+        scope.enter(|| {
             let run_count = run_count.clone();
             create_effect(move |_| {
                 signal.track();

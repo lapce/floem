@@ -12,7 +12,7 @@ use winit::window::{
     ImeCapabilities, ImeEnableRequest, ImeHint, ImePurpose, ImeRequest, ImeRequestData,
 };
 
-use floem_reactive::{RwSignal, Scope, SignalGet, SignalUpdate, with_scope};
+use floem_reactive::{RwSignal, Scope, SignalGet, SignalUpdate};
 use floem_renderer::Renderer;
 use floem_renderer::gpu_resources::GpuResources;
 use peniko::color::palette;
@@ -114,14 +114,14 @@ impl WindowHandle {
         let context_menu = scope.create_rw_signal(None);
 
         #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
-        let view = with_scope(scope, move || {
+        let view = scope.enter(move || {
             let main_view = view_fn(window_id);
             let main_view_id = main_view.id();
             (main_view_id, main_view)
         });
 
         #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-        let view = with_scope(scope, move || {
+        let view = scope.enter(move || {
             let main_view = view_fn(window_id);
             let main_view_id = main_view.id();
             (
@@ -1321,7 +1321,7 @@ fn context_menu_view(
     context_menu: RwSignal<Option<(muda::Menu, Point, bool)>>,
     window_size: RwSignal<Size>,
 ) -> impl IntoView {
-    use floem_reactive::{create_effect, create_rw_signal};
+    use floem_reactive::Effect;
     use peniko::Color;
 
     use crate::{
@@ -1429,10 +1429,10 @@ fn context_menu_view(
                 title,
                 children,
             } => {
-                let menu_width = create_rw_signal(0.0);
-                let show_submenu = create_rw_signal(false);
-                let on_submenu = create_rw_signal(false);
-                let on_child_submenu = create_rw_signal(false);
+                let menu_width = RwSignal::new(0.0);
+                let show_submenu = RwSignal::new(false);
+                let on_submenu = RwSignal::new(false);
+                let on_child_submenu = RwSignal::new(false);
                 let has_submenu = children.is_some();
                 let submenu_svg = r#"<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M10.072 8.024L5.715 3.667l.618-.62L11 7.716v.618L6.333 13l-.618-.619 4.357-4.357z"/></svg>"#;
                 container(
@@ -1561,7 +1561,7 @@ fn context_menu_view(
         }
     }
 
-    let on_child_submenu = create_rw_signal(false);
+    let on_child_submenu = RwSignal::new(false);
     let view = dyn_stack(
         move || context_menu_items.get().unwrap_or_default(),
         move |s| s.clone(),
@@ -1623,7 +1623,7 @@ fn context_menu_view(
 
     let id = view.id();
 
-    create_effect(move |_| {
+    Effect::new(move |_| {
         if context_menu.with(|m| m.is_some()) {
             id.request_focus();
         }

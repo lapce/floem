@@ -2,7 +2,7 @@
 
 use std::ops::RangeInclusive;
 
-use floem_reactive::{SignalGet, SignalUpdate, create_updater};
+use floem_reactive::{SignalGet, SignalUpdate, UpdaterEffect};
 use peniko::Brush;
 use peniko::color::palette;
 use peniko::kurbo::{Circle, Point, RoundedRect, RoundedRectRadii};
@@ -364,7 +364,7 @@ impl Slider {
     /// ```
     pub fn new<P: Into<Pct>>(percent: impl Fn() -> P + 'static) -> Self {
         let id = ViewId::new();
-        let percent = create_updater(
+        let percent = UpdaterEffect::new(
             move || {
                 let percent = percent().into();
                 percent.0
@@ -444,7 +444,7 @@ impl Slider {
 
         let cloned_range = range.clone();
 
-        let percent = create_updater(
+        let percent = UpdaterEffect::new(
             move || {
                 let value_range = range.end() - range.start();
                 ((value() - range.start()) / value_range) * 100.0

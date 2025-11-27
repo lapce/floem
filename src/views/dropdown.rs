@@ -6,10 +6,7 @@
 //! The [`DropdownCustomStyle`] struct allows for easy and advanced customization of the dropdown's appearance.
 use std::{any::Any, rc::Rc};
 
-use floem_reactive::{
-    RwSignal, Scope, SignalGet, SignalUpdate, as_child_of_current_scope, create_effect,
-    create_updater,
-};
+use floem_reactive::{Effect, RwSignal, Scope, SignalGet, SignalUpdate, UpdaterEffect};
 use imbl::OrdMap;
 use peniko::kurbo::{Point, Rect, Size};
 use ui_events::keyboard::{Key, NamedKey};
@@ -392,11 +389,11 @@ impl<T: Clone + std::cmp::PartialEq> Dropdown<T> {
             },
         );
 
-        let initial = create_updater(active_item, move |new_state| {
+        let initial = UpdaterEffect::new(active_item, move |new_state| {
             dropdown_id.update_state(Message::ActiveElement(Box::new(new_state)));
         });
 
-        let main_fn = Box::new(as_child_of_current_scope(main_view));
+        let main_fn = Box::new(Scope::current().enter_child(main_view));
         let (child, main_view_scope) = main_fn(initial.clone());
         let main_view = child.id();
 
@@ -490,7 +487,7 @@ impl<T: Clone + std::cmp::PartialEq> Dropdown<T> {
 
     /// Overrides the main view for the dropdown.
     pub fn main_view(mut self, main_view: impl Fn(T) -> Box<dyn View> + 'static) -> Self {
-        self.main_fn = Box::new(as_child_of_current_scope(main_view));
+        self.main_fn = Box::new(Scope::current().enter_child(main_view));
         let (child, main_view_scope) = (self.main_fn)(self.current_value.clone());
         let main_view = child.id();
         self.main_view_scope = main_view_scope;
@@ -511,7 +508,7 @@ impl<T: Clone + std::cmp::PartialEq> Dropdown<T> {
     /// The `show` function will be re-run whenever any signal it depends on changes.
     pub fn show_list(self, show: impl Fn() -> bool + 'static) -> Self {
         let id = self.id();
-        create_effect(move |_| {
+        Effect::new(move |_| {
             let state = show();
             id.update_state(Message::OpenState(state));
         });
@@ -587,7 +584,7 @@ impl<T: Clone + std::cmp::PartialEq> Dropdown<T> {
             let initial_inset = Size::new(point.x, point.y);
             let inset = RwSignal::new(initial_inset);
 
-            create_effect(move |_| {
+            Effect::new(move |_| {
                 let (Some(list_size), Some(overlay_size)) = (list_size.get(), overlay_size.get())
                 else {
                     return;

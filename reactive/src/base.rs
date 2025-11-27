@@ -198,14 +198,6 @@ impl<T: Send + Sync + 'static> Drop for SyncBaseSignal<T> {
     }
 }
 
-#[deprecated(
-    since = "0.2.0",
-    note = "Use SyncBaseSignal::new instead; this will be removed in a future release"
-)]
-pub fn create_sync_base_signal<T: Send + Sync + 'static>(value: T) -> SyncBaseSignal<T> {
-    SyncBaseSignal::new(value)
-}
-
 impl<T: Send + Sync + 'static> SyncBaseSignal<T> {
     pub fn new(value: T) -> Self {
         let id = Signal::new_sync(value);

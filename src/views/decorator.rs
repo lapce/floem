@@ -4,7 +4,7 @@
 //!
 //! The decorator trait is the primary interface for extending the appearance and functionality of ['View']s.
 
-use floem_reactive::{SignalUpdate, create_effect, create_updater};
+use floem_reactive::{Effect, SignalUpdate, UpdaterEffect};
 use peniko::kurbo::{Point, Rect};
 use std::rc::Rc;
 use ui_events::keyboard::{Key, KeyState, KeyboardEvent, Modifiers};
@@ -77,7 +77,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
         let state = view_id.state();
 
         let offset = state.borrow_mut().style.next_offset();
-        let style = create_updater(
+        let style = UpdaterEffect::new(
             move || style(Style::new()),
             move |style| {
                 view_id.update_style(offset, style);
@@ -110,7 +110,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     ) -> Self::DV {
         let view = self.into_view();
         let view_id = view.id();
-        create_effect(move |_| {
+        Effect::new(move |_| {
             let apply = apply();
             let state = view_id.state();
             if apply {
@@ -130,7 +130,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     fn dragging_style(self, style: impl Fn(Style) -> Style + 'static) -> Self::DV {
         let view = self.into_view();
         let view_id = view.id();
-        create_effect(move |_| {
+        Effect::new(move |_| {
             let style = style(Style::new());
             {
                 let state = view_id.state();
@@ -152,7 +152,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     fn class_if<C: StyleClass>(self, apply: impl Fn() -> bool + 'static, _class: C) -> Self::DV {
         let view = self.into_view();
         let id = view.id();
-        create_effect(move |_| {
+        Effect::new(move |_| {
             let apply = apply();
             if apply {
                 id.add_class(C::class_ref());
@@ -188,7 +188,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     ) -> Self::DV {
         let view = self.into_view();
         let id = view.id();
-        create_effect(move |_| {
+        Effect::new(move |_| {
             let (event, disable) = disable();
             if disable {
                 id.disable_default_event(event);
@@ -424,7 +424,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
         let state = view_id.state();
 
         let offset = state.borrow_mut().animations.next_offset();
-        let initial_animation = create_updater(
+        let initial_animation = UpdaterEffect::new(
             move || animation(Animation::new()),
             move |animation| {
                 view_id.update_animation(offset, animation);
@@ -446,7 +446,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     fn clear_focus(self, when: impl Fn() + 'static) -> Self::DV {
         let view = self.into_view();
         let id = view.id();
-        create_effect(move |_| {
+        Effect::new(move |_| {
             when();
             id.clear_focus();
         });
@@ -460,7 +460,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     fn request_focus(self, when: impl Fn() + 'static) -> Self::DV {
         let view = self.into_view();
         let id = view.id();
-        create_effect(move |_| {
+        Effect::new(move |_| {
             when();
             id.request_focus();
         });
@@ -474,7 +474,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     /// # Reactivity
     /// The scale function is reactive and will rereun in response to any signal changes in the function.
     fn window_scale(self, scale_fn: impl Fn() -> f64 + 'static) -> Self {
-        create_effect(move |_| {
+        Effect::new(move |_| {
             let window_scale = scale_fn();
             set_window_scale(window_scale);
         });
@@ -488,7 +488,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     /// # Reactivity
     /// The title function is reactive and will rereun in response to any signal changes in the function.
     fn window_title(self, title_fn: impl Fn() -> String + 'static) -> Self {
-        create_effect(move |_| {
+        Effect::new(move |_| {
             let window_title = title_fn();
             set_window_title(window_title);
         });
@@ -507,7 +507,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     /// # Reactivity
     /// The menu function is reactive and will rereun in response to any signal changes in the function.
     fn window_menu(self, menu_fn: impl Fn() -> Menu + 'static) -> Self {
-        create_effect(move |_| {
+        Effect::new(move |_| {
             let menu = menu_fn();
             set_window_menu(menu);
         });

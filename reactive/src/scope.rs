@@ -68,7 +68,7 @@ impl Scope {
     where
         T: Any + 'static,
     {
-        with_scope(self, || RwSignal::new_split(value))
+        self.enter(|| RwSignal::new_split(value))
     }
 
     /// Create a RwSignal under this Scope (local/unsync by default)
@@ -76,7 +76,7 @@ impl Scope {
     where
         T: Any + 'static,
     {
-        with_scope(self, || RwSignal::new(value))
+        self.enter(|| RwSignal::new(value))
     }
 
     /// Create a sync Signal under this Scope
@@ -87,7 +87,7 @@ impl Scope {
     where
         T: Any + Send + Sync + 'static,
     {
-        with_scope(self, || RwSignal::<T, SyncStorage>::new_sync_split(value))
+        self.enter(|| RwSignal::<T, SyncStorage>::new_sync_split(value))
     }
 
     /// Create a sync RwSignal under this Scope
@@ -95,7 +95,7 @@ impl Scope {
     where
         T: Any + Send + Sync + 'static,
     {
-        with_scope(self, || RwSignal::<T, SyncStorage>::new_sync(value))
+        self.enter(|| RwSignal::<T, SyncStorage>::new_sync(value))
     }
 
     /// Create a local (unsync) Signal under this Scope
@@ -106,7 +106,7 @@ impl Scope {
     where
         T: Any + 'static,
     {
-        with_scope(self, || RwSignal::new_split(value))
+        self.enter(|| RwSignal::new_split(value))
     }
 
     /// Create a local (unsync) RwSignal under this Scope
@@ -114,7 +114,7 @@ impl Scope {
     where
         T: Any + 'static,
     {
-        with_scope(self, || RwSignal::new(value))
+        self.enter(|| RwSignal::new(value))
     }
 
     /// Create a Memo under this Scope
@@ -122,12 +122,12 @@ impl Scope {
     where
         T: PartialEq + 'static,
     {
-        with_scope(self, || create_memo(f))
+        self.enter(|| create_memo(f))
     }
 
     /// Create a Trigger under this Scope
     pub fn create_trigger(self) -> Trigger {
-        with_scope(self, create_trigger)
+        self.enter(create_trigger)
     }
 
     /// Create effect under this Scope
@@ -135,7 +135,7 @@ impl Scope {
     where
         T: Any + 'static,
     {
-        with_scope(self, || create_effect(f))
+        self.enter(|| create_effect(f))
     }
 
     /// Create updater under this Scope
@@ -147,11 +147,11 @@ impl Scope {
     where
         R: 'static,
     {
-        with_scope(self, || create_updater(compute, on_change))
+        self.enter(|| create_updater(compute, on_change))
     }
 
     /// Runs the given closure within this scope.
-    pub fn with_scope<T>(&self, f: impl FnOnce() -> T) -> T
+    pub fn enter<T>(&self, f: impl FnOnce() -> T) -> T
     where
         T: 'static,
     {
@@ -173,7 +173,7 @@ impl Scope {
     }
 
     /// Wraps a closure so it runs under a new child scope of this scope.
-    pub fn with_child_scope<T, U>(&self, f: impl Fn(T) -> U + 'static) -> impl Fn(T) -> (U, Scope)
+    pub fn enter_child<T, U>(&self, f: impl Fn(T) -> U + 'static) -> impl Fn(T) -> (U, Scope)
     where
         T: 'static,
     {
@@ -225,25 +225,25 @@ impl Scope {
 
 #[deprecated(
     since = "0.2.0",
-    note = "Use Scope::with_scope instead; this will be removed in a future release"
+    note = "Use Scope::enter instead; this will be removed in a future release"
 )]
 /// Runs the given code with the given Scope
 pub fn with_scope<T>(scope: Scope, f: impl FnOnce() -> T) -> T
 where
     T: 'static,
 {
-    scope.with_scope(f)
+    scope.enter(f)
 }
 
 /// Wrap the closure so that whenever the closure runs, it will be under a child Scope
 /// of the current Scope
 #[deprecated(
     since = "0.2.0",
-    note = "Use Scope::current().with_child_scope instead; this will be removed in a future release"
+    note = "Use Scope::current().enter_child instead; this will be removed in a future release"
 )]
 pub fn as_child_of_current_scope<T, U>(f: impl Fn(T) -> U + 'static) -> impl Fn(T) -> (U, Scope)
 where
     T: 'static,
 {
-    Scope::current().with_child_scope(f)
+    Scope::current().enter_child(f)
 }

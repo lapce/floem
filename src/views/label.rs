@@ -16,7 +16,7 @@ use crate::{
     unit::PxPct,
     view::View,
 };
-use floem_reactive::create_updater;
+use floem_reactive::UpdaterEffect;
 use floem_renderer::{Renderer, text::Cursor};
 use peniko::{
     Brush,
@@ -135,7 +135,7 @@ pub fn static_label(label: impl Into<String>) -> Label {
 /// ```
 pub fn label<S: Display + 'static>(label: impl Fn() -> S + 'static) -> Label {
     let id = ViewId::new();
-    let initial_label = create_updater(
+    let initial_label = UpdaterEffect::new(
         move || label().to_string(),
         move |new_label| id.update_state(new_label),
     );

@@ -3,7 +3,7 @@ use std::{
     marker::PhantomData,
 };
 
-use floem_reactive::{Scope, as_child_of_current_scope, create_effect};
+use floem_reactive::{Effect, Scope};
 use rustc_hash::FxHasher;
 use smallvec::SmallVec;
 
@@ -89,7 +89,7 @@ where
     T: 'static,
 {
     let id = ViewId::new();
-    create_effect(move |prev_hash_run| {
+    Effect::new(move |prev_hash_run| {
         let items = each_fn();
         let items = items.into_iter().collect::<SmallVec<[_; 128]>>();
         let hashed_items = items.iter().map(&key_fn).collect::<FxIndexSet<_>>();
@@ -116,7 +116,7 @@ where
         id.update_state(diff);
         HashRun(hashed_items)
     });
-    let view_fn = Box::new(as_child_of_current_scope(move |e| view_fn(e).into_any()));
+    let view_fn = Box::new(Scope::current().enter_child(move |e| view_fn(e).into_any()));
     DynStack {
         id,
         children: Vec::new(),

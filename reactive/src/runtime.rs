@@ -119,7 +119,7 @@ impl Runtime {
     }
 
     pub(crate) fn add_pending_effect(&self, effect_id: Id) {
-        let has_effect = self.pending_effects.borrow().iter().any(|e| *e == effect_id);
+        let has_effect = self.pending_effects.borrow().contains(&effect_id);
         if !has_effect {
             self.pending_effects.borrow_mut().push(effect_id);
         }

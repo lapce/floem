@@ -13,7 +13,7 @@ use crate::{
 use std::any::Any;
 use std::rc::Rc;
 
-use floem_reactive::{RwSignal, SignalGet, Trigger, create_updater};
+use floem_reactive::{RwSignal, SignalGet, Trigger, UpdaterEffect};
 use smallvec::{SmallVec, smallvec};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
@@ -675,7 +675,7 @@ impl Animation {
     ) -> Self {
         let states = RwSignal::new(SmallVec::new());
         self.effect_states.push(states);
-        let initial_command = create_updater(command, move |command| {
+        let initial_command = UpdaterEffect::new(command, move |command| {
             for (view_id, stack_offset) in states.get_untracked() {
                 view_id.update_animation_state(stack_offset, command)
             }
