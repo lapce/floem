@@ -12,19 +12,17 @@ use floem::{
         EditorStyle,
     },
 };
-use lazy_static::lazy_static;
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::LazyLock;
 use syntect::highlighting::{
     FontStyle, HighlightState, Highlighter, RangedHighlightIterator, ThemeSet,
 };
 use syntect::parsing::{ParseState, ScopeStack, SyntaxReference, SyntaxSet};
 
-lazy_static! {
-    pub static ref SYNTAXSET: SyntaxSet = SyntaxSet::load_defaults_newlines();
-    pub static ref THEMES: ThemeSet = ThemeSet::load_defaults();
-}
+pub static SYNTAXSET: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
+pub static THEMES: LazyLock<ThemeSet> = LazyLock::new(ThemeSet::load_defaults);
 
 struct SyntaxHighlightingStyle<'a> {
     pub syntax: &'a SyntaxReference,

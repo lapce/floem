@@ -1,12 +1,12 @@
 use std::{
     any::Any,
     collections::{HashMap, HashSet},
-    sync::{Arc, Mutex, OnceLock, RwLock, RwLockReadGuard, RwLockWriteGuard},
+    sync::{Arc, LazyLock, Mutex, OnceLock, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 
-use lazy_static::lazy_static;
-
 use crate::id::Id;
+
+pub(crate) static SYNC_RUNTIME: LazyLock<SyncRuntime> = LazyLock::new(SyncRuntime::new);
 
 /// Sync-only signal representation for the global runtime.
 #[allow(dead_code)]
@@ -117,9 +117,4 @@ impl SyncRuntime {
     pub(crate) fn set_waker(&self, waker: impl Fn() + Send + Sync + 'static) {
         let _ = self.waker.set(Arc::new(waker));
     }
-}
-
-lazy_static! {
-    #[allow(dead_code)]
-    pub(crate) static ref SYNC_RUNTIME: SyncRuntime = SyncRuntime::new();
 }
