@@ -193,7 +193,7 @@ pub enum TextDirection {
 /// ### Reactivity
 /// The view is reactive and will track updates on buffer signal.
 /// ### Info
-    /// For more advanced editing see [TextEditor](super::text_editor::TextEditor).
+/// For more advanced editing see [TextEditor](super::text_editor::TextEditor).
 pub fn text_input(buffer: RwSignal<String>) -> TextInput {
     let id = ViewId::new();
     let is_focused = RwSignal::new(false);

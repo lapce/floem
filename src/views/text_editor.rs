@@ -85,10 +85,9 @@ pub fn text_editor(text: impl Into<Rope>) -> TextEditor {
     let editor = Editor::new(cx, doc, style, false);
 
     let editor_sig = cx.create_rw_signal(editor.clone());
-    let child = cx.enter(|| {
-        editor_container_view(editor_sig, |_| true, default_key_handler(editor_sig))
-    })
-    .into_view();
+    let child = cx
+        .enter(|| editor_container_view(editor_sig, |_| true, default_key_handler(editor_sig)))
+        .into_view();
 
     let child_id = child.id();
     id.set_children([child]);
@@ -116,14 +115,15 @@ pub fn text_editor_keys(
     let editor = Editor::new(cx, doc, style, false);
 
     let editor_sig = cx.create_rw_signal(editor.clone());
-    let child = cx.enter(|| {
-        editor_container_view(
-            editor_sig,
-            |_| true,
-            move |kp| handle_key_event(editor_sig, &kp),
-        )
-    })
-    .into_view();
+    let child = cx
+        .enter(|| {
+            editor_container_view(
+                editor_sig,
+                |_| true,
+                move |kp| handle_key_event(editor_sig, &kp),
+            )
+        })
+        .into_view();
 
     let child_id = child.id();
     id.set_children([child]);
@@ -464,10 +464,10 @@ impl TextEditor {
         let editor = Editor::new(self.cx, doc, style, false);
 
         let editor_sig = self.cx.create_rw_signal(editor.clone());
-        let child = self.cx.enter(|| {
-            editor_container_view(editor_sig, |_| true, default_key_handler(editor_sig))
-        })
-        .into_view();
+        let child = self
+            .cx
+            .enter(|| editor_container_view(editor_sig, |_| true, default_key_handler(editor_sig)))
+            .into_view();
 
         let child_id = child.id();
         id.set_children([child]);
