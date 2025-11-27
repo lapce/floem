@@ -22,7 +22,7 @@ use crate::{
         CursorStyle, DisplayProp, Focusable, Hidden, PointerEvents, PointerEventsProp,
         StyleSelector, ZIndex,
     },
-    view_storage::VIEW_STORAGE,
+    view_storage::{MeasureContext, NodeContext, VIEW_STORAGE},
 };
 
 /// Encapsulates and owns the global state of the application,
@@ -177,6 +177,7 @@ impl WindowState {
     }
 
     pub fn compute_taffy(&mut self) {
+        let mut measure_context = MeasureContext::default();
         if let Some(root) = self.root {
             let _ = self
                 .root_view_id
@@ -192,14 +193,34 @@ impl WindowState {
                     },
                     |known_dimensions, available_space, node_id, node_context, style| {
                         match node_context {
-                            Some(crate::view_storage::NodeContext::None) => taffy::Size::ZERO,
-                            Some(crate::view_storage::NodeContext::Custom(c)) => {
-                                c(known_dimensions, available_space, node_id, style)
-                            }
+                            Some(NodeContext::Custom {
+                                measure,
+                                finalize: _,
+                            }) => measure(
+                                known_dimensions,
+                                available_space,
+                                node_id,
+                                style,
+                                &mut measure_context,
+                            ),
                             None => taffy::Size::ZERO,
                         }
                     },
                 );
+
+            // Finalize nodes that requested it
+            let taffy = self.root_view_id.taffy();
+            let taffy = taffy.borrow();
+            for node_id in measure_context.needs_finalization {
+                if let Ok(layout) = taffy.layout(node_id)
+                    && let Some(NodeContext::Custom {
+                        finalize: Some(f), ..
+                    }) = taffy.get_node_context(node_id)
+                {
+                    f(node_id, layout.size);
+                }
+            }
+            drop(taffy);
 
             compute_absolute_transforms_and_boxes(root, Affine::IDENTITY, None);
             let _damage = VIEW_STORAGE.with_borrow(|s| s.box_tree.borrow_mut().commit());

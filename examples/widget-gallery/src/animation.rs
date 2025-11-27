@@ -58,10 +58,10 @@ pub fn animation_view() -> impl IntoView {
                     .resume(move || resume.track())
                     .delay(3.seconds())
             })
-            .on_event_stop(EL::PointerEnter, move |_| {
+            .on_event_stop(EL::PointerEnter, move |_, _| {
                 pause.notify();
             })
-            .on_event_stop(EL::PointerLeave, move |_| {
+            .on_event_stop(EL::PointerLeave, move |_, _| {
                 resume.notify();
             }),
     ))

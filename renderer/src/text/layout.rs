@@ -301,6 +301,13 @@ impl TextLayout {
             .set_size(&mut font_system, Some(width), Some(height));
     }
 
+    pub fn clear_size(&mut self) {
+        let mut font_system = FONT_SYSTEM.lock();
+        self.width_opt = None;
+        self.height_opt = None;
+        self.buffer.set_size(&mut font_system, None, None);
+    }
+
     pub fn metrics(&self) -> Metrics {
         self.buffer.metrics()
     }

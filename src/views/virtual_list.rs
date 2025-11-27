@@ -2,7 +2,7 @@ use floem_reactive::Effect;
 use taffy::FlexDirection;
 use ui_events::keyboard::{Key, NamedKey};
 
-use crate::event::{Event, EventListener};
+use crate::event::{Event, EventListener, EventPropagation};
 use crate::{ViewId, prelude::*};
 
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -198,7 +198,7 @@ where
                             selection.set(Some(0));
                             stack_id.update_state(0_usize); // Must be usize to match state type
                         }
-                        Outcome::Stop
+                        EventPropagation::Stop
                     }
                     Key::Named(NamedKey::End) => {
                         let len = length.get_untracked();
@@ -206,7 +206,7 @@ where
                             selection.set(Some(len - 1));
                             stack_id.update_state(len - 1);
                         }
-                        Outcome::Stop
+                        EventPropagation::Stop
                     }
                     Key::Named(
                         named_key @ (NamedKey::ArrowUp
@@ -220,10 +220,10 @@ where
                         stack_id,
                         named_key,
                     ),
-                    _ => Outcome::Continue,
+                    _ => EventPropagation::Continue,
                 }
             } else {
-                Outcome::Continue
+                EventPropagation::Continue
             }
         });
     VirtualList { stack, selection }
@@ -235,7 +235,7 @@ fn handle_arrow_key(
     direction: FlexDirection,
     stack_id: ViewId,
     key: NamedKey,
-) -> Outcome {
+) -> EventPropagation {
     let current = selection.get();
 
     // Determine if we should move forward or backward based on direction and key
@@ -268,7 +268,7 @@ fn handle_arrow_key(
     );
 
     if is_cross_axis {
-        return Outcome::Continue;
+        return EventPropagation::Continue;
     }
 
     match current {
@@ -289,7 +289,7 @@ fn handle_arrow_key(
             }
         }
     }
-    Outcome::Stop
+    EventPropagation::Stop
 }
 
 impl<T: 'static> IntoView for VirtualList<T> {

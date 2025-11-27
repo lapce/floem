@@ -15,6 +15,12 @@ impl From<f32> for Pct {
     }
 }
 
+impl From<f64> for Pct {
+    fn from(value: f64) -> Self {
+        Pct(value)
+    }
+}
+
 impl From<i32> for Pct {
     fn from(value: i32) -> Self {
         Pct(value as f64)

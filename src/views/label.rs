@@ -3,7 +3,7 @@ use std::{any::Any, cell::RefCell, fmt::Display, mem::swap, rc::Rc};
 use crate::{
     Clipboard,
     context::{EventCx, PaintCx, UpdateCx},
-    event::{Event, EventListener, EventPropagation},
+    event::{Event, EventPropagation},
     id::ViewId,
     prop_extractor,
     style::{
@@ -14,7 +14,7 @@ use crate::{
     style_class,
     text::{Attrs, AttrsList, FamilyOwned, TextLayout},
     view::View,
-    view_storage::NodeContext,
+    view_storage::{MeasureFunction, NodeContext},
 };
 use floem_reactive::UpdaterEffect;
 use floem_renderer::{
@@ -38,7 +38,7 @@ use super::{Decorators, TextCommand};
 /// This struct can be wrapped in Rc<RefCell<>> and shared between the taffy layout
 /// function and other text rendering operations without needing to roundtrip through update.
 #[derive(Clone)]
-pub struct LabelLayoutData {
+pub struct TextLayoutData {
     /// The base text layout created from the original text.
     /// This is always created with no width constraint and represents
     /// the natural, unwrapped size of the text.
@@ -59,7 +59,7 @@ pub struct LabelLayoutData {
     text_overflow: TextOverflow,
 }
 
-impl LabelLayoutData {
+impl TextLayoutData {
     pub fn new() -> Self {
         Self {
             text_layout: None,
@@ -112,52 +112,6 @@ impl LabelLayoutData {
         }
     }
 
-    fn handle_ellipsis_overflow(&mut self, available_width: f32) {
-        if self.available_width == Some(available_width) {
-            return; // Already computed for this width
-        }
-
-        let Some(text_layout) = self.text_layout.as_ref() else {
-            return;
-        };
-
-        let mut dots_text = TextLayout::new();
-        dots_text.set_text("...", self.attrs_list.clone(), self.text_align);
-        let dots_width = dots_text.size().width as f32;
-        let width_left = available_width - dots_width;
-
-        let hit_point = text_layout.hit_point(Point::new(width_left as f64, 0.0));
-        let index = hit_point.index;
-
-        let new_text = if index > 0 {
-            format!("{}...", &self.original_text[..index])
-        } else {
-            "".to_string()
-        };
-
-        self.available_text = Some(new_text.clone());
-        self.available_width = Some(available_width);
-
-        let mut available_layout = TextLayout::new();
-        available_layout.set_text(&new_text, self.attrs_list.clone(), self.text_align);
-        self.available_text_layout = Some(available_layout);
-    }
-
-    fn handle_wrap_overflow(&mut self, available_width: f32) {
-        if self.available_width == Some(available_width) {
-            return; // Already computed for this width
-        }
-
-        let Some(text_layout) = self.text_layout.as_ref() else {
-            return;
-        };
-
-        let mut wrapped_layout = text_layout.clone();
-        wrapped_layout.set_size(available_width, f32::MAX);
-        self.available_text_layout = Some(wrapped_layout);
-        self.available_width = Some(available_width);
-    }
-
     pub fn clear_overflow_state(&mut self) {
         self.available_text = None;
         self.available_width = None;
@@ -168,103 +122,204 @@ impl LabelLayoutData {
         self.text_layout.as_ref()
     }
 
-    /// Create a taffy layout function that can be used with NodeContext::custom
-    /// This function handles all ellipsis and wrap logic internally without requiring updates
-    pub fn create_taffy_layout_fn(
-        layout_data: Rc<RefCell<Self>>,
-    ) -> impl Fn(
-        taffy::Size<Option<f32>>,
-        taffy::Size<taffy::AvailableSpace>,
-        taffy::NodeId,
-        &taffy::Style,
-    ) -> taffy::Size<f32> {
-        move |known_dimensions, available_space, _node_id, _style| {
-            use taffy::*;
+    /// Compute what the overflow size would be without mutating visible state.
+    /// Temporarily modifies text_layout size but restores it after.
+    pub fn compute_overflow_size(
+        &mut self,
+        available_width: f32,
+        text_overflow: TextOverflow,
+    ) -> peniko::kurbo::Size {
+        let Some(text_layout) = self.text_layout.as_mut() else {
+            return peniko::kurbo::Size::new(0.0, 14.0);
+        };
 
-            // First, check if we have text layout and get basic info
-            let (has_text_layout, natural_size, text_overflow) = {
-                let layout_data = layout_data.borrow();
-                let has_text = layout_data.text_layout.is_some();
-                let size = layout_data
-                    .text_layout
-                    .as_ref()
-                    .map(|tl| tl.size())
-                    .unwrap_or_else(|| peniko::kurbo::Size::new(0.0, 14.0));
-                (has_text, size, layout_data.text_overflow)
-            };
+        match text_overflow {
+            TextOverflow::Ellipsis => {
+                let mut dots_text = TextLayout::new();
+                dots_text.set_text("...", self.attrs_list.clone(), self.text_align);
+                let dots_width = dots_text.size().width as f32;
+                let width_left = available_width - dots_width;
 
-            if !has_text_layout {
-                let height = known_dimensions.height.unwrap_or(14.0);
-                return Size {
-                    width: known_dimensions.width.unwrap_or(0.0),
-                    height,
-                };
-            }
+                let hit_point = text_layout.hit_point(Point::new(width_left as f64, 0.0));
+                let index = hit_point.index;
 
-            let width_constraint = match available_space.width {
-                AvailableSpace::Definite(w) => Some(w),
-                _ => None,
-            };
-
-            let text_size = if let Some(width) = width_constraint {
-                let natural_width = natural_size.width as f32;
-                let overflows = natural_width > width;
-
-                if overflows {
-                    match text_overflow {
-                        crate::style::TextOverflow::Ellipsis => {
-                            let mut layout_data = layout_data.borrow_mut();
-                            layout_data.handle_ellipsis_overflow(width);
-                            // Use the ellipsis layout size
-                            layout_data
-                                .available_text_layout
-                                .as_ref()
-                                .map(|l| l.size())
-                                .unwrap_or(natural_size)
-                        }
-                        crate::style::TextOverflow::Wrap => {
-                            let mut layout_data = layout_data.borrow_mut();
-                            layout_data.handle_wrap_overflow(width);
-                            // Use the wrapped layout size
-                            layout_data
-                                .available_text_layout
-                                .as_ref()
-                                .map(|l| l.size())
-                                .unwrap_or(natural_size)
-                        }
-                        _ => {
-                            // For clip mode, just constrain to available width
-                            let mut layout_data = layout_data.borrow_mut();
-                            layout_data.clear_overflow_state();
-
-                            let text_layout = layout_data.text_layout.as_ref().unwrap();
-                            let mut constrained_layout = text_layout.clone();
-                            constrained_layout.set_size(width, f32::MAX);
-                            constrained_layout.size()
-                        }
-                    }
+                let new_text = if index > 0 {
+                    format!("{}...", &self.original_text[..index])
                 } else {
-                    // Text fits, clear any overflow state
-                    let mut layout_data = layout_data.borrow_mut();
-                    layout_data.clear_overflow_state();
-                    natural_size
-                }
-            } else {
-                // No width constraint, use natural size
-                let mut layout_data = layout_data.borrow_mut();
-                layout_data.clear_overflow_state();
-                natural_size
-            };
+                    "".to_string()
+                };
 
-            Size {
-                width: known_dimensions.width.unwrap_or(text_size.width as f32),
-                height: known_dimensions.height.unwrap_or(text_size.height as f32),
+                let mut temp_layout = TextLayout::new();
+                temp_layout.set_text(&new_text, self.attrs_list.clone(), self.text_align);
+                temp_layout.size()
+            }
+            TextOverflow::Wrap => {
+                text_layout.set_size(available_width, f32::MAX);
+                let size = text_layout.size();
+                text_layout.clear_size(); // Reset
+                size
+            }
+            _ => peniko::kurbo::Size::new(available_width as f64, text_layout.size().height),
+        }
+    }
+
+    /// Finalize the text layout for the given width.
+    /// Called after taffy layout is complete with the actual final dimensions.
+    pub fn finalize_for_width(&mut self, final_width: f32) {
+        let Some(text_layout) = self.text_layout.as_ref() else {
+            return;
+        };
+
+        let natural_width = text_layout.size().width as f32;
+        let overflows = natural_width > final_width + 0.5;
+
+        if !overflows {
+            self.clear_overflow_state();
+            return;
+        }
+
+        if self.available_width == Some(final_width) {
+            return; // Already finalized for this width
+        }
+
+        match self.text_overflow {
+            TextOverflow::Ellipsis => {
+                let mut dots_text = TextLayout::new();
+                dots_text.set_text("...", self.attrs_list.clone(), self.text_align);
+                let dots_width = dots_text.size().width as f32;
+                let width_left = final_width - dots_width;
+
+                let hit_point = text_layout.hit_point(Point::new(width_left as f64, 0.0));
+                let index = hit_point.index;
+
+                let new_text = if index > 0 {
+                    format!("{}...", &self.original_text[..index])
+                } else {
+                    "".to_string()
+                };
+
+                // Only create a new layout if the text actually changed
+                if self.available_text.as_ref() != Some(&new_text) {
+                    let mut layout = TextLayout::new();
+                    layout.set_text(&new_text, self.attrs_list.clone(), self.text_align);
+                    self.available_text = Some(new_text);
+                    self.available_text_layout = Some(layout);
+                }
+                self.available_width = Some(final_width);
+            }
+            TextOverflow::Wrap => {
+                // Reuse existing available_text_layout if we have one, just update size
+                if let Some(ref mut layout) = self.available_text_layout {
+                    layout.set_size(final_width, f32::MAX);
+                } else {
+                    // First time - clone from base layout
+                    let mut layout = text_layout.clone();
+                    layout.set_size(final_width, f32::MAX);
+                    self.available_text_layout = Some(layout);
+                }
+                self.available_width = Some(final_width);
+            }
+            _ => {
+                self.clear_overflow_state();
             }
         }
     }
+
+    /// Create a taffy layout function that can be used with NodeContext::custom
+    /// This function handles all ellipsis and wrap logic internally without requiring updates
+    pub fn create_taffy_layout_fn(layout_data: Rc<RefCell<Self>>) -> Box<MeasureFunction> {
+        Box::new(
+            move |known_dimensions, available_space, node_id, _style, measure_ctx| {
+                use taffy::*;
+
+                // Mark for finalization - don't mutate here
+                measure_ctx.needs_finalization(node_id);
+
+                // Get text layout info
+                let (has_text_layout, natural_size, text_overflow) = {
+                    let layout_data = layout_data.borrow();
+                    let has_text = layout_data.text_layout.is_some();
+                    let size = layout_data
+                        .text_layout
+                        .as_ref()
+                        .map(|tl| tl.size())
+                        .unwrap_or_else(|| peniko::kurbo::Size::new(0.0, 14.0));
+                    (has_text, size, layout_data.text_overflow)
+                };
+
+                if !has_text_layout {
+                    return Size {
+                        width: known_dimensions.width.unwrap_or(0.0),
+                        height: known_dimensions.height.unwrap_or(14.0),
+                    };
+                }
+
+                let natural_width = natural_size.width as f32;
+
+                // Determine the effective width for layout
+                let effective_width: Option<f32> = if let Some(w) = known_dimensions.width {
+                    if w == 0.0 {
+                        match available_space.height {
+                            AvailableSpace::MinContent | AvailableSpace::MaxContent => None,
+                            AvailableSpace::Definite(_) => Some(w),
+                        }
+                    } else {
+                        Some(w)
+                    }
+                } else {
+                    match available_space.width {
+                        AvailableSpace::Definite(w) => Some(w),
+                        AvailableSpace::MinContent => match text_overflow {
+                            crate::style::TextOverflow::Wrap => None,
+                            _ => None,
+                        },
+                        AvailableSpace::MaxContent => None,
+                    }
+                };
+
+                // Calculate the actual text size based on effective width
+                let text_size = if let Some(width) = effective_width {
+                    let overflows = natural_width > width + 0.5;
+
+                    if overflows {
+                        // Just compute what the size would be
+                        match text_overflow {
+                            crate::style::TextOverflow::Ellipsis
+                            | crate::style::TextOverflow::Wrap => {
+                                let mut layout_data = layout_data.borrow_mut();
+                                layout_data.compute_overflow_size(width, text_overflow)
+                            }
+                            _ => {
+                                // Clip mode
+                                peniko::kurbo::Size::new(width as f64, natural_size.height)
+                            }
+                        }
+                    } else {
+                        natural_size
+                    }
+                } else {
+                    natural_size
+                };
+
+                Size {
+                    width: known_dimensions.width.unwrap_or(text_size.width as f32),
+                    height: known_dimensions.height.unwrap_or(text_size.height as f32),
+                }
+            },
+        )
+    }
+
+    pub fn create_finalize_fn(
+        layout_data: Rc<RefCell<Self>>,
+    ) -> Box<dyn Fn(taffy::NodeId, taffy::Size<f32>)> {
+        Box::new(move |_node_id, final_size| {
+            let mut layout_data = layout_data.borrow_mut();
+            layout_data.finalize_for_width(final_size.width);
+        })
+    }
 }
 
-impl Default for LabelLayoutData {
+impl Default for TextLayoutData {
     fn default() -> Self {
         Self::new()
     }
@@ -303,7 +358,7 @@ pub struct Label {
     id: ViewId,
     label: String,
     /// Layout data containing text layouts and overflow handling logic
-    layout_data: Rc<RefCell<LabelLayoutData>>,
+    layout_data: Rc<RefCell<TextLayoutData>>,
     text_overflow_listener: Option<TextOverflowListener>,
     selection_state: SelectionState,
     selection_range: Option<(Cursor, Cursor)>,
@@ -314,7 +369,7 @@ pub struct Label {
 
 impl Label {
     fn new(id: ViewId, label: String) -> Self {
-        let layout_data = Rc::new(RefCell::new(LabelLayoutData::new()));
+        let layout_data = Rc::new(RefCell::new(TextLayoutData::new()));
         let mut label = Label {
             id,
             label,
@@ -372,9 +427,7 @@ pub fn label<S: Display + 'static>(label: impl Fn() -> S + 'static) -> Label {
         move || label().to_string(),
         move |new_label| id.update_state(new_label),
     );
-    Label::new(id, initial_label).on_event_cont(EventListener::FocusLost, move |_, _| {
-        id.request_layout();
-    })
+    Label::new(id, initial_label)
 }
 
 impl Label {
@@ -418,7 +471,6 @@ impl Label {
         let mut layout_data = self.layout_data.borrow_mut();
         layout_data.set_text(&self.label, attrs_list, align);
         layout_data.set_text_overflow(text_overflow);
-        drop(layout_data);
 
         let _ = self.id.mark_view_layout_dirty();
     }
@@ -512,9 +564,16 @@ impl Label {
         let taffy_node = self.id.taffy_node();
         let mut taffy = taffy.borrow_mut();
 
-        let layout_fn = LabelLayoutData::create_taffy_layout_fn(self.layout_data.clone());
+        let layout_fn = TextLayoutData::create_taffy_layout_fn(self.layout_data.clone());
+        let finalize_fn = TextLayoutData::create_finalize_fn(self.layout_data.clone());
 
-        let _ = taffy.set_node_context(taffy_node, Some(NodeContext::Custom(Box::new(layout_fn))));
+        let _ = taffy.set_node_context(
+            taffy_node,
+            Some(NodeContext::Custom {
+                measure: layout_fn,
+                finalize: Some(finalize_fn),
+            }),
+        );
     }
 }
 
@@ -532,7 +591,7 @@ impl View for Label {
     }
 
     fn event(&mut self, _cx: &mut EventCx, event: &Event, phase: Phase) -> EventPropagation {
-        if phase == Phase::Capture {
+        if phase != Phase::Target {
             return EventPropagation::Continue;
         }
 

@@ -50,7 +50,7 @@ use crate::{
     event::Event,
 };
 
-use super::{Decorators, label::LabelLayoutData};
+use super::{Decorators, label::TextLayoutData};
 
 style_class!(
     /// The style class that is applied to all `TextInput` views.
@@ -117,7 +117,7 @@ pub struct TextInput {
     // This can be retrieved from the glyph, but we store it for efficiency.
     cursor_x: f64,
     /// Layout data containing text layouts and overflow handling logic
-    layout_data: Rc<RefCell<LabelLayoutData>>,
+    layout_data: Rc<RefCell<TextLayoutData>>,
     /// Horizontal scroll offset for text that overflows the visible area
     scroll_offset: f64,
     selection: Option<Range<usize>>,
@@ -229,7 +229,7 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
             buffer,
             last_buffer: buffer.get_untracked(),
         },
-        layout_data: Rc::new(RefCell::new(LabelLayoutData::new())),
+        layout_data: Rc::new(RefCell::new(TextLayoutData::new())),
         style: Default::default(),
         font: FontProps::default(),
         cursor_x: 0.0,
@@ -353,9 +353,16 @@ impl TextInput {
         let taffy_node = self.id.taffy_node();
         let mut taffy = taffy.borrow_mut();
 
-        let layout_fn = LabelLayoutData::create_taffy_layout_fn(self.layout_data.clone());
+        let layout_fn = TextLayoutData::create_taffy_layout_fn(self.layout_data.clone());
+        let finalize_fn = TextLayoutData::create_finalize_fn(self.layout_data.clone());
 
-        let _ = taffy.set_node_context(taffy_node, Some(NodeContext::Custom(Box::new(layout_fn))));
+        let _ = taffy.set_node_context(
+            taffy_node,
+            Some(NodeContext::Custom {
+                measure: layout_fn,
+                finalize: Some(finalize_fn),
+            }),
+        );
     }
 }
 
@@ -552,7 +559,7 @@ impl TextInput {
 
     /// Determine approximate max size of a single glyph, given the current font weight & size
     fn get_font_glyph_max_size(&self) -> Size {
-        let mut tmp = LabelLayoutData::new();
+        let mut tmp = TextLayoutData::new();
         let attrs_list = self.get_text_attrs();
         let align = self.style.text_align();
         tmp.set_text("W", attrs_list, align);

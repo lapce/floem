@@ -1,5 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
+use rustc_hash::FxHashSet;
 use slotmap::{SecondaryMap, SlotMap};
 use taffy::NodeId;
 use understory_box_tree::{NodeId as UnderNode, Tree as UnderTree};
@@ -26,14 +27,25 @@ pub type MeasureFunction = dyn FnMut(
     taffy::Size<taffy::AvailableSpace>,
     taffy::NodeId,
     &taffy::Style,
+    &mut MeasureContext,
 ) -> taffy::Size<f32>;
 
-#[derive(Default)]
+#[derive(Default, Clone, Debug)]
+pub struct MeasureContext {
+    pub(crate) needs_finalization: FxHashSet<NodeId>,
+}
+impl MeasureContext {
+    pub fn needs_finalization(&mut self, node_id: taffy::NodeId) {
+        self.needs_finalization.insert(node_id);
+    }
+}
+
 #[non_exhaustive]
 pub enum NodeContext {
-    #[default]
-    None,
-    Custom(Box<MeasureFunction>),
+    Custom {
+        measure: Box<MeasureFunction>,
+        finalize: Option<Box<dyn Fn(NodeId, taffy::Size<f32>)>>,
+    },
 }
 
 pub(crate) struct ViewStorage {

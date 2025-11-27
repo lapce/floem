@@ -49,7 +49,7 @@ pub fn editor_view() -> impl IntoView {
         .placeholder("Some placeholder text");
     let doc = editor_a.doc();
 
-    let view = stack((
+    stack((
         editor_a,
         editor_b,
         stack((
@@ -79,12 +79,10 @@ pub fn editor_view() -> impl IntoView {
             .gap(10)
             .items_center()
             .justify_center()
-    });
-
-    let id = view.id();
-    view.on_key_up(
+    })
+    .on_key_up(
         Key::Named(NamedKey::F11),
         |m| m.is_empty(),
-        move |_| id.inspect(),
+        move |v, _| v.id().inspect(),
     )
 }

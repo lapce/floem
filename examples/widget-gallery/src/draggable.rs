@@ -26,7 +26,8 @@ fn sortable_item(
             .style(|s| s.padding(5).width_full())
             .on_event_stop(
                 floem::event::EventListener::PointerDown,
-                |_| { /* Disable dragging for this view */ },
+                |_, _| { /* Disable dragging for this view: TOOD: update with cx.disable_defaults() */
+                },
             ),
         "drag me".style(|s| {
             s.selectable(false)
@@ -34,11 +35,11 @@ fn sortable_item(
                 .cursor(CursorStyle::RowResize)
         }),
     )
-        .on_event(floem::event::EventListener::DragStart, move |_| {
+        .on_event(floem::event::EventListener::DragStart, move |_,_| {
             dragger_id.set(item_id);
             floem::event::EventPropagation::Continue
         })
-        .on_event(floem::event::EventListener::DragOver, move |_| {
+        .on_event(floem::event::EventListener::DragOver, move |_,_| {
             if dragger_id.get_untracked() != item_id {
                 let dragger_pos = sortable_items
                     .get()

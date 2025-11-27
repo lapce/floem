@@ -28,8 +28,8 @@ fn app_view() -> impl IntoView {
     let todos_scroll = todos()
         .style(|s| s.max_width_full().width_full())
         .scroll()
-        .style(|s| s.padding(10).padding_right(14))
-        .scroll_style(|s| s.shrink_to_fit().handle_thickness(8));
+        .style(|s| s.padding(10).padding_right(14).scrollbar_width(8))
+        .custom_style(|s| s.shrink_to_fit());
 
     let new_button = button("New To-Do")
         .action(|| AppCommand::NewTodo.execute())
@@ -53,49 +53,49 @@ fn app_view() -> impl IntoView {
                 .max_width_full()
                 .font_size(15.)
         })
-        .on_click_stop(move |_| {
+        .action(move || {
             AppCommand::Escape.execute();
         })
         .on_key_down(
             Key::Named(NamedKey::F11),
             |m| m.is_empty(),
-            |_| {
+            |_, _| {
                 inspect();
             },
         )
         .on_key_down(
             Key::Named(NamedKey::Escape),
             |m| m.is_empty(),
-            move |_| {
+            move |_, _| {
                 AppCommand::Escape.execute();
             },
         )
         .on_key_down(
             Key::Character("n".into()),
             |m| m == OS_MOD,
-            move |_| AppCommand::NewTodo.execute(),
+            move |_, _| AppCommand::NewTodo.execute(),
         )
         .on_key_down(
             Key::Character("r".into()),
             |m| m == OS_MOD,
-            move |_| AppCommand::RefreshDB.execute(),
+            move |_, _| AppCommand::RefreshDB.execute(),
         )
         .on_key_down(
             Key::Character("a".into()),
             |m| m == OS_MOD,
-            move |_| AppCommand::SelectAll.execute(),
+            move |_, _| AppCommand::SelectAll.execute(),
         )
         .on_key_down(
             Key::Named(NamedKey::Enter),
             |m| m.is_empty(),
-            |_| {
+            |_, _| {
                 AppCommand::AppAction.execute();
             },
         )
         .on_key_down(
             Key::Character(" ".into()),
             |m| m.is_empty(),
-            |_| {
+            |_, _| {
                 AppCommand::AppAction.execute();
             },
         )
@@ -103,19 +103,19 @@ fn app_view() -> impl IntoView {
             Key::Named(NamedKey::Backspace),
             // empty, shift, or OS_MOD or OS_MOD + shift
             move |m| !m.intersects((OS_MOD | Modifiers::SHIFT).complement()),
-            move |_| AppCommand::DeleteSelected.execute(),
+            move |_, _| AppCommand::DeleteSelected.execute(),
         )
         .on_key_down(
             Key::Named(NamedKey::ArrowDown),
             |m| m == Modifiers::empty(),
-            |_| {
+            |_, _| {
                 AppCommand::SelectDown.execute();
             },
         )
         .on_key_down(
             Key::Named(NamedKey::ArrowUp),
             |m| m == Modifiers::empty(),
-            |_| {
+            |_, _| {
                 AppCommand::SelectUp.execute();
             },
         )

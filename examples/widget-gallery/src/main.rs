@@ -26,7 +26,6 @@ use floem::{
     muda::{AboutMetadataBuilder, PredefinedMenuItem},
     new_window,
     prelude::*,
-    receiver_signal::ChannelSignal,
     style::{Background, CursorStyle, CustomStylable, Transition},
     theme::StyleThemeExt,
     ui_events::keyboard::{Key, KeyState, KeyboardEvent, Modifiers, NamedKey},
@@ -112,11 +111,12 @@ fn app_view(window_id: WindowId) -> impl IntoView {
     let side_tab_bar = side_bar_list
         .scroll()
         .debug_name("Side Tab Bar")
-        .custom_style(|s| s.shrink_to_fit().handle_thickness(8.))
+        .custom_style(|s| s.shrink_to_fit())
         .style(|s| {
             s.border(1.)
                 .flex_col()
                 .padding(3.)
+                .scrollbar_width(8.)
                 .border_color(palette::css::GRAY)
                 .class(LabelClass, |s| s.selectable(false))
         });
@@ -155,7 +155,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
 
     let tab = tab.scroll().style(|s| s.size_full());
 
-    let view = (left_side_bar, tab)
+    let view = ("this is amazing", left_side_bar, tab)
         .h_stack()
         .style(|s| s.padding(5.0).width_full().height_full().col_gap(5.0))
         .window_title(|| "Widget Gallery".to_owned());
@@ -303,7 +303,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
             .inset_right(15.)
     }));
 
-    view.on_event_stop(EventListener::KeyUp, move |e| {
+    view.on_event_stop(EventListener::KeyUp, move |_, e| {
         if let Event::Key(KeyboardEvent {
             state: KeyState::Up,
             key,

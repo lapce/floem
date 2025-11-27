@@ -2,6 +2,7 @@ use std::any::Any;
 
 use super::{Decorators, v_stack_from_iter};
 use crate::context::StyleCx;
+use crate::event::EventPropagation;
 use crate::id::ViewId;
 use crate::style::Style;
 use crate::style_class;
@@ -125,13 +126,13 @@ where
                     if length > 0 {
                         selection.set(Some(0));
                     }
-                    Outcome::Stop
+                    EventPropagation::Stop
                 }
                 Key::Named(NamedKey::End) => {
                     if length > 0 {
                         selection.set(Some(length - 1));
                     }
-                    Outcome::Stop
+                    EventPropagation::Stop
                 }
                 Key::Named(NamedKey::ArrowUp) => {
                     let current = selection.get_untracked();
@@ -147,15 +148,15 @@ where
                             }
                         }
                     }
-                    Outcome::Stop
+                    EventPropagation::Stop
                 }
                 Key::Named(NamedKey::Enter) => {
                     list_id.update_state(ListUpdate::Accept);
-                    Outcome::Stop
+                    EventPropagation::Stop
                 }
                 Key::Character(c) if c == " " => {
                     list_id.update_state(ListUpdate::Accept);
-                    Outcome::Stop
+                    EventPropagation::Stop
                 }
                 Key::Named(NamedKey::ArrowDown) => {
                     let current = selection.get_untracked();
@@ -171,12 +172,12 @@ where
                             }
                         }
                     }
-                    Outcome::Stop
+                    EventPropagation::Stop
                 }
-                _ => Outcome::Continue,
+                _ => EventPropagation::Continue,
             }
         } else {
-            Outcome::Continue
+            EventPropagation::Continue
         }
     })
     .class(ListClass)

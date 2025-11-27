@@ -2,12 +2,10 @@
 //! A toggle button widget. An example can be found in [widget-gallery/button](https://github.com/lapce/floem/tree/main/examples/widget-gallery)
 //! in the floem examples.
 
-use std::any::Any;
-
-use std::any::Any;
 use floem_reactive::{Effect, SignalGet, SignalUpdate};
 use peniko::Brush;
 use peniko::kurbo::{Point, Size};
+use std::any::Any;
 use ui_events::keyboard::{Key, KeyState, KeyboardEvent, NamedKey};
 use ui_events::pointer::PointerEvent;
 use understory_responder::types::Phase;

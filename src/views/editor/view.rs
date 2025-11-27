@@ -4,7 +4,7 @@ use crate::{
     Renderer,
     action::{set_ime_allowed, set_ime_cursor_area},
     context::{PaintCx, UpdateCx},
-    event::{Event, EventListener},
+    event::{Event, EventListener, EventPropagation},
     id::ViewId,
     kurbo::{BezPath, Line, Point, Rect, Size, Vec2},
     peniko::Color,
@@ -1059,7 +1059,7 @@ pub fn editor_view(
     })
     .on_event(EventListener::ImePreedit, move |_, event| {
         if !is_active.get_untracked() || !focused.get_untracked() {
-            return Outcome::Continue;
+            return EventPropagation::Continue;
         }
 
         if let Event::ImePreedit { text, cursor } = event {
@@ -1086,11 +1086,11 @@ pub fn editor_view(
                 }
             });
         }
-        Outcome::Stop
+        EventPropagation::Stop
     })
     .on_event(EventListener::ImeCommit, move |_, event| {
         if !is_active.get_untracked() || !focused.get_untracked() {
-            return Outcome::Continue;
+            return EventPropagation::Continue;
         }
 
         if let Event::ImeCommit(text) = event {
@@ -1099,7 +1099,7 @@ pub fn editor_view(
                 ed.receive_char(text);
             });
         }
-        Outcome::Stop
+        EventPropagation::Stop
     })
     .class(EditorViewClass)
 }

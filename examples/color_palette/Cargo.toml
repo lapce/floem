@@ -5,5 +5,4 @@ license.workspace = true
 version.workspace = true
 
 [dependencies]
-floem = { path = "../.." }
-palette = "0.7.6"
+floem = { path = "../..", features = ["vello"]}

@@ -990,6 +990,11 @@ impl View for Scroll {
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         let lcx = &mut LayoutCx::new(self.id);
+
+        // this apply scroll delta of zero is cheap.
+        // it is here in the case that the available delta changed, this will catch it and update it to a better size
+        self.apply_scroll_delta(Vec2::ZERO, lcx);
+
         let raw_rect_local = lcx.layout_rect_local();
         let pre = cx.transform;
         cx.save();

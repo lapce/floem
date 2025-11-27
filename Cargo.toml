@@ -107,6 +107,7 @@ sys-locale = { version = "0.3.2", optional = true }
 understory_box_tree = {path = "../understory/understory_box_tree/"}
 understory_responder = {path = "../understory/understory_responder/", features = ["box_tree_adapter"]}
 understory_focus = {path = "../understory/understory_focus/", features = ["box_tree_adapter"]}
+understory_precise_hit = {path = "../understory/understory_precise_hit"}
 
 [target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
 muda = { workspace = true }

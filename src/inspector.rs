@@ -2,7 +2,7 @@ mod data;
 mod view;
 
 use crate::context::StyleCx;
-use crate::event::{Event, EventListener};
+use crate::event::{Event, EventListener, EventPropagation};
 use crate::id::ViewId;
 use crate::prelude::ViewTuple;
 use crate::style::{
@@ -187,7 +187,7 @@ fn add_event<T: View + 'static>(
                 // TODO: Log error
                 let _ = Clipboard::set_contents(name.clone());
             }
-            Outcome::Stop
+            EventPropagation::Stop
         }
     })
     .on_event_stop(EventListener::KeyDown, {

@@ -26,6 +26,7 @@ use std::sync::mpsc::Receiver;
 
 use crate::animate::{AnimStateKind, RepeatMode};
 use crate::easing::{Easing, Linear};
+use crate::event::EventPropagation;
 use crate::menu::Menu;
 use crate::renderer::Renderer;
 use crate::style::{Disabled, DisplayProp, Focusable, Hidden};
@@ -41,7 +42,7 @@ use crate::{
     window_state::WindowState,
 };
 
-pub type EventCallback = dyn FnMut(&mut dyn View, &Event) -> Outcome;
+pub type EventCallback = dyn FnMut(&mut dyn View, &Event) -> EventPropagation;
 pub type ResizeCallback = dyn Fn(Rect);
 pub type MenuCallback = dyn Fn() -> Menu;
 

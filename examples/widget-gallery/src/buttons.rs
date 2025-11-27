@@ -43,7 +43,7 @@ pub fn button_view() -> impl IntoView {
         ),
         form_item(
             "Secondary click button:",
-            button("Right click me").on_secondary_click_stop(|_| {
+            button("Right click me").on_secondary_click_stop(|_, _| {
                 println!("Secondary mouse button click.");
             }),
         ),

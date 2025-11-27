@@ -23,7 +23,7 @@ use taffy::FlexDirection;
 use ui_events::pointer::{
     PointerButton, PointerButtonEvent, PointerEvent, PointerState, PointerUpdate,
 };
-use understory_responder::types::{Outcome, Phase};
+use understory_responder::types::Phase;
 
 style_class!(
     /// The style class that is applied to all [`ResizableStack`] views.

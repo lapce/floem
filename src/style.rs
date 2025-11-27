@@ -3848,39 +3848,146 @@ define_builtin_props!(
     /// Only has an effect when flex-wrap is enabled and there are multiple lines.
     AlignContentProp align_content {}: Option<AlignContent> {} = None,
 
-    /// Defines the line names and track sizing functions of the grid rows.
-    ///
-    /// Specifies the size and names of the rows in a grid layout.
-    GridTemplateRows grid_template_rows {}: Vec<GridTemplateComponent<String>> {} = Vec::new(),
-
     /// Defines the line names and track sizing functions of the grid columns.
     ///
-    /// Specifies the size and names of the columns in a grid layout.
+    /// Specifies the size and names of the columns in a grid layout. Track sizing functions
+    /// are available from the `taffy::prelude` module.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use floem::prelude::*;
+    /// # use floem::taffy::prelude::*;
+    /// // Two columns: auto-sized first column, flexible second column
+    /// empty().style(|s| s.grid_template_columns([auto(), fr(1.)]));
+    ///
+    /// // Three evenly sized columns
+    /// empty().style(|s| s.grid_template_columns(evenly_sized_tracks(3)));
+    /// ```
     GridTemplateColumns grid_template_columns {}: Vec<GridTemplateComponent<String>> {} = Vec::new(),
+
+    /// Defines the line names and track sizing functions of the grid rows.
+    ///
+    /// Specifies the size and names of the rows in a grid layout. Track sizing functions
+    /// are available from the `taffy::prelude` module.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use floem::prelude::*;
+    /// # use floem::taffy::prelude::*;
+    /// // Two rows: auto-sized first row, flexible second row
+    /// empty().style(|s| s.grid_template_rows([auto(), fr(1.)]));
+    ///
+    /// // Three evenly sized rows
+    /// empty().style(|s| s.grid_template_rows(evenly_sized_tracks(3)));
+    /// ```
+    GridTemplateRows grid_template_rows {}: Vec<GridTemplateComponent<String>> {} = Vec::new(),
 
     /// Specifies the size of implicitly-created grid rows.
     ///
-    /// Sets the default size for rows that are created automatically.
+    /// When grid items are placed outside the explicit grid (defined by `grid_template_rows`),
+    /// implicit rows are created automatically. This property controls the size of those rows.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use floem::prelude::*;
+    /// # use floem::taffy::prelude::*;
+    /// // Implicit rows will be at least 50px, but can grow to fit content
+    /// empty().style(|s| s.grid_auto_rows([minmax(length(50.), auto())]));
+    ///
+    /// // All implicit rows will be 100px tall
+    /// empty().style(|s| s.grid_auto_rows([length(100.)]));
+    /// ```
     GridAutoRows grid_auto_rows {}: Vec<MinMax<MinTrackSizingFunction, MaxTrackSizingFunction>> {} = Vec::new(),
 
     /// Specifies the size of implicitly-created grid columns.
     ///
-    /// Sets the default size for columns that are created automatically.
+    /// When grid items are placed outside the explicit grid (defined by `grid_template_columns`),
+    /// implicit columns are created automatically. This property controls the size of those columns.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use floem::prelude::*;
+    /// # use floem::taffy::prelude::*;
+    /// // Implicit columns will be at least 100px, but can grow to fit content
+    /// empty().style(|s| s.grid_auto_columns([minmax(length(100.), auto())]));
+    ///
+    /// // All implicit columns will take equal flexible space
+    /// empty().style(|s| s.grid_auto_columns([flex(1.)]));
+    /// ```
     GridAutoColumns grid_auto_columns {}: Vec<MinMax<MinTrackSizingFunction, MaxTrackSizingFunction>> {} = Vec::new(),
 
     /// Controls how auto-placed items get flowed into the grid.
     ///
-    /// Determines the direction that grid items are placed when not explicitly positioned.
+    /// When grid items don't have explicit positions, this property determines
+    /// the direction they flow: filling rows first (`Row`) or columns first (`Column`).
+    /// The `Dense` variants attempt to fill holes in the grid.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use floem::prelude::*;
+    /// # use floem::taffy;
+    /// // Items flow left-to-right, then wrap to next row (default)
+    /// empty().style(|s| s.grid_auto_flow(taffy::GridAutoFlow::Row));
+    ///
+    /// // Items flow top-to-bottom, then wrap to next column
+    /// empty().style(|s| s.grid_auto_flow(taffy::GridAutoFlow::Column));
+    ///
+    /// // Row flow, but try to fill gaps left by larger items
+    /// empty().style(|s| s.grid_auto_flow(taffy::GridAutoFlow::RowDense));
+    /// ```
     GridAutoFlow grid_auto_flow {}: taffy::GridAutoFlow {} = taffy::GridAutoFlow::Row,
 
-    /// Specifies a grid item's location within the grid row.
+    /// Specifies a grid item's row placement within the grid.
     ///
-    /// Determines which grid rows the item spans.
+    /// Controls which row(s) the item occupies. Can specify a start line, end line,
+    /// or span. Line indices are 1-based, with negative indices counting from the end.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use floem::prelude::*;
+    /// # use floem::taffy::prelude::*;
+    /// // Place item starting at row line 2
+    /// empty().style(|s| s.grid_row(Line::from_line_index(2)));
+    ///
+    /// // Item spans 2 rows from its auto-placed position
+    /// empty().style(|s| s.grid_row(Line::from_span(2)));
+    ///
+    /// // Item spans from row line 1 to row line 3 (2 rows)
+    /// empty().style(|s| s.grid_row(Line { start: line(1), end: line(3) }));
+    ///
+    /// // Place at the last row line (negative indices count from end)
+    /// empty().style(|s| s.grid_row(Line::from_line_index(-1)));
+    /// ```
     GridRow grid_row {}: Line<GridPlacement> {} = Line::default(),
 
-    /// Specifies a grid item's location within the grid column.
+    /// Specifies a grid item's column placement within the grid.
     ///
-    /// Determines which grid columns the item spans.
+    /// Controls which column(s) the item occupies. Can specify a start line, end line,
+    /// or span. Line indices are 1-based, with negative indices counting from the end.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use floem::prelude::*;
+    /// # use floem::taffy::prelude::*;
+    /// // Place item starting at column line 1
+    /// empty().style(|s| s.grid_column(Line::from_line_index(1)));
+    ///
+    /// // Item spans 3 columns from its auto-placed position
+    /// empty().style(|s| s.grid_column(Line::from_span(3)));
+    ///
+    /// // Item spans from column line 2 to column line 4 (2 columns)
+    /// empty().style(|s| s.grid_column(Line { start: line(2), end: line(4) }));
+    ///
+    /// // Create a full-width item spanning all columns
+    /// empty().style(|s| s.grid_column(Line { start: line(1), end: line(-1) }));
+    /// ```
     GridColumn grid_column {}: Line<GridPlacement> {} = Line::default(),
 
     /// Controls individual alignment along the cross axis.
@@ -5144,8 +5251,9 @@ impl Style {
     }
 
     /// Sets the font family for text content.
-    pub fn font_family(self, family: impl Into<StyleValue<String>>) -> Self {
-        self.set_style_value(FontFamily, family.into().map(Some))
+    pub fn font_family(self, family: impl Into<String>) -> Self {
+        let family = Some(family.into());
+        self.set_style_value(FontFamily, StyleValue::Val(family))
     }
 
     /// Sets the font weight (boldness) for text content.

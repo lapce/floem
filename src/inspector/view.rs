@@ -1,5 +1,5 @@
 use crate::app::{AppUpdateEvent, add_app_update_event};
-use crate::event::{Event, EventListener};
+use crate::event::{Event, EventListener, EventPropagation};
 use crate::inspector::data::{CapturedData, CapturedDatas};
 use crate::inspector::{
     CAPTURE, Capture, CaptureView, RUNNING, add_event, find_view, header, selected_view, stats,
@@ -80,14 +80,14 @@ pub fn capture(window_id: WindowId) {
                         if let Event::Key(e) = e {
                             if e.key == keyboard::Key::Named(NamedKey::F11) && e.modifiers.shift() {
                                 id.inspect();
-                                return Outcome::Stop;
+                                return EventPropagation::Stop;
                             }
                         }
-                        Outcome::Continue
+                        EventPropagation::Continue
                     })
                     .on_event(EventListener::WindowClosed, |_, _| {
                         RUNNING.set(false);
-                        Outcome::Continue
+                        EventPropagation::Continue
                     })
             },
             Some(WindowConfig::default().size((1200.0, 800.0))),

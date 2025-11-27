@@ -21,9 +21,9 @@ pub fn dropped_file_view() -> impl IntoView {
         .on_key_up(
             Key::Named(NamedKey::F11),
             |m| m.is_empty(),
-            move |_| floem::action::inspect(),
+            move |_, _| floem::action::inspect(),
         )
-        .on_event_stop(EventListener::DroppedFiles, move |e| {
+        .on_event_stop(EventListener::DroppedFiles, move |_v, e| {
             if let Event::FileDrag(e @ FileDragEvent::DragDropped { paths, .. }) = e {
                 println!("DroppedFile {e:?}");
                 filename.set(format!(

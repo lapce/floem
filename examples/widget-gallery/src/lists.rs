@@ -51,7 +51,7 @@ fn enhanced_list() -> impl IntoView {
 
     let x_mark = move |index| {
         svg(CROSS_SVG)
-            .on_click_stop(move |_| {
+            .action(move || {
                 print!("Item Removed");
                 long_list.update(|list| {
                     list.remove(index);

@@ -164,6 +164,13 @@ impl View for SatValuePicker {
         self.id
     }
 
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
     // fn compute_layout(&mut self, _cx: &mut floem::context::ComputeLayoutCx) -> Option<Rect> {
     //     self.size = self.id.get_size().unwrap_or_default();
     //     None
@@ -175,11 +182,15 @@ impl View for SatValuePicker {
         }
     }
 
-    fn event_before_children(
+    fn event(
         &mut self,
         _cx: &mut floem::context::EventCx,
         event: &Event,
+        phase: Phase,
     ) -> EventPropagation {
+        if phase != Phase::Target {
+            return EventPropagation::Continue;
+        }
         if let Some(on_change) = &self.on_change {
             match event {
                 Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. })) => {
@@ -291,6 +302,13 @@ impl View for HuePicker {
         self.id
     }
 
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
     // fn compute_layout(&mut self, _cx: &mut floem::context::ComputeLayoutCx) -> Option<Rect> {
     //     self.size = self.id.get_size().unwrap_or_default();
     //     None
@@ -302,11 +320,15 @@ impl View for HuePicker {
         }
     }
 
-    fn event_before_children(
+    fn event(
         &mut self,
         _cx: &mut floem::context::EventCx,
         event: &Event,
+        phase: Phase,
     ) -> EventPropagation {
+        if phase != Phase::Target {
+            return EventPropagation::Continue;
+        }
         if let Some(on_change) = &self.on_change {
             match event {
                 Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. })) => {
@@ -416,6 +438,13 @@ impl View for OpacityPicker {
         self.id
     }
 
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
     // fn compute_layout(&mut self, _cx: &mut floem::context::ComputeLayoutCx) -> Option<Rect> {
     //     self.size = self.id.get_size().unwrap_or_default();
     //     None
@@ -427,11 +456,15 @@ impl View for OpacityPicker {
         }
     }
 
-    fn event_before_children(
+    fn event(
         &mut self,
         _cx: &mut floem::context::EventCx,
         event: &Event,
+        phase: Phase,
     ) -> EventPropagation {
+        if phase != Phase::Target {
+            return EventPropagation::Continue;
+        }
         if let Some(on_change) = &self.on_change {
             match event {
                 Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. })) => {

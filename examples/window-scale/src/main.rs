@@ -17,14 +17,14 @@ fn app_view() -> impl IntoView {
         set_window_scale(window_scale);
     });
 
-    let value_label = label(move || format!("Value: {}", counter.get())).style(|s| s.padding(10.0));
+    let value_label = label(move || format!("Value: {counter}")).style(|s| s.padding(10.0));
 
-    let increment_button = "Increment".class(Button).on_click_stop(move |_| {
+    let increment_button = "Increment".class(Button).action(move || {
         counter.update(|value| *value += 1);
     });
     let decrement_button = "Decrement"
         .class(Button)
-        .on_click_stop(move |_| {
+        .action(move || {
             counter.update(|value| *value -= 1);
         })
         .style(|s| {
@@ -34,7 +34,7 @@ fn app_view() -> impl IntoView {
         });
     let reset_to_zero_button = "Reset to 0"
         .class(Button)
-        .on_click_stop(move |_| {
+        .action(move || {
             println!("Reset counter pressed"); // will not fire if button is disabled
             counter.update(|value| *value = 0);
         })
@@ -48,44 +48,42 @@ fn app_view() -> impl IntoView {
 
     let counter_buttons = (increment_button, decrement_button, reset_to_zero_button).h_stack();
 
-    let zoom_in_button = "Zoom In"
-        .class(Button)
-        .on_click_stop(move |_| {
-            window_scale.update(|scale| *scale *= 1.2);
-        })
-        .style(|s| s.margin_top(10.0).margin_right(10.0));
-    let zoom_out_button = "Zoom Out"
-        .class(Button)
-        .on_click_stop(move |_| {
-            window_scale.update(|scale| *scale /= 1.2);
-        })
-        .style(|s| s.margin_top(10.0).margin_right(10.0));
+    let zoom_in_button = "Zoom In".class(Button).action(move || {
+        window_scale.update(|scale| *scale *= 1.2);
+    });
+    let zoom_out_button = "Zoom Out".class(Button).action(move || {
+        window_scale.update(|scale| *scale /= 1.2);
+    });
     let zoom_reset_button = "Zoom Reset"
         .class(Button)
-        .on_click_stop(move |_| {
+        .action(move || {
             window_scale.set(1.0);
         })
-        .style(move |s| {
-            s.margin_top(10.0)
-                .margin_right(10.0)
-                .set_disabled(window_scale.get() == 1.0)
-        });
+        .style(move |s| s.set_disabled(window_scale.get() == 1.0));
 
     let scale_buttons = (zoom_in_button, zoom_out_button, zoom_reset_button)
         .h_stack()
-        .style(|s| s.absolute().inset_top(0).inset_right(0));
+        .style(|s| {
+            s.absolute()
+                .inset_top(0)
+                .inset_right(0)
+                .gap(10)
+                .padding_top(10)
+                .padding_right(10)
+        });
 
-    let view = (value_label, counter_buttons, scale_buttons)
+    (value_label, counter_buttons, scale_buttons)
         .v_stack()
         .style(|s| {
-            s.size(100.pct(), 100.pct())
+            s.size_full()
                 .items_center()
                 .justify_center()
                 .class(Button, |s| {
                     s.border(1.0)
                         .border_radius(10.0)
                         .padding(10.0)
-                        .focus_visible(|s| s.border(2.).border_color(palette::css::BLUE))
+                        .focusable(true)
+                        .focus_visible(|s| s.outline(2.).border_color(palette::css::BLUE))
                         .disabled(|s| s.background(palette::css::LIGHT_GRAY))
                         .hover(|s| s.background(palette::css::LIGHT_GREEN))
                         .active(|s| {
@@ -93,21 +91,19 @@ fn app_view() -> impl IntoView {
                                 .background(palette::css::DARK_GREEN)
                         })
                 })
-        });
-
-    let id = view.id();
-    view.on_event_stop(EventListener::KeyUp, move |e| {
-        if let Event::Key(KeyboardEvent {
-            state: KeyState::Up,
-            key,
-            ..
-        }) = e
-        {
-            if *key == Key::Named(NamedKey::F11) {
-                id.inspect();
+        })
+        .on_event_stop(EventListener::KeyUp, move |v, e| {
+            if let Event::Key(KeyboardEvent {
+                state: KeyState::Up,
+                key,
+                ..
+            }) = e
+            {
+                if *key == Key::Named(NamedKey::F11) {
+                    v.id().inspect();
+                }
             }
-        }
-    })
+        })
 }
 
 fn main() {

@@ -6,14 +6,13 @@
 
 use floem_reactive::{Effect, SignalUpdate, UpdaterEffect};
 use peniko::kurbo::{Point, Rect};
-use std::{any::Any, cell::RefCell, rc::Rc};
+use std::rc::Rc;
 use ui_events::keyboard::{Key, KeyState, KeyboardEvent, Modifiers};
-use understory_responder::types::Outcome;
 
 use crate::{
     action::{set_window_menu, set_window_scale, set_window_title},
     animate::Animation,
-    event::{Event, EventListener},
+    event::{Event, EventListener, EventPropagation},
     menu::Menu,
     style::{Style, StyleClass},
     view::{IntoView, View},
@@ -219,7 +218,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     fn on_event(
         self,
         listener: EventListener,
-        mut action: impl FnMut(&mut Self::DV, &Event) -> Outcome + 'static,
+        mut action: impl FnMut(&mut Self::DV, &Event) -> EventPropagation + 'static,
     ) -> Self::DV
     where
         Self::DV: 'static,
@@ -231,7 +230,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
                 if let Some(concrete_view) = v.as_any_mut().downcast_mut::<Self::DV>() {
                     action(concrete_view, e)
                 } else {
-                    Outcome::Continue
+                    EventPropagation::Continue
                 }
             }),
         );
@@ -260,10 +259,10 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
             {
                 if *event_key == key && cmp(*modifiers) {
                     action(v, e);
-                    return Outcome::Stop;
+                    return EventPropagation::Stop;
                 }
             }
-            Outcome::Continue
+            EventPropagation::Continue
         })
     }
 
@@ -289,10 +288,10 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
             {
                 if *event_key == key && cmp(*modifiers) {
                     action(v, e);
-                    return Outcome::Stop;
+                    return EventPropagation::Stop;
                 }
             }
-            Outcome::Continue
+            EventPropagation::Continue
         })
     }
 
@@ -308,7 +307,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     {
         self.on_event(listener, move |v, e| {
             action(v, e);
-            Outcome::Continue
+            EventPropagation::Continue
         })
     }
 
@@ -324,14 +323,14 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     {
         self.on_event(listener, move |v, e| {
             action(v, e);
-            Outcome::Stop
+            EventPropagation::Stop
         })
     }
 
     /// Add an event handler for [`EventListener::Click`].
     fn on_click(
         self,
-        mut action: impl FnMut(&mut Self::DV, &Event) -> Outcome + 'static,
+        mut action: impl FnMut(&mut Self::DV, &Event) -> EventPropagation + 'static,
     ) -> Self::DV
     where
         Self::DV: 'static,
@@ -347,7 +346,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     {
         self.on_click(move |v, e| {
             action(v, e);
-            Outcome::Continue
+            EventPropagation::Continue
         })
     }
 
@@ -359,7 +358,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     {
         self.on_click(move |v, e| {
             action(v, e);
-            Outcome::Stop
+            EventPropagation::Stop
         })
     }
 
@@ -371,14 +370,14 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     {
         self.on_click(move |_, _| {
             action();
-            Outcome::Stop
+            EventPropagation::Stop
         })
     }
 
     /// Add an event handler for [`EventListener::DoubleClick`]
     fn on_double_click(
         self,
-        action: impl FnMut(&mut Self::DV, &Event) -> Outcome + 'static,
+        action: impl FnMut(&mut Self::DV, &Event) -> EventPropagation + 'static,
     ) -> Self::DV
     where
         Self::DV: 'static,
@@ -397,7 +396,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     {
         self.on_double_click(move |v, e| {
             action(v, e);
-            Outcome::Continue
+            EventPropagation::Continue
         })
     }
 
@@ -412,14 +411,14 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     {
         self.on_double_click(move |v, e| {
             action(v, e);
-            Outcome::Stop
+            EventPropagation::Stop
         })
     }
 
     /// Add an event handler for [`EventListener::SecondaryClick`]. This is most often the "Right" click.
     fn on_secondary_click(
         self,
-        action: impl FnMut(&mut Self::DV, &Event) -> Outcome + 'static,
+        action: impl FnMut(&mut Self::DV, &Event) -> EventPropagation + 'static,
     ) -> Self::DV
     where
         Self::DV: 'static,
@@ -438,7 +437,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     {
         self.on_secondary_click(move |v, e| {
             action(v, e);
-            Outcome::Continue
+            EventPropagation::Continue
         })
     }
 
@@ -453,7 +452,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     {
         self.on_secondary_click(move |v, e| {
             action(v, e);
-            Outcome::Stop
+            EventPropagation::Stop
         })
     }
 
