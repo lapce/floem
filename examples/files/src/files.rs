@@ -1,14 +1,14 @@
 use floem::{
     action::{open_file, save_as},
     file::{FileDialogOptions, FileInfo, FileSpec},
-    reactive::{create_rw_signal, SignalGet, SignalUpdate},
+    reactive::{RwSignal, SignalGet, SignalUpdate},
     text::Weight,
     views::{button, h_stack, label, v_stack, Decorators},
     IntoView,
 };
 
 pub fn files_view() -> impl IntoView {
-    let files = create_rw_signal("".to_string());
+    let files = RwSignal::new(String::new());
     let view = h_stack((
         button("Select file").on_click_cont(move |_| {
             open_file(

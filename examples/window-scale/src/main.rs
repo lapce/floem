@@ -2,7 +2,7 @@ use floem::{
     action::set_window_scale,
     event::{Event, EventListener},
     prelude::*,
-    reactive::create_effect,
+    reactive::Effect,
     style_class,
     unit::UnitExt,
 };
@@ -10,9 +10,9 @@ use floem::{
 style_class!(pub Button);
 
 fn app_view() -> impl IntoView {
-    let (counter, set_counter) = create_signal(0);
-    let window_scale = create_rw_signal(1.0);
-    create_effect(move |_| {
+    let counter = RwSignal::new(0);
+    let window_scale = RwSignal::new(1.0);
+    Effect::new(move |_| {
         let window_scale = window_scale.get();
         set_window_scale(window_scale);
     });
@@ -20,12 +20,12 @@ fn app_view() -> impl IntoView {
     let value_label = label(move || format!("Value: {}", counter.get())).style(|s| s.padding(10.0));
 
     let increment_button = "Increment".class(Button).on_click_stop(move |_| {
-        set_counter.update(|value| *value += 1);
+        counter.update(|value| *value += 1);
     });
     let decrement_button = "Decrement"
         .class(Button)
         .on_click_stop(move |_| {
-            set_counter.update(|value| *value -= 1);
+            counter.update(|value| *value -= 1);
         })
         .style(|s| {
             s.margin_left(10.0)
@@ -36,7 +36,7 @@ fn app_view() -> impl IntoView {
         .class(Button)
         .on_click_stop(move |_| {
             println!("Reset counter pressed"); // will not fire if button is disabled
-            set_counter.update(|value| *value = 0);
+            counter.update(|value| *value = 0);
         })
         .style(move |s| {
             s.margin_left(10.0)

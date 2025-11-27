@@ -2,7 +2,7 @@ use std::ops::RangeInclusive;
 
 use floem::{
     prelude::{SignalGet, SignalUpdate},
-    reactive::create_rw_signal,
+    reactive::RwSignal,
     unit::{Pct, UnitExt},
     views::{container, h_stack, label, slider, v_stack, Decorators},
     IntoView,
@@ -13,13 +13,13 @@ fn main() {
 }
 
 fn app_view() -> impl IntoView {
-    let regular_slider_value = create_rw_signal(75.pct());
-    let auto_slider_value = create_rw_signal(40.pct());
+    let regular_slider_value = RwSignal::new(75.pct());
+    let auto_slider_value = RwSignal::new(40.pct());
 
-    let ranged_slider_value_1 = create_rw_signal(20.0);
+    let ranged_slider_value_1 = RwSignal::new(20.0);
     let ranged_slider_range_1 = 0.0..=100.0;
 
-    let ranged_slider_value_2 = create_rw_signal(-25.0);
+    let ranged_slider_value_2 = RwSignal::new(-25.0);
     let ranged_slider_range_2 = -50.0..=100.0;
 
     let regular_slider_stack = h_stack((

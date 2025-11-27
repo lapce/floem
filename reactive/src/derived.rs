@@ -101,11 +101,7 @@ where
         T: 'static,
     {
         let func = self.getter.get_untracked();
-        self.signal
-            .id
-            .signal()
-            .unwrap()
-            .with(|t| f(&func(t)))
+        self.signal.id.signal().unwrap().with(|t| f(&func(t)))
     }
 
     fn with_untracked<O2>(&self, f: impl FnOnce(&O) -> O2) -> O2
@@ -358,11 +354,7 @@ where
         T: 'static,
     {
         let func = self.getter.get_untracked();
-        self.signal
-            .id
-            .signal()
-            .unwrap()
-            .with(|t| f(&func(t)))
+        self.signal.id.signal().unwrap().with(|t| f(&func(t)))
     }
 
     fn with_untracked<O2>(&self, f: impl FnOnce(&O) -> O2) -> O2

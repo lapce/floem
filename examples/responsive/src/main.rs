@@ -1,6 +1,6 @@
 use floem::{
     peniko::color::palette,
-    reactive::{create_signal, SignalGet, SignalUpdate},
+    reactive::{RwSignal, SignalGet, SignalUpdate},
     responsive::{range, ScreenSize},
     style::TextOverflow,
     unit::UnitExt,
@@ -9,7 +9,7 @@ use floem::{
 };
 
 fn app_view() -> impl IntoView {
-    let (is_text_overflown, set_is_text_overflown) = create_signal(false);
+    let is_text_overflown = RwSignal::new(false);
 
     stack({
         (
@@ -37,7 +37,7 @@ fn app_view() -> impl IntoView {
                 "Long text that will overflow on smaller screens since the available width is less",
             )
             .on_text_overflow(move |is_overflown| {
-                set_is_text_overflown.update(|overflown| *overflown = is_overflown);
+                is_text_overflown.set(is_overflown);
             })
             .style(move |s| {
                 s.background(palette::css::DIM_GRAY)

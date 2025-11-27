@@ -2,7 +2,6 @@ use floem::{
     event::{Event, EventListener},
     imbl,
     prelude::*,
-    reactive::{ReadSignal, WriteSignal},
     style::{CursorStyle, Position},
     text::Weight,
 };
@@ -26,14 +25,13 @@ impl std::fmt::Display for Tab {
 
 fn tab_button(
     this_tab: Tab,
-    tabs: ReadSignal<imbl::Vector<Tab>>,
-    set_active_tab: WriteSignal<usize>,
-    active_tab: ReadSignal<usize>,
+    tabs: RwSignal<imbl::Vector<Tab>>,
+    active_tab: RwSignal<usize>,
 ) -> impl IntoView {
     text(this_tab)
         .button() // by making this a button, the button class from the default theme will be applied and the focusable property will be set
         .action(move || {
-            set_active_tab.update(|v: &mut usize| {
+            active_tab.update(|v: &mut usize| {
                 *v = tabs
                     .get_untracked()
                     .iter()
@@ -63,13 +61,13 @@ pub fn tab_navigation_view() -> impl IntoView {
     let tabs = vec![Tab::General, Tab::Settings, Tab::Feedback]
         .into_iter()
         .collect::<imbl::Vector<Tab>>();
-    let (tabs, _set_tabs) = create_signal(tabs);
-    let (active_tab, set_active_tab) = create_signal(0);
+    let tabs = RwSignal::new(tabs);
+    let active_tab = RwSignal::new(0);
 
     let tabs_bar = h_stack((
-        tab_button(Tab::General, tabs, set_active_tab, active_tab),
-        tab_button(Tab::Settings, tabs, set_active_tab, active_tab),
-        tab_button(Tab::Feedback, tabs, set_active_tab, active_tab),
+        tab_button(Tab::General, tabs, active_tab),
+        tab_button(Tab::Settings, tabs, active_tab),
+        tab_button(Tab::Feedback, tabs, active_tab),
     ))
     .style(|s| {
         s.flex_row()

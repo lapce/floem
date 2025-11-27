@@ -7,7 +7,7 @@ use floem::{
 };
 
 fn app_view() -> impl IntoView {
-    let (size, set_size) = create_signal(Size::default());
+    let size = RwSignal::new(Size::default());
 
     let view = label(move || format!("{}", size.get()))
         .style(|s| s.font_size(30.0))
@@ -34,7 +34,7 @@ fn app_view() -> impl IntoView {
             }
         }
     })
-    .on_resize(move |r| set_size.update(|value| *value = r.size()))
+    .on_resize(move |r| size.set(r.size()))
 }
 
 fn main() {

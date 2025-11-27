@@ -2,7 +2,7 @@ use floem::{
     IntoView, View, ViewId,
     context::{ComputeLayoutCx, UpdateCx},
     kurbo::{self, Rect},
-    reactive::{RwSignal, SignalGet, SignalUpdate, create_updater},
+    reactive::{RwSignal, SignalGet, SignalUpdate, UpdaterEffect},
     unit::Pct,
     views::{Decorators, clip},
 };
@@ -34,7 +34,7 @@ pub fn transform_view<V: IntoView + 'static>(
 ) -> TransformView {
     let id = floem::ViewId::new();
     let view_transform_signal = RwSignal::new(affine());
-    create_updater(affine, move |new_view_transform| {
+    UpdaterEffect::new(affine, move |new_view_transform| {
         id.update_state(new_view_transform);
     });
 

@@ -350,8 +350,7 @@ pub enum AnimStateCommand {
     Reverse,
 }
 
-type EffectStateVec =
-    SmallVec<[RwSignal<SmallVec<[(ViewId, StackOffset<Animation>); 1]>>; 1]>;
+type EffectStateVec = SmallVec<[RwSignal<SmallVec<[(ViewId, StackOffset<Animation>); 1]>>; 1]>;
 
 /// The main animation struct
 ///

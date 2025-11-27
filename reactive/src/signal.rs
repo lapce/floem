@@ -13,8 +13,8 @@ use crate::{
     id::Id,
     read::{SignalRead, SignalTrack, SignalWith},
     runtime::{Runtime, RUNTIME},
-    sync_runtime::{SyncSignal, SYNC_RUNTIME},
     storage::{Storage, SyncStorage, UnsyncStorage},
+    sync_runtime::{SyncSignal, SYNC_RUNTIME},
     write::SignalWrite,
     SignalGet, SignalUpdate,
 };
@@ -41,7 +41,8 @@ impl<T: Any + Send + Sync + 'static> Storage<T> for SyncStorage {
     }
 
     fn get(id: Id) -> Option<Self::Signal> {
-        id.signal().or_else(|| SYNC_RUNTIME.get_signal(&id).map(|s| s.into()))
+        id.signal()
+            .or_else(|| SYNC_RUNTIME.get_signal(&id).map(|s| s.into()))
     }
 
     type Signal = Signal;
@@ -401,10 +402,7 @@ impl Signal {
         result
     }
 
-    pub(crate) fn update_value_local<U, T: 'static>(
-        &self,
-        f: impl FnOnce(&mut T) -> U,
-    ) -> U {
+    pub(crate) fn update_value_local<U, T: 'static>(&self, f: impl FnOnce(&mut T) -> U) -> U {
         let value = self.as_local::<T>();
         let mut guard = value.borrow_mut();
         let result = f(&mut *guard);
@@ -607,9 +605,11 @@ impl<T: Send + Sync> SignalRead<T> for RwSignal<T, SyncStorage> {
     where
         T: 'static,
     {
-        self.id().signal().map(|signal| crate::read::ReadSignalValue {
-            value: crate::read::ValueHandle::Sync(signal.as_sync::<T>()),
-        })
+        self.id()
+            .signal()
+            .map(|signal| crate::read::ReadSignalValue {
+                value: crate::read::ValueHandle::Sync(signal.as_sync::<T>()),
+            })
     }
 }
 
@@ -640,9 +640,7 @@ impl<T: Send + Sync> SignalUpdate<T> for RwSignal<T, SyncStorage> {
     where
         T: 'static,
     {
-        self.id()
-            .signal()
-            .map(|signal| signal.update_value_sync(f))
+        self.id().signal().map(|signal| signal.update_value_sync(f))
     }
 }
 
@@ -662,10 +660,12 @@ impl<T: Send + Sync> SignalWrite<T> for RwSignal<T, SyncStorage> {
     where
         T: 'static,
     {
-        self.id().signal().map(|signal| crate::write::WriteSignalValue {
-            id: signal.id,
-            value: crate::write::ValueHandle::Sync(signal.as_sync::<T>()),
-        })
+        self.id()
+            .signal()
+            .map(|signal| crate::write::WriteSignalValue {
+                id: signal.id,
+                value: crate::write::ValueHandle::Sync(signal.as_sync::<T>()),
+            })
     }
 }
 
@@ -797,9 +797,11 @@ impl<T: Send + Sync> SignalRead<T> for ReadSignal<T, SyncStorage> {
     where
         T: 'static,
     {
-        self.id().signal().map(|signal| crate::read::ReadSignalValue {
-            value: crate::read::ValueHandle::Sync(signal.as_sync::<T>()),
-        })
+        self.id()
+            .signal()
+            .map(|signal| crate::read::ReadSignalValue {
+                value: crate::read::ValueHandle::Sync(signal.as_sync::<T>()),
+            })
     }
 }
 
@@ -830,9 +832,7 @@ impl<T: Send + Sync> SignalUpdate<T> for WriteSignal<T, SyncStorage> {
     where
         T: 'static,
     {
-        self.id()
-            .signal()
-            .map(|signal| signal.update_value_sync(f))
+        self.id().signal().map(|signal| signal.update_value_sync(f))
     }
 }
 
@@ -852,10 +852,12 @@ impl<T: Send + Sync> SignalWrite<T> for WriteSignal<T, SyncStorage> {
     where
         T: 'static,
     {
-        self.id().signal().map(|signal| crate::write::WriteSignalValue {
-            id: signal.id,
-            value: crate::write::ValueHandle::Sync(signal.as_sync::<T>()),
-        })
+        self.id()
+            .signal()
+            .map(|signal| crate::write::WriteSignalValue {
+                id: signal.id,
+                value: crate::write::ValueHandle::Sync(signal.as_sync::<T>()),
+            })
     }
 }
 
@@ -1008,9 +1010,11 @@ impl<T> SignalRead<T> for RwSignal<T, UnsyncStorage> {
         T: 'static,
     {
         Runtime::assert_ui_thread();
-        self.id().signal().map(|signal| crate::read::ReadSignalValue {
-            value: crate::read::ValueHandle::Local(signal.as_local::<T>()),
-        })
+        self.id()
+            .signal()
+            .map(|signal| crate::read::ReadSignalValue {
+                value: crate::read::ValueHandle::Local(signal.as_local::<T>()),
+            })
     }
 }
 
@@ -1068,10 +1072,12 @@ impl<T> SignalWrite<T> for RwSignal<T, UnsyncStorage> {
         T: 'static,
     {
         Runtime::assert_ui_thread();
-        self.id().signal().map(|signal| crate::write::WriteSignalValue {
-            id: signal.id,
-            value: crate::write::ValueHandle::Local(signal.as_local::<T>()),
-        })
+        self.id()
+            .signal()
+            .map(|signal| crate::write::WriteSignalValue {
+                id: signal.id,
+                value: crate::write::ValueHandle::Local(signal.as_local::<T>()),
+            })
     }
 }
 
@@ -1129,10 +1135,12 @@ impl<T> SignalWrite<T> for WriteSignal<T, UnsyncStorage> {
         T: 'static,
     {
         Runtime::assert_ui_thread();
-        self.id().signal().map(|signal| crate::write::WriteSignalValue {
-            id: signal.id,
-            value: crate::write::ValueHandle::Local(signal.as_local::<T>()),
-        })
+        self.id()
+            .signal()
+            .map(|signal| crate::write::WriteSignalValue {
+                id: signal.id,
+                value: crate::write::ValueHandle::Local(signal.as_local::<T>()),
+            })
     }
 }
 
@@ -1278,8 +1286,10 @@ impl<T> SignalRead<T> for ReadSignal<T, UnsyncStorage> {
     where
         T: 'static,
     {
-        self.id().signal().map(|signal| crate::read::ReadSignalValue {
-            value: crate::read::ValueHandle::Local(signal.as_local::<T>()),
-        })
+        self.id()
+            .signal()
+            .map(|signal| crate::read::ReadSignalValue {
+                value: crate::read::ValueHandle::Local(signal.as_local::<T>()),
+            })
     }
 }

@@ -7,7 +7,7 @@ use floem::{
         Gradient, Mix,
     },
     prelude::*,
-    reactive::create_updater,
+    reactive::UpdaterEffect,
     ui_events::pointer::{PointerButtonEvent, PointerEvent},
     ViewId,
 };
@@ -130,7 +130,7 @@ pub struct SatValuePicker {
 impl SatValuePicker {
     pub fn new(color: impl Fn() -> Color + 'static) -> Self {
         let id = ViewId::new();
-        let color = create_updater(color, move |c| id.update_state(c));
+        let color = UpdaterEffect::new(color, move |c| id.update_state(c));
         Self {
             id,
             size: Size::ZERO,
@@ -260,7 +260,7 @@ pub struct HuePicker {
 impl HuePicker {
     pub fn new(color: impl Fn() -> Color + 'static) -> Self {
         let id = ViewId::new();
-        let color = create_updater(color, move |c| id.update_state(c));
+        let color = UpdaterEffect::new(color, move |c| id.update_state(c));
         Self {
             id,
             size: Size::ZERO,
@@ -389,7 +389,7 @@ pub struct OpacityPicker {
 impl OpacityPicker {
     pub fn new(color: impl Fn() -> Color + 'static) -> Self {
         let id = ViewId::new();
-        let color = create_updater(color, move |c| id.update_state(c));
+        let color = UpdaterEffect::new(color, move |c| id.update_state(c));
         Self {
             id,
             size: Size::ZERO,

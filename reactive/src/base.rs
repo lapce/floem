@@ -1,15 +1,8 @@
 use std::marker::PhantomData;
 
 use crate::{
-    id::Id,
-    signal::Signal,
-    storage::SyncStorage,
-    ReadSignal,
-    RwSignal,
-    SignalGet,
-    SignalUpdate,
-    SignalWith,
-    WriteSignal,
+    id::Id, signal::Signal, storage::SyncStorage, ReadSignal, RwSignal, SignalGet, SignalUpdate,
+    SignalWith, WriteSignal,
 };
 
 /// BaseSignal gives you another way to control the lifetime of a Signal apart

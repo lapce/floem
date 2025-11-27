@@ -3,7 +3,7 @@ use floem::{
     event::{Event, EventListener},
     kurbo::{Point, Size},
     prelude::*,
-    reactive::{create_updater, provide_context},
+    reactive::{provide_context, UpdaterEffect},
     window::WindowConfig,
     Application,
 };
@@ -60,7 +60,7 @@ pub fn launch_with_track<V: IntoView + 'static>(app_view: impl FnOnce() -> V + '
     provide_context(app_config);
 
     // todo: debounce this
-    create_updater(
+    UpdaterEffect::new(
         move || app_config.get(),
         |config| {
             let _ = confy::store("my_app", "floem-defaults", config);

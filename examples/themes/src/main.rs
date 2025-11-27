@@ -95,31 +95,31 @@ fn app_view() -> impl IntoView {
         .color(palette::css::BLACK.with_alpha(0.5))
         .font_size(16.0);
 
-    let (counter, set_counter) = create_signal(0);
-    let (theme, set_theme) = create_signal(false);
+    let counter = RwSignal::new(0);
+    let theme = RwSignal::new(false);
     let view = stack((
         "Toggle Theme".class(Button).on_click_stop({
             move |_| {
-                set_theme.update(|theme| *theme = !*theme);
+                theme.update(|theme| *theme = !*theme);
             }
         }),
         stack((
             label(move || format!("Value: {}", counter.get())).class(Label),
             "Increment".class(Button).on_click_stop({
                 move |_| {
-                    set_counter.update(|value| *value += 1);
+                    counter.update(|value| *value += 1);
                 }
             }),
             "Decrement".class(Button).on_click_stop({
                 move |_| {
-                    set_counter.update(|value| *value -= 1);
+                    counter.update(|value| *value -= 1);
                 }
             }),
             "Reset to 0"
                 .class(Button)
                 .on_click_stop(move |_| {
                     println!("Reset counter pressed"); // will not fire if button is disabled
-                    set_counter.update(|value| *value = 0);
+                    counter.update(|value| *value = 0);
                 })
                 .style(move |s| s.set_disabled(counter.get() == 0)),
         ))

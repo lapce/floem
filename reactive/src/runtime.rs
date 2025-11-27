@@ -3,7 +3,10 @@ use std::{
     cell::{Cell, RefCell},
     collections::{HashMap, HashSet},
     rc::Rc,
-    sync::{atomic::{AtomicBool, Ordering}, OnceLock},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        OnceLock,
+    },
     thread::{self, ThreadId},
 };
 

@@ -110,10 +110,7 @@ impl UpdaterEffect<(), (), (), ()> {
     /// run of `compute` are updated. `compute` is immediately run only once, and its value is returned
     /// from the call to `create_updater`.
     #[allow(clippy::new_ret_no_self)]
-    pub fn new<R>(
-        compute: impl Fn() -> R + 'static,
-        on_change: impl Fn(R) + 'static,
-    ) -> R
+    pub fn new<R>(compute: impl Fn() -> R + 'static, on_change: impl Fn(R) + 'static) -> R
     where
         R: 'static,
     {
@@ -153,10 +150,7 @@ impl UpdaterEffect<(), (), (), ()> {
     since = "0.2.0",
     note = "Use UpdaterEffect::new instead; this will be removed in a future release"
 )]
-pub fn create_updater<R>(
-    compute: impl Fn() -> R + 'static,
-    on_change: impl Fn(R) + 'static,
-) -> R
+pub fn create_updater<R>(compute: impl Fn() -> R + 'static, on_change: impl Fn(R) + 'static) -> R
 where
     R: 'static,
 {
@@ -281,9 +275,7 @@ where
         *runtime.current_effect.borrow_mut() = Some(effect.clone());
 
         let effect_scope = Scope(effect_id, PhantomData);
-        let (result, new_value) = effect_scope.enter(|| {
-            (effect.compute)(None)
-        });
+        let (result, new_value) = effect_scope.enter(|| (effect.compute)(None));
 
         // set new value
         *effect.value.borrow_mut() = Some(new_value);
