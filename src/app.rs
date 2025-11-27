@@ -6,7 +6,7 @@ use muda::MenuId;
 #[cfg(not(feature = "crossbeam"))]
 use std::sync::mpsc::{Receiver, Sender, channel};
 
-use floem_reactive::WriteSignal;
+use floem_reactive::{Runtime, WriteSignal};
 use parking_lot::Mutex;
 use raw_window_handle::HasDisplayHandle;
 use winit::{
@@ -181,6 +181,9 @@ impl ApplicationHandler for Application {
         self.handle.handle_timer(event_loop);
         self.handle
             .handle_window_event(window_id, event, event_loop);
+            if Runtime::has_pending_work() {
+                Runtime::drain_pending_work();
+            }
     }
 
     fn proxy_wake_up(&mut self, event_loop: &dyn ActiveEventLoop) {
@@ -189,6 +192,9 @@ impl ApplicationHandler for Application {
             self.handle.handle_user_event(event_loop, event);
         }
         self.handle.handle_updates_for_all_windows();
+            if Runtime::has_pending_work() {
+                Runtime::drain_pending_work();
+            }
     }
 
     fn destroy_surfaces(&mut self, _event_loop: &dyn ActiveEventLoop) {
@@ -199,6 +205,9 @@ impl ApplicationHandler for Application {
 
     fn about_to_wait(&mut self, event_loop: &dyn ActiveEventLoop) {
         self.handle.handle_timer(event_loop);
+            if Runtime::has_pending_work() {
+                Runtime::drain_pending_work();
+            }
     }
 }
 
@@ -261,6 +270,9 @@ impl Application {
     }
 
     pub fn run(mut self) {
+        Runtime::init_on_ui_thread();
+        // Nudge UI when sync signals are updated from other threads.
+        Runtime::set_sync_effect_waker(|| Application::send_proxy_event(UserEvent::Idle));
         let event_loop = self.event_loop.take().unwrap();
         let _ = event_loop.run_app(self);
     }

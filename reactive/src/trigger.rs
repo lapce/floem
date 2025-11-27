@@ -1,7 +1,4 @@
-use crate::{
-    signal::{create_rw_signal, RwSignal},
-    SignalUpdate, SignalWith,
-};
+use crate::{signal::RwSignal, SignalUpdate, SignalWith};
 
 #[derive(Debug)]
 pub struct Trigger {
@@ -27,12 +24,18 @@ impl Trigger {
 
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
-        create_trigger()
+        Trigger {
+            signal: RwSignal::new(()),
+        }
     }
 }
 
+#[deprecated(
+    since = "0.2.0",
+    note = "Use Trigger::new instead; this will be removed in a future release"
+)]
 pub fn create_trigger() -> Trigger {
     Trigger {
-        signal: create_rw_signal(()),
+        signal: RwSignal::new(()),
     }
 }

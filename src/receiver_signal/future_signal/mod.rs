@@ -80,10 +80,7 @@ impl<T: 'static> FutureSignal<T> {
     }
 }
 
-impl<T> floem_reactive::SignalGet<Option<T>> for FutureSignal<T>
-where
-    T: Clone,
-{
+impl<T: Clone> floem_reactive::SignalGet<Option<T>> for FutureSignal<T> {
     fn id(&self) -> floem_reactive::ReactiveId {
         self.value.id()
     }
@@ -98,6 +95,20 @@ impl<T> floem_reactive::SignalWith<Option<T>> for FutureSignal<T> {
 impl<T> floem_reactive::SignalRead<Option<T>> for FutureSignal<T> {
     fn id(&self) -> floem_reactive::ReactiveId {
         self.value.id()
+    }
+
+    fn try_read(&self) -> Option<floem_reactive::ReadSignalValue<Option<T>>>
+    where
+        T: 'static,
+    {
+        self.value.try_read()
+    }
+
+    fn try_read_untracked(&self) -> Option<floem_reactive::ReadSignalValue<Option<T>>>
+    where
+        T: 'static,
+    {
+        self.value.try_read_untracked()
     }
 }
 

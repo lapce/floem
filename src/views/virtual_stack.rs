@@ -8,7 +8,7 @@ use std::{
 
 use floem_reactive::{
     ReadSignal, RwSignal, Scope, SignalGet, SignalTrack, SignalUpdate, SignalWith, WriteSignal,
-    as_child_of_current_scope, create_effect, create_signal,
+    as_child_of_current_scope, create_effect,
 };
 use peniko::kurbo::{Rect, Size};
 use smallvec::SmallVec;
@@ -215,7 +215,7 @@ where
 {
     let id = ViewId::new();
 
-    let (viewport, set_viewport) = create_signal(Rect::ZERO);
+    let (viewport, set_viewport) = RwSignal::new_split(Rect::ZERO);
 
     let item_size = RwSignal::new(VirtualItemSize::Assume(None));
 

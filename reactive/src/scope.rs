@@ -1,13 +1,20 @@
-use std::{any::Any, cell::RefCell, collections::HashMap, fmt, marker::PhantomData, rc::Rc};
+use std::{
+    any::Any,
+    cell::RefCell,
+    collections::HashSet,
+    fmt,
+    marker::PhantomData,
+    rc::Rc,
+    sync::{Arc, Mutex},
+};
 
 use crate::{
     create_effect, create_updater,
     id::Id,
     memo::{create_memo, Memo},
-    runtime::RUNTIME,
-    signal::{
-        create_rw_signal, create_signal, NotThreadSafe, ReadSignal, RwSignal, Signal, WriteSignal,
-    },
+    runtime::{Runtime, RUNTIME},
+    signal::{ReadSignal, RwSignal, Signal, SignalValue, WriteSignal},
+    storage::{SyncStorage, UnsyncStorage},
     trigger::{create_trigger, Trigger},
 };
 
@@ -17,7 +24,7 @@ use crate::{
 /// and when you Dispose the Scope, it will clean up all the Signals
 /// that belong to the Scope and all the child Scopes
 #[derive(Clone, Copy)]
-pub struct Scope(pub(crate) Id, pub(crate) PhantomData<NotThreadSafe>);
+pub struct Scope(pub(crate) Id, pub(crate) PhantomData<()>);
 
 impl Default for Scope {
     fn default() -> Self {
@@ -61,15 +68,53 @@ impl Scope {
     where
         T: Any + 'static,
     {
-        with_scope(self, || create_signal(value))
+        with_scope(self, || RwSignal::new_split(value))
     }
 
-    /// Create a RwSignal under this Scope
+    /// Create a RwSignal under this Scope (local/unsync by default)
     pub fn create_rw_signal<T>(self, value: T) -> RwSignal<T>
     where
         T: Any + 'static,
     {
-        with_scope(self, || create_rw_signal(value))
+        with_scope(self, || RwSignal::new(value))
+    }
+
+    /// Create a sync Signal under this Scope
+    pub fn create_sync_signal<T>(
+        self,
+        value: T,
+    ) -> (ReadSignal<T, SyncStorage>, WriteSignal<T, SyncStorage>)
+    where
+        T: Any + Send + Sync + 'static,
+    {
+        with_scope(self, || RwSignal::<T, SyncStorage>::new_sync_split(value))
+    }
+
+    /// Create a sync RwSignal under this Scope
+    pub fn create_sync_rw_signal<T>(self, value: T) -> RwSignal<T, SyncStorage>
+    where
+        T: Any + Send + Sync + 'static,
+    {
+        with_scope(self, || RwSignal::<T, SyncStorage>::new_sync(value))
+    }
+
+    /// Create a local (unsync) Signal under this Scope
+    pub fn create_local_signal<T>(
+        self,
+        value: T,
+    ) -> (ReadSignal<T, UnsyncStorage>, WriteSignal<T, UnsyncStorage>)
+    where
+        T: Any + 'static,
+    {
+        with_scope(self, || RwSignal::new_split(value))
+    }
+
+    /// Create a local (unsync) RwSignal under this Scope
+    pub fn create_local_rw_signal<T>(self, value: T) -> RwSignal<T, UnsyncStorage>
+    where
+        T: Any + 'static,
+    {
+        with_scope(self, || RwSignal::new(value))
     }
 
     /// Create a Memo under this Scope
@@ -105,22 +150,70 @@ impl Scope {
         with_scope(self, || create_updater(compute, on_change))
     }
 
+    /// Runs the given closure within this scope.
+    pub fn with_scope<T>(&self, f: impl FnOnce() -> T) -> T
+    where
+        T: 'static,
+    {
+        Runtime::assert_ui_thread();
+        let prev_scope = RUNTIME.with(|runtime| {
+            let mut current_scope = runtime.current_scope.borrow_mut();
+            let prev_scope = *current_scope;
+            *current_scope = self.0;
+            prev_scope
+        });
+
+        let result = f();
+
+        RUNTIME.with(|runtime| {
+            *runtime.current_scope.borrow_mut() = prev_scope;
+        });
+
+        result
+    }
+
+    /// Wraps a closure so it runs under a new child scope of this scope.
+    pub fn with_child_scope<T, U>(&self, f: impl Fn(T) -> U + 'static) -> impl Fn(T) -> (U, Scope)
+    where
+        T: 'static,
+    {
+        Runtime::assert_ui_thread();
+        let parent = *self;
+        move |t| {
+            let scope = parent.create_child();
+            let prev_scope = RUNTIME.with(|runtime| {
+                let mut current_scope = runtime.current_scope.borrow_mut();
+                let prev_scope = *current_scope;
+                *current_scope = scope.0;
+                prev_scope
+            });
+
+            let result = f(t);
+
+            RUNTIME.with(|runtime| {
+                *runtime.current_scope.borrow_mut() = prev_scope;
+            });
+
+            (result, scope)
+        }
+    }
+
     /// This is normally used in create_effect, and it will bind the effect's lifetime
     /// to this scope
     pub fn track(&self) {
-        let tracker = if let Some(signal) = self.0.signal() {
+        Runtime::assert_ui_thread();
+        let signal = if let Some(signal) = self.0.signal() {
             signal
         } else {
             let signal = Signal {
                 id: self.0,
-                subscribers: Rc::new(RefCell::new(HashMap::new())),
-                value: Rc::new(RefCell::new(())),
-                ts: PhantomData,
+                subscribers: Arc::new(Mutex::new(HashSet::new())),
+                value: SignalValue::Local(Rc::new(RefCell::new(()))),
             };
             self.0.add_signal(signal.clone());
             signal
         };
-        tracker.subscribe();
+        signal.subscribe();
     }
 
     /// Dispose this Scope, and it will cleanup all the Signals and child Scope
@@ -130,49 +223,27 @@ impl Scope {
     }
 }
 
+#[deprecated(
+    since = "0.2.0",
+    note = "Use Scope::with_scope instead; this will be removed in a future release"
+)]
 /// Runs the given code with the given Scope
 pub fn with_scope<T>(scope: Scope, f: impl FnOnce() -> T) -> T
 where
     T: 'static,
 {
-    let prev_scope = RUNTIME.with(|runtime| {
-        let mut current_scope = runtime.current_scope.borrow_mut();
-        let prev_scope = *current_scope;
-        *current_scope = scope.0;
-        prev_scope
-    });
-
-    let result = f();
-
-    RUNTIME.with(|runtime| {
-        *runtime.current_scope.borrow_mut() = prev_scope;
-    });
-
-    result
+    scope.with_scope(f)
 }
 
 /// Wrap the closure so that whenever the closure runs, it will be under a child Scope
 /// of the current Scope
+#[deprecated(
+    since = "0.2.0",
+    note = "Use Scope::current().with_child_scope instead; this will be removed in a future release"
+)]
 pub fn as_child_of_current_scope<T, U>(f: impl Fn(T) -> U + 'static) -> impl Fn(T) -> (U, Scope)
 where
     T: 'static,
 {
-    let current_scope = Scope::current();
-    move |t| {
-        let scope = current_scope.create_child();
-        let prev_scope = RUNTIME.with(|runtime| {
-            let mut current_scope = runtime.current_scope.borrow_mut();
-            let prev_scope = *current_scope;
-            *current_scope = scope.0;
-            prev_scope
-        });
-
-        let result = f(t);
-
-        RUNTIME.with(|runtime| {
-            *runtime.current_scope.borrow_mut() = prev_scope;
-        });
-
-        (result, scope)
-    }
+    Scope::current().with_child_scope(f)
 }

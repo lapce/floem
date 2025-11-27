@@ -1,21 +1,45 @@
 use std::{
     cell::{Ref, RefCell},
-    marker::PhantomData,
+    ops::Deref,
     rc::Rc,
+    sync::{Arc, Mutex, MutexGuard},
 };
 
-use crate::{id::Id, signal::NotThreadSafe};
+use crate::{id::Id, signal::SignalValue};
 
 #[derive(Clone)]
 pub struct ReadSignalValue<T> {
-    pub(crate) value: Rc<RefCell<T>>,
-    pub(crate) ts: PhantomData<NotThreadSafe>,
+    pub(crate) value: ValueHandle<T>,
 }
 
 impl<T> ReadSignalValue<T> {
     /// Borrows the current value stored in the Signal
-    pub fn borrow(&self) -> Ref<'_, T> {
-        self.value.borrow()
+    pub fn borrow(&self) -> ReadBorrow<'_, T> {
+        match &self.value {
+            ValueHandle::Sync(v) => ReadBorrow::Sync(v.lock().unwrap()),
+            ValueHandle::Local(v) => ReadBorrow::Local(v.borrow()),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum ValueHandle<T> {
+    Sync(Arc<Mutex<T>>),
+    Local(Rc<RefCell<T>>),
+}
+
+pub enum ReadBorrow<'a, T> {
+    Sync(MutexGuard<'a, T>),
+    Local(Ref<'a, T>),
+}
+
+impl<'a, T> Deref for ReadBorrow<'a, T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        match self {
+            ReadBorrow::Sync(v) => &*v,
+            ReadBorrow::Local(v) => &*v,
+        }
     }
 }
 
@@ -23,8 +47,6 @@ pub trait SignalGet<T: Clone> {
     /// get the Signal Id
     fn id(&self) -> Id;
 
-    /// Clones and returns the current value stored in the Signal, but it doesn't subscribe
-    /// to the current running effect.
     fn get_untracked(&self) -> T
     where
         T: 'static,
@@ -32,8 +54,6 @@ pub trait SignalGet<T: Clone> {
         self.try_get_untracked().unwrap()
     }
 
-    /// Clones and returns the current value stored in the Signal, and subscribes
-    /// to the current running effect to this Signal.
     fn get(&self) -> T
     where
         T: 'static,
@@ -41,8 +61,6 @@ pub trait SignalGet<T: Clone> {
         self.try_get().unwrap()
     }
 
-    /// Try to clone and return the current value stored in the Signal, and returns None
-    /// if it's already disposed. It subscribes to the current running effect.
     fn try_get(&self) -> Option<T>
     where
         T: 'static,
@@ -50,8 +68,6 @@ pub trait SignalGet<T: Clone> {
         self.id().signal().map(|signal| signal.get())
     }
 
-    /// Try to clone and return the current value stored in the Signal, and returns None
-    /// if it's already disposed. It doesn't subscribe to the current running effect.
     fn try_get_untracked(&self) -> Option<T>
     where
         T: 'static,
@@ -81,8 +97,6 @@ pub trait SignalWith<T> {
     /// get the Signal Id
     fn id(&self) -> Id;
 
-    /// Applies a closure to the current value stored in the Signal, and subscribes
-    /// to the current running effect to this Memo.
     fn with<O>(&self, f: impl FnOnce(&T) -> O) -> O
     where
         T: 'static,
@@ -90,8 +104,6 @@ pub trait SignalWith<T> {
         self.id().signal().unwrap().with(f)
     }
 
-    /// Applies a closure to the current value stored in the Signal, but it doesn't subscribe
-    /// to the current running effect.
     fn with_untracked<O>(&self, f: impl FnOnce(&T) -> O) -> O
     where
         T: 'static,
@@ -99,8 +111,6 @@ pub trait SignalWith<T> {
         self.id().signal().unwrap().with_untracked(f)
     }
 
-    /// If the signal isn't disposed, applies a closure to the current value stored in the Signal.
-    /// It subscribes to the current running effect.
     fn try_with<O>(&self, f: impl FnOnce(Option<&T>) -> O) -> O
     where
         T: 'static,
@@ -112,8 +122,6 @@ pub trait SignalWith<T> {
         }
     }
 
-    /// If the signal isn't disposed, applies a closure to the current value stored in the Signal,
-    /// but it doesn't subscribe to the current running effect.
     fn try_with_untracked<O>(&self, f: impl FnOnce(Option<&T>) -> O) -> O
     where
         T: 'static,
@@ -158,19 +166,21 @@ pub trait SignalRead<T> {
     where
         T: 'static,
     {
-        if let Some(signal) = self.id().signal() {
+        self.id().signal().map(|signal| {
             signal.subscribe();
-            Some(ReadSignalValue {
-                value: signal
-                    .value
-                    .clone()
-                    .downcast::<RefCell<T>>()
-                    .expect("to downcast signal type"),
-                ts: PhantomData,
-            })
-        } else {
-            None
-        }
+            match signal.value.clone() {
+                SignalValue::Local(value) => ReadSignalValue {
+                    value: ValueHandle::Local(
+                        value
+                            .downcast::<RefCell<T>>()
+                            .expect("to downcast signal type"),
+                    ),
+                },
+                SignalValue::Sync(_) => {
+                    unreachable!("sync SignalRead should use the SyncStorage impls")
+                }
+            }
+        })
     }
 
     /// If the signal isn't disposed,
@@ -181,17 +191,17 @@ pub trait SignalRead<T> {
     where
         T: 'static,
     {
-        if let Some(signal) = self.id().signal() {
-            Some(ReadSignalValue {
-                value: signal
-                    .value
-                    .clone()
-                    .downcast::<RefCell<T>>()
-                    .expect("to downcast signal type"),
-                ts: PhantomData,
-            })
-        } else {
-            None
-        }
+        self.id().signal().map(|signal| match signal.value.clone() {
+            SignalValue::Local(value) => ReadSignalValue {
+                value: ValueHandle::Local(
+                    value
+                        .downcast::<RefCell<T>>()
+                        .expect("to downcast signal type"),
+                ),
+            },
+            SignalValue::Sync(_) => {
+                unreachable!("sync SignalRead should use the SyncStorage impls")
+            }
+        })
     }
 }
