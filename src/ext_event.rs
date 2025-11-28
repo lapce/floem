@@ -1,8 +1,7 @@
 use std::{cell::Cell, collections::VecDeque, sync::Arc};
 
 use floem_reactive::{
-    ReadSignal, RwSignal, Scope, SignalGet, SignalUpdate, SignalWith, WriteSignal, create_effect,
-    create_rw_signal, untrack, with_scope,
+    Effect, ReadSignal, RwSignal, Scope, SignalGet, SignalUpdate, SignalWith, WriteSignal,
 };
 use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
@@ -51,7 +50,7 @@ impl ExtSendTrigger {
 
 pub fn create_trigger() -> ExtSendTrigger {
     ExtSendTrigger {
-        signal: create_rw_signal(()),
+        signal: RwSignal::new(()),
     }
 }
 
@@ -97,17 +96,17 @@ pub fn create_ext_action<T: Send + 'static>(
 ) -> impl FnOnce(T) {
     let view = get_current_view();
     let cx = cx.create_child();
-    let trigger = with_scope(cx, ExtSendTrigger::new);
+    let trigger = cx.enter(ExtSendTrigger::new);
     let data = Arc::new(Mutex::new(None));
 
     {
         let data = data.clone();
         let action = Cell::new(Some(action));
-        with_scope(cx, move || {
-            create_effect(move |_| {
+        cx.enter(move || {
+            Effect::new(move |_| {
                 trigger.track();
                 if let Some(event) = data.lock().take() {
-                    untrack(|| {
+                    Effect::untrack(|| {
                         let current_view = get_current_view();
                         set_current_view(view);
                         let action = action.take().unwrap();
@@ -134,7 +133,7 @@ pub fn update_signal_from_channel<T: Send + 'static>(
     rx: Receiver<T>,
 ) {
     let cx = Scope::new();
-    let trigger = with_scope(cx, ExtSendTrigger::new);
+    let trigger = cx.enter(ExtSendTrigger::new);
 
     let channel_closed = cx.create_rw_signal(false);
     let data = Arc::new(Mutex::new(VecDeque::new()));
@@ -278,7 +277,7 @@ impl<T> ArcRwSignal<T> {
     fn ensure_main_signal(&self) {
         let mut main_signal = self.inner.main_signal.lock();
         if main_signal.is_none() {
-            *main_signal = Some(create_rw_signal(()));
+            *main_signal = Some(RwSignal::new(()));
         }
     }
 

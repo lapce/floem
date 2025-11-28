@@ -128,7 +128,7 @@
 //!
 //! You can create custom extractors and embed them in your custom views so that you can get out any built in prop, or any of your custom props from the final combined style that is applied to your `View`.
 
-use floem_reactive::{RwSignal, SignalGet, SignalUpdate as _, create_updater};
+use floem_reactive::{RwSignal, SignalGet, SignalUpdate as _, UpdaterEffect};
 use floem_renderer::Renderer;
 use floem_renderer::text::{LineHeightValue, Weight};
 use imbl::hashmap::Entry;
@@ -5502,7 +5502,7 @@ pub trait CustomStylable<S: CustomStyle + 'static>: IntoView<V = Self::DV> + Siz
         let id = view.id();
         let view_state = id.state();
         let offset = view_state.borrow_mut().style.next_offset();
-        let style = create_updater(
+        let style = UpdaterEffect::new(
             move || style(S::default()),
             move |style| id.update_style(offset, style.into()),
         );

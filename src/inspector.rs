@@ -18,7 +18,7 @@ use crate::views::{
 };
 use crate::window_state::WindowState;
 use crate::{AnyView, Clipboard, style};
-use floem_reactive::{RwSignal, Scope, SignalGet, SignalUpdate, batch};
+use floem_reactive::{Effect, RwSignal, Scope, SignalGet, SignalUpdate};
 use peniko::color::palette;
 use peniko::kurbo::{Point, Rect, Size};
 use slotmap::Key;
@@ -970,7 +970,7 @@ fn update_select_view_id(
     capture.selected.set(Some(id));
     capture.highlighted.set(Some(id));
     capture.expanding_selection.set(Some((id, request_focus)));
-    batch(|| {
+    Effect::batch(|| {
         datas.update(|x| {
             x.focus(id);
         });

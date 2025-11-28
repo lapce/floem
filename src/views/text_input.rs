@@ -2,13 +2,13 @@
 use crate::action::{exec_after, set_ime_allowed, set_ime_cursor_area};
 use crate::event::{EventListener, EventPropagation};
 use crate::id::ViewId;
-use crate::reactive::{RwSignal, create_effect};
+use crate::reactive::{Effect, RwSignal};
 use crate::style::{FontFamily, FontProps, PaddingProp, SelectionStyle, TextAlignProp};
 use crate::style::{FontStyle, FontWeight, TextColor};
 use crate::unit::{PxPct, PxPctAuto};
 use crate::views::editor::text::Preedit;
 use crate::{Clipboard, prop_extractor, style_class};
-use floem_reactive::{SignalGet, SignalUpdate, SignalWith, create_rw_signal};
+use floem_reactive::{SignalGet, SignalUpdate, SignalWith};
 use taffy::prelude::{Layout, NodeId};
 
 use floem_renderer::Renderer;
@@ -196,10 +196,10 @@ pub enum TextDirection {
 /// For more advanced editing see [TextEditor](super::text_editor::TextEditor).
 pub fn text_input(buffer: RwSignal<String>) -> TextInput {
     let id = ViewId::new();
-    let is_focused = create_rw_signal(false);
+    let is_focused = RwSignal::new(false);
 
     {
-        create_effect(move |_| {
+        Effect::new(move |_| {
             // subscribe to changes without cloning string
             buffer.with(|_| {});
             id.update_state(is_focused.get());

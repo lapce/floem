@@ -6,4 +6,3 @@ edition = "2021"
 [dependencies]
 floem = { path = "../..", features = ["editor"] }
 syntect = "5.2.0"
-lazy_static = "1.4.0"

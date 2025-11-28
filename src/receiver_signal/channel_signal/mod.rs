@@ -49,7 +49,7 @@ impl<T: std::marker::Send + 'static> From<std::sync::mpsc::Receiver<T>>
     }
 }
 
-impl<T: 'static, E: 'static> ChannelSignal<T, E> {
+impl<T: Send + 'static, E: Send + 'static> ChannelSignal<T, E> {
     /// Creates a new reactive channel signal with sensible defaults.
     ///
     /// - **Executor**: Std::thread for blocking receivers, event loop for pollable receivers
@@ -67,8 +67,6 @@ impl<T: 'static, E: 'static> ChannelSignal<T, E> {
     pub fn new<R>(receiver: R) -> ChannelSignal<Option<T>, E>
     where
         R: BlockingReceiver<Item = T, Error = E> + Send + 'static,
-        T: Send + 'static,
-        E: Send + 'static,
     {
         ChannelSignalBuilder::new(receiver).build()
     }
@@ -76,8 +74,6 @@ impl<T: 'static, E: 'static> ChannelSignal<T, E> {
     pub fn new_poll<R>(receiver: R) -> ChannelSignal<Option<T>, E>
     where
         R: PollableReceiver<Item = T, Error = E> + Send + 'static,
-        T: Send + 'static,
-        E: Send + 'static,
     {
         ChannelSignalBuilder::new(receiver).event_loop().build()
     }
@@ -102,8 +98,6 @@ impl<T: 'static, E: 'static> ChannelSignal<T, E> {
     pub fn with_initial<R>(receiver: R, initial: T) -> Self
     where
         R: BlockingReceiver<Item = T, Error = E> + Send + 'static,
-        T: Send + 'static,
-        E: Send + 'static,
     {
         ChannelSignalBuilder::new(receiver).initial(initial).build()
     }
@@ -154,6 +148,20 @@ impl<T, E> floem_reactive::SignalWith<T> for ChannelSignal<T, E> {
 impl<T, E> floem_reactive::SignalRead<T> for ChannelSignal<T, E> {
     fn id(&self) -> floem_reactive::ReactiveId {
         self.value.id()
+    }
+
+    fn try_read(&self) -> Option<floem_reactive::ReadRef<'_, T>>
+    where
+        T: 'static,
+    {
+        self.value.try_read()
+    }
+
+    fn try_read_untracked(&self) -> Option<floem_reactive::ReadRef<'_, T>>
+    where
+        T: 'static,
+    {
+        self.value.try_read_untracked()
     }
 }
 

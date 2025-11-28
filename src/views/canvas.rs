@@ -1,4 +1,4 @@
-use floem_reactive::{SignalTracker, create_tracker};
+use floem_reactive::SignalTracker;
 use peniko::kurbo::Size;
 
 use crate::{context::PaintCx, id::ViewId, view::View};
@@ -68,7 +68,7 @@ impl View for Canvas {
         let paint = &self.paint_fn;
 
         if self.tracker.is_none() {
-            self.tracker = Some(create_tracker(move || {
+            self.tracker = Some(SignalTracker::new(move || {
                 id.request_paint();
             }));
         }

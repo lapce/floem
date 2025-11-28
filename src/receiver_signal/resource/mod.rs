@@ -204,15 +204,29 @@ impl<T> floem_reactive::SignalRead<T> for Resource<T> {
     fn id(&self) -> floem_reactive::ReactiveId {
         self.data.id()
     }
+
+    fn try_read(&self) -> Option<floem_reactive::ReadRef<'_, T>>
+    where
+        T: 'static,
+    {
+        self.data.try_read()
+    }
+
+    fn try_read_untracked(&self) -> Option<floem_reactive::ReadRef<'_, T>>
+    where
+        T: 'static,
+    {
+        self.data.try_read_untracked()
+    }
 }
 
-impl<T: Clone> floem_reactive::SignalGet<T> for Resource<T> {
+impl<T: Clone + 'static> floem_reactive::SignalGet<T> for Resource<T> {
     fn id(&self) -> floem_reactive::ReactiveId {
         self.data.id()
     }
 }
 
-impl<T> floem_reactive::SignalTrack<T> for Resource<T> {
+impl<T: 'static> floem_reactive::SignalTrack<T> for Resource<T> {
     fn id(&self) -> floem_reactive::ReactiveId {
         self.data.id()
     }

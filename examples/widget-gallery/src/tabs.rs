@@ -1,6 +1,6 @@
 use floem::prelude::palette::css;
 use floem::prelude::*;
-use floem::reactive::create_effect;
+use floem::reactive::Effect;
 use floem::style::BoxShadow;
 use floem::taffy::AlignContent;
 use floem::theme::StyleThemeExt;
@@ -32,7 +32,7 @@ pub fn tab_view() -> impl IntoView {
     let active_tab = RwSignal::new(None::<usize>);
     let tab_action = RwSignal::new(Action::None);
 
-    create_effect(move |_| match tab_action.get() {
+    Effect::new(move |_| match tab_action.get() {
         Action::Add => {
             tabs.update(|tabs| tabs.push(TabContent::new(tabs.len())));
         }

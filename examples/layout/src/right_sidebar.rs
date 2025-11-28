@@ -11,7 +11,7 @@ const SIDEBAR_ITEM_HEIGHT: f64 = 21.0;
 
 pub fn right_sidebar_view() -> impl IntoView {
     let long_list: imbl::Vector<i32> = (0..100).collect();
-    let long_list = create_rw_signal(long_list);
+    let long_list = RwSignal::new(long_list);
 
     let top_bar = label(|| String::from("Top bar"))
         .style(|s| s.padding(10.0).width_full().height(TOPBAR_HEIGHT));

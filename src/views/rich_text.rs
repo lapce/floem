@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use floem_reactive::create_effect;
+use floem_reactive::Effect;
 use floem_renderer::{
     Renderer,
     text::{Attrs, AttrsList, AttrsOwned, TextLayout},
@@ -34,7 +34,7 @@ pub struct RichText {
 pub fn rich_text(text_layout: impl Fn() -> TextLayout + 'static) -> RichText {
     let id = ViewId::new();
     let text = text_layout();
-    create_effect(move |_| {
+    Effect::new(move |_| {
         let new_text_layout = text_layout();
         id.update_state(new_text_layout);
     });

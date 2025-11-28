@@ -2,7 +2,7 @@
 #![deny(missing_docs)]
 use std::{path::PathBuf, sync::Arc};
 
-use floem_reactive::create_effect;
+use floem_reactive::Effect;
 use peniko::{Blob, ImageAlphaType, ImageData};
 use sha2::{Digest, Sha256};
 use taffy::NodeId;
@@ -205,7 +205,7 @@ pub fn img_from_path(image: impl Fn() -> PathBuf + 'static) -> Img {
 
 pub(crate) fn img_dynamic(image: impl Fn() -> peniko::ImageBrush + 'static) -> Img {
     let id = ViewId::new();
-    create_effect(move |_| {
+    Effect::new(move |_| {
         id.update_state(image());
     });
     Img {

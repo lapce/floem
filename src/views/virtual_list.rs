@@ -1,4 +1,4 @@
-use floem_reactive::create_effect;
+use floem_reactive::Effect;
 use taffy::FlexDirection;
 use ui_events::keyboard::{Key, NamedKey};
 
@@ -131,7 +131,7 @@ impl<T: 'static> VirtualList<T> {
     /// });
     /// ```
     pub fn on_select(self, on_select: impl Fn(Option<usize>) + 'static) -> Self {
-        create_effect(move |_| {
+        Effect::new(move |_| {
             let selection = self.selection.get();
             on_select(selection);
         });
@@ -180,7 +180,7 @@ where
 
     let stack_id = stack.id();
 
-    create_effect(move |_| {
+    Effect::new(move |_| {
         if let Some(idx) = selection.get() {
             stack_id.update_state(idx);
         }

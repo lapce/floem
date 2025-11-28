@@ -2,9 +2,7 @@ use std::time::{Duration, Instant};
 
 use floem::{
     action::exec_after,
-    reactive::{
-        create_effect, create_rw_signal, DerivedRwSignal, SignalGet, SignalTrack, SignalUpdate,
-    },
+    reactive::{DerivedRwSignal, Effect, RwSignal, SignalGet, SignalTrack, SignalUpdate},
     unit::{Pct, UnitExt},
     views::{button, container, label, slider, stack, text, v_stack, Decorators},
     IntoView,
@@ -17,10 +15,10 @@ fn main() {
 fn app_view() -> impl IntoView {
     // We take maximum duration as 100s for convenience so that
     // one percent represents one second.
-    let target_duration = create_rw_signal(100.pct());
+    let target_duration = RwSignal::new(100.pct());
     let duration_slider = thin_slider(target_duration);
 
-    let elapsed_time = create_rw_signal(Duration::ZERO);
+    let elapsed_time = RwSignal::new(Duration::ZERO);
     let is_active = move || elapsed_time.get().as_secs_f64() < target_duration.get().0;
 
     let elapsed_time_label = label(move || {
@@ -34,8 +32,8 @@ fn app_view() -> impl IntoView {
         )
     });
 
-    let tick = create_rw_signal(());
-    create_effect(move |_| {
+    let tick = RwSignal::new(());
+    Effect::new(move |_| {
         tick.track();
         let before_exec = Instant::now();
 

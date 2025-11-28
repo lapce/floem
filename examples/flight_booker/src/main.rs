@@ -3,7 +3,7 @@ use std::fmt::Display;
 use floem::views::StackExt;
 use floem::{
     peniko::color::palette,
-    reactive::{create_rw_signal, RwSignal, SignalGet, SignalUpdate},
+    reactive::{RwSignal, SignalGet, SignalUpdate},
     unit::UnitExt,
     views::{button, dyn_container, empty, text, text_input, v_stack, Decorators, RadioButton},
     IntoView,
@@ -39,11 +39,11 @@ static DATE_FORMAT: &[time::format_description::FormatItem<'_>] =
 pub fn app_view() -> impl IntoView {
     let flight_mode = RwSignal::new(FlightMode::OneWay);
 
-    let start_text = create_rw_signal("24-02-2024".to_string());
+    let start_text = RwSignal::new("24-02-2024".to_string());
     let start_date = move || Date::parse(&start_text.get(), &DATE_FORMAT).ok();
     let start_date_is_valid = move || start_date().is_some();
 
-    let return_text = create_rw_signal("24-02-2024".to_string());
+    let return_text = RwSignal::new("24-02-2024".to_string());
     let return_date = move || Date::parse(&return_text.get(), &DATE_FORMAT).ok();
     let return_text_is_enabled = move || flight_mode.get() == FlightMode::Return;
     let return_date_is_valid = move || {
@@ -62,7 +62,7 @@ pub fn app_view() -> impl IntoView {
         },
     };
 
-    let did_booking = create_rw_signal(false);
+    let did_booking = RwSignal::new(false);
 
     let mode_picker = FlightMode::iter()
         .map(move |fm| RadioButton::new_labeled_rw(fm, flight_mode, move || fm))

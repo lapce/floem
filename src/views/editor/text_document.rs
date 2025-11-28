@@ -15,9 +15,7 @@ use floem_editor_core::{
     selection::Selection,
     word::WordCursor,
 };
-use floem_reactive::{
-    RwSignal, Scope, SignalGet, SignalTrack, SignalUpdate, SignalWith, create_effect,
-};
+use floem_reactive::{Effect, RwSignal, Scope, SignalGet, SignalTrack, SignalUpdate, SignalWith};
 use lapce_xi_rope::{Rope, RopeDelta};
 use smallvec::{SmallVec, smallvec};
 use ui_events::keyboard::Modifiers;
@@ -88,7 +86,7 @@ impl TextDocument {
         let placeholders = cx.create_rw_signal(HashMap::new());
 
         // Whenever the placeholders change, update the cache rev
-        create_effect(move |_| {
+        Effect::new(move |_| {
             placeholders.track();
             cache_rev.try_update(|cache_rev| {
                 *cache_rev += 1;

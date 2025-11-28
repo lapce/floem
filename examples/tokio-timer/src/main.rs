@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use floem::action::inspect;
 use floem::prelude::*;
-use floem::reactive::{create_memo, DerivedRwSignal};
+use floem::reactive::{DerivedRwSignal, Memo};
 use floem::receiver_signal::StreamSignal;
 use floem::theme::StyleThemeExt;
 use floem::unit::Pct;
@@ -29,7 +29,7 @@ fn app_view() -> impl IntoView {
     let now = Instant::now();
     let started_at = RwSignal::new(now);
     let current_instant = StreamSignal::with_initial(stream, now);
-    let elapsed_time = create_memo(move |_| {
+    let elapsed_time = Memo::<f64>::new(move |_| {
         current_instant
             .get()
             .duration_since(started_at.get())

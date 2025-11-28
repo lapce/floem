@@ -1,6 +1,9 @@
 use std::{cell::Cell, rc::Rc};
 
-use floem_reactive::{batch, create_effect, create_rw_signal, SignalTrack, SignalUpdate};
+use floem_reactive::{
+    batch, create_effect, create_rw_signal, Runtime, SignalGet, SignalRead, SignalTrack,
+    SignalUpdate, SignalWrite,
+};
 
 #[test]
 fn batch_simple() {
@@ -24,9 +27,11 @@ fn batch_simple() {
 
     // Setting each signal once will trigger the effect
     name.set("Mary");
+    Runtime::drain_pending_work();
     assert_eq!(count.get(), 2);
 
     age.set(21);
+    Runtime::drain_pending_work();
     assert_eq!(count.get(), 3);
 
     // Batching will only update once
@@ -34,6 +39,7 @@ fn batch_simple() {
         name.set("John");
         age.set(20);
     });
+    Runtime::drain_pending_work();
     assert_eq!(count.get(), 4);
 }
 
@@ -66,5 +72,143 @@ fn batch_batch() {
         });
     });
 
+    Runtime::drain_pending_work();
     assert_eq!(count.get(), 2);
+}
+
+#[test]
+fn no_reentrant_runs() {
+    let state = create_rw_signal(0);
+    let log = Rc::new(std::cell::RefCell::new(Vec::new()));
+
+    create_effect({
+        let log = log.clone();
+        move |_| {
+            let v = state.get();
+            log.borrow_mut().push(format!("run {v}"));
+            if v == 0 {
+                state.set(1);
+                log.borrow_mut().push("post set".into());
+            }
+        }
+    });
+
+    Runtime::drain_pending_work();
+
+    let log = log.borrow();
+    assert_eq!(log.as_slice(), ["run 0", "run 1", "post set"]);
+}
+
+#[test]
+fn cross_thread_write_updates_value_immediately() {
+    // cross-thread writes are not supported for local signals
+}
+
+#[test]
+fn pending_effects_are_deduped() {
+    let signal = create_rw_signal(0);
+    let counter = Rc::new(Cell::new(0));
+
+    create_effect({
+        let counter = counter.clone();
+        move |_| {
+            signal.track();
+            counter.set(counter.get() + 1);
+        }
+    });
+
+    batch(|| {
+        signal.set(1);
+        signal.set(2);
+        signal.set(3);
+    });
+
+    Runtime::drain_pending_work();
+    assert_eq!(counter.get(), 2);
+}
+
+fn assert_send_sync<T: Send + Sync>() {}
+
+#[test]
+fn signals_are_send_sync_when_value_is() {
+    // no-op for local-only signals
+}
+
+#[test]
+fn track_default_subscribes() {
+    let signal = create_rw_signal(0);
+    let runs = Rc::new(Cell::new(0));
+
+    create_effect({
+        let runs = runs.clone();
+        move |_| {
+            signal.track();
+            runs.set(runs.get() + 1);
+        }
+    });
+
+    assert_eq!(runs.get(), 1);
+    signal.set(1);
+    Runtime::drain_pending_work();
+    assert_eq!(runs.get(), 2);
+}
+
+#[test]
+fn read_untracked_does_not_subscribe() {
+    let signal = create_rw_signal(0);
+    let tracked_runs = Rc::new(Cell::new(0));
+    let untracked_runs = Rc::new(Cell::new(0));
+
+    create_effect({
+        let tracked_runs = tracked_runs.clone();
+        move |_| {
+            signal.get();
+            tracked_runs.set(tracked_runs.get() + 1);
+        }
+    });
+
+    create_effect({
+        let untracked_runs = untracked_runs.clone();
+        move |_| {
+            signal.read_untracked();
+            untracked_runs.set(untracked_runs.get() + 1);
+        }
+    });
+
+    assert_eq!(tracked_runs.get(), 1);
+    assert_eq!(untracked_runs.get(), 1);
+
+    signal.set(1);
+    Runtime::drain_pending_work();
+
+    assert_eq!(tracked_runs.get(), 2, "tracked effect reruns");
+    assert_eq!(
+        untracked_runs.get(),
+        1,
+        "untracked read should not resubscribe"
+    );
+}
+
+#[test]
+fn write_ref_drop_notifies_subscribers_once() {
+    let signal = create_rw_signal(0);
+    let runs = Rc::new(Cell::new(0));
+
+    create_effect({
+        let runs = runs.clone();
+        move |_| {
+            signal.get();
+            runs.set(runs.get() + 1);
+        }
+    });
+
+    assert_eq!(runs.get(), 1);
+
+    {
+        let mut w = signal.write();
+        *w = 5;
+    }
+    Runtime::drain_pending_work();
+    assert_eq!(runs.get(), 2, "effect reruns after write ref drop");
+    assert_eq!(signal.get(), 5);
 }

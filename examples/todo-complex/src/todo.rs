@@ -8,7 +8,7 @@ use floem::{
     menu::Menu,
     muda::{self, NativeIcon},
     prelude::*,
-    reactive::{create_effect, create_memo, Trigger},
+    reactive::{Effect, Memo, Trigger},
     style::{BoxShadowProp, CursorStyle, MinHeight, Transition},
     taffy::AlignItems,
     AnyView,
@@ -75,8 +75,8 @@ impl IntoView for TodoState {
         });
 
         let (active, selected) = TODOS_STATE.with(|s| (s.active, s.selected));
-        let is_active = create_memo(move |_| active.with(|a| a.active == Some(self)));
-        let is_selected = create_memo(move |_| selected.with(|s| s.contains(&self)));
+        let is_active = Memo::<bool>::new(move |_| active.with(|a| a.active == Some(self)));
+        let is_selected = Memo::<bool>::new(move |_| selected.with(|s| s.contains(&self)));
 
         let todo_action_menu = move || {
             // would be better to have actions that can operate on multiple selections.
@@ -176,7 +176,7 @@ impl IntoView for TodoState {
         if Instant::now().duration_since(TODOS_STATE.with(|s| s.time_stated)) > 50.millis() {
             input_id.request_focus();
         }
-        create_effect(move |_| {
+        Effect::new(move |_| {
             if is_active.get() {
                 input_id.request_focus();
             }
@@ -206,7 +206,7 @@ impl IntoView for TodoState {
 
         let container = main_controls.container();
         let final_view_id = container.id();
-        create_effect(move |_| {
+        Effect::new(move |_| {
             input_focused.track();
             // this is a super ugly hack...
             // We should really figure out a way to make sure than an item that is focused

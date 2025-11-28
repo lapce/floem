@@ -8,7 +8,7 @@ use crate::{
     id::ViewId,
     kurbo::{BezPath, Line, Point, Rect, Size, Vec2},
     peniko::Color,
-    reactive::{Memo, RwSignal, Scope, batch, create_effect, create_memo, create_rw_signal},
+    reactive::{Effect, Memo, RwSignal, Scope},
     style::{CursorStyle, Style},
     style_class,
     taffy::tree::NodeId,
@@ -272,7 +272,7 @@ impl ScreenLines {
             let new_y1 = new_y0 + vp.height();
             let new_viewport = Rect::new(vp.x0, new_y0, vp.x1, new_y1);
 
-            batch(|| {
+            Effect::batch(|| {
                 self.base.set(ScreenLinesBase {
                     active_viewport: new_viewport,
                 });
@@ -948,14 +948,14 @@ pub fn editor_view(
     is_active: impl Fn(bool) -> bool + 'static + Copy,
 ) -> EditorView {
     let id = ViewId::new();
-    let is_active = create_memo(move |_| is_active(true));
+    let is_active = Scope::current().create_memo(move |_| is_active(true));
 
     let ed = editor.get_untracked();
 
     let doc = ed.doc;
     let style = ed.style;
     let lines = ed.screen_lines;
-    create_effect(move |_| {
+    Effect::new(move |_| {
         doc.track();
         style.track();
         lines.track();
@@ -963,21 +963,22 @@ pub fn editor_view(
     });
 
     let hide_cursor = ed.cursor_info.hidden;
-    create_effect(move |_| {
+    Effect::new(move |_| {
         hide_cursor.track();
         id.request_paint();
     });
 
     let editor_window_origin = ed.window_origin;
     let cursor = ed.cursor;
-    let cursor_memo = create_memo(move |_| cursor.with(|c| (c.is_insert(), c.offset())));
+    let cursor_memo =
+        Scope::current().create_memo(move |_| cursor.with(|c| (c.is_insert(), c.offset())));
     let allows_ime = ed.ime_allowed;
     let editor_viewport = ed.viewport;
     let focused = ed.editor_view_focused_value;
     let prev_ime_area = ed.ime_cursor_area;
     let preedit = ed.preedit().preedit;
 
-    create_effect(move |_| {
+    Effect::new(move |_| {
         if !is_active.get() {
             return;
         }
@@ -1195,7 +1196,7 @@ pub fn editor_gutter(editor: RwSignal<Editor>) -> impl IntoView {
 
     let scroll_delta = ed.scroll_delta;
 
-    let gutter_rect = create_rw_signal(Rect::ZERO);
+    let gutter_rect = RwSignal::new(Rect::ZERO);
 
     editor_gutter_view(editor)
         .on_resize(move |rect| {
@@ -1344,7 +1345,7 @@ fn editor_content(
 mod tests {
     use std::{collections::HashMap, rc::Rc};
 
-    use floem_reactive::create_rw_signal;
+    use floem_reactive::RwSignal;
     use peniko::kurbo::Rect;
 
     use crate::views::editor::{
@@ -1378,7 +1379,7 @@ mod tests {
             lines: Rc::new(lines),
             info: Rc::new(info),
             diff_sections: None,
-            base: create_rw_signal(ScreenLinesBase {
+            base: RwSignal::new(ScreenLinesBase {
                 active_viewport: Rect::ZERO,
             }),
         };

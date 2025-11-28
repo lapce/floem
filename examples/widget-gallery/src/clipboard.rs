@@ -3,8 +3,8 @@ use floem::{prelude::*, Clipboard};
 use crate::form::{form, form_item};
 
 pub fn clipboard_view() -> impl IntoView {
-    let text1 = create_rw_signal("".to_string());
-    let text2 = create_rw_signal("-".to_string());
+    let text1 = RwSignal::new(String::new());
+    let text2 = RwSignal::new("-".to_string());
 
     form((
         form_item(

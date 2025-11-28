@@ -14,7 +14,7 @@ use crate::{
     kurbo::{Point, Rect, Size, Vec2},
     peniko::{Brush, Color, color::palette},
     prop, prop_extractor,
-    reactive::{ReadSignal, RwSignal, Scope, batch, untrack},
+    reactive::{Effect, ReadSignal, RwSignal, Scope},
     style::{CursorColor, StylePropValue, TextColor},
     text::{Attrs, AttrsList, LineHeightValue, TextLayout, Wrap},
     view::{IntoView, View},
@@ -338,7 +338,7 @@ impl Editor {
     }
 
     pub fn recreate_view_effects(&self) {
-        batch(|| {
+        Effect::batch(|| {
             self.effects_cx.get().dispose();
             self.effects_cx.set(self.cx.get().create_child());
             create_view_effects(self.effects_cx.get(), self);
@@ -347,7 +347,7 @@ impl Editor {
 
     /// Swap the underlying document out
     pub fn update_doc(&self, doc: Rc<dyn Document>, styling: Option<Rc<dyn Styling>>) {
-        batch(|| {
+        Effect::batch(|| {
             // Get rid of all the effects
             self.effects_cx.get().dispose();
 
@@ -372,7 +372,7 @@ impl Editor {
     }
 
     pub fn update_styling(&self, styling: Rc<dyn Styling>) {
-        batch(|| {
+        Effect::batch(|| {
             // Get rid of all the effects
             self.effects_cx.get().dispose();
 
@@ -406,7 +406,7 @@ impl Editor {
             false,
         );
 
-        batch(|| {
+        Effect::batch(|| {
             editor.read_only.set(self.read_only.get_untracked());
             editor.es.set(self.es.get_untracked());
             editor
@@ -460,7 +460,7 @@ impl Editor {
     }
 
     pub fn set_preedit(&self, text: String, cursor: Option<(usize, usize)>, offset: usize) {
-        batch(|| {
+        Effect::batch(|| {
             self.doc().cache_rev().update(|cache_rev| {
                 *cache_rev += 1;
             });
@@ -484,7 +484,7 @@ impl Editor {
             return;
         }
 
-        batch(|| {
+        Effect::batch(|| {
             self.owns_preedit.set(false);
 
             let commited = self.preedit().preedit.with_untracked(|preedit| {
@@ -519,7 +519,7 @@ impl Editor {
             return;
         }
 
-        batch(|| {
+        Effect::batch(|| {
             preedit.preedit.set(None);
             self.doc().cache_rev().update(|cache_rev| {
                 *cache_rev += 1;
@@ -1520,7 +1520,7 @@ fn create_view_effects(cx: Scope, ed: &Editor) {
                 let should_update = sl.on_created_layout(ed, line);
 
                 if should_update {
-                    untrack(|| {
+                    Effect::untrack(|| {
                         update_screen_lines(ed);
                     });
 
@@ -1562,7 +1562,7 @@ fn create_view_effects(cx: Scope, ed: &Editor) {
 
         // TODO: should this be a with or with_untracked?
         if viewport != base.with_untracked(|base| base.active_viewport) {
-            batch(|| {
+            Effect::batch(|| {
                 base.update(|base| {
                     base.active_viewport = viewport;
                 });

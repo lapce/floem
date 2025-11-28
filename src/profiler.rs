@@ -8,7 +8,7 @@ use crate::views::{
     ContainerExt, Decorators, button, clip, container, dyn_container, empty, h_stack, label,
     scroll, stack, static_label, text, v_stack, v_stack_from_iter,
 };
-use floem_reactive::{RwSignal, Scope, SignalGet, SignalUpdate, create_rw_signal};
+use floem_reactive::{RwSignal, Scope, SignalGet, SignalUpdate};
 use std::fmt::Display;
 use std::mem;
 use std::rc::Rc;
@@ -98,9 +98,9 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
         .collect();
     frames.sort_by(|a, b| b.sum.cmp(&a.sum));
 
-    let selected_frame = create_rw_signal(None);
+    let selected_frame = RwSignal::new(None);
 
-    let zoom = create_rw_signal(1.0);
+    let zoom = RwSignal::new(1.0);
 
     let frames: Vec<_> = frames
         .iter()
@@ -134,7 +134,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
         })
         .collect();
 
-    let hovered_event: RwSignal<Option<ProfileEvent>> = create_rw_signal(None);
+    let hovered_event: RwSignal<Option<ProfileEvent>> = RwSignal::new(None);
 
     let event_tooltip = dyn_container(
         move || hovered_event.get(),
@@ -277,7 +277,7 @@ thread_local! {
 }
 
 pub fn profiler(window_id: WindowId) -> impl IntoView {
-    let profiling = create_rw_signal(false);
+    let profiling = RwSignal::new(false);
     let profile = PROFILE.with(|c| *c);
 
     let button = h_stack((

@@ -19,7 +19,7 @@ use crate::views::{
 };
 use crate::window::WindowConfig;
 use crate::{IntoView, View, ViewId, new_window};
-use floem_reactive::{RwSignal, SignalGet, SignalUpdate, create_effect, create_rw_signal};
+use floem_reactive::{Effect, RwSignal, SignalGet, SignalUpdate};
 use peniko::Color;
 use peniko::color::palette;
 use std::rc::Rc;
@@ -136,12 +136,12 @@ fn capture_view(
     capture: Rc<Capture>,
 ) -> impl IntoView {
     let capture_view = CaptureView {
-        expanding_selection: create_rw_signal(None),
-        scroll_to: create_rw_signal(None),
-        selected: create_rw_signal(None),
-        highlighted: create_rw_signal(None),
+        expanding_selection: RwSignal::new(None),
+        scroll_to: RwSignal::new(None),
+        selected: RwSignal::new(None),
+        highlighted: RwSignal::new(None),
     };
-    let datas = create_rw_signal(CapturedDatas::init_from_view(capture.root.clone()));
+    let datas = RwSignal::new(CapturedDatas::init_from_view(capture.root.clone()));
     let window = capture.window.clone();
     let capture_ = capture.clone();
     let (image_width, image_height) = capture
@@ -157,7 +157,7 @@ fn capture_view(
     let size = capture_.window_size;
     let renderer = capture_.renderer.clone();
 
-    let contain_ids = create_rw_signal((0, Vec::<ViewId>::new()));
+    let contain_ids = RwSignal::new((0, Vec::<ViewId>::new()));
 
     let image = if let Some(window) = window {
         img_dynamic(move || window.clone()).into_any()
@@ -401,9 +401,9 @@ fn capture_view(
     let root = capture.root.clone();
     let tree = view_tree(capture.clone(), capture_view, datas);
 
-    let search_str = create_rw_signal("".to_string());
+    let search_str = RwSignal::new("".to_string());
     let inner_search = search_str;
-    let match_ids = create_rw_signal((0, Vec::<ViewId>::new()));
+    let match_ids = RwSignal::new((0, Vec::<ViewId>::new()));
 
     let search = text_input(search_str)
         .style(|s| s.width_full())
@@ -558,7 +558,7 @@ fn tree_node(
     let row_id = row.id();
     let scroll_to = capture_signal.scroll_to;
     let expanding_selection = capture_signal.expanding_selection;
-    create_effect(move |_| {
+    Effect::new(move |_| {
         if let Some((selection, request_focus)) = expanding_selection.get() {
             if selection == id {
                 // Scroll to the row, then to the name part of the row.

@@ -1,21 +1,73 @@
-use std::{
-    cell::{Ref, RefCell},
-    marker::PhantomData,
-    rc::Rc,
+use std::{ops::Deref, rc::Rc, sync::Arc};
+
+use parking_lot::{Mutex, MutexGuard};
+
+use crate::{
+    id::Id,
+    runtime::Runtime,
+    signal::{SignalValue, TrackedRef, TrackedRefCell},
 };
 
-use crate::{id::Id, signal::NotThreadSafe};
-
-#[derive(Clone)]
-pub struct ReadSignalValue<T> {
-    pub(crate) value: Rc<RefCell<T>>,
-    pub(crate) ts: PhantomData<NotThreadSafe>,
+pub struct SyncReadRef<'a, T> {
+    _handle: Arc<Mutex<T>>,
+    pub(crate) guard: MutexGuard<'a, T>,
 }
 
-impl<T> ReadSignalValue<T> {
-    /// Borrows the current value stored in the Signal
-    pub fn borrow(&self) -> Ref<'_, T> {
-        self.value.borrow()
+pub struct LocalReadRef<'a, T> {
+    _handle: Rc<TrackedRefCell<T>>,
+    pub(crate) guard: TrackedRef<'a, T>,
+}
+
+pub enum ReadRef<'a, T> {
+    Sync(SyncReadRef<'a, T>),
+    Local(LocalReadRef<'a, T>),
+}
+
+impl<'a, T> Deref for SyncReadRef<'a, T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        &self.guard
+    }
+}
+
+impl<'a, T> Deref for LocalReadRef<'a, T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        &self.guard
+    }
+}
+
+impl<'a, T> Deref for ReadRef<'a, T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        match self {
+            ReadRef::Sync(v) => &v.guard,
+            ReadRef::Local(v) => &v.guard,
+        }
+    }
+}
+
+impl<'a, T> SyncReadRef<'a, T> {
+    pub(crate) fn new(handle: Arc<Mutex<T>>) -> Self {
+        let guard = handle.lock();
+        // The Arc keeps the data alive for the lifetime of the guard.
+        let guard = unsafe { std::mem::transmute::<MutexGuard<'_, T>, MutexGuard<'a, T>>(guard) };
+        Self {
+            _handle: handle,
+            guard,
+        }
+    }
+}
+
+impl<'a, T> LocalReadRef<'a, T> {
+    pub(crate) fn new(handle: Rc<TrackedRefCell<T>>) -> Self {
+        let guard = handle.borrow();
+        // The Rc keeps the data alive for the lifetime of the guard.
+        let guard = unsafe { std::mem::transmute::<TrackedRef<'_, T>, TrackedRef<'a, T>>(guard) };
+        Self {
+            _handle: handle,
+            guard,
+        }
     }
 }
 
@@ -23,8 +75,6 @@ pub trait SignalGet<T: Clone> {
     /// get the Signal Id
     fn id(&self) -> Id;
 
-    /// Clones and returns the current value stored in the Signal, but it doesn't subscribe
-    /// to the current running effect.
     fn get_untracked(&self) -> T
     where
         T: 'static,
@@ -32,8 +82,6 @@ pub trait SignalGet<T: Clone> {
         self.try_get_untracked().unwrap()
     }
 
-    /// Clones and returns the current value stored in the Signal, and subscribes
-    /// to the current running effect to this Signal.
     fn get(&self) -> T
     where
         T: 'static,
@@ -41,22 +89,28 @@ pub trait SignalGet<T: Clone> {
         self.try_get().unwrap()
     }
 
-    /// Try to clone and return the current value stored in the Signal, and returns None
-    /// if it's already disposed. It subscribes to the current running effect.
     fn try_get(&self) -> Option<T>
     where
         T: 'static,
     {
-        self.id().signal().map(|signal| signal.get())
+        self.id().signal().map(|signal| {
+            if matches!(signal.value, SignalValue::Local(_)) {
+                Runtime::assert_ui_thread();
+            }
+            signal.get()
+        })
     }
 
-    /// Try to clone and return the current value stored in the Signal, and returns None
-    /// if it's already disposed. It doesn't subscribe to the current running effect.
     fn try_get_untracked(&self) -> Option<T>
     where
         T: 'static,
     {
-        self.id().signal().map(|signal| signal.get_untracked())
+        self.id().signal().map(|signal| {
+            if matches!(signal.value, SignalValue::Local(_)) {
+                Runtime::assert_ui_thread();
+            }
+            signal.get_untracked()
+        })
     }
 }
 
@@ -65,13 +119,20 @@ pub trait SignalTrack<T> {
     /// Only subscribes to the current running effect to this Signal.
     ///
     fn track(&self) {
-        self.id().signal().unwrap().subscribe();
+        let signal = self.id().signal().unwrap();
+        if matches!(signal.value, SignalValue::Local(_)) {
+            Runtime::assert_ui_thread();
+        }
+        signal.subscribe();
     }
 
     /// If the signal isn't disposed,
     // subscribes to the current running effect to this Signal.
     fn try_track(&self) {
         if let Some(signal) = self.id().signal() {
+            if matches!(signal.value, SignalValue::Local(_)) {
+                Runtime::assert_ui_thread();
+            }
             signal.subscribe();
         }
     }
@@ -81,44 +142,50 @@ pub trait SignalWith<T> {
     /// get the Signal Id
     fn id(&self) -> Id;
 
-    /// Applies a closure to the current value stored in the Signal, and subscribes
-    /// to the current running effect to this Memo.
     fn with<O>(&self, f: impl FnOnce(&T) -> O) -> O
     where
         T: 'static,
     {
-        self.id().signal().unwrap().with(f)
+        let signal = self.id().signal().unwrap();
+        if matches!(signal.value, SignalValue::Local(_)) {
+            Runtime::assert_ui_thread();
+        }
+        signal.with(f)
     }
 
-    /// Applies a closure to the current value stored in the Signal, but it doesn't subscribe
-    /// to the current running effect.
     fn with_untracked<O>(&self, f: impl FnOnce(&T) -> O) -> O
     where
         T: 'static,
     {
-        self.id().signal().unwrap().with_untracked(f)
+        let signal = self.id().signal().unwrap();
+        if matches!(signal.value, SignalValue::Local(_)) {
+            Runtime::assert_ui_thread();
+        }
+        signal.with_untracked(f)
     }
 
-    /// If the signal isn't disposed, applies a closure to the current value stored in the Signal.
-    /// It subscribes to the current running effect.
     fn try_with<O>(&self, f: impl FnOnce(Option<&T>) -> O) -> O
     where
         T: 'static,
     {
         if let Some(signal) = self.id().signal() {
+            if matches!(signal.value, SignalValue::Local(_)) {
+                Runtime::assert_ui_thread();
+            }
             signal.with(|v| f(Some(v)))
         } else {
             f(None)
         }
     }
 
-    /// If the signal isn't disposed, applies a closure to the current value stored in the Signal,
-    /// but it doesn't subscribe to the current running effect.
     fn try_with_untracked<O>(&self, f: impl FnOnce(Option<&T>) -> O) -> O
     where
         T: 'static,
     {
         if let Some(signal) = self.id().signal() {
+            if matches!(signal.value, SignalValue::Local(_)) {
+                Runtime::assert_ui_thread();
+            }
             signal.with_untracked(|v| f(Some(v)))
         } else {
             f(None)
@@ -130,20 +197,16 @@ pub trait SignalRead<T> {
     /// get the Signal Id
     fn id(&self) -> Id;
 
-    /// Reads the data stored in the Signal to a RefCell, so that you can `borrow()`
-    /// and access the data.
-    /// It subscribes to the current running effect.
-    fn read(&self) -> ReadSignalValue<T>
+    /// Reads the data stored in the Signal, subscribing the current running effect.
+    fn read(&self) -> ReadRef<'_, T>
     where
         T: 'static,
     {
         self.try_read().unwrap()
     }
 
-    /// Reads the data stored in the Signal to a RefCell, so that you can `borrow()`
-    /// and access the data.
-    /// It doesn't subscribe to the current running effect.
-    fn read_untracked(&self) -> ReadSignalValue<T>
+    /// Reads the data stored in the Signal without subscribing.
+    fn read_untracked(&self) -> ReadRef<'_, T>
     where
         T: 'static,
     {
@@ -151,47 +214,14 @@ pub trait SignalRead<T> {
     }
 
     /// If the signal isn't disposed,
-    /// reads the data stored in the Signal to a RefCell, so that you can `borrow()`
-    /// and access the data.
-    /// It subscribes to the current running effect.
-    fn try_read(&self) -> Option<ReadSignalValue<T>>
+    /// reads the data stored in the Signal and subscribes to the current running effect.
+    fn try_read(&self) -> Option<ReadRef<'_, T>>
     where
-        T: 'static,
-    {
-        if let Some(signal) = self.id().signal() {
-            signal.subscribe();
-            Some(ReadSignalValue {
-                value: signal
-                    .value
-                    .clone()
-                    .downcast::<RefCell<T>>()
-                    .expect("to downcast signal type"),
-                ts: PhantomData,
-            })
-        } else {
-            None
-        }
-    }
+        T: 'static;
 
     /// If the signal isn't disposed,
-    /// reads the data stored in the Signal to a RefCell, so that you can `borrow()`
-    /// and access the data.
-    /// It doesn't subscribe to the current running effect.
-    fn try_read_untracked(&self) -> Option<ReadSignalValue<T>>
+    /// reads the data stored in the Signal without subscribing.
+    fn try_read_untracked(&self) -> Option<ReadRef<'_, T>>
     where
-        T: 'static,
-    {
-        if let Some(signal) = self.id().signal() {
-            Some(ReadSignalValue {
-                value: signal
-                    .value
-                    .clone()
-                    .downcast::<RefCell<T>>()
-                    .expect("to downcast signal type"),
-                ts: PhantomData,
-            })
-        } else {
-            None
-        }
-    }
+        T: 'static;
 }

@@ -1,6 +1,6 @@
 use floem::{
     animate::Animation,
-    reactive::{create_rw_signal, RwSignal, SignalGet, SignalUpdate},
+    reactive::{RwSignal, SignalGet, SignalUpdate},
     views::*,
     IntoView,
 };
@@ -33,7 +33,7 @@ fn main() {
 }
 
 fn app_view() -> impl IntoView {
-    let view = create_rw_signal(ViewSwitcher::One);
+    let view = RwSignal::new(ViewSwitcher::One);
 
     v_stack((
         button("Switch views").action(move || view.update(|which| which.toggle())),

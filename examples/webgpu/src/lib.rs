@@ -2,7 +2,7 @@ use floem::text::FONT_SYSTEM;
 use floem::window::WindowConfig;
 use floem::Application;
 use floem::{
-    reactive::{create_signal, SignalGet, SignalUpdate},
+    reactive::{RwSignal, SignalGet, SignalUpdate},
     views::{label, ButtonClass, Decorators},
     IntoView,
 };
@@ -16,7 +16,7 @@ const DEJAVU_SERIF: &[u8] = include_bytes!("../fonts/DejaVuSerif.ttf");
 
 pub fn app_view() -> impl IntoView {
     // Create a reactive signal with a counter value, defaulting to 0
-    let (counter, set_counter) = create_signal(0);
+    let counter = RwSignal::new(0);
 
     // Create a vertical layout
     (
@@ -25,10 +25,10 @@ pub fn app_view() -> impl IntoView {
         // Create a horizontal layout
         (
             "Increment".class(ButtonClass).on_click_stop(move |_| {
-                set_counter.update(|value| *value += 1);
+                counter.update(|value| *value += 1);
             }),
             "Decrement".class(ButtonClass).on_click_stop(move |_| {
-                set_counter.update(|value| *value -= 1);
+                counter.update(|value| *value -= 1);
             }),
         ),
     )

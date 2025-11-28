@@ -8,7 +8,7 @@ use crate::style::{CustomStylable, CustomStyle, Style, StylePropValue};
 use crate::view_state::{Stack, StackOffset};
 use crate::views::{Decorators, static_label};
 use crate::{AnyView, IntoView, View, ViewId, prop, prop_extractor, style_class};
-use floem_reactive::create_updater;
+use floem_reactive::UpdaterEffect;
 use floem_renderer::text::Align;
 use fluent_bundle::{FluentBundle, FluentResource};
 
@@ -260,7 +260,7 @@ impl L10n {
         // for the lifetime of the L10n struct
         let static_ref: &'static str = unsafe { &*arg_key_ptr };
 
-        let initial_val = create_updater(
+        let initial_val = UpdaterEffect::new(
             move || arg_val().into(),
             move |arg_val: FluentValue<'static>| {
                 id.update_state(L10nState::Arg(offset, arg_val));
@@ -288,7 +288,7 @@ impl L10n {
     /// This function will reactively update its value on the signal change.
     pub fn fallback<S: Into<String>>(mut self, fallback: impl Fn() -> S + 'static) -> Self {
         let id = self.id;
-        let initial_fallback = create_updater(
+        let initial_fallback = UpdaterEffect::new(
             move || fallback().into(),
             move |fallback| {
                 id.update_state(L10nState::Fallback(fallback));

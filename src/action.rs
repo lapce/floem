@@ -8,7 +8,7 @@
 
 use std::sync::atomic::AtomicU64;
 
-use floem_reactive::SignalWith;
+use floem_reactive::{SignalWith, UpdaterEffect};
 use peniko::kurbo::{Point, Size, Vec2};
 use winit::window::{ResizeDirection, Theme};
 
@@ -190,7 +190,7 @@ where
     T: std::hash::Hash + 'static,
     F: Fn() + Clone + 'static,
 {
-    crate::reactive::create_stateful_updater(
+    UpdaterEffect::new_stateful(
         move |prev_opt: Option<(u64, Option<TimerToken>)>| {
             use std::hash::Hasher;
             let mut hasher = std::hash::DefaultHasher::new();

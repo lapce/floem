@@ -12,7 +12,7 @@ use crate::{
     unit::Px,
     view_state::StackOffset,
 };
-use floem_reactive::create_effect;
+use floem_reactive::Effect;
 use peniko::{
     Brush,
     kurbo::{self, Line, Point, Rect, Stroke},
@@ -305,7 +305,7 @@ impl View for ResizableStack {
 impl ResizableStack {
     pub fn custom_sizes(self, sizes: impl Fn() -> Vec<(usize, f64)> + 'static) -> Self {
         let id = self.id;
-        create_effect(move |_| {
+        Effect::new(move |_| {
             let sizes = sizes();
             id.update_state(sizes);
         });

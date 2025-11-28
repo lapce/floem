@@ -1,7 +1,7 @@
 #![deny(missing_docs)]
 use std::{hash::Hash, marker::PhantomData};
 
-use floem_reactive::{Scope, as_child_of_current_scope, create_effect};
+use floem_reactive::{Effect, Scope};
 use smallvec::SmallVec;
 
 use crate::{
@@ -194,7 +194,7 @@ where
 {
     let id = ViewId::new();
 
-    create_effect(move |prev_hash_run| {
+    Effect::new(move |prev_hash_run| {
         let items = each_fn();
         let items = items.into_iter().collect::<SmallVec<[_; 128]>>();
         let hashed_items = items.iter().map(&key_fn).collect::<FxIndexSet<_>>();
@@ -222,7 +222,7 @@ where
         HashRun(hashed_items)
     });
 
-    create_effect(move |_| {
+    Effect::new(move |_| {
         let active = active_fn();
         match active {
             Some(idx) => id.update_state(TabState::Active::<T>(idx)),
@@ -230,7 +230,7 @@ where
         }
     });
 
-    let view_fn = Box::new(as_child_of_current_scope(move |e| view_fn(e).into_any()));
+    let view_fn = Box::new(Scope::current().enter_child(move |e| view_fn(e).into_any()));
 
     Tab {
         id,

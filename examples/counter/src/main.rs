@@ -1,7 +1,7 @@
 use floem::{prelude::*, unit::UnitExt};
 
 fn app_view() -> impl IntoView {
-    let (counter, set_counter) = create_signal(0);
+    let counter = RwSignal::new(0);
     let view = (
         dyn_view(move || format!("Value: {}", counter.get())),
         counter.style(|s| s.padding(10.0)),
@@ -22,13 +22,13 @@ fn app_view() -> impl IntoView {
                 })
                 .on_click_stop({
                     move |_| {
-                        set_counter.update(|value| *value += 1);
+                        counter.update(|value| *value += 1);
                     }
                 }),
             "Decrement"
                 .on_click_stop({
                     move |_| {
-                        set_counter.update(|value| *value -= 1);
+                        counter.update(|value| *value -= 1);
                     }
                 })
                 .style(|s| {
@@ -45,7 +45,7 @@ fn app_view() -> impl IntoView {
             "Reset to 0"
                 .on_click_stop(move |_| {
                     println!("Reset counter pressed"); // will not fire if button is disabled
-                    set_counter.update(|value| *value = 0);
+                    counter.update(|value| *value = 0);
                 })
                 .style(move |s| {
                     s.box_shadow_blur(5.0)

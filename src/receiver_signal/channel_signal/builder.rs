@@ -298,7 +298,7 @@ where
     use floem_reactive::*;
 
     let cx = Scope::current();
-    let trigger = with_scope(cx, ExtSendTrigger::new);
+    let trigger = cx.enter(ExtSendTrigger::new);
     let (read, write) = cx.create_signal(initial);
     let (read_error, write_error) = cx.create_signal(None);
 
@@ -325,7 +325,7 @@ where
     use floem_reactive::*;
 
     let cx = Scope::current();
-    let trigger = with_scope(cx, ExtSendTrigger::new);
+    let trigger = cx.enter(ExtSendTrigger::new);
     let (read, write) = cx.create_signal(None);
     let (read_error, write_error) = cx.create_signal(None);
 

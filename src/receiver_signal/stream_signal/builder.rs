@@ -189,7 +189,7 @@ where
     use floem_reactive::*;
 
     let cx = Scope::current();
-    let trigger = with_scope(cx, ExtSendTrigger::new);
+    let trigger = cx.enter(ExtSendTrigger::new);
     let (read, write) = cx.create_signal(initial);
     let (read_finished, write_finished) = cx.create_signal(false);
 
@@ -215,7 +215,7 @@ where
     use floem_reactive::*;
 
     let cx = Scope::current();
-    let trigger = with_scope(cx, ExtSendTrigger::new);
+    let trigger = cx.enter(ExtSendTrigger::new);
     let (read, write) = cx.create_signal(None);
     let (read_finished, write_finished) = cx.create_signal(false);
 

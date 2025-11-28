@@ -1,9 +1,7 @@
 use dropdown::Dropdown;
 use strum::IntoEnumIterator;
 
-use floem::{
-    prelude::*, reactive::create_effect, theme::StyleThemeExt, views::scroll::ScrollClass,
-};
+use floem::{prelude::*, reactive::Effect, theme::StyleThemeExt, views::scroll::ScrollClass};
 
 use crate::form::{self, form_item};
 
@@ -24,7 +22,7 @@ impl std::fmt::Display for Values {
 pub fn dropdown_view() -> impl IntoView {
     let dropdown_active_item = RwSignal::new(Values::Three);
 
-    create_effect(move |_| {
+    Effect::new(move |_| {
         let active_item = dropdown_active_item.get();
         println!("Selected: {active_item}");
     });

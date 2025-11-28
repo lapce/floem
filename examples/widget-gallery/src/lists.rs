@@ -1,7 +1,7 @@
 use floem::{
     imbl,
     prelude::*,
-    reactive::create_effect,
+    reactive::Effect,
     taffy::{prelude::*, Line},
     text::Weight,
     theme::{border_style, StyleThemeExt},
@@ -74,7 +74,7 @@ fn enhanced_list() -> impl IntoView {
 
     let item_view = move |(index, (state, item))| {
         let checkbox_state = RwSignal::new(state);
-        create_effect(move |_| {
+        Effect::new(move |_| {
             let state = checkbox_state.get();
             long_list.update(|list| {
                 // because this is an immutable vector, getting the index will always result in the correct item even if we remove elements.
