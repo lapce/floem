@@ -2,8 +2,10 @@ use std::{
     cell::{RefCell, RefMut},
     ops::{Deref, DerefMut},
     rc::Rc,
-    sync::{Arc, Mutex, MutexGuard},
+    sync::Arc,
 };
+
+use parking_lot::{Mutex, MutexGuard};
 
 use crate::id::Id;
 
@@ -25,7 +27,7 @@ impl<T> WriteSignalValue<T> {
     /// Mutably borrows the current value stored in the Signal
     pub fn borrow_mut(&self) -> WriteBorrow<'_, T> {
         match &self.value {
-            ValueHandle::Sync(v) => WriteBorrow::Sync(v.lock().unwrap()),
+            ValueHandle::Sync(v) => WriteBorrow::Sync(v.lock()),
             ValueHandle::Local(v) => WriteBorrow::Local(v.borrow_mut()),
         }
     }

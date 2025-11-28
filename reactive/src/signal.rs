@@ -5,8 +5,10 @@ use std::{
     fmt,
     marker::PhantomData,
     rc::Rc,
-    sync::{Arc, Mutex, MutexGuard},
+    sync::Arc,
 };
+
+use parking_lot::{Mutex, MutexGuard};
 
 use crate::{
     effect::run_effect,
@@ -330,7 +332,7 @@ impl Signal {
                     .as_ref()
                     .downcast_ref::<Mutex<T>>()
                     .expect("to downcast signal type");
-                SignalBorrow::Sync(v.lock().unwrap())
+                SignalBorrow::Sync(v.lock())
             }
             SignalValue::Local(v) => {
                 let v = v
@@ -349,7 +351,7 @@ impl Signal {
                     .as_ref()
                     .downcast_ref::<Mutex<T>>()
                     .expect("to downcast signal type");
-                v.lock().unwrap().clone()
+                v.lock().clone()
             }
             SignalValue::Local(v) => {
                 let v = v
@@ -373,7 +375,7 @@ impl Signal {
                     .as_ref()
                     .downcast_ref::<Mutex<T>>()
                     .expect("to downcast signal type");
-                f(&v.lock().unwrap())
+                f(&v.lock())
             }
             SignalValue::Local(v) => {
                 let v = v
@@ -395,7 +397,7 @@ impl Signal {
         f: impl FnOnce(&mut T) -> U,
     ) -> U {
         let value = self.as_sync::<T>();
-        let mut guard = value.lock().unwrap();
+        let mut guard = value.lock();
         let result = f(&mut *guard);
         drop(guard);
         self.run_effects();
@@ -412,7 +414,7 @@ impl Signal {
     }
 
     pub(crate) fn subscriber_ids(&self) -> HashSet<Id> {
-        self.subscribers.lock().unwrap().iter().copied().collect()
+        self.subscribers.lock().iter().copied().collect()
     }
 
     pub(crate) fn run_effects(&self) {
@@ -440,7 +442,7 @@ impl Signal {
     pub(crate) fn subscribe(&self) {
         RUNTIME.with(|runtime| {
             if let Some(effect) = runtime.current_effect.borrow().as_ref() {
-                self.subscribers.lock().unwrap().insert(effect.id());
+                self.subscribers.lock().insert(effect.id());
                 effect.add_observer(self.id);
             }
         });
@@ -479,7 +481,7 @@ impl<T: Clone + Send + Sync> SignalGet<T> for RwSignal<T, SyncStorage> {
     {
         self.id()
             .signal()
-            .map(|signal| signal.as_sync::<T>().lock().unwrap().clone())
+            .map(|signal| signal.as_sync::<T>().lock().clone())
             .unwrap()
     }
 
@@ -496,7 +498,7 @@ impl<T: Clone + Send + Sync> SignalGet<T> for RwSignal<T, SyncStorage> {
     {
         self.id().signal().map(|signal| {
             signal.subscribe();
-            signal.as_sync::<T>().lock().unwrap().clone()
+            signal.as_sync::<T>().lock().clone()
         })
     }
 
@@ -506,7 +508,7 @@ impl<T: Clone + Send + Sync> SignalGet<T> for RwSignal<T, SyncStorage> {
     {
         self.id()
             .signal()
-            .map(|signal| signal.as_sync::<T>().lock().unwrap().clone())
+            .map(|signal| signal.as_sync::<T>().lock().clone())
     }
 }
 
@@ -522,7 +524,7 @@ impl<T: Send + Sync> SignalWith<T> for RwSignal<T, SyncStorage> {
         let signal = self.id().signal().unwrap();
         signal.subscribe();
         let handle = signal.as_sync::<T>();
-        let guard = handle.lock().unwrap();
+        let guard = handle.lock();
         f(&*guard)
     }
 
@@ -532,7 +534,7 @@ impl<T: Send + Sync> SignalWith<T> for RwSignal<T, SyncStorage> {
     {
         let signal = self.id().signal().unwrap();
         let handle = signal.as_sync::<T>();
-        let guard = handle.lock().unwrap();
+        let guard = handle.lock();
         f(&*guard)
     }
 
@@ -543,7 +545,7 @@ impl<T: Send + Sync> SignalWith<T> for RwSignal<T, SyncStorage> {
         if let Some(signal) = self.id().signal() {
             signal.subscribe();
             let handle = signal.as_sync::<T>();
-            let guard = handle.lock().unwrap();
+            let guard = handle.lock();
             f(Some(&*guard))
         } else {
             f(None)
@@ -556,7 +558,7 @@ impl<T: Send + Sync> SignalWith<T> for RwSignal<T, SyncStorage> {
     {
         if let Some(signal) = self.id().signal() {
             let handle = signal.as_sync::<T>();
-            let guard = handle.lock().unwrap();
+            let guard = handle.lock();
             f(Some(&*guard))
         } else {
             f(None)
@@ -694,7 +696,7 @@ impl<T: Clone + Send + Sync> SignalGet<T> for ReadSignal<T, SyncStorage> {
     {
         self.id().signal().map(|signal| {
             signal.subscribe();
-            signal.as_sync::<T>().lock().unwrap().clone()
+            signal.as_sync::<T>().lock().clone()
         })
     }
 
@@ -704,7 +706,7 @@ impl<T: Clone + Send + Sync> SignalGet<T> for ReadSignal<T, SyncStorage> {
     {
         self.id()
             .signal()
-            .map(|signal| signal.as_sync::<T>().lock().unwrap().clone())
+            .map(|signal| signal.as_sync::<T>().lock().clone())
     }
 }
 
@@ -720,7 +722,7 @@ impl<T: Send + Sync> SignalWith<T> for ReadSignal<T, SyncStorage> {
         let signal = self.id().signal().unwrap();
         signal.subscribe();
         let handle = signal.as_sync::<T>();
-        let guard = handle.lock().unwrap();
+        let guard = handle.lock();
         f(&*guard)
     }
 
@@ -730,7 +732,7 @@ impl<T: Send + Sync> SignalWith<T> for ReadSignal<T, SyncStorage> {
     {
         let signal = self.id().signal().unwrap();
         let handle = signal.as_sync::<T>();
-        let guard = handle.lock().unwrap();
+        let guard = handle.lock();
         f(&*guard)
     }
 
@@ -741,7 +743,7 @@ impl<T: Send + Sync> SignalWith<T> for ReadSignal<T, SyncStorage> {
         if let Some(signal) = self.id().signal() {
             signal.subscribe();
             let handle = signal.as_sync::<T>();
-            let guard = handle.lock().unwrap();
+            let guard = handle.lock();
             f(Some(&*guard))
         } else {
             f(None)
@@ -754,7 +756,7 @@ impl<T: Send + Sync> SignalWith<T> for ReadSignal<T, SyncStorage> {
     {
         if let Some(signal) = self.id().signal() {
             let handle = signal.as_sync::<T>();
-            let guard = handle.lock().unwrap();
+            let guard = handle.lock();
             f(Some(&*guard))
         } else {
             f(None)

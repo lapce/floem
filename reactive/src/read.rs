@@ -2,8 +2,10 @@ use std::{
     cell::{Ref, RefCell},
     ops::Deref,
     rc::Rc,
-    sync::{Arc, Mutex, MutexGuard},
+    sync::Arc,
 };
+
+use parking_lot::{Mutex, MutexGuard};
 
 use crate::{id::Id, signal::SignalValue};
 
@@ -16,7 +18,7 @@ impl<T> ReadSignalValue<T> {
     /// Borrows the current value stored in the Signal
     pub fn borrow(&self) -> ReadBorrow<'_, T> {
         match &self.value {
-            ValueHandle::Sync(v) => ReadBorrow::Sync(v.lock().unwrap()),
+            ValueHandle::Sync(v) => ReadBorrow::Sync(v.lock()),
             ValueHandle::Local(v) => ReadBorrow::Local(v.borrow()),
         }
     }

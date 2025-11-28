@@ -5,8 +5,10 @@ use std::{
     fmt,
     marker::PhantomData,
     rc::Rc,
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
+
+use parking_lot::Mutex;
 
 use crate::{
     create_effect, create_updater,

@@ -1,8 +1,10 @@
 use std::{
     any::Any,
     collections::{HashMap, HashSet},
-    sync::{Arc, LazyLock, Mutex, OnceLock, RwLock, RwLockReadGuard, RwLockWriteGuard},
+    sync::{Arc, LazyLock, OnceLock, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
+
+use parking_lot::Mutex;
 
 use crate::id::Id;
 
@@ -76,7 +78,7 @@ impl SyncRuntime {
 
     pub(crate) fn enqueue_effects(&self, ids: impl IntoIterator<Item = Id>) {
         let waker = {
-            let mut queue = self.pending_effects.lock().unwrap();
+            let mut queue = self.pending_effects.lock();
             queue.extend(ids);
             self.waker.get().cloned()
         };
@@ -88,7 +90,7 @@ impl SyncRuntime {
 
     pub(crate) fn enqueue_disposals(&self, ids: impl IntoIterator<Item = Id>) {
         let waker = {
-            let mut queue = self.pending_disposals.lock().unwrap();
+            let mut queue = self.pending_disposals.lock();
             queue.extend(ids);
             self.waker.get().cloned()
         };
@@ -99,19 +101,19 @@ impl SyncRuntime {
     }
 
     pub(crate) fn take_pending_effects(&self) -> Vec<Id> {
-        std::mem::take(&mut *self.pending_effects.lock().unwrap())
+        std::mem::take(&mut *self.pending_effects.lock())
     }
 
     pub(crate) fn take_pending_disposals(&self) -> Vec<Id> {
-        std::mem::take(&mut *self.pending_disposals.lock().unwrap())
+        std::mem::take(&mut *self.pending_disposals.lock())
     }
 
     pub(crate) fn has_pending_effects(&self) -> bool {
-        !self.pending_effects.lock().unwrap().is_empty()
+        !self.pending_effects.lock().is_empty()
     }
 
     pub(crate) fn has_pending_disposals(&self) -> bool {
-        !self.pending_disposals.lock().unwrap().is_empty()
+        !self.pending_disposals.lock().is_empty()
     }
 
     pub(crate) fn set_waker(&self, waker: impl Fn() + Send + Sync + 'static) {
