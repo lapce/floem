@@ -15,7 +15,7 @@ use smallvec::SmallVec;
 use crate::{
     effect::{run_effect, EffectTrait},
     id::Id,
-    signal::Signal,
+    signal::SignalState,
     sync_runtime::SYNC_RUNTIME,
 };
 
@@ -32,7 +32,7 @@ pub struct Runtime {
     pub(crate) current_effect: RefCell<Option<Rc<dyn EffectTrait>>>,
     pub(crate) current_scope: RefCell<Id>,
     pub(crate) children: RefCell<HashMap<Id, HashSet<Id>>>,
-    pub(crate) signals: RefCell<HashMap<Id, Signal>>,
+    pub(crate) signals: RefCell<HashMap<Id, SignalState>>,
     pub(crate) effects: RefCell<HashMap<Id, Rc<dyn EffectTrait>>>,
     pub(crate) contexts: RefCell<HashMap<TypeId, Box<dyn Any>>>,
     pub(crate) batching: Cell<bool>,

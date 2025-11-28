@@ -97,14 +97,14 @@ impl<T> floem_reactive::SignalRead<Option<T>> for FutureSignal<T> {
         self.value.id()
     }
 
-    fn try_read(&self) -> Option<floem_reactive::ReadSignalValue<Option<T>>>
+    fn try_read(&self) -> Option<floem_reactive::ReadRef<'_, Option<T>>>
     where
         T: 'static,
     {
         self.value.try_read()
     }
 
-    fn try_read_untracked(&self) -> Option<floem_reactive::ReadSignalValue<Option<T>>>
+    fn try_read_untracked(&self) -> Option<floem_reactive::ReadRef<'_, Option<T>>>
     where
         T: 'static,
     {

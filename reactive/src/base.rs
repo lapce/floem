@@ -1,8 +1,8 @@
 use std::marker::PhantomData;
 
 use crate::{
-    id::Id, signal::Signal, storage::SyncStorage, ReadSignal, RwSignal, SignalGet, SignalUpdate,
-    SignalWith, WriteSignal,
+    id::Id, signal::SignalState, storage::SyncStorage, ReadSignal, RwSignal, SignalGet,
+    SignalUpdate, SignalWith, WriteSignal,
 };
 
 /// BaseSignal gives you another way to control the lifetime of a Signal apart
@@ -41,7 +41,7 @@ pub fn create_base_signal<T: 'static>(value: T) -> BaseSignal<T> {
 
 impl<T: 'static> BaseSignal<T> {
     pub fn new(value: T) -> Self {
-        let id = Signal::new(value);
+        let id = SignalState::new(value);
         BaseSignal {
             id,
             ty: PhantomData,
@@ -80,67 +80,11 @@ impl<T: Clone + 'static> SignalGet<T> for BaseSignal<T> {
     fn id(&self) -> Id {
         self.id
     }
-
-    fn get_untracked(&self) -> T
-    where
-        T: 'static,
-    {
-        self.read_only().get_untracked()
-    }
-
-    fn get(&self) -> T
-    where
-        T: 'static,
-    {
-        self.read_only().get()
-    }
-
-    fn try_get(&self) -> Option<T>
-    where
-        T: 'static,
-    {
-        Some(self.get())
-    }
-
-    fn try_get_untracked(&self) -> Option<T>
-    where
-        T: 'static,
-    {
-        Some(self.get_untracked())
-    }
 }
 
 impl<T: Clone + 'static> SignalWith<T> for BaseSignal<T> {
     fn id(&self) -> Id {
         self.id
-    }
-
-    fn with<O>(&self, f: impl FnOnce(&T) -> O) -> O
-    where
-        T: 'static,
-    {
-        self.read_only().with(f)
-    }
-
-    fn with_untracked<O>(&self, f: impl FnOnce(&T) -> O) -> O
-    where
-        T: 'static,
-    {
-        self.read_only().with_untracked(f)
-    }
-
-    fn try_with<O>(&self, f: impl FnOnce(Option<&T>) -> O) -> O
-    where
-        T: 'static,
-    {
-        f(Some(&self.get()))
-    }
-
-    fn try_with_untracked<O>(&self, f: impl FnOnce(Option<&T>) -> O) -> O
-    where
-        T: 'static,
-    {
-        f(Some(&self.get_untracked()))
     }
 }
 
@@ -193,7 +137,7 @@ impl<T: Send + Sync + 'static> Drop for SyncBaseSignal<T> {
 
 impl<T: Send + Sync + 'static> SyncBaseSignal<T> {
     pub fn new(value: T) -> Self {
-        let id = Signal::new_sync(value);
+        let id = SignalState::new_sync(value);
         SyncBaseSignal {
             id,
             ty: PhantomData,
@@ -232,67 +176,11 @@ impl<T: Clone + Send + Sync + 'static> SignalGet<T> for SyncBaseSignal<T> {
     fn id(&self) -> Id {
         self.id
     }
-
-    fn get_untracked(&self) -> T
-    where
-        T: 'static,
-    {
-        self.read_only().get_untracked()
-    }
-
-    fn get(&self) -> T
-    where
-        T: 'static,
-    {
-        self.read_only().get()
-    }
-
-    fn try_get(&self) -> Option<T>
-    where
-        T: 'static,
-    {
-        Some(self.get())
-    }
-
-    fn try_get_untracked(&self) -> Option<T>
-    where
-        T: 'static,
-    {
-        Some(self.get_untracked())
-    }
 }
 
 impl<T: Clone + Send + Sync + 'static> SignalWith<T> for SyncBaseSignal<T> {
     fn id(&self) -> Id {
         self.id
-    }
-
-    fn with<O>(&self, f: impl FnOnce(&T) -> O) -> O
-    where
-        T: 'static,
-    {
-        self.read_only().with(f)
-    }
-
-    fn with_untracked<O>(&self, f: impl FnOnce(&T) -> O) -> O
-    where
-        T: 'static,
-    {
-        self.read_only().with_untracked(f)
-    }
-
-    fn try_with<O>(&self, f: impl FnOnce(Option<&T>) -> O) -> O
-    where
-        T: 'static,
-    {
-        f(Some(&self.get()))
-    }
-
-    fn try_with_untracked<O>(&self, f: impl FnOnce(Option<&T>) -> O) -> O
-    where
-        T: 'static,
-    {
-        f(Some(&self.get_untracked()))
     }
 }
 

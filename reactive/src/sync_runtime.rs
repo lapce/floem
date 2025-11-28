@@ -19,9 +19,9 @@ pub(crate) struct SyncSignal {
     pub(crate) subscribers: Arc<Mutex<HashSet<Id>>>,
 }
 
-impl From<SyncSignal> for crate::signal::Signal {
+impl From<SyncSignal> for crate::signal::SignalState {
     fn from(sync: SyncSignal) -> Self {
-        crate::signal::Signal {
+        crate::signal::SignalState {
             id: sync.id,
             value: crate::signal::SignalValue::Sync(sync.value),
             subscribers: sync.subscribers,

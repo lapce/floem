@@ -3,7 +3,7 @@ use std::sync::atomic::AtomicU64;
 use crate::{
     effect::observer_clean_up,
     runtime::{Runtime, RUNTIME},
-    signal::Signal,
+    signal::SignalState,
     sync_runtime::SYNC_RUNTIME,
 };
 
@@ -19,7 +19,7 @@ impl Id {
     }
 
     /// Try to get the Signal that links with this Id
-    pub(crate) fn signal(&self) -> Option<Signal> {
+    pub(crate) fn signal(&self) -> Option<SignalState> {
         if Runtime::is_ui_thread() {
             if let Some(sig) = RUNTIME.with(|runtime| runtime.signals.borrow().get(self).cloned()) {
                 return Some(sig);
@@ -31,7 +31,7 @@ impl Id {
     }
 
     /// Try to set the Signal to be linking with this Id
-    pub(crate) fn add_signal(&self, signal: Signal) {
+    pub(crate) fn add_signal(&self, signal: SignalState) {
         RUNTIME.with(|runtime| runtime.signals.borrow_mut().insert(*self, signal));
     }
 
@@ -92,7 +92,7 @@ impl Id {
         }
     }
 
-    fn cleanup_signal(signal: Option<Signal>) {
+    fn cleanup_signal(signal: Option<SignalState>) {
         if let Some(signal) = signal {
             for effect_id in signal.subscriber_ids() {
                 // Drop any effect that was subscribed to this signal so it can't linger

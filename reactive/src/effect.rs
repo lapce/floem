@@ -6,11 +6,12 @@ use crate::{
     scope::Scope,
 };
 
-pub(crate) trait EffectTrait {
+pub(crate) trait EffectTrait: Any {
     fn id(&self) -> Id;
     fn run(&self) -> bool;
     fn add_observer(&self, id: Id);
     fn clear_observers(&self) -> HashSet<Id>;
+    fn as_any(&self) -> &dyn Any;
 }
 
 /// Handle for a running effect. Prefer `Effect::new` over `create_effect`.
@@ -304,7 +305,7 @@ pub(crate) fn observer_clean_up(effect: &Rc<dyn EffectTrait>) {
 impl<T, F> EffectTrait for Effect<T, F>
 where
     T: 'static,
-    F: Fn(Option<T>) -> T,
+    F: Fn(Option<T>) -> T + 'static,
 {
     fn id(&self) -> Id {
         self.id
@@ -328,14 +329,18 @@ where
     fn clear_observers(&self) -> HashSet<Id> {
         mem::take(&mut *self.observers.borrow_mut())
     }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 }
 
 impl<T, I, C, U> EffectTrait for UpdaterEffect<T, I, C, U>
 where
     T: 'static,
     I: 'static,
-    C: Fn(Option<T>) -> (I, T),
-    U: Fn(I, T) -> T,
+    C: Fn(Option<T>) -> (I, T) + 'static,
+    U: Fn(I, T) -> T + 'static,
 {
     fn id(&self) -> Id {
         self.id
@@ -358,6 +363,10 @@ where
 
     fn clear_observers(&self) -> HashSet<Id> {
         mem::take(&mut *self.observers.borrow_mut())
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 
@@ -446,5 +455,9 @@ impl EffectTrait for TrackingEffect {
 
     fn clear_observers(&self) -> HashSet<Id> {
         mem::take(&mut *self.observers.borrow_mut())
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }

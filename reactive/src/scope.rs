@@ -9,7 +9,7 @@ use crate::{
     id::Id,
     memo::{create_memo, Memo},
     runtime::{Runtime, RUNTIME},
-    signal::{ReadSignal, RwSignal, Signal, SignalValue, WriteSignal},
+    signal::{ReadSignal, RwSignal, SignalState, SignalValue, WriteSignal},
     storage::{SyncStorage, UnsyncStorage},
     trigger::{create_trigger, Trigger},
 };
@@ -201,7 +201,7 @@ impl Scope {
         let signal = if let Some(signal) = self.0.signal() {
             signal
         } else {
-            let signal = Signal {
+            let signal = SignalState {
                 id: self.0,
                 subscribers: Arc::new(Mutex::new(HashSet::new())),
                 value: SignalValue::Local(Rc::new(RefCell::new(()))),

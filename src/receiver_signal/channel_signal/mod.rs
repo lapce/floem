@@ -150,14 +150,14 @@ impl<T, E> floem_reactive::SignalRead<T> for ChannelSignal<T, E> {
         self.value.id()
     }
 
-    fn try_read(&self) -> Option<floem_reactive::ReadSignalValue<T>>
+    fn try_read(&self) -> Option<floem_reactive::ReadRef<'_, T>>
     where
         T: 'static,
     {
         self.value.try_read()
     }
 
-    fn try_read_untracked(&self) -> Option<floem_reactive::ReadSignalValue<T>>
+    fn try_read_untracked(&self) -> Option<floem_reactive::ReadRef<'_, T>>
     where
         T: 'static,
     {

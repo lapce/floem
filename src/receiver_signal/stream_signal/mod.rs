@@ -136,6 +136,20 @@ impl<T> floem_reactive::SignalRead<T> for StreamSignal<T> {
     fn id(&self) -> floem_reactive::ReactiveId {
         self.value.id()
     }
+
+    fn try_read(&self) -> Option<floem_reactive::ReadRef<'_, T>>
+    where
+        T: 'static,
+    {
+        self.value.try_read()
+    }
+
+    fn try_read_untracked(&self) -> Option<floem_reactive::ReadRef<'_, T>>
+    where
+        T: 'static,
+    {
+        self.value.try_read_untracked()
+    }
 }
 
 impl<T> floem_reactive::SignalTrack<T> for StreamSignal<T> {

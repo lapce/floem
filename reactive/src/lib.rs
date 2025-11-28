@@ -32,8 +32,8 @@ pub use effect::{
     SignalTracker, UpdaterEffect,
 };
 pub use id::Id as ReactiveId;
-pub use memo::{create_memo, Memo, SyncMemo};
-pub use read::{ReadSignalValue, SignalGet, SignalRead, SignalTrack, SignalWith};
+pub use memo::{create_memo, Memo};
+pub use read::{ReadRef, SignalGet, SignalRead, SignalTrack, SignalWith};
 pub use runtime::Runtime;
 pub use scope::{as_child_of_current_scope, with_scope, Scope};
 pub use signal::{
@@ -41,4 +41,4 @@ pub use signal::{
     SyncWriteSignal, WriteSignal,
 };
 pub use trigger::{create_trigger, Trigger};
-pub use write::{SignalUpdate, SignalWrite, WriteSignalValue};
+pub use write::{SignalUpdate, SignalWrite, WriteRef};

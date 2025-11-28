@@ -1,9 +1,8 @@
 use std::marker::PhantomData;
 
 use crate::{
-    read::SignalTrack,
     storage::{SyncStorage, UnsyncStorage},
-    RwSignal, SignalGet, SignalUpdate, SignalWith,
+    RwSignal, SignalGet, SignalTrack, SignalUpdate, SignalWith,
 };
 
 /// A derived signal backed by a local [`RwSignal`] (UI-thread only).
@@ -150,16 +149,6 @@ where
 {
     fn id(&self) -> crate::id::Id {
         self.signal.id
-    }
-
-    fn track(&self) {
-        SignalWith::id(self).signal().unwrap().subscribe();
-    }
-
-    fn try_track(&self) {
-        if let Some(signal) = SignalWith::id(self).signal() {
-            signal.subscribe();
-        }
     }
 }
 
@@ -403,15 +392,6 @@ where
 {
     fn id(&self) -> crate::id::Id {
         self.signal.id
-    }
-    fn track(&self) {
-        SignalWith::id(self).signal().unwrap().subscribe();
-    }
-
-    fn try_track(&self) {
-        if let Some(signal) = SignalWith::id(self).signal() {
-            signal.subscribe();
-        }
     }
 }
 

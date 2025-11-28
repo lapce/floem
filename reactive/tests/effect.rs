@@ -1,7 +1,8 @@
 use std::{cell::Cell, rc::Rc};
 
 use floem_reactive::{
-    batch, create_effect, create_rw_signal, Runtime, SignalGet, SignalTrack, SignalUpdate,
+    batch, create_effect, create_rw_signal, Runtime, SignalGet, SignalRead, SignalTrack,
+    SignalUpdate, SignalWrite,
 };
 
 #[test]
@@ -131,4 +132,83 @@ fn assert_send_sync<T: Send + Sync>() {}
 #[test]
 fn signals_are_send_sync_when_value_is() {
     // no-op for local-only signals
+}
+
+#[test]
+fn track_default_subscribes() {
+    let signal = create_rw_signal(0);
+    let runs = Rc::new(Cell::new(0));
+
+    create_effect({
+        let runs = runs.clone();
+        move |_| {
+            signal.track();
+            runs.set(runs.get() + 1);
+        }
+    });
+
+    assert_eq!(runs.get(), 1);
+    signal.set(1);
+    Runtime::drain_pending_work();
+    assert_eq!(runs.get(), 2);
+}
+
+#[test]
+fn read_untracked_does_not_subscribe() {
+    let signal = create_rw_signal(0);
+    let tracked_runs = Rc::new(Cell::new(0));
+    let untracked_runs = Rc::new(Cell::new(0));
+
+    create_effect({
+        let tracked_runs = tracked_runs.clone();
+        move |_| {
+            signal.get();
+            tracked_runs.set(tracked_runs.get() + 1);
+        }
+    });
+
+    create_effect({
+        let untracked_runs = untracked_runs.clone();
+        move |_| {
+            signal.read_untracked();
+            untracked_runs.set(untracked_runs.get() + 1);
+        }
+    });
+
+    assert_eq!(tracked_runs.get(), 1);
+    assert_eq!(untracked_runs.get(), 1);
+
+    signal.set(1);
+    Runtime::drain_pending_work();
+
+    assert_eq!(tracked_runs.get(), 2, "tracked effect reruns");
+    assert_eq!(
+        untracked_runs.get(),
+        1,
+        "untracked read should not resubscribe"
+    );
+}
+
+#[test]
+fn write_ref_drop_notifies_subscribers_once() {
+    let signal = create_rw_signal(0);
+    let runs = Rc::new(Cell::new(0));
+
+    create_effect({
+        let runs = runs.clone();
+        move |_| {
+            signal.get();
+            runs.set(runs.get() + 1);
+        }
+    });
+
+    assert_eq!(runs.get(), 1);
+
+    {
+        let mut w = signal.write();
+        *w = 5;
+    }
+    Runtime::drain_pending_work();
+    assert_eq!(runs.get(), 2, "effect reruns after write ref drop");
+    assert_eq!(signal.get(), 5);
 }
