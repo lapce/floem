@@ -80,8 +80,8 @@ impl<'a, T> Deref for WriteRef<'a, T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
         match self {
-            WriteRef::Sync(v) => &*v.guard.as_ref().expect("guard present"),
-            WriteRef::Local(v) => &*v.guard.as_ref().expect("guard present"),
+            WriteRef::Sync(v) => v.guard.as_ref().expect("guard present"),
+            WriteRef::Local(v) => v.guard.as_ref().expect("guard present"),
         }
     }
 }

@@ -168,9 +168,11 @@ impl<T: PartialEq + 'static> Memo<T> {
     }
 }
 
+type ComputeFn<T> = Box<dyn Fn(Option<&T>) -> T>;
+
 struct MemoState<T: PartialEq + 'static> {
     id: Id,
-    compute: Box<dyn Fn(Option<&T>) -> T>,
+    compute: ComputeFn<T>,
     setter: RefCell<Option<WriteSignal<T>>>,
     dirty: Cell<bool>,
     observers: RefCell<HashSet<Id>>,

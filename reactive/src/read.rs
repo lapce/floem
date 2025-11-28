@@ -41,8 +41,8 @@ impl<'a, T> Deref for ReadRef<'a, T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
         match self {
-            ReadRef::Sync(v) => &*v.guard,
-            ReadRef::Local(v) => &*v.guard,
+            ReadRef::Sync(v) => &v.guard,
+            ReadRef::Local(v) => &v.guard,
         }
     }
 }
