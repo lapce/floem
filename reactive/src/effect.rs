@@ -296,7 +296,7 @@ pub(crate) fn observer_clean_up(effect: &Rc<dyn EffectTrait>) {
     let observers = effect.clear_observers();
     for observer in observers {
         if let Some(signal) = observer.signal() {
-                signal.subscribers.lock().remove(&effect_id);
+            signal.subscribers.lock().remove(&effect_id);
         }
     }
 }

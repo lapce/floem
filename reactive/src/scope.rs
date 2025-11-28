@@ -1,11 +1,5 @@
 use std::{
-    any::Any,
-    cell::RefCell,
-    collections::HashSet,
-    fmt,
-    marker::PhantomData,
-    rc::Rc,
-    sync::Arc,
+    any::Any, cell::RefCell, collections::HashSet, fmt, marker::PhantomData, rc::Rc, sync::Arc,
 };
 
 use parking_lot::Mutex;
