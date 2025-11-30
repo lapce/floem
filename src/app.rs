@@ -86,6 +86,7 @@ impl AppConfig {
 /// ```
 ///
 /// To build an application and windows with more configuration, see [`Application`].
+#[cfg_attr(debug_assertions, track_caller)]
 pub fn launch<V: IntoView + 'static>(app_view: impl FnOnce() -> V + 'static) {
     Application::new().window(move |_| app_view(), None).run()
 }
@@ -269,6 +270,7 @@ impl Application {
         self
     }
 
+    #[cfg_attr(debug_assertions, track_caller)]
     pub fn run(mut self) {
         Runtime::init_on_ui_thread();
         // Nudge UI when sync signals are updated from other threads.
