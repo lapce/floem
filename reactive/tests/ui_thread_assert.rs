@@ -46,6 +46,9 @@ fn assert_ui_thread_reports_caller_and_set_location() {
 
     #[cfg(not(debug_assertions))]
     {
-        assert!(result.is_err(), "assert_ui_thread should panic off UI thread");
+        assert!(
+            result.is_err(),
+            "assert_ui_thread should panic off UI thread"
+        );
     }
 }
