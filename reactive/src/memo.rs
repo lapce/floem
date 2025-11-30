@@ -129,6 +129,7 @@ where
     since = "0.2.0",
     note = "Use Memo::new instead; this will be removed in a future release"
 )]
+#[cfg_attr(debug_assertions, track_caller)]
 pub fn create_memo<T>(f: impl Fn(Option<&T>) -> T + 'static) -> Memo<T>
 where
     T: PartialEq + 'static,
@@ -137,6 +138,7 @@ where
 }
 
 impl<T: PartialEq + 'static> Memo<T> {
+    #[cfg_attr(debug_assertions, track_caller)]
     pub fn new(f: impl Fn(Option<&T>) -> T + 'static) -> Self {
         Runtime::assert_ui_thread();
 

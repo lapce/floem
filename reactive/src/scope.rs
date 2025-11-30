@@ -60,6 +60,7 @@ impl Scope {
     }
 
     /// Create a new Signal under this Scope
+    #[cfg_attr(debug_assertions, track_caller)]
     pub fn create_signal<T>(self, value: T) -> (ReadSignal<T>, WriteSignal<T>)
     where
         T: Any + 'static,
@@ -68,6 +69,7 @@ impl Scope {
     }
 
     /// Create a RwSignal under this Scope (local/unsync by default)
+    #[cfg_attr(debug_assertions, track_caller)]
     pub fn create_rw_signal<T>(self, value: T) -> RwSignal<T>
     where
         T: Any + 'static,
@@ -76,6 +78,7 @@ impl Scope {
     }
 
     /// Create a sync Signal under this Scope
+    #[cfg_attr(debug_assertions, track_caller)]
     pub fn create_sync_signal<T>(
         self,
         value: T,
@@ -87,6 +90,7 @@ impl Scope {
     }
 
     /// Create a sync RwSignal under this Scope
+    #[cfg_attr(debug_assertions, track_caller)]
     pub fn create_sync_rw_signal<T>(self, value: T) -> RwSignal<T, SyncStorage>
     where
         T: Any + Send + Sync + 'static,
@@ -95,6 +99,7 @@ impl Scope {
     }
 
     /// Create a local (unsync) Signal under this Scope
+    #[cfg_attr(debug_assertions, track_caller)]
     pub fn create_local_signal<T>(
         self,
         value: T,
@@ -106,6 +111,7 @@ impl Scope {
     }
 
     /// Create a local (unsync) RwSignal under this Scope
+    #[cfg_attr(debug_assertions, track_caller)]
     pub fn create_local_rw_signal<T>(self, value: T) -> RwSignal<T, UnsyncStorage>
     where
         T: Any + 'static,
@@ -114,6 +120,7 @@ impl Scope {
     }
 
     /// Create a Memo under this Scope
+    #[cfg_attr(debug_assertions, track_caller)]
     pub fn create_memo<T>(self, f: impl Fn(Option<&T>) -> T + 'static) -> Memo<T>
     where
         T: PartialEq + 'static,
@@ -122,11 +129,13 @@ impl Scope {
     }
 
     /// Create a Trigger under this Scope
+    #[cfg_attr(debug_assertions, track_caller)]
     pub fn create_trigger(self) -> Trigger {
         self.enter(create_trigger)
     }
 
     /// Create effect under this Scope
+    #[cfg_attr(debug_assertions, track_caller)]
     pub fn create_effect<T>(self, f: impl Fn(Option<T>) -> T + 'static)
     where
         T: Any + 'static,
@@ -135,6 +144,7 @@ impl Scope {
     }
 
     /// Create updater under this Scope
+    #[cfg_attr(debug_assertions, track_caller)]
     pub fn create_updater<R>(
         self,
         compute: impl Fn() -> R + 'static,
@@ -147,6 +157,7 @@ impl Scope {
     }
 
     /// Runs the given closure within this scope.
+    #[cfg_attr(debug_assertions, track_caller)]
     pub fn enter<T>(&self, f: impl FnOnce() -> T) -> T
     where
         T: 'static,
@@ -169,6 +180,7 @@ impl Scope {
     }
 
     /// Wraps a closure so it runs under a new child scope of this scope.
+    #[cfg_attr(debug_assertions, track_caller)]
     pub fn enter_child<T, U>(&self, f: impl Fn(T) -> U + 'static) -> impl Fn(T) -> (U, Scope)
     where
         T: 'static,
@@ -196,6 +208,7 @@ impl Scope {
 
     /// This is normally used in create_effect, and it will bind the effect's lifetime
     /// to this scope
+    #[cfg_attr(debug_assertions, track_caller)]
     pub fn track(&self) {
         Runtime::assert_ui_thread();
         let signal = if let Some(signal) = self.0.signal() {

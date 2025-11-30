@@ -52,6 +52,7 @@ where
     since = "0.2.0",
     note = "Use Effect::new instead; this will be removed in a future release"
 )]
+#[cfg_attr(debug_assertions, track_caller)]
 pub fn create_effect<T>(f: impl Fn(Option<T>) -> T + 'static)
 where
     T: Any + 'static,
@@ -65,6 +66,7 @@ where
     F: Fn(Option<T>) -> T + 'static,
 {
     #[allow(clippy::new_ret_no_self)]
+    #[cfg_attr(debug_assertions, track_caller)]
     pub fn new(f: F) {
         Runtime::assert_ui_thread();
         let id = Id::next();
@@ -111,6 +113,7 @@ impl UpdaterEffect<(), (), (), ()> {
     /// run of `compute` are updated. `compute` is immediately run only once, and its value is returned
     /// from the call to `create_updater`.
     #[allow(clippy::new_ret_no_self)]
+    #[cfg_attr(debug_assertions, track_caller)]
     pub fn new<R>(compute: impl Fn() -> R + 'static, on_change: impl Fn(R) + 'static) -> R
     where
         R: 'static,
@@ -121,6 +124,7 @@ impl UpdaterEffect<(), (), (), ()> {
     /// Create an effect updater that runs `on_change` when any signals within `compute` subscribe to
     /// changes. `compute` is immediately run and its return value is returned.
     #[allow(clippy::new_ret_no_self)]
+    #[cfg_attr(debug_assertions, track_caller)]
     pub fn new_stateful<T, R>(
         compute: impl Fn(Option<T>) -> (R, T) + 'static,
         on_change: impl Fn(R, T) -> T + 'static,
@@ -151,6 +155,7 @@ impl UpdaterEffect<(), (), (), ()> {
     since = "0.2.0",
     note = "Use UpdaterEffect::new instead; this will be removed in a future release"
 )]
+#[cfg_attr(debug_assertions, track_caller)]
 pub fn create_updater<R>(compute: impl Fn() -> R + 'static, on_change: impl Fn(R) + 'static) -> R
 where
     R: 'static,
@@ -164,6 +169,7 @@ where
     since = "0.2.0",
     note = "Use UpdaterEffect::new_stateful instead; this will be removed in a future release"
 )]
+#[cfg_attr(debug_assertions, track_caller)]
 pub fn create_stateful_updater<T, R>(
     compute: impl Fn(Option<T>) -> (R, T) + 'static,
     on_change: impl Fn(R, T) -> T + 'static,
@@ -178,6 +184,7 @@ where
 /// Signals that are wrapped with `untrack` will not subscribe to any effect.
 impl Effect<(), fn(Option<()>) -> ()> {
     #[allow(clippy::new_ret_no_self)]
+    #[cfg_attr(debug_assertions, track_caller)]
     pub fn untrack<T>(f: impl FnOnce() -> T) -> T {
         Runtime::assert_ui_thread();
         let prev_effect = RUNTIME.with(|runtime| runtime.current_effect.borrow_mut().take());
@@ -189,6 +196,7 @@ impl Effect<(), fn(Option<()>) -> ()> {
     }
 
     #[allow(clippy::new_ret_no_self)]
+    #[cfg_attr(debug_assertions, track_caller)]
     pub fn batch<T>(f: impl FnOnce() -> T) -> T {
         let already_batching = RUNTIME.with(|runtime| {
             let batching = runtime.batching.get();

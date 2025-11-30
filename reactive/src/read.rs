@@ -89,6 +89,7 @@ pub trait SignalGet<T: Clone> {
         self.try_get().unwrap()
     }
 
+    #[cfg_attr(debug_assertions, track_caller)]
     fn try_get(&self) -> Option<T>
     where
         T: 'static,
@@ -101,6 +102,7 @@ pub trait SignalGet<T: Clone> {
         })
     }
 
+    #[cfg_attr(debug_assertions, track_caller)]
     fn try_get_untracked(&self) -> Option<T>
     where
         T: 'static,
@@ -118,6 +120,7 @@ pub trait SignalTrack<T> {
     fn id(&self) -> Id;
     /// Only subscribes to the current running effect to this Signal.
     ///
+    #[cfg_attr(debug_assertions, track_caller)]
     fn track(&self) {
         let signal = self.id().signal().unwrap();
         if matches!(signal.value, SignalValue::Local(_)) {
@@ -128,6 +131,7 @@ pub trait SignalTrack<T> {
 
     /// If the signal isn't disposed,
     // subscribes to the current running effect to this Signal.
+    #[cfg_attr(debug_assertions, track_caller)]
     fn try_track(&self) {
         if let Some(signal) = self.id().signal() {
             if matches!(signal.value, SignalValue::Local(_)) {
@@ -142,6 +146,7 @@ pub trait SignalWith<T> {
     /// get the Signal Id
     fn id(&self) -> Id;
 
+    #[cfg_attr(debug_assertions, track_caller)]
     fn with<O>(&self, f: impl FnOnce(&T) -> O) -> O
     where
         T: 'static,
@@ -153,6 +158,7 @@ pub trait SignalWith<T> {
         signal.with(f)
     }
 
+    #[cfg_attr(debug_assertions, track_caller)]
     fn with_untracked<O>(&self, f: impl FnOnce(&T) -> O) -> O
     where
         T: 'static,
@@ -164,6 +170,7 @@ pub trait SignalWith<T> {
         signal.with_untracked(f)
     }
 
+    #[cfg_attr(debug_assertions, track_caller)]
     fn try_with<O>(&self, f: impl FnOnce(Option<&T>) -> O) -> O
     where
         T: 'static,
