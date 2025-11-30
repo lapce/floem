@@ -24,6 +24,8 @@ pub(crate) static RUNTIME: Runtime = Runtime::new();
 }
 
 static UI_THREAD_ID: OnceLock<ThreadId> = OnceLock::new();
+#[cfg(debug_assertions)]
+static UI_THREAD_SET_LOCATION: OnceLock<&'static std::panic::Location<'static>> = OnceLock::new();
 static ENFORCE_UI_THREAD: AtomicBool = AtomicBool::new(false);
 
 /// The internal reactive Runtime which stores all the reactive system states in a
@@ -60,6 +62,7 @@ impl Runtime {
     }
 
     /// Call this once on the UI thread during initialization.
+    #[cfg_attr(debug_assertions, track_caller)]
     pub fn init_on_ui_thread() {
         let current = thread::current().id();
         match UI_THREAD_ID.set(current) {
@@ -72,9 +75,15 @@ impl Runtime {
                 );
             }
         }
+        #[cfg(debug_assertions)]
+        {
+            let caller = std::panic::Location::caller();
+            let _ = UI_THREAD_SET_LOCATION.set(caller);
+        }
         ENFORCE_UI_THREAD.store(true, Ordering::Relaxed);
     }
 
+    #[cfg_attr(debug_assertions, track_caller)]
     pub fn assert_ui_thread() {
         if !ENFORCE_UI_THREAD.load(Ordering::Relaxed) {
             return;
@@ -83,11 +92,32 @@ impl Runtime {
         let current = thread::current().id();
         match UI_THREAD_ID.get() {
             Some(ui_id) => {
-                assert_eq!(
-                    *ui_id, current,
-                    "Unsync runtime access from non-UI thread: expected {:?}, got {:?}",
-                    ui_id, current
-                );
+                if *ui_id != current {
+                    #[cfg(debug_assertions)]
+                    {
+                        let caller = std::panic::Location::caller();
+                        let set_at = UI_THREAD_SET_LOCATION.get();
+                        let set_info = set_at
+                            .map(|loc| format!(" (set at {}:{})", loc.file(), loc.line()))
+                            .unwrap_or_default();
+                        panic!(
+                            "Unsync runtime access from non-UI thread\n  expected UI thread: {:?}{}\n  current thread: {:?}\n  caller: {}:{}",
+                            ui_id,
+                            set_info,
+                            current,
+                            caller.file(),
+                            caller.line(),
+                        );
+                    }
+                    #[cfg(not(debug_assertions))]
+                    {
+                        assert_eq!(
+                            *ui_id, current,
+                            "Unsync runtime access from non-UI thread: expected {:?}, got {:?}",
+                            ui_id, current
+                        );
+                    }
+                }
             }
             None => {
                 // Once enforcement is on, first access defines the UI thread.

@@ -308,6 +308,7 @@ impl<T: Send + Sync + 'static> RwSignal<T, SyncStorage> {
 }
 
 impl<T: 'static> RwSignal<T, UnsyncStorage> {
+    #[cfg_attr(debug_assertions, track_caller)]
     pub fn new(value: T) -> Self {
         Runtime::assert_ui_thread();
         let id = <UnsyncStorage as Storage<T>>::create(value);
@@ -318,6 +319,7 @@ impl<T: 'static> RwSignal<T, UnsyncStorage> {
             st: PhantomData,
         }
     }
+    #[cfg_attr(debug_assertions, track_caller)]
     pub fn new_split(value: T) -> (ReadSignal<T, UnsyncStorage>, WriteSignal<T, UnsyncStorage>) {
         let sig = Self::new(value);
         (sig.read_only(), sig.write_only())
@@ -333,6 +335,7 @@ impl<T: 'static> RwSignal<T, UnsyncStorage> {
     since = "0.2.0",
     note = "Use RwSignal::new for sync signals or RwSignal::new_local for local ones"
 )]
+#[cfg_attr(debug_assertions, track_caller)]
 pub fn create_rw_signal<T>(value: T) -> RwSignal<T>
 where
     T: Any + 'static,
@@ -448,6 +451,7 @@ pub enum SignalBorrow<'a, T> {
 
 impl SignalState {
     #[allow(clippy::new_ret_no_self)]
+    #[cfg_attr(debug_assertions, track_caller)]
     pub fn new<T>(value: T) -> Id
     where
         T: Any + 'static,
@@ -868,6 +872,7 @@ impl<T> SignalRead<T> for RwSignal<T, UnsyncStorage> {
         self.id
     }
 
+    #[cfg_attr(debug_assertions, track_caller)]
     fn try_read(&self) -> Option<crate::read::ReadRef<'_, T>>
     where
         T: 'static,
@@ -895,6 +900,7 @@ impl<T> SignalUpdate<T> for RwSignal<T, UnsyncStorage> {
         self.id
     }
 
+    #[cfg_attr(debug_assertions, track_caller)]
     fn set(&self, new_value: T)
     where
         T: 'static,
@@ -905,6 +911,7 @@ impl<T> SignalUpdate<T> for RwSignal<T, UnsyncStorage> {
         }
     }
 
+    #[cfg_attr(debug_assertions, track_caller)]
     fn update(&self, f: impl FnOnce(&mut T))
     where
         T: 'static,
@@ -915,6 +922,7 @@ impl<T> SignalUpdate<T> for RwSignal<T, UnsyncStorage> {
         }
     }
 
+    #[cfg_attr(debug_assertions, track_caller)]
     fn try_update<O>(&self, f: impl FnOnce(&mut T) -> O) -> Option<O>
     where
         T: 'static,
@@ -931,6 +939,7 @@ impl<T> SignalWrite<T> for RwSignal<T, UnsyncStorage> {
         self.id
     }
 
+    #[cfg_attr(debug_assertions, track_caller)]
     fn write(&self) -> crate::write::WriteRef<'_, T>
     where
         T: 'static,
@@ -939,6 +948,7 @@ impl<T> SignalWrite<T> for RwSignal<T, UnsyncStorage> {
         self.try_write().unwrap()
     }
 
+    #[cfg_attr(debug_assertions, track_caller)]
     fn try_write(&self) -> Option<crate::write::WriteRef<'_, T>>
     where
         T: 'static,
@@ -958,6 +968,7 @@ impl<T> SignalUpdate<T> for WriteSignal<T, UnsyncStorage> {
         self.id
     }
 
+    #[cfg_attr(debug_assertions, track_caller)]
     fn set(&self, new_value: T)
     where
         T: 'static,
@@ -968,6 +979,7 @@ impl<T> SignalUpdate<T> for WriteSignal<T, UnsyncStorage> {
         }
     }
 
+    #[cfg_attr(debug_assertions, track_caller)]
     fn update(&self, f: impl FnOnce(&mut T))
     where
         T: 'static,
@@ -978,6 +990,7 @@ impl<T> SignalUpdate<T> for WriteSignal<T, UnsyncStorage> {
         }
     }
 
+    #[cfg_attr(debug_assertions, track_caller)]
     fn try_update<O>(&self, f: impl FnOnce(&mut T) -> O) -> Option<O>
     where
         T: 'static,
@@ -994,6 +1007,7 @@ impl<T> SignalWrite<T> for WriteSignal<T, UnsyncStorage> {
         self.id
     }
 
+    #[cfg_attr(debug_assertions, track_caller)]
     fn try_write(&self) -> Option<crate::write::WriteRef<'_, T>>
     where
         T: 'static,
@@ -1025,6 +1039,7 @@ impl<T> SignalRead<T> for ReadSignal<T, UnsyncStorage> {
         self.id
     }
 
+    #[cfg_attr(debug_assertions, track_caller)]
     fn try_read(&self) -> Option<crate::read::ReadRef<'_, T>>
     where
         T: 'static,
