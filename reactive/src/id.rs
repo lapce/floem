@@ -8,7 +8,7 @@ use crate::{
 };
 
 /// An internal id which can reference a Signal/Effect/Scope.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Id(u64);
 
 impl Id {

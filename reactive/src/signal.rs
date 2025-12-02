@@ -16,7 +16,6 @@ use std::panic::Location;
 use parking_lot::{Mutex, MutexGuard};
 
 use crate::{
-    effect::run_effect,
     id::Id,
     read::{SignalRead, SignalTrack, SignalWith},
     runtime::{Runtime, RUNTIME},
@@ -623,25 +622,22 @@ impl SignalState {
     }
 
     pub(crate) fn run_effects(&self) {
-        let ids = self.subscriber_ids();
-        if !Runtime::is_ui_thread() {
+        let ids: Vec<_> = self.subscriber_ids().into_iter().collect();
+        let on_ui_thread = Runtime::is_ui_thread();
+
+        if !on_ui_thread {
             SYNC_RUNTIME.enqueue_effects(ids);
             return;
         }
-        if RUNTIME.with(|r| r.batching.get()) {
-            RUNTIME.with(|r| {
-                for id in &ids {
-                    r.add_pending_effect(*id);
-                }
-            });
-            return;
-        }
 
-        for id in ids {
-            if let Some(effect) = RUNTIME.with(|r| r.get_effect(id)) {
-                run_effect(effect);
+        RUNTIME.with(|r| {
+            for id in &ids {
+                r.add_pending_effect(*id);
             }
-        }
+            if !r.batching.get() {
+                r.run_pending_effects();
+            }
+        });
     }
 
     pub(crate) fn subscribe(&self) {

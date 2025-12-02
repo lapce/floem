@@ -7,7 +7,7 @@ use std::{
 };
 
 use crate::{
-    effect::{observer_clean_up, EffectTrait},
+    effect::{observer_clean_up, EffectPriority, EffectTrait},
     id::Id,
     read::SignalTrack,
     runtime::{Runtime, RUNTIME},
@@ -151,14 +151,14 @@ impl<T: PartialEq + 'static> Memo<T> {
 
         let initial = state.compute_initial();
         let (getter, setter) = RwSignal::new_split(initial);
-        state.set_signal(setter);
+        state.set_signal(getter, setter);
         state.mark_clean();
 
         Memo { getter, memo_id }
     }
 
     fn ensure_fresh(&self) {
-        self.with_state(|state| state.ensure_fresh(&self.getter));
+        self.with_state(|state| state.ensure_fresh());
     }
 
     fn with_state<O>(&self, f: impl FnOnce(&MemoState<T>) -> O) -> Option<O> {
@@ -175,6 +175,7 @@ type ComputeFn<T> = Box<dyn Fn(Option<&T>) -> T>;
 struct MemoState<T: PartialEq + 'static> {
     id: Id,
     compute: ComputeFn<T>,
+    getter: RefCell<Option<ReadSignal<T>>>,
     setter: RefCell<Option<WriteSignal<T>>>,
     dirty: Cell<bool>,
     observers: RefCell<HashSet<Id>>,
@@ -186,6 +187,7 @@ impl<T: PartialEq + 'static> MemoState<T> {
         Self {
             id,
             compute: Box::new(compute),
+            getter: RefCell::new(None),
             setter: RefCell::new(None),
             dirty: Cell::new(true),
             observers: RefCell::new(HashSet::new()),
@@ -207,7 +209,8 @@ impl<T: PartialEq + 'static> MemoState<T> {
         value
     }
 
-    fn set_signal(&self, setter: WriteSignal<T>) {
+    fn set_signal(&self, getter: ReadSignal<T>, setter: WriteSignal<T>) {
+        self.getter.replace(Some(getter));
         self.setter.replace(Some(setter));
     }
 
@@ -215,14 +218,20 @@ impl<T: PartialEq + 'static> MemoState<T> {
         self.dirty.set(false);
     }
 
-    fn ensure_fresh(&self, getter: &ReadSignal<T>) {
+    fn ensure_fresh(&self) {
         if !self.dirty.get() {
             return;
         }
-        self.recompute(getter);
+        self.recompute();
     }
 
-    fn recompute(&self, getter: &ReadSignal<T>) {
+    fn recompute(&self) {
+        let getter = self
+            .getter
+            .borrow()
+            .as_ref()
+            .copied()
+            .expect("memo getter set");
         Runtime::assert_ui_thread();
         let effect = RUNTIME
             .with(|runtime| runtime.get_effect(self.id))
@@ -276,6 +285,7 @@ where
 
     fn run(&self) -> bool {
         self.dirty.set(true);
+        self.ensure_fresh();
         true
     }
 
@@ -285,6 +295,10 @@ where
 
     fn clear_observers(&self) -> HashSet<Id> {
         std::mem::take(&mut *self.observers.borrow_mut())
+    }
+
+    fn priority(&self) -> EffectPriority {
+        EffectPriority::High
     }
 
     fn as_any(&self) -> &dyn Any {
