@@ -6,11 +6,21 @@ use crate::{
     scope::Scope,
 };
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Default)]
+pub(crate) enum EffectPriority {
+    #[default]
+    Normal,
+    High,
+}
+
 pub(crate) trait EffectTrait: Any {
     fn id(&self) -> Id;
     fn run(&self) -> bool;
     fn add_observer(&self, id: Id);
     fn clear_observers(&self) -> HashSet<Id>;
+    fn priority(&self) -> EffectPriority {
+        EffectPriority::Normal
+    }
     fn as_any(&self) -> &dyn Any;
 }
 

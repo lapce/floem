@@ -1,6 +1,7 @@
 use std::{
     any::{Any, TypeId},
     cell::{Cell, RefCell},
+    cmp::Reverse,
     collections::{HashMap, HashSet},
     rc::Rc,
     sync::{
@@ -13,7 +14,7 @@ use std::{
 use smallvec::SmallVec;
 
 use crate::{
-    effect::{run_effect, EffectTrait},
+    effect::{run_effect, EffectPriority, EffectTrait},
     id::Id,
     signal::SignalState,
     sync_runtime::SYNC_RUNTIME,
@@ -39,6 +40,7 @@ pub struct Runtime {
     pub(crate) contexts: RefCell<HashMap<TypeId, Box<dyn Any>>>,
     pub(crate) batching: Cell<bool>,
     pub(crate) pending_effects: RefCell<SmallVec<[Id; 10]>>,
+    pub(crate) pending_effects_set: RefCell<HashSet<Id>>,
 }
 
 impl Default for Runtime {
@@ -58,6 +60,7 @@ impl Runtime {
             contexts: Default::default(),
             batching: Cell::new(false),
             pending_effects: RefCell::new(SmallVec::new()),
+            pending_effects_set: RefCell::new(HashSet::new()),
         }
     }
 
@@ -152,17 +155,30 @@ impl Runtime {
     }
 
     pub(crate) fn add_pending_effect(&self, effect_id: Id) {
-        let has_effect = self.pending_effects.borrow().contains(&effect_id);
-        if !has_effect {
+        let mut set = self.pending_effects_set.borrow_mut();
+        if set.insert(effect_id) {
             self.pending_effects.borrow_mut().push(effect_id);
         }
     }
 
     pub(crate) fn run_pending_effects(&self) {
-        let pending_effects = self.pending_effects.take();
-        for effect_id in pending_effects {
-            if let Some(effect) = self.get_effect(effect_id) {
-                run_effect(effect);
+        loop {
+            let mut pending_effects = self.pending_effects.take();
+            if pending_effects.is_empty() {
+                break;
+            }
+            pending_effects.sort_by_key(|id| {
+                let priority = self
+                    .get_effect(*id)
+                    .map(|effect| effect.priority())
+                    .unwrap_or(EffectPriority::Normal);
+                (Reverse(priority), *id)
+            });
+            for effect_id in pending_effects {
+                self.pending_effects_set.borrow_mut().remove(&effect_id);
+                if let Some(effect) = self.get_effect(effect_id) {
+                    run_effect(effect);
+                }
             }
         }
     }
