@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 confy = "1.0.0"
 floem = { path = "../..", features = [
+  "editor",
   "serde",
   "vello",
 ], default-features = false }
