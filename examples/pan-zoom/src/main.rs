@@ -1,12 +1,11 @@
-use floem::{kurbo, prelude::*};
+use floem::{kurbo, prelude::*, reactive::Effect};
 
 mod pan_zoom_view;
-mod transform_view;
 
-use crate::{pan_zoom_view::pan_zoom_view, transform_view::transform_view};
+use crate::pan_zoom_view::pan_zoom_view;
 
 fn child_view() -> impl IntoView {
-    let button = button("Click me").on_click_stop(|_| {
+    let button = button("Click me").action(|| {
         println!("Button clicked!");
     });
 
@@ -46,20 +45,21 @@ fn child_view() -> impl IntoView {
 fn app_view() -> impl IntoView {
     let view_transform = RwSignal::new(kurbo::Affine::default());
 
-    let view = pan_zoom_view(
-        view_transform.get(),
-        transform_view(child_view(), move || view_transform.get().inverse())
-            .style(|s| s.size_full()),
-    )
-    .style(|s| s.width_full().height_full().background(palette::css::BLACK))
-    .on_pan_zoom(move |affine| view_transform.set(affine));
+    let child_view = child_view().into_view();
+    let child_id = child_view.id();
+    Effect::new(move |_| {
+        let transform = view_transform.get().inverse();
+        child_id.set_transform(transform);
+    });
 
-    let id = view.id();
-    view.on_key_up(
-        Key::Named(NamedKey::F11),
-        |m| m.is_empty(),
-        move |_| id.inspect(),
-    )
+    pan_zoom_view(view_transform.get(), child_view.style(|s| s.size_full()))
+        .style(|s| s.width_full().height_full().background(palette::css::BLACK))
+        .on_pan_zoom(move |affine| view_transform.set(affine))
+        .on_key_up(
+            Key::Named(NamedKey::F11),
+            |m| m.is_empty(),
+            move |v, _| v.id().inspect(),
+        )
 }
 
 fn main() {

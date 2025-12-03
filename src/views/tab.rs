@@ -254,6 +254,7 @@ impl<T> View for Tab<T> {
         if let Ok(state) = state.downcast::<TabState<T>>() {
             match *state {
                 TabState::Diff(diff) => {
+                    dbg!(self.id);
                     apply_diff(
                         self.id(),
                         cx.window_state,

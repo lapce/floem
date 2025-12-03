@@ -135,6 +135,14 @@ impl ViewId {
         })
     }
 
+    /// set the transform on a view that is applied after style transforms
+    pub fn set_transform(&self, transform: Affine) {
+        VIEW_STORAGE.with_borrow_mut(|s| {
+            s.state(*self).borrow_mut().transform = transform;
+        });
+        self.request_layout();
+    }
+
     pub(crate) fn state(&self) -> Rc<RefCell<ViewState>> {
         VIEW_STORAGE.with_borrow_mut(|s| s.state(*self))
     }
@@ -170,40 +178,11 @@ impl ViewId {
         });
     }
 
-    /// Set the children views of this Id
-    /// See also [`Self::set_children_vec`]
-    pub fn set_children<const N: usize, V: IntoView>(&self, children: [V; N]) {
-        VIEW_STORAGE.with_borrow_mut(|s| {
-            let this_box_node = s.state(*self).borrow().box_node;
-            let mut children_ids = Vec::with_capacity(N);
-            let mut children_nodes = Vec::with_capacity(N);
-            for child in children {
-                let child_view = child.into_view();
-                let child_view_id = child_view.id();
-                let child_taffy_node = s.state(child_view_id).borrow().node;
-                children_nodes.push(child_taffy_node);
-                children_ids.push(child_view_id);
-                s.parent.insert(child_view_id, Some(*self));
-                let child_box_node = s.state(child_view_id).borrow().box_node;
-                s.box_tree
-                    .borrow_mut()
-                    .reparent(child_box_node, Some(this_box_node));
-                s.views
-                    .insert(child_view_id, Rc::new(RefCell::new(child_view.into_any())));
-            }
-            s.children.insert(*self, children_ids);
-            let this_taffy_node = s.state(*self).borrow().node;
-            let _ = s
-                .taffy
-                .borrow_mut()
-                .set_children(this_taffy_node, &children_nodes);
-        });
-    }
-
     /// Set the children views of this Id using a Vector
-    /// See also [`Self::set_children`]
-    pub fn set_children_vec(&self, children: Vec<impl IntoView>) {
+    pub fn set_children<V: IntoView>(&self, children: impl Into<Vec<V>>) {
         VIEW_STORAGE.with_borrow_mut(|s| {
+            let children = children.into();
+
             let this_box_node = s.state(*self).borrow().box_node;
             let mut children_ids = Vec::with_capacity(children.len());
             let mut children_nodes = Vec::with_capacity(children.len());
@@ -249,23 +228,6 @@ impl ViewId {
                 s.box_tree
                     .borrow_mut()
                     .reparent(this_box_node, Some(parent_box_node));
-
-                // Update taffy tree
-                let parent_taffy_node = s.state(parent).borrow().node;
-                let this_taffy_node = s.state(*self).borrow().node;
-                let mut taffy = s.taffy.borrow_mut();
-
-                // Get parent's current children
-                let mut parent_children = taffy
-                    .children(parent_taffy_node)
-                    .unwrap_or_default()
-                    .to_vec();
-
-                // Add this node if not already present
-                if !parent_children.contains(&this_taffy_node) {
-                    parent_children.push(this_taffy_node);
-                    let _ = taffy.set_children(parent_taffy_node, &parent_children);
-                }
             }
         });
     }
@@ -273,55 +235,30 @@ impl ViewId {
     /// Set the Ids that should be used as the children of this Id
     pub fn set_children_ids(&self, children: Vec<ViewId>) {
         VIEW_STORAGE.with_borrow_mut(|s| {
+            if !s.view_ids.contains_key(*self) {
+                return;
+            }
+
             let this_taffy_node = s.state(*self).borrow().node;
             let this_box_node = s.state(*self).borrow().box_node;
 
-            if !s.view_ids.contains_key(*self) {
-                return; // Early return if this view doesn't exist
-            }
+            let taffy_children: Vec<_> = children
+                .iter()
+                .map(|child| s.state(*child).borrow().node)
+                .collect();
 
-            // Get current children from Taffy
-            let current_taffy_children = s
-                .taffy
-                .borrow()
-                .children(this_taffy_node)
-                .unwrap_or_default();
-
-            // Use SmallVec to avoid heap allocations for common cases (up to 64 children)
-            let mut new_taffy_children: SmallVec<[_; 64]> = SmallVec::with_capacity(children.len());
-
-            // Fill the SmallVec with taffy nodes and update parent mapping + box tree
             for child in &children {
-                new_taffy_children.push(s.state(*child).borrow().node);
                 s.parent.insert(*child, Some(*self));
-
                 let child_box_node = s.state(*child).borrow().box_node;
                 s.box_tree
                     .borrow_mut()
                     .reparent(child_box_node, Some(this_box_node));
             }
 
-            // If the child lists are different, update Taffy
-            if current_taffy_children[..] != new_taffy_children[..] {
-                // Clear existing children first by removing each child node
-                let mut taffy = s.taffy.borrow_mut();
-                // Remove all existing child nodes
-                // We need to use the actual child NodeId, not an index
-                while let Some(first_child) = taffy
-                    .children(this_taffy_node)
-                    .unwrap_or_default()
-                    .first()
-                    .copied()
-                {
-                    let _ = taffy.remove_child(this_taffy_node, first_child);
-                }
-                // Add children in the correct order
-                for child_node in &new_taffy_children {
-                    let _ = taffy.add_child(this_taffy_node, *child_node);
-                }
-            }
-
-            // Update the children map regardless
+            let _ = s
+                .taffy
+                .borrow_mut()
+                .set_children(this_taffy_node, &taffy_children);
             s.children.insert(*self, children);
         });
     }
@@ -364,15 +301,23 @@ impl ViewId {
 
     /// Get the chain of debug names that have been applied to this view.
     pub fn debug_name(&self) -> String {
-        self.state()
-            .borrow()
-            .debug_name
-            .iter()
-            .rev()
-            .chain(std::iter::once(
-                &View::debug_name(self.view().borrow().as_ref()).to_string(),
-            ))
-            .cloned()
+        let state_names = self
+            .state()
+            .try_borrow()
+            .ok()
+            .map(|state| state.debug_name.iter().rev().cloned().collect::<Vec<_>>())
+            .unwrap_or_default();
+
+        let view_name = self
+            .view()
+            .try_borrow()
+            .ok()
+            .map(|view| View::debug_name(view.as_ref()).to_string())
+            .unwrap_or_else(|| "<borrow failed>".to_string());
+
+        state_names
+            .into_iter()
+            .chain(std::iter::once(view_name))
             .collect::<Vec<_>>()
             .join(" - ")
     }
@@ -571,6 +516,11 @@ impl ViewId {
     /// Use this when you want the `view_style` method from the `View` trait to be rerun.
     pub fn request_view_style(&self) {
         self.request_changes(ChangeFlags::VIEW_STYLE)
+    }
+
+    /// use this if your view wants to run the layout function after any window layout change
+    pub fn needs_post_layout(&self) {
+        self.add_update_message(UpdateMessage::NeedsPostLayout(*self));
     }
 
     pub(crate) fn request_changes(&self, flags: ChangeFlags) {
@@ -797,6 +747,15 @@ impl ViewId {
         VIEW_STORAGE.with_borrow(|s| {
             let box_tree = s.box_tree.borrow();
             box_tree.world_transform(node_id)
+        })
+    }
+
+    /// gets the world bounds, including clips for this view
+    pub fn world_bounds(&self) -> Option<Rect> {
+        let node_id = self.box_node();
+        VIEW_STORAGE.with_borrow(|s| {
+            let box_tree = s.box_tree.borrow();
+            box_tree.world_bounds(node_id)
         })
     }
 }

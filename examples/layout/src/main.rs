@@ -1,5 +1,6 @@
+use std::fmt::Display;
+
 use floem::{
-    event::{Event, EventListener},
     kurbo::Size,
     prelude::*,
     style::AlignContent,
@@ -12,20 +13,20 @@ pub mod left_sidebar;
 pub mod right_sidebar;
 pub mod tab_navigation;
 
-fn list_item<V: IntoView + 'static>(name: String, view_fn: impl Fn() -> V) -> impl IntoView {
+fn list_item<V: IntoView + 'static>(name: impl Display, view_fn: impl Fn() -> V) -> impl IntoView {
     h_stack((
-        label(move || name.clone()).style(|s| s),
+        text(name).style(|s| s),
         container(view_fn()).style(|s| s.width_full().justify_content(AlignContent::End)),
     ))
     .style(|s| s.width(200))
 }
 
 fn app_view() -> impl IntoView {
-    let view = v_stack((
+    v_stack((
         label(move || String::from("Static layouts"))
             .style(|s| s.font_size(30.0).margin_bottom(15.0)),
-        list_item(String::from("Left sidebar"), move || {
-            button("Open").action(|| {
+        list_item("Left sidebar", move || {
+            "Open".button().action(|| {
                 new_window(
                     |_| left_sidebar::left_sidebar_view(),
                     Some(
@@ -36,8 +37,8 @@ fn app_view() -> impl IntoView {
                 );
             })
         }),
-        list_item(String::from("Right sidebar"), move || {
-            button("Open").action(|| {
+        list_item("Right sidebar", move || {
+            "Open".button().action(|| {
                 new_window(
                     |_| right_sidebar::right_sidebar_view(),
                     Some(
@@ -48,8 +49,8 @@ fn app_view() -> impl IntoView {
                 );
             })
         }),
-        list_item(String::from("Holy grail"), move || {
-            button("Open").action(|| {
+        list_item("Holy grail", move || {
+            "Open".button().action(|| {
                 new_window(
                     |_| holy_grail::holy_grail_view(),
                     Some(
@@ -60,10 +61,9 @@ fn app_view() -> impl IntoView {
                 );
             })
         }),
-        label(move || String::from("Interactive layouts"))
-            .style(|s| s.font_size(30.0).margin_top(15.0).margin_bottom(15.0)),
-        list_item(String::from("Tab navigation"), move || {
-            button("Open").action(|| {
+        "Interactive layouts".style(|s| s.font_size(30.0).margin_top(15.0).margin_bottom(15.0)),
+        list_item("Tab navigation", move || {
+            "Open".button().action(|| {
                 new_window(
                     |_| tab_navigation::tab_navigation_view(),
                     Some(
@@ -74,8 +74,8 @@ fn app_view() -> impl IntoView {
                 );
             })
         }),
-        list_item(String::from("Draggable sidebar"), move || {
-            button("Open").action(|| {
+        list_item("Draggable sidebar", move || {
+            "Open".button().action(|| {
                 new_window(
                     |_| draggable_sidebar::draggable_sidebar_view(),
                     Some(
@@ -93,21 +93,14 @@ fn app_view() -> impl IntoView {
             .height_full()
             .padding(10.0)
             .row_gap(10.0)
-    });
-
-    let id = view.id();
-    view.on_event_stop(EventListener::KeyUp, move |e| {
-        if let Event::Key(KeyboardEvent {
-            state: KeyState::Up,
-            key,
-            ..
-        }) = e
-        {
-            if *key == Key::Named(NamedKey::F11) {
-                id.inspect();
-            }
-        }
     })
+    .on_key_up(
+        Key::Named(NamedKey::F11),
+        |_| true,
+        move |_, _| {
+            floem::action::inspect();
+        },
+    )
     .window_title(|| String::from("Layout examples"))
 }
 

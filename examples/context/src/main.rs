@@ -1,4 +1,5 @@
 use floem::{
+    action::inspect,
     peniko::{color::palette, Color},
     reactive::{provide_context, use_context},
     ui_events::keyboard::{Key, NamedKey},
@@ -30,7 +31,7 @@ fn context_container<V: IntoView + 'static>(
 fn app_view() -> impl IntoView {
     provide_context(palette::css::BLACK);
 
-    let view = v_stack((
+    v_stack((
         colored_label(String::from("app_view")),
         context_container(
             palette::css::HOT_PINK,
@@ -48,13 +49,11 @@ fn app_view() -> impl IntoView {
             .items_center()
             .justify_center()
             .row_gap(5)
-    });
-
-    let id = view.id();
-    view.on_key_up(
+    })
+    .on_key_up(
         Key::Named(NamedKey::F11),
         |m| m.is_empty(),
-        move |_| id.inspect(),
+        move |_, _| inspect(),
     )
 }
 

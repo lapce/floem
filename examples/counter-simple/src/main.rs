@@ -13,4 +13,9 @@ fn counter_view() -> impl IntoView {
         button("Decrement").action(move || counter -= 1),
     ))
     .style(|s| s.size_full().items_center().justify_center().gap(10))
+    .on_key_up(
+        Key::Named(NamedKey::F11),
+        |m| m.is_empty(),
+        move |v, _| v.id().inspect(),
+    )
 }

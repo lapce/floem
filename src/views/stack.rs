@@ -23,7 +23,7 @@ pub(crate) fn create_stack(
     direction: Option<FlexDirection>,
 ) -> Stack {
     let id = ViewId::new();
-    id.set_children_vec(children);
+    id.set_children(children);
 
     Stack { id, direction }
 }
@@ -121,7 +121,7 @@ impl View for Stack {
 
     fn update(&mut self, _cx: &mut UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(state) = state.downcast::<Vec<Box<dyn View>>>() {
-            self.id.set_children_vec(*state);
+            self.id.set_children(*state);
             self.id.request_all();
         }
     }

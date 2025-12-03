@@ -1,4 +1,5 @@
 use floem::{
+    action::inspect,
     event::{Event, EventListener},
     peniko::{color::palette, Color},
     prelude::*,
@@ -97,27 +98,21 @@ fn app_view() -> impl IntoView {
 
     let counter = RwSignal::new(0);
     let theme = RwSignal::new(false);
-    let view = stack((
-        "Toggle Theme".class(Button).on_click_stop({
-            move |_| {
-                theme.update(|theme| *theme = !*theme);
-            }
+    stack((
+        "Toggle Theme".class(Button).action(move || {
+            theme.update(|theme| *theme = !*theme);
         }),
         stack((
             label(move || format!("Value: {}", counter.get())).class(Label),
-            "Increment".class(Button).on_click_stop({
-                move |_| {
-                    counter.update(|value| *value += 1);
-                }
+            "Increment".class(Button).action(move || {
+                counter.update(|value| *value += 1);
             }),
-            "Decrement".class(Button).on_click_stop({
-                move |_| {
-                    counter.update(|value| *value -= 1);
-                }
+            "Decrement".class(Button).action(move || {
+                counter.update(|value| *value -= 1);
             }),
             "Reset to 0"
                 .class(Button)
-                .on_click_stop(move |_| {
+                .action(move || {
                     println!("Reset counter pressed"); // will not fire if button is disabled
                     counter.update(|value| *value = 0);
                 })
@@ -140,10 +135,8 @@ fn app_view() -> impl IntoView {
         .items_center()
         .justify_center()
     })
-    .window_title(|| "Themes Example".to_string());
-
-    let id = view.id();
-    view.on_event_stop(EventListener::KeyUp, move |e| {
+    .window_title(|| "Themes Example".to_string())
+    .on_event_stop(EventListener::KeyUp, move |_, e| {
         if let Event::Key(KeyboardEvent {
             state: KeyState::Up,
             key,
@@ -151,7 +144,7 @@ fn app_view() -> impl IntoView {
         }) = e
         {
             if *key == Key::Named(NamedKey::F11) {
-                id.inspect();
+                inspect();
             }
         }
     })

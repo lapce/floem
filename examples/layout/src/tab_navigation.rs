@@ -98,19 +98,13 @@ pub fn tab_navigation_view() -> impl IntoView {
             .width_full()
     });
 
-    let settings_view = v_stack((tabs_bar, main_content)).style(|s| s.width_full().height_full());
-
-    let id = settings_view.id();
-    settings_view.on_event_stop(EventListener::KeyUp, move |e| {
-        if let Event::Key(KeyboardEvent {
-            state: KeyState::Up,
-            key,
-            ..
-        }) = e
-        {
-            if *key == Key::Named(NamedKey::F11) {
-                id.inspect();
-            }
-        }
-    })
+    v_stack((tabs_bar, main_content))
+        .style(|s| s.width_full().height_full())
+        .on_key_up(
+            Key::Named(NamedKey::F11),
+            |_| true,
+            move |_, _| {
+                floem::action::inspect();
+            },
+        )
 }

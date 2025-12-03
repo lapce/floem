@@ -54,7 +54,7 @@ use understory_responder::{
 
 use crate::{
     Renderer,
-    context::{EventCx, PaintCx, StyleCx, UpdateCx},
+    context::{EventCx, LayoutCx, PaintCx, StyleCx, UpdateCx},
     event::{Event, EventPropagation},
     id::ViewId,
     style::{LayoutProps, Style, StyleClassRef},
@@ -286,6 +286,11 @@ pub trait View {
         }
     }
 
+    /// If a view requests to be run post layout this function will be called after any layout pass in the window
+    fn post_layout(&mut self, lcx: &mut LayoutCx) {
+        let _ = lcx;
+    }
+
     fn event(&mut self, cx: &mut EventCx, event: &Event, phase: Phase) -> EventPropagation {
         let _ = (cx, event, phase);
         EventPropagation::Continue
@@ -340,6 +345,10 @@ impl View for Box<dyn View> {
 
     fn style_pass(&mut self, cx: &mut StyleCx) {
         (**self).style_pass(cx)
+    }
+
+    fn post_layout(&mut self, lcx: &mut LayoutCx) {
+        (**self).post_layout(lcx)
     }
 
     fn event(&mut self, cx: &mut EventCx, event: &Event, phase: Phase) -> EventPropagation {

@@ -8,8 +8,8 @@ pub fn dyn_stack_view() -> impl IntoView {
     let long_list = RwSignal::new(long_list);
 
     let button = button("Add an item")
-        .style(|s| s.active(|s| s.scale_x(50.pct()).scale_y(50.pct())))
-        .action(move || long_list.update(|list| list.push_back(list.len() as i32 + 1)));
+        .style(|s| s.active(|s| s.scale(50.pct())))
+        .action(move || long_list.update(|list| list.push_back(list.len() as i32)));
 
     let stack = dyn_stack(
         move || long_list.get(),

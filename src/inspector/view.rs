@@ -25,7 +25,6 @@ use peniko::color::palette;
 use std::rc::Rc;
 use ui_events::keyboard::{self, KeyState, KeyboardEvent, NamedKey};
 use ui_events::pointer::{PointerButtonEvent, PointerEvent, PointerUpdate};
-use understory_responder::types::Outcome;
 use winit::window::WindowId;
 
 pub fn capture(window_id: WindowId) {

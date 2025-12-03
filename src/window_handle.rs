@@ -849,6 +849,9 @@ impl WindowHandle {
                             self.set_menu_theme_for_windows(new);
                         }
                     }
+                    UpdateMessage::NeedsPostLayout(id) => {
+                        self.window_state.needs_post_layout.insert(id);
+                    }
                 }
             }
         }

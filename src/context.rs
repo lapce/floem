@@ -1,17 +1,13 @@
 use floem_reactive::Scope;
 use floem_renderer::Renderer as FloemRenderer;
 use floem_renderer::gpu_resources::{GpuResourceError, GpuResources};
-use peniko::color::palette;
 use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Shape, Size, Vec2};
-use std::any::Any;
-use std::cell::RefCell;
 use std::{
     ops::{Deref, DerefMut},
     rc::Rc,
     sync::Arc,
 };
 use taffy::Layout;
-use understory_responder::types::Outcome;
 use winit::window::Window;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -30,7 +26,6 @@ use crate::event::EventPropagation;
 use crate::menu::Menu;
 use crate::renderer::Renderer;
 use crate::style::{Disabled, DisplayProp, Focusable, Hidden};
-use crate::view_storage::VIEW_STORAGE;
 use crate::{
     action::exec_after,
     event::Event,
@@ -72,12 +67,6 @@ pub(crate) enum FrameUpdate {
     Style(ViewId),
     Layout,
     Paint(ViewId),
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) enum PointerEventConsumed {
-    Yes,
-    No,
 }
 
 mod event;

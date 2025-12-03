@@ -1,11 +1,4 @@
-use floem::text::FONT_SYSTEM;
-use floem::window::WindowConfig;
-use floem::Application;
-use floem::{
-    reactive::{RwSignal, SignalGet, SignalUpdate},
-    views::{label, ButtonClass, Decorators},
-    IntoView,
-};
+use floem::{prelude::*, text::FONT_SYSTEM, window::WindowConfig, Application};
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
@@ -19,20 +12,20 @@ pub fn app_view() -> impl IntoView {
     let counter = RwSignal::new(0);
 
     // Create a vertical layout
-    (
+    v_stack((
         // The counter value updates automatically, thanks to reactivity
         label(move || format!("Value: {}", counter.get())),
         // Create a horizontal layout
         (
-            "Increment".class(ButtonClass).on_click_stop(move |_| {
+            "Increment".class(ButtonClass).action(move || {
                 counter.update(|value| *value += 1);
             }),
-            "Decrement".class(ButtonClass).on_click_stop(move |_| {
+            "Decrement".class(ButtonClass).action(move || {
                 counter.update(|value| *value -= 1);
             }),
         ),
-    )
-        .style(|s| s.flex_col())
+    ))
+    .style(|s| s.flex_col())
 }
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]

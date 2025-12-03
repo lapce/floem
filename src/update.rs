@@ -55,4 +55,5 @@ pub(crate) enum UpdateMessage {
     WindowVisible(bool),
     ViewTransitionAnimComplete(ViewId),
     SetTheme(Option<Theme>),
+    NeedsPostLayout(ViewId),
 }

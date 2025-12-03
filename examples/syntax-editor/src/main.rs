@@ -1,4 +1,5 @@
 use floem::{
+    action::inspect,
     prelude::*,
     text::{Attrs, AttrsList, FamilyOwned, Stretch, Style, Weight},
     views::editor::{
@@ -215,7 +216,7 @@ mod tests {
 
     let doc = editor.doc();
 
-    let view = stack((
+    stack((
         editor,
         stack((
             button("Clear").action(move || {
@@ -231,13 +232,11 @@ mod tests {
         ))
         .style(|s| s.width_full().flex_row().items_center().justify_center()),
     ))
-    .style(|s| s.size_full().flex_col().items_center().justify_center());
-
-    let id = view.id();
-    view.on_key_up(
+    .style(|s| s.size_full().flex_col().items_center().justify_center())
+    .on_key_up(
         Key::Named(NamedKey::F11),
         |m| m.is_empty(),
-        move |_| id.inspect(),
+        move |_, _| inspect(),
     )
 }
 

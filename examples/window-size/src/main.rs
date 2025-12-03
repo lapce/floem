@@ -1,4 +1,5 @@
 use floem::{
+    action::inspect,
     event::{Event, EventListener},
     kurbo::Size,
     prelude::*,
@@ -9,7 +10,7 @@ use floem::{
 fn app_view() -> impl IntoView {
     let size = RwSignal::new(Size::default());
 
-    let view = label(move || format!("{}", size.get()))
+    label(move || format!("{}", size.get()))
         .style(|s| s.font_size(30.0))
         .container()
         .style(|s| {
@@ -19,22 +20,20 @@ fn app_view() -> impl IntoView {
                 .width_full()
                 .height_full()
                 .row_gap(10.0)
-        });
-
-    let id = view.id();
-    view.on_event_stop(EventListener::KeyUp, move |e| {
-        if let Event::Key(KeyboardEvent {
-            state: KeyState::Up,
-            key,
-            ..
-        }) = e
-        {
-            if *key == Key::Named(NamedKey::F11) {
-                id.inspect();
+        })
+        .on_event_stop(EventListener::KeyUp, move |_, e| {
+            if let Event::Key(KeyboardEvent {
+                state: KeyState::Up,
+                key,
+                ..
+            }) = e
+            {
+                if *key == Key::Named(NamedKey::F11) {
+                    inspect();
+                }
             }
-        }
-    })
-    .on_resize(move |r| size.set(r.size()))
+        })
+        .on_resize(move |r| size.set(r.size()))
 }
 
 fn main() {

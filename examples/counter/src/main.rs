@@ -1,11 +1,11 @@
-use floem::{prelude::*, unit::UnitExt};
+use floem::{action::inspect, prelude::*};
 
 fn app_view() -> impl IntoView {
     let counter = RwSignal::new(0);
-    let view = (
+    v_stack((
         dyn_view(move || format!("Value: {}", counter.get())),
         counter.style(|s| s.padding(10.0)),
-        (
+        h_stack((
             "Increment"
                 .style(|s| {
                     s.border_radius(10.0)
@@ -20,16 +20,12 @@ fn app_view() -> impl IntoView {
                                 .background(palette::css::DARK_GREEN)
                         })
                 })
-                .on_click_stop({
-                    move |_| {
-                        counter.update(|value| *value += 1);
-                    }
+                .action(move || {
+                    counter.update(|value| *value += 1);
                 }),
             "Decrement"
-                .on_click_stop({
-                    move |_| {
-                        counter.update(|value| *value -= 1);
-                    }
+                .action(move || {
+                    counter.update(|value| *value -= 1);
                 })
                 .style(|s| {
                     s.box_shadow_blur(5.0)
@@ -43,7 +39,7 @@ fn app_view() -> impl IntoView {
                         .active(|s| s.color(palette::css::WHITE).background(palette::css::RED))
                 }),
             "Reset to 0"
-                .on_click_stop(move |_| {
+                .action(move || {
                     println!("Reset counter pressed"); // will not fire if button is disabled
                     counter.update(|value| *value = 0);
                 })
@@ -63,21 +59,14 @@ fn app_view() -> impl IntoView {
                                 .background(palette::css::YELLOW_GREEN)
                         })
                 }),
-        )
-            .style(|s| s.custom_style_class(|s: LabelCustomStyle| s.selectable(false))),
-    )
-        .style(|s| {
-            s.size(100.pct(), 100.pct())
-                .flex_col()
-                .items_center()
-                .justify_center()
-        });
-
-    let id = view.id();
-    view.on_key_up(
+        ))
+        .style(|s| s.custom_style_class(|s: LabelCustomStyle| s.selectable(false))),
+    ))
+    .style(|s| s.size_full().items_center().justify_center())
+    .on_key_up(
         Key::Named(NamedKey::F11),
         |m| m.is_empty(),
-        move |_| id.inspect(),
+        move |_, _| inspect(),
     )
 }
 

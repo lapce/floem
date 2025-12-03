@@ -2,19 +2,18 @@ use std::collections::{HashMap, HashSet};
 
 use muda::MenuId;
 use peniko::kurbo::{Affine, Point, Rect, Size, Vec2};
+use rustc_hash::FxHashSet;
 use taffy::{AvailableSpace, Display, NodeId};
-use understory_box_tree::{ClipBehavior, Hit, LocalNode, NodeFlags};
+use understory_box_tree::{ClipBehavior, LocalNode, NodeFlags};
 use understory_responder::{
-    adapters::box_tree::PathAwareClickState, click::ClickState, focus::FocusState,
-    hover::HoverState,
+    adapters::box_tree::PathAwareClickState, focus::FocusState, hover::HoverState,
 };
 use winit::cursor::CursorIcon;
 use winit::window::Theme;
 
 use crate::{
     action::add_update_message,
-    context::{DragState, FrameUpdate},
-    event::{Event, EventListener},
+    context::{DragState, FrameUpdate, LayoutCx},
     id::ViewId,
     inspector::CaptureState,
     responsive::{GridBreakpoints, ScreenSizeBp},
@@ -47,6 +46,7 @@ pub struct WindowState {
     pub(crate) focus_state: FocusState<understory_box_tree::NodeId>,
     pub(crate) focusable: HashSet<understory_box_tree::NodeId>,
     pub(crate) file_hovered: HashSet<ViewId>,
+    pub(crate) needs_post_layout: FxHashSet<ViewId>,
     // whether the window is in light or dark mode
     pub(crate) light_dark_theme: winit::window::Theme,
     // if `true`, then the window will not follow the os theme changes
@@ -83,6 +83,7 @@ impl WindowState {
             focus_state: FocusState::new(),
             focusable: HashSet::new(),
             file_hovered: HashSet::new(),
+            needs_post_layout: Default::default(),
             theme_overriden: false,
             light_dark_theme: os_theme.unwrap_or(Theme::Light),
             cursor: None,
@@ -222,8 +223,17 @@ impl WindowState {
             }
             drop(taffy);
 
-            compute_absolute_transforms_and_boxes(root, Affine::IDENTITY, None);
+            compute_absolute_transforms_and_boxes(
+                root,
+                Affine::IDENTITY,
+                ScrollContext::default(),
+                None,
+            );
             let _damage = VIEW_STORAGE.with_borrow(|s| s.box_tree.borrow_mut().commit());
+            for id in self.needs_post_layout.iter() {
+                let lcx = &mut LayoutCx::new(*id);
+                id.view().borrow_mut().post_layout(lcx);
+            }
         }
     }
 
@@ -289,12 +299,19 @@ impl WindowState {
     }
 }
 
+#[derive(Clone, Default)]
+pub struct ScrollContext {
+    pub offset: Vec2, // total accumulated offset from all scroll ancestors
+}
+
 fn compute_absolute_transforms_and_boxes(
     node: NodeId,
-    parent_transform_for_children: Affine, // What my parent wants MY children to see
+    parent_transform_for_children: Affine,
+    parent_scroll_context: ScrollContext,
     parent_box_node: Option<understory_box_tree::NodeId>,
 ) {
     VIEW_STORAGE.with_borrow(|s| {
+        let mut scroll_ctx = parent_scroll_context.clone();
         let taffy = s.taffy.borrow();
         let layout = taffy.layout(node).unwrap();
 
@@ -304,15 +321,19 @@ fn compute_absolute_transforms_and_boxes(
         let (view_id, local_transform, scroll_offset) =
             if let Some(&view_id) = s.node_to_view.get(&node) {
                 let state = s.states.get(view_id);
-                let transform = state
+                let style_transform = state
                     .as_ref()
                     .map(|s| s.borrow().view_transform_props.affine(layout))
+                    .unwrap_or_default();
+                let transform = state
+                    .as_ref()
+                    .map(|s| s.borrow().transform)
                     .unwrap_or_default();
                 let scroll = state
                     .as_ref()
                     .map(|s| s.borrow().scroll_offset)
                     .unwrap_or_default();
-                (Some(view_id), transform, scroll)
+                (Some(view_id), style_transform * transform, scroll)
             } else {
                 (None, Affine::IDENTITY, Vec2::ZERO)
             };
@@ -325,6 +346,13 @@ fn compute_absolute_transforms_and_boxes(
         let children_parent_transform = Affine::translate(-scroll_offset);
 
         let current_box_node = if let Some(view_id) = view_id {
+            if scroll_offset != Vec2::ZERO {
+                scroll_ctx.offset += scroll_offset;
+            }
+            if let Some(s) = s.states.get(view_id) {
+                s.borrow_mut().scroll_ctx = scroll_ctx.clone();
+            }
+
             let local_rect = Rect::from_origin_size(Point::ZERO, size);
 
             let style = s
@@ -400,7 +428,8 @@ fn compute_absolute_transforms_and_boxes(
             for &child in &children {
                 compute_absolute_transforms_and_boxes(
                     child,
-                    children_parent_transform, // They pass this to THEIR children
+                    children_parent_transform,
+                    scroll_ctx.clone(),
                     current_box_node,
                 );
             }

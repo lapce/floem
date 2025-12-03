@@ -186,7 +186,7 @@ where
         }
     });
 
-    let direction = stack.direction;
+    let layout_data = stack.layout_data.clone();
 
     let stack = stack
         .class(ListClass)
@@ -216,7 +216,7 @@ where
                     ) => handle_arrow_key(
                         selection,
                         length.get_untracked(),
-                        direction.get_untracked(),
+                        layout_data.borrow().direction,
                         stack_id,
                         named_key,
                     ),

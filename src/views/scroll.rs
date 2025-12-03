@@ -176,6 +176,9 @@ pub fn scroll<V: IntoView + 'static>(child: V) -> Scroll {
     let child = child.into_any();
     let child_id = child.id();
     id.add_child(child);
+    // we need to first set the clip rect to zero so that virtual items don't set a large initial size
+    id.set_box_tree_clip(Some(RoundedRect::from_rect(Rect::ZERO, 0.)));
+    child_id.set_box_tree_clip_behavior(understory_box_tree::ClipBehavior::Inherit);
 
     Scroll {
         id,
@@ -1010,8 +1013,6 @@ impl View for Scroll {
             cx.clip(&clip_rect);
         }
         self.id.set_box_tree_clip(clip_rect);
-        self.child
-            .set_box_tree_clip_behavior(understory_box_tree::ClipBehavior::Inherit);
 
         cx.paint_view(self.child);
         cx.restore();

@@ -1,14 +1,12 @@
-use floem::{imbl, prelude::*};
+use floem::prelude::*;
 
 pub fn virtual_stack_view() -> impl IntoView {
     // A virtual list is optimized to only render the views that are visible
     // making it ideal for large lists with a lot of views.
 
-    let long_list: imbl::Vector<i32> = (0..1000000).collect();
-    let long_list = RwSignal::new(long_list);
+    let long_list = RwSignal::new(0..1000000);
 
-    let button = button("Add an item")
-        .action(move || long_list.update(|list| list.push_back(list.len() as i32 + 1)));
+    let button = button("Add an item").action(move || long_list.update(|range| range.end += 1));
 
     let virtual_stack = VirtualStack::new(move || long_list.get())
         .style(|s| s.flex_col().width_full())

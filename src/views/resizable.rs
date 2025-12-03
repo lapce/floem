@@ -41,7 +41,7 @@ pub(crate) fn create_resizable(children: Vec<Box<dyn View>>) -> ResizableStack {
             offset
         })
         .collect();
-    id.set_children_vec(children);
+    id.set_children(children);
 
     ResizableStack {
         id,
@@ -293,8 +293,8 @@ impl View for ResizableStack {
 
         let color = self.handle_style.color();
         if let Some(color) = color {
-            for (idx, handle_line) in
-                (0..(self.layouts.len() - 1)).map(|idx| (idx, self.get_handle_line(idx)))
+            for (idx, handle_line) in (0..(self.layouts.len().saturating_sub(1)))
+                .map(|idx| (idx, self.get_handle_line(idx)))
             {
                 if Some(idx) == drawn {
                     continue;
@@ -353,7 +353,7 @@ impl ResizableStack {
     }
 
     fn find_handle_at_position(&self, pos: Point) -> Option<usize> {
-        for i in 0..self.layouts.len() - 1 {
+        for i in 0..self.layouts.len().saturating_sub(1) {
             let handle_rect = self.get_handle_line(i);
             // TODO make hit target configurable
             if handle_rect.hit(pos, 5.) {
@@ -364,7 +364,7 @@ impl ResizableStack {
     }
 
     fn update_handle_position(&mut self, handle_idx: usize, pos: Point) {
-        if handle_idx >= self.layouts.len() - 1 {
+        if handle_idx >= self.layouts.len().saturating_sub(1) {
             return;
         }
         let current_layout = self.layouts[handle_idx];
@@ -435,7 +435,7 @@ impl ResizableStack {
     fn apply_size_to_child(&self, child_idx: usize, size: f64) {
         let child = self.id.with_children(|c| c[child_idx]);
         let offset = self.style_offsets[child_idx];
-        let is_last = child_idx == self.style_offsets.len() - 1;
+        let is_last = child_idx == self.style_offsets.len().saturating_sub(1);
 
         match self.re_style.direction() {
             FlexDirection::Row | FlexDirection::RowReverse => {
@@ -472,7 +472,7 @@ impl ResizableStack {
     }
 
     fn clear_handle_pos(&mut self, handle_idx: usize) {
-        if handle_idx >= self.layouts.len() - 1 {
+        if handle_idx >= self.layouts.len().saturating_sub(1) {
             return;
         }
 

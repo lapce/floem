@@ -39,15 +39,6 @@ use crate::{
 
 pub(crate) type FloemDispatch = Dispatch<NodeId, ViewId, Option<()>>;
 
-macro_rules! continue_or_stop {
-    ($expr:expr) => {
-        match $expr.into() {
-            Outcome::Continue => {}
-            Outcome::Stop => return Outcome::Stop.into(),
-        }
-    };
-}
-
 pub trait WidgetLookupExt {
     fn widget_of(&self) -> Option<ViewId>;
     fn parent_of(&self) -> Option<Self>
@@ -692,27 +683,6 @@ impl<'a> EventCx<'a> {
                 self.view_arrow_navigation(name, event.clone());
             }
         }
-
-        // Handle keyboard trigger release (space/enter up on active view)
-        // if self.window_state.keyboard_navigation
-        //     && event.is_keyboard_trigger()
-        //     && matches!(
-        //         event,
-        //         Event::Key(KeyboardEvent {
-        //             state: KeyState::Up,
-        //             ..
-        //         })
-        //     )
-        // {
-        //     if let Some(active_id) = self.window_state.active.take() {
-        //         if self
-        //             .window_state
-        //             .has_style_for_sel(active_id, StyleSelector::Active)
-        //         {
-        //             active_id.request_style_recursive();
-        //         }
-        //     }
-        // }
     }
 
     /// Route directed events (keyboard to focused view)

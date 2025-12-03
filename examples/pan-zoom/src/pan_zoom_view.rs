@@ -5,6 +5,7 @@ use floem::{
     action::exec_after,
     event::{Event, EventPropagation},
     kurbo::{self, Vec2},
+    prelude::Phase,
     ui_events::pointer::{PointerButtonEvent, PointerEvent, PointerUpdate},
 };
 
@@ -92,68 +93,80 @@ impl View for PanZoomView {
         self.id
     }
 
-    fn event_before_children(
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn event(
         &mut self,
         _cx: &mut floem::context::EventCx,
         event: &Event,
+        phase: Phase,
     ) -> EventPropagation {
-        match event {
-            Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. })) => {
-                self.dragging = true;
-                self.drag_cursor_pos = Some(state.logical_point());
-                self.drag_velocities.clear();
-                self.schedule_update();
-            }
-            Event::Pointer(PointerEvent::Move(PointerUpdate { current, .. })) => {
-                self.cursor_pos = Some(current.logical_point());
-                if !self.dragging {
-                    return EventPropagation::Continue;
-                }
-
-                let current_cursor_pos = current.logical_point();
-                let Some(previous_cursor_pos) = self.drag_cursor_pos else {
-                    self.drag_cursor_pos = Some(current_cursor_pos);
-                    return EventPropagation::Continue;
-                };
-
-                // Calculate and apply drag delta in viewport space
-                let delta = self.screen_to_viewport(previous_cursor_pos)
-                    - self.screen_to_viewport(current_cursor_pos);
-                self.set_view_transform(kurbo::Affine::translate(delta) * self.view_transform);
-                self.drag_cursor_pos = Some(current_cursor_pos);
-
-                self.id().request_paint();
-
-                return EventPropagation::Stop;
-            }
-            Event::Pointer(PointerEvent::Up(_)) => {
-                self.dragging = false;
-                self.drag_cursor_pos = None;
-
-                let now = std::time::Instant::now();
-                let dt = (now - self.last_update).as_secs_f64();
-                if dt < 1. {
-                    self.drag_velocity = self.drag_velocity();
-                    self.drag_end_time = Some(now);
+        if phase == Phase::Capture {
+            match event {
+                Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. })) => {
+                    self.dragging = true;
+                    self.drag_cursor_pos = Some(state.logical_point());
+                    self.drag_velocities.clear();
+                    self.id.request_active();
                     self.schedule_update();
-                } else {
-                    self.drag_velocity = kurbo::Vec2::ZERO;
                 }
-            }
-            e @ Event::Pointer(PointerEvent::Scroll(_)) => {
-                if let Some(delta) = e.pixel_scroll_delta_vec2() {
-                    let scale = 1. - delta.y / 40.;
+                Event::Pointer(PointerEvent::Move(PointerUpdate { current, .. })) => {
+                    self.cursor_pos = Some(current.logical_point());
+                    if !self.dragging {
+                        return EventPropagation::Continue;
+                    }
 
-                    self.target_scale *= scale;
-                    if self.zoom_start_time.is_none() {
-                        self.zoom_start_time = Some(std::time::Instant::now());
+                    let current_cursor_pos = current.logical_point();
+                    let Some(previous_cursor_pos) = self.drag_cursor_pos else {
+                        self.drag_cursor_pos = Some(current_cursor_pos);
+                        return EventPropagation::Continue;
+                    };
+
+                    // Calculate and apply drag delta in viewport space
+                    let delta = self.screen_to_viewport(previous_cursor_pos)
+                        - self.screen_to_viewport(current_cursor_pos);
+                    self.set_view_transform(kurbo::Affine::translate(delta) * self.view_transform);
+                    self.drag_cursor_pos = Some(current_cursor_pos);
+
+                    self.id().request_paint();
+
+                    return EventPropagation::Stop;
+                }
+                Event::Pointer(PointerEvent::Up(_)) => {
+                    self.dragging = false;
+                    self.drag_cursor_pos = None;
+
+                    let now = std::time::Instant::now();
+                    let dt = (now - self.last_update).as_secs_f64();
+                    if dt < 1. {
+                        self.drag_velocity = self.drag_velocity();
+                        self.drag_end_time = Some(now);
                         self.schedule_update();
                     } else {
-                        self.zoom_start_time = Some(std::time::Instant::now());
+                        self.drag_velocity = kurbo::Vec2::ZERO;
+                    }
+                    self.id.clear_active();
+                }
+                e @ Event::Pointer(PointerEvent::Scroll(_)) => {
+                    if let Some(delta) = e.pixel_scroll_delta_vec2() {
+                        let scale = 1. - delta.y / 40.;
+
+                        self.target_scale *= scale;
+                        if self.zoom_start_time.is_none() {
+                            self.zoom_start_time = Some(std::time::Instant::now());
+                            self.schedule_update();
+                        } else {
+                            self.zoom_start_time = Some(std::time::Instant::now());
+                        }
                     }
                 }
+                _ => {}
             }
-            _ => {}
         }
         EventPropagation::Continue
     }

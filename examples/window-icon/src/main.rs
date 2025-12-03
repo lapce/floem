@@ -1,4 +1,5 @@
 use floem::{
+    action::inspect,
     close_window,
     event::{Event, EventListener},
     kurbo::Size,
@@ -26,7 +27,7 @@ fn sub_window_view(id: WindowId) -> impl IntoView {
 }
 
 fn app_view() -> impl IntoView {
-    let view = v_stack((
+    v_stack((
         label(move || String::from("This window has an icon from a PNG file"))
             .style(|s| s.font_size(30.0)),
         button("Open another window").action(|| {
@@ -49,10 +50,8 @@ fn app_view() -> impl IntoView {
             .width_full()
             .height_full()
             .row_gap(10.0)
-    });
-
-    let id = view.id();
-    view.on_event_stop(EventListener::KeyUp, move |e| {
+    })
+    .on_event_stop(EventListener::KeyUp, move |_, e| {
         if let Event::Key(KeyboardEvent {
             state: KeyState::Up,
             key,
@@ -60,7 +59,7 @@ fn app_view() -> impl IntoView {
         }) = e
         {
             if *key == Key::Named(NamedKey::F11) {
-                id.inspect();
+                inspect();
             }
         }
     })

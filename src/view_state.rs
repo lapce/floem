@@ -12,6 +12,7 @@ use crate::{
         OutlineColor, Style, StyleClassRef, StyleSelectors, TransformProps, resolve_nested_maps,
     },
     view_storage::NodeContext,
+    window_state::ScrollContext,
 };
 use bitflags::bitflags;
 use imbl::HashSet;
@@ -182,6 +183,7 @@ pub struct ViewState {
     pub(crate) request_style_recursive: bool,
     pub(crate) has_style_selectors: StyleSelectors,
     pub(crate) scroll_offset: Vec2,
+    pub(crate) scroll_ctx: ScrollContext,
     pub(crate) layout_props: LayoutProps,
     pub(crate) view_style_props: ViewStyleProps,
     pub(crate) view_transform_props: TransformProps,
@@ -221,6 +223,7 @@ impl ViewState {
             style,
             view_style_offset,
             scroll_offset: Default::default(),
+            scroll_ctx: Default::default(),
             layout_props: Default::default(),
             view_style_props: Default::default(),
             view_transform_props: Default::default(),
