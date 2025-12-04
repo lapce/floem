@@ -28,7 +28,7 @@ use crate::{
     window_tracking::with_window,
 };
 
-#[cfg(any(feature = "rfd-async-std", feature = "rfd-tokio"))]
+#[cfg(any(feature = "rfd-async-std", feature = "rfd-tokio", feature = "rfd"))]
 pub use crate::file_action::*;
 
 pub(crate) fn add_update_message(msg: UpdateMessage) {

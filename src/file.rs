@@ -19,11 +19,11 @@ pub struct FileSpec {
 
 #[derive(Debug, Clone)]
 pub struct FileInfo {
-    /// The path to the selected file.
+    /// The path(s) to the selected file(s).
     ///
     /// On macOS, this is already rewritten to use the extension that the user selected
     /// with the `file format` property.
-    pub path: Vec<PathBuf>,
+    pub paths: Vec<PathBuf>,
     /// The selected file format.
     ///
     /// If there are multiple different formats available
@@ -37,7 +37,7 @@ pub struct FileInfo {
 impl FileInfo {
     /// Returns the underlying path.
     pub fn path(&self) -> &Vec<PathBuf> {
-        &self.path
+        &self.paths
     }
 }
 
