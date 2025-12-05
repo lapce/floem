@@ -3,7 +3,7 @@ use peniko::kurbo::Point;
 use std::rc::Rc;
 use std::{any::Any, cell::RefCell};
 use ui_events::pointer::PointerEvent;
-use understory_responder::types::{Outcome, Phase};
+use understory_responder::types::Phase;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Duration;
@@ -53,7 +53,6 @@ pub struct Tooltip {
     style: TooltipStyle,
     tip_style: Style,
     scale: f64,
-    window_origin: Option<Point>,
 }
 
 /// A view that displays a tooltip for its child.
@@ -73,7 +72,6 @@ pub fn tooltip<V: IntoView + 'static, T: IntoView + 'static>(
         style: Default::default(),
         tip_style: Default::default(),
         scale: 1.0,
-        window_origin: None,
     }
     .class(TooltipContainerClass)
     .on_cleanup(move || {
@@ -90,21 +88,21 @@ impl View for Tooltip {
 
     fn update(&mut self, _cx: &mut UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(token) = state.downcast::<TimerToken>() {
-            if let Some(window_origin) = self.window_origin {
-                if self.hover.map(|(_, t)| t) == Some(*token) {
-                    let tip = self.tip.clone();
+            if let Some(bounds) = self.id.world_bounds()
+                && let origin = bounds.origin()
+                && self.hover.map(|(_, t)| t) == Some(*token)
+            {
+                let tip = self.tip.clone();
 
-                    let tip_style = self.tip_style.clone();
-                    let point = window_origin
-                        + self.hover.unwrap().0.to_vec2()
-                        + (10. / self.scale, 10. / self.scale);
-                    let overlay_id = add_overlay(
-                        ToolTipOverlay::new(tip().style(move |_| tip_style.clone()))
-                            .style(move |s| s.inset_left(point.x).inset_top(point.y)),
-                    );
-                    // overlay_id.request_all();
-                    *self.overlay.borrow_mut() = Some(overlay_id);
-                }
+                let tip_style = self.tip_style.clone();
+                let point =
+                    origin + self.hover.unwrap().0.to_vec2() + (10. / self.scale, 10. / self.scale);
+                let overlay_id = add_overlay(
+                    ToolTipOverlay::new(tip().style(move |_| tip_style.clone()))
+                        .style(move |s| s.inset_left(point.x).inset_top(point.y)),
+                );
+                // overlay_id.request_all();
+                *self.overlay.borrow_mut() = Some(overlay_id);
             }
         }
     }
@@ -117,47 +115,34 @@ impl View for Tooltip {
             Style::new().apply_classes_from_context(&[TooltipClass::class_ref()], &cx.current);
 
         self.tip_style = tip_style;
-
-        for child in self.id.children() {
-            cx.style_view(child);
-        }
     }
 
-    fn event(&mut self, cx: &mut EventCx, event: &Event, phase: Phase) -> EventPropagation {
-        if phase != Phase::Bubble {
+    fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
+        if cx.phase == Phase::Capture {
             return EventPropagation::Continue;
         }
 
-        match &event {
-            Event::Pointer(PointerEvent::Move(pu)) => {
-                if self.overlay.borrow().is_none() && cx.window_state.dragging.is_none() {
-                    let id = self.id();
-                    let token = exec_after(self.style.delay(), move |token| {
-                        id.update_state(token);
-                    });
-                    self.hover = Some((pu.current.logical_point(), token));
-                }
+        if cx
+            .listeners
+            .contains(&crate::event::EventListener::PointerLeave)
+        {
+            self.hover = None;
+            if let Some(id) = self.overlay.borrow_mut().take() {
+                remove_overlay(id);
+                return EventPropagation::Continue;
             }
-            Event::Pointer(_) | Event::Key(_) => {
-                self.hover = None;
-                if let Some(id) = self.overlay.borrow_mut().take() {
-                    remove_overlay(id);
-                }
+        }
+
+        if let Event::Pointer(PointerEvent::Move(pu)) = &cx.event {
+            if self.overlay.borrow().is_none() && cx.window_state.dragging.is_none() {
+                let id = self.id();
+                let token = exec_after(self.style.delay(), move |token| {
+                    id.update_state(token);
+                });
+                self.hover = Some((pu.current.logical_point(), token));
             }
-            _ => {}
         }
         EventPropagation::Continue
-    }
-
-    // fn compute_layout(
-    //     &mut self,
-    //     cx: &mut crate::context::ComputeLayoutCx,
-    // ) -> Option<peniko::kurbo::Rect> {
-    //     self.window_origin = Some(cx.window_origin);
-    //     cx.layout_view(self.id)
-    // }
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
@@ -251,10 +236,6 @@ impl View for ToolTipOverlay {
 
     //     node
     // }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self

@@ -17,15 +17,15 @@ fn app_view() -> impl IntoView {
                 .justify_center()
                 .focusable(true) // Focusable is needed for a view to be able to receive keyboard events
         });
-    view.on_event_stop(EventListener::KeyDown, move |_v, e| {
+    view.on_event_stop(EventListener::KeyDown, move |_v, cx| {
         if let Event::Key(KeyboardEvent {
             state: KeyState::Down,
             code,
             key,
             ..
-        }) = e
+        }) = &cx.event
         {
-            if *key == Key::Character("q".into()) {
+            if let  Key::Character(c) = key && c == "q" {
                 println!("Goodbye :)");
                 std::process::exit(0)
             }

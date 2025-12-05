@@ -1,15 +1,15 @@
 use floem::{
-    context::PaintCx,
+    ViewId,
+    context::{EventCx, PaintCx},
     event::{Event, EventPropagation},
     kurbo::{Affine, Circle, Point, Rect, Shape, Size, Stroke},
     peniko::{
-        color::{AlphaColor, ColorSpaceTag::LinearSrgb, Hsl},
         Gradient, Mix,
+        color::{AlphaColor, ColorSpaceTag::LinearSrgb, Hsl},
     },
     prelude::*,
     reactive::UpdaterEffect,
     ui_events::pointer::{PointerButtonEvent, PointerEvent},
-    ViewId,
 };
 use palette::css;
 
@@ -164,9 +164,6 @@ impl View for SatValuePicker {
         self.id
     }
 
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
@@ -182,17 +179,12 @@ impl View for SatValuePicker {
         }
     }
 
-    fn event(
-        &mut self,
-        _cx: &mut floem::context::EventCx,
-        event: &Event,
-        phase: Phase,
-    ) -> EventPropagation {
-        if phase != Phase::Target {
+    fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
+        if cx.phase != Phase::Target {
             return EventPropagation::Continue;
         }
         if let Some(on_change) = &self.on_change {
-            match event {
+            match &cx.event {
                 Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. })) => {
                     self.current_color = self.position_to_hsl(state.logical_point());
                     on_change(self.current_color.convert());
@@ -202,7 +194,6 @@ impl View for SatValuePicker {
                 Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. })) => {
                     self.current_color = self.position_to_hsl(state.logical_point());
                     on_change(self.current_color.convert());
-                    self.id.clear_active();
                     self.track = false;
                 }
                 Event::Pointer(PointerEvent::Move(pu)) => {
@@ -302,9 +293,6 @@ impl View for HuePicker {
         self.id
     }
 
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
@@ -320,17 +308,12 @@ impl View for HuePicker {
         }
     }
 
-    fn event(
-        &mut self,
-        _cx: &mut floem::context::EventCx,
-        event: &Event,
-        phase: Phase,
-    ) -> EventPropagation {
-        if phase != Phase::Target {
+    fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
+        if cx.phase != Phase::Target {
             return EventPropagation::Continue;
         }
         if let Some(on_change) = &self.on_change {
-            match event {
+            match &cx.event {
                 Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. })) => {
                     self.current_color = self.position_to_hsl(state.logical_point());
                     on_change(self.current_color.convert());
@@ -340,7 +323,6 @@ impl View for HuePicker {
                 Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. })) => {
                     self.current_color = self.position_to_hsl(state.logical_point());
                     on_change(self.current_color.convert());
-                    self.id.clear_active();
                     self.track = false;
                 }
                 Event::Pointer(PointerEvent::Move(pu)) => {
@@ -438,9 +420,6 @@ impl View for OpacityPicker {
         self.id
     }
 
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
@@ -456,17 +435,12 @@ impl View for OpacityPicker {
         }
     }
 
-    fn event(
-        &mut self,
-        _cx: &mut floem::context::EventCx,
-        event: &Event,
-        phase: Phase,
-    ) -> EventPropagation {
-        if phase != Phase::Target {
+    fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
+        if cx.phase != Phase::Target {
             return EventPropagation::Continue;
         }
         if let Some(on_change) = &self.on_change {
-            match event {
+            match &cx.event {
                 Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. })) => {
                     self.current_color = self.position_to_alpha(state.logical_point());
                     on_change(self.current_color);
@@ -476,7 +450,6 @@ impl View for OpacityPicker {
                 Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. })) => {
                     self.current_color = self.position_to_alpha(state.logical_point());
                     on_change(self.current_color);
-                    self.id.clear_active();
                     self.track = false;
                 }
                 Event::Pointer(PointerEvent::Move(pu)) => {

@@ -105,15 +105,15 @@ pub fn launch_with_track<V: IntoView + 'static>(app_view: impl FnOnce() -> V + '
                         });
                     },
                 )
-                .on_event_stop(EventListener::WindowMoved, move |_, event| {
-                    if let Event::WindowMoved(position) = event {
+                .on_event_stop(EventListener::WindowMoved, move |_, cx| {
+                    if let Event::WindowMoved(position) = &cx.event {
                         app_config.update(|val| {
                             val.position = *position;
                         })
                     }
                 })
-                .on_event_stop(EventListener::WindowResized, move |_, event| {
-                    if let Event::WindowResized(size) = event {
+                .on_event_stop(EventListener::WindowResized, move |_, cx| {
+                    if let Event::WindowResized(size) = &cx.event {
                         app_config.update(|val| {
                             val.size = *size;
                         })

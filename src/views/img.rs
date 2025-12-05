@@ -7,7 +7,7 @@ use peniko::{Blob, ImageAlphaType, ImageData};
 use sha2::{Digest, Sha256};
 use taffy::NodeId;
 
-use crate::{Renderer, id::ViewId, style::Style, unit::UnitExt, view::View};
+use crate::{Renderer, id::ViewId, view::View};
 
 /// Holds information about image position and size inside container.
 pub struct ImageStyle {
@@ -276,10 +276,6 @@ impl View for Img {
                 rect,
             );
         }
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {

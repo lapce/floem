@@ -6,7 +6,7 @@ use crate::{
     id::ViewId,
     peniko::kurbo::Point,
     prop, prop_extractor,
-    style::{Style, TextColor},
+    style::TextColor,
     style_class,
     text::{Attrs, AttrsList, TextLayout},
     view::View,
@@ -225,10 +225,6 @@ impl View for EditorGutterView {
                 cx.draw_text(&text_layout, pos);
             }
         });
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {

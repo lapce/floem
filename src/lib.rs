@@ -244,6 +244,7 @@ pub use peniko::kurbo;
 pub use screen_layout::ScreenLayout;
 pub use taffy;
 pub use ui_events;
+pub use understory_box_tree::NodeId as VisualId;
 pub use view::{AnyView, IntoView, View};
 pub use view_state::{Stack, StackOffset};
 pub use window::{close_window, new_window};

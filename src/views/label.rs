@@ -7,14 +7,15 @@ use crate::{
     id::ViewId,
     prop_extractor,
     style::{
-        CursorColor, CustomStylable, CustomStyle, FontProps, LineHeight, Selectable,
+        CursorStyle, CustomStylable, CustomStyle, FontProps, LineHeight, Selectable,
         SelectionCornerRadius, SelectionStyle, Style, TextAlignProp, TextColor, TextOverflow,
         TextOverflowProp,
     },
     style_class,
     text::{Attrs, AttrsList, FamilyOwned, TextLayout},
     view::View,
-    view_storage::{MeasureFunction, NodeContext},
+    view_storage::{FinalizeFn, MeasureFn, NodeContext},
+    views::editor::SelectionColor,
 };
 use floem_reactive::UpdaterEffect;
 use floem_renderer::{
@@ -23,8 +24,8 @@ use floem_renderer::{
 };
 use peniko::{
     Brush,
-    color::palette,
-    kurbo::{Point, Rect},
+    color::palette::{self, css::RED},
+    kurbo::{Point, Rect, Stroke},
 };
 use ui_events::{
     keyboard::{Key, KeyState, KeyboardEvent},
@@ -171,7 +172,7 @@ impl TextLayoutData {
         };
 
         let natural_width = text_layout.size().width as f32;
-        let overflows = natural_width > final_width + 0.5;
+        let overflows = natural_width > final_width + 1.;
 
         if !overflows {
             self.clear_overflow_state();
@@ -227,7 +228,7 @@ impl TextLayoutData {
 
     /// Create a taffy layout function that can be used with NodeContext::custom
     /// This function handles all ellipsis and wrap logic internally without requiring updates
-    pub fn create_taffy_layout_fn(layout_data: Rc<RefCell<Self>>) -> Box<MeasureFunction> {
+    pub fn create_taffy_layout_fn(layout_data: Rc<RefCell<Self>>) -> Box<MeasureFn> {
         Box::new(
             move |known_dimensions, available_space, node_id, _style, measure_ctx| {
                 use taffy::*;
@@ -279,7 +280,7 @@ impl TextLayoutData {
 
                 // Calculate the actual text size based on effective width
                 let text_size = if let Some(width) = effective_width {
-                    let overflows = natural_width > width + 0.5;
+                    let overflows = natural_width > width + 1.;
 
                     if overflows {
                         // Just compute what the size would be
@@ -309,12 +310,10 @@ impl TextLayoutData {
         )
     }
 
-    pub fn create_finalize_fn(
-        layout_data: Rc<RefCell<Self>>,
-    ) -> Box<dyn Fn(taffy::NodeId, taffy::Size<f32>)> {
-        Box::new(move |_node_id, final_size| {
+    pub fn create_finalize_fn(layout_data: Rc<RefCell<Self>>) -> Box<FinalizeFn> {
+        Box::new(move |_node_id, layout| {
             let mut layout_data = layout_data.borrow_mut();
-            layout_data.finalize_for_width(final_size.width);
+            layout_data.finalize_for_width(layout.content_box_width());
         })
     }
 }
@@ -340,12 +339,13 @@ style_class!(
     pub LabelClass
 );
 
+// TODO: make this a custom event
 struct TextOverflowListener {
     last_is_overflown: Option<bool>,
     on_change_fn: Box<dyn Fn(bool) + 'static>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 enum SelectionState {
     None,
     Ready(Point),
@@ -590,25 +590,36 @@ impl View for Label {
         format!("Label: {:?}", self.label).into()
     }
 
-    fn event(&mut self, _cx: &mut EventCx, event: &Event, phase: Phase) -> EventPropagation {
-        if phase != Phase::Target {
+    fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
+        if cx
+            .listeners
+            .contains(&crate::event::EventListener::FocusLost)
+        {
+            self.id.set_cursor(None);
+            self.selection_state = SelectionState::None;
+            self.selection_range = None;
+            cx.window_state.request_paint(self.id);
+            return EventPropagation::Continue;
+        }
+        if cx.phase != Phase::Target {
             return EventPropagation::Continue;
         }
 
-        match event {
+        match &cx.event {
             Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. })) => {
                 if self.style.text_selectable() {
                     self.selection_range = None;
                     self.selection_state = SelectionState::Ready(state.logical_point());
-                    self.id.request_paint();
+                    cx.window_state.update_active(self.id);
+                    cx.window_state.request_paint(self.id);
                 }
             }
             Event::Pointer(PointerEvent::Move(pu)) => {
                 if !self.style.text_selectable() {
-                    if self.selection_range.is_some() {
+                    if self.selection_state != SelectionState::None {
                         self.selection_state = SelectionState::None;
                         self.selection_range = None;
-                        self.id.request_paint();
+                        cx.window_state.request_paint(self.id);
                     }
                 } else {
                     let (SelectionState::Selecting(start, _) | SelectionState::Ready(start)) =
@@ -617,12 +628,17 @@ impl View for Label {
                         return EventPropagation::Continue;
                     };
                     // this check is here to make it so that text selection doesn't eat pointer events on very small move events
-                    if start.distance(pu.current.logical_point()).abs() > 2. {
+                    if start.distance(pu.current.logical_point()).abs() > 2.
+                        && matches!(
+                            self.selection_state,
+                            SelectionState::Ready(_) | SelectionState::Selecting(_, _)
+                        )
+                    {
                         self.selection_state =
                             SelectionState::Selecting(start, pu.current.logical_point());
                         self.set_selection_range();
-                        self.id.request_active();
-                        self.id.request_paint();
+                        cx.window_state.request_paint(self.id);
+                        cx.window_state.update_active(self.id.visual_id());
                         self.id.request_focus();
                     }
                 }
@@ -633,8 +649,7 @@ impl View for Label {
                 } else {
                     self.selection_state = SelectionState::None;
                 }
-                self.id.clear_active();
-                self.id.request_paint();
+                cx.window_state.request_paint(self.id);
             }
             Event::Key(
                 ke @ KeyboardEvent {
@@ -648,6 +663,11 @@ impl View for Label {
             }
             _ => {}
         }
+        if self.selection_state == SelectionState::None {
+            self.id.set_cursor(None);
+        } else {
+            self.id.set_cursor(Some(CursorStyle::Text));
+        }
         EventPropagation::Continue
     }
 
@@ -655,10 +675,10 @@ impl View for Label {
         if self.font.read(cx) | self.style.read(cx) {
             self.layout_data.borrow_mut().clear_overflow_state();
             self.set_text_layout();
-            cx.window_state.schedule_layout();
+            cx.window_state.request_layout();
         }
         if self.selection_style.read(cx) {
-            self.id.request_paint();
+            cx.window_state.request_paint(self.id);
         }
     }
 
@@ -680,16 +700,14 @@ impl View for Label {
 
         let text_loc = self.id.content_rect_local().origin();
 
+        cx.stroke(&self.id.layout_rect_local(), RED, &Stroke::new(1.));
+
         self.with_effective_text_layout(|l| {
             cx.draw_text(l, text_loc);
-            if cx.window_state.is_focused(&self.id()) {
+            if cx.window_state.is_focused(self.id()) {
                 self.paint_selection(l, cx);
             }
         });
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
@@ -734,7 +752,7 @@ impl LabelCustomStyle {
     }
 
     pub fn selection_color(mut self, color: impl Into<Brush>) -> Self {
-        self = Self(self.0.set(CursorColor, color));
+        self = Self(self.0.set(SelectionColor, color));
         self
     }
 }

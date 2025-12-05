@@ -365,7 +365,15 @@ impl TapCounter {
                         x: position.x,
                         y: position.y,
                     };
-                    self.taps.push(s);
+                    if let Some(t) = self
+                        .taps
+                        .iter_mut()
+                        .find(|state| state.pointer_id == pointer_id)
+                    {
+                        *t = s;
+                    } else {
+                        self.taps.push(s);
+                    }
                     event.state.count = 1;
                 };
                 self.clear_expired(time);

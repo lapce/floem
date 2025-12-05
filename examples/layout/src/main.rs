@@ -1,6 +1,7 @@
 use std::fmt::Display;
 
 use floem::{
+    action::set_window_title,
     kurbo::Size,
     prelude::*,
     style::AlignContent,
@@ -15,16 +16,17 @@ pub mod tab_navigation;
 
 fn list_item<V: IntoView + 'static>(name: impl Display, view_fn: impl Fn() -> V) -> impl IntoView {
     h_stack((
-        text(name).style(|s| s),
+        text(name).style(|s| s.width_full()),
         container(view_fn()).style(|s| s.width_full().justify_content(AlignContent::End)),
     ))
-    .style(|s| s.width(200))
+    .style(|s| s.width(250))
 }
 
 fn app_view() -> impl IntoView {
+    set_window_title("Layout examples");
+
     v_stack((
-        label(move || String::from("Static layouts"))
-            .style(|s| s.font_size(30.0).margin_bottom(15.0)),
+        "Static layouts".style(|s| s.font_size(30.0).margin_bottom(15.0)),
         list_item("Left sidebar", move || {
             "Open".button().action(|| {
                 new_window(
@@ -101,7 +103,6 @@ fn app_view() -> impl IntoView {
             floem::action::inspect();
         },
     )
-    .window_title(|| String::from("Layout examples"))
 }
 
 fn main() {

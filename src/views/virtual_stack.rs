@@ -14,7 +14,7 @@ use crate::{
     prop_extractor,
     style::FlexDirectionProp,
     view::{IntoView, View},
-    view_storage::{MeasureFunction, NodeContext},
+    view_storage::{MeasureFn, NodeContext},
 };
 use floem_reactive::{Effect, ReadSignal, RwSignal, Scope, SignalGet, SignalUpdate, SignalWith};
 use peniko::kurbo::Rect;
@@ -82,7 +82,7 @@ impl VirtualStackLayoutData {
     /// Create the taffy measure function for this virtual stack.
     /// Before children are set, this tells taffy our desired main axis size.
     /// Once children exist, taffy will use their layout instead.
-    pub fn create_taffy_layout_fn(layout_data: Rc<RefCell<Self>>) -> Box<MeasureFunction> {
+    pub fn create_taffy_layout_fn(layout_data: Rc<RefCell<Self>>) -> Box<MeasureFn> {
         Box::new(
             move |known_dimensions, _available_space, _node_id, _style, _measure_ctx| {
                 use taffy::*;
@@ -573,12 +573,9 @@ impl<T> View for VirtualStack<T> {
                 .selected_idx
                 .contains(&(child_id_index + self.first_child_idx))
             {
-                cx.save();
-                cx.selected();
-                cx.style_view(child);
-                cx.restore();
+                child.parent_set_selected();
             } else {
-                cx.style_view(child);
+                child.parent_clear_selected();
             }
         }
     }
@@ -619,10 +616,6 @@ impl<T> View for VirtualStack<T> {
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         cx.paint_children(self.id());
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {

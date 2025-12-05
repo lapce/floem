@@ -19,13 +19,13 @@ fn counter_view() -> impl IntoView {
     let lang_tabs = h_stack((
         "System Default"
             .class(TabSelectorClass)
-            .style(move |s| s.apply_if(langauge.get().is_none(), |s| s.set_selected(true)))
+            .style(move |s| s.apply_if(langauge.get().is_none(), |s| s.is_selected(true)))
             .action(move || langauge.set(None)),
         "pl-PL"
             .class(TabSelectorClass)
             .style(move |s| {
                 s.apply_opt(langauge.get(), |s, l| {
-                    s.apply_if(l == "pl-PL", |s| s.set_selected(true))
+                    s.apply_if(l == "pl-PL", |s| s.is_selected(true))
                 })
             })
             .action(move || langauge.set(Some("pl-PL"))),
@@ -33,7 +33,7 @@ fn counter_view() -> impl IntoView {
             .class(TabSelectorClass)
             .style(move |s| {
                 s.apply_opt(langauge.get(), |s, l| {
-                    s.apply_if(l == "en-US", |s| s.set_selected(true))
+                    s.apply_if(l == "en-US", |s| s.is_selected(true))
                 })
             })
             .action(move || langauge.set(Some("en-US"))),

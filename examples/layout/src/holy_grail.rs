@@ -1,4 +1,4 @@
-use floem::{event::EventListener, prelude::*, taffy::Position};
+use floem::{prelude::*, taffy::Position};
 
 const SIDEBAR_WIDTH: f64 = 140.0;
 const TOPBAR_HEIGHT: f64 = 30.0;

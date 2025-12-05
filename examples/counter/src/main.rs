@@ -51,7 +51,7 @@ fn app_view() -> impl IntoView {
                         .background(palette::css::LIGHT_BLUE)
                         .focusable(true)
                         .focus_visible(|s| s.outline(2.).outline_color(palette::css::BLUE))
-                        .set_disabled(counter.get() == 0)
+                        .is_disabled(counter.get() == 0)
                         .disabled(|s| s.background(palette::css::LIGHT_GRAY))
                         .hover(|s| s.background(palette::css::LIGHT_YELLOW))
                         .active(|s| {

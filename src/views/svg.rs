@@ -144,7 +144,7 @@ impl View for Svg {
             let aspect_ratio = size.width() / size.height();
             if self.aspect_ratio != aspect_ratio {
                 self.aspect_ratio = aspect_ratio;
-                self.id.request_style();
+                cx.window_state.request_style(self.id);
             }
         }
         if let Some(prop_reader) = &mut self.css_prop {
@@ -155,7 +155,7 @@ impl View for Svg {
         }
     }
 
-    fn update(&mut self, _cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
+    fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(state) = state.downcast::<SvgOrStyle>() {
             let (text, style) = match *state {
                 SvgOrStyle::Svg(text) => {
@@ -182,7 +182,7 @@ impl View for Svg {
             let hash = hasher.finalize().to_vec();
             self.svg_hash = Some(hash);
 
-            self.id.request_layout();
+            cx.window_state.request_layout();
         }
     }
 
@@ -198,10 +198,6 @@ impl View for Svg {
             };
             cx.draw_svg(crate::RendererSvg { tree, hash }, rect, color.as_ref());
         }
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {

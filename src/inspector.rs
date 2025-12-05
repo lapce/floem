@@ -6,12 +6,10 @@ use crate::event::{Event, EventListener, EventPropagation};
 use crate::id::ViewId;
 use crate::prelude::ViewTuple;
 use crate::style::{
-    Focusable, FontSize, OverflowX, OverflowY, Style, StyleClassRef, StyleKeyInfo, StylePropRef,
-    Transition,
+    FontSize, OverflowX, OverflowY, Style, StyleClassRef, StyleKeyInfo, StylePropRef, Transition,
 };
 use crate::theme::StyleThemeExt as _;
 use crate::view::{IntoView, View};
-use crate::view_state::ChangeFlags;
 use crate::views::{
     ContainerExt, Decorators, Label, ScrollExt, dyn_container, empty, stack, static_label, text,
     v_stack, v_stack_from_iter,
@@ -27,7 +25,6 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::rc::Rc;
 use ui_events::keyboard::{self, KeyboardEvent, NamedKey};
-use understory_responder::types::Outcome;
 pub use view::capture;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -49,7 +46,6 @@ pub struct CapturedView {
     taffy: Layout,
     children: Vec<Rc<CapturedView>>,
     direct_style: Style,
-    requested_changes: ChangeFlags,
     keyboard_navigable: bool,
     classes: Vec<StyleClassRef>,
     focused: bool,
@@ -62,8 +58,8 @@ impl CapturedView {
         let view_state = id.state();
         let view_state = view_state.borrow();
         let combined_style = view_state.combined_style.clone();
-        let keyboard_navigable = view_state.combined_style.get(Focusable);
-        let focused = window_state.focus_state.current_path().last() == Some(&id.box_node());
+        let keyboard_navigable = view_state.combined_style.builtin().focusable();
+        let focused = window_state.focus_state.current_path().last() == Some(&id.visual_id());
         let clipped = layout.intersect(clip);
         let custom_name = &view_state.debug_name;
         let classes = view_state.classes.clone();
@@ -87,7 +83,6 @@ impl CapturedView {
             layout,
             taffy,
             direct_style: combined_style,
-            requested_changes: view_state.requested_changes,
             keyboard_navigable,
             focused,
             classes,
@@ -131,10 +126,6 @@ impl CapturedView {
         }
         match_ids
     }
-
-    fn warnings(&self) -> bool {
-        !self.requested_changes.is_empty() || self.children.iter().any(|child| child.warnings())
-    }
 }
 
 pub struct Capture {
@@ -143,7 +134,7 @@ pub struct Capture {
     pub post_style: Instant,
     pub post_layout: Instant,
     pub end: Instant,
-    pub taffy_duration: Duration,
+    pub layout_duration: Duration,
     pub taffy_node_count: usize,
     pub taffy_depth: usize,
     pub window: Option<peniko::ImageBrush>,
@@ -192,8 +183,8 @@ fn add_event<T: View + 'static>(
     })
     .on_event_stop(EventListener::KeyDown, {
         let capture = capture.clone();
-        move |_v, event| {
-            if let Event::Key(KeyboardEvent { key, modifiers, .. }) = event {
+        move |_v, cx| {
+            if let Event::Key(KeyboardEvent { key, modifiers, .. }) = &cx.event {
                 match key {
                     keyboard::Key::Named(NamedKey::ArrowUp) => {
                         let rs = find_relative_view_by_id_with_self(id, &capture.root);
@@ -256,21 +247,14 @@ fn info_row(name: String, view: impl View + 'static) -> impl View {
 
 fn stats(capture: &Capture) -> impl IntoView + use<> {
     let style_time = capture.post_style.saturating_duration_since(capture.start);
-    let layout_time = capture
-        .post_layout
-        .saturating_duration_since(capture.post_style);
     let paint_time = capture.end.saturating_duration_since(capture.post_layout);
     let style_time = info(
         "Full Style Time",
         format!("{:.4} ms", style_time.as_secs_f64() * 1000.0),
     );
     let layout_time = info(
-        "Full Layout Time",
-        format!("{:.4} ms", layout_time.as_secs_f64() * 1000.0),
-    );
-    let taffy_time = info(
-        "Taffy Time",
-        format!("{:.4} ms", capture.taffy_duration.as_secs_f64() * 1000.0),
+        "Layout Time",
+        format!("{:.4} ms", capture.layout_duration.as_secs_f64() * 1000.0),
     );
     let taffy_node_count = info("Taffy Node Count", capture.taffy_node_count.to_string());
     let taffy_depth = info("Taffy Depth", capture.taffy_depth.to_string());
@@ -284,7 +268,6 @@ fn stats(capture: &Capture) -> impl IntoView + use<> {
         [
             style_time,
             layout_time,
-            taffy_time,
             taffy_node_count,
             taffy_depth,
             paint_time,

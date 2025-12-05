@@ -13,7 +13,10 @@ use crate::{
         LabeledRadioButtonClass, ListClass, ListItemClass, PlaceholderTextClass, RadioButtonClass,
         RadioButtonDotClass, SvgClass, TabSelectorClass, TextInputClass, ToggleButtonCircleRad,
         ToggleButtonClass, ToggleButtonInset, TooltipClass, dropdown,
-        resizable::{ResizableClass, ResizableCustomStyle},
+        editor::SelectionColor,
+        resizable::{
+            HandleHitTestThickness, ResizableClass, ResizableCustomStyle, ResizableHandleClass,
+        },
         scroll,
         slider::{SliderClass, SliderCustomStyle},
     },
@@ -512,7 +515,8 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
         .with_theme(|s, t| {
             s.background(t.bg_base())
                 .padding(t.padding())
-                .cursor_color(t.primary_muted().with_alpha(0.5))
+                .cursor_color(t.primary_muted())
+                .set(SelectionColor, t.primary_muted().with_alpha(0.5))
                 .hover(|s| s.background(t.bg_elevated()))
                 .disabled(|s| s.background(t.bg_disabled()).color(t.text_muted()))
         })
@@ -654,7 +658,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
                         .apply(overlay_style())
                         .items_center()
                         .class(ListItemClass, move |s| {
-                            s.padding(6).with_theme(|s, t| {
+                            s.padding(6).selectable(false).with_theme(|s, t| {
                                 s.hover(|s| {
                                     s.background(t.bg_elevated())
                                         .selected(|s| s.background(t.primary_muted()))
@@ -663,12 +667,15 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
                         })
                 })
         })
-        .class(ResizableClass, |s| {
+        .class(ResizableHandleClass, |s| {
             s.with_theme(|s, t| {
                 s.custom(|cs: ResizableCustomStyle| {
-                    cs.handle_thickness(3.)
-                        .handle_color(t.primary_muted().with_alpha(0.5))
-                        .hover(|s| s.handle_color(t.primary()))
+                    cs.handle_thickness(6.)
+                        .hover(|s| s.handle_color(t.primary().with_alpha(0.7)))
+                        .active(|s| {
+                            s.handle_cursor_style(CursorStyle::NwseResize)
+                                .handle_color(t.primary())
+                        })
                 })
             })
         })

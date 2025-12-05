@@ -28,7 +28,7 @@ pub fn checkbox_view() -> impl IntoView {
         ),
         form_item(
             "Disabled Checkbox:",
-            checkbox(move || is_checked.get()).style(|s| s.set_disabled(true)),
+            checkbox(move || is_checked.get()).style(|s| s.is_disabled(true)),
         ),
         form_item(
             "Labeled Checkbox:",
@@ -42,7 +42,7 @@ pub fn checkbox_view() -> impl IntoView {
         form_item(
             "Disabled Labeled Checkbox:",
             labeled_checkbox(move || is_checked.get(), || "Check me!")
-                .style(|s| s.set_disabled(true)),
+                .style(|s| s.is_disabled(true)),
         ),
     ))
 }

@@ -187,8 +187,9 @@ impl IntoView for TodoState {
             .on_double_click_stop(move |_, _| {
                 AppCommand::SetActive(self).execute();
             })
-            .on_click_stop(move |_, e| {
-                let Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. })) = e else {
+            .on_click_stop(move |_, cx| {
+                let Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. })) = &cx.event
+                else {
                     return;
                 };
                 if state.modifiers == OS_MOD {

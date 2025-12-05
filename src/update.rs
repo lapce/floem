@@ -3,7 +3,7 @@ use std::{any::Any, cell::RefCell, collections::HashMap};
 use peniko::kurbo::{Point, Rect, Size, Vec2};
 use winit::window::{ResizeDirection, Theme};
 
-use crate::{id::ViewId, menu::Menu, view::View};
+use crate::{VisualId, id::ViewId, menu::Menu, view::View};
 
 thread_local! {
     /// Stores all the update message with their original `ViewId`
@@ -17,25 +17,29 @@ thread_local! {
     /// that you can use to send a state update to a view.
     pub(crate) static UPDATE_MESSAGES: RefCell<HashMap<ViewId, Vec<UpdateMessage>>> = Default::default();
     /// Similar to `CENTRAL_UPDATE_MESSAGES` but for `DEFERRED_UPDATE_MESSAGES`
-    pub(crate) static CENTRAL_DEFERRED_UPDATE_MESSAGES: RefCell<Vec<(ViewId, Box<dyn Any>)>> = Default::default();
+    pub(crate) static CENTRAL_DEFERRED_UPDATE_MESSAGES: RefCell<Vec<(VisualId, Box<dyn Any>)>> = Default::default();
     pub(crate) static DEFERRED_UPDATE_MESSAGES: RefCell<DeferredUpdateMessages> = Default::default();
     /// It stores the active view handle, so that when you dispatch an action, it knows
     /// which view handle it submitted to
     pub(crate) static CURRENT_RUNNING_VIEW_HANDLE: RefCell<ViewId> = RefCell::new(ViewId::new());
+
+    pub(crate) static CURRENT_ROOT_VIEW: RefCell<ViewId> = RefCell::new(ViewId::new());
 }
 
-type DeferredUpdateMessages = HashMap<ViewId, Vec<(ViewId, Box<dyn Any>)>>;
+type DeferredUpdateMessages = HashMap<VisualId, Vec<(VisualId, Box<dyn Any>)>>;
 
-pub(crate) enum UpdateMessage {
-    Focus(ViewId),
-    ClearFocus(ViewId),
-    ClearAppFocus,
-    Active(ViewId),
-    ClearActive(ViewId),
+pub enum UpdateMessage {
+    Focus(VisualId),
+    ClearFocus,
+    Active(VisualId),
+    ClearActive,
     WindowScale(f64),
     RequestPaint,
+    RequestStyle(VisualId),
+    RequestViewStyle(ViewId),
     RequestLayout,
-    State { id: ViewId, state: Box<dyn Any> },
+    RequestBoxTreeCommit,
+    State { id: VisualId, state: Box<dyn Any> },
     ToggleWindowMaximized,
     SetWindowMaximized(bool),
     MinimizeWindow,
@@ -48,7 +52,7 @@ pub(crate) enum UpdateMessage {
     AddOverlay { view: Box<dyn View> },
     RemoveOverlay { id: ViewId },
     Inspect,
-    ScrollTo { id: ViewId, rect: Option<Rect> },
+    ScrollTo { id: VisualId, rect: Option<Rect> },
     FocusWindow,
     SetImeAllowed { allowed: bool },
     SetImeCursorArea { position: Point, size: Size },

@@ -1,4 +1,5 @@
 use floem::{
+    Application, IntoView,
     action::inspect,
     close_window,
     event::{Event, EventListener},
@@ -6,7 +7,6 @@ use floem::{
     new_window,
     prelude::*,
     window::{Icon, RgbaIcon, WindowConfig, WindowId},
-    Application, IntoView, View,
 };
 use std::path::Path;
 
@@ -51,16 +51,14 @@ fn app_view() -> impl IntoView {
             .height_full()
             .row_gap(10.0)
     })
-    .on_event_stop(EventListener::KeyUp, move |_, e| {
+    .on_event_stop(EventListener::KeyUp, move |_, cx| {
         if let Event::Key(KeyboardEvent {
             state: KeyState::Up,
-            key,
+            key: Key::Named(NamedKey::F11),
             ..
-        }) = e
+        }) = &cx.event
         {
-            if *key == Key::Named(NamedKey::F11) {
-                inspect();
-            }
+            inspect();
         }
     })
 }

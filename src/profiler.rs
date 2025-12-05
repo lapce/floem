@@ -15,7 +15,6 @@ use std::mem;
 use std::rc::Rc;
 use taffy::AlignItems;
 use taffy::style::FlexDirection;
-use understory_responder::types::Outcome;
 use winit::window::WindowId;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -236,8 +235,8 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
                 )
                 .custom_style(|s| s.vertical_track_inset(5.).show_bars_when_idle(false))
                 .style(|s| s.height_full().min_width(0).flex_basis(0).flex_grow(1.0))
-                .on_event(EventListener::PointerWheel, move |_, e| {
-                    if let Some(delta) = e.pixel_scroll_delta_vec2() {
+                .on_event(EventListener::PointerWheel, move |_, cx| {
+                    if let Some(delta) = &cx.event.pixel_scroll_delta_vec2() {
                         zoom.set(zoom.get() * (1.0 - delta.y / 400.0));
                         EventPropagation::Stop
                     } else {

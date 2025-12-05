@@ -1,26 +1,29 @@
 use crate::{
+    ViewId,
+    action::add_update_message,
     animate::Animation,
     context::{
-        CleanupListeners, EventCallback, InteractionState, MenuCallback, MoveListeners,
-        ResizeCallback, ResizeListeners,
+        CleanupListeners, EventCallback, InheritedInteractionCx, InteractionState, MenuCallback,
+        MoveListeners, ResizeCallback, ResizeListeners,
     },
     event::EventListener,
     prop_extractor,
     responsive::ScreenSizeBp,
     style::{
-        Background, BorderColorProp, BorderRadiusProp, BoxShadowProp, LayoutProps, Outline,
-        OutlineColor, Style, StyleClassRef, StyleSelectors, TransformProps, resolve_nested_maps,
+        Background, BorderColorProp, BorderRadiusProp, BoxShadowProp, BoxTreeProps, CursorStyle,
+        LayoutProps, Outline, OutlineColor, Style, StyleClassRef, StyleSelectors, TransformProps,
+        resolve_nested_maps,
     },
+    update::{CENTRAL_UPDATE_MESSAGES, UpdateMessage},
     view_storage::NodeContext,
     window_state::ScrollContext,
 };
 use bitflags::bitflags;
 use imbl::HashSet;
-use peniko::kurbo::{Affine, Point, Rect, Vec2};
+use peniko::kurbo::{Affine, Point, Vec2};
 use smallvec::SmallVec;
 use std::{cell::RefCell, collections::HashMap, marker::PhantomData, rc::Rc};
 use taffy::tree::NodeId;
-use ui_events::pointer::PointerState;
 use understory_box_tree::LocalNode;
 
 /// A stack of view attributes. Each entry is associated with a view decorator call.
@@ -101,15 +104,6 @@ prop_extractor! {
     }
 }
 
-bitflags! {
-    #[derive(Default, Copy, Clone, Debug)]
-    #[must_use]
-    pub(crate) struct ChangeFlags: u8 {
-        const STYLE = 1;
-        const VIEW_STYLE = 1 << 1;
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IsHiddenState {
     Visible(taffy::style::Display),
@@ -173,27 +167,34 @@ impl IsHiddenState {
 /// View state stores internal state associated with a view which is owned and managed by Floem.
 pub struct ViewState {
     pub(crate) node: NodeId,
-    pub(crate) box_node: understory_box_tree::NodeId,
-    pub(crate) requested_changes: ChangeFlags,
+    pub(crate) visual_id: understory_box_tree::NodeId,
     pub(crate) style: Stack<Style>,
     /// We store the stack offset to the view style to keep the api consistent but it should
     /// always be the first offset.
     pub(crate) view_style_offset: StackOffset<Style>,
     /// Layout is requested on all direct and indirect children.
     pub(crate) request_style_recursive: bool,
+    pub(crate) needs_first_style: bool,
     pub(crate) has_style_selectors: StyleSelectors,
     pub(crate) scroll_offset: Vec2,
     pub(crate) scroll_ctx: ScrollContext,
     pub(crate) layout_props: LayoutProps,
     pub(crate) view_style_props: ViewStyleProps,
     pub(crate) view_transform_props: TransformProps,
+    pub(crate) box_tree_props: BoxTreeProps,
     pub(crate) animations: Stack<Animation>,
     pub(crate) classes: Vec<StyleClassRef>,
     pub(crate) dragging_style: Option<Style>,
+    pub(crate) style_cursor: Option<CursorStyle>,
+    pub(crate) user_cursor: Option<CursorStyle>,
     /// Combine the stacked style into one style, and apply the interact state.
     pub(crate) combined_style: Style,
     /// The final style including inherited style from parent.
     pub(crate) computed_style: Style,
+    /// this is the inherited properties from this view's style that this view's chilren can pull from
+    pub(crate) style_cx: Option<Style>,
+    pub(crate) style_interaction_cx: InheritedInteractionCx,
+    pub(crate) parent_set_style_interaction_cx: InheritedInteractionCx,
     pub(crate) taffy_style: taffy::style::Style,
     pub(crate) event_listeners: HashMap<EventListener, Vec<Rc<RefCell<EventCallback>>>>,
     pub(crate) context_menu: Option<Rc<MenuCallback>>,
@@ -210,6 +211,7 @@ pub struct ViewState {
 
 impl ViewState {
     pub(crate) fn new(
+        id: ViewId,
         taffy: &mut taffy::TaffyTree<NodeContext>,
         under_tree: &mut understory_box_tree::Tree,
     ) -> Self {
@@ -217,9 +219,15 @@ impl ViewState {
         let view_style_offset = style.next_offset();
         style.push(Style::new());
 
+        let visual_id = under_tree.insert(None, LocalNode::default());
+        CENTRAL_UPDATE_MESSAGES
+            .with_borrow_mut(|m| m.push((id, UpdateMessage::RequestStyle(visual_id))));
+        CENTRAL_UPDATE_MESSAGES
+            .with_borrow_mut(|m| m.push((id, UpdateMessage::RequestViewStyle(id))));
+
         Self {
             node: taffy.new_leaf(taffy::style::Style::DEFAULT).unwrap(),
-            box_node: under_tree.insert(None, LocalNode::default()),
+            visual_id,
             style,
             view_style_offset,
             scroll_offset: Default::default(),
@@ -227,13 +235,19 @@ impl ViewState {
             layout_props: Default::default(),
             view_style_props: Default::default(),
             view_transform_props: Default::default(),
-            requested_changes: ChangeFlags::all(),
+            box_tree_props: Default::default(),
+            style_cursor: None,
+            user_cursor: None,
             request_style_recursive: false,
+            needs_first_style: true,
             has_style_selectors: StyleSelectors::default(),
             animations: Default::default(),
             classes: Vec::new(),
             combined_style: Style::new(),
             computed_style: Style::new(),
+            style_cx: None,
+            parent_set_style_interaction_cx: Default::default(),
+            style_interaction_cx: Default::default(),
             taffy_style: taffy::style::Style::DEFAULT,
             dragging_style: None,
             event_listeners: HashMap::new(),
@@ -248,90 +262,6 @@ impl ViewState {
             transform: Affine::IDENTITY,
             debug_name: Default::default(),
         }
-    }
-
-    /// the first returned bool is new_frame. the second is classes_applied
-    /// Returns `true` if a new frame is requested.
-    ///
-    // The context has the nested maps of classes and inherited properties
-    pub(crate) fn compute_combined(
-        &mut self,
-        interact_state: InteractionState,
-        screen_size_bp: ScreenSizeBp,
-        view_class: Option<StyleClassRef>,
-        context: &Style,
-        cx_hidden: bool,
-    ) -> (bool, bool) {
-        let mut new_frame = false;
-
-        // Build the initial combined style
-        let mut combined_style = Style::new();
-
-        let mut classes: SmallVec<[_; 4]> = SmallVec::new();
-
-        // Apply view class if provided
-        if let Some(view_class) = view_class {
-            classes.insert(0, view_class);
-        }
-
-        for class in &self.classes {
-            classes.push(*class);
-        }
-
-        let mut new_context = context.clone();
-        let mut new_classes = false;
-
-        let (resolved_style, classes_applied) = resolve_nested_maps(
-            combined_style,
-            &interact_state,
-            screen_size_bp,
-            &classes,
-            &mut new_context,
-        );
-        combined_style = resolved_style;
-        new_classes |= classes_applied;
-
-        let self_style = self.style();
-
-        combined_style.apply_mut(self_style.clone());
-
-        let (resolved_style, classes_applied) = resolve_nested_maps(
-            combined_style,
-            &interact_state,
-            screen_size_bp,
-            &classes,
-            &mut new_context,
-        );
-        combined_style = resolved_style;
-        new_classes |= classes_applied;
-
-        // Track if this style has selectors for optimization purposes
-        self.has_style_selectors = combined_style.selectors();
-
-        // Process animations
-        for animation in self
-            .animations
-            .stack
-            .iter_mut()
-            .filter(|anim| anim.can_advance() || anim.should_apply_folded())
-        {
-            if animation.can_advance() {
-                new_frame = true;
-                animation.animate_into(&mut combined_style);
-                animation.advance();
-            } else {
-                animation.apply_folded(&mut combined_style)
-            }
-            debug_assert!(!animation.is_idle());
-        }
-
-        // Apply visibility
-        if cx_hidden {
-            combined_style = combined_style.hide();
-        }
-
-        self.combined_style = combined_style;
-        (new_frame, new_classes)
     }
 
     pub(crate) fn has_active_animation(&self) -> bool {
@@ -349,6 +279,10 @@ impl ViewState {
             result.apply_mut(entry.clone());
         }
         result
+    }
+
+    pub fn cursor(&self) -> Option<CursorStyle> {
+        self.style_cursor.or(self.user_cursor)
     }
 
     pub(crate) fn add_event_listener(

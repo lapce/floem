@@ -235,7 +235,7 @@ impl AppCommand<'_> {
                         });
                     }
                     active.update(|s| s.set(None));
-                    floem::action::clear_app_focus();
+                    floem::action::clear_focus();
                 }
                 AppCommand::RefreshDB => {
                     s.refresh_db();

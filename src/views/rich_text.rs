@@ -5,22 +5,11 @@ use floem_renderer::{
     Renderer,
     text::{Attrs, AttrsList, AttrsOwned, TextLayout},
 };
-use peniko::{
-    Color,
-    color::palette,
-    kurbo::{Point, Rect},
-};
+use peniko::{Color, color::palette, kurbo::Point};
 use smallvec::{SmallVec, smallvec};
 use taffy::tree::NodeId;
 
-use crate::{
-    IntoView,
-    context::UpdateCx,
-    id::ViewId,
-    style::{Style, TextOverflow},
-    unit::PxPct,
-    view::View,
-};
+use crate::{IntoView, context::UpdateCx, id::ViewId, style::TextOverflow, view::View};
 
 pub struct RichText {
     id: ViewId,
@@ -159,10 +148,6 @@ impl View for RichText {
         } else {
             cx.draw_text(&self.text_layout, point);
         }
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {

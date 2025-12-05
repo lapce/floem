@@ -38,7 +38,7 @@ pub fn slider_view() -> impl IntoView {
             stack((
                 slider::Slider::new(move || slider_state.get())
                     .slider_style(|s| s.handle_radius(0).edge_align(true))
-                    .style(|s| s.width(200).set_disabled(true)),
+                    .style(|s| s.width(200).is_disabled(true)),
                 label(move || format!("{:.1}%", slider_state.get().0)),
             ))
             .style(|s| s.gap(10)),

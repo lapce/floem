@@ -46,21 +46,15 @@
 use floem_reactive::{ReadSignal, RwSignal, SignalGet};
 use peniko::kurbo::*;
 use std::any::Any;
-use understory_box_tree::{NodeId, QueryFilter};
-use understory_responder::{
-    adapters::box_tree::navigation::{next_depth_first_filtered, prev_depth_first_filtered},
-    types::{Outcome, Phase},
-};
 
 use crate::{
-    Renderer,
+    Renderer, VisualId,
     context::{EventCx, LayoutCx, PaintCx, StyleCx, UpdateCx},
-    event::{Event, EventPropagation},
+    event::EventPropagation,
     id::ViewId,
     style::{LayoutProps, Style, StyleClassRef},
     unit::PxPct,
     view_state::ViewStyleProps,
-    view_storage::VIEW_STORAGE,
     views::{DynamicView, dyn_view},
     window_state::WindowState,
 };
@@ -276,14 +270,11 @@ pub trait View {
         let _ = state;
     }
 
-    /// Use this method to style the view's children.
+    /// Use this method to extract styles from the style pass
     ///
-    /// If the style changes needs other passes to run you're expected to call
-    /// `cx.window_state_mut().request_changes`.
+    /// You do not need to style the view children, Floem will drive the style traversal
     fn style_pass(&mut self, cx: &mut StyleCx<'_>) {
-        for child in self.id().children() {
-            cx.style_view(child);
-        }
+        let _ = cx;
     }
 
     /// If a view requests to be run post layout this function will be called after any layout pass in the window
@@ -291,8 +282,8 @@ pub trait View {
         let _ = lcx;
     }
 
-    fn event(&mut self, cx: &mut EventCx, event: &Event, phase: Phase) -> EventPropagation {
-        let _ = (cx, event, phase);
+    fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
+        let _ = cx;
         EventPropagation::Continue
     }
 
@@ -305,8 +296,8 @@ pub trait View {
 
     /// Scrolls the view and all direct and indirect children to bring the `target` view to be
     /// visible. Returns true if this view contains or is the target.
-    fn scroll_to(&mut self, cx: &mut WindowState, target: ViewId, rect: Option<Rect>) -> bool {
-        if self.id() == target {
+    fn scroll_to(&mut self, cx: &mut WindowState, target: VisualId, rect: Option<Rect>) -> bool {
+        if self.id().visual_id() == target {
             return true;
         }
         let mut found = false;
@@ -316,8 +307,6 @@ pub trait View {
         }
         found
     }
-
-    fn as_any(&self) -> &dyn Any;
 
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
@@ -351,20 +340,16 @@ impl View for Box<dyn View> {
         (**self).post_layout(lcx)
     }
 
-    fn event(&mut self, cx: &mut EventCx, event: &Event, phase: Phase) -> EventPropagation {
-        (**self).event(cx, event, phase)
+    fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
+        (**self).event(cx)
     }
 
     fn paint(&mut self, cx: &mut PaintCx) {
         (**self).paint(cx)
     }
 
-    fn scroll_to(&mut self, cx: &mut WindowState, target: ViewId, rect: Option<Rect>) -> bool {
+    fn scroll_to(&mut self, cx: &mut WindowState, target: VisualId, rect: Option<Rect>) -> bool {
         (**self).scroll_to(cx, target, rect)
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        (**self).as_any()
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
@@ -402,7 +387,7 @@ fn border_to_radii_view(style: &ViewStyleProps, size: Size) -> RoundedRectRadii 
 }
 
 pub(crate) fn border_to_radii(style: &Style, size: Size) -> RoundedRectRadii {
-    let border_radii = style.get(crate::style::BorderRadiusProp);
+    let border_radii = style.builtin().border_radius_combined();
     RoundedRectRadii {
         top_left: border_radius(
             border_radii.top_left.unwrap_or(PxPct::Px(0.0)),
@@ -737,14 +722,6 @@ pub(crate) fn paint_border(
         }
     }
     assert!(current_path.is_empty());
-}
-
-fn view_nested_last_child(view: ViewId) -> ViewId {
-    let mut last_child = view;
-    while let Some(new_last_child) = last_child.children().pop() {
-        last_child = new_last_child;
-    }
-    last_child
 }
 
 // Helper functions for futzing with RoundedRectRadii. These should probably be in kurbo.

@@ -19,7 +19,10 @@ pub mod tabs;
 pub mod texteditor;
 
 use floem::{
-    action::{add_overlay, set_theme, set_window_menu, toggle_global_theme, toggle_window_theme},
+    action::{
+        add_overlay, set_theme, set_window_menu, set_window_title, toggle_global_theme,
+        toggle_window_theme,
+    },
     event::{Event, EventListener},
     kurbo::Size,
     menu::*,
@@ -33,6 +36,8 @@ use floem::{
 };
 
 fn app_view(window_id: WindowId) -> impl IntoView {
+    set_window_title("Widget Gallery");
+
     let tabs: Vec<&'static str> = vec![
         "Label",
         "Button",
@@ -155,10 +160,9 @@ fn app_view(window_id: WindowId) -> impl IntoView {
 
     let tab = tab.scroll().style(|s| s.size_full());
 
-    let view = ("this is amazing", left_side_bar, tab)
+    let view = (left_side_bar, tab)
         .h_stack()
-        .style(|s| s.padding(5.0).width_full().height_full().col_gap(5.0))
-        .window_title(|| "Widget Gallery".to_owned());
+        .style(|s| s.padding(5.0).width_full().height_full().col_gap(5.0));
 
     let file_submenu = |m: SubMenu| {
         m.item("New Window", |i| {
@@ -303,13 +307,13 @@ fn app_view(window_id: WindowId) -> impl IntoView {
             .inset_right(15.)
     }));
 
-    view.on_event_stop(EventListener::KeyUp, move |_, e| {
+    view.on_event_stop(EventListener::KeyUp, move |_, cx| {
         if let Event::Key(KeyboardEvent {
             state: KeyState::Up,
             key,
             modifiers,
             ..
-        }) = e
+        }) = &cx.event
         {
             if *key == Key::Named(NamedKey::F11) {
                 floem::action::inspect();

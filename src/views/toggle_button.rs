@@ -135,17 +135,12 @@ impl View for ToggleButton {
         }
     }
 
-    fn event(
-        &mut self,
-        cx: &mut EventCx,
-        event: &crate::event::Event,
-        phase: Phase,
-    ) -> EventPropagation {
-        if phase != Phase::Bubble {
+    fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
+        if cx.phase != Phase::Bubble {
             return EventPropagation::Continue;
         }
 
-        match event {
+        match &cx.event {
             crate::event::Event::Pointer(PointerEvent::Down { .. }) => {
                 cx.window_state.update_active(self.id);
                 self.held = ToggleState::Held;
@@ -268,10 +263,6 @@ impl View for ToggleButton {
         if let Some(color) = self.style.foreground() {
             cx.fill(&circle, &color, 0.);
         }
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {

@@ -3,14 +3,14 @@ use floem::{
     prelude::*,
     text::{Attrs, AttrsList, FamilyOwned, Stretch, Style, Weight},
     views::editor::{
+        EditorStyle,
         core::{
             buffer::rope_text::RopeText, cursor::CursorAffinity, editor::EditType,
             selection::Selection,
         },
         id::EditorId,
         layout::TextLayoutLine,
-        text::{default_dark_color, Document, SimpleStylingBuilder, Styling, WrapMethod},
-        EditorStyle,
+        text::{Document, SimpleStylingBuilder, Styling, WrapMethod, default_dark_color},
     },
 };
 use std::borrow::Cow;
@@ -117,30 +117,27 @@ impl Styling for SyntaxHighlightingStyle<'_> {
 
             for line_no in start..=line {
                 let text = doc.rope_text().line_content(line).to_string();
-                if let Ok(ops) = states.0.parse_line(&text, &SYNTAXSET) {
-                    if line_no == line {
-                        for (style, _text, range) in RangedHighlightIterator::new(
-                            &mut states.1,
-                            &ops,
-                            &text,
-                            &self.highlighter,
-                        ) {
-                            let mut attr = default.clone();
-                            if style.font_style.contains(FontStyle::ITALIC) {
-                                attr = attr.style(Style::Italic);
-                            }
-                            if style.font_style.contains(FontStyle::BOLD) {
-                                attr = attr.weight(Weight::BOLD);
-                            }
-                            attr = attr.color(Color::from_rgba8(
-                                style.foreground.r,
-                                style.foreground.g,
-                                style.foreground.b,
-                                style.foreground.a,
-                            ));
-
-                            attrs.add_span(range, attr);
+                if let Ok(ops) = states.0.parse_line(&text, &SYNTAXSET)
+                    && line_no == line
+                {
+                    for (style, _text, range) in
+                        RangedHighlightIterator::new(&mut states.1, &ops, &text, &self.highlighter)
+                    {
+                        let mut attr = default.clone();
+                        if style.font_style.contains(FontStyle::ITALIC) {
+                            attr = attr.style(Style::Italic);
                         }
+                        if style.font_style.contains(FontStyle::BOLD) {
+                            attr = attr.weight(Weight::BOLD);
+                        }
+                        attr = attr.color(Color::from_rgba8(
+                            style.foreground.r,
+                            style.foreground.g,
+                            style.foreground.b,
+                            style.foreground.a,
+                        ));
+
+                        attrs.add_span(range, attr);
                     }
                 }
 

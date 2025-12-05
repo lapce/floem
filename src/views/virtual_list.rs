@@ -190,8 +190,8 @@ where
 
     let stack = stack
         .class(ListClass)
-        .on_event(EventListener::KeyDown, move |_v, e| {
-            if let Event::Key(key_event) = e {
+        .on_event(EventListener::KeyDown, move |_v, cx| {
+            if let Event::Key(key_event) = &cx.event {
                 match key_event.key {
                     Key::Named(NamedKey::Home) => {
                         if length.get_untracked() > 0 {

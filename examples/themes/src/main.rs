@@ -1,5 +1,5 @@
 use floem::{
-    action::inspect,
+    action::{inspect, set_window_title},
     event::{Event, EventListener},
     peniko::{color::palette, Color},
     prelude::*,
@@ -96,6 +96,8 @@ fn app_view() -> impl IntoView {
         .color(palette::css::BLACK.with_alpha(0.5))
         .font_size(16.0);
 
+    set_window_title("Themes Example");
+
     let counter = RwSignal::new(0);
     let theme = RwSignal::new(false);
     stack((
@@ -116,7 +118,7 @@ fn app_view() -> impl IntoView {
                     println!("Reset counter pressed"); // will not fire if button is disabled
                     counter.update(|value| *value = 0);
                 })
-                .style(move |s| s.set_disabled(counter.get() == 0)),
+                .style(move |s| s.is_disabled(counter.get() == 0)),
         ))
         .class(Frame)
         .style(|s| s.items_center()),
@@ -135,17 +137,14 @@ fn app_view() -> impl IntoView {
         .items_center()
         .justify_center()
     })
-    .window_title(|| "Themes Example".to_string())
-    .on_event_stop(EventListener::KeyUp, move |_, e| {
+    .on_event_stop(EventListener::KeyUp, move |_, cx| {
         if let Event::Key(KeyboardEvent {
             state: KeyState::Up,
-            key,
+            key: Key::Named(NamedKey::F11),
             ..
-        }) = e
+        }) = &cx.event
         {
-            if *key == Key::Named(NamedKey::F11) {
-                inspect();
-            }
+            inspect();
         }
     })
 }

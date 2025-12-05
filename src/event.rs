@@ -147,8 +147,8 @@ pub enum Event {
     ThemeChanged(Theme),
     FocusGained,
     FocusLost,
+    VisualDamageOverCursor,
     WindowScaleChanged(f64),
-    Click(Option<Point>),
 }
 
 impl Event {
@@ -199,12 +199,12 @@ impl Event {
             | Event::ImeDisabled
             | Event::ImePreedit { .. }
             | Event::ImeCommit(_)
-            | Event::Click(_)
             | Event::FileDrag(
                 FileDragEvent::DragEntered { .. }
                 | FileDragEvent::DragMoved { .. }
                 | FileDragEvent::DragLeft { .. },
             )
+            | Event::VisualDamageOverCursor
             | Event::Key(_) => false,
         }
     }
@@ -231,7 +231,6 @@ impl Event {
             | Event::Pointer(PointerEvent::Scroll(PointerScrollEvent { state, .. })) => {
                 Some(state.logical_point())
             }
-            Self::Click(point) => *point,
             Event::FileDrag(
                 FileDragEvent::DragEntered {
                     position,
@@ -278,10 +277,6 @@ impl Event {
                     .to_physical(state.scale_factor);
                 state.position = phys_pos;
             }
-            Event::Click(Some(point)) => {
-                let transformed_point = transform.inverse() * *point;
-                self = Event::Click(Some(transformed_point));
-            }
             Event::FileDrag(
                 FileDragEvent::DragEntered {
                     position,
@@ -315,7 +310,6 @@ impl Event {
             )
             | Event::FileDrag(FileDragEvent::DragLeft { position: None, .. })
             | Event::Key(_)
-            | Event::Click(None)
             | Event::FocusGained
             | Event::FocusLost
             | Event::ImeEnabled
@@ -328,6 +322,7 @@ impl Event {
             | Event::WindowMoved(_)
             | Event::WindowMaximizeChanged(_)
             | Event::WindowScaleChanged(_)
+            | Event::VisualDamageOverCursor
             | Event::WindowGotFocus
             | Event::WindowLostFocus => {}
         }
@@ -352,7 +347,6 @@ impl Event {
                 state: KeyState::Up,
                 ..
             }) => Some(EventListener::KeyUp),
-            Event::Click(_) => Some(EventListener::Click),
             Event::ImeEnabled => Some(EventListener::ImeEnabled),
             Event::ImeDisabled => Some(EventListener::ImeDisabled),
             Event::ImePreedit { .. } => Some(EventListener::ImePreedit),
@@ -380,6 +374,22 @@ impl Event {
     /// Returns true if this event should be directed to a specific view (like focused view)
     pub fn is_directed(&self) -> bool {
         self.needs_focus()
+    }
+
+    pub fn pointer_event(&self) -> Option<PointerEvent> {
+        if let Self::Pointer(event) = self {
+            Some(event.clone())
+        } else {
+            None
+        }
+    }
+
+    pub fn keyboard_event(&self) -> Option<KeyboardEvent> {
+        if let Self::Key(event) = self {
+            Some(event.clone())
+        } else {
+            None
+        }
     }
 
     /// Returns true if this event should be broadcast to all views

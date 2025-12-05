@@ -4,10 +4,10 @@ use crate::context::LayoutCx;
 use crate::event::{EventListener, EventPropagation};
 use crate::id::ViewId;
 use crate::reactive::{Effect, RwSignal};
-use crate::style::{FontFamily, FontProps, PaddingProp, SelectionStyle, TextAlignProp};
+use crate::style::{FontFamily, FontProps, SelectionStyle, TextAlignProp};
 use crate::style::{FontStyle, FontWeight, TextColor};
 use crate::unit::PxPct;
-use crate::{Clipboard, prop_extractor, style_class};
+use crate::{Clipboard, WindowState, prop_extractor, style_class};
 use floem_reactive::{SignalGet, SignalUpdate, SignalWith};
 
 use floem_renderer::Renderer;
@@ -890,7 +890,7 @@ impl TextInput {
         }
     }
 
-    fn handle_key_down(&mut self, cx: &mut EventCx, event: &KeyboardEvent) -> bool {
+    fn handle_key_down(&mut self, window_state: &mut WindowState, event: &KeyboardEvent) -> bool {
         let handled = match event.key {
             Key::Character(ref c) if c == " " => {
                 if let Some(selection) = &self.selection {
@@ -959,7 +959,7 @@ impl TextInput {
                 true
             }
             Key::Named(NamedKey::Escape) => {
-                cx.window_state.clear_focus();
+                window_state.clear_focus();
                 true
             }
             Key::Named(NamedKey::Enter) => {
@@ -1008,6 +1008,7 @@ impl TextInput {
                     // clear and jump to the start of the selection
                     if matches!(move_kind, Movement::Glyph) {
                         self.cursor_glyph_idx = selection.start;
+                        window_state.request_paint(self.id);
                     }
                 }
 
@@ -1025,6 +1026,7 @@ impl TextInput {
                     // clear and jump to the end of the selection
                     if matches!(move_kind, Movement::Glyph) {
                         self.cursor_glyph_idx = selection.end;
+                        window_state.request_paint(self.id);
                     }
                 }
 
@@ -1103,7 +1105,7 @@ impl TextInput {
         let cursor_color = self.selection_style.selection_color();
 
         let content_rect = lcx.content_rect_local();
-        let padding_left = match style.get(PaddingProp).left.unwrap_or(PxPct::Px(0.)) {
+        let padding_left = match style.builtin().padding_left() {
             PxPct::Px(padding) => padding,
             PxPct::Pct(pct) => pct / 100.0 * content_rect.size().width,
         };
@@ -1201,7 +1203,7 @@ impl View for TextInput {
                 self.commit_preedit();
                 self.update_ime_cursor_area();
 
-                if is_focused && !cx.window_state.is_active(&self.id) {
+                if is_focused && !cx.window_state.is_active(self.id) {
                     self.selection = None;
                     self.cursor_glyph_idx = self.buffer.with_untracked(|buf| buf.len());
                 }
@@ -1220,15 +1222,15 @@ impl View for TextInput {
 
             if text_updated {
                 self.update_text_layout();
-                self.id.request_layout();
+                cx.window_state.request_layout();
             }
         } else {
             eprintln!("downcast failed");
         }
     }
 
-    fn event(&mut self, cx: &mut EventCx, event: &Event, phase: Phase) -> EventPropagation {
-        if phase != Phase::Target {
+    fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
+        if cx.phase != Phase::Target {
             return EventPropagation::Continue;
         }
 
@@ -1239,7 +1241,7 @@ impl View for TextInput {
             self.cursor_glyph_idx = buff_len;
         }
 
-        let is_handled = match &event {
+        let is_handled = match &cx.event {
             // match on pointer primary button press
             Event::Pointer(PointerEvent::Down(PointerButtonEvent {
                 button: Some(PointerButton::Primary),
@@ -1265,28 +1267,29 @@ impl View for TextInput {
                 true
             }
             Event::Pointer(PointerEvent::Move(pu)) => {
-                if cx.window_state.is_active(&self.id)
+                if cx.window_state.is_active(self.id)
                     && self.buffer.with_untracked(|buff| !buff.is_empty())
                 {
                     if self.commit_preedit() {
-                        self.id.request_layout();
+                        cx.window_state.request_layout();
                     }
                     let pos = pu.current.logical_point();
 
                     // Get visible width for scrolling using LayoutCx
                     let mut lcx = LayoutCx::new(self.id);
-                    let visible_width = lcx.content_rect_local().size().width;
+                    let content_rect = lcx.content_rect_local();
+                    let visible_width = content_rect.size().width;
 
-                    if pos.x < 0. && pos.x < self.last_pointer_down.x {
+                    if pos.x < content_rect.x0 && pos.x < self.last_pointer_down.x {
                         self.scroll(pos.x, visible_width);
-                    } else if pos.x > visible_width && pos.x > self.last_pointer_down.x {
+                    } else if pos.x > content_rect.x1 && pos.x > self.last_pointer_down.x {
                         self.scroll(pos.x - visible_width, visible_width);
                     }
 
                     let selection_stop = self.get_box_position(pos.x);
                     self.update_selection(self.cursor_glyph_idx, selection_stop);
 
-                    self.id.request_paint();
+                    cx.window_state.request_paint(self.id);
                 }
                 false
             }
@@ -1295,7 +1298,7 @@ impl View for TextInput {
                     state: KeyState::Down,
                     ..
                 },
-            ) => self.handle_key_down(cx, ke),
+            ) => self.handle_key_down(cx.window_state, ke),
             Event::ImePreedit { text, cursor } => {
                 if self.is_focused && !text.is_empty() {
                     if let Some(selection) = self.selection.take() {
@@ -1416,7 +1419,7 @@ impl View for TextInput {
         cx.restore();
 
         // skip rendering selection / cursor if we don't have focus
-        if !cx.window_state.is_focused(&self.id()) {
+        if !cx.window_state.is_focused(self.id()) {
             return;
         }
 
@@ -1454,10 +1457,6 @@ impl View for TextInput {
         exec_after(Duration::from_millis(CURSOR_BLINK_INTERVAL_MS), move |_| {
             id.request_paint();
         });
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {

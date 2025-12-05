@@ -31,7 +31,8 @@ use crate::{
 #[cfg(any(feature = "rfd-async-std", feature = "rfd-tokio"))]
 pub use crate::file_action::*;
 
-pub(crate) fn add_update_message(msg: UpdateMessage) {
+/// Add an update message to the current window queue
+pub fn add_update_message(msg: UpdateMessage) {
     let current_view = get_current_view();
     let _ = UPDATE_MESSAGES.try_with(|msgs| {
         let mut msgs = msgs.borrow_mut();
@@ -240,8 +241,10 @@ pub fn set_window_menu(menu: Menu) {
 }
 
 /// Set the title of the window.
-pub fn set_window_title(title: String) {
-    add_update_message(UpdateMessage::SetWindowTitle { title });
+pub fn set_window_title(title: impl Into<String>) {
+    add_update_message(UpdateMessage::SetWindowTitle {
+        title: title.into(),
+    });
 }
 
 /// Focus the window.
@@ -249,9 +252,14 @@ pub fn focus_window() {
     add_update_message(UpdateMessage::FocusWindow);
 }
 
-/// Clear the app focus.
-pub fn clear_app_focus() {
-    add_update_message(UpdateMessage::ClearAppFocus);
+/// Clear the focus.
+pub fn clear_focus() {
+    add_update_message(UpdateMessage::ClearFocus);
+}
+
+/// Clear the active element.
+pub fn clear_active() {
+    add_update_message(UpdateMessage::ClearActive);
 }
 
 /// Set whether ime input is shown.

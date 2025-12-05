@@ -150,6 +150,7 @@ use std::ptr;
 use std::rc::Rc;
 use taffy::prelude::{auto, fr};
 use taffy::{GridTemplateComponent, Layout};
+use understory_box_tree::NodeFlags;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
@@ -176,6 +177,7 @@ use crate::theme::StyleThemeExt;
 use crate::unit::{Angle, Pct, Px, PxPct, PxPctAuto, UnitExt};
 use crate::view::{IntoView, View};
 use crate::view_tuple::ViewTupleFlat;
+use crate::views::editor::SelectionColor;
 use crate::views::{
     ContainerExt, Decorators, TooltipExt, canvas, empty, h_stack, label, stack, text, v_stack,
     v_stack_from_iter,
@@ -2085,7 +2087,7 @@ pub(crate) fn screen_size_bp_to_key(breakpoint: ScreenSizeBp) -> StyleKey {
 }
 
 /// the bool in the return is a classes_applied flag. if a new class has been applied, we need to do a request_style_recursive
-pub(crate) fn resolve_nested_maps(
+pub fn resolve_nested_maps(
     style: Style,
     interact_state: &InteractionState,
     screen_size_bp: ScreenSizeBp,
@@ -2154,7 +2156,7 @@ fn resolve_nested_maps_internal(
     }
 
     // Disabled state (takes precedence)
-    if interact_state.is_disabled {
+    if interact_state.is_disabled || style.builtin().is_disabled() {
         if let Some(map) = style.get_nested_map(StyleSelector::Disabled.to_key()) {
             classes_applied |= map.any_inherited();
             style.apply_mut(map);
@@ -2165,7 +2167,7 @@ fn resolve_nested_maps_internal(
         // Other states only apply if not disabled
 
         // Selected
-        if interact_state.is_selected || style.get(Selected) {
+        if interact_state.is_selected || style.builtin().is_selected() {
             if let Some(map) = style.get_nested_map(StyleSelector::Selected.to_key()) {
                 classes_applied |= map.any_inherited();
                 style.apply_mut(map);
@@ -2343,6 +2345,7 @@ impl Style {
                 self.apply_context_mappings_mut();
             }
         }
+        // TODO: check this. should this be here?
         if self.get(Selected) {
             if let Some(map) = self.get_nested_map(StyleSelector::Selected.to_key()) {
                 self.apply_mut(map.apply_selectors(&[StyleSelector::Selected]));
@@ -2728,7 +2731,7 @@ style_key_selector!(
 );
 
 impl StyleSelector {
-    fn to_key(self) -> StyleKey {
+    pub(crate) fn to_key(self) -> StyleKey {
         match self {
             StyleSelector::Hover => hover(),
             StyleSelector::Focus => focus(),
@@ -4168,11 +4171,11 @@ define_builtin_props!(
     /// .scrollbar_width(6.0)
     /// ```
     ///
-    /// **Default:** `6px`
+    /// **Default:** `8px`
     ///
     /// **Note:** This property only affects layout space reservation. Actual scrollbar rendering
     /// (position, styling, thumb size) must be handled separately by the rendering layer.
-    ScrollbarWidth scrollbar_width {tr}: Px {} = Px(6.),
+    ScrollbarWidth scrollbar_width {tr}: Px {} = Px(8.),
 
     /// Controls how overflowed text content is handled.
     ///
@@ -4242,27 +4245,33 @@ define_builtin_props!(
     /// like `AnchorAbout::CENTER` or create custom anchor points with pixel or percentage values.
     ScaleAbout scale_about {tr}: AnchorAbout {} = AnchorAbout::CENTER,
 
-    /// Controls the selected state of the view.
+    /// Sets the opacity of the view.
+    ///
+    /// Values range from 0.0 (fully transparent) to 1.0 (fully opaque).
+    /// This affects the entire view including its children.
+    Opacity opacity {tr}: f32 {} = 1.0,
+
+    /// Sets the selected state of the view.
     ///
     /// This property is inherited by child views.
-    Selected set_selected {}: bool { inherited } = false,
+    Selected is_selected {}: bool { inherited } = false,
 
-    /// Controls the disabled state of the view.
+    /// Sets the disabled state of the view.
     ///
     /// This property is inherited by child views.
-    Disabled set_disabled {}: bool { inherited } = false,
+    Disabled is_disabled {}: bool { inherited } = false,
 
-    /// Controls the visibility of the view.
+    /// Sets the visibility of the view.
     ///
     /// This property is inherited by child views.
-    Hidden set_hidden {}: bool { inherited } = false,
+    Hidden is_hidden {}: bool { inherited } = false,
 
-    /// Controls whether the view can receive focus.
+    /// Sets whether the view can receive focus.
     ///
     /// Focus is necessary for keyboard interaction.
     Focusable focusable {}: bool { } = false,
 
-    /// Controls whether the view can be dragged.
+    /// Sets whether the view can be dragged.
     ///
     /// Enables drag-and-drop functionality for the view.
     Draggable draggable {}: bool { } = false,
@@ -4421,6 +4430,43 @@ impl TransformProps {
     }
 }
 
+prop_extractor! {
+    pub BoxTreeProps {
+        pub scale_about: ScaleAbout,
+        pub z_index: ZIndex,
+        pub pointer_events: PointerEventsProp,
+        pub focusable: Focusable,
+        pub hidden: Hidden,
+        pub disabled: Disabled,
+        pub display: DisplayProp
+    }
+}
+impl BoxTreeProps {
+    pub fn pickable(&self) -> bool {
+        self.pointer_events() != Some(PointerEvents::None)
+    }
+
+    pub fn set_box_tree(
+        &self,
+        node_id: understory_box_tree::NodeId,
+        box_tree: &mut understory_box_tree::Tree,
+    ) {
+        box_tree.set_z_index(node_id, self.z_index().unwrap_or(0));
+        let mut flags = NodeFlags::empty();
+        if self.pickable() {
+            flags |= NodeFlags::PICKABLE;
+        }
+        if self.focusable() && !self.hidden() && self.display() != Display::None && !self.disabled()
+        {
+            flags |= NodeFlags::FOCUSABLE;
+        }
+        if !self.hidden() {
+            flags |= NodeFlags::VISIBLE;
+        }
+        box_tree.set_flags(node_id, flags);
+    }
+}
+
 impl LayoutProps {
     pub fn to_style(&self) -> Style {
         let border = self.border();
@@ -4451,7 +4497,7 @@ impl LayoutProps {
 prop_extractor! {
     pub SelectionStyle {
         pub corner_radius: SelectionCornerRadius,
-        pub selection_color: CursorColor,
+        pub selection_color: SelectionColor,
     }
 }
 
@@ -5487,7 +5533,7 @@ impl Style {
             align_self: style.align_self(),
             aspect_ratio: style.aspect_ratio(),
             border: {
-                let border = style.style.get(BorderProp);
+                let border = style.border_combined();
                 Rect {
                     left: LengthPercentage::length(border.left.map_or(0.0, |b| b.0.width) as f32),
                     top: LengthPercentage::length(border.top.map_or(0.0, |b| b.0.width) as f32),
@@ -5498,7 +5544,7 @@ impl Style {
                 }
             },
             padding: {
-                let padding = style.style.get(PaddingProp);
+                let padding = style.padding_combined();
                 Rect {
                     left: padding.left.unwrap_or(PxPct::Px(0.0)).into(),
                     top: padding.top.unwrap_or(PxPct::Px(0.0)).into(),
@@ -5507,7 +5553,7 @@ impl Style {
                 }
             },
             margin: {
-                let margin = style.style.get(MarginProp);
+                let margin = style.margin_combined();
                 Rect {
                     left: margin.left.unwrap_or(PxPctAuto::Px(0.0)).into(),
                     top: margin.top.unwrap_or(PxPctAuto::Px(0.0)).into(),
@@ -5876,7 +5922,7 @@ mod tests {
         let style = style1.apply(style2);
 
         // Check that the combined padding has the expected left value
-        let padding = style.get(PaddingProp);
+        let padding = style.builtin().padding_combined();
         assert_eq!(padding.left, Some(PxPct::Px(64.0)));
 
         let style1 = Style::new().padding_left(32.0).padding_bottom(45.0);
@@ -5884,7 +5930,7 @@ mod tests {
 
         let style = style1.apply(style2);
 
-        let padding = style.get(PaddingProp);
+        let padding = style.builtin().padding_combined();
         assert_eq!(padding.left, Some(PxPct::Px(64.0)));
         assert_eq!(padding.bottom, Some(PxPct::Px(45.0))); // Should be preserved from style1
 
@@ -5894,7 +5940,7 @@ mod tests {
 
         let style = style1.apply(style2);
 
-        let padding = style.get(PaddingProp);
+        let padding = style.builtin().padding_combined();
         assert_eq!(padding.left, Some(PxPct::Px(64.0)));
         assert_eq!(padding.bottom, Some(PxPct::Px(45.)));
 

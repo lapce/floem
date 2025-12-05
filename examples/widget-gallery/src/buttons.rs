@@ -1,13 +1,13 @@
 use floem::{
-    peniko::{color::palette, Color},
+    IntoView,
+    peniko::{Color, color::palette},
     prelude::{
-        palette::css::{DARK_GRAY, WHITE_SMOKE},
         RwSignal, SignalGet,
+        palette::css::{DARK_GRAY, WHITE_SMOKE},
     },
     style::CursorStyle,
     theme::StyleThemeExt,
-    views::{button, toggle_button, Decorators, ToggleButton, ToggleHandleBehavior},
-    IntoView,
+    views::{Decorators, ToggleButton, ToggleHandleBehavior, button, toggle_button},
 };
 
 use crate::form::{form, form_item};
@@ -38,7 +38,7 @@ pub fn button_view() -> impl IntoView {
         form_item(
             "Disabled Button:",
             button("Unclickable")
-                .style(|s| s.set_disabled(true))
+                .style(|s| s.is_disabled(true))
                 .action(|| println!("Button clicked")),
         ),
         form_item(

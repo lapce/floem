@@ -8,9 +8,9 @@ use std::{any::Any, rc::Rc};
 
 use floem_reactive::{Effect, RwSignal, Scope, SignalGet, SignalUpdate, UpdaterEffect};
 use imbl::OrdMap;
-use peniko::kurbo::{Point, Rect, Size};
+use peniko::kurbo::{Point, Size};
 use ui_events::keyboard::{Key, NamedKey};
-use understory_responder::types::{Outcome, Phase};
+use understory_responder::types::Phase;
 
 use crate::{
     AnyView,
@@ -174,7 +174,6 @@ pub struct Dropdown<T: 'static> {
     list_item_fn: Rc<dyn Fn(&T) -> AnyView>,
     list_style: Style,
     overlay_id: Option<ViewId>,
-    window_origin: Option<Point>,
     on_accept: Option<Box<dyn Fn(T)>>,
     on_open: Option<Box<dyn Fn(bool)>>,
     style: DropdownStyle,
@@ -205,16 +204,7 @@ impl<T: 'static + Clone + PartialEq> View for Dropdown<T> {
             .style()
             .get_nested_map(scroll::ScrollClass::key())
             .unwrap_or_default();
-
-        for child in self.id.children() {
-            cx.style_view(child);
-        }
     }
-
-    // fn compute_layout(&mut self, cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
-    //     self.window_origin = Some(cx.window_origin);
-    //     cx.layout_children(self.id)
-    // }
 
     fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(state) = state.downcast::<Message>() {
@@ -252,12 +242,12 @@ impl<T: 'static + Clone + PartialEq> View for Dropdown<T> {
         }
     }
 
-    fn event(&mut self, _cx: &mut EventCx, event: &Event, phase: Phase) -> EventPropagation {
-        if phase != Phase::Bubble {
+    fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
+        if cx.phase != Phase::Bubble {
             return EventPropagation::Continue;
         }
 
-        match event {
+        match &cx.event {
             e if e.is_pointer_down() => {
                 self.swap_state();
                 return EventPropagation::Stop;
@@ -275,10 +265,6 @@ impl<T: 'static + Clone + PartialEq> View for Dropdown<T> {
         }
 
         EventPropagation::Continue
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
@@ -419,7 +405,6 @@ impl<T: Clone + std::cmp::PartialEq> Dropdown<T> {
             index_to_item,
             list_style: Style::new(),
             overlay_id: None,
-            window_origin: None,
             on_accept: None,
             on_open: None,
             style: Default::default(),
@@ -552,16 +537,14 @@ impl<T: Clone + std::cmp::PartialEq> Dropdown<T> {
     fn open_dropdown(&mut self, cx: &mut crate::context::UpdateCx) {
         if self.overlay_id.is_none() {
             self.id.request_layout();
-            cx.window_state.compute_taffy();
-            if let Some(layout) = self.id.layout() {
-                self.update_list_style(layout.size.width as f64);
-                let point =
-                    self.window_origin.unwrap_or_default() + (0., layout.size.height as f64);
-                self.create_overlay(point);
+            let layout = self.id.layout_rect_local();
+            self.update_list_style(layout.width());
+            let origin = self.id.world_bounds().unwrap_or_default().origin();
+            let point = origin + (0., layout.height());
+            self.create_overlay(point);
 
-                if let Some(on_open) = &self.on_open {
-                    on_open(true);
-                }
+            if let Some(on_open) = &self.on_open {
+                on_open(true);
             }
         }
     }
@@ -576,7 +559,7 @@ impl<T: Clone + std::cmp::PartialEq> Dropdown<T> {
     }
 
     fn update_list_style(&mut self, width: f64) {
-        if let PxPctAuto::Pct(pct) = self.list_style.get(Width) {
+        if let PxPctAuto::Pct(pct) = self.list_style.builtin().width() {
             let new_width = width * pct / 100.0;
             self.list_style = self.list_style.clone().width(new_width);
         }

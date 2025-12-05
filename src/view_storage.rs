@@ -3,7 +3,8 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use rustc_hash::FxHashSet;
 use slotmap::{SecondaryMap, SlotMap};
 use taffy::NodeId;
-use understory_box_tree::{NodeId as UnderNode, Tree as UnderTree};
+
+pub type UnderTree = understory_box_tree::Tree;
 
 use crate::{IntoView, id::ViewId, view::AnyView, view_state::ViewState};
 
@@ -22,7 +23,7 @@ thread_local! {
 /// P.P.S. It may well be possible to combine them into a single enum at somepoint. In which case known_dimensions: Some(_) would become something like an AvailableSpace::Exact(_) variant.
 ///
 /// taken from https://github.com/DioxusLabs/taffy/discussions/716#discussioncomment-10846100
-pub type MeasureFunction = dyn FnMut(
+pub type MeasureFn = dyn FnMut(
     taffy::Size<Option<f32>>,
     taffy::Size<taffy::AvailableSpace>,
     taffy::NodeId,
@@ -40,12 +41,26 @@ impl MeasureContext {
     }
 }
 
+/// the sizes are the total size and then the content size
+pub type FinalizeFn = dyn Fn(NodeId, &taffy::Layout);
+
 #[non_exhaustive]
 pub enum NodeContext {
     Custom {
-        measure: Box<MeasureFunction>,
-        finalize: Option<Box<dyn Fn(NodeId, taffy::Size<f32>)>>,
+        measure: Box<MeasureFn>,
+        finalize: Option<Box<FinalizeFn>>,
     },
+}
+impl std::fmt::Debug for NodeContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Custom { .. } => f
+                .debug_struct("Custom")
+                .field("measure", &"<measure fn>")
+                .field("finalize", &"<finalize fn>")
+                .finish(),
+        }
+    }
 }
 
 pub(crate) struct ViewStorage {
@@ -75,12 +90,14 @@ impl ViewStorage {
     pub fn new() -> Self {
         let mut taffy = taffy::TaffyTree::<NodeContext>::new();
         let mut box_tree = UnderTree::new();
+        let mut view_ids = SlotMap::<ViewId, ()>::default();
+        let stale_id = view_ids.insert(());
         taffy.disable_rounding();
-        let state_view_state = ViewState::new(&mut taffy, &mut box_tree);
+        let stale_view_state = ViewState::new(stale_id, &mut taffy, &mut box_tree);
 
         Self {
             taffy: Rc::new(RefCell::new(taffy)),
-            view_ids: Default::default(),
+            view_ids,
             views: Default::default(),
             children: Default::default(),
             parent: Default::default(),
@@ -89,7 +106,7 @@ impl ViewStorage {
             node_to_view: Default::default(),
             box_node_to_view: Default::default(),
             box_tree: Rc::new(RefCell::new(box_tree)),
-            stale_view_state: Rc::new(RefCell::new(state_view_state)),
+            stale_view_state: Rc::new(RefCell::new(stale_view_state)),
             stale_view: Rc::new(RefCell::new(
                 crate::views::Empty {
                     id: ViewId::default(),
@@ -110,6 +127,7 @@ impl ViewStorage {
                 .unwrap()
                 .or_insert_with(|| {
                     let state = Rc::new(RefCell::new(ViewState::new(
+                        id,
                         &mut self.taffy.borrow_mut(),
                         &mut self.box_tree.borrow_mut(),
                     )));
@@ -117,7 +135,7 @@ impl ViewStorage {
                     self.node_to_view.insert(state.borrow().node, id);
                     self.box_node_to_view
                         .borrow_mut()
-                        .insert(state.borrow().box_node, id);
+                        .insert(state.borrow().visual_id, id);
                     state
                 })
                 .clone()

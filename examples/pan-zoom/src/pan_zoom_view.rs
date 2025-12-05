@@ -2,7 +2,7 @@ use std::{collections::VecDeque, time::Duration};
 
 use floem::{
     IntoView, View,
-    action::exec_after,
+    action::{clear_active, exec_after},
     event::{Event, EventPropagation},
     kurbo::{self, Vec2},
     prelude::Phase,
@@ -96,18 +96,10 @@ impl View for PanZoomView {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
 
-    fn event(
-        &mut self,
-        _cx: &mut floem::context::EventCx,
-        event: &Event,
-        phase: Phase,
-    ) -> EventPropagation {
-        if phase == Phase::Capture {
-            match event {
+    fn event(&mut self, cx: &mut floem::context::EventCx) -> EventPropagation {
+        if cx.phase == Phase::Capture {
+            match &cx.event {
                 Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. })) => {
                     self.dragging = true;
                     self.drag_cursor_pos = Some(state.logical_point());
@@ -133,7 +125,7 @@ impl View for PanZoomView {
                     self.set_view_transform(kurbo::Affine::translate(delta) * self.view_transform);
                     self.drag_cursor_pos = Some(current_cursor_pos);
 
-                    self.id().request_paint();
+                    cx.window_state.request_paint(self.id);
 
                     return EventPropagation::Stop;
                 }
@@ -150,7 +142,6 @@ impl View for PanZoomView {
                     } else {
                         self.drag_velocity = kurbo::Vec2::ZERO;
                     }
-                    self.id.clear_active();
                 }
                 e @ Event::Pointer(PointerEvent::Scroll(_)) => {
                     if let Some(delta) = e.pixel_scroll_delta_vec2() {
@@ -171,7 +162,7 @@ impl View for PanZoomView {
         EventPropagation::Continue
     }
 
-    fn update(&mut self, _cx: &mut floem::context::UpdateCx, _state: Box<dyn std::any::Any>) {
+    fn update(&mut self, cx: &mut floem::context::UpdateCx, _state: Box<dyn std::any::Any>) {
         let update = self.measure_drag_velocity();
 
         let mut repaint = false;
@@ -179,7 +170,7 @@ impl View for PanZoomView {
         repaint |= self.run_drag_end_animation();
 
         if repaint {
-            self.id().request_paint();
+            cx.window_state.request_paint(self.id);
         }
         if update || repaint {
             self.schedule_update();

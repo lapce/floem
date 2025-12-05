@@ -101,7 +101,7 @@ fn gauge(fill_percent: impl SignalGet<Pct> + 'static + Copy) -> slider::Slider {
         })
         .style(move |s| {
             let fill_percent = fill_percent.get().0;
-            s.width(200).set_disabled(true).with_theme(move |s, t| {
+            s.width(200).is_disabled(true).with_theme(move |s, t| {
                 s.apply_if(fill_percent == 100., |s| {
                     s.custom(|s: SliderCustomStyle| s.accent_bar_color(t.success()))
                 })

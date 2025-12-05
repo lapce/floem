@@ -1,11 +1,11 @@
 use std::time::{Duration, Instant};
 
 use floem::{
+    IntoView,
     action::exec_after,
     reactive::{DerivedRwSignal, Effect, RwSignal, SignalGet, SignalTrack, SignalUpdate},
     unit::{Pct, UnitExt},
-    views::{button, container, label, slider, stack, text, v_stack, Decorators},
-    IntoView,
+    views::{Decorators, button, container, label, slider, stack, text, v_stack},
 };
 
 fn main() {
@@ -87,5 +87,5 @@ fn gauge(fill_percent: impl SignalGet<Pct> + 'static) -> slider::Slider {
                 .bar_radius(25.pct())
                 .accent_bar_radius(25.pct())
         })
-        .style(|s| s.width(200).set_disabled(true))
+        .style(|s| s.width(200).is_disabled(true))
 }

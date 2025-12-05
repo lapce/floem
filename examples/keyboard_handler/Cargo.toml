@@ -1,6 +1,6 @@
 [package]
 name = "keyboard_handler"
-edition = "2021"
+edition = "2024"
 license.workspace = true
 version.workspace = true
 

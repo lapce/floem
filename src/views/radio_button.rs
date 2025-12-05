@@ -72,7 +72,7 @@ impl RadioButton {
         let clone = represented_value.clone();
         radio_button_svg(represented_value, actual_value).style(move |s| {
             s.focusable(true)
-                .apply_if(clone == actual_value.get(), |s| s.set_selected(true))
+                .apply_if(clone == actual_value.get(), |s| s.is_selected(true))
         })
     }
 
@@ -94,7 +94,7 @@ impl RadioButton {
             .style(move |s| {
                 s.focusable(true)
                     .apply_if(cloneable_represented_value_ == actual_value.get(), |s| {
-                        s.set_selected(true)
+                        s.is_selected(true)
                     })
             })
             .on_click_stop(move |_, _| {
@@ -158,7 +158,7 @@ impl RadioButton {
         .style(move |s| {
             s.items_center()
                 .focusable(true)
-                .apply_if(clone == actual_value.get(), |s| s.set_selected(true))
+                .apply_if(clone == actual_value.get(), |s| s.is_selected(true))
         })
     }
 
@@ -185,7 +185,7 @@ impl RadioButton {
         .style(move |s| {
             s.items_center().focusable(true).apply_if(
                 cloneable_represented_value_.clone() == actual_value.get(),
-                |s| s.set_selected(true),
+                |s| s.is_selected(true),
             )
         })
         .on_click_stop(move |_, _| {

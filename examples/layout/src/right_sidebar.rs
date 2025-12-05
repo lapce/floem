@@ -1,5 +1,4 @@
 use floem::{
-    event::{Event, EventListener},
     imbl,
     prelude::*,
     style::Position,

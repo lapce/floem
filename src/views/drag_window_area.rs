@@ -23,8 +23,9 @@ pub fn drag_window_area<V: IntoView + 'static>(child: V) -> DragWindowArea {
     let id = ViewId::new();
     id.set_children([child]);
     DragWindowArea { id }
-        .on_event_stop(EventListener::PointerDown, |_, e| {
-            if let Event::Pointer(PointerEvent::Down(PointerButtonEvent { button, .. })) = e {
+        .on_event_stop(EventListener::PointerDown, |_, cx| {
+            if let Event::Pointer(PointerEvent::Down(PointerButtonEvent { button, .. })) = &cx.event
+            {
                 if button.is_some_and(|b| b == PointerButton::Primary) {
                     drag_window();
                 }
@@ -39,10 +40,6 @@ impl View for DragWindowArea {
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
         "Drag Window Area".into()
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {

@@ -13,7 +13,6 @@ use crate::{
 };
 use floem_reactive::{Effect, RwSignal, SignalGet, SignalUpdate};
 use ui_events::keyboard::{Key, KeyState, KeyboardEvent, NamedKey};
-use understory_responder::types::Outcome;
 
 style_class!(pub ListClass);
 style_class!(pub ListItemClass);
@@ -114,12 +113,12 @@ where
         child,
         onaccept: None,
     }
-    .on_event(EventListener::KeyDown, move |_v, e| {
+    .on_event(EventListener::KeyDown, move |_v, cx| {
         if let Event::Key(KeyboardEvent {
             state: KeyState::Down,
             key,
             ..
-        }) = e
+        }) = &cx.event
         {
             match key {
                 Key::Named(NamedKey::Home) => {
@@ -188,16 +187,18 @@ impl View for List {
         self.id
     }
 
-    fn update(&mut self, _cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
+    fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(change) = state.downcast::<ListUpdate>() {
             match *change {
                 ListUpdate::SelectionChanged(old_idx) => {
                     if let Some(old_idx) = old_idx {
                         let child = self.child.children()[old_idx];
+                        cx.window_state.request_style(self.id);
                         child.request_style_recursive();
                     }
                     if let Some(index) = self.selection.get_untracked() {
                         let child = self.child.children()[index];
+                        cx.window_state.request_style(self.id);
                         child.request_style_recursive();
                         child.scroll_to(None);
                     }
@@ -209,10 +210,6 @@ impl View for List {
                 }
             }
         }
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
@@ -233,20 +230,13 @@ impl View for Item {
         "List Item".into()
     }
 
-    fn style_pass(&mut self, cx: &mut StyleCx<'_>) {
+    fn style_pass(&mut self, _cx: &mut StyleCx<'_>) {
         let selected = self.selection.get_untracked();
         if Some(self.index) == selected {
-            cx.save();
-            cx.selected();
-            cx.style_view(self.child);
-            cx.restore();
+            self.child.parent_set_selected();
         } else {
-            cx.style_view(self.child);
+            self.child.parent_clear_selected();
         }
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {

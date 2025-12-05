@@ -3,7 +3,7 @@
 use std::any::Any;
 use std::ops::RangeInclusive;
 
-use floem_reactive::{SignalGet, SignalUpdate, create_updater};
+use floem_reactive::{SignalGet, SignalUpdate, UpdaterEffect};
 use peniko::{
     Brush,
     color::palette,
@@ -154,19 +154,14 @@ impl View for Slider {
         }
     }
 
-    fn event(
-        &mut self,
-        cx: &mut EventCx,
-        event: &crate::event::Event,
-        phase: Phase,
-    ) -> EventPropagation {
-        if phase != Phase::Target {
+    fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
+        if cx.phase != Phase::Target {
             return EventPropagation::Continue;
         }
 
         let lcx = &mut LayoutCx::new(self.id);
 
-        let pos_changed = match event {
+        let pos_changed = match &cx.event {
             crate::event::Event::Pointer(PointerEvent::Down(PointerButtonEvent {
                 state, ..
             })) => {
@@ -176,15 +171,13 @@ impl View for Slider {
                 self.percent = self.mouse_pos_to_percent(state.logical_point().x, lcx);
                 true
             }
-            crate::event::Event::Pointer(PointerEvent::Up(PointerButtonEvent {
-                state, ..
-            })) => {
+            crate::event::Event::Pointer(PointerEvent::Up(e)) => {
                 self.id.request_layout();
 
                 // set the state based on the position of the slider
                 let changed = self.held;
                 if self.held {
-                    self.percent = self.mouse_pos_to_percent(state.logical_point().x, lcx);
+                    self.percent = self.mouse_pos_to_percent(e.state.logical_point().x, lcx);
                     self.update_restrict_position();
                 }
                 self.held = false;
@@ -351,10 +344,6 @@ impl View for Slider {
         }
     }
 
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
@@ -383,7 +372,7 @@ impl Slider {
     /// ```
     pub fn new<P: Into<Pct>>(percent: impl Fn() -> P + 'static) -> Self {
         let id = ViewId::new();
-        let percent = create_updater(
+        let percent = UpdaterEffect::new(
             move || {
                 let percent = percent().into();
                 percent.0
@@ -462,7 +451,7 @@ impl Slider {
 
         let cloned_range = range.clone();
 
-        let percent = create_updater(
+        let percent = UpdaterEffect::new(
             move || {
                 let value_range = range.end() - range.start();
                 ((value() - range.start()) / value_range) * 100.0
@@ -723,7 +712,7 @@ mod test {
 
     // Test helper to create EventCx
     fn create_test_event_cx(view_id: ViewId) -> EventCx<'static> {
-        EventCx::new(Box::leak(Box::new(create_test_window_state(view_id))))
+        EventCx::test(Box::leak(Box::new(create_test_window_state(view_id))))
     }
 
     // Helper to directly update slider value

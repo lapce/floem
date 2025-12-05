@@ -1,8 +1,8 @@
 use floem::{
+    IntoView,
     animate::Animation,
     reactive::{RwSignal, SignalGet, SignalUpdate},
     views::*,
-    IntoView,
 };
 
 #[derive(Clone, Copy, PartialEq)]
@@ -18,7 +18,7 @@ impl ViewSwitcher {
         };
     }
 
-    fn view(&self, state: RwSignal<Self>) -> impl IntoView {
+    fn view(&self, state: RwSignal<Self>) -> impl IntoView + use<> {
         match self {
             ViewSwitcher::One => view_one().into_any(),
             ViewSwitcher::Two => view_two(state).into_any(),

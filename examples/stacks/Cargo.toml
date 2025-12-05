@@ -4,4 +4,4 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-floem = { path = "../..", features = ["vello"] }
+floem = { path = "../.." }

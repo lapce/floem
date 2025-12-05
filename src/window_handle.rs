@@ -5,10 +5,9 @@ use std::{cell::RefCell, mem, rc::Rc, sync::Arc};
 use muda::MenuId;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
-use ui_events::keyboard::{Key, KeyState, KeyboardEvent, Modifiers, NamedKey};
+use ui_events::keyboard::{Key, KeyboardEvent, Modifiers, NamedKey};
 use ui_events::pointer::PointerEvent;
 use ui_events_winit::WindowEventReducer;
-use understory_responder::types::WidgetLookup;
 
 use winit::window::{
     ImeCapabilities, ImeEnableRequest, ImeHint, ImePurpose, ImeRequest, ImeRequestData,
@@ -26,7 +25,7 @@ use winit::{
     window::{Window, WindowId},
 };
 
-use crate::context::{BoxNodeLookup, WidgetLookupExt};
+use crate::context::{GlobalEventCx, WidgetLookupExt};
 use crate::dropped_file::FileDragEvent;
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use crate::menu::MudaMenu;
@@ -40,19 +39,18 @@ use crate::views::{Decorators, container, stack};
 use crate::{
     Application,
     app::UserEvent,
-    context::{EventCx, FrameUpdate, PaintCx, PaintState, StyleCx, UpdateCx},
-    event::{Event, EventListener},
+    context::{FrameUpdate, PaintCx, PaintState, StyleCx, UpdateCx},
+    event::Event,
     id::ViewId,
     inspector::{self, Capture, CaptureState, CapturedView},
     profiler::Profile,
-    style::{CursorStyle, Style, StyleSelector},
+    style::{CursorStyle, Style},
     theme::default_theme,
     update::{
         CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES, CURRENT_RUNNING_VIEW_HANDLE,
         DEFERRED_UPDATE_MESSAGES, UPDATE_MESSAGES, UpdateMessage,
     },
     view::{IntoView, View},
-    view_state::ChangeFlags,
     window_state::WindowState,
     window_tracking::{remove_window_id_mapping, store_window_id_mapping},
 };
@@ -79,7 +77,6 @@ pub(crate) struct WindowHandle {
     transparent: bool,
     pub(crate) scale: f64,
     pub(crate) modifiers: Modifiers,
-    pub(crate) cursor_position: Point,
     pub(crate) window_position: Point,
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     pub(crate) context_menu: RwSignal<Option<(muda::Menu, Point, bool)>>,
@@ -197,7 +194,6 @@ impl WindowHandle {
             profile: None,
             scale,
             modifiers: Modifiers::default(),
-            cursor_position: Point::ZERO,
             window_position: Point::ZERO,
             #[cfg(any(target_os = "linux", target_os = "freebsd"))]
             context_menu,
@@ -250,8 +246,8 @@ impl WindowHandle {
         set_current_view(self.id);
         let event = event.transform(Affine::scale(self.window_state.scale));
 
-        let mut cx = EventCx::new(&mut self.window_state);
-        cx.window_event(event.clone());
+        let mut cx = GlobalEventCx::new(&mut self.window_state, event.clone());
+        cx.run();
 
         // Platform-specific context menu handling
         #[cfg(any(target_os = "linux", target_os = "freebsd"))]
@@ -308,7 +304,7 @@ impl WindowHandle {
             self.window.set_theme(theme);
         }
         self.id.request_all();
-        request_recursive_changes(self.id, ChangeFlags::STYLE);
+        request_style_all(&mut self.window_state, self.id);
         if let Some(theme) = theme {
             self.event(Event::ThemeChanged(theme));
         }
@@ -328,7 +324,8 @@ impl WindowHandle {
             self.event(Event::WindowMaximizeChanged(is_maximized));
         }
         self.style();
-        self.compute_taffy();
+        self.compute_layout();
+        self.commit_box_tree();
         self.process_update();
         self.schedule_repaint();
     }
@@ -371,14 +368,32 @@ impl WindowHandle {
     }
 
     fn style(&mut self) {
-        let mut cx = StyleCx::new(&mut self.window_state, self.id);
-        if let Some(theme) = &self.default_theme {
-            cx.current = Rc::new(theme.inherited());
+        let start = Instant::now();
+        // Build explicit traversal order
+        let traversal = self.window_state.build_style_traversal(self.id);
+        if traversal.is_empty() {
+            self.window_state.style_dirty.clear();
+            self.window_state.view_style_dirty.clear();
         }
-        cx.style_view(self.id);
+
+        // Style each view in order
+        for visual_id in traversal {
+            // Find the ViewId for this VisualId
+            if let Some(view_id) = visual_id.view_of() {
+                let cx =
+                    &mut StyleCx::new(&mut self.window_state, start, view_id, visual_id, || {
+                        self.default_theme.as_ref().map(|t| t.inherited()).unwrap()
+                    });
+
+                cx.style_target();
+            } else {
+                // if we can't route to the visual id through a view
+                // TODO: log an error
+            }
+        }
     }
 
-    fn compute_taffy(&mut self) -> Duration {
+    fn compute_layout(&mut self) -> Duration {
         self.window_state.root = {
             let view = self.id.view();
             let view = view.borrow_mut();
@@ -386,17 +401,28 @@ impl WindowHandle {
         };
 
         let start = Instant::now();
-        self.window_state.compute_taffy();
+        self.window_state.compute_layout();
 
         Instant::now().saturating_duration_since(start)
+    }
+
+    pub fn commit_box_tree(&mut self) {
+        self.window_state.root = {
+            let view = self.id.view();
+            let view = view.borrow_mut();
+            Some(view.id().taffy_node())
+        };
+        self.window_state.commit_box_tree();
     }
 
     pub(crate) fn render_frame(&mut self, gpu_resources: Option<GpuResources>) {
         // Processes updates scheduled on this frame.
         for update in mem::take(&mut self.window_state.scheduled_updates) {
             match update {
-                FrameUpdate::Style(id) => id.request_style(),
-                FrameUpdate::Layout => self.id.request_layout(),
+                FrameUpdate::Style(id) => {
+                    self.window_state.style_dirty.insert(id.visual_id());
+                }
+                FrameUpdate::Layout => self.window_state.request_layout = true,
                 FrameUpdate::Paint(id) => self.window_state.request_paint(id),
             }
         }
@@ -470,18 +496,34 @@ impl WindowHandle {
         // Ensure we run layout and styling again for accurate timing. We also need to ensure
         // styles are recomputed to capture them.
         fn request_changes(id: ViewId) {
-            id.state().borrow_mut().requested_changes = ChangeFlags::all();
             for child in id.children() {
                 request_changes(child);
             }
         }
         request_changes(self.id);
 
+        fn collect_taffy_nodes(id: ViewId, nodes: &mut Vec<taffy::tree::NodeId>) {
+            nodes.push(id.state().borrow().node);
+            for child in id.children() {
+                collect_taffy_nodes(child, nodes);
+            }
+        }
+        let mut taffy_nodes = Vec::new();
+        collect_taffy_nodes(self.id, &mut taffy_nodes);
+        {
+            let taffy = self.id.taffy();
+            let mut taffy = taffy.borrow_mut();
+            for node in taffy_nodes {
+                taffy.mark_dirty(node).ok();
+            }
+        }
+
         fn get_taffy_depth(
             taffy: Rc<RefCell<taffy::TaffyTree<NodeContext>>>,
             root: taffy::tree::NodeId,
         ) -> usize {
             let children = taffy.borrow().children(root).unwrap();
+
             if children.is_empty() {
                 1
             } else {
@@ -499,7 +541,8 @@ impl WindowHandle {
         let post_style = Instant::now();
 
         let taffy_root_node = self.id.state().borrow().node;
-        let taffy_duration = self.compute_taffy();
+        let layout_duration = self.compute_layout();
+        self.commit_box_tree();
         let post_layout = Instant::now();
         let window = self.paint(gpu_resources);
         let end = Instant::now();
@@ -509,7 +552,7 @@ impl WindowHandle {
             post_style,
             post_layout,
             end,
-            taffy_duration,
+            layout_duration,
             taffy_node_count: self.id.taffy().borrow().total_node_count(),
             taffy_depth: get_taffy_depth(self.id.taffy(), taffy_root_node),
             window,
@@ -539,7 +582,10 @@ impl WindowHandle {
         loop {
             loop {
                 self.process_update_messages();
-                if !self.window_state.request_layout && !self.needs_style() {
+                if !self.window_state.request_layout
+                    && !self.window_state.request_box_tree_commit
+                    && !self.needs_style()
+                {
                     break;
                 }
 
@@ -550,8 +596,10 @@ impl WindowHandle {
 
                 if self.window_state.request_layout {
                     paint = true;
-                    self.compute_taffy();
+                    self.compute_layout();
+                    self.commit_box_tree();
                     self.window_state.request_layout = false;
+                    self.window_state.request_box_tree_commit = false;
                 }
             }
             if !self.has_deferred_update_messages() {
@@ -561,6 +609,22 @@ impl WindowHandle {
             self.process_deferred_update_messages();
         }
 
+        if self.window_state.needs_cursor_resolution {
+            let mut temp = None;
+            for hover in self.window_state.hover_state.current_path() {
+                if let Some(view_id) = hover.view_of()
+                    && let Some(cursor) = view_id.state().borrow().cursor()
+                {
+                    temp = Some(cursor);
+                }
+                // it is important that the node cursors override the widget cursor because non View nodes will have a widget that maps to the parent View that they are associated with
+                if let Some(cursor) = self.window_state.cursors.get(hover) {
+                    temp = Some(*cursor);
+                }
+            }
+            self.window_state.cursor = temp;
+            self.window_state.needs_cursor_resolution = false;
+        }
         self.set_cursor();
 
         // TODO: This should only use `self.window_state.request_paint)`
@@ -609,8 +673,8 @@ impl WindowHandle {
                     );
                     let unprocessed = &mut *central_msgs.borrow_mut();
                     for (id, msg) in removed_central_msgs {
-                        if let Some(root) = id.root() {
-                            let msgs = msgs.entry(root).or_default();
+                        if let Some(root) = id.view_of().and_then(|view_id| view_id.root()) {
+                            let msgs = msgs.entry(root.visual_id()).or_default();
                             msgs.push((id, msg));
                         } else {
                             unprocessed.push((id, msg));
@@ -630,89 +694,63 @@ impl WindowHandle {
                 break;
             }
             for msg in msgs {
-                let mut cx = UpdateCx {
-                    window_state: &mut self.window_state,
-                };
                 match msg {
-                    UpdateMessage::RequestPaint => {
-                        cx.window_state.request_paint = true;
+                    UpdateMessage::RequestStyle(id) => {
+                        self.window_state.style_dirty.insert(id);
+                    }
+                    UpdateMessage::RequestViewStyle(id) => {
+                        self.window_state.view_style_dirty.insert(id);
                     }
                     UpdateMessage::RequestLayout => {
-                        cx.window_state.request_layout = true;
+                        self.window_state.request_layout = true;
+                    }
+                    UpdateMessage::RequestPaint => {
+                        self.window_state.request_paint = true;
+                    }
+                    UpdateMessage::RequestBoxTreeCommit => {
+                        self.window_state.request_box_tree_commit = true;
                     }
                     UpdateMessage::Focus(id) => {
-                        EventCx::new(cx.window_state).update_focus(
-                            id.box_node(),
-                            false,
-                            Event::FocusGained,
-                        );
+                        GlobalEventCx::new(&mut self.window_state, Event::FocusGained)
+                            .update_focus(id, false);
                     }
-                    UpdateMessage::ClearFocus(id) => {
-                        cx.window_state.focus_state.clear();
-                        EventCx::new(cx.window_state).update_focus_from_path(
-                            &[],
-                            false,
-                            Event::FocusLost,
-                        );
-                    }
-                    UpdateMessage::ClearAppFocus => {
-                        cx.window_state.focus_state.clear();
-                        EventCx::new(cx.window_state).update_focus_from_path(
-                            &[],
-                            false,
-                            Event::FocusLost,
-                        );
+                    UpdateMessage::ClearFocus => {
+                        self.window_state.focus_state.clear();
+                        GlobalEventCx::new(&mut self.window_state, Event::FocusLost)
+                            .update_focus_from_path(&[], false);
                     }
                     UpdateMessage::Active(id) => {
-                        let old = cx.window_state.active;
-                        cx.window_state.active = Some(id.box_node());
+                        let old = self.window_state.active;
+                        self.window_state.active = Some(id);
 
-                        if let Some(old_id) = old.and_then(|old| old.widget_of()) {
+                        if let Some(old_id) = old {
                             // To remove the styles applied by the Active selector
-                            if cx
-                                .window_state
-                                .has_style_for_sel(old_id, StyleSelector::Clicking)
-                            {
-                                old_id.request_style_recursive();
-                            }
+                            self.window_state.style_dirty.insert(old_id);
                         }
-
-                        if cx
-                            .window_state
-                            .has_style_for_sel(id, StyleSelector::Clicking)
-                        {
-                            id.request_style_recursive();
-                        }
+                        self.window_state.style_dirty.insert(id);
                     }
-                    UpdateMessage::ClearActive(id) => {
-                        let old = cx.window_state.active;
-                        cx.window_state.active = None;
-                        if let Some(old_id) = old.and_then(|old| old.widget_of()) {
-                            // To remove the styles applied by the Active selector
-                            if cx
-                                .window_state
-                                .has_style_for_sel(old_id, StyleSelector::Clicking)
-                            {
-                                old_id.request_style_recursive();
-                            }
-                        }
-
-                        if cx
-                            .window_state
-                            .has_style_for_sel(id, StyleSelector::Clicking)
-                        {
-                            id.request_style_recursive();
+                    UpdateMessage::ClearActive => {
+                        let old = self.window_state.active;
+                        self.window_state.active = None;
+                        if let Some(old_id) = old {
+                            self.window_state.style_dirty.insert(old_id);
                         }
                     }
                     UpdateMessage::ScrollTo { id, rect } => {
                         self.id
                             .view()
                             .borrow_mut()
-                            .scroll_to(cx.window_state, id, rect);
+                            .scroll_to(&mut self.window_state, id, rect);
                     }
                     UpdateMessage::State { id, state } => {
-                        let view = id.view();
-                        view.borrow_mut().update(&mut cx, state);
+                        let mut cx = UpdateCx {
+                            window_state: &mut self.window_state,
+                            target: id,
+                        };
+                        if let Some(view_id) = id.view_of() {
+                            let view = view_id.view();
+                            view.borrow_mut().update(&mut cx, state);
+                        }
                     }
                     UpdateMessage::DragWindow => {
                         let _ = self.window.drag_window();
@@ -740,15 +778,15 @@ impl WindowHandle {
                             ));
                     }
                     UpdateMessage::WindowScale(scale) => {
-                        cx.window_state.scale = scale;
+                        self.window_state.scale = scale;
                         self.id.request_layout();
-                        let scale = self.scale * cx.window_state.scale;
+                        let scale = self.scale * self.window_state.scale;
                         self.paint_state.set_scale(scale);
                     }
                     UpdateMessage::ShowContextMenu { menu, pos } => {
                         let (menu, registry) = menu.build();
-                        cx.window_state.context_menu.clear();
-                        cx.window_state.update_context_menu(registry);
+                        self.window_state.context_menu.clear();
+                        self.window_state.update_context_menu(registry);
 
                         #[cfg(any(target_os = "windows", target_os = "macos"))]
                         {
@@ -830,7 +868,7 @@ impl WindowHandle {
                         self.id.request_all();
                     }
                     UpdateMessage::RemoveOverlay { id } => {
-                        cx.window_state.remove_view(id);
+                        self.window_state.remove_view(id);
                         self.id.request_all();
                     }
                     UpdateMessage::WindowVisible(visible) => {
@@ -859,26 +897,31 @@ impl WindowHandle {
 
     fn process_deferred_update_messages(&mut self) {
         self.process_central_messages();
-        let msgs = DEFERRED_UPDATE_MESSAGES
-            .with(|msgs| msgs.borrow_mut().remove(&self.id).unwrap_or_default());
-        let mut cx = UpdateCx {
-            window_state: &mut self.window_state,
-        };
+        let msgs = DEFERRED_UPDATE_MESSAGES.with(|msgs| {
+            msgs.borrow_mut()
+                .remove(&self.id.visual_id())
+                .unwrap_or_default()
+        });
         for (id, state) in msgs {
-            let view = id.view();
-            view.borrow_mut().update(&mut cx, state);
+            if let Some(view_id) = id.view_of() {
+                let view = view_id.view();
+                let mut cx = UpdateCx {
+                    window_state: &mut self.window_state,
+                    target: id,
+                };
+                view.borrow_mut().update(&mut cx, state);
+            }
         }
     }
 
     fn needs_style(&mut self) -> bool {
-        let flags = self.id.state().borrow().requested_changes;
-        flags.contains(ChangeFlags::STYLE) || flags.contains(ChangeFlags::VIEW_STYLE)
+        !self.window_state.view_style_dirty.is_empty() || !self.window_state.style_dirty.is_empty()
     }
 
     fn has_deferred_update_messages(&self) -> bool {
         DEFERRED_UPDATE_MESSAGES.with(|m| {
             m.borrow()
-                .get(&self.id)
+                .get(&self.id.visual_id())
                 .map(|m| !m.is_empty())
                 .unwrap_or(false)
         })
@@ -1062,10 +1105,10 @@ impl WindowHandle {
     }
 }
 
-fn request_recursive_changes(id: ViewId, changes: ChangeFlags) {
-    id.state().borrow_mut().requested_changes = changes;
+fn request_style_all(window_state: &mut WindowState, id: ViewId) {
     for child in id.children() {
-        request_recursive_changes(child, changes);
+        window_state.style_dirty.insert(child.visual_id());
+        request_style_all(window_state, child);
     }
 }
 
@@ -1412,10 +1455,6 @@ impl View for WindowView {
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
         "Window".into()
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {

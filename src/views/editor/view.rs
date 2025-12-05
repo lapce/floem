@@ -22,11 +22,11 @@ use floem_editor_core::{
     mode::{Mode, VisualMode},
 };
 use floem_reactive::{SignalGet, SignalTrack, SignalUpdate, SignalWith};
+use peniko::Brush;
 use ui_events::{
     keyboard::{Key, KeyState, KeyboardEvent, Modifiers},
     pointer::{PointerButton, PointerButtonEvent, PointerEvent},
 };
-use understory_responder::types::Outcome;
 
 use crate::views::editor::{
     command::CommandExecuted,
@@ -351,7 +351,7 @@ impl EditorView {
     fn paint_normal_selection(
         cx: &mut PaintCx,
         ed: &Editor,
-        color: Color,
+        color: Brush,
         screen_lines: &ScreenLines,
         start_offset: usize,
         end_offset: usize,
@@ -423,7 +423,7 @@ impl EditorView {
             };
 
             let rect = Rect::from_origin_size((x0, vline_y), (width, line_height));
-            cx.fill(&rect, color, 0.0);
+            cx.fill(&rect, &color, 0.0);
         }
     }
 
@@ -431,7 +431,7 @@ impl EditorView {
     pub fn paint_linewise_selection(
         cx: &mut PaintCx,
         ed: &Editor,
-        color: Color,
+        color: Brush,
         screen_lines: &ScreenLines,
         start_offset: usize,
         end_offset: usize,
@@ -472,7 +472,7 @@ impl EditorView {
                 (viewport.x0, vline_y),
                 (x1 - viewport.x0, f64::from(line_height)),
             );
-            cx.fill(&rect, color, 0.0);
+            cx.fill(&rect, &color, 0.0);
         }
     }
 
@@ -480,7 +480,7 @@ impl EditorView {
     pub fn paint_blockwise_selection(
         cx: &mut PaintCx,
         ed: &Editor,
-        color: Color,
+        color: Brush,
         screen_lines: &ScreenLines,
         start_offset: usize,
         end_offset: usize,
@@ -518,7 +518,7 @@ impl EditorView {
             let line_height = ed.line_height(line);
             let rect =
                 Rect::from_origin_size((x0, line_info.vline_y), (x1 - x0, f64::from(line_height)));
-            cx.fill(&rect, color, 0.0);
+            cx.fill(&rect, &color, 0.0);
         }
     }
 
@@ -627,7 +627,7 @@ impl EditorView {
                     EditorView::paint_normal_selection(
                         cx,
                         ed,
-                        selection_color,
+                        selection_color.clone(),
                         screen_lines,
                         start.min(end),
                         start.max(end),
@@ -793,7 +793,7 @@ impl EditorView {
         }
 
         let is_active = if let Some(view_id) = view_id {
-            is_active && cx.window_state.is_focused(&view_id)
+            is_active && cx.window_state.is_focused(view_id)
         } else {
             is_active
         };
@@ -941,10 +941,6 @@ impl View for EditorView {
         );
     }
 
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
@@ -1057,12 +1053,12 @@ pub fn editor_view(
         editor.with_untracked(|ed| ed.commit_preedit());
         set_ime_allowed(false);
     })
-    .on_event(EventListener::ImePreedit, move |_, event| {
+    .on_event(EventListener::ImePreedit, move |_, cx| {
         if !is_active.get_untracked() || !focused.get_untracked() {
             return EventPropagation::Continue;
         }
 
-        if let Event::ImePreedit { text, cursor } = event {
+        if let Event::ImePreedit { text, cursor } = &cx.event {
             editor.with_untracked(|ed| {
                 if text.is_empty() {
                     ed.clear_preedit();
@@ -1088,12 +1084,12 @@ pub fn editor_view(
         }
         EventPropagation::Stop
     })
-    .on_event(EventListener::ImeCommit, move |_, event| {
+    .on_event(EventListener::ImeCommit, move |_, cx| {
         if !is_active.get_untracked() || !focused.get_untracked() {
             return EventPropagation::Continue;
         }
 
-        if let Event::ImeCommit(text) = event {
+        if let Event::ImeCommit(text) = &cx.event {
             editor.with_untracked(|ed| {
                 ed.clear_preedit();
                 ed.receive_char(text);
@@ -1211,8 +1207,8 @@ pub fn editor_gutter(editor: RwSignal<Editor>) -> impl IntoView {
         .on_resize(move |rect| {
             gutter_rect.set(rect);
         })
-        .on_event_stop(EventListener::PointerWheel, move |_, event| {
-            if let Some(vec2) = event.pixel_scroll_delta_vec2() {
+        .on_event_stop(EventListener::PointerWheel, move |_, cx| {
+            if let Some(vec2) = cx.event.pixel_scroll_delta_vec2() {
                 scroll_delta.set(vec2);
             }
         })
@@ -1244,10 +1240,10 @@ fn editor_content(
             .on_event_cont(EventListener::FocusLost, move |_, _| {
                 editor.with_untracked(|ed| ed.editor_view_focus_lost.notify())
             })
-            .on_event_cont(EventListener::PointerDown, move |_, event| {
+            .on_event_cont(EventListener::PointerDown, move |_, cx| {
                 if let Event::Pointer(
                     pointer_event @ PointerEvent::Down(PointerButtonEvent { state, button, .. }),
-                ) = event
+                ) = &cx.event
                 {
                     id.request_active();
                     id.request_focus();
@@ -1258,23 +1254,25 @@ fn editor_content(
                     }
                 }
             })
-            .on_event_cont(EventListener::PointerMove, move |_, event| {
-                if let Event::Pointer(PointerEvent::Move(pu)) = event {
+            .on_event_cont(EventListener::PointerMove, move |_, cx| {
+                if let Event::Pointer(PointerEvent::Move(pu)) = &cx.event {
                     editor.get_untracked().pointer_move(&pu.current);
                 }
             })
-            .on_event_cont(EventListener::PointerUp, move |_, event| {
-                if let Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. })) = event {
+            .on_event_cont(EventListener::PointerUp, move |_, cx| {
+                if let Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. })) =
+                    &cx.event
+                {
                     editor.get_untracked().pointer_up(state);
                 }
             })
-            .on_event_stop(EventListener::KeyDown, move |_, event| {
+            .on_event_stop(EventListener::KeyDown, move |_, cx| {
                 let Event::Key(
                     key_event @ KeyboardEvent {
                         state: KeyState::Down,
                         ..
                     },
-                ) = event
+                ) = &cx.event
                 else {
                     return;
                 };

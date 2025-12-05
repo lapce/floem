@@ -1,4 +1,6 @@
+use crate::action::inspect;
 use crate::app::{AppUpdateEvent, add_app_update_event};
+use crate::context::EventCx;
 use crate::event::{Event, EventListener, EventPropagation};
 use crate::inspector::data::{CapturedData, CapturedDatas};
 use crate::inspector::{
@@ -39,7 +41,7 @@ pub fn capture(window_id: WindowId) {
                     text(name)
                         .class(TabSelectorClass)
                         .on_click_stop(move |_, _| selected.set(index))
-                        .style(move |s| s.set_selected(selected.get() == index))
+                        .style(move |s| s.is_selected(selected.get() == index))
                 };
 
                 let tabs = (tab_item("Views", 0), tab_item("Profiler", 1))
@@ -71,14 +73,12 @@ pub fn capture(window_id: WindowId) {
                         .with_theme(|s, t| s.background(t.border()))
                 });
 
-                let stack = v_stack((tabs, separator, tab));
-                let id = stack.id();
-                stack
+                v_stack((tabs, separator, tab))
                     .style(|s| s.width_full().height_full())
-                    .on_event(EventListener::KeyUp, move |_v, e| {
-                        if let Event::Key(e) = e {
+                    .on_event(EventListener::KeyUp, move |_v, cx| {
+                        if let Event::Key(e) = &cx.event {
                             if e.key == keyboard::Key::Named(NamedKey::F11) && e.modifiers.shift() {
-                                id.inspect();
+                                inspect();
                                 return EventPropagation::Stop;
                             }
                         }
@@ -175,12 +175,12 @@ fn capture_view(
             .focusable(true)
     })
     .on_event_stop(EventListener::KeyUp, {
-        move |_v, event: &Event| {
+        move |_v, cx| {
             if let Event::Key(KeyboardEvent {
                 state: KeyState::Up,
                 key,
                 ..
-            }) = event
+            }) = &cx.event
             {
                 match key {
                     keyboard::Key::Named(NamedKey::ArrowUp) => {
@@ -216,8 +216,8 @@ fn capture_view(
     })
     .on_event_stop(EventListener::PointerUp, {
         let capture_ = capture_.clone();
-        move |_v, event: &Event| {
-            if let Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. })) = event {
+        move |_v, cx: &mut EventCx| {
+            if let Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. })) = &cx.event {
                 let find_ids = capture_
                     .root
                     .find_all_by_pos(state.logical_point())
@@ -239,8 +239,9 @@ fn capture_view(
         }
     })
     .on_event_stop(EventListener::PointerMove, {
-        move |_v, event: &Event| {
-            if let Event::Pointer(PointerEvent::Move(PointerUpdate { current: state, .. })) = event
+        move |_v, cx: &mut EventCx| {
+            if let Event::Pointer(PointerEvent::Move(PointerUpdate { current: state, .. })) =
+                &cx.event
             {
                 let find_ids = capture_
                     .root
@@ -371,14 +372,14 @@ fn capture_view(
             clear,
             "selected"
                 .style(move |s| {
-                    s.apply_if(active_tab.get() == 0, |s| s.set_selected(true))
+                    s.apply_if(active_tab.get() == 0, |s| s.is_selected(true))
                         .margin_left(PxPctAuto::Auto)
                 })
                 .class(TabSelectorClass)
                 .on_click_stop(move |_, _| active_tab.set(0)),
             "stats"
                 .style(move |s| {
-                    s.apply_if(active_tab.get() == 1, |s| s.set_selected(true))
+                    s.apply_if(active_tab.get() == 1, |s| s.is_selected(true))
                         .margin_right(PxPctAuto::Auto)
                 })
                 .class(TabSelectorClass)
@@ -394,7 +395,8 @@ fn capture_view(
         resizable::resizable((scroll(image).style(|s| s.max_height_pct(60.0)), tabs))
             .custom_sizes(move || vec![(0, size.height.min(500.))])
             .style(|s| s.size_full().flex_col()),
-    ));
+    ))
+    .style(|s| s.min_size(0., 0.));
 
     let root = capture.root.clone();
     let tree = view_tree(capture.clone(), capture_view, datas);
@@ -406,8 +408,8 @@ fn capture_view(
     let search = text_input(search_str)
         .style(|s| s.width_full())
         .placeholder("View Search...")
-        .on_event_stop(EventListener::KeyUp, move |_v, event: &Event| {
-            if let Event::Key(KeyboardEvent { key, .. }) = event {
+        .on_event_stop(EventListener::KeyUp, move |_v, cx| {
+            if let Event::Key(KeyboardEvent { key, .. }) = &cx.event {
                 match key {
                     keyboard::Key::Named(NamedKey::ArrowUp) => {
                         let id = match_ids.try_update(|(match_index, ids)| {
@@ -450,21 +452,8 @@ fn capture_view(
                 }
             }
         });
-    let tree = if capture.root.warnings() {
-        v_stack((
-            header("Warnings")
-                .style(|s| s.with_theme(|s, t| s.color(t.warning_base)))
-                .tooltip(|| "requested changes is not empty"),
-            header("View Tree"),
-            search,
-            tree,
-        ))
-        .into_view()
-    } else {
-        v_stack((header("View Tree"), search, tree)).into_view()
-    };
-
-    let tree = tree.style(|s| s.height_full().min_width(0).flex_basis(0).flex_grow(1.0));
+    let tree = v_stack((header("View Tree"), search, tree))
+        .style(|s| s.height_full().min_width(0).flex_basis(0).flex_grow(1.0));
 
     resizable::resizable((left, tree))
         .style(|s| s.size_full().max_width_full())
@@ -533,7 +522,7 @@ fn tree_node(
                 //         s.background(Color::from_rgba8(228, 237, 216, 160))
                 //     })
                 .apply_if(selected.get() == Some(id), |s| {
-                    s.set_selected(true)
+                    s.is_selected(true)
                     // if highlighted.get() == Some(id) {
                     //     s.background(Color::from_rgb8(186, 180, 216))
                     // } else {
@@ -622,7 +611,7 @@ fn tree_node_name(view: &CapturedData, marge_left: f64) -> impl IntoView {
         .style(move |s| match ty {
             Some(expanded) => {
                 let expanded = expanded.get();
-                s.apply_if(expanded, |s| s.set_selected(true))
+                s.apply_if(expanded, |s| s.is_selected(true))
                     .size(12, 12)
                     .margin_right(4.0)
                     .with_theme(move |s, t| {

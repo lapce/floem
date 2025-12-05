@@ -432,9 +432,6 @@ impl View for L10n {
         if !self.has_format_value {
             self.apply_fallback();
         }
-        for child in self.id().children() {
-            cx.style_view(child);
-        }
     }
 
     fn update(&mut self, _cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
@@ -467,10 +464,6 @@ impl View for L10n {
                 }
             }
         }
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {

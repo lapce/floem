@@ -1,10 +1,9 @@
 use floem::{
-    action::set_window_scale,
+    action::{inspect, set_window_scale},
     event::{Event, EventListener},
     prelude::*,
     reactive::Effect,
     style_class,
-    unit::UnitExt,
 };
 
 style_class!(pub Button);
@@ -43,7 +42,7 @@ fn app_view() -> impl IntoView {
                 .background(palette::css::LIGHT_BLUE)
                 .hover(|s| s.background(palette::css::LIGHT_YELLOW))
                 .active(|s| s.background(palette::css::YELLOW_GREEN))
-                .set_disabled(counter.get() == 0)
+                .is_disabled(counter.get() == 0)
         });
 
     let counter_buttons = (increment_button, decrement_button, reset_to_zero_button).h_stack();
@@ -59,7 +58,7 @@ fn app_view() -> impl IntoView {
         .action(move || {
             window_scale.set(1.0);
         })
-        .style(move |s| s.set_disabled(window_scale.get() == 1.0));
+        .style(move |s| s.is_disabled(window_scale.get() == 1.0));
 
     let scale_buttons = (zoom_in_button, zoom_out_button, zoom_reset_button)
         .h_stack()
@@ -92,16 +91,14 @@ fn app_view() -> impl IntoView {
                         })
                 })
         })
-        .on_event_stop(EventListener::KeyUp, move |v, e| {
+        .on_event_stop(EventListener::KeyUp, move |_v, cx| {
             if let Event::Key(KeyboardEvent {
                 state: KeyState::Up,
-                key,
+                key: Key::Named(NamedKey::F11),
                 ..
-            }) = e
+            }) = &cx.event
             {
-                if *key == Key::Named(NamedKey::F11) {
-                    v.id().inspect();
-                }
+                inspect();
             }
         })
 }

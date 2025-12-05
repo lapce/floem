@@ -1,4 +1,4 @@
-use floem::prelude::palette::css;
+use floem::prelude::palette::css::{self, PURPLE};
 use floem::prelude::*;
 use floem::reactive::Effect;
 use floem::style::{BoxShadow, CustomStylable};
@@ -55,7 +55,7 @@ pub fn tab_view() -> impl IntoView {
             })
         },
     )
-    .style(|s| s.flex_col().width_full().row_gap(5.))
+    .style(|s| s.flex_col().width_full().gap(5))
     .scroll()
     .action(move || {
         if active_tab.with_untracked(|act| act.is_some()) {
@@ -63,103 +63,98 @@ pub fn tab_view() -> impl IntoView {
         }
     })
     .style(|s| {
-        s.size_full()
-            .padding(5.)
-            .padding_right(7.)
-            .scrollbar_width(6.)
-    })
-    .custom_style(|s| s.shrink_to_fit())
-    .style(|s| {
-        s.width(140.)
-            .min_width(140.)
-            .height_full()
-            .border_right(1.)
+        s.height_full()
+            .width_full()
+            .min_size(0, 0)
+            .padding(5)
+            .border_right(1)
             .with_theme(|s, t| s.border_color(t.border_muted()))
     });
 
-    let tabs_content_view = stack((tab(
+    let tabs_content_view = tab(
         move || active_tab.get(),
         move || tabs.get(),
         |tab| tab.idx,
         show_tab_content,
     )
-    .style(|s| s.size_full()),))
     .style(|s| s.size_full());
 
-    v_stack((
-        h_stack((
-            button("add tab").action(move || {
-                tab_action.update(|a| {
-                    *a = Action::Add;
-                })
-            }),
-            button("remove tab").action(move || {
-                tab_action.update(|a| {
-                    *a = Action::Remove;
-                })
-            }),
-        ))
-        .style(|s| {
-            s.height(40.px())
-                .width_full()
-                .border_bottom(1.)
-                .with_theme(|s, t| s.border_color(t.border_muted()))
-                .padding(5.)
-                .col_gap(5.)
-                .items_center()
-                .align_content(AlignContent::SpaceAround)
-        }),
-        stack((tabs_view, tabs_content_view)).style(|s| s.height(400.px()).width(500.px())),
-    ))
-    .style(|s| s.size_full())
-    .container()
-    .style(|s| {
-        s.size_full()
-            .padding(10.)
+    let add_tab_b = "add tab".button().action(move || {
+        tab_action.update(|a| {
+            *a = Action::Add;
+        })
+    });
+    let remove_tab_b = "remove tab".button().action(move || {
+        tab_action.update(|a| {
+            *a = Action::Remove;
+        })
+    });
+    let add_remove_btns = (add_tab_b, remove_tab_b).h_stack().style(|s| {
+        s.width_full()
+            .border_bottom(1)
             .with_theme(|s, t| s.border_color(t.border_muted()))
-    })
+            .padding(5)
+            .gap(5)
+            .items_center()
+            .align_content(AlignContent::SpaceAround)
+    });
+
+    let tabs_and_content = (tabs_view, tabs_content_view)
+        .h_stack()
+        .style(|s| s.height(400.px()).width(500.px()));
+
+    (add_remove_btns, tabs_and_content)
+        .v_stack()
+        .style(|s| s.size_full())
+        .container()
+        .style(|s| {
+            s.size_full()
+                .padding(10.)
+                .with_theme(|s, t| s.border_color(t.border_muted()))
+        })
 }
 
 fn show_tab_content(tab: TabContent) -> impl IntoView {
-    v_stack((
-        tab.name.style(|s| s.font_size(15.).font_bold()),
-        label(move || format!("{}", tab.idx)).style(|s| s.font_size(20.).font_bold()),
-        "is now active".style(|s| s.font_size(13.)),
-    ))
-    .style(|s| {
-        s.size(150.px(), 150.px())
-            .items_center()
-            .justify_center()
-            .row_gap(10.)
-            .border_radius(7.)
-            .border_top(0.6)
-            .with_theme(|s, t| {
-                s.background(t.bg_elevated())
-                    .border_top_color(css::WHITE)
-                    .apply_if(t.is_dark, |s| s.border_top_color(t.border()))
-            })
-            .border_bottom_color(css::BLACK.multiply_alpha(0.7))
-            .apply_box_shadows(vec![
-                BoxShadow::new()
-                    .color(css::BLACK.multiply_alpha(0.3))
-                    .top_offset(-13.)
-                    .bottom_offset(0.4)
-                    .right_offset(-4.)
-                    .left_offset(-4.)
-                    .blur_radius(2.)
-                    .spread(1.),
-                BoxShadow::new()
-                    .color(css::BLACK.multiply_alpha(0.3))
-                    .top_offset(-15.)
-                    .bottom_offset(4.)
-                    .right_offset(-6.)
-                    .left_offset(-6.)
-                    .blur_radius(5.)
-                    .spread(6.),
-            ])
-    })
-    .container()
-    .style(|s| s.size_full().items_center().justify_center())
+    // v_stack((
+    //     tab.name.style(|s| s.font_size(15.).font_bold()),
+    //     label(move || format!("{}", tab.idx)).style(|s| s.font_size(20.).font_bold()),
+    //     "is now active".style(|s| s.font_size(13.)),
+    // ))
+    // .style(|s| {
+    //     s.size(150, 150)
+    //         .items_center()
+    //         .justify_center()
+    //         .gap(10.)
+    //         .border_radius(7.)
+    //         .border_top(0.6)
+    //         .with_theme(|s, t| {
+    //             s.background(t.bg_elevated())
+    //                 .border_top_color(css::WHITE)
+    //                 .apply_if(t.is_dark, |s| s.border_top_color(t.border()))
+    //         })
+    //         .border_bottom_color(css::BLACK.multiply_alpha(0.7))
+    //         .apply_box_shadows(vec![
+    //             BoxShadow::new()
+    //                 .color(css::BLACK.multiply_alpha(0.3))
+    //                 .top_offset(-13.)
+    //                 .bottom_offset(0.4)
+    //                 .right_offset(-4.)
+    //                 .left_offset(-4.)
+    //                 .blur_radius(2.)
+    //                 .spread(1.),
+    //             BoxShadow::new()
+    //                 .color(css::BLACK.multiply_alpha(0.3))
+    //                 .top_offset(-15.)
+    //                 .bottom_offset(4.)
+    //                 .right_offset(-6.)
+    //                 .left_offset(-6.)
+    //                 .blur_radius(5.)
+    //                 .spread(6.),
+    //         ])
+    // })
+    // .container()
+    // .style(|s| s.size_full().items_center().justify_center())
+    "test this is a test"
 }
 
 fn tab_side_item(tab: TabContent, act_tab: RwSignal<Option<usize>>) -> impl IntoView {
@@ -167,9 +162,8 @@ fn tab_side_item(tab: TabContent, act_tab: RwSignal<Option<usize>>) -> impl Into
         .button()
         .style(move |s| {
             s.width_full()
-                .height(36.px())
-                .apply_if(act_tab.get().is_some_and(|a| a == tab.idx), |s| {
-                    s.with_theme(|s, t| s.border_color(t.primary()))
-                })
+                .padding(10)
+                .is_selected(act_tab.get().is_some_and(|a| a == tab.idx))
         })
+        .class(TabSelectorClass)
 }

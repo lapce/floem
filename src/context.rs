@@ -1,7 +1,26 @@
+use crate::{
+    VisualId,
+    action::exec_after,
+    animate::{AnimStateKind, RepeatMode},
+    easing::{Easing, Linear},
+    event::EventPropagation,
+    id::ViewId,
+    inspector::CaptureState,
+    menu::Menu,
+    renderer::Renderer,
+    responsive::ScreenSizeBp,
+    style::{Style, StyleClassRef, StyleProp, resolve_nested_maps},
+    view::{View, paint_bg, paint_border, paint_outline},
+    window_state::WindowState,
+};
 use floem_reactive::Scope;
-use floem_renderer::Renderer as FloemRenderer;
-use floem_renderer::gpu_resources::{GpuResourceError, GpuResources};
+use floem_renderer::{
+    Renderer as FloemRenderer,
+    gpu_resources::{GpuResourceError, GpuResources},
+};
+use peniko::BlendMode;
 use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Shape, Size, Vec2};
+use smallvec::SmallVec;
 use std::{
     ops::{Deref, DerefMut},
     rc::Rc,
@@ -20,24 +39,7 @@ use crossbeam::channel::Receiver;
 #[cfg(not(feature = "crossbeam"))]
 use std::sync::mpsc::Receiver;
 
-use crate::animate::{AnimStateKind, RepeatMode};
-use crate::easing::{Easing, Linear};
-use crate::event::EventPropagation;
-use crate::menu::Menu;
-use crate::renderer::Renderer;
-use crate::style::{Disabled, DisplayProp, Focusable, Hidden};
-use crate::{
-    action::exec_after,
-    event::Event,
-    id::ViewId,
-    inspector::CaptureState,
-    style::{Style, StyleProp, ZIndex},
-    view::{View, paint_bg, paint_border, paint_outline},
-    view_state::ChangeFlags,
-    window_state::WindowState,
-};
-
-pub type EventCallback = dyn FnMut(&mut dyn View, &Event) -> EventPropagation;
+pub type EventCallback = dyn FnMut(&mut dyn View, &mut EventCx) -> EventPropagation;
 pub type ResizeCallback = dyn Fn(Rect);
 pub type MenuCallback = dyn Fn() -> Menu;
 
@@ -72,105 +74,165 @@ pub(crate) enum FrameUpdate {
 mod event;
 pub use event::*;
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct InteractionState {
-    pub(crate) is_hovered: bool,
-    pub(crate) is_selected: bool,
-    pub(crate) is_disabled: bool,
-    pub(crate) is_focused: bool,
-    pub(crate) is_clicking: bool,
-    pub(crate) is_dark_mode: bool,
-    pub(crate) is_file_hover: bool,
-    pub(crate) using_keyboard_navigation: bool,
+    pub is_hovered: bool,
+    pub is_selected: bool,
+    pub is_disabled: bool,
+    pub is_focused: bool,
+    pub is_clicking: bool,
+    pub is_dark_mode: bool,
+    pub is_file_hover: bool,
+    pub using_keyboard_navigation: bool,
+    pub is_hidden: bool,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub(crate) struct InheritedInteractionCx {
+    pub(crate) disabled: bool,
+    pub(crate) hidden: bool,
+    pub(crate) selected: bool,
+}
+impl InheritedInteractionCx {
+    fn clear(&mut self) {
+        self.hidden = false;
+        self.disabled = false;
+        self.selected = false;
+    }
+}
+impl std::ops::BitOrAssign for InheritedInteractionCx {
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.disabled |= rhs.disabled;
+        self.hidden |= rhs.hidden;
+        self.selected |= rhs.selected;
+    }
+}
+impl std::ops::BitOr for InheritedInteractionCx {
+    type Output = Self;
+
+    fn bitor(mut self, rhs: Self) -> Self::Output {
+        self |= rhs;
+        self
+    }
 }
 
 pub struct StyleCx<'a> {
     pub window_state: &'a mut WindowState,
+    pub target: VisualId,
+    /// current_view is used in prop readers for sending frame updates to request styles for the next frame if there are transitions
     pub(crate) current_view: ViewId,
     /// current is used as context for carrying inherited properties between views
-    pub(crate) current: Rc<Style>,
+    pub(crate) current: Style,
     pub(crate) direct: Style,
-    saved: Vec<Rc<Style>>,
     pub(crate) now: Instant,
-    saved_disabled: Vec<bool>,
-    saved_selected: Vec<bool>,
-    saved_hidden: Vec<bool>,
-    disabled: bool,
-    hidden: bool,
-    selected: bool,
+    pub disabled: bool,
+    pub hidden: bool,
+    pub selected: bool,
+}
+impl StyleCx<'_> {
+    fn interaction_cx(&self) -> InheritedInteractionCx {
+        InheritedInteractionCx {
+            disabled: self.disabled,
+            hidden: self.hidden,
+            selected: self.selected,
+        }
+    }
 }
 
 impl<'a> StyleCx<'a> {
-    pub(crate) fn new(window_state: &'a mut WindowState, root: ViewId) -> Self {
+    pub(crate) fn new(
+        window_state: &'a mut WindowState,
+        now: Instant,
+        view_id: ViewId,
+        target: VisualId,
+        default_style: impl FnOnce() -> Style,
+    ) -> Self {
+        let parent_cx = if let Some(p) = view_id.parent() {
+            // First check if style_cx is already set
+            if let Some(style_cx) = p.state().borrow().style_cx.clone() {
+                style_cx
+            } else if p.parent().is_some() {
+                // If not set and we're not at root, recursively compute it
+                let parent_target = p.visual_id();
+                let mut parent_style_cx =
+                    StyleCx::new(window_state, now, p, parent_target, default_style);
+                parent_style_cx.style_target();
+                p.state()
+                    .borrow()
+                    .style_cx
+                    .clone()
+                    .expect("cached in style_target")
+            } else {
+                // We're at root, set it to default
+                let default = default_style();
+                p.state().borrow_mut().style_cx = Some(default.clone());
+                default
+            }
+        } else {
+            default_style()
+        };
+
+        let parent_style_interaction_cx = view_id
+            .parent()
+            .map(|p| {
+                let parent_state = p.state();
+                let parent_state = parent_state.borrow();
+                parent_state.style_interaction_cx
+            })
+            .unwrap_or_default();
+
         Self {
             window_state,
-            current_view: root,
-            current: Default::default(),
+            target,
+            current_view: view_id,
+            current: parent_cx,
             direct: Default::default(),
-            saved: Default::default(),
             now: Instant::now(),
-            saved_disabled: Default::default(),
-            saved_selected: Default::default(),
-            saved_hidden: Default::default(),
-            disabled: false,
-            hidden: false,
-            selected: false,
+            disabled: parent_style_interaction_cx.disabled,
+            hidden: parent_style_interaction_cx.hidden,
+            selected: parent_style_interaction_cx.selected,
         }
     }
 
-    /// Marks the current context as selected.
-    pub fn selected(&mut self) {
-        self.selected = true;
-    }
-
-    pub fn hidden(&mut self) {
-        self.hidden = true;
-    }
-
-    fn get_interact_state(&self, id: &ViewId) -> InteractionState {
+    pub fn get_interact_state(&self, id: impl Into<VisualId>) -> InteractionState {
+        let id = id.into();
+        let icx = id
+            .view_of()
+            .map(|v| {
+                let view_state = v.state();
+                let view_state = view_state.borrow();
+                view_state.parent_set_style_interaction_cx
+            })
+            .unwrap_or_default();
         InteractionState {
-            is_selected: self.selected || id.is_selected(),
+            is_selected: self.selected | icx.selected,
+            is_disabled: self.disabled | icx.disabled,
+            is_hidden: self.hidden | icx.hidden,
             is_hovered: self.window_state.is_hovered(id),
-            is_disabled: id.is_disabled() || self.disabled,
             is_focused: self.window_state.is_focused(id),
-            is_clicking: self.window_state.is_clicking(id)
-                || self.window_state.active == Some(id.box_node()),
+            is_clicking: self.window_state.is_clicking(id) || self.window_state.active == Some(id),
             is_dark_mode: self.window_state.is_dark_mode(),
             is_file_hover: self.window_state.is_file_hover(id),
             using_keyboard_navigation: self.window_state.keyboard_navigation,
         }
     }
 
-    /// Internal method used by Floem to compute the styles for the view.
-    pub fn style_view(&mut self, view_id: ViewId) {
-        self.save();
+    pub fn style_target(&mut self) {
+        let view_id = self.current_view;
         let view = view_id.view();
+        let visual_id = view_id.visual_id();
         let view_state = view_id.state();
+
         {
             let mut view_state = view_state.borrow_mut();
-            if !view_state.requested_changes.contains(ChangeFlags::STYLE)
-                && !view_state
-                    .requested_changes
-                    .contains(ChangeFlags::VIEW_STYLE)
-            {
-                self.restore();
-                return;
-            }
-            view_state.requested_changes.remove(ChangeFlags::STYLE);
-        }
-        let view_class = view.borrow().view_class();
-        {
-            let mut view_state = view_state.borrow_mut();
-            if view_state
-                .requested_changes
-                .contains(ChangeFlags::VIEW_STYLE)
-            {
-                view_state.requested_changes.remove(ChangeFlags::VIEW_STYLE);
+            if self.window_state.view_style_dirty.contains(&view_id) {
+                self.window_state.view_style_dirty.remove(&view_id);
                 if let Some(view_style) = view.borrow().view_style() {
                     let offset = view_state.view_style_offset;
                     view_state.style.set(offset, view_style);
                 }
             }
+
             // Propagate style requests to children if needed.
             if view_state.request_style_recursive {
                 view_state.request_style_recursive = false;
@@ -178,50 +240,45 @@ impl<'a> StyleCx<'a> {
                 for child in children {
                     let view_state = child.state();
                     let mut state = view_state.borrow_mut();
+                    let visual_id = state.visual_id;
                     state.request_style_recursive = true;
-                    state.requested_changes.insert(ChangeFlags::STYLE);
+                    self.window_state.style_dirty.insert(visual_id);
                 }
             }
         }
 
-        let view_interact_state = self.get_interact_state(&view_id);
-        self.disabled = view_interact_state.is_disabled;
-        let (mut new_frame, classes_applied) = view_id.state().borrow_mut().compute_combined(
+        let view_interact_state = self.get_interact_state(visual_id);
+        let view_class = view.borrow().view_class();
+
+        let (mut new_frame, classes_applied) = self.compute_combined(
             view_interact_state,
             self.window_state.screen_size_bp,
             view_class,
-            &self.current,
-            self.hidden,
+            &self.current.clone(),
         );
+
         if classes_applied {
             let children = view_id.children();
             for child in children {
                 let view_state = child.state();
                 let mut state = view_state.borrow_mut();
+                let visual_id = state.visual_id;
                 state.request_style_recursive = true;
-                state.requested_changes.insert(ChangeFlags::STYLE);
+                self.window_state.style_dirty.insert(visual_id);
             }
         }
 
         self.direct = view_state.borrow().combined_style.clone();
-        Style::apply_only_inherited(&mut self.current, &self.direct);
-        let mut computed_style = (*self.current).clone();
-        computed_style.apply_mut(self.direct.clone());
+        self.current.apply_mut(self.direct.inherited());
+        let computed_style = self.current.clone().apply(self.direct.clone());
         CaptureState::capture_style(view_id, self, computed_style.clone());
-        if computed_style.get(Focusable)
-            && !computed_style.get(Disabled)
-            && !computed_style.get(Hidden)
-            && computed_style.get(DisplayProp) != taffy::Display::None
-        {
-            self.window_state.focusable.insert(view_id.box_node());
-        } else {
-            self.window_state.focusable.remove(&view_id.box_node());
-        }
-        view_state.borrow_mut().computed_style = computed_style;
-        self.hidden |= view_id.is_hidden();
-
-        // This is used by the `request_transition` and `style` methods below.
-        self.current_view = view_id;
+        view_state.borrow_mut().computed_style = computed_style.clone();
+        self.hidden |= computed_style.builtin().is_hidden()
+            | (computed_style.builtin().display() == taffy::Display::None);
+        self.disabled |= computed_style.builtin().is_disabled();
+        self.selected |= computed_style.builtin().is_selected();
+        view_state.borrow_mut().style_cx = Some(self.current.clone());
+        view_state.borrow_mut().style_interaction_cx = self.interaction_cx();
 
         {
             let mut view_state = view_state.borrow_mut();
@@ -254,10 +311,28 @@ impl<'a> StyleCx<'a> {
                 self.window_state.schedule_layout();
             }
 
+            if view_state.box_tree_props.read_explicit(
+                &self.direct,
+                &self.current,
+                &self.now,
+                &mut new_frame,
+            ) {
+                let visual_id = view_state.visual_id;
+                let box_tree = view_id.box_tree();
+                let mut box_tree = box_tree.borrow_mut();
+                view_state
+                    .box_tree_props
+                    .set_box_tree(visual_id, &mut box_tree);
+                self.window_state.schedule_layout();
+            }
+
+            view_state.style_cursor = computed_style.builtin().cursor();
+
             if new_frame && !self.hidden {
                 self.window_state.schedule_style(view_id);
             }
         }
+
         // If there's any changes to the Taffy style, request layout.
         let layout_style = view_state.borrow().layout_props.to_style();
         let taffy_style = self.direct.clone().apply(layout_style).to_taffy_style();
@@ -271,7 +346,7 @@ impl<'a> StyleCx<'a> {
         view.borrow_mut().style_pass(self);
 
         let mut is_hidden_state = view_state.borrow().is_hidden_state;
-        let computed_display = view_state.borrow().combined_style.get(DisplayProp);
+        let computed_display = view_state.borrow().combined_style.builtin().display();
         is_hidden_state.transition(
             computed_display,
             || {
@@ -296,26 +371,93 @@ impl<'a> StyleCx<'a> {
             .apply_opt(is_hidden_state.get_display(), Style::display);
 
         view_state.borrow_mut().combined_style = modified;
+    }
 
-        self.restore();
+    /// the first returned bool is new_frame. the second is classes_applied
+    /// Returns `true` if a new frame is requested.
+    ///
+    // The context has the nested maps of classes and inherited properties
+    fn compute_combined(
+        &mut self,
+        interact_state: InteractionState,
+        screen_size_bp: ScreenSizeBp,
+        view_class: Option<StyleClassRef>,
+        context: &Style,
+    ) -> (bool, bool) {
+        let mut new_frame = false;
+
+        // Build the initial combined style
+        let mut combined_style = Style::new();
+
+        let mut classes: SmallVec<[_; 4]> = SmallVec::new();
+
+        // Apply view class if provided
+        if let Some(view_class) = view_class {
+            classes.insert(0, view_class);
+        }
+
+        let state = self.current_view.state();
+        let mut state = state.borrow_mut();
+
+        for class in &state.classes {
+            classes.push(*class);
+        }
+
+        let mut new_context = context.clone();
+        let mut new_classes = false;
+
+        let (resolved_style, classes_applied) = resolve_nested_maps(
+            combined_style,
+            &interact_state,
+            screen_size_bp,
+            &classes,
+            &mut new_context,
+        );
+        combined_style = resolved_style;
+        new_classes |= classes_applied;
+
+        let self_style = state.style();
+
+        combined_style.apply_mut(self_style.clone());
+
+        let (resolved_style, classes_applied) = resolve_nested_maps(
+            combined_style,
+            &interact_state,
+            screen_size_bp,
+            &classes,
+            &mut new_context,
+        );
+        combined_style = resolved_style;
+        new_classes |= classes_applied;
+
+        // Process animations
+        for animation in state
+            .animations
+            .stack
+            .iter_mut()
+            .filter(|anim| anim.can_advance() || anim.should_apply_folded())
+        {
+            if animation.can_advance() {
+                new_frame = true;
+                animation.animate_into(&mut combined_style);
+                animation.advance();
+            } else {
+                animation.apply_folded(&mut combined_style)
+            }
+            debug_assert!(!animation.is_idle());
+        }
+
+        // Apply visibility
+        if interact_state.is_hidden {
+            combined_style = combined_style.hide();
+        }
+
+        state.combined_style = combined_style;
+        (new_frame, new_classes)
     }
 
     pub fn now(&self) -> Instant {
         self.now
-    }
-
-    pub fn save(&mut self) {
-        self.saved.push(self.current.clone());
-        self.saved_disabled.push(self.disabled);
-        self.saved_selected.push(self.selected);
-        self.saved_hidden.push(self.hidden);
-    }
-
-    pub fn restore(&mut self) {
-        self.current = self.saved.pop().unwrap_or_default();
-        self.disabled = self.saved_disabled.pop().unwrap_or_default();
-        self.selected = self.saved_selected.pop().unwrap_or_default();
-        self.hidden = self.saved_hidden.pop().unwrap_or_default();
     }
 
     pub fn get_prop<P: StyleProp>(&self, _prop: P) -> Option<P::Type> {
@@ -325,7 +467,7 @@ impl<'a> StyleCx<'a> {
     }
 
     pub fn style(&self) -> Style {
-        (*self.current).clone().apply(self.direct.clone())
+        self.current.clone().apply(self.direct.clone())
     }
 
     pub fn direct_style(&self) -> &Style {
@@ -449,8 +591,17 @@ impl PaintCx<'_> {
 
         // Save clip and z-index state (but not transform, since we're using absolute transforms)
         self.save();
-
+        let alpha = view_state.borrow().computed_style.builtin().opacity();
         let size = id.layout_rect_local().size();
+        if alpha != 1. {
+            self.push_layer(
+                BlendMode::default(),
+                alpha,
+                Affine::IDENTITY,
+                &size.to_rect(),
+            );
+        }
+
         let is_empty = self
             .clip
             .map(|rect| rect.rect().intersect(size.to_rect()).is_zero_area())
@@ -461,7 +612,7 @@ impl PaintCx<'_> {
             let view_style_props = view_state.borrow().view_style_props.clone();
             let layout_props = view_state.borrow().layout_props.clone();
 
-            if let Some(z_index) = style.get(ZIndex) {
+            if let Some(z_index) = style.builtin().z_index() {
                 self.set_z_index(z_index);
             }
 
@@ -500,8 +651,7 @@ impl PaintCx<'_> {
                         None
                     }
                 } else {
-                    let translation =
-                        self.window_state.last_cursor_location.to_vec2() - dragging.offset;
+                    let translation = self.window_state.last_pointer.to_vec2() - dragging.offset;
                     Some(self.transform.with_translation(translation))
                 };
 
@@ -546,6 +696,9 @@ impl PaintCx<'_> {
 
         if drag_set_to_none {
             self.window_state.dragging = None;
+        }
+        if alpha != 1. {
+            self.pop_layer();
         }
 
         // Restore clip and z-index
@@ -604,8 +757,8 @@ impl PaintCx<'_> {
         self.paint_state.renderer_mut().set_z_index(z_index);
     }
 
-    pub fn is_focused(&self, id: ViewId) -> bool {
-        self.window_state.is_focused(&id)
+    pub fn is_focused(&self, id: impl Into<VisualId>) -> bool {
+        self.window_state.is_focused(id)
     }
 }
 
@@ -754,7 +907,6 @@ pub struct LayoutCx {
     // Lazy cached fields
     raw_layout: Option<Option<Layout>>,
     raw_layout_rect: Option<Rect>,
-    raw_view_rect: Option<Rect>,
     raw_layout_rect_local: Option<Rect>,
     raw_content_rect: Option<Rect>,
     raw_content_rect_local: Option<Rect>,
@@ -766,7 +918,6 @@ impl LayoutCx {
             view_id,
             raw_layout: None,
             raw_layout_rect: None,
-            raw_view_rect: None,
             raw_layout_rect_local: None,
             raw_content_rect: None,
             raw_content_rect_local: None,
@@ -831,20 +982,11 @@ impl LayoutCx {
             .raw_layout_rect
             .get_or_insert_with(|| self.view_id.layout_rect())
     }
-
-    /// Returns the view rect relative to the parent view.
-    ///
-    /// This includes the full visual bounds of the view. The position is relative
-    /// to the parent view's origin.
-    pub fn view_rect(&mut self) -> Rect {
-        *self
-            .raw_view_rect
-            .get_or_insert_with(|| self.view_id.view_rect())
-    }
 }
 
 pub struct UpdateCx<'a> {
     pub window_state: &'a mut WindowState,
+    pub target: VisualId,
 }
 
 impl Deref for PaintCx<'_> {

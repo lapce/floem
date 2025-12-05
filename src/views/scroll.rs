@@ -4,28 +4,23 @@
 use std::any::Any;
 
 use floem_reactive::Effect;
-use peniko::color::palette::css;
 use peniko::kurbo::{Axis, Point, Rect, RoundedRect, RoundedRectRadii, Stroke, Vec2};
 use peniko::{Brush, Color};
 use ui_events::pointer::{PointerButton, PointerButtonEvent, PointerEvent, PointerScrollEvent};
 use understory_responder::types::Phase;
 
-use crate::context::LayoutCx;
-use crate::event::EventPropagation;
-use crate::style::{
-    BorderColorProp, BorderRadiusProp, CustomStylable, CustomStyle, OverflowX, OverflowY,
-    ScrollbarWidth,
-};
-use crate::unit::PxPct;
 use crate::{
-    Renderer,
-    context::{EventCx, PaintCx},
-    event::Event,
+    Renderer, VisualId,
+    context::{EventCx, LayoutCx, PaintCx},
+    event::{Event, EventPropagation},
     id::ViewId,
     prop, prop_extractor,
-    style::{Background, Style, StyleSelector},
+    style::{
+        Background, BorderColorProp, BorderRadiusProp, CustomStylable, CustomStyle, OverflowX,
+        OverflowY, ScrollbarWidth, Style, StyleSelector,
+    },
     style_class,
-    unit::Px,
+    unit::{Px, PxPct},
     view::{IntoView, View},
     window_state::WindowState,
 };
@@ -37,7 +32,7 @@ enum ScrollState {
     ScrollDelta(Vec2),
     ScrollTo(Point),
     ScrollToPercent(f32),
-    ScrollToView(ViewId),
+    ScrollToView(VisualId),
 }
 
 trait Vec2Ext {
@@ -168,6 +163,7 @@ pub struct Scroll {
     track_style: ScrollTrackStyle,
     track_hover_style: ScrollTrackStyle,
     scroll_style: ScrollStyle,
+    clip_rect: Option<RoundedRect>,
 }
 
 /// Create a new scroll view
@@ -176,6 +172,7 @@ pub fn scroll<V: IntoView + 'static>(child: V) -> Scroll {
     let child = child.into_any();
     let child_id = child.id();
     id.add_child(child);
+    id.needs_post_layout();
     // we need to first set the clip rect to zero so that virtual items don't set a large initial size
     id.set_box_tree_clip(Some(RoundedRect::from_rect(Rect::ZERO, 0.)));
     child_id.set_box_tree_clip_behavior(understory_box_tree::ClipBehavior::Inherit);
@@ -197,6 +194,7 @@ pub fn scroll<V: IntoView + 'static>(child: V) -> Scroll {
         track_style: Default::default(),
         track_hover_style: Default::default(),
         scroll_style: Default::default(),
+        clip_rect: None,
     }
     .class(ScrollClass)
 }
@@ -282,7 +280,7 @@ impl Scroll {
         let id = self.id();
         Effect::new(move |_| {
             if let Some(view) = view() {
-                id.update_state_deferred(ScrollState::ScrollToView(view));
+                id.update_state_deferred(ScrollState::ScrollToView(view.visual_id()));
             }
         });
 
@@ -425,35 +423,42 @@ impl Scroll {
         self.id.set_scroll_offset(self.scroll_offset);
     }
 
-    fn do_scroll_to_view(&mut self, target: ViewId, target_rect: Option<Rect>, lcx: &mut LayoutCx) {
-        if target.layout().is_none() || target.is_hidden() {
-            return;
-        }
+    // TODO: make this work
+    fn do_scroll_to_view(
+        &mut self,
+        target: VisualId,
+        target_rect: Option<Rect>,
+        lcx: &mut LayoutCx,
+    ) {
+        // todo!()
+        // if target.layout().is_none() || target.is_hidden() {
+        //     return;
+        // }
 
-        // Get target's rect relative to its parent
-        let mut rect = target.view_rect();
+        // // Get target's rect relative to its parent
+        // let mut rect = target.layout_rect();
 
-        // If a specific sub-rect within the target is specified, adjust
-        if let Some(target_rect) = target_rect {
-            rect = rect.with_origin(rect.origin() + target_rect.origin().to_vec2());
-            let new_size = target_rect
-                .size()
-                .to_rect()
-                .intersect(rect.size().to_rect())
-                .size();
-            rect = rect.with_size(new_size);
-        }
+        // // If a specific sub-rect within the target is specified, adjust
+        // if let Some(target_rect) = target_rect {
+        //     rect = rect.with_origin(rect.origin() + target_rect.origin().to_vec2());
+        //     let new_size = target_rect
+        //         .size()
+        //         .to_rect()
+        //         .intersect(rect.size().to_rect())
+        //         .size();
+        //     rect = rect.with_size(new_size);
+        // }
 
-        // Convert from window coordinates to child content coordinates
-        // We need to find the position relative to the scrollable child
-        let target_window_rect = rect;
-        let child_window_origin = self.child.view_rect().origin();
+        // // Convert from window coordinates to child content coordinates
+        // // We need to find the position relative to the scrollable child
+        // let target_window_rect = rect;
+        // let child_window_origin = self.child.layout_rect().origin();
 
-        // Convert to child-relative coordinates
-        let rect_in_child = target_window_rect
-            .with_origin(target_window_rect.origin() - child_window_origin.to_vec2());
+        // // Convert to child-relative coordinates
+        // let rect_in_child = target_window_rect
+        //     .with_origin(target_window_rect.origin() - child_window_origin.to_vec2());
 
-        self.do_ensure_visible(rect_in_child, lcx);
+        // self.do_ensure_visible(rect_in_child, lcx);
     }
 
     fn v_handle_style(&self) -> &ScrollTrackStyle {
@@ -799,7 +804,7 @@ impl View for Scroll {
         )
     }
 
-    fn update(&mut self, _cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
+    fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(state) = state.downcast::<ScrollState>() {
             let lcx = &mut LayoutCx::new(self.id);
             match *state {
@@ -829,11 +834,11 @@ impl View for Scroll {
                     self.do_scroll_to_view(id, None, lcx);
                 }
             }
-            self.id.request_layout();
+            cx.window_state.request_layout();
         }
     }
 
-    fn scroll_to(&mut self, cx: &mut WindowState, target: ViewId, rect: Option<Rect>) -> bool {
+    fn scroll_to(&mut self, cx: &mut WindowState, target: VisualId, rect: Option<Rect>) -> bool {
         let found = self.child.view().borrow_mut().scroll_to(cx, target, rect);
         if found {
             let lcx = &mut LayoutCx::new(self.id);
@@ -864,12 +869,22 @@ impl View for Scroll {
         self.track_style.read_style(cx, &track_style);
         self.track_hover_style
             .read_style(cx, &track_style.apply_selectors(&[StyleSelector::Hover]));
-
-        cx.style_view(self.child);
     }
 
-    fn event(&mut self, cx: &mut EventCx, event: &Event, phase: Phase) -> EventPropagation {
-        match phase {
+    fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
+        let is_pointer_leave = cx
+            .listeners
+            .contains(&crate::event::EventListener::PointerLeave);
+        if is_pointer_leave && !cx.window_state.is_active(cx.target) {
+            self.v_handle_hover = false;
+            self.h_handle_hover = false;
+            self.v_track_hover = false;
+            self.h_track_hover = false;
+            self.is_scrolling_or_interacting = false;
+            cx.window_state.request_paint(self.id);
+            return EventPropagation::Stop;
+        }
+        match cx.phase {
             Phase::Bubble | Phase::Target => {
                 if self.scroll_style.hide_bar() {
                     return EventPropagation::Continue;
@@ -877,7 +892,7 @@ impl View for Scroll {
 
                 let lcx = &mut LayoutCx::new(self.id);
 
-                match event {
+                match &cx.event {
                     Event::Pointer(PointerEvent::Down(PointerButtonEvent {
                         button: Some(PointerButton::Primary),
                         state,
@@ -893,7 +908,7 @@ impl View for Scroll {
                             self.held = BarHeldState::Vertical(pos.y, self.scroll_offset);
                             cx.window_state.update_active(self.id());
 
-                            self.id.request_paint();
+                            cx.window_state.request_paint(self.id);
                             return EventPropagation::Stop;
                         }
 
@@ -905,7 +920,7 @@ impl View for Scroll {
                             self.held = BarHeldState::Horizontal(pos.x, self.scroll_offset);
                             cx.window_state.update_active(self.id());
 
-                            self.id.request_paint();
+                            cx.window_state.request_paint(self.id);
                             return EventPropagation::Stop;
                         }
                     }
@@ -913,7 +928,7 @@ impl View for Scroll {
                     Event::Pointer(PointerEvent::Up { .. }) => {
                         if self.are_bars_held() {
                             self.held = BarHeldState::None;
-                            self.id.request_paint();
+                            cx.window_state.request_paint(self.id);
                         }
                     }
 
@@ -947,17 +962,8 @@ impl View for Scroll {
                         }
                     }
 
-                    Event::Pointer(PointerEvent::Leave(_)) => {
-                        self.v_handle_hover = false;
-                        self.h_handle_hover = false;
-                        self.v_track_hover = false;
-                        self.h_track_hover = false;
-                        self.is_scrolling_or_interacting = false;
-                        self.id.request_paint();
-                    }
-
                     Event::Pointer(PointerEvent::Scroll(PointerScrollEvent { state, .. })) => {
-                        if let Some(delta) = event.pixel_scroll_delta_vec2() {
+                        if let Some(delta) = cx.event.pixel_scroll_delta_vec2() {
                             let delta = -if self.scroll_style.vertical_scroll_as_horizontal()
                                 && delta.x == 0.0
                                 && delta.y != 0.0
@@ -991,16 +997,8 @@ impl View for Scroll {
         }
     }
 
-    fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        let lcx = &mut LayoutCx::new(self.id);
-
-        // this apply scroll delta of zero is cheap.
-        // it is here in the case that the available delta changed, this will catch it and update it to a better size
-        self.apply_scroll_delta(Vec2::ZERO, lcx);
-
+    fn post_layout(&mut self, lcx: &mut LayoutCx) {
         let raw_rect_local = lcx.layout_rect_local();
-        let pre = cx.transform;
-        cx.save();
 
         let radii = crate::view::border_to_radii(
             &self.id.state().borrow().combined_style,
@@ -1009,10 +1007,26 @@ impl View for Scroll {
 
         let clip_rect = self.get_clip_rect(lcx, radii);
 
-        if let Some(clip_rect) = clip_rect {
+        if self.clip_rect != clip_rect {
+            self.clip_rect = clip_rect;
+            self.id.set_box_tree_clip(clip_rect);
+            self.id.request_layout();
+        }
+    }
+
+    fn paint(&mut self, cx: &mut crate::context::PaintCx) {
+        let lcx = &mut LayoutCx::new(self.id);
+
+        // this apply scroll delta of zero is cheap.
+        // it is here in the case that the available delta changed, this will catch it and update it to a better size
+        self.apply_scroll_delta(Vec2::ZERO, lcx);
+
+        let pre = cx.transform;
+        cx.save();
+
+        if let Some(clip_rect) = self.clip_rect {
             cx.clip(&clip_rect);
         }
-        self.id.set_box_tree_clip(clip_rect);
 
         cx.paint_view(self.child);
         cx.restore();
@@ -1021,10 +1035,6 @@ impl View for Scroll {
         if !self.scroll_style.hide_bar() {
             self.draw_bars(cx, lcx);
         }
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
