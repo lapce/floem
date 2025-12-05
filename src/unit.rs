@@ -118,8 +118,18 @@ pub trait DurationUnitExt {
     fn millis(self) -> Duration;
 }
 impl DurationUnitExt for u64 {
+    /// # Panics
+    ///
+    /// Panics if `self` minutes would overflow a `Duration` when converted to
+    /// seconds.
     fn minutes(self) -> Duration {
-        Duration::from_secs(self)
+        const SECS_PER_MINUTE: u64 = 60;
+
+        if self > u64::MAX / SECS_PER_MINUTE {
+            panic!("overflow in DurationUnitExt::minutes for u64");
+        }
+
+        Duration::from_secs(self * SECS_PER_MINUTE)
     }
 
     fn seconds(self) -> Duration {
