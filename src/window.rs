@@ -240,6 +240,23 @@ impl WindowConfig {
         self
     }
 
+    /// Set up Windows specific configuration. The passed closure will only be
+    /// called on Windows.
+    #[allow(unused_variables, unused_mut)] // build will complain on non-Windows platforms otherwise
+    pub fn with_win_os_config(
+        mut self,
+        mut f: impl FnMut(WinOSWindowConfig) -> WinOSWindowConfig,
+    ) -> Self {
+        #[cfg(target_os = "windows")]
+        if let Some(existing_config) = self.win_os_config {
+            self.win_os_config = Some(f(existing_config))
+        } else {
+            let new_config = f(WinOSWindowConfig::default());
+            self.win_os_config = Some(new_config);
+        }
+        self
+    }
+
     /// Set up web specific configuration.
     /// The passed closure will only be called on the web.
     #[allow(unused_variables, unused_mut)] // build will complain on non-web platforms otherwise
