@@ -29,10 +29,12 @@ pub fn draggable_sidebar_view() -> impl IntoView {
             .border_color(Color::from_rgb8(205, 205, 205))
     });
 
-    let main_window = scroll(
-        container(
-            label(move || String::from("<-- drag me!\n \n(double click to return to default)"))
-                .style(|s| s.padding(10.0)),
+    let main_window = Scroll::new(
+        Container::new(
+            Label::derived(move || {
+                String::from("<-- drag me!\n \n(double click to return to default)")
+            })
+            .style(|s| s.padding(10.0)),
         )
         .style(|s| s.flex_col().items_start().padding_bottom(10.0)),
     )

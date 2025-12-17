@@ -177,8 +177,8 @@ use crate::unit::{Pct, Px, PxPct, PxPctAuto, UnitExt};
 use crate::view::{IntoView, View};
 use crate::view_tuple::ViewTupleFlat;
 use crate::views::{
-    ContainerExt, Decorators, TooltipExt, canvas, empty, h_stack, label, stack, text, v_stack,
-    v_stack_from_iter,
+    ContainerExt, Decorators, Label, TooltipExt, canvas, empty, h_stack, label, stack, text,
+    v_stack, v_stack_from_iter,
 };
 use crate::{AnyView, easing::*};
 
@@ -336,7 +336,7 @@ where
     fn debug_view(&self) -> Option<Box<dyn View>> {
         if self.is_empty() {
             return Some(
-                text("smallvec\n[]")
+                Label::new("smallvec\n[]")
                     .style(|s| s.with_theme(|s, t| s.color(t.text_muted())))
                     .into_any(),
             );
@@ -371,11 +371,11 @@ where
 
         let tooltip_view = move || {
             v_stack_from_iter(items.iter().enumerate().map(|(i, item)| {
-                let index_label = text(format!("[{}]", i))
+                let index_label = Label::new(format!("[{}]", i))
                     .style(|s| s.with_theme(|s, t| s.color(t.text_muted())));
 
                 let item_view = item.debug_view().unwrap_or_else(|| {
-                    text(format!("{:?}", item))
+                    Label::new(format!("{:?}", item))
                         .style(|s| s.flex_grow(1.0))
                         .into_any()
                 });

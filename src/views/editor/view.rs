@@ -14,7 +14,7 @@ use crate::{
     taffy::tree::NodeId,
     text::{Attrs, AttrsList, TextLayout},
     view::{IntoView, View},
-    views::{Decorators, editor::keypress::KeypressKey, scroll, stack},
+    views::{Decorators, Scroll, editor::keypress::KeypressKey, scroll, stack},
 };
 use floem_editor_core::{
     command::EditCommand,
@@ -1221,7 +1221,7 @@ fn editor_content(
     let window_origin = ed.window_origin;
     let viewport = ed.viewport;
 
-    scroll({
+    Scroll::new({
         let editor_content_view =
             editor_view(editor, is_active).style(move |s| s.absolute().cursor(CursorStyle::Text));
 

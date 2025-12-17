@@ -14,8 +14,8 @@ use crate::style::{FontSize, OverflowX, OverflowY, TextColor};
 use crate::theme::StyleThemeExt as _;
 use crate::unit::PxPctAuto;
 use crate::views::{
-    CheckboxClass, ContainerExt, Decorators, ListClass, ListItemClass, ScrollExt, TabSelectorClass,
-    TooltipExt, resizable,
+    CheckboxClass, ContainerExt, Decorators, ListClass, ListItemClass, Scroll, ScrollExt,
+    TabSelectorClass, TooltipExt, resizable,
 };
 use crate::window::WindowConfig;
 use crate::{IntoView, View, ViewId, new_window};
@@ -393,7 +393,7 @@ fn capture_view(
 
     let left = v_stack((
         header("Captured Window"),
-        resizable::resizable((scroll(image).style(|s| s.max_height_pct(60.0)), tabs))
+        resizable::resizable((Scroll::new(image).style(|s| s.max_height_pct(60.0)), tabs))
             .custom_sizes(move || vec![(0, size.height.min(500.))])
             .style(|s| s.size_full().flex_col()),
     ));

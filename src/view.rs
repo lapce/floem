@@ -159,7 +159,7 @@ impl IntoView for i32 {
     type V = crate::views::Label;
 
     fn into_view(self) -> Self::V {
-        crate::views::text(self)
+        crate::views::Label::new(self)
     }
 }
 
@@ -167,7 +167,7 @@ impl IntoView for usize {
     type V = crate::views::Label;
 
     fn into_view(self) -> Self::V {
-        crate::views::text(self)
+        crate::views::Label::new(self)
     }
 }
 
@@ -175,7 +175,7 @@ impl IntoView for &str {
     type V = crate::views::Label;
 
     fn into_view(self) -> Self::V {
-        crate::views::text(self)
+        crate::views::Label::new(self)
     }
 }
 
@@ -183,7 +183,15 @@ impl IntoView for String {
     type V = crate::views::Label;
 
     fn into_view(self) -> Self::V {
-        crate::views::text(self)
+        crate::views::Label::new(self)
+    }
+}
+
+impl IntoView for () {
+    type V = crate::views::Empty;
+
+    fn into_view(self) -> Self::V {
+        crate::views::Empty::new()
     }
 }
 

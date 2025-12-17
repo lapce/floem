@@ -107,7 +107,7 @@ mod virtual_stack;
 pub use virtual_stack::*;
 
 pub mod scroll;
-pub use scroll::{Scroll, ScrollExt, scroll};
+pub use scroll::{Scroll, ScrollExt};
 
 mod tab;
 pub use tab::*;

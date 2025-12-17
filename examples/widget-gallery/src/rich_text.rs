@@ -3,7 +3,7 @@ use std::ops::Range;
 use floem::{
     peniko::color::palette,
     text::{Attrs, AttrsList, Style, TextLayout},
-    views::{rich_text, scroll, v_stack, Decorators, RichTextExt},
+    views::{rich_text, scroll, v_stack, Decorators, RichTextExt, Scroll},
     IntoView,
 };
 
@@ -16,7 +16,7 @@ pub fn rich_text_view() -> impl IntoView {
     fn main() {
         println(\"Hello World!\");
     }";
-    scroll({
+    Scroll::new({
         v_stack((
             rich_text(move || {
                 let attrs = Attrs::new().color(palette::css::BLACK);

@@ -22,7 +22,7 @@ use crate::{
     style_class,
     unit::PxPctAuto,
     view::{IntoView, View, default_compute_layout},
-    views::{ContainerExt, Decorators, ScrollExt, scroll, svg, text},
+    views::{ContainerExt, Decorators, Label, ScrollExt, scroll, svg},
 };
 
 use super::list;
@@ -295,7 +295,10 @@ impl<T: Clone + std::cmp::PartialEq> Dropdown<T> {
         "##;
 
         // TODO: this should be more customizable
-        (text(item), svg(CHEVRON_DOWN).style(|s| s.items_center()))
+        (
+            Label::new(item),
+            svg(CHEVRON_DOWN).style(|s| s.items_center()),
+        )
             .h_stack()
             .style(|s| s.items_center().justify_between().size_full())
             .into_any()
@@ -446,7 +449,7 @@ impl<T: Clone + std::cmp::PartialEq> Dropdown<T> {
         T: Clone + PartialEq + std::fmt::Display + 'static,
     {
         Self::custom(active_item, Self::default_main_view, iterator, |v| {
-            crate::views::text(v).into_any()
+            crate::views::Label::new(v).into_any()
         })
     }
 
@@ -480,7 +483,7 @@ impl<T: Clone + std::cmp::PartialEq> Dropdown<T> {
             move || active_item.get(),
             Self::default_main_view,
             iterator,
-            |t| text(t).into_any(),
+            |t| Label::new(t).into_any(),
         )
         .on_accept(move |nv| active_item.set(nv))
     }

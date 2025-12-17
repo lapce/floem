@@ -9,7 +9,7 @@ pub fn clipboard_view() -> impl IntoView {
     form((
         form_item(
             "Simple copy",
-            button("Copy the answer").action(move || {
+            Button::new("Copy the answer").action(move || {
                 let _ = Clipboard::set_contents("42".to_string());
             }),
         ),
@@ -17,7 +17,7 @@ pub fn clipboard_view() -> impl IntoView {
             "Copy from input",
             h_stack((
                 text_input(text1).style(|s| s.width_full().min_width(150)),
-                button("Copy").action(move || {
+                Button::new("Copy").action(move || {
                     let _ = Clipboard::set_contents(text1.get());
                 }),
             ))
@@ -26,12 +26,12 @@ pub fn clipboard_view() -> impl IntoView {
         form_item(
             "Get clipboard",
             v_stack((
-                button("Get clipboard").action(move || {
+                Button::new("Get clipboard").action(move || {
                     if let Ok(content) = Clipboard::get_contents() {
                         text2.set(content);
                     }
                 }),
-                label(move || text2.get()),
+                Label::derived(move || text2.get()),
             )),
         ),
     ))

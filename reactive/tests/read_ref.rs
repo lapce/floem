@@ -1,8 +1,8 @@
-use floem_reactive::{create_rw_signal, SignalRead};
+use floem_reactive::{RwSignal, SignalRead};
 
 #[test]
 fn read_ref_derefs_to_inner_value() {
-    let signal = create_rw_signal(vec![10, 20, 30]);
+    let signal = RwSignal::new(vec![10, 20, 30]);
 
     let read = signal.read();
     assert_eq!(read.len(), 3);
@@ -12,7 +12,7 @@ fn read_ref_derefs_to_inner_value() {
 
 #[test]
 fn read_untracked_also_derefs() {
-    let signal = create_rw_signal(String::from("hello"));
+    let signal = RwSignal::new(String::from("hello"));
 
     let read = signal.read_untracked();
     assert_eq!(read.as_str(), "hello");

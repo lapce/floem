@@ -1,9 +1,10 @@
 use floem::text::FONT_SYSTEM;
+use floem::views::Label;
 use floem::window::WindowConfig;
 use floem::Application;
 use floem::{
     reactive::{RwSignal, SignalGet, SignalUpdate},
-    views::{label, ButtonClass, Decorators},
+    views::{ButtonClass, Decorators},
     IntoView,
 };
 
@@ -21,7 +22,7 @@ pub fn app_view() -> impl IntoView {
     // Create a vertical layout
     (
         // The counter value updates automatically, thanks to reactivity
-        label(move || format!("Value: {}", counter.get())),
+        Label::derived(move || format!("Value: {}", counter.get())),
         // Create a horizontal layout
         (
             "Increment".class(ButtonClass).on_click_stop(move |_| {
