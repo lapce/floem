@@ -1,16 +1,41 @@
 use crate::{id::ViewId, view::View};
 
-/// An empty View. See [`empty`].
+/// An empty View.
+///
+/// This view can still have a size, background, border radius, and outline.
+/// It can be used as a simple placeholder view when another view requires a child element but
+/// there is no meaningful child element to be provided.
 pub struct Empty {
     pub(crate) id: ViewId,
+}
+
+impl Empty {
+    /// Creates a new empty view.
+    ///
+    /// ## Example
+    /// ```rust
+    /// use floem::views::Empty;
+    ///
+    /// let placeholder = Empty::new();
+    /// ```
+    pub fn new() -> Self {
+        Empty { id: ViewId::new() }
+    }
+}
+
+impl Default for Empty {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// An empty View. This view can still have a size, background, border radius, and outline.
 ///
 /// This view can be used as a simple placeholder view when another view requires a child element but
 /// there is no meaningful child element to be provided.
+#[deprecated(since = "0.2.0", note = "Use Empty::new() instead")]
 pub fn empty() -> Empty {
-    Empty { id: ViewId::new() }
+    Empty::new()
 }
 
 impl View for Empty {

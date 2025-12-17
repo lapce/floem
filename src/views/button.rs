@@ -10,15 +10,15 @@ style_class!(
 ///
 /// ### Examples
 /// ```rust
-/// # use floem::views::button;
+/// # use floem::views::Button;
 /// # use floem::prelude::{*, palette::css};
 /// # use floem::views::Decorators;
 /// # use floem::style::CursorStyle;
 /// // Basic usage
-/// let button1 = button("Click me").action(move || println!("Button1 clicked!"));
-/// let button2 = button("Click me").action(move || println!("Button2 clicked!"));
+/// let button1 = Button::new("Click me").action(move || println!("Button1 clicked!"));
+/// let button2 = Button::new("Click me").action(move || println!("Button2 clicked!"));
 /// // Apply styles for the button
-/// let styled = button("Click me")
+/// let styled = Button::new("Click me")
 ///     .action(|| println!("Styled button clicked!"))
 ///     .style(|s| s
 ///         .border(1.0)
@@ -32,6 +32,7 @@ style_class!(
 ///         .focus_visible(|s| s.border(2.).border_color(css::BLUE))
 ///     );
 /// ```
+#[deprecated(since = "0.2.0", note = "Use Button::new() instead")]
 pub fn button<V: IntoView + 'static>(child: V) -> Button {
     Button::new(child)
 }
@@ -48,18 +49,19 @@ impl View for Button {
 }
 
 impl Button {
-    /// Create new [Button].
+    /// Creates a new [Button] with the given child view.
+    ///
     /// ### Examples
     /// ```rust
-    /// # use floem::views::button;
+    /// # use floem::views::Button;
     /// # use floem::prelude::{*, palette::css};
     /// # use floem::views::Decorators;
     /// # use floem::style::CursorStyle;
     /// // Basic usage
-    /// let button1 = button("Click me").action(move || println!("Button1 clicked!"));
-    /// let button2 = button("Click me").action(move || println!("Button2 clicked!"));
+    /// let button1 = Button::new("Click me").action(move || println!("Button1 clicked!"));
+    /// let button2 = Button::new("Click me").action(move || println!("Button2 clicked!"));
     /// // Apply styles for the button
-    /// let styled = button("Click me")
+    /// let styled = Button::new("Click me")
     ///     .action(|| println!("Styled button clicked!"))
     ///     .style(|s| s
     ///         .border(1.0)
@@ -73,8 +75,9 @@ impl Button {
     ///         .focus_visible(|s| s.border(2.).border_color(css::BLUE))
     ///     );
     /// ```
+    ///
     /// ### Reactivity
-    /// Button's label is not reactive.
+    /// Button's label is not reactive. For reactive content, pass a reactive view as the child.
     pub fn new(child: impl IntoView) -> Self {
         let id = ViewId::new();
         id.add_child(Box::new(child.into_view()));
@@ -89,6 +92,6 @@ pub trait ButtonExt {
 }
 impl<T: IntoView + 'static> ButtonExt for T {
     fn button(self) -> Button {
-        button(self)
+        Button::new(self)
     }
 }

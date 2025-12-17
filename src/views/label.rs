@@ -77,7 +77,7 @@ pub struct Label {
 }
 
 impl Label {
-    fn new(id: ViewId, label: String) -> Self {
+    fn new_internal(id: ViewId, label: String) -> Self {
         Label {
             id,
             label,
@@ -94,6 +94,39 @@ impl Label {
             style: Default::default(),
         }
         .class(LabelClass)
+    }
+
+    /// Creates a new non-reactive label from any type that implements [`Display`].
+    ///
+    /// ## Example
+    /// ```rust
+    /// use floem::views::*;
+    ///
+    /// Label::new("Hello, world!");
+    /// Label::new(42);
+    /// ```
+    pub fn new<S: Display>(label: S) -> Self {
+        Self::new_internal(ViewId::new(), label.to_string())
+    }
+
+    /// Creates a derived label that automatically updates when its dependencies change.
+    ///
+    /// ## Example
+    /// ```rust
+    /// use floem::{reactive::*, views::*};
+    ///
+    /// let count = RwSignal::new(0);
+    /// Label::derived(move || format!("Count: {}", count.get()));
+    /// ```
+    pub fn derived<S: Display + 'static>(label: impl Fn() -> S + 'static) -> Self {
+        let id = ViewId::new();
+        let initial_label = UpdaterEffect::new(
+            move || label().to_string(),
+            move |new_label| id.update_state(new_label),
+        );
+        Self::new_internal(id, initial_label).on_event_cont(EventListener::FocusLost, move |_| {
+            id.request_layout();
+        })
     }
 
     fn effective_text_layout(&self) -> &TextLayout {
@@ -114,13 +147,15 @@ impl Label {
 ///    text(505),
 /// ));
 /// ```
+#[deprecated(since = "0.2.0", note = "Use Label::new() instead")]
 pub fn text<S: Display>(text: S) -> Label {
-    static_label(text.to_string())
+    Label::new(text)
 }
 
 /// A non-reactive view that can display text from an item that can be turned into a [`String`]. See also [`label`].
+#[deprecated(since = "0.2.0", note = "Use Label::new() instead")]
 pub fn static_label(label: impl Into<String>) -> Label {
-    Label::new(ViewId::new(), label.into())
+    Label::new(label.into())
 }
 
 /// A view that can reactively display text from an item that implements [`Display`]. See also [`text`] for a non-reactive label.
@@ -133,15 +168,9 @@ pub fn static_label(label: impl Into<String>) -> Label {
 ///
 /// label(move || text.get());
 /// ```
+#[deprecated(since = "0.2.0", note = "Use Label::derived() instead")]
 pub fn label<S: Display + 'static>(label: impl Fn() -> S + 'static) -> Label {
-    let id = ViewId::new();
-    let initial_label = UpdaterEffect::new(
-        move || label().to_string(),
-        move |new_label| id.update_state(new_label),
-    );
-    Label::new(id, initial_label).on_event_cont(EventListener::FocusLost, move |_| {
-        id.request_layout();
-    })
+    Label::derived(label)
 }
 
 impl Label {
