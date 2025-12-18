@@ -50,7 +50,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use floem::prelude::*;
-use floem::views::{stack_from_iter, Decorators};
+use floem::views::{Decorators, stack_from_iter};
 
 // Re-export the test harness from floem
 pub use floem::test_harness::*;
@@ -60,11 +60,11 @@ pub use floem::ViewId;
 
 /// Prelude module for convenient imports in tests.
 pub mod prelude {
-    pub use super::{layer, layers, ClickTracker, TestHarnessExt};
+    pub use super::{ClickTracker, TestHarnessExt, layer, layers};
+    pub use floem::ViewId;
     pub use floem::prelude::*;
     pub use floem::test_harness::*;
-    pub use floem::views::{stack, stack_from_iter, Container, Decorators, Empty};
-    pub use floem::ViewId;
+    pub use floem::views::{Container, Decorators, Empty, stack, stack_from_iter};
 }
 
 /// Tracks click events on views for testing.
@@ -180,9 +180,10 @@ pub fn layer(view: impl IntoView) -> impl IntoView {
 /// ```
 pub fn layers<VT: ViewTuple + 'static>(children: VT) -> impl IntoView {
     // Convert each child to a layer with absolute positioning
-    let children_iter = children.into_views().into_iter().map(|v| {
-        v.style(|s| s.absolute().inset(0.0).size_full())
-    });
+    let children_iter = children
+        .into_views()
+        .into_iter()
+        .map(|v| v.style(|s| s.absolute().inset(0.0).size_full()));
 
     stack_from_iter(children_iter).style(|s| s.size_full())
 }

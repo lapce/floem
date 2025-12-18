@@ -859,8 +859,7 @@ impl<'a> StyleCx<'a> {
         let position = view_state.borrow().combined_style.get(PositionProp);
         let has_transform = transform != Affine::IDENTITY;
 
-        let creates_context =
-            z_index.is_some() || position == Position::Absolute || has_transform;
+        let creates_context = z_index.is_some() || position == Position::Absolute || has_transform;
 
         view_state.borrow_mut().stacking_info = StackingInfo {
             creates_context,

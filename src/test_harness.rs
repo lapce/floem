@@ -267,7 +267,7 @@ fn hit_test(view_id: ViewId, point: Point) -> Option<ViewId> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::views::{stack, Decorators, Empty};
+    use crate::views::{Decorators, Empty, stack};
     use std::cell::Cell;
     use std::rc::Rc;
 

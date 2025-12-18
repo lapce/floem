@@ -83,12 +83,10 @@ fn test_stacking_context_boundary() {
     let tracker = ClickTracker::new();
 
     let view = layers((
-        Container::new(
-            tracker.track_named(
-                "grandchild",
-                Empty::new().style(|s| s.size(100.0, 100.0).z_index(1000)),
-            ),
-        )
+        Container::new(tracker.track_named(
+            "grandchild",
+            Empty::new().style(|s| s.size(100.0, 100.0).z_index(1000)),
+        ))
         .style(|s| s.z_index(1)),
         tracker.track_named("sibling", Empty::new().style(|s| s.z_index(2))),
     ))
@@ -182,13 +180,21 @@ fn test_partial_overlap_click_non_overlapping_region() {
 
     let view = stack((
         // Left view: 0-60 x, 0-60 y
-        tracker
-            .track_named("left", Empty::new())
-            .style(|s| s.absolute().inset_left(0.0).inset_top(0.0).size(60.0, 60.0).z_index(1)),
+        tracker.track_named("left", Empty::new()).style(|s| {
+            s.absolute()
+                .inset_left(0.0)
+                .inset_top(0.0)
+                .size(60.0, 60.0)
+                .z_index(1)
+        }),
         // Right view: 40-100 x, 40-100 y (overlaps with left in 40-60 x 40-60 region)
-        tracker
-            .track_named("right", Empty::new())
-            .style(|s| s.absolute().inset_left(40.0).inset_top(40.0).size(60.0, 60.0).z_index(10)),
+        tracker.track_named("right", Empty::new()).style(|s| {
+            s.absolute()
+                .inset_left(40.0)
+                .inset_top(40.0)
+                .size(60.0, 60.0)
+                .z_index(10)
+        }),
     ))
     .style(|s| s.size(100.0, 100.0));
 
@@ -228,9 +234,12 @@ fn test_click_outside_all_views() {
     // Clicking outside all views should not trigger any handlers
     let tracker = ClickTracker::new();
 
-    let view = stack((tracker
-        .track_named("small", Empty::new())
-        .style(|s| s.absolute().inset_left(10.0).inset_top(10.0).size(30.0, 30.0)),))
+    let view = stack((tracker.track_named("small", Empty::new()).style(|s| {
+        s.absolute()
+            .inset_left(10.0)
+            .inset_top(10.0)
+            .size(30.0, 30.0)
+    }),))
     .style(|s| s.size(100.0, 100.0));
 
     let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
