@@ -241,7 +241,7 @@ fn info(name: impl Display, value: String) -> AnyView {
     info_row(name.to_string(), value.style(|s| s.font_bold())).into_any()
 }
 
-fn info_row(name: String, view: impl View + 'static) -> impl View {
+fn info_row(name: String, view: impl IntoView + 'static) -> impl View {
     let name = name
         .style(|s| {
             s.margin_right(5.0)

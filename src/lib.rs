@@ -244,7 +244,9 @@ pub use peniko::kurbo;
 pub use screen_layout::ScreenLayout;
 pub use taffy;
 pub use ui_events;
-pub use view::{AnyView, IntoView, View, default_compute_layout, recursively_layout_view};
+pub use view::{
+    AnyView, HasViewId, IntoView, LazyView, View, default_compute_layout, recursively_layout_view,
+};
 pub use view_state::{Stack, StackOffset};
 pub use window::{close_window, new_window};
 pub use window_id::{Urgency, WindowIdExt};
@@ -255,7 +257,7 @@ pub mod prelude {
     pub use crate::unit::{DurationUnitExt, UnitExt};
     pub use crate::view_tuple::ViewTuple;
     pub use crate::views::*;
-    pub use crate::{IntoView, View};
+    pub use crate::{HasViewId, IntoView, View};
     #[allow(deprecated)]
     pub use floem_reactive::{
         RwSignal, SignalGet, SignalTrack, SignalUpdate, SignalWith, create_rw_signal, create_signal,

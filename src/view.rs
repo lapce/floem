@@ -112,10 +112,26 @@ pub type AnyView = Box<dyn View>;
 /// ```
 /// Check out the [other types](#foreign-impls) that `IntoView` is implemented for.
 pub trait IntoView: Sized {
+    /// The final View type this converts to.
     type V: View + 'static;
 
+    /// Intermediate type that has a [`ViewId`] before full view construction.
+    ///
+    /// For [`View`] types, this is `Self` (already has ViewId).
+    /// For primitives, this is [`LazyView<Self>`] (creates ViewId, defers view construction).
+    /// For tuples/vecs, this is the converted view type (eager conversion).
+    type Intermediate: HasViewId + IntoView<V = Self::V>;
+
+    /// Converts to the intermediate form which has a [`ViewId`].
+    ///
+    /// This is used by [`Decorators`](crate::views::Decorators) to get a [`ViewId`]
+    /// for applying styles before the final view is constructed.
+    fn into_intermediate(self) -> Self::Intermediate;
+
     /// Converts the value into a [`View`].
-    fn into_view(self) -> Self::V;
+    fn into_view(self) -> Self::V {
+        self.into_intermediate().into_view()
+    }
 
     /// Converts the value into a [`AnyView`].
     fn into_any(self) -> AnyView {
@@ -123,32 +139,100 @@ pub trait IntoView: Sized {
     }
 }
 
+/// A trait for types that have an associated [`ViewId`].
+///
+/// This is automatically implemented for all types that implement [`View`],
+/// and can be manually implemented for intermediate types like [`Pending`].
+pub trait HasViewId {
+    /// Returns the [`ViewId`] associated with this value.
+    fn view_id(&self) -> ViewId;
+}
+
+/// Blanket implementation of [`HasViewId`] for all [`View`] types.
+impl<V: View> HasViewId for V {
+    fn view_id(&self) -> ViewId {
+        self.id()
+    }
+}
+
+/// A wrapper type for lazy view construction.
+///
+/// `LazyView<T>` wraps a value that will eventually be converted into a [`View`],
+/// but creates its [`ViewId`] eagerly. This allows decorators to be applied
+/// before the actual view is constructed.
+///
+/// ## Example
+/// ```rust
+/// use floem::views::*;
+/// use floem::{IntoView, LazyView};
+///
+/// // The ViewId is created when LazyView is constructed,
+/// // but the Label is only created when into_view() is called
+/// let lazy = LazyView::new("Hello");
+/// let view = lazy.style(|s| s.padding(10.0)).into_view();
+/// ```
+pub struct LazyView<T> {
+    /// The ViewId created eagerly for this lazy view.
+    pub id: ViewId,
+    /// The content that will be converted into a view.
+    pub content: T,
+}
+
+impl<T> LazyView<T> {
+    /// Creates a new `LazyView` wrapper with an eagerly-created [`ViewId`].
+    pub fn new(content: T) -> Self {
+        Self {
+            id: ViewId::new(),
+            content,
+        }
+    }
+
+    /// Creates a new `LazyView` wrapper with an existing [`ViewId`].
+    pub fn with_id(id: ViewId, content: T) -> Self {
+        Self { id, content }
+    }
+}
+
+impl<T> HasViewId for LazyView<T> {
+    fn view_id(&self) -> ViewId {
+        self.id
+    }
+}
+
 impl<IV: IntoView + 'static> IntoView for Box<dyn Fn() -> IV> {
     type V = DynamicView;
+    type Intermediate = DynamicView;
 
-    fn into_view(self) -> Self::V {
+    fn into_intermediate(self) -> Self::Intermediate {
         dyn_view(self)
     }
 }
 
 impl<T: IntoView + Clone + 'static> IntoView for RwSignal<T> {
     type V = DynamicView;
+    type Intermediate = DynamicView;
 
-    fn into_view(self) -> Self::V {
+    fn into_intermediate(self) -> Self::Intermediate {
         dyn_view(move || self.get())
     }
 }
 
 impl<T: IntoView + Clone + 'static> IntoView for ReadSignal<T> {
     type V = DynamicView;
+    type Intermediate = DynamicView;
 
-    fn into_view(self) -> Self::V {
+    fn into_intermediate(self) -> Self::Intermediate {
         dyn_view(move || self.get())
     }
 }
 
 impl<VW: View + 'static> IntoView for VW {
     type V = VW;
+    type Intermediate = Self;
+
+    fn into_intermediate(self) -> Self::Intermediate {
+        self
+    }
 
     fn into_view(self) -> Self::V {
         self
@@ -157,49 +241,137 @@ impl<VW: View + 'static> IntoView for VW {
 
 impl IntoView for i32 {
     type V = crate::views::Label;
+    type Intermediate = LazyView<i32>;
 
-    fn into_view(self) -> Self::V {
-        crate::views::Label::new(self)
+    fn into_intermediate(self) -> Self::Intermediate {
+        LazyView::new(self)
     }
 }
 
 impl IntoView for usize {
     type V = crate::views::Label;
+    type Intermediate = LazyView<usize>;
 
-    fn into_view(self) -> Self::V {
-        crate::views::Label::new(self)
+    fn into_intermediate(self) -> Self::Intermediate {
+        LazyView::new(self)
     }
 }
 
 impl IntoView for &str {
     type V = crate::views::Label;
+    type Intermediate = LazyView<String>;
 
-    fn into_view(self) -> Self::V {
-        crate::views::Label::new(self)
+    fn into_intermediate(self) -> Self::Intermediate {
+        LazyView::new(self.to_string())
     }
 }
 
 impl IntoView for String {
     type V = crate::views::Label;
+    type Intermediate = LazyView<String>;
 
-    fn into_view(self) -> Self::V {
-        crate::views::Label::new(self)
+    fn into_intermediate(self) -> Self::Intermediate {
+        LazyView::new(self)
     }
 }
 
 impl IntoView for () {
     type V = crate::views::Empty;
+    type Intermediate = LazyView<()>;
 
-    fn into_view(self) -> Self::V {
-        crate::views::Empty::new()
+    fn into_intermediate(self) -> Self::Intermediate {
+        LazyView::new(self)
     }
 }
 
 impl<IV: IntoView + 'static> IntoView for Vec<IV> {
     type V = crate::views::Stack;
+    type Intermediate = LazyView<Vec<IV>>;
+
+    fn into_intermediate(self) -> Self::Intermediate {
+        LazyView::new(self)
+    }
+}
+
+impl<IV: IntoView + 'static> IntoView for LazyView<Vec<IV>> {
+    type V = crate::views::Stack;
+    type Intermediate = Self;
+
+    fn into_intermediate(self) -> Self::Intermediate {
+        self
+    }
 
     fn into_view(self) -> Self::V {
-        crate::views::stack_from_iter(self)
+        crate::views::from_iter_with_id(self.id, self.content, None)
+    }
+}
+
+// IntoView implementations for LazyView<T> types
+// These use the pre-created ViewId from LazyView
+// LazyView is its own Intermediate since it already has a ViewId
+
+impl IntoView for LazyView<i32> {
+    type V = crate::views::Label;
+    type Intermediate = Self;
+
+    fn into_intermediate(self) -> Self::Intermediate {
+        self
+    }
+
+    fn into_view(self) -> Self::V {
+        crate::views::Label::with_id(self.id, self.content)
+    }
+}
+
+impl IntoView for LazyView<usize> {
+    type V = crate::views::Label;
+    type Intermediate = Self;
+
+    fn into_intermediate(self) -> Self::Intermediate {
+        self
+    }
+
+    fn into_view(self) -> Self::V {
+        crate::views::Label::with_id(self.id, self.content)
+    }
+}
+
+impl IntoView for LazyView<&str> {
+    type V = crate::views::Label;
+    type Intermediate = Self;
+
+    fn into_intermediate(self) -> Self::Intermediate {
+        self
+    }
+
+    fn into_view(self) -> Self::V {
+        crate::views::Label::with_id(self.id, self.content)
+    }
+}
+
+impl IntoView for LazyView<String> {
+    type V = crate::views::Label;
+    type Intermediate = Self;
+
+    fn into_intermediate(self) -> Self::Intermediate {
+        self
+    }
+
+    fn into_view(self) -> Self::V {
+        crate::views::Label::with_id(self.id, self.content)
+    }
+}
+
+impl IntoView for LazyView<()> {
+    type V = crate::views::Empty;
+    type Intermediate = Self;
+
+    fn into_intermediate(self) -> Self::Intermediate {
+        self
+    }
+
+    fn into_view(self) -> Self::V {
+        crate::views::Empty::with_id(self.id)
     }
 }
 

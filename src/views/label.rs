@@ -109,6 +109,14 @@ impl Label {
         Self::new_internal(ViewId::new(), label.to_string())
     }
 
+    /// Creates a new non-reactive label with a pre-existing [`ViewId`].
+    ///
+    /// This is useful for lazy view construction where the `ViewId` is created
+    /// before the view itself.
+    pub fn with_id<S: Display>(id: ViewId, label: S) -> Self {
+        Self::new_internal(id, label.to_string())
+    }
+
     /// Creates a derived label that automatically updates when its dependencies change.
     ///
     /// ## Example

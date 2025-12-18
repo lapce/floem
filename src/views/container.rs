@@ -27,6 +27,14 @@ impl Container {
         id.set_children([child.into_view()]);
         Container { id }
     }
+
+    /// Creates a new container with a specific ViewId wrapping the given child view.
+    ///
+    /// This is useful when you need to control the ViewId for lazy view creation.
+    pub fn with_id(id: ViewId, child: impl IntoView) -> Self {
+        id.set_children([child.into_view()]);
+        Container { id }
+    }
 }
 
 /// A simple wrapper around another View

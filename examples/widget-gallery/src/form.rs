@@ -20,7 +20,10 @@ pub fn form<VTF: ViewTupleFlat + 'static>(children: VTF) -> impl IntoView {
         .debug_name("Form")
 }
 
-pub fn form_item<V: IntoView + 'static>(item_label: impl IntoView, view: V) -> Vec<Box<dyn View>> {
+pub fn form_item<V: IntoView + 'static>(
+    item_label: impl IntoView + 'static,
+    view: V,
+) -> Vec<Box<dyn View>> {
     let label_view = item_label.style(|s| s.font_weight(Weight::BOLD));
 
     (label_view, view).into_views()

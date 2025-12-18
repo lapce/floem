@@ -21,6 +21,14 @@ impl Empty {
     pub fn new() -> Self {
         Empty { id: ViewId::new() }
     }
+
+    /// Creates a new empty view with a pre-existing [`ViewId`].
+    ///
+    /// This is useful for lazy view construction where the `ViewId` is created
+    /// before the view itself.
+    pub fn with_id(id: ViewId) -> Self {
+        Empty { id }
+    }
 }
 
 impl Default for Empty {
