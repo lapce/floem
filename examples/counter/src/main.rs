@@ -73,7 +73,7 @@ fn app_view() -> impl IntoView {
                 .justify_center()
         });
 
-    let id = view.id();
+    let id = view.view_id();
     view.on_key_up(
         Key::Named(NamedKey::F11),
         |m| m.is_empty(),

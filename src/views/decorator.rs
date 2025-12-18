@@ -15,15 +15,19 @@ use crate::{
     event::{Event, EventListener, EventPropagation},
     menu::Menu,
     style::{Style, StyleClass},
-    view::{IntoView, View},
+    view::{HasViewId, IntoView},
 };
 
 /// A trait that extends the appearance and functionality of Views through styling and event handling.
-pub trait Decorators: IntoView<V = Self::DV> + Sized {
-    /// The type of the decorated view.
-    ///
-    /// Using this type allows for chaining of decorators as well as maintaining the original type of the view which allows you to call methods that were a part of the original view even after calling a decorators method.
-    type DV: View;
+///
+/// This trait is automatically implemented for all [`IntoView`] types via a blanket implementation.
+/// The decoration behavior depends on the type's [`IntoView::Intermediate`] type:
+///
+/// - **[`View`] types**: Decorated directly (already have a [`ViewId`])
+/// - **Primitives** (`&str`, `String`, `i32`, etc.): Wrapped in [`LazyView`](crate::LazyView)
+///   which creates a [`ViewId`] eagerly but defers view construction
+/// - **Tuples/Vecs**: Converted eagerly to their view type
+pub trait Decorators: IntoView {
 
     /// Alter the style of the view.
     ///
@@ -35,7 +39,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     /// - **Spacing**: Padding, margins with individual side control or shorthand methods
     /// - **Positioning**: Absolute positioning with inset controls
     ///
-    /// ## Visual Styling  
+    /// ## Visual Styling
     /// - **Colors & Brushes**: Solid colors, gradients, and custom brushes for backgrounds and text
     /// - **Borders**: Individual border styling per side with colors, widths, and radius
     /// - **Shadows**: Box shadows with blur, spread, offset, and color customization
@@ -71,9 +75,9 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     ///     ))
     /// }
     /// ```
-    fn style(self, style: impl Fn(Style) -> Style + 'static) -> Self::DV {
-        let view = self.into_view();
-        let view_id = view.id();
+    fn style(self, style: impl Fn(Style) -> Style + 'static) -> Self::Intermediate {
+        let intermediate = self.into_intermediate();
+        let view_id = intermediate.view_id();
         let state = view_id.state();
 
         let offset = state.borrow_mut().style.next_offset();
@@ -85,18 +89,18 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
         );
         state.borrow_mut().style.push(style);
 
-        view
+        intermediate
     }
 
     /// Add a debug name to the view that will be shown in the inspector.
     ///
     /// This can be called multiple times and each name will be shown in the inspector with the most recent name showing first.
-    fn debug_name(self, name: impl Into<String>) -> Self::DV {
-        let view = self.into_view();
-        let view_id = view.id();
+    fn debug_name(self, name: impl Into<String>) -> Self::Intermediate {
+        let intermediate = self.into_intermediate();
+        let view_id = intermediate.view_id();
         let state = view_id.state();
         state.borrow_mut().debug_name.push(name.into());
-        view
+        intermediate
     }
 
     /// Conditionally add a debug name to the view that will be shown in the inspector.
@@ -107,9 +111,9 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
         self,
         apply: impl Fn() -> bool + 'static,
         name: impl Fn() -> S + 'static,
-    ) -> Self::DV {
-        let view = self.into_view();
-        let view_id = view.id();
+    ) -> Self::Intermediate {
+        let intermediate = self.into_intermediate();
+        let view_id = intermediate.view_id();
         Effect::new(move |_| {
             let apply = apply();
             let state = view_id.state();
@@ -123,13 +127,13 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
             }
         });
 
-        view
+        intermediate
     }
 
     /// The visual style to apply when the view is being dragged
-    fn dragging_style(self, style: impl Fn(Style) -> Style + 'static) -> Self::DV {
-        let view = self.into_view();
-        let view_id = view.id();
+    fn dragging_style(self, style: impl Fn(Style) -> Style + 'static) -> Self::Intermediate {
+        let intermediate = self.into_intermediate();
+        let view_id = intermediate.view_id();
         Effect::new(move |_| {
             let style = style(Style::new());
             {
@@ -138,20 +142,20 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
             }
             view_id.request_style();
         });
-        view
+        intermediate
     }
 
     /// Add a style class to the view
-    fn class<C: StyleClass>(self, _class: C) -> Self::DV {
-        let view = self.into_view();
-        view.id().add_class(C::class_ref());
-        view
+    fn class<C: StyleClass>(self, _class: C) -> Self::Intermediate {
+        let intermediate = self.into_intermediate();
+        intermediate.view_id().add_class(C::class_ref());
+        intermediate
     }
 
     /// Conditionally add a style class to the view
-    fn class_if<C: StyleClass>(self, apply: impl Fn() -> bool + 'static, _class: C) -> Self::DV {
-        let view = self.into_view();
-        let id = view.id();
+    fn class_if<C: StyleClass>(self, apply: impl Fn() -> bool + 'static, _class: C) -> Self::Intermediate {
+        let intermediate = self.into_intermediate();
+        let id = intermediate.view_id();
         Effect::new(move |_| {
             let apply = apply();
             if apply {
@@ -160,19 +164,19 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
                 id.remove_class(C::class_ref());
             }
         });
-        view
+        intermediate
     }
 
     /// Remove a style class from the view
-    fn remove_class<C: StyleClass>(self, _class: C) -> Self::DV {
-        let view = self.into_view();
-        view.id().remove_class(C::class_ref());
-        view
+    fn remove_class<C: StyleClass>(self, _class: C) -> Self::Intermediate {
+        let intermediate = self.into_intermediate();
+        intermediate.view_id().remove_class(C::class_ref());
+        intermediate
     }
 
     /// Allows the element to be navigated to with the keyboard. Similar to setting tabindex="0" in html.
     #[deprecated(note = "Set this property using `Style::focusable` instead")]
-    fn keyboard_navigable(self) -> Self::DV {
+    fn keyboard_navigable(self) -> Self::Intermediate {
         self.style(|s| s.focusable(true))
     }
 
@@ -185,9 +189,9 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     fn disable_default_event(
         self,
         disable: impl Fn() -> (EventListener, bool) + 'static,
-    ) -> Self::DV {
-        let view = self.into_view();
-        let id = view.id();
+    ) -> Self::Intermediate {
+        let intermediate = self.into_intermediate();
+        let id = intermediate.view_id();
         Effect::new(move |_| {
             let (event, disable) = disable();
             if disable {
@@ -196,12 +200,12 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
                 id.remove_disable_default_event(event);
             }
         });
-        view
+        intermediate
     }
 
     /// Mark the view as draggable
     #[deprecated(note = "use `Style::draggable` directly instead")]
-    fn draggable(self) -> Self::DV {
+    fn draggable(self) -> Self::Intermediate {
         self.style(move |s| s.draggable(true))
     }
 
@@ -210,7 +214,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     /// # Reactivity
     /// The `disabled_fn` is reactive.
     #[deprecated(note = "use `Style::set_disabled` directly instead")]
-    fn disabled(self, disabled_fn: impl Fn() -> bool + 'static) -> Self::DV {
+    fn disabled(self, disabled_fn: impl Fn() -> bool + 'static) -> Self::Intermediate {
         self.style(move |s| s.set_disabled(disabled_fn()))
     }
 
@@ -219,10 +223,10 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
         self,
         listener: EventListener,
         action: impl FnMut(&Event) -> EventPropagation + 'static,
-    ) -> Self::DV {
-        let view = self.into_view();
-        view.id().add_event_listener(listener, Box::new(action));
-        view
+    ) -> Self::Intermediate {
+        let intermediate = self.into_intermediate();
+        intermediate.view_id().add_event_listener(listener, Box::new(action));
+        intermediate
     }
 
     /// Add an handler for pressing down a specific key.
@@ -233,7 +237,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
         key: Key,
         cmp: impl Fn(Modifiers) -> bool + 'static,
         action: impl Fn(&Event) + 'static,
-    ) -> Self::DV {
+    ) -> Self::Intermediate {
         self.on_event(EventListener::KeyDown, move |e| {
             if let Event::Key(KeyboardEvent {
                 state: KeyState::Down,
@@ -259,7 +263,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
         key: Key,
         cmp: impl Fn(Modifiers) -> bool + 'static,
         action: impl Fn(&Event) + 'static,
-    ) -> Self::DV {
+    ) -> Self::Intermediate {
         self.on_event(EventListener::KeyUp, move |e| {
             if let Event::Key(KeyboardEvent {
                 state: KeyState::Up,
@@ -279,7 +283,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
 
     /// Add an event handler for the given [`EventListener`]. This event will be handled with
     /// the given handler and the event will continue propagating.
-    fn on_event_cont(self, listener: EventListener, action: impl Fn(&Event) + 'static) -> Self::DV {
+    fn on_event_cont(self, listener: EventListener, action: impl Fn(&Event) + 'static) -> Self::Intermediate {
         self.on_event(listener, move |e| {
             action(e);
             EventPropagation::Continue
@@ -288,7 +292,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
 
     /// Add an event handler for the given [`EventListener`]. This event will be handled with
     /// the given handler and the event will stop propagating.
-    fn on_event_stop(self, listener: EventListener, action: impl Fn(&Event) + 'static) -> Self::DV {
+    fn on_event_stop(self, listener: EventListener, action: impl Fn(&Event) + 'static) -> Self::Intermediate {
         self.on_event(listener, move |e| {
             action(e);
             EventPropagation::Stop
@@ -296,13 +300,13 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     }
 
     /// Add an event handler for [`EventListener::Click`].
-    fn on_click(self, action: impl FnMut(&Event) -> EventPropagation + 'static) -> Self::DV {
+    fn on_click(self, action: impl FnMut(&Event) -> EventPropagation + 'static) -> Self::Intermediate {
         self.on_event(EventListener::Click, action)
     }
 
     /// Add an event handler for [`EventListener::Click`]. This event will be handled with
     /// the given handler and the event will continue propagating.
-    fn on_click_cont(self, action: impl Fn(&Event) + 'static) -> Self::DV {
+    fn on_click_cont(self, action: impl Fn(&Event) + 'static) -> Self::Intermediate {
         self.on_click(move |e| {
             action(e);
             EventPropagation::Continue
@@ -311,7 +315,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
 
     /// Add an event handler for [`EventListener::Click`]. This event will be handled with
     /// the given handler and the event will stop propagating.
-    fn on_click_stop(self, mut action: impl FnMut(&Event) + 'static) -> Self::DV {
+    fn on_click_stop(self, mut action: impl FnMut(&Event) + 'static) -> Self::Intermediate {
         self.on_click(move |e| {
             action(e);
             EventPropagation::Stop
@@ -319,7 +323,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     }
 
     /// Attach action executed on button click or Enter or Space Key.
-    fn action(self, mut action: impl FnMut() + 'static) -> Self::DV {
+    fn action(self, mut action: impl FnMut() + 'static) -> Self::Intermediate {
         self.on_click(move |_| {
             action();
             EventPropagation::Stop
@@ -327,13 +331,13 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     }
 
     /// Add an event handler for [`EventListener::DoubleClick`]
-    fn on_double_click(self, action: impl Fn(&Event) -> EventPropagation + 'static) -> Self::DV {
+    fn on_double_click(self, action: impl Fn(&Event) -> EventPropagation + 'static) -> Self::Intermediate {
         self.on_event(EventListener::DoubleClick, action)
     }
 
     /// Add an event handler for [`EventListener::DoubleClick`]. This event will be handled with
     /// the given handler and the event will continue propagating.
-    fn on_double_click_cont(self, action: impl Fn(&Event) + 'static) -> Self::DV {
+    fn on_double_click_cont(self, action: impl Fn(&Event) + 'static) -> Self::Intermediate {
         self.on_double_click(move |e| {
             action(e);
             EventPropagation::Continue
@@ -342,7 +346,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
 
     /// Add an event handler for [`EventListener::DoubleClick`]. This event will be handled with
     /// the given handler and the event will stop propagating.
-    fn on_double_click_stop(self, action: impl Fn(&Event) + 'static) -> Self::DV {
+    fn on_double_click_stop(self, action: impl Fn(&Event) + 'static) -> Self::Intermediate {
         self.on_double_click(move |e| {
             action(e);
             EventPropagation::Stop
@@ -350,13 +354,13 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     }
 
     /// Add an event handler for [`EventListener::SecondaryClick`]. This is most often the "Right" click.
-    fn on_secondary_click(self, action: impl Fn(&Event) -> EventPropagation + 'static) -> Self::DV {
+    fn on_secondary_click(self, action: impl Fn(&Event) -> EventPropagation + 'static) -> Self::Intermediate {
         self.on_event(EventListener::SecondaryClick, action)
     }
 
     /// Add an event handler for [`EventListener::SecondaryClick`]. This is most often the "Right" click.
     /// This event will be handled with the given handler and the event will continue propagating.
-    fn on_secondary_click_cont(self, action: impl Fn(&Event) + 'static) -> Self::DV {
+    fn on_secondary_click_cont(self, action: impl Fn(&Event) + 'static) -> Self::Intermediate {
         self.on_secondary_click(move |e| {
             action(e);
             EventPropagation::Continue
@@ -365,7 +369,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
 
     /// Add an event handler for [`EventListener::SecondaryClick`]. This is most often the "Right" click.
     /// This event will be handled with the given handler and the event will stop propagating.
-    fn on_secondary_click_stop(self, action: impl Fn(&Event) + 'static) -> Self::DV {
+    fn on_secondary_click_stop(self, action: impl Fn(&Event) + 'static) -> Self::Intermediate {
         self.on_secondary_click(move |e| {
             action(e);
             EventPropagation::Stop
@@ -376,24 +380,24 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     ///
     /// # Reactivity
     /// The action will be called whenever the view is resized but will not rerun automatically in response to signal changes
-    fn on_resize(self, action: impl Fn(Rect) + 'static) -> Self::DV {
-        let view = self.into_view();
-        let id = view.id();
+    fn on_resize(self, action: impl Fn(Rect) + 'static) -> Self::Intermediate {
+        let intermediate = self.into_intermediate();
+        let id = intermediate.view_id();
         let state = id.state();
         state.borrow_mut().add_resize_listener(Rc::new(action));
-        view
+        intermediate
     }
 
     /// Adds an event handler for move events for this view.
     ///
     /// # Reactivity
     /// The action will be called whenever the view is moved but will not rerun automatically in response to signal changes
-    fn on_move(self, action: impl Fn(Point) + 'static) -> Self::DV {
-        let view = self.into_view();
-        let id = view.id();
+    fn on_move(self, action: impl Fn(Point) + 'static) -> Self::Intermediate {
+        let intermediate = self.into_intermediate();
+        let id = intermediate.view_id();
         let state = id.state();
         state.borrow_mut().add_move_listener(Rc::new(action));
-        view
+        intermediate
     }
 
     /// Adds an event handler for cleanup events for this view.
@@ -402,12 +406,12 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     ///
     /// # Reactivity
     /// The action will be called when the view is removed from the view tree but will not rerun automatically in response to signal changes
-    fn on_cleanup(self, action: impl Fn() + 'static) -> Self::DV {
-        let view = self.into_view();
-        let id = view.id();
+    fn on_cleanup(self, action: impl Fn() + 'static) -> Self::Intermediate {
+        let intermediate = self.into_intermediate();
+        let id = intermediate.view_id();
         let state = id.state();
         state.borrow_mut().add_cleanup_listener(Rc::new(action));
-        view
+        intermediate
     }
 
     /// Add an animation to the view.
@@ -418,9 +422,9 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     ///
     /// # Reactivity
     /// The animation function will be updated in response to signal changes in the function. The behavior is the same as the [`Decorators::style`] method.
-    fn animation(self, animation: impl Fn(Animation) -> Animation + 'static) -> Self::DV {
-        let view = self.into_view();
-        let view_id = view.id();
+    fn animation(self, animation: impl Fn(Animation) -> Animation + 'static) -> Self::Intermediate {
+        let intermediate = self.into_intermediate();
+        let view_id = intermediate.view_id();
         let state = view_id.state();
 
         let offset = state.borrow_mut().animations.next_offset();
@@ -436,35 +440,35 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
 
         state.borrow_mut().animations.push(initial_animation);
 
-        view
+        intermediate
     }
 
     /// Clear the focus from the window.
     ///
     /// # Reactivity
     /// The when function is reactive and will rereun in response to any signal changes in the function.
-    fn clear_focus(self, when: impl Fn() + 'static) -> Self::DV {
-        let view = self.into_view();
-        let id = view.id();
+    fn clear_focus(self, when: impl Fn() + 'static) -> Self::Intermediate {
+        let intermediate = self.into_intermediate();
+        let id = intermediate.view_id();
         Effect::new(move |_| {
             when();
             id.clear_focus();
         });
-        view
+        intermediate
     }
 
     /// Request that this view gets the focus for the window.
     ///
     /// # Reactivity
     /// The when function is reactive and will rereun in response to any signal changes in the function.
-    fn request_focus(self, when: impl Fn() + 'static) -> Self::DV {
-        let view = self.into_view();
-        let id = view.id();
+    fn request_focus(self, when: impl Fn() + 'static) -> Self::Intermediate {
+        let intermediate = self.into_intermediate();
+        let id = intermediate.view_id();
         Effect::new(move |_| {
             when();
             id.request_focus();
         });
-        view
+        intermediate
     }
 
     /// Set the window scale factor.
@@ -473,12 +477,13 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     ///
     /// # Reactivity
     /// The scale function is reactive and will rereun in response to any signal changes in the function.
-    fn window_scale(self, scale_fn: impl Fn() -> f64 + 'static) -> Self {
+    fn window_scale(self, scale_fn: impl Fn() -> f64 + 'static) -> Self::Intermediate {
+        let intermediate = self.into_intermediate();
         Effect::new(move |_| {
             let window_scale = scale_fn();
             set_window_scale(window_scale);
         });
-        self
+        intermediate
     }
 
     /// Set the window title.
@@ -487,12 +492,13 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     ///
     /// # Reactivity
     /// The title function is reactive and will rereun in response to any signal changes in the function.
-    fn window_title(self, title_fn: impl Fn() -> String + 'static) -> Self {
+    fn window_title(self, title_fn: impl Fn() -> String + 'static) -> Self::Intermediate {
+        let intermediate = self.into_intermediate();
         Effect::new(move |_| {
             let window_title = title_fn();
             set_window_title(window_title);
         });
-        self
+        intermediate
     }
 
     /// Set the system window menu
@@ -506,37 +512,37 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     ///
     /// # Reactivity
     /// The menu function is reactive and will rereun in response to any signal changes in the function.
-    fn window_menu(self, menu_fn: impl Fn() -> Menu + 'static) -> Self {
+    fn window_menu(self, menu_fn: impl Fn() -> Menu + 'static) -> Self::Intermediate {
+        let intermediate = self.into_intermediate();
         Effect::new(move |_| {
             let menu = menu_fn();
             set_window_menu(menu);
         });
-        self
+        intermediate
     }
 
     /// Adds a secondary-click context menu to the view, which opens at the mouse position.
     ///
     /// # Reactivity
     /// The menu function is not reactive and will not rerun automatically in response to signal changes while the menu is showing and will only update the menu items each time that it is created
-    fn context_menu(self, menu: impl Fn() -> Menu + 'static) -> Self::DV {
-        let view = self.into_view();
-        let id = view.id();
+    fn context_menu(self, menu: impl Fn() -> Menu + 'static) -> Self::Intermediate {
+        let intermediate = self.into_intermediate();
+        let id = intermediate.view_id();
         id.update_context_menu(menu);
-        view
+        intermediate
     }
 
     /// Adds a primary-click context menu, which opens below the view.
     ///
     /// # Reactivity
     /// The menu function is not reactive and will not rerun automatically in response to signal changes while the menu is showing and will only update the menu items each time that it is created
-    fn popout_menu(self, menu: impl Fn() -> Menu + 'static) -> Self::DV {
-        let view = self.into_view();
-        let id = view.id();
+    fn popout_menu(self, menu: impl Fn() -> Menu + 'static) -> Self::Intermediate {
+        let intermediate = self.into_intermediate();
+        let id = intermediate.view_id();
         id.update_popout_menu(menu);
-        view
+        intermediate
     }
 }
 
-impl<VW: View, IV: IntoView<V = VW>> Decorators for IV {
-    type DV = VW;
-}
+/// Blanket implementation for all [`IntoView`] types.
+impl<T: IntoView> Decorators for T {}

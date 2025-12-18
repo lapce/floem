@@ -226,8 +226,9 @@ pub struct RichSpanOwned {
 }
 impl IntoView for RichSpanOwned {
     type V = RichText;
+    type Intermediate = RichText;
 
-    fn into_view(self) -> Self::V {
+    fn into_intermediate(self) -> Self::Intermediate {
         let mut layout = TextLayout::new();
         let mut attrs_list = AttrsList::new(Attrs::new().color(palette::css::BLACK));
         for span in self.spans {
@@ -240,9 +241,10 @@ impl IntoView for RichSpanOwned {
 }
 impl IntoView for RichSpan<'_> {
     type V = RichText;
+    type Intermediate = RichText;
 
-    fn into_view(self) -> Self::V {
-        self.to_owned().into_view()
+    fn into_intermediate(self) -> Self::Intermediate {
+        self.to_owned().into_intermediate()
     }
 }
 impl<'a, S> std::ops::Add<S> for RichSpan<'a>

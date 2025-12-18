@@ -1,8 +1,8 @@
 use taffy::FlexDirection;
 
 use crate::{
-    view::{IntoView, View},
-    views::{Stack, create_stack},
+    view::{IntoView, LazyView, View},
+    views::{Stack, create_stack, create_stack_with_id},
 };
 
 /// Adds the `flatten` function to turn a tuple of [View]'s into a [Vec] of View trait objects.
@@ -78,12 +78,26 @@ macro_rules! impl_view_tuple {
 
         impl<$($t: IntoView + 'static),+> IntoView for ($($t,)+) {
             type V = crate::views::Stack;
+            type Intermediate = LazyView<($($t,)+)>;
+
+            fn into_intermediate(self) -> Self::Intermediate {
+                LazyView::new(self)
+            }
+        }
+
+        impl<$($t: IntoView + 'static),+> IntoView for LazyView<($($t,)+)> {
+            type V = crate::views::Stack;
+            type Intermediate = Self;
+
+            fn into_intermediate(self) -> Self::Intermediate {
+                self
+            }
 
             fn into_view(self) -> Self::V {
                 #[allow(non_snake_case)]
-                let ($($t,)+) = self;
+                let ($($t,)+) = self.content;
                 let views = vec![ $($t.into_any(),)+ ];
-                crate::views::create_stack(views, None)
+                create_stack_with_id(self.id, views, None)
             }
         }
     };

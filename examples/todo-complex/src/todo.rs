@@ -62,8 +62,9 @@ impl From<Todo> for TodoState {
 }
 impl IntoView for TodoState {
     type V = AnyView;
+    type Intermediate = AnyView;
 
-    fn into_view(self) -> Self::V {
+    fn into_intermediate(self) -> Self::Intermediate {
         // when the done status changes, commit the change to the db
         debounce_action(self.done, 300.millis(), move || {
             AppCommand::UpdateDone(self).execute()
@@ -255,10 +256,11 @@ impl IntoView for TodoState {
 }
 impl IntoView for Todo {
     type V = <TodoState as IntoView>::V;
+    type Intermediate = <TodoState as IntoView>::Intermediate;
 
-    fn into_view(self) -> Self::V {
+    fn into_intermediate(self) -> Self::Intermediate {
         let todo_state: TodoState = self.into();
-        todo_state.into_view()
+        todo_state.into_intermediate()
     }
 }
 

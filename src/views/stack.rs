@@ -20,9 +20,15 @@ pub(crate) fn create_stack(
     children: Vec<Box<dyn View>>,
     direction: Option<FlexDirection>,
 ) -> Stack {
-    let id = ViewId::new();
-    id.set_children_vec(children);
+    create_stack_with_id(ViewId::new(), children, direction)
+}
 
+pub(crate) fn create_stack_with_id(
+    id: ViewId,
+    children: Vec<Box<dyn View>>,
+    direction: Option<FlexDirection>,
+) -> Stack {
+    id.set_children_vec(children);
     Stack { id, direction }
 }
 
@@ -126,6 +132,35 @@ impl View for Stack {
 }
 
 impl Stack {
+    /// Creates a new stack with a specific ViewId from a tuple of views.
+    ///
+    /// This is useful for lazy view construction where the `ViewId` is created
+    /// before the view itself.
+    ///
+    /// ## Example
+    /// ```rust
+    /// use floem::{ViewId, views::Stack};
+    ///
+    /// let id = ViewId::new();
+    /// Stack::with_id(id, (/* children */)).horizontal();
+    /// ```
+    pub fn with_id<VT: ViewTuple + 'static>(id: ViewId, children: VT) -> Self {
+        id.set_children_vec(children.into_views());
+        Stack { id, direction: None }
+    }
+
+    /// Sets the stack direction to horizontal (row).
+    pub fn horizontal(mut self) -> Self {
+        self.direction = Some(FlexDirection::Row);
+        self
+    }
+
+    /// Sets the stack direction to vertical (column).
+    pub fn vertical(mut self) -> Self {
+        self.direction = Some(FlexDirection::Column);
+        self
+    }
+
     pub fn add_class_by_idx(self, class: impl Fn(usize) -> StyleClassRef) -> Self {
         for (index, child) in self.id.children().into_iter().enumerate() {
             let style_class = class(index);

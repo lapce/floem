@@ -517,7 +517,7 @@ fn tree_node(
     capture: Rc<Capture>,
     level: usize,
     datas: RwSignal<CapturedDatas>,
-) -> impl IntoView + use<> {
+) -> impl View + use<> {
     let name = tree_node_name(view, level as f64 * 10.0).into_view();
     let name_id = name.id();
     let height = 20.0;

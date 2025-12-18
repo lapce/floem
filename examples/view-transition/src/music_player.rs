@@ -38,8 +38,9 @@ impl Default for SongInfo {
 }
 impl IntoView for SongInfo {
     type V = Stack;
+    type Intermediate = Stack;
 
-    fn into_view(self) -> Self::V {
+    fn into_intermediate(self) -> Self::Intermediate {
         let song_artist = v_stack((
             self.title.style(|s| s.font_weight(Weight::MEDIUM)),
             self.artist

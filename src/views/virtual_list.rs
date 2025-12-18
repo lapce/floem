@@ -162,7 +162,7 @@ where
         move |(_i, d)| key_fn(d),
         move |(index, e)| {
             let child = view_fn(index, e).class(ListItemClass);
-            let child_id = child.id();
+            let child_id = child.view_id();
             child.on_click_cont(move |_| {
                 if selection.get_untracked() != Some(index) {
                     selection.set(Some(index));
@@ -294,8 +294,9 @@ fn handle_arrow_key(
 
 impl<T: 'static> IntoView for VirtualList<T> {
     type V = VirtualStack<(usize, T)>;
+    type Intermediate = VirtualStack<(usize, T)>;
 
-    fn into_view(self) -> Self::V {
+    fn into_intermediate(self) -> Self::Intermediate {
         self.stack
     }
 }
