@@ -286,10 +286,23 @@ impl IntoView for () {
 
 impl<IV: IntoView + 'static> IntoView for Vec<IV> {
     type V = crate::views::Stack;
-    type Intermediate = crate::views::Stack;
+    type Intermediate = LazyView<Vec<IV>>;
 
     fn into_intermediate(self) -> Self::Intermediate {
-        crate::views::stack_from_iter(self)
+        LazyView::new(self)
+    }
+}
+
+impl<IV: IntoView + 'static> IntoView for LazyView<Vec<IV>> {
+    type V = crate::views::Stack;
+    type Intermediate = Self;
+
+    fn into_intermediate(self) -> Self::Intermediate {
+        self
+    }
+
+    fn into_view(self) -> Self::V {
+        crate::views::from_iter_with_id(self.id, self.content, None)
     }
 }
 

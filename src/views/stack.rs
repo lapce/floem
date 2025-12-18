@@ -75,6 +75,24 @@ where
     )
 }
 
+pub(crate) fn from_iter_with_id<V>(
+    id: ViewId,
+    iterator: impl IntoIterator<Item = V>,
+    direction: Option<FlexDirection>,
+) -> Stack
+where
+    V: IntoView + 'static,
+{
+    create_stack_with_id(
+        id,
+        iterator
+            .into_iter()
+            .map(|v| -> Box<dyn View> { v.into_any() })
+            .collect(),
+        direction,
+    )
+}
+
 /// Creates a stack from an iterator of views. See also [`v_stack_from_iter`] and [`h_stack_from_iter`].
 ///
 /// ## Example
@@ -142,7 +160,7 @@ impl Stack {
     /// use floem::{ViewId, views::Stack};
     ///
     /// let id = ViewId::new();
-    /// Stack::with_id(id, (/* children */)).horizontal();
+    /// Stack::with_id(id, ("child 1", "child 2")).horizontal();
     /// ```
     pub fn with_id<VT: ViewTuple + 'static>(id: ViewId, children: VT) -> Self {
         id.set_children_vec(children.into_views());
