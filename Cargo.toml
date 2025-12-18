@@ -9,6 +9,7 @@ members = [
   "editor-core",
   "examples/*",
   "ui-events-winit",
+  "test",
 ]
 default-members = [
   ".",

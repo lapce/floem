@@ -22,20 +22,24 @@ use crossbeam::channel::Receiver;
 use std::sync::mpsc::Receiver;
 
 use taffy::prelude::NodeId;
+use taffy::style::Position;
 
 use crate::animate::{AnimStateKind, RepeatMode};
 use crate::dropped_file::FileDragEvent;
 use crate::easing::{Easing, Linear};
 use crate::menu::Menu;
 use crate::renderer::Renderer;
-use crate::style::{Disabled, DisplayProp, Focusable, Hidden, PointerEvents, PointerEventsProp};
-use crate::view_state::IsHiddenState;
+use crate::style::{
+    Disabled, DisplayProp, Focusable, Hidden, PointerEvents, PointerEventsProp, PositionProp,
+    ZIndex,
+};
+use crate::view_state::{IsHiddenState, StackingInfo};
 use crate::{
     action::{exec_after, show_context_menu},
     event::{Event, EventListener, EventPropagation},
     id::ViewId,
     inspector::CaptureState,
-    style::{Style, StyleProp, ZIndex},
+    style::{Style, StyleProp},
     view::{View, paint_bg, paint_border, paint_outline},
     view_state::ChangeFlags,
     window_state::WindowState,
@@ -77,6 +81,39 @@ pub(crate) enum FrameUpdate {
 pub(crate) enum PointerEventConsumed {
     Yes,
     No,
+}
+
+/// Returns children sorted by z-index (paint order).
+/// For event dispatch, iterate in reverse to get top-first order.
+pub(crate) fn children_in_paint_order(parent_id: ViewId) -> Vec<ViewId> {
+    let children = parent_id.children();
+    if children.len() <= 1 {
+        return children;
+    }
+
+    // Check if any child has non-zero z-index (optimization)
+    let needs_sort = children
+        .iter()
+        .any(|&id| id.state().borrow().stacking_info.effective_z_index != 0);
+
+    if !needs_sort {
+        return children;
+    }
+
+    // Build sortable list: (ViewId, z_index, dom_order)
+    let mut sortable: Vec<(ViewId, i32, usize)> = children
+        .iter()
+        .enumerate()
+        .map(|(dom_order, &child_id)| {
+            let z_index = child_id.state().borrow().stacking_info.effective_z_index;
+            (child_id, z_index, dom_order)
+        })
+        .collect();
+
+    // Stable sort by z-index (DOM order preserved for equal z-index)
+    sortable.sort_by(|a, b| a.1.cmp(&b.1));
+
+    sortable.into_iter().map(|(id, _, _)| id).collect()
 }
 
 /// A bundle of helper methods to be used by `View::event` handlers
@@ -171,7 +208,7 @@ impl EventCx<'_> {
         let mut view_pointer_event_consumed = PointerEventConsumed::No;
 
         if !directed {
-            let children = view_id.children();
+            let children = children_in_paint_order(view_id);
             for child in children.into_iter().rev() {
                 if !self.should_send(child, &event) {
                     continue;
@@ -813,6 +850,22 @@ impl<'a> StyleCx<'a> {
 
         view_state.borrow_mut().transform = transform;
 
+        // Compute stacking context info
+        // A view creates a stacking context if it has:
+        // - Any z-index value (including 0, since None means "auto" in web terms)
+        // - position: absolute
+        // - Any non-identity transform
+        let z_index = view_state.borrow().combined_style.get(ZIndex);
+        let position = view_state.borrow().combined_style.get(PositionProp);
+        let has_transform = transform != Affine::IDENTITY;
+
+        let creates_context = z_index.is_some() || position == Position::Absolute || has_transform;
+
+        view_state.borrow_mut().stacking_info = StackingInfo {
+            creates_context,
+            effective_z_index: z_index.unwrap_or(0),
+        };
+
         self.restore();
     }
 
@@ -1140,7 +1193,7 @@ impl PaintCx<'_> {
 
     /// paint the children of this view
     pub fn paint_children(&mut self, id: ViewId) {
-        let children = id.children();
+        let children = children_in_paint_order(id);
         for child in children {
             self.paint_view(child);
         }
@@ -1526,4 +1579,178 @@ fn animations_on_create(id: ViewId) {
     }
 
     id.children().into_iter().for_each(animations_on_create);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Helper to create a ViewId and set its z-index
+    fn create_view_with_z_index(z_index: Option<i32>) -> ViewId {
+        let id = ViewId::new();
+        // Access state to initialize it
+        let state = id.state();
+        state.borrow_mut().stacking_info = StackingInfo {
+            creates_context: z_index.is_some(),
+            effective_z_index: z_index.unwrap_or(0),
+        };
+        id
+    }
+
+    /// Helper to set up parent with children
+    fn setup_parent_with_children(children: Vec<ViewId>) -> ViewId {
+        let parent = ViewId::new();
+        parent.set_children_ids(children);
+        parent
+    }
+
+    /// Helper to extract z-indices from sorted children for easier assertion
+    fn get_z_indices(children: &[ViewId]) -> Vec<i32> {
+        children
+            .iter()
+            .map(|id| id.state().borrow().stacking_info.effective_z_index)
+            .collect()
+    }
+
+    #[test]
+    fn test_no_children() {
+        let parent = ViewId::new();
+        let result = children_in_paint_order(parent);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_single_child() {
+        let child = create_view_with_z_index(Some(5));
+        let parent = setup_parent_with_children(vec![child]);
+
+        let result = children_in_paint_order(parent);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], child);
+    }
+
+    #[test]
+    fn test_children_no_z_index_preserves_dom_order() {
+        // All children with default z-index (0) should preserve DOM order
+        let child1 = create_view_with_z_index(None);
+        let child2 = create_view_with_z_index(None);
+        let child3 = create_view_with_z_index(None);
+        let parent = setup_parent_with_children(vec![child1, child2, child3]);
+
+        let result = children_in_paint_order(parent);
+        assert_eq!(result, vec![child1, child2, child3]);
+    }
+
+    #[test]
+    fn test_basic_z_index_sorting() {
+        // Children with different z-indices should be sorted ascending
+        let child_z10 = create_view_with_z_index(Some(10));
+        let child_z1 = create_view_with_z_index(Some(1));
+        let child_z5 = create_view_with_z_index(Some(5));
+        // DOM order: z10, z1, z5
+        let parent = setup_parent_with_children(vec![child_z10, child_z1, child_z5]);
+
+        let result = children_in_paint_order(parent);
+        // Paint order should be: z1, z5, z10 (ascending)
+        assert_eq!(get_z_indices(&result), vec![1, 5, 10]);
+        assert_eq!(result, vec![child_z1, child_z5, child_z10]);
+    }
+
+    #[test]
+    fn test_negative_z_index() {
+        // Negative z-index should sort before positive
+        let child_pos = create_view_with_z_index(Some(1));
+        let child_neg = create_view_with_z_index(Some(-1));
+        let child_zero = create_view_with_z_index(Some(0));
+        // DOM order: pos, neg, zero
+        let parent = setup_parent_with_children(vec![child_pos, child_neg, child_zero]);
+
+        let result = children_in_paint_order(parent);
+        // Paint order: -1, 0, 1
+        assert_eq!(get_z_indices(&result), vec![-1, 0, 1]);
+    }
+
+    #[test]
+    fn test_equal_z_index_preserves_dom_order() {
+        // Children with same z-index should preserve DOM order (stable sort)
+        let child1 = create_view_with_z_index(Some(5));
+        let child2 = create_view_with_z_index(Some(5));
+        let child3 = create_view_with_z_index(Some(5));
+        let parent = setup_parent_with_children(vec![child1, child2, child3]);
+
+        let result = children_in_paint_order(parent);
+        // Same z-index, so DOM order preserved
+        assert_eq!(result, vec![child1, child2, child3]);
+    }
+
+    #[test]
+    fn test_mixed_z_index_and_default() {
+        // Mix of explicit z-index and default (None = 0)
+        let child_default = create_view_with_z_index(None); // effective 0
+        let child_z5 = create_view_with_z_index(Some(5));
+        let child_z_neg = create_view_with_z_index(Some(-1));
+        // DOM order: default, z5, z_neg
+        let parent = setup_parent_with_children(vec![child_default, child_z5, child_z_neg]);
+
+        let result = children_in_paint_order(parent);
+        // Paint order: -1, 0, 5
+        assert_eq!(get_z_indices(&result), vec![-1, 0, 5]);
+    }
+
+    #[test]
+    fn test_optimization_skips_sort_when_all_zero() {
+        // When all z-indices are 0, sorting should be skipped (optimization)
+        // This test verifies the result is correct; actual optimization is internal
+        let child1 = create_view_with_z_index(Some(0));
+        let child2 = create_view_with_z_index(Some(0));
+        let child3 = create_view_with_z_index(Some(0));
+        let parent = setup_parent_with_children(vec![child1, child2, child3]);
+
+        let result = children_in_paint_order(parent);
+        // All zero, DOM order preserved
+        assert_eq!(result, vec![child1, child2, child3]);
+    }
+
+    #[test]
+    fn test_large_z_index_values() {
+        // Test with large z-index values
+        let child_max = create_view_with_z_index(Some(i32::MAX));
+        let child_min = create_view_with_z_index(Some(i32::MIN));
+        let child_zero = create_view_with_z_index(Some(0));
+        let parent = setup_parent_with_children(vec![child_max, child_min, child_zero]);
+
+        let result = children_in_paint_order(parent);
+        assert_eq!(get_z_indices(&result), vec![i32::MIN, 0, i32::MAX]);
+    }
+
+    #[test]
+    fn test_event_dispatch_order_is_reverse_of_paint() {
+        // Event dispatch iterates in reverse, so highest z-index receives events first
+        let child_z1 = create_view_with_z_index(Some(1));
+        let child_z10 = create_view_with_z_index(Some(10));
+        let child_z5 = create_view_with_z_index(Some(5));
+        let parent = setup_parent_with_children(vec![child_z1, child_z10, child_z5]);
+
+        let paint_order = children_in_paint_order(parent);
+        // Paint order: 1, 5, 10 (ascending)
+        assert_eq!(get_z_indices(&paint_order), vec![1, 5, 10]);
+
+        // Event dispatch order (reverse): 10, 5, 1
+        let event_order: Vec<_> = paint_order.into_iter().rev().collect();
+        assert_eq!(get_z_indices(&event_order), vec![10, 5, 1]);
+    }
+
+    #[test]
+    fn test_many_children_sorting() {
+        // Test with many children to ensure sorting is stable and correct
+        let children: Vec<_> = (0..10)
+            .map(|i| create_view_with_z_index(Some(9 - i))) // z-indices: 9, 8, 7, ..., 0
+            .collect();
+        let parent = setup_parent_with_children(children.clone());
+
+        let result = children_in_paint_order(parent);
+        // Should be sorted ascending: 0, 1, 2, ..., 9
+        let z_indices = get_z_indices(&result);
+        assert_eq!(z_indices, (0..10).collect::<Vec<_>>());
+    }
 }
