@@ -146,7 +146,10 @@ impl Stack {
     /// ```
     pub fn with_id<VT: ViewTuple + 'static>(id: ViewId, children: VT) -> Self {
         id.set_children_vec(children.into_views());
-        Stack { id, direction: None }
+        Stack {
+            id,
+            direction: None,
+        }
     }
 
     /// Sets the stack direction to horizontal (row).

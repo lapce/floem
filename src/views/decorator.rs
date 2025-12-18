@@ -28,7 +28,6 @@ use crate::{
 ///   which creates a [`ViewId`] eagerly but defers view construction
 /// - **Tuples/Vecs**: Converted eagerly to their view type
 pub trait Decorators: IntoView {
-
     /// Alter the style of the view.
     ///
     /// The Floem style system provides comprehensive styling capabilities including:
@@ -153,7 +152,11 @@ pub trait Decorators: IntoView {
     }
 
     /// Conditionally add a style class to the view
-    fn class_if<C: StyleClass>(self, apply: impl Fn() -> bool + 'static, _class: C) -> Self::Intermediate {
+    fn class_if<C: StyleClass>(
+        self,
+        apply: impl Fn() -> bool + 'static,
+        _class: C,
+    ) -> Self::Intermediate {
         let intermediate = self.into_intermediate();
         let id = intermediate.view_id();
         Effect::new(move |_| {
@@ -225,7 +228,9 @@ pub trait Decorators: IntoView {
         action: impl FnMut(&Event) -> EventPropagation + 'static,
     ) -> Self::Intermediate {
         let intermediate = self.into_intermediate();
-        intermediate.view_id().add_event_listener(listener, Box::new(action));
+        intermediate
+            .view_id()
+            .add_event_listener(listener, Box::new(action));
         intermediate
     }
 
@@ -283,7 +288,11 @@ pub trait Decorators: IntoView {
 
     /// Add an event handler for the given [`EventListener`]. This event will be handled with
     /// the given handler and the event will continue propagating.
-    fn on_event_cont(self, listener: EventListener, action: impl Fn(&Event) + 'static) -> Self::Intermediate {
+    fn on_event_cont(
+        self,
+        listener: EventListener,
+        action: impl Fn(&Event) + 'static,
+    ) -> Self::Intermediate {
         self.on_event(listener, move |e| {
             action(e);
             EventPropagation::Continue
@@ -292,7 +301,11 @@ pub trait Decorators: IntoView {
 
     /// Add an event handler for the given [`EventListener`]. This event will be handled with
     /// the given handler and the event will stop propagating.
-    fn on_event_stop(self, listener: EventListener, action: impl Fn(&Event) + 'static) -> Self::Intermediate {
+    fn on_event_stop(
+        self,
+        listener: EventListener,
+        action: impl Fn(&Event) + 'static,
+    ) -> Self::Intermediate {
         self.on_event(listener, move |e| {
             action(e);
             EventPropagation::Stop
@@ -300,7 +313,10 @@ pub trait Decorators: IntoView {
     }
 
     /// Add an event handler for [`EventListener::Click`].
-    fn on_click(self, action: impl FnMut(&Event) -> EventPropagation + 'static) -> Self::Intermediate {
+    fn on_click(
+        self,
+        action: impl FnMut(&Event) -> EventPropagation + 'static,
+    ) -> Self::Intermediate {
         self.on_event(EventListener::Click, action)
     }
 
@@ -331,7 +347,10 @@ pub trait Decorators: IntoView {
     }
 
     /// Add an event handler for [`EventListener::DoubleClick`]
-    fn on_double_click(self, action: impl Fn(&Event) -> EventPropagation + 'static) -> Self::Intermediate {
+    fn on_double_click(
+        self,
+        action: impl Fn(&Event) -> EventPropagation + 'static,
+    ) -> Self::Intermediate {
         self.on_event(EventListener::DoubleClick, action)
     }
 
@@ -354,7 +373,10 @@ pub trait Decorators: IntoView {
     }
 
     /// Add an event handler for [`EventListener::SecondaryClick`]. This is most often the "Right" click.
-    fn on_secondary_click(self, action: impl Fn(&Event) -> EventPropagation + 'static) -> Self::Intermediate {
+    fn on_secondary_click(
+        self,
+        action: impl Fn(&Event) -> EventPropagation + 'static,
+    ) -> Self::Intermediate {
         self.on_event(EventListener::SecondaryClick, action)
     }
 
