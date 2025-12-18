@@ -20,6 +20,9 @@ use crate::{
     sync_runtime::SYNC_RUNTIME,
 };
 
+/// Type alias for context storage within a scope.
+pub(crate) type ScopeContexts = HashMap<TypeId, Box<dyn Any>>;
+
 thread_local! {
 pub(crate) static RUNTIME: Runtime = Runtime::new();
 }
@@ -38,7 +41,7 @@ pub struct Runtime {
     pub(crate) parents: RefCell<HashMap<Id, Id>>,
     pub(crate) signals: RefCell<HashMap<Id, SignalState>>,
     pub(crate) effects: RefCell<HashMap<Id, Rc<dyn EffectTrait>>>,
-    pub(crate) scope_contexts: RefCell<HashMap<Id, HashMap<TypeId, Box<dyn Any>>>>,
+    pub(crate) scope_contexts: RefCell<HashMap<Id, ScopeContexts>>,
     pub(crate) batching: Cell<bool>,
     pub(crate) pending_effects: RefCell<SmallVec<[Id; 10]>>,
     pub(crate) pending_effects_set: RefCell<HashSet<Id>>,
