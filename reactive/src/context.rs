@@ -773,4 +773,95 @@ mod tests {
         assert_eq!(parent.get_context::<i32>(), None);
         assert_eq!(child.get_context::<i32>(), Some(100));
     }
+
+    #[test]
+    fn dispose_cleans_up_multiple_children() {
+        let parent = Scope::new();
+        let child1 = parent.create_child();
+        let child2 = parent.create_child();
+        let child3 = parent.create_child();
+
+        parent.provide_context(String::from("parent"));
+        child1.provide_context(String::from("child1"));
+        child2.provide_context(String::from("child2"));
+        child3.provide_context(String::from("child3"));
+
+        // Verify all contexts exist
+        RUNTIME.with(|runtime| {
+            assert!(runtime.scope_contexts.borrow().contains_key(&parent.0));
+            assert!(runtime.scope_contexts.borrow().contains_key(&child1.0));
+            assert!(runtime.scope_contexts.borrow().contains_key(&child2.0));
+            assert!(runtime.scope_contexts.borrow().contains_key(&child3.0));
+        });
+
+        // Dispose parent - should clean up all children
+        parent.dispose();
+
+        RUNTIME.with(|runtime| {
+            // All should be gone
+            assert!(!runtime.scope_contexts.borrow().contains_key(&parent.0));
+            assert!(!runtime.scope_contexts.borrow().contains_key(&child1.0));
+            assert!(!runtime.scope_contexts.borrow().contains_key(&child2.0));
+            assert!(!runtime.scope_contexts.borrow().contains_key(&child3.0));
+            // Parent tracking should be gone for all children
+            assert!(!runtime.parents.borrow().contains_key(&child1.0));
+            assert!(!runtime.parents.borrow().contains_key(&child2.0));
+            assert!(!runtime.parents.borrow().contains_key(&child3.0));
+        });
+    }
+
+    #[test]
+    fn dispose_parent_without_context_cleans_children_context() {
+        let parent = Scope::new();
+        let child1 = parent.create_child();
+        let child2 = parent.create_child();
+
+        // Parent has NO context, but children do
+        child1.provide_context(String::from("child1"));
+        child2.provide_context(String::from("child2"));
+
+        // Verify children's contexts exist
+        RUNTIME.with(|runtime| {
+            assert!(!runtime.scope_contexts.borrow().contains_key(&parent.0));
+            assert!(runtime.scope_contexts.borrow().contains_key(&child1.0));
+            assert!(runtime.scope_contexts.borrow().contains_key(&child2.0));
+        });
+
+        // Dispose parent - should still clean up children's contexts
+        parent.dispose();
+
+        RUNTIME.with(|runtime| {
+            assert!(!runtime.scope_contexts.borrow().contains_key(&child1.0));
+            assert!(!runtime.scope_contexts.borrow().contains_key(&child2.0));
+            assert!(!runtime.parents.borrow().contains_key(&child1.0));
+            assert!(!runtime.parents.borrow().contains_key(&child2.0));
+        });
+    }
+
+    #[test]
+    fn double_dispose_is_idempotent() {
+        let scope = Scope::new();
+        let child = scope.create_child();
+
+        scope.provide_context(42i32);
+        child.provide_context(100i32);
+
+        // First dispose
+        scope.dispose();
+
+        RUNTIME.with(|runtime| {
+            assert!(!runtime.scope_contexts.borrow().contains_key(&scope.0));
+            assert!(!runtime.scope_contexts.borrow().contains_key(&child.0));
+        });
+
+        // Second dispose - should not panic
+        scope.dispose();
+        child.dispose();
+
+        // Still clean
+        RUNTIME.with(|runtime| {
+            assert!(!runtime.scope_contexts.borrow().contains_key(&scope.0));
+            assert!(!runtime.scope_contexts.borrow().contains_key(&child.0));
+        });
+    }
 }
