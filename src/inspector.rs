@@ -13,8 +13,7 @@ use crate::theme::StyleThemeExt as _;
 use crate::view::{IntoView, View};
 use crate::view_state::ChangeFlags;
 use crate::views::{
-    ContainerExt, Decorators, Label, ScrollExt, dyn_container,  stack, 
-    v_stack, v_stack_from_iter,
+    ContainerExt, Decorators, Label, ScrollExt, dyn_container, stack, v_stack, v_stack_from_iter,
 };
 use crate::window_state::WindowState;
 use crate::{AnyView, Clipboard, style};
@@ -448,9 +447,8 @@ fn selected_view(
                         .style(|s| s.items_center().justify_center())
                         .into_any()
                     };
-                    let mut v = (prop.info().debug_view)(&*value).unwrap_or_else(|| {
-                        Label::new((prop.info().debug_any)(&*value)).into_any()
-                    });
+                    let mut v = (prop.info().debug_view)(&*value)
+                        .unwrap_or_else(|| Label::new((prop.info().debug_any)(&*value)).into_any());
                     if let Some(transition) = style
                         .map
                         .get(&prop.info().transition_key)
@@ -615,75 +613,74 @@ fn selected_view(
                             let header_row =
                                 stack((class_header, count_badge)).style(|s| s.items_center());
 
-                            let props_view = if !props.is_empty() {
-                                Some(
-                                    v_stack_from_iter(props.into_iter().map(
-                                        |((prop, name), value)| {
-                                            let name = name
-                                                .strip_prefix("floem::style::")
-                                                .unwrap_or(&name);
-                                            let mut v = (prop.info().debug_view)(&*value)
-                                                .unwrap_or_else(|| {
-                                                    Label::new((prop.info().debug_any)(&*value))
-                                                        .into_any()
-                                                });
+                            let props_view =
+                                if !props.is_empty() {
+                                    Some(
+                                        v_stack_from_iter(props.into_iter().map(
+                                            |((prop, name), value)| {
+                                                let name = name
+                                                    .strip_prefix("floem::style::")
+                                                    .unwrap_or(&name);
+                                                let mut v = (prop.info().debug_view)(&*value)
+                                                    .unwrap_or_else(|| {
+                                                        Label::new((prop.info().debug_any)(&*value))
+                                                            .into_any()
+                                                    });
 
-                                            if let Some(transition) = class_style
-                                                .map
-                                                .get(&prop.info().transition_key)
-                                                .and_then(|v| v.downcast_ref::<Transition>())
-                                            {
-                                                let transition_badge = stack((
-                                                    "Transition".style(|s| {
-                                                        s.margin_top(5.0)
-                                                            .margin_right(5.0)
-                                                            .border(1.)
-                                                            .border_radius(5.0)
-                                                            .padding(4.0)
-                                                            .with_theme(|s, t| {
-                                                                s.color(t.text_muted())
-                                                                    .border_color(t.border())
-                                                            })
-                                                            .with_context_opt::<FontSize, _>(
-                                                                |s, fs| s.font_size(fs * 0.8),
+                                                if let Some(transition) = class_style
+                                                    .map
+                                                    .get(&prop.info().transition_key)
+                                                    .and_then(|v| v.downcast_ref::<Transition>())
+                                                {
+                                                    let transition_badge = stack((
+                                                        "Transition".style(|s| {
+                                                            s.margin_top(5.0)
+                                                                .margin_right(5.0)
+                                                                .border(1.)
+                                                                .border_radius(5.0)
+                                                                .padding(4.0)
+                                                                .with_theme(|s, t| {
+                                                                    s.color(t.text_muted())
+                                                                        .border_color(t.border())
+                                                                })
+                                                                .with_context_opt::<FontSize, _>(
+                                                                    |s, fs| s.font_size(fs * 0.8),
+                                                                )
+                                                        }),
+                                                        format!("{:?}", transition),
+                                                    ))
+                                                    .style(|s| s.items_center());
+                                                    v = v_stack((v, transition_badge)).into_any();
+                                                }
+
+                                                stack((
+                                                    Label::new(name)
+                                                        .style(|s| {
+                                                            s.margin_right(5.0).with_theme(
+                                                                |s, t| s.color(t.text_muted()),
                                                             )
-                                                    }),
-                                                    format!("{:?}", transition),
-                                                ))
-                                                .style(|s| s.items_center());
-                                                v = v_stack((v, transition_badge)).into_any();
-                                            }
-
-                                            stack((
-                                                Label::new(name)
-                                                    .style(|s| {
-                                                        s.margin_right(5.0).with_theme(|s, t| {
-                                                            s.color(t.text_muted())
                                                         })
-                                                    })
-                                                    .container()
-                                                    .style(|s| {
-                                                        s.min_width(120.0).flex_direction(
-                                                            FlexDirection::RowReverse,
-                                                        )
-                                                    }),
-                                                v,
-                                            ))
-                                            .style(
-                                                |s| {
+                                                        .container()
+                                                        .style(|s| {
+                                                            s.min_width(120.0).flex_direction(
+                                                                FlexDirection::RowReverse,
+                                                            )
+                                                        }),
+                                                    v,
+                                                ))
+                                                .style(|s| {
                                                     s.padding(4.0)
                                                         .padding_left(20.0)
                                                         .items_center()
                                                         .width_full()
-                                                },
-                                            )
-                                        },
-                                    ))
-                                    .style(|s| s.width_full()),
-                                )
-                            } else {
-                                None
-                            };
+                                                })
+                                            },
+                                        ))
+                                        .style(|s| s.width_full()),
+                                    )
+                                } else {
+                                    None
+                                };
 
                             let selectors_view = if !selectors.is_empty() {
                                 Some(
@@ -706,13 +703,14 @@ fn selected_view(
 
                                             nested_props.sort_unstable_by(|a, b| a.0.1.cmp(&b.0.1));
 
-                                            let selector_header = Label::new(selector_name).style(|s| {
-                                                s.font_bold()
-                                                    .with_theme(|s, t| s.color(t.text()))
-                                                    .with_context_opt::<FontSize, _>(|s, fs| {
-                                                    s.font_size(fs * 0.9)
-                                                })
-                                            });
+                                            let selector_header =
+                                                Label::new(selector_name).style(|s| {
+                                                    s.font_bold()
+                                                        .with_theme(|s, t| s.color(t.text()))
+                                                        .with_context_opt::<FontSize, _>(|s, fs| {
+                                                            s.font_size(fs * 0.9)
+                                                        })
+                                                });
 
                                             let nested_count = Label::new(format!(
                                                 "{} {}",
@@ -753,10 +751,8 @@ fn selected_view(
                                                             .unwrap_or(&name);
                                                         let v = (prop.info().debug_view)(&*value)
                                                             .unwrap_or_else(|| {
-                                                                Label::new((prop
-                                                                    .info()
-                                                                    .debug_any)(
-                                                                    &*value
+                                                                Label::new((prop.info().debug_any)(
+                                                                    &*value,
                                                                 ))
                                                                 .into_any()
                                                             });
@@ -860,7 +856,9 @@ fn selected_view(
             .style(|s| s.width_full())
             .into_any()
         } else {
-            Label::new("No selection").style(|s| s.padding(5.0)).into_any()
+            Label::new("No selection")
+                .style(|s| s.padding(5.0))
+                .into_any()
         }
     };
 
