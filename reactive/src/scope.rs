@@ -52,9 +52,13 @@ impl Scope {
     pub fn create_child(&self) -> Scope {
         let child = Id::next();
         RUNTIME.with(|runtime| {
-            let mut children = runtime.children.borrow_mut();
-            let children = children.entry(self.0).or_default();
-            children.insert(child);
+            runtime
+                .children
+                .borrow_mut()
+                .entry(self.0)
+                .or_default()
+                .insert(child);
+            runtime.parents.borrow_mut().insert(child, self.0);
         });
         Scope(child, PhantomData)
     }
@@ -154,6 +158,58 @@ impl Scope {
         R: 'static,
     {
         self.enter(|| create_updater(compute, on_change))
+    }
+
+    /// Store a context value in this scope.
+    ///
+    /// The stored context value can be retrieved by this scope and any of its
+    /// descendants using [`Scope::get_context`] or [`Context::get`](crate::Context::get).
+    /// Child scopes can provide their own values of the same type, which will
+    /// shadow the parent's value for that subtree.
+    ///
+    /// Context values are automatically cleaned up when the scope is disposed.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use floem_reactive::Scope;
+    /// let scope = Scope::new();
+    /// scope.provide_context(42i32);
+    /// scope.enter(|| {
+    ///     assert_eq!(scope.get_context::<i32>(), Some(42));
+    /// });
+    /// ```
+    pub fn provide_context<T>(&self, value: T)
+    where
+        T: Clone + 'static,
+    {
+        self.enter(|| crate::context::Context::provide(value))
+    }
+
+    /// Try to retrieve a stored context value from this scope or its ancestors.
+    ///
+    /// Context lookup walks up the scope tree from this scope to find the
+    /// nearest ancestor that provides a value of the requested type.
+    ///
+    /// Note: This method must be called while the scope is entered (i.e., inside
+    /// [`Scope::enter`]) for the lookup to work correctly.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use floem_reactive::Scope;
+    /// let parent = Scope::new();
+    /// parent.provide_context(42i32);
+    ///
+    /// let child = parent.create_child();
+    /// child.enter(|| {
+    ///     // Child sees parent's context
+    ///     assert_eq!(child.get_context::<i32>(), Some(42));
+    /// });
+    /// ```
+    pub fn get_context<T>(&self) -> Option<T>
+    where
+        T: Clone + 'static,
+    {
+        self.enter(crate::context::Context::get::<T>)
     }
 
     /// Runs the given closure within this scope.
