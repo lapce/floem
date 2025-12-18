@@ -6,7 +6,7 @@ mod transform_view;
 use crate::{pan_zoom_view::pan_zoom_view, transform_view::transform_view};
 
 fn child_view() -> impl IntoView {
-    let button = button("Click me").on_click_stop(|_| {
+    let button = Button::new("Click me").on_click_stop(|_| {
         println!("Button clicked!");
     });
 
@@ -16,7 +16,7 @@ fn child_view() -> impl IntoView {
     v_stack((
         "Try panning to move and scrolling to zoom this view",
         button,
-        container(container("Clipping example").style(|s| {
+        Container::new(Container::new("Clipping example").style(|s| {
             s.background(palette::css::TURQUOISE)
                 .height(96.0)
                 .width(96.0)

@@ -172,38 +172,52 @@ pub struct Scroll {
 }
 
 /// Create a new scroll view
+#[deprecated(since = "0.2.0", note = "Use Scroll::new() instead")]
 pub fn scroll<V: IntoView + 'static>(child: V) -> Scroll {
-    let id = ViewId::new();
-    let child = child.into_view();
-    let child_id = child.id();
-    id.set_children([child]);
-
-    Scroll {
-        id,
-        child: child_id,
-        content_rect: Rect::ZERO,
-        total_rect: Rect::ZERO,
-        child_size: Size::ZERO,
-        child_viewport: Rect::ZERO,
-        computed_child_viewport: Rect::ZERO,
-        onscroll: None,
-        held: BarHeldState::None,
-        v_handle_hover: false,
-        h_handle_hover: false,
-        v_track_hover: false,
-        h_track_hover: false,
-        is_scrolling_or_interacting: false,
-        handle_style: Default::default(),
-        handle_active_style: Default::default(),
-        handle_hover_style: Default::default(),
-        track_style: Default::default(),
-        track_hover_style: Default::default(),
-        scroll_style: Default::default(),
-    }
-    .class(ScrollClass)
+    Scroll::new(child)
 }
 
 impl Scroll {
+    /// Creates a new scroll view wrapping the given child view.
+    ///
+    /// ## Example
+    /// ```rust
+    /// use floem::views::*;
+    ///
+    /// let content = Label::new("Scrollable content");
+    /// let scrollable = Scroll::new(content);
+    /// ```
+    pub fn new(child: impl IntoView) -> Self {
+        let id = ViewId::new();
+        let child = child.into_view();
+        let child_id = child.id();
+        id.set_children([child]);
+
+        Scroll {
+            id,
+            child: child_id,
+            content_rect: Rect::ZERO,
+            total_rect: Rect::ZERO,
+            child_size: Size::ZERO,
+            child_viewport: Rect::ZERO,
+            computed_child_viewport: Rect::ZERO,
+            onscroll: None,
+            held: BarHeldState::None,
+            v_handle_hover: false,
+            h_handle_hover: false,
+            v_track_hover: false,
+            h_track_hover: false,
+            is_scrolling_or_interacting: false,
+            handle_style: Default::default(),
+            handle_active_style: Default::default(),
+            handle_hover_style: Default::default(),
+            track_style: Default::default(),
+            track_hover_style: Default::default(),
+            scroll_style: Default::default(),
+        }
+        .class(ScrollClass)
+    }
+
     /// Sets a callback that will be triggered whenever the scroll position changes.
     ///
     /// This callback receives the viewport rectangle that represents the currently
@@ -1252,6 +1266,6 @@ pub trait ScrollExt {
 
 impl<T: IntoView + 'static> ScrollExt for T {
     fn scroll(self) -> Scroll {
-        scroll(self)
+        Scroll::new(self)
     }
 }

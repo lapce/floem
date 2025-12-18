@@ -6,7 +6,7 @@ use std::rc::Rc;
 
 use crate::style::{CustomStylable, CustomStyle, Style, StylePropValue};
 use crate::view_state::{Stack, StackOffset};
-use crate::views::{Decorators, static_label};
+use crate::views::Decorators;
 use crate::{AnyView, IntoView, View, ViewId, prop, prop_extractor, style_class};
 use floem_reactive::UpdaterEffect;
 use floem_renderer::text::Align;
@@ -16,6 +16,8 @@ pub use fluent_bundle::FluentArgs;
 pub use fluent_bundle::types::FluentValue;
 use smallvec::smallvec;
 pub use unic_langid::LanguageIdentifier;
+
+use super::Label;
 
 /// A map that stores localizations.
 #[derive(Clone)]
@@ -98,7 +100,7 @@ impl StylePropValue for LocaleMap {
 
 impl StylePropValue for LanguageIdentifier {
     fn debug_view(&self) -> Option<Box<dyn View>> {
-        Some(crate::views::text(format!("{self:?}")).into_any())
+        Some(crate::views::Label::new(format!("{self:?}")).into_any())
     }
 
     fn interpolate(&self, _other: &Self, _value: f64) -> Option<Self> {
@@ -211,7 +213,7 @@ impl L10n {
     /// Constructs new localized label with the key.
     pub fn new(key: impl Into<String>) -> Self {
         let key: String = key.into();
-        let label = static_label(key.clone());
+        let label = Label::new(key.clone());
         let label_id = label.id();
         let id = ViewId::new();
         id.add_child(label.into_any());

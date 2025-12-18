@@ -3,14 +3,14 @@ use floem::{
     file::{FileDialogOptions, FileInfo, FileSpec},
     reactive::{RwSignal, SignalGet, SignalUpdate},
     text::Weight,
-    views::{button, h_stack, label, v_stack, Decorators},
+    views::{h_stack, v_stack, Button, Decorators, Label},
     IntoView,
 };
 
 pub fn files_view() -> impl IntoView {
     let files = RwSignal::new(String::new());
     let view = h_stack((
-        button("Select file").on_click_cont(move |_| {
+        Button::new("Select file").on_click_cont(move |_| {
             open_file(
                 FileDialogOptions::new()
                     .force_starting_directory("/")
@@ -27,7 +27,7 @@ pub fn files_view() -> impl IntoView {
                 },
             );
         }),
-        button("Select multiple files").on_click_cont(move |_| {
+        Button::new("Select multiple files").on_click_cont(move |_| {
             open_file(
                 FileDialogOptions::new()
                     .multi_selection()
@@ -44,7 +44,7 @@ pub fn files_view() -> impl IntoView {
                 },
             );
         }),
-        button("Select folder").on_click_cont(move |_| {
+        Button::new("Select folder").on_click_cont(move |_| {
             open_file(
                 FileDialogOptions::new()
                     .select_directories()
@@ -57,7 +57,7 @@ pub fn files_view() -> impl IntoView {
                 },
             );
         }),
-        button("Select multiple folder").on_click_cont(move |_| {
+        Button::new("Select multiple folder").on_click_cont(move |_| {
             open_file(
                 FileDialogOptions::new()
                     .select_directories()
@@ -71,7 +71,7 @@ pub fn files_view() -> impl IntoView {
                 },
             );
         }),
-        button("Save file").on_click_cont(move |_| {
+        Button::new("Save file").on_click_cont(move |_| {
             save_as(
                 FileDialogOptions::new()
                     .default_name("floem.file")
@@ -91,7 +91,7 @@ pub fn files_view() -> impl IntoView {
         view,
         h_stack((
             "Path(s): ".style(|s| s.font_weight(Weight::BOLD)),
-            label(move || files.get()),
+            Label::derived(move || files.get()),
         )),
     ))
     .style(|s| {

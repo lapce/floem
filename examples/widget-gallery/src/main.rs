@@ -77,7 +77,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
             #[cfg(feature = "full")]
             "Files" => files::files_view().into_any(),
             "Text Editor" => texteditor::editor_view().into_any(),
-            _ => label(|| "Not implemented".to_owned()).into_any(),
+            _ => Label::derived(|| "Not implemented".to_owned()).into_any(),
         }
         .debug_name(it.to_string())
     };
@@ -120,9 +120,9 @@ fn app_view(window_id: WindowId) -> impl IntoView {
                 .class(LabelClass, |s| s.selectable(false))
         });
 
-    let inspector = button("Open Inspector").action(floem::action::inspect);
+    let inspector = Button::new("Open Inspector").action(floem::action::inspect);
 
-    let new_window_button = button("Open In Window").action(move || {
+    let new_window_button = Button::new("Open In Window").action(move || {
         let name = tabs.with(|tabs| tabs.get(active_tab.get().unwrap_or(0)).copied());
         new_window(
             move |_| {

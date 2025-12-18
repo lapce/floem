@@ -32,7 +32,7 @@ pub fn canvas_view() -> impl IntoView {
                     );
                 })
                 .style(|s| s.size(100, 300)),
-                button("toggle")
+                Button::new("toggle")
                     .action(move || rounded.update(|s| *s = !*s))
                     .style(|s| s.height(30)),
             ))

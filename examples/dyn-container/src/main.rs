@@ -36,7 +36,7 @@ fn app_view() -> impl IntoView {
     let view = RwSignal::new(ViewSwitcher::One);
 
     v_stack((
-        button("Switch views").action(move || view.update(|which| which.toggle())),
+        Button::new("Switch views").action(move || view.update(|which| which.toggle())),
         dyn_container(move || view.get(), move |which| which.view(view))
             .style(|s| s.border(1.).border_radius(5)),
     ))
@@ -51,13 +51,13 @@ fn app_view() -> impl IntoView {
 
 fn view_one() -> impl IntoView {
     // container used to make the text clip evenly on both sides while animating
-    container("A view").style(|s| s.size(100, 100).items_center().justify_center())
+    Container::new("A view").style(|s| s.size(100, 100).items_center().justify_center())
 }
 
 fn view_two(view: RwSignal<ViewSwitcher>) -> impl IntoView {
     v_stack((
         "Another view",
-        button("Switch back").action(move || view.set(ViewSwitcher::One)),
+        Button::new("Switch back").action(move || view.set(ViewSwitcher::One)),
     ))
     .style(|s| {
         s.row_gap(10.0)

@@ -8,7 +8,7 @@ pub fn draggable_sidebar_view() -> impl IntoView {
     let side_bar = VirtualStack::with_view(
         || 0..100,
         move |item| {
-            label(move || format!("Item {item} with long lines")).style(move |s| {
+            Label::derived(move || format!("Item {item} with long lines")).style(move |s| {
                 s.text_ellipsis()
                     .height(22)
                     .padding(10.0)
@@ -29,10 +29,12 @@ pub fn draggable_sidebar_view() -> impl IntoView {
             .border_color(Color::from_rgb8(205, 205, 205))
     });
 
-    let main_window = scroll(
-        container(
-            label(move || String::from("<-- drag me!\n \n(double click to return to default)"))
-                .style(|s| s.padding(10.0)),
+    let main_window = Scroll::new(
+        Container::new(
+            Label::derived(move || {
+                String::from("<-- drag me!\n \n(double click to return to default)")
+            })
+            .style(|s| s.padding(10.0)),
         )
         .style(|s| s.flex_col().items_start().padding_bottom(10.0)),
     )

@@ -1,18 +1,17 @@
 use std::{cell::Cell, rc::Rc};
 
 use floem_reactive::{
-    batch, create_effect, create_rw_signal, Runtime, SignalGet, SignalRead, SignalTrack,
-    SignalUpdate, SignalWrite,
+    Effect, Runtime, RwSignal, SignalGet, SignalRead, SignalTrack, SignalUpdate, SignalWrite,
 };
 
 #[test]
 fn batch_simple() {
-    let name = create_rw_signal("John");
-    let age = create_rw_signal(20);
+    let name = RwSignal::new("John");
+    let age = RwSignal::new(20);
 
     let count = Rc::new(Cell::new(0));
 
-    create_effect({
+    Effect::new({
         let count = count.clone();
         move |_| {
             name.track();
@@ -35,7 +34,7 @@ fn batch_simple() {
     assert_eq!(count.get(), 3);
 
     // Batching will only update once
-    batch(|| {
+    Effect::batch(|| {
         name.set("John");
         age.set(20);
     });
@@ -45,12 +44,12 @@ fn batch_simple() {
 
 #[test]
 fn batch_batch() {
-    let name = create_rw_signal("John");
-    let age = create_rw_signal(20);
+    let name = RwSignal::new("John");
+    let age = RwSignal::new(20);
 
     let count = Rc::new(Cell::new(0));
 
-    create_effect({
+    Effect::new({
         let count = count.clone();
         move |_| {
             name.track();
@@ -63,10 +62,10 @@ fn batch_batch() {
     assert_eq!(count.get(), 1);
 
     // Batching within another batch should be equivalent to batching them all together
-    batch(|| {
+    Effect::batch(|| {
         name.set("Mary");
         age.set(21);
-        batch(|| {
+        Effect::batch(|| {
             name.set("John");
             age.set(20);
         });
@@ -78,10 +77,10 @@ fn batch_batch() {
 
 #[test]
 fn no_reentrant_runs() {
-    let state = create_rw_signal(0);
+    let state = RwSignal::new(0);
     let log = Rc::new(std::cell::RefCell::new(Vec::new()));
 
-    create_effect({
+    Effect::new({
         let log = log.clone();
         move |_| {
             let v = state.get();
@@ -106,10 +105,10 @@ fn cross_thread_write_updates_value_immediately() {
 
 #[test]
 fn pending_effects_are_deduped() {
-    let signal = create_rw_signal(0);
+    let signal = RwSignal::new(0);
     let counter = Rc::new(Cell::new(0));
 
-    create_effect({
+    Effect::new({
         let counter = counter.clone();
         move |_| {
             signal.track();
@@ -117,7 +116,7 @@ fn pending_effects_are_deduped() {
         }
     });
 
-    batch(|| {
+    Effect::batch(|| {
         signal.set(1);
         signal.set(2);
         signal.set(3);
@@ -127,8 +126,6 @@ fn pending_effects_are_deduped() {
     assert_eq!(counter.get(), 2);
 }
 
-fn assert_send_sync<T: Send + Sync>() {}
-
 #[test]
 fn signals_are_send_sync_when_value_is() {
     // no-op for local-only signals
@@ -136,10 +133,10 @@ fn signals_are_send_sync_when_value_is() {
 
 #[test]
 fn track_default_subscribes() {
-    let signal = create_rw_signal(0);
+    let signal = RwSignal::new(0);
     let runs = Rc::new(Cell::new(0));
 
-    create_effect({
+    Effect::new({
         let runs = runs.clone();
         move |_| {
             signal.track();
@@ -155,11 +152,11 @@ fn track_default_subscribes() {
 
 #[test]
 fn read_untracked_does_not_subscribe() {
-    let signal = create_rw_signal(0);
+    let signal = RwSignal::new(0);
     let tracked_runs = Rc::new(Cell::new(0));
     let untracked_runs = Rc::new(Cell::new(0));
 
-    create_effect({
+    Effect::new({
         let tracked_runs = tracked_runs.clone();
         move |_| {
             signal.get();
@@ -167,7 +164,7 @@ fn read_untracked_does_not_subscribe() {
         }
     });
 
-    create_effect({
+    Effect::new({
         let untracked_runs = untracked_runs.clone();
         move |_| {
             signal.read_untracked();
@@ -191,10 +188,10 @@ fn read_untracked_does_not_subscribe() {
 
 #[test]
 fn write_ref_drop_notifies_subscribers_once() {
-    let signal = create_rw_signal(0);
+    let signal = RwSignal::new(0);
     let runs = Rc::new(Cell::new(0));
 
-    create_effect({
+    Effect::new({
         let runs = runs.clone();
         move |_| {
             signal.get();

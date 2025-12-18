@@ -1,11 +1,11 @@
 use std::fmt::Display;
 
-use floem::views::StackExt;
+use floem::views::{Button, Label, StackExt};
 use floem::{
     peniko::color::palette,
     reactive::{RwSignal, SignalGet, SignalUpdate},
     unit::UnitExt,
-    views::{button, dyn_container, empty, text, text_input, v_stack, Decorators, RadioButton},
+    views::{dyn_container, text_input, v_stack, Decorators, RadioButton},
     IntoView,
 };
 use strum::IntoEnumIterator;
@@ -78,7 +78,7 @@ pub fn app_view() -> impl IntoView {
                 .apply_if(!return_date_is_valid(), |s| s.background(palette::css::RED))
         });
 
-    let book_button = button("Book")
+    let book_button = Button::new("Book")
         .style(move |s| {
             s.set_disabled(
                 !(dates_are_chronological() && start_date_is_valid() && return_date_is_valid()),
@@ -89,11 +89,11 @@ pub fn app_view() -> impl IntoView {
     let success_message = dyn_container(
         move || (did_booking.get(), flight_mode.get()),
         move |value| match value {
-            (true, FlightMode::OneWay) => text(oneway_message(start_text.get())).into_any(),
+            (true, FlightMode::OneWay) => Label::new(oneway_message(start_text.get())).into_any(),
             (true, FlightMode::Return) => {
-                text(return_message(start_text.get(), return_text.get())).into_any()
+                Label::new(return_message(start_text.get(), return_text.get())).into_any()
             }
-            (false, _) => empty().into_any(),
+            (false, _) => ().into_any(),
         },
     );
 

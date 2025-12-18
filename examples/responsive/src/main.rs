@@ -4,7 +4,7 @@ use floem::{
     responsive::{range, ScreenSize},
     style::TextOverflow,
     unit::UnitExt,
-    views::{h_stack, label, stack, text, Decorators},
+    views::{h_stack, stack, Decorators, Label},
     IntoView,
 };
 
@@ -13,7 +13,7 @@ fn app_view() -> impl IntoView {
 
     stack({
         (
-            label(|| "Resize the window to see the magic").style(|s| {
+            Label::derived(|| "Resize the window to see the magic").style(|s| {
                 s.border(1.0)
                     .border_radius(10.0)
                     .padding(10.0)
@@ -33,7 +33,7 @@ fn app_view() -> impl IntoView {
                         |s| s.width(300.0),
                     )
             }),
-            text(
+            Label::new(
                 "Long text that will overflow on smaller screens since the available width is less",
             )
             .on_text_overflow(move |is_overflown| {
@@ -50,16 +50,18 @@ fn app_view() -> impl IntoView {
                     .text_overflow(TextOverflow::Ellipsis)
             }),
             h_stack((
-                text("The text fits in the available width?:"),
-                label(move || if is_text_overflown.get() { "No" } else { "Yes" }.to_string())
-                    .style(move |s| {
-                        s.color(if is_text_overflown.get() {
-                            palette::css::RED
-                        } else {
-                            palette::css::GREEN
-                        })
-                        .font_bold()
-                    }),
+                Label::new("The text fits in the available width?:"),
+                Label::derived(move || {
+                    if is_text_overflown.get() { "No" } else { "Yes" }.to_string()
+                })
+                .style(move |s| {
+                    s.color(if is_text_overflown.get() {
+                        palette::css::RED
+                    } else {
+                        palette::css::GREEN
+                    })
+                    .font_bold()
+                }),
             )),
         )
     })

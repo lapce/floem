@@ -177,8 +177,7 @@ use crate::unit::{Pct, Px, PxPct, PxPctAuto, UnitExt};
 use crate::view::{IntoView, View};
 use crate::view_tuple::ViewTupleFlat;
 use crate::views::{
-    ContainerExt, Decorators, TooltipExt, canvas, empty, h_stack, label, stack, text, v_stack,
-    v_stack_from_iter,
+    ContainerExt, Decorators, Label, TooltipExt, canvas, h_stack, stack, v_stack, v_stack_from_iter,
 };
 use crate::{AnyView, easing::*};
 
@@ -249,19 +248,19 @@ impl StylePropValue for BoxShadow {
         let shadow = *self;
 
         // Shadow preview box
-        let shadow_preview = empty()
-            .style(move |s| s.width(50.0).height(50.0))
-            .container()
-            .style(move |s| {
-                s.with_theme(|s, t| {
-                    s.background(Color::TRANSPARENT)
-                        .border_color(t.border())
-                        .border(1.)
-                        .border_radius(t.border_radius())
-                })
-                .apply_box_shadows(vec![shadow])
-                .margin(10.0)
-            });
+        let shadow_preview =
+            ().style(move |s| s.width(50.0).height(50.0))
+                .container()
+                .style(move |s| {
+                    s.with_theme(|s, t| {
+                        s.background(Color::TRANSPARENT)
+                            .border_color(t.border())
+                            .border(1.)
+                            .border_radius(t.border_radius())
+                    })
+                    .apply_box_shadows(vec![shadow])
+                    .margin(10.0)
+                });
 
         // Create a details section showing the shadow properties
         let details_view = move || {
@@ -336,7 +335,7 @@ where
     fn debug_view(&self) -> Option<Box<dyn View>> {
         if self.is_empty() {
             return Some(
-                text("smallvec\n[]")
+                Label::new("smallvec\n[]")
                     .style(|s| s.with_theme(|s, t| s.color(t.text_muted())))
                     .into_any(),
             );
@@ -346,7 +345,7 @@ where
         let is_spilled = self.spilled();
 
         // Create a preview that shows count and whether it has spilled to heap
-        let preview = label(move || {
+        let preview = Label::derived(move || {
             if is_spilled {
                 format!("smallvec\n[{}] (heap)", count)
             } else {
@@ -371,11 +370,11 @@ where
 
         let tooltip_view = move || {
             v_stack_from_iter(items.iter().enumerate().map(|(i, item)| {
-                let index_label = text(format!("[{}]", i))
+                let index_label = Label::new(format!("[{}]", i))
                     .style(|s| s.with_theme(|s, t| s.color(t.text_muted())));
 
                 let item_view = item.debug_view().unwrap_or_else(|| {
-                    text(format!("{:?}", item))
+                    Label::new(format!("{:?}", item))
                         .style(|s| s.flex_grow(1.0))
                         .into_any()
                 });
@@ -466,14 +465,14 @@ impl<T: StylePropValue + 'static> StylePropValue for Vec<T> {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         if self.is_empty() {
             return Some(
-                text("[]")
+                Label::new("[]")
                     .style(|s| s.with_theme(|s, t| s.color(t.text_muted())))
                     .into_any(),
             );
         }
 
         let count = self.len();
-        let _preview = label(move || format!("[{}]", count)).style(|s| {
+        let _preview = Label::derived(move || format!("[{}]", count)).style(|s| {
             s.padding(2.0)
                 .padding_horiz(6.0)
                 .border(1.)
@@ -486,11 +485,11 @@ impl<T: StylePropValue + 'static> StylePropValue for Vec<T> {
         let items = self.clone();
         let tooltip_view = move || {
             v_stack_from_iter(items.iter().enumerate().map(|(i, item)| {
-                let index_label = text(format!("[{}]", i))
+                let index_label = Label::new(format!("[{}]", i))
                     .style(|s| s.with_theme(|s, t| s.color(t.text_muted())));
 
                 let item_view = item.debug_view().unwrap_or_else(|| {
-                    text(format!("{:?}", item))
+                    Label::new(format!("{:?}", item))
                         .style(|s| s.flex_grow(1.0))
                         .into_any()
                 });
@@ -522,7 +521,7 @@ impl<T: StylePropValue + 'static> StylePropValue for Vec<T> {
 }
 impl StylePropValue for Px {
     fn debug_view(&self) -> Option<Box<dyn View>> {
-        Some(text(format!("{} px", self.0)).into_any())
+        Some(Label::new(format!("{} px", self.0)).into_any())
     }
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         self.0.interpolate(&other.0, value).map(Px)
@@ -530,7 +529,7 @@ impl StylePropValue for Px {
 }
 impl StylePropValue for Pct {
     fn debug_view(&self) -> Option<Box<dyn View>> {
-        Some(text(format!("{}%", self.0)).into_any())
+        Some(Label::new(format!("{}%", self.0)).into_any())
     }
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         self.0.interpolate(&other.0, value).map(Pct)
@@ -543,7 +542,7 @@ impl StylePropValue for PxPctAuto {
             Self::Pct(v) => format!("{v}%"),
             Self::Auto => "auto".to_string(),
         };
-        Some(text(label).into_any())
+        Some(Label::new(label).into_any())
     }
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         match (self, other) {
@@ -561,7 +560,7 @@ impl StylePropValue for PxPct {
             Self::Px(v) => format!("{v} px"),
             Self::Pct(v) => format!("{v}%"),
         };
-        Some(text(label).into_any())
+        Some(Label::new(label).into_any())
     }
 
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
@@ -581,7 +580,7 @@ fn views(views: impl ViewTuple) -> Vec<AnyView> {
 impl StylePropValue for Color {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         let color = *self;
-        let swatch = empty()
+        let swatch = ()
             .style(move |s| {
                 s.background(color)
                     .width(22.0)
@@ -624,30 +623,30 @@ impl StylePropValue for Color {
 
             let hex = views((
                 "Hex:".style(|s| s.font_bold().min_width(80.0).justify_end()),
-                label(move || hex.clone()),
+                Label::derived(move || hex.clone()),
             ));
             let rgba = views((
                 "RGBA:".style(|s| s.font_bold().min_width(80.0).justify_end()),
-                label(move || rgba_str.clone()),
+                Label::derived(move || rgba_str.clone()),
             ));
             let components = views((
                 "Components:".style(|s| s.font_bold().min_width(80.0).justify_end()),
                 (
-                    label(move || format!("[0]: {:.3}", components[0])),
-                    label(move || format!("[1]: {:.3}", components[1])),
-                    label(move || format!("[2]: {:.3}", components[2])),
-                    label(move || format!("[3]: {:.3}", components[3])),
+                    Label::derived(move || format!("[0]: {:.3}", components[0])),
+                    Label::derived(move || format!("[1]: {:.3}", components[1])),
+                    Label::derived(move || format!("[2]: {:.3}", components[2])),
+                    Label::derived(move || format!("[3]: {:.3}", components[3])),
                 )
                     .v_stack()
                     .style(|s| s.gap(2.0)),
             ));
             let color_space = views((
                 "Color Space:".style(|s| s.font_bold().min_width(80.0).justify_end()),
-                label(move || color_space_str.clone()),
+                Label::derived(move || color_space_str.clone()),
             ));
             let alpha = views((
                 "Alpha:".style(|s| s.font_bold().min_width(80.0).justify_end()),
-                label(move || alpha_str.clone()),
+                Label::derived(move || alpha_str.clone()),
             ));
             (hex, rgba, components, color_space, alpha)
                 .flatten()
@@ -709,7 +708,7 @@ impl StylePropValue for Gradient {
             }
             _ => grad.kind,
         };
-        let color = empty().style(move |s| {
+        let color = ().style(move |s| {
             s.background(grad.clone())
                 .width(box_width)
                 .height(box_height)
@@ -724,7 +723,7 @@ impl StylePropValue for Gradient {
                 .margin_left(6.0)
         });
         Some(
-            stack((text(format!("{self:?}")), color))
+            stack((Label::new(format!("{self:?}")), color))
                 .style(|s| s.items_center())
                 .into_any(),
         )
@@ -884,34 +883,34 @@ impl StylePropValue for StrokeWrap {
 
             let width_row = views((
                 "Width:".style(|s| s.font_bold().min_width(100.0).justify_end()),
-                label(move || format!("{:.1}px", stroke.width)),
+                Label::derived(move || format!("{:.1}px", stroke.width)),
             ));
 
             let join_row = views((
                 "Join:".style(|s| s.font_bold().min_width(100.0).justify_end()),
-                label(move || format!("{:?}", stroke.join)),
+                Label::derived(move || format!("{:?}", stroke.join)),
             ));
 
             let miter_row = views((
                 "Miter Limit:".style(|s| s.font_bold().min_width(100.0).justify_end()),
-                label(move || format!("{:.2}", stroke.miter_limit)),
+                Label::derived(move || format!("{:.2}", stroke.miter_limit)),
             ));
 
             let start_cap_row = views((
                 "Start Cap:".style(|s| s.font_bold().min_width(100.0).justify_end()),
-                label(move || format!("{:?}", stroke.start_cap)),
+                Label::derived(move || format!("{:?}", stroke.start_cap)),
             ));
 
             let end_cap_row = views((
                 "End Cap:".style(|s| s.font_bold().min_width(100.0).justify_end()),
-                label(move || format!("{:?}", stroke.end_cap)),
+                Label::derived(move || format!("{:?}", stroke.end_cap)),
             ));
 
             let pattern_clone = stroke.dash_pattern.clone();
 
             let dash_pattern_row = views((
                 "Dash Pattern:".style(|s| s.font_bold().min_width(100.0).justify_end()),
-                label(move || {
+                Label::derived(move || {
                     if pattern_clone.is_empty() {
                         "Solid".to_string()
                     } else {
@@ -923,7 +922,7 @@ impl StylePropValue for StrokeWrap {
             let dash_offset_row = if !stroke.dash_pattern.is_empty() {
                 Some(views((
                     "Dash Offset:".style(|s| s.font_bold().min_width(100.0).justify_end()),
-                    label(move || format!("{:.1}", stroke.dash_offset)),
+                    Label::derived(move || format!("{:.1}", stroke.dash_offset)),
                 )))
             } else {
                 None
@@ -1174,7 +1173,7 @@ impl StylePropInfo {
                     match v {
                         StyleMapValue::Val(v) | StyleMapValue::Animated(v) => v.debug_view(),
 
-                        StyleMapValue::Unset => Some(text("Unset").into_any()),
+                        StyleMapValue::Unset => Some(Label::new("Unset").into_any()),
                     }
                 } else {
                     panic!(
@@ -1679,13 +1678,13 @@ impl Transition {
 
             let duration_row = views((
                 "Duration:".style(|s| s.font_bold().min_width(80.0).justify_end()),
-                label(move || format!("{:.0}ms", transition.duration.as_millis())),
+                Label::derived(move || format!("{:.0}ms", transition.duration.as_millis())),
             ));
 
             let easing_name = format!("{:?}", transition.easing);
             let easing_row = views((
                 "Easing:".style(|s| s.font_bold().min_width(80.0).justify_end()),
-                label(move || easing_name.clone()),
+                Label::derived(move || easing_name.clone()),
             ));
 
             // Show velocity at key points if available
@@ -1696,7 +1695,7 @@ impl Transition {
                         transition
                             .easing
                             .velocity(t)
-                            .map(|v| text(format!("t={:.2}: {:.3}", t, v)))
+                            .map(|v| Label::new(format!("t={:.2}: {:.3}", t, v)))
                     })
                     .collect::<Vec<_>>();
 

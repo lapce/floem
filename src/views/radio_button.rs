@@ -3,7 +3,7 @@ use crate::{
     style::StyleSelector,
     style_class,
     view::View,
-    views::{self, ContainerExt, Decorators, empty, h_stack},
+    views::{self, ContainerExt, Decorators, h_stack},
 };
 use floem_reactive::{SignalGet, SignalUpdate};
 
@@ -18,8 +18,7 @@ fn radio_button_svg<T>(represented_value: T, actual_value: impl SignalGet<T> + '
 where
     T: Eq + PartialEq + Clone + 'static,
 {
-    empty()
-        .class(RadioButtonDotClass)
+    ().class(RadioButtonDotClass)
         .style(move |s| {
             s.apply_if(actual_value.get() != represented_value, |s| {
                 s.display(taffy::style::Display::None)
@@ -120,7 +119,7 @@ impl RadioButton {
         value_container(
             h_stack((
                 radio_button_svg(represented_value.clone(), inbound_signal.read_only()),
-                views::label(label),
+                views::Label::derived(label),
             ))
             .class(LabeledRadioButtonClass)
             .style(move |s| {
@@ -152,7 +151,7 @@ impl RadioButton {
         let clone = represented_value.clone();
         h_stack((
             radio_button_svg(represented_value, actual_value),
-            views::label(label),
+            views::Label::derived(label),
         ))
         .class(LabeledRadioButtonClass)
         .style(move |s| {
@@ -179,7 +178,7 @@ impl RadioButton {
 
         h_stack((
             radio_button_svg(cloneable_represented_value.clone(), actual_value),
-            views::label(label),
+            views::Label::derived(label),
         ))
         .class(LabeledRadioButtonClass)
         .style(move |s| {

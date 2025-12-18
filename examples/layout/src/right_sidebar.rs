@@ -13,15 +13,15 @@ pub fn right_sidebar_view() -> impl IntoView {
     let long_list: imbl::Vector<i32> = (0..100).collect();
     let long_list = RwSignal::new(long_list);
 
-    let top_bar = label(|| String::from("Top bar"))
+    let top_bar = Label::derived(|| String::from("Top bar"))
         .style(|s| s.padding(10.0).width_full().height(TOPBAR_HEIGHT));
 
-    let side_bar = scroll({
+    let side_bar = Scroll::new({
         virtual_stack(
             move || long_list.get(),
             move |item| *item,
             move |item| {
-                label(move || item.to_string()).style(move |s| {
+                Label::derived(move || item.to_string()).style(move |s| {
                     s.padding(10.0)
                         .padding_top(3.0)
                         .padding_bottom(3.0)
@@ -42,9 +42,11 @@ pub fn right_sidebar_view() -> impl IntoView {
             .border_color(Color::from_rgb8(205, 205, 205))
     });
 
-    let main_window = scroll(
-        container(label(move || String::from("Hello world")).style(|s| s.padding(10.0)))
-            .style(|s| s.flex_col().items_start().padding_bottom(10.0)),
+    let main_window = Scroll::new(
+        Container::new(
+            Label::derived(move || String::from("Hello world")).style(|s| s.padding(10.0)),
+        )
+        .style(|s| s.flex_col().items_start().padding_bottom(10.0)),
     )
     .style(|s| {
         s.flex_col()

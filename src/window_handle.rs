@@ -32,7 +32,7 @@ use crate::reactive::SignalWith;
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use crate::unit::UnitExt;
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-use crate::views::{Decorators, container, stack};
+use crate::views::{Container, Decorators, Label, stack};
 use crate::{
     Application,
     app::UserEvent,
@@ -127,7 +127,7 @@ impl WindowHandle {
             (
                 main_view_id,
                 stack((
-                    container(main_view).style(|s| s.size(100.pct(), 100.pct())),
+                    Container::new(main_view).style(|s| s.size(100.pct(), 100.pct())),
                     context_menu_view(scope, context_menu, size),
                 ))
                 .style(|s| s.size(100.pct(), 100.pct()))
@@ -1326,7 +1326,7 @@ fn context_menu_view(
 
     use crate::{
         app::{AppUpdateEvent, add_app_update_event},
-        views::{dyn_stack, empty, svg, text},
+        views::{dyn_stack, svg},
     };
 
     #[derive(Clone, PartialEq, Eq, Hash)]
@@ -1435,10 +1435,10 @@ fn context_menu_view(
                 let on_child_submenu = RwSignal::new(false);
                 let has_submenu = children.is_some();
                 let submenu_svg = r#"<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M10.072 8.024L5.715 3.667l.618-.62L11 7.716v.618L6.333 13l-.618-.619 4.357-4.357z"/></svg>"#;
-                container(
+                Container::new(
                     stack((
                         stack((
-                            text(title).style(|s| s.selectable(false)),
+                            Label::new(title).style(|s| s.selectable(false)),
                             svg(submenu_svg).style(move |s| {
                                 s.size(20.0, 20.0)
                                     .color(Color::from_rgb8(201, 201, 201))
@@ -1550,7 +1550,7 @@ fn context_menu_view(
                 .into_any()
             }
 
-            MenuDisplay::Separator(_) => container(empty().style(|s| {
+            MenuDisplay::Separator(_) => Container::new(().style(|s| {
                 s.width(100.pct())
                     .height(1.0)
                     .margin_vert(5.0)

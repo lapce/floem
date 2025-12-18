@@ -5,8 +5,8 @@ use crate::theme::StyleThemeExt;
 use crate::unit::UnitExt;
 use crate::view::IntoView;
 use crate::views::{
-    ContainerExt, Decorators, button, clip, container, dyn_container, empty, h_stack, label,
-    scroll, stack, static_label, text, v_stack, v_stack_from_iter,
+    Button, Clip, Container, ContainerExt, Decorators, Label, Scroll, dyn_container, h_stack,
+    stack, v_stack, v_stack_from_iter,
 };
 use floem_reactive::{RwSignal, Scope, SignalGet, SignalUpdate};
 use std::fmt::Display;
@@ -53,12 +53,12 @@ struct ProfileFrameData {
 }
 
 fn info(name: impl Display, value: String) -> impl IntoView {
-    info_row(name.to_string(), static_label(value))
+    info_row(name.to_string(), Label::new(value))
 }
 
 fn info_row(name: String, view: impl IntoView + 'static) -> impl IntoView {
     stack((
-        static_label(name)
+        Label::new(name)
             .style(|s| {
                 s.margin_right(5.0)
                     .with_theme(|s, t| s.color(t.text_muted()))
@@ -109,8 +109,8 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
             let frame = frame.clone();
             let frame_ = frame.clone();
             h_stack((
-                static_label(format!("Frame #{i}")).style(|s| s.flex_grow(1.0)),
-                static_label(format!("{:.4} ms", frame.sum.as_secs_f64() * 1000.0))
+                Label::new(format!("Frame #{i}")).style(|s| s.flex_grow(1.0)),
+                Label::new(format!("{:.4} ms", frame.sum.as_secs_f64() * 1000.0))
                     .style(|s| s.margin_right(16)),
             ))
             .on_click_stop(move |_| {
@@ -151,7 +151,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
                 .style(|s| s.width_full())
                 .into_any()
             } else {
-                text("No hovered event")
+                Label::new("No hovered event")
                     .style(|s| s.padding(5.0).width_full())
                     .into_any()
             }
@@ -161,7 +161,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
 
     let frames = v_stack((
         header("Frames"),
-        scroll(v_stack_from_iter(frames).style(|s| s.width_full()))
+        Scroll::new(v_stack_from_iter(frames).style(|s| s.width_full()))
             .style(|s| {
                 s.flex_basis(0)
                     .min_height(0)
@@ -180,7 +180,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
     ))
     .style(|s| s.width(230.0));
 
-    let separator = empty().style(move |s| {
+    let separator = ().style(move |s| {
         s.height_full()
             .min_width(1.0)
             .with_theme(|s, t| s.background(t.border()))
@@ -202,14 +202,12 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
                         / frame.duration.as_secs_f64();
                     let width = len / frame.duration.as_secs_f64();
                     let event_ = event.clone();
-                    clip(
-                        static_label(format!("{} ({:.4} ms)", event.name, len * 1000.0)).style(
-                            |s| {
-                                s.selectable(false)
-                                    .padding(5.0)
-                                    .align_self(AlignItems::Center)
-                            },
-                        ),
+                    Clip::new(
+                        Label::new(format!("{} ({:.4} ms)", event.name, len * 1000.0)).style(|s| {
+                            s.selectable(false)
+                                .padding(5.0)
+                                .align_self(AlignItems::Center)
+                        }),
                     )
                     .style(move |s| {
                         s.min_width(0)
@@ -230,7 +228,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
                         hovered_event.set(Some(event_.clone()))
                     })
                 });
-                scroll(
+                Scroll::new(
                     v_stack_from_iter(list)
                         .style(move |s| s.min_width_pct(zoom.get() * 100.0).height_full()),
                 )
@@ -250,7 +248,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
                 })
                 .into_any()
             } else {
-                text("No selected frame")
+                Label::new("No selected frame")
                     .style(|s| s.padding(5.0))
                     .into_any()
             }
@@ -281,7 +279,7 @@ pub fn profiler(window_id: WindowId) -> impl IntoView {
     let profile = PROFILE.with(|c| *c);
 
     let button = h_stack((
-        button(label(move || {
+        Button::new(Label::derived(move || {
             if profiling.get() {
                 "Stop Profiling"
             } else {
@@ -300,11 +298,11 @@ pub fn profiler(window_id: WindowId) -> impl IntoView {
             profiling.set(!profiling.get());
         })
         .style(|s| s.margin(5.0)),
-        label(move || if profiling.get() { "Profiling..." } else { "" }),
+        Label::derived(move || if profiling.get() { "Profiling..." } else { "" }),
     ))
     .style(|s| s.items_center());
 
-    let separator = empty().style(move |s| {
+    let separator = ().style(move |s| {
         s.width_full()
             .min_height(1.0)
             .with_theme(|s, t| s.background(t.border()))
@@ -316,14 +314,16 @@ pub fn profiler(window_id: WindowId) -> impl IntoView {
             if let Some(profile) = profile {
                 profile_view(&profile).into_any()
             } else {
-                text("No profile").style(|s| s.padding(5.0)).into_any()
+                Label::new("No profile")
+                    .style(|s| s.padding(5.0))
+                    .into_any()
             }
         },
     )
     .style(|s| s.width_full().min_height(0).flex_basis(0).flex_grow(1.0));
 
     // FIXME: This needs an extra `container` or the `v_stack` ends up horizontal.
-    container(v_stack((button, separator, lower)).style(|s| s.size_full()))
+    Container::new(v_stack((button, separator, lower)).style(|s| s.size_full()))
         .style(|s| s.size_full())
         .on_event_cont(EventListener::WindowClosed, move |_| {
             if profiling.get() {

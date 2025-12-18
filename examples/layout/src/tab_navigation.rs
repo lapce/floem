@@ -28,7 +28,7 @@ fn tab_button(
     tabs: RwSignal<imbl::Vector<Tab>>,
     active_tab: RwSignal<usize>,
 ) -> impl IntoView {
-    text(this_tab)
+    Label::new(this_tab)
         .button() // by making this a button, the button class from the default theme will be applied and the focusable property will be set
         .action(move || {
             active_tab.update(|v: &mut usize| {
@@ -79,13 +79,13 @@ pub fn tab_navigation_view() -> impl IntoView {
             .border_color(Color::from_rgb8(205, 205, 205))
     });
 
-    let main_content = container(
-        scroll(
+    let main_content = Container::new(
+        Scroll::new(
             tab(
                 move || Some(active_tab.get()),
                 move || tabs.get(),
                 |it| *it,
-                |it| container(label(move || format!("{it}"))),
+                |it| Container::new(Label::derived(move || format!("{it}"))),
             )
             .style(|s| s.padding(CONTENT_PADDING).padding_bottom(10.0)),
         )

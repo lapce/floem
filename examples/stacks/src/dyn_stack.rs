@@ -7,7 +7,7 @@ pub fn dyn_stack_view() -> impl IntoView {
     let long_list: imbl::Vector<i32> = (0..10).collect();
     let long_list = RwSignal::new(long_list);
 
-    let button = button("Add an item")
+    let button = Button::new("Add an item")
         .action(move || long_list.update(|list| list.push_back(list.len() as i32 + 1)));
 
     let stack = dyn_stack(

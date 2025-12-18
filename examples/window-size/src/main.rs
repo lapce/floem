@@ -9,7 +9,7 @@ use floem::{
 fn app_view() -> impl IntoView {
     let size = RwSignal::new(Size::default());
 
-    let view = label(move || format!("{}", size.get()))
+    let view = Label::derived(move || format!("{}", size.get()))
         .style(|s| s.font_size(30.0))
         .container()
         .style(|s| {

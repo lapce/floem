@@ -11,9 +11,9 @@ use std::path::Path;
 
 fn sub_window_view(id: WindowId) -> impl IntoView {
     v_stack((
-        label(move || String::from("This window has an icon from an SVG file."))
+        Label::derived(move || String::from("This window has an icon from an SVG file."))
             .style(|s| s.font_size(30.0)),
-        button("Close this window").action(move || close_window(id)),
+        Button::new("Close this window").action(move || close_window(id)),
     ))
     .style(|s| {
         s.flex_col()
@@ -27,9 +27,9 @@ fn sub_window_view(id: WindowId) -> impl IntoView {
 
 fn app_view() -> impl IntoView {
     let view = v_stack((
-        label(move || String::from("This window has an icon from a PNG file"))
+        Label::derived(move || String::from("This window has an icon from a PNG file"))
             .style(|s| s.font_size(30.0)),
-        button("Open another window").action(|| {
+        Button::new("Open another window").action(|| {
             let svg_icon = load_svg_icon(include_str!("../assets/ferris.svg"));
             new_window(
                 sub_window_view,

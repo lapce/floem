@@ -18,7 +18,6 @@ use crate::{
     style::{CursorColor, StylePropValue, TextColor},
     text::{Attrs, AttrsList, LineHeightValue, TextLayout, Wrap},
     view::{IntoView, View},
-    views::text,
 };
 use floem_editor_core::{
     buffer::rope_text::{RopeText, RopeTextVal},
@@ -66,10 +65,12 @@ use self::{
     },
 };
 
+use super::Label;
+
 prop!(pub WrapProp: WrapMethod {} = WrapMethod::EditorWidth);
 impl StylePropValue for WrapMethod {
     fn debug_view(&self) -> Option<Box<dyn View>> {
-        Some(crate::views::text(self).into_any())
+        Some(crate::views::Label::new(self).into_any())
     }
 }
 prop!(pub CursorSurroundingLines: usize {} = 1);
@@ -84,13 +85,13 @@ prop!(pub PreeditUnderlineColor: Color {} = palette::css::WHITE);
 prop!(pub RenderWhitespaceProp: RenderWhitespace {} = RenderWhitespace::None);
 impl StylePropValue for RenderWhitespace {
     fn debug_view(&self) -> Option<Box<dyn View>> {
-        Some(crate::views::text(self).into_any())
+        Some(crate::views::Label::new(self).into_any())
     }
 }
 prop!(pub IndentStyleProp: IndentStyle {} = IndentStyle::Spaces(4));
 impl StylePropValue for IndentStyle {
     fn debug_view(&self) -> Option<Box<dyn View>> {
-        Some(text(self).into_any())
+        Some(Label::new(self).into_any())
     }
 }
 prop!(pub DropdownShadow: Option<Color> {} = None);

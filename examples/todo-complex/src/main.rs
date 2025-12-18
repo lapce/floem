@@ -31,7 +31,7 @@ fn app_view() -> impl IntoView {
         .style(|s| s.padding(10).padding_right(14))
         .scroll_style(|s| s.shrink_to_fit().handle_thickness(8));
 
-    let new_button = button("New To-Do")
+    let new_button = Button::new("New To-Do")
         .action(|| AppCommand::NewTodo.execute())
         .style(|s| s.margin_horiz(10));
 

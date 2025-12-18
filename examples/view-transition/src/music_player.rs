@@ -1,14 +1,13 @@
 use floem::{
     animate::Animation,
-    peniko::color::palette,
-    peniko::{Brush, Color},
+    peniko::{color::palette, Brush, Color},
     reactive::{RwSignal, SignalGet, SignalUpdate},
     style::{ScaleX, ScaleY, Style, Transition},
     text::Weight,
     unit::{DurationUnitExt, UnitExt},
     views::{
-        container, dyn_container, empty, h_stack, slider, svg, v_stack, ButtonClass, Decorators,
-        Stack, SvgClass,
+        dyn_container, h_stack, slider, svg, v_stack, ButtonClass, Container, Decorators, Stack,
+        SvgClass,
     },
     AnyView, IntoView,
 };
@@ -49,7 +48,7 @@ impl IntoView for SongInfo {
         .style(|s| s.gap(5.));
 
         h_stack((
-            empty().style(|s| s.size(50, 50).border_radius(8).background(ICON)),
+            ().style(|s| s.size(50, 50).border_radius(8).background(ICON)),
             song_artist,
         ))
         .style(|s| s.gap(10).items_center())
@@ -88,15 +87,15 @@ pub fn music_player() -> impl IntoView {
 
     let play_pause_state = RwSignal::new(PlayPause::Play);
 
-    let play_pause_button = container(
+    let play_pause_button = Container::new(
         dyn_container(move || play_pause_state.get(), PlayPause::view).class(ButtonClass),
     )
     .on_click_stop(move |_| play_pause_state.update(PlayPause::toggle));
 
     let media_buttons = h_stack((
-        container(svg(svg::BACKWARD)).class(ButtonClass),
+        Container::new(svg(svg::BACKWARD)).class(ButtonClass),
         play_pause_button,
-        container(svg(svg::FORWARD)).class(ButtonClass),
+        Container::new(svg(svg::FORWARD)).class(ButtonClass),
     ))
     .style(|s| {
         s.align_self(Some(floem::taffy::AlignItems::Center))
@@ -144,7 +143,7 @@ pub fn music_player() -> impl IntoView {
             })
     };
 
-    container(card).style(move |s| {
+    Container::new(card).style(move |s| {
         s.size(300, 175)
             .items_center()
             .justify_center()

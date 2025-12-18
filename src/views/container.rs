@@ -5,20 +5,37 @@ use crate::{
     view::{IntoView, View},
 };
 
-/// A simple wrapper around another View. See [`container`].
+/// A simple wrapper around another View.
+///
+/// Wrapping a [View](crate::view::View) with a [`Container`] allows using another
+/// set of styles completely separate from the child View that is being wrapped.
 pub struct Container {
     id: ViewId,
+}
+
+impl Container {
+    /// Creates a new container wrapping the given child view.
+    ///
+    /// ## Example
+    /// ```rust
+    /// use floem::views::{Container, Label};
+    ///
+    /// let wrapped = Container::new(Label::new("Content"));
+    /// ```
+    pub fn new(child: impl IntoView) -> Self {
+        let id = ViewId::new();
+        id.set_children([child.into_view()]);
+        Container { id }
+    }
 }
 
 /// A simple wrapper around another View
 ///
 /// Wrapping a [View](crate::view::View) with a [`Container`] allows using another
 /// set of styles completely separate from the child View that is being wrapped.
+#[deprecated(since = "0.2.0", note = "Use Container::new() instead")]
 pub fn container<V: IntoView + 'static>(child: V) -> Container {
-    let id = ViewId::new();
-    id.set_children([child.into_view()]);
-
-    Container { id }
+    Container::new(child)
 }
 
 impl View for Container {
@@ -39,6 +56,6 @@ pub trait ContainerExt {
 
 impl<T: IntoView + 'static> ContainerExt for T {
     fn container(self) -> Container {
-        container(self)
+        Container::new(self)
     }
 }

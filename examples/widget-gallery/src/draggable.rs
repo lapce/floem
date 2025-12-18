@@ -22,7 +22,7 @@ fn sortable_item(
     ];
 
     (
-        label(move || format!("Selectable item {name}"))
+        Label::derived(move || format!("Selectable item {name}"))
             .style(|s| s.padding(5).width_full())
             .on_event_stop(
                 floem::event::EventListener::PointerDown,

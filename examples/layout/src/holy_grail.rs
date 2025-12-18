@@ -5,13 +5,13 @@ const TOPBAR_HEIGHT: f64 = 30.0;
 const SIDEBAR_ITEM_HEIGHT: f64 = 21.0;
 
 pub fn holy_grail_view() -> impl IntoView {
-    let top_bar = label(|| String::from("Top bar"))
-        .style(|s| s.padding(10.0).width_full().height(TOPBAR_HEIGHT));
+    let top_bar =
+        Label::new("Top bar").style(|s| s.padding(10.0).width_full().height(TOPBAR_HEIGHT));
 
     let side_bar_right = VirtualStack::with_view(
         || 0..100,
         |item| {
-            label(move || item.to_string()).style(move |s| {
+            Label::derived(move || item.to_string()).style(move |s| {
                 s.padding(10.0)
                     .padding_top(3.0)
                     .padding_bottom(3.0)
@@ -35,7 +35,7 @@ pub fn holy_grail_view() -> impl IntoView {
     let side_bar_left = VirtualStack::with_view(
         || 0..100,
         move |item| {
-            label(move || item.to_string()).style(move |s| {
+            Label::derived(move || item.to_string()).style(move |s| {
                 s.padding(10.0)
                     .padding_top(3.0)
                     .padding_bottom(3.0)
