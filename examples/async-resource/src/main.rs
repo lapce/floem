@@ -212,7 +212,7 @@ fn user_display(user_resource: Resource<Option<UserResult>>) -> impl IntoView {
                             .style(|s| s.font_size(16.0).color(css::GRAY))
                             .into_any()
                     })
-                    .unwrap_or_else(|| empty().into_any());
+                    .unwrap_or_else(|| ().into_any());
 
                 let name_section = (login, username)
                     .v_stack()
@@ -230,7 +230,7 @@ fn user_display(user_resource: Resource<Option<UserResult>>) -> impl IntoView {
                             .style(|s| s.font_size(14.0).margin_bottom(15.0).line_height(1.4))
                             .into_any()
                     })
-                    .unwrap_or_else(|| empty().into_any());
+                    .unwrap_or_else(|| ().into_any());
 
                 let stats = (
                     stat_item("Repos", user.public_repos),
@@ -241,7 +241,7 @@ fn user_display(user_resource: Resource<Option<UserResult>>) -> impl IntoView {
                     .style(|s| s.col_gap(20.0).justify_center());
 
                 let open_url = user.html_url.clone();
-                let profile_link = button(format!("View on GitHub: {}", user.html_url))
+                let profile_link = Button::new(format!("View on GitHub: {}", user.html_url))
                     .style(|s| {
                         s.font_size(12.0)
                             .color(css::BLUE)
@@ -373,7 +373,7 @@ fn app_view() -> impl IntoView {
                     .style(|s| s.color(css::BLUE).font_size(14.0).margin_bottom(10.0))
                     .into_any()
             } else {
-                empty().into_any()
+                ().into_any()
             }
         },
     );
@@ -393,12 +393,12 @@ fn app_view() -> impl IntoView {
                     .style(|s| s.color(css::RED).font_size(14.0).margin_bottom(10.0))
                     .into_any()
             } else {
-                empty().into_any()
+                ().into_any()
             }
         },
     );
 
-    let refresh_button = button("Refresh")
+    let refresh_button = Button::new("Refresh")
         .action(move || user_resource.refetch())
         .style(|s| {
             s.padding_vert(6.0)

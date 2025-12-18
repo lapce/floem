@@ -139,7 +139,7 @@ impl Checkbox {
                     let checked = inbound_signal.get_untracked();
                     outbound_signal.set(!checked);
                 }),
-                views::label(label),
+                views::Label::derived(label),
             ))
             .class(LabeledCheckboxClass)
             .on_click_stop(move |_| {
@@ -175,7 +175,7 @@ impl Checkbox {
             checkbox_svg(checked, custom_check).on_click_stop(move |_| {
                 checked.update(|val| *val = !*val);
             }),
-            views::label(label),
+            views::Label::derived(label),
         ))
         .on_click_stop(move |_| {
             checked.update(|val| *val = !*val);

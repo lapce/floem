@@ -4,7 +4,7 @@ use floem::{
     kurbo::{self, Rect},
     reactive::{RwSignal, SignalGet, SignalUpdate, UpdaterEffect},
     unit::Pct,
-    views::{Decorators, clip},
+    views::{Clip, Decorators},
 };
 
 /// Transform a child view without changing its layout.
@@ -40,7 +40,7 @@ pub fn transform_view<V: IntoView + 'static>(
 
     // Wrapping child in a container. In case child has margins, this ensures we get the proper dimensions
     // to calculate the correct transformation.
-    let child = clip(child);
+    let child = Clip::new(child);
     let child_center = RwSignal::new(
         child
             .id()

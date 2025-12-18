@@ -13,7 +13,7 @@ use crate::theme::StyleThemeExt as _;
 use crate::view::{IntoView, View};
 use crate::view_state::ChangeFlags;
 use crate::views::{
-    ContainerExt, Decorators, Label, ScrollExt, dyn_container, empty, stack, static_label, text,
+    ContainerExt, Decorators, Label, ScrollExt, dyn_container,  stack, 
     v_stack, v_stack_from_iter,
 };
 use crate::window_state::WindowState;
@@ -228,7 +228,7 @@ fn add_event<T: View + 'static>(
 }
 
 pub(crate) fn header(label: impl Display) -> Label {
-    text(label).style(|s| {
+    Label::new(label).style(|s| {
         s.padding(5.0)
             .width_full()
             .height(27.0)
@@ -430,7 +430,7 @@ fn selected_view(
                 |(idx, ((prop, name), value))| {
                     let name = name.strip_prefix("floem::style::").unwrap_or(&name);
                     let name = if direct.contains(&prop.key) {
-                        text(name).into_any()
+                        Label::new(name).into_any()
                     } else {
                         stack((
                             "Inherited".style(|s| {
@@ -443,13 +443,13 @@ fn selected_view(
                                         s.color(t.text_muted()).padding(t.padding() / 2.)
                                     })
                             }),
-                            text(name),
+                            Label::new(name),
                         ))
                         .style(|s| s.items_center().justify_center())
                         .into_any()
                     };
                     let mut v = (prop.info().debug_view)(&*value).unwrap_or_else(|| {
-                        static_label((prop.info().debug_any)(&*value)).into_any()
+                        Label::new((prop.info().debug_any)(&*value)).into_any()
                     });
                     if let Some(transition) = style
                         .map
@@ -539,7 +539,7 @@ fn selected_view(
 
                         let class_name = format!("{:?}", class_ref.key);
 
-                        let class_header = text(&class_name)
+                        let class_header = Label::new(&class_name)
                             .style(|s| s.font_bold().with_theme(|s, t| s.color(t.text())));
 
                         if let Some((class_style, _changed)) = class_style {
@@ -600,7 +600,7 @@ fn selected_view(
                                 "empty".to_string()
                             };
 
-                            let count_badge = text(total_text).style(|s| {
+                            let count_badge = Label::new(total_text).style(|s| {
                                 s.padding(2.0)
                                     .padding_horiz(6.0)
                                     .border(1.)
@@ -624,7 +624,7 @@ fn selected_view(
                                                 .unwrap_or(&name);
                                             let mut v = (prop.info().debug_view)(&*value)
                                                 .unwrap_or_else(|| {
-                                                    static_label((prop.info().debug_any)(&*value))
+                                                    Label::new((prop.info().debug_any)(&*value))
                                                         .into_any()
                                                 });
 
@@ -655,7 +655,7 @@ fn selected_view(
                                             }
 
                                             stack((
-                                                text(name)
+                                                Label::new(name)
                                                     .style(|s| {
                                                         s.margin_right(5.0).with_theme(|s, t| {
                                                             s.color(t.text_muted())
@@ -706,7 +706,7 @@ fn selected_view(
 
                                             nested_props.sort_unstable_by(|a, b| a.0.1.cmp(&b.0.1));
 
-                                            let selector_header = text(selector_name).style(|s| {
+                                            let selector_header = Label::new(selector_name).style(|s| {
                                                 s.font_bold()
                                                     .with_theme(|s, t| s.color(t.text()))
                                                     .with_context_opt::<FontSize, _>(|s, fs| {
@@ -714,7 +714,7 @@ fn selected_view(
                                                 })
                                             });
 
-                                            let nested_count = text(format!(
+                                            let nested_count = Label::new(format!(
                                                 "{} {}",
                                                 nested_props.len(),
                                                 if nested_props.len() == 1 {
@@ -753,7 +753,7 @@ fn selected_view(
                                                             .unwrap_or(&name);
                                                         let v = (prop.info().debug_view)(&*value)
                                                             .unwrap_or_else(|| {
-                                                                static_label((prop
+                                                                Label::new((prop
                                                                     .info()
                                                                     .debug_any)(
                                                                     &*value
@@ -762,7 +762,7 @@ fn selected_view(
                                                             });
 
                                                         stack((
-                                                            text(name)
+                                                            Label::new(name)
                                                                 .style(|s| {
                                                                     s.margin_right(5.0).with_theme(
                                                                         |s, t| {
@@ -805,7 +805,7 @@ fn selected_view(
                                     .into_any(),
                                 (Some(props), None) => props.into_any(),
                                 (None, Some(selectors)) => selectors.into_any(),
-                                (None, None) => empty().into_any(),
+                                (None, None) => ().into_any(),
                             };
 
                             v_stack((header_row, content)).style(move |s| {
@@ -823,7 +823,7 @@ fn selected_view(
                         } else {
                             stack((
                                 class_header,
-                                text("(no properties)").style(|s| {
+                                Label::new("(no properties)").style(|s| {
                                     s.margin_left(8.0)
                                         .with_theme(|s, t| s.color(t.text_muted()))
                                         .with_context_opt::<FontSize, _>(|s, fs| {
@@ -860,7 +860,7 @@ fn selected_view(
             .style(|s| s.width_full())
             .into_any()
         } else {
-            text("No selection").style(|s| s.padding(5.0)).into_any()
+            Label::new("No selection").style(|s| s.padding(5.0)).into_any()
         }
     };
 

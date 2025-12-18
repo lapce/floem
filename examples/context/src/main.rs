@@ -2,13 +2,13 @@ use floem::{
     peniko::{color::palette, Color},
     reactive::{provide_context, use_context},
     ui_events::keyboard::{Key, NamedKey},
-    views::{empty, label, v_stack, Decorators},
+    views::{v_stack, Decorators, Empty, Label},
     IntoView, View,
 };
 
 fn colored_label(text: String) -> impl IntoView {
     let color: Color = use_context().unwrap();
-    label(move || text.clone()).style(move |s| s.color(color))
+    Label::derived(move || text.clone()).style(move |s| s.color(color))
 }
 
 fn context_container<V: IntoView + 'static>(
@@ -37,7 +37,11 @@ fn app_view() -> impl IntoView {
             String::from("Nested context 1"),
             || {
                 context_container(palette::css::BLUE, String::from("Nested context 2"), || {
-                    context_container(palette::css::GREEN, String::from("Nested context 3"), empty)
+                    context_container(
+                        palette::css::GREEN,
+                        String::from("Nested context 3"),
+                        Empty::new,
+                    )
                 })
             },
         ),

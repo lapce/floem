@@ -3,7 +3,7 @@ use floem::{
     file::{FileDialogOptions, FileInfo, FileSpec},
     reactive::{RwSignal, SignalGet, SignalUpdate},
     text::Weight,
-    views::{button, h_stack, v_stack, Button, Decorators, Label},
+    views::{h_stack, v_stack, Button, Decorators, Label},
     IntoView,
 };
 

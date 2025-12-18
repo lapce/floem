@@ -3,7 +3,7 @@ use std::ops::Range;
 use floem::{
     peniko::color::palette,
     text::{Attrs, AttrsList, Style, TextLayout},
-    views::{rich_text, scroll, v_stack, Decorators, RichTextExt, Scroll},
+    views::{rich_text, v_stack, Decorators, RichTextExt, Scroll},
     IntoView,
 };
 

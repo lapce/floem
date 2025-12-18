@@ -44,7 +44,7 @@ fn app_view() -> impl IntoView {
         |val| *val,
     );
 
-    let elapsed_time_label = label(move || {
+    let elapsed_time_label = Label::derived(move || {
         format!(
             "{:.1}s",
             if is_active() {
@@ -63,7 +63,7 @@ fn app_view() -> impl IntoView {
         .h_stack()
         .style(|s| s.justify_between());
 
-    let reset_button = button("Reset").action(move || started_at.set(Instant::now()));
+    let reset_button = Button::new("Reset").action(move || started_at.set(Instant::now()));
 
     v_stack((
         el_label_bar,

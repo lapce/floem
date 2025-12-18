@@ -165,7 +165,7 @@ mod tests {
         });
 
         assert_eq!(run_count.get(), 1);
-        let inner_signal = created_signal.borrow().clone().expect("signal created");
+        let inner_signal = created_signal.borrow().expect("signal created");
         assert!(inner_signal.id().signal().is_some());
 
         // Dispose the dependency scope; the effect should be disposed and clean up its children.

@@ -3,7 +3,6 @@ use floem::{
     ui_events::keyboard::{Key, NamedKey},
     unit::UnitExt,
     views::{
-        button,
         editor::{
             command::{Command, CommandExecuted},
             core::{
@@ -12,7 +11,7 @@ use floem::{
             },
             text::{default_dark_color, SimpleStyling},
         },
-        stack, text_editor, Decorators,
+        stack, text_editor, Button, Decorators,
     },
     IntoView, View,
 };
@@ -53,14 +52,14 @@ pub fn editor_view() -> impl IntoView {
         editor_a,
         editor_b,
         stack((
-            button("Clear").action(move || {
+            Button::new("Clear").action(move || {
                 doc.edit_single(
                     Selection::region(0, doc.text().len(), CursorAffinity::Backward),
                     "",
                     EditType::DeleteSelection,
                 );
             }),
-            button("Flip Gutter").action(move || {
+            Button::new("Flip Gutter").action(move || {
                 hide_gutter_a.update(|hide| *hide = !*hide);
             }),
         ))

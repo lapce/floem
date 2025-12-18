@@ -83,12 +83,12 @@ pub fn tab_view() -> impl IntoView {
 
     v_stack((
         h_stack((
-            button("add tab").action(move || {
+            Button::new("add tab").action(move || {
                 tab_action.update(|a| {
                     *a = Action::Add;
                 })
             }),
-            button("remove tab").action(move || {
+            Button::new("remove tab").action(move || {
                 tab_action.update(|a| {
                     *a = Action::Remove;
                 })
@@ -118,7 +118,7 @@ pub fn tab_view() -> impl IntoView {
 fn show_tab_content(tab: TabContent) -> impl IntoView {
     v_stack((
         tab.name.style(|s| s.font_size(15.).font_bold()),
-        label(move || format!("{}", tab.idx)).style(|s| s.font_size(20.).font_bold()),
+        Label::derived(move || format!("{}", tab.idx)).style(|s| s.font_size(20.).font_bold()),
         "is now active".style(|s| s.font_size(13.)),
     ))
     .style(|s| {
@@ -158,7 +158,7 @@ fn show_tab_content(tab: TabContent) -> impl IntoView {
 }
 
 fn tab_side_item(tab: TabContent, act_tab: RwSignal<Option<usize>>) -> impl IntoView {
-    text(format!("{} {}", tab.name, tab.idx))
+    Label::new(format!("{} {}", tab.name, tab.idx))
         .button()
         .style(move |s| {
             s.width_full()

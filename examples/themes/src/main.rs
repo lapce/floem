@@ -8,6 +8,7 @@ use floem::{
     },
     style_class,
     unit::DurationUnitExt,
+    views,
 };
 
 style_class!(pub Button);
@@ -104,7 +105,7 @@ fn app_view() -> impl IntoView {
             }
         }),
         stack((
-            label(move || format!("Value: {}", counter.get())).class(Label),
+            views::Label::derived(move || format!("Value: {}", counter.get())).class(Label),
             "Increment".class(Button).on_click_stop({
                 move |_| {
                     counter.update(|value| *value += 1);

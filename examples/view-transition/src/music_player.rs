@@ -6,8 +6,8 @@ use floem::{
     text::Weight,
     unit::{DurationUnitExt, UnitExt},
     views::{
-        dyn_container, empty, h_stack, slider, svg, v_stack, ButtonClass, Container, Decorators,
-        Stack, SvgClass,
+        dyn_container, h_stack, slider, svg, v_stack, ButtonClass, Container, Decorators, Stack,
+        SvgClass,
     },
     AnyView, IntoView,
 };
@@ -48,7 +48,7 @@ impl IntoView for SongInfo {
         .style(|s| s.gap(5.));
 
         h_stack((
-            empty().style(|s| s.size(50, 50).border_radius(8).background(ICON)),
+            ().style(|s| s.size(50, 50).border_radius(8).background(ICON)),
             song_artist,
         ))
         .style(|s| s.gap(10).items_center())

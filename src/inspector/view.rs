@@ -6,16 +6,16 @@ use crate::inspector::{
     update_select_view_id,
 };
 use crate::prelude::{
-    ViewTuple, button, dyn_container, empty, h_stack, img_dynamic, scroll, stack, static_label,
-    tab, text, text_input, v_stack, virtual_stack,
+    ViewTuple, dyn_container, h_stack, img_dynamic, scroll, stack, tab, text_input, v_stack,
+    virtual_stack,
 };
 use crate::profiler::profiler;
 use crate::style::{FontSize, OverflowX, OverflowY, TextColor};
 use crate::theme::StyleThemeExt as _;
 use crate::unit::PxPctAuto;
 use crate::views::{
-    CheckboxClass, ContainerExt, Decorators, ListClass, ListItemClass, Scroll, ScrollExt,
-    TabSelectorClass, TooltipExt, resizable,
+    Button, CheckboxClass, ContainerExt, Decorators, Label, ListClass, ListItemClass, Scroll,
+    ScrollExt, TabSelectorClass, TooltipExt, resizable,
 };
 use crate::window::WindowConfig;
 use crate::{IntoView, View, ViewId, new_window};
@@ -36,7 +36,7 @@ pub fn capture(window_id: WindowId) {
                 let selected = RwSignal::new(0);
 
                 let tab_item = |name, index| {
-                    text(name)
+                    Label::new(name)
                         .class(TabSelectorClass)
                         .on_click_stop(move |_| selected.set(index))
                         .style(move |s| s.set_selected(selected.get() == index))
@@ -65,7 +65,7 @@ pub fn capture(window_id: WindowId) {
                 )
                 .style(|s| s.flex_basis(0.0).min_height(0.0).flex_grow(1.0));
 
-                let separator = empty().style(move |s| {
+                let separator = ().style(move |s| {
                     s.width_full()
                         .min_height(1.0)
                         .with_theme(|s, t| s.background(t.border()))
@@ -107,7 +107,7 @@ fn inspector_view(
     let view = if let Some(capture) = capture {
         capture_view(window_id, capture_s, capture.clone()).into_any()
     } else {
-        text("No capture").into_any()
+        Label::new("No capture").into_any()
     };
 
     view.container()
@@ -162,8 +162,7 @@ fn capture_view(
     let image = if let Some(window) = window {
         img_dynamic(move || window.clone()).into_any()
     } else {
-        empty()
-            .style(move |s| s.min_width(size.width).min_height(size.height))
+        ().style(move |s| s.min_width(size.width).min_height(size.height))
             .into_any()
     }
     .style(move |s| {
@@ -274,7 +273,7 @@ fn capture_view(
     });
 
     let capture_ = capture.clone();
-    let selected_overlay = empty().style(move |s| {
+    let selected_overlay = ().style(move |s| {
         if let Some(view) = capture_view
             .selected
             .get()
@@ -298,7 +297,7 @@ fn capture_view(
     });
 
     let capture_ = capture.clone();
-    let highlighted_overlay = empty().style(move |s| {
+    let highlighted_overlay = ().style(move |s| {
         if let Some(view) = capture_view
             .highlighted
             .get()
@@ -322,7 +321,7 @@ fn capture_view(
 
     let image = stack((image, selected_overlay, highlighted_overlay));
 
-    let recapture = button("Recapture").on_click_stop(move |_| {
+    let recapture = Button::new("Recapture").on_click_stop(move |_| {
         add_app_update_event(AppUpdateEvent::CaptureWindow {
             window_id,
             capture: capture_s.write_only(),
@@ -347,7 +346,7 @@ fn capture_view(
                     header("Stats"),
                     stats(&capture_sig.get()),
                     header("Renderer"),
-                    text(renderer.clone()).style(|s| s.padding(5.0)),
+                    Label::new(renderer.clone()).style(|s| s.padding(5.0)),
                 ))
                 .into_any(),
                 _ => panic!(),
@@ -363,7 +362,7 @@ fn capture_view(
     )
     .style(|s| s.size_full().min_size(0, 0));
 
-    let clear = button("Clear selection")
+    let clear = Button::new("Clear selection")
         .style(move |s| s.apply_if(capture_view.selected.get().is_none(), |s| s.hide()))
         .action(move || capture_view.selected.set(None));
 
@@ -575,8 +574,8 @@ fn tree_node(
 }
 
 fn tree_node_name(view: &CapturedData, marge_left: f64) -> impl IntoView {
-    let name = static_label(view.view_conf.name.clone());
-    let id = text(format!("{:?}", view.id)).style(|s| {
+    let name = Label::new(view.view_conf.name.clone());
+    let id = Label::new(format!("{:?}", view.id)).style(|s| {
         s.margin_right(5.0)
             .background(palette::css::BLACK.with_alpha(0.02))
             .border(1.)
@@ -615,11 +614,11 @@ fn tree_node_name(view: &CapturedData, marge_left: f64) -> impl IntoView {
             })
             .into_any()
     } else {
-        empty().into_any()
+        ().into_any()
     };
     let ty = view.expanded();
     // let click_ty = view.ty.clone();
-    let checkbox = empty()
+    let checkbox = ()
         .class_if(move || ty.is_some(), CheckboxClass)
         .style(move |s| match ty {
             Some(expanded) => {

@@ -14,7 +14,7 @@ use crate::{
     taffy::tree::NodeId,
     text::{Attrs, AttrsList, TextLayout},
     view::{IntoView, View},
-    views::{Decorators, Scroll, editor::keypress::KeypressKey, scroll, stack},
+    views::{Decorators, Scroll, editor::keypress::KeypressKey, stack},
 };
 use floem_editor_core::{
     command::EditCommand,

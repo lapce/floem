@@ -4,7 +4,7 @@ use floem::{
     prelude::{SignalGet, SignalUpdate},
     reactive::RwSignal,
     unit::{Pct, UnitExt},
-    views::{container, h_stack, label, slider, v_stack, Decorators},
+    views::{h_stack, slider, v_stack, Container, Decorators, Label},
     IntoView,
 };
 
@@ -24,41 +24,44 @@ fn app_view() -> impl IntoView {
 
     let regular_slider_stack = h_stack((
         regular_slider(regular_slider_value),
-        label(move || format!("{:.2} %", regular_slider_value.get().0))
+        Label::derived(move || format!("{:.2} %", regular_slider_value.get().0))
             .style(|s| s.font_size(18.0)),
     ))
     .style(|s| s.justify_between());
 
     let auto_slider_stack = h_stack((
         auto_reactive_slider(auto_slider_value),
-        label(move || format!("{:.2} %", auto_slider_value.get().0)).style(|s| s.font_size(18.0)),
+        Label::derived(move || format!("{:.2} %", auto_slider_value.get().0))
+            .style(|s| s.font_size(18.0)),
     ))
     .style(|s| s.justify_between());
 
     let ranged_slider_1_stack = h_stack((
         ranged_slider(ranged_slider_value_1, ranged_slider_range_1, 10.0),
-        label(move || format!("{}", ranged_slider_value_1.get())).style(|s| s.font_size(18.0)),
+        Label::derived(move || format!("{}", ranged_slider_value_1.get()))
+            .style(|s| s.font_size(18.0)),
     ))
     .style(|s| s.justify_between());
 
     let ranged_slider_2_stack = h_stack((
         ranged_slider(ranged_slider_value_2, ranged_slider_range_2, 1.0),
-        label(move || format!("{}", ranged_slider_value_2.get())).style(|s| s.font_size(18.0)),
+        Label::derived(move || format!("{}", ranged_slider_value_2.get()))
+            .style(|s| s.font_size(18.0)),
     ))
     .style(|s| s.justify_between());
 
     let view = v_stack((
-        label(|| "Regular slider").style(|s| s.font_size(20)),
+        Label::derived(|| "Regular slider").style(|s| s.font_size(20)),
         regular_slider_stack,
-        label(|| "RW slider").style(|s| s.font_size(20)),
+        Label::derived(|| "RW slider").style(|s| s.font_size(20)),
         auto_slider_stack,
-        label(|| "Ranged sliders").style(|s| s.font_size(20)),
+        Label::derived(|| "Ranged sliders").style(|s| s.font_size(20)),
         ranged_slider_1_stack,
         ranged_slider_2_stack,
     ))
     .style(|s| s.gap(5));
 
-    container(view).style(|s| {
+    Container::new(view).style(|s| {
         s.size(100.pct(), 100.pct())
             .flex_col()
             .items_center()

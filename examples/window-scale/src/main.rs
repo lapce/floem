@@ -17,7 +17,8 @@ fn app_view() -> impl IntoView {
         set_window_scale(window_scale);
     });
 
-    let value_label = label(move || format!("Value: {}", counter.get())).style(|s| s.padding(10.0));
+    let value_label =
+        Label::derived(move || format!("Value: {}", counter.get())).style(|s| s.padding(10.0));
 
     let increment_button = "Increment".class(Button).on_click_stop(move |_| {
         counter.update(|value| *value += 1);

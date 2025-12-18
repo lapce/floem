@@ -1,11 +1,11 @@
 #![cfg(debug_assertions)]
 
-use floem_reactive::{create_rw_signal, SignalRead, SignalWrite};
+use floem_reactive::{RwSignal, SignalRead, SignalWrite};
 
 #[test]
 fn borrow_conflict_reports_locations() {
     let result = std::panic::catch_unwind(|| {
-        let signal = create_rw_signal(0);
+        let signal = RwSignal::new(0);
         let _first = signal.read(); // holds a shared borrow
 
         // Should panic when trying to take a mutable borrow while a shared one is held.

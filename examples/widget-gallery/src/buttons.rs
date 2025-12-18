@@ -6,7 +6,7 @@ use floem::{
     },
     style::CursorStyle,
     theme::StyleThemeExt,
-    views::{button, toggle_button, Decorators, ToggleButton, ToggleHandleBehavior},
+    views::{toggle_button, Button, Decorators, ToggleButton, ToggleHandleBehavior},
     IntoView,
 };
 
@@ -17,11 +17,11 @@ pub fn button_view() -> impl IntoView {
     form((
         form_item(
             "Basic Button:",
-            button("Click me").action(|| println!("Button clicked")),
+            Button::new("Click me").action(|| println!("Button clicked")),
         ),
         form_item(
             "Styled Button:",
-            button("Click me")
+            Button::new("Click me")
                 .action(|| println!("Button clicked"))
                 .style(|s| {
                     s.border(1.0)
@@ -37,13 +37,13 @@ pub fn button_view() -> impl IntoView {
         ),
         form_item(
             "Disabled Button:",
-            button("Unclickable")
+            Button::new("Unclickable")
                 .style(|s| s.set_disabled(true))
                 .action(|| println!("Button clicked")),
         ),
         form_item(
             "Secondary click button:",
-            button("Right click me").on_secondary_click_stop(|_| {
+            Button::new("Right click me").on_secondary_click_stop(|_| {
                 println!("Secondary mouse button click.");
             }),
         ),

@@ -34,7 +34,7 @@ pub fn dropped_file_view() -> impl IntoView {
         });
 
     form((
-        form_item("Files:", label(move || filename.get())),
+        form_item("Files:", Label::derived(move || filename.get())),
         form_item("", dropped_view),
     ))
 }

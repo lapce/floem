@@ -41,20 +41,19 @@ fn app_view() -> impl IntoView {
         Button::new("Switch views").action(move || state.update(ViewSwitcher::toggle)),
         h_stack((
             dyn_container(move || state.get(), move |which| which.view(state)),
-            empty()
-                .animation(move |a| {
-                    a.scale_effect()
-                        .with_duration(|a, d| a.delay(d))
-                        .keyframe(0, |s| s.style(|s| s.size(0, 0)))
-                })
-                .style(move |s| {
-                    s.size(100, 100)
-                        .scale(100.pct())
-                        .border_radius(5)
-                        .background(palette::css::RED)
-                        .apply_if(state.get() == ViewSwitcher::Two, |s| s.hide())
-                        .apply(box_shadow())
-                }),
+            ().animation(move |a| {
+                a.scale_effect()
+                    .with_duration(|a, d| a.delay(d))
+                    .keyframe(0, |s| s.style(|s| s.size(0, 0)))
+            })
+            .style(move |s| {
+                s.size(100, 100)
+                    .scale(100.pct())
+                    .border_radius(5)
+                    .background(palette::css::RED)
+                    .apply_if(state.get() == ViewSwitcher::Two, |s| s.hide())
+                    .apply(box_shadow())
+            }),
         ))
         .style(|s| s.items_center().justify_center().flex_wrap(FlexWrap::Wrap)),
     ))

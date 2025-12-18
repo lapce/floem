@@ -8,7 +8,7 @@ pub fn draggable_sidebar_view() -> impl IntoView {
     let side_bar = VirtualStack::with_view(
         || 0..100,
         move |item| {
-            label(move || format!("Item {item} with long lines")).style(move |s| {
+            Label::derived(move || format!("Item {item} with long lines")).style(move |s| {
                 s.text_ellipsis()
                     .height(22)
                     .padding(10.0)

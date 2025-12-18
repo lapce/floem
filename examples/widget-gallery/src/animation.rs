@@ -4,7 +4,7 @@ use floem::{
     peniko::color::palette,
     reactive::{RwSignal, SignalGet, Trigger},
     unit::DurationUnitExt,
-    views::{empty, h_stack, Decorators},
+    views::{h_stack, Decorators},
     IntoView,
 };
 
@@ -29,28 +29,25 @@ pub fn animation_view() -> impl IntoView {
     let resume = Trigger::new();
 
     h_stack((
-        empty()
-            .style(|s| s.background(palette::css::RED).size(500, 100))
+        ().style(|s| s.background(palette::css::RED).size(500, 100))
             .animation(move |_| animation.get().duration(10.seconds())),
-        empty()
-            .style(|s| {
-                s.background(palette::css::BLUE)
-                    .size(50, 100)
-                    .border(5.)
-                    .border_color(palette::css::GREEN)
-            })
-            .animation(move |_| animation.get())
-            .animation(move |a| {
-                a.keyframe(0, |f| f.computed_style())
-                    .keyframe(100, |f| {
-                        f.style(|s| s.border(5.).border_color(palette::css::PURPLE))
-                    })
-                    .duration(5.seconds())
-                    .repeat(true)
-                    .auto_reverse(true)
-            }),
-        empty()
-            .style(|s| s.background(palette::css::GREEN).size(100, 300))
+        ().style(|s| {
+            s.background(palette::css::BLUE)
+                .size(50, 100)
+                .border(5.)
+                .border_color(palette::css::GREEN)
+        })
+        .animation(move |_| animation.get())
+        .animation(move |a| {
+            a.keyframe(0, |f| f.computed_style())
+                .keyframe(100, |f| {
+                    f.style(|s| s.border(5.).border_color(palette::css::PURPLE))
+                })
+                .duration(5.seconds())
+                .repeat(true)
+                .auto_reverse(true)
+        }),
+        ().style(|s| s.background(palette::css::GREEN).size(100, 300))
             .animation(move |_| {
                 animation
                     .get()
