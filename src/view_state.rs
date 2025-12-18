@@ -168,6 +168,19 @@ impl IsHiddenState {
     }
 }
 
+/// Information about a view's stacking context participation.
+/// Used to determine paint order and event dispatch order (like CSS stacking contexts).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct StackingInfo {
+    /// Whether this view creates a new stacking context.
+    /// A stacking context is created by z-index, position: absolute, or transform.
+    /// Reserved for future use in stacking context debugging/inspection.
+    #[allow(dead_code)]
+    pub creates_context: bool,
+    /// The effective z-index for sorting (0 if no z-index specified).
+    pub effective_z_index: i32,
+}
+
 /// View state stores internal state associated with a view which is owned and managed by Floem.
 pub struct ViewState {
     pub(crate) node: NodeId,
@@ -203,6 +216,7 @@ pub struct ViewState {
     pub(crate) num_waiting_animations: u16,
     pub(crate) disable_default_events: HashSet<EventListener>,
     pub(crate) transform: Affine,
+    pub(crate) stacking_info: StackingInfo,
     pub(crate) debug_name: SmallVec<[String; 1]>,
 }
 
@@ -241,6 +255,7 @@ impl ViewState {
             num_waiting_animations: 0,
             disable_default_events: HashSet::new(),
             transform: Affine::IDENTITY,
+            stacking_info: StackingInfo::default(),
             debug_name: Default::default(),
         }
     }

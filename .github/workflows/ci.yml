@@ -55,7 +55,7 @@ jobs:
         run: cargo build
 
       - name: Run tests
-        run: cargo nextest run --no-fail-fast
+        run: cargo nextest run --workspace --no-fail-fast
 
       - name: Run doc tests
         # Only run doctests on macOS to improve CI times - macOS is currently the fastest runner

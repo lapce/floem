@@ -1,0 +1,13 @@
+[package]
+name = "floem-test"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Testing utilities for Floem UI applications"
+repository.workspace = true
+
+[dependencies]
+floem = { path = ".." }
+
+[dev-dependencies]

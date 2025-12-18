@@ -202,6 +202,7 @@ mod renderer;
 pub mod responsive;
 mod screen_layout;
 pub mod style;
+pub mod test_harness;
 pub mod theme;
 pub mod unit;
 mod update;
