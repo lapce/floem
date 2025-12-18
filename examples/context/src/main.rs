@@ -1,13 +1,13 @@
 use floem::{
     peniko::{color::palette, Color},
-    reactive::{provide_context, use_context},
+    reactive::{Context, Scope},
     ui_events::keyboard::{Key, NamedKey},
     views::{v_stack, Decorators, Empty, Label},
     IntoView, View,
 };
 
 fn colored_label(text: String) -> impl IntoView {
-    let color: Color = use_context().unwrap();
+    let color: Color = Context::get().unwrap();
     Label::derived(move || text.clone()).style(move |s| s.color(color))
 }
 
@@ -16,19 +16,23 @@ fn context_container<V: IntoView + 'static>(
     name: String,
     view_fn: impl Fn() -> V,
 ) -> impl IntoView {
-    provide_context(color);
+    // Create a child scope for this context container
+    let scope = Scope::current().create_child();
+    scope.enter(|| {
+        Context::provide(color);
 
-    v_stack((colored_label(name), view_fn())).style(move |s| {
-        s.padding(10)
-            .border(1)
-            .border_color(color)
-            .row_gap(5)
-            .items_center()
+        v_stack((colored_label(name), view_fn())).style(move |s| {
+            s.padding(10)
+                .border(1)
+                .border_color(color)
+                .row_gap(5)
+                .items_center()
+        })
     })
 }
 
 fn app_view() -> impl IntoView {
-    provide_context(palette::css::BLACK);
+    Context::provide(palette::css::BLACK);
 
     let view = v_stack((
         colored_label(String::from("app_view")),

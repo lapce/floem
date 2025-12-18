@@ -23,7 +23,7 @@ mod trigger;
 mod write;
 
 pub use base::{create_base_signal, BaseSignal, SyncBaseSignal};
-pub use context::{provide_context, use_context};
+pub use context::{provide_context, use_context, Context};
 pub use derived::{
     create_derived_rw_signal, create_sync_derived_rw_signal, DerivedRwSignal, SyncDerivedRwSignal,
 };

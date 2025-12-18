@@ -38,10 +38,14 @@ impl Id {
     /// Make this Id a child of the current Scope
     pub(crate) fn set_scope(&self) {
         RUNTIME.with(|runtime| {
-            let scope = runtime.current_scope.borrow();
-            let mut children = runtime.children.borrow_mut();
-            let children = children.entry(*scope).or_default();
-            children.insert(*self);
+            let scope = *runtime.current_scope.borrow();
+            runtime
+                .children
+                .borrow_mut()
+                .entry(scope)
+                .or_default()
+                .insert(*self);
+            runtime.parents.borrow_mut().insert(*self, scope);
         });
     }
 
@@ -66,6 +70,10 @@ impl Id {
         }
 
         if let Ok((children, signal, effect)) = RUNTIME.try_with(|runtime| {
+            // Clean up scope-specific data
+            runtime.scope_contexts.borrow_mut().remove(self);
+            runtime.parents.borrow_mut().remove(self);
+
             (
                 runtime.children.borrow_mut().remove(self),
                 runtime.signals.borrow_mut().remove(self),

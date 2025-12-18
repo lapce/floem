@@ -3,7 +3,7 @@ use floem::{
     event::{Event, EventListener},
     kurbo::{Point, Size},
     prelude::*,
-    reactive::{provide_context, UpdaterEffect},
+    reactive::{Context, UpdaterEffect},
     window::WindowConfig,
     Application,
 };
@@ -57,7 +57,7 @@ pub fn launch_with_track<V: IntoView + 'static>(app_view: impl FnOnce() -> V + '
     // modifying this will rewrite app config to disk
     let app_config = RwSignal::new(config);
 
-    provide_context(app_config);
+    Context::provide(app_config);
 
     // todo: debounce this
     UpdaterEffect::new(
