@@ -26,6 +26,8 @@ use winit::{
 
 use crate::dropped_file::FileDragEvent;
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+use crate::event::EventListener;
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use crate::menu::MudaMenu;
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use crate::reactive::SignalWith;
@@ -33,8 +35,6 @@ use crate::reactive::SignalWith;
 use crate::unit::UnitExt;
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use crate::views::{Container, Decorators, Label, stack};
-#[cfg(any(target_os = "linux", target_os = "freebsd"))]
-use crate::event::EventListener;
 use crate::{
     Application,
     app::UserEvent,
@@ -354,25 +354,23 @@ impl WindowHandle {
         // Platform-specific context menu handling
         #[cfg(any(target_os = "linux", target_os = "freebsd"))]
         {
-            if is_pointer_down {
-                if self.context_menu.with_untracked(|c| {
+            if is_pointer_down
+                && self.context_menu.with_untracked(|c| {
                     c.as_ref()
                         .map(|(_, _, had_pointer_down)| !*had_pointer_down)
                         .unwrap_or(false)
-                }) {
-                    // we had a pointer down event
-                    // if context menu is still shown
-                    // we should hide it
-                    self.context_menu.set(None);
-                }
+                })
+            {
+                // we had a pointer down event
+                // if context menu is still shown
+                // we should hide it
+                self.context_menu.set(None);
             }
-            if is_pointer_up {
-                if self.context_menu.with_untracked(|c| c.is_some()) {
-                    // we had a pointer up event
-                    // if context menu is still shown
-                    // we should hide it
-                    self.context_menu.set(None);
-                }
+            if is_pointer_up && self.context_menu.with_untracked(|c| c.is_some()) {
+                // we had a pointer up event
+                // if context menu is still shown
+                // we should hide it
+                self.context_menu.set(None);
             }
         }
 
