@@ -33,6 +33,8 @@ use crate::reactive::SignalWith;
 use crate::unit::UnitExt;
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use crate::views::{Container, Decorators, Label, stack};
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+use crate::event::EventListener;
 use crate::{
     Application,
     app::UserEvent,
