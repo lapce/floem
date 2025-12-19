@@ -196,6 +196,7 @@ pub mod file_action;
 pub(crate) mod id;
 mod inspector;
 pub mod menu;
+pub mod mock_window;
 mod nav;
 mod profiler;
 mod renderer;

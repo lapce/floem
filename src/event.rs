@@ -186,14 +186,32 @@ impl Event {
     }
 
     pub fn pixel_scroll_delta_vec2(&self) -> Option<Vec2> {
-        if let Event::Pointer(PointerEvent::Scroll(PointerScrollEvent {
-            delta: ScrollDelta::PixelDelta(delta),
-            state,
-            ..
-        })) = self
+        if let Event::Pointer(PointerEvent::Scroll(PointerScrollEvent { delta, state, .. })) = self
         {
-            let log = delta.to_logical(state.scale_factor);
-            Some(Vec2 { x: log.x, y: log.y })
+            match delta {
+                ScrollDelta::PixelDelta(delta) => {
+                    let log = delta.to_logical(state.scale_factor);
+                    Some(Vec2 { x: log.x, y: log.y })
+                }
+                ScrollDelta::LineDelta(x, y) => {
+                    // Convert line delta to pixel delta
+                    // 20 pixels per line is a reasonable default for most UIs
+                    const LINE_HEIGHT: f64 = 20.0;
+                    Some(Vec2 {
+                        x: (*x as f64) * LINE_HEIGHT,
+                        y: (*y as f64) * LINE_HEIGHT,
+                    })
+                }
+                ScrollDelta::PageDelta(x, y) => {
+                    // Page deltas are synthetic (e.g., clicking scrollbar well)
+                    // Use a larger multiplier for page scrolling
+                    const PAGE_HEIGHT: f64 = 200.0;
+                    Some(Vec2 {
+                        x: (*x as f64) * PAGE_HEIGHT,
+                        y: (*y as f64) * PAGE_HEIGHT,
+                    })
+                }
+            }
         } else {
             None
         }

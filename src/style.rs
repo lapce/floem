@@ -1937,9 +1937,14 @@ pub enum StyleKeyInfo {
     Selector(StyleSelectors),
     Class(StyleClassInfo),
     ContextMappings,
+    /// Selectors discovered by probing context mappings at construction time.
+    /// This allows selectors defined inside `with_context` closures to be visible
+    /// to floem's selector detection mechanism.
+    ContextSelectors,
 }
 
 static CONTEXT_MAPPINGS_INFO: StyleKeyInfo = StyleKeyInfo::ContextMappings;
+static CONTEXT_SELECTORS_INFO: StyleKeyInfo = StyleKeyInfo::ContextSelectors;
 
 type ContextMapFn = Rc<dyn Fn(Style, &Style) -> Style>;
 
@@ -1951,7 +1956,9 @@ impl StyleKey {
     pub(crate) fn debug_any(&self, value: &dyn Any) -> String {
         match self.info {
             StyleKeyInfo::Selector(selectors) => selectors.debug_string(),
-            StyleKeyInfo::Transition | StyleKeyInfo::ContextMappings => String::new(),
+            StyleKeyInfo::Transition
+            | StyleKeyInfo::ContextMappings
+            | StyleKeyInfo::ContextSelectors => String::new(),
             StyleKeyInfo::Class(info) => (info.name)().to_string(),
             StyleKeyInfo::Prop(v) => (v.debug_any)(value),
         }
@@ -1960,7 +1967,8 @@ impl StyleKey {
         match self.info {
             StyleKeyInfo::Selector(..)
             | StyleKeyInfo::Transition
-            | StyleKeyInfo::ContextMappings => false,
+            | StyleKeyInfo::ContextMappings
+            | StyleKeyInfo::ContextSelectors => false,
             StyleKeyInfo::Class(..) => true,
             StyleKeyInfo::Prop(v) => v.inherited,
         }
@@ -1985,6 +1993,7 @@ impl Debug for StyleKey {
             }
             StyleKeyInfo::Transition => write!(f, "transition"),
             StyleKeyInfo::ContextMappings => write!(f, "ContextMappings"),
+            StyleKeyInfo::ContextSelectors => write!(f, "ContextSelectors"),
             StyleKeyInfo::Class(v) => write!(f, "{}", (v.name)()),
             StyleKeyInfo::Prop(v) => write!(f, "{}", (v.name)()),
         }
@@ -2082,7 +2091,16 @@ fn resolve_nested_maps_internal(
     }
 
     // Disabled state (takes precedence)
-    if interact_state.is_disabled {
+    // Use style.get(Disabled) to check the current style's disabled state.
+    // This handles:
+    // 1. The view's own set_disabled() calls (reactive or static)
+    // 2. Inherited disabled state from parent views (passed via context)
+    //
+    // Note: We use style.get(Disabled) instead of interact_state.is_disabled
+    // because interact_state is computed from the PREVIOUS pass's computed_style,
+    // which would cause the disabled selector to be incorrectly applied when
+    // transitioning from disabled to enabled via reactive set_disabled() calls.
+    if style.get(Disabled) {
         if let Some(map) = style.get_nested_map(StyleSelector::Disabled.to_key()) {
             classes_applied |= map.any_inherited();
             style.apply_mut(map);
@@ -2230,6 +2248,20 @@ impl Style {
 
     pub(crate) fn selectors(&self) -> StyleSelectors {
         let mut result = StyleSelectors::new();
+
+        // Check for selectors discovered from context mappings
+        let selectors_key = StyleKey {
+            info: &CONTEXT_SELECTORS_INFO,
+        };
+        if let Some(context_selectors) = self
+            .map
+            .get(&selectors_key)
+            .and_then(|v| v.downcast_ref::<StyleSelectors>())
+        {
+            result = result.union(*context_selectors);
+        }
+
+        // Check for direct selectors
         for (k, v) in &self.map {
             if let StyleKeyInfo::Selector(selector) = k.info {
                 result = result
@@ -2280,12 +2312,39 @@ impl Style {
         self
     }
 
-    /// Store a context mapping to be applied to nested styles
-    // Then update your with_context function:
+    /// Store a context mapping to be applied to nested styles.
+    ///
+    /// This also probes the closure with a default context value to discover
+    /// any selectors (like `.hover()` or `.active()`) defined inside it,
+    /// ensuring they're visible to floem's selector detection mechanism.
     pub fn with_context<P: StyleProp>(
         mut self,
         f: impl Fn(Self, &P::Type) -> Self + 'static,
     ) -> Self {
+        // Probe the closure with default value to discover selectors.
+        // This ensures selectors defined inside with_context are visible
+        // to floem's selector detection (e.g., for :active style updates).
+        let default_value = P::default_value();
+        let probed = f(Style::new(), &default_value);
+        let discovered_selectors = probed.selectors();
+
+        // Store discovered selectors
+        if !discovered_selectors.is_empty() {
+            let selectors_key = StyleKey {
+                info: &CONTEXT_SELECTORS_INFO,
+            };
+            let existing_selectors = self
+                .map
+                .get(&selectors_key)
+                .and_then(|v| v.downcast_ref::<StyleSelectors>())
+                .copied()
+                .unwrap_or_default();
+            self.map.insert(
+                selectors_key,
+                Rc::new(existing_selectors.union(discovered_selectors)),
+            );
+        }
+
         let mapper: ContextMapFn = Rc::new(move |style: Style, context: &Style| {
             // Try getting the property from style first, then from context if not found
             let value = style.get_prop::<P>().or_else(|| {
@@ -2321,10 +2380,36 @@ impl Style {
         self
     }
 
-    pub fn with_context_opt<P: StyleProp<Type = Option<T>>, T: 'static>(
+    /// Store a context mapping for optional props.
+    ///
+    /// Like `with_context`, this probes the closure to discover selectors.
+    /// Note: Probing uses `None` as the default, so selectors are only discovered
+    /// if the closure handles the `None` case or if `T` has a `Default` impl.
+    pub fn with_context_opt<P: StyleProp<Type = Option<T>>, T: 'static + Default>(
         mut self,
         f: impl Fn(Self, T) -> Self + 'static,
     ) -> Self {
+        // Probe with default T value to discover selectors
+        let probed = f(Style::new(), T::default());
+        let discovered_selectors = probed.selectors();
+
+        // Store discovered selectors
+        if !discovered_selectors.is_empty() {
+            let selectors_key = StyleKey {
+                info: &CONTEXT_SELECTORS_INFO,
+            };
+            let existing_selectors = self
+                .map
+                .get(&selectors_key)
+                .and_then(|v| v.downcast_ref::<StyleSelectors>())
+                .copied()
+                .unwrap_or_default();
+            self.map.insert(
+                selectors_key,
+                Rc::new(existing_selectors.union(discovered_selectors)),
+            );
+        }
+
         let mapper: ContextMapFn = Rc::new(move |style: Style, context: &Style| {
             // Try getting the property from style first, then from context if not found
             let value = style.get_prop::<P>().or_else(|| {
@@ -2470,6 +2555,17 @@ impl Style {
                                 *e.get_mut() = Rc::new(current);
                             }
                         }
+                    }
+                    Entry::Vacant(e) => {
+                        e.insert(v.clone());
+                    }
+                },
+                StyleKeyInfo::ContextSelectors => match self.map.entry(*k) {
+                    Entry::Occupied(mut e) => {
+                        // Union the selectors
+                        let new_selectors = *v.downcast_ref::<StyleSelectors>().unwrap();
+                        let current = *e.get().downcast_ref::<StyleSelectors>().unwrap();
+                        *e.get_mut() = Rc::new(current.union(new_selectors));
                     }
                     Entry::Vacant(e) => {
                         e.insert(v.clone());

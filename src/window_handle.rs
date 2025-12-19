@@ -4,7 +4,7 @@ use std::{cell::RefCell, mem, rc::Rc, sync::Arc};
 use muda::MenuId;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
-use ui_events::keyboard::{Key, KeyState, KeyboardEvent, Modifiers, NamedKey};
+use ui_events::keyboard::{Key, KeyboardEvent, Modifiers, NamedKey};
 use ui_events::pointer::PointerEvent;
 use ui_events_winit::WindowEventReducer;
 
@@ -26,6 +26,8 @@ use winit::{
 
 use crate::dropped_file::FileDragEvent;
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+use crate::event::EventListener;
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use crate::menu::MudaMenu;
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use crate::reactive::SignalWith;
@@ -39,10 +41,9 @@ use crate::{
     context::{
         ComputeLayoutCx, EventCx, FrameUpdate, LayoutCx, PaintCx, PaintState, StyleCx, UpdateCx,
     },
-    event::{Event, EventListener},
+    event::Event,
     id::ViewId,
     inspector::{self, Capture, CaptureState, CapturedView},
-    nav::view_arrow_navigation,
     profiler::Profile,
     style::{CursorStyle, Style, StyleSelector},
     theme::default_theme,
@@ -50,7 +51,7 @@ use crate::{
         CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES, CURRENT_RUNNING_VIEW_HANDLE,
         DEFERRED_UPDATE_MESSAGES, UPDATE_MESSAGES, UpdateMessage,
     },
-    view::{IntoView, View, view_tab_navigation},
+    view::{IntoView, View},
     view_state::ChangeFlags,
     window_state::WindowState,
     window_tracking::{remove_window_id_mapping, store_window_id_mapping},
@@ -65,7 +66,8 @@ use crate::{
 pub(crate) struct WindowHandle {
     pub(crate) window: Arc<dyn winit::window::Window>,
     window_id: WindowId,
-    id: ViewId,
+    /// The root view ID for this window.
+    pub(crate) id: ViewId,
     main_view: ViewId,
     /// Reactive Scope for this `WindowHandle`
     scope: Scope,
@@ -221,6 +223,95 @@ impl WindowHandle {
         window_handle
     }
 
+    /// Creates a headless WindowHandle for testing purposes.
+    ///
+    /// This constructor creates a WindowHandle with a MockWindow and no GPU resources,
+    /// suitable for testing the event handling and view update logic without a real window.
+    ///
+    /// # Arguments
+    /// * `view` - The root view for this window
+    /// * `size` - The virtual window size
+    /// * `scale` - The window scale factor (default 1.0)
+    pub(crate) fn new_headless(view: impl IntoView, size_val: Size, scale: f64) -> Self {
+        use crate::mock_window::MockWindow;
+
+        let scope = Scope::new();
+        let mock_window = MockWindow::with_size(size_val.width as u32, size_val.height as u32);
+        let window_id = mock_window.id();
+        let id = ViewId::new();
+        let size = scope.create_rw_signal(size_val);
+        let os_theme = mock_window.theme();
+        let is_maximized = mock_window.is_maximized();
+
+        set_current_view(id);
+
+        // Convert the view
+        let main_view = view.into_view();
+        let main_view_id = main_view.id();
+        let widget: Box<dyn View> = main_view.into_any();
+
+        id.set_children([widget]);
+
+        let window_view = WindowView { id };
+        id.set_view(window_view.into_any());
+
+        let window: Arc<dyn Window> = Arc::new(mock_window);
+        // Note: We skip store_window_id_mapping for headless testing to avoid
+        // interfering with the global window tracking system
+
+        // Create a paint state that will never initialize (for headless testing)
+        // We use a channel that will never receive a value
+        let (tx, rx) = std::sync::mpsc::channel();
+        drop(tx); // Drop sender so receiver will never receive
+        let paint_state = PaintState::new_pending(
+            window.clone(),
+            rx,
+            scale,
+            size_val * scale,
+            0.0, // font_embolden
+        );
+
+        let window_state = WindowState::new(id, os_theme);
+
+        let mut window_handle = Self {
+            window,
+            window_id,
+            id,
+            main_view: main_view_id,
+            scope,
+            paint_state,
+            size,
+            default_theme: Some(default_theme(window_state.light_dark_theme)),
+            window_state,
+            is_maximized,
+            transparent: false,
+            profile: None,
+            scale,
+            modifiers: Modifiers::default(),
+            cursor_position: Point::ZERO,
+            window_position: Point::ZERO,
+            #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+            context_menu: scope.create_rw_signal(None),
+            window_menu_actions: HashMap::new(),
+            window_menu: None,
+            event_reducer: WindowEventReducer::default(),
+        };
+
+        window_handle
+            .window_state
+            .set_root_size(size.get_untracked());
+
+        window_handle.window_state.light_dark_theme =
+            os_theme.unwrap_or(winit::window::Theme::Light);
+
+        // Run initial style and layout passes
+        window_handle.style();
+        window_handle.layout();
+        window_handle.compute_layout();
+
+        window_handle
+    }
+
     pub(crate) fn init_renderer(&mut self, gpu_resources: Option<GpuResources>) {
         // On the web, we need to get the canvas size once. The size will be updated automatically
         // when the canvas element is resized subsequently. This is the correct place to do so
@@ -247,227 +338,35 @@ impl WindowHandle {
 
     pub fn event(&mut self, event: Event) {
         set_current_view(self.id);
-        let event = event.transform(Affine::scale(self.window_state.scale));
 
+        // Check event type for platform-specific context menu handling
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+        let is_pointer_down = matches!(&event, Event::Pointer(PointerEvent::Down { .. }));
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+        let is_pointer_up = matches!(&event, Event::Pointer(PointerEvent::Up { .. }));
+
+        // Use the shared event dispatch logic
         let mut cx = EventCx {
             window_state: &mut self.window_state,
         };
+        cx.dispatch_event(self.id, self.main_view, event);
 
-        let is_pointer_move = if let Event::Pointer(PointerEvent::Move(pu)) = &event {
-            let pos = pu.current.logical_point();
-            cx.window_state.last_cursor_location = pos;
-            Some(pu.pointer)
-        } else {
-            None
-        };
-        let (was_hovered, was_dragging_over) = if is_pointer_move.is_some() {
-            cx.window_state.cursor = None;
-            let was_hovered = std::mem::take(&mut cx.window_state.hovered);
-            let was_dragging_over = std::mem::take(&mut cx.window_state.dragging_over);
-
-            (Some(was_hovered), Some(was_dragging_over))
-        } else {
-            (None, None)
-        };
-
-        let was_file_hovered = if matches!(event, Event::FileDrag(FileDragEvent::DragMoved { .. }))
-            || is_pointer_move.is_some()
+        // Platform-specific context menu handling
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
         {
-            if !cx.window_state.file_hovered.is_empty() {
-                Some(std::mem::take(&mut cx.window_state.file_hovered))
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        let is_pointer_down = matches!(&event, Event::Pointer(PointerEvent::Down { .. }));
-        let was_focused = if is_pointer_down {
-            cx.window_state.clicking.clear();
-            cx.window_state.focus.take()
-        } else {
-            cx.window_state.focus
-        };
-
-        if event.needs_focus() {
-            let mut processed = false;
-
-            if !processed {
-                if let Some(id) = cx.window_state.focus {
-                    processed |= cx
-                        .unconditional_view_event(id, event.clone(), true)
-                        .0
-                        .is_processed();
-                }
-
-                if !processed {
-                    if let Some(listener) = event.listener() {
-                        processed |= self
-                            .main_view
-                            .apply_event(&listener, &event)
-                            .is_some_and(|prop| prop.is_processed());
-                    }
-                }
-
-                if !processed {
-                    if let Event::Key(KeyboardEvent {
-                        key,
-                        modifiers,
-                        state: KeyState::Down,
-                        ..
-                    }) = &event
-                    {
-                        if *key == Key::Named(NamedKey::Tab)
-                            && (modifiers.is_empty() || *modifiers == Modifiers::SHIFT)
-                        {
-                            let backwards = modifiers.contains(Modifiers::SHIFT);
-                            view_tab_navigation(self.id, cx.window_state, backwards);
-                            // view_debug_tree(&self.view);
-                        } else if *modifiers == Modifiers::ALT {
-                            if let Key::Named(
-                                name @ (NamedKey::ArrowUp
-                                | NamedKey::ArrowDown
-                                | NamedKey::ArrowLeft
-                                | NamedKey::ArrowRight),
-                            ) = key
-                            {
-                                view_arrow_navigation(*name, cx.window_state, self.id);
-                            }
-                        }
-                    }
-
-                    let keyboard_trigger_end = cx.window_state.keyboard_navigation
-                        && event.is_keyboard_trigger()
-                        && matches!(
-                            event,
-                            Event::Key(KeyboardEvent {
-                                state: KeyState::Up,
-                                ..
-                            })
-                        );
-                    if keyboard_trigger_end {
-                        if let Some(id) = cx.window_state.active {
-                            // To remove the styles applied by the Active selector
-                            if cx.window_state.has_style_for_sel(id, StyleSelector::Active) {
-                                id.request_style_recursive();
-                            }
-
-                            cx.window_state.active = None;
-                        }
-                    }
-                }
-            }
-        } else if cx.window_state.active.is_some() && event.is_pointer() {
-            if cx.window_state.is_dragging() {
-                cx.unconditional_view_event(self.id, event.clone(), false);
-            }
-
-            let id = cx.window_state.active.unwrap();
-
+            if is_pointer_down
+                && self.context_menu.with_untracked(|c| {
+                    c.as_ref()
+                        .map(|(_, _, had_pointer_down)| !*had_pointer_down)
+                        .unwrap_or(false)
+                })
             {
-                let window_origin = id.state().borrow().window_origin;
-                let layout = id.get_layout().unwrap_or_default();
-                let viewport = id.state().borrow().viewport.unwrap_or_default();
-                let transform = Affine::translate((
-                    window_origin.x - layout.location.x as f64 + viewport.x0,
-                    window_origin.y - layout.location.y as f64 + viewport.y0,
-                ));
-                cx.unconditional_view_event(id, event.clone().transform(transform), true);
-            }
-
-            if let Event::Pointer(PointerEvent::Up { .. }) = &event {
-                // To remove the styles applied by the Active selector
-                if cx.window_state.has_style_for_sel(id, StyleSelector::Active) {
-                    id.request_style_recursive();
-                }
-
-                cx.window_state.active = None;
-            }
-        } else {
-            cx.unconditional_view_event(self.id, event.clone(), false);
-        }
-
-        if let Event::Pointer(PointerEvent::Up { .. }) = &event {
-            cx.window_state.drag_start = None;
-        }
-        if let Some(info) = is_pointer_move {
-            let hovered = &cx.window_state.hovered.clone();
-            for id in was_hovered.unwrap().symmetric_difference(hovered) {
-                let view_state = id.state();
-                if view_state.borrow().has_active_animation()
-                    || view_state
-                        .borrow()
-                        .has_style_selectors
-                        .has(StyleSelector::Hover)
-                    || view_state
-                        .borrow()
-                        .has_style_selectors
-                        .has(StyleSelector::Active)
-                {
-                    id.request_style();
-                }
-                if hovered.contains(id) {
-                    id.apply_event(&EventListener::PointerEnter, &event);
-                } else {
-                    cx.unconditional_view_event(
-                        *id,
-                        Event::Pointer(PointerEvent::Leave(info)),
-                        true,
-                    );
-                }
-            }
-            let dragging_over = &cx.window_state.dragging_over.clone();
-            for id in was_dragging_over
-                .unwrap()
-                .symmetric_difference(dragging_over)
-            {
-                if dragging_over.contains(id) {
-                    id.apply_event(&EventListener::DragEnter, &event);
-                } else {
-                    id.apply_event(&EventListener::DragLeave, &event);
-                }
-            }
-        }
-        if let Some(was_file_hovered) = was_file_hovered {
-            for id in was_file_hovered.symmetric_difference(&cx.window_state.file_hovered) {
-                id.request_style();
-            }
-        }
-        if was_focused != cx.window_state.focus {
-            cx.window_state
-                .focus_changed(was_focused, cx.window_state.focus);
-        }
-
-        if is_pointer_down {
-            for id in cx.window_state.clicking.clone() {
-                if cx.window_state.has_style_for_sel(id, StyleSelector::Active) {
-                    id.request_style_recursive();
-                }
-            }
-
-            #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-            if self.context_menu.with_untracked(|c| {
-                c.as_ref()
-                    .map(|(_, _, had_pointer_down)| !*had_pointer_down)
-                    .unwrap_or(false)
-            }) {
                 // we had a pointer down event
                 // if context menu is still shown
                 // we should hide it
                 self.context_menu.set(None);
             }
-        }
-        if matches!(&event, Event::Pointer(PointerEvent::Up { .. })) {
-            for id in cx.window_state.clicking.clone() {
-                if cx.window_state.has_style_for_sel(id, StyleSelector::Active) {
-                    id.request_style_recursive();
-                }
-            }
-            cx.window_state.clicking.clear();
-
-            #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-            if self.context_menu.with_untracked(|c| c.is_some()) {
+            if is_pointer_up && self.context_menu.with_untracked(|c| c.is_some()) {
                 // we had a pointer up event
                 // if context menu is still shown
                 // we should hide it
@@ -665,10 +564,9 @@ impl WindowHandle {
             paint_state: &mut self.paint_state,
             transform: Affine::IDENTITY,
             clip: None,
-            z_index: None,
             saved_transforms: Vec::new(),
             saved_clips: Vec::new(),
-            saved_z_indexes: Vec::new(),
+            pending_drag_paint: None,
             gpu_resources,
             window: self.window.clone(),
             #[cfg(feature = "vello")]
@@ -699,6 +597,8 @@ impl WindowHandle {
             );
         }
         cx.paint_view(self.id);
+        // Paint drag overlay last to ensure it appears on top of all content
+        cx.paint_pending_drag();
         if cx.window_state.capture.is_none() {
             self.window.pre_present_notify();
         }
@@ -776,7 +676,8 @@ impl WindowHandle {
     }
 
     pub(crate) fn process_update(&mut self) {
-        if self.process_update_no_paint() {
+        let needs_paint = self.process_update_no_paint();
+        if needs_paint {
             self.schedule_repaint();
         }
     }
@@ -789,14 +690,13 @@ impl WindowHandle {
         loop {
             loop {
                 self.process_update_messages();
-                if !self.needs_layout()
-                    && !self.needs_style()
-                    && !self.window_state.request_compute_layout
-                {
+                let needs_style = self.needs_style();
+                let needs_layout = self.needs_layout();
+                if !needs_layout && !needs_style && !self.window_state.request_compute_layout {
                     break;
                 }
 
-                if self.needs_style() {
+                if needs_style {
                     paint = true;
                     self.style();
                 }
@@ -1648,5 +1548,95 @@ impl View for WindowView {
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
         "Window".into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::views::{Decorators, Empty};
+
+    /// Test that we can create a headless WindowHandle.
+    #[test]
+    fn test_headless_window_handle_creation() {
+        let view = Empty::new().style(|s| s.size(100.0, 100.0));
+        let window_handle = WindowHandle::new_headless(view, Size::new(800.0, 600.0), 1.0);
+
+        // Just verify creation doesn't panic
+        assert!(window_handle.scale > 0.0);
+    }
+
+    /// Test that headless WindowHandle can dispatch events.
+    #[test]
+    fn test_headless_event_dispatch() {
+        use crate::event::Event;
+        use ui_events::pointer::{
+            PointerButton, PointerButtonEvent, PointerEvent, PointerId, PointerInfo, PointerType,
+        };
+
+        let view = Empty::new().style(|s| s.size(100.0, 100.0));
+        let mut window_handle = WindowHandle::new_headless(view, Size::new(800.0, 600.0), 1.0);
+
+        // Create a pointer down event
+        let event = Event::Pointer(PointerEvent::Down(PointerButtonEvent {
+            state: ui_events::pointer::PointerState {
+                position: dpi::PhysicalPosition::new(50.0, 50.0),
+                count: 1,
+                ..Default::default()
+            },
+            button: Some(PointerButton::Primary),
+            pointer: PointerInfo {
+                pointer_id: Some(PointerId::PRIMARY),
+                persistent_device_id: None,
+                pointer_type: PointerType::Mouse,
+            },
+        }));
+
+        // Dispatch should not panic
+        window_handle.event(event);
+    }
+
+    /// Test that headless WindowHandle runs process_update correctly.
+    #[test]
+    fn test_headless_process_update() {
+        use crate::event::Event;
+        use ui_events::pointer::{
+            PointerButton, PointerButtonEvent, PointerEvent, PointerId, PointerInfo, PointerType,
+        };
+
+        let view = Empty::new().style(|s| s.size(100.0, 100.0));
+        let mut window_handle = WindowHandle::new_headless(view, Size::new(800.0, 600.0), 1.0);
+
+        // Dispatch pointer down
+        window_handle.event(Event::Pointer(PointerEvent::Down(PointerButtonEvent {
+            state: ui_events::pointer::PointerState {
+                position: dpi::PhysicalPosition::new(50.0, 50.0),
+                count: 1,
+                ..Default::default()
+            },
+            button: Some(PointerButton::Primary),
+            pointer: PointerInfo {
+                pointer_id: Some(PointerId::PRIMARY),
+                persistent_device_id: None,
+                pointer_type: PointerType::Mouse,
+            },
+        })));
+
+        // Dispatch pointer up
+        window_handle.event(Event::Pointer(PointerEvent::Up(PointerButtonEvent {
+            state: ui_events::pointer::PointerState {
+                position: dpi::PhysicalPosition::new(50.0, 50.0),
+                count: 1,
+                ..Default::default()
+            },
+            button: Some(PointerButton::Primary),
+            pointer: PointerInfo {
+                pointer_id: Some(PointerId::PRIMARY),
+                persistent_device_id: None,
+                pointer_type: PointerType::Mouse,
+            },
+        })));
+
+        // All should complete without panic
     }
 }
