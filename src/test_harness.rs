@@ -241,7 +241,9 @@ impl TestHarness {
     /// For example, `has_style_for_selector(id, StyleSelector::Active)` returns true
     /// if the view has an `:active` style defined.
     pub fn has_style_for_selector(&mut self, id: ViewId, selector: StyleSelector) -> bool {
-        self.window_handle.window_state.has_style_for_sel(id, selector)
+        self.window_handle
+            .window_state
+            .has_style_for_sel(id, selector)
     }
 
     /// Get the computed style for a view.
@@ -281,7 +283,11 @@ impl TestHarness {
     pub fn process_pointer_up_styles(&mut self) {
         // Request style update for views that have Active selector
         for id in self.window_handle.window_state.clicking.clone() {
-            if self.window_handle.window_state.has_style_for_sel(id, StyleSelector::Active) {
+            if self
+                .window_handle
+                .window_state
+                .has_style_for_sel(id, StyleSelector::Active)
+            {
                 id.request_style_recursive();
             }
         }
@@ -460,8 +466,10 @@ fn create_pointer_move(x: f64, y: f64) -> Event {
 /// Create a scroll event with pixel delta at the given position.
 fn create_scroll_event(x: f64, y: f64, delta_x: f64, delta_y: f64) -> Event {
     use dpi::PhysicalPosition;
-    use ui_events::pointer::{PointerEvent, PointerId, PointerInfo, PointerScrollEvent, PointerType};
     use ui_events::ScrollDelta;
+    use ui_events::pointer::{
+        PointerEvent, PointerId, PointerInfo, PointerScrollEvent, PointerType,
+    };
 
     Event::Pointer(PointerEvent::Scroll(PointerScrollEvent {
         state: ui_events::pointer::PointerState {
@@ -481,8 +489,10 @@ fn create_scroll_event(x: f64, y: f64, delta_x: f64, delta_y: f64) -> Event {
 /// Create a scroll event with line delta at the given position.
 fn create_scroll_lines_event(x: f64, y: f64, lines_x: f32, lines_y: f32) -> Event {
     use dpi::PhysicalPosition;
-    use ui_events::pointer::{PointerEvent, PointerId, PointerInfo, PointerScrollEvent, PointerType};
     use ui_events::ScrollDelta;
+    use ui_events::pointer::{
+        PointerEvent, PointerId, PointerInfo, PointerScrollEvent, PointerType,
+    };
 
     Event::Pointer(PointerEvent::Scroll(PointerScrollEvent {
         state: ui_events::pointer::PointerState {
@@ -600,8 +610,7 @@ mod tests {
         use crate::peniko::color::palette::css;
         use crate::style::Background;
 
-        let view = Empty::new()
-            .style(|s| s.size(100.0, 100.0).active(|s| s.background(css::RED)));
+        let view = Empty::new().style(|s| s.size(100.0, 100.0).active(|s| s.background(css::RED)));
         let id = view.view_id();
 
         let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
@@ -614,13 +623,19 @@ mod tests {
 
         // Check computed background color before clicking - should be None
         let bg_before = harness.get_computed_style(id).get(Background);
-        assert!(bg_before.is_none(), "Background should be None before clicking");
+        assert!(
+            bg_before.is_none(),
+            "Background should be None before clicking"
+        );
 
         // Pointer down
         harness.pointer_down(50.0, 50.0);
 
         // Check clicking state
-        assert!(harness.is_clicking(id), "Should be clicking after pointer down");
+        assert!(
+            harness.is_clicking(id),
+            "Should be clicking after pointer down"
+        );
 
         // Check computed background color after clicking - should be RED
         let bg_after = harness.get_computed_style(id).get(Background);
@@ -634,8 +649,7 @@ mod tests {
     fn test_style_request_on_clicking() {
         use crate::peniko::color::palette::css;
 
-        let view = Empty::new()
-            .style(|s| s.size(100.0, 100.0).active(|s| s.background(css::RED)));
+        let view = Empty::new().style(|s| s.size(100.0, 100.0).active(|s| s.background(css::RED)));
         let id = view.view_id();
 
         let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
@@ -653,7 +667,10 @@ mod tests {
         harness.pointer_down(50.0, 50.0);
 
         // Check clicking state after
-        assert!(harness.is_clicking(id), "Should be clicking after pointer down");
+        assert!(
+            harness.is_clicking(id),
+            "Should be clicking after pointer down"
+        );
 
         // Check if has_active is still true after clicking
         assert!(

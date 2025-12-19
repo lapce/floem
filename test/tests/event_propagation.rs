@@ -261,12 +261,10 @@ fn test_pointer_events_none_child_parent_still_receives() {
     let view = tracker
         .track_named(
             "parent",
-            Container::new(
-                tracker.track_named(
-                    "child_no_events",
-                    Empty::new().style(|s| s.size(50.0, 50.0).pointer_events_none()),
-                ),
-            )
+            Container::new(tracker.track_named(
+                "child_no_events",
+                Empty::new().style(|s| s.size(50.0, 50.0).pointer_events_none()),
+            ))
             .style(|s| s.size(100.0, 100.0)),
         )
         .style(|s| s.size(100.0, 100.0));
@@ -412,7 +410,8 @@ fn test_bubbling_order_child_then_parent() {
                 tracker.track_named_cont(
                     "parent",
                     Container::new(
-                        tracker.track_named_cont("child", Empty::new().style(|s| s.size(30.0, 30.0))),
+                        tracker
+                            .track_named_cont("child", Empty::new().style(|s| s.size(30.0, 30.0))),
                     )
                     .style(|s| s.size(60.0, 60.0)),
                 ),
@@ -445,7 +444,8 @@ fn test_stop_in_middle_prevents_further_bubbling() {
                 tracker.track_named(
                     "parent", // Uses stop!
                     Container::new(
-                        tracker.track_named_cont("child", Empty::new().style(|s| s.size(30.0, 30.0))),
+                        tracker
+                            .track_named_cont("child", Empty::new().style(|s| s.size(30.0, 30.0))),
                     )
                     .style(|s| s.size(60.0, 60.0)),
                 ),
@@ -545,7 +545,10 @@ fn test_clicking_state_cleared_immediately_after_pointer_up() {
 
     // Pointer down - should be clicking
     harness.pointer_down(50.0, 50.0);
-    assert!(harness.is_clicking(id), "Should be clicking after pointer down");
+    assert!(
+        harness.is_clicking(id),
+        "Should be clicking after pointer down"
+    );
 
     // Pointer up - should NOT be clicking anymore
     harness.pointer_up(50.0, 50.0);
@@ -678,21 +681,39 @@ fn test_rapid_click_sequence_clears_clicking_state() {
 
     // First click
     harness.pointer_down(50.0, 50.0);
-    assert!(harness.is_clicking(id), "Should be clicking after first down");
+    assert!(
+        harness.is_clicking(id),
+        "Should be clicking after first down"
+    );
     harness.pointer_up(50.0, 50.0);
-    assert!(!harness.is_clicking(id), "Should not be clicking after first up");
+    assert!(
+        !harness.is_clicking(id),
+        "Should not be clicking after first up"
+    );
 
     // Second click
     harness.pointer_down(50.0, 50.0);
-    assert!(harness.is_clicking(id), "Should be clicking after second down");
+    assert!(
+        harness.is_clicking(id),
+        "Should be clicking after second down"
+    );
     harness.pointer_up(50.0, 50.0);
-    assert!(!harness.is_clicking(id), "Should not be clicking after second up");
+    assert!(
+        !harness.is_clicking(id),
+        "Should not be clicking after second up"
+    );
 
     // Third click
     harness.pointer_down(50.0, 50.0);
-    assert!(harness.is_clicking(id), "Should be clicking after third down");
+    assert!(
+        harness.is_clicking(id),
+        "Should be clicking after third down"
+    );
     harness.pointer_up(50.0, 50.0);
-    assert!(!harness.is_clicking(id), "Should not be clicking after third up");
+    assert!(
+        !harness.is_clicking(id),
+        "Should not be clicking after third up"
+    );
 }
 
 #[test]
@@ -707,7 +728,10 @@ fn test_clicking_state_cleared_even_when_pointer_up_outside_view() {
 
     // Pointer down on the child view
     harness.pointer_down(25.0, 25.0);
-    assert!(harness.is_clicking(id), "Should be clicking after pointer down on view");
+    assert!(
+        harness.is_clicking(id),
+        "Should be clicking after pointer down on view"
+    );
 
     // Pointer up outside the child view (but still in parent)
     harness.pointer_up(75.0, 75.0);
@@ -732,7 +756,10 @@ fn test_interaction_state_reflects_clicking() {
     // Pointer down - should be clicking
     harness.pointer_down(50.0, 50.0);
     let state = harness.get_interaction_state(id);
-    assert!(state.is_clicking, "Interaction state should show clicking after pointer down");
+    assert!(
+        state.is_clicking,
+        "Interaction state should show clicking after pointer down"
+    );
 
     // Pointer up - should NOT be clicking
     harness.pointer_up(50.0, 50.0);
@@ -748,15 +775,17 @@ fn test_interaction_state_after_style_recomputation() {
     // After recomputing styles, the interaction state should still be correct
     use floem::peniko::color::palette::css;
 
-    let view = Empty::new()
-        .style(|s| s.size(100.0, 100.0).active(|s| s.background(css::RED)));
+    let view = Empty::new().style(|s| s.size(100.0, 100.0).active(|s| s.background(css::RED)));
     let id = view.view_id();
 
     let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
 
     // Pointer down
     harness.pointer_down(50.0, 50.0);
-    assert!(harness.is_clicking(id), "Should be clicking after pointer down");
+    assert!(
+        harness.is_clicking(id),
+        "Should be clicking after pointer down"
+    );
 
     // Recompute styles while clicking
     harness.recompute_styles();
@@ -785,8 +814,7 @@ fn test_active_style_with_full_click_cycle() {
     use floem::peniko::color::palette::css;
     use floem::style::StyleSelector;
 
-    let view = Empty::new()
-        .style(|s| s.size(100.0, 100.0).active(|s| s.background(css::RED)));
+    let view = Empty::new().style(|s| s.size(100.0, 100.0).active(|s| s.background(css::RED)));
     let id = view.view_id();
 
     let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
@@ -797,11 +825,17 @@ fn test_active_style_with_full_click_cycle() {
 
     // Pointer down - start clicking
     harness.pointer_down(50.0, 50.0);
-    assert!(harness.is_clicking(id), "Should be clicking after pointer down");
+    assert!(
+        harness.is_clicking(id),
+        "Should be clicking after pointer down"
+    );
 
     // Pointer up - stop clicking
     harness.pointer_up(50.0, 50.0);
-    assert!(!harness.is_clicking(id), "Should NOT be clicking after pointer up");
+    assert!(
+        !harness.is_clicking(id),
+        "Should NOT be clicking after pointer up"
+    );
 
     // After process_pointer_up_styles, clicking should definitely be cleared
     harness.process_pointer_up_styles();
@@ -830,7 +864,10 @@ fn test_clicking_state_persists_when_pointer_leaves_view() {
 
     // Pointer down on the child view
     harness.pointer_down(25.0, 25.0);
-    assert!(harness.is_clicking(id), "Should be clicking after pointer down");
+    assert!(
+        harness.is_clicking(id),
+        "Should be clicking after pointer down"
+    );
 
     // Move pointer out of the child view (but still in parent)
     harness.pointer_move(75.0, 75.0);
@@ -854,8 +891,7 @@ fn test_clicking_state_after_pointer_move_and_style_update() {
     // After pointer move out and style recalculation, clicking should still be set
     use floem::peniko::color::palette::css;
 
-    let view = Empty::new()
-        .style(|s| s.size(50.0, 50.0).active(|s| s.background(css::RED)));
+    let view = Empty::new().style(|s| s.size(50.0, 50.0).active(|s| s.background(css::RED)));
     let id = view.view_id();
 
     let parent = Container::new(view).style(|s| s.size(100.0, 100.0));
@@ -864,7 +900,10 @@ fn test_clicking_state_after_pointer_move_and_style_update() {
 
     // Pointer down on the child view
     harness.pointer_down(25.0, 25.0);
-    assert!(harness.is_clicking(id), "Should be clicking after pointer down");
+    assert!(
+        harness.is_clicking(id),
+        "Should be clicking after pointer down"
+    );
 
     // Move pointer out of the child view
     harness.pointer_move(75.0, 75.0);
@@ -895,7 +934,10 @@ fn test_hover_state_cleared_on_pointer_leave() {
 
     // Should be hovered
     let state = harness.get_interaction_state(id);
-    assert!(state.is_hovered, "Should be hovered when pointer is over view");
+    assert!(
+        state.is_hovered,
+        "Should be hovered when pointer is over view"
+    );
 
     // Move pointer out of the child view
     harness.pointer_move(75.0, 75.0);
@@ -915,8 +957,8 @@ fn test_hover_state_cleared_on_pointer_leave() {
 #[test]
 fn test_active_style_applied_during_click() {
     // Verify that the :active style is actually applied to the computed style
-    use floem::peniko::color::palette::css;
     use floem::peniko::Brush;
+    use floem::peniko::color::palette::css;
     use floem::style::{Background, StyleSelector};
 
     let view = Empty::new().style(|s| {
@@ -938,16 +980,23 @@ fn test_active_style_applied_during_click() {
     );
 
     // Check that the view has Active selector defined BEFORE any interaction
-    eprintln!("Before any interaction: has_style_for_selector(Active) = {}",
-        harness.has_style_for_selector(id, StyleSelector::Active));
+    eprintln!(
+        "Before any interaction: has_style_for_selector(Active) = {}",
+        harness.has_style_for_selector(id, StyleSelector::Active)
+    );
 
     // Pointer down - should apply :active style
     harness.pointer_down(50.0, 50.0);
-    eprintln!("After pointer_down: is_clicking = {}", harness.is_clicking(id));
+    eprintln!(
+        "After pointer_down: is_clicking = {}",
+        harness.is_clicking(id)
+    );
     harness.recompute_styles();
 
-    eprintln!("After pointer_down+recompute: has_style_for_selector(Active) = {}",
-        harness.has_style_for_selector(id, StyleSelector::Active));
+    eprintln!(
+        "After pointer_down+recompute: has_style_for_selector(Active) = {}",
+        harness.has_style_for_selector(id, StyleSelector::Active)
+    );
 
     let style = harness.get_computed_style(id);
     let bg = style.get(Background);
@@ -960,7 +1009,10 @@ fn test_active_style_applied_during_click() {
 
     // Pointer up - should revert to normal style
     eprintln!("--- About to pointer_up ---");
-    eprintln!("has_style_for_selector(Active) = {}", harness.has_style_for_selector(id, StyleSelector::Active));
+    eprintln!(
+        "has_style_for_selector(Active) = {}",
+        harness.has_style_for_selector(id, StyleSelector::Active)
+    );
     harness.pointer_up(50.0, 50.0);
 
     // Debug: check if clicking is actually cleared

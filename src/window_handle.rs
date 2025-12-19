@@ -230,11 +230,7 @@ impl WindowHandle {
     /// * `view` - The root view for this window
     /// * `size` - The virtual window size
     /// * `scale` - The window scale factor (default 1.0)
-    pub(crate) fn new_headless(
-        view: impl IntoView,
-        size_val: Size,
-        scale: f64,
-    ) -> Self {
+    pub(crate) fn new_headless(view: impl IntoView, size_val: Size, scale: f64) -> Self {
         use crate::mock_window::MockWindow;
 
         let scope = Scope::new();

@@ -653,18 +653,17 @@ impl EventCx<'_> {
         };
 
         // Track file hover changes
-        let was_file_hovered =
-            if matches!(event, Event::FileDrag(FileDragEvent::DragMoved { .. }))
-                || is_pointer_move.is_some()
-            {
-                if !self.window_state.file_hovered.is_empty() {
-                    Some(std::mem::take(&mut self.window_state.file_hovered))
-                } else {
-                    None
-                }
+        let was_file_hovered = if matches!(event, Event::FileDrag(FileDragEvent::DragMoved { .. }))
+            || is_pointer_move.is_some()
+        {
+            if !self.window_state.file_hovered.is_empty() {
+                Some(std::mem::take(&mut self.window_state.file_hovered))
             } else {
                 None
-            };
+            }
+        } else {
+            None
+        };
 
         // On pointer down, clear clicking state and save focus
         let is_pointer_down = matches!(&event, Event::Pointer(PointerEvent::Down { .. }));
@@ -734,7 +733,10 @@ impl EventCx<'_> {
                     );
                 if keyboard_trigger_end {
                     if let Some(id) = self.window_state.active {
-                        if self.window_state.has_style_for_sel(id, StyleSelector::Active) {
+                        if self
+                            .window_state
+                            .has_style_for_sel(id, StyleSelector::Active)
+                        {
                             id.request_style_recursive();
                         }
                         self.window_state.active = None;
@@ -761,7 +763,10 @@ impl EventCx<'_> {
             }
 
             if let Event::Pointer(PointerEvent::Up { .. }) = &event {
-                if self.window_state.has_style_for_sel(id, StyleSelector::Active) {
+                if self
+                    .window_state
+                    .has_style_for_sel(id, StyleSelector::Active)
+                {
                     id.request_style_recursive();
                 }
                 self.window_state.active = None;
@@ -834,7 +839,10 @@ impl EventCx<'_> {
         // Request style updates for clicking views on pointer down
         if is_pointer_down {
             for id in self.window_state.clicking.clone() {
-                if self.window_state.has_style_for_sel(id, StyleSelector::Active) {
+                if self
+                    .window_state
+                    .has_style_for_sel(id, StyleSelector::Active)
+                {
                     id.request_style_recursive();
                 }
             }
@@ -843,7 +851,10 @@ impl EventCx<'_> {
         // On pointer up, request style updates and clear clicking state
         if matches!(&event, Event::Pointer(PointerEvent::Up { .. })) {
             for id in self.window_state.clicking.clone() {
-                if self.window_state.has_style_for_sel(id, StyleSelector::Active) {
+                if self
+                    .window_state
+                    .has_style_for_sel(id, StyleSelector::Active)
+                {
                     id.request_style_recursive();
                 }
             }
@@ -1550,8 +1561,7 @@ impl PaintCx<'_> {
             }
         } else {
             // Handle active dragging
-            let translation =
-                self.window_state.last_cursor_location.to_vec2() - dragging.offset;
+            let translation = self.window_state.last_cursor_location.to_vec2() - dragging.offset;
             Some(base_transform.with_translation(translation))
         };
 
@@ -1580,12 +1590,7 @@ impl PaintCx<'_> {
             if let Some(dragging_style) = view_state.borrow().dragging_style.clone() {
                 let style = style.apply(dragging_style);
                 let mut _new_frame = false;
-                view_style_props.read_explicit(
-                    &style,
-                    &style,
-                    &Instant::now(),
-                    &mut _new_frame,
-                );
+                view_style_props.read_explicit(&style, &style, &Instant::now(), &mut _new_frame);
             }
 
             // Paint with drag styling

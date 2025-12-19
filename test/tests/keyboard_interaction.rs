@@ -5,39 +5,32 @@
 //! - Active styles work with pointer events
 //! - Container/child interaction works correctly
 
+use floem::peniko::Brush;
 use floem::prelude::*;
 use floem::style::{Background, StyleSelector};
-use floem::peniko::Brush;
 use floem_test::prelude::*;
 
 /// Test that focused view shows focus style.
 #[test]
 fn test_focus_style_applied_when_focused() {
-    let view = Empty::new()
-        .style(|s| {
-            s.size(100.0, 100.0)
-                .focusable(true)
-                .background(palette::css::BLUE)
-                .focus(|s| s.background(palette::css::YELLOW))
-        });
+    let view = Empty::new().style(|s| {
+        s.size(100.0, 100.0)
+            .focusable(true)
+            .background(palette::css::BLUE)
+            .focus(|s| s.background(palette::css::YELLOW))
+    });
     let id = view.view_id();
 
     let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
 
     // Initially not focused
-    assert!(
-        !harness.is_focused(id),
-        "Should not be focused initially"
-    );
+    assert!(!harness.is_focused(id), "Should not be focused initially");
 
     // Click to focus
     harness.click(50.0, 50.0);
 
     // Should now be focused
-    assert!(
-        harness.is_focused(id),
-        "Should be focused after click"
-    );
+    assert!(harness.is_focused(id), "Should be focused after click");
 
     // Check focus style is applied
     let style = harness.get_computed_style(id);
@@ -52,13 +45,12 @@ fn test_focus_style_applied_when_focused() {
 /// Test that view has focus_visible selector.
 #[test]
 fn test_focus_visible_selector_detected() {
-    let view = Empty::new()
-        .style(|s| {
-            s.size(100.0, 100.0)
-                .focusable(true)
-                .background(palette::css::BLUE)
-                .focus_visible(|s| s.background(palette::css::ORANGE))
-        });
+    let view = Empty::new().style(|s| {
+        s.size(100.0, 100.0)
+            .focusable(true)
+            .background(palette::css::BLUE)
+            .focus_visible(|s| s.background(palette::css::ORANGE))
+    });
     let id = view.view_id();
 
     let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
@@ -75,15 +67,15 @@ fn test_focus_visible_selector_detected() {
 fn test_container_child_click_interaction() {
     let tracker = ClickTracker::new();
 
-    let child = tracker.track_named("child", Empty::new())
+    let child = tracker
+        .track_named("child", Empty::new())
         .style(|s| s.size(50.0, 50.0).background(palette::css::RED));
 
-    let container = Container::new(child)
-        .style(|s| {
-            s.size(100.0, 100.0)
-                .background(palette::css::BLUE)
-                .active(|s| s.background(palette::css::DARK_BLUE))
-        });
+    let container = Container::new(child).style(|s| {
+        s.size(100.0, 100.0)
+            .background(palette::css::BLUE)
+            .active(|s| s.background(palette::css::DARK_BLUE))
+    });
     let container_id = container.view_id();
 
     let mut harness = TestHarness::new_with_size(container, 100.0, 100.0);
@@ -119,12 +111,11 @@ fn test_container_child_click_interaction() {
 /// Test that active style is removed after pointer up.
 #[test]
 fn test_active_style_removed_after_pointer_up() {
-    let view = Empty::new()
-        .style(|s| {
-            s.size(100.0, 100.0)
-                .background(palette::css::BLUE)
-                .active(|s| s.background(palette::css::RED))
-        });
+    let view = Empty::new().style(|s| {
+        s.size(100.0, 100.0)
+            .background(palette::css::BLUE)
+            .active(|s| s.background(palette::css::RED))
+    });
     let id = view.view_id();
 
     let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
@@ -157,16 +148,13 @@ fn test_active_style_removed_after_pointer_up() {
 /// Test multiple focusable views - only one should be focused at a time.
 #[test]
 fn test_only_one_view_focused_at_time() {
-    let view1 = Empty::new()
-        .style(|s| s.size(50.0, 50.0).focusable(true));
+    let view1 = Empty::new().style(|s| s.size(50.0, 50.0).focusable(true));
     let id1 = view1.view_id();
 
-    let view2 = Empty::new()
-        .style(|s| s.size(50.0, 50.0).focusable(true));
+    let view2 = Empty::new().style(|s| s.size(50.0, 50.0).focusable(true));
     let id2 = view2.view_id();
 
-    let view = stack((view1, view2))
-        .style(|s| s.size(100.0, 50.0));
+    let view = stack((view1, view2)).style(|s| s.size(100.0, 50.0));
 
     let mut harness = TestHarness::new_with_size(view, 100.0, 50.0);
 
@@ -177,6 +165,9 @@ fn test_only_one_view_focused_at_time() {
 
     // Click second view
     harness.click(75.0, 25.0);
-    assert!(!harness.is_focused(id1), "View 1 should no longer be focused");
+    assert!(
+        !harness.is_focused(id1),
+        "View 1 should no longer be focused"
+    );
     assert!(harness.is_focused(id2), "View 2 should now be focused");
 }

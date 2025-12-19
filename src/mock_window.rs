@@ -110,7 +110,7 @@ impl HasWindowHandle for MockWindowHandle {
         // Return a no-op window handle
         // SAFETY: This is a mock that won't be used for real rendering
         use std::ptr::NonNull;
-        let ptr = NonNull::new(1usize as *mut std::ffi::c_void).unwrap();
+        let ptr = NonNull::new(std::ptr::dangling_mut::<std::ffi::c_void>()).unwrap();
         let handle = AppKitWindowHandle::new(ptr);
         Ok(unsafe { WindowHandle::borrow_raw(RawWindowHandle::AppKit(handle)) })
     }

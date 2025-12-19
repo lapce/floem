@@ -9,9 +9,9 @@
 //! interact_state.is_disabled which is computed from the OLD computed_style,
 //! not the NEW style being computed.
 
+use floem::peniko::Brush;
 use floem::prelude::*;
 use floem::style::{Background, Disabled};
-use floem::peniko::Brush;
 use floem_test::prelude::*;
 
 /// Test that a reactive style closure re-runs when its signal changes.
@@ -20,15 +20,13 @@ use floem_test::prelude::*;
 fn test_reactive_style_updates_on_signal_change() {
     let counter = RwSignal::new(0);
 
-    let view = Empty::new()
-        .style(move |s| {
-            s.size(100.0, 100.0)
-                .background(if counter.get() == 0 {
-                    palette::css::GRAY
-                } else {
-                    palette::css::BLUE
-                })
-        });
+    let view = Empty::new().style(move |s| {
+        s.size(100.0, 100.0).background(if counter.get() == 0 {
+            palette::css::GRAY
+        } else {
+            palette::css::BLUE
+        })
+    });
     let id = view.view_id();
 
     let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
@@ -64,11 +62,7 @@ fn test_reactive_style_updates_on_signal_change() {
 fn test_set_disabled_sets_property() {
     let counter = RwSignal::new(0);
 
-    let view = Empty::new()
-        .style(move |s| {
-            s.size(100.0, 100.0)
-                .set_disabled(counter.get() == 0)
-        });
+    let view = Empty::new().style(move |s| s.size(100.0, 100.0).set_disabled(counter.get() == 0));
     let id = view.view_id();
 
     let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
@@ -104,13 +98,12 @@ fn test_set_disabled_sets_property() {
 fn test_disabled_selector_applied_on_first_pass() {
     let counter = RwSignal::new(0);
 
-    let view = Empty::new()
-        .style(move |s| {
-            s.size(100.0, 100.0)
-                .background(palette::css::LIGHT_BLUE)
-                .set_disabled(counter.get() == 0)
-                .disabled(|s| s.background(palette::css::LIGHT_GRAY))
-        });
+    let view = Empty::new().style(move |s| {
+        s.size(100.0, 100.0)
+            .background(palette::css::LIGHT_BLUE)
+            .set_disabled(counter.get() == 0)
+            .disabled(|s| s.background(palette::css::LIGHT_GRAY))
+    });
     let id = view.view_id();
 
     let harness = TestHarness::new_with_size(view, 100.0, 100.0);
@@ -149,13 +142,12 @@ fn test_disabled_selector_applied_on_first_pass() {
 fn test_disabled_to_enabled_transition() {
     let counter = RwSignal::new(0);
 
-    let view = Empty::new()
-        .style(move |s| {
-            s.size(100.0, 100.0)
-                .background(palette::css::LIGHT_BLUE)
-                .set_disabled(counter.get() == 0)
-                .disabled(|s| s.background(palette::css::LIGHT_GRAY))
-        });
+    let view = Empty::new().style(move |s| {
+        s.size(100.0, 100.0)
+            .background(palette::css::LIGHT_BLUE)
+            .set_disabled(counter.get() == 0)
+            .disabled(|s| s.background(palette::css::LIGHT_GRAY))
+    });
     let id = view.view_id();
 
     let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
@@ -185,7 +177,10 @@ fn test_disabled_to_enabled_transition() {
     // After signal change, Disabled PROPERTY should be false
     let style = harness.get_computed_style(id);
     let disabled = style.get(Disabled);
-    assert!(!disabled, "After counter=1, Disabled property should be false");
+    assert!(
+        !disabled,
+        "After counter=1, Disabled property should be false"
+    );
 
     // BUG: Background should change to LIGHT_BLUE (enabled)
     // But it stays LIGHT_GRAY because interact_state.is_disabled was true
@@ -208,13 +203,12 @@ fn test_disabled_to_enabled_transition() {
 fn test_disabled_selector_after_style_request() {
     let counter = RwSignal::new(0);
 
-    let view = Empty::new()
-        .style(move |s| {
-            s.size(100.0, 100.0)
-                .background(palette::css::LIGHT_BLUE)
-                .set_disabled(counter.get() == 0)
-                .disabled(|s| s.background(palette::css::LIGHT_GRAY))
-        });
+    let view = Empty::new().style(move |s| {
+        s.size(100.0, 100.0)
+            .background(palette::css::LIGHT_BLUE)
+            .set_disabled(counter.get() == 0)
+            .disabled(|s| s.background(palette::css::LIGHT_GRAY))
+    });
     let id = view.view_id();
 
     let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
@@ -222,7 +216,10 @@ fn test_disabled_selector_after_style_request() {
     // After first style pass, Disabled property should be true
     let style = harness.get_computed_style(id);
     let disabled = style.get(Disabled);
-    assert!(disabled, "Disabled property should be true after first pass");
+    assert!(
+        disabled,
+        "Disabled property should be true after first pass"
+    );
 
     // But the disabled selector wasn't applied (BUG)
     // Now explicitly request a style recalculation
@@ -247,30 +244,25 @@ fn test_disabled_selector_after_style_request() {
 fn test_multiple_reactive_styles() {
     let signal = RwSignal::new(false);
 
-    let view1 = Empty::new()
-        .style(move |s| {
-            s.size(50.0, 50.0)
-                .background(if signal.get() {
-                    palette::css::RED
-                } else {
-                    palette::css::BLUE
-                })
-        });
+    let view1 = Empty::new().style(move |s| {
+        s.size(50.0, 50.0).background(if signal.get() {
+            palette::css::RED
+        } else {
+            palette::css::BLUE
+        })
+    });
     let id1 = view1.view_id();
 
-    let view2 = Empty::new()
-        .style(move |s| {
-            s.size(50.0, 50.0)
-                .background(if signal.get() {
-                    palette::css::GREEN
-                } else {
-                    palette::css::YELLOW
-                })
-        });
+    let view2 = Empty::new().style(move |s| {
+        s.size(50.0, 50.0).background(if signal.get() {
+            palette::css::GREEN
+        } else {
+            palette::css::YELLOW
+        })
+    });
     let id2 = view2.view_id();
 
-    let view = stack((view1, view2))
-        .style(|s| s.size(100.0, 50.0));
+    let view = stack((view1, view2)).style(|s| s.size(100.0, 50.0));
 
     let mut harness = TestHarness::new_with_size(view, 100.0, 50.0);
 
@@ -332,17 +324,15 @@ fn test_counter_example_repaint_scenario() {
             }
         });
 
-    let reset_btn = Empty::new()
-        .style(move |s| {
-            s.size(80.0, 30.0)
-                .background(palette::css::LIGHT_BLUE)
-                .set_disabled(counter.get() == 0)
-                .disabled(|s| s.background(palette::css::LIGHT_GRAY))
-        });
+    let reset_btn = Empty::new().style(move |s| {
+        s.size(80.0, 30.0)
+            .background(palette::css::LIGHT_BLUE)
+            .set_disabled(counter.get() == 0)
+            .disabled(|s| s.background(palette::css::LIGHT_GRAY))
+    });
     let reset_id = reset_btn.view_id();
 
-    let view = stack((increment_btn, reset_btn))
-        .style(|s| s.size(200.0, 100.0));
+    let view = stack((increment_btn, reset_btn)).style(|s| s.size(200.0, 100.0));
 
     let mut harness = TestHarness::new_with_size(view, 200.0, 100.0);
 
@@ -350,7 +340,10 @@ fn test_counter_example_repaint_scenario() {
     // After first style pass, Disabled property should be true
     let style = harness.get_computed_style(reset_id);
     let disabled = style.get(Disabled);
-    assert!(disabled, "Reset button should have Disabled=true when counter==0");
+    assert!(
+        disabled,
+        "Reset button should have Disabled=true when counter==0"
+    );
 
     // Click on the increment button (at position within the first button)
     harness.click(40.0, 15.0);
@@ -372,15 +365,13 @@ fn test_counter_example_repaint_scenario() {
 fn test_style_change_triggers_recalculation() {
     let counter = RwSignal::new(0);
 
-    let view = Empty::new()
-        .style(move |s| {
-            s.size(100.0, 100.0)
-                .background(if counter.get() == 0 {
-                    palette::css::GRAY
-                } else {
-                    palette::css::BLUE
-                })
-        });
+    let view = Empty::new().style(move |s| {
+        s.size(100.0, 100.0).background(if counter.get() == 0 {
+            palette::css::GRAY
+        } else {
+            palette::css::BLUE
+        })
+    });
     let id = view.view_id();
 
     let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);

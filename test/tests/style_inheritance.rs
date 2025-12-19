@@ -5,10 +5,10 @@
 //! - Non-inherited props don't flow to children
 //! - Nested views can override inherited props
 
+use floem::peniko::{Brush, Color};
 use floem::prelude::*;
 use floem::prop;
 use floem::style::{Background, Style};
-use floem::peniko::{Brush, Color};
 use floem_test::prelude::*;
 
 // Define an inherited prop
@@ -32,18 +32,16 @@ impl InheritedColorExt for Style {
 /// Test that inherited props flow from parent to child.
 #[test]
 fn test_inherited_prop_flows_to_child() {
-    let child = Empty::new()
-        .style(|s| {
-            s.size(50.0, 50.0)
-                .with_inherited_color(|s, color| s.background(*color))
-        });
+    let child = Empty::new().style(|s| {
+        s.size(50.0, 50.0)
+            .with_inherited_color(|s, color| s.background(*color))
+    });
     let child_id = child.view_id();
 
-    let parent = Container::new(child)
-        .style(|s| {
-            s.size(100.0, 100.0)
-                .set(InheritedColorProp, palette::css::RED)
-        });
+    let parent = Container::new(child).style(|s| {
+        s.size(100.0, 100.0)
+            .set(InheritedColorProp, palette::css::RED)
+    });
 
     let harness = TestHarness::new_with_size(parent, 100.0, 100.0);
 
@@ -60,20 +58,18 @@ fn test_inherited_prop_flows_to_child() {
 /// Test that child can override inherited prop.
 #[test]
 fn test_child_can_override_inherited_prop() {
-    let child = Empty::new()
-        .style(|s| {
-            s.size(50.0, 50.0)
-                // Override the inherited prop
-                .set(InheritedColorProp, palette::css::BLUE)
-                .with_inherited_color(|s, color| s.background(*color))
-        });
+    let child = Empty::new().style(|s| {
+        s.size(50.0, 50.0)
+            // Override the inherited prop
+            .set(InheritedColorProp, palette::css::BLUE)
+            .with_inherited_color(|s, color| s.background(*color))
+    });
     let child_id = child.view_id();
 
-    let parent = Container::new(child)
-        .style(|s| {
-            s.size(100.0, 100.0)
-                .set(InheritedColorProp, palette::css::RED)
-        });
+    let parent = Container::new(child).style(|s| {
+        s.size(100.0, 100.0)
+            .set(InheritedColorProp, palette::css::RED)
+    });
 
     let harness = TestHarness::new_with_size(parent, 100.0, 100.0);
 
@@ -90,21 +86,18 @@ fn test_child_can_override_inherited_prop() {
 /// Test deeply nested inheritance.
 #[test]
 fn test_deeply_nested_inheritance() {
-    let grandchild = Empty::new()
-        .style(|s| {
-            s.size(25.0, 25.0)
-                .with_inherited_color(|s, color| s.background(*color))
-        });
+    let grandchild = Empty::new().style(|s| {
+        s.size(25.0, 25.0)
+            .with_inherited_color(|s, color| s.background(*color))
+    });
     let grandchild_id = grandchild.view_id();
 
-    let child = Container::new(grandchild)
-        .style(|s| s.size(50.0, 50.0));
+    let child = Container::new(grandchild).style(|s| s.size(50.0, 50.0));
 
-    let parent = Container::new(child)
-        .style(|s| {
-            s.size(100.0, 100.0)
-                .set(InheritedColorProp, palette::css::GREEN)
-        });
+    let parent = Container::new(child).style(|s| {
+        s.size(100.0, 100.0)
+            .set(InheritedColorProp, palette::css::GREEN)
+    });
 
     let harness = TestHarness::new_with_size(parent, 100.0, 100.0);
 
@@ -123,18 +116,16 @@ fn test_deeply_nested_inheritance() {
 fn test_inherited_prop_updates_propagate() {
     let color_signal = RwSignal::new(palette::css::RED);
 
-    let child = Empty::new()
-        .style(|s| {
-            s.size(50.0, 50.0)
-                .with_inherited_color(|s, color| s.background(*color))
-        });
+    let child = Empty::new().style(|s| {
+        s.size(50.0, 50.0)
+            .with_inherited_color(|s, color| s.background(*color))
+    });
     let child_id = child.view_id();
 
-    let parent = Container::new(child)
-        .style(move |s| {
-            s.size(100.0, 100.0)
-                .set(InheritedColorProp, color_signal.get())
-        });
+    let parent = Container::new(child).style(move |s| {
+        s.size(100.0, 100.0)
+            .set(InheritedColorProp, color_signal.get())
+    });
 
     let mut harness = TestHarness::new_with_size(parent, 100.0, 100.0);
 

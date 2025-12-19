@@ -31,7 +31,9 @@ fn test_scroll_down_moves_viewport() {
     // Verify scroll happened
     assert!(scroll_tracker.has_scrolled(), "Should have scrolled");
 
-    let viewport = scroll_tracker.last_viewport().expect("Should have viewport");
+    let viewport = scroll_tracker
+        .last_viewport()
+        .expect("Should have viewport");
     assert!(
         viewport.y0 > 0.0,
         "Viewport y0 should be positive after scrolling down, got {}",
@@ -85,7 +87,9 @@ fn test_scroll_horizontal() {
 
     // Check if scroll happened - if content isn't actually wider, this may not work
     if scroll_tracker.has_scrolled() {
-        let viewport = scroll_tracker.last_viewport().expect("Should have viewport");
+        let viewport = scroll_tracker
+            .last_viewport()
+            .expect("Should have viewport");
         assert!(
             viewport.x0 >= 0.0,
             "Viewport x0 should be non-negative, got {}",
@@ -112,7 +116,9 @@ fn test_scroll_diagonal() {
     // Scroll diagonally (negative deltas = scroll down/right)
     harness.scroll(50.0, 50.0, -50.0, -50.0);
 
-    let viewport = scroll_tracker.last_viewport().expect("Should have viewport");
+    let viewport = scroll_tracker
+        .last_viewport()
+        .expect("Should have viewport");
     // At minimum, vertical scrolling should work
     assert!(
         viewport.y0 > 0.0,
@@ -163,7 +169,9 @@ fn test_scroll_clamped_at_bottom() {
     // Try to scroll way past the bottom
     harness.scroll_down(50.0, 50.0, 1000.0);
 
-    let viewport = scroll_tracker.last_viewport().expect("Should have viewport");
+    let viewport = scroll_tracker
+        .last_viewport()
+        .expect("Should have viewport");
 
     // Maximum scroll is content_height - viewport_height = 400 - 100 = 300
     assert!(
@@ -208,7 +216,9 @@ fn test_scroll_clamped_at_right() {
     // Try to scroll way past the right
     harness.scroll_right(50.0, 50.0, 1000.0);
 
-    let viewport = scroll_tracker.last_viewport().expect("Should have viewport");
+    let viewport = scroll_tracker
+        .last_viewport()
+        .expect("Should have viewport");
 
     // Maximum scroll is content_width - viewport_width = 400 - 100 = 300
     assert!(
@@ -336,7 +346,9 @@ fn test_viewport_size_matches_container() {
     // Scroll to trigger a viewport update
     harness.scroll_down(50.0, 50.0, 10.0);
 
-    let viewport = scroll_tracker.last_viewport().expect("Should have viewport");
+    let viewport = scroll_tracker
+        .last_viewport()
+        .expect("Should have viewport");
 
     // Viewport size should approximately match container size
     let width = viewport.x1 - viewport.x0;
@@ -372,7 +384,9 @@ fn test_scroll_by_lines() {
     // LineDelta is converted: 20 pixels per line
     harness.scroll_lines(50.0, 50.0, 0.0, -3.0);
 
-    let viewport = scroll_tracker.last_viewport().expect("Should have viewport");
+    let viewport = scroll_tracker
+        .last_viewport()
+        .expect("Should have viewport");
 
     // 3 lines * 20 pixels = 60 pixels
     assert!(
@@ -539,10 +553,7 @@ fn test_scroll_small_viewport() {
 
     // Verify we got a valid viewport
     if let Some(viewport) = scroll_tracker.last_viewport() {
-        assert!(
-            viewport.y0 >= 0.0,
-            "Viewport should be valid after scroll"
-        );
+        assert!(viewport.y0 >= 0.0, "Viewport should be valid after scroll");
     }
 }
 
@@ -624,7 +635,10 @@ fn test_on_scroll_callback_values() {
     harness.scroll_down(50.0, 50.0, 30.0);
 
     let viewports = scroll_tracker.viewports();
-    assert!(viewports.len() >= 3, "Should have multiple viewport updates");
+    assert!(
+        viewports.len() >= 3,
+        "Should have multiple viewport updates"
+    );
 
     // Each subsequent viewport should show increased scroll (or same if clamped)
     for i in 1..viewports.len() {
@@ -692,7 +706,11 @@ fn test_scroll_tracker_reset() {
         !scroll_tracker.has_scrolled(),
         "Should not have scrolled after reset"
     );
-    assert_eq!(scroll_tracker.scroll_count(), 0, "Count should be 0 after reset");
+    assert_eq!(
+        scroll_tracker.scroll_count(),
+        0,
+        "Count should be 0 after reset"
+    );
     assert!(
         scroll_tracker.last_viewport().is_none(),
         "No viewport after reset"
