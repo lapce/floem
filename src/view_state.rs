@@ -291,6 +291,22 @@ impl ViewState {
         let mut new_context = context.clone();
         let mut new_classes = false;
 
+        // Capture selectors BEFORE any resolution.
+        // This must be done early because resolve_nested_maps removes selector nested maps
+        // after applying them, which would cause selectors() to miss them.
+        let self_style = self.style();
+
+        let mut selectors = self_style.selectors();
+
+        // Also capture selectors from class styles
+        for class in &classes {
+            if let Some(class_style) = context.get_nested_map(class.key) {
+                selectors = selectors.union(class_style.selectors());
+            }
+        }
+
+        self.has_style_selectors = selectors;
+
         let (resolved_style, classes_applied) = resolve_nested_maps(
             combined_style,
             &interact_state,
@@ -300,8 +316,6 @@ impl ViewState {
         );
         combined_style = resolved_style;
         new_classes |= classes_applied;
-
-        let self_style = self.style();
 
         combined_style.apply_mut(self_style.clone());
 
@@ -314,9 +328,6 @@ impl ViewState {
         );
         combined_style = resolved_style;
         new_classes |= classes_applied;
-
-        // Track if this style has selectors for optimization purposes
-        self.has_style_selectors = combined_style.selectors();
 
         // Process animations
         for animation in self

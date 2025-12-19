@@ -60,11 +60,11 @@ pub use floem::ViewId;
 
 /// Prelude module for convenient imports in tests.
 pub mod prelude {
-    pub use super::{ClickTracker, TestHarnessExt, layer, layers};
+    pub use super::{ClickTracker, ScrollTracker, TestHarnessExt, layer, layers};
     pub use floem::ViewId;
     pub use floem::prelude::*;
     pub use floem::test_harness::*;
-    pub use floem::views::{Container, Decorators, Empty, stack, stack_from_iter};
+    pub use floem::views::{Container, Decorators, Empty, Scroll, stack, stack_from_iter};
 }
 
 /// Tracks click events on views for testing.
@@ -85,6 +85,10 @@ pub mod prelude {
 pub struct ClickTracker {
     clicks: Rc<RefCell<Vec<Option<String>>>>,
     count: Rc<Cell<usize>>,
+    double_clicks: Rc<RefCell<Vec<Option<String>>>>,
+    double_click_count: Rc<Cell<usize>>,
+    secondary_clicks: Rc<RefCell<Vec<Option<String>>>>,
+    secondary_click_count: Rc<Cell<usize>>,
 }
 
 impl ClickTracker {
@@ -113,6 +117,19 @@ impl ClickTracker {
         let count = self.count.clone();
         let name = name.to_string();
         view.into_view().on_click_stop(move |_| {
+            clicks.borrow_mut().push(Some(name.clone()));
+            count.set(count.get() + 1);
+        })
+    }
+
+    /// Wrap a view to track when it receives clicks, with a name for identification.
+    ///
+    /// The view will have `on_click_cont` added to it, allowing the event to bubble.
+    pub fn track_named_cont<V: IntoView>(&self, name: &str, view: V) -> impl IntoView + use<V> {
+        let clicks = self.clicks.clone();
+        let count = self.count.clone();
+        let name = name.to_string();
+        view.into_view().on_click_cont(move |_| {
             clicks.borrow_mut().push(Some(name.clone()));
             count.set(count.get() + 1);
         })
@@ -148,6 +165,68 @@ impl ClickTracker {
     pub fn reset(&self) {
         self.clicks.borrow_mut().clear();
         self.count.set(0);
+        self.double_clicks.borrow_mut().clear();
+        self.double_click_count.set(0);
+        self.secondary_clicks.borrow_mut().clear();
+        self.secondary_click_count.set(0);
+    }
+
+    /// Wrap a view to track when it receives double clicks, with a name for identification.
+    ///
+    /// The view will have `on_double_click_stop` added to it.
+    pub fn track_double_click<V: IntoView>(&self, name: &str, view: V) -> impl IntoView + use<V> {
+        let clicks = self.double_clicks.clone();
+        let count = self.double_click_count.clone();
+        let name = name.to_string();
+        view.into_view().on_double_click_stop(move |_| {
+            clicks.borrow_mut().push(Some(name.clone()));
+            count.set(count.get() + 1);
+        })
+    }
+
+    /// Returns the number of double clicks recorded.
+    pub fn double_click_count(&self) -> usize {
+        self.double_click_count.get()
+    }
+
+    /// Returns the names of double-clicked views in order.
+    pub fn double_clicked_names(&self) -> Vec<String> {
+        self.double_clicks
+            .borrow()
+            .iter()
+            .filter_map(|n| n.clone())
+            .collect()
+    }
+
+    /// Wrap a view to track when it receives secondary (right) clicks, with a name.
+    ///
+    /// The view will have `on_secondary_click_stop` added to it.
+    pub fn track_secondary_click<V: IntoView>(
+        &self,
+        name: &str,
+        view: V,
+    ) -> impl IntoView + use<V> {
+        let clicks = self.secondary_clicks.clone();
+        let count = self.secondary_click_count.clone();
+        let name = name.to_string();
+        view.into_view().on_secondary_click_stop(move |_| {
+            clicks.borrow_mut().push(Some(name.clone()));
+            count.set(count.get() + 1);
+        })
+    }
+
+    /// Returns the number of secondary (right) clicks recorded.
+    pub fn secondary_click_count(&self) -> usize {
+        self.secondary_click_count.get()
+    }
+
+    /// Returns the names of secondary-clicked views in order.
+    pub fn secondary_clicked_names(&self) -> Vec<String> {
+        self.secondary_clicks
+            .borrow()
+            .iter()
+            .filter_map(|n| n.clone())
+            .collect()
     }
 }
 
@@ -202,5 +281,77 @@ impl TestHarnessExt for TestHarness {
         let mut harness = TestHarness::new(view);
         harness.set_size(width, height);
         harness
+    }
+}
+
+/// Tracks scroll events on Scroll views for testing.
+///
+/// This helper records viewport changes from scroll events, making it easy
+/// to verify scroll behavior in tests.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// let scroll_tracker = ScrollTracker::new();
+///
+/// let content = Empty::new().style(|s| s.size(200.0, 400.0));
+/// let scroll_view = scroll_tracker.track(Scroll::new(content));
+///
+/// let mut harness = TestHarness::new_with_size(scroll_view, 100.0, 100.0);
+/// harness.scroll_vertical(50.0, 50.0, 50.0);
+///
+/// let viewport = scroll_tracker.last_viewport().unwrap();
+/// assert!(viewport.y0 > 0.0, "Should have scrolled down");
+/// ```
+/// Kurbo types re-exported for convenience.
+pub use floem::kurbo::{Point, Rect};
+
+#[derive(Clone, Default)]
+pub struct ScrollTracker {
+    viewports: Rc<RefCell<Vec<Rect>>>,
+}
+
+impl ScrollTracker {
+    /// Create a new scroll tracker.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Wrap a Scroll view to track its viewport changes.
+    pub fn track(&self, scroll: floem::views::Scroll) -> floem::views::Scroll {
+        let viewports = self.viewports.clone();
+        scroll.on_scroll(move |viewport| {
+            viewports.borrow_mut().push(viewport);
+        })
+    }
+
+    /// Returns true if any scroll events have been recorded.
+    pub fn has_scrolled(&self) -> bool {
+        !self.viewports.borrow().is_empty()
+    }
+
+    /// Returns the number of scroll events recorded.
+    pub fn scroll_count(&self) -> usize {
+        self.viewports.borrow().len()
+    }
+
+    /// Returns the last recorded viewport, if any.
+    pub fn last_viewport(&self) -> Option<Rect> {
+        self.viewports.borrow().last().copied()
+    }
+
+    /// Returns all recorded viewports in order.
+    pub fn viewports(&self) -> Vec<Rect> {
+        self.viewports.borrow().clone()
+    }
+
+    /// Returns the current scroll position (top-left of viewport).
+    pub fn scroll_position(&self) -> Option<Point> {
+        self.last_viewport().map(|v| v.origin())
+    }
+
+    /// Reset the tracker, clearing all recorded viewports.
+    pub fn reset(&self) {
+        self.viewports.borrow_mut().clear();
     }
 }

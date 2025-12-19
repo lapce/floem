@@ -2,12 +2,13 @@ use floem_reactive::Scope;
 use floem_renderer::Renderer as FloemRenderer;
 use floem_renderer::gpu_resources::{GpuResourceError, GpuResources};
 use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Shape, Size, Vec2};
+use smallvec::SmallVec;
 use std::{
     ops::{Deref, DerefMut},
     rc::Rc,
     sync::Arc,
 };
-use ui_events::keyboard::{KeyState, KeyboardEvent};
+use ui_events::keyboard::{Key, KeyState, KeyboardEvent, Modifiers, NamedKey};
 use ui_events::pointer::{PointerButton, PointerButtonEvent, PointerEvent, PointerUpdate};
 use winit::window::Window;
 
@@ -39,8 +40,9 @@ use crate::{
     event::{Event, EventListener, EventPropagation},
     id::ViewId,
     inspector::CaptureState,
-    style::{Style, StyleProp},
-    view::{View, paint_bg, paint_border, paint_outline},
+    nav::view_arrow_navigation,
+    style::{Style, StyleProp, StyleSelector},
+    view::{View, paint_bg, paint_border, paint_outline, view_tab_navigation},
     view_state::ChangeFlags,
     window_state::WindowState,
 };
@@ -87,11 +89,13 @@ pub(crate) enum PointerEventConsumed {
 /// For event dispatch, iterate in reverse to get top-first order.
 pub(crate) fn children_in_paint_order(parent_id: ViewId) -> Vec<ViewId> {
     let children = parent_id.children();
+
     if children.len() <= 1 {
         return children;
     }
 
-    // Check if any child has non-zero z-index (optimization)
+    // Quick check: if no child has non-zero z-index, return original order.
+    // This avoids SmallVec allocation in the common case where z-index isn't used.
     let needs_sort = children
         .iter()
         .any(|&id| id.state().borrow().stacking_info.effective_z_index != 0);
@@ -100,8 +104,9 @@ pub(crate) fn children_in_paint_order(parent_id: ViewId) -> Vec<ViewId> {
         return children;
     }
 
-    // Build sortable list: (ViewId, z_index, dom_order)
-    let mut sortable: Vec<(ViewId, i32, usize)> = children
+    // Build sortable list with z-index and DOM order.
+    // Use SmallVec to avoid heap allocation for typical child counts (<=8).
+    let mut sortable: SmallVec<[(ViewId, i32, usize); 8]> = children
         .iter()
         .enumerate()
         .map(|(dom_order, &child_id)| {
@@ -602,18 +607,277 @@ impl EventCx<'_> {
 
         true
     }
+
+    /// Dispatch an event through the view tree with proper state management.
+    ///
+    /// This is the core event processing logic shared between WindowHandle and TestHarness.
+    /// It handles:
+    /// - Scaling the event coordinates by the window scale factor
+    /// - Pre-dispatch state setup (clearing hover/clicking state as needed)
+    /// - Event dispatch to the appropriate views (focus-based, active-based, or unconditional)
+    /// - Post-dispatch state management (hover enter/leave, clicking state, focus changes)
+    ///
+    /// # Arguments
+    /// * `root_id` - The root view ID of the window
+    /// * `main_view_id` - The main content view ID (for keyboard event dispatch)
+    /// * `event` - The event to dispatch
+    ///
+    /// # Returns
+    /// The event propagation result
+    pub(crate) fn dispatch_event(
+        &mut self,
+        root_id: ViewId,
+        main_view_id: ViewId,
+        event: Event,
+    ) -> EventPropagation {
+        // Scale the event coordinates by the window scale factor
+        let event = event.transform(Affine::scale(self.window_state.scale));
+
+        // Handle pointer move: track cursor position and prepare for hover state changes
+        let is_pointer_move = if let Event::Pointer(PointerEvent::Move(pu)) = &event {
+            let pos = pu.current.logical_point();
+            self.window_state.last_cursor_location = pos;
+            Some(pu.pointer)
+        } else {
+            None
+        };
+
+        // On pointer move, save previous hover/dragging state and clear for rebuild
+        let (was_hovered, was_dragging_over) = if is_pointer_move.is_some() {
+            self.window_state.cursor = None;
+            let was_hovered = std::mem::take(&mut self.window_state.hovered);
+            let was_dragging_over = std::mem::take(&mut self.window_state.dragging_over);
+            (Some(was_hovered), Some(was_dragging_over))
+        } else {
+            (None, None)
+        };
+
+        // Track file hover changes
+        let was_file_hovered =
+            if matches!(event, Event::FileDrag(FileDragEvent::DragMoved { .. }))
+                || is_pointer_move.is_some()
+            {
+                if !self.window_state.file_hovered.is_empty() {
+                    Some(std::mem::take(&mut self.window_state.file_hovered))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+        // On pointer down, clear clicking state and save focus
+        let is_pointer_down = matches!(&event, Event::Pointer(PointerEvent::Down { .. }));
+        let was_focused = if is_pointer_down {
+            self.window_state.clicking.clear();
+            self.window_state.focus.take()
+        } else {
+            self.window_state.focus
+        };
+
+        // Dispatch the event based on its type and current state
+        if event.needs_focus() {
+            // Keyboard events: send to focused view first, then bubble up
+            let mut processed = false;
+
+            if let Some(id) = self.window_state.focus {
+                processed |= self
+                    .unconditional_view_event(id, event.clone(), true)
+                    .0
+                    .is_processed();
+            }
+
+            if !processed {
+                if let Some(listener) = event.listener() {
+                    processed |= main_view_id
+                        .apply_event(&listener, &event)
+                        .is_some_and(|prop| prop.is_processed());
+                }
+            }
+
+            if !processed {
+                // Handle Tab and arrow key navigation
+                if let Event::Key(KeyboardEvent {
+                    key,
+                    modifiers,
+                    state: KeyState::Down,
+                    ..
+                }) = &event
+                {
+                    if *key == Key::Named(NamedKey::Tab)
+                        && (modifiers.is_empty() || *modifiers == Modifiers::SHIFT)
+                    {
+                        let backwards = modifiers.contains(Modifiers::SHIFT);
+                        view_tab_navigation(root_id, self.window_state, backwards);
+                    } else if *modifiers == Modifiers::ALT {
+                        if let Key::Named(
+                            name @ (NamedKey::ArrowUp
+                            | NamedKey::ArrowDown
+                            | NamedKey::ArrowLeft
+                            | NamedKey::ArrowRight),
+                        ) = key
+                        {
+                            view_arrow_navigation(*name, self.window_state, root_id);
+                        }
+                    }
+                }
+
+                // Handle keyboard trigger end (space/enter key up on focused element)
+                let keyboard_trigger_end = self.window_state.keyboard_navigation
+                    && event.is_keyboard_trigger()
+                    && matches!(
+                        event,
+                        Event::Key(KeyboardEvent {
+                            state: KeyState::Up,
+                            ..
+                        })
+                    );
+                if keyboard_trigger_end {
+                    if let Some(id) = self.window_state.active {
+                        if self.window_state.has_style_for_sel(id, StyleSelector::Active) {
+                            id.request_style_recursive();
+                        }
+                        self.window_state.active = None;
+                    }
+                }
+            }
+        } else if self.window_state.active.is_some() && event.is_pointer() {
+            // Pointer events while dragging: send to active view
+            if self.window_state.is_dragging() {
+                self.unconditional_view_event(root_id, event.clone(), false);
+            }
+
+            let id = self.window_state.active.unwrap();
+
+            {
+                let window_origin = id.state().borrow().window_origin;
+                let layout = id.get_layout().unwrap_or_default();
+                let viewport = id.state().borrow().viewport.unwrap_or_default();
+                let transform = Affine::translate((
+                    window_origin.x - layout.location.x as f64 + viewport.x0,
+                    window_origin.y - layout.location.y as f64 + viewport.y0,
+                ));
+                self.unconditional_view_event(id, event.clone().transform(transform), true);
+            }
+
+            if let Event::Pointer(PointerEvent::Up { .. }) = &event {
+                if self.window_state.has_style_for_sel(id, StyleSelector::Active) {
+                    id.request_style_recursive();
+                }
+                self.window_state.active = None;
+            }
+        } else {
+            // Normal event dispatch through view tree
+            self.unconditional_view_event(root_id, event.clone(), false);
+        }
+
+        // Clear drag_start on pointer up
+        if let Event::Pointer(PointerEvent::Up { .. }) = &event {
+            self.window_state.drag_start = None;
+        }
+
+        // Handle hover state changes - send PointerEnter/Leave events
+        if let Some(info) = is_pointer_move {
+            let hovered = &self.window_state.hovered.clone();
+            for id in was_hovered.unwrap().symmetric_difference(hovered) {
+                let view_state = id.state();
+                if view_state.borrow().has_active_animation()
+                    || view_state
+                        .borrow()
+                        .has_style_selectors
+                        .has(StyleSelector::Hover)
+                    || view_state
+                        .borrow()
+                        .has_style_selectors
+                        .has(StyleSelector::Active)
+                {
+                    id.request_style();
+                }
+                if hovered.contains(id) {
+                    id.apply_event(&EventListener::PointerEnter, &event);
+                } else {
+                    self.unconditional_view_event(
+                        *id,
+                        Event::Pointer(PointerEvent::Leave(info)),
+                        true,
+                    );
+                }
+            }
+
+            // Handle drag enter/leave events
+            let dragging_over = &self.window_state.dragging_over.clone();
+            for id in was_dragging_over
+                .unwrap()
+                .symmetric_difference(dragging_over)
+            {
+                if dragging_over.contains(id) {
+                    id.apply_event(&EventListener::DragEnter, &event);
+                } else {
+                    id.apply_event(&EventListener::DragLeave, &event);
+                }
+            }
+        }
+
+        // Handle file hover style changes
+        if let Some(was_file_hovered) = was_file_hovered {
+            for id in was_file_hovered.symmetric_difference(&self.window_state.file_hovered) {
+                id.request_style();
+            }
+        }
+
+        // Handle focus changes
+        if was_focused != self.window_state.focus {
+            self.window_state
+                .focus_changed(was_focused, self.window_state.focus);
+        }
+
+        // Request style updates for clicking views on pointer down
+        if is_pointer_down {
+            for id in self.window_state.clicking.clone() {
+                if self.window_state.has_style_for_sel(id, StyleSelector::Active) {
+                    id.request_style_recursive();
+                }
+            }
+        }
+
+        // On pointer up, request style updates and clear clicking state
+        if matches!(&event, Event::Pointer(PointerEvent::Up { .. })) {
+            for id in self.window_state.clicking.clone() {
+                if self.window_state.has_style_for_sel(id, StyleSelector::Active) {
+                    id.request_style_recursive();
+                }
+            }
+            self.window_state.clicking.clear();
+        }
+
+        EventPropagation::Continue
+    }
 }
 
-#[derive(Default)]
+/// The interaction state of a view, used to determine which style selectors apply.
+///
+/// This struct captures the current state of user interaction with a view,
+/// such as whether it's hovered, focused, being clicked, etc. This state is
+/// used during style computation to apply conditional styles like `:hover`,
+/// `:active`, `:focus`, etc.
+#[derive(Default, Debug, Clone, Copy)]
 pub struct InteractionState {
-    pub(crate) is_hovered: bool,
-    pub(crate) is_selected: bool,
-    pub(crate) is_disabled: bool,
-    pub(crate) is_focused: bool,
-    pub(crate) is_clicking: bool,
-    pub(crate) is_dark_mode: bool,
-    pub(crate) is_file_hover: bool,
-    pub(crate) using_keyboard_navigation: bool,
+    /// Whether the pointer is currently over this view.
+    pub is_hovered: bool,
+    /// Whether this view is in a selected state.
+    pub is_selected: bool,
+    /// Whether this view is disabled.
+    pub is_disabled: bool,
+    /// Whether this view has keyboard focus.
+    pub is_focused: bool,
+    /// Whether this view is being clicked (pointer down but not yet up).
+    pub is_clicking: bool,
+    /// Whether dark mode is enabled.
+    pub is_dark_mode: bool,
+    /// Whether a file is being dragged over this view.
+    pub is_file_hover: bool,
+    /// Whether keyboard navigation is active.
+    pub using_keyboard_navigation: bool,
 }
 
 pub struct StyleCx<'a> {
@@ -1118,15 +1382,22 @@ std::thread_local! {
     static CURRENT_DRAG_PAINTING_ID : std::cell::Cell<Option<ViewId>> = const { std::cell::Cell::new(None) };
 }
 
+/// Information needed to paint a dragged view overlay after the main tree painting.
+/// This ensures the drag overlay always appears on top of all other content.
+pub(crate) struct PendingDragPaint {
+    pub id: ViewId,
+    pub base_transform: Affine,
+}
+
 pub struct PaintCx<'a> {
     pub window_state: &'a mut WindowState,
     pub(crate) paint_state: &'a mut PaintState,
     pub(crate) transform: Affine,
     pub(crate) clip: Option<RoundedRect>,
-    pub(crate) z_index: Option<i32>,
     pub(crate) saved_transforms: Vec<Affine>,
     pub(crate) saved_clips: Vec<Option<RoundedRect>>,
-    pub(crate) saved_z_indexes: Vec<Option<i32>>,
+    /// Pending drag paint info, to be painted after the main tree.
+    pub(crate) pending_drag_paint: Option<PendingDragPaint>,
     pub gpu_resources: Option<GpuResources>,
     pub window: Arc<dyn Window>,
     #[cfg(feature = "vello")]
@@ -1139,7 +1410,6 @@ impl PaintCx<'_> {
     pub fn save(&mut self) {
         self.saved_transforms.push(self.transform);
         self.saved_clips.push(self.clip);
-        self.saved_z_indexes.push(self.z_index);
         #[cfg(feature = "vello")]
         self.saved_layer_counts.push(self.layer_count);
     }
@@ -1156,15 +1426,9 @@ impl PaintCx<'_> {
 
         self.transform = self.saved_transforms.pop().unwrap_or_default();
         self.clip = self.saved_clips.pop().unwrap_or_default();
-        self.z_index = self.saved_z_indexes.pop().unwrap_or_default();
         self.paint_state
             .renderer_mut()
             .set_transform(self.transform);
-        if let Some(z_index) = self.z_index {
-            self.paint_state.renderer_mut().set_z_index(z_index);
-        } else {
-            self.paint_state.renderer_mut().set_z_index(0);
-        }
 
         #[cfg(not(feature = "vello"))]
         {
@@ -1219,13 +1483,8 @@ impl PaintCx<'_> {
             .map(|rect| rect.rect().intersect(size.to_rect()).is_zero_area())
             .unwrap_or(false);
         if !is_empty {
-            let style = view_state.borrow().combined_style.clone();
             let view_style_props = view_state.borrow().view_style_props.clone();
             let layout_props = view_state.borrow().layout_props.clone();
-
-            if let Some(z_index) = style.get(ZIndex) {
-                self.set_z_index(z_index);
-            }
 
             paint_bg(self, &view_style_props, size);
 
@@ -1233,88 +1492,124 @@ impl PaintCx<'_> {
             paint_border(self, &layout_props, &view_style_props, size);
             paint_outline(self, &view_style_props, size)
         }
-        let mut drag_set_to_none = false;
-
+        // Check if this view is being dragged and needs deferred painting
         if let Some(dragging) = self.window_state.dragging.as_ref() {
             if dragging.id == id {
-                let transform = if let Some((released_at, release_location)) =
-                    dragging.released_at.zip(dragging.release_location)
-                {
-                    let easing = Linear;
-                    const ANIMATION_DURATION_MS: f64 = 300.0;
-                    let elapsed = released_at.elapsed().as_millis() as f64;
-                    let progress = elapsed / ANIMATION_DURATION_MS;
-
-                    if !(easing.finished(progress)) {
-                        let offset_scale = 1.0 - easing.eval(progress);
-                        let release_offset = release_location.to_vec2() - dragging.offset;
-
-                        // Schedule next animation frame
-                        exec_after(Duration::from_millis(8), move |_| {
-                            id.request_paint();
-                        });
-
-                        Some(self.transform * Affine::translate(release_offset * offset_scale))
-                    } else {
-                        drag_set_to_none = true;
-                        None
-                    }
-                } else {
-                    // Handle active dragging
-                    let translation =
-                        self.window_state.last_cursor_location.to_vec2() - dragging.offset;
-                    Some(self.transform.with_translation(translation))
-                };
-
-                if let Some(transform) = transform {
-                    self.save();
-                    self.transform = transform;
-                    self.paint_state
-                        .renderer_mut()
-                        .set_transform(self.transform);
-                    self.set_z_index(1000);
-                    self.clear_clip();
-
-                    // Apply styles
-                    let style = view_state.borrow().combined_style.clone();
-                    let mut view_style_props = view_state.borrow().view_style_props.clone();
-
-                    if let Some(dragging_style) = view_state.borrow().dragging_style.clone() {
-                        let style = style.apply(dragging_style);
-                        let mut _new_frame = false;
-                        view_style_props.read_explicit(
-                            &style,
-                            &style,
-                            &Instant::now(),
-                            &mut _new_frame,
-                        );
-                    }
-
-                    // Paint with drag styling
-                    let layout_props = view_state.borrow().layout_props.clone();
-
-                    // Important: If any method early exit points are added in this
-                    // code block, they MUST call CURRENT_DRAG_PAINTING_ID.take() before
-                    // returning.
-
-                    CURRENT_DRAG_PAINTING_ID.set(Some(id));
-
-                    paint_bg(self, &view_style_props, size);
-                    view.borrow_mut().paint(self);
-                    paint_border(self, &layout_props, &view_style_props, size);
-                    paint_outline(self, &view_style_props, size);
-
-                    self.restore();
-
-                    CURRENT_DRAG_PAINTING_ID.take();
-                }
+                // Store the pending drag paint info - actual painting happens after tree traversal
+                self.pending_drag_paint = Some(PendingDragPaint {
+                    id,
+                    base_transform: self.transform,
+                });
             }
+        }
+
+        self.restore();
+    }
+
+    /// Paint the drag overlay after the main tree has been painted.
+    /// This ensures the dragged view always appears on top of all other content.
+    pub fn paint_pending_drag(&mut self) {
+        let Some(pending) = self.pending_drag_paint.take() else {
+            return;
+        };
+
+        let id = pending.id;
+        let base_transform = pending.base_transform;
+
+        let Some(dragging) = self.window_state.dragging.as_ref() else {
+            return;
+        };
+
+        if dragging.id != id {
+            return;
+        }
+
+        let mut drag_set_to_none = false;
+
+        let transform = if let Some((released_at, release_location)) =
+            dragging.released_at.zip(dragging.release_location)
+        {
+            let easing = Linear;
+            const ANIMATION_DURATION_MS: f64 = 300.0;
+            let elapsed = released_at.elapsed().as_millis() as f64;
+            let progress = elapsed / ANIMATION_DURATION_MS;
+
+            if !(easing.finished(progress)) {
+                let offset_scale = 1.0 - easing.eval(progress);
+                let release_offset = release_location.to_vec2() - dragging.offset;
+
+                // Schedule next animation frame
+                exec_after(Duration::from_millis(8), move |_| {
+                    id.request_paint();
+                });
+
+                Some(base_transform * Affine::translate(release_offset * offset_scale))
+            } else {
+                drag_set_to_none = true;
+                None
+            }
+        } else {
+            // Handle active dragging
+            let translation =
+                self.window_state.last_cursor_location.to_vec2() - dragging.offset;
+            Some(base_transform.with_translation(translation))
+        };
+
+        if let Some(transform) = transform {
+            let view = id.view();
+            let view_state = id.state();
+
+            self.save();
+            self.transform = transform;
+            self.paint_state
+                .renderer_mut()
+                .set_transform(self.transform);
+            self.clear_clip();
+
+            // Get size from layout
+            let size = if let Some(layout) = id.get_layout() {
+                Size::new(layout.size.width as f64, layout.size.height as f64)
+            } else {
+                Size::ZERO
+            };
+
+            // Apply styles
+            let style = view_state.borrow().combined_style.clone();
+            let mut view_style_props = view_state.borrow().view_style_props.clone();
+
+            if let Some(dragging_style) = view_state.borrow().dragging_style.clone() {
+                let style = style.apply(dragging_style);
+                let mut _new_frame = false;
+                view_style_props.read_explicit(
+                    &style,
+                    &style,
+                    &Instant::now(),
+                    &mut _new_frame,
+                );
+            }
+
+            // Paint with drag styling
+            let layout_props = view_state.borrow().layout_props.clone();
+
+            // Important: If any method early exit points are added in this
+            // code block, they MUST call CURRENT_DRAG_PAINTING_ID.take() before
+            // returning.
+
+            CURRENT_DRAG_PAINTING_ID.set(Some(id));
+
+            paint_bg(self, &view_style_props, size);
+            view.borrow_mut().paint(self);
+            paint_border(self, &layout_props, &view_style_props, size);
+            paint_outline(self, &view_style_props, size);
+
+            self.restore();
+
+            CURRENT_DRAG_PAINTING_ID.take();
         }
 
         if drag_set_to_none {
             self.window_state.dragging = None;
         }
-        self.restore();
     }
 
     /// Clip the drawing area to the given shape.
@@ -1400,11 +1695,6 @@ impl PaintCx<'_> {
         } else {
             Size::ZERO
         }
-    }
-
-    pub(crate) fn set_z_index(&mut self, z_index: i32) {
-        self.z_index = Some(z_index);
-        self.paint_state.renderer_mut().set_z_index(z_index);
     }
 
     pub fn is_focused(&self, id: ViewId) -> bool {
