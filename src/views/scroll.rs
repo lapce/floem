@@ -147,6 +147,9 @@ pub struct Scroll {
 
     child_size: Size,
 
+    /// Callback called when child_size changes after layout
+    on_child_size: Option<Box<dyn Fn(Size)>>,
+
     /// The origin is relative to `actual_rect`.
     child_viewport: Rect,
 
@@ -199,6 +202,7 @@ impl Scroll {
             content_rect: Rect::ZERO,
             total_rect: Rect::ZERO,
             child_size: Size::ZERO,
+            on_child_size: None,
             child_viewport: Rect::ZERO,
             computed_child_viewport: Rect::ZERO,
             onscroll: None,
@@ -224,6 +228,16 @@ impl Scroll {
     /// visible portion of the scrollable content.
     pub fn on_scroll(mut self, onscroll: impl Fn(Rect) + 'static) -> Self {
         self.onscroll = Some(Box::new(onscroll));
+        self
+    }
+
+    /// Sets a callback that will be triggered whenever the child's size changes after layout.
+    ///
+    /// This is useful for reactive code that needs to depend on the actual
+    /// laid-out size of the scroll content, ensuring proper ordering when
+    /// combined with `ensure_visible`.
+    pub fn on_child_size(mut self, callback: impl Fn(Size) + 'static) -> Self {
+        self.on_child_size = Some(Box::new(callback));
         self
     }
 
@@ -317,6 +331,8 @@ impl Scroll {
     /// Ensure that an entire area is visible in the scroll view.
     // TODO: remove duplilcation between this method and pan_to_visible
     pub fn ensure_area_visible(&mut self, window_state: &mut WindowState, rect: Rect) {
+        // Refresh child_size to ensure we have the latest layout
+        self.update_size();
         /// Given a position and the min and max edges of an axis,
         /// return a delta by which to adjust that axis such that the value
         /// falls between its edges.
@@ -913,7 +929,14 @@ impl View for Scroll {
     }
 
     fn compute_layout(&mut self, cx: &mut ComputeLayoutCx) -> Option<Rect> {
+        let old_child_size = self.child_size;
         self.update_size();
+        // Call callback if child size changed
+        if old_child_size != self.child_size {
+            if let Some(callback) = &self.on_child_size {
+                callback(self.child_size);
+            }
+        }
         self.clamp_child_viewport(cx.window_state, self.child_viewport);
         self.computed_child_viewport = self.child_viewport;
         cx.compute_view_layout(self.child);

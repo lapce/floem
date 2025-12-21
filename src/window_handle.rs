@@ -256,8 +256,7 @@ impl WindowHandle {
         id.set_view(window_view.into_any());
 
         let window: Arc<dyn Window> = Arc::new(mock_window);
-        // Note: We skip store_window_id_mapping for headless testing to avoid
-        // interfering with the global window tracking system
+        store_window_id_mapping(id, window_id, &window);
 
         // Create a paint state that will never initialize (for headless testing)
         // We use a channel that will never receive a value
