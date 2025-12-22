@@ -3,6 +3,7 @@ use taffy::style::FlexDirection;
 use crate::{
     context::UpdateCx,
     id::ViewId,
+    into_view_iter::IntoViewIter,
     style::{Style, StyleClassRef},
     view::{IntoView, View},
     view_tuple::ViewTuple,
@@ -150,6 +151,35 @@ impl View for Stack {
 }
 
 impl Stack {
+    /// Creates a new stack from any type that implements [`IntoViewIter`].
+    ///
+    /// This accepts arrays, tuples, vectors, slices, and iterators of views.
+    ///
+    /// ## Example
+    /// ```rust,no_run
+    /// use floem::views::*;
+    ///
+    /// // From array
+    /// Stack::new([text("child 1"), text("child 2")]);
+    ///
+    /// // From tuple (heterogeneous types)
+    /// Stack::new((text("label"), button("click")));
+    ///
+    /// // From vec
+    /// Stack::new(vec![text("a"), text("b"), text("c")]);
+    ///
+    /// // From iterator
+    /// Stack::new((0..5).map(|i| text(i)).collect::<Vec<_>>());
+    /// ```
+    pub fn new(children: impl IntoViewIter) -> Self {
+        let id = ViewId::new();
+        id.set_children_iter(children.into_view_iter());
+        Stack {
+            id,
+            direction: None,
+        }
+    }
+
     /// Creates a new stack with a specific ViewId from a tuple of views.
     ///
     /// This is useful for lazy view construction where the `ViewId` is created
@@ -162,8 +192,8 @@ impl Stack {
     /// let id = ViewId::new();
     /// Stack::with_id(id, ("child 1", "child 2")).horizontal();
     /// ```
-    pub fn with_id<VT: ViewTuple + 'static>(id: ViewId, children: VT) -> Self {
-        id.set_children_vec(children.into_views());
+    pub fn with_id(id: ViewId, children: impl IntoViewIter) -> Self {
+        id.set_children_iter(children.into_view_iter());
         Stack {
             id,
             direction: None,

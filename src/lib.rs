@@ -195,6 +195,7 @@ pub mod file;
 pub mod file_action;
 pub(crate) mod id;
 mod inspector;
+pub mod into_view_iter;
 pub mod menu;
 pub mod mock_window;
 mod nav;
@@ -256,6 +257,7 @@ pub use window_state::WindowState;
 
 pub mod prelude {
     pub use crate::Renderer;
+    pub use crate::into_view_iter::IntoViewIter;
     pub use crate::unit::{DurationUnitExt, UnitExt};
     pub use crate::view_tuple::ViewTuple;
     pub use crate::views::*;

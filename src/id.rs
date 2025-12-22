@@ -138,17 +138,26 @@ impl ViewId {
     }
 
     /// Set the children views of this Id using a Vector
-    /// See also [`Self::set_children`]
+    /// See also [`Self::set_children`] and [`Self::set_children_iter`]
     pub fn set_children_vec(&self, children: Vec<impl IntoView>) {
+        self.set_children_iter(children.into_iter().map(|c| c.into_any()));
+    }
+
+    /// Set the children views of this Id using an iterator of boxed views.
+    ///
+    /// This is the most efficient way to set children when you already have
+    /// an iterator of `Box<dyn View>`, as it avoids intermediate allocations.
+    ///
+    /// See also [`Self::set_children`] and [`Self::set_children_vec`]
+    pub fn set_children_iter(&self, children: impl Iterator<Item = Box<dyn View>>) {
         VIEW_STORAGE.with_borrow_mut(|s| {
             let mut children_ids = Vec::new();
-            for child in children {
-                let child_view = child.into_view();
+            for child_view in children {
                 let child_view_id = child_view.id();
                 children_ids.push(child_view_id);
                 s.parent.insert(child_view_id, Some(*self));
                 s.views
-                    .insert(child_view_id, Rc::new(RefCell::new(child_view.into_any())));
+                    .insert(child_view_id, Rc::new(RefCell::new(child_view)));
             }
             s.children.insert(*self, children_ids);
         });
