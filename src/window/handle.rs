@@ -45,12 +45,12 @@ use crate::{
     },
     event::Event,
     inspector::{self, Capture, CaptureState, CapturedView, profiler::Profile},
-    style::{CursorStyle, Style, StyleSelector},
-    theme::default_theme,
-    update::{
+    message::{
         CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES, CURRENT_RUNNING_VIEW_HANDLE,
         DEFERRED_UPDATE_MESSAGES, UPDATE_MESSAGES, UpdateMessage,
     },
+    style::{CursorStyle, Style, StyleSelector},
+    theme::default_theme,
     view::ChangeFlags,
     view::ViewId,
     view::{IntoView, View},

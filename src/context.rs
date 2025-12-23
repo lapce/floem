@@ -45,5 +45,5 @@ pub use crate::layout::{ComputeLayoutCx, LayoutCx};
 pub use crate::style::{InteractionState, StyleCx};
 // Re-export paint context types from paint module for backward compatibility
 pub use crate::paint::{PaintCx, PaintState};
-// Re-export update context types from update module for backward compatibility
-pub use crate::update::UpdateCx;
+// Re-export update context types from message module for backward compatibility
+pub use crate::message::UpdateCx;

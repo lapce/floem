@@ -19,8 +19,8 @@ use web_time::{Duration, Instant};
 
 use crate::{
     app::{AppUpdateEvent, add_app_update_event},
+    message::{UPDATE_MESSAGES, UpdateMessage},
     platform::menu::Menu,
-    update::{UPDATE_MESSAGES, UpdateMessage},
     view::View,
     view::ViewId,
     views::Decorators,

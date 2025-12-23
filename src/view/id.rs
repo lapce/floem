@@ -18,10 +18,10 @@ use crate::{
     animate::{AnimStateCommand, Animation},
     context::{EventCallback, ResizeCallback},
     event::{EventListener, EventPropagation},
+    message::{CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES, UpdateMessage},
     platform::menu::Menu,
     style::{Disabled, DisplayProp, Draggable, Focusable, Hidden, Style, StyleClassRef},
     unit::PxPct,
-    update::{CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES, UpdateMessage},
     window::tracking::{is_known_root, window_id_for_root},
 };
 
