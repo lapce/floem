@@ -29,7 +29,7 @@ fn test_reactive_style_updates_on_signal_change() {
     });
     let id = view.view_id();
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Initial state: counter is 0, background should be GRAY
     let style = harness.get_computed_style(id);
@@ -65,7 +65,7 @@ fn test_set_disabled_sets_property() {
     let view = Empty::new().style(move |s| s.size(100.0, 100.0).set_disabled(counter.get() == 0));
     let id = view.view_id();
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Initial state: counter is 0, Disabled should be true
     let style = harness.get_computed_style(id);
@@ -106,7 +106,7 @@ fn test_disabled_selector_applied_on_first_pass() {
     });
     let id = view.view_id();
 
-    let harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Initial state: counter is 0, should be disabled with LIGHT_GRAY background
     // BUG: This currently shows LIGHT_BLUE because the disabled selector isn't applied
@@ -150,7 +150,7 @@ fn test_disabled_to_enabled_transition() {
     });
     let id = view.view_id();
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Initial state: disabled=true, Disabled property is set
     let style = harness.get_computed_style(id);
@@ -211,7 +211,7 @@ fn test_disabled_selector_after_style_request() {
     });
     let id = view.view_id();
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // After first style pass, Disabled property should be true
     let style = harness.get_computed_style(id);
@@ -264,7 +264,7 @@ fn test_multiple_reactive_styles() {
 
     let view = stack((view1, view2)).style(|s| s.size(100.0, 50.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 50.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 50.0);
 
     // Initial state: signal is false
     let style1 = harness.get_computed_style(id1);
@@ -334,7 +334,7 @@ fn test_counter_example_repaint_scenario() {
 
     let view = stack((increment_btn, reset_btn)).style(|s| s.size(200.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 200.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 100.0);
 
     // Initial state: counter is 0
     // After first style pass, Disabled property should be true
@@ -374,7 +374,7 @@ fn test_style_change_triggers_recalculation() {
     });
     let id = view.view_id();
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Initial background is GRAY
     let style = harness.get_computed_style(id);

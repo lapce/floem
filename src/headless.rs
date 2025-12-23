@@ -1,16 +1,16 @@
-//! Test harness for headless UI testing.
+//! Headless harness for UI testing and benchmarking.
 //!
-//! This module provides utilities for testing Floem views without creating
+//! This module provides utilities for running Floem views without creating
 //! an actual window. It allows simulating user interactions and verifying
-//! view behavior.
+//! view behavior in tests and benchmarks.
 //!
 //! # Example
 //!
 //! ```rust,ignore
-//! use floem::test_harness::TestHarness;
+//! use floem::headless::HeadlessHarness;
 //! use floem::views::*;
 //!
-//! let harness = TestHarness::new(
+//! let harness = HeadlessHarness::new(
 //!     stack((
 //!         button("Behind").z_index(1),
 //!         button("In Front").z_index(10),
@@ -39,27 +39,27 @@ pub struct EventResult {
     pub consumed: bool,
 }
 
-/// A test harness for headless UI testing.
+/// A headless harness for UI testing and benchmarking.
 ///
-/// TestHarness manages a view tree and provides methods to simulate
+/// HeadlessHarness manages a view tree and provides methods to simulate
 /// user interactions without creating an actual window.
 ///
-/// Internally, it uses a headless `WindowHandle` to ensure that test behavior
+/// Internally, it uses a headless `WindowHandle` to ensure behavior
 /// matches real window behavior, including the full `process_update()` cycle
 /// for style recalculation and layout.
-pub struct TestHarness {
+pub struct HeadlessHarness {
     window_handle: WindowHandle,
 }
 
-impl TestHarness {
-    /// Create a new test harness with the given root view.
+impl HeadlessHarness {
+    /// Create a new headless harness with the given root view.
     ///
     /// The view will be set up with default size (800x600) and scale (1.0).
     pub fn new(view: impl IntoView) -> Self {
         Self::new_with_size(view, 800.0, 600.0)
     }
 
-    /// Create a new test harness with the given root view and window size.
+    /// Create a new headless harness with the given root view and window size.
     pub fn new_with_size(view: impl IntoView, width: f64, height: f64) -> Self {
         let size = Size::new(width, height);
         let window_handle = WindowHandle::new_headless(view, size, 1.0);

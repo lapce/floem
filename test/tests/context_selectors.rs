@@ -68,7 +68,7 @@ fn test_active_selector_detected_inside_with_context() {
     });
     let id = view.view_id();
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // The Active selector should be detected even though it's inside with_context
     assert!(
@@ -88,7 +88,7 @@ fn test_hover_selector_detected_inside_with_context() {
     });
     let id = view.view_id();
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // The Hover selector should be detected even though it's inside with_context
     assert!(
@@ -110,7 +110,7 @@ fn test_multiple_selectors_detected_inside_with_context() {
     });
     let id = view.view_id();
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     assert!(
         harness.has_style_for_selector(id, StyleSelector::Hover),
@@ -140,7 +140,7 @@ fn test_active_style_applied_from_with_context() {
     });
     let id = view.view_id();
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Initial state: background should be BLUE
     let style = harness.get_computed_style(id);
@@ -189,7 +189,7 @@ fn test_hover_style_applied_from_with_context() {
     });
     let id = view.view_id();
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Initial state: background should be BLUE
     let style = harness.get_computed_style(id);
@@ -237,7 +237,7 @@ fn test_nested_with_context_selectors_detected() {
     });
     let id = view.view_id();
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Active selector should still be detected in nested with_context
     assert!(
@@ -267,7 +267,7 @@ fn test_active_style_uses_theme_values() {
     });
     let id = view.view_id();
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Initial state: background should be BLUE (primary)
     let style = harness.get_computed_style(id);
@@ -301,7 +301,7 @@ fn test_clicking_state_set_for_with_context_active() {
     });
     let id = view.view_id();
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Initially not clicking
     assert!(!harness.is_clicking(id), "Should not be clicking initially");
@@ -339,7 +339,7 @@ fn test_disabled_selector_detected_inside_with_context() {
     });
     let id = view.view_id();
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     assert!(
         harness.has_style_for_selector(id, StyleSelector::Disabled),
@@ -361,7 +361,7 @@ fn test_focus_selector_detected_inside_with_context() {
     });
     let id = view.view_id();
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     assert!(
         harness.has_style_for_selector(id, StyleSelector::Focus),
@@ -383,7 +383,7 @@ fn test_focus_visible_selector_detected_inside_with_context() {
     });
     let id = view.view_id();
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     assert!(
         harness.has_style_for_selector(id, StyleSelector::FocusVisible),
@@ -405,7 +405,7 @@ fn test_dragging_selector_detected_inside_with_context() {
     });
     let id = view.view_id();
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     assert!(
         harness.has_style_for_selector(id, StyleSelector::Dragging),
@@ -427,7 +427,7 @@ fn test_selected_selector_detected_inside_with_context() {
     });
     let id = view.view_id();
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     assert!(
         harness.has_style_for_selector(id, StyleSelector::Selected),
@@ -450,7 +450,7 @@ fn test_disabled_style_applied_from_with_context() {
     });
     let id = view.view_id();
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Request style recalc to apply disabled selector
     id.request_style();
@@ -483,7 +483,7 @@ fn test_with_context_selectors_merge_correctly() {
         });
     let id = view.view_id();
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Active selector should be detected
     assert!(
@@ -517,7 +517,7 @@ fn test_active_style_triggers_paint() {
     });
     let id = view.view_id();
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Check that view has Active selector
     assert!(
@@ -558,7 +558,7 @@ fn test_style_request_on_clicking() {
     });
     let id = view.view_id();
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Verify selector is detected
     assert!(

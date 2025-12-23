@@ -550,7 +550,7 @@ impl EventCx<'_> {
 
     /// Dispatch an event through the view tree with proper state management.
     ///
-    /// This is the core event processing logic shared between WindowHandle and TestHarness.
+    /// This is the core event processing logic shared between WindowHandle and HeadlessHarness.
     /// It handles:
     /// - Scaling the event coordinates by the window scale factor
     /// - Pre-dispatch state setup (clearing hover/clicking state as needed)

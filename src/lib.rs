@@ -199,8 +199,8 @@ pub use platform::file;
 pub use platform::menu;
 /// Re-export view_tuple module from view for backward compatibility.
 pub use view::tuple as view_tuple;
+pub mod headless;
 pub mod style;
-pub mod test_harness;
 pub mod view;
 pub mod views;
 pub mod window;

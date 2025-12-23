@@ -10,8 +10,8 @@
 //! - Event bubbling follows DOM tree, not stacking context tree
 
 use floem::event::EventPropagation;
+use floem::headless::HeadlessHarness;
 use floem::taffy;
-use floem::test_harness::TestHarness;
 use floem::unit::UnitExt;
 use floem::views::{Decorators, Empty, stack};
 use std::cell::Cell;
@@ -40,7 +40,7 @@ fn test_z_index_click_ordering() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Click in the center where both views overlap
     harness.click(50.0, 50.0);
@@ -94,7 +94,7 @@ fn test_stacking_context_child_escapes() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -147,7 +147,7 @@ fn test_stacking_context_bounds_children() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -217,7 +217,7 @@ fn test_stacking_context_complex_interleaving() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -271,7 +271,7 @@ fn test_stacking_context_negative_z_index() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -321,7 +321,7 @@ fn test_stacking_context_transform_creates_context() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -382,7 +382,7 @@ fn test_stacking_context_deeply_nested_escape() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -434,7 +434,7 @@ fn test_stacking_context_dom_order_tiebreaker() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -493,7 +493,7 @@ fn test_stacking_context_mixed_contexts() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -555,7 +555,7 @@ fn test_stacking_context_partial_overlap() {
     ))
     .style(|s| s.size(200.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 200.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 100.0);
 
     // Click left side
     harness.click(50.0, 50.0);
@@ -618,7 +618,7 @@ fn test_stacking_context_pointer_events_none() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -667,7 +667,7 @@ fn test_stacking_context_hidden_view() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -718,7 +718,7 @@ fn test_stacking_context_hidden_parent_hides_children() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -782,7 +782,7 @@ fn test_stacking_context_hidden_in_escaped_context() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -826,7 +826,7 @@ fn test_stacking_context_hidden_does_not_bubble() {
         EventPropagation::Continue
     });
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -880,7 +880,7 @@ fn test_stacking_context_nested_contexts() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -932,7 +932,7 @@ fn test_stacking_context_sibling_isolation() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -977,7 +977,7 @@ fn test_stacking_context_event_bubbling() {
         EventPropagation::Continue
     });
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -1015,7 +1015,7 @@ fn test_stacking_context_bubbling_stops_on_stop() {
         clicked_parent_clone.set(true);
     });
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -1063,7 +1063,7 @@ fn test_stacking_context_deep_bubbling() {
         EventPropagation::Continue
     });
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -1119,7 +1119,7 @@ fn test_stacking_context_bubbling_across_stacking_contexts() {
         EventPropagation::Continue
     });
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -1177,7 +1177,7 @@ fn test_stacking_context_multiple_escaped_children() {
     .style(|s| s.absolute().inset(0.0).size(100.0, 100.0)),))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -1229,7 +1229,7 @@ fn test_stacking_context_explicit_z_index_zero() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 

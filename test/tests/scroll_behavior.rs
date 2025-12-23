@@ -23,7 +23,7 @@ fn test_scroll_down_moves_viewport() {
     let content = Empty::new().style(|s| s.size(100.0, 400.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = TestHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
 
     // Scroll down
     harness.scroll_down(50.0, 50.0, 50.0);
@@ -49,7 +49,7 @@ fn test_scroll_up_moves_viewport() {
     let content = Empty::new().style(|s| s.size(100.0, 400.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = TestHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
 
     // Scroll down first
     harness.scroll_down(50.0, 50.0, 100.0);
@@ -80,7 +80,7 @@ fn test_scroll_horizontal() {
     let content = Empty::new().style(|s| s.min_size(400.0, 100.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = TestHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
 
     // Scroll right
     harness.scroll_right(50.0, 50.0, 50.0);
@@ -111,7 +111,7 @@ fn test_scroll_diagonal() {
     let content = Empty::new().style(|s| s.min_size(400.0, 400.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = TestHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
 
     // Scroll diagonally (negative deltas = scroll down/right)
     harness.scroll(50.0, 50.0, -50.0, -50.0);
@@ -140,7 +140,7 @@ fn test_scroll_clamped_at_top() {
     let content = Empty::new().style(|s| s.size(100.0, 400.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = TestHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
 
     // Try to scroll up from initial position (already at top)
     harness.scroll_up(50.0, 50.0, 100.0);
@@ -164,7 +164,7 @@ fn test_scroll_clamped_at_bottom() {
     let content = Empty::new().style(|s| s.size(100.0, 400.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = TestHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
 
     // Try to scroll way past the bottom
     harness.scroll_down(50.0, 50.0, 1000.0);
@@ -189,7 +189,7 @@ fn test_scroll_clamped_at_left() {
     let content = Empty::new().style(|s| s.size(400.0, 100.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = TestHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
 
     // Try to scroll left from initial position
     harness.scroll_left(50.0, 50.0, 100.0);
@@ -211,7 +211,7 @@ fn test_scroll_clamped_at_right() {
     let content = Empty::new().style(|s| s.size(400.0, 100.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = TestHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
 
     // Try to scroll way past the right
     harness.scroll_right(50.0, 50.0, 1000.0);
@@ -241,7 +241,7 @@ fn test_no_scroll_when_content_fits() {
     let content = Empty::new().style(|s| s.size(100.0, 100.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = TestHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
 
     // Try to scroll
     harness.scroll_down(50.0, 50.0, 50.0);
@@ -266,7 +266,7 @@ fn test_no_scroll_when_content_smaller() {
     let content = Empty::new().style(|s| s.size(50.0, 50.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = TestHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
 
     harness.scroll_down(50.0, 50.0, 50.0);
 
@@ -292,7 +292,7 @@ fn test_multiple_scroll_events_accumulate() {
     let content = Empty::new().style(|s| s.size(100.0, 1000.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = TestHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
 
     // Multiple small scrolls
     harness.scroll_down(50.0, 50.0, 20.0);
@@ -315,7 +315,7 @@ fn test_scroll_up_down_cancels() {
     let content = Empty::new().style(|s| s.size(100.0, 400.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = TestHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
 
     // Scroll down then back up
     harness.scroll_down(50.0, 50.0, 100.0);
@@ -341,7 +341,7 @@ fn test_viewport_size_matches_container() {
     let content = Empty::new().style(|s| s.size(100.0, 400.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = TestHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
 
     // Scroll to trigger a viewport update
     harness.scroll_down(50.0, 50.0, 10.0);
@@ -378,7 +378,7 @@ fn test_scroll_by_lines() {
     let content = Empty::new().style(|s| s.size(100.0, 400.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = TestHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
 
     // Scroll by 3 lines down (negative because scroll view negates)
     // LineDelta is converted: 20 pixels per line
@@ -411,7 +411,7 @@ fn test_click_passes_through_scroll() {
 
     let scroll_view = Scroll::new(content);
 
-    let mut harness = TestHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
 
     // Click on the content
     harness.click(50.0, 50.0);
@@ -442,7 +442,7 @@ fn test_click_after_scroll() {
 
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = TestHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
 
     // Initially, clicking at center hits the top_spacer (no handler)
     harness.click(50.0, 50.0);
@@ -486,7 +486,7 @@ fn test_scrollbar_click_doesnt_hit_content() {
 
     let scroll_view = Scroll::new(content);
 
-    let mut harness = TestHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
 
     // Click on the right edge where scrollbar should be (typically last 10 pixels)
     harness.click(95.0, 50.0);
@@ -520,7 +520,7 @@ fn test_scroll_propagation_at_limit() {
 
     let outer_scroll = outer_tracker.track(Scroll::new(outer_content));
 
-    let mut harness = TestHarness::new_with_size(outer_scroll, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(outer_scroll, 100.0, 100.0);
 
     // Scroll while hovering over the inner scroll area
     // Since inner can't scroll, event should propagate to outer
@@ -546,7 +546,7 @@ fn test_scroll_small_viewport() {
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
     // Small but not zero
-    let mut harness = TestHarness::new_with_size(scroll_view, 10.0, 10.0);
+    let mut harness = HeadlessHarness::new_with_size(scroll_view, 10.0, 10.0);
 
     // Try to scroll - should not crash
     harness.scroll_down(5.0, 5.0, 50.0);
@@ -565,7 +565,7 @@ fn test_scroll_after_resize() {
     let content = Empty::new().style(|s| s.size(100.0, 400.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = TestHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
 
     // Scroll down
     harness.scroll_down(50.0, 50.0, 150.0);
@@ -596,7 +596,7 @@ fn test_viewport_bounds_valid() {
     let content = Empty::new().style(|s| s.size(400.0, 400.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = TestHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
 
     // Scroll in various directions
     harness.scroll(50.0, 50.0, -50.0, -50.0);
@@ -627,7 +627,7 @@ fn test_on_scroll_callback_values() {
     let content = Empty::new().style(|s| s.size(100.0, 400.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = TestHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
 
     // Scroll multiple times and verify incremental changes
     harness.scroll_down(50.0, 50.0, 30.0);
@@ -659,7 +659,7 @@ fn test_scroll_position_helper() {
     let content = Empty::new().style(|s| s.min_size(100.0, 400.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = TestHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
 
     // Note: The scroll view may trigger an initial viewport callback during setup.
     // We reset the tracker to test scroll position from a known state.
@@ -695,7 +695,7 @@ fn test_scroll_tracker_reset() {
     let content = Empty::new().style(|s| s.size(100.0, 400.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = TestHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
 
     harness.scroll_down(50.0, 50.0, 50.0);
     assert!(scroll_tracker.has_scrolled(), "Should have scrolled");
@@ -733,7 +733,7 @@ fn test_scroll_left_right() {
     let content = Empty::new().style(|s| s.min_size(400.0, 100.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = TestHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
 
     // Scroll right
     harness.scroll_right(50.0, 50.0, 100.0);
@@ -769,7 +769,7 @@ fn test_scroll_up_down() {
     let content = Empty::new().style(|s| s.size(100.0, 400.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = TestHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
 
     // Scroll down
     harness.scroll_down(50.0, 50.0, 100.0);
@@ -806,7 +806,7 @@ fn test_scroll_view_click_after_scroll() {
 
     let view = stack((scroll_view,)).style(|s| s.size(200.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 200.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 100.0);
 
     // Button is at y=150 in content coordinates, but viewport is y=0 to y=100
     // So button is not visible yet. Let's scroll down to see it.
@@ -839,7 +839,7 @@ fn test_clip_aware_hit_testing_clipped_content() {
     let scroll_view = Scroll::new(content).style(|s| s.size(200.0, 100.0));
     let view = stack((scroll_view,)).style(|s| s.size(200.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 200.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 100.0);
 
     // The button is at y=150 in content coordinates.
     // Without scrolling, the viewport shows y=0 to y=100.
@@ -869,7 +869,7 @@ fn test_clip_aware_hit_testing_visible_content() {
     let scroll_view = Scroll::new(content).style(|s| s.size(200.0, 100.0));
     let view = stack((scroll_view,)).style(|s| s.size(200.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 200.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 100.0);
 
     // The button is at y=25 to y=75 in content coordinates.
     // The viewport shows y=0 to y=100, so the button IS visible.
@@ -901,7 +901,7 @@ fn test_clip_aware_hit_testing_after_scroll_clipped() {
     let scroll_view = Scroll::new(content).style(|s| s.size(200.0, 100.0));
     let view = stack((scroll_view,)).style(|s| s.size(200.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 200.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 100.0);
 
     // Initially, button1 is visible (y=10 to y=40), button2 is not (y=150 to y=180)
 

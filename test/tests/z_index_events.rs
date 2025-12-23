@@ -16,7 +16,7 @@ fn test_higher_z_index_receives_click_first() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
     harness.click(50.0, 50.0);
 
     // z-index 10 should have been clicked, z-index 1 should not
@@ -38,7 +38,7 @@ fn test_negative_z_index_receives_click_last() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
     harness.click(50.0, 50.0);
 
     assert_eq!(
@@ -59,7 +59,7 @@ fn test_dom_order_when_z_index_equal() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
     harness.click(50.0, 50.0);
 
     // Last child in DOM order should receive the click
@@ -92,7 +92,7 @@ fn test_stacking_context_boundary() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
     harness.click(50.0, 50.0);
 
     // The sibling with z-index 2 should receive the click,
@@ -113,7 +113,7 @@ fn test_hit_test_respects_z_index() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // The view at (50, 50) should be the one with z-index 10
     let hit = harness.view_at(50.0, 50.0);
@@ -126,7 +126,7 @@ fn test_click_tracker_reset() {
 
     let view = tracker.track(Empty::new().style(|s| s.size(100.0, 100.0)));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
     assert_eq!(tracker.click_count(), 1);
@@ -152,7 +152,7 @@ fn test_multiple_z_index_layers() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
     harness.click(50.0, 50.0);
 
     // Highest z-index (100) should receive the click
@@ -198,7 +198,7 @@ fn test_partial_overlap_click_non_overlapping_region() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Click in left-only region (20, 20)
     harness.click(20.0, 20.0);
@@ -242,7 +242,7 @@ fn test_click_outside_all_views() {
     }),))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Click outside the small view
     harness.click(80.0, 80.0);
@@ -266,7 +266,7 @@ fn test_extreme_z_index_values() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
     harness.click(50.0, 50.0);
 
     assert_eq!(

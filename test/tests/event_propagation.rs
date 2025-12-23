@@ -19,7 +19,7 @@ fn test_pointer_down_move_away_no_click() {
     ))
     .style(|s| s.size(100.0, 50.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 50.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 50.0);
 
     // Pointer down on target
     harness.pointer_down(25.0, 25.0);
@@ -50,7 +50,7 @@ fn test_pointer_down_move_away_move_back_clicks() {
     ))
     .style(|s| s.size(100.0, 50.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 50.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 50.0);
 
     // Pointer down on target
     harness.pointer_down(25.0, 25.0);
@@ -86,7 +86,7 @@ fn test_pointer_down_on_a_up_on_b_neither_clicks() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Pointer down on left view
     harness.pointer_down(25.0, 50.0);
@@ -110,7 +110,7 @@ fn test_hidden_view_no_click() {
         .track_named("hidden", Empty::new())
         .style(|s| s.size(100.0, 100.0).hide());
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -132,7 +132,7 @@ fn test_hidden_view_click_passes_through() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -155,7 +155,7 @@ fn test_double_click_fires_double_click_handler() {
         )
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Perform a double click
     harness.double_click(50.0, 50.0);
@@ -176,7 +176,7 @@ fn test_single_click_does_not_fire_double_click() {
         .track_double_click("target", Empty::new().style(|s| s.size(100.0, 100.0)))
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Perform a single click
     harness.click(50.0, 50.0);
@@ -197,7 +197,7 @@ fn test_secondary_click_fires_secondary_handler() {
         .track_secondary_click("target", Empty::new().style(|s| s.size(100.0, 100.0)))
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     harness.secondary_click(50.0, 50.0);
 
@@ -217,7 +217,7 @@ fn test_primary_click_does_not_fire_secondary_handler() {
         .track_secondary_click("target", Empty::new().style(|s| s.size(100.0, 100.0)))
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -242,7 +242,7 @@ fn test_pointer_events_none_passes_through() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -269,7 +269,7 @@ fn test_pointer_events_none_child_parent_still_receives() {
         )
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Click in the child area
     harness.click(25.0, 25.0);
@@ -287,7 +287,7 @@ fn test_clicking_state_during_pointer_down() {
     let view = Empty::new().style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Before any interaction, not clicking
     assert!(
@@ -319,7 +319,7 @@ fn test_clicking_state_persists_during_move() {
     let view = stack((target, Empty::new().style(|s| s.size(50.0, 100.0))))
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Pointer down on target
     harness.pointer_down(25.0, 50.0);
@@ -358,7 +358,7 @@ fn test_click_stop_prevents_bubbling() {
         )
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Click on the child area
     harness.click(25.0, 25.0);
@@ -385,7 +385,7 @@ fn test_click_cont_allows_bubbling() {
         )
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Click on the child area
     harness.click(25.0, 25.0);
@@ -420,7 +420,7 @@ fn test_bubbling_order_child_then_parent() {
         )
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     harness.click(15.0, 15.0);
 
@@ -454,7 +454,7 @@ fn test_stop_in_middle_prevents_further_bubbling() {
         )
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     harness.click(15.0, 15.0);
 
@@ -481,7 +481,7 @@ fn test_click_outside_child_only_hits_parent() {
         )
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Click outside child (30x30) but inside parent (100x100)
     harness.click(80.0, 80.0);
@@ -508,7 +508,7 @@ fn test_sibling_views_no_bubbling_between_siblings() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Click on left sibling
     harness.click(25.0, 50.0);
@@ -541,7 +541,7 @@ fn test_clicking_state_cleared_immediately_after_pointer_up() {
     let view = Empty::new().style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Pointer down - should be clicking
     harness.pointer_down(50.0, 50.0);
@@ -569,7 +569,7 @@ fn test_clicking_state_cleared_for_all_views_on_pointer_up() {
 
     let view = stack((child1, child2)).style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Pointer down on child1
     harness.pointer_down(25.0, 50.0);
@@ -608,7 +608,7 @@ fn test_clicking_state_cleared_after_click_handler_runs() {
         was_clicking_clone.set(true);
     });
 
-    let mut harness = TestHarness::new_with_size(view_with_handler, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view_with_handler, 100.0, 100.0);
 
     // Perform a complete click
     harness.click(50.0, 50.0);
@@ -630,7 +630,7 @@ fn test_nested_views_clicking_state_cleared() {
     let parent = Container::new(child).style(|s| s.size(100.0, 100.0));
     let parent_id = parent.view_id();
 
-    let mut harness = TestHarness::new_with_size(parent, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
 
     // Pointer down on child (which is inside parent)
     harness.pointer_down(25.0, 25.0);
@@ -660,7 +660,7 @@ fn test_clicking_state_not_set_on_pointer_up_only() {
     let view = Empty::new().style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Just pointer up without down
     harness.pointer_up(50.0, 50.0);
@@ -677,7 +677,7 @@ fn test_rapid_click_sequence_clears_clicking_state() {
     let view = Empty::new().style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // First click
     harness.pointer_down(50.0, 50.0);
@@ -724,7 +724,7 @@ fn test_clicking_state_cleared_even_when_pointer_up_outside_view() {
 
     let parent = Container::new(view).style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(parent, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
 
     // Pointer down on the child view
     harness.pointer_down(25.0, 25.0);
@@ -747,7 +747,7 @@ fn test_interaction_state_reflects_clicking() {
     let view = Empty::new().style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Initial state - not clicking
     let state = harness.get_interaction_state(id);
@@ -778,7 +778,7 @@ fn test_interaction_state_after_style_recomputation() {
     let view = Empty::new().style(|s| s.size(100.0, 100.0).active(|s| s.background(css::RED)));
     let id = view.view_id();
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Pointer down
     harness.pointer_down(50.0, 50.0);
@@ -817,7 +817,7 @@ fn test_active_style_with_full_click_cycle() {
     let view = Empty::new().style(|s| s.size(100.0, 100.0).active(|s| s.background(css::RED)));
     let id = view.view_id();
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Check if the view has Active styles
     let has_active = harness.has_style_for_selector(id, StyleSelector::Active);
@@ -860,7 +860,7 @@ fn test_clicking_state_persists_when_pointer_leaves_view() {
 
     let parent = Container::new(view).style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(parent, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
 
     // Pointer down on the child view
     harness.pointer_down(25.0, 25.0);
@@ -896,7 +896,7 @@ fn test_clicking_state_after_pointer_move_and_style_update() {
 
     let parent = Container::new(view).style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(parent, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
 
     // Pointer down on the child view
     harness.pointer_down(25.0, 25.0);
@@ -927,7 +927,7 @@ fn test_hover_state_cleared_on_pointer_leave() {
 
     let parent = Container::new(view).style(|s| s.size(100.0, 100.0));
 
-    let mut harness = TestHarness::new_with_size(parent, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
 
     // Move pointer to the child view to hover it
     harness.pointer_move(25.0, 25.0);
@@ -968,7 +968,7 @@ fn test_active_style_applied_during_click() {
     });
     let id = view.view_id();
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Check initial background is BLUE
     let style = harness.get_computed_style(id);
@@ -1061,7 +1061,7 @@ fn test_nested_stack_click_no_z_index() {
     .style(|s| s.flex_row()),))
     .style(|s| s.size(100.0, 100.0).flex_col());
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Click on button1 (should be at x=25, y=25)
     harness.click(25.0, 25.0);
@@ -1113,7 +1113,7 @@ fn test_counter_example_structure() {
                 .justify_center()
         });
 
-    let mut harness = TestHarness::new_with_size(view, 200.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 100.0);
 
     // Click on the increment button
     harness.click(30.0, 55.0);

@@ -1,6 +1,6 @@
 //! Testing utilities for Floem UI applications.
 //!
-//! This crate provides a test harness for testing Floem views without
+//! This crate provides a headless harness for testing Floem views without
 //! creating an actual window.
 //!
 //! # Example
@@ -16,7 +16,7 @@
 //!         Empty::new().style(|s| s.size(100.0, 100.0))
 //!     );
 //!
-//!     let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+//!     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 //!     harness.click(50.0, 50.0);
 //!
 //!     assert!(tracker.was_clicked());
@@ -38,7 +38,7 @@
 //!         tracker.track_named("front", Empty::new().z_index(10)),
 //!     ));
 //!
-//!     let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+//!     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 //!     harness.click(50.0, 50.0);
 //!
 //!     // Front (z-index 10) should receive the click
@@ -52,18 +52,18 @@ use std::rc::Rc;
 use floem::prelude::*;
 use floem::views::{Decorators, stack_from_iter};
 
-// Re-export the test harness from floem
-pub use floem::test_harness::*;
+// Re-export the headless harness from floem
+pub use floem::headless::*;
 
 // Re-export commonly used floem types for convenience
 pub use floem::ViewId;
 
 /// Prelude module for convenient imports in tests.
 pub mod prelude {
-    pub use super::{ClickTracker, ScrollTracker, TestHarnessExt, layer, layers};
+    pub use super::{ClickTracker, HeadlessHarnessExt, ScrollTracker, layer, layers};
     pub use floem::ViewId;
+    pub use floem::headless::*;
     pub use floem::prelude::*;
-    pub use floem::test_harness::*;
     pub use floem::views::{Container, Decorators, Empty, Scroll, stack, stack_from_iter};
 }
 
@@ -267,18 +267,18 @@ pub fn layers<VT: ViewTuple + 'static>(children: VT) -> impl IntoView {
     stack_from_iter(children_iter).style(|s| s.size_full())
 }
 
-/// Extension trait for TestHarness with convenient test methods.
-pub trait TestHarnessExt {
-    /// Create a new test harness with a specified size.
-    fn new_with_size(view: impl IntoView, width: f64, height: f64) -> TestHarness;
+/// Extension trait for HeadlessHarness with convenient test methods.
+pub trait HeadlessHarnessExt {
+    /// Create a new headless harness with a specified size.
+    fn new_with_size(view: impl IntoView, width: f64, height: f64) -> HeadlessHarness;
 }
 
-impl TestHarnessExt for TestHarness {
-    /// Create a new test harness with a specified size.
+impl HeadlessHarnessExt for HeadlessHarness {
+    /// Create a new headless harness with a specified size.
     ///
     /// This is a convenience method that combines `new()` and `set_size()`.
-    fn new_with_size(view: impl IntoView, width: f64, height: f64) -> TestHarness {
-        let mut harness = TestHarness::new(view);
+    fn new_with_size(view: impl IntoView, width: f64, height: f64) -> HeadlessHarness {
+        let mut harness = HeadlessHarness::new(view);
         harness.set_size(width, height);
         harness
     }
@@ -297,7 +297,7 @@ impl TestHarnessExt for TestHarness {
 /// let content = Empty::new().style(|s| s.size(200.0, 400.0));
 /// let scroll_view = scroll_tracker.track(Scroll::new(content));
 ///
-/// let mut harness = TestHarness::new_with_size(scroll_view, 100.0, 100.0);
+/// let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
 /// harness.scroll_vertical(50.0, 50.0, 50.0);
 ///
 /// let viewport = scroll_tracker.last_viewport().unwrap();
