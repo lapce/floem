@@ -13,8 +13,8 @@ use crate::event::{Event, EventListener};
 use crate::platform::menu::MudaMenu;
 use crate::style::CursorStyle;
 use crate::unit::UnitExt;
-use crate::view::IntoView;
-use crate::views::{Container, Decorators, Label, dyn_stack, stack, svg};
+use crate::view::{IntoView, View};
+use crate::views::{Container, Decorators, Label, stack, svg};
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 enum MenuDisplay {

@@ -26,8 +26,6 @@ use winit::{
 
 use super::state::WindowState;
 use super::tracking::{remove_window_id_mapping, store_window_id_mapping};
-#[cfg(any(target_os = "linux", target_os = "freebsd"))]
-use crate::event::EventListener;
 use crate::event::dropped_file::FileDragEvent;
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use crate::platform::context_menu::context_menu_view;
