@@ -654,25 +654,13 @@ pub(crate) fn paint_bg(cx: &mut PaintCx, style: &ViewStyleProps, size: Size) {
     let radii = border_to_radii_view(style, size);
     if radii_max(radii) > 0.0 {
         let rect = size.to_rect();
-        let width = rect.width();
-        let height = rect.height();
-        if width > 0.0 && height > 0.0 && radii_min(radii) > width.max(height) / 2.0 {
-            let radius = width.max(height) / 2.0;
-            let circle = Circle::new(rect.center(), radius);
-            let bg = match style.background() {
-                Some(color) => color,
-                None => return,
-            };
-            cx.fill(&circle, &bg, 0.0);
-        } else {
-            paint_box_shadow(cx, style, rect, Some(radii));
-            let bg = match style.background() {
-                Some(color) => color,
-                None => return,
-            };
-            let rounded_rect = rect.to_rounded_rect(radii);
-            cx.fill(&rounded_rect, &bg, 0.0);
-        }
+        paint_box_shadow(cx, style, rect, Some(radii));
+        let bg = match style.background() {
+            Some(color) => color,
+            None => return,
+        };
+        let rounded_rect = rect.to_rounded_rect(radii);
+        cx.fill(&rounded_rect, &bg, 0.0);
     } else {
         paint_box_shadow(cx, style, size.to_rect(), None);
         let bg = match style.background() {
@@ -1076,14 +1064,6 @@ fn radii_map(radii: RoundedRectRadii, f: impl Fn(f64) -> f64) -> RoundedRectRadi
         bottom_left: f(radii.bottom_left),
         bottom_right: f(radii.bottom_right),
     }
-}
-
-pub(crate) const fn radii_min(radii: RoundedRectRadii) -> f64 {
-    radii
-        .top_left
-        .min(radii.top_right)
-        .min(radii.bottom_left)
-        .min(radii.bottom_right)
 }
 
 pub(crate) const fn radii_max(radii: RoundedRectRadii) -> f64 {
