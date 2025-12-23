@@ -4,7 +4,6 @@ use crate::{
     Clipboard,
     context::{PaintCx, UpdateCx},
     event::{Event, EventListener, EventPropagation},
-    view::ViewId,
     prop_extractor,
     style::{
         CursorColor, CustomStylable, CustomStyle, FontProps, LineHeight, Selectable,
@@ -15,6 +14,7 @@ use crate::{
     text::{Attrs, AttrsList, FamilyOwned, TextLayout},
     unit::PxPct,
     view::View,
+    view::ViewId,
 };
 use floem_reactive::UpdaterEffect;
 use floem_renderer::{Renderer, text::Cursor};

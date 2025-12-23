@@ -14,12 +14,12 @@ use crate::unit::Pct;
 use crate::{
     Renderer,
     event::EventPropagation,
-    view::ViewId,
     prop, prop_extractor,
     style::{Background, CustomStylable, Foreground, Height, Style},
     style_class,
     unit::{PxPct, PxPctAuto},
     view::View,
+    view::ViewId,
     views::Decorators,
 };
 

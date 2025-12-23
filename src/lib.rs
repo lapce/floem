@@ -179,19 +179,13 @@
 pub mod action;
 pub mod animate;
 mod app;
-mod clipboard;
 pub mod context;
-pub mod dropped_file;
 pub mod event;
 pub mod ext_event;
-pub mod file;
-#[cfg(any(feature = "rfd-async-std", feature = "rfd-tokio"))]
-pub mod file_action;
 mod inspector;
-pub mod menu;
-mod nav;
-pub mod paint;
 pub mod layout;
+pub mod paint;
+pub mod platform;
 pub mod style;
 pub mod test_harness;
 mod update;
@@ -213,20 +207,24 @@ pub mod receiver_signal {
 }
 
 pub use app::{AppConfig, AppEvent, Application, launch, quit_app, reopen};
-pub use clipboard::{Clipboard, ClipboardError};
 pub use floem_reactive as reactive;
 pub use floem_renderer::Renderer;
 pub use floem_renderer::Svg as RendererSvg;
 pub use floem_renderer::gpu_resources::GpuResources;
 pub use floem_renderer::text;
-pub use view::ViewId;
 pub use imbl;
+pub use layout::ScreenLayout;
 pub use muda;
 pub use peniko;
 pub use peniko::kurbo;
-pub use layout::ScreenLayout;
+pub use platform::{
+    Clipboard, ClipboardError, FileDialogOptions, FileInfo, FileSpec, Menu, SubMenu,
+};
+#[cfg(any(feature = "rfd-async-std", feature = "rfd-tokio"))]
+pub use platform::{open_file, save_as};
 pub use taffy;
 pub use ui_events;
+pub use view::ViewId;
 pub use view::{
     AnyView, HasViewId, IntoView, LazyView, View, default_compute_layout, recursively_layout_view,
 };
@@ -238,8 +236,8 @@ pub use style::{theme, unit};
 
 pub mod prelude {
     pub use crate::Renderer;
-    pub use crate::view::IntoViewIter;
     pub use crate::unit::{DurationUnitExt, UnitExt};
+    pub use crate::view::IntoViewIter;
     pub use crate::view::ViewTuple;
     pub use crate::views::*;
     pub use crate::{HasViewId, IntoView, View};

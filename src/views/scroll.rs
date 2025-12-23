@@ -14,11 +14,11 @@ use crate::{
     Renderer,
     context::{ComputeLayoutCx, PaintCx},
     event::{Event, EventPropagation},
-    view::ViewId,
     prop, prop_extractor,
     style::{Background, Style, StyleSelector},
     style_class,
     unit::Px,
+    view::ViewId,
     view::{IntoView, View},
     window::state::WindowState,
 };

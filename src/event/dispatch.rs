@@ -10,13 +10,13 @@ use std::time::Instant;
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
 
-use super::stacking::collect_stacking_context_items;
+use super::dropped_file::FileDragEvent;
+use super::nav::view_arrow_navigation;
 use super::{Event, EventListener, EventPropagation};
 use crate::action::show_context_menu;
-use crate::dropped_file::FileDragEvent;
-use crate::view::ViewId;
-use crate::nav::view_arrow_navigation;
 use crate::style::{Focusable, PointerEvents, PointerEventsProp, StyleSelector};
+use crate::view::ViewId;
+use crate::view::stacking::collect_stacking_context_items;
 use crate::view::view_tab_navigation;
 use crate::window::state::{DragState, WindowState};
 

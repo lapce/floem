@@ -2,10 +2,9 @@ use std::path::PathBuf;
 
 use floem_reactive::Scope;
 
-use crate::{
-    ext_event::create_ext_action,
-    file::{FileDialogOptions, FileInfo},
-};
+use crate::ext_event::create_ext_action;
+
+use super::file::{FileDialogOptions, FileInfo};
 
 /// Open a file using the system file dialog
 pub fn open_file(

@@ -14,11 +14,11 @@ use web_time::Instant;
 use crate::{
     context::FrameUpdate,
     event::{Event, EventListener},
-    view::ViewId,
     inspector::CaptureState,
     layout::responsive::{GridBreakpoints, ScreenSizeBp},
     style::{CursorStyle, StyleSelector},
     view::VIEW_STORAGE,
+    view::ViewId,
 };
 
 /// Tracks the state of a view being dragged.

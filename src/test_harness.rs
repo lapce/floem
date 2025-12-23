@@ -25,9 +25,9 @@ use peniko::kurbo::{Point, Size};
 
 use crate::context::InteractionState;
 use crate::event::Event;
-use crate::view::ViewId;
 use crate::style::{Style, StyleSelector};
 use crate::view::IntoView;
+use crate::view::ViewId;
 use crate::window::handle::WindowHandle;
 
 /// Result of an event dispatch operation.
@@ -877,10 +877,7 @@ mod tests {
                     clicked_child_clone.set(true);
                 }),))
             .style(|s| {
-                s.absolute()
-                    .inset(0.0)
-                    .size(100.0, 100.0)
-                    .scale(101.pct()) // Non-identity transform creates stacking context
+                s.absolute().inset(0.0).size(100.0, 100.0).scale(101.pct()) // Non-identity transform creates stacking context
             }),
             // Sibling with z-index 5
             Empty::new()
@@ -1130,10 +1127,7 @@ mod tests {
         // Click left side
         harness.click(50.0, 50.0);
 
-        assert!(
-            clicked_left.get(),
-            "Left should receive click at (50, 50)"
-        );
+        assert!(clicked_left.get(), "Left should receive click at (50, 50)");
         assert!(
             !clicked_right.get(),
             "Right should NOT receive click at (50, 50)"
@@ -1762,18 +1756,12 @@ mod tests {
 
         harness.click(50.0, 50.0);
 
-        assert!(
-            !clicked[0].get(),
-            "Child1 (z=3) should NOT receive click"
-        );
+        assert!(!clicked[0].get(), "Child1 (z=3) should NOT receive click");
         assert!(
             !clicked[1].get(),
             "Child2 (z=7) should NOT receive click - Child4 is later in DOM"
         );
-        assert!(
-            !clicked[2].get(),
-            "Child3 (z=5) should NOT receive click"
-        );
+        assert!(!clicked[2].get(), "Child3 (z=5) should NOT receive click");
         assert!(
             clicked[3].get(),
             "Child4 (z=7, last in DOM) should receive click"
@@ -2001,7 +1989,12 @@ mod tests {
                     }),
             ),
         )
-            .style(|s| s.size(200.0, 100.0).flex_col().items_center().justify_center());
+            .style(|s| {
+                s.size(200.0, 100.0)
+                    .flex_col()
+                    .items_center()
+                    .justify_center()
+            });
 
         let mut harness = TestHarness::new_with_size(view, 200.0, 100.0);
 
@@ -2016,7 +2009,10 @@ mod tests {
             !clicked_decrement.get(),
             "Decrement button should NOT receive click"
         );
-        assert!(!clicked_reset.get(), "Reset button should NOT receive click");
+        assert!(
+            !clicked_reset.get(),
+            "Reset button should NOT receive click"
+        );
     }
 
     #[test]
@@ -2219,7 +2215,10 @@ mod tests {
 
         // Click on button1 - should work
         harness.click(50.0, 25.0);
-        assert!(button1_clicked.get(), "Button1 should be clickable initially");
+        assert!(
+            button1_clicked.get(),
+            "Button1 should be clickable initially"
+        );
         button1_clicked.set(false);
 
         // Scroll down by 100px

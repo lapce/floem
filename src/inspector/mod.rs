@@ -4,15 +4,15 @@ mod view;
 
 use crate::context::StyleCx;
 use crate::event::{Event, EventListener, EventPropagation};
-use crate::view::ViewId;
 use crate::prelude::ViewTuple;
 use crate::style::{
     Focusable, FontSize, OverflowX, OverflowY, Style, StyleClassRef, StyleKeyInfo, StylePropRef,
     Transition,
 };
 use crate::theme::StyleThemeExt as _;
-use crate::view::{IntoView, View};
 use crate::view::ChangeFlags;
+use crate::view::ViewId;
+use crate::view::{IntoView, View};
 use crate::views::{
     ContainerExt, Decorators, Label, ScrollExt, dyn_container, stack, v_stack, v_stack_from_iter,
 };

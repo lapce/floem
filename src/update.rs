@@ -3,7 +3,11 @@ use std::{any::Any, cell::RefCell, collections::HashMap};
 use peniko::kurbo::{Point, Rect, Size, Vec2};
 use winit::window::{ResizeDirection, Theme};
 
-use crate::{menu::Menu, view::{View, ViewId}, window::state::WindowState};
+use crate::{
+    platform::menu::Menu,
+    view::{View, ViewId},
+    window::state::WindowState,
+};
 
 thread_local! {
     /// Stores all the update message with their original `ViewId`

@@ -19,17 +19,17 @@ use web_time::{Duration, Instant};
 
 use crate::{
     app::{AppUpdateEvent, add_app_update_event},
-    view::ViewId,
-    menu::Menu,
+    platform::menu::Menu,
     update::{UPDATE_MESSAGES, UpdateMessage},
     view::View,
+    view::ViewId,
     views::Decorators,
     window::handle::{get_current_view, set_current_view},
     window::tracking::with_window,
 };
 
 #[cfg(any(feature = "rfd-async-std", feature = "rfd-tokio"))]
-pub use crate::file_action::*;
+pub use crate::platform::file_action::*;
 
 pub(crate) fn add_update_message(msg: UpdateMessage) {
     let current_view = get_current_view();

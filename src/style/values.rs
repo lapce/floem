@@ -11,8 +11,8 @@ use peniko::{
 };
 use smallvec::SmallVec;
 use std::fmt::Debug;
-use taffy::prelude::{auto, fr};
 use taffy::GridTemplateComponent;
+use taffy::prelude::{auto, fr};
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Duration;
@@ -28,15 +28,13 @@ use taffy::{
     style::{LengthPercentage, MaxTrackSizingFunction, MinTrackSizingFunction},
 };
 
-use crate::unit::{Pct, Px, PxPct, PxPctAuto};
-use crate::view::{IntoView, View};
-use crate::view::ViewTupleFlat;
-use crate::views::{
-    ContainerExt, Decorators, Label, TooltipExt, canvas, stack, v_stack_from_iter,
-};
 use crate::AnyView;
 use crate::prelude::ViewTuple;
 use crate::theme::StyleThemeExt;
+use crate::unit::{Pct, Px, PxPct, PxPctAuto};
+use crate::view::ViewTupleFlat;
+use crate::view::{IntoView, View};
+use crate::views::{ContainerExt, Decorators, Label, TooltipExt, canvas, stack, v_stack_from_iter};
 
 use super::FontSize;
 

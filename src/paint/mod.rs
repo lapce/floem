@@ -33,8 +33,8 @@ use std::sync::mpsc::Receiver;
 
 use crate::action::exec_after;
 use crate::animate::{Easing, Linear};
-use crate::event::collect_stacking_context_items;
 use crate::view::ViewId;
+use crate::view::stacking::collect_stacking_context_items;
 use crate::view::{paint_bg, paint_border, paint_outline};
 use crate::window::state::WindowState;
 

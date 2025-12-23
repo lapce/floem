@@ -12,7 +12,7 @@ use crate::unit::{PxPct, PxPctAuto};
 use crate::view::{IntoView, View};
 use crate::views::{ContainerExt, Decorators, TooltipExt, h_stack, v_stack, v_stack_from_iter};
 
-use super::values::{CombineResult, StylePropValue, StrokeWrap};
+use super::values::{CombineResult, StrokeWrap, StylePropValue};
 
 /// Pointer event handling mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

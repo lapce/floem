@@ -14,13 +14,15 @@ use std::time::Instant;
 use web_time::Instant;
 
 use crate::animate::{AnimStateKind, RepeatMode};
-use crate::event::invalidate_stacking_cache;
-use crate::view::ViewId;
 use crate::inspector::CaptureState;
+use crate::view::ViewId;
+use crate::view::stacking::invalidate_stacking_cache;
 use crate::view::{ChangeFlags, StackingInfo};
 use crate::window::state::WindowState;
 
-use super::{Disabled, DisplayProp, Focusable, Hidden, OverflowX, OverflowY, Style, StyleProp, ZIndex};
+use super::{
+    Disabled, DisplayProp, Focusable, Hidden, OverflowX, OverflowY, Style, StyleProp, ZIndex,
+};
 
 /// The interaction state of a view, used to determine which style selectors apply.
 ///

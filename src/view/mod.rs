@@ -45,6 +45,7 @@
 
 mod id;
 mod into_iter;
+pub(crate) mod stacking;
 mod state;
 mod storage;
 mod tuple;

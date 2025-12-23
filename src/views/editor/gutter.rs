@@ -1,13 +1,13 @@
 use crate::{
     Renderer,
     context::PaintCx,
-    view::ViewId,
     peniko::kurbo::Point,
     prop, prop_extractor,
     style::{Style, TextColor},
     style_class,
     text::{Attrs, AttrsList, TextLayout},
     view::View,
+    view::ViewId,
     views::Decorators,
 };
 use floem_editor_core::{cursor::CursorMode, mode::Mode};

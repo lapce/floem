@@ -8,14 +8,15 @@ use ui_events::{
 };
 use winit::window::Theme;
 
-use crate::dropped_file::{self, FileDragEvent};
 use dpi::LogicalPosition;
 
 mod dispatch;
-mod stacking;
+pub mod dropped_file;
+pub(crate) mod nav;
+
+pub use dropped_file::FileDragEvent;
 
 pub use dispatch::*;
-pub(crate) use stacking::*;
 
 /// Control whether an event will continue propagating or whether it should stop.
 pub enum EventPropagation {

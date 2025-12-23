@@ -7,8 +7,8 @@
 use peniko::kurbo::{Affine, Point, Rect, Size};
 use taffy::prelude::NodeId;
 
-use crate::view::ViewId;
 use crate::style::Style;
+use crate::view::ViewId;
 use crate::view::{ChangeFlags, IsHiddenState, View};
 use crate::window::state::WindowState;
 

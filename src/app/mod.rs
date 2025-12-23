@@ -22,8 +22,8 @@ use winit::{
 
 use crate::{
     action::{Timer, TimerToken},
-    clipboard::Clipboard,
     inspector::{Capture, profiler::Profile},
+    platform::clipboard::Clipboard,
     view::IntoView,
     window::{WindowConfig, WindowCreation},
 };

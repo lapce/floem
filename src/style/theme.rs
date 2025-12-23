@@ -1,5 +1,10 @@
 use std::time::Duration;
 
+use super::unit::{DurationUnitExt, UnitExt};
+use super::{
+    Background, BoxShadow, CursorStyle, CustomStyle, FontSize, Foreground, Style, StylePropValue,
+    Transition,
+};
 use crate::{
     AnyView, prop, style_class,
     views::{
@@ -12,11 +17,6 @@ use crate::{
         slider::{SliderClass, SliderCustomStyle},
     },
 };
-use super::{
-    Background, BoxShadow, CursorStyle, CustomStyle, FontSize, Foreground, Style,
-    StylePropValue, Transition,
-};
-use super::unit::{DurationUnitExt, UnitExt};
 use floem_renderer::text::Weight;
 use peniko::{Brush, Color, color::palette::css};
 use smallvec::smallvec;

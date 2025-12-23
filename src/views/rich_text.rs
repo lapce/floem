@@ -16,10 +16,10 @@ use taffy::tree::NodeId;
 use crate::{
     IntoView,
     context::UpdateCx,
-    view::ViewId,
     style::{Style, TextOverflow},
     unit::PxPct,
     view::View,
+    view::ViewId,
 };
 
 pub struct RichText {

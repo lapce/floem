@@ -15,8 +15,8 @@ use crate::{
     action::{TimerToken, add_overlay, exec_after, remove_overlay},
     context::{EventCx, UpdateCx},
     event::{Event, EventPropagation},
-    view::ViewId,
     prop, prop_extractor, style_class,
+    view::ViewId,
     view::{IntoView, View, default_compute_layout},
 };
 

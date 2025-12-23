@@ -11,18 +11,19 @@ use slotmap::new_key_type;
 use taffy::{Display, Layout, NodeId, TaffyTree};
 use winit::window::WindowId;
 
+use super::stacking::invalidate_stacking_cache;
+use super::{ChangeFlags, IntoView, StackOffset, VIEW_STORAGE, View, ViewState};
 use crate::{
     ScreenLayout,
     animate::{AnimStateCommand, Animation},
-    context::{EventCallback, ResizeCallback, invalidate_stacking_cache},
+    context::{EventCallback, ResizeCallback},
     event::{EventListener, EventPropagation},
-    menu::Menu,
+    platform::menu::Menu,
     style::{Disabled, DisplayProp, Draggable, Focusable, Hidden, Style, StyleClassRef},
     unit::PxPct,
     update::{CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES, UpdateMessage},
     window::tracking::{is_known_root, window_id_for_root},
 };
-use super::{IntoView, View, ChangeFlags, StackOffset, ViewState, VIEW_STORAGE};
 
 new_key_type! {
     /// A small unique identifier for an instance of a [View](crate::View).

@@ -20,7 +20,7 @@ use web_time::{Duration, Instant};
 use crate::animate::{Bezier, Easing, Linear, Spring};
 use crate::theme::StyleThemeExt;
 use crate::view::{IntoView, View};
-use crate::views::{canvas, ContainerExt, Decorators, Label, TooltipExt, v_stack_from_iter};
+use crate::views::{ContainerExt, Decorators, Label, TooltipExt, canvas, v_stack_from_iter};
 
 use super::StylePropValue;
 use super::values::views;
