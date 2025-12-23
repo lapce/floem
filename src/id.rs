@@ -21,8 +21,8 @@ use crate::{
     unit::PxPct,
     update::{CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES, UpdateMessage},
     view::{IntoView, View},
-    view_state::{ChangeFlags, StackOffset, ViewState},
-    view_storage::VIEW_STORAGE,
+    view::{ChangeFlags, StackOffset, ViewState},
+    view::VIEW_STORAGE,
     window_tracking::{is_known_root, window_id_for_root},
 };
 

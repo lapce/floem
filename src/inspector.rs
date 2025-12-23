@@ -11,7 +11,7 @@ use crate::style::{
 };
 use crate::theme::StyleThemeExt as _;
 use crate::view::{IntoView, View};
-use crate::view_state::ChangeFlags;
+use crate::view::ChangeFlags;
 use crate::views::{
     ContainerExt, Decorators, Label, ScrollExt, dyn_container, stack, v_stack, v_stack_from_iter,
 };

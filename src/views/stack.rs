@@ -6,7 +6,7 @@ use crate::{
     into_view_iter::IntoViewIter,
     style::{Style, StyleClassRef},
     view::{IntoView, View},
-    view_tuple::ViewTuple,
+    view::ViewTuple,
 };
 
 /// A collection of static views. See [`stack`] and [`stack_from_iter`].

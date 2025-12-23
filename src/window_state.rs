@@ -1,20 +1,33 @@
 use std::collections::{HashMap, HashSet};
 
 use muda::MenuId;
-use peniko::kurbo::{Point, Size};
+use peniko::kurbo::{Point, Size, Vec2};
 use taffy::{AvailableSpace, NodeId};
 use winit::cursor::CursorIcon;
 use winit::window::Theme;
 
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
+
 use crate::{
-    context::{DragState, FrameUpdate},
+    context::FrameUpdate,
     event::{Event, EventListener},
     id::ViewId,
     inspector::CaptureState,
     responsive::{GridBreakpoints, ScreenSizeBp},
     style::{CursorStyle, StyleSelector},
-    view_storage::VIEW_STORAGE,
+    view::VIEW_STORAGE,
 };
+
+/// Tracks the state of a view being dragged.
+pub struct DragState {
+    pub(crate) id: ViewId,
+    pub(crate) offset: Vec2,
+    pub(crate) released_at: Option<Instant>,
+    pub(crate) release_location: Option<Point>,
+}
 
 /// Encapsulates and owns the global state of the application,
 pub struct WindowState {

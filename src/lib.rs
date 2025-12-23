@@ -208,10 +208,7 @@ pub mod test_harness;
 pub mod theme;
 pub mod unit;
 mod update;
-pub(crate) mod view;
-pub(crate) mod view_state;
-pub(crate) mod view_storage;
-pub mod view_tuple;
+pub mod view;
 pub mod views;
 pub mod window;
 mod window_handle;
@@ -250,7 +247,7 @@ pub use ui_events;
 pub use view::{
     AnyView, HasViewId, IntoView, LazyView, View, default_compute_layout, recursively_layout_view,
 };
-pub use view_state::{Stack, StackOffset};
+pub use view::{Stack, StackOffset};
 pub use window::{close_window, new_window};
 pub use window_id::{Urgency, WindowIdExt};
 pub use window_state::WindowState;
@@ -259,7 +256,7 @@ pub mod prelude {
     pub use crate::Renderer;
     pub use crate::into_view_iter::IntoViewIter;
     pub use crate::unit::{DurationUnitExt, UnitExt};
-    pub use crate::view_tuple::ViewTuple;
+    pub use crate::view::ViewTuple;
     pub use crate::views::*;
     pub use crate::{HasViewId, IntoView, View};
     #[allow(deprecated)]

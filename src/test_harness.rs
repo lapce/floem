@@ -316,7 +316,7 @@ impl TestHarness {
 
     /// Check if a view has pending style changes.
     pub fn has_pending_style_change(&self, id: ViewId) -> bool {
-        use crate::view_state::ChangeFlags;
+        use crate::view::ChangeFlags;
         id.state()
             .borrow()
             .requested_changes

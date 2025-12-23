@@ -7,7 +7,7 @@ use crate::{
     easing::*,
     style::{Style, StylePropRef},
     unit::UnitExt,
-    view_state::StackOffset,
+    view::StackOffset,
 };
 
 use std::any::Any;

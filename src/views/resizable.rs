@@ -10,7 +10,7 @@ use crate::{
     },
     style_class,
     unit::Px,
-    view_state::StackOffset,
+    view::StackOffset,
 };
 use floem_reactive::Effect;
 use peniko::{

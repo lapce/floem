@@ -52,7 +52,7 @@ use crate::{
         DEFERRED_UPDATE_MESSAGES, UPDATE_MESSAGES, UpdateMessage,
     },
     view::{IntoView, View},
-    view_state::ChangeFlags,
+    view::ChangeFlags,
     window_state::WindowState,
     window_tracking::{remove_window_id_mapping, store_window_id_mapping},
 };
