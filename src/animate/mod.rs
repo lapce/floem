@@ -2,9 +2,12 @@
 
 //! Animations
 
+pub mod easing;
+
+pub use easing::{Bezier, Easing, Linear, Spring, Step, StepPosition};
+
 use crate::{
     ViewId,
-    easing::*,
     style::{Style, StylePropRef},
     unit::UnitExt,
     view::StackOffset,

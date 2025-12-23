@@ -1,7 +1,7 @@
 #![deny(missing_docs)]
 use crate::action::{exec_after, set_ime_allowed, set_ime_cursor_area};
 use crate::event::{EventListener, EventPropagation};
-use crate::id::ViewId;
+use crate::view::ViewId;
 use crate::reactive::{Effect, RwSignal};
 use crate::style::{FontFamily, FontProps, PaddingProp, SelectionStyle, TextAlignProp};
 use crate::style::{FontStyle, FontWeight, TextColor};

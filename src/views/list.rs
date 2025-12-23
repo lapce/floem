@@ -1,7 +1,7 @@
 use super::{Decorators, v_stack_from_iter};
 use crate::context::StyleCx;
 use crate::event::EventPropagation;
-use crate::id::ViewId;
+use crate::view::ViewId;
 use crate::style::Style;
 use crate::style_class;
 use crate::view::IntoView;

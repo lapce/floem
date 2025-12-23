@@ -1,3 +1,13 @@
+pub(crate) mod handle;
+pub(crate) mod id;
+pub mod mock;
+pub(crate) mod state;
+pub(crate) mod tracking;
+
+pub use id::{Urgency, WindowIdExt};
+pub use mock::MockWindow;
+pub use state::WindowState;
+
 use peniko::Color;
 use peniko::kurbo::{Point, Size};
 pub use winit::icon::{Icon, RgbaIcon};

@@ -14,9 +14,9 @@ use web_time::Instant;
 use crate::{
     context::FrameUpdate,
     event::{Event, EventListener},
-    id::ViewId,
+    view::ViewId,
     inspector::CaptureState,
-    responsive::{GridBreakpoints, ScreenSizeBp},
+    layout::responsive::{GridBreakpoints, ScreenSizeBp},
     style::{CursorStyle, StyleSelector},
     view::VIEW_STORAGE,
 };

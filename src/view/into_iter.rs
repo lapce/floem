@@ -18,7 +18,6 @@
 //!
 //! ```rust
 //! use floem::prelude::*;
-//! use floem::into_view_iter::IntoViewIter;
 //!
 //! // Using the trait to iterate over children
 //! fn process_children(children: impl IntoViewIter) {
@@ -35,7 +34,7 @@
 //! // process_children(items.iter().map(label).collect::<Vec<_>>()); // iterator
 //! ```
 
-use crate::view::{AnyView, IntoView};
+use super::{AnyView, IntoView};
 
 /// Trait for types that can be converted into an iterator of views.
 ///

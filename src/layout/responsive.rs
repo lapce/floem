@@ -174,9 +174,7 @@ impl BitOr for ScreenSize {
 
 #[cfg(test)]
 mod tests {
-    use crate::responsive::SizeFlags;
-
-    use super::{ScreenSize, range};
+    use super::{ScreenSize, SizeFlags, range};
 
     #[test]
     fn range_full() {

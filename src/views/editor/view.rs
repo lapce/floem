@@ -5,7 +5,7 @@ use crate::{
     action::{set_ime_allowed, set_ime_cursor_area},
     context::{LayoutCx, PaintCx, UpdateCx},
     event::{Event, EventListener, EventPropagation},
-    id::ViewId,
+    view::ViewId,
     kurbo::{BezPath, Line, Point, Rect, Size, Vec2},
     peniko::Color,
     reactive::{Effect, Memo, RwSignal, Scope},

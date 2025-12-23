@@ -1,13 +1,7 @@
 use std::time::Duration;
 
 use crate::{
-    AnyView, prop,
-    style::{
-        Background, BoxShadow, CursorStyle, CustomStyle, FontSize, Foreground, Style,
-        StylePropValue, Transition,
-    },
-    style_class,
-    unit::{DurationUnitExt, UnitExt},
+    AnyView, prop, style_class,
     views::{
         ButtonClass, CheckboxClass, LabelClass, LabelCustomStyle, LabeledCheckboxClass,
         LabeledRadioButtonClass, ListClass, ListItemClass, PlaceholderTextClass, RadioButtonClass,
@@ -18,6 +12,11 @@ use crate::{
         slider::{SliderClass, SliderCustomStyle},
     },
 };
+use super::{
+    Background, BoxShadow, CursorStyle, CustomStyle, FontSize, Foreground, Style,
+    StylePropValue, Transition,
+};
+use super::unit::{DurationUnitExt, UnitExt};
 use floem_renderer::text::Weight;
 use peniko::{Brush, Color, color::palette::css};
 use smallvec::smallvec;

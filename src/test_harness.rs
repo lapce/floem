@@ -25,10 +25,10 @@ use peniko::kurbo::{Point, Size};
 
 use crate::context::InteractionState;
 use crate::event::Event;
-use crate::id::ViewId;
+use crate::view::ViewId;
 use crate::style::{Style, StyleSelector};
 use crate::view::IntoView;
-use crate::window_handle::WindowHandle;
+use crate::window::handle::WindowHandle;
 
 /// Result of an event dispatch operation.
 #[derive(Debug, Clone)]

@@ -14,13 +14,13 @@ use crate::{
     Renderer,
     context::{ComputeLayoutCx, PaintCx},
     event::{Event, EventPropagation},
-    id::ViewId,
+    view::ViewId,
     prop, prop_extractor,
     style::{Background, Style, StyleSelector},
     style_class,
     unit::Px,
     view::{IntoView, View},
-    window_state::WindowState,
+    window::state::WindowState,
 };
 
 use super::Decorators;

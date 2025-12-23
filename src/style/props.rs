@@ -25,7 +25,7 @@ use web_time::Instant;
 use crate::view::{IntoView, View};
 use crate::views::Label;
 
-use super::animation::TransitionState;
+use super::transition::TransitionState;
 use super::selectors::StyleSelectors;
 use super::values::{CombineResult, StyleMapValue, StylePropValue, StyleValue};
 use super::Style;

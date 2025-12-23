@@ -43,10 +43,14 @@
 //! ```
 //!
 
+mod id;
+mod into_iter;
 mod state;
 mod storage;
 mod tuple;
 
+pub use id::ViewId;
+pub use into_iter::*;
 pub use state::*;
 pub(crate) use storage::*;
 pub use tuple::*;
@@ -60,13 +64,12 @@ use crate::{
     Renderer,
     context::{ComputeLayoutCx, EventCx, LayoutCx, PaintCx, StyleCx, UpdateCx},
     event::{Event, EventPropagation},
-    id::ViewId,
     style::{LayoutProps, Style, StyleClassRef},
     unit::PxPct,
-    state::ViewStyleProps,
     views::{DynamicView, dyn_view},
-    window_state::WindowState,
+    window::state::WindowState,
 };
+use state::ViewStyleProps;
 
 /// type erased [`View`]
 ///
@@ -729,7 +732,7 @@ fn paint_box_shadow(
 #[cfg(feature = "vello")]
 pub(crate) fn paint_outline(cx: &mut PaintCx, style: &ViewStyleProps, size: Size) {
     use crate::{
-        border_path_iter::{BorderPath, BorderPathEvent},
+        paint::{BorderPath, BorderPathEvent},
         unit::Pct,
     };
 
@@ -892,7 +895,7 @@ pub(crate) fn paint_border(
     size: Size,
 ) {
     use crate::{
-        border_path_iter::{BorderPath, BorderPathEvent},
+        paint::{BorderPath, BorderPathEvent},
         unit::Pct,
     };
 

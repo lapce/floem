@@ -6,7 +6,7 @@ use crate::ViewId;
 use peniko::kurbo::{Point, Rect, Size};
 use winit::window::{Window, WindowId};
 
-use crate::window_tracking::{
+use crate::window::tracking::{
     monitor_bounds_for_monitor, rect_from_physical_bounds_for_window, with_window_id_and_window,
 };
 

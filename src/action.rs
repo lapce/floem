@@ -19,13 +19,13 @@ use web_time::{Duration, Instant};
 
 use crate::{
     app::{AppUpdateEvent, add_app_update_event},
-    id::ViewId,
+    view::ViewId,
     menu::Menu,
     update::{UPDATE_MESSAGES, UpdateMessage},
     view::View,
     views::Decorators,
-    window_handle::{get_current_view, set_current_view},
-    window_tracking::with_window,
+    window::handle::{get_current_view, set_current_view},
+    window::tracking::with_window,
 };
 
 #[cfg(any(feature = "rfd-async-std", feature = "rfd-tokio"))]

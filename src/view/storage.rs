@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use slotmap::{SecondaryMap, SlotMap};
 
-use crate::{IntoView, id::ViewId};
+use crate::{IntoView, view::ViewId};
 use super::{AnyView, state::ViewState};
 
 thread_local! {

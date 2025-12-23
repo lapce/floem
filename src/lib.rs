@@ -179,42 +179,25 @@
 pub mod action;
 pub mod animate;
 mod app;
-#[cfg(target_os = "macos")]
-mod app_delegate;
-mod app_handle;
-#[cfg(feature = "vello")]
-mod border_path_iter;
 mod clipboard;
 pub mod context;
 pub mod dropped_file;
-pub mod easing;
 pub mod event;
 pub mod ext_event;
 pub mod file;
 #[cfg(any(feature = "rfd-async-std", feature = "rfd-tokio"))]
 pub mod file_action;
-pub(crate) mod id;
 mod inspector;
-pub mod into_view_iter;
 pub mod menu;
-pub mod mock_window;
 mod nav;
-mod profiler;
-mod renderer;
-pub mod responsive;
-mod screen_layout;
+pub mod paint;
+pub mod layout;
 pub mod style;
 pub mod test_harness;
-pub mod theme;
-pub mod unit;
 mod update;
 pub mod view;
 pub mod views;
 pub mod window;
-mod window_handle;
-mod window_id;
-pub(crate) mod window_state;
-mod window_tracking;
 pub mod receiver_signal {
     //! Signals from Channels, Futures, and Streams.
     mod channel_signal;
@@ -236,25 +219,26 @@ pub use floem_renderer::Renderer;
 pub use floem_renderer::Svg as RendererSvg;
 pub use floem_renderer::gpu_resources::GpuResources;
 pub use floem_renderer::text;
-pub use id::ViewId;
+pub use view::ViewId;
 pub use imbl;
 pub use muda;
 pub use peniko;
 pub use peniko::kurbo;
-pub use screen_layout::ScreenLayout;
+pub use layout::ScreenLayout;
 pub use taffy;
 pub use ui_events;
 pub use view::{
     AnyView, HasViewId, IntoView, LazyView, View, default_compute_layout, recursively_layout_view,
 };
 pub use view::{Stack, StackOffset};
-pub use window::{close_window, new_window};
-pub use window_id::{Urgency, WindowIdExt};
-pub use window_state::WindowState;
+pub use window::{Urgency, WindowIdExt, WindowState, close_window, new_window};
+
+/// Re-export unit and theme modules from style for backward compatibility.
+pub use style::{theme, unit};
 
 pub mod prelude {
     pub use crate::Renderer;
-    pub use crate::into_view_iter::IntoViewIter;
+    pub use crate::view::IntoViewIter;
     pub use crate::unit::{DurationUnitExt, UnitExt};
     pub use crate::view::ViewTuple;
     pub use crate::views::*;

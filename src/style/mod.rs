@@ -153,23 +153,24 @@ use taffy::{
     },
 };
 
-use crate::context::InteractionState;
-use crate::responsive::{ScreenSize, ScreenSizeBp};
-use crate::unit::{Pct, Px, PxPct, PxPctAuto, UnitExt};
+use crate::layout::responsive::{ScreenSize, ScreenSizeBp};
 use crate::view::{IntoView, View};
 
 // Import macros from crate root (they are #[macro_export] in props.rs)
 use crate::{prop, prop_extractor};
 
-mod animation;
 mod components;
+mod cx;
 mod props;
 mod selectors;
 #[cfg(test)]
 mod tests;
+pub mod theme;
+mod transition;
+pub mod unit;
 mod values;
 
-pub use animation::{DirectTransition, Transition, TransitionState};
+pub use transition::{DirectTransition, Transition, TransitionState};
 pub use components::{
     Border, BorderColor, BorderRadius, BoxShadow, CursorStyle, Margin, Padding, PointerEvents,
     TextOverflow,
@@ -179,7 +180,10 @@ pub use props::{
     StyleProp, StylePropInfo, StylePropReader, StylePropRef,
 };
 pub use selectors::{StyleSelector, StyleSelectors};
+pub use theme::{DesignSystem, StyleThemeExt};
+pub use unit::{Auto, DurationUnitExt, Pct, Px, PxPct, PxPctAuto, UnitExt};
 pub use values::{CombineResult, StyleMapValue, StylePropValue, StyleValue, StrokeWrap};
+pub use cx::{InteractionState, StyleCx};
 
 pub(crate) use props::{style_key_selector, ImHashMap, CONTEXT_MAPPINGS_INFO, CONTEXT_SELECTORS_INFO};
 
@@ -2749,7 +2753,7 @@ pub trait CustomStyle: Default + Clone + Into<Style> + From<Style> {
     /// ```rust
     /// # use floem::prelude::*;
     /// # use floem::style::CustomStyle;
-    /// # use floem::responsive::ScreenSize;
+    /// # use floem::layout::responsive::ScreenSize;
     /// # use palette::css;
     /// # let label_custom_style = LabelCustomStyle::new();
     /// label_custom_style.responsive(ScreenSize::SM, |s| s.selection_color(css::PURPLE))

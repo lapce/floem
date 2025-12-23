@@ -1,13 +1,10 @@
-use crate::{
-    ScreenLayout, ViewId,
-    screen_layout::screen_layout_for_window,
-    window_tracking::{force_window_repaint, with_window},
-};
+use crate::{ScreenLayout, ViewId, layout::screen_layout_for_window};
 use std::{cell::RefCell, collections::HashMap, sync::Arc};
 
-use super::window_tracking::{
-    monitor_bounds, root_view_id, window_inner_screen_bounds, window_inner_screen_position,
-    window_outer_screen_bounds, window_outer_screen_position,
+use super::tracking::{
+    force_window_repaint, monitor_bounds, root_view_id, window_inner_screen_bounds,
+    window_inner_screen_position, window_outer_screen_bounds, window_outer_screen_position,
+    with_window,
 };
 use peniko::kurbo::{Point, Rect, Size};
 use winit::{

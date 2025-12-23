@@ -1,0 +1,248 @@
+//! Layout context types for view layout computation.
+//!
+//! This module contains the context types used during the layout phase:
+//! - [`LayoutCx`] - Context for computing Taffy layout nodes
+//! - [`ComputeLayoutCx`] - Context for computing view positions after Taffy layout
+
+use peniko::kurbo::{Affine, Point, Rect, Size};
+use taffy::prelude::NodeId;
+
+use crate::view::ViewId;
+use crate::style::Style;
+use crate::view::{ChangeFlags, IsHiddenState, View};
+use crate::window::state::WindowState;
+
+/// Context for computing view layout after Taffy has calculated sizes.
+///
+/// This context is used in the second phase of layout, where we traverse the view tree
+/// and compute the actual positions of views based on Taffy's layout calculations.
+pub struct ComputeLayoutCx<'a> {
+    pub window_state: &'a mut WindowState,
+    pub(crate) viewport: Rect,
+    pub(crate) window_origin: Point,
+    /// The accumulated clip rect in window coordinates. Views outside this rect
+    /// are clipped by ancestor overflow:hidden/scroll containers.
+    pub(crate) clip_rect: Rect,
+    pub(crate) saved_viewports: Vec<Rect>,
+    pub(crate) saved_window_origins: Vec<Point>,
+    pub(crate) saved_clip_rects: Vec<Rect>,
+}
+
+impl<'a> ComputeLayoutCx<'a> {
+    pub(crate) fn new(window_state: &'a mut WindowState, viewport: Rect) -> Self {
+        Self {
+            window_state,
+            viewport,
+            window_origin: Point::ZERO,
+            // Start with a large clip rect that effectively means "no clipping"
+            clip_rect: Rect::new(-1e9, -1e9, 1e9, 1e9),
+            saved_viewports: Vec::new(),
+            saved_window_origins: Vec::new(),
+            saved_clip_rects: Vec::new(),
+        }
+    }
+
+    pub fn window_origin(&self) -> Point {
+        self.window_origin
+    }
+
+    pub fn save(&mut self) {
+        self.saved_viewports.push(self.viewport);
+        self.saved_window_origins.push(self.window_origin);
+        self.saved_clip_rects.push(self.clip_rect);
+    }
+
+    pub fn restore(&mut self) {
+        self.viewport = self.saved_viewports.pop().unwrap_or_default();
+        self.window_origin = self.saved_window_origins.pop().unwrap_or_default();
+        self.clip_rect = self
+            .saved_clip_rects
+            .pop()
+            .unwrap_or(Rect::new(-1e9, -1e9, 1e9, 1e9));
+    }
+
+    pub fn current_viewport(&self) -> Rect {
+        self.viewport
+    }
+
+    /// Internal method used by Floem. This method derives its calculations based on the [Taffy Node](taffy::tree::NodeId) returned by the `View::layout` method.
+    ///
+    /// It's responsible for:
+    /// - calculating and setting the view's origin (local coordinates and window coordinates)
+    /// - calculating and setting the view's viewport
+    /// - invoking any attached `context::ResizeListener`s
+    ///
+    /// Returns the bounding rect that encompasses this view and its children
+    pub fn compute_view_layout(&mut self, id: ViewId) -> Option<Rect> {
+        let view_state = id.state();
+
+        if view_state.borrow().is_hidden_state == IsHiddenState::Hidden {
+            view_state.borrow_mut().layout_rect = Rect::ZERO;
+            return None;
+        }
+
+        self.save();
+
+        let layout = id.get_layout().unwrap_or_default();
+        let origin = Point::new(layout.location.x as f64, layout.location.y as f64);
+        let this_viewport = view_state.borrow().viewport;
+        let this_viewport_origin = this_viewport.unwrap_or_default().origin().to_vec2();
+        let size = Size::new(layout.size.width as f64, layout.size.height as f64);
+        let parent_viewport = self.viewport.with_origin(
+            Point::new(
+                self.viewport.x0 - layout.location.x as f64,
+                self.viewport.y0 - layout.location.y as f64,
+            ) + this_viewport_origin,
+        );
+        self.viewport = parent_viewport.intersect(size.to_rect());
+        if let Some(this_viewport) = this_viewport {
+            self.viewport = self.viewport.intersect(this_viewport);
+        }
+
+        let window_origin = origin + self.window_origin.to_vec2() - this_viewport_origin;
+        self.window_origin = window_origin;
+        {
+            view_state.borrow_mut().window_origin = window_origin;
+        }
+
+        // Compute this view's clip_rect in window coordinates.
+        // It's the intersection of the parent's clip_rect with this view's visible area.
+        let view_rect_in_window = size.to_rect().with_origin(window_origin);
+        let view_clip_rect = self.clip_rect.intersect(view_rect_in_window);
+
+        // If this view has a viewport (scroll view), it clips its children.
+        // Update self.clip_rect for child layout.
+        if this_viewport.is_some() {
+            self.clip_rect = view_clip_rect;
+        }
+
+        {
+            let view_state = view_state.borrow();
+            let mut resize_listeners = view_state.resize_listeners.borrow_mut();
+
+            let new_rect = size.to_rect().with_origin(origin);
+            if new_rect != resize_listeners.rect {
+                resize_listeners.rect = new_rect;
+
+                let callbacks = resize_listeners.callbacks.clone();
+
+                // explicitly dropping borrows before using callbacks
+                std::mem::drop(resize_listeners);
+                std::mem::drop(view_state);
+
+                for callback in callbacks {
+                    (*callback)(new_rect);
+                }
+            }
+        }
+
+        {
+            let view_state = view_state.borrow();
+            let mut move_listeners = view_state.move_listeners.borrow_mut();
+
+            if window_origin != move_listeners.window_origin {
+                move_listeners.window_origin = window_origin;
+
+                let callbacks = move_listeners.callbacks.clone();
+
+                // explicitly dropping borrows before using callbacks
+                std::mem::drop(move_listeners);
+                std::mem::drop(view_state);
+
+                for callback in callbacks {
+                    (*callback)(window_origin);
+                }
+            }
+        }
+
+        let view = id.view();
+        let child_layout_rect = view.borrow_mut().compute_layout(self);
+
+        let layout_rect = size.to_rect().with_origin(self.window_origin);
+        let layout_rect = if let Some(child_layout_rect) = child_layout_rect {
+            layout_rect.union(child_layout_rect)
+        } else {
+            layout_rect
+        };
+
+        let transform = view_state.borrow().transform;
+        let layout_rect = transform.transform_rect_bbox(layout_rect);
+
+        // Compute the cumulative transform from local coordinates to root (window) coordinates.
+        // This combines translation to window_origin with the view's CSS transform.
+        // To convert from root coords to local: local = local_to_root.inverse() * root
+        let local_to_root_transform =
+            Affine::translate((self.window_origin.x, self.window_origin.y)) * transform;
+
+        {
+            let mut vs = view_state.borrow_mut();
+            vs.layout_rect = layout_rect;
+            vs.clip_rect = view_clip_rect;
+            vs.local_to_root_transform = local_to_root_transform;
+        }
+
+        self.restore();
+
+        Some(layout_rect)
+    }
+}
+
+/// Holds current layout state for given position in the tree.
+/// You'll use this in the `View::layout` implementation to call `layout_node` on children and to access any font
+pub struct LayoutCx<'a> {
+    pub window_state: &'a mut WindowState,
+}
+
+impl<'a> LayoutCx<'a> {
+    pub(crate) fn new(window_state: &'a mut WindowState) -> Self {
+        Self { window_state }
+    }
+
+    /// Responsible for invoking the recalculation of style and thus the layout and
+    /// creating or updating the layout of child nodes within the closure.
+    ///
+    /// You should ensure that all children are laid out within the closure and/or whatever
+    /// other work you need to do to ensure that the layout for the returned nodes is correct.
+    pub fn layout_node(
+        &mut self,
+        id: ViewId,
+        has_children: bool,
+        mut children: impl FnMut(&mut LayoutCx) -> Vec<NodeId>,
+    ) -> NodeId {
+        let view_state = id.state();
+        let node = view_state.borrow().node;
+        if !view_state
+            .borrow()
+            .requested_changes
+            .contains(ChangeFlags::LAYOUT)
+        {
+            return node;
+        }
+        view_state
+            .borrow_mut()
+            .requested_changes
+            .remove(ChangeFlags::LAYOUT);
+        let layout_style = view_state.borrow().layout_props.to_style();
+        let animate_out_display = view_state.borrow().is_hidden_state.get_display();
+        let style = view_state
+            .borrow()
+            .combined_style
+            .clone()
+            .apply(layout_style)
+            .apply_opt(animate_out_display, Style::display)
+            .to_taffy_style();
+        let _ = id.taffy().borrow_mut().set_style(node, style);
+
+        if has_children {
+            let nodes = children(self);
+            let _ = id.taffy().borrow_mut().set_children(node, &nodes);
+        }
+
+        node
+    }
+
+    /// Internal method used by Floem to invoke the user-defined `View::layout` method.
+    pub fn layout_view(&mut self, view: &mut dyn View) -> NodeId {
+        view.layout(self)
+    }
+}

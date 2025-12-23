@@ -15,7 +15,7 @@ use crate::{
     AnyView,
     action::{add_overlay, remove_overlay},
     event::{Event, EventListener, EventPropagation},
-    id::ViewId,
+    view::ViewId,
     prelude::ViewTuple,
     prop, prop_extractor,
     style::{CustomStylable, CustomStyle, Style, StyleClass, Width},

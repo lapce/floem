@@ -4,7 +4,7 @@ use objc2::{MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{NSApplication, NSApplicationDelegate};
 use objc2_foundation::{NSObject, NSObjectProtocol};
 
-use crate::app::UserEvent;
+use super::UserEvent;
 
 define_class!(
     #[unsafe(super(NSObject))]

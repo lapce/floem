@@ -14,11 +14,11 @@ use super::stacking::collect_stacking_context_items;
 use super::{Event, EventListener, EventPropagation};
 use crate::action::show_context_menu;
 use crate::dropped_file::FileDragEvent;
-use crate::id::ViewId;
+use crate::view::ViewId;
 use crate::nav::view_arrow_navigation;
 use crate::style::{Focusable, PointerEvents, PointerEventsProp, StyleSelector};
 use crate::view::view_tab_navigation;
-use crate::window_state::{DragState, WindowState};
+use crate::window::state::{DragState, WindowState};
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum PointerEventConsumed {

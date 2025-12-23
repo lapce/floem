@@ -2,17 +2,37 @@
 
 use peniko::kurbo::{ParamCurve, Point};
 
+/// A trait for easing functions used in animations.
+///
+/// Easing functions control how a value changes over time during an animation.
+/// They take a normalized time value (0.0 to 1.0) and return a progress value.
 pub trait Easing: std::fmt::Debug {
+    /// Evaluates the easing function at the given time.
+    ///
+    /// # Arguments
+    /// * `time` - A normalized time value, typically between 0.0 and 1.0
+    ///
+    /// # Returns
+    /// The eased progress value, typically between 0.0 and 1.0
     fn eval(&self, time: f64) -> f64;
+
+    /// Returns the velocity at the given time, if available.
+    ///
+    /// This is primarily used by spring animations to determine when motion has stopped.
     fn velocity(&self, time: f64) -> Option<f64> {
         let _ = time;
         None
     }
+
+    /// Returns whether the animation has finished at the given time.
+    ///
+    /// By default, an animation is finished when time is outside the 0.0..1.0 range.
     fn finished(&self, time: f64) -> bool {
         !(0. ..1.).contains(&time)
     }
 }
 
+/// Linear easing - no acceleration or deceleration.
 #[derive(Debug, Clone, Copy)]
 pub struct Linear;
 impl Easing for Linear {
@@ -21,14 +41,23 @@ impl Easing for Linear {
     }
 }
 
+/// Position of the step change in a step easing function.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StepPosition {
+    /// Step changes occur at the midpoint of each interval.
     None,
+    /// Step changes occur at both the start and end of each interval.
     Both,
+    /// Step changes occur at the start of each interval.
     Start,
+    /// Step changes occur at the end of each interval.
     End,
 }
 
+/// Step easing - discrete jumps between values.
+///
+/// Creates a staircase effect where the animation jumps between discrete values
+/// rather than smoothly interpolating.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Step {
     num_steps: usize,
@@ -41,23 +70,28 @@ impl Default for Step {
 }
 
 impl Step {
+    /// A single step that changes at both start and end.
     pub const BOTH: Self = Self {
         num_steps: 1,
         step_position: StepPosition::Both,
     };
+    /// A single step that changes at the midpoint.
     pub const NONE: Self = Self {
         num_steps: 1,
         step_position: StepPosition::None,
     };
+    /// A single step that changes at the start.
     pub const START: Self = Self {
         num_steps: 1,
         step_position: StepPosition::Start,
     };
+    /// A single step that changes at the end.
     pub const END: Self = Self {
         num_steps: 1,
         step_position: StepPosition::End,
     };
 
+    /// Creates a new step easing with the given number of steps and position.
     pub const fn new(num_steps: usize, step_position: StepPosition) -> Self {
         Self {
             num_steps,
@@ -65,6 +99,7 @@ impl Step {
         }
     }
 
+    /// Creates a new step easing that changes at the end of each step.
     pub const fn new_end(num_steps: usize) -> Self {
         Self {
             num_steps,
@@ -100,6 +135,10 @@ impl Easing for Step {
     }
 }
 
+/// Cubic bezier easing curve.
+///
+/// Defined by two control points (x1, y1) and (x2, y2) that shape the curve.
+/// The curve starts at (0, 0) and ends at (1, 1).
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Bezier(pub f64, pub f64, pub f64, pub f64);
 impl Bezier {
@@ -107,19 +146,28 @@ impl Bezier {
     const EASE_IN: Self = Self(0.42, 0., 1., 1.);
     const EASE_OUT: Self = Self(0., 0., 0.58, 1.);
     const EASE_IN_OUT: Self = Self(0.42, 0., 0.58, 1.);
+
+    /// Standard ease curve - slow start and end, fast middle.
     pub const fn ease() -> Self {
         Self::EASE
     }
+
+    /// Ease-in curve - slow start, fast end.
     pub const fn ease_in() -> Self {
         Self::EASE_IN
     }
+
+    /// Ease-out curve - fast start, slow end.
     pub const fn ease_out() -> Self {
         Self::EASE_OUT
     }
+
+    /// Ease-in-out curve - slow start and end.
     pub const fn ease_in_out() -> Self {
         Self::EASE_IN_OUT
     }
 
+    /// Evaluates the bezier curve at the given time.
     pub fn eval(&self, time: f64) -> f64 {
         // TODO: Optimize this, don't use kurbo
         let p1 = Point::new(0., 0.);
@@ -136,6 +184,10 @@ impl Easing for Bezier {
     }
 }
 
+/// Physics-based spring animation.
+///
+/// Simulates a damped harmonic oscillator to create natural-feeling motion
+/// with overshoot and settling behavior.
 #[derive(Debug, Clone, Copy)]
 pub struct Spring {
     mass: f64,
@@ -145,6 +197,13 @@ pub struct Spring {
 }
 
 impl Spring {
+    /// Creates a new spring with the given physics parameters.
+    ///
+    /// # Arguments
+    /// * `mass` - The mass of the spring (affects momentum)
+    /// * `stiffness` - How "tight" the spring is (higher = faster oscillation)
+    /// * `damping` - How quickly oscillations die down (higher = less bouncy)
+    /// * `initial_velocity` - Starting velocity of the animation
     pub const fn new(mass: f64, stiffness: f64, damping: f64, initial_velocity: f64) -> Self {
         Self {
             mass,
@@ -170,6 +229,7 @@ impl Spring {
         Self::new(1., 200.0, 20.0, 0.0)
     }
 
+    /// Evaluates the spring position at the given time.
     pub fn eval(&self, time: f64) -> f64 {
         if time <= 0.0 {
             return 0.0;
@@ -213,7 +273,10 @@ impl Spring {
         }
     }
 
+    /// Threshold for determining when the spring has settled.
     pub const THRESHOLD: f64 = 0.005;
+
+    /// Returns whether the spring has settled at the given time.
     pub fn finished(&self, time: f64) -> bool {
         let position = self.eval(time);
         let velocity = self.velocity(time);
@@ -221,6 +284,7 @@ impl Spring {
         (1.0 - position).abs() < Self::THRESHOLD && velocity.abs() < Self::THRESHOLD
     }
 
+    /// Returns the velocity of the spring at the given time.
     pub fn velocity(&self, time: f64) -> f64 {
         if time <= 0.0 {
             return self.initial_velocity;

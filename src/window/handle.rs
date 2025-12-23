@@ -42,9 +42,8 @@ use crate::{
         ComputeLayoutCx, EventCx, FrameUpdate, LayoutCx, PaintCx, PaintState, StyleCx, UpdateCx,
     },
     event::Event,
-    id::ViewId,
-    inspector::{self, Capture, CaptureState, CapturedView},
-    profiler::Profile,
+    view::ViewId,
+    inspector::{self, Capture, CaptureState, CapturedView, profiler::Profile},
     style::{CursorStyle, Style, StyleSelector},
     theme::default_theme,
     update::{
@@ -53,9 +52,9 @@ use crate::{
     },
     view::{IntoView, View},
     view::ChangeFlags,
-    window_state::WindowState,
-    window_tracking::{remove_window_id_mapping, store_window_id_mapping},
 };
+use super::state::WindowState;
+use super::tracking::{remove_window_id_mapping, store_window_id_mapping};
 
 /// The top-level window handle that owns the winit `Window`.
 /// Meant only for use with the root view of the application.
@@ -233,7 +232,7 @@ impl WindowHandle {
     /// * `size` - The virtual window size
     /// * `scale` - The window scale factor (default 1.0)
     pub(crate) fn new_headless(view: impl IntoView, size_val: Size, scale: f64) -> Self {
-        use crate::mock_window::MockWindow;
+        use super::mock::MockWindow;
 
         let scope = Scope::new();
         let mock_window = MockWindow::with_size(size_val.width as u32, size_val.height as u32);

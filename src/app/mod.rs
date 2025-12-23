@@ -1,3 +1,7 @@
+#[cfg(target_os = "macos")]
+pub(crate) mod delegate;
+pub(crate) mod handle;
+
 use std::{cell::RefCell, rc::Rc};
 
 #[cfg(feature = "crossbeam")]
@@ -18,13 +22,12 @@ use winit::{
 
 use crate::{
     action::{Timer, TimerToken},
-    app_handle::ApplicationHandle,
     clipboard::Clipboard,
-    inspector::Capture,
-    profiler::Profile,
+    inspector::{Capture, profiler::Profile},
     view::IntoView,
     window::{WindowConfig, WindowCreation},
 };
+use handle::ApplicationHandle;
 
 pub(crate) type AppEventCallback = dyn Fn(AppEvent);
 
@@ -220,7 +223,7 @@ impl Application {
         let event_loop = EventLoop::new().expect("can't start the event loop");
 
         #[cfg(target_os = "macos")]
-        crate::app_delegate::set_app_delegate();
+        delegate::set_app_delegate();
 
         let event_loop_proxy = event_loop.create_proxy();
         let (sender, receiver) = channel();

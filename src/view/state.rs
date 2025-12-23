@@ -5,8 +5,8 @@ use crate::{
         ResizeCallback, ResizeListeners,
     },
     event::EventListener,
+    layout::responsive::ScreenSizeBp,
     prop_extractor,
-    responsive::ScreenSizeBp,
     style::{
         Background, BorderColorProp, BorderRadiusProp, BoxShadowProp, LayoutProps, Outline,
         OutlineColor, Style, StyleClassRef, StyleSelectors, resolve_nested_maps,

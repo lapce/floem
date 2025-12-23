@@ -1,9 +1,10 @@
 mod data;
+pub(crate) mod profiler;
 mod view;
 
 use crate::context::StyleCx;
 use crate::event::{Event, EventListener, EventPropagation};
-use crate::id::ViewId;
+use crate::view::ViewId;
 use crate::prelude::ViewTuple;
 use crate::style::{
     Focusable, FontSize, OverflowX, OverflowY, Style, StyleClassRef, StyleKeyInfo, StylePropRef,
@@ -15,7 +16,7 @@ use crate::view::ChangeFlags;
 use crate::views::{
     ContainerExt, Decorators, Label, ScrollExt, dyn_container, stack, v_stack, v_stack_from_iter,
 };
-use crate::window_state::WindowState;
+use crate::window::state::WindowState;
 use crate::{AnyView, Clipboard, style};
 use floem_reactive::{Effect, RwSignal, Scope, SignalGet, SignalUpdate};
 use peniko::color::palette;

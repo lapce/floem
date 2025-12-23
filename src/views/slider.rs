@@ -14,7 +14,7 @@ use crate::unit::Pct;
 use crate::{
     Renderer,
     event::EventPropagation,
-    id::ViewId,
+    view::ViewId,
     prop, prop_extractor,
     style::{Background, CustomStylable, Foreground, Height, Style},
     style_class,

@@ -4,7 +4,7 @@ use floem_reactive::{Effect, RwSignal, SignalGet, SignalUpdate, UpdaterEffect};
 
 use crate::{
     context::UpdateCx,
-    id::ViewId,
+    view::ViewId,
     view::{IntoView, View},
 };
 

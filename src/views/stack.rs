@@ -2,11 +2,9 @@ use taffy::style::FlexDirection;
 
 use crate::{
     context::UpdateCx,
-    id::ViewId,
-    into_view_iter::IntoViewIter,
+    view::ViewId,
     style::{Style, StyleClassRef},
-    view::{IntoView, View},
-    view::ViewTuple,
+    view::{IntoView, IntoViewIter, View, ViewTuple},
 };
 
 /// A collection of static views. See [`stack`] and [`stack_from_iter`].

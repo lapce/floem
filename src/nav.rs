@@ -1,7 +1,7 @@
 use peniko::kurbo::{Point, Rect};
 use ui_events::keyboard::NamedKey;
 
-use crate::{id::ViewId, view::view_tab_navigation, window_state::WindowState};
+use crate::{view::ViewId, view::view_tab_navigation, window::state::WindowState};
 
 pub(crate) fn view_arrow_navigation(key: NamedKey, window_state: &mut WindowState, view: ViewId) {
     let focused = match window_state.focus {

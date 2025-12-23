@@ -1,7 +1,7 @@
 use crate::{
     Renderer,
     context::PaintCx,
-    id::ViewId,
+    view::ViewId,
     peniko::kurbo::Point,
     prop, prop_extractor,
     style::{Style, TextColor},

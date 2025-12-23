@@ -1,7 +1,7 @@
 #![deny(missing_docs)]
 
 use crate::{
-    id::ViewId,
+    view::ViewId,
     view::{IntoView, View},
 };
 

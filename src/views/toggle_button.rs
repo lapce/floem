@@ -11,7 +11,7 @@ use ui_events::pointer::PointerEvent;
 use crate::{
     Renderer,
     event::EventPropagation,
-    id::ViewId,
+    view::ViewId,
     prop, prop_extractor,
     style::{self, Foreground, Style},
     style_class,

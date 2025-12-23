@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
 use web_time::{Duration, Instant};
 
-use crate::easing::{Bezier, Easing, Linear, Spring};
+use crate::animate::{Bezier, Easing, Linear, Spring};
 use crate::theme::StyleThemeExt;
 use crate::view::{IntoView, View};
 use crate::views::{canvas, ContainerExt, Decorators, Label, TooltipExt, v_stack_from_iter};

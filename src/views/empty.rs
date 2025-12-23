@@ -1,4 +1,4 @@
-use crate::{id::ViewId, view::View};
+use crate::{view::ViewId, view::View};
 
 /// An empty View.
 ///

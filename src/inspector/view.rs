@@ -9,7 +9,7 @@ use crate::prelude::{
     ViewTuple, dyn_container, h_stack, img_dynamic, scroll, stack, tab, text_input, v_stack,
     virtual_stack,
 };
-use crate::profiler::profiler;
+use super::profiler::profiler;
 use crate::style::{FontSize, OverflowX, OverflowY, TextColor};
 use crate::theme::StyleThemeExt as _;
 use crate::unit::PxPctAuto;

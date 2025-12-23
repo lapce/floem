@@ -1,7 +1,7 @@
 use floem_reactive::SignalTracker;
 use peniko::kurbo::Size;
 
-use crate::{context::PaintCx, id::ViewId, view::View};
+use crate::{context::PaintCx, view::ViewId, view::View};
 
 /// A Canvas view. See the docs for [canvas()].
 #[allow(clippy::type_complexity)]

@@ -3,7 +3,7 @@ use std::{any::Any, cell::RefCell, collections::HashMap};
 use peniko::kurbo::{Point, Rect, Size, Vec2};
 use winit::window::{ResizeDirection, Theme};
 
-use crate::{id::ViewId, menu::Menu, view::View};
+use crate::{menu::Menu, view::{View, ViewId}, window::state::WindowState};
 
 thread_local! {
     /// Stores all the update message with their original `ViewId`
@@ -54,4 +54,9 @@ pub(crate) enum UpdateMessage {
     WindowVisible(bool),
     ViewTransitionAnimComplete(ViewId),
     SetTheme(Option<Theme>),
+}
+
+/// Context passed during the update phase of the view lifecycle.
+pub struct UpdateCx<'a> {
+    pub window_state: &'a mut WindowState,
 }

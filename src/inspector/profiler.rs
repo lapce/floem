@@ -1,6 +1,6 @@
 use crate::app::{AppUpdateEvent, add_app_update_event};
 use crate::event::{EventListener, EventPropagation};
-use crate::inspector::header;
+use super::header;
 use crate::theme::StyleThemeExt;
 use crate::unit::UnitExt;
 use crate::view::IntoView;

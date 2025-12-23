@@ -20,11 +20,9 @@ use crate::{
     style::{Disabled, DisplayProp, Draggable, Focusable, Hidden, Style, StyleClassRef},
     unit::PxPct,
     update::{CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES, UpdateMessage},
-    view::{IntoView, View},
-    view::{ChangeFlags, StackOffset, ViewState},
-    view::VIEW_STORAGE,
-    window_tracking::{is_known_root, window_id_for_root},
+    window::tracking::{is_known_root, window_id_for_root},
 };
+use super::{IntoView, View, ChangeFlags, StackOffset, ViewState, VIEW_STORAGE};
 
 new_key_type! {
     /// A small unique identifier for an instance of a [View](crate::View).
@@ -622,6 +620,6 @@ impl ViewId {
 
     /// Get a layout in screen-coordinates for this view, if possible.
     pub fn screen_layout(&self) -> Option<ScreenLayout> {
-        crate::screen_layout::try_create_screen_layout(self)
+        crate::layout::try_create_screen_layout(self)
     }
 }

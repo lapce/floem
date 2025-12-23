@@ -19,20 +19,18 @@ use winit::{
     window::{Theme, WindowId},
 };
 
-use crate::app::AppConfig;
+use super::{APP_UPDATE_EVENTS, AppConfig, AppEventCallback, AppUpdateEvent, UserEvent};
 use crate::{
     AppEvent,
     action::{Timer, TimerToken},
-    app::{APP_UPDATE_EVENTS, AppEventCallback, AppUpdateEvent, UserEvent},
     context::PaintState,
     dropped_file::FileDragEvent::{self, DragDropped},
     ext_event::EXT_EVENT_HANDLER,
-    inspector::Capture,
-    profiler::{Profile, ProfileEvent},
+    inspector::{Capture, profiler::{Profile, ProfileEvent}},
     view::View,
     window::WindowConfig,
-    window_handle::WindowHandle,
-    window_id::process_window_updates,
+    window::handle::WindowHandle,
+    window::id::process_window_updates,
 };
 
 pub(crate) struct ApplicationHandle {
@@ -84,7 +82,7 @@ impl ApplicationHandle {
                 } = &handle.paint_state
                 {
                     let (gpu_resources, surface) = rx.recv().unwrap().unwrap();
-                    let renderer = crate::renderer::Renderer::new(
+                    let renderer = crate::paint::Renderer::new(
                         window.clone(),
                         gpu_resources.clone(),
                         surface,

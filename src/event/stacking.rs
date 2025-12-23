@@ -6,7 +6,7 @@
 use smallvec::SmallVec;
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::id::ViewId;
+use crate::view::ViewId;
 
 /// Type alias for parent chain storage.
 /// Uses SmallVec to avoid heap allocation for shallow nesting (common case).
