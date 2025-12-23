@@ -48,7 +48,7 @@ mod into_iter;
 pub(crate) mod stacking;
 mod state;
 mod storage;
-mod tuple;
+pub mod tuple;
 
 pub use id::ViewId;
 pub use into_iter::*;

@@ -5,7 +5,7 @@ use std::pin::Pin;
 use std::rc::Rc;
 
 use crate::style::{CustomStylable, CustomStyle, Style, StylePropValue};
-use crate::view_state::{Stack, StackOffset};
+use crate::view::{Stack, StackOffset};
 use crate::views::Decorators;
 use crate::{AnyView, IntoView, View, ViewId, prop, prop_extractor, style_class};
 use floem_reactive::UpdaterEffect;
@@ -202,7 +202,7 @@ pub struct L10n {
     label_id: ViewId,
     key: String,
     args: FluentArgs<'static>,
-    arg_keys: Pin<Box<crate::view_state::Stack<String>>>, // Pinned allocation
+    arg_keys: Pin<Box<Stack<String>>>, // Pinned allocation
     locale: LanguageExtractor,
     fallback: FallBackExtractor,
     fallback_override: Option<String>,
