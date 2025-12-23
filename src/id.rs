@@ -14,7 +14,7 @@ use winit::window::WindowId;
 use crate::{
     ScreenLayout,
     animate::{AnimStateCommand, Animation},
-    context::{EventCallback, ResizeCallback},
+    context::{EventCallback, ResizeCallback, invalidate_stacking_cache},
     event::{EventListener, EventPropagation},
     menu::Menu,
     style::{Disabled, DisplayProp, Draggable, Focusable, Hidden, Style, StyleClassRef},
@@ -188,6 +188,8 @@ impl ViewId {
                 s.children.insert(*self, children);
             }
         });
+        // Invalidate stacking cache since children changed
+        invalidate_stacking_cache(*self);
     }
 
     /// Get the list of `ViewId`s that are associated with the children views of this `ViewId`
@@ -196,7 +198,7 @@ impl ViewId {
     }
 
     /// Get access to the list of `ViewId`s that are associated with the children views of this `ViewId`
-    pub fn with_children<R>(&self, children: impl Fn(&[ViewId]) -> R) -> R {
+    pub fn with_children<R>(&self, mut children: impl FnMut(&[ViewId]) -> R) -> R {
         VIEW_STORAGE.with_borrow(|s| children(s.children.get(*self).map_or(&[], |v| v)))
     }
 

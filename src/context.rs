@@ -4,6 +4,8 @@ use floem_renderer::gpu_resources::{GpuResourceError, GpuResources};
 use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Shape, Size, Vec2};
 use smallvec::SmallVec;
 use std::{
+    cell::RefCell,
+    collections::HashMap,
     ops::{Deref, DerefMut},
     rc::Rc,
     sync::Arc,
@@ -23,17 +25,12 @@ use crossbeam::channel::Receiver;
 use std::sync::mpsc::Receiver;
 
 use taffy::prelude::NodeId;
-use taffy::style::Position;
-
 use crate::animate::{AnimStateKind, RepeatMode};
 use crate::dropped_file::FileDragEvent;
 use crate::easing::{Easing, Linear};
 use crate::menu::Menu;
 use crate::renderer::Renderer;
-use crate::style::{
-    Disabled, DisplayProp, Focusable, Hidden, PointerEvents, PointerEventsProp, PositionProp,
-    ZIndex,
-};
+use crate::style::{Disabled, DisplayProp, Focusable, Hidden, OverflowX, OverflowY, PointerEvents, PointerEventsProp, ZIndex};
 use crate::view_state::{IsHiddenState, StackingInfo};
 use crate::{
     action::{exec_after, show_context_menu},
@@ -85,45 +82,146 @@ pub(crate) enum PointerEventConsumed {
     No,
 }
 
-/// Returns children sorted by z-index (paint order).
-/// For event dispatch, iterate in reverse to get top-first order.
-pub(crate) fn children_in_paint_order(parent_id: ViewId) -> Vec<ViewId> {
-    let children = parent_id.children();
+/// Type alias for parent chain storage.
+/// Uses SmallVec to avoid heap allocation for shallow nesting (common case).
+pub(crate) type ParentChain = SmallVec<[ViewId; 8]>;
 
-    if children.len() <= 1 {
-        return children;
+/// An item to be painted within a stacking context.
+/// Implements true CSS stacking context semantics where children of non-stacking-context
+/// views participate in their ancestor's stacking context.
+#[derive(Debug, Clone)]
+pub(crate) struct StackingContextItem {
+    pub view_id: ViewId,
+    pub z_index: i32,
+    pub dom_order: usize,
+    /// If true, this view creates a stacking context; paint it atomically with children
+    pub creates_context: bool,
+    /// Cached parent chain from this view up to (but not including) the stacking context root.
+    /// Ordered from immediate parent towards root. Used for event bubbling and painting transforms.
+    /// Wrapped in Rc to share among siblings (they have the same parent chain).
+    pub parent_chain: Rc<ParentChain>,
+}
+
+/// Type alias for stacking context item collection.
+/// Uses SmallVec to avoid heap allocation for small numbers of items (common case).
+pub(crate) type StackingContextItems = SmallVec<[StackingContextItem; 8]>;
+
+// Thread-local cache for stacking context items.
+// Key: ViewId of the stacking context root
+// Value: Sorted list of items in that stacking context (Rc to avoid cloning on cache hit)
+thread_local! {
+    static STACKING_CONTEXT_CACHE: RefCell<HashMap<ViewId, Rc<StackingContextItems>>> =
+        RefCell::new(HashMap::new());
+}
+
+/// Invalidates the stacking context cache for a view and all its ancestors.
+/// Call this when z-index, transform, hidden state, or children change.
+pub(crate) fn invalidate_stacking_cache(view_id: ViewId) {
+    STACKING_CONTEXT_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        // Invalidate this view's cache (if it's a stacking context root)
+        cache.remove(&view_id);
+        // Invalidate all ancestor caches since this view might participate in them
+        let mut parent = view_id.parent();
+        while let Some(p) = parent {
+            cache.remove(&p);
+            parent = p.parent();
+        }
+    });
+}
+
+/// Collects all items participating in a stacking context, sorted by z-index.
+/// This implements true CSS stacking context semantics:
+/// - Views that create stacking contexts are painted atomically (children bounded within)
+/// - Views that don't create stacking contexts have their children "escape" and participate
+///   in the parent's stacking context
+///
+/// Results are cached per stacking context root. Call `invalidate_stacking_cache` when
+/// z-index, transform, or children change.
+///
+/// Returns an Rc to avoid cloning the cached items on each call.
+pub(crate) fn collect_stacking_context_items(parent_id: ViewId) -> Rc<StackingContextItems> {
+    // Check cache first - Rc::clone is cheap (just increments refcount)
+    let cached = STACKING_CONTEXT_CACHE.with(|cache| cache.borrow().get(&parent_id).cloned());
+
+    if let Some(items) = cached {
+        return items;
     }
 
-    // Quick check: if no child has non-zero z-index, return original order.
-    // This avoids SmallVec allocation in the common case where z-index isn't used.
-    let needs_sort = children
-        .iter()
-        .any(|&id| id.state().borrow().stacking_info.effective_z_index != 0);
+    // Cache miss - compute items
+    // SmallVec avoids heap allocation for <= 8 items (common case)
+    let mut items = StackingContextItems::new();
+    let mut dom_order = 0;
+    let mut has_non_zero_z = false;
 
-    if !needs_sort {
-        return children;
+    // Start with empty parent chain (direct children of the stacking context root)
+    // Wrap in Rc so siblings can share the same parent chain
+    let parent_chain = Rc::new(ParentChain::new());
+    for child in parent_id.children() {
+        collect_items_recursive(child, &mut items, &mut dom_order, &mut has_non_zero_z, Rc::clone(&parent_chain));
     }
 
-    // Build sortable list with z-index and DOM order.
-    // Use SmallVec to avoid heap allocation for typical child counts (<=8).
-    let mut sortable: SmallVec<[(ViewId, i32, usize); 8]> = children
-        .iter()
-        .enumerate()
-        .map(|(dom_order, &child_id)| {
-            let z_index = child_id.state().borrow().stacking_info.effective_z_index;
-            (child_id, z_index, dom_order)
-        })
-        .collect();
+    // Fast path: skip sorting if all z-indices are zero (already in DOM order)
+    if has_non_zero_z {
+        items.sort_by(|a, b| a.z_index.cmp(&b.z_index).then(a.dom_order.cmp(&b.dom_order)));
+    }
 
-    // Stable sort by z-index (DOM order preserved for equal z-index)
-    sortable.sort_by(|a, b| a.1.cmp(&b.1));
+    // Wrap in Rc and store in cache
+    let items = Rc::new(items);
+    STACKING_CONTEXT_CACHE.with(|cache| {
+        cache.borrow_mut().insert(parent_id, Rc::clone(&items));
+    });
 
-    sortable.into_iter().map(|(id, _, _)| id).collect()
+    items
+}
+
+/// Recursively collects items for a stacking context.
+/// For views that don't create stacking contexts, their children are collected into the
+/// parent's stacking context (they can interleave with siblings based on z-index).
+fn collect_items_recursive(
+    view_id: ViewId,
+    items: &mut StackingContextItems,
+    dom_order: &mut usize,
+    has_non_zero_z: &mut bool,
+    parent_chain: Rc<ParentChain>,
+) {
+    let info = view_id.state().borrow().stacking_info;
+
+    // Track if any non-zero z-index is encountered
+    if info.effective_z_index != 0 {
+        *has_non_zero_z = true;
+    }
+
+    items.push(StackingContextItem {
+        view_id,
+        z_index: info.effective_z_index,
+        dom_order: *dom_order,
+        creates_context: info.creates_context,
+        parent_chain: Rc::clone(&parent_chain),
+    });
+    *dom_order += 1;
+
+    // If this view doesn't create a stacking context, its children participate
+    // in the parent's stacking context (they can interleave with uncles/aunts)
+    if !info.creates_context {
+        // Build the parent chain for children: current view + our parent chain
+        // Create a new Rc that all children (siblings) will share
+        let mut child_parent_chain = (*parent_chain).clone();
+        child_parent_chain.insert(0, view_id);
+        let child_parent_chain = Rc::new(child_parent_chain);
+        for child in view_id.children() {
+            collect_items_recursive(child, items, dom_order, has_non_zero_z, Rc::clone(&child_parent_chain));
+        }
+    }
 }
 
 /// A bundle of helper methods to be used by `View::event` handlers
 pub struct EventCx<'a> {
     pub window_state: &'a mut WindowState,
+    /// When dispatching events in a stacking context, this tracks views whose children are
+    /// handled by the parent stacking context. When event dispatch reaches such a view,
+    /// it should not dispatch to its children (they're handled separately).
+    pub(crate) skip_children_for: Option<ViewId>,
 }
 
 impl EventCx<'_> {
@@ -144,7 +242,7 @@ impl EventCx<'_> {
     pub(crate) fn unconditional_view_event(
         &mut self,
         view_id: ViewId,
-        event: Event,
+        event: &Event,
         directed: bool,
     ) -> (EventPropagation, PointerEventConsumed) {
         if view_id.is_hidden() {
@@ -159,11 +257,15 @@ impl EventCx<'_> {
 
         // TODO! Handle file hover
 
-        // offset the event positions if the event has positions
-        // e.g. pointer events, so that the position is relative
-        // to the view, taking into account of the layout location
-        // of the view and the viewport of the view if it's in a scroll.
-        let event = self.offset_event(view_id, event);
+        // The event parameter is in absolute (window) coordinates.
+        // We keep a reference for should_send() and stacking context dispatch.
+        let absolute_event = event;
+
+        // Convert absolute coordinates to view's local coordinates using the
+        // precomputed local_to_root_transform. We clone here because we need
+        // both absolute and local versions of the event.
+        let local_to_root = view_id.state().borrow().local_to_root_transform;
+        let event = absolute_event.clone().transform(local_to_root);
 
         let view = view_id.view();
         let view_state = view_id.state();
@@ -212,14 +314,39 @@ impl EventCx<'_> {
 
         let mut view_pointer_event_consumed = PointerEventConsumed::No;
 
-        if !directed {
-            let children = children_in_paint_order(view_id);
-            for child in children.into_iter().rev() {
-                if !self.should_send(child, &event) {
+        // Dispatch events to children using true CSS stacking context semantics.
+        // Views that don't create stacking contexts have their children participate
+        // in the parent's stacking context, so we skip them here (they're handled separately).
+        if !directed && self.skip_children_for != Some(view_id) {
+            // Collect all items in this stacking context and iterate in reverse
+            // (highest z-index first, so topmost elements receive events first)
+            let items = collect_stacking_context_items(view_id);
+
+            // Track the consuming item's parent chain for event bubbling
+            let mut consuming_item_parent_chain: Option<&SmallVec<[ViewId; 8]>> = None;
+
+            for item in items.iter().rev() {
+                // Use should_send (with absolute coordinates) to check if the event point
+                // is inside the item. The absolute_event and layout_rect are both in
+                // window coordinates.
+                if !self.should_send(item.view_id, &absolute_event) {
                     continue;
                 }
+
+                // For non-stacking-context items, mark them so their children
+                // aren't processed again (they're in our flat list)
+                if !item.creates_context {
+                    self.skip_children_for = Some(item.view_id);
+                }
+
+                // Pass the absolute event reference - unconditional_view_event
+                // converts to local using the item's own local_to_root_transform.
                 let (event_propagation, pointer_event_consumed) =
-                    self.unconditional_view_event(child, event.clone(), false);
+                    self.unconditional_view_event(item.view_id, absolute_event, false);
+
+                // Clear the skip flag
+                self.skip_children_for = None;
+
                 if event_propagation.is_processed() {
                     return (EventPropagation::Stop, PointerEventConsumed::Yes);
                 }
@@ -227,9 +354,26 @@ impl EventCx<'_> {
                     // if a child's pointer event was consumed because pointer-events: auto
                     // we don't pass the pointer event the next child
                     // also, we mark pointer_event_consumed to be yes
-                    // so that it will be bublled up the parent
+                    // so that it will be bubbled up the parent
                     view_pointer_event_consumed = PointerEventConsumed::Yes;
+                    // Track the consuming item's cached parent chain for bubbling
+                    consuming_item_parent_chain = Some(&item.parent_chain);
                     break;
+                }
+            }
+
+            // Event bubbling: if a child consumed the event but didn't stop propagation,
+            // bubble up through its cached parent chain until we reach the stacking context root
+            if let Some(parent_chain) = consuming_item_parent_chain {
+                // Iterate through the cached parent chain (ordered from immediate parent to root)
+                for &ancestor_id in parent_chain.iter() {
+                    // Pass absolute event reference - each ancestor converts to local
+                    // using its own local_to_root_transform
+                    let (event_propagation, _) =
+                        self.unconditional_view_event(ancestor_id, absolute_event, true);
+                    if event_propagation.is_processed() {
+                        return (EventPropagation::Stop, PointerEventConsumed::Yes);
+                    }
                 }
             }
         }
@@ -558,26 +702,12 @@ impl EventCx<'_> {
         (EventPropagation::Continue, PointerEventConsumed::Yes)
     }
 
-    /// translate a window-positioned event to the local coordinate system of a view
-    pub(crate) fn offset_event(&self, id: ViewId, event: Event) -> Event {
-        let state = id.state();
-        let viewport = state.borrow().viewport;
-        let transform = state.borrow().transform;
-
-        if let Some(layout) = id.get_layout() {
-            event.transform(
-                Affine::translate((
-                    layout.location.x as f64 - viewport.map(|rect| rect.x0).unwrap_or(0.0),
-                    layout.location.y as f64 - viewport.map(|rect| rect.y0).unwrap_or(0.0),
-                )) * transform,
-            )
-        } else {
-            event
-        }
-    }
-
     /// Used to determine if you should send an event to another view. This is basically a check for pointer events to see if the pointer is inside a child view and to make sure the current view isn't hidden or disabled.
     /// Usually this is used if you want to propagate an event to a child view
+    ///
+    /// Note: This function expects event coordinates to be in absolute (window) coordinates,
+    /// as used by the stacking context event dispatch. The layout_rect and clip_rect are also
+    /// in absolute coordinates, so they can be compared directly.
     pub fn should_send(&mut self, id: ViewId, event: &Event) -> bool {
         if id.is_hidden() || (id.is_disabled() && !event.allow_disabled()) {
             return false;
@@ -587,25 +717,24 @@ impl EventCx<'_> {
             return true;
         };
 
-        let layout_rect = id.layout_rect();
-        let Some(layout) = id.get_layout() else {
-            return false;
-        };
+        let view_state = id.state();
+        let vs = view_state.borrow();
 
-        // Check if point is within current view's bounds
-        let current_rect = layout_rect.with_origin(Point::new(
-            layout.location.x as f64,
-            layout.location.y as f64,
-        ));
-        // For that, we need to take any style transformations into account
-        let transform = id.state().borrow().transform;
-        let current_rect = transform.transform_rect_bbox(current_rect);
-
-        if !current_rect.contains(point) {
+        // First check if the point is within the clip bounds.
+        // This handles cases where the view is clipped by an ancestor's
+        // overflow:hidden or scroll container.
+        if !vs.clip_rect.contains(point) {
             return false;
         }
 
-        true
+        // Use the absolute layout_rect directly since stacking context dispatch
+        // uses absolute event coordinates
+        let layout_rect = vs.layout_rect;
+
+        // Apply any style transformations to the rect
+        let current_rect = vs.transform.transform_rect_bbox(layout_rect);
+
+        current_rect.contains(point)
     }
 
     /// Dispatch an event through the view tree with proper state management.
@@ -681,7 +810,7 @@ impl EventCx<'_> {
 
             if let Some(id) = self.window_state.focus {
                 processed |= self
-                    .unconditional_view_event(id, event.clone(), true)
+                    .unconditional_view_event(id, &event, true)
                     .0
                     .is_processed();
             }
@@ -746,7 +875,7 @@ impl EventCx<'_> {
         } else if self.window_state.active.is_some() && event.is_pointer() {
             // Pointer events while dragging: send to active view
             if self.window_state.is_dragging() {
-                self.unconditional_view_event(root_id, event.clone(), false);
+                self.unconditional_view_event(root_id, &event, false);
             }
 
             let id = self.window_state.active.unwrap();
@@ -759,7 +888,8 @@ impl EventCx<'_> {
                     window_origin.x - layout.location.x as f64 + viewport.x0,
                     window_origin.y - layout.location.y as f64 + viewport.y0,
                 ));
-                self.unconditional_view_event(id, event.clone().transform(transform), true);
+                let transformed_event = event.clone().transform(transform);
+                self.unconditional_view_event(id, &transformed_event, true);
             }
 
             if let Event::Pointer(PointerEvent::Up { .. }) = &event {
@@ -773,7 +903,7 @@ impl EventCx<'_> {
             }
         } else {
             // Normal event dispatch through view tree
-            self.unconditional_view_event(root_id, event.clone(), false);
+            self.unconditional_view_event(root_id, &event, false);
         }
 
         // Clear drag_start on pointer up
@@ -801,11 +931,8 @@ impl EventCx<'_> {
                 if hovered.contains(id) {
                     id.apply_event(&EventListener::PointerEnter, &event);
                 } else {
-                    self.unconditional_view_event(
-                        *id,
-                        Event::Pointer(PointerEvent::Leave(info)),
-                        true,
-                    );
+                    let leave_event = Event::Pointer(PointerEvent::Leave(info));
+                    self.unconditional_view_event(*id, &leave_event, true);
                 }
             }
 
@@ -1064,7 +1191,8 @@ impl<'a> StyleCx<'a> {
 
         view.borrow_mut().style_pass(self);
 
-        let mut is_hidden_state = view_state.borrow().is_hidden_state;
+        let old_is_hidden_state = view_state.borrow().is_hidden_state;
+        let mut is_hidden_state = old_is_hidden_state;
         let computed_display = view_state.borrow().combined_style.get(DisplayProp);
         is_hidden_state.transition(
             computed_display,
@@ -1081,6 +1209,11 @@ impl<'a> StyleCx<'a> {
             },
             || view_state.borrow().num_waiting_animations,
         );
+
+        // Invalidate stacking cache if hidden state changed
+        if old_is_hidden_state != is_hidden_state {
+            invalidate_stacking_cache(view_id);
+        }
 
         view_state.borrow_mut().is_hidden_state = is_hidden_state;
         let modified = view_state
@@ -1127,19 +1260,47 @@ impl<'a> StyleCx<'a> {
 
         // Compute stacking context info
         // A view creates a stacking context if it has:
-        // - Any z-index value (including 0, since None means "auto" in web terms)
-        // - position: absolute
+        // - Any explicit z-index value (including 0, since None means "auto" in CSS terms)
         // - Any non-identity transform
+        // - A viewport (scroll views) - these offset their children's coordinates
+        // - Overflow set to Scroll or Hidden (scroll views, clip views) - they manage child painting
+        // Note: Unlike our previous implementation, `position: absolute` alone does NOT
+        // create a stacking context per CSS spec. It needs explicit z-index to do so.
+        // Missing CSS triggers (not implemented in floem): opacity < 1, filter, clip-path,
+        // mask, isolation: isolate, mix-blend-mode, contain.
         let z_index = view_state.borrow().combined_style.get(ZIndex);
-        let position = view_state.borrow().combined_style.get(PositionProp);
         let has_transform = transform != Affine::IDENTITY;
+        let has_viewport = view_state.borrow().viewport.is_some();
+        // Check if overflow is set to Scroll or Hidden - these views manage their own child painting
+        let overflow_x = view_state.borrow().combined_style.get(OverflowX);
+        let overflow_y = view_state.borrow().combined_style.get(OverflowY);
+        let has_scroll_overflow = matches!(
+            overflow_x,
+            taffy::Overflow::Scroll | taffy::Overflow::Hidden
+        ) || matches!(
+            overflow_y,
+            taffy::Overflow::Scroll | taffy::Overflow::Hidden
+        );
 
-        let creates_context = z_index.is_some() || position == Position::Absolute || has_transform;
+        let creates_context =
+            z_index.is_some() || has_transform || has_viewport || has_scroll_overflow;
 
-        view_state.borrow_mut().stacking_info = StackingInfo {
+        let new_stacking_info = StackingInfo {
             creates_context,
             effective_z_index: z_index.unwrap_or(0),
         };
+
+        // Invalidate stacking cache if stacking info changed
+        {
+            let mut vs = view_state.borrow_mut();
+            let old_info = vs.stacking_info;
+            if old_info.creates_context != new_stacking_info.creates_context
+                || old_info.effective_z_index != new_stacking_info.effective_z_index
+            {
+                invalidate_stacking_cache(view_id);
+            }
+            vs.stacking_info = new_stacking_info;
+        }
 
         self.restore();
     }
@@ -1190,8 +1351,12 @@ pub struct ComputeLayoutCx<'a> {
     pub window_state: &'a mut WindowState,
     pub(crate) viewport: Rect,
     pub(crate) window_origin: Point,
+    /// The accumulated clip rect in window coordinates. Views outside this rect
+    /// are clipped by ancestor overflow:hidden/scroll containers.
+    pub(crate) clip_rect: Rect,
     pub(crate) saved_viewports: Vec<Rect>,
     pub(crate) saved_window_origins: Vec<Point>,
+    pub(crate) saved_clip_rects: Vec<Rect>,
 }
 
 impl<'a> ComputeLayoutCx<'a> {
@@ -1200,8 +1365,11 @@ impl<'a> ComputeLayoutCx<'a> {
             window_state,
             viewport,
             window_origin: Point::ZERO,
+            // Start with a large clip rect that effectively means "no clipping"
+            clip_rect: Rect::new(-1e9, -1e9, 1e9, 1e9),
             saved_viewports: Vec::new(),
             saved_window_origins: Vec::new(),
+            saved_clip_rects: Vec::new(),
         }
     }
 
@@ -1212,11 +1380,13 @@ impl<'a> ComputeLayoutCx<'a> {
     pub fn save(&mut self) {
         self.saved_viewports.push(self.viewport);
         self.saved_window_origins.push(self.window_origin);
+        self.saved_clip_rects.push(self.clip_rect);
     }
 
     pub fn restore(&mut self) {
         self.viewport = self.saved_viewports.pop().unwrap_or_default();
         self.window_origin = self.saved_window_origins.pop().unwrap_or_default();
+        self.clip_rect = self.saved_clip_rects.pop().unwrap_or(Rect::new(-1e9, -1e9, 1e9, 1e9));
     }
 
     pub fn current_viewport(&self) -> Rect {
@@ -1261,6 +1431,17 @@ impl<'a> ComputeLayoutCx<'a> {
         self.window_origin = window_origin;
         {
             view_state.borrow_mut().window_origin = window_origin;
+        }
+
+        // Compute this view's clip_rect in window coordinates.
+        // It's the intersection of the parent's clip_rect with this view's visible area.
+        let view_rect_in_window = size.to_rect().with_origin(window_origin);
+        let view_clip_rect = self.clip_rect.intersect(view_rect_in_window);
+
+        // If this view has a viewport (scroll view), it clips its children.
+        // Update self.clip_rect for child layout.
+        if this_viewport.is_some() {
+            self.clip_rect = view_clip_rect;
         }
 
         {
@@ -1315,7 +1496,18 @@ impl<'a> ComputeLayoutCx<'a> {
         let transform = view_state.borrow().transform;
         let layout_rect = transform.transform_rect_bbox(layout_rect);
 
-        view_state.borrow_mut().layout_rect = layout_rect;
+        // Compute the cumulative transform from local coordinates to root (window) coordinates.
+        // This combines translation to window_origin with the view's CSS transform.
+        // To convert from root coords to local: local = local_to_root.inverse() * root
+        let local_to_root_transform =
+            Affine::translate((self.window_origin.x, self.window_origin.y)) * transform;
+
+        {
+            let mut vs = view_state.borrow_mut();
+            vs.layout_rect = layout_rect;
+            vs.clip_rect = view_clip_rect;
+            vs.local_to_root_transform = local_to_root_transform;
+        }
 
         self.restore();
 
@@ -1409,6 +1601,10 @@ pub struct PaintCx<'a> {
     pub(crate) saved_clips: Vec<Option<RoundedRect>>,
     /// Pending drag paint info, to be painted after the main tree.
     pub(crate) pending_drag_paint: Option<PendingDragPaint>,
+    /// When painting a stacking context, this tracks views whose children are handled
+    /// by the parent stacking context (not by the view itself). When paint_children is
+    /// called for such a view, it should be a no-op.
+    pub(crate) skip_children_for: Option<ViewId>,
     pub gpu_resources: Option<GpuResources>,
     pub window: Arc<dyn Window>,
     #[cfg(feature = "vello")]
@@ -1466,11 +1662,73 @@ impl PaintCx<'_> {
         false
     }
 
-    /// paint the children of this view
+    /// Paint the children of this view using true CSS stacking context semantics.
+    ///
+    /// Views that create stacking contexts have their children bounded within them.
+    /// Views that don't create stacking contexts allow their children to "escape"
+    /// and participate in the parent's stacking context (z-index sorting).
     pub fn paint_children(&mut self, id: ViewId) {
-        let children = children_in_paint_order(id);
-        for child in children {
-            self.paint_view(child);
+        // If this view's children are being handled by a parent stacking context, skip
+        if self.skip_children_for == Some(id) {
+            return;
+        }
+
+        // Collect all items participating in this stacking context
+        let items = collect_stacking_context_items(id);
+
+        // Track currently applied transforms in root-to-item order.
+        // Using diff-based approach: only push/pop transforms that change between items.
+        // This is much faster for siblings (common case) since they share the same parent chain.
+        let mut current_chain: SmallVec<[ViewId; 8]> = SmallVec::new();
+
+        for item in items.iter() {
+            if item.view_id.is_hidden() {
+                continue;
+            }
+
+            // Find common prefix length between current_chain and item's parent chain.
+            // parent_chain is [immediate_parent, ..., root_child], we compare in root-to-item order.
+            // current_chain[i] should match parent_chain[len - 1 - i]
+            let item_chain_len = item.parent_chain.len();
+            let common_len = current_chain
+                .iter()
+                .zip(item.parent_chain.iter().rev())
+                .take_while(|(a, b)| a == b)
+                .count();
+
+            // Pop transforms that are no longer in the path
+            for _ in common_len..current_chain.len() {
+                self.restore();
+            }
+            current_chain.truncate(common_len);
+
+            // Push new transforms for the remaining ancestors
+            // Iterate from common_len to item_chain_len in root-to-item order
+            for i in common_len..item_chain_len {
+                let ancestor = item.parent_chain[item_chain_len - 1 - i];
+                self.save();
+                self.transform(ancestor);
+                current_chain.push(ancestor);
+            }
+
+            // If this item doesn't create a stacking context, mark it so its
+            // paint_children call will be a no-op (children are in our flat list)
+            if !item.creates_context {
+                self.skip_children_for = Some(item.view_id);
+            }
+
+            // Paint the view
+            self.paint_view(item.view_id);
+
+            // Clear the skip flag
+            self.skip_children_for = None;
+
+            // Don't pop transforms here - leave them for the next item to potentially reuse
+        }
+
+        // Pop all remaining transforms after processing all items
+        for _ in 0..current_chain.len() {
+            self.restore();
         }
     }
 
@@ -1881,9 +2139,9 @@ mod tests {
     use super::*;
 
     /// Helper to create a ViewId and set its z-index
+    /// Views with explicit z-index create stacking contexts
     fn create_view_with_z_index(z_index: Option<i32>) -> ViewId {
         let id = ViewId::new();
-        // Access state to initialize it
         let state = id.state();
         state.borrow_mut().stacking_info = StackingInfo {
             creates_context: z_index.is_some(),
@@ -1892,25 +2150,47 @@ mod tests {
         id
     }
 
-    /// Helper to set up parent with children
+    /// Helper to create a ViewId that does NOT create a stacking context
+    /// Its children will participate in the parent's stacking context
+    fn create_view_no_stacking_context() -> ViewId {
+        let id = ViewId::new();
+        let state = id.state();
+        state.borrow_mut().stacking_info = StackingInfo {
+            creates_context: false,
+            effective_z_index: 0,
+        };
+        id
+    }
+
+    /// Helper to set up parent with children (also sets parent pointers)
     fn setup_parent_with_children(children: Vec<ViewId>) -> ViewId {
         let parent = ViewId::new();
-        parent.set_children_ids(children);
+        set_children_with_parents(parent, children);
         parent
     }
 
-    /// Helper to extract z-indices from sorted children for easier assertion
-    fn get_z_indices(children: &[ViewId]) -> Vec<i32> {
-        children
-            .iter()
-            .map(|id| id.state().borrow().stacking_info.effective_z_index)
-            .collect()
+    /// Helper to set children AND parent pointers (for test purposes)
+    fn set_children_with_parents(parent: ViewId, children: Vec<ViewId>) {
+        for child in &children {
+            child.set_parent(parent);
+        }
+        parent.set_children_ids(children);
+    }
+
+    /// Helper to extract view IDs from stacking context items
+    fn get_view_ids(items: &[StackingContextItem]) -> Vec<ViewId> {
+        items.iter().map(|item| item.view_id).collect()
+    }
+
+    /// Helper to extract z-indices from stacking context items
+    fn get_z_indices_from_items(items: &[StackingContextItem]) -> Vec<i32> {
+        items.iter().map(|item| item.z_index).collect()
     }
 
     #[test]
     fn test_no_children() {
         let parent = ViewId::new();
-        let result = children_in_paint_order(parent);
+        let result = collect_stacking_context_items(parent);
         assert!(result.is_empty());
     }
 
@@ -1919,21 +2199,22 @@ mod tests {
         let child = create_view_with_z_index(Some(5));
         let parent = setup_parent_with_children(vec![child]);
 
-        let result = children_in_paint_order(parent);
+        let result = collect_stacking_context_items(parent);
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0], child);
+        assert_eq!(result[0].view_id, child);
     }
 
     #[test]
     fn test_children_no_z_index_preserves_dom_order() {
         // All children with default z-index (0) should preserve DOM order
-        let child1 = create_view_with_z_index(None);
-        let child2 = create_view_with_z_index(None);
-        let child3 = create_view_with_z_index(None);
+        // Note: children without explicit z-index don't create stacking contexts
+        let child1 = create_view_no_stacking_context();
+        let child2 = create_view_no_stacking_context();
+        let child3 = create_view_no_stacking_context();
         let parent = setup_parent_with_children(vec![child1, child2, child3]);
 
-        let result = children_in_paint_order(parent);
-        assert_eq!(result, vec![child1, child2, child3]);
+        let result = collect_stacking_context_items(parent);
+        assert_eq!(get_view_ids(&result), vec![child1, child2, child3]);
     }
 
     #[test]
@@ -1945,10 +2226,10 @@ mod tests {
         // DOM order: z10, z1, z5
         let parent = setup_parent_with_children(vec![child_z10, child_z1, child_z5]);
 
-        let result = children_in_paint_order(parent);
+        let result = collect_stacking_context_items(parent);
         // Paint order should be: z1, z5, z10 (ascending)
-        assert_eq!(get_z_indices(&result), vec![1, 5, 10]);
-        assert_eq!(result, vec![child_z1, child_z5, child_z10]);
+        assert_eq!(get_z_indices_from_items(&result), vec![1, 5, 10]);
+        assert_eq!(get_view_ids(&result), vec![child_z1, child_z5, child_z10]);
     }
 
     #[test]
@@ -1960,9 +2241,9 @@ mod tests {
         // DOM order: pos, neg, zero
         let parent = setup_parent_with_children(vec![child_pos, child_neg, child_zero]);
 
-        let result = children_in_paint_order(parent);
+        let result = collect_stacking_context_items(parent);
         // Paint order: -1, 0, 1
-        assert_eq!(get_z_indices(&result), vec![-1, 0, 1]);
+        assert_eq!(get_z_indices_from_items(&result), vec![-1, 0, 1]);
     }
 
     #[test]
@@ -1973,37 +2254,23 @@ mod tests {
         let child3 = create_view_with_z_index(Some(5));
         let parent = setup_parent_with_children(vec![child1, child2, child3]);
 
-        let result = children_in_paint_order(parent);
+        let result = collect_stacking_context_items(parent);
         // Same z-index, so DOM order preserved
-        assert_eq!(result, vec![child1, child2, child3]);
+        assert_eq!(get_view_ids(&result), vec![child1, child2, child3]);
     }
 
     #[test]
     fn test_mixed_z_index_and_default() {
         // Mix of explicit z-index and default (None = 0)
-        let child_default = create_view_with_z_index(None); // effective 0
+        let child_default = create_view_no_stacking_context(); // effective 0, no stacking context
         let child_z5 = create_view_with_z_index(Some(5));
         let child_z_neg = create_view_with_z_index(Some(-1));
         // DOM order: default, z5, z_neg
         let parent = setup_parent_with_children(vec![child_default, child_z5, child_z_neg]);
 
-        let result = children_in_paint_order(parent);
+        let result = collect_stacking_context_items(parent);
         // Paint order: -1, 0, 5
-        assert_eq!(get_z_indices(&result), vec![-1, 0, 5]);
-    }
-
-    #[test]
-    fn test_optimization_skips_sort_when_all_zero() {
-        // When all z-indices are 0, sorting should be skipped (optimization)
-        // This test verifies the result is correct; actual optimization is internal
-        let child1 = create_view_with_z_index(Some(0));
-        let child2 = create_view_with_z_index(Some(0));
-        let child3 = create_view_with_z_index(Some(0));
-        let parent = setup_parent_with_children(vec![child1, child2, child3]);
-
-        let result = children_in_paint_order(parent);
-        // All zero, DOM order preserved
-        assert_eq!(result, vec![child1, child2, child3]);
+        assert_eq!(get_z_indices_from_items(&result), vec![-1, 0, 5]);
     }
 
     #[test]
@@ -2014,8 +2281,8 @@ mod tests {
         let child_zero = create_view_with_z_index(Some(0));
         let parent = setup_parent_with_children(vec![child_max, child_min, child_zero]);
 
-        let result = children_in_paint_order(parent);
-        assert_eq!(get_z_indices(&result), vec![i32::MIN, 0, i32::MAX]);
+        let result = collect_stacking_context_items(parent);
+        assert_eq!(get_z_indices_from_items(&result), vec![i32::MIN, 0, i32::MAX]);
     }
 
     #[test]
@@ -2026,13 +2293,13 @@ mod tests {
         let child_z5 = create_view_with_z_index(Some(5));
         let parent = setup_parent_with_children(vec![child_z1, child_z10, child_z5]);
 
-        let paint_order = children_in_paint_order(parent);
+        let paint_order = collect_stacking_context_items(parent);
         // Paint order: 1, 5, 10 (ascending)
-        assert_eq!(get_z_indices(&paint_order), vec![1, 5, 10]);
+        assert_eq!(get_z_indices_from_items(&paint_order), vec![1, 5, 10]);
 
         // Event dispatch order (reverse): 10, 5, 1
-        let event_order: Vec<_> = paint_order.into_iter().rev().collect();
-        assert_eq!(get_z_indices(&event_order), vec![10, 5, 1]);
+        let event_order: Vec<i32> = paint_order.iter().rev().map(|item| item.z_index).collect();
+        assert_eq!(event_order, vec![10, 5, 1]);
     }
 
     #[test]
@@ -2043,9 +2310,730 @@ mod tests {
             .collect();
         let parent = setup_parent_with_children(children.clone());
 
-        let result = children_in_paint_order(parent);
+        let result = collect_stacking_context_items(parent);
         // Should be sorted ascending: 0, 1, 2, ..., 9
-        let z_indices = get_z_indices(&result);
+        let z_indices = get_z_indices_from_items(&result);
         assert_eq!(z_indices, (0..10).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn test_all_same_nonzero_z_index_preserves_dom_order() {
+        // When all children have the same non-zero z-index, DOM order should be preserved
+        let child1 = create_view_with_z_index(Some(-5));
+        let child2 = create_view_with_z_index(Some(-5));
+        let child3 = create_view_with_z_index(Some(-5));
+        let parent = setup_parent_with_children(vec![child1, child2, child3]);
+
+        let result = collect_stacking_context_items(parent);
+        // All same z-index, DOM order preserved
+        assert_eq!(get_view_ids(&result), vec![child1, child2, child3]);
+        assert_eq!(get_z_indices_from_items(&result), vec![-5, -5, -5]);
+    }
+
+    // ========== True CSS Stacking Context Tests ==========
+
+    #[test]
+    fn test_stacking_context_children_escape() {
+        // Children of a non-stacking-context view should participate in the
+        // parent's stacking context and can interleave with siblings
+        //
+        // Structure:
+        //   Root
+        //   ├── A (no stacking context, z=0)
+        //   │   ├── A1 (z=5, creates context)
+        //   │   └── A2 (z=-1, creates context)
+        //   └── B (z=3, creates context)
+        //
+        // Expected paint order: A2 (z=-1), A (z=0), B (z=3), A1 (z=5)
+
+        let a = create_view_no_stacking_context();
+        let a1 = create_view_with_z_index(Some(5));
+        let a2 = create_view_with_z_index(Some(-1));
+        a.set_children_ids(vec![a1, a2]);
+
+        let b = create_view_with_z_index(Some(3));
+
+        let root = setup_parent_with_children(vec![a, b]);
+
+        let result = collect_stacking_context_items(root);
+
+        // A2 should be first (z=-1), then A (z=0), then B (z=3), then A1 (z=5)
+        assert_eq!(get_z_indices_from_items(&result), vec![-1, 0, 3, 5]);
+        assert_eq!(get_view_ids(&result), vec![a2, a, b, a1]);
+    }
+
+    #[test]
+    fn test_stacking_context_bounds_children() {
+        // Children of a stacking-context view should NOT escape
+        //
+        // Structure:
+        //   Root
+        //   ├── A (z=1, creates stacking context)
+        //   │   └── A1 (z=100, creates context) - bounded within A
+        //   └── B (z=2, creates context)
+        //
+        // Expected paint order: A (z=1), B (z=2)
+        // A1's z=100 doesn't matter - it's inside A's stacking context
+
+        let a = create_view_with_z_index(Some(1));
+        let a1 = create_view_with_z_index(Some(100));
+        a.set_children_ids(vec![a1]);
+
+        let b = create_view_with_z_index(Some(2));
+
+        let root = setup_parent_with_children(vec![a, b]);
+
+        let result = collect_stacking_context_items(root);
+
+        // Only A and B should be in root's stacking context
+        // A1 is bounded within A's stacking context
+        assert_eq!(result.len(), 2);
+        assert_eq!(get_z_indices_from_items(&result), vec![1, 2]);
+        assert_eq!(get_view_ids(&result), vec![a, b]);
+    }
+
+    #[test]
+    fn test_deeply_nested_stacking_context_escape() {
+        // Deeply nested children should escape multiple levels
+        //
+        // Structure:
+        //   Root
+        //   ├── A (no stacking context)
+        //   │   └── A1 (no stacking context)
+        //   │       └── A1a (z=10, creates context)
+        //   └── B (z=5, creates context)
+        //
+        // Expected paint order: A (z=0), A1 (z=0), B (z=5), A1a (z=10)
+
+        let a = create_view_no_stacking_context();
+        let a1 = create_view_no_stacking_context();
+        let a1a = create_view_with_z_index(Some(10));
+        a1.set_children_ids(vec![a1a]);
+        a.set_children_ids(vec![a1]);
+
+        let b = create_view_with_z_index(Some(5));
+
+        let root = setup_parent_with_children(vec![a, b]);
+
+        let result = collect_stacking_context_items(root);
+
+        // A1a escapes through A1 and A to participate in root's stacking context
+        assert_eq!(get_z_indices_from_items(&result), vec![0, 0, 5, 10]);
+        assert_eq!(get_view_ids(&result), vec![a, a1, b, a1a]);
+    }
+
+    #[test]
+    fn test_ancestor_path_tracking() {
+        // Verify that ancestor paths are correctly tracked for nested items
+        //
+        // Structure:
+        //   Root
+        //   └── A (no stacking context)
+        //       └── A1 (z=5, creates context)
+
+        let a = create_view_no_stacking_context();
+        let a1 = create_view_with_z_index(Some(5));
+        a.set_children_ids(vec![a1]);
+
+        let root = setup_parent_with_children(vec![a]);
+
+        let result = collect_stacking_context_items(root);
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].view_id, a);
+        assert_eq!(result[1].view_id, a1);
+    }
+
+    #[test]
+    fn test_negative_z_index_escapes_and_interleaves() {
+        // Negative z-index children should escape and sort before z=0
+        //
+        // Structure:
+        //   Root
+        //   ├── A (no stacking context)
+        //   │   └── A1 (z=-5)
+        //   ├── B (z=-2)
+        //   └── C (no stacking context)
+        //       └── C1 (z=-10)
+        //
+        // Expected: C1 (-10), A1 (-5), B (-2), A (0), C (0)
+
+        let a = create_view_no_stacking_context();
+        let a1 = create_view_with_z_index(Some(-5));
+        a.set_children_ids(vec![a1]);
+
+        let b = create_view_with_z_index(Some(-2));
+
+        let c = create_view_no_stacking_context();
+        let c1 = create_view_with_z_index(Some(-10));
+        c.set_children_ids(vec![c1]);
+
+        let root = setup_parent_with_children(vec![a, b, c]);
+        let result = collect_stacking_context_items(root);
+
+        assert_eq!(get_z_indices_from_items(&result), vec![-10, -5, -2, 0, 0]);
+        assert_eq!(get_view_ids(&result), vec![c1, a1, b, a, c]);
+    }
+
+    #[test]
+    fn test_dom_order_preserved_for_escaped_children_same_z() {
+        // When escaped children have the same z-index, DOM order should be preserved
+        //
+        // Structure:
+        //   Root
+        //   ├── A (no stacking context)
+        //   │   └── A1 (z=5)
+        //   ├── B (no stacking context)
+        //   │   └── B1 (z=5)
+        //   └── C (no stacking context)
+        //       └── C1 (z=5)
+        //
+        // Expected: A (0), B (0), C (0), A1 (5), B1 (5), C1 (5)
+        // DOM order: A1 before B1 before C1
+
+        let a = create_view_no_stacking_context();
+        let a1 = create_view_with_z_index(Some(5));
+        a.set_children_ids(vec![a1]);
+
+        let b = create_view_no_stacking_context();
+        let b1 = create_view_with_z_index(Some(5));
+        b.set_children_ids(vec![b1]);
+
+        let c = create_view_no_stacking_context();
+        let c1 = create_view_with_z_index(Some(5));
+        c.set_children_ids(vec![c1]);
+
+        let root = setup_parent_with_children(vec![a, b, c]);
+        let result = collect_stacking_context_items(root);
+
+        assert_eq!(get_z_indices_from_items(&result), vec![0, 0, 0, 5, 5, 5]);
+        // A1 comes before B1 comes before C1 due to DOM order
+        assert_eq!(get_view_ids(&result), vec![a, b, c, a1, b1, c1]);
+    }
+
+    #[test]
+    fn test_empty_non_stacking_context_view() {
+        // Non-stacking-context views with no children should work correctly
+        //
+        // Structure:
+        //   Root
+        //   ├── A (no stacking context, no children)
+        //   └── B (z=1)
+
+        let a = create_view_no_stacking_context();
+        let b = create_view_with_z_index(Some(1));
+
+        let root = setup_parent_with_children(vec![a, b]);
+        let result = collect_stacking_context_items(root);
+
+        assert_eq!(get_z_indices_from_items(&result), vec![0, 1]);
+        assert_eq!(get_view_ids(&result), vec![a, b]);
+    }
+
+    #[test]
+    fn test_creates_context_flag_correctness() {
+        // Verify the creates_context flag is set correctly for different view types
+
+        let with_z = create_view_with_z_index(Some(5));
+        let without_z = create_view_no_stacking_context();
+        let with_z_zero = create_view_with_z_index(Some(0));
+
+        let root = setup_parent_with_children(vec![with_z, without_z, with_z_zero]);
+        let result = collect_stacking_context_items(root);
+
+        // View with explicit z-index creates context
+        assert!(result[1].creates_context); // with_z (sorted to middle due to z=5)
+        // View without z-index doesn't create context
+        assert!(!result[0].creates_context); // without_z (z=0)
+        // View with explicit z-index: 0 DOES create context (unlike z-index: auto)
+        assert!(result[2].creates_context); // with_z_zero (z=0 but explicit)
+    }
+
+    #[test]
+    fn test_complex_nested_stacking_contexts() {
+        // Complex scenario with multiple levels of stacking contexts
+        //
+        // Structure:
+        //   Root
+        //   ├── A (z=1, creates context)
+        //   │   ├── A1 (no stacking context)
+        //   │   │   └── A1a (z=100) -- bounded within A
+        //   │   └── A2 (z=50) -- bounded within A
+        //   ├── B (no stacking context)
+        //   │   └── B1 (z=2, creates context)
+        //   │       └── B1a (z=999) -- bounded within B1
+        //   └── C (z=3)
+        //
+        // Root's stacking context: A (1), B (0), B1 (2), C (3)
+        // A1a and A2 are in A's stacking context
+        // B1a is in B1's stacking context
+
+        let a = create_view_with_z_index(Some(1));
+        let a1 = create_view_no_stacking_context();
+        let a1a = create_view_with_z_index(Some(100));
+        a1.set_children_ids(vec![a1a]);
+        let a2 = create_view_with_z_index(Some(50));
+        a.set_children_ids(vec![a1, a2]);
+
+        let b = create_view_no_stacking_context();
+        let b1 = create_view_with_z_index(Some(2));
+        let b1a = create_view_with_z_index(Some(999));
+        b1.set_children_ids(vec![b1a]);
+        b.set_children_ids(vec![b1]);
+
+        let c = create_view_with_z_index(Some(3));
+
+        let root = setup_parent_with_children(vec![a, b, c]);
+        let result = collect_stacking_context_items(root);
+
+        // Root's stacking context should have: B (0), A (1), B1 (2), C (3)
+        // Note: B escapes but B1 is in root's context because B doesn't create one
+        assert_eq!(result.len(), 4);
+        assert_eq!(get_z_indices_from_items(&result), vec![0, 1, 2, 3]);
+        assert_eq!(get_view_ids(&result), vec![b, a, b1, c]);
+    }
+
+    #[test]
+    fn test_siblings_interleave_with_escaped_cousins() {
+        // Test that escaped children interleave correctly with their parent's siblings
+        //
+        // Structure:
+        //   Root
+        //   ├── A (z=5)
+        //   ├── B (no stacking context)
+        //   │   ├── B1 (z=3)
+        //   │   └── B2 (z=7)
+        //   └── C (z=6)
+        //
+        // Expected order: B (0), B1 (3), A (5), C (6), B2 (7)
+
+        let a = create_view_with_z_index(Some(5));
+
+        let b = create_view_no_stacking_context();
+        let b1 = create_view_with_z_index(Some(3));
+        let b2 = create_view_with_z_index(Some(7));
+        b.set_children_ids(vec![b1, b2]);
+
+        let c = create_view_with_z_index(Some(6));
+
+        let root = setup_parent_with_children(vec![a, b, c]);
+        let result = collect_stacking_context_items(root);
+
+        assert_eq!(get_z_indices_from_items(&result), vec![0, 3, 5, 6, 7]);
+        assert_eq!(get_view_ids(&result), vec![b, b1, a, c, b2]);
+    }
+
+    #[test]
+    fn test_all_non_stacking_context_tree() {
+        // When no view creates a stacking context, all should be collected with z=0
+        //
+        // Structure:
+        //   Root
+        //   ├── A (no stacking context)
+        //   │   └── A1 (no stacking context)
+        //   │       └── A1a (no stacking context)
+        //   └── B (no stacking context)
+        //
+        // All should be in paint order with z=0, DOM order preserved
+
+        let a = create_view_no_stacking_context();
+        let a1 = create_view_no_stacking_context();
+        let a1a = create_view_no_stacking_context();
+        a1.set_children_ids(vec![a1a]);
+        a.set_children_ids(vec![a1]);
+
+        let b = create_view_no_stacking_context();
+
+        let root = setup_parent_with_children(vec![a, b]);
+        let result = collect_stacking_context_items(root);
+
+        // All z=0, DOM order: A, A1, A1a, B
+        assert_eq!(get_z_indices_from_items(&result), vec![0, 0, 0, 0]);
+        assert_eq!(get_view_ids(&result), vec![a, a1, a1a, b]);
+    }
+
+    #[test]
+    fn test_stacking_context_at_leaf() {
+        // Stacking context at leaf level (no children)
+        //
+        // Structure:
+        //   Root
+        //   └── A (no stacking context)
+        //       └── A1 (no stacking context)
+        //           └── A1a (z=5, leaf with no children)
+
+        let a = create_view_no_stacking_context();
+        let a1 = create_view_no_stacking_context();
+        let a1a = create_view_with_z_index(Some(5));
+        a1.set_children_ids(vec![a1a]);
+        a.set_children_ids(vec![a1]);
+
+        let root = setup_parent_with_children(vec![a]);
+        let result = collect_stacking_context_items(root);
+
+        assert_eq!(get_z_indices_from_items(&result), vec![0, 0, 5]);
+        assert_eq!(get_view_ids(&result), vec![a, a1, a1a]);
+    }
+
+    #[test]
+    fn test_event_dispatch_order_with_escaping() {
+        // Event dispatch should be reverse of paint order, even with escaped children
+        //
+        // Structure:
+        //   Root
+        //   ├── A (no stacking context)
+        //   │   └── A1 (z=10)
+        //   └── B (z=5)
+        //
+        // Paint order: A (0), B (5), A1 (10)
+        // Event order: A1 (10), B (5), A (0)
+
+        let a = create_view_no_stacking_context();
+        let a1 = create_view_with_z_index(Some(10));
+        a.set_children_ids(vec![a1]);
+
+        let b = create_view_with_z_index(Some(5));
+
+        let root = setup_parent_with_children(vec![a, b]);
+        let paint_order = collect_stacking_context_items(root);
+
+        assert_eq!(get_z_indices_from_items(&paint_order), vec![0, 5, 10]);
+
+        // Reverse for event dispatch
+        let event_z_indices: Vec<i32> = paint_order.iter().rev().map(|item| item.z_index).collect();
+        let event_view_ids: Vec<ViewId> = paint_order.iter().rev().map(|item| item.view_id).collect();
+        assert_eq!(event_z_indices, vec![10, 5, 0]);
+        assert_eq!(event_view_ids, vec![a1, b, a]);
+    }
+
+    #[test]
+    fn test_multiple_children_escape_same_parent() {
+        // Multiple children of a non-stacking-context parent all escape
+        //
+        // Structure:
+        //   Root
+        //   ├── A (no stacking context)
+        //   │   ├── A1 (z=-1)
+        //   │   ├── A2 (z=0)
+        //   │   ├── A3 (z=1)
+        //   │   └── A4 (z=2)
+        //   └── B (z=1)
+        //
+        // Expected: A1 (-1), A (0), A2 (0), A3 (1), B (1), A4 (2)
+        // Note: A3 and B both have z=1, A3 comes first due to DOM order
+
+        let a = create_view_no_stacking_context();
+        let a1 = create_view_with_z_index(Some(-1));
+        let a2 = create_view_with_z_index(Some(0));
+        let a3 = create_view_with_z_index(Some(1));
+        let a4 = create_view_with_z_index(Some(2));
+        a.set_children_ids(vec![a1, a2, a3, a4]);
+
+        let b = create_view_with_z_index(Some(1));
+
+        let root = setup_parent_with_children(vec![a, b]);
+        let result = collect_stacking_context_items(root);
+
+        assert_eq!(get_z_indices_from_items(&result), vec![-1, 0, 0, 1, 1, 2]);
+        // A comes before A2 at z=0 because A is the parent (encountered first in DOM)
+        // A3 comes before B at z=1 because A3's dom_order is smaller
+        assert_eq!(get_view_ids(&result), vec![a1, a, a2, a3, b, a4]);
+    }
+
+    // ========== Stacking Context Cache Tests ==========
+
+    #[test]
+    fn test_stacking_cache_hit_on_second_call() {
+        // Second call should return cached value (same result)
+        let a = create_view_with_z_index(Some(1));
+        let b = create_view_with_z_index(Some(2));
+        let root = setup_parent_with_children(vec![a, b]);
+
+        let result1 = collect_stacking_context_items(root);
+        let result2 = collect_stacking_context_items(root);
+
+        // Results should be identical
+        assert_eq!(get_view_ids(&result1), get_view_ids(&result2));
+        assert_eq!(get_z_indices_from_items(&result1), get_z_indices_from_items(&result2));
+    }
+
+    #[test]
+    fn test_stacking_cache_invalidation_on_z_index_change() {
+        // Cache should be invalidated when z-index changes
+        let a = create_view_with_z_index(Some(1));
+        let b = create_view_with_z_index(Some(2));
+        let root = setup_parent_with_children(vec![a, b]);
+
+        let result1 = collect_stacking_context_items(root);
+        assert_eq!(get_view_ids(&result1), vec![a, b]);
+
+        // Change a's z-index to be higher than b
+        {
+            let state = a.state();
+            let old_info = state.borrow().stacking_info;
+            state.borrow_mut().stacking_info = StackingInfo {
+                creates_context: true,
+                effective_z_index: 10,
+            };
+            // Simulate what happens during style computation
+            if old_info.effective_z_index != 10 {
+                invalidate_stacking_cache(a);
+            }
+        }
+
+        let result2 = collect_stacking_context_items(root);
+        // Now a should come after b due to higher z-index
+        assert_eq!(get_view_ids(&result2), vec![b, a]);
+        assert_eq!(get_z_indices_from_items(&result2), vec![2, 10]);
+    }
+
+    #[test]
+    fn test_stacking_cache_invalidation_on_children_change() {
+        // Cache should be invalidated when children are added/removed
+        let a = create_view_with_z_index(Some(1));
+        let root = setup_parent_with_children(vec![a]);
+
+        let result1 = collect_stacking_context_items(root);
+        assert_eq!(get_view_ids(&result1), vec![a]);
+
+        // Add a new child
+        let b = create_view_with_z_index(Some(2));
+        root.set_children_ids(vec![a, b]); // This calls invalidate_stacking_cache
+
+        let result2 = collect_stacking_context_items(root);
+        assert_eq!(get_view_ids(&result2), vec![a, b]);
+    }
+
+    #[test]
+    fn test_stacking_cache_invalidation_propagates_to_ancestors() {
+        // Invalidating a child should also invalidate ancestor caches
+        //
+        // Structure:
+        //   Root
+        //   └── A (no stacking context)
+        //       └── A1 (z=5)
+        //
+        // When A1's z-index changes, root's cache should also be invalidated
+
+        let a = create_view_no_stacking_context();
+        let a1 = create_view_with_z_index(Some(5));
+        set_children_with_parents(a, vec![a1]);
+        let root = setup_parent_with_children(vec![a]);
+
+        let result1 = collect_stacking_context_items(root);
+        assert_eq!(get_z_indices_from_items(&result1), vec![0, 5]);
+
+        // Change A1's z-index
+        {
+            let state = a1.state();
+            state.borrow_mut().stacking_info = StackingInfo {
+                creates_context: true,
+                effective_z_index: -1,
+            };
+            invalidate_stacking_cache(a1); // Should invalidate root's cache too
+        }
+
+        let result2 = collect_stacking_context_items(root);
+        // A1 now has negative z-index, should come first
+        assert_eq!(get_z_indices_from_items(&result2), vec![-1, 0]);
+        assert_eq!(get_view_ids(&result2), vec![a1, a]);
+    }
+
+    #[test]
+    fn test_stacking_cache_invalidation_on_creates_context_change() {
+        // Cache should be invalidated when creates_context flag changes
+        //
+        // Structure:
+        //   Root
+        //   ├── A (initially creates stacking context)
+        //   │   └── A1 (z=100)
+        //   └── B (z=2)
+        //
+        // When A stops creating a stacking context, A1 should escape
+
+        let a = create_view_with_z_index(Some(1));
+        let a1 = create_view_with_z_index(Some(100));
+        a.set_children_ids(vec![a1]);
+
+        let b = create_view_with_z_index(Some(2));
+        let root = setup_parent_with_children(vec![a, b]);
+
+        let result1 = collect_stacking_context_items(root);
+        // A1 is bounded within A's stacking context
+        assert_eq!(result1.len(), 2);
+        assert_eq!(get_view_ids(&result1), vec![a, b]);
+
+        // Change A to NOT create a stacking context
+        {
+            let state = a.state();
+            let old_info = state.borrow().stacking_info;
+            state.borrow_mut().stacking_info = StackingInfo {
+                creates_context: false,
+                effective_z_index: 0,
+            };
+            if old_info.creates_context != false {
+                invalidate_stacking_cache(a);
+            }
+        }
+
+        let result2 = collect_stacking_context_items(root);
+        // A1 should now escape and be in root's stacking context
+        assert_eq!(result2.len(), 3);
+        assert_eq!(get_z_indices_from_items(&result2), vec![0, 2, 100]);
+        assert_eq!(get_view_ids(&result2), vec![a, b, a1]);
+    }
+
+    #[test]
+    fn test_stacking_cache_multiple_roots_independent() {
+        // Different stacking context roots should have independent caches
+        let a1 = create_view_with_z_index(Some(1));
+        let a2 = create_view_with_z_index(Some(2));
+        let root_a = setup_parent_with_children(vec![a1, a2]);
+
+        let b1 = create_view_with_z_index(Some(10));
+        let b2 = create_view_with_z_index(Some(20));
+        let root_b = setup_parent_with_children(vec![b1, b2]);
+
+        let result_a = collect_stacking_context_items(root_a);
+        let result_b = collect_stacking_context_items(root_b);
+
+        assert_eq!(get_view_ids(&result_a), vec![a1, a2]);
+        assert_eq!(get_view_ids(&result_b), vec![b1, b2]);
+
+        // Invalidate root_a's cache
+        invalidate_stacking_cache(a1);
+
+        // root_b's cache should still be valid (returns same result)
+        let result_b2 = collect_stacking_context_items(root_b);
+        assert_eq!(get_view_ids(&result_b2), vec![b1, b2]);
+    }
+
+    #[test]
+    fn test_stacking_cache_invalidation_on_child_removal() {
+        // Cache should be invalidated when a child is removed
+        let a = create_view_with_z_index(Some(1));
+        let b = create_view_with_z_index(Some(2));
+        let c = create_view_with_z_index(Some(3));
+        let root = setup_parent_with_children(vec![a, b, c]);
+
+        let result1 = collect_stacking_context_items(root);
+        assert_eq!(get_view_ids(&result1), vec![a, b, c]);
+
+        // Remove b from children
+        root.set_children_ids(vec![a, c]); // This calls invalidate_stacking_cache
+
+        let result2 = collect_stacking_context_items(root);
+        assert_eq!(get_view_ids(&result2), vec![a, c]);
+    }
+
+    #[test]
+    fn test_stacking_cache_invalidation_nested_escaping_child_change() {
+        // When a deeply nested child changes, ancestor caches should be invalidated
+        //
+        // Structure:
+        //   Root
+        //   └── A (no stacking context)
+        //       └── A1 (no stacking context)
+        //           └── A1a (z=10, creates context)
+        //
+        // When A1a changes, root's cache should be invalidated
+
+        let a = create_view_no_stacking_context();
+        let a1 = create_view_no_stacking_context();
+        let a1a = create_view_with_z_index(Some(10));
+        set_children_with_parents(a1, vec![a1a]);
+        set_children_with_parents(a, vec![a1]);
+        let root = setup_parent_with_children(vec![a]);
+
+        let result1 = collect_stacking_context_items(root);
+        assert_eq!(get_z_indices_from_items(&result1), vec![0, 0, 10]);
+
+        // Change A1a's z-index to negative
+        {
+            let state = a1a.state();
+            state.borrow_mut().stacking_info = StackingInfo {
+                creates_context: true,
+                effective_z_index: -5,
+            };
+            invalidate_stacking_cache(a1a);
+        }
+
+        let result2 = collect_stacking_context_items(root);
+        // A1a should now be first due to negative z-index
+        assert_eq!(get_z_indices_from_items(&result2), vec![-5, 0, 0]);
+        assert_eq!(get_view_ids(&result2), vec![a1a, a, a1]);
+    }
+
+    // ========== Fast Path Tests ==========
+
+    #[test]
+    fn test_fast_path_all_zero_z_index_preserves_dom_order() {
+        // When all z-indices are zero, items should be in DOM order (no sorting needed)
+        let a = create_view_no_stacking_context();
+        let b = create_view_no_stacking_context();
+        let c = create_view_no_stacking_context();
+        let root = setup_parent_with_children(vec![a, b, c]);
+
+        let result = collect_stacking_context_items(root);
+
+        // All z-indices are 0, should be in DOM order
+        assert_eq!(get_view_ids(&result), vec![a, b, c]);
+        assert_eq!(get_z_indices_from_items(&result), vec![0, 0, 0]);
+    }
+
+    #[test]
+    fn test_fast_path_nested_all_zero_z_index() {
+        // Nested structure with all z-indices zero should preserve DOM order
+        //
+        // Structure:
+        //   Root
+        //   ├── A (no stacking context)
+        //   │   ├── A1 (no stacking context)
+        //   │   └── A2 (no stacking context)
+        //   └── B (no stacking context)
+
+        let a = create_view_no_stacking_context();
+        let a1 = create_view_no_stacking_context();
+        let a2 = create_view_no_stacking_context();
+        set_children_with_parents(a, vec![a1, a2]);
+
+        let b = create_view_no_stacking_context();
+
+        let root = setup_parent_with_children(vec![a, b]);
+        let result = collect_stacking_context_items(root);
+
+        // All z-indices are 0, DOM order: A, A1, A2, B
+        assert_eq!(get_view_ids(&result), vec![a, a1, a2, b]);
+        assert_eq!(get_z_indices_from_items(&result), vec![0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn test_sorting_triggered_by_single_non_zero_z_index() {
+        // Even a single non-zero z-index should trigger sorting
+        let a = create_view_no_stacking_context();
+        let b = create_view_with_z_index(Some(1)); // Only one with z-index
+        let c = create_view_no_stacking_context();
+        let root = setup_parent_with_children(vec![a, b, c]);
+
+        let result = collect_stacking_context_items(root);
+
+        // b has z=1, so it should come after a and c (which have z=0)
+        assert_eq!(get_view_ids(&result), vec![a, c, b]);
+        assert_eq!(get_z_indices_from_items(&result), vec![0, 0, 1]);
+    }
+
+    #[test]
+    fn test_sorting_triggered_by_negative_z_index() {
+        // Negative z-index should also trigger sorting
+        let a = create_view_no_stacking_context();
+        let b = create_view_with_z_index(Some(-1)); // Negative z-index
+        let c = create_view_no_stacking_context();
+        let root = setup_parent_with_children(vec![a, b, c]);
+
+        let result = collect_stacking_context_items(root);
+
+        // b has z=-1, so it should come before a and c (which have z=0)
+        assert_eq!(get_view_ids(&result), vec![b, a, c]);
+        assert_eq!(get_z_indices_from_items(&result), vec![-1, 0, 0]);
     }
 }

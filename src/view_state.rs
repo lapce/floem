@@ -173,9 +173,9 @@ impl IsHiddenState {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct StackingInfo {
     /// Whether this view creates a new stacking context.
-    /// A stacking context is created by z-index, position: absolute, or transform.
-    /// Reserved for future use in stacking context debugging/inspection.
-    #[allow(dead_code)]
+    /// A stacking context is created by explicit z-index or non-identity transform.
+    /// When true, this view's children are bounded within it and cannot interleave with siblings.
+    /// When false, this view's children participate in the parent's stacking context.
     pub creates_context: bool,
     /// The effective z-index for sorting (0 if no z-index specified).
     pub effective_z_index: i32,
@@ -194,6 +194,10 @@ pub struct ViewState {
     pub(crate) has_style_selectors: StyleSelectors,
     pub(crate) viewport: Option<Rect>,
     pub(crate) layout_rect: Rect,
+    /// The visible clip area in window coordinates. This is the intersection of
+    /// the view's layout_rect with all ancestor clip bounds (from overflow: hidden/scroll).
+    /// Used for clip-aware hit testing - clicks outside this rect should not hit the view.
+    pub(crate) clip_rect: Rect,
     pub(crate) layout_props: LayoutProps,
     pub(crate) view_style_props: ViewStyleProps,
     pub(crate) animations: Stack<Animation>,
@@ -216,6 +220,10 @@ pub struct ViewState {
     pub(crate) num_waiting_animations: u16,
     pub(crate) disable_default_events: HashSet<EventListener>,
     pub(crate) transform: Affine,
+    /// The cumulative transform from this view's local coordinates to root (window) coordinates.
+    /// This combines the view's position (window_origin) and any CSS transforms.
+    /// Use the inverse to convert from root coordinates to local coordinates.
+    pub(crate) local_to_root_transform: Affine,
     pub(crate) stacking_info: StackingInfo,
     pub(crate) debug_name: SmallVec<[String; 1]>,
 }
@@ -232,6 +240,7 @@ impl ViewState {
             style,
             view_style_offset,
             layout_rect: Rect::ZERO,
+            clip_rect: Rect::ZERO,
             layout_props: Default::default(),
             view_style_props: Default::default(),
             requested_changes: ChangeFlags::all(),
@@ -255,6 +264,7 @@ impl ViewState {
             num_waiting_animations: 0,
             disable_default_events: HashSet::new(),
             transform: Affine::IDENTITY,
+            local_to_root_transform: Affine::IDENTITY,
             stacking_info: StackingInfo::default(),
             debug_name: Default::default(),
         }

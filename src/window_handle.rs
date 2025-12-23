@@ -347,6 +347,7 @@ impl WindowHandle {
         // Use the shared event dispatch logic
         let mut cx = EventCx {
             window_state: &mut self.window_state,
+            skip_children_for: None,
         };
         cx.dispatch_event(self.id, self.main_view, event);
 
@@ -468,6 +469,7 @@ impl WindowHandle {
                 set_current_view(self.id);
                 let cx = EventCx {
                     window_state: &mut self.window_state,
+                    skip_children_for: None,
                 };
                 let was_hovered = std::mem::take(&mut cx.window_state.hovered);
                 for id in was_hovered {
@@ -566,6 +568,7 @@ impl WindowHandle {
             saved_transforms: Vec::new(),
             saved_clips: Vec::new(),
             pending_drag_paint: None,
+            skip_children_for: None,
             gpu_resources,
             window: self.window.clone(),
             #[cfg(feature = "vello")]
