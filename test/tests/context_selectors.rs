@@ -503,3 +503,84 @@ fn test_with_context_selectors_merge_correctly() {
         bg
     );
 }
+
+// =============================================================================
+// Active Style Trigger Tests
+// =============================================================================
+
+/// Test that active style triggers paint when clicking.
+#[test]
+fn test_active_style_triggers_paint() {
+    let view = Empty::new().style(|s| {
+        s.size(100.0, 100.0)
+            .active(|s| s.background(palette::css::RED))
+    });
+    let id = view.view_id();
+
+    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+
+    // Check that view has Active selector
+    assert!(
+        harness.has_style_for_selector(id, StyleSelector::Active),
+        "View should have Active selector"
+    );
+
+    // Check computed background color before clicking - should be None
+    let bg_before = harness.get_computed_style(id).get(Background);
+    assert!(
+        bg_before.is_none(),
+        "Background should be None before clicking"
+    );
+
+    // Pointer down
+    harness.pointer_down(50.0, 50.0);
+
+    // Check clicking state
+    assert!(
+        harness.is_clicking(id),
+        "Should be clicking after pointer down"
+    );
+
+    // Check computed background color after clicking - should be RED
+    let bg_after = harness.get_computed_style(id).get(Background);
+    assert!(
+        bg_after.is_some(),
+        "Background should be set after pointer down on view with :active style"
+    );
+}
+
+/// Test that style is requested when clicking state changes.
+#[test]
+fn test_style_request_on_clicking() {
+    let view = Empty::new().style(|s| {
+        s.size(100.0, 100.0)
+            .active(|s| s.background(palette::css::RED))
+    });
+    let id = view.view_id();
+
+    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+
+    // Verify selector is detected
+    assert!(
+        harness.has_style_for_selector(id, StyleSelector::Active),
+        "View should have Active selector"
+    );
+
+    // Check clicking state before
+    assert!(!harness.is_clicking(id), "Should not be clicking initially");
+
+    // Pointer down
+    harness.pointer_down(50.0, 50.0);
+
+    // Check clicking state after
+    assert!(
+        harness.is_clicking(id),
+        "Should be clicking after pointer down"
+    );
+
+    // Check if has_active is still true after clicking
+    assert!(
+        harness.has_style_for_selector(id, StyleSelector::Active),
+        "View should still have Active selector after clicking"
+    );
+}

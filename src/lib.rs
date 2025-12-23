@@ -187,18 +187,18 @@ pub mod layout;
 mod message;
 pub mod paint;
 pub mod platform;
+/// Re-export easing module from animate for backward compatibility.
+pub use animate::easing;
+/// Re-export dropped_file module from event for backward compatibility.
+pub use event::dropped_file;
+/// Re-export responsive module from layout for backward compatibility.
+pub use layout::responsive;
 /// Re-export file module from platform for backward compatibility.
 pub use platform::file;
 /// Re-export menu module from platform for backward compatibility.
 pub use platform::menu;
-/// Re-export responsive module from layout for backward compatibility.
-pub use layout::responsive;
-/// Re-export dropped_file module from event for backward compatibility.
-pub use event::dropped_file;
 /// Re-export view_tuple module from view for backward compatibility.
 pub use view::tuple as view_tuple;
-/// Re-export easing module from animate for backward compatibility.
-pub use animate::easing;
 pub mod style;
 pub mod test_harness;
 pub mod view;

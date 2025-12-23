@@ -1031,3 +1031,96 @@ fn test_active_style_applied_during_click() {
         bg
     );
 }
+
+// =============================================================================
+// Nested Stack Click Tests - Without z-index
+// =============================================================================
+
+/// Test that clicks work in nested stacks without z-index set.
+///
+/// This reproduces the counter example structure where nested stacks
+/// with clickable elements have no z-index set.
+#[test]
+fn test_nested_stack_click_no_z_index() {
+    // Structure:
+    //   Root Stack (flex column)
+    //   └── Inner Stack (flex row)
+    //       ├── Button1 (clickable)
+    //       └── Button2 (clickable)
+
+    let tracker = ClickTracker::new();
+
+    let view = stack((stack((
+        tracker
+            .track_named("button1", Empty::new())
+            .style(|s| s.size(50.0, 50.0)),
+        tracker
+            .track_named("button2", Empty::new())
+            .style(|s| s.size(50.0, 50.0)),
+    ))
+    .style(|s| s.flex_row()),))
+    .style(|s| s.size(100.0, 100.0).flex_col());
+
+    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+
+    // Click on button1 (should be at x=25, y=25)
+    harness.click(25.0, 25.0);
+
+    assert_eq!(
+        tracker.clicked_names(),
+        vec!["button1"],
+        "Button1 should receive click in nested stack without z-index"
+    );
+}
+
+/// Test the counter example structure with multiple rows of buttons.
+///
+/// This mirrors the actual counter example layout:
+///   Root (flex col)
+///   ├── Label "Value: ..."
+///   ├── Spacer
+///   └── Button Row (flex row by default as tuple)
+///       ├── "Increment" button
+///       ├── "Decrement" button
+///       └── "Reset" button
+#[test]
+fn test_counter_example_structure() {
+    let tracker = ClickTracker::new();
+
+    // Mimics the counter example tuple structure
+    let view = (
+        // Value label at top
+        Empty::new().style(|s| s.size(200.0, 30.0)),
+        // Spacer
+        Empty::new().style(|s| s.size(200.0, 10.0)),
+        // Button row
+        (
+            tracker
+                .track_named("increment", Empty::new())
+                .style(|s| s.size(60.0, 30.0)),
+            tracker
+                .track_named("decrement", Empty::new())
+                .style(|s| s.size(60.0, 30.0)),
+            tracker
+                .track_named("reset", Empty::new())
+                .style(|s| s.size(60.0, 30.0)),
+        ),
+    )
+        .style(|s| {
+            s.size(200.0, 100.0)
+                .flex_col()
+                .items_center()
+                .justify_center()
+        });
+
+    let mut harness = TestHarness::new_with_size(view, 200.0, 100.0);
+
+    // Click on the increment button
+    harness.click(30.0, 55.0);
+
+    assert_eq!(
+        tracker.clicked_names(),
+        vec!["increment"],
+        "Increment button should receive click"
+    );
+}

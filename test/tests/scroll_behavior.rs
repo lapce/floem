@@ -786,3 +786,153 @@ fn test_scroll_up_down() {
         after_up
     );
 }
+
+// =============================================================================
+// Clip-Aware Hit Testing Tests
+// =============================================================================
+
+/// Test that clicks work correctly after scrolling.
+#[test]
+fn test_scroll_view_click_after_scroll() {
+    let tracker = ClickTracker::new();
+
+    // Create content with a clickable button at y=150 (below initial viewport)
+    let button = tracker
+        .track_named("button", Empty::new())
+        .style(|s| s.size(100.0, 50.0).margin_top(150.0));
+
+    let content = stack((button,)).style(|s| s.size(200.0, 500.0).flex_col());
+    let scroll_view = Scroll::new(content).style(|s| s.size(200.0, 100.0));
+
+    let view = stack((scroll_view,)).style(|s| s.size(200.0, 100.0));
+
+    let mut harness = TestHarness::new_with_size(view, 200.0, 100.0);
+
+    // Button is at y=150 in content coordinates, but viewport is y=0 to y=100
+    // So button is not visible yet. Let's scroll down to see it.
+
+    // Scroll down by 100px so the button (at y=150) is now at visual y=50
+    harness.scroll_down(50.0, 50.0, 100.0);
+
+    // The button should now be visible at approximately y=50 (150 - 100 scroll)
+    // Click in the middle of where the button should be visually
+    harness.click(50.0, 75.0);
+
+    assert!(
+        tracker.was_clicked(),
+        "Button should receive click after scrolling (clicked at visual position)"
+    );
+}
+
+/// Test that clicks on content outside the scroll view's visible area
+/// don't trigger click handlers (clip-aware hit testing).
+#[test]
+fn test_clip_aware_hit_testing_clipped_content() {
+    let tracker = ClickTracker::new();
+
+    // Create a button at y=150 (below the scroll view's 100px height)
+    let button = tracker
+        .track_named("button", Empty::new())
+        .style(|s| s.size(100.0, 50.0).margin_top(150.0));
+
+    let content = stack((button,)).style(|s| s.size(200.0, 500.0).flex_col());
+    let scroll_view = Scroll::new(content).style(|s| s.size(200.0, 100.0));
+    let view = stack((scroll_view,)).style(|s| s.size(200.0, 100.0));
+
+    let mut harness = TestHarness::new_with_size(view, 200.0, 100.0);
+
+    // The button is at y=150 in content coordinates.
+    // Without scrolling, the viewport shows y=0 to y=100.
+    // The button is NOT visible (it's below the viewport).
+
+    // Click at y=175 (where the button would be without clipping)
+    // This is outside the scroll view entirely, so won't hit anything.
+    harness.click(50.0, 175.0);
+    assert!(
+        !tracker.was_clicked(),
+        "Click outside scroll view bounds should not hit clipped content"
+    );
+}
+
+/// Test that clicks on content inside the scroll view's visible area
+/// do trigger click handlers.
+#[test]
+fn test_clip_aware_hit_testing_visible_content() {
+    let tracker = ClickTracker::new();
+
+    // Create a button at y=25 (inside the scroll view's 100px height)
+    let button = tracker
+        .track_named("button", Empty::new())
+        .style(|s| s.size(100.0, 50.0).margin_top(25.0));
+
+    let content = stack((button,)).style(|s| s.size(200.0, 500.0).flex_col());
+    let scroll_view = Scroll::new(content).style(|s| s.size(200.0, 100.0));
+    let view = stack((scroll_view,)).style(|s| s.size(200.0, 100.0));
+
+    let mut harness = TestHarness::new_with_size(view, 200.0, 100.0);
+
+    // The button is at y=25 to y=75 in content coordinates.
+    // The viewport shows y=0 to y=100, so the button IS visible.
+
+    // Click in the middle of the button (y=50)
+    harness.click(50.0, 50.0);
+    assert!(
+        tracker.was_clicked(),
+        "Click inside scroll view on visible content should trigger handler"
+    );
+}
+
+/// Test that after scrolling, content that moves out of view
+/// no longer receives clicks.
+#[test]
+fn test_clip_aware_hit_testing_after_scroll_clipped() {
+    let tracker = ClickTracker::new();
+
+    // Button1 at top (y=10), Button2 further down (y=150)
+    let button1 = tracker
+        .track_named("button1", Empty::new())
+        .style(|s| s.size(100.0, 30.0).margin_top(10.0));
+
+    let button2 = tracker
+        .track_named("button2", Empty::new())
+        .style(|s| s.size(100.0, 30.0).margin_top(110.0)); // 10 + 30 + 110 = 150
+
+    let content = stack((button1, button2)).style(|s| s.size(200.0, 500.0).flex_col());
+    let scroll_view = Scroll::new(content).style(|s| s.size(200.0, 100.0));
+    let view = stack((scroll_view,)).style(|s| s.size(200.0, 100.0));
+
+    let mut harness = TestHarness::new_with_size(view, 200.0, 100.0);
+
+    // Initially, button1 is visible (y=10 to y=40), button2 is not (y=150 to y=180)
+
+    // Click on button1 - should work
+    harness.click(50.0, 25.0);
+    assert_eq!(
+        tracker.clicked_names(),
+        vec!["button1"],
+        "Button1 should be clickable initially"
+    );
+    tracker.reset();
+
+    // Scroll down by 100px
+    // Now button1 is at visual y=-90 to y=-60 (clipped, above viewport)
+    // And button2 is at visual y=50 to y=80 (visible)
+    harness.scroll_down(50.0, 50.0, 100.0);
+
+    // Click at y=25 where button1 USED to be - should NOT hit button1 anymore
+    harness.click(50.0, 25.0);
+    assert!(
+        !tracker.clicked_names().contains(&"button1".to_string()),
+        "Button1 should NOT be clickable after scrolling out of view"
+    );
+
+    tracker.reset();
+
+    // Click at y=65 where button2 now is - should work
+    harness.click(50.0, 65.0);
+    assert_eq!(
+        tracker.clicked_names(),
+        vec!["button2"],
+        "Button2 should be clickable after scrolling into view"
+    );
+}
