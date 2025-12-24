@@ -72,27 +72,27 @@ impl EventCx<'_> {
         // We keep a reference for should_send() and stacking context dispatch.
         let absolute_event = event;
 
-        // Convert absolute coordinates to view's local coordinates using the
-        // precomputed local_to_root_transform. We clone here because we need
-        // both absolute and local versions of the event.
-        let local_to_root = view_id.state().borrow().local_to_root_transform;
-        let event = absolute_event.clone().transform(local_to_root);
-
         let view = view_id.view();
         let view_state = view_id.state();
 
-        let disable_default = if let Some(listener) = event.listener() {
-            view_state
-                .borrow()
-                .disable_default_events
-                .contains(&listener)
-        } else {
-            false
-        };
+        // Single borrow to extract all needed fields, avoiding multiple RefCell borrows.
+        // This is a hot path optimization - consolidates 3 borrows into 1.
+        let (local_to_root, disable_default, is_pointer_none) = {
+            let borrowed = view_state.borrow();
+            let local_to_root = borrowed.local_to_root_transform;
+            let disable_default = event
+                .listener()
+                .map(|listener| borrowed.disable_default_events.contains(&listener))
+                .unwrap_or(false);
+            let is_pointer_none = event.is_pointer()
+                && borrowed.computed_style.get(PointerEventsProp)
+                    == Some(PointerEvents::None);
+            (local_to_root, disable_default, is_pointer_none)
+        }; // borrow dropped here before mutable borrow below
 
-        let is_pointer_none = event.is_pointer()
-            && view_state.borrow().computed_style.get(PointerEventsProp)
-                == Some(PointerEvents::None);
+        // Convert absolute coordinates to view's local coordinates using the
+        // precomputed local_to_root_transform.
+        let event = absolute_event.clone().transform(local_to_root);
 
         if !disable_default
             && !is_pointer_none
@@ -413,9 +413,14 @@ impl EventCx<'_> {
 
                         let last_pointer_down = view_state.borrow_mut().last_pointer_down.take();
 
-                        let event_listeners = view_state.borrow().event_listeners.clone();
-                        if let Some(handlers) = event_listeners.get(&EventListener::DoubleClick) {
-                            view_state.borrow_mut();
+                        // Only clone the specific handlers we need, not the entire HashMap.
+                        // This is a hot path optimization.
+                        let double_click_handlers = view_state
+                            .borrow()
+                            .event_listeners
+                            .get(&EventListener::DoubleClick)
+                            .cloned();
+                        if let Some(handlers) = double_click_handlers {
                             if on_view
                                 && self.window_state.is_clicking(&view_id)
                                 && last_pointer_down
@@ -430,7 +435,12 @@ impl EventCx<'_> {
                             }
                         }
 
-                        if let Some(handlers) = event_listeners.get(&EventListener::Click) {
+                        let click_handlers = view_state
+                            .borrow()
+                            .event_listeners
+                            .get(&EventListener::Click)
+                            .cloned();
+                        if let Some(handlers) = click_handlers {
                             if on_view
                                 && self.window_state.is_clicking(&view_id)
                                 && last_pointer_down.is_some()
@@ -453,9 +463,13 @@ impl EventCx<'_> {
                         let on_view = rect.contains(state.logical_point());
 
                         let last_pointer_down = view_state.borrow_mut().last_pointer_down.take();
-                        let event_listeners = view_state.borrow().event_listeners.clone();
-                        if let Some(handlers) = event_listeners.get(&EventListener::SecondaryClick)
-                        {
+                        // Only clone specific handlers, not the entire HashMap.
+                        let secondary_click_handlers = view_state
+                            .borrow()
+                            .event_listeners
+                            .get(&EventListener::SecondaryClick)
+                            .cloned();
+                        if let Some(handlers) = secondary_click_handlers {
                             if on_view
                                 && last_pointer_down.is_some()
                                 && handlers.iter().fold(false, |handled, handler| {
@@ -509,8 +523,13 @@ impl EventCx<'_> {
 
         if !disable_default {
             if let Some(listener) = event.listener() {
-                let event_listeners = view_state.borrow().event_listeners.clone();
-                if let Some(handlers) = event_listeners.get(&listener).cloned() {
+                // Only clone specific handlers, not the entire HashMap.
+                let handlers = view_state
+                    .borrow()
+                    .event_listeners
+                    .get(&listener)
+                    .cloned();
+                if let Some(handlers) = handlers {
                     let should_run = if let Some(pos) = event.point() {
                         let rect = view_id.get_size().unwrap_or_default().to_rect();
                         rect.contains(pos)
