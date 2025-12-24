@@ -216,9 +216,29 @@ impl<'a> StyleCx<'a> {
         // If there's any changes to the Taffy style, request layout.
         let layout_style = view_state.borrow().layout_props.to_style();
         let taffy_style = self.direct.clone().apply(layout_style).to_taffy_style();
-        if taffy_style != view_state.borrow().taffy_style {
-            view_state.borrow_mut().taffy_style = taffy_style;
+        let old_taffy_style = view_state.borrow().taffy_style.clone();
+        if taffy_style != old_taffy_style {
+            view_state.borrow_mut().taffy_style = taffy_style.clone();
             self.window_state.schedule_layout(view_id);
+
+            // If display changed from None to visible, request style and layout for all children recursively.
+            // This is needed because children of display:None elements may not have been properly
+            // laid out, and when the parent becomes visible again, the children need to be re-styled
+            // and re-laid out.
+            let was_hidden = old_taffy_style.display == taffy::Display::None;
+            let is_visible = taffy_style.display != taffy::Display::None;
+            if was_hidden && is_visible {
+                fn request_style_layout_recursive(id: ViewId) {
+                    id.request_style_recursive();
+                    id.request_layout();
+                    for child in id.children() {
+                        request_style_layout_recursive(child);
+                    }
+                }
+                for child in view_id.children() {
+                    request_style_layout_recursive(child);
+                }
+            }
         }
 
         view.borrow_mut().style_pass(self);

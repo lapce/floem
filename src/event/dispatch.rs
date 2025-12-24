@@ -137,10 +137,27 @@ impl EventCx<'_> {
             let mut consuming_item_parent_chain: Option<&SmallVec<[ViewId; 8]>> = None;
 
             for item in items.iter().rev() {
-                // Use should_send (with absolute coordinates) to check if the event point
-                // is inside the item. The absolute_event and layout_rect are both in
-                // window coordinates.
-                if !self.should_send(item.view_id, absolute_event) {
+                let should_send_to_view = self.should_send(item.view_id, absolute_event);
+
+                // If the view creates a stacking context, we must recurse into its children
+                // even if the parent fails clip_rect. This handles absolute positioned elements
+                // (like dropdowns) that extend beyond their parent's clip area.
+                // The children might have different clip_rects that allow the event.
+                if item.creates_context && !should_send_to_view {
+                    // Recurse into the nested stacking context to check children
+                    let (event_propagation, _) =
+                        self.unconditional_view_event(item.view_id, absolute_event, false);
+
+                    if event_propagation.is_processed() {
+                        return (EventPropagation::Stop, PointerEventConsumed::Yes);
+                    }
+                    // If no child consumed the event, continue to check siblings.
+                    // We don't break on pointer_event_consumed here because
+                    // unconditional_view_event returns Yes even when no child matched.
+                    continue;
+                }
+
+                if !should_send_to_view {
                     continue;
                 }
 

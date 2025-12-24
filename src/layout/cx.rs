@@ -108,11 +108,29 @@ impl<'a> ComputeLayoutCx<'a> {
         // Compute this view's clip_rect in window coordinates.
         // It's the intersection of the parent's clip_rect with this view's visible area.
         let view_rect_in_window = size.to_rect().with_origin(window_origin);
-        let view_clip_rect = self.clip_rect.intersect(view_rect_in_window);
+
+        // For absolute positioned elements, don't constrain clip_rect to parent's clip.
+        // This allows dropdowns, modals, tooltips, etc. to receive events even when
+        // they extend beyond their parent container (like a scroll view).
+        let is_absolute = view_state.borrow().taffy_style.position == taffy::Position::Absolute;
+        let view_clip_rect = if is_absolute {
+            // Absolute elements can receive events anywhere they're rendered
+            view_rect_in_window
+        } else {
+            self.clip_rect.intersect(view_rect_in_window)
+        };
 
         // If this view has a viewport (scroll view), it clips its children.
         // Update self.clip_rect for child layout.
         if this_viewport.is_some() {
+            self.clip_rect = view_clip_rect;
+        }
+
+        // For absolute positioned elements, also update clip_rect for children.
+        // This ensures that children of absolute elements (like dropdown items)
+        // can receive events even when the absolute element extends beyond
+        // its parent's clip area.
+        if is_absolute {
             self.clip_rect = view_clip_rect;
         }
 
