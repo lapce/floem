@@ -324,6 +324,111 @@ fn bench_event_sequence(c: &mut Criterion) {
     group.finish();
 }
 
+/// Benchmarks specifically designed to measure hit test result caching effectiveness.
+/// These simulate real-world event patterns where multiple events occur at the same location.
+fn bench_cache_effectiveness(c: &mut Criterion) {
+    let mut group = c.benchmark_group("cache_effectiveness");
+
+    // Benchmark: 20 consecutive events at the SAME location
+    // This is the ideal case for a result cache - should see maximum benefit
+    for size in [50, 100].iter() {
+        group.bench_with_input(
+            BenchmarkId::new("same_location_20_events", size),
+            size,
+            |b, &size| {
+                let view = create_flat_tree(size);
+                let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+                b.iter(|| {
+                    for _ in 0..20 {
+                        harness.pointer_move(black_box(50.0), black_box(50.0));
+                    }
+                });
+            },
+        );
+    }
+
+    // Benchmark: Alternating between 2 locations
+    // A 2-entry cache should handle this well without thrashing
+    for size in [50, 100].iter() {
+        group.bench_with_input(
+            BenchmarkId::new("alternating_2_locations", size),
+            size,
+            |b, &size| {
+                let view = create_flat_tree(size);
+                let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+                b.iter(|| {
+                    for i in 0..20 {
+                        let x = if i % 2 == 0 { 25.0 } else { 75.0 };
+                        harness.pointer_move(black_box(x), black_box(50.0));
+                    }
+                });
+            },
+        );
+    }
+
+    // Benchmark: Alternating between 3 locations
+    // A 2-entry cache will thrash here - this shows the limitation
+    for size in [50, 100].iter() {
+        group.bench_with_input(
+            BenchmarkId::new("alternating_3_locations", size),
+            size,
+            |b, &size| {
+                let view = create_flat_tree(size);
+                let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+                b.iter(|| {
+                    for i in 0..20 {
+                        let x = match i % 3 {
+                            0 => 20.0,
+                            1 => 50.0,
+                            _ => 80.0,
+                        };
+                        harness.pointer_move(black_box(x), black_box(50.0));
+                    }
+                });
+            },
+        );
+    }
+
+    // Benchmark: Simulated mouse hover with small movements
+    // Real mouse movement often stays in a small area
+    group.bench_function("hover_jitter_small_area", |b| {
+        let view = create_flat_tree(100);
+        let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+        b.iter(|| {
+            // Simulate small jittery movements around a point
+            for i in 0..20 {
+                let offset = (i % 5) as f64 * 0.5; // 0, 0.5, 1.0, 1.5, 2.0 pixel offsets
+                harness.pointer_move(black_box(50.0 + offset), black_box(50.0));
+            }
+        });
+    });
+
+    // Benchmark: Hit testing only (no event dispatch overhead)
+    // Direct comparison for cache effectiveness on hit_test alone
+    for size in [50, 100].iter() {
+        group.bench_with_input(
+            BenchmarkId::new("hit_test_same_location_20x", size),
+            size,
+            |b, &size| {
+                let view = create_flat_tree(size);
+                let harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+                b.iter(|| {
+                    for _ in 0..20 {
+                        black_box(harness.view_at(black_box(50.0), black_box(50.0)));
+                    }
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_flat_tree_dispatch,
@@ -333,6 +438,7 @@ criterion_group!(
     bench_hit_testing,
     bench_scroll_events,
     bench_event_sequence,
+    bench_cache_effectiveness,
 );
 
 criterion_main!(benches);

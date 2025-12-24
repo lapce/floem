@@ -21,6 +21,8 @@
 //! let result = harness.pointer_down(50.0, 50.0);
 //! ```
 
+use std::cell::RefCell;
+
 use peniko::kurbo::{Point, Size};
 
 use crate::context::InteractionState;
@@ -509,9 +511,114 @@ fn create_scroll_lines_event(x: f64, y: f64, lines_x: f32, lines_y: f32) -> Even
     }))
 }
 
+// ============================================================================
+// Hit Test Result Cache
+// ============================================================================
+//
+// A small 2-entry cache for hit test results, inspired by Chromium's Blink engine.
+// This exploits the common pattern where multiple events occur at the same location
+// (e.g., mousedown, mouseup, click all at the same point).
+//
+// The cache size of 2 is chosen because:
+// 1. It handles the ping-pong pattern of alternating event types
+// 2. It's cheap to store and search (O(2) lookup)
+// 3. Matches Blink's proven design: HIT_TEST_CACHE_SIZE = 2
+
+/// Cache entry for hit test results.
+#[derive(Clone, Copy)]
+struct HitTestCacheEntry {
+    /// The root view ID for this hit test
+    root_id: ViewId,
+    /// The point that was tested (in window coordinates)
+    point: Point,
+    /// The result of the hit test
+    result: Option<ViewId>,
+}
+
+/// 2-entry hit test result cache.
+struct HitTestCache {
+    entries: [Option<HitTestCacheEntry>; 2],
+    /// Index of next slot to write (round-robin)
+    next_slot: usize,
+}
+
+impl HitTestCache {
+    const fn new() -> Self {
+        Self {
+            entries: [None, None],
+            next_slot: 0,
+        }
+    }
+
+    /// Look up a cached hit test result.
+    /// Returns Some(result) on cache hit, None on cache miss.
+    #[inline]
+    fn lookup(&self, root_id: ViewId, point: Point) -> Option<Option<ViewId>> {
+        for entry in &self.entries {
+            if let Some(e) = entry {
+                // Use bitwise comparison for Point (exact match like Blink)
+                if e.root_id == root_id
+                    && e.point.x.to_bits() == point.x.to_bits()
+                    && e.point.y.to_bits() == point.y.to_bits()
+                {
+                    return Some(e.result);
+                }
+            }
+        }
+        None
+    }
+
+    /// Add a hit test result to the cache.
+    #[inline]
+    fn insert(&mut self, root_id: ViewId, point: Point, result: Option<ViewId>) {
+        self.entries[self.next_slot] = Some(HitTestCacheEntry {
+            root_id,
+            point,
+            result,
+        });
+        self.next_slot = (self.next_slot + 1) % 2;
+    }
+
+    /// Clear the cache. Call this when layout or view tree changes.
+    #[inline]
+    fn clear(&mut self) {
+        self.entries = [None, None];
+    }
+}
+
+thread_local! {
+    static HIT_TEST_CACHE: RefCell<HitTestCache> = const { RefCell::new(HitTestCache::new()) };
+}
+
+/// Clear the hit test result cache.
+/// Call this when layout changes, view tree changes, or at the start of a new frame.
+pub fn clear_hit_test_cache() {
+    HIT_TEST_CACHE.with(|cache| cache.borrow_mut().clear());
+}
+
 /// Perform a hit test to find the view at the given point.
 /// Uses CSS stacking context semantics to find the topmost view.
+///
+/// Results are cached in a 2-entry cache to optimize repeated hit tests
+/// at the same location (common during event sequences like click).
 fn hit_test(view_id: ViewId, point: Point) -> Option<ViewId> {
+    // Check cache first
+    if let Some(cached_result) = HIT_TEST_CACHE.with(|cache| cache.borrow().lookup(view_id, point))
+    {
+        return cached_result;
+    }
+
+    // Cache miss - perform the actual hit test
+    let result = hit_test_uncached(view_id, point);
+
+    // Store result in cache
+    HIT_TEST_CACHE.with(|cache| cache.borrow_mut().insert(view_id, point, result));
+
+    result
+}
+
+/// Perform a hit test without caching (internal implementation).
+fn hit_test_uncached(view_id: ViewId, point: Point) -> Option<ViewId> {
     if view_id.is_hidden() {
         return None;
     }
@@ -536,7 +643,7 @@ fn hit_test(view_id: ViewId, point: Point) -> Option<ViewId> {
         if child_rect.contains(point) {
             // If this item creates a stacking context, recursively hit test its children
             if item.creates_context {
-                if let Some(hit) = hit_test(item.view_id, point) {
+                if let Some(hit) = hit_test_uncached(item.view_id, point) {
                     return Some(hit);
                 }
             } else {
