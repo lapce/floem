@@ -518,7 +518,8 @@ fn test_with_trigger_sibling() {
             .z_index(99)
     });
 
-    let trigger = tracker.track_named("trigger", Empty::new())
+    let trigger = tracker
+        .track_named("trigger", Empty::new())
         .style(|s| s.width(100.0).height(36.0));
 
     let view = stack((trigger, backdrop, dropdown)).style(|s| s.size(200.0, 200.0));
@@ -568,7 +569,8 @@ fn test_with_container_wrapper() {
             .z_index(99)
     });
 
-    let trigger = tracker.track_named("trigger", Empty::new())
+    let trigger = tracker
+        .track_named("trigger", Empty::new())
         .style(|s| s.width(100.0).height(36.0));
 
     let view = Container::new(stack((trigger, backdrop, dropdown)))
@@ -626,7 +628,8 @@ fn test_with_vstack_items() {
             .z_index(99)
     });
 
-    let trigger = tracker.track_named("trigger", Empty::new())
+    let trigger = tracker
+        .track_named("trigger", Empty::new())
         .style(|s| s.width(100.0).height(36.0));
 
     let view = Container::new(stack((trigger, backdrop, dropdown)))
@@ -685,7 +688,8 @@ fn test_inside_scroll_view() {
             .z_index(99)
     });
 
-    let trigger = tracker.track_named("trigger", Empty::new())
+    let trigger = tracker
+        .track_named("trigger", Empty::new())
         .style(|s| s.width(120.0).height(36.0));
 
     let content = Container::new(stack((trigger, backdrop, dropdown)))
@@ -749,7 +753,7 @@ fn test_inset_left_right_without_width() {
         s.absolute()
             .inset_top(40.0)
             .inset_left(0.0)
-            .inset_right(0.0)  // No explicit width!
+            .inset_right(0.0) // No explicit width!
             .z_index(100)
     });
 
@@ -762,7 +766,8 @@ fn test_inset_left_right_without_width() {
             .z_index(99)
     });
 
-    let trigger = tracker.track_named("trigger", Empty::new())
+    let trigger = tracker
+        .track_named("trigger", Empty::new())
         .style(|s| s.width(120.0).height(36.0));
 
     let view = Container::new(stack((trigger, backdrop, dropdown)))
@@ -817,7 +822,7 @@ fn test_with_width_full_items_fixed() {
         tracker.track_named("item1", Empty::new().style(|s| s.width_full().height(30.0))),
         tracker.track_named("item2", Empty::new().style(|s| s.width_full().height(30.0))),
     ))
-    .style(|s| s.width_full());  // FIX: add width_full to v_stack
+    .style(|s| s.width_full()); // FIX: add width_full to v_stack
 
     let dropdown = Container::new(items_container).style(|s| {
         s.absolute()
@@ -836,7 +841,8 @@ fn test_with_width_full_items_fixed() {
             .z_index(99)
     });
 
-    let trigger = tracker.track_named("trigger", Empty::new())
+    let trigger = tracker
+        .track_named("trigger", Empty::new())
         .style(|s| s.width(120.0).height(36.0));
 
     let view = Container::new(stack((trigger, backdrop, dropdown)))
@@ -895,7 +901,8 @@ fn test_with_vstack_width_full() {
             .z_index(99)
     });
 
-    let trigger = tracker.track_named("trigger", Empty::new())
+    let trigger = tracker
+        .track_named("trigger", Empty::new())
         .style(|s| s.width(120.0).height(36.0));
 
     let view = Container::new(stack((trigger, backdrop, dropdown)))
@@ -960,7 +967,8 @@ fn test_select_like_no_explicit_container_width() {
     });
 
     // Trigger with min_width only - no explicit width
-    let trigger = tracker.track_named("trigger", Empty::new())
+    let trigger = tracker
+        .track_named("trigger", Empty::new())
         .style(|s| s.min_width(120.0).height(36.0));
 
     // Outer container has position:relative but NO explicit width
@@ -969,8 +977,7 @@ fn test_select_like_no_explicit_container_width() {
         .style(|s| s.position(Position::Relative).min_width(120.0));
 
     // Wrap in v_stack like a real app would
-    let view = v_stack((select_container,))
-        .style(|s| s.width_full().height_full().padding(50.0));
+    let view = v_stack((select_container,)).style(|s| s.width_full().height_full().padding(50.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 400.0, 400.0);
 
@@ -1026,14 +1033,14 @@ fn test_select_structure_with_inset_top_pct() {
             .z_index(99)
     });
 
-    let trigger = tracker.track_named("trigger", Empty::new())
+    let trigger = tracker
+        .track_named("trigger", Empty::new())
         .style(|s| s.min_width(120.0).height(36.0));
 
     let select_container = Container::new(stack((trigger, backdrop, dropdown)))
         .style(|s| s.position(Position::Relative).min_width(120.0));
 
-    let view = v_stack((select_container,))
-        .style(|s| s.width_full().height_full().padding(50.0));
+    let view = v_stack((select_container,)).style(|s| s.width_full().height_full().padding(50.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 400.0, 400.0);
 
@@ -1094,23 +1101,26 @@ fn test_display_none_to_visible_layout() {
         }
     });
 
-    let backdrop = tracker.track_named("backdrop", Empty::new()).style(move |s| {
-        let open = is_open.get();
-        let base = s
-            .absolute()
-            .inset_top(-100.0)
-            .inset_left(-100.0)
-            .width(500.0)
-            .height(500.0)
-            .z_index(99);
-        if open {
-            base
-        } else {
-            base.display(floem::style::Display::None)
-        }
-    });
+    let backdrop = tracker
+        .track_named("backdrop", Empty::new())
+        .style(move |s| {
+            let open = is_open.get();
+            let base = s
+                .absolute()
+                .inset_top(-100.0)
+                .inset_left(-100.0)
+                .width(500.0)
+                .height(500.0)
+                .z_index(99);
+            if open {
+                base
+            } else {
+                base.display(floem::style::Display::None)
+            }
+        });
 
-    let trigger = tracker.track_named("trigger", Empty::new())
+    let trigger = tracker
+        .track_named("trigger", Empty::new())
         .style(|s| s.width(100.0).height(36.0));
 
     let view = Container::new(stack((trigger, backdrop, dropdown)))
@@ -1163,23 +1173,26 @@ fn test_display_toggle_multiple_times() {
         }
     });
 
-    let backdrop = tracker.track_named("backdrop", Empty::new()).style(move |s| {
-        let open = is_open.get();
-        let base = s
-            .absolute()
-            .inset_top(-100.0)
-            .inset_left(-100.0)
-            .width(500.0)
-            .height(500.0)
-            .z_index(99);
-        if open {
-            base
-        } else {
-            base.display(floem::style::Display::None)
-        }
-    });
+    let backdrop = tracker
+        .track_named("backdrop", Empty::new())
+        .style(move |s| {
+            let open = is_open.get();
+            let base = s
+                .absolute()
+                .inset_top(-100.0)
+                .inset_left(-100.0)
+                .width(500.0)
+                .height(500.0)
+                .z_index(99);
+            if open {
+                base
+            } else {
+                base.display(floem::style::Display::None)
+            }
+        });
 
-    let trigger = tracker.track_named("trigger", Empty::new())
+    let trigger = tracker
+        .track_named("trigger", Empty::new())
         .style(|s| s.width(100.0).height(36.0));
 
     let view = Container::new(stack((trigger, backdrop, dropdown)))
@@ -1270,31 +1283,34 @@ fn test_inside_scroll_view_with_display_toggle() {
         }
     });
 
-    let backdrop = tracker.track_named("backdrop", Empty::new()).style(move |s| {
-        let open = is_open.get();
-        let base = s
-            .absolute()
-            .inset_top(-100.0)
-            .inset_left(-100.0)
-            .width(500.0)
-            .height(500.0)
-            .z_index(99);
-        if open {
-            base
-        } else {
-            base.display(floem::style::Display::None)
-        }
-    });
+    let backdrop = tracker
+        .track_named("backdrop", Empty::new())
+        .style(move |s| {
+            let open = is_open.get();
+            let base = s
+                .absolute()
+                .inset_top(-100.0)
+                .inset_left(-100.0)
+                .width(500.0)
+                .height(500.0)
+                .z_index(99);
+            if open {
+                base
+            } else {
+                base.display(floem::style::Display::None)
+            }
+        });
 
-    let trigger = tracker.track_named("trigger", Empty::new())
+    let trigger = tracker
+        .track_named("trigger", Empty::new())
         .style(|s| s.width(100.0).height(36.0));
 
     let select_container = Container::new(stack((trigger, backdrop, dropdown)))
         .style(|s| s.position(Position::Relative).width(120.0));
 
     // Wrap in a content container inside a Scroll view - like the showcase
-    let content = Container::new(select_container)
-        .style(|s| s.width_full().height(500.0).padding(20.0));
+    let content =
+        Container::new(select_container).style(|s| s.width_full().height(500.0).padding(20.0));
 
     let view = Scroll::new(content).style(|s| s.width_full().height_full());
 
@@ -1356,31 +1372,34 @@ fn test_inset_top_pct_positioning() {
         }
     });
 
-    let backdrop = tracker.track_named("backdrop", Empty::new()).style(move |s| {
-        let open = is_open.get();
-        let base = s
-            .absolute()
-            .inset_top(-100.0)
-            .inset_left(-100.0)
-            .width(500.0)
-            .height(500.0)
-            .z_index(99);
-        if open {
-            base
-        } else {
-            base.display(floem::style::Display::None)
-        }
-    });
+    let backdrop = tracker
+        .track_named("backdrop", Empty::new())
+        .style(move |s| {
+            let open = is_open.get();
+            let base = s
+                .absolute()
+                .inset_top(-100.0)
+                .inset_left(-100.0)
+                .width(500.0)
+                .height(500.0)
+                .z_index(99);
+            if open {
+                base
+            } else {
+                base.display(floem::style::Display::None)
+            }
+        });
 
-    let trigger = tracker.track_named("trigger", Empty::new())
+    let trigger = tracker
+        .track_named("trigger", Empty::new())
         .style(|s| s.width(100.0).height(36.0));
 
     // Container with position:relative - dropdown will be positioned relative to this
     let select_container = Container::new(stack((trigger, backdrop, dropdown)))
         .style(|s| s.position(Position::Relative).width(120.0).height(36.0));
 
-    let view = Container::new(select_container)
-        .style(|s| s.width_full().height_full().padding(50.0));
+    let view =
+        Container::new(select_container).style(|s| s.width_full().height_full().padding(50.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 300.0, 300.0);
 
@@ -1450,23 +1469,26 @@ fn test_dropdown_extends_beyond_scroll_area() {
         }
     });
 
-    let backdrop = tracker.track_named("backdrop", Empty::new()).style(move |s| {
-        let open = is_open.get();
-        let base = s
-            .absolute()
-            .inset_top(-100.0)
-            .inset_left(-100.0)
-            .width(500.0)
-            .height(500.0)
-            .z_index(99);
-        if open {
-            base
-        } else {
-            base.display(floem::style::Display::None)
-        }
-    });
+    let backdrop = tracker
+        .track_named("backdrop", Empty::new())
+        .style(move |s| {
+            let open = is_open.get();
+            let base = s
+                .absolute()
+                .inset_top(-100.0)
+                .inset_left(-100.0)
+                .width(500.0)
+                .height(500.0)
+                .z_index(99);
+            if open {
+                base
+            } else {
+                base.display(floem::style::Display::None)
+            }
+        });
 
-    let trigger = tracker.track_named("trigger", Empty::new())
+    let trigger = tracker
+        .track_named("trigger", Empty::new())
         .style(|s| s.width(100.0).height(36.0));
 
     let select_container = Container::new(stack((trigger, backdrop, dropdown)))
@@ -1474,8 +1496,8 @@ fn test_dropdown_extends_beyond_scroll_area() {
 
     // Content is taller than the scroll container
     // Select is at the top (padding: 20), dropdown extends below
-    let content = Container::new(select_container)
-        .style(|s| s.width_full().height(200.0).padding(20.0));
+    let content =
+        Container::new(select_container).style(|s| s.width_full().height(200.0).padding(20.0));
 
     // Scroll container is smaller than content - this creates clipping
     let view = Scroll::new(content).style(|s| s.width(200.0).height(100.0));
