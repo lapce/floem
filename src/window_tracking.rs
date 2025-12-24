@@ -5,17 +5,18 @@
 //! such as screen position.
 use crate::ViewId;
 use peniko::kurbo::{Point, Rect};
-use std::{
-    collections::HashMap,
-    sync::{Arc, OnceLock, RwLock},
-};
+use std::{collections::HashMap, sync::Arc};
 use winit::{
     dpi::{PhysicalPosition, PhysicalSize},
     monitor::MonitorHandle,
     window::{Window, WindowId},
 };
 
-static WINDOW_FOR_WINDOW_AND_ROOT_IDS: OnceLock<RwLock<WindowMapping>> = OnceLock::new();
+use std::cell::RefCell;
+
+thread_local! {
+    static WINDOW_FOR_WINDOW_AND_ROOT_IDS: RefCell<WindowMapping> = RefCell::new(WindowMapping::default());
+}
 
 /// Add a mapping from `root_id` -> `window_id` -> `window` for the given triple.
 pub fn store_window_id_mapping(
@@ -96,38 +97,26 @@ pub fn with_window_id_and_window<F: FnOnce(&WindowId, &Arc<dyn Window>) -> T, T>
 ) -> Option<T> {
     view.root()
         .and_then(|root_view_id| with_window_map(|m| m.with_window_id_and_window(root_view_id, f)))
-        .unwrap_or(None)
 }
 
 pub fn is_known_root(id: &ViewId) -> bool {
-    with_window_map(|map| map.window_id_for_root_view_id.contains_key(id)).unwrap_or(false)
+    with_window_map(|map| map.window_id_for_root_view_id.contains_key(id))
 }
 
-fn with_window_map_mut<F: FnMut(&mut WindowMapping)>(mut f: F) -> bool {
-    let map = WINDOW_FOR_WINDOW_AND_ROOT_IDS.get_or_init(|| RwLock::new(Default::default()));
-    if let Ok(mut map) = map.write() {
-        f(&mut map);
-        true
-    } else {
-        false
-    }
+fn with_window_map_mut<F: FnOnce(&mut WindowMapping) -> T, T>(f: F) -> T {
+    WINDOW_FOR_WINDOW_AND_ROOT_IDS.with(|map| f(&mut map.borrow_mut()))
 }
 
-fn with_window_map<F: FnOnce(&WindowMapping) -> T, T>(f: F) -> Option<T> {
-    let map = WINDOW_FOR_WINDOW_AND_ROOT_IDS.get_or_init(|| RwLock::new(Default::default()));
-    if let Ok(map) = map.read() {
-        Some(f(&map))
-    } else {
-        None
-    }
+fn with_window_map<F: FnOnce(&WindowMapping) -> T, T>(f: F) -> T {
+    WINDOW_FOR_WINDOW_AND_ROOT_IDS.with(|map| f(&map.borrow()))
 }
 
 pub fn with_window<F: FnOnce(&Arc<dyn Window>) -> T, T>(window: &WindowId, f: F) -> Option<T> {
-    with_window_map(|m| m.with_window(window, |w| f(w))).unwrap_or(None)
+    with_window_map(|m| m.with_window(window, |w| f(w)))
 }
 
 pub fn root_view_id(window: &WindowId) -> Option<ViewId> {
-    with_window_map(|m| m.root_view_id_for(window)).unwrap_or(None)
+    with_window_map(|m| m.root_view_id_for(window))
 }
 
 /// Force a single window to repaint - this is necessary in cases where the
@@ -138,11 +127,10 @@ pub fn force_window_repaint(id: &WindowId) -> bool {
         m.with_window(id, |window| window.request_redraw())
             .is_some()
     })
-    .unwrap_or(false)
 }
 
 pub fn window_id_for_root(root_id: ViewId) -> Option<WindowId> {
-    with_window_map(|map| map.window_id_for_root(&root_id)).unwrap_or(None)
+    with_window_map(|map| map.window_id_for_root(&root_id))
 }
 
 pub fn monitor_bounds(id: &WindowId) -> Option<Rect> {
@@ -154,7 +142,6 @@ pub fn monitor_bounds(id: &WindowId) -> Option<Rect> {
         })
         .unwrap_or(None)
     })
-    .unwrap_or(None)
 }
 
 pub fn monitor_bounds_for_monitor(window: &Arc<dyn Window>, monitor: &MonitorHandle) -> Rect {
@@ -197,7 +184,6 @@ pub fn window_inner_screen_position(id: &WindowId) -> Option<Point> {
             scale_point(window, Point::new(pos.x as f64, pos.y as f64))
         })
     })
-    .unwrap_or(None)
 }
 
 pub fn window_inner_screen_bounds(id: &WindowId) -> Option<Rect> {
@@ -207,7 +193,6 @@ pub fn window_inner_screen_bounds(id: &WindowId) -> Option<Rect> {
             rect_from_physical_bounds_for_window(window, pos, window.surface_size())
         })
     })
-    .unwrap_or(None)
 }
 
 pub fn rect_from_physical_bounds_for_window(
@@ -236,7 +221,6 @@ pub fn window_outer_screen_position(id: &WindowId) -> Option<Point> {
         })
         .unwrap_or(None)
     })
-    .unwrap_or(None)
 }
 
 pub fn window_outer_screen_bounds(id: &WindowId) -> Option<Rect> {
@@ -255,5 +239,4 @@ pub fn window_outer_screen_bounds(id: &WindowId) -> Option<Rect> {
         })
         .unwrap_or(None)
     })
-    .unwrap_or(None)
 }
