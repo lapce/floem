@@ -176,8 +176,9 @@ impl EventCx<'_> {
             // Event bubbling: if a child consumed the event but didn't stop propagation,
             // bubble up through its cached parent chain until we reach the stacking context root
             if let Some(parent_chain) = consuming_item_parent_chain {
-                // Iterate through the cached parent chain (ordered from immediate parent to root)
-                for &ancestor_id in parent_chain.iter() {
+                // Iterate through the cached parent chain in reverse (from immediate parent to root)
+                // Parent chain is stored ancestor-to-parent for O(1) push during collection
+                for &ancestor_id in parent_chain.iter().rev() {
                     // Pass absolute event reference - each ancestor converts to local
                     // using its own local_to_root_transform
                     let (event_propagation, _) =

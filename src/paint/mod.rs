@@ -150,12 +150,12 @@ impl PaintCx<'_> {
             }
 
             // Find common prefix length between current_chain and item's parent chain.
-            // parent_chain is [immediate_parent, ..., root_child], we compare in root-to-item order.
-            // current_chain[i] should match parent_chain[len - 1 - i]
+            // parent_chain is [root_child, ..., immediate_parent] (ancestor-to-parent order).
+            // Both chains are in root-to-item order, so we can compare directly.
             let item_chain_len = item.parent_chain.len();
             let common_len = current_chain
                 .iter()
-                .zip(item.parent_chain.iter().rev())
+                .zip(item.parent_chain.iter())
                 .take_while(|(a, b)| a == b)
                 .count();
 
@@ -167,8 +167,9 @@ impl PaintCx<'_> {
 
             // Push new transforms for the remaining ancestors
             // Iterate from common_len to item_chain_len in root-to-item order
+            // parent_chain is already in root-to-item order, so index directly
             for i in common_len..item_chain_len {
-                let ancestor = item.parent_chain[item_chain_len - 1 - i];
+                let ancestor = item.parent_chain[i];
                 self.save();
                 self.transform(ancestor);
                 current_chain.push(ancestor);

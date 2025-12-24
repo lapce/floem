@@ -3,13 +3,16 @@
 //! This module implements true CSS stacking context semantics where children of
 //! non-stacking-context views participate in their ancestor's stacking context.
 
+use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 
 use crate::view::ViewId;
 
 /// Type alias for parent chain storage.
 /// Uses SmallVec to avoid heap allocation for shallow nesting (common case).
+/// Stored in ancestor-to-parent order (root first, immediate parent last).
+/// Iterate with `.iter().rev()` to go from immediate parent up to root.
 pub(crate) type ParentChain = SmallVec<[ViewId; 8]>;
 
 /// An item to be painted within a stacking context.
@@ -23,7 +26,8 @@ pub(crate) struct StackingContextItem {
     /// If true, this view creates a stacking context; paint it atomically with children
     pub creates_context: bool,
     /// Cached parent chain from this view up to (but not including) the stacking context root.
-    /// Ordered from immediate parent towards root. Used for event bubbling and painting transforms.
+    /// Stored in ancestor-to-parent order (root first, immediate parent last).
+    /// Iterate with `.iter().rev()` to go from immediate parent up to root for event bubbling.
     /// Wrapped in Rc to share among siblings (they have the same parent chain).
     pub parent_chain: Rc<ParentChain>,
 }
@@ -35,9 +39,10 @@ pub(crate) type StackingContextItems = SmallVec<[StackingContextItem; 8]>;
 // Thread-local cache for stacking context items.
 // Key: ViewId of the stacking context root
 // Value: Sorted list of items in that stacking context (Rc to avoid cloning on cache hit)
+// Uses FxHashMap for faster hashing of ViewId keys.
 thread_local! {
-    static STACKING_CONTEXT_CACHE: RefCell<HashMap<ViewId, Rc<StackingContextItems>>> =
-        RefCell::new(HashMap::new());
+    static STACKING_CONTEXT_CACHE: RefCell<FxHashMap<ViewId, Rc<StackingContextItems>>> =
+        RefCell::new(FxHashMap::default());
 }
 
 /// Invalidates the stacking context cache for a view and all its ancestors.
@@ -140,10 +145,12 @@ fn collect_items_recursive(
     // If this view doesn't create a stacking context, its children participate
     // in the parent's stacking context (they can interleave with uncles/aunts)
     if !info.creates_context {
-        // Build the parent chain for children: current view + our parent chain
-        // Create a new Rc that all children (siblings) will share
+        // Build the parent chain for children: our parent chain + current view
+        // Using push (O(1)) instead of insert(0, ...) (O(n)) for better performance.
+        // The chain is stored ancestor-to-parent (root first), iterate with .rev() to bubble.
+        // Create a new Rc that all children (siblings) will share.
         let mut child_parent_chain = (*parent_chain).clone();
-        child_parent_chain.insert(0, view_id);
+        child_parent_chain.push(view_id);
         let child_parent_chain = Rc::new(child_parent_chain);
         for child in view_id.children() {
             collect_items_recursive(
