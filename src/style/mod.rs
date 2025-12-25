@@ -1226,6 +1226,12 @@ define_builtin_props!(
     /// Higher values appear in front of lower values.
     ZIndex z_index { nocb, tr }: Option<i32> {} = None,
 
+    /// Sets the opacity of the view.
+    ///
+    /// Value ranges from 0.0 (fully transparent) to 1.0 (fully opaque).
+    /// Per CSS spec, opacity < 1.0 creates a stacking context.
+    Opacity opacity { nocb, tr }: Option<f32> {} = None,
+
     /// Sets the cursor style when hovering over the view.
     ///
     /// Changes the appearance of the mouse cursor.
@@ -2430,6 +2436,14 @@ impl Style {
     /// Sets the stack order of the view.
     pub fn z_index(self, z_index: i32) -> Self {
         self.set(ZIndex, Some(z_index))
+    }
+
+    /// Sets the opacity of the view.
+    ///
+    /// Value should be between 0.0 (fully transparent) and 1.0 (fully opaque).
+    /// Per CSS spec, opacity < 1.0 creates a stacking context.
+    pub fn opacity(self, opacity: f32) -> Self {
+        self.set(Opacity, Some(opacity))
     }
 
     /// Sets uniform scaling for both X and Y axes.

@@ -21,7 +21,8 @@ use crate::view::{ChangeFlags, StackingInfo};
 use crate::window::state::WindowState;
 
 use super::{
-    Disabled, DisplayProp, Focusable, Hidden, OverflowX, OverflowY, Style, StyleProp, ZIndex,
+    Disabled, DisplayProp, Focusable, Hidden, Opacity, OverflowX, OverflowY, Style, StyleProp,
+    ZIndex,
 };
 
 /// The interaction state of a view, used to determine which style selectors apply.
@@ -316,9 +317,10 @@ impl<'a> StyleCx<'a> {
         // - Any non-identity transform
         // - A viewport (scroll views) - these offset their children's coordinates
         // - Overflow set to Scroll or Hidden (scroll views, clip views) - they manage child painting
+        // - Opacity < 1.0 (per CSS spec)
         // Note: Unlike our previous implementation, `position: absolute` alone does NOT
         // create a stacking context per CSS spec. It needs explicit z-index to do so.
-        // Missing CSS triggers (not implemented in floem): opacity < 1, filter, clip-path,
+        // Missing CSS triggers (not implemented in floem): filter, clip-path,
         // mask, isolation: isolate, mix-blend-mode, contain.
         let z_index = view_state.borrow().combined_style.get(ZIndex);
         let has_transform = transform != Affine::IDENTITY;
@@ -333,9 +335,15 @@ impl<'a> StyleCx<'a> {
             overflow_y,
             taffy::Overflow::Scroll | taffy::Overflow::Hidden
         );
+        // CSS spec: opacity < 1 creates a stacking context
+        let opacity = view_state.borrow().combined_style.get(Opacity);
+        let has_opacity = opacity.is_some_and(|o| o < 1.0);
 
-        let creates_context =
-            z_index.is_some() || has_transform || has_viewport || has_scroll_overflow;
+        let creates_context = z_index.is_some()
+            || has_transform
+            || has_viewport
+            || has_scroll_overflow
+            || has_opacity;
 
         let new_stacking_info = StackingInfo {
             creates_context,

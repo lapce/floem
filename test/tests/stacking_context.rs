@@ -1242,3 +1242,265 @@ fn test_stacking_context_explicit_z_index_zero() {
         "Child should NOT receive click - bounded by Parent's explicit z-index: 0"
     );
 }
+
+// ========== Opacity Stacking Context Tests ==========
+// CSS spec: opacity < 1 creates a stacking context, bounding children
+
+#[test]
+fn test_opacity_creates_stacking_context() {
+    // Test that opacity < 1 creates a stacking context, bounding children.
+    //
+    // Structure:
+    //   Root
+    //   ├── Parent (opacity: 0.5, creates stacking context!)
+    //   │   └── Child (z-index: 100)  <-- bounded by Parent!
+    //   └── Sibling (z-index: 5)  <-- should receive click!
+    //
+    // Parent has opacity: 0.5 which creates stacking context per CSS spec.
+    // Sibling (z=5) > Parent (z=0 implicit), so Sibling wins.
+
+    let clicked_child = Rc::new(Cell::new(false));
+    let clicked_sibling = Rc::new(Cell::new(false));
+
+    let clicked_child_clone = clicked_child.clone();
+    let clicked_sibling_clone = clicked_sibling.clone();
+
+    let view = stack((
+        // Parent with opacity < 1 (should create stacking context)
+        stack((Empty::new()
+            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(100))
+            .on_click_stop(move |_| {
+                clicked_child_clone.set(true);
+            }),))
+        .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).opacity(0.5)),
+        // Sibling with z-index 5
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(5))
+            .on_click_stop(move |_| {
+                clicked_sibling_clone.set(true);
+            }),
+    ))
+    .style(|s| s.size(100.0, 100.0));
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    harness.click(50.0, 50.0);
+
+    // Sibling (z=5) should receive click because Parent (with opacity, z=0) bounds Child
+    assert!(
+        clicked_sibling.get(),
+        "Sibling (z=5) should receive click - Parent's opacity creates stacking context"
+    );
+    assert!(
+        !clicked_child.get(),
+        "Child should NOT receive click - bounded by Parent's opacity stacking context"
+    );
+}
+
+#[test]
+fn test_opacity_1_does_not_create_stacking_context() {
+    // Test that opacity: 1.0 does NOT create a stacking context.
+    // Children should be able to escape.
+    //
+    // Structure:
+    //   Root
+    //   ├── Parent (opacity: 1.0, NO stacking context)
+    //   │   └── Child (z-index: 10)  <-- escapes! Should receive click!
+    //   └── Sibling (z-index: 5)
+    //
+    // Parent has opacity: 1.0 which does NOT create stacking context.
+    // Child (z=10) escapes and wins over Sibling (z=5).
+
+    let clicked_child = Rc::new(Cell::new(false));
+    let clicked_sibling = Rc::new(Cell::new(false));
+
+    let clicked_child_clone = clicked_child.clone();
+    let clicked_sibling_clone = clicked_sibling.clone();
+
+    let view = stack((
+        // Parent with opacity = 1.0 (should NOT create stacking context)
+        stack((Empty::new()
+            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(10))
+            .on_click_stop(move |_| {
+                clicked_child_clone.set(true);
+            }),))
+        .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).opacity(1.0)),
+        // Sibling with z-index 5
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(5))
+            .on_click_stop(move |_| {
+                clicked_sibling_clone.set(true);
+            }),
+    ))
+    .style(|s| s.size(100.0, 100.0));
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    harness.click(50.0, 50.0);
+
+    // Child (z=10) should receive click because it escapes Parent (opacity: 1.0)
+    assert!(
+        clicked_child.get(),
+        "Child (z=10) should receive click - escaped from Parent with opacity: 1.0"
+    );
+    assert!(
+        !clicked_sibling.get(),
+        "Sibling (z=5) should NOT receive click"
+    );
+}
+
+#[test]
+fn test_opacity_near_zero_creates_stacking_context() {
+    // Test that very low opacity (near 0) creates stacking context.
+    //
+    // Structure:
+    //   Root
+    //   ├── Parent (opacity: 0.01)
+    //   │   └── Child (z-index: 100)  <-- bounded!
+    //   └── Sibling (z-index: 5)  <-- should receive click!
+
+    let clicked_child = Rc::new(Cell::new(false));
+    let clicked_sibling = Rc::new(Cell::new(false));
+
+    let clicked_child_clone = clicked_child.clone();
+    let clicked_sibling_clone = clicked_sibling.clone();
+
+    let view = stack((
+        stack((Empty::new()
+            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(100))
+            .on_click_stop(move |_| {
+                clicked_child_clone.set(true);
+            }),))
+        .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).opacity(0.01)),
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(5))
+            .on_click_stop(move |_| {
+                clicked_sibling_clone.set(true);
+            }),
+    ))
+    .style(|s| s.size(100.0, 100.0));
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    harness.click(50.0, 50.0);
+
+    assert!(
+        clicked_sibling.get(),
+        "Sibling should receive click - Parent's near-zero opacity creates stacking context"
+    );
+    assert!(
+        !clicked_child.get(),
+        "Child should NOT receive click - bounded by opacity stacking context"
+    );
+}
+
+#[test]
+fn test_opacity_with_z_index_combination() {
+    // Test that opacity combined with z-index works correctly.
+    // The z-index determines the stacking order at the parent level.
+    //
+    // Structure:
+    //   Root
+    //   ├── ParentA (z-index: 10, opacity: 0.5)
+    //   │   └── ChildA (z-index: 100)  <-- bounded by ParentA
+    //   └── ParentB (z-index: 5)
+    //       └── ChildB (z-index: 1)
+    //
+    // ParentA (z=10) > ParentB (z=5), so ChildA receives click.
+    // ChildA is bounded within ParentA due to opacity.
+
+    let clicked_child_a = Rc::new(Cell::new(false));
+    let clicked_child_b = Rc::new(Cell::new(false));
+
+    let clicked_a_clone = clicked_child_a.clone();
+    let clicked_b_clone = clicked_child_b.clone();
+
+    let view = stack((
+        // ParentA with z-index: 10 and opacity: 0.5
+        stack((Empty::new()
+            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(100))
+            .on_click_stop(move |_| {
+                clicked_a_clone.set(true);
+            }),))
+        .style(|s| {
+            s.absolute()
+                .inset(0.0)
+                .size(100.0, 100.0)
+                .z_index(10)
+                .opacity(0.5)
+        }),
+        // ParentB with z-index: 5
+        stack((Empty::new()
+            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
+            .on_click_stop(move |_| {
+                clicked_b_clone.set(true);
+            }),))
+        .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(5)),
+    ))
+    .style(|s| s.size(100.0, 100.0));
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    harness.click(50.0, 50.0);
+
+    // ChildA should receive click because ParentA (z=10) > ParentB (z=5)
+    assert!(
+        clicked_child_a.get(),
+        "ChildA should receive click - ParentA (z=10) wins"
+    );
+    assert!(!clicked_child_b.get(), "ChildB should NOT receive click");
+}
+
+#[test]
+fn test_opacity_deeply_nested() {
+    // Test opacity stacking context with deep nesting.
+    //
+    // Structure:
+    //   Root
+    //   ├── Level1 (no stacking context)
+    //   │   └── Level2 (opacity: 0.8, creates stacking context)
+    //   │       └── DeepChild (z-index: 100)  <-- bounded by Level2!
+    //   └── Sibling (z-index: 5)  <-- should receive click!
+    //
+    // Level2's opacity bounds DeepChild. Level2 has implicit z=0.
+
+    let clicked_deep = Rc::new(Cell::new(false));
+    let clicked_sibling = Rc::new(Cell::new(false));
+
+    let clicked_deep_clone = clicked_deep.clone();
+    let clicked_sibling_clone = clicked_sibling.clone();
+
+    let view = stack((
+        // Level1 (no stacking context)
+        stack((
+            // Level2 (opacity creates stacking context)
+            stack((Empty::new()
+                .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(100))
+                .on_click_stop(move |_| {
+                    clicked_deep_clone.set(true);
+                }),))
+            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).opacity(0.8)),
+        ))
+        .style(|s| s.absolute().inset(0.0).size(100.0, 100.0)),
+        // Sibling
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(5))
+            .on_click_stop(move |_| {
+                clicked_sibling_clone.set(true);
+            }),
+    ))
+    .style(|s| s.size(100.0, 100.0));
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    harness.click(50.0, 50.0);
+
+    assert!(
+        clicked_sibling.get(),
+        "Sibling (z=5) should receive click - DeepChild bounded by Level2's opacity"
+    );
+    assert!(
+        !clicked_deep.get(),
+        "DeepChild should NOT receive click - bounded by opacity stacking context"
+    );
+}
