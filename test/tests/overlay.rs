@@ -712,6 +712,121 @@ fn test_overlay_escapes_nested_clips() {
     );
 }
 
+// ============================================================================
+// Container::derived inside Overlay Tests
+// ============================================================================
+
+#[test]
+fn test_overlay_with_container_derived_rebuild() {
+    // Test that Container::derived inside Overlay::new works correctly
+    // when the derived content is rebuilt.
+    //
+    // This reproduces a bug where taffy layout nodes become invalid
+    // after Container::derived rebuilds its children.
+
+    use floem::views::Container;
+
+    let counter = RwSignal::new(0);
+
+    let view = stack((
+        Label::new("Main content"),
+        Overlay::new(
+            Container::derived(move || {
+                let count = counter.get();
+                Label::new(format!("Count: {}", count))
+            })
+            .style(|s| s.size(100.0, 50.0)),
+        ),
+    ))
+    .style(|s| s.size(100.0, 100.0));
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    // Initial paint should work
+    harness.rebuild();
+    harness.paint();
+
+    // Trigger a rebuild of Container::derived content
+    counter.set(1);
+    harness.rebuild();
+    harness.paint();
+
+    // Another update
+    counter.set(2);
+    harness.rebuild();
+    harness.paint();
+}
+
+#[test]
+fn test_overlay_with_nested_container_derived() {
+    // More complex case: nested Container::derived inside Overlay
+    // This tests the pattern used in Dialog component.
+
+    use floem::views::Container;
+
+    let open = RwSignal::new(true);
+
+    let view = stack((
+        Label::new("Main content"),
+        Overlay::new(
+            stack((
+                // Backdrop
+                Empty::new().style(move |s| {
+                    let is_open = open.get();
+                    s.absolute()
+                        .inset(0.0)
+                        .size(100.0, 100.0)
+                        .apply_if(!is_open, |s| s.display(floem::taffy::Display::None))
+                }),
+                // Centering container with derived content
+                Container::new(
+                    Container::derived(move || {
+                        let is_open = open.get();
+                        stack((
+                            Label::new("Dialog Title"),
+                            Label::new("Dialog Description"),
+                        ))
+                        .style(move |s| {
+                            s.size(80.0, 60.0)
+                                .apply_if(!is_open, |s| s.display(floem::taffy::Display::None))
+                        })
+                    }),
+                )
+                .style(move |s| {
+                    let is_open = open.get();
+                    s.absolute()
+                        .inset(0.0)
+                        .size(100.0, 100.0)
+                        .apply_if(!is_open, |s| s.display(floem::taffy::Display::None))
+                }),
+            ))
+            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0)),
+        ),
+    ))
+    .style(|s| s.size(100.0, 100.0));
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    // Initial state: dialog open
+    harness.rebuild();
+    harness.paint();
+
+    // Close dialog
+    open.set(false);
+    harness.rebuild();
+    harness.paint();
+
+    // Open dialog again
+    open.set(true);
+    harness.rebuild();
+    harness.paint();
+
+    // Close again
+    open.set(false);
+    harness.rebuild();
+    harness.paint();
+}
+
 #[test]
 fn test_clip_only_affects_painting_not_events() {
     // Document current behavior: Clip only affects painting, not event dispatch.
