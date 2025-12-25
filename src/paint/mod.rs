@@ -45,6 +45,74 @@ std::thread_local! {
     /// This is ephemerally set before paint calls that are painting the view in a
     /// location other than its natural one for purposes of drag and drop.
     static CURRENT_DRAG_PAINTING_ID : std::cell::Cell<Option<ViewId>> = const { std::cell::Cell::new(None) };
+
+    /// Paint order tracker for testing purposes.
+    /// When enabled, records the ViewIds in the order they are painted.
+    /// This is used by HeadlessHarness to verify paint order in tests.
+    static PAINT_ORDER_TRACKER: std::cell::RefCell<PaintOrderTracker> = std::cell::RefCell::new(PaintOrderTracker::new());
+}
+
+/// Tracker for paint order, used in testing to verify views are painted in the correct order.
+#[derive(Default)]
+pub struct PaintOrderTracker {
+    enabled: bool,
+    order: Vec<ViewId>,
+}
+
+impl PaintOrderTracker {
+    const fn new() -> Self {
+        Self {
+            enabled: false,
+            order: Vec::new(),
+        }
+    }
+
+    fn record(&mut self, id: ViewId) {
+        if self.enabled {
+            self.order.push(id);
+        }
+    }
+}
+
+/// Enable paint order tracking. When enabled, all painted ViewIds are recorded in order.
+pub fn enable_paint_order_tracking() {
+    PAINT_ORDER_TRACKER.with(|tracker| {
+        let mut t = tracker.borrow_mut();
+        t.enabled = true;
+        t.order.clear();
+    });
+}
+
+/// Disable paint order tracking.
+pub fn disable_paint_order_tracking() {
+    PAINT_ORDER_TRACKER.with(|tracker| {
+        tracker.borrow_mut().enabled = false;
+    });
+}
+
+/// Clear the recorded paint order without disabling tracking.
+pub fn clear_paint_order() {
+    PAINT_ORDER_TRACKER.with(|tracker| {
+        tracker.borrow_mut().order.clear();
+    });
+}
+
+/// Get a copy of the recorded paint order.
+pub fn get_paint_order() -> Vec<ViewId> {
+    PAINT_ORDER_TRACKER.with(|tracker| tracker.borrow().order.clone())
+}
+
+/// Check if paint order tracking is enabled.
+pub fn is_paint_order_tracking_enabled() -> bool {
+    PAINT_ORDER_TRACKER.with(|tracker| tracker.borrow().enabled)
+}
+
+/// Record a view being painted (internal use).
+#[inline]
+fn record_paint(id: ViewId) {
+    PAINT_ORDER_TRACKER.with(|tracker| {
+        tracker.borrow_mut().record(id);
+    });
 }
 
 /// Information needed to paint a dragged view overlay after the main tree painting.
@@ -69,6 +137,8 @@ pub struct PaintCx<'a> {
     pub layer_count: usize,
     #[cfg(feature = "vello")]
     pub saved_layer_counts: Vec<usize>,
+    /// Whether to record paint order for testing. Cached from thread-local at creation.
+    pub(crate) record_paint_order: bool,
 }
 
 impl PaintCx<'_> {
@@ -150,6 +220,12 @@ impl PaintCx<'_> {
         if id.is_hidden() {
             return;
         }
+
+        // Record paint order for testing (fast path: skip if not recording)
+        if self.record_paint_order {
+            record_paint(id);
+        }
+
         let view = id.view();
         let view_state = id.state();
 

@@ -571,6 +571,7 @@ impl WindowHandle {
             saved_layer_counts: Vec::new(),
             #[cfg(feature = "vello")]
             layer_count: 0,
+            record_paint_order: crate::paint::is_paint_order_tracking_enabled(),
         };
         cx.paint_state
             .renderer_mut()

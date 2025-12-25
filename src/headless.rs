@@ -26,6 +26,9 @@ use peniko::kurbo::{Point, Size};
 use crate::context::InteractionState;
 use crate::event::Event;
 use crate::event::path::hit_test;
+use crate::paint::{
+    clear_paint_order, disable_paint_order_tracking, enable_paint_order_tracking, get_paint_order,
+};
 use crate::style::{Style, StyleSelector};
 use crate::view::IntoView;
 use crate::view::ViewId;
@@ -370,6 +373,65 @@ impl HeadlessHarness {
     /// Get the content rectangle for a view (excluding padding/borders).
     pub fn get_content_rect(&self, id: ViewId) -> peniko::kurbo::Rect {
         id.get_content_rect()
+    }
+
+    // ========================================================================
+    // Paint Order Tracking
+    // ========================================================================
+
+    /// Paint the view tree and record the order in which views are painted.
+    ///
+    /// This enables paint order tracking, paints the entire view tree
+    /// (including overlays), and returns the list of ViewIds in the order
+    /// they were painted.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// let paint_order = harness.paint_and_get_order();
+    /// // Views are painted from back to front (lowest z-index first)
+    /// // Regular views paint first, then overlays
+    /// ```
+    pub fn paint_and_get_order(&mut self) -> Vec<ViewId> {
+        enable_paint_order_tracking();
+        self.window_handle.paint(None);
+        let order = get_paint_order();
+        disable_paint_order_tracking();
+        order
+    }
+
+    /// Enable paint order tracking for subsequent paint operations.
+    ///
+    /// Call this before operations that trigger painting, then use
+    /// `get_paint_order()` to retrieve the recorded order.
+    pub fn enable_paint_tracking(&mut self) {
+        enable_paint_order_tracking();
+    }
+
+    /// Disable paint order tracking.
+    pub fn disable_paint_tracking(&mut self) {
+        disable_paint_order_tracking();
+    }
+
+    /// Clear the recorded paint order without disabling tracking.
+    pub fn clear_paint_order(&mut self) {
+        clear_paint_order();
+    }
+
+    /// Get the recorded paint order from the most recent paint operation.
+    ///
+    /// Returns the list of ViewIds in the order they were painted
+    /// (from back to front).
+    pub fn get_paint_order(&self) -> Vec<ViewId> {
+        get_paint_order()
+    }
+
+    /// Trigger a paint operation (without returning the image).
+    ///
+    /// This runs the full paint cycle including overlays and drag overlay.
+    /// Use with `enable_paint_tracking()` and `get_paint_order()` to
+    /// verify paint order.
+    pub fn paint(&mut self) {
+        self.window_handle.paint(None);
     }
 }
 
