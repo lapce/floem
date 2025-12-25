@@ -1,5 +1,6 @@
 use peniko::kurbo::{Point, Rect};
-use std::rc::Rc;
+use smallvec::SmallVec;
+use std::{cell::RefCell, rc::Rc};
 
 use crate::platform::menu::Menu;
 use crate::{
@@ -10,6 +11,11 @@ use crate::{
 pub type EventCallback = dyn FnMut(&Event) -> EventPropagation;
 pub type ResizeCallback = dyn Fn(Rect);
 pub type MenuCallback = dyn Fn() -> Menu;
+
+/// Vector of event listeners, optimized for the common case of 0-1 listeners per event type.
+/// Uses SmallVec to avoid heap allocation when there's only one listener.
+/// Inspired by Chromium's HeapVector<..., 1> pattern for event listener storage.
+pub type EventListenerVec = SmallVec<[Rc<RefCell<EventCallback>>; 1]>;
 
 #[derive(Default)]
 pub(crate) struct ResizeListeners {

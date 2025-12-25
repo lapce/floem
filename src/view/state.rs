@@ -1,8 +1,8 @@
 use crate::{
     animate::Animation,
     context::{
-        CleanupListeners, EventCallback, InteractionState, MenuCallback, MoveListeners,
-        ResizeCallback, ResizeListeners,
+        CleanupListeners, EventCallback, EventListenerVec, InteractionState, MenuCallback,
+        MoveListeners, ResizeCallback, ResizeListeners,
     },
     event::EventListener,
     layout::responsive::ScreenSizeBp,
@@ -208,7 +208,7 @@ pub struct ViewState {
     /// The final style including inherited style from parent.
     pub(crate) computed_style: Style,
     pub(crate) taffy_style: taffy::style::Style,
-    pub(crate) event_listeners: HashMap<EventListener, Vec<Rc<RefCell<EventCallback>>>>,
+    pub(crate) event_listeners: HashMap<EventListener, EventListenerVec>,
     pub(crate) context_menu: Option<Rc<MenuCallback>>,
     pub(crate) popout_menu: Option<Rc<MenuCallback>>,
     pub(crate) resize_listeners: Rc<RefCell<ResizeListeners>>,
