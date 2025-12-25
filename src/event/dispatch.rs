@@ -46,15 +46,6 @@ pub(crate) enum DispatchOutcome {
     Skipped,
 }
 
-/// A bundle of helper methods to be used by `View::event` handlers
-pub struct EventCx<'a> {
-    pub window_state: &'a mut WindowState,
-    /// When dispatching events in a stacking context, this tracks views whose children are
-    /// handled by the parent stacking context. When event dispatch reaches such a view,
-    /// it should not dispatch to its children (they're handled separately).
-    pub(crate) skip_children_for: Option<ViewId>,
-}
-
 impl DispatchOutcome {
     /// Returns true if the event was fully processed and propagation should stop.
     pub fn is_processed(self) -> bool {
@@ -68,7 +59,20 @@ type BuiltinResult = Option<DispatchOutcome>;
 /// Constant for a processed event result (stops propagation).
 const PROCESSED: BuiltinResult = Some(DispatchOutcome::Processed);
 
+/// A bundle of helper methods to be used by `View::event` handlers
+pub struct EventCx<'a> {
+    pub window_state: &'a mut WindowState,
+    /// When dispatching events in a stacking context, this tracks views whose children are
+    /// handled by the parent stacking context. When event dispatch reaches such a view,
+    /// it should not dispatch to its children (they're handled separately).
+    pub(crate) skip_children_for: Option<ViewId>,
+}
+
 impl EventCx<'_> {
+    // =========================================================================
+    // Public API
+    // =========================================================================
+
     pub fn update_active(&mut self, id: ViewId) {
         self.window_state.update_active(id);
     }
@@ -80,6 +84,188 @@ impl EventCx<'_> {
     #[allow(unused)]
     pub(crate) fn update_focus(&mut self, id: ViewId, keyboard_navigation: bool) {
         self.window_state.update_focus(id, keyboard_navigation);
+    }
+
+    // =========================================================================
+    // Main Entry Point
+    // =========================================================================
+
+    /// Dispatch an event through the view tree with proper state management.
+    ///
+    /// This is the core event processing logic shared between WindowHandle and HeadlessHarness.
+    /// It handles:
+    /// - Scaling the event coordinates by the window scale factor
+    /// - Pre-dispatch state setup (clearing hover/clicking state as needed)
+    /// - Event dispatch to the appropriate views (focus-based, active-based, or unconditional)
+    /// - Post-dispatch state management (hover enter/leave, clicking state, focus changes)
+    ///
+    /// # Arguments
+    /// * `root_id` - The root view ID of the window
+    /// * `main_view_id` - The main content view ID (for keyboard event dispatch)
+    /// * `event` - The event to dispatch
+    ///
+    /// # Returns
+    /// The event propagation result
+    pub(crate) fn dispatch_event(
+        &mut self,
+        root_id: ViewId,
+        main_view_id: ViewId,
+        event: Event,
+    ) -> EventPropagation {
+        // Scale the event coordinates by the window scale factor
+        let event = event.transform(Affine::scale(self.window_state.scale));
+
+        // Handle pointer move: track cursor position and prepare for hover state changes
+        let is_pointer_move = if let Event::Pointer(PointerEvent::Move(pu)) = &event {
+            let pos = pu.current.logical_point();
+            self.window_state.last_cursor_location = pos;
+            Some(pu.pointer)
+        } else {
+            None
+        };
+
+        // On pointer move, save previous hover/dragging state and clear for rebuild
+        let (was_hovered, was_dragging_over) = if is_pointer_move.is_some() {
+            self.window_state.cursor = None;
+            let was_hovered = std::mem::take(&mut self.window_state.hovered);
+            let was_dragging_over = std::mem::take(&mut self.window_state.dragging_over);
+            (Some(was_hovered), Some(was_dragging_over))
+        } else {
+            (None, None)
+        };
+
+        // Track file hover changes
+        let was_file_hovered = if matches!(event, Event::FileDrag(FileDragEvent::DragMoved { .. }))
+            || is_pointer_move.is_some()
+        {
+            if !self.window_state.file_hovered.is_empty() {
+                Some(std::mem::take(&mut self.window_state.file_hovered))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        // On pointer down, clear clicking state and save focus
+        let is_pointer_down = matches!(&event, Event::Pointer(PointerEvent::Down { .. }));
+        let was_focused = if is_pointer_down {
+            self.window_state.clicking.clear();
+            self.window_state.focus.take()
+        } else {
+            self.window_state.focus
+        };
+
+        // Dispatch the event based on its type and current state
+        if event.needs_focus() {
+            self.dispatch_keyboard_event(root_id, main_view_id, &event);
+        } else if self.window_state.active.is_some() && event.is_pointer() {
+            self.dispatch_to_active_view(root_id, &event);
+        } else if event.is_pointer() {
+            // Pointer events use Chromium-style path-based dispatch:
+            // 1. Hit test finds target (z-index aware)
+            // 2. Event path built from target to root (DOM order)
+            // 3. Dispatch through path (capturing + bubbling)
+            // 4. Click events dispatched separately after PointerUp
+            self.dispatch_pointer_event_via_path(root_id, &event);
+        } else {
+            // Non-pointer events use stacking context dispatch
+            self.dispatch_to_view(root_id, &event, false);
+        }
+
+        // Clear drag_start on pointer up
+        if let Event::Pointer(PointerEvent::Up { .. }) = &event {
+            self.window_state.drag_start = None;
+        }
+
+        // Handle hover state changes - send PointerEnter/Leave events
+        if let Some(pointer_info) = is_pointer_move {
+            self.handle_hover_changes(
+                pointer_info,
+                was_hovered.unwrap(),
+                was_dragging_over.unwrap(),
+                &event,
+            );
+        }
+
+        // Handle file hover style changes
+        if let Some(was_file_hovered) = was_file_hovered {
+            for id in was_file_hovered.symmetric_difference(&self.window_state.file_hovered) {
+                id.request_style();
+            }
+        }
+
+        // Handle focus changes
+        if was_focused != self.window_state.focus {
+            self.window_state
+                .focus_changed(was_focused, self.window_state.focus);
+        }
+
+        // Update active styles for clicking views on pointer down/up
+        let is_pointer_up = matches!(&event, Event::Pointer(PointerEvent::Up { .. }));
+        if is_pointer_down || is_pointer_up {
+            for id in self.window_state.clicking.clone() {
+                if self
+                    .window_state
+                    .has_style_for_sel(id, StyleSelector::Active)
+                {
+                    id.request_style_recursive();
+                }
+            }
+            if is_pointer_up {
+                self.window_state.clicking.clear();
+            }
+        }
+
+        EventPropagation::Continue
+    }
+
+    // =========================================================================
+    // Dispatch Methods
+    // =========================================================================
+
+    /// Dispatch a pointer event using Chromium-style path-based dispatch.
+    ///
+    /// This implements the three-phase dispatch model:
+    /// 1. Hit test to find the target view (z-index aware)
+    /// 2. Build event path from target to root (DOM order)
+    /// 3. Dispatch through path:
+    ///    - Capturing phase (root → target): `event_before_children`
+    ///    - Bubbling phase (target → root): `event_after_children` + listeners
+    /// 4. For PointerUp: dispatch Click events as separate synthetic events
+    ///
+    /// Returns true if the event was processed.
+    pub(crate) fn dispatch_pointer_event_via_path(
+        &mut self,
+        root_id: ViewId,
+        event: &Event,
+    ) -> bool {
+        // Get the point from the event
+        let Some(point) = event.point() else {
+            // No point = not a pointer event, fall back to stacking context dispatch
+            return self.dispatch_to_view(root_id, event, false).is_processed();
+        };
+
+        // Phase 1: Hit test to find the target (z-index aware)
+        let Some(target) = hit_test(root_id, point) else {
+            // No target found, nothing to dispatch to
+            return false;
+        };
+
+        // Phase 2: Build event path from target to root (DOM order)
+        let path = build_event_path(target);
+
+        // Phase 3: Dispatch through the path (capturing + bubbling)
+        let result = dispatch_through_path(&path, event, self);
+
+        // Phase 4: For PointerUp, dispatch Click events separately
+        // This matches Chromium's behavior where Click is a synthetic event
+        // that bubbles through the entire path after PointerUp completes.
+        if matches!(event, Event::Pointer(ui_events::pointer::PointerEvent::Up { .. })) {
+            dispatch_click_through_path(&path, event, self);
+        }
+
+        result.is_processed()
     }
 
     /// Internal method used by Floem. This can be called from parent `View`s to propagate an event to the child `View`.
@@ -144,6 +330,202 @@ impl EventCx<'_> {
         DispatchOutcome::Consumed
     }
 
+    /// Dispatch events to children using CSS stacking context semantics.
+    ///
+    /// Iterates through child views in reverse z-order (highest z-index first),
+    /// handling stacking context boundaries and event bubbling.
+    fn dispatch_to_children(&mut self, view_id: ViewId, event: &Event) -> DispatchOutcome {
+        let items = collect_stacking_context_items(view_id);
+
+        // Track the consuming item's parent chain for event bubbling
+        let mut consuming_parent_chain: Option<&SmallVec<[ViewId; 8]>> = None;
+
+        for item in items.iter().rev() {
+            let should_send = self.should_send(item.view_id, event);
+
+            // Stacking contexts may have children outside their clip rect (e.g., dropdowns).
+            // We must recurse into them even if the parent fails the clip test.
+            if item.creates_context && !should_send {
+                if self.dispatch_to_view(item.view_id, event, false).is_processed() {
+                    return DispatchOutcome::Processed;
+                }
+                continue;
+            }
+
+            if !should_send {
+                continue;
+            }
+
+            // Mark non-stacking-context items so their children aren't processed twice
+            if !item.creates_context {
+                self.skip_children_for = Some(item.view_id);
+            }
+
+            let outcome = self.dispatch_to_view(item.view_id, event, false);
+            self.skip_children_for = None;
+
+            if outcome.is_processed() {
+                return DispatchOutcome::Processed;
+            }
+
+            if event.is_pointer() && outcome == DispatchOutcome::Consumed {
+                consuming_parent_chain = Some(&item.parent_chain);
+                break;
+            }
+        }
+
+        // Event bubbling: notify ancestors of the consuming child
+        if let Some(parent_chain) = consuming_parent_chain {
+            for &ancestor_id in parent_chain.iter().rev() {
+                if self.dispatch_to_view(ancestor_id, event, true).is_processed() {
+                    return DispatchOutcome::Processed;
+                }
+            }
+            return DispatchOutcome::Consumed;
+        }
+
+        DispatchOutcome::Skipped
+    }
+
+    /// Dispatch keyboard events to focused view with navigation handling.
+    fn dispatch_keyboard_event(&mut self, root_id: ViewId, main_view_id: ViewId, event: &Event) {
+        let mut processed = false;
+
+        if let Some(id) = self.window_state.focus {
+            processed |= self.dispatch_to_view(id, event, true).is_processed();
+        }
+
+        if !processed {
+            if let Some(listener) = event.listener() {
+                processed |= main_view_id
+                    .apply_event(&listener, event)
+                    .is_some_and(|prop| prop.is_processed());
+            }
+        }
+
+        if !processed {
+            // Handle Tab and arrow key navigation
+            if let Event::Key(KeyboardEvent {
+                key,
+                modifiers,
+                state: KeyState::Down,
+                ..
+            }) = event
+            {
+                if *key == Key::Named(NamedKey::Tab)
+                    && (modifiers.is_empty() || *modifiers == Modifiers::SHIFT)
+                {
+                    let backwards = modifiers.contains(Modifiers::SHIFT);
+                    view_tab_navigation(root_id, self.window_state, backwards);
+                } else if *modifiers == Modifiers::ALT {
+                    if let Key::Named(
+                        name @ (NamedKey::ArrowUp
+                        | NamedKey::ArrowDown
+                        | NamedKey::ArrowLeft
+                        | NamedKey::ArrowRight),
+                    ) = key
+                    {
+                        view_arrow_navigation(*name, self.window_state, root_id);
+                    }
+                }
+            }
+
+            // Handle keyboard trigger end (space/enter key up on focused element)
+            let keyboard_trigger_end = self.window_state.keyboard_navigation
+                && event.is_keyboard_trigger()
+                && matches!(
+                    event,
+                    Event::Key(KeyboardEvent {
+                        state: KeyState::Up,
+                        ..
+                    })
+                );
+            if keyboard_trigger_end {
+                if let Some(id) = self.window_state.active {
+                    if self
+                        .window_state
+                        .has_style_for_sel(id, StyleSelector::Active)
+                    {
+                        id.request_style_recursive();
+                    }
+                    self.window_state.active = None;
+                }
+            }
+        }
+    }
+
+    /// Dispatch pointer events to the currently active view (during drag operations).
+    fn dispatch_to_active_view(&mut self, root_id: ViewId, event: &Event) {
+        if self.window_state.is_dragging() {
+            self.dispatch_to_view(root_id, event, false);
+        }
+
+        let id = self.window_state.active.unwrap();
+
+        // Single borrow to get both window_origin and viewport
+        let view_state = id.state();
+        let (window_origin, viewport) = {
+            let vs = view_state.borrow();
+            (vs.window_origin, vs.viewport.unwrap_or_default())
+        };
+        let layout = id.get_layout().unwrap_or_default();
+        let transform = Affine::translate((
+            window_origin.x - layout.location.x as f64 + viewport.x0,
+            window_origin.y - layout.location.y as f64 + viewport.y0,
+        ));
+        let transformed_event = event.clone().transform(transform);
+        self.dispatch_to_view(id, &transformed_event, true);
+
+        if let Event::Pointer(PointerEvent::Up { .. }) = event {
+            if self
+                .window_state
+                .has_style_for_sel(id, StyleSelector::Active)
+            {
+                id.request_style_recursive();
+            }
+            self.window_state.active = None;
+        }
+    }
+
+    // =========================================================================
+    // Dispatch Helpers
+    // =========================================================================
+
+    /// Used to determine if you should send an event to another view. This is basically a check for pointer events to see if the pointer is inside a child view and to make sure the current view isn't hidden or disabled.
+    /// Usually this is used if you want to propagate an event to a child view
+    ///
+    /// Note: This function expects event coordinates to be in absolute (window) coordinates,
+    /// as used by the stacking context event dispatch. The layout_rect and clip_rect are also
+    /// in absolute coordinates, so they can be compared directly.
+    pub fn should_send(&mut self, id: ViewId, event: &Event) -> bool {
+        if id.is_hidden() || (id.is_disabled() && !event.allow_disabled()) {
+            return false;
+        }
+
+        let Some(point) = event.point() else {
+            return true;
+        };
+
+        let view_state = id.state();
+        let vs = view_state.borrow();
+
+        // First check if the point is within the clip bounds.
+        // This handles cases where the view is clipped by an ancestor's
+        // overflow:hidden or scroll container.
+        if !vs.clip_rect.contains(point) {
+            return false;
+        }
+
+        // Use the absolute layout_rect directly since stacking context dispatch
+        // uses absolute event coordinates
+        let layout_rect = vs.layout_rect;
+
+        // Apply any style transformations to the rect
+        let current_rect = vs.transform.transform_rect_bbox(layout_rect);
+
+        current_rect.contains(point)
+    }
+
     /// Apply side effects when event_before_children returns processed (focus, cursor).
     fn apply_processed_side_effects(
         &mut self,
@@ -169,11 +551,8 @@ impl EventCx<'_> {
     }
 
     // =========================================================================
-    // Built-in Event Behavior Helpers
+    // Built-in Event Behaviors
     // =========================================================================
-    //
-    // These methods handle the default behaviors for various event types,
-    // extracted from the main dispatch function for readability.
 
     /// Handle all default behaviors for an event: built-in behaviors and event listeners.
     fn handle_default_behaviors(
@@ -485,247 +864,7 @@ impl EventCx<'_> {
     }
 
     // =========================================================================
-    // Menu Helpers
-    // =========================================================================
-
-    /// Try to show popout menu for a view.
-    fn try_show_popout_menu(&self, view_id: ViewId) -> BuiltinResult {
-        let view_state = view_id.state();
-        let (bottom_left, popout_menu) = {
-            let vs = view_state.borrow();
-            let layout = vs.layout_rect;
-            (Point::new(layout.x0, layout.y1), vs.popout_menu.clone())
-        };
-        if let Some(menu) = popout_menu {
-            show_context_menu(menu(), Some(bottom_left));
-            return PROCESSED;
-        }
-        None
-    }
-
-    /// Try to show context menu for a view.
-    fn try_show_context_menu(&self, view_id: ViewId, pointer_state: &PointerState) -> BuiltinResult {
-        let view_state = view_id.state();
-        let (position, context_menu) = {
-            let vs = view_state.borrow();
-            let layout = vs.layout_rect;
-            let pos = Point::new(
-                layout.x0 + pointer_state.logical_point().x,
-                layout.y0 + pointer_state.logical_point().y,
-            );
-            (pos, vs.context_menu.clone())
-        };
-        if let Some(menu) = context_menu {
-            show_context_menu(menu(), Some(position));
-            return PROCESSED;
-        }
-        None
-    }
-
-    // =========================================================================
-    // Dispatch Routing Helpers
-    // =========================================================================
-
-    /// Dispatch events to children using CSS stacking context semantics.
-    ///
-    /// Iterates through child views in reverse z-order (highest z-index first),
-    /// handling stacking context boundaries and event bubbling.
-    fn dispatch_to_children(&mut self, view_id: ViewId, event: &Event) -> DispatchOutcome {
-        let items = collect_stacking_context_items(view_id);
-
-        // Track the consuming item's parent chain for event bubbling
-        let mut consuming_parent_chain: Option<&SmallVec<[ViewId; 8]>> = None;
-
-        for item in items.iter().rev() {
-            let should_send = self.should_send(item.view_id, event);
-
-            // Stacking contexts may have children outside their clip rect (e.g., dropdowns).
-            // We must recurse into them even if the parent fails the clip test.
-            if item.creates_context && !should_send {
-                if self.dispatch_to_view(item.view_id, event, false).is_processed() {
-                    return DispatchOutcome::Processed;
-                }
-                continue;
-            }
-
-            if !should_send {
-                continue;
-            }
-
-            // Mark non-stacking-context items so their children aren't processed twice
-            if !item.creates_context {
-                self.skip_children_for = Some(item.view_id);
-            }
-
-            let outcome = self.dispatch_to_view(item.view_id, event, false);
-            self.skip_children_for = None;
-
-            if outcome.is_processed() {
-                return DispatchOutcome::Processed;
-            }
-
-            if event.is_pointer() && outcome == DispatchOutcome::Consumed {
-                consuming_parent_chain = Some(&item.parent_chain);
-                break;
-            }
-        }
-
-        // Event bubbling: notify ancestors of the consuming child
-        if let Some(parent_chain) = consuming_parent_chain {
-            for &ancestor_id in parent_chain.iter().rev() {
-                if self.dispatch_to_view(ancestor_id, event, true).is_processed() {
-                    return DispatchOutcome::Processed;
-                }
-            }
-            return DispatchOutcome::Consumed;
-        }
-
-        DispatchOutcome::Skipped
-    }
-
-    /// Dispatch keyboard events to focused view with navigation handling.
-    fn dispatch_keyboard_event(&mut self, root_id: ViewId, main_view_id: ViewId, event: &Event) {
-        let mut processed = false;
-
-        if let Some(id) = self.window_state.focus {
-            processed |= self.dispatch_to_view(id, event, true).is_processed();
-        }
-
-        if !processed {
-            if let Some(listener) = event.listener() {
-                processed |= main_view_id
-                    .apply_event(&listener, event)
-                    .is_some_and(|prop| prop.is_processed());
-            }
-        }
-
-        if !processed {
-            // Handle Tab and arrow key navigation
-            if let Event::Key(KeyboardEvent {
-                key,
-                modifiers,
-                state: KeyState::Down,
-                ..
-            }) = event
-            {
-                if *key == Key::Named(NamedKey::Tab)
-                    && (modifiers.is_empty() || *modifiers == Modifiers::SHIFT)
-                {
-                    let backwards = modifiers.contains(Modifiers::SHIFT);
-                    view_tab_navigation(root_id, self.window_state, backwards);
-                } else if *modifiers == Modifiers::ALT {
-                    if let Key::Named(
-                        name @ (NamedKey::ArrowUp
-                        | NamedKey::ArrowDown
-                        | NamedKey::ArrowLeft
-                        | NamedKey::ArrowRight),
-                    ) = key
-                    {
-                        view_arrow_navigation(*name, self.window_state, root_id);
-                    }
-                }
-            }
-
-            // Handle keyboard trigger end (space/enter key up on focused element)
-            let keyboard_trigger_end = self.window_state.keyboard_navigation
-                && event.is_keyboard_trigger()
-                && matches!(
-                    event,
-                    Event::Key(KeyboardEvent {
-                        state: KeyState::Up,
-                        ..
-                    })
-                );
-            if keyboard_trigger_end {
-                if let Some(id) = self.window_state.active {
-                    if self
-                        .window_state
-                        .has_style_for_sel(id, StyleSelector::Active)
-                    {
-                        id.request_style_recursive();
-                    }
-                    self.window_state.active = None;
-                }
-            }
-        }
-    }
-
-    /// Dispatch pointer events to the currently active view (during drag operations).
-    fn dispatch_to_active_view(&mut self, root_id: ViewId, event: &Event) {
-        if self.window_state.is_dragging() {
-            self.dispatch_to_view(root_id, event, false);
-        }
-
-        let id = self.window_state.active.unwrap();
-
-        // Single borrow to get both window_origin and viewport
-        let view_state = id.state();
-        let (window_origin, viewport) = {
-            let vs = view_state.borrow();
-            (vs.window_origin, vs.viewport.unwrap_or_default())
-        };
-        let layout = id.get_layout().unwrap_or_default();
-        let transform = Affine::translate((
-            window_origin.x - layout.location.x as f64 + viewport.x0,
-            window_origin.y - layout.location.y as f64 + viewport.y0,
-        ));
-        let transformed_event = event.clone().transform(transform);
-        self.dispatch_to_view(id, &transformed_event, true);
-
-        if let Event::Pointer(PointerEvent::Up { .. }) = event {
-            if self
-                .window_state
-                .has_style_for_sel(id, StyleSelector::Active)
-            {
-                id.request_style_recursive();
-            }
-            self.window_state.active = None;
-        }
-    }
-
-    /// Handle hover state changes by sending PointerEnter/Leave events.
-    fn handle_hover_changes(
-        &mut self,
-        pointer_info: PointerInfo,
-        was_hovered: std::collections::HashSet<ViewId>,
-        was_dragging_over: std::collections::HashSet<ViewId>,
-        event: &Event,
-    ) {
-        let hovered = self.window_state.hovered.clone();
-        for id in was_hovered.symmetric_difference(&hovered) {
-            // Single borrow to check all style-related conditions
-            let view_state = id.state();
-            let needs_style_update = {
-                let vs = view_state.borrow();
-                vs.has_active_animation()
-                    || vs.has_style_selectors.has(StyleSelector::Hover)
-                    || vs.has_style_selectors.has(StyleSelector::Active)
-            };
-            if needs_style_update {
-                id.request_style();
-            }
-
-            if hovered.contains(id) {
-                id.apply_event(&EventListener::PointerEnter, event);
-            } else {
-                let leave_event = Event::Pointer(PointerEvent::Leave(pointer_info));
-                self.dispatch_to_view(*id, &leave_event, true);
-            }
-        }
-
-        // Handle drag enter/leave events
-        let dragging_over = self.window_state.dragging_over.clone();
-        for id in was_dragging_over.symmetric_difference(&dragging_over) {
-            if dragging_over.contains(id) {
-                id.apply_event(&EventListener::DragEnter, event);
-            } else {
-                id.apply_event(&EventListener::DragLeave, event);
-            }
-        }
-    }
-
-    // =========================================================================
-    // Event Listener Helpers
+    // Click & Listener Helpers
     // =========================================================================
 
     /// Try to dispatch an event to registered listeners for the view.
@@ -794,220 +933,86 @@ impl EventCx<'_> {
         processed.then_some(PROCESSED).flatten()
     }
 
-    /// Used to determine if you should send an event to another view. This is basically a check for pointer events to see if the pointer is inside a child view and to make sure the current view isn't hidden or disabled.
-    /// Usually this is used if you want to propagate an event to a child view
-    ///
-    /// Note: This function expects event coordinates to be in absolute (window) coordinates,
-    /// as used by the stacking context event dispatch. The layout_rect and clip_rect are also
-    /// in absolute coordinates, so they can be compared directly.
-    pub fn should_send(&mut self, id: ViewId, event: &Event) -> bool {
-        if id.is_hidden() || (id.is_disabled() && !event.allow_disabled()) {
-            return false;
-        }
+    // =========================================================================
+    // Menu Helpers
+    // =========================================================================
 
-        let Some(point) = event.point() else {
-            return true;
+    /// Try to show popout menu for a view.
+    fn try_show_popout_menu(&self, view_id: ViewId) -> BuiltinResult {
+        let view_state = view_id.state();
+        let (bottom_left, popout_menu) = {
+            let vs = view_state.borrow();
+            let layout = vs.layout_rect;
+            (Point::new(layout.x0, layout.y1), vs.popout_menu.clone())
         };
-
-        let view_state = id.state();
-        let vs = view_state.borrow();
-
-        // First check if the point is within the clip bounds.
-        // This handles cases where the view is clipped by an ancestor's
-        // overflow:hidden or scroll container.
-        if !vs.clip_rect.contains(point) {
-            return false;
+        if let Some(menu) = popout_menu {
+            show_context_menu(menu(), Some(bottom_left));
+            return PROCESSED;
         }
-
-        // Use the absolute layout_rect directly since stacking context dispatch
-        // uses absolute event coordinates
-        let layout_rect = vs.layout_rect;
-
-        // Apply any style transformations to the rect
-        let current_rect = vs.transform.transform_rect_bbox(layout_rect);
-
-        current_rect.contains(point)
+        None
     }
 
-    // =========================================================================
-    // Path-Based Dispatch (Chromium-style)
-    // =========================================================================
-
-    /// Dispatch a pointer event using Chromium-style path-based dispatch.
-    ///
-    /// This implements the three-phase dispatch model:
-    /// 1. Hit test to find the target view (z-index aware)
-    /// 2. Build event path from target to root (DOM order)
-    /// 3. Dispatch through path:
-    ///    - Capturing phase (root → target): `event_before_children`
-    ///    - Bubbling phase (target → root): `event_after_children` + listeners
-    /// 4. For PointerUp: dispatch Click events as separate synthetic events
-    ///
-    /// Returns true if the event was processed.
-    pub(crate) fn dispatch_pointer_event_via_path(
-        &mut self,
-        root_id: ViewId,
-        event: &Event,
-    ) -> bool {
-        // Get the point from the event
-        let Some(point) = event.point() else {
-            // No point = not a pointer event, fall back to stacking context dispatch
-            return self.dispatch_to_view(root_id, event, false).is_processed();
-        };
-
-        // Phase 1: Hit test to find the target (z-index aware)
-        let Some(target) = hit_test(root_id, point) else {
-            // No target found, nothing to dispatch to
-            return false;
-        };
-
-        // Phase 2: Build event path from target to root (DOM order)
-        let path = build_event_path(target);
-
-        // Phase 3: Dispatch through the path (capturing + bubbling)
-        let result = dispatch_through_path(&path, event, self);
-
-        // Phase 4: For PointerUp, dispatch Click events separately
-        // This matches Chromium's behavior where Click is a synthetic event
-        // that bubbles through the entire path after PointerUp completes.
-        if matches!(event, Event::Pointer(ui_events::pointer::PointerEvent::Up { .. })) {
-            dispatch_click_through_path(&path, event, self);
-        }
-
-        result.is_processed()
-    }
-
-    // =========================================================================
-    // Main Dispatch Entry Point
-    // =========================================================================
-
-    /// Dispatch an event through the view tree with proper state management.
-    ///
-    /// This is the core event processing logic shared between WindowHandle and HeadlessHarness.
-    /// It handles:
-    /// - Scaling the event coordinates by the window scale factor
-    /// - Pre-dispatch state setup (clearing hover/clicking state as needed)
-    /// - Event dispatch to the appropriate views (focus-based, active-based, or unconditional)
-    /// - Post-dispatch state management (hover enter/leave, clicking state, focus changes)
-    ///
-    /// # Arguments
-    /// * `root_id` - The root view ID of the window
-    /// * `main_view_id` - The main content view ID (for keyboard event dispatch)
-    /// * `event` - The event to dispatch
-    ///
-    /// # Returns
-    /// The event propagation result
-    pub(crate) fn dispatch_event(
-        &mut self,
-        root_id: ViewId,
-        main_view_id: ViewId,
-        event: Event,
-    ) -> EventPropagation {
-        // Scale the event coordinates by the window scale factor
-        let event = event.transform(Affine::scale(self.window_state.scale));
-
-        // Handle pointer move: track cursor position and prepare for hover state changes
-        let is_pointer_move = if let Event::Pointer(PointerEvent::Move(pu)) = &event {
-            let pos = pu.current.logical_point();
-            self.window_state.last_cursor_location = pos;
-            Some(pu.pointer)
-        } else {
-            None
-        };
-
-        // On pointer move, save previous hover/dragging state and clear for rebuild
-        let (was_hovered, was_dragging_over) = if is_pointer_move.is_some() {
-            self.window_state.cursor = None;
-            let was_hovered = std::mem::take(&mut self.window_state.hovered);
-            let was_dragging_over = std::mem::take(&mut self.window_state.dragging_over);
-            (Some(was_hovered), Some(was_dragging_over))
-        } else {
-            (None, None)
-        };
-
-        // Track file hover changes
-        let was_file_hovered = if matches!(event, Event::FileDrag(FileDragEvent::DragMoved { .. }))
-            || is_pointer_move.is_some()
-        {
-            if !self.window_state.file_hovered.is_empty() {
-                Some(std::mem::take(&mut self.window_state.file_hovered))
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        // On pointer down, clear clicking state and save focus
-        let is_pointer_down = matches!(&event, Event::Pointer(PointerEvent::Down { .. }));
-        let was_focused = if is_pointer_down {
-            self.window_state.clicking.clear();
-            self.window_state.focus.take()
-        } else {
-            self.window_state.focus
-        };
-
-        // Dispatch the event based on its type and current state
-        if event.needs_focus() {
-            self.dispatch_keyboard_event(root_id, main_view_id, &event);
-        } else if self.window_state.active.is_some() && event.is_pointer() {
-            self.dispatch_to_active_view(root_id, &event);
-        } else if event.is_pointer() {
-            // Pointer events use Chromium-style path-based dispatch:
-            // 1. Hit test finds target (z-index aware)
-            // 2. Event path built from target to root (DOM order)
-            // 3. Dispatch through path (capturing + bubbling)
-            // 4. Click events dispatched separately after PointerUp
-            self.dispatch_pointer_event_via_path(root_id, &event);
-        } else {
-            // Non-pointer events use stacking context dispatch
-            self.dispatch_to_view(root_id, &event, false);
-        }
-
-        // Clear drag_start on pointer up
-        if let Event::Pointer(PointerEvent::Up { .. }) = &event {
-            self.window_state.drag_start = None;
-        }
-
-        // Handle hover state changes - send PointerEnter/Leave events
-        if let Some(pointer_info) = is_pointer_move {
-            self.handle_hover_changes(
-                pointer_info,
-                was_hovered.unwrap(),
-                was_dragging_over.unwrap(),
-                &event,
+    /// Try to show context menu for a view.
+    fn try_show_context_menu(&self, view_id: ViewId, pointer_state: &PointerState) -> BuiltinResult {
+        let view_state = view_id.state();
+        let (position, context_menu) = {
+            let vs = view_state.borrow();
+            let layout = vs.layout_rect;
+            let pos = Point::new(
+                layout.x0 + pointer_state.logical_point().x,
+                layout.y0 + pointer_state.logical_point().y,
             );
+            (pos, vs.context_menu.clone())
+        };
+        if let Some(menu) = context_menu {
+            show_context_menu(menu(), Some(position));
+            return PROCESSED;
         }
+        None
+    }
 
-        // Handle file hover style changes
-        if let Some(was_file_hovered) = was_file_hovered {
-            for id in was_file_hovered.symmetric_difference(&self.window_state.file_hovered) {
+    // =========================================================================
+    // State Change Helpers
+    // =========================================================================
+
+    /// Handle hover state changes by sending PointerEnter/Leave events.
+    fn handle_hover_changes(
+        &mut self,
+        pointer_info: PointerInfo,
+        was_hovered: std::collections::HashSet<ViewId>,
+        was_dragging_over: std::collections::HashSet<ViewId>,
+        event: &Event,
+    ) {
+        let hovered = self.window_state.hovered.clone();
+        for id in was_hovered.symmetric_difference(&hovered) {
+            // Single borrow to check all style-related conditions
+            let view_state = id.state();
+            let needs_style_update = {
+                let vs = view_state.borrow();
+                vs.has_active_animation()
+                    || vs.has_style_selectors.has(StyleSelector::Hover)
+                    || vs.has_style_selectors.has(StyleSelector::Active)
+            };
+            if needs_style_update {
                 id.request_style();
             }
-        }
 
-        // Handle focus changes
-        if was_focused != self.window_state.focus {
-            self.window_state
-                .focus_changed(was_focused, self.window_state.focus);
-        }
-
-        // Update active styles for clicking views on pointer down/up
-        let is_pointer_up = matches!(&event, Event::Pointer(PointerEvent::Up { .. }));
-        if is_pointer_down || is_pointer_up {
-            for id in self.window_state.clicking.clone() {
-                if self
-                    .window_state
-                    .has_style_for_sel(id, StyleSelector::Active)
-                {
-                    id.request_style_recursive();
-                }
-            }
-            if is_pointer_up {
-                self.window_state.clicking.clear();
+            if hovered.contains(id) {
+                id.apply_event(&EventListener::PointerEnter, event);
+            } else {
+                let leave_event = Event::Pointer(PointerEvent::Leave(pointer_info));
+                self.dispatch_to_view(*id, &leave_event, true);
             }
         }
 
-        EventPropagation::Continue
+        // Handle drag enter/leave events
+        let dragging_over = self.window_state.dragging_over.clone();
+        for id in was_dragging_over.symmetric_difference(&dragging_over) {
+            if dragging_over.contains(id) {
+                id.apply_event(&EventListener::DragEnter, event);
+            } else {
+                id.apply_event(&EventListener::DragLeave, event);
+            }
+        }
     }
 }
