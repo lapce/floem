@@ -28,6 +28,11 @@ use crate::{
 /// Inspired by Chromium's approach for event listener collections.
 pub(crate) type ViewIdSmallSet = SmallVec<[ViewId; 8]>;
 
+/// A small map from PointerId to ViewId, optimized for the common case of 1-2 pointers.
+/// Most applications only have a mouse pointer or a few touch points active at once.
+/// Uses linear search which is faster than HashMap for small N due to cache locality.
+pub(crate) type PointerCaptureMap = SmallVec<[(PointerId, ViewId); 2]>;
+
 /// Tracks the state of a view being dragged.
 pub struct DragState {
     pub(crate) id: ViewId,
@@ -48,11 +53,13 @@ pub struct WindowState {
     /// Per-pointer capture tracking inspired by Chromium's PointerEventManager.
     /// Maps pointer IDs to the view that has captured that pointer.
     /// Events for captured pointers are routed directly to the capture target.
-    pub(crate) pointer_capture_target: HashMap<PointerId, ViewId>,
+    /// Uses SmallVec for O(1) stack allocation in the common 1-2 pointer case.
+    pub(crate) pointer_capture_target: PointerCaptureMap,
     /// Pending pointer captures to be applied on the next event cycle.
     /// This two-phase approach (pending → active) ensures proper event ordering:
     /// lostpointercapture fires before gotpointercapture.
-    pub(crate) pending_pointer_capture_target: HashMap<PointerId, ViewId>,
+    /// Uses SmallVec for O(1) stack allocation in the common 1-2 pointer case.
+    pub(crate) pending_pointer_capture_target: PointerCaptureMap,
 
     pub(crate) root_view_id: ViewId,
     pub(crate) root: Option<NodeId>,
@@ -94,8 +101,8 @@ impl WindowState {
             focus: None,
             prev_focus: None,
             active: None,
-            pointer_capture_target: HashMap::new(),
-            pending_pointer_capture_target: HashMap::new(),
+            pointer_capture_target: PointerCaptureMap::new(),
+            pending_pointer_capture_target: PointerCaptureMap::new(),
             scale: 1.0,
             root_size: Size::ZERO,
             screen_size_bp: ScreenSizeBp::Xs,
@@ -171,8 +178,9 @@ impl WindowState {
         }
 
         // Clean up pointer capture state for removed view
-        self.pointer_capture_target.retain(|_, v| *v != id);
-        self.pending_pointer_capture_target.retain(|_, v| *v != id);
+        self.pointer_capture_target.retain(|(_, v)| *v != id);
+        self.pending_pointer_capture_target
+            .retain(|(_, v)| *v != id);
     }
 
     pub fn is_hovered(&self, id: &ViewId) -> bool {
@@ -219,22 +227,33 @@ impl WindowState {
     ///
     /// Note: Unlike the web API, this doesn't validate that the pointer is active
     /// (has button pressed). The caller should ensure this constraint if needed.
+    #[inline]
     pub(crate) fn set_pointer_capture(&mut self, pointer_id: PointerId, target: ViewId) -> bool {
-        self.pending_pointer_capture_target
-            .insert(pointer_id, target);
+        // Update existing entry or push new one
+        if let Some(entry) = self
+            .pending_pointer_capture_target
+            .iter_mut()
+            .find(|(id, _)| *id == pointer_id)
+        {
+            entry.1 = target;
+        } else {
+            self.pending_pointer_capture_target
+                .push((pointer_id, target));
+        }
         true
     }
 
     /// Release pointer capture for a specific view.
     ///
     /// Returns true if the view had capture and it was released.
+    #[inline]
     pub(crate) fn release_pointer_capture(
         &mut self,
         pointer_id: PointerId,
         target: ViewId,
     ) -> bool {
         if self.has_pointer_capture(pointer_id, target) {
-            self.pending_pointer_capture_target.remove(&pointer_id);
+            self.remove_pending_capture(pointer_id);
             true
         } else {
             false
@@ -242,31 +261,96 @@ impl WindowState {
     }
 
     /// Release pointer capture unconditionally.
+    #[inline]
     pub(crate) fn release_pointer_capture_unconditional(&mut self, pointer_id: PointerId) {
-        self.pending_pointer_capture_target.remove(&pointer_id);
+        self.remove_pending_capture(pointer_id);
+    }
+
+    /// Remove a pointer from the pending capture map.
+    #[inline]
+    fn remove_pending_capture(&mut self, pointer_id: PointerId) {
+        if let Some(pos) = self
+            .pending_pointer_capture_target
+            .iter()
+            .position(|(id, _)| *id == pointer_id)
+        {
+            self.pending_pointer_capture_target.swap_remove(pos);
+        }
+    }
+
+    /// Remove a pointer from the active capture map.
+    #[inline]
+    pub(crate) fn remove_active_capture(&mut self, pointer_id: PointerId) {
+        if let Some(pos) = self
+            .pointer_capture_target
+            .iter()
+            .position(|(id, _)| *id == pointer_id)
+        {
+            self.pointer_capture_target.swap_remove(pos);
+        }
+    }
+
+    /// Set the active capture target for a pointer.
+    #[inline]
+    pub(crate) fn set_active_capture(&mut self, pointer_id: PointerId, target: ViewId) {
+        if let Some(entry) = self
+            .pointer_capture_target
+            .iter_mut()
+            .find(|(id, _)| *id == pointer_id)
+        {
+            entry.1 = target;
+        } else {
+            self.pointer_capture_target.push((pointer_id, target));
+        }
     }
 
     /// Check if a view has pointer capture (pending or active).
     ///
     /// Following Chromium's behavior, this checks the pending map since
     /// that represents the "intent" of the capture state.
+    #[inline]
     pub(crate) fn has_pointer_capture(&self, pointer_id: PointerId, target: ViewId) -> bool {
         self.pending_pointer_capture_target
-            .get(&pointer_id)
-            .is_some_and(|v| *v == target)
+            .iter()
+            .any(|(id, v)| *id == pointer_id && *v == target)
+    }
+
+    /// Get the pending capture target for a pointer.
+    #[inline]
+    pub(crate) fn get_pending_capture_target(&self, pointer_id: PointerId) -> Option<ViewId> {
+        self.pending_pointer_capture_target
+            .iter()
+            .find(|(id, _)| *id == pointer_id)
+            .map(|(_, v)| *v)
     }
 
     /// Get the effective target for a pointer event, considering capture.
     ///
     /// If the pointer has an active capture, returns the capture target.
     /// Otherwise returns None, indicating normal hit-testing should be used.
+    #[inline]
     pub(crate) fn get_pointer_capture_target(&self, pointer_id: PointerId) -> Option<ViewId> {
-        self.pointer_capture_target.get(&pointer_id).copied()
+        self.pointer_capture_target
+            .iter()
+            .find(|(id, _)| *id == pointer_id)
+            .map(|(_, v)| *v)
     }
 
     /// Check if any pointer has active capture to the given view.
+    #[inline]
+    #[allow(dead_code)]
     pub(crate) fn has_any_capture(&self, target: ViewId) -> bool {
-        self.pointer_capture_target.values().any(|v| *v == target)
+        self.pointer_capture_target
+            .iter()
+            .any(|(_, v)| *v == target)
+    }
+
+    /// Check if the pending capture map contains an entry for the given pointer.
+    #[inline]
+    pub(crate) fn has_pending_capture(&self, pointer_id: PointerId) -> bool {
+        self.pending_pointer_capture_target
+            .iter()
+            .any(|(id, _)| *id == pointer_id)
     }
 
     pub fn set_root_size(&mut self, size: Size) {

@@ -100,17 +100,10 @@ impl EventCx<'_> {
     /// 4. Fire `GotPointerCapture` to the new target (if any)
     ///
     /// This ensures proper event ordering: lost fires before got.
+    #[inline]
     pub(crate) fn process_pending_pointer_capture(&mut self, pointer_id: PointerId) {
-        let current_target = self
-            .window_state
-            .pointer_capture_target
-            .get(&pointer_id)
-            .copied();
-        let pending_target = self
-            .window_state
-            .pending_pointer_capture_target
-            .get(&pointer_id)
-            .copied();
+        let current_target = self.window_state.get_pointer_capture_target(pointer_id);
+        let pending_target = self.window_state.get_pending_capture_target(pointer_id);
 
         // No change in capture state
         if current_target == pending_target {
@@ -119,7 +112,7 @@ impl EventCx<'_> {
 
         // Fire LostPointerCapture to the old target
         if let Some(old_target) = current_target {
-            self.window_state.pointer_capture_target.remove(&pointer_id);
+            self.window_state.remove_active_capture(pointer_id);
             let event = Event::LostPointerCapture(pointer_id);
             old_target.apply_event(&EventListener::LostPointerCapture, &event);
         }
@@ -128,15 +121,13 @@ impl EventCx<'_> {
         if let Some(new_target) = pending_target {
             // Only set capture if the view is still connected
             if !new_target.is_hidden() {
-                self.window_state
-                    .pointer_capture_target
-                    .insert(pointer_id, new_target);
+                self.window_state.set_active_capture(pointer_id, new_target);
                 let event = Event::GotPointerCapture(pointer_id);
                 new_target.apply_event(&EventListener::GotPointerCapture, &event);
 
                 // If the view was removed during the event handler, clean up
                 if new_target.is_hidden() {
-                    self.window_state.pointer_capture_target.remove(&pointer_id);
+                    self.window_state.remove_active_capture(pointer_id);
                     let event = Event::LostPointerCapture(pointer_id);
                     new_target.apply_event(&EventListener::LostPointerCapture, &event);
                 }
@@ -147,14 +138,21 @@ impl EventCx<'_> {
     /// Process pending pointer captures for all pointers.
     ///
     /// Called before dispatching pointer events to ensure capture state is current.
+    #[allow(dead_code)]
     pub(crate) fn process_all_pending_pointer_captures(&mut self) {
         // Collect all pointer IDs that have pending or current captures
+        // Using SmallVec to avoid heap allocation in common case
         let pointer_ids: SmallVec<[PointerId; 4]> = self
             .window_state
             .pending_pointer_capture_target
-            .keys()
-            .chain(self.window_state.pointer_capture_target.keys())
-            .copied()
+            .iter()
+            .map(|(id, _)| *id)
+            .chain(
+                self.window_state
+                    .pointer_capture_target
+                    .iter()
+                    .map(|(id, _)| *id),
+            )
             .collect();
 
         for pointer_id in pointer_ids {
@@ -163,6 +161,7 @@ impl EventCx<'_> {
     }
 
     /// Get the pointer ID from a pointer event, if available.
+    #[inline]
     fn get_pointer_id_from_event(event: &Event) -> Option<PointerId> {
         match event {
             Event::Pointer(PointerEvent::Down(PointerButtonEvent { pointer, .. }))
@@ -398,11 +397,7 @@ impl EventCx<'_> {
                 if let Some(pointer_id) = pointer.pointer_id {
                     // Only set implicit capture if no explicit capture was set during dispatch
                     // and no explicit release was requested
-                    if !self
-                        .window_state
-                        .pending_pointer_capture_target
-                        .contains_key(&pointer_id)
-                    {
+                    if !self.window_state.has_pending_capture(pointer_id) {
                         self.window_state.set_pointer_capture(pointer_id, target);
                     }
                 }
