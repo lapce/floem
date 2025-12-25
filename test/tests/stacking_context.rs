@@ -226,8 +226,14 @@ fn test_stacking_model_siblings_compete_at_same_level() {
         "C with z-index 6 should receive click (highest at root level)"
     );
     assert!(!clicked_b.get(), "B should NOT receive click");
-    assert!(!clicked_a1.get(), "A1 should NOT receive click (bounded within A)");
-    assert!(!clicked_a2.get(), "A2 should NOT receive click (bounded within A)");
+    assert!(
+        !clicked_a1.get(),
+        "A1 should NOT receive click (bounded within A)"
+    );
+    assert!(
+        !clicked_a2.get(),
+        "A2 should NOT receive click (bounded within A)"
+    );
 }
 
 #[test]

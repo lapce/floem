@@ -3,10 +3,10 @@
 //! These tests verify that the Overlay view correctly manages overlays,
 //! including event dispatch order and paint order.
 
+use floem::HasViewId;
 use floem::headless::HeadlessHarness;
 use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 use floem::views::{Clip, Decorators, Empty, Label, Overlay, stack};
-use floem::HasViewId;
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -281,10 +281,7 @@ fn test_overlay_dom_order_tiebreaker() {
         clicked_overlay2.get(),
         "Overlay2 (later in DOM) should receive click when z-index is equal"
     );
-    assert!(
-        !clicked_overlay1.get(),
-        "Overlay1 should NOT receive click"
-    );
+    assert!(!clicked_overlay1.get(), "Overlay1 should NOT receive click");
 }
 
 #[test]
@@ -411,8 +408,7 @@ fn test_paint_order_overlays_after_regular_views() {
     let regular = Empty::new().style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(100));
     let regular_id = regular.view_id();
 
-    let overlay_content =
-        Empty::new().style(|s| s.absolute().inset(0.0).size(100.0, 100.0));
+    let overlay_content = Empty::new().style(|s| s.absolute().inset(0.0).size(100.0, 100.0));
     let overlay_id = overlay_content.view_id();
 
     let view = stack((regular, Overlay::new(overlay_content))).style(|s| s.size(100.0, 100.0));
@@ -449,12 +445,10 @@ fn test_paint_order_multiple_overlays_by_z_index() {
     //   └── Overlay (z-index: 1)   <-- painted first (lower z-index = painted earlier)
     //       └── overlay2_content
 
-    let overlay1_content =
-        Empty::new().style(|s| s.absolute().inset(0.0).size(100.0, 100.0));
+    let overlay1_content = Empty::new().style(|s| s.absolute().inset(0.0).size(100.0, 100.0));
     let overlay1_id = overlay1_content.view_id();
 
-    let overlay2_content =
-        Empty::new().style(|s| s.absolute().inset(0.0).size(100.0, 100.0));
+    let overlay2_content = Empty::new().style(|s| s.absolute().inset(0.0).size(100.0, 100.0));
     let overlay2_id = overlay2_content.view_id();
 
     let view = stack((
@@ -470,14 +464,8 @@ fn test_paint_order_multiple_overlays_by_z_index() {
     let overlay1_pos = paint_order.iter().position(|&id| id == overlay1_id);
     let overlay2_pos = paint_order.iter().position(|&id| id == overlay2_id);
 
-    assert!(
-        overlay1_pos.is_some(),
-        "Overlay1 should be in paint order"
-    );
-    assert!(
-        overlay2_pos.is_some(),
-        "Overlay2 should be in paint order"
-    );
+    assert!(overlay1_pos.is_some(), "Overlay1 should be in paint order");
+    assert!(overlay2_pos.is_some(), "Overlay2 should be in paint order");
 
     // Lower z-index (overlay2, z=1) should be painted first
     // Higher z-index (overlay1, z=10) should be painted later
@@ -544,12 +532,10 @@ fn test_paint_order_nested_overlay_escapes_parent() {
     //   │       └── overlay_content  <-- painted last (overlay always on top)
     //   └── sibling (z-index: 100)  <-- painted before overlay (regular view)
 
-    let overlay_content =
-        Empty::new().style(|s| s.absolute().inset(0.0).size(100.0, 100.0));
+    let overlay_content = Empty::new().style(|s| s.absolute().inset(0.0).size(100.0, 100.0));
     let overlay_id = overlay_content.view_id();
 
-    let sibling =
-        Empty::new().style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(100));
+    let sibling = Empty::new().style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(100));
     let sibling_id = sibling.view_id();
 
     let view = stack((
@@ -651,8 +637,7 @@ fn test_overlay_painted_outside_parent_clip() {
     //
     // The overlay content should appear in the paint order.
 
-    let overlay_content =
-        Empty::new().style(|s| s.absolute().inset(0.0).size(100.0, 100.0));
+    let overlay_content = Empty::new().style(|s| s.absolute().inset(0.0).size(100.0, 100.0));
     let overlay_id = overlay_content.view_id();
 
     let view = stack((Clip::new(stack((Overlay::new(overlay_content),)))
@@ -720,10 +705,7 @@ fn test_overlay_escapes_nested_clips() {
     // Click outside both clip bounds (90, 45) but inside overlay
     harness.click(90.0, 45.0);
 
-    assert!(
-        clicked_overlay.get(),
-        "Overlay should escape nested clips"
-    );
+    assert!(clicked_overlay.get(), "Overlay should escape nested clips");
     assert!(
         !clicked_background.get(),
         "Background should NOT receive click"
@@ -784,4 +766,3 @@ fn test_clip_only_affects_painting_not_events() {
         "Background should NOT receive click (blocked by child's hit area)"
     );
 }
-

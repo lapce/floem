@@ -109,7 +109,11 @@ pub(crate) fn collect_stacking_context_items(parent_id: ViewId) -> Rc<StackingCo
 
     // Sort by z-index, then DOM order
     if has_non_zero_z {
-        items.sort_by(|a, b| a.z_index.cmp(&b.z_index).then(a.dom_order.cmp(&b.dom_order)));
+        items.sort_by(|a, b| {
+            a.z_index
+                .cmp(&b.z_index)
+                .then(a.dom_order.cmp(&b.dom_order))
+        });
     }
 
     // Cache and return
