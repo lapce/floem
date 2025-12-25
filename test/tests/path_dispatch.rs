@@ -242,10 +242,7 @@ fn test_double_click_at_target_fires_first() {
         .track_double_click(
             "parent",
             Container::new(
-                tracker.track_double_click(
-                    "child",
-                    Empty::new().style(|s| s.size(50.0, 50.0)),
-                ),
+                tracker.track_double_click("child", Empty::new().style(|s| s.size(50.0, 50.0))),
             )
             .style(|s| s.size(100.0, 100.0)),
         )
@@ -304,10 +301,7 @@ fn test_secondary_click_at_target_fires_first() {
         .track_secondary_click(
             "parent",
             Container::new(
-                tracker.track_secondary_click(
-                    "child",
-                    Empty::new().style(|s| s.size(50.0, 50.0)),
-                ),
+                tracker.track_secondary_click("child", Empty::new().style(|s| s.size(50.0, 50.0))),
             )
             .style(|s| s.size(100.0, 100.0)),
         )
@@ -543,8 +537,7 @@ fn test_multiple_clicks_each_bubble_separately() {
         .track_named_cont(
             "parent",
             Container::new(
-                tracker
-                    .track_named_cont("child", Empty::new().style(|s| s.size(50.0, 50.0))),
+                tracker.track_named_cont("child", Empty::new().style(|s| s.size(50.0, 50.0))),
             )
             .style(|s| s.size(100.0, 100.0)),
         )
@@ -572,10 +565,7 @@ fn test_click_on_disabled_view_does_not_bubble() {
         .track_named(
             "parent",
             Container::new(
-                tracker.track_named(
-                    "disabled_child",
-                    Empty::new().style(|s| s.size(50.0, 50.0)),
-                ),
+                tracker.track_named("disabled_child", Empty::new().style(|s| s.size(50.0, 50.0))),
             )
             .style(|s| s.set_disabled(true))
             .style(|s| s.size(100.0, 100.0)),

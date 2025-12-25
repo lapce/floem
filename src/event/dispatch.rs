@@ -261,7 +261,10 @@ impl EventCx<'_> {
         // Phase 4: For PointerUp, dispatch Click events separately
         // This matches Chromium's behavior where Click is a synthetic event
         // that bubbles through the entire path after PointerUp completes.
-        if matches!(event, Event::Pointer(ui_events::pointer::PointerEvent::Up { .. })) {
+        if matches!(
+            event,
+            Event::Pointer(ui_events::pointer::PointerEvent::Up { .. })
+        ) {
             dispatch_click_through_path(&path, event, self);
         }
 
@@ -289,8 +292,11 @@ impl EventCx<'_> {
             let vs = view_state.borrow();
             (
                 vs.local_to_root_transform,
-                event.listener().is_some_and(|l| vs.disable_default_events.contains(&l)),
-                event.is_pointer() && vs.computed_style.get(PointerEventsProp) == Some(PointerEvents::None),
+                event
+                    .listener()
+                    .is_some_and(|l| vs.disable_default_events.contains(&l)),
+                event.is_pointer()
+                    && vs.computed_style.get(PointerEventsProp) == Some(PointerEvents::None),
             )
         };
 
@@ -298,7 +304,12 @@ impl EventCx<'_> {
         let can_process = !disable_default && !is_pointer_none;
 
         // Phase 1: Let view handle event before children
-        if can_process && view.borrow_mut().event_before_children(self, &event).is_processed() {
+        if can_process
+            && view
+                .borrow_mut()
+                .event_before_children(self, &event)
+                .is_processed()
+        {
             self.apply_processed_side_effects(view_id, &view_state, &event);
             return DispatchOutcome::Processed;
         }
@@ -315,16 +326,28 @@ impl EventCx<'_> {
         };
 
         // Phase 3: Let view handle event after children
-        if can_process && view.borrow_mut().event_after_children(self, &event).is_processed() {
+        if can_process
+            && view
+                .borrow_mut()
+                .event_after_children(self, &event)
+                .is_processed()
+        {
             return DispatchOutcome::Processed;
         }
 
         if is_pointer_none {
-            return if child_consumed { DispatchOutcome::Consumed } else { DispatchOutcome::Skipped };
+            return if child_consumed {
+                DispatchOutcome::Consumed
+            } else {
+                DispatchOutcome::Skipped
+            };
         }
 
         // Phase 4: Built-in behaviors and listeners
-        if let Some(result) = can_process.then(|| self.handle_default_behaviors(view_id, &view_state, &event, directed)).flatten() {
+        if let Some(result) = can_process
+            .then(|| self.handle_default_behaviors(view_id, &view_state, &event, directed))
+            .flatten()
+        {
             return result;
         }
 
@@ -348,7 +371,10 @@ impl EventCx<'_> {
             // Stacking contexts may have children outside their clip rect (e.g., dropdowns).
             // We must recurse into them even if the parent fails the clip test.
             if item.creates_context && !should_send {
-                if self.dispatch_to_view(item.view_id, event, false).is_processed() {
+                if self
+                    .dispatch_to_view(item.view_id, event, false)
+                    .is_processed()
+                {
                     return DispatchOutcome::Processed;
                 }
                 continue;
@@ -379,7 +405,10 @@ impl EventCx<'_> {
         // Event bubbling: notify ancestors of the consuming child
         if let Some(parent_chain) = consuming_parent_chain {
             for &ancestor_id in parent_chain.iter().rev() {
-                if self.dispatch_to_view(ancestor_id, event, true).is_processed() {
+                if self
+                    .dispatch_to_view(ancestor_id, event, true)
+                    .is_processed()
+                {
                     return DispatchOutcome::Processed;
                 }
             }
@@ -962,7 +991,11 @@ impl EventCx<'_> {
     }
 
     /// Try to show context menu for a view.
-    fn try_show_context_menu(&self, view_id: ViewId, pointer_state: &PointerState) -> BuiltinResult {
+    fn try_show_context_menu(
+        &self,
+        view_id: ViewId,
+        pointer_state: &PointerState,
+    ) -> BuiltinResult {
         let view_state = view_id.state();
         let (position, context_menu) = {
             let vs = view_state.borrow();

@@ -516,7 +516,8 @@ pub fn dispatch_click_through_path(
         return DispatchResult::Continue;
     }
 
-    let is_primary = pointer.is_primary_pointer() && button.is_none_or(|b| b == PointerButton::Primary);
+    let is_primary =
+        pointer.is_primary_pointer() && button.is_none_or(|b| b == PointerButton::Primary);
     let is_secondary = button.is_some_and(|b| b == PointerButton::Secondary);
 
     if !is_primary && !is_secondary {

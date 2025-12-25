@@ -9,7 +9,7 @@
 use floem::prelude::*;
 use floem::style::{Display, PointerEvents};
 use floem::views::{Container, Empty, Scroll};
-use floem_test::{layers, ClickTracker, HeadlessHarness};
+use floem_test::{ClickTracker, HeadlessHarness, layers};
 
 // =============================================================================
 // Basic Scroll Clip Tests
@@ -100,10 +100,8 @@ fn test_nested_scroll_simple() {
     let inner_scroll = Scroll::new(button).style(|s| s.size(40.0, 40.0));
 
     // Outer scroll: 60x60
-    let outer_scroll = Scroll::new(
-        Container::new(inner_scroll).style(|s| s.size(100.0, 100.0)),
-    )
-    .style(|s| s.size(60.0, 60.0));
+    let outer_scroll = Scroll::new(Container::new(inner_scroll).style(|s| s.size(100.0, 100.0)))
+        .style(|s| s.size(60.0, 60.0));
 
     let view = stack((outer_scroll,)).style(|s| s.size(60.0, 60.0));
 
@@ -138,10 +136,8 @@ fn test_nested_scroll_with_offset() {
     let inner_scroll = Scroll::new(button).style(|s| s.size(40.0, 40.0).margin(20.0));
 
     // Outer scroll: 80x80
-    let outer_scroll = Scroll::new(
-        Container::new(inner_scroll).style(|s| s.size(100.0, 100.0)),
-    )
-    .style(|s| s.size(80.0, 80.0));
+    let outer_scroll = Scroll::new(Container::new(inner_scroll).style(|s| s.size(100.0, 100.0)))
+        .style(|s| s.size(80.0, 80.0));
 
     let view = stack((outer_scroll,)).style(|s| s.size(80.0, 80.0));
 
@@ -182,16 +178,14 @@ fn test_absolute_with_z_index_escapes_clip() {
     let tracker = ClickTracker::new();
 
     // Dropdown that will be positioned outside the scroll viewport
-    let dropdown = tracker
-        .track_named("dropdown", Empty::new())
-        .style(|s| {
-            s.absolute()
-                .inset_left(0.0)
-                .inset_top(60.0) // Below scroll viewport
-                .width(100.0)
-                .height(40.0)
-                .z_index(100)
-        });
+    let dropdown = tracker.track_named("dropdown", Empty::new()).style(|s| {
+        s.absolute()
+            .inset_left(0.0)
+            .inset_top(60.0) // Below scroll viewport
+            .width(100.0)
+            .height(40.0)
+            .z_index(100)
+    });
 
     // Content container with relative positioning
     let content = layers((
@@ -230,16 +224,14 @@ fn test_trigger_and_dropdown_click_dispatch() {
 
     // Dropdown positioned below trigger, with higher z-index
     // Use a stack with relative positioning to hold both
-    let dropdown = tracker
-        .track_named("dropdown", Empty::new())
-        .style(|s| {
-            s.absolute()
-                .inset_left(0.0)
-                .inset_top(30.0) // Right below trigger
-                .width(100.0)
-                .height(80.0) // Extends to y=110
-                .z_index(100)
-        });
+    let dropdown = tracker.track_named("dropdown", Empty::new()).style(|s| {
+        s.absolute()
+            .inset_left(0.0)
+            .inset_top(30.0) // Right below trigger
+            .width(100.0)
+            .height(80.0) // Extends to y=110
+            .z_index(100)
+    });
 
     // Stack holds trigger (normal flow) and dropdown (absolute)
     // The trigger takes up the top 30px, dropdown is positioned at y=30
@@ -396,10 +388,7 @@ fn test_hidden_view_no_clip_effect() {
 
     // The hidden scroll should not affect the visible button
     harness.click(50.0, 25.0);
-    assert!(
-        tracker.was_clicked(),
-        "Visible button should be clickable"
-    );
+    assert!(tracker.was_clicked(), "Visible button should be clickable");
 }
 
 /// Test pointer_events: none combined with clips.
@@ -448,8 +437,7 @@ fn test_overlapping_scroll_containers() {
         .track_named("right", Empty::new())
         .style(|s| s.size(100.0, 100.0));
     // Right scroll overlaps left by using negative margin
-    let right_scroll =
-        Scroll::new(right_content).style(|s| s.size(50.0, 50.0).margin_left(-20.0));
+    let right_scroll = Scroll::new(right_content).style(|s| s.size(50.0, 50.0).margin_left(-20.0));
 
     let view = h_stack((left_scroll, right_scroll)).style(|s| s.size(80.0, 50.0));
 
