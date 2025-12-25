@@ -30,6 +30,12 @@ pub(crate) type StackingContextItems = SmallVec<[StackingContextItem; 8]>;
 thread_local! {
     static STACKING_CONTEXT_CACHE: RefCell<FxHashMap<ViewId, Rc<StackingContextItems>>> =
         RefCell::new(FxHashMap::default());
+
+    // Thread-local cache for overlay order per root.
+    // Key: ViewId of the root
+    // Value: Sorted list of overlay ViewIds by z-index
+    static OVERLAY_ORDER_CACHE: RefCell<FxHashMap<ViewId, SmallVec<[ViewId; 4]>>> =
+        RefCell::new(FxHashMap::default());
 }
 
 /// Invalidates the stacking context cache for a view and its parent.
@@ -43,6 +49,22 @@ pub(crate) fn invalidate_stacking_cache(view_id: ViewId) {
         if let Some(parent) = view_id.parent() {
             cache.remove(&parent);
         }
+    });
+}
+
+/// Invalidates the overlay order cache for a root.
+/// Call this when overlays are registered/unregistered or their z-index changes.
+pub(crate) fn invalidate_overlay_cache(root_id: ViewId) {
+    OVERLAY_ORDER_CACHE.with(|cache| {
+        cache.borrow_mut().remove(&root_id);
+    });
+}
+
+/// Invalidates all overlay caches.
+/// This is a fallback when the root is not known.
+pub(crate) fn invalidate_all_overlay_caches() {
+    OVERLAY_ORDER_CACHE.with(|cache| {
+        cache.borrow_mut().clear();
     });
 }
 
@@ -102,10 +124,20 @@ pub(crate) fn collect_stacking_context_items(parent_id: ViewId) -> Rc<StackingCo
 /// Collects all overlay ViewIds that belong to the given root.
 /// Overlays are painted at root level, above all other content.
 /// Returns overlays sorted by z-index (lower z-index painted first).
+///
+/// Results are cached. Call `invalidate_overlay_cache` when overlays are
+/// registered/unregistered or their z-index changes.
 pub(crate) fn collect_overlays(root_id: ViewId) -> SmallVec<[ViewId; 4]> {
     use super::VIEW_STORAGE;
 
-    // Collect overlay IDs that belong to root_id
+    // Check cache first
+    let cached = OVERLAY_ORDER_CACHE.with(|cache| cache.borrow().get(&root_id).cloned());
+
+    if let Some(overlays) = cached {
+        return overlays;
+    }
+
+    // Cache miss - collect overlay IDs that belong to root_id
     // We compute the actual root dynamically since the root may not be known at registration time
     let overlay_ids: SmallVec<[ViewId; 4]> = VIEW_STORAGE.with_borrow(|s| {
         s.overlays
@@ -130,7 +162,14 @@ pub(crate) fn collect_overlays(root_id: ViewId) -> SmallVec<[ViewId; 4]> {
     // Sort by z-index, then DOM order for stability
     overlays.sort_by_key(|(_, z)| *z);
 
-    overlays.into_iter().map(|(id, _)| id).collect()
+    let result: SmallVec<[ViewId; 4]> = overlays.into_iter().map(|(id, _)| id).collect();
+
+    // Cache and return
+    OVERLAY_ORDER_CACHE.with(|cache| {
+        cache.borrow_mut().insert(root_id, result.clone());
+    });
+
+    result
 }
 
 #[cfg(test)]
@@ -548,5 +587,82 @@ mod tests {
         // b has z=-1, so it should come before a and c (which have z=0)
         assert_eq!(get_view_ids(&result), vec![b, a, c]);
         assert_eq!(get_z_indices_from_items(&result), vec![-1, 0, 0]);
+    }
+
+    // ========== Overlay Cache Tests ==========
+
+    #[test]
+    fn test_overlay_cache_hit_on_second_call() {
+        use crate::view::VIEW_STORAGE;
+
+        // Create a root and register overlays
+        let root = ViewId::new();
+        let overlay1 = create_view_with_z_index(1);
+        let overlay2 = create_view_with_z_index(2);
+
+        // Set up parent chain so overlays belong to root
+        overlay1.set_parent(root);
+        overlay2.set_parent(root);
+        root.set_children_ids(vec![overlay1, overlay2]);
+
+        // Register overlays
+        VIEW_STORAGE.with_borrow_mut(|s| {
+            s.overlays.insert(overlay1, root);
+            s.overlays.insert(overlay2, root);
+        });
+
+        // First call should populate cache
+        let result1 = collect_overlays(root);
+
+        // Second call should return cached value
+        let result2 = collect_overlays(root);
+
+        assert_eq!(result1, result2);
+        assert_eq!(result1.len(), 2);
+
+        // Clean up
+        VIEW_STORAGE.with_borrow_mut(|s| {
+            s.overlays.remove(overlay1);
+            s.overlays.remove(overlay2);
+        });
+    }
+
+    #[test]
+    fn test_overlay_cache_invalidation() {
+        use crate::view::VIEW_STORAGE;
+
+        // Create a root and register an overlay
+        let root = ViewId::new();
+        let overlay1 = create_view_with_z_index(1);
+
+        overlay1.set_parent(root);
+        root.set_children_ids(vec![overlay1]);
+
+        VIEW_STORAGE.with_borrow_mut(|s| {
+            s.overlays.insert(overlay1, root);
+        });
+
+        let result1 = collect_overlays(root);
+        assert_eq!(result1.len(), 1);
+
+        // Invalidate cache
+        invalidate_all_overlay_caches();
+
+        // Add another overlay
+        let overlay2 = create_view_with_z_index(2);
+        overlay2.set_parent(root);
+        VIEW_STORAGE.with_borrow_mut(|s| {
+            s.overlays.insert(overlay2, root);
+        });
+
+        // Should get fresh result with both overlays
+        let result2 = collect_overlays(root);
+        assert_eq!(result2.len(), 2);
+
+        // Clean up
+        VIEW_STORAGE.with_borrow_mut(|s| {
+            s.overlays.remove(overlay1);
+            s.overlays.remove(overlay2);
+        });
     }
 }

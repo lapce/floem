@@ -5,7 +5,7 @@
 
 use floem::headless::HeadlessHarness;
 use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
-use floem::views::{Decorators, Empty, Label, Overlay, stack};
+use floem::views::{Clip, Decorators, Empty, Label, Overlay, stack};
 use floem::HasViewId;
 use std::cell::Cell;
 use std::rc::Rc;
@@ -574,6 +574,214 @@ fn test_paint_order_nested_overlay_escapes_parent() {
         "Overlay should be painted AFTER sibling (overlay at {}, sibling at {})",
         overlay_pos.unwrap(),
         sibling_pos.unwrap()
+    );
+}
+
+// ============================================================================
+// Clip Escape Tests
+// ============================================================================
+
+#[test]
+fn test_overlay_escapes_parent_clip() {
+    // Test that an overlay inside a Clip view still receives events
+    // outside the clip bounds.
+    //
+    // Structure:
+    //   stack (100x100)
+    //   ├── Clip (50x50 at 0,0)
+    //   │   └── stack
+    //   │       └── Overlay
+    //   │           └── overlay_content (100x100)  <-- extends beyond clip
+    //   └── background (100x100)  <-- should NOT receive click at (75, 25)
+    //
+    // Click at (75, 25) is outside the Clip bounds but inside
+    // the overlay_content bounds. The overlay should receive this click.
+
+    let clicked_overlay = Rc::new(Cell::new(false));
+    let clicked_background = Rc::new(Cell::new(false));
+
+    let overlay_clone = clicked_overlay.clone();
+    let bg_clone = clicked_background.clone();
+
+    let view = stack((
+        // Clipping parent using Clip view
+        Clip::new(stack((Overlay::new(
+            Empty::new()
+                .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
+                .on_click_stop(move |_| {
+                    overlay_clone.set(true);
+                }),
+        ),)))
+        .style(|s| s.absolute().inset_left(0.0).inset_top(0.0).size(50.0, 50.0)),
+        // Background that would receive click if overlay didn't escape clip
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(-1))
+            .on_click_stop(move |_| {
+                bg_clone.set(true);
+            }),
+    ))
+    .style(|s| s.size(100.0, 100.0));
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    // Click outside clip bounds (75, 25) but inside overlay bounds
+    harness.click(75.0, 25.0);
+
+    assert!(
+        clicked_overlay.get(),
+        "Overlay should receive click outside parent's clip bounds"
+    );
+    assert!(
+        !clicked_background.get(),
+        "Background should NOT receive click (blocked by overlay)"
+    );
+}
+
+#[test]
+fn test_overlay_painted_outside_parent_clip() {
+    // Test that an overlay is painted even when it extends outside
+    // its parent's clipping region.
+    //
+    // Structure:
+    //   stack
+    //   └── Clip (50x50)
+    //       └── stack
+    //           └── Overlay
+    //               └── overlay_content (100x100)  <-- extends beyond clip
+    //
+    // The overlay content should appear in the paint order.
+
+    let overlay_content =
+        Empty::new().style(|s| s.absolute().inset(0.0).size(100.0, 100.0));
+    let overlay_id = overlay_content.view_id();
+
+    let view = stack((Clip::new(stack((Overlay::new(overlay_content),)))
+        .style(|s| s.absolute().inset(0.0).size(50.0, 50.0)),))
+    .style(|s| s.size(100.0, 100.0));
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    let paint_order = harness.paint_and_get_order();
+
+    let overlay_pos = paint_order.iter().position(|&id| id == overlay_id);
+
+    assert!(
+        overlay_pos.is_some(),
+        "Overlay should be painted even when parent has clip"
+    );
+}
+
+#[test]
+fn test_overlay_escapes_nested_clips() {
+    // Test that an overlay escapes multiple levels of clipping parents.
+    //
+    // Structure:
+    //   stack (100x100)
+    //   ├── Clip (80x80)
+    //   │   └── Clip (60x60)
+    //   │       └── stack
+    //   │           └── Overlay
+    //   │               └── overlay_content (100x100)  <-- should escape all clips
+    //   └── background  <-- should NOT receive click
+    //
+    // Click at (90, 45) is outside both clip bounds but inside overlay bounds.
+
+    let clicked_overlay = Rc::new(Cell::new(false));
+    let clicked_background = Rc::new(Cell::new(false));
+
+    let overlay_clone = clicked_overlay.clone();
+    let bg_clone = clicked_background.clone();
+
+    let view = stack((
+        // Outer clipping container
+        Clip::new(
+            // Inner clipping container
+            Clip::new(stack((Overlay::new(
+                Empty::new()
+                    .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
+                    .on_click_stop(move |_| {
+                        overlay_clone.set(true);
+                    }),
+            ),)))
+            .style(|s| s.absolute().inset(0.0).size(60.0, 60.0)),
+        )
+        .style(|s| s.absolute().inset(0.0).size(80.0, 80.0)),
+        // Background
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(-1))
+            .on_click_stop(move |_| {
+                bg_clone.set(true);
+            }),
+    ))
+    .style(|s| s.size(100.0, 100.0));
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    // Click outside both clip bounds (90, 45) but inside overlay
+    harness.click(90.0, 45.0);
+
+    assert!(
+        clicked_overlay.get(),
+        "Overlay should escape nested clips"
+    );
+    assert!(
+        !clicked_background.get(),
+        "Background should NOT receive click"
+    );
+}
+
+#[test]
+fn test_clip_only_affects_painting_not_events() {
+    // Document current behavior: Clip only affects painting, not event dispatch.
+    // Children inside a Clip still receive events outside the clip bounds.
+    //
+    // Structure:
+    //   stack (100x100)
+    //   ├── Clip (50x50)
+    //   │   └── regular_child (100x100, extends beyond clip)
+    //   └── background
+    //
+    // Click at (75, 25) goes to regular_child even though it's outside clip bounds.
+    // This is because Clip only affects rendering, not hit testing.
+
+    let clicked_child = Rc::new(Cell::new(false));
+    let clicked_background = Rc::new(Cell::new(false));
+
+    let child_clone = clicked_child.clone();
+    let bg_clone = clicked_background.clone();
+
+    let view = stack((
+        // Clipping parent
+        Clip::new(
+            Empty::new()
+                .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
+                .on_click_stop(move |_| {
+                    child_clone.set(true);
+                }),
+        )
+        .style(|s| s.absolute().inset_left(0.0).inset_top(0.0).size(50.0, 50.0)),
+        // Background
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(-1))
+            .on_click_stop(move |_| {
+                bg_clone.set(true);
+            }),
+    ))
+    .style(|s| s.size(100.0, 100.0));
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    // Click outside clip bounds - child still receives it because Clip
+    // only affects painting, not event dispatch
+    harness.click(75.0, 25.0);
+
+    assert!(
+        clicked_child.get(),
+        "Child receives click outside clip bounds (Clip only affects painting)"
+    );
+    assert!(
+        !clicked_background.get(),
+        "Background should NOT receive click (blocked by child's hit area)"
     );
 }
 

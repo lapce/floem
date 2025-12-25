@@ -62,7 +62,17 @@ impl Overlay {
     /// Overlay::new(Label::new("Static overlay content"));
     /// ```
     pub fn new(child: impl IntoView) -> Self {
-        let id = ViewId::new();
+        Self::with_id(ViewId::new(), child)
+    }
+
+    /// Creates a new overlay with a specific ViewId.
+    ///
+    /// This is useful when you need to control the ViewId for the overlay.
+    ///
+    /// # Arguments
+    /// * `id` - The ViewId to use for this overlay
+    /// * `content` - The view to display as overlay content
+    pub fn with_id(id: ViewId, child: impl IntoView) -> Self {
         id.set_children([child.into_view()]);
         id.register_overlay();
         Overlay {

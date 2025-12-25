@@ -16,7 +16,7 @@ use web_time::Instant;
 use crate::animate::{AnimStateKind, RepeatMode};
 use crate::inspector::CaptureState;
 use crate::view::ViewId;
-use crate::view::stacking::invalidate_stacking_cache;
+use crate::view::stacking::{invalidate_all_overlay_caches, invalidate_stacking_cache};
 use crate::view::{ChangeFlags, StackingInfo};
 use crate::window::state::WindowState;
 
@@ -322,6 +322,10 @@ impl<'a> StyleCx<'a> {
             let old_z_index = vs.stacking_info.effective_z_index;
             if old_z_index != new_z_index {
                 invalidate_stacking_cache(view_id);
+                // If this is an overlay, also invalidate overlay cache
+                if view_id.is_overlay() {
+                    invalidate_all_overlay_caches();
+                }
             }
             vs.stacking_info = StackingInfo {
                 effective_z_index: new_z_index,

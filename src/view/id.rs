@@ -13,7 +13,7 @@ use winit::window::WindowId;
 
 use ui_events::pointer::PointerId;
 
-use super::stacking::invalidate_stacking_cache;
+use super::stacking::{invalidate_all_overlay_caches, invalidate_stacking_cache};
 use super::{ChangeFlags, IntoView, StackOffset, VIEW_STORAGE, View, ViewState};
 use crate::{
     ScreenLayout,
@@ -66,6 +66,8 @@ impl ViewId {
         VIEW_STORAGE.with_borrow_mut(|s| {
             s.overlays.insert(*self, root_id);
         });
+        // Invalidate overlay cache - use invalidate_all since root may not be finalized yet
+        invalidate_all_overlay_caches();
     }
 
     /// Unregister this view as an overlay.
@@ -73,6 +75,8 @@ impl ViewId {
         VIEW_STORAGE.with_borrow_mut(|s| {
             s.overlays.remove(*self);
         });
+        // Invalidate overlay cache
+        invalidate_all_overlay_caches();
     }
 
     /// Check if this view is registered as an overlay.
