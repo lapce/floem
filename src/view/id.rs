@@ -46,6 +46,8 @@ impl ViewId {
             // Remove the cached root, in the (unlikely) case that this view is
             // re-added to a different window
             s.root.remove(*self);
+            // Remove from overlays if registered
+            s.overlays.remove(*self);
             if let Some(Some(parent)) = s.parent.get(*self) {
                 if let Some(children) = s.children.get_mut(*parent) {
                     children.retain(|c| c != self);
@@ -53,6 +55,29 @@ impl ViewId {
             }
             s.view_ids.remove(*self);
         });
+    }
+
+    /// Register this view as an overlay.
+    ///
+    /// Overlays escape z-index constraints and are painted at the root level,
+    /// above all other views. The root is determined at registration time.
+    pub(crate) fn register_overlay(&self) {
+        let root_id = self.root().unwrap_or(*self);
+        VIEW_STORAGE.with_borrow_mut(|s| {
+            s.overlays.insert(*self, root_id);
+        });
+    }
+
+    /// Unregister this view as an overlay.
+    pub(crate) fn unregister_overlay(&self) {
+        VIEW_STORAGE.with_borrow_mut(|s| {
+            s.overlays.remove(*self);
+        });
+    }
+
+    /// Check if this view is registered as an overlay.
+    pub(crate) fn is_overlay(&self) -> bool {
+        VIEW_STORAGE.with_borrow(|s| s.overlays.contains_key(*self))
     }
 
     /// Get access to the taffy tree

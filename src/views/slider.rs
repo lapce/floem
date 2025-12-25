@@ -711,7 +711,6 @@ mod test {
     fn create_test_event_cx(view_id: ViewId) -> EventCx<'static> {
         EventCx {
             window_state: Box::leak(Box::new(create_test_window_state(view_id))),
-            skip_children_for: None,
         }
     }
 

@@ -168,15 +168,15 @@ impl IsHiddenState {
     }
 }
 
-/// Information about a view's stacking context participation.
-/// Used to determine paint order and event dispatch order (like CSS stacking contexts).
+/// Information about a view's stacking context.
+/// Used to determine paint order and event dispatch order.
+///
+/// In the simplified stacking model:
+/// - Every view is implicitly a stacking context
+/// - z-index only competes with siblings
+/// - Children are always bounded within their parent (no "escaping")
 #[derive(Debug, Clone, Copy, Default)]
 pub struct StackingInfo {
-    /// Whether this view creates a new stacking context.
-    /// A stacking context is created by explicit z-index or non-identity transform.
-    /// When true, this view's children are bounded within it and cannot interleave with siblings.
-    /// When false, this view's children participate in the parent's stacking context.
-    pub creates_context: bool,
     /// The effective z-index for sorting (0 if no z-index specified).
     pub effective_z_index: i32,
 }

@@ -115,6 +115,9 @@ pub use tab::*;
 mod tooltip;
 pub use tooltip::*;
 
+mod overlay;
+pub use overlay::*;
+
 mod stack;
 pub use stack::*;
 

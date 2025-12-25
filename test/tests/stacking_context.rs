@@ -1,13 +1,12 @@
-//! Tests for CSS stacking context semantics.
+//! Tests for simplified stacking semantics.
 //!
-//! These tests verify that floem correctly implements CSS-like stacking context
-//! behavior for event dispatch:
-//! - Views with z-index create stacking contexts that bound their children
-//! - Children inside a stacking context cannot "escape" to compete with siblings
-//! - Non-stacking-context parents allow children to escape and compete globally
-//! - Transform creates stacking context
+//! These tests verify that floem correctly implements simplified stacking behavior
+//! for event dispatch:
+//! - Every view is implicitly a stacking context
+//! - z-index only competes with siblings (children never escape parent boundaries)
+//! - Children are always bounded within their parent
 //! - DOM order is used as a tiebreaker when z-index values are equal
-//! - Event bubbling follows DOM tree, not stacking context tree
+//! - Event bubbling follows DOM tree
 
 use floem::event::EventPropagation;
 use floem::headless::HeadlessHarness;
@@ -57,19 +56,18 @@ fn test_z_index_click_ordering() {
 }
 
 #[test]
-fn test_stacking_context_child_escapes() {
-    // Test CSS stacking context escaping: a child with high z-index inside a
-    // non-stacking-context parent should "escape" and receive clicks before
-    // siblings with lower z-index.
+fn test_stacking_context_children_bounded_within_parent() {
+    // Test simplified stacking: children are always bounded within their parent.
+    // A child's z-index only competes with siblings at the same level.
     //
     // Structure:
     //   Root
-    //   ├── Wrapper (no z-index, no stacking context)
-    //   │   └── Child (z-index: 10)  <-- should receive click!
-    //   └── Sibling (z-index: 5)
+    //   ├── Wrapper (z=0)
+    //   │   └── Child (z=10)  <-- bounded within Wrapper!
+    //   └── Sibling (z=5)  <-- should receive click! (z=5 > Wrapper z=0)
     //
-    // Child should receive the click because it escapes Wrapper's non-stacking-context
-    // and competes directly with Sibling.
+    // Sibling wins because it competes with Wrapper at root level,
+    // and Sibling z=5 > Wrapper z=0.
 
     let clicked_child = Rc::new(Cell::new(false));
     let clicked_sibling = Rc::new(Cell::new(false));
@@ -78,7 +76,7 @@ fn test_stacking_context_child_escapes() {
     let clicked_sibling_clone = clicked_sibling.clone();
 
     let view = stack((
-        // Wrapper without z-index (no stacking context)
+        // Wrapper (every view is a stacking context in the simplified model)
         stack((Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(10))
             .on_click_stop(move |_| {
@@ -98,14 +96,14 @@ fn test_stacking_context_child_escapes() {
 
     harness.click(50.0, 50.0);
 
-    // Child (z=10) should receive click, not Sibling (z=5)
+    // Sibling (z=5) should receive click, Child is bounded within Wrapper (z=0)
     assert!(
-        clicked_child.get(),
-        "Child with z-index 10 should receive click (escaped from non-stacking-context parent)"
+        clicked_sibling.get(),
+        "Sibling with z-index 5 should receive click (Wrapper z=0 < Sibling z=5)"
     );
     assert!(
-        !clicked_sibling.get(),
-        "Sibling with z-index 5 should NOT receive click"
+        !clicked_child.get(),
+        "Child should NOT receive click (bounded within Wrapper)"
     );
 }
 
@@ -163,19 +161,20 @@ fn test_stacking_context_bounds_children() {
 }
 
 #[test]
-fn test_stacking_context_complex_interleaving() {
-    // Complex test with multiple escaping children interleaving with siblings
+fn test_stacking_model_siblings_compete_at_same_level() {
+    // In the simplified stacking model, z-index only competes with siblings at the same level.
+    // Children are bounded within their parent.
     //
     // Structure:
     //   Root
-    //   ├── A (no z-index, no stacking context)
-    //   │   ├── A1 (z-index: 3)
-    //   │   └── A2 (z-index: 7)  <-- should receive click!
-    //   ├── B (z-index: 5)
-    //   └── C (z-index: 6)
+    //   ├── A (z=0)
+    //   │   ├── A1 (z=3)  <-- bounded within A!
+    //   │   └── A2 (z=7)  <-- bounded within A!
+    //   ├── B (z=5)
+    //   └── C (z=6)  <-- should receive click! (highest at root level)
     //
-    // Event order (reverse of paint): A2 (7), C (6), B (5), A1 (3), A (0)
-    // A2 should receive the click.
+    // At root level: C (z=6) > B (z=5) > A (z=0)
+    // C should receive the click.
 
     let clicked_a1 = Rc::new(Cell::new(false));
     let clicked_a2 = Rc::new(Cell::new(false));
@@ -188,7 +187,7 @@ fn test_stacking_context_complex_interleaving() {
     let clicked_c_clone = clicked_c.clone();
 
     let view = stack((
-        // A (no stacking context)
+        // A (children are bounded within it)
         stack((
             Empty::new()
                 .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(3))
@@ -221,14 +220,14 @@ fn test_stacking_context_complex_interleaving() {
 
     harness.click(50.0, 50.0);
 
-    // A2 (z=7) should receive click - highest z-index among all participants
+    // C (z=6) should receive click - highest z-index at root level
     assert!(
-        clicked_a2.get(),
-        "A2 with z-index 7 should receive click (escaped and highest)"
+        clicked_c.get(),
+        "C with z-index 6 should receive click (highest at root level)"
     );
-    assert!(!clicked_c.get(), "C should NOT receive click");
     assert!(!clicked_b.get(), "B should NOT receive click");
-    assert!(!clicked_a1.get(), "A1 should NOT receive click");
+    assert!(!clicked_a1.get(), "A1 should NOT receive click (bounded within A)");
+    assert!(!clicked_a2.get(), "A2 should NOT receive click (bounded within A)");
 }
 
 #[test]
@@ -337,19 +336,19 @@ fn test_stacking_context_transform_creates_context() {
 }
 
 #[test]
-fn test_stacking_context_deeply_nested_escape() {
-    // Test deeply nested escaping: a child nested multiple levels deep can still
-    // escape if no ancestor creates a stacking context.
+fn test_stacking_model_deeply_nested_bounded() {
+    // In the simplified stacking model, deeply nested children are bounded at each level.
+    // They don't "escape" to compete with ancestors' siblings.
     //
     // Structure:
     //   Root
-    //   ├── Level1 (no z-index)
-    //   │   └── Level2 (no z-index)
-    //   │       └── Level3 (no z-index)
-    //   │           └── DeepChild (z-index: 10)  <-- should receive click!
-    //   └── Sibling (z-index: 5)
+    //   ├── Level1 (z=0)
+    //   │   └── Level2 (z=0)
+    //   │       └── Level3 (z=0)
+    //   │           └── DeepChild (z=10)  <-- bounded within Level3!
+    //   └── Sibling (z=5)  <-- should receive click! (z=5 > Level1's z=0)
     //
-    // DeepChild escapes all the way up and competes with Sibling.
+    // At root level: Sibling (z=5) > Level1 (z=0)
 
     let clicked_deep = Rc::new(Cell::new(false));
     let clicked_sibling = Rc::new(Cell::new(false));
@@ -386,13 +385,14 @@ fn test_stacking_context_deeply_nested_escape() {
 
     harness.click(50.0, 50.0);
 
+    // Sibling wins at root level (z=5 > Level1's z=0)
     assert!(
-        clicked_deep.get(),
-        "DeepChild (z=10) should receive click - escaped through 3 levels"
+        clicked_sibling.get(),
+        "Sibling (z=5) should receive click - higher than Level1 (z=0) at root level"
     );
     assert!(
-        !clicked_sibling.get(),
-        "Sibling (z=5) should NOT receive click"
+        !clicked_deep.get(),
+        "DeepChild should NOT receive click (deeply nested, bounded at each level)"
     );
 }
 
@@ -447,44 +447,44 @@ fn test_stacking_context_dom_order_tiebreaker() {
 }
 
 #[test]
-fn test_stacking_context_mixed_contexts() {
-    // Test mixed stacking contexts: some views create context, some don't.
+fn test_stacking_model_all_views_are_stacking_contexts() {
+    // In the simplified stacking model, every view is a stacking context.
+    // Children are always bounded within their parent.
     //
     // Structure:
     //   Root
-    //   ├── NoContext (no z-index)
-    //   │   └── Escaper (z-index: 8)  <-- escapes!
-    //   ├── WithContext (z-index: 3, creates context)
-    //   │   └── Bounded (z-index: 100)  <-- bounded by WithContext
-    //   └── TopLevel (z-index: 6)
+    //   ├── Wrapper (z=0)
+    //   │   └── BoundedChild (z=8)  <-- bounded within Wrapper!
+    //   ├── Parent (z=3)
+    //   │   └── BoundedChild2 (z=100)  <-- bounded within Parent!
+    //   └── TopLevel (z=6)  <-- should receive click! (highest at root level)
     //
-    // Event order: Escaper (8), TopLevel (6), WithContext (3) -> Bounded (100)
-    // Escaper should receive click.
+    // At root level: TopLevel (z=6) > Parent (z=3) > Wrapper (z=0)
 
-    let clicked_escaper = Rc::new(Cell::new(false));
     let clicked_bounded = Rc::new(Cell::new(false));
+    let clicked_bounded2 = Rc::new(Cell::new(false));
     let clicked_top = Rc::new(Cell::new(false));
 
-    let clicked_escaper_clone = clicked_escaper.clone();
     let clicked_bounded_clone = clicked_bounded.clone();
+    let clicked_bounded2_clone = clicked_bounded2.clone();
     let clicked_top_clone = clicked_top.clone();
 
     let view = stack((
-        // NoContext wrapper
+        // Wrapper (z=0, bounds its children)
         stack((Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(8))
             .on_click_stop(move |_| {
-                clicked_escaper_clone.set(true);
+                clicked_bounded_clone.set(true);
             }),))
         .style(|s| s.absolute().inset(0.0).size(100.0, 100.0)),
-        // WithContext (z-index creates stacking context)
+        // Parent (z=3, bounds its children)
         stack((Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(100))
             .on_click_stop(move |_| {
-                clicked_bounded_clone.set(true);
+                clicked_bounded2_clone.set(true);
             }),))
         .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(3)),
-        // TopLevel
+        // TopLevel (z=6)
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(6))
             .on_click_stop(move |_| {
@@ -497,17 +497,18 @@ fn test_stacking_context_mixed_contexts() {
 
     harness.click(50.0, 50.0);
 
+    // TopLevel wins at root level (z=6 is highest)
     assert!(
-        clicked_escaper.get(),
-        "Escaper (z=8) should receive click - escaped and highest"
-    );
-    assert!(
-        !clicked_top.get(),
-        "TopLevel (z=6) should NOT receive click"
+        clicked_top.get(),
+        "TopLevel (z=6) should receive click - highest at root level"
     );
     assert!(
         !clicked_bounded.get(),
-        "Bounded (z=100) should NOT receive click - bounded by WithContext (z=3)"
+        "BoundedChild (z=8) should NOT receive click - bounded within Wrapper (z=0)"
+    );
+    assert!(
+        !clicked_bounded2.get(),
+        "BoundedChild2 (z=100) should NOT receive click - bounded within Parent (z=3)"
     );
 }
 
@@ -1298,18 +1299,17 @@ fn test_opacity_creates_stacking_context() {
 }
 
 #[test]
-fn test_opacity_1_does_not_create_stacking_context() {
-    // Test that opacity: 1.0 does NOT create a stacking context.
-    // Children should be able to escape.
+fn test_stacking_model_opacity_does_not_affect_stacking() {
+    // In the simplified stacking model, opacity does not affect stacking behavior.
+    // Every view is already a stacking context, so children are bounded.
     //
     // Structure:
     //   Root
-    //   ├── Parent (opacity: 1.0, NO stacking context)
-    //   │   └── Child (z-index: 10)  <-- escapes! Should receive click!
-    //   └── Sibling (z-index: 5)
+    //   ├── Parent (opacity: 1.0, z=0)
+    //   │   └── Child (z=10)  <-- bounded within Parent!
+    //   └── Sibling (z=5)  <-- should receive click! (z=5 > Parent's z=0)
     //
-    // Parent has opacity: 1.0 which does NOT create stacking context.
-    // Child (z=10) escapes and wins over Sibling (z=5).
+    // At root level: Sibling (z=5) > Parent (z=0)
 
     let clicked_child = Rc::new(Cell::new(false));
     let clicked_sibling = Rc::new(Cell::new(false));
@@ -1318,7 +1318,7 @@ fn test_opacity_1_does_not_create_stacking_context() {
     let clicked_sibling_clone = clicked_sibling.clone();
 
     let view = stack((
-        // Parent with opacity = 1.0 (should NOT create stacking context)
+        // Parent with opacity = 1.0 (still bounds children in simplified stacking model)
         stack((Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(10))
             .on_click_stop(move |_| {
@@ -1338,14 +1338,14 @@ fn test_opacity_1_does_not_create_stacking_context() {
 
     harness.click(50.0, 50.0);
 
-    // Child (z=10) should receive click because it escapes Parent (opacity: 1.0)
+    // Sibling wins at root level (z=5 > Parent's z=0)
     assert!(
-        clicked_child.get(),
-        "Child (z=10) should receive click - escaped from Parent with opacity: 1.0"
+        clicked_sibling.get(),
+        "Sibling (z=5) should receive click - higher than Parent (z=0) at root level"
     );
     assert!(
-        !clicked_sibling.get(),
-        "Sibling (z=5) should NOT receive click"
+        !clicked_child.get(),
+        "Child should NOT receive click - bounded within Parent"
     );
 }
 

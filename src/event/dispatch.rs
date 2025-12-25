@@ -63,10 +63,6 @@ const PROCESSED: BuiltinResult = Some(DispatchOutcome::Processed);
 /// A bundle of helper methods to be used by `View::event` handlers
 pub struct EventCx<'a> {
     pub window_state: &'a mut WindowState,
-    /// When dispatching events in a stacking context, this tracks views whose children are
-    /// handled by the parent stacking context. When event dispatch reaches such a view,
-    /// it should not dispatch to its children (they're handled separately).
-    pub(crate) skip_children_for: Option<ViewId>,
 }
 
 impl EventCx<'_> {
@@ -451,7 +447,7 @@ impl EventCx<'_> {
         }
 
         // Phase 2: Dispatch to children
-        let child_consumed = if !directed && self.skip_children_for != Some(view_id) {
+        let child_consumed = if !directed {
             match self.dispatch_to_children(view_id, absolute_event) {
                 DispatchOutcome::Processed => return DispatchOutcome::Processed,
                 DispatchOutcome::Consumed => true,
@@ -490,23 +486,23 @@ impl EventCx<'_> {
         DispatchOutcome::Consumed
     }
 
-    /// Dispatch events to children using CSS stacking context semantics.
+    /// Dispatch events to children using simplified stacking semantics.
     ///
-    /// Iterates through child views in reverse z-order (highest z-index first),
-    /// handling stacking context boundaries and event bubbling.
+    /// Iterates through direct children in reverse z-order (highest z-index first).
+    /// Each child handles its own children recursively. Children are bounded within
+    /// their parent (they never "escape" to compete with ancestors' siblings).
     #[inline]
     fn dispatch_to_children(&mut self, view_id: ViewId, event: &Event) -> DispatchOutcome {
         let items = collect_stacking_context_items(view_id);
 
-        // Track the consuming item's parent chain for event bubbling
-        let mut consuming_parent_chain: Option<&SmallVec<[ViewId; 8]>> = None;
-
         for item in items.iter().rev() {
             let should_send = self.should_send(item.view_id, event);
 
-            // Stacking contexts may have children outside their clip rect (e.g., dropdowns).
-            // We must recurse into them even if the parent fails the clip test.
-            if item.creates_context && !should_send {
+            // Even if the parent fails clip test, children may be outside clip rect
+            // (e.g., dropdowns). We still recurse into the view's dispatch_to_view
+            // which will handle its own children.
+            if !should_send {
+                // Still dispatch to the view in case it has children outside its clip rect
                 if self
                     .dispatch_to_view(item.view_id, event, false)
                     .is_processed()
@@ -516,39 +512,15 @@ impl EventCx<'_> {
                 continue;
             }
 
-            if !should_send {
-                continue;
-            }
-
-            // Mark non-stacking-context items so their children aren't processed twice
-            if !item.creates_context {
-                self.skip_children_for = Some(item.view_id);
-            }
-
             let outcome = self.dispatch_to_view(item.view_id, event, false);
-            self.skip_children_for = None;
 
             if outcome.is_processed() {
                 return DispatchOutcome::Processed;
             }
 
             if event.is_pointer() && outcome == DispatchOutcome::Consumed {
-                consuming_parent_chain = Some(&item.parent_chain);
-                break;
+                return DispatchOutcome::Consumed;
             }
-        }
-
-        // Event bubbling: notify ancestors of the consuming child
-        if let Some(parent_chain) = consuming_parent_chain {
-            for &ancestor_id in parent_chain.iter().rev() {
-                if self
-                    .dispatch_to_view(ancestor_id, event, true)
-                    .is_processed()
-                {
-                    return DispatchOutcome::Processed;
-                }
-            }
-            return DispatchOutcome::Consumed;
         }
 
         DispatchOutcome::Skipped

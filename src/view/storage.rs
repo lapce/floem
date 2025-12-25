@@ -21,6 +21,8 @@ pub(crate) struct ViewStorage {
     pub(crate) states: SecondaryMap<ViewId, Rc<RefCell<ViewState>>>,
     pub(crate) stale_view_state: Rc<RefCell<ViewState>>,
     pub(crate) stale_view: Rc<RefCell<AnyView>>,
+    /// Views registered as overlays - maps overlay ViewId to its window root ViewId
+    pub(crate) overlays: SecondaryMap<ViewId, ViewId>,
 }
 
 impl Default for ViewStorage {
@@ -50,6 +52,7 @@ impl ViewStorage {
                 }
                 .into_any(),
             )),
+            overlays: Default::default(),
         }
     }
 

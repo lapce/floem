@@ -16,7 +16,7 @@ use peniko::kurbo::{Affine, Point};
 use smallvec::SmallVec;
 
 use crate::view::ViewId;
-use crate::view::stacking::collect_stacking_context_items;
+use crate::view::stacking::{collect_overlays, collect_stacking_context_items};
 
 // ============================================================================
 // Hit Test Result Cache
@@ -300,6 +300,24 @@ pub fn hit_test(root_id: ViewId, point: Point) -> Option<ViewId> {
     }
 
     // Cache miss - perform the actual hit test
+    //
+    // First check overlays (they're painted on top, so hit test them first)
+    // Overlays are sorted by z-index in collect_overlays, so we iterate in reverse
+    // to check the highest z-index first.
+    let overlays = collect_overlays(root_id);
+    for overlay_id in overlays.iter().rev() {
+        if overlay_id.is_hidden() || overlay_id.is_disabled() {
+            continue;
+        }
+
+        // Hit test within the overlay
+        if let Some(hit) = hit_test_stacking_context(*overlay_id, point) {
+            HIT_TEST_CACHE.with(|cache| cache.borrow_mut().insert(root_id, point, Some(hit)));
+            return Some(hit);
+        }
+    }
+
+    // No overlay hit - check the regular view tree
     let result = hit_test_stacking_context(root_id, point);
 
     // Store result in cache
@@ -308,7 +326,10 @@ pub fn hit_test(root_id: ViewId, point: Point) -> Option<ViewId> {
     result
 }
 
-/// Hit test within a stacking context, checking items in reverse z-order.
+/// Hit test within a view, checking children in reverse z-order.
+///
+/// In the simplified stacking model, every view is a stacking context and z-index
+/// only competes with siblings. Children are bounded within their parent.
 fn hit_test_stacking_context(parent_id: ViewId, point: Point) -> Option<ViewId> {
     use crate::style::{PointerEvents, PointerEventsProp};
 
@@ -333,15 +354,11 @@ fn hit_test_stacking_context(parent_id: ViewId, point: Point) -> Option<ViewId> 
             .unwrap_or(false);
 
         // Check clip rect first (for overflow:hidden containers like scroll views)
-        // If point is outside clip_rect and this item doesn't create a stacking context,
-        // skip it entirely. If it creates a stacking context, we still need to check
-        // its children because escaped elements (with z-index) have their own clip_rects.
+        // Children may be outside clip rect (e.g., dropdowns), so still recurse.
         if !vs.clip_rect.contains(point) {
-            if item.creates_context {
-                drop(vs);
-                if let Some(target) = hit_test_stacking_context(item.view_id, point) {
-                    return Some(target);
-                }
+            drop(vs);
+            if let Some(target) = hit_test_stacking_context(item.view_id, point) {
+                return Some(target);
             }
             continue;
         }
@@ -352,22 +369,16 @@ fn hit_test_stacking_context(parent_id: ViewId, point: Point) -> Option<ViewId> 
         drop(vs); // Drop borrow before recursing
 
         if !current_rect.contains(point) {
-            // If this creates a stacking context, check children anyway
-            // (the layout_rect might not contain point but children might)
-            if item.creates_context {
-                if let Some(target) = hit_test_stacking_context(item.view_id, point) {
-                    return Some(target);
-                }
+            // Check children anyway (the layout_rect might not contain point but children might)
+            if let Some(target) = hit_test_stacking_context(item.view_id, point) {
+                return Some(target);
             }
             continue;
         }
 
-        // Point is inside this view. If it creates a stacking context,
-        // recursively check its children for a deeper target.
-        if item.creates_context {
-            if let Some(child_target) = hit_test_stacking_context(item.view_id, point) {
-                return Some(child_target);
-            }
+        // Point is inside this view. Recursively check children for a deeper target.
+        if let Some(child_target) = hit_test_stacking_context(item.view_id, point) {
+            return Some(child_target);
         }
 
         // If pointer-events: none, skip this view but we already checked children above
@@ -375,7 +386,7 @@ fn hit_test_stacking_context(parent_id: ViewId, point: Point) -> Option<ViewId> 
             continue;
         }
 
-        // No child matched (or no stacking context), this view is the target
+        // No child matched, this view is the target
         return Some(item.view_id);
     }
 

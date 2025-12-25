@@ -20,10 +20,7 @@ use crate::view::stacking::invalidate_stacking_cache;
 use crate::view::{ChangeFlags, StackingInfo};
 use crate::window::state::WindowState;
 
-use super::{
-    Disabled, DisplayProp, Focusable, Hidden, Opacity, OverflowX, OverflowY, Style, StyleProp,
-    ZIndex,
-};
+use super::{Disabled, DisplayProp, Focusable, Hidden, Style, StyleProp, ZIndex};
 
 /// The interaction state of a view, used to determine which style selectors apply.
 ///
@@ -311,55 +308,24 @@ impl<'a> StyleCx<'a> {
 
         view_state.borrow_mut().transform = transform;
 
-        // Compute stacking context info
-        // A view creates a stacking context if it has:
-        // - Any explicit z-index value (including 0, since None means "auto" in CSS terms)
-        // - Any non-identity transform
-        // - A viewport (scroll views) - these offset their children's coordinates
-        // - Overflow set to Scroll or Hidden (scroll views, clip views) - they manage child painting
-        // - Opacity < 1.0 (per CSS spec)
-        // Note: Unlike our previous implementation, `position: absolute` alone does NOT
-        // create a stacking context per CSS spec. It needs explicit z-index to do so.
-        // Missing CSS triggers (not implemented in floem): filter, clip-path,
-        // mask, isolation: isolate, mix-blend-mode, contain.
+        // Simplified stacking model:
+        // - Every view is implicitly a stacking context
+        // - z-index only competes with siblings
+        // - Children are always bounded within their parent (no "escaping")
+        // We only need to track z-index for sibling sorting within a parent.
         let z_index = view_state.borrow().combined_style.get(ZIndex);
-        let has_transform = transform != Affine::IDENTITY;
-        let has_viewport = view_state.borrow().viewport.is_some();
-        // Check if overflow is set to Scroll or Hidden - these views manage their own child painting
-        let overflow_x = view_state.borrow().combined_style.get(OverflowX);
-        let overflow_y = view_state.borrow().combined_style.get(OverflowY);
-        let has_scroll_overflow = matches!(
-            overflow_x,
-            taffy::Overflow::Scroll | taffy::Overflow::Hidden
-        ) || matches!(
-            overflow_y,
-            taffy::Overflow::Scroll | taffy::Overflow::Hidden
-        );
-        // CSS spec: opacity < 1 creates a stacking context
-        let opacity = view_state.borrow().combined_style.get(Opacity);
-        let has_opacity = opacity.is_some_and(|o| o < 1.0);
+        let new_z_index = z_index.unwrap_or(0);
 
-        let creates_context = z_index.is_some()
-            || has_transform
-            || has_viewport
-            || has_scroll_overflow
-            || has_opacity;
-
-        let new_stacking_info = StackingInfo {
-            creates_context,
-            effective_z_index: z_index.unwrap_or(0),
-        };
-
-        // Invalidate stacking cache if stacking info changed
+        // Invalidate stacking cache if z-index changed
         {
             let mut vs = view_state.borrow_mut();
-            let old_info = vs.stacking_info;
-            if old_info.creates_context != new_stacking_info.creates_context
-                || old_info.effective_z_index != new_stacking_info.effective_z_index
-            {
+            let old_z_index = vs.stacking_info.effective_z_index;
+            if old_z_index != new_z_index {
                 invalidate_stacking_cache(view_id);
             }
-            vs.stacking_info = new_stacking_info;
+            vs.stacking_info = StackingInfo {
+                effective_z_index: new_z_index,
+            };
         }
 
         self.restore();

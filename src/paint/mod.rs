@@ -16,7 +16,6 @@ pub use renderer::Renderer;
 use floem_renderer::Renderer as FloemRenderer;
 use floem_renderer::gpu_resources::{GpuResourceError, GpuResources};
 use peniko::kurbo::{Affine, RoundedRect, Shape, Size, Vec2};
-use smallvec::SmallVec;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use winit::window::Window;
@@ -34,7 +33,7 @@ use std::sync::mpsc::Receiver;
 use crate::action::exec_after;
 use crate::animate::{Easing, Linear};
 use crate::view::ViewId;
-use crate::view::stacking::collect_stacking_context_items;
+use crate::view::stacking::{collect_overlays, collect_stacking_context_items};
 use crate::view::{paint_bg, paint_border, paint_outline};
 use crate::window::state::WindowState;
 
@@ -64,10 +63,6 @@ pub struct PaintCx<'a> {
     pub(crate) saved_clips: Vec<Option<RoundedRect>>,
     /// Pending drag paint info, to be painted after the main tree.
     pub(crate) pending_drag_paint: Option<PendingDragPaint>,
-    /// When painting a stacking context, this tracks views whose children are handled
-    /// by the parent stacking context (not by the view itself). When paint_children is
-    /// called for such a view, it should be a no-op.
-    pub(crate) skip_children_for: Option<ViewId>,
     pub gpu_resources: Option<GpuResources>,
     pub window: Arc<dyn Window>,
     #[cfg(feature = "vello")]
@@ -125,74 +120,23 @@ impl PaintCx<'_> {
         false
     }
 
-    /// Paint the children of this view using true CSS stacking context semantics.
+    /// Paint the children of this view using simplified stacking semantics.
     ///
-    /// Views that create stacking contexts have their children bounded within them.
-    /// Views that don't create stacking contexts allow their children to "escape"
-    /// and participate in the parent's stacking context (z-index sorting).
+    /// In the simplified stacking model:
+    /// - Every view is implicitly a stacking context
+    /// - z-index only competes with siblings
+    /// - Children are always bounded within their parent (no "escaping")
     pub fn paint_children(&mut self, id: ViewId) {
-        // If this view's children are being handled by a parent stacking context, skip
-        if self.skip_children_for == Some(id) {
-            return;
-        }
-
-        // Collect all items participating in this stacking context
+        // Collect direct children sorted by z-index
         let items = collect_stacking_context_items(id);
-
-        // Track currently applied transforms in root-to-item order.
-        // Using diff-based approach: only push/pop transforms that change between items.
-        // This is much faster for siblings (common case) since they share the same parent chain.
-        let mut current_chain: SmallVec<[ViewId; 8]> = SmallVec::new();
 
         for item in items.iter() {
             if item.view_id.is_hidden() {
                 continue;
             }
 
-            // Find common prefix length between current_chain and item's parent chain.
-            // parent_chain is [root_child, ..., immediate_parent] (ancestor-to-parent order).
-            // Both chains are in root-to-item order, so we can compare directly.
-            let item_chain_len = item.parent_chain.len();
-            let common_len = current_chain
-                .iter()
-                .zip(item.parent_chain.iter())
-                .take_while(|(a, b)| a == b)
-                .count();
-
-            // Pop transforms that are no longer in the path
-            for _ in common_len..current_chain.len() {
-                self.restore();
-            }
-            current_chain.truncate(common_len);
-
-            // Push new transforms for the remaining ancestors
-            // Iterate from common_len to item_chain_len in root-to-item order
-            // parent_chain is already in root-to-item order, so index directly
-            for i in common_len..item_chain_len {
-                let ancestor = item.parent_chain[i];
-                self.save();
-                self.transform(ancestor);
-                current_chain.push(ancestor);
-            }
-
-            // If this item doesn't create a stacking context, mark it so its
-            // paint_children call will be a no-op (children are in our flat list)
-            if !item.creates_context {
-                self.skip_children_for = Some(item.view_id);
-            }
-
-            // Paint the view
+            // Paint the child view (which will recursively paint its own children)
             self.paint_view(item.view_id);
-
-            // Clear the skip flag
-            self.skip_children_for = None;
-
-            // Don't pop transforms here - leave them for the next item to potentially reuse
-        }
-
-        // Pop all remaining transforms after processing all items
-        for _ in 0..current_chain.len() {
-            self.restore();
         }
     }
 
@@ -336,6 +280,55 @@ impl PaintCx<'_> {
 
         if drag_set_to_none {
             self.window_state.dragging = None;
+        }
+    }
+
+    /// Paint all registered overlays for the given root view.
+    ///
+    /// Overlays are painted at the root level, above all regular content but below
+    /// drag overlays. They are sorted by z-index (lower z-index painted first).
+    ///
+    /// The overlay views are skipped during normal tree traversal (in `collect_stacking_context_items`)
+    /// and painted here at root level so they appear above all other content.
+    pub fn paint_overlays(&mut self, root_id: ViewId) {
+        let overlays = collect_overlays(root_id);
+
+        for overlay_id in overlays {
+            if overlay_id.is_hidden() {
+                continue;
+            }
+
+            // Accumulate transforms from root to overlay's parent
+            // This ensures the overlay is painted at the correct window position
+            self.save();
+
+            // Build the transform chain from root to overlay's parent
+            let mut ancestors = Vec::new();
+            let mut current = overlay_id.parent();
+            while let Some(ancestor) = current {
+                ancestors.push(ancestor);
+                current = ancestor.parent();
+            }
+
+            // Apply transforms from root down to parent (reverse order)
+            for ancestor in ancestors.into_iter().rev() {
+                if let Some(layout) = ancestor.get_layout() {
+                    self.transform *= Affine::translate(Vec2 {
+                        x: layout.location.x as f64,
+                        y: layout.location.y as f64,
+                    });
+                    self.transform *= ancestor.state().borrow().transform;
+                }
+            }
+
+            self.paint_state
+                .renderer_mut()
+                .set_transform(self.transform);
+
+            // Now paint the overlay view (which will apply its own transform)
+            self.paint_view(overlay_id);
+
+            self.restore();
         }
     }
 

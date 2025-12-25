@@ -1543,29 +1543,32 @@ fn test_z_index_auto_vs_explicit_zero_with_negative() {
 }
 
 #[test]
-fn test_z_index_zero_creates_stacking_context() {
-    // Test that z-index: 0 (explicit) creates a stacking context that bounds children,
-    // while z-index: auto does not.
+fn test_stacking_model_both_children_bounded() {
+    // In the simplified stacking model, every view is a stacking context that bounds its children.
+    // Neither child escapes - they compete at their parent's level only.
     //
     // Structure:
     //   layers
-    //   ├── wrapper_no_context (no z-index, no stacking context)
-    //   │   └── escaped_child (z-index: 100) <- should escape and receive click!
-    //   └── wrapper_with_context (z-index: 0, creates stacking context)
-    //       └── bounded_child (z-index: 100) <- bounded, should NOT receive click
+    //   ├── wrapper_a (z=0)
+    //   │   └── child_a (z=100) <- bounded within wrapper_a
+    //   └── wrapper_b (z=0)
+    //       └── child_b (z=100) <- bounded within wrapper_b
+    //
+    // At root level: wrapper_a (z=0) vs wrapper_b (z=0) - DOM order: wrapper_b wins
+    // bounded_child is inside wrapper_b, so it receives the click.
 
     let tracker = ClickTracker::new();
 
     let view = layers((
-        // Wrapper without z-index (no stacking context) - child escapes
+        // Wrapper A (z=0) - child is bounded within
         Container::new(tracker.track_named(
-            "escaped_child",
+            "child_a",
             Empty::new().style(|s| s.size(100.0, 100.0).z_index(100)),
         ))
         .style(|s| s.size(100.0, 100.0)),
-        // Wrapper with z-index: 0 (creates stacking context) - child is bounded
+        // Wrapper B (z=0, explicit) - child is bounded within
         Container::new(tracker.track_named(
-            "bounded_child",
+            "child_b",
             Empty::new().style(|s| s.size(100.0, 100.0).z_index(100)),
         ))
         .style(|s| s.z_index(0)),
@@ -1575,14 +1578,12 @@ fn test_z_index_zero_creates_stacking_context() {
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
     harness.click(50.0, 50.0);
 
-    // escaped_child (z=100) should win because it escapes to root stacking context
-    // bounded_child (z=100) is inside wrapper_with_context (z=0), so it's effectively z=0
-    // escaped_child (z=100) > wrapper_with_context (z=0), so escaped_child wins
+    // At root level, both wrappers have z=0, so DOM order wins.
+    // wrapper_b is later in DOM, so child_b receives the click.
     assert_eq!(
         tracker.clicked_names(),
-        vec!["escaped_child"],
-        "Child that escapes (no stacking context parent) should receive click over \
-         child bounded by z-index: 0 parent"
+        vec!["child_b"],
+        "In the simplified stacking model, later sibling (wrapper_b z=0) wins over earlier sibling (wrapper_a z=0) at same z-index"
     );
 }
 
