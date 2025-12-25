@@ -42,6 +42,8 @@ impl ViewId {
 
     /// Remove this view id and all of it's children from the `VIEW_STORAGE`
     pub fn remove(&self) {
+        // Get parent before removing, for stacking cache invalidation
+        let parent = self.parent();
         VIEW_STORAGE.with_borrow_mut(|s| {
             // Remove the cached root, in the (unlikely) case that this view is
             // re-added to a different window
@@ -55,6 +57,10 @@ impl ViewId {
             }
             s.view_ids.remove(*self);
         });
+        // Invalidate parent's stacking cache since its children changed
+        if let Some(parent) = parent {
+            invalidate_stacking_cache(parent);
+        }
     }
 
     /// Register this view as an overlay.
@@ -165,6 +171,8 @@ impl ViewId {
             }
             s.children.insert(*self, children_ids);
         });
+        // Invalidate stacking cache since children changed
+        invalidate_stacking_cache(*self);
     }
 
     /// Set the children views of this Id using a Vector
@@ -191,6 +199,8 @@ impl ViewId {
             }
             s.children.insert(*self, children_ids);
         });
+        // Invalidate stacking cache since children changed
+        invalidate_stacking_cache(*self);
     }
 
     /// Set the view that should be associated with this Id

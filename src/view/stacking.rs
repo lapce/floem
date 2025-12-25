@@ -669,4 +669,168 @@ mod tests {
             s.overlays.remove(overlay2);
         });
     }
+
+    // ========== Bug Fix Tests ==========
+    // These tests verify the fixes for stacking cache invalidation bugs
+
+    #[test]
+    fn test_set_children_invalidates_stacking_cache() {
+        // Bug fix: set_children was not invalidating the stacking cache,
+        // causing stale child ViewIds to be returned during painting.
+        //
+        // This tests that set_children (used by Container::derived) properly
+        // invalidates the stacking cache.
+
+        use crate::view::View;
+        use crate::views::Empty;
+
+        let parent = ViewId::new();
+
+        // Create initial children using set_children (not set_children_ids)
+        let child1 = Empty::new();
+        let child1_id = child1.id();
+        parent.set_children([child1]);
+
+        // Set parent pointer for child
+        child1_id.set_parent(parent);
+
+        // First call - should cache the result
+        let result1 = collect_stacking_context_items(parent);
+        assert_eq!(get_view_ids(&result1), vec![child1_id]);
+
+        // Now replace children using set_children (simulating Container::derived rebuild)
+        let child2 = Empty::new();
+        let child2_id = child2.id();
+        parent.set_children([child2]);
+        child2_id.set_parent(parent);
+
+        // The stacking cache should have been invalidated by set_children
+        // so this should return the NEW children, not the cached old ones
+        let result2 = collect_stacking_context_items(parent);
+        assert_eq!(
+            get_view_ids(&result2),
+            vec![child2_id],
+            "set_children should invalidate stacking cache"
+        );
+        assert!(
+            !get_view_ids(&result2).contains(&child1_id),
+            "Old child should not be in stacking context"
+        );
+    }
+
+    #[test]
+    fn test_set_children_iter_invalidates_stacking_cache() {
+        // Same test but for set_children_iter (used by set_children_vec)
+
+        use crate::view::{IntoView, View};
+        use crate::views::Empty;
+
+        let parent = ViewId::new();
+
+        // Create initial children using set_children_iter
+        let child1 = Empty::new();
+        let child1_id = child1.id();
+        parent.set_children_iter(std::iter::once(child1.into_any()));
+        child1_id.set_parent(parent);
+
+        // First call - should cache the result
+        let result1 = collect_stacking_context_items(parent);
+        assert_eq!(get_view_ids(&result1), vec![child1_id]);
+
+        // Replace children using set_children_iter
+        let child2 = Empty::new();
+        let child2_id = child2.id();
+        parent.set_children_iter(std::iter::once(child2.into_any()));
+        child2_id.set_parent(parent);
+
+        // The stacking cache should have been invalidated
+        let result2 = collect_stacking_context_items(parent);
+        assert_eq!(
+            get_view_ids(&result2),
+            vec![child2_id],
+            "set_children_iter should invalidate stacking cache"
+        );
+    }
+
+    #[test]
+    fn test_remove_invalidates_parent_stacking_cache() {
+        // Bug fix: id.remove() was not invalidating the parent's stacking cache,
+        // causing paint to iterate over removed (stale) ViewIds.
+        //
+        // This tests that remove() properly invalidates the parent's stacking cache.
+
+        let a = create_view_with_z_index(1);
+        let b = create_view_with_z_index(2);
+        let c = create_view_with_z_index(3);
+        let parent = setup_parent_with_children(vec![a, b, c]);
+
+        // First call - caches the result
+        let result1 = collect_stacking_context_items(parent);
+        assert_eq!(get_view_ids(&result1), vec![a, b, c]);
+
+        // Remove 'b' using id.remove() (which is called by remove_view)
+        b.remove();
+
+        // The parent's stacking cache should have been invalidated by remove()
+        // so this should return the updated children list
+        let result2 = collect_stacking_context_items(parent);
+        assert_eq!(
+            get_view_ids(&result2),
+            vec![a, c],
+            "remove() should invalidate parent's stacking cache"
+        );
+        assert!(
+            !get_view_ids(&result2).contains(&b),
+            "Removed child should not be in stacking context"
+        );
+    }
+
+    #[test]
+    fn test_container_derived_pattern_cache_invalidation() {
+        // This test simulates the exact pattern used by Container::derived:
+        // 1. Initial children set via set_children
+        // 2. Update callback replaces children via set_children
+        // 3. Old children are removed via remove()
+        //
+        // The stacking cache must be properly invalidated at each step.
+
+        use crate::view::View;
+        use crate::views::Empty;
+
+        let container_id = ViewId::new();
+
+        // Step 1: Initial child
+        let old_child = Empty::new();
+        let old_child_id = old_child.id();
+        container_id.set_children([old_child]);
+        old_child_id.set_parent(container_id);
+
+        // Cache the stacking context
+        let result1 = collect_stacking_context_items(container_id);
+        assert_eq!(get_view_ids(&result1), vec![old_child_id]);
+
+        // Step 2: Simulate Container::derived update
+        // - Get old children
+        let old_children = container_id.children();
+        assert_eq!(old_children, vec![old_child_id]);
+
+        // - Create new child and set it
+        let new_child = Empty::new();
+        let new_child_id = new_child.id();
+        container_id.set_children([new_child]);
+        new_child_id.set_parent(container_id);
+
+        // Step 3: Remove old children (simulating update handler)
+        for old in old_children {
+            old.remove();
+        }
+
+        // Verify: stacking context should only contain new child
+        let result2 = collect_stacking_context_items(container_id);
+        assert_eq!(
+            get_view_ids(&result2),
+            vec![new_child_id],
+            "After Container::derived pattern, only new child should be in stacking context"
+        );
+    }
 }
