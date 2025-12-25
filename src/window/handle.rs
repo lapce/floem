@@ -41,7 +41,7 @@ use crate::{
     context::{
         ComputeLayoutCx, EventCx, FrameUpdate, LayoutCx, PaintCx, PaintState, StyleCx, UpdateCx,
     },
-    event::Event,
+    event::{Event, clear_hit_test_cache},
     inspector::{self, Capture, CaptureState, CapturedView, profiler::Profile},
     message::{
         CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES, CURRENT_RUNNING_VIEW_HANDLE,
@@ -535,6 +535,8 @@ impl WindowHandle {
         let viewport = (self.window_state.root_size / self.window_state.scale).to_rect();
         let mut cx = ComputeLayoutCx::new(&mut self.window_state, viewport);
         cx.compute_view_layout(self.id);
+        // Invalidate hit test cache since layout rects have changed
+        clear_hit_test_cache();
     }
 
     pub(crate) fn render_frame(&mut self, gpu_resources: Option<GpuResources>) {

@@ -13,7 +13,7 @@ use web_time::Instant;
 
 use crate::{
     context::FrameUpdate,
-    event::{Event, EventListener},
+    event::{Event, EventListener, clear_hit_test_cache},
     inspector::CaptureState,
     layout::responsive::{GridBreakpoints, ScreenSizeBp},
     style::{CursorStyle, StyleSelector},
@@ -108,6 +108,8 @@ impl WindowState {
         if !exists {
             return;
         }
+        // Invalidate hit test cache since view tree is changing
+        clear_hit_test_cache();
 
         let children = id.children();
         for child in children {
