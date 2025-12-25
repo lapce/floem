@@ -743,10 +743,14 @@ fn handle_builtin_behaviors(
             let rect = view_id.get_size().unwrap_or_default().to_rect();
             if rect.contains(current.logical_point()) {
                 if cx.window_state.is_dragging() {
-                    cx.window_state.dragging_over.insert(view_id);
+                    if !cx.window_state.dragging_over.contains(&view_id) {
+                        cx.window_state.dragging_over.push(view_id);
+                    }
                     view_id.apply_event(&super::EventListener::DragOver, local_event);
                 } else {
-                    cx.window_state.hovered.insert(view_id);
+                    if !cx.window_state.hovered.contains(&view_id) {
+                        cx.window_state.hovered.push(view_id);
+                    }
                     let cursor = view_state.borrow().combined_style.builtin().cursor();
                     if let Some(cursor) = cursor {
                         if cx.window_state.cursor.is_none() {

@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use muda::MenuId;
 use peniko::kurbo::{Point, Size, Vec2};
+use smallvec::SmallVec;
 use taffy::{AvailableSpace, NodeId};
 use winit::cursor::CursorIcon;
 use winit::window::Theme;
@@ -20,6 +21,11 @@ use crate::{
     view::VIEW_STORAGE,
     view::ViewId,
 };
+
+/// A small set of ViewIds, optimized for small collections (< 8 items).
+/// Uses linear search which is faster than hashing for small N.
+/// Inspired by Chromium's approach for event listener collections.
+pub(crate) type ViewIdSmallSet = SmallVec<[ViewId; 8]>;
 
 /// Tracks the state of a view being dragged.
 pub struct DragState {
@@ -46,11 +52,11 @@ pub struct WindowState {
     pub(crate) request_paint: bool,
     pub(crate) dragging: Option<DragState>,
     pub(crate) drag_start: Option<(ViewId, Point)>,
-    pub(crate) dragging_over: HashSet<ViewId>,
+    pub(crate) dragging_over: ViewIdSmallSet,
     pub(crate) screen_size_bp: ScreenSizeBp,
     pub(crate) grid_bps: GridBreakpoints,
     pub(crate) clicking: HashSet<ViewId>,
-    pub(crate) hovered: HashSet<ViewId>,
+    pub(crate) hovered: ViewIdSmallSet,
     pub(crate) focusable: HashSet<ViewId>,
     pub(crate) file_hovered: HashSet<ViewId>,
     // whether the window is in light or dark mode
@@ -85,9 +91,9 @@ impl WindowState {
             request_compute_layout: false,
             dragging: None,
             drag_start: None,
-            dragging_over: HashSet::new(),
+            dragging_over: ViewIdSmallSet::new(),
             clicking: HashSet::new(),
-            hovered: HashSet::new(),
+            hovered: ViewIdSmallSet::new(),
             focusable: HashSet::new(),
             file_hovered: HashSet::new(),
             theme_overriden: false,
@@ -134,9 +140,9 @@ impl WindowState {
         }
         let _ = taffy.remove(node);
         id.remove();
-        self.dragging_over.remove(&id);
+        self.dragging_over.retain(|x| *x != id);
         self.clicking.remove(&id);
-        self.hovered.remove(&id);
+        self.hovered.retain(|x| *x != id);
         self.file_hovered.remove(&id);
         self.clicking.remove(&id);
         self.focusable.remove(&id);
