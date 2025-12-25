@@ -1,4 +1,5 @@
 use peniko::kurbo::{Affine, Point, Size, Vec2};
+pub use ui_events::pointer::PointerId;
 use ui_events::{
     ScrollDelta,
     keyboard::{Code, KeyState, KeyboardEvent},
@@ -77,6 +78,12 @@ pub enum EventListener {
     PointerEnter,
     /// Receives [`Event::PointerLeave`]
     PointerLeave,
+    /// Fired when a view gains pointer capture.
+    /// Receives [`Event::GotPointerCapture`]
+    GotPointerCapture,
+    /// Fired when a view loses pointer capture.
+    /// Receives [`Event::LostPointerCapture`]
+    LostPointerCapture,
     /// Receives [`Event::PinchGesture`]
     PinchGesture,
     /// Receives [`Event::ImeEnabled`]
@@ -118,6 +125,12 @@ pub enum Event {
     Pointer(PointerEvent),
     FileDrag(dropped_file::FileDragEvent),
     Key(ui_events::keyboard::KeyboardEvent),
+    /// Fired when a view gains pointer capture.
+    /// Contains the pointer ID that was captured.
+    GotPointerCapture(PointerId),
+    /// Fired when a view loses pointer capture.
+    /// Contains the pointer ID that was released.
+    LostPointerCapture(PointerId),
     ImeEnabled,
     ImeDisabled,
     ImePreedit {
@@ -177,8 +190,12 @@ impl Event {
             | Event::WindowMaximizeChanged(_)
             | Event::WindowScaleChanged(_)
             | Event::WindowLostFocus
-            | Event::FileDrag(FileDragEvent::DragDropped { .. }) => true,
+            | Event::FileDrag(FileDragEvent::DragDropped { .. })
+            // Capture events should be delivered even to disabled views
+            // since they need to know when capture is lost
+            | Event::LostPointerCapture(_) => true,
             Event::Pointer(_)
+            | Event::GotPointerCapture(_)
             | Event::FocusGained
             | Event::FocusLost
             | Event::ImeEnabled
@@ -313,6 +330,8 @@ impl Event {
             )
             | Event::FileDrag(FileDragEvent::DragLeft { position: None, .. })
             | Event::Key(_)
+            | Event::GotPointerCapture(_)
+            | Event::LostPointerCapture(_)
             | Event::FocusGained
             | Event::FocusLost
             | Event::ImeEnabled
@@ -341,6 +360,8 @@ impl Event {
             Event::Pointer(PointerEvent::Enter(_)) => None, // TODO
             Event::Pointer(PointerEvent::Cancel(_)) => None, // TODO
             Event::Pointer(PointerEvent::Gesture(_)) => None, // TODO
+            Event::GotPointerCapture(_) => Some(EventListener::GotPointerCapture),
+            Event::LostPointerCapture(_) => Some(EventListener::LostPointerCapture),
             Event::Key(KeyboardEvent {
                 state: KeyState::Down,
                 ..

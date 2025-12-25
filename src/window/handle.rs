@@ -836,6 +836,18 @@ impl WindowHandle {
                             cx.window_state.active = None;
                         }
                     }
+                    UpdateMessage::SetPointerCapture {
+                        view_id,
+                        pointer_id,
+                    } => {
+                        cx.window_state.set_pointer_capture(pointer_id, view_id);
+                    }
+                    UpdateMessage::ReleasePointerCapture {
+                        view_id,
+                        pointer_id,
+                    } => {
+                        cx.window_state.release_pointer_capture(pointer_id, view_id);
+                    }
                     UpdateMessage::ScrollTo { id, rect } => {
                         self.id
                             .view()

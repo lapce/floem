@@ -60,8 +60,11 @@ pub use floem::ViewId;
 
 /// Prelude module for convenient imports in tests.
 pub mod prelude {
-    pub use super::{ClickTracker, HeadlessHarnessExt, ScrollTracker, layer, layers};
+    pub use super::{
+        ClickTracker, HeadlessHarnessExt, PointerCaptureTracker, ScrollTracker, layer, layers,
+    };
     pub use floem::ViewId;
+    pub use floem::event::PointerId;
     pub use floem::headless::*;
     pub use floem::prelude::*;
     pub use floem::views::{Container, Decorators, Empty, Scroll, stack, stack_from_iter};
@@ -353,5 +356,159 @@ impl ScrollTracker {
     /// Reset the tracker, clearing all recorded viewports.
     pub fn reset(&self) {
         self.viewports.borrow_mut().clear();
+    }
+}
+
+/// Tracks pointer capture events on views for testing.
+///
+/// This helper makes it easy to verify which views received GotPointerCapture
+/// and LostPointerCapture events.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// let tracker = PointerCaptureTracker::new();
+///
+/// let view = tracker.track("my_view", my_view);
+/// // ... set pointer capture ...
+/// assert!(tracker.got_capture_count() > 0);
+/// ```
+#[derive(Clone, Default)]
+pub struct PointerCaptureTracker {
+    got_captures: Rc<RefCell<Vec<(String, floem::event::PointerId)>>>,
+    lost_captures: Rc<RefCell<Vec<(String, floem::event::PointerId)>>>,
+    pointer_downs: Rc<RefCell<Vec<(String, Option<floem::event::PointerId>)>>>,
+    pointer_moves: Rc<RefCell<Vec<(String, Option<floem::event::PointerId>)>>>,
+    pointer_ups: Rc<RefCell<Vec<(String, Option<floem::event::PointerId>)>>>,
+}
+
+impl PointerCaptureTracker {
+    /// Create a new pointer capture tracker.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Wrap a view to track pointer capture events with a name.
+    pub fn track<V: IntoView>(&self, name: &str, view: V) -> impl IntoView + use<V> {
+        use floem::event::{Event, EventListener};
+
+        let got_captures = self.got_captures.clone();
+        let lost_captures = self.lost_captures.clone();
+        let pointer_downs = self.pointer_downs.clone();
+        let pointer_moves = self.pointer_moves.clone();
+        let pointer_ups = self.pointer_ups.clone();
+        let name = name.to_string();
+
+        let name_got = name.clone();
+        let name_lost = name.clone();
+        let name_down = name.clone();
+        let name_move = name.clone();
+        let name_up = name.clone();
+
+        view.into_view()
+            .on_event(EventListener::GotPointerCapture, move |e| {
+                if let Event::GotPointerCapture(pointer_id) = e {
+                    got_captures
+                        .borrow_mut()
+                        .push((name_got.clone(), *pointer_id));
+                }
+                floem::event::EventPropagation::Continue
+            })
+            .on_event(EventListener::LostPointerCapture, move |e| {
+                if let Event::LostPointerCapture(pointer_id) = e {
+                    lost_captures
+                        .borrow_mut()
+                        .push((name_lost.clone(), *pointer_id));
+                }
+                floem::event::EventPropagation::Continue
+            })
+            .on_event(EventListener::PointerDown, move |e| {
+                if let Event::Pointer(floem::ui_events::pointer::PointerEvent::Down(pe)) = e {
+                    pointer_downs
+                        .borrow_mut()
+                        .push((name_down.clone(), pe.pointer.pointer_id));
+                }
+                floem::event::EventPropagation::Continue
+            })
+            .on_event(EventListener::PointerMove, move |e| {
+                if let Event::Pointer(floem::ui_events::pointer::PointerEvent::Move(pu)) = e {
+                    pointer_moves
+                        .borrow_mut()
+                        .push((name_move.clone(), pu.pointer.pointer_id));
+                }
+                floem::event::EventPropagation::Continue
+            })
+            .on_event(EventListener::PointerUp, move |e| {
+                if let Event::Pointer(floem::ui_events::pointer::PointerEvent::Up(pe)) = e {
+                    pointer_ups
+                        .borrow_mut()
+                        .push((name_up.clone(), pe.pointer.pointer_id));
+                }
+                floem::event::EventPropagation::Continue
+            })
+    }
+
+    /// Returns the number of GotPointerCapture events recorded.
+    pub fn got_capture_count(&self) -> usize {
+        self.got_captures.borrow().len()
+    }
+
+    /// Returns the number of LostPointerCapture events recorded.
+    pub fn lost_capture_count(&self) -> usize {
+        self.lost_captures.borrow().len()
+    }
+
+    /// Returns the names of views that got pointer capture, in order.
+    pub fn got_capture_names(&self) -> Vec<String> {
+        self.got_captures
+            .borrow()
+            .iter()
+            .map(|(name, _)| name.clone())
+            .collect()
+    }
+
+    /// Returns the names of views that lost pointer capture, in order.
+    pub fn lost_capture_names(&self) -> Vec<String> {
+        self.lost_captures
+            .borrow()
+            .iter()
+            .map(|(name, _)| name.clone())
+            .collect()
+    }
+
+    /// Returns the names of views that received PointerDown events, in order.
+    pub fn pointer_down_names(&self) -> Vec<String> {
+        self.pointer_downs
+            .borrow()
+            .iter()
+            .map(|(name, _)| name.clone())
+            .collect()
+    }
+
+    /// Returns the names of views that received PointerMove events, in order.
+    pub fn pointer_move_names(&self) -> Vec<String> {
+        self.pointer_moves
+            .borrow()
+            .iter()
+            .map(|(name, _)| name.clone())
+            .collect()
+    }
+
+    /// Returns the names of views that received PointerUp events, in order.
+    pub fn pointer_up_names(&self) -> Vec<String> {
+        self.pointer_ups
+            .borrow()
+            .iter()
+            .map(|(name, _)| name.clone())
+            .collect()
+    }
+
+    /// Reset the tracker, clearing all recorded events.
+    pub fn reset(&self) {
+        self.got_captures.borrow_mut().clear();
+        self.lost_captures.borrow_mut().clear();
+        self.pointer_downs.borrow_mut().clear();
+        self.pointer_moves.borrow_mut().clear();
+        self.pointer_ups.borrow_mut().clear();
     }
 }

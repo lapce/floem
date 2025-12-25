@@ -11,6 +11,8 @@ use slotmap::new_key_type;
 use taffy::{Display, Layout, NodeId, TaffyTree};
 use winit::window::WindowId;
 
+use ui_events::pointer::PointerId;
+
 use super::stacking::invalidate_stacking_cache;
 use super::{ChangeFlags, IntoView, StackOffset, VIEW_STORAGE, View, ViewState};
 use crate::{
@@ -448,6 +450,60 @@ impl ViewId {
     /// Request that the active state be removed from this View
     pub fn clear_active(&self) {
         self.add_update_message(UpdateMessage::ClearActive(*self));
+    }
+
+    // =========================================================================
+    // Pointer Capture API (W3C Pointer Events inspired)
+    // =========================================================================
+
+    /// Set pointer capture for this view.
+    ///
+    /// When a view has pointer capture for a pointer, all subsequent pointer events
+    /// for that pointer are dispatched directly to this view, regardless of where
+    /// the pointer moves. This is useful for:
+    /// - Drag operations that should continue even when the pointer leaves the view
+    /// - Sliders and scrollbars that need to track pointer movement globally
+    /// - Any interaction that requires reliable pointer tracking
+    ///
+    /// The capture will be applied on the next pointer event for this pointer ID.
+    /// When capture is set:
+    /// - `GotPointerCapture` event is fired to this view
+    /// - All subsequent pointer events for this pointer are routed here
+    /// - When released, `LostPointerCapture` event is fired
+    ///
+    /// Capture is automatically released on `PointerUp` for the captured pointer.
+    ///
+    /// # Example
+    /// ```ignore
+    /// fn event_before_children(&mut self, cx: &mut EventCx, event: &Event) -> EventPropagation {
+    ///     if let Event::Pointer(PointerEvent::Down(e)) = event {
+    ///         if let Some(pointer_id) = e.pointer.pointer_id {
+    ///             self.id().set_pointer_capture(pointer_id);
+    ///         }
+    ///     }
+    ///     EventPropagation::Continue
+    /// }
+    /// ```
+    pub fn set_pointer_capture(&self, pointer_id: PointerId) {
+        self.add_update_message(UpdateMessage::SetPointerCapture {
+            view_id: *self,
+            pointer_id,
+        });
+    }
+
+    /// Release pointer capture from this view.
+    ///
+    /// If this view has capture for the specified pointer, the capture will be
+    /// released on the next pointer event. A `LostPointerCapture` event will be
+    /// fired when the release takes effect.
+    ///
+    /// Note: This only releases capture if this view currently has it.
+    /// It's safe to call even if this view doesn't have capture.
+    pub fn release_pointer_capture(&self, pointer_id: PointerId) {
+        self.add_update_message(UpdateMessage::ReleasePointerCapture {
+            view_id: *self,
+            pointer_id,
+        });
     }
 
     /// Send a message to the application to open the Inspector for this Window

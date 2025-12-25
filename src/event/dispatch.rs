@@ -4,7 +4,8 @@ use peniko::kurbo::{Affine, Point};
 use smallvec::SmallVec;
 use ui_events::keyboard::{Key, KeyState, KeyboardEvent, Modifiers, NamedKey};
 use ui_events::pointer::{
-    PointerButton, PointerButtonEvent, PointerEvent, PointerInfo, PointerState, PointerUpdate,
+    PointerButton, PointerButtonEvent, PointerEvent, PointerId, PointerInfo, PointerState,
+    PointerType, PointerUpdate,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -87,6 +88,96 @@ impl EventCx<'_> {
     }
 
     // =========================================================================
+    // Pointer Capture Processing (inspired by Chromium's ProcessPendingPointerCapture)
+    // =========================================================================
+
+    /// Process pending pointer capture changes for a specific pointer.
+    ///
+    /// This implements Chromium's two-phase capture model:
+    /// 1. Compare pending vs current capture state for the pointer
+    /// 2. Fire `LostPointerCapture` to the old target (if any)
+    /// 3. Move pending to active capture map
+    /// 4. Fire `GotPointerCapture` to the new target (if any)
+    ///
+    /// This ensures proper event ordering: lost fires before got.
+    pub(crate) fn process_pending_pointer_capture(&mut self, pointer_id: PointerId) {
+        let current_target = self
+            .window_state
+            .pointer_capture_target
+            .get(&pointer_id)
+            .copied();
+        let pending_target = self
+            .window_state
+            .pending_pointer_capture_target
+            .get(&pointer_id)
+            .copied();
+
+        // No change in capture state
+        if current_target == pending_target {
+            return;
+        }
+
+        // Fire LostPointerCapture to the old target
+        if let Some(old_target) = current_target {
+            self.window_state.pointer_capture_target.remove(&pointer_id);
+            let event = Event::LostPointerCapture(pointer_id);
+            old_target.apply_event(&EventListener::LostPointerCapture, &event);
+        }
+
+        // Fire GotPointerCapture to the new target
+        if let Some(new_target) = pending_target {
+            // Only set capture if the view is still connected
+            if !new_target.is_hidden() {
+                self.window_state
+                    .pointer_capture_target
+                    .insert(pointer_id, new_target);
+                let event = Event::GotPointerCapture(pointer_id);
+                new_target.apply_event(&EventListener::GotPointerCapture, &event);
+
+                // If the view was removed during the event handler, clean up
+                if new_target.is_hidden() {
+                    self.window_state.pointer_capture_target.remove(&pointer_id);
+                    let event = Event::LostPointerCapture(pointer_id);
+                    new_target.apply_event(&EventListener::LostPointerCapture, &event);
+                }
+            }
+        }
+    }
+
+    /// Process pending pointer captures for all pointers.
+    ///
+    /// Called before dispatching pointer events to ensure capture state is current.
+    pub(crate) fn process_all_pending_pointer_captures(&mut self) {
+        // Collect all pointer IDs that have pending or current captures
+        let pointer_ids: SmallVec<[PointerId; 4]> = self
+            .window_state
+            .pending_pointer_capture_target
+            .keys()
+            .chain(self.window_state.pointer_capture_target.keys())
+            .copied()
+            .collect();
+
+        for pointer_id in pointer_ids {
+            self.process_pending_pointer_capture(pointer_id);
+        }
+    }
+
+    /// Get the pointer ID from a pointer event, if available.
+    fn get_pointer_id_from_event(event: &Event) -> Option<PointerId> {
+        match event {
+            Event::Pointer(PointerEvent::Down(PointerButtonEvent { pointer, .. }))
+            | Event::Pointer(PointerEvent::Up(PointerButtonEvent { pointer, .. })) => {
+                pointer.pointer_id
+            }
+            Event::Pointer(PointerEvent::Move(PointerUpdate { pointer, .. })) => pointer.pointer_id,
+            Event::Pointer(PointerEvent::Leave(info))
+            | Event::Pointer(PointerEvent::Enter(info))
+            | Event::Pointer(PointerEvent::Cancel(info)) => info.pointer_id,
+            _ => None,
+        }
+    }
+
+    // =========================================================================
     // Main Entry Point
     // =========================================================================
 
@@ -159,15 +250,40 @@ impl EventCx<'_> {
         // Dispatch the event based on its type and current state
         if event.needs_focus() {
             self.dispatch_keyboard_event(root_id, main_view_id, &event);
-        } else if self.window_state.active.is_some() && event.is_pointer() {
-            self.dispatch_to_active_view(root_id, &event);
         } else if event.is_pointer() {
-            // Pointer events use Chromium-style path-based dispatch:
-            // 1. Hit test finds target (z-index aware)
-            // 2. Event path built from target to root (DOM order)
-            // 3. Dispatch through path (capturing + bubbling)
-            // 4. Click events dispatched separately after PointerUp
-            self.dispatch_pointer_event_via_path(root_id, &event);
+            // Process pending pointer captures before dispatching
+            // This ensures capture state is current and fires got/lost events
+            if let Some(pointer_id) = Self::get_pointer_id_from_event(&event) {
+                self.process_pending_pointer_capture(pointer_id);
+
+                // Check if this pointer has an active capture
+                if let Some(capture_target) =
+                    self.window_state.get_pointer_capture_target(pointer_id)
+                {
+                    // Route to capture target instead of hit-testing
+                    self.dispatch_to_captured_view(capture_target, &event);
+
+                    // On pointer up, release implicit capture
+                    if matches!(&event, Event::Pointer(PointerEvent::Up { .. })) {
+                        self.window_state
+                            .release_pointer_capture_unconditional(pointer_id);
+                    }
+                } else if self.window_state.active.is_some() {
+                    // Legacy active view handling (for drag operations)
+                    self.dispatch_to_active_view(root_id, &event);
+                } else {
+                    // Pointer events use Chromium-style path-based dispatch:
+                    // 1. Hit test finds target (z-index aware)
+                    // 2. Event path built from target to root (DOM order)
+                    // 3. Dispatch through path (capturing + bubbling)
+                    // 4. Click events dispatched separately after PointerUp
+                    self.dispatch_pointer_event_via_path(root_id, &event);
+                }
+            } else if self.window_state.active.is_some() {
+                self.dispatch_to_active_view(root_id, &event);
+            } else {
+                self.dispatch_pointer_event_via_path(root_id, &event);
+            }
         } else {
             // Non-pointer events use stacking context dispatch
             self.dispatch_to_view(root_id, &event, false);
@@ -234,6 +350,9 @@ impl EventCx<'_> {
     ///    - Bubbling phase (target → root): `event_after_children` + listeners
     /// 4. For PointerUp: dispatch Click events as separate synthetic events
     ///
+    /// For touch pointers, implicit capture is set on PointerDown following
+    /// the W3C Pointer Events spec and Chromium's behavior.
+    ///
     /// Returns true if the event was processed.
     pub(crate) fn dispatch_pointer_event_via_path(
         &mut self,
@@ -266,6 +385,28 @@ impl EventCx<'_> {
             Event::Pointer(ui_events::pointer::PointerEvent::Up { .. })
         ) {
             dispatch_click_through_path(&path, event, self);
+        }
+
+        // Implicit touch capture: For touch pointers, automatically capture on PointerDown
+        // This follows the W3C Pointer Events spec and Chromium's behavior where
+        // touch interactions implicitly capture to the target element.
+        // IMPORTANT: This is set AFTER event dispatch, matching Chromium's timing.
+        // This allows handlers during PointerDown to call releasePointerCapture()
+        // to prevent implicit capture if desired.
+        if let Event::Pointer(PointerEvent::Down(PointerButtonEvent { pointer, .. })) = event {
+            if pointer.pointer_type == PointerType::Touch {
+                if let Some(pointer_id) = pointer.pointer_id {
+                    // Only set implicit capture if no explicit capture was set during dispatch
+                    // and no explicit release was requested
+                    if !self
+                        .window_state
+                        .pending_pointer_capture_target
+                        .contains_key(&pointer_id)
+                    {
+                        self.window_state.set_pointer_capture(pointer_id, target);
+                    }
+                }
+            }
         }
 
         result.is_processed()
@@ -516,6 +657,26 @@ impl EventCx<'_> {
             }
             self.window_state.active = None;
         }
+    }
+
+    /// Dispatch pointer events to a view that has pointer capture.
+    ///
+    /// Similar to dispatch_to_active_view, but specifically for pointer capture.
+    /// Events are transformed to the capture target's local coordinate space.
+    fn dispatch_to_captured_view(&mut self, capture_target: ViewId, event: &Event) {
+        // Single borrow to get both window_origin and viewport
+        let view_state = capture_target.state();
+        let (window_origin, viewport) = {
+            let vs = view_state.borrow();
+            (vs.window_origin, vs.viewport.unwrap_or_default())
+        };
+        let layout = capture_target.get_layout().unwrap_or_default();
+        let transform = Affine::translate((
+            window_origin.x - layout.location.x as f64 + viewport.x0,
+            window_origin.y - layout.location.y as f64 + viewport.y0,
+        ));
+        let transformed_event = event.clone().transform(transform);
+        self.dispatch_to_view(capture_target, &transformed_event, true);
     }
 
     // =========================================================================

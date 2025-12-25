@@ -1,6 +1,7 @@
 use std::{any::Any, cell::RefCell, collections::HashMap};
 
 use peniko::kurbo::{Point, Rect, Size, Vec2};
+use ui_events::pointer::PointerId;
 use winit::window::{ResizeDirection, Theme};
 
 use crate::{
@@ -36,25 +37,57 @@ pub(crate) enum UpdateMessage {
     ClearAppFocus,
     Active(ViewId),
     ClearActive(ViewId),
+    /// Set pointer capture for a view (W3C Pointer Events API).
+    SetPointerCapture {
+        view_id: ViewId,
+        pointer_id: PointerId,
+    },
+    /// Release pointer capture from a view.
+    ReleasePointerCapture {
+        view_id: ViewId,
+        pointer_id: PointerId,
+    },
     WindowScale(f64),
     RequestPaint,
-    State { id: ViewId, state: Box<dyn Any> },
+    State {
+        id: ViewId,
+        state: Box<dyn Any>,
+    },
     ToggleWindowMaximized,
     SetWindowMaximized(bool),
     MinimizeWindow,
     DragWindow,
     DragResizeWindow(ResizeDirection),
     SetWindowDelta(Vec2),
-    ShowContextMenu { menu: Menu, pos: Option<Point> },
-    WindowMenu { menu: Menu },
-    SetWindowTitle { title: String },
-    AddOverlay { view: Box<dyn View> },
-    RemoveOverlay { id: ViewId },
+    ShowContextMenu {
+        menu: Menu,
+        pos: Option<Point>,
+    },
+    WindowMenu {
+        menu: Menu,
+    },
+    SetWindowTitle {
+        title: String,
+    },
+    AddOverlay {
+        view: Box<dyn View>,
+    },
+    RemoveOverlay {
+        id: ViewId,
+    },
     Inspect,
-    ScrollTo { id: ViewId, rect: Option<Rect> },
+    ScrollTo {
+        id: ViewId,
+        rect: Option<Rect>,
+    },
     FocusWindow,
-    SetImeAllowed { allowed: bool },
-    SetImeCursorArea { position: Point, size: Size },
+    SetImeAllowed {
+        allowed: bool,
+    },
+    SetImeCursorArea {
+        position: Point,
+        size: Size,
+    },
     WindowVisible(bool),
     ViewTransitionAnimComplete(ViewId),
     SetTheme(Option<Theme>),

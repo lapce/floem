@@ -148,6 +148,29 @@ impl HeadlessHarness {
         self.dispatch_event(create_secondary_pointer_up(x, y))
     }
 
+    /// Simulate a touch down event at the given position.
+    ///
+    /// Touch pointers automatically get implicit capture per W3C Pointer Events spec.
+    pub fn touch_down(&mut self, x: f64, y: f64) -> EventResult {
+        self.dispatch_event(create_touch_down(x, y))
+    }
+
+    /// Simulate a touch up event at the given position.
+    pub fn touch_up(&mut self, x: f64, y: f64) -> EventResult {
+        self.dispatch_event(create_touch_up(x, y))
+    }
+
+    /// Simulate a touch move event to the given position.
+    pub fn touch_move(&mut self, x: f64, y: f64) -> EventResult {
+        self.dispatch_event(create_touch_move(x, y))
+    }
+
+    /// Simulate a tap (touch down + touch up) at the given position.
+    pub fn tap(&mut self, x: f64, y: f64) -> EventResult {
+        self.touch_down(x, y);
+        self.touch_up(x, y)
+    }
+
     /// Simulate a scroll wheel event at the given position.
     ///
     /// `delta_x` and `delta_y` are the scroll amounts in pixels.
@@ -453,6 +476,68 @@ fn create_pointer_move(x: f64, y: f64) -> Event {
             pointer_id: Some(PointerId::PRIMARY),
             persistent_device_id: None,
             pointer_type: PointerType::Mouse,
+        },
+        current: ui_events::pointer::PointerState {
+            position: dpi::PhysicalPosition::new(x, y),
+            count: 0,
+            ..Default::default()
+        },
+        coalesced: Vec::new(),
+        predicted: Vec::new(),
+    }))
+}
+
+/// Create a touch pointer down event at the given position.
+fn create_touch_down(x: f64, y: f64) -> Event {
+    use ui_events::pointer::{
+        PointerButton, PointerButtonEvent, PointerEvent, PointerId, PointerInfo, PointerType,
+    };
+
+    Event::Pointer(PointerEvent::Down(PointerButtonEvent {
+        state: ui_events::pointer::PointerState {
+            position: dpi::PhysicalPosition::new(x, y),
+            count: 1,
+            ..Default::default()
+        },
+        button: Some(PointerButton::Primary),
+        pointer: PointerInfo {
+            pointer_id: Some(PointerId::PRIMARY),
+            persistent_device_id: None,
+            pointer_type: PointerType::Touch,
+        },
+    }))
+}
+
+/// Create a touch pointer up event at the given position.
+fn create_touch_up(x: f64, y: f64) -> Event {
+    use ui_events::pointer::{
+        PointerButton, PointerButtonEvent, PointerEvent, PointerId, PointerInfo, PointerType,
+    };
+
+    Event::Pointer(PointerEvent::Up(PointerButtonEvent {
+        state: ui_events::pointer::PointerState {
+            position: dpi::PhysicalPosition::new(x, y),
+            count: 1,
+            ..Default::default()
+        },
+        button: Some(PointerButton::Primary),
+        pointer: PointerInfo {
+            pointer_id: Some(PointerId::PRIMARY),
+            persistent_device_id: None,
+            pointer_type: PointerType::Touch,
+        },
+    }))
+}
+
+/// Create a touch pointer move event to the given position.
+fn create_touch_move(x: f64, y: f64) -> Event {
+    use ui_events::pointer::{PointerEvent, PointerId, PointerInfo, PointerType, PointerUpdate};
+
+    Event::Pointer(PointerEvent::Move(PointerUpdate {
+        pointer: PointerInfo {
+            pointer_id: Some(PointerId::PRIMARY),
+            persistent_device_id: None,
+            pointer_type: PointerType::Touch,
         },
         current: ui_events::pointer::PointerState {
             position: dpi::PhysicalPosition::new(x, y),
