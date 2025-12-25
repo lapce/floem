@@ -61,15 +61,13 @@ impl HitTestCache {
     /// Returns Some(result) on cache hit, None on cache miss.
     #[inline]
     fn lookup(&self, root_id: ViewId, point: Point) -> Option<Option<ViewId>> {
-        for entry in &self.entries {
-            if let Some(e) = entry {
-                // Use bitwise comparison for Point (exact match like Blink)
-                if e.root_id == root_id
-                    && e.point.x.to_bits() == point.x.to_bits()
-                    && e.point.y.to_bits() == point.y.to_bits()
-                {
-                    return Some(e.result);
-                }
+        for e in self.entries.iter().flatten() {
+            // Use bitwise comparison for Point (exact match like Blink)
+            if e.root_id == root_id
+                && e.point.x.to_bits() == point.x.to_bits()
+                && e.point.y.to_bits() == point.y.to_bits()
+            {
+                return Some(e.result);
             }
         }
         None
