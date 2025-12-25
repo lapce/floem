@@ -429,6 +429,69 @@ fn bench_cache_effectiveness(c: &mut Criterion) {
     group.finish();
 }
 
+/// Benchmarks specifically for the "no listeners" early exit optimization.
+/// These trees have NO event listeners, so we can measure the overhead of
+/// dispatching through paths that don't need processing.
+fn bench_no_listeners_path(c: &mut Criterion) {
+    let mut group = c.benchmark_group("no_listeners_path");
+
+    // Flat tree with no listeners - tests sibling traversal
+    for size in [10, 50, 100, 200].iter() {
+        group.bench_with_input(
+            BenchmarkId::new("flat_no_listeners", size),
+            size,
+            |b, &size| {
+                let view = create_flat_tree(size);
+                let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+                b.iter(|| {
+                    harness.pointer_down(black_box(50.0), black_box(50.0));
+                    harness.pointer_up(black_box(50.0), black_box(50.0));
+                });
+            },
+        );
+    }
+
+    // Deep tree with no listeners - tests path building and traversal
+    for depth in [10, 20, 50, 100].iter() {
+        group.bench_with_input(
+            BenchmarkId::new("deep_no_listeners", depth),
+            depth,
+            |b, &depth| {
+                let view = create_deep_tree(depth);
+                let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+                b.iter(|| {
+                    harness.pointer_down(black_box(50.0), black_box(50.0));
+                    harness.pointer_up(black_box(50.0), black_box(50.0));
+                });
+            },
+        );
+    }
+
+    // Wide tree depth 3 with no listeners
+    for width in [3, 5, 7].iter() {
+        let total_nodes = width + width * width + width * width * width;
+        let label = format!("w{}_d3_n{}", width, total_nodes);
+
+        group.bench_with_input(
+            BenchmarkId::new("wide_no_listeners", &label),
+            width,
+            |b, &width| {
+                let view = create_wide_tree_depth3(width);
+                let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+                b.iter(|| {
+                    harness.pointer_down(black_box(5.0), black_box(5.0));
+                    harness.pointer_up(black_box(5.0), black_box(5.0));
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_flat_tree_dispatch,
@@ -439,6 +502,7 @@ criterion_group!(
     bench_scroll_events,
     bench_event_sequence,
     bench_cache_effectiveness,
+    bench_no_listeners_path,
 );
 
 criterion_main!(benches);

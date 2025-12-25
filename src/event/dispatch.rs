@@ -269,6 +269,7 @@ impl EventCx<'_> {
     }
 
     /// Internal method used by Floem. This can be called from parent `View`s to propagate an event to the child `View`.
+    #[inline]
     pub(crate) fn dispatch_to_view(
         &mut self,
         view_id: ViewId,
@@ -334,6 +335,7 @@ impl EventCx<'_> {
     ///
     /// Iterates through child views in reverse z-order (highest z-index first),
     /// handling stacking context boundaries and event bubbling.
+    #[inline]
     fn dispatch_to_children(&mut self, view_id: ViewId, event: &Event) -> DispatchOutcome {
         let items = collect_stacking_context_items(view_id);
 
@@ -497,6 +499,7 @@ impl EventCx<'_> {
     /// Note: This function expects event coordinates to be in absolute (window) coordinates,
     /// as used by the stacking context event dispatch. The layout_rect and clip_rect are also
     /// in absolute coordinates, so they can be compared directly.
+    #[inline]
     pub fn should_send(&mut self, id: ViewId, event: &Event) -> bool {
         if id.is_hidden() || (id.is_disabled() && !event.allow_disabled()) {
             return false;
@@ -555,6 +558,7 @@ impl EventCx<'_> {
     // =========================================================================
 
     /// Handle all default behaviors for an event: built-in behaviors and event listeners.
+    #[inline]
     fn handle_default_behaviors(
         &mut self,
         view_id: ViewId,
@@ -868,6 +872,7 @@ impl EventCx<'_> {
     // =========================================================================
 
     /// Try to dispatch an event to registered listeners for the view.
+    #[inline]
     fn try_dispatch_to_listeners(&self, view_id: ViewId, event: &Event) -> BuiltinResult {
         let listener = event.listener()?;
         let handlers = view_id
@@ -976,6 +981,7 @@ impl EventCx<'_> {
     // =========================================================================
 
     /// Handle hover state changes by sending PointerEnter/Leave events.
+    #[inline]
     fn handle_hover_changes(
         &mut self,
         pointer_info: PointerInfo,
