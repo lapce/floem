@@ -1418,6 +1418,175 @@ fn test_inset_top_pct_positioning() {
 }
 
 #[test]
+fn test_explicit_z_index_zero_vs_auto_hit_testing() {
+    // Test CSS spec behavior: z-index: 0 (explicit) receives clicks before z-index: auto
+    // at the same z-level because explicit z-index creates a stacking context.
+    //
+    // Structure:
+    //   layers
+    //   ├── auto_view (no z-index, uses z-index: auto)
+    //   └── explicit_zero (z-index: 0, explicit)
+    //
+    // explicit_zero should receive the click because:
+    // - It has z-index: 0 (explicit) which creates a stacking context
+    // - z-index: auto paints before z-index: 0
+    // - Hit testing is reverse of paint order
+
+    let tracker = ClickTracker::new();
+
+    let view = layers((
+        tracker.track_named("auto", Empty::new()), // z-index: auto
+        tracker.track_named("explicit_zero", Empty::new().style(|s| s.z_index(0))), // z-index: 0
+    ))
+    .style(|s| s.size(100.0, 100.0));
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    harness.click(50.0, 50.0);
+
+    assert_eq!(
+        tracker.clicked_names(),
+        vec!["explicit_zero"],
+        "z-index: 0 (explicit) should receive click before z-index: auto"
+    );
+}
+
+#[test]
+fn test_z_index_auto_vs_explicit_zero_dom_order() {
+    // Test that when there are multiple z-index: auto and z-index: 0 views,
+    // DOM order serves as a tiebreaker within each group.
+    //
+    // Structure:
+    //   layers
+    //   ├── auto1 (z-index: auto)
+    //   ├── zero1 (z-index: 0)
+    //   ├── auto2 (z-index: auto)
+    //   └── zero2 (z-index: 0)
+    //
+    // Hit test order should be: zero2 (last explicit 0 in DOM)
+
+    let tracker = ClickTracker::new();
+
+    let view = layers((
+        tracker.track_named("auto1", Empty::new()),
+        tracker.track_named("zero1", Empty::new().style(|s| s.z_index(0))),
+        tracker.track_named("auto2", Empty::new()),
+        tracker.track_named("zero2", Empty::new().style(|s| s.z_index(0))),
+    ))
+    .style(|s| s.size(100.0, 100.0));
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    harness.click(50.0, 50.0);
+
+    assert_eq!(
+        tracker.clicked_names(),
+        vec!["zero2"],
+        "Last z-index: 0 (explicit) in DOM should receive click"
+    );
+}
+
+#[test]
+fn test_z_index_auto_vs_explicit_zero_with_positive() {
+    // Test that z-index: 1 beats both z-index: 0 and z-index: auto
+    //
+    // Structure:
+    //   layers
+    //   ├── auto (z-index: auto)
+    //   ├── explicit_zero (z-index: 0)
+    //   └── positive (z-index: 1) <- should receive click
+
+    let tracker = ClickTracker::new();
+
+    let view = layers((
+        tracker.track_named("auto", Empty::new()),
+        tracker.track_named("explicit_zero", Empty::new().style(|s| s.z_index(0))),
+        tracker.track_named("positive", Empty::new().style(|s| s.z_index(1))),
+    ))
+    .style(|s| s.size(100.0, 100.0));
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    harness.click(50.0, 50.0);
+
+    assert_eq!(
+        tracker.clicked_names(),
+        vec!["positive"],
+        "z-index: 1 should receive click over z-index: 0 and auto"
+    );
+}
+
+#[test]
+fn test_z_index_auto_vs_explicit_zero_with_negative() {
+    // Test that z-index: 0 beats z-index: -1, and z-index: auto beats z-index: -1
+    //
+    // Structure:
+    //   layers
+    //   ├── negative (z-index: -1)
+    //   ├── auto (z-index: auto)
+    //   └── explicit_zero (z-index: 0) <- should receive click
+
+    let tracker = ClickTracker::new();
+
+    let view = layers((
+        tracker.track_named("negative", Empty::new().style(|s| s.z_index(-1))),
+        tracker.track_named("auto", Empty::new()),
+        tracker.track_named("explicit_zero", Empty::new().style(|s| s.z_index(0))),
+    ))
+    .style(|s| s.size(100.0, 100.0));
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    harness.click(50.0, 50.0);
+
+    assert_eq!(
+        tracker.clicked_names(),
+        vec!["explicit_zero"],
+        "z-index: 0 (explicit) should receive click over z-index: auto and z-index: -1"
+    );
+}
+
+#[test]
+fn test_z_index_zero_creates_stacking_context() {
+    // Test that z-index: 0 (explicit) creates a stacking context that bounds children,
+    // while z-index: auto does not.
+    //
+    // Structure:
+    //   layers
+    //   ├── wrapper_no_context (no z-index, no stacking context)
+    //   │   └── escaped_child (z-index: 100) <- should escape and receive click!
+    //   └── wrapper_with_context (z-index: 0, creates stacking context)
+    //       └── bounded_child (z-index: 100) <- bounded, should NOT receive click
+
+    let tracker = ClickTracker::new();
+
+    let view = layers((
+        // Wrapper without z-index (no stacking context) - child escapes
+        Container::new(tracker.track_named(
+            "escaped_child",
+            Empty::new().style(|s| s.size(100.0, 100.0).z_index(100)),
+        ))
+        .style(|s| s.size(100.0, 100.0)),
+        // Wrapper with z-index: 0 (creates stacking context) - child is bounded
+        Container::new(tracker.track_named(
+            "bounded_child",
+            Empty::new().style(|s| s.size(100.0, 100.0).z_index(100)),
+        ))
+        .style(|s| s.z_index(0)),
+    ))
+    .style(|s| s.size(100.0, 100.0));
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    harness.click(50.0, 50.0);
+
+    // escaped_child (z=100) should win because it escapes to root stacking context
+    // bounded_child (z=100) is inside wrapper_with_context (z=0), so it's effectively z=0
+    // escaped_child (z=100) > wrapper_with_context (z=0), so escaped_child wins
+    assert_eq!(
+        tracker.clicked_names(),
+        vec!["escaped_child"],
+        "Child that escapes (no stacking context parent) should receive click over \
+         child bounded by z-index: 0 parent"
+    );
+}
+
+#[test]
 fn test_dropdown_extends_beyond_scroll_area() {
     // Test that z-index event dispatch works correctly when a dropdown extends
     // beyond the scroll container's visible area.

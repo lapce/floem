@@ -3,7 +3,9 @@
 use peniko::kurbo::{Affine, Point};
 use smallvec::SmallVec;
 use ui_events::keyboard::{Key, KeyState, KeyboardEvent, Modifiers, NamedKey};
-use ui_events::pointer::{PointerButton, PointerButtonEvent, PointerEvent, PointerUpdate};
+use ui_events::pointer::{
+    PointerButton, PointerButtonEvent, PointerEvent, PointerInfo, PointerState, PointerUpdate,
+};
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
@@ -12,6 +14,7 @@ use web_time::Instant;
 
 use super::dropped_file::FileDragEvent;
 use super::nav::view_arrow_navigation;
+use super::path::{build_event_path, dispatch_click_through_path, dispatch_through_path, hit_test};
 use super::{Event, EventListener, EventPropagation};
 use crate::action::show_context_menu;
 use crate::style::{Focusable, PointerEvents, PointerEventsProp, StyleSelector};
@@ -20,10 +23,27 @@ use crate::view::stacking::collect_stacking_context_items;
 use crate::view::view_tab_navigation;
 use crate::window::state::{DragState, WindowState};
 
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) enum PointerEventConsumed {
-    Yes,
-    No,
+/// Internal result type for event dispatch operations.
+///
+/// This is inspired by Chromium's two-level event result system where:
+/// - The public API (`EventPropagation`) is what views return to control bubbling
+/// - This internal type tracks both propagation AND pointer consumption state
+///
+/// The three meaningful combinations are:
+/// - `Processed`: Event fully handled, stop propagation (view took action)
+/// - `Consumed`: Pointer is over this view, but continue bubbling to parents
+/// - `Skipped`: View didn't participate (hidden, disabled, or pointer missed)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DispatchOutcome {
+    /// Event was fully processed - stop propagation immediately.
+    /// The view took action and no other views should handle this event.
+    Processed,
+    /// A child consumed the pointer (pointer is over a view), but propagation continues.
+    /// Used for hover/click tracking - the event bubbles up but siblings are skipped.
+    Consumed,
+    /// View didn't participate - continue to next sibling.
+    /// The view was hidden, disabled, or the pointer wasn't over it.
+    Skipped,
 }
 
 /// A bundle of helper methods to be used by `View::event` handlers
@@ -34,6 +54,19 @@ pub struct EventCx<'a> {
     /// it should not dispatch to its children (they're handled separately).
     pub(crate) skip_children_for: Option<ViewId>,
 }
+
+impl DispatchOutcome {
+    /// Returns true if the event was fully processed and propagation should stop.
+    pub fn is_processed(self) -> bool {
+        matches!(self, DispatchOutcome::Processed)
+    }
+}
+
+/// Result type for built-in event handlers that may stop propagation.
+type BuiltinResult = Option<DispatchOutcome>;
+
+/// Constant for a processed event result (stops propagation).
+const PROCESSED: BuiltinResult = Some(DispatchOutcome::Processed);
 
 impl EventCx<'_> {
     pub fn update_active(&mut self, id: ViewId) {
@@ -50,504 +83,715 @@ impl EventCx<'_> {
     }
 
     /// Internal method used by Floem. This can be called from parent `View`s to propagate an event to the child `View`.
-    pub(crate) fn unconditional_view_event(
+    pub(crate) fn dispatch_to_view(
         &mut self,
         view_id: ViewId,
         event: &Event,
         directed: bool,
-    ) -> (EventPropagation, PointerEventConsumed) {
-        if view_id.is_hidden() {
-            // we don't process events for hidden view
-            return (EventPropagation::Continue, PointerEventConsumed::No);
-        }
-        if view_id.is_disabled() && !event.allow_disabled() {
-            // if the view is disabled and the event is not processed
-            // for disabled views
-            return (EventPropagation::Continue, PointerEventConsumed::No);
+    ) -> DispatchOutcome {
+        if view_id.is_hidden() || (view_id.is_disabled() && !event.allow_disabled()) {
+            return DispatchOutcome::Skipped;
         }
 
-        // TODO! Handle file hover
-
-        // The event parameter is in absolute (window) coordinates.
-        // We keep a reference for should_send() and stacking context dispatch.
         let absolute_event = event;
-
         let view = view_id.view();
         let view_state = view_id.state();
 
-        // Single borrow to extract all needed fields, avoiding multiple RefCell borrows.
-        // This is a hot path optimization - consolidates 3 borrows into 1.
+        // Single borrow to extract all needed fields (hot path optimization)
         let (local_to_root, disable_default, is_pointer_none) = {
-            let borrowed = view_state.borrow();
-            let local_to_root = borrowed.local_to_root_transform;
-            let disable_default = event
-                .listener()
-                .map(|listener| borrowed.disable_default_events.contains(&listener))
-                .unwrap_or(false);
-            let is_pointer_none = event.is_pointer()
-                && borrowed.computed_style.get(PointerEventsProp)
-                    == Some(PointerEvents::None);
-            (local_to_root, disable_default, is_pointer_none)
-        }; // borrow dropped here before mutable borrow below
+            let vs = view_state.borrow();
+            (
+                vs.local_to_root_transform,
+                event.listener().is_some_and(|l| vs.disable_default_events.contains(&l)),
+                event.is_pointer() && vs.computed_style.get(PointerEventsProp) == Some(PointerEvents::None),
+            )
+        };
 
-        // Convert absolute coordinates to view's local coordinates using the
-        // precomputed local_to_root_transform.
         let event = absolute_event.clone().transform(local_to_root);
+        let can_process = !disable_default && !is_pointer_none;
 
-        if !disable_default
-            && !is_pointer_none
-            && view
-                .borrow_mut()
-                .event_before_children(self, &event)
-                .is_processed()
-        {
-            if let Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. })) = &event {
-                if view_state.borrow().computed_style.get(Focusable) {
-                    let rect = view_id.get_size().unwrap_or_default().to_rect();
-                    let point = state.logical_point();
-                    let now_focused = rect.contains(point);
-                    if now_focused {
-                        self.window_state.update_focus(view_id, false);
-                    }
+        // Phase 1: Let view handle event before children
+        if can_process && view.borrow_mut().event_before_children(self, &event).is_processed() {
+            self.apply_processed_side_effects(view_id, &view_state, &event);
+            return DispatchOutcome::Processed;
+        }
+
+        // Phase 2: Dispatch to children
+        let child_consumed = if !directed && self.skip_children_for != Some(view_id) {
+            match self.dispatch_to_children(view_id, absolute_event) {
+                DispatchOutcome::Processed => return DispatchOutcome::Processed,
+                DispatchOutcome::Consumed => true,
+                DispatchOutcome::Skipped => false,
+            }
+        } else {
+            false
+        };
+
+        // Phase 3: Let view handle event after children
+        if can_process && view.borrow_mut().event_after_children(self, &event).is_processed() {
+            return DispatchOutcome::Processed;
+        }
+
+        if is_pointer_none {
+            return if child_consumed { DispatchOutcome::Consumed } else { DispatchOutcome::Skipped };
+        }
+
+        // Phase 4: Built-in behaviors and listeners
+        if let Some(result) = can_process.then(|| self.handle_default_behaviors(view_id, &view_state, &event, directed)).flatten() {
+            return result;
+        }
+
+        DispatchOutcome::Consumed
+    }
+
+    /// Apply side effects when event_before_children returns processed (focus, cursor).
+    fn apply_processed_side_effects(
+        &mut self,
+        view_id: ViewId,
+        view_state: &std::cell::RefCell<crate::view::ViewState>,
+        event: &Event,
+    ) {
+        if let Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. })) = event {
+            if view_state.borrow().computed_style.get(Focusable) {
+                let rect = view_id.get_size().unwrap_or_default().to_rect();
+                if rect.contains(state.logical_point()) {
+                    self.window_state.update_focus(view_id, false);
                 }
             }
-            if let Event::Pointer(PointerEvent::Move(_)) = &event {
-                let view_state = view_state.borrow();
-                let style = view_state.combined_style.builtin();
-                if let Some(cursor) = style.cursor() {
+        }
+        if let Event::Pointer(PointerEvent::Move(_)) = event {
+            if let Some(cursor) = view_state.borrow().combined_style.builtin().cursor() {
+                if self.window_state.cursor.is_none() {
+                    self.window_state.cursor = Some(cursor);
+                }
+            }
+        }
+    }
+
+    // =========================================================================
+    // Built-in Event Behavior Helpers
+    // =========================================================================
+    //
+    // These methods handle the default behaviors for various event types,
+    // extracted from the main dispatch function for readability.
+
+    /// Handle all default behaviors for an event: built-in behaviors and event listeners.
+    fn handle_default_behaviors(
+        &mut self,
+        view_id: ViewId,
+        view_state: &std::cell::RefCell<crate::view::ViewState>,
+        event: &Event,
+        directed: bool,
+    ) -> BuiltinResult {
+        // Built-in behaviors by event type
+        let result = match event {
+            Event::Pointer(PointerEvent::Down(PointerButtonEvent {
+                pointer,
+                state,
+                button,
+                ..
+            })) => self.handle_pointer_down(view_id, pointer, state, button),
+
+            Event::Pointer(PointerEvent::Move(PointerUpdate { current, .. })) => {
+                self.handle_pointer_move(view_id, current, event)
+            }
+
+            Event::Pointer(PointerEvent::Up(PointerButtonEvent {
+                button,
+                pointer,
+                state,
+            })) => self.handle_pointer_up(view_id, pointer, state, button, event, directed),
+
+            Event::Key(KeyboardEvent {
+                state: KeyState::Down,
+                ..
+            }) => {
+                if self.window_state.is_focused(&view_id) && event.is_keyboard_trigger() {
+                    view_id.apply_event(&EventListener::Click, event);
+                }
+                None
+            }
+
+            Event::WindowResized(_) => {
+                if view_state.borrow().has_style_selectors.has_responsive() {
+                    view_id.request_style();
+                }
+                None
+            }
+
+            Event::FileDrag(e @ FileDragEvent::DragMoved { .. }) => {
+                if let Some(point) = e.logical_point() {
+                    let rect = view_id.get_size().unwrap_or_default().to_rect();
+                    if rect.contains(point) {
+                        self.window_state.file_hovered.insert(view_id);
+                        view_id.request_style();
+                    }
+                }
+                None
+            }
+
+            _ => None,
+        };
+
+        if result.is_some() {
+            return result;
+        }
+
+        // Dispatch to registered event listeners
+        self.try_dispatch_to_listeners(view_id, event)
+    }
+
+    /// Handle built-in PointerDown behaviors: clicking state, focus, drag start, popout menu.
+    fn handle_pointer_down(
+        &mut self,
+        view_id: ViewId,
+        pointer: &PointerInfo,
+        state: &PointerState,
+        button: &Option<PointerButton>,
+    ) -> BuiltinResult {
+        let view_state = view_id.state();
+        self.window_state.clicking.insert(view_id);
+
+        let point = state.logical_point();
+        let rect = view_id.get_size().unwrap_or_default().to_rect();
+        let on_view = rect.contains(point);
+
+        if pointer.is_primary_pointer() && button.is_none_or(|b| b == PointerButton::Primary) {
+            if on_view {
+                // Update focus if focusable
+                if view_state.borrow().computed_style.get(Focusable) {
+                    self.window_state.update_focus(view_id, false);
+                }
+
+                // Track pointer down for click/double-click detection
+                let needs_tracking = {
+                    let listeners = &view_state.borrow().event_listeners;
+                    listeners.contains_key(&EventListener::Click)
+                        || (state.count == 2 && listeners.contains_key(&EventListener::DoubleClick))
+                };
+                if needs_tracking {
+                    view_state.borrow_mut().last_pointer_down = Some(state.clone());
+                }
+
+                // Show popout menu (all platforms show on pointer down)
+                if let Some(result) = self.try_show_popout_menu(view_id) {
+                    return Some(result);
+                }
+
+                // Initialize drag if view supports it
+                if view_id.can_drag() && self.window_state.drag_start.is_none() {
+                    self.window_state.drag_start = Some((view_id, point));
+                }
+            }
+        } else if button.is_some_and(|b| b == PointerButton::Secondary) && on_view {
+            // Secondary button: focus and track for secondary click
+            let (is_focusable, has_secondary_click) = {
+                let vs = view_state.borrow();
+                (
+                    vs.computed_style.get(Focusable),
+                    vs.event_listeners
+                        .contains_key(&EventListener::SecondaryClick),
+                )
+            };
+            if is_focusable {
+                self.window_state.update_focus(view_id, false);
+            }
+            if has_secondary_click {
+                view_state.borrow_mut().last_pointer_down = Some(state.clone());
+            }
+        }
+
+        None
+    }
+
+    /// Handle built-in PointerMove behaviors: hover, cursor, drag state updates.
+    fn handle_pointer_move(
+        &mut self,
+        view_id: ViewId,
+        current: &PointerState,
+        event: &Event,
+    ) -> BuiltinResult {
+        let view_state = view_id.state();
+        let rect = view_id.get_size().unwrap_or_default().to_rect();
+        let point = current.logical_point();
+
+        // Track hover/drag-over state
+        if rect.contains(point) {
+            if self.window_state.is_dragging() {
+                self.window_state.dragging_over.insert(view_id);
+                view_id.apply_event(&EventListener::DragOver, event);
+            } else {
+                self.window_state.hovered.insert(view_id);
+                let vs = view_state.borrow();
+                if let Some(cursor) = vs.combined_style.builtin().cursor() {
                     if self.window_state.cursor.is_none() {
                         self.window_state.cursor = Some(cursor);
                     }
                 }
             }
-            return (EventPropagation::Stop, PointerEventConsumed::Yes);
         }
 
-        let mut view_pointer_event_consumed = PointerEventConsumed::No;
+        // Handle drag state updates
+        if view_id.can_drag() {
+            if let Some((_, drag_start)) = self
+                .window_state
+                .drag_start
+                .as_ref()
+                .filter(|(drag_id, _)| drag_id == &view_id)
+            {
+                let offset = point - *drag_start;
 
-        // Dispatch events to children using true CSS stacking context semantics.
-        // Views that don't create stacking contexts have their children participate
-        // in the parent's stacking context, so we skip them here (they're handled separately).
-        if !directed && self.skip_children_for != Some(view_id) {
-            // Collect all items in this stacking context and iterate in reverse
-            // (highest z-index first, so topmost elements receive events first)
-            let items = collect_stacking_context_items(view_id);
-
-            // Track the consuming item's parent chain for event bubbling
-            let mut consuming_item_parent_chain: Option<&SmallVec<[ViewId; 8]>> = None;
-
-            for item in items.iter().rev() {
-                let should_send_to_view = self.should_send(item.view_id, absolute_event);
-
-                // If the view creates a stacking context, we must recurse into its children
-                // even if the parent fails clip_rect. This handles absolute positioned elements
-                // (like dropdowns) that extend beyond their parent's clip area.
-                // The children might have different clip_rects that allow the event.
-                if item.creates_context && !should_send_to_view {
-                    // Recurse into the nested stacking context to check children
-                    let (event_propagation, _) =
-                        self.unconditional_view_event(item.view_id, absolute_event, false);
-
-                    if event_propagation.is_processed() {
-                        return (EventPropagation::Stop, PointerEventConsumed::Yes);
-                    }
-                    // If no child consumed the event, continue to check siblings.
-                    // We don't break on pointer_event_consumed here because
-                    // unconditional_view_event returns Yes even when no child matched.
-                    continue;
-                }
-
-                if !should_send_to_view {
-                    continue;
-                }
-
-                // For non-stacking-context items, mark them so their children
-                // aren't processed again (they're in our flat list)
-                if !item.creates_context {
-                    self.skip_children_for = Some(item.view_id);
-                }
-
-                // Pass the absolute event reference - unconditional_view_event
-                // converts to local using the item's own local_to_root_transform.
-                let (event_propagation, pointer_event_consumed) =
-                    self.unconditional_view_event(item.view_id, absolute_event, false);
-
-                // Clear the skip flag
-                self.skip_children_for = None;
-
-                if event_propagation.is_processed() {
-                    return (EventPropagation::Stop, PointerEventConsumed::Yes);
-                }
-                if event.is_pointer() && pointer_event_consumed == PointerEventConsumed::Yes {
-                    // if a child's pointer event was consumed because pointer-events: auto
-                    // we don't pass the pointer event the next child
-                    // also, we mark pointer_event_consumed to be yes
-                    // so that it will be bubbled up the parent
-                    view_pointer_event_consumed = PointerEventConsumed::Yes;
-                    // Track the consuming item's cached parent chain for bubbling
-                    consuming_item_parent_chain = Some(&item.parent_chain);
-                    break;
-                }
-            }
-
-            // Event bubbling: if a child consumed the event but didn't stop propagation,
-            // bubble up through its cached parent chain until we reach the stacking context root
-            if let Some(parent_chain) = consuming_item_parent_chain {
-                // Iterate through the cached parent chain in reverse (from immediate parent to root)
-                // Parent chain is stored ancestor-to-parent for O(1) push during collection
-                for &ancestor_id in parent_chain.iter().rev() {
-                    // Pass absolute event reference - each ancestor converts to local
-                    // using its own local_to_root_transform
-                    let (event_propagation, _) =
-                        self.unconditional_view_event(ancestor_id, absolute_event, true);
-                    if event_propagation.is_processed() {
-                        return (EventPropagation::Stop, PointerEventConsumed::Yes);
-                    }
+                if let Some(dragging) = self
+                    .window_state
+                    .dragging
+                    .as_mut()
+                    .filter(|d| d.id == view_id && d.released_at.is_none())
+                {
+                    // Update position while dragging
+                    dragging.offset = drag_start.to_vec2();
+                    self.window_state.request_paint(view_id);
+                } else if offset.x.abs() + offset.y.abs() > 1.0 {
+                    // Start dragging when moved > 1px
+                    self.window_state.active = None;
+                    self.window_state.dragging = Some(DragState {
+                        id: view_id,
+                        offset: drag_start.to_vec2(),
+                        released_at: None,
+                        release_location: None,
+                    });
+                    self.update_active(view_id);
+                    self.window_state.request_paint(view_id);
+                    view_id.apply_event(&EventListener::DragStart, event);
                 }
             }
         }
 
-        if !disable_default
-            && !is_pointer_none
-            && view
-                .borrow_mut()
-                .event_after_children(self, &event)
-                .is_processed()
+        // Check if PointerMove listener stops propagation
+        if view_id
+            .apply_event(&EventListener::PointerMove, event)
+            .is_some_and(|prop| prop.is_processed())
         {
-            return (EventPropagation::Stop, PointerEventConsumed::Yes);
+            return PROCESSED;
         }
 
-        if is_pointer_none {
-            // if pointer-events: none, we don't handle the pointer event
-            return (EventPropagation::Continue, view_pointer_event_consumed);
-        }
+        None
+    }
 
-        // CLARIFY: should this be disabled when disable_default?
-        if !disable_default {
-            let popout_menu = || {
-                let bottom_left = {
-                    let layout = view_state.borrow().layout_rect;
-                    Point::new(layout.x0, layout.y1)
-                };
+    /// Handle built-in PointerUp behaviors: click/double-click, drag end, context menu.
+    fn handle_pointer_up(
+        &mut self,
+        view_id: ViewId,
+        pointer: &PointerInfo,
+        state: &PointerState,
+        button: &Option<PointerButton>,
+        event: &Event,
+        directed: bool,
+    ) -> BuiltinResult {
+        let view_state = view_id.state();
+        let rect = view_id.get_size().unwrap_or_default().to_rect();
+        let on_view = rect.contains(state.logical_point());
 
-                let popout_menu = view_state.borrow().popout_menu.clone();
-                show_context_menu(popout_menu?(), Some(bottom_left));
-                Some((EventPropagation::Stop, PointerEventConsumed::Yes))
-            };
-
-            match &event {
-                Event::Pointer(PointerEvent::Down(PointerButtonEvent {
-                    pointer,
-                    state,
-                    button,
-                    ..
-                })) => {
-                    self.window_state.clicking.insert(view_id);
-                    let point = state.logical_point();
-                    if pointer.is_primary_pointer()
-                        && button.is_none_or(|b| b == PointerButton::Primary)
-                    {
-                        let rect = view_id.get_size().unwrap_or_default().to_rect();
-                        let on_view = rect.contains(point);
-
-                        if on_view {
-                            if view_state.borrow().computed_style.get(Focusable) {
-                                // if the view can be focused, we update the focus
-                                self.window_state.update_focus(view_id, false);
-                            }
-                            if state.count == 2
-                                && view_state
-                                    .borrow()
-                                    .event_listeners
-                                    .contains_key(&EventListener::DoubleClick)
-                            {
-                                view_state.borrow_mut().last_pointer_down = Some(state.clone());
-                            }
-                            if view_state
-                                .borrow()
-                                .event_listeners
-                                .contains_key(&EventListener::Click)
-                            {
-                                view_state.borrow_mut().last_pointer_down = Some(state.clone());
-                            }
-
-                            #[cfg(target_os = "macos")]
-                            if let Some((ep, pec)) = popout_menu() {
-                                return (ep, pec);
-                            };
-
-                            let bottom_left = {
-                                let layout = view_state.borrow().layout_rect;
-                                Point::new(layout.x0, layout.y1)
-                            };
-                            let popout_menu = view_state.borrow().popout_menu.clone();
-                            if let Some(menu) = popout_menu {
-                                show_context_menu(menu(), Some(bottom_left));
-                                return (EventPropagation::Stop, PointerEventConsumed::Yes);
-                            }
-                            if view_id.can_drag() && self.window_state.drag_start.is_none() {
-                                self.window_state.drag_start = Some((view_id, point));
-                            }
-                        }
-                    } else if button.is_some_and(|b| b == PointerButton::Secondary) {
-                        let rect = view_id.get_size().unwrap_or_default().to_rect();
-                        let on_view = rect.contains(point);
-
-                        if on_view {
-                            if view_state.borrow().computed_style.get(Focusable) {
-                                // if the view can be focused, we update the focus
-                                self.window_state.update_focus(view_id, false);
-                            }
-                            if view_state
-                                .borrow()
-                                .event_listeners
-                                .contains_key(&EventListener::SecondaryClick)
-                            {
-                                view_state.borrow_mut().last_pointer_down = Some(state.clone());
-                            }
-                        }
-                    }
+        if pointer.is_primary_pointer() && button.is_none_or(|b| b == PointerButton::Primary) {
+            // Show popout menu on non-macOS (pointer up)
+            #[cfg(not(target_os = "macos"))]
+            if on_view {
+                if let Some(result) = self.try_show_popout_menu(view_id) {
+                    return Some(result);
                 }
-                Event::Pointer(PointerEvent::Move(PointerUpdate { current, .. })) => {
-                    let rect = view_id.get_size().unwrap_or_default().to_rect();
-                    if rect.contains(current.logical_point()) {
-                        if self.window_state.is_dragging() {
-                            self.window_state.dragging_over.insert(view_id);
-                            view_id.apply_event(&EventListener::DragOver, &event);
-                        } else {
-                            self.window_state.hovered.insert(view_id);
-                            let view_state = view_state.borrow();
-                            let style = view_state.combined_style.builtin();
-                            if let Some(cursor) = style.cursor() {
-                                if self.window_state.cursor.is_none() {
-                                    self.window_state.cursor = Some(cursor);
-                                }
-                            }
-                        }
-                    }
-                    if view_id.can_drag() {
-                        if let Some((_, drag_start)) = self
-                            .window_state
-                            .drag_start
-                            .as_ref()
-                            .filter(|(drag_id, _)| drag_id == &view_id)
-                        {
-                            let offset = current.logical_point() - *drag_start;
-                            if let Some(dragging) = self
-                                .window_state
-                                .dragging
-                                .as_mut()
-                                .filter(|d| d.id == view_id && d.released_at.is_none())
-                            {
-                                // update the mouse position if the view is dragging and not released
-                                dragging.offset = drag_start.to_vec2();
-                                self.window_state.request_paint(view_id);
-                            } else if offset.x.abs() + offset.y.abs() > 1.0 {
-                                // start dragging when moved 1 px
-                                self.window_state.active = None;
-                                self.window_state.dragging = Some(DragState {
-                                    id: view_id,
-                                    offset: drag_start.to_vec2(),
-                                    released_at: None,
-                                    release_location: None,
-                                });
-                                self.update_active(view_id);
-                                self.window_state.request_paint(view_id);
-                                view_id.apply_event(&EventListener::DragStart, &event);
-                            }
-                        }
-                    }
-                    if view_id
-                        .apply_event(&EventListener::PointerMove, &event)
-                        .is_some_and(|prop| prop.is_processed())
-                    {
-                        return (EventPropagation::Stop, PointerEventConsumed::Yes);
-                    }
-                }
-                Event::Pointer(PointerEvent::Up(PointerButtonEvent {
-                    button,
-                    pointer,
-                    state,
-                })) => {
-                    if pointer.is_primary_pointer()
-                        && button.is_none_or(|b| b == PointerButton::Primary)
-                    {
-                        let rect = view_id.get_size().unwrap_or_default().to_rect();
-                        let on_view = rect.contains(state.logical_point());
+            }
 
-                        #[cfg(not(target_os = "macos"))]
-                        if on_view {
-                            if let Some((ep, pec)) = popout_menu() {
-                                return (ep, pec);
-                            };
-                        }
-
-                        if !directed {
-                            if on_view {
-                                if let Some(dragging) = self.window_state.dragging.as_mut() {
-                                    let dragging_id = dragging.id;
-                                    if view_id
-                                        .apply_event(&EventListener::Drop, &event)
-                                        .is_some_and(|prop| prop.is_processed())
-                                    {
-                                        // if the drop is processed, we set dragging to none so that the animation
-                                        // for the dragged view back to its original position isn't played.
-                                        self.window_state.dragging = None;
-                                        self.window_state.request_paint(view_id);
-                                        dragging_id.apply_event(&EventListener::DragEnd, &event);
-                                    }
-                                }
-                            }
-                        } else if let Some(dragging) = self
-                            .window_state
-                            .dragging
-                            .as_mut()
-                            .filter(|d| d.id == view_id)
-                        {
-                            let dragging_id = dragging.id;
-                            dragging.released_at = Some(Instant::now());
-                            dragging.release_location = Some(state.logical_point());
-                            self.window_state.request_paint(view_id);
-                            dragging_id.apply_event(&EventListener::DragEnd, &event);
-                        }
-
-                        let last_pointer_down = view_state.borrow_mut().last_pointer_down.take();
-
-                        // Only clone the specific handlers we need, not the entire HashMap.
-                        // This is a hot path optimization.
-                        let double_click_handlers = view_state
-                            .borrow()
-                            .event_listeners
-                            .get(&EventListener::DoubleClick)
-                            .cloned();
-                        if let Some(handlers) = double_click_handlers {
-                            if on_view
-                                && self.window_state.is_clicking(&view_id)
-                                && last_pointer_down
-                                    .as_ref()
-                                    .map(|s| s.count == 2)
-                                    .unwrap_or(false)
-                                && handlers.iter().fold(false, |handled, handler| {
-                                    handled | (handler.borrow_mut())(&event).is_processed()
-                                })
-                            {
-                                return (EventPropagation::Stop, PointerEventConsumed::Yes);
-                            }
-                        }
-
-                        let click_handlers = view_state
-                            .borrow()
-                            .event_listeners
-                            .get(&EventListener::Click)
-                            .cloned();
-                        if let Some(handlers) = click_handlers {
-                            if on_view
-                                && self.window_state.is_clicking(&view_id)
-                                && last_pointer_down.is_some()
-                                && handlers.iter().fold(false, |handled, handler| {
-                                    handled | (handler.borrow_mut())(&event).is_processed()
-                                })
-                            {
-                                return (EventPropagation::Stop, PointerEventConsumed::Yes);
-                            }
-                        }
-
+            // Handle drag drop
+            if !directed {
+                if on_view {
+                    if let Some(dragging) = self.window_state.dragging.as_mut() {
+                        let dragging_id = dragging.id;
                         if view_id
-                            .apply_event(&EventListener::PointerUp, &event)
+                            .apply_event(&EventListener::Drop, event)
                             .is_some_and(|prop| prop.is_processed())
                         {
-                            return (EventPropagation::Stop, PointerEventConsumed::Yes);
+                            self.window_state.dragging = None;
+                            self.window_state.request_paint(view_id);
+                            dragging_id.apply_event(&EventListener::DragEnd, event);
                         }
-                    } else if button.is_some_and(|b| b == PointerButton::Secondary) {
-                        let rect = view_id.get_size().unwrap_or_default().to_rect();
-                        let on_view = rect.contains(state.logical_point());
+                    }
+                }
+            } else if let Some(dragging) = self
+                .window_state
+                .dragging
+                .as_mut()
+                .filter(|d| d.id == view_id)
+            {
+                // Directed event to the dragged view itself
+                let dragging_id = dragging.id;
+                dragging.released_at = Some(Instant::now());
+                dragging.release_location = Some(state.logical_point());
+                self.window_state.request_paint(view_id);
+                dragging_id.apply_event(&EventListener::DragEnd, event);
+            }
 
-                        let last_pointer_down = view_state.borrow_mut().last_pointer_down.take();
-                        // Only clone specific handlers, not the entire HashMap.
-                        let secondary_click_handlers = view_state
-                            .borrow()
-                            .event_listeners
-                            .get(&EventListener::SecondaryClick)
-                            .cloned();
-                        if let Some(handlers) = secondary_click_handlers {
-                            if on_view
-                                && last_pointer_down.is_some()
-                                && handlers.iter().fold(false, |handled, handler| {
-                                    handled | (handler.borrow_mut())(&event).is_processed()
-                                })
-                            {
-                                return (EventPropagation::Stop, PointerEventConsumed::Yes);
-                            }
-                        }
+            // Handle double-click and click
+            let last_pointer_down = view_state.borrow_mut().last_pointer_down.take();
+            let is_double = last_pointer_down.as_ref().is_some_and(|s| s.count == 2);
+            let is_clicking = self.window_state.is_clicking(&view_id);
 
-                        let viewport_event_position = {
-                            let layout = view_state.borrow().layout_rect;
-                            Point::new(
-                                layout.x0 + state.logical_point().x,
-                                layout.y0 + state.logical_point().y,
-                            )
-                        };
-                        let context_menu = view_state.borrow().context_menu.clone();
-                        if let Some(menu) = context_menu {
-                            show_context_menu(menu(), Some(viewport_event_position));
-                            return (EventPropagation::Stop, PointerEventConsumed::Yes);
-                        }
-                    }
+            if let Some(result) = self.try_click_handler(
+                view_id,
+                EventListener::DoubleClick,
+                on_view,
+                is_clicking && is_double,
+                event,
+            ) {
+                return Some(result);
+            }
+
+            if let Some(result) = self.try_click_handler(
+                view_id,
+                EventListener::Click,
+                on_view,
+                is_clicking && last_pointer_down.is_some(),
+                event,
+            ) {
+                return Some(result);
+            }
+
+            // Check if PointerUp listener stops propagation
+            if view_id
+                .apply_event(&EventListener::PointerUp, event)
+                .is_some_and(|prop| prop.is_processed())
+            {
+                return PROCESSED;
+            }
+        } else if button.is_some_and(|b| b == PointerButton::Secondary) {
+            // Handle secondary click and context menu
+            let last_pointer_down = view_state.borrow_mut().last_pointer_down.take();
+            if let Some(result) = self.try_click_handler(
+                view_id,
+                EventListener::SecondaryClick,
+                on_view,
+                last_pointer_down.is_some(),
+                event,
+            ) {
+                return Some(result);
+            }
+
+            if on_view {
+                if let Some(result) = self.try_show_context_menu(view_id, state) {
+                    return Some(result);
                 }
-                Event::Key(KeyboardEvent {
-                    state: KeyState::Down,
-                    ..
-                }) => {
-                    if self.window_state.is_focused(&view_id) && event.is_keyboard_trigger() {
-                        view_id.apply_event(&EventListener::Click, &event);
-                    }
-                }
-                Event::WindowResized(_) => {
-                    if view_state.borrow().has_style_selectors.has_responsive() {
-                        view_id.request_style();
-                    }
-                }
-                Event::FileDrag(e @ FileDragEvent::DragMoved { .. }) => {
-                    if let Some(point) = e.logical_point() {
-                        let rect = view_id.get_size().unwrap_or_default().to_rect();
-                        let on_view = rect.contains(point);
-                        if on_view {
-                            self.window_state.file_hovered.insert(view_id);
-                            view_id.request_style();
-                        }
-                    }
-                }
-                _ => (),
             }
         }
 
-        if !disable_default {
+        None
+    }
+
+    // =========================================================================
+    // Menu Helpers
+    // =========================================================================
+
+    /// Try to show popout menu for a view.
+    fn try_show_popout_menu(&self, view_id: ViewId) -> BuiltinResult {
+        let view_state = view_id.state();
+        let (bottom_left, popout_menu) = {
+            let vs = view_state.borrow();
+            let layout = vs.layout_rect;
+            (Point::new(layout.x0, layout.y1), vs.popout_menu.clone())
+        };
+        if let Some(menu) = popout_menu {
+            show_context_menu(menu(), Some(bottom_left));
+            return PROCESSED;
+        }
+        None
+    }
+
+    /// Try to show context menu for a view.
+    fn try_show_context_menu(&self, view_id: ViewId, pointer_state: &PointerState) -> BuiltinResult {
+        let view_state = view_id.state();
+        let (position, context_menu) = {
+            let vs = view_state.borrow();
+            let layout = vs.layout_rect;
+            let pos = Point::new(
+                layout.x0 + pointer_state.logical_point().x,
+                layout.y0 + pointer_state.logical_point().y,
+            );
+            (pos, vs.context_menu.clone())
+        };
+        if let Some(menu) = context_menu {
+            show_context_menu(menu(), Some(position));
+            return PROCESSED;
+        }
+        None
+    }
+
+    // =========================================================================
+    // Dispatch Routing Helpers
+    // =========================================================================
+
+    /// Dispatch events to children using CSS stacking context semantics.
+    ///
+    /// Iterates through child views in reverse z-order (highest z-index first),
+    /// handling stacking context boundaries and event bubbling.
+    fn dispatch_to_children(&mut self, view_id: ViewId, event: &Event) -> DispatchOutcome {
+        let items = collect_stacking_context_items(view_id);
+
+        // Track the consuming item's parent chain for event bubbling
+        let mut consuming_parent_chain: Option<&SmallVec<[ViewId; 8]>> = None;
+
+        for item in items.iter().rev() {
+            let should_send = self.should_send(item.view_id, event);
+
+            // Stacking contexts may have children outside their clip rect (e.g., dropdowns).
+            // We must recurse into them even if the parent fails the clip test.
+            if item.creates_context && !should_send {
+                if self.dispatch_to_view(item.view_id, event, false).is_processed() {
+                    return DispatchOutcome::Processed;
+                }
+                continue;
+            }
+
+            if !should_send {
+                continue;
+            }
+
+            // Mark non-stacking-context items so their children aren't processed twice
+            if !item.creates_context {
+                self.skip_children_for = Some(item.view_id);
+            }
+
+            let outcome = self.dispatch_to_view(item.view_id, event, false);
+            self.skip_children_for = None;
+
+            if outcome.is_processed() {
+                return DispatchOutcome::Processed;
+            }
+
+            if event.is_pointer() && outcome == DispatchOutcome::Consumed {
+                consuming_parent_chain = Some(&item.parent_chain);
+                break;
+            }
+        }
+
+        // Event bubbling: notify ancestors of the consuming child
+        if let Some(parent_chain) = consuming_parent_chain {
+            for &ancestor_id in parent_chain.iter().rev() {
+                if self.dispatch_to_view(ancestor_id, event, true).is_processed() {
+                    return DispatchOutcome::Processed;
+                }
+            }
+            return DispatchOutcome::Consumed;
+        }
+
+        DispatchOutcome::Skipped
+    }
+
+    /// Dispatch keyboard events to focused view with navigation handling.
+    fn dispatch_keyboard_event(&mut self, root_id: ViewId, main_view_id: ViewId, event: &Event) {
+        let mut processed = false;
+
+        if let Some(id) = self.window_state.focus {
+            processed |= self.dispatch_to_view(id, event, true).is_processed();
+        }
+
+        if !processed {
             if let Some(listener) = event.listener() {
-                // Only clone specific handlers, not the entire HashMap.
-                let handlers = view_state
-                    .borrow()
-                    .event_listeners
-                    .get(&listener)
-                    .cloned();
-                if let Some(handlers) = handlers {
-                    let should_run = if let Some(pos) = event.point() {
-                        let rect = view_id.get_size().unwrap_or_default().to_rect();
-                        rect.contains(pos)
-                    } else {
-                        true
-                    };
-                    if should_run
-                        && handlers.iter().fold(false, |handled, handler| {
-                            handled | (handler.borrow_mut())(&event).is_processed()
-                        })
-                    {
-                        return (EventPropagation::Stop, PointerEventConsumed::Yes);
-                    }
-                }
+                processed |= main_view_id
+                    .apply_event(&listener, event)
+                    .is_some_and(|prop| prop.is_processed());
             }
         }
 
-        (EventPropagation::Continue, PointerEventConsumed::Yes)
+        if !processed {
+            // Handle Tab and arrow key navigation
+            if let Event::Key(KeyboardEvent {
+                key,
+                modifiers,
+                state: KeyState::Down,
+                ..
+            }) = event
+            {
+                if *key == Key::Named(NamedKey::Tab)
+                    && (modifiers.is_empty() || *modifiers == Modifiers::SHIFT)
+                {
+                    let backwards = modifiers.contains(Modifiers::SHIFT);
+                    view_tab_navigation(root_id, self.window_state, backwards);
+                } else if *modifiers == Modifiers::ALT {
+                    if let Key::Named(
+                        name @ (NamedKey::ArrowUp
+                        | NamedKey::ArrowDown
+                        | NamedKey::ArrowLeft
+                        | NamedKey::ArrowRight),
+                    ) = key
+                    {
+                        view_arrow_navigation(*name, self.window_state, root_id);
+                    }
+                }
+            }
+
+            // Handle keyboard trigger end (space/enter key up on focused element)
+            let keyboard_trigger_end = self.window_state.keyboard_navigation
+                && event.is_keyboard_trigger()
+                && matches!(
+                    event,
+                    Event::Key(KeyboardEvent {
+                        state: KeyState::Up,
+                        ..
+                    })
+                );
+            if keyboard_trigger_end {
+                if let Some(id) = self.window_state.active {
+                    if self
+                        .window_state
+                        .has_style_for_sel(id, StyleSelector::Active)
+                    {
+                        id.request_style_recursive();
+                    }
+                    self.window_state.active = None;
+                }
+            }
+        }
+    }
+
+    /// Dispatch pointer events to the currently active view (during drag operations).
+    fn dispatch_to_active_view(&mut self, root_id: ViewId, event: &Event) {
+        if self.window_state.is_dragging() {
+            self.dispatch_to_view(root_id, event, false);
+        }
+
+        let id = self.window_state.active.unwrap();
+
+        // Single borrow to get both window_origin and viewport
+        let view_state = id.state();
+        let (window_origin, viewport) = {
+            let vs = view_state.borrow();
+            (vs.window_origin, vs.viewport.unwrap_or_default())
+        };
+        let layout = id.get_layout().unwrap_or_default();
+        let transform = Affine::translate((
+            window_origin.x - layout.location.x as f64 + viewport.x0,
+            window_origin.y - layout.location.y as f64 + viewport.y0,
+        ));
+        let transformed_event = event.clone().transform(transform);
+        self.dispatch_to_view(id, &transformed_event, true);
+
+        if let Event::Pointer(PointerEvent::Up { .. }) = event {
+            if self
+                .window_state
+                .has_style_for_sel(id, StyleSelector::Active)
+            {
+                id.request_style_recursive();
+            }
+            self.window_state.active = None;
+        }
+    }
+
+    /// Handle hover state changes by sending PointerEnter/Leave events.
+    fn handle_hover_changes(
+        &mut self,
+        pointer_info: PointerInfo,
+        was_hovered: std::collections::HashSet<ViewId>,
+        was_dragging_over: std::collections::HashSet<ViewId>,
+        event: &Event,
+    ) {
+        let hovered = self.window_state.hovered.clone();
+        for id in was_hovered.symmetric_difference(&hovered) {
+            // Single borrow to check all style-related conditions
+            let view_state = id.state();
+            let needs_style_update = {
+                let vs = view_state.borrow();
+                vs.has_active_animation()
+                    || vs.has_style_selectors.has(StyleSelector::Hover)
+                    || vs.has_style_selectors.has(StyleSelector::Active)
+            };
+            if needs_style_update {
+                id.request_style();
+            }
+
+            if hovered.contains(id) {
+                id.apply_event(&EventListener::PointerEnter, event);
+            } else {
+                let leave_event = Event::Pointer(PointerEvent::Leave(pointer_info));
+                self.dispatch_to_view(*id, &leave_event, true);
+            }
+        }
+
+        // Handle drag enter/leave events
+        let dragging_over = self.window_state.dragging_over.clone();
+        for id in was_dragging_over.symmetric_difference(&dragging_over) {
+            if dragging_over.contains(id) {
+                id.apply_event(&EventListener::DragEnter, event);
+            } else {
+                id.apply_event(&EventListener::DragLeave, event);
+            }
+        }
+    }
+
+    // =========================================================================
+    // Event Listener Helpers
+    // =========================================================================
+
+    /// Try to dispatch an event to registered listeners for the view.
+    fn try_dispatch_to_listeners(&self, view_id: ViewId, event: &Event) -> BuiltinResult {
+        let listener = event.listener()?;
+        let handlers = view_id
+            .state()
+            .borrow()
+            .event_listeners
+            .get(&listener)
+            .cloned()?;
+
+        // Check if pointer is within view bounds (for pointer events)
+        let should_run = event
+            .point()
+            .map(|pos| {
+                view_id
+                    .get_size()
+                    .unwrap_or_default()
+                    .to_rect()
+                    .contains(pos)
+            })
+            .unwrap_or(true);
+
+        if !should_run {
+            return None;
+        }
+
+        let processed = handlers
+            .iter()
+            .any(|h| (h.borrow_mut())(event).is_processed());
+
+        if processed {
+            return PROCESSED;
+        }
+        None
+    }
+
+    /// Try to trigger click-type handlers (click, double-click, secondary-click).
+    ///
+    /// The `extra_condition` parameter allows each click type to specify additional
+    /// requirements (e.g., double-click requires count == 2, click requires clicking state).
+    fn try_click_handler(
+        &self,
+        view_id: ViewId,
+        listener: EventListener,
+        on_view: bool,
+        extra_condition: bool,
+        event: &Event,
+    ) -> BuiltinResult {
+        if !on_view || !extra_condition {
+            return None;
+        }
+
+        let handlers = view_id
+            .state()
+            .borrow()
+            .event_listeners
+            .get(&listener)
+            .cloned()?;
+
+        let processed = handlers
+            .iter()
+            .any(|h| (h.borrow_mut())(event).is_processed());
+
+        processed.then_some(PROCESSED).flatten()
     }
 
     /// Used to determine if you should send an event to another view. This is basically a check for pointer events to see if the pointer is inside a child view and to make sure the current view isn't hidden or disabled.
@@ -584,6 +828,58 @@ impl EventCx<'_> {
 
         current_rect.contains(point)
     }
+
+    // =========================================================================
+    // Path-Based Dispatch (Chromium-style)
+    // =========================================================================
+
+    /// Dispatch a pointer event using Chromium-style path-based dispatch.
+    ///
+    /// This implements the three-phase dispatch model:
+    /// 1. Hit test to find the target view (z-index aware)
+    /// 2. Build event path from target to root (DOM order)
+    /// 3. Dispatch through path:
+    ///    - Capturing phase (root → target): `event_before_children`
+    ///    - Bubbling phase (target → root): `event_after_children` + listeners
+    /// 4. For PointerUp: dispatch Click events as separate synthetic events
+    ///
+    /// Returns true if the event was processed.
+    pub(crate) fn dispatch_pointer_event_via_path(
+        &mut self,
+        root_id: ViewId,
+        event: &Event,
+    ) -> bool {
+        // Get the point from the event
+        let Some(point) = event.point() else {
+            // No point = not a pointer event, fall back to stacking context dispatch
+            return self.dispatch_to_view(root_id, event, false).is_processed();
+        };
+
+        // Phase 1: Hit test to find the target (z-index aware)
+        let Some(target) = hit_test(root_id, point) else {
+            // No target found, nothing to dispatch to
+            return false;
+        };
+
+        // Phase 2: Build event path from target to root (DOM order)
+        let path = build_event_path(target);
+
+        // Phase 3: Dispatch through the path (capturing + bubbling)
+        let result = dispatch_through_path(&path, event, self);
+
+        // Phase 4: For PointerUp, dispatch Click events separately
+        // This matches Chromium's behavior where Click is a synthetic event
+        // that bubbles through the entire path after PointerUp completes.
+        if matches!(event, Event::Pointer(ui_events::pointer::PointerEvent::Up { .. })) {
+            dispatch_click_through_path(&path, event, self);
+        }
+
+        result.is_processed()
+    }
+
+    // =========================================================================
+    // Main Dispatch Entry Point
+    // =========================================================================
 
     /// Dispatch an event through the view tree with proper state management.
     ///
@@ -653,105 +949,19 @@ impl EventCx<'_> {
 
         // Dispatch the event based on its type and current state
         if event.needs_focus() {
-            // Keyboard events: send to focused view first, then bubble up
-            let mut processed = false;
-
-            if let Some(id) = self.window_state.focus {
-                processed |= self
-                    .unconditional_view_event(id, &event, true)
-                    .0
-                    .is_processed();
-            }
-
-            if !processed {
-                if let Some(listener) = event.listener() {
-                    processed |= main_view_id
-                        .apply_event(&listener, &event)
-                        .is_some_and(|prop| prop.is_processed());
-                }
-            }
-
-            if !processed {
-                // Handle Tab and arrow key navigation
-                if let Event::Key(KeyboardEvent {
-                    key,
-                    modifiers,
-                    state: KeyState::Down,
-                    ..
-                }) = &event
-                {
-                    if *key == Key::Named(NamedKey::Tab)
-                        && (modifiers.is_empty() || *modifiers == Modifiers::SHIFT)
-                    {
-                        let backwards = modifiers.contains(Modifiers::SHIFT);
-                        view_tab_navigation(root_id, self.window_state, backwards);
-                    } else if *modifiers == Modifiers::ALT {
-                        if let Key::Named(
-                            name @ (NamedKey::ArrowUp
-                            | NamedKey::ArrowDown
-                            | NamedKey::ArrowLeft
-                            | NamedKey::ArrowRight),
-                        ) = key
-                        {
-                            view_arrow_navigation(*name, self.window_state, root_id);
-                        }
-                    }
-                }
-
-                // Handle keyboard trigger end (space/enter key up on focused element)
-                let keyboard_trigger_end = self.window_state.keyboard_navigation
-                    && event.is_keyboard_trigger()
-                    && matches!(
-                        event,
-                        Event::Key(KeyboardEvent {
-                            state: KeyState::Up,
-                            ..
-                        })
-                    );
-                if keyboard_trigger_end {
-                    if let Some(id) = self.window_state.active {
-                        if self
-                            .window_state
-                            .has_style_for_sel(id, StyleSelector::Active)
-                        {
-                            id.request_style_recursive();
-                        }
-                        self.window_state.active = None;
-                    }
-                }
-            }
+            self.dispatch_keyboard_event(root_id, main_view_id, &event);
         } else if self.window_state.active.is_some() && event.is_pointer() {
-            // Pointer events while dragging: send to active view
-            if self.window_state.is_dragging() {
-                self.unconditional_view_event(root_id, &event, false);
-            }
-
-            let id = self.window_state.active.unwrap();
-
-            {
-                let window_origin = id.state().borrow().window_origin;
-                let layout = id.get_layout().unwrap_or_default();
-                let viewport = id.state().borrow().viewport.unwrap_or_default();
-                let transform = Affine::translate((
-                    window_origin.x - layout.location.x as f64 + viewport.x0,
-                    window_origin.y - layout.location.y as f64 + viewport.y0,
-                ));
-                let transformed_event = event.clone().transform(transform);
-                self.unconditional_view_event(id, &transformed_event, true);
-            }
-
-            if let Event::Pointer(PointerEvent::Up { .. }) = &event {
-                if self
-                    .window_state
-                    .has_style_for_sel(id, StyleSelector::Active)
-                {
-                    id.request_style_recursive();
-                }
-                self.window_state.active = None;
-            }
+            self.dispatch_to_active_view(root_id, &event);
+        } else if event.is_pointer() {
+            // Pointer events use Chromium-style path-based dispatch:
+            // 1. Hit test finds target (z-index aware)
+            // 2. Event path built from target to root (DOM order)
+            // 3. Dispatch through path (capturing + bubbling)
+            // 4. Click events dispatched separately after PointerUp
+            self.dispatch_pointer_event_via_path(root_id, &event);
         } else {
-            // Normal event dispatch through view tree
-            self.unconditional_view_event(root_id, &event, false);
+            // Non-pointer events use stacking context dispatch
+            self.dispatch_to_view(root_id, &event, false);
         }
 
         // Clear drag_start on pointer up
@@ -760,42 +970,13 @@ impl EventCx<'_> {
         }
 
         // Handle hover state changes - send PointerEnter/Leave events
-        if let Some(info) = is_pointer_move {
-            let hovered = &self.window_state.hovered.clone();
-            for id in was_hovered.unwrap().symmetric_difference(hovered) {
-                let view_state = id.state();
-                if view_state.borrow().has_active_animation()
-                    || view_state
-                        .borrow()
-                        .has_style_selectors
-                        .has(StyleSelector::Hover)
-                    || view_state
-                        .borrow()
-                        .has_style_selectors
-                        .has(StyleSelector::Active)
-                {
-                    id.request_style();
-                }
-                if hovered.contains(id) {
-                    id.apply_event(&EventListener::PointerEnter, &event);
-                } else {
-                    let leave_event = Event::Pointer(PointerEvent::Leave(info));
-                    self.unconditional_view_event(*id, &leave_event, true);
-                }
-            }
-
-            // Handle drag enter/leave events
-            let dragging_over = &self.window_state.dragging_over.clone();
-            for id in was_dragging_over
-                .unwrap()
-                .symmetric_difference(dragging_over)
-            {
-                if dragging_over.contains(id) {
-                    id.apply_event(&EventListener::DragEnter, &event);
-                } else {
-                    id.apply_event(&EventListener::DragLeave, &event);
-                }
-            }
+        if let Some(pointer_info) = is_pointer_move {
+            self.handle_hover_changes(
+                pointer_info,
+                was_hovered.unwrap(),
+                was_dragging_over.unwrap(),
+                &event,
+            );
         }
 
         // Handle file hover style changes
@@ -811,8 +992,9 @@ impl EventCx<'_> {
                 .focus_changed(was_focused, self.window_state.focus);
         }
 
-        // Request style updates for clicking views on pointer down
-        if is_pointer_down {
+        // Update active styles for clicking views on pointer down/up
+        let is_pointer_up = matches!(&event, Event::Pointer(PointerEvent::Up { .. }));
+        if is_pointer_down || is_pointer_up {
             for id in self.window_state.clicking.clone() {
                 if self
                     .window_state
@@ -821,19 +1003,9 @@ impl EventCx<'_> {
                     id.request_style_recursive();
                 }
             }
-        }
-
-        // On pointer up, request style updates and clear clicking state
-        if matches!(&event, Event::Pointer(PointerEvent::Up { .. })) {
-            for id in self.window_state.clicking.clone() {
-                if self
-                    .window_state
-                    .has_style_for_sel(id, StyleSelector::Active)
-                {
-                    id.request_style_recursive();
-                }
+            if is_pointer_up {
+                self.window_state.clicking.clear();
             }
-            self.window_state.clicking.clear();
         }
 
         EventPropagation::Continue

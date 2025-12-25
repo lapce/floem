@@ -36,8 +36,6 @@ pub(crate) enum FrameUpdate {
 pub use crate::event::EventCx;
 // Re-export DragState from window_state
 pub use crate::window::state::DragState;
-// Re-export stacking context types from view module
-pub(crate) use crate::view::stacking::collect_stacking_context_items;
 
 // Re-export layout context types from layout module for backward compatibility
 pub use crate::layout::{ComputeLayoutCx, LayoutCx};

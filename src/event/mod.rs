@@ -13,8 +13,10 @@ use dpi::LogicalPosition;
 mod dispatch;
 pub mod dropped_file;
 pub(crate) mod nav;
+pub(crate) mod path;
 
 pub use dropped_file::FileDragEvent;
+pub use path::clear_hit_test_cache;
 
 pub use dispatch::*;
 

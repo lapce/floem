@@ -98,11 +98,21 @@ pub(crate) fn collect_stacking_context_items(parent_id: ViewId) -> Rc<StackingCo
         );
     }
 
-    // Fast path: skip sorting if all z-indices are zero (already in DOM order)
-    if has_non_zero_z {
+    // Fast path: skip sorting if all z-indices are zero AND no explicit z-index: 0
+    // (already in DOM order). When there are mixed creates_context values at z=0,
+    // we still need to sort because z-index: 0 (explicit) paints after z-index: auto.
+    let needs_sorting = has_non_zero_z
+        || items
+            .iter()
+            .any(|item| item.z_index == 0 && item.creates_context);
+
+    if needs_sorting {
         items.sort_by(|a, b| {
             a.z_index
                 .cmp(&b.z_index)
+                // CSS spec: at same z-index level, z-index: auto paints before z-index: 0 (explicit)
+                // Since false < true in Rust, this puts creates_context: false (auto) before true (explicit)
+                .then(a.creates_context.cmp(&b.creates_context))
                 .then(a.dom_order.cmp(&b.dom_order))
         });
     }
@@ -1073,5 +1083,190 @@ mod tests {
         // b has z=-1, so it should come before a and c (which have z=0)
         assert_eq!(get_view_ids(&result), vec![b, a, c]);
         assert_eq!(get_z_indices_from_items(&result), vec![-1, 0, 0]);
+    }
+
+    // ========== z-index: 0 vs z-index: auto Tests ==========
+
+    #[test]
+    fn test_explicit_z_index_zero_paints_after_auto() {
+        // CSS spec: z-index: 0 (explicit) should paint AFTER z-index: auto
+        // at the same z-level. This is because explicit z-index: 0 creates a
+        // stacking context while z-index: auto does not.
+        //
+        // For hit testing (reverse order), z-index: 0 should be checked FIRST.
+        //
+        // Structure:
+        //   Root
+        //   ├── A (z-index: auto, no stacking context)
+        //   └── B (z-index: 0, explicit, creates stacking context)
+        //
+        // Paint order: A (auto), B (explicit 0)
+        // Hit test order (reverse): B, A
+
+        let auto_view = create_view_no_stacking_context(); // z-index: auto
+        let explicit_zero = create_view_with_z_index(Some(0)); // z-index: 0 (explicit)
+        let root = setup_parent_with_children(vec![auto_view, explicit_zero]);
+
+        let result = collect_stacking_context_items(root);
+
+        // Paint order: auto comes first, explicit 0 comes after
+        assert_eq!(get_view_ids(&result), vec![auto_view, explicit_zero]);
+        assert_eq!(get_z_indices_from_items(&result), vec![0, 0]);
+
+        // Verify creates_context flags
+        assert!(!result[0].creates_context, "auto should not create context");
+        assert!(
+            result[1].creates_context,
+            "explicit 0 should create context"
+        );
+
+        // Hit test order (reverse): explicit 0 is checked first
+        let hit_test_order: Vec<ViewId> = result.iter().rev().map(|item| item.view_id).collect();
+        assert_eq!(hit_test_order, vec![explicit_zero, auto_view]);
+    }
+
+    #[test]
+    fn test_explicit_z_index_zero_vs_auto_dom_order() {
+        // When there are multiple views with z-index: auto and z-index: 0,
+        // DOM order serves as tiebreaker within each group.
+        //
+        // Structure:
+        //   Root
+        //   ├── A1 (z-index: auto)
+        //   ├── B1 (z-index: 0, explicit)
+        //   ├── A2 (z-index: auto)
+        //   └── B2 (z-index: 0, explicit)
+        //
+        // Paint order: A1, A2 (autos in DOM order), B1, B2 (explicit 0s in DOM order)
+        // Hit test order: B2, B1, A2, A1
+
+        let a1 = create_view_no_stacking_context();
+        let b1 = create_view_with_z_index(Some(0));
+        let a2 = create_view_no_stacking_context();
+        let b2 = create_view_with_z_index(Some(0));
+        let root = setup_parent_with_children(vec![a1, b1, a2, b2]);
+
+        let result = collect_stacking_context_items(root);
+
+        // Paint order: autos first (a1, a2), then explicit 0s (b1, b2)
+        assert_eq!(get_view_ids(&result), vec![a1, a2, b1, b2]);
+
+        // Hit test order (reverse)
+        let hit_test_order: Vec<ViewId> = result.iter().rev().map(|item| item.view_id).collect();
+        assert_eq!(hit_test_order, vec![b2, b1, a2, a1]);
+    }
+
+    #[test]
+    fn test_explicit_z_index_zero_interleaved_with_positive() {
+        // Test interleaving of z-index: auto, z-index: 0, and positive z-index
+        //
+        // Structure:
+        //   Root
+        //   ├── A (z-index: auto, effective 0)
+        //   ├── B (z-index: 0, explicit)
+        //   └── C (z-index: 1)
+        //
+        // Paint order: A (auto, 0), B (explicit 0), C (1)
+        // Hit test order: C, B, A
+
+        let a = create_view_no_stacking_context(); // auto
+        let b = create_view_with_z_index(Some(0)); // explicit 0
+        let c = create_view_with_z_index(Some(1)); // z-index: 1
+        let root = setup_parent_with_children(vec![a, b, c]);
+
+        let result = collect_stacking_context_items(root);
+
+        assert_eq!(get_view_ids(&result), vec![a, b, c]);
+        assert_eq!(get_z_indices_from_items(&result), vec![0, 0, 1]);
+
+        // Hit test order
+        let hit_test_order: Vec<ViewId> = result.iter().rev().map(|item| item.view_id).collect();
+        assert_eq!(hit_test_order, vec![c, b, a]);
+    }
+
+    #[test]
+    fn test_explicit_z_index_zero_with_negative() {
+        // Test with negative z-index, z-index: auto, and z-index: 0
+        //
+        // Structure:
+        //   Root
+        //   ├── A (z-index: -1)
+        //   ├── B (z-index: auto, effective 0)
+        //   └── C (z-index: 0, explicit)
+        //
+        // Paint order: A (-1), B (auto 0), C (explicit 0)
+        // Hit test order: C, B, A
+
+        let a = create_view_with_z_index(Some(-1)); // z-index: -1
+        let b = create_view_no_stacking_context(); // auto
+        let c = create_view_with_z_index(Some(0)); // explicit 0
+        let root = setup_parent_with_children(vec![a, b, c]);
+
+        let result = collect_stacking_context_items(root);
+
+        assert_eq!(get_view_ids(&result), vec![a, b, c]);
+        assert_eq!(get_z_indices_from_items(&result), vec![-1, 0, 0]);
+
+        // Hit test order
+        let hit_test_order: Vec<ViewId> = result.iter().rev().map(|item| item.view_id).collect();
+        assert_eq!(hit_test_order, vec![c, b, a]);
+    }
+
+    #[test]
+    fn test_explicit_z_index_zero_in_escaped_context() {
+        // Test that z-index: 0 vs auto ordering works correctly with escaping
+        //
+        // Structure:
+        //   Root
+        //   ├── Wrapper (no stacking context)
+        //   │   ├── A (z-index: auto)
+        //   │   └── B (z-index: 0, explicit)
+        //   └── C (z-index: 1)
+        //
+        // All escape wrapper. Paint order: Wrapper (0 auto), A (0 auto), B (0 explicit), C (1)
+        // Hit test order: C, B, A, Wrapper
+
+        let wrapper = create_view_no_stacking_context();
+        let a = create_view_no_stacking_context(); // auto
+        let b = create_view_with_z_index(Some(0)); // explicit 0
+        set_children_with_parents(wrapper, vec![a, b]);
+
+        let c = create_view_with_z_index(Some(1));
+        let root = setup_parent_with_children(vec![wrapper, c]);
+
+        let result = collect_stacking_context_items(root);
+
+        // Paint order: wrapper (auto), a (auto), b (explicit 0), c (1)
+        assert_eq!(get_view_ids(&result), vec![wrapper, a, b, c]);
+        assert_eq!(get_z_indices_from_items(&result), vec![0, 0, 0, 1]);
+
+        // Hit test order
+        let hit_test_order: Vec<ViewId> = result.iter().rev().map(|item| item.view_id).collect();
+        assert_eq!(hit_test_order, vec![c, b, a, wrapper]);
+    }
+
+    #[test]
+    fn test_sorting_triggered_by_explicit_z_index_zero() {
+        // Even when all effective z-indices are 0, sorting should be triggered
+        // if there's a mix of z-index: auto and z-index: 0 (explicit).
+        //
+        // Structure:
+        //   Root
+        //   ├── A (z-index: auto)
+        //   ├── B (z-index: 0, explicit) <- comes after A in DOM but should paint later
+        //   └── C (z-index: auto)
+        //
+        // Without proper sorting, DOM order would give: A, B, C
+        // With proper sorting: A, C (autos), B (explicit 0)
+
+        let a = create_view_no_stacking_context();
+        let b = create_view_with_z_index(Some(0)); // explicit 0
+        let c = create_view_no_stacking_context();
+        let root = setup_parent_with_children(vec![a, b, c]);
+
+        let result = collect_stacking_context_items(root);
+
+        // B should come after A and C because explicit 0 > auto
+        assert_eq!(get_view_ids(&result), vec![a, c, b]);
     }
 }
