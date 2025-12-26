@@ -12,7 +12,7 @@ use std::hint::black_box;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use floem::headless::HeadlessHarness;
 use floem::prelude::*;
-use floem::views::{Container, Decorators, Empty, stack_from_iter};
+use floem::views::{Container, Decorators, Empty, Stack};
 
 /// Create a flat tree with N children at the same level.
 /// All children are positioned absolutely and overlap.
@@ -24,7 +24,7 @@ fn create_flat_tree(n: usize) -> impl IntoView {
         })
         .collect();
 
-    stack_from_iter(children).style(|s| s.size(100.0, 100.0))
+    Stack::from_iter(children).style(|s| s.size(100.0, 100.0))
 }
 
 /// Create a deep tree with depth N (each level has one child).
@@ -58,7 +58,7 @@ fn create_mixed_stacking_tree(n: usize) -> impl IntoView {
         })
         .collect();
 
-    stack_from_iter(children).style(|s| s.size(100.0, 100.0))
+    Stack::from_iter(children).style(|s| s.size(100.0, 100.0))
 }
 
 /// Create a wide tree where each node has multiple children.
@@ -70,11 +70,11 @@ fn create_wide_tree_depth2(width: usize) -> impl IntoView {
             let grandchildren: Vec<_> = (0..width)
                 .map(|_| Empty::new().style(|s| s.size(10.0, 10.0)))
                 .collect();
-            stack_from_iter(grandchildren).style(|s| s.size_full())
+            Stack::from_iter(grandchildren).style(|s| s.size_full())
         })
         .collect();
 
-    stack_from_iter(children).style(|s| s.size(100.0, 100.0))
+    Stack::from_iter(children).style(|s| s.size(100.0, 100.0))
 }
 
 /// Create a wider tree with depth 3.
@@ -86,14 +86,14 @@ fn create_wide_tree_depth3(width: usize) -> impl IntoView {
                     let great_grandchildren: Vec<_> = (0..width)
                         .map(|_| Empty::new().style(|s| s.size(5.0, 5.0)))
                         .collect();
-                    stack_from_iter(great_grandchildren).style(|s| s.size_full())
+                    Stack::from_iter(great_grandchildren).style(|s| s.size_full())
                 })
                 .collect();
-            stack_from_iter(grandchildren).style(|s| s.size_full())
+            Stack::from_iter(grandchildren).style(|s| s.size_full())
         })
         .collect();
 
-    stack_from_iter(children).style(|s| s.size(100.0, 100.0))
+    Stack::from_iter(children).style(|s| s.size(100.0, 100.0))
 }
 
 fn bench_flat_tree_dispatch(c: &mut Criterion) {

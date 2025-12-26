@@ -359,6 +359,9 @@ impl ScrollTracker {
     }
 }
 
+/// Type alias for pointer event tracking with optional pointer ID.
+type PointerEventLog = Rc<RefCell<Vec<(String, Option<floem::event::PointerId>)>>>;
+
 /// Tracks pointer capture events on views for testing.
 ///
 /// This helper makes it easy to verify which views received GotPointerCapture
@@ -377,9 +380,9 @@ impl ScrollTracker {
 pub struct PointerCaptureTracker {
     got_captures: Rc<RefCell<Vec<(String, floem::event::PointerId)>>>,
     lost_captures: Rc<RefCell<Vec<(String, floem::event::PointerId)>>>,
-    pointer_downs: Rc<RefCell<Vec<(String, Option<floem::event::PointerId>)>>>,
-    pointer_moves: Rc<RefCell<Vec<(String, Option<floem::event::PointerId>)>>>,
-    pointer_ups: Rc<RefCell<Vec<(String, Option<floem::event::PointerId>)>>>,
+    pointer_downs: PointerEventLog,
+    pointer_moves: PointerEventLog,
+    pointer_ups: PointerEventLog,
 }
 
 impl PointerCaptureTracker {

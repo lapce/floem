@@ -49,7 +49,7 @@ std::thread_local! {
     /// Paint order tracker for testing purposes.
     /// When enabled, records the ViewIds in the order they are painted.
     /// This is used by HeadlessHarness to verify paint order in tests.
-    static PAINT_ORDER_TRACKER: std::cell::RefCell<PaintOrderTracker> = std::cell::RefCell::new(PaintOrderTracker::new());
+    static PAINT_ORDER_TRACKER: std::cell::RefCell<PaintOrderTracker> = const { std::cell::RefCell::new(PaintOrderTracker::new()) };
 }
 
 /// Tracker for paint order, used in testing to verify views are painted in the correct order.

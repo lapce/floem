@@ -1108,10 +1108,7 @@ fn test_overlapping_siblings_no_cross_propagation() {
         // Backdrop - covers entire area, lower z-index
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
-            .on_click_stop({
-                let backdrop_clicked = backdrop_clicked;
-                move |_| backdrop_clicked.set(true)
-            }),
+            .on_click_stop(move |_| backdrop_clicked.set(true)),
         // Content - smaller, higher z-index, overlaps backdrop
         Empty::new()
             .style(|s| {
@@ -1121,10 +1118,7 @@ fn test_overlapping_siblings_no_cross_propagation() {
                     .size(50.0, 50.0)
                     .z_index(10)
             })
-            .on_click_stop({
-                let content_clicked = content_clicked;
-                move |_| content_clicked.set(true)
-            }),
+            .on_click_stop(move |_| content_clicked.set(true)),
     ))
     .style(|s| s.size(100.0, 100.0));
 
@@ -1154,10 +1148,7 @@ fn test_overlapping_siblings_click_outside_content() {
     // Use stack instead of layers and apply styles directly
     let backdrop = Empty::new()
         .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
-        .on_click_stop({
-            let backdrop_clicked = backdrop_clicked;
-            move |_| backdrop_clicked.set(true)
-        });
+        .on_click_stop(move |_| backdrop_clicked.set(true));
     let backdrop_id = backdrop.view_id();
 
     let content = Empty::new()
@@ -1168,10 +1159,7 @@ fn test_overlapping_siblings_click_outside_content() {
                 .size(50.0, 50.0)
                 .z_index(10)
         })
-        .on_click_stop({
-            let content_clicked = content_clicked;
-            move |_| content_clicked.set(true)
-        });
+        .on_click_stop(move |_| content_clicked.set(true));
     let content_id = content.view_id();
 
     let view = Stack::new((backdrop, content)).style(|s| s.size(100.0, 100.0));
@@ -2122,12 +2110,9 @@ fn test_overlay_fixed_click_corners() {
                 // Backdrop - fills entire area
                 Empty::new()
                     .style(|s| s.absolute().inset(0.0).z_index(1))
-                    .on_click_stop({
-                        let backdrop_clicked = backdrop_clicked;
-                        move |_| {
-                            eprintln!("[{}] Backdrop clicked!", name);
-                            backdrop_clicked.set(true);
-                        }
+                    .on_click_stop(move |_| {
+                        eprintln!("[{}] Backdrop clicked!", name);
+                        backdrop_clicked.set(true);
                     }),
                 // Content - positioned at (50, 50) with size (100, 100)
                 Empty::new()
@@ -2138,12 +2123,9 @@ fn test_overlay_fixed_click_corners() {
                             .size(100.0, 100.0)
                             .z_index(10)
                     })
-                    .on_click_stop({
-                        let content_clicked = content_clicked;
-                        move |_| {
-                            eprintln!("[{}] Content clicked!", name);
-                            content_clicked.set(true);
-                        }
+                    .on_click_stop(move |_| {
+                        eprintln!("[{}] Content clicked!", name);
+                        content_clicked.set(true);
                     }),
             ))
             .style(|s| s.fixed().inset(0.0).width_full().height_full()),
@@ -2199,12 +2181,9 @@ fn test_overlay_fixed_translate_click_corners() {
                 // Backdrop
                 Empty::new()
                     .style(|s| s.absolute().inset(0.0).z_index(1))
-                    .on_click_stop({
-                        let backdrop_clicked = backdrop_clicked;
-                        move |_| {
-                            eprintln!("[translate-{}] Backdrop clicked!", name);
-                            backdrop_clicked.set(true);
-                        }
+                    .on_click_stop(move |_| {
+                        eprintln!("[translate-{}] Backdrop clicked!", name);
+                        backdrop_clicked.set(true);
                     }),
                 // Content - centered using translate
                 Empty::new()
@@ -2217,12 +2196,9 @@ fn test_overlay_fixed_translate_click_corners() {
                             .size(80.0, 80.0)
                             .z_index(10)
                     })
-                    .on_click_stop({
-                        let content_clicked = content_clicked;
-                        move |_| {
-                            eprintln!("[translate-{}] Content clicked!", name);
-                            content_clicked.set(true);
-                        }
+                    .on_click_stop(move |_| {
+                        eprintln!("[translate-{}] Content clicked!", name);
+                        content_clicked.set(true);
                     }),
             ))
             .style(|s| s.fixed().inset(0.0).width_full().height_full()),
@@ -2272,12 +2248,7 @@ fn test_overlay_fixed_click_outside_content() {
                 // Backdrop
                 Empty::new()
                     .style(|s| s.absolute().inset(0.0).z_index(1))
-                    .on_click_stop({
-                        let backdrop_clicked = backdrop_clicked;
-                        move |_| {
-                            backdrop_clicked.set(true);
-                        }
-                    }),
+                    .on_click_stop(move |_| backdrop_clicked.set(true)),
                 // Content
                 Empty::new()
                     .style(|s| {
@@ -2287,12 +2258,7 @@ fn test_overlay_fixed_click_outside_content() {
                             .size(100.0, 100.0)
                             .z_index(10)
                     })
-                    .on_click_stop({
-                        let content_clicked = content_clicked;
-                        move |_| {
-                            content_clicked.set(true);
-                        }
-                    }),
+                    .on_click_stop(move |_| content_clicked.set(true)),
             ))
             .style(|s| s.fixed().inset(0.0).width_full().height_full()),
         );
@@ -2344,10 +2310,7 @@ fn test_no_overlay_fixed_translate_probe_boundary() {
         let view = Stack::new((
             Empty::new()
                 .style(|s| s.absolute().inset(0.0).z_index(1))
-                .on_click_stop({
-                    let backdrop_clicked = backdrop_clicked;
-                    move |_| backdrop_clicked.set(true)
-                }),
+                .on_click_stop(move |_| backdrop_clicked.set(true)),
             Empty::new()
                 .style(|s| {
                     s.absolute()
@@ -2358,10 +2321,7 @@ fn test_no_overlay_fixed_translate_probe_boundary() {
                         .size(80.0, 80.0)
                         .z_index(10)
                 })
-                .on_click_stop({
-                    let content_clicked = content_clicked;
-                    move |_| content_clicked.set(true)
-                }),
+                .on_click_stop(move |_| content_clicked.set(true)),
         ))
         // Same fixed positioning
         .style(|s| s.fixed().inset(0.0).width_full().height_full());
@@ -2419,10 +2379,7 @@ fn test_overlay_fixed_translate_probe_boundary() {
             Stack::new((
                 Empty::new()
                     .style(|s| s.absolute().inset(0.0).z_index(1))
-                    .on_click_stop({
-                        let backdrop_clicked = backdrop_clicked;
-                        move |_| backdrop_clicked.set(true)
-                    }),
+                    .on_click_stop(move |_| backdrop_clicked.set(true)),
                 Empty::new()
                     .style(|s| {
                         s.absolute()
@@ -2433,10 +2390,7 @@ fn test_overlay_fixed_translate_probe_boundary() {
                             .size(80.0, 80.0)
                             .z_index(10)
                     })
-                    .on_click_stop({
-                        let content_clicked = content_clicked;
-                        move |_| content_clicked.set(true)
-                    }),
+                    .on_click_stop(move |_| content_clicked.set(true)),
             ))
             .style(|s| s.fixed().inset(0.0).width_full().height_full()),
         );
@@ -2476,10 +2430,7 @@ fn test_overlay_fixed_translate_probe_boundary() {
             Stack::new((
                 Empty::new()
                     .style(|s| s.absolute().inset(0.0).z_index(1))
-                    .on_click_stop({
-                        let backdrop_clicked = backdrop_clicked;
-                        move |_| backdrop_clicked.set(true)
-                    }),
+                    .on_click_stop(move |_| backdrop_clicked.set(true)),
                 Empty::new()
                     .style(|s| {
                         s.absolute()
@@ -2490,10 +2441,7 @@ fn test_overlay_fixed_translate_probe_boundary() {
                             .size(80.0, 80.0)
                             .z_index(10)
                     })
-                    .on_click_stop({
-                        let content_clicked = content_clicked;
-                        move |_| content_clicked.set(true)
-                    }),
+                    .on_click_stop(move |_| content_clicked.set(true)),
             ))
             .style(|s| s.fixed().inset(0.0).width_full().height_full()),
         );

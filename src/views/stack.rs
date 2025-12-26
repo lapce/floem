@@ -212,6 +212,7 @@ impl Stack {
     ///
     /// Stack::from_iter((0..5).map(|i| text(i)));
     /// ```
+    #[allow(clippy::should_implement_trait)]
     pub fn from_iter<V: IntoView + 'static>(children: impl IntoIterator<Item = V>) -> Self {
         let id = ViewId::new();
         id.set_children_vec(

@@ -781,12 +781,11 @@ fn test_overlay_with_nested_container_derived() {
                 // Centering container with derived content
                 Container::new(Container::derived(move || {
                     let is_open = open.get();
-                    Stack::new((Label::new("Dialog Title"), Label::new("Dialog Description"))).style(
-                        move |s| {
+                    Stack::new((Label::new("Dialog Title"), Label::new("Dialog Description")))
+                        .style(move |s| {
                             s.size(80.0, 60.0)
                                 .apply_if(!is_open, |s| s.display(floem::taffy::Display::None))
-                        },
-                    )
+                        })
                 }))
                 .style(move |s| {
                     let is_open = open.get();

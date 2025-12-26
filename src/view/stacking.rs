@@ -54,6 +54,7 @@ pub(crate) fn invalidate_stacking_cache(view_id: ViewId) {
 
 /// Invalidates the overlay order cache for a root.
 /// Call this when overlays are registered/unregistered or their z-index changes.
+#[allow(dead_code)] // Kept for targeted cache invalidation when root is known
 pub(crate) fn invalidate_overlay_cache(root_id: ViewId) {
     OVERLAY_ORDER_CACHE.with(|cache| {
         cache.borrow_mut().remove(&root_id);

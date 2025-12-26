@@ -77,6 +77,7 @@ impl ViewId {
     }
 
     /// Unregister this view as an overlay.
+    #[allow(dead_code)] // Kept for API symmetry with register_overlay
     pub(crate) fn unregister_overlay(&self) {
         VIEW_STORAGE.with_borrow_mut(|s| {
             s.overlays.remove(*self);

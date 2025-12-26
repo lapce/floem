@@ -977,8 +977,8 @@ fn test_select_like_no_explicit_container_width() {
         .style(|s| s.position(Position::Relative).min_width(120.0));
 
     // Wrap in v_stack like a real app would
-    let view = Stack::vertical((select_container,))
-        .style(|s| s.width_full().height_full().padding(50.0));
+    let view =
+        Stack::vertical((select_container,)).style(|s| s.width_full().height_full().padding(50.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 400.0, 400.0);
 
