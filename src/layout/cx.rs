@@ -99,7 +99,19 @@ impl<'a> ComputeLayoutCx<'a> {
             self.viewport = self.viewport.intersect(this_viewport);
         }
 
-        let window_origin = origin + self.window_origin.to_vec2() - this_viewport_origin;
+        // Check if this is a fixed-positioned element
+        let is_fixed = view_state
+            .borrow()
+            .combined_style
+            .get(crate::style::IsFixed);
+
+        // For fixed positioning, the element is positioned relative to the viewport (window)
+        // rather than relative to its parent. So we set window_origin to (0, 0).
+        let window_origin = if is_fixed {
+            Point::ZERO
+        } else {
+            origin + self.window_origin.to_vec2() - this_viewport_origin
+        };
         self.window_origin = window_origin;
         {
             view_state.borrow_mut().window_origin = window_origin;
@@ -109,12 +121,12 @@ impl<'a> ComputeLayoutCx<'a> {
         // It's the intersection of the parent's clip_rect with this view's visible area.
         let view_rect_in_window = size.to_rect().with_origin(window_origin);
 
-        // For absolute positioned elements, don't constrain clip_rect to parent's clip.
+        // For absolute and fixed positioned elements, don't constrain clip_rect to parent's clip.
         // This allows dropdowns, modals, tooltips, etc. to receive events even when
         // they extend beyond their parent container (like a scroll view).
         let is_absolute = view_state.borrow().taffy_style.position == taffy::Position::Absolute;
-        let mut view_clip_rect = if is_absolute {
-            // Absolute elements can receive events anywhere they're rendered
+        let mut view_clip_rect = if is_absolute || is_fixed {
+            // Absolute/fixed elements can receive events anywhere they're rendered
             view_rect_in_window
         } else {
             self.clip_rect.intersect(view_rect_in_window)
@@ -140,11 +152,11 @@ impl<'a> ComputeLayoutCx<'a> {
             self.clip_rect = view_clip_rect;
         }
 
-        // For absolute positioned elements, also update clip_rect for children.
-        // This ensures that children of absolute elements (like dropdown items)
-        // can receive events even when the absolute element extends beyond
+        // For absolute and fixed positioned elements, also update clip_rect for children.
+        // This ensures that children of absolute/fixed elements (like dropdown items)
+        // can receive events even when the element extends beyond
         // its parent's clip area.
-        if is_absolute {
+        if is_absolute || is_fixed {
             self.clip_rect = view_clip_rect;
         }
 
@@ -256,13 +268,30 @@ impl<'a> LayoutCx<'a> {
             .remove(ChangeFlags::LAYOUT);
         let layout_style = view_state.borrow().layout_props.to_style();
         let animate_out_display = view_state.borrow().is_hidden_state.get_display();
-        let style = view_state
-            .borrow()
-            .combined_style
-            .clone()
+        let combined_style = view_state.borrow().combined_style.clone();
+        let is_fixed = combined_style.get(crate::style::IsFixed);
+        let mut style = combined_style
             .apply(layout_style)
-            .apply_opt(animate_out_display, Style::display)
+            .apply_opt(animate_out_display, crate::style::Style::display)
             .to_taffy_style();
+
+        // For fixed positioning, set explicit dimensions to window size.
+        // This ensures percentage-based children are relative to the viewport.
+        if is_fixed {
+            let root_size = self.window_state.root_size / self.window_state.scale;
+            style.size = taffy::prelude::Size {
+                width: taffy::style::Dimension::length(root_size.width as f32),
+                height: taffy::style::Dimension::length(root_size.height as f32),
+            };
+            // Fixed elements should be positioned at the origin relative to viewport
+            style.inset = taffy::prelude::Rect {
+                left: taffy::style::LengthPercentageAuto::length(0.0),
+                right: taffy::style::LengthPercentageAuto::auto(),
+                top: taffy::style::LengthPercentageAuto::length(0.0),
+                bottom: taffy::style::LengthPercentageAuto::auto(),
+            };
+        }
+
         let _ = id.taffy().borrow_mut().set_style(node, style);
 
         if has_children {

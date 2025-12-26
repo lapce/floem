@@ -374,26 +374,38 @@ impl PaintCx<'_> {
                 continue;
             }
 
+            // Check if this is a fixed-positioned overlay
+            let is_fixed = overlay_id
+                .state()
+                .borrow()
+                .combined_style
+                .get(crate::style::IsFixed);
+
             // Accumulate transforms from root to overlay's parent
             // This ensures the overlay is painted at the correct window position
             self.save();
 
-            // Build the transform chain from root to overlay's parent
-            let mut ancestors = Vec::new();
-            let mut current = overlay_id.parent();
-            while let Some(ancestor) = current {
-                ancestors.push(ancestor);
-                current = ancestor.parent();
-            }
+            // For fixed-positioned overlays, we don't apply parent transforms
+            // because they're positioned relative to the viewport, not their parent.
+            // For regular overlays, we build the transform chain from root to parent.
+            if !is_fixed {
+                // Build the transform chain from root to overlay's parent
+                let mut ancestors = Vec::new();
+                let mut current = overlay_id.parent();
+                while let Some(ancestor) = current {
+                    ancestors.push(ancestor);
+                    current = ancestor.parent();
+                }
 
-            // Apply transforms from root down to parent (reverse order)
-            for ancestor in ancestors.into_iter().rev() {
-                if let Some(layout) = ancestor.get_layout() {
-                    self.transform *= Affine::translate(Vec2 {
-                        x: layout.location.x as f64,
-                        y: layout.location.y as f64,
-                    });
-                    self.transform *= ancestor.state().borrow().transform;
+                // Apply transforms from root down to parent (reverse order)
+                for ancestor in ancestors.into_iter().rev() {
+                    if let Some(layout) = ancestor.get_layout() {
+                        self.transform *= Affine::translate(Vec2 {
+                            x: layout.location.x as f64,
+                            y: layout.location.y as f64,
+                        });
+                        self.transform *= ancestor.state().borrow().transform;
+                    }
                 }
             }
 

@@ -1034,6 +1034,17 @@ define_builtin_props!(
     /// This affects how the view is positioned relative to its normal position in the document flow.
     PositionProp position {}: Position {} = Position::Relative,
 
+    /// Enables fixed positioning relative to the viewport.
+    ///
+    /// When true, the view is positioned relative to the window viewport rather than
+    /// its parent. This is similar to CSS `position: fixed`. The view will:
+    /// - Use `inset` properties relative to the viewport
+    /// - Have percentage sizes relative to the viewport
+    /// - Be painted above all other content (like overlays)
+    ///
+    /// Note: This works in conjunction with `position: absolute` internally.
+    IsFixed is_fixed {}: bool {} = false,
+
     /// Sets the width of the view.
     ///
     /// Can be specified in pixels, percentages, or auto.
@@ -2351,6 +2362,25 @@ impl Style {
     /// Sets the view to absolute positioning.
     pub fn absolute(self) -> Self {
         self.position(taffy::style::Position::Absolute)
+    }
+
+    /// Sets the view to fixed positioning relative to the viewport.
+    ///
+    /// This is similar to CSS `position: fixed`. The view will:
+    /// - Be positioned relative to the window viewport
+    /// - Use `inset` properties relative to the viewport
+    /// - Have percentage sizes relative to the viewport
+    /// - Be painted above all other content
+    ///
+    /// # Example
+    /// ```rust
+    /// use floem::style::Style;
+    ///
+    /// // Create a full-screen overlay
+    /// Style::new().fixed().inset(0.0);
+    /// ```
+    pub fn fixed(self) -> Self {
+        self.position(taffy::style::Position::Absolute).is_fixed(true)
     }
 
     /// Aligns flex items to stretch and fill the cross axis.
