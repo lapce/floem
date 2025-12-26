@@ -113,14 +113,36 @@ impl<'a> ComputeLayoutCx<'a> {
         } else {
             origin + self.window_origin.to_vec2() - this_viewport_origin
         };
-        self.window_origin = window_origin;
+
+        // Compute translate offsets early so children are positioned at the TRANSFORMED location.
+        // CSS translate percentages are relative to the element's own dimensions.
+        let (translate_x, translate_y) = {
+            let vs = view_state.borrow();
+            let layout_props = &vs.layout_props;
+            let tx = match layout_props.translate_x() {
+                crate::unit::PxPct::Px(px) => px,
+                crate::unit::PxPct::Pct(pct) => size.width * pct / 100.,
+            };
+            let ty = match layout_props.translate_y() {
+                crate::unit::PxPct::Px(px) => px,
+                crate::unit::PxPct::Pct(pct) => size.height * pct / 100.,
+            };
+            (tx, ty)
+        };
+
+        // Apply translate to window_origin so children are positioned correctly.
+        // This ensures children of translated parents appear at the visual location.
+        let transformed_window_origin =
+            Point::new(window_origin.x + translate_x, window_origin.y + translate_y);
+        self.window_origin = transformed_window_origin;
         {
-            view_state.borrow_mut().window_origin = window_origin;
+            view_state.borrow_mut().window_origin = transformed_window_origin;
         }
 
         // Compute this view's clip_rect in window coordinates.
         // It's the intersection of the parent's clip_rect with this view's visible area.
-        let view_rect_in_window = size.to_rect().with_origin(window_origin);
+        // Use transformed_window_origin since clip_rect should be at the visual location.
+        let view_rect_in_window = size.to_rect().with_origin(transformed_window_origin);
 
         // For absolute and fixed positioned elements, don't constrain clip_rect to parent's clip.
         // This allows dropdowns, modals, tooltips, etc. to receive events even when
@@ -210,27 +232,17 @@ impl<'a> ComputeLayoutCx<'a> {
             layout_rect
         };
 
-        // Compute the CSS transform now that we have the element's size.
-        // CSS translate percentages are relative to the element's own dimensions.
+        // Compute the CSS transform (scale and rotation only).
+        // Translate was already applied to window_origin above so children are positioned correctly.
+        // This transform is used for visual effects like scale/rotation around center.
         let transform = {
             let vs = view_state.borrow();
             let layout_props = &vs.layout_props;
 
             let mut transform = Affine::IDENTITY;
 
-            // Translate: percentages relative to element's own size
-            let transform_x = match layout_props.translate_x() {
-                crate::unit::PxPct::Px(px) => px,
-                crate::unit::PxPct::Pct(pct) => size.width * pct / 100.,
-            };
-            let transform_y = match layout_props.translate_y() {
-                crate::unit::PxPct::Px(px) => px,
-                crate::unit::PxPct::Pct(pct) => size.height * pct / 100.,
-            };
-            transform *= Affine::translate(Vec2 {
-                x: transform_x,
-                y: transform_y,
-            });
+            // NOTE: Translate is NOT included here - it's already applied to window_origin above.
+            // This ensures children are positioned at the transformed location.
 
             // Scale and rotation around center
             let scale_x = layout_props.scale_x().0 / 100.;
@@ -251,12 +263,24 @@ impl<'a> ComputeLayoutCx<'a> {
 
             transform
         };
-        // Store the computed transform
-        view_state.borrow_mut().transform = transform;
+
+        // Create the full transform (including translate) for storage and painting.
+        // This combines the translate we computed earlier with scale/rotation.
+        let full_transform = Affine::translate(Vec2 {
+            x: translate_x,
+            y: translate_y,
+        }) * transform;
+
+        // Store the full transform (used by painting and coordinate transforms)
+        view_state.borrow_mut().transform = full_transform;
+
+        // layout_rect already includes translate via self.window_origin, so only apply scale/rotation
         let layout_rect = transform.transform_rect_bbox(layout_rect);
+        // Same for clip_rect - already at transformed position, only apply scale/rotation
+        let view_clip_rect = transform.transform_rect_bbox(view_clip_rect);
 
         // Compute the cumulative transform from local coordinates to root (window) coordinates.
-        // This combines translation to window_origin with the view's CSS transform.
+        // window_origin already includes translate, so we use the scale/rotation-only transform here.
         // To convert from root coords to local: local = local_to_root.inverse() * root
         let local_to_root_transform =
             Affine::translate((self.window_origin.x, self.window_origin.y)) * transform;

@@ -2046,14 +2046,8 @@ fn test_overlay_fixed_no_translate() {
     // Click in the content area (50, 50) to (150, 150)
     harness.click(100.0, 100.0);
 
-    assert!(
-        content_clicked.get(),
-        "Content should receive click"
-    );
-    assert!(
-        !backdrop_clicked.get(),
-        "Backdrop should NOT receive click"
-    );
+    assert!(content_clicked.get(), "Content should receive click");
+    assert!(!backdrop_clicked.get(), "Backdrop should NOT receive click");
 }
 
 /// Test the exact DialogContent structure but without Overlay.
@@ -2095,14 +2089,8 @@ fn test_fixed_translate_no_overlay() {
     // Click in center
     harness.click(100.0, 100.0);
 
-    assert!(
-        content_clicked.get(),
-        "Content should receive click"
-    );
-    assert!(
-        !backdrop_clicked.get(),
-        "Backdrop should NOT receive click"
-    );
+    assert!(content_clicked.get(), "Content should receive click");
+    assert!(!backdrop_clicked.get(), "Backdrop should NOT receive click");
 }
 
 /// Test clicking at 4 corners of content with Overlay + fixed positioning.
@@ -2242,10 +2230,7 @@ fn test_overlay_fixed_translate_click_corners() {
 
         let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
 
-        eprintln!(
-            "Testing translate corner: {} at ({}, {})",
-            name, x, y
-        );
+        eprintln!("Testing translate corner: {} at ({}, {})", name, x, y);
         harness.click(x, y);
 
         assert!(
@@ -2531,10 +2516,10 @@ fn test_overlay_fixed_translate_probe_boundary() {
 /// Debug test: print layout information for overlay + fixed + translate.
 #[test]
 fn test_overlay_fixed_translate_debug_layout() {
+    use floem::ViewId;
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::unit::Pct;
     use floem::views::Overlay;
-    use floem::ViewId;
 
     let content_id = ViewId::new();
     let backdrop_clicked = RwSignal::new(false);
@@ -2574,8 +2559,14 @@ fn test_overlay_fixed_translate_debug_layout() {
 
     // Print layout info for content
     if let Some(layout) = content_id.get_layout() {
-        eprintln!("Content layout position: ({}, {})", layout.location.x, layout.location.y);
-        eprintln!("Content layout size: {}x{}", layout.size.width, layout.size.height);
+        eprintln!(
+            "Content layout position: ({}, {})",
+            layout.location.x, layout.location.y
+        );
+        eprintln!(
+            "Content layout size: {}x{}",
+            layout.size.width, layout.size.height
+        );
     }
 
     let layout_rect = content_id.get_layout_rect();
@@ -2583,10 +2574,7 @@ fn test_overlay_fixed_translate_debug_layout() {
 
     let transform = content_id.get_transform();
     let coeffs = transform.as_coeffs();
-    eprintln!(
-        "Content transform: translate({}, {})",
-        coeffs[4], coeffs[5]
-    );
+    eprintln!("Content transform: translate({}, {})", coeffs[4], coeffs[5]);
 
     // Click at center (100, 100) - should be inside content after transform
     harness.click(100.0, 100.0);
@@ -2835,4 +2823,380 @@ fn test_bubbling_through_handler_less_child() {
         !sibling1_clicked.get(),
         "Sibling1 should NOT receive click - bubbling goes up, not sideways"
     );
+}
+
+// =============================================================================
+// Fixed Overlay with Child Click Tests
+// =============================================================================
+
+/// Test that a clickable child inside a fixed overlay receives pointer events.
+///
+/// Structure:
+///   Overlay (fixed, inset 0, full size)
+///   └── Stack
+///       ├── Backdrop (on_click_stop)
+///       └── Content (fixed, centered with translate)
+///           └── ClickableChild (button-like element)
+#[test]
+fn test_fixed_overlay_child_receives_click() {
+    use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
+    use floem::unit::Pct;
+    use floem::views::Overlay;
+
+    let backdrop_clicked = RwSignal::new(false);
+    let content_clicked = RwSignal::new(false);
+    let child_clicked = RwSignal::new(false);
+
+    let view = Overlay::new(
+        stack((
+            // Backdrop
+            Empty::new()
+                .style(|s| s.absolute().inset(0.0))
+                .on_click_stop(move |_| {
+                    eprintln!("[backdrop] clicked!");
+                    backdrop_clicked.set(true);
+                }),
+            // Content - centered with translate
+            v_stack((
+                // Clickable child (like a button)
+                Empty::new()
+                    .style(|s| s.size(60.0, 30.0))
+                    .on_click_stop(move |_| {
+                        eprintln!("[child] clicked!");
+                        child_clicked.set(true);
+                    }),
+            ))
+            .style(|s| {
+                s.absolute()
+                    .inset_left(Pct(50.0))
+                    .inset_top(Pct(50.0))
+                    .translate_x(Pct(-50.0))
+                    .translate_y(Pct(-50.0))
+                    .size(80.0, 60.0)
+                    .z_index(10)
+            })
+            .on_click_stop(move |_| {
+                eprintln!("[content] clicked!");
+                content_clicked.set(true);
+            }),
+        ))
+        .style(|s| s.fixed().inset(0.0).width_full().height_full()),
+    );
+
+    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    harness.rebuild();
+
+    eprintln!("=== Fixed Overlay Child Click Test ===");
+    eprintln!("Window size: 200x200");
+    eprintln!("Content: 80x60 centered at (100, 100) with translate(-40, -30)");
+    eprintln!("Expected content bounds: (60, 70) to (140, 130)");
+    eprintln!("Child inside content: 60x30 at origin, so global (60, 70) to (120, 100)");
+
+    // Click at center of the child (should be around 90, 85)
+    eprintln!("\nClicking at (90, 85) - should hit child");
+    harness.click(90.0, 85.0);
+
+    eprintln!("Results:");
+    eprintln!("  child_clicked: {}", child_clicked.get());
+    eprintln!("  content_clicked: {}", content_clicked.get());
+    eprintln!("  backdrop_clicked: {}", backdrop_clicked.get());
+
+    assert!(
+        child_clicked.get(),
+        "Child inside fixed overlay content should receive click"
+    );
+    assert!(
+        !backdrop_clicked.get(),
+        "Backdrop should NOT receive click when child is clicked"
+    );
+}
+
+/// Test clicking at multiple positions inside the child to verify hit detection bounds.
+#[test]
+fn test_fixed_overlay_child_click_bounds() {
+    use floem::ViewId;
+    use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
+    use floem::unit::Pct;
+    use floem::views::Overlay;
+
+    let child_id = ViewId::new();
+    let content_id = ViewId::new();
+
+    let backdrop_clicks = RwSignal::new(0);
+    let content_clicks = RwSignal::new(0);
+    let child_clicks = RwSignal::new(0);
+
+    let view = Overlay::new(
+        stack((
+            // Backdrop
+            Empty::new()
+                .style(|s| s.absolute().inset(0.0))
+                .on_click_stop(move |_| {
+                    backdrop_clicks.update(|c| *c += 1);
+                }),
+            // Content - centered with translate
+            floem::views::Container::with_id(
+                content_id,
+                v_stack((
+                    // Clickable child with known ID
+                    floem::views::Container::with_id(
+                        child_id,
+                        Empty::new().style(|s| s.size(60.0, 30.0)),
+                    )
+                    .on_click_stop(move |_| {
+                        child_clicks.update(|c| *c += 1);
+                    }),
+                ))
+                .style(|s| s.gap(0.0)),
+            )
+            .style(|s| {
+                s.absolute()
+                    .inset_left(Pct(50.0))
+                    .inset_top(Pct(50.0))
+                    .translate_x(Pct(-50.0))
+                    .translate_y(Pct(-50.0))
+                    .size(80.0, 60.0)
+                    .z_index(10)
+            })
+            .on_click_stop(move |_| {
+                content_clicks.update(|c| *c += 1);
+            }),
+        ))
+        .style(|s| s.fixed().inset(0.0).width_full().height_full()),
+    );
+
+    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    harness.rebuild();
+
+    eprintln!("=== Fixed Overlay Child Click Bounds Test ===");
+
+    // Print layout info
+    if let Some(content_layout) = content_id.get_layout() {
+        eprintln!(
+            "Content layout: pos=({}, {}), size={}x{}",
+            content_layout.location.x,
+            content_layout.location.y,
+            content_layout.size.width,
+            content_layout.size.height
+        );
+    }
+    let content_rect = content_id.get_layout_rect();
+    eprintln!("Content layout_rect: {:?}", content_rect);
+
+    if let Some(child_layout) = child_id.get_layout() {
+        eprintln!(
+            "Child layout: pos=({}, {}), size={}x{}",
+            child_layout.location.x,
+            child_layout.location.y,
+            child_layout.size.width,
+            child_layout.size.height
+        );
+    }
+    let child_rect = child_id.get_layout_rect();
+    eprintln!("Child layout_rect: {:?}", child_rect);
+
+    // Test clicks at various positions
+    let test_points = [
+        (90.0, 85.0, "center of child"),
+        (65.0, 75.0, "top-left of child"),
+        (115.0, 95.0, "bottom-right of child"),
+        (70.0, 110.0, "below child, inside content"),
+        (50.0, 50.0, "outside content, on backdrop"),
+    ];
+
+    for (x, y, desc) in test_points {
+        // Reset counters
+        backdrop_clicks.set(0);
+        content_clicks.set(0);
+        child_clicks.set(0);
+
+        harness.click(x, y);
+
+        let result = if child_clicks.get() > 0 {
+            "CHILD"
+        } else if content_clicks.get() > 0 {
+            "CONTENT"
+        } else if backdrop_clicks.get() > 0 {
+            "backdrop"
+        } else {
+            "NONE"
+        };
+
+        eprintln!("  ({:5.1}, {:5.1}) {} -> {}", x, y, desc, result);
+    }
+}
+
+/// Test that nested children at various depths receive clicks correctly.
+#[test]
+fn test_fixed_overlay_deeply_nested_child() {
+    use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
+    use floem::unit::Pct;
+    use floem::views::Overlay;
+
+    let backdrop_clicked = RwSignal::new(false);
+    let level1_clicked = RwSignal::new(false);
+    let level2_clicked = RwSignal::new(false);
+    let level3_clicked = RwSignal::new(false);
+
+    let view = Overlay::new(
+        stack((
+            // Backdrop
+            Empty::new()
+                .style(|s| s.absolute().inset(0.0))
+                .on_click_stop(move |_| {
+                    backdrop_clicked.set(true);
+                }),
+            // Level 1 - Content container
+            Container::new(
+                // Level 2 - Inner container
+                Container::new(
+                    // Level 3 - Deepest clickable element
+                    Empty::new()
+                        .style(|s| s.size(40.0, 20.0))
+                        .on_click_stop(move |_| {
+                            eprintln!("[level3] clicked!");
+                            level3_clicked.set(true);
+                        }),
+                )
+                .style(|s| s.size(50.0, 30.0).padding(5.0))
+                .on_click_stop(move |_| {
+                    eprintln!("[level2] clicked!");
+                    level2_clicked.set(true);
+                }),
+            )
+            .style(|s| {
+                s.absolute()
+                    .inset_left(Pct(50.0))
+                    .inset_top(Pct(50.0))
+                    .translate_x(Pct(-50.0))
+                    .translate_y(Pct(-50.0))
+                    .size(80.0, 60.0)
+                    .padding(10.0)
+                    .z_index(10)
+            })
+            .on_click_stop(move |_| {
+                eprintln!("[level1] clicked!");
+                level1_clicked.set(true);
+            }),
+        ))
+        .style(|s| s.fixed().inset(0.0).width_full().height_full()),
+    );
+
+    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    harness.rebuild();
+
+    eprintln!("=== Deeply Nested Child Click Test ===");
+    eprintln!("Clicking at center (100, 100)");
+
+    harness.click(100.0, 100.0);
+
+    eprintln!("Results:");
+    eprintln!("  level3_clicked: {}", level3_clicked.get());
+    eprintln!("  level2_clicked: {}", level2_clicked.get());
+    eprintln!("  level1_clicked: {}", level1_clicked.get());
+    eprintln!("  backdrop_clicked: {}", backdrop_clicked.get());
+
+    // The deepest element that contains the point should receive the click
+    // Since we use on_click_stop, only one handler should fire
+    assert!(
+        level3_clicked.get() || level2_clicked.get() || level1_clicked.get(),
+        "At least one content level should receive click"
+    );
+    assert!(!backdrop_clicked.get(), "Backdrop should NOT receive click");
+}
+
+/// Probe test to find exact hit detection bounds for child element.
+#[test]
+fn test_fixed_overlay_child_probe_bounds() {
+    use floem::ViewId;
+    use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
+    use floem::unit::Pct;
+    use floem::views::Overlay;
+
+    let child_id = ViewId::new();
+
+    let backdrop_clicks = RwSignal::new(0);
+    let child_clicks = RwSignal::new(0);
+
+    // Simple structure: backdrop + content with child
+    // Content is 80x60 centered, child is 60x30 at top of content
+    let view = Overlay::new(
+        stack((
+            Empty::new()
+                .style(|s| s.absolute().inset(0.0))
+                .on_click_stop(move |_| {
+                    backdrop_clicks.update(|c| *c += 1);
+                }),
+            v_stack((floem::views::Container::with_id(
+                child_id,
+                Empty::new().style(|s| s.size(60.0, 30.0)),
+            )
+            .on_click_stop(move |_| {
+                child_clicks.update(|c| *c += 1);
+            }),))
+            .style(|s| {
+                s.absolute()
+                    .inset_left(Pct(50.0))
+                    .inset_top(Pct(50.0))
+                    .translate_x(Pct(-50.0))
+                    .translate_y(Pct(-50.0))
+                    .size(80.0, 60.0)
+                    .z_index(10)
+            }),
+        ))
+        .style(|s| s.fixed().inset(0.0).width_full().height_full()),
+    );
+
+    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    harness.rebuild();
+
+    eprintln!("=== Fixed Overlay Child Probe Bounds ===");
+
+    // Get actual child bounds
+    let child_rect = child_id.get_layout_rect();
+    eprintln!("Child layout_rect: {:?}", child_rect);
+
+    // Window: 200x200
+    // Content: 80x60 at center (100, 100) with translate(-40, -30)
+    // Expected content visual bounds: (60, 70) to (140, 130)
+    // Child: 60x30 inside content at (0, 0)
+    // Expected child visual bounds: (60 + (80-60)/2, 70) = (70, 70) to (130, 100)
+    // Actually, v_stack positions child at top, so if content padding is 0:
+    // Child starts at content origin, so (60, 70) to (120, 100)
+
+    eprintln!("\n=== Horizontal probe at y=85 (center of expected child height) ===");
+    for x in (50..=150).step_by(10) {
+        backdrop_clicks.set(0);
+        child_clicks.set(0);
+
+        harness.click(x as f64, 85.0);
+
+        let hit = if child_clicks.get() > 0 {
+            "CHILD"
+        } else if backdrop_clicks.get() > 0 {
+            "backdrop"
+        } else {
+            "NONE"
+        };
+
+        eprintln!("  x={:3} -> {}", x, hit);
+    }
+
+    eprintln!("\n=== Vertical probe at x=90 (center of expected child width) ===");
+    for y in (50..=130).step_by(10) {
+        backdrop_clicks.set(0);
+        child_clicks.set(0);
+
+        harness.click(90.0, y as f64);
+
+        let hit = if child_clicks.get() > 0 {
+            "CHILD"
+        } else if backdrop_clicks.get() > 0 {
+            "backdrop"
+        } else {
+            "NONE"
+        };
+
+        eprintln!("  y={:3} -> {}", y, hit);
+    }
 }
