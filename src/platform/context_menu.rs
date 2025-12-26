@@ -14,7 +14,7 @@ use crate::platform::menu::MudaMenu;
 use crate::style::CursorStyle;
 use crate::unit::UnitExt;
 use crate::view::{IntoView, View};
-use crate::views::{Container, Decorators, Label, stack, svg};
+use crate::views::{Container, Decorators, Label, Stack, svg};
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 enum MenuDisplay {
@@ -133,8 +133,8 @@ pub(crate) fn context_menu_view(
                 let has_submenu = children.is_some();
                 let submenu_svg = r#"<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M10.072 8.024L5.715 3.667l.618-.62L11 7.716v.618L6.333 13l-.618-.619 4.357-4.357z"/></svg>"#;
                 Container::new(
-                    stack((
-                        stack((
+                    Stack::new((
+                        Stack::new((
                             Label::new(title).style(|s| s.selectable(false)),
                             svg(submenu_svg).style(move |s| {
                                 s.size(20.0, 20.0)

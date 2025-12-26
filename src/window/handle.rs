@@ -34,7 +34,7 @@ use crate::reactive::SignalWith;
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use crate::unit::UnitExt;
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-use crate::views::{Container, Decorators, stack};
+use crate::views::{Container, Decorators, Stack};
 use crate::{
     Application,
     app::UserEvent,
@@ -125,7 +125,7 @@ impl WindowHandle {
             let main_view_id = main_view.id();
             (
                 main_view_id,
-                stack((
+                Stack::new((
                     Container::new(main_view).style(|s| s.size(100.pct(), 100.pct())),
                     context_menu_view(scope, context_menu, size),
                 ))
