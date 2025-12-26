@@ -11,6 +11,172 @@ use crate::view::ViewId;
 use crate::view::{ChangeFlags, IsHiddenState, View};
 use crate::window::state::WindowState;
 
+// =============================================================================
+// Transform computation
+// =============================================================================
+
+/// CSS transform components, computed once and used throughout layout.
+#[derive(Clone, Copy)]
+pub struct TransformComponents {
+    /// Complete transform (translate + scale + rotation) for painting
+    pub full: Affine,
+    /// Just the translation component
+    pub translate: Vec2,
+    /// Scale and rotation only (for rects that already have translate in origin)
+    pub scale_rotation: Affine,
+}
+
+impl TransformComponents {
+    /// Compute CSS transform from layout properties.
+    pub fn from_layout_props(layout_props: &crate::style::LayoutProps, size: Size) -> Self {
+        // Compute translate
+        let translate_x = match layout_props.translate_x() {
+            crate::unit::PxPct::Px(px) => px,
+            crate::unit::PxPct::Pct(pct) => size.width * pct / 100.,
+        };
+        let translate_y = match layout_props.translate_y() {
+            crate::unit::PxPct::Px(px) => px,
+            crate::unit::PxPct::Pct(pct) => size.height * pct / 100.,
+        };
+        let translate = Vec2::new(translate_x, translate_y);
+
+        // Compute scale and rotation around center
+        let scale_x = layout_props.scale_x().0 / 100.;
+        let scale_y = layout_props.scale_y().0 / 100.;
+        let rotation = layout_props.rotation().0;
+        let center = Vec2::new(size.width / 2., size.height / 2.);
+
+        let scale_rotation = Affine::translate(center)
+            * Affine::scale_non_uniform(scale_x, scale_y)
+            * Affine::rotate(rotation)
+            * Affine::translate(-center);
+
+        // Full transform = translate + scale/rotation
+        let full = Affine::translate(translate) * scale_rotation;
+
+        Self {
+            full,
+            translate,
+            scale_rotation,
+        }
+    }
+}
+
+// =============================================================================
+// Window origin computation
+// =============================================================================
+
+/// Computed window origins for a view.
+#[derive(Clone, Copy)]
+struct WindowOrigins {
+    /// Position before transform (used for move listeners)
+    base: Point,
+    /// Position after translate (where children are positioned)
+    visual: Point,
+}
+
+fn compute_window_origins(
+    origin: Point,
+    parent_window_origin: Point,
+    viewport_origin: Vec2,
+    translate: Vec2,
+    is_fixed: bool,
+) -> WindowOrigins {
+    let base = if is_fixed {
+        // Fixed positioning: relative to viewport, not parent
+        origin
+    } else {
+        // Normal positioning: relative to parent
+        origin + parent_window_origin.to_vec2() - viewport_origin
+    };
+
+    let visual = Point::new(base.x + translate.x, base.y + translate.y);
+
+    WindowOrigins { base, visual }
+}
+
+// =============================================================================
+// Clip rect computation
+// =============================================================================
+
+fn compute_clip_rect(
+    size: Size,
+    visual_origin: Point,
+    parent_clip_rect: Rect,
+    is_absolute: bool,
+    is_fixed: bool,
+) -> Rect {
+    let view_rect = size.to_rect().with_origin(visual_origin);
+
+    if is_absolute || is_fixed {
+        // Absolute/fixed elements can receive events anywhere they're rendered
+        view_rect
+    } else {
+        parent_clip_rect.intersect(view_rect)
+    }
+}
+
+fn apply_viewport_clipping(
+    clip_rect: Rect,
+    viewport: Option<Rect>,
+    base_window_origin: Point,
+    viewport_origin: Vec2,
+) -> Rect {
+    if let Some(vp) = viewport {
+        let scroll_origin = base_window_origin + viewport_origin;
+        let viewport_rect = Rect::new(
+            scroll_origin.x,
+            scroll_origin.y,
+            scroll_origin.x + vp.width(),
+            scroll_origin.y + vp.height(),
+        );
+        clip_rect.intersect(viewport_rect)
+    } else {
+        clip_rect
+    }
+}
+
+// =============================================================================
+// Listener notification
+// =============================================================================
+
+fn notify_resize_listeners(id: ViewId, size: Size, origin: Point) {
+    let view_state = id.state();
+    let vs = view_state.borrow();
+    let mut resize_listeners = vs.resize_listeners.borrow_mut();
+
+    let new_rect = size.to_rect().with_origin(origin);
+    if new_rect != resize_listeners.rect {
+        resize_listeners.rect = new_rect;
+        let callbacks = resize_listeners.callbacks.clone();
+        std::mem::drop(resize_listeners);
+        std::mem::drop(vs);
+        for callback in callbacks {
+            (*callback)(new_rect);
+        }
+    }
+}
+
+fn notify_move_listeners(id: ViewId, base_window_origin: Point) {
+    let view_state = id.state();
+    let vs = view_state.borrow();
+    let mut move_listeners = vs.move_listeners.borrow_mut();
+
+    if base_window_origin != move_listeners.window_origin {
+        move_listeners.window_origin = base_window_origin;
+        let callbacks = move_listeners.callbacks.clone();
+        std::mem::drop(move_listeners);
+        std::mem::drop(vs);
+        for callback in callbacks {
+            (*callback)(base_window_origin);
+        }
+    }
+}
+
+// =============================================================================
+// ComputeLayoutCx
+// =============================================================================
+
 /// Context for computing view layout after Taffy has calculated sizes.
 ///
 /// This context is used in the second phase of layout, where we traverse the view tree
@@ -33,7 +199,6 @@ impl<'a> ComputeLayoutCx<'a> {
             window_state,
             viewport,
             window_origin: Point::ZERO,
-            // Start with a large clip rect that effectively means "no clipping"
             clip_rect: Rect::new(-1e9, -1e9, 1e9, 1e9),
             saved_viewports: Vec::new(),
             saved_window_origins: Vec::new(),
@@ -64,17 +229,13 @@ impl<'a> ComputeLayoutCx<'a> {
         self.viewport
     }
 
-    /// Internal method used by Floem. This method derives its calculations based on the [Taffy Node](taffy::tree::NodeId) returned by the `View::layout` method.
+    /// Compute layout for a view and its children.
     ///
-    /// It's responsible for:
-    /// - calculating and setting the view's origin (local coordinates and window coordinates)
-    /// - calculating and setting the view's viewport
-    /// - invoking any attached `context::ResizeListener`s
-    ///
-    /// Returns the bounding rect that encompasses this view and its children
+    /// Returns the bounding rect that encompasses this view and its children.
     pub fn compute_view_layout(&mut self, id: ViewId) -> Option<Rect> {
         let view_state = id.state();
 
+        // Early return for hidden views
         if view_state.borrow().is_hidden_state == IsHiddenState::Hidden {
             view_state.borrow_mut().layout_rect = Rect::ZERO;
             return None;
@@ -82,221 +243,119 @@ impl<'a> ComputeLayoutCx<'a> {
 
         self.save();
 
+        // Get basic layout info from Taffy
         let layout = id.get_layout().unwrap_or_default();
         let origin = Point::new(layout.location.x as f64, layout.location.y as f64);
-        let this_viewport = view_state.borrow().viewport;
-        let this_viewport_origin = this_viewport.unwrap_or_default().origin().to_vec2();
         let size = Size::new(layout.size.width as f64, layout.size.height as f64);
-        let parent_viewport = self.viewport.with_origin(
-            Point::new(
-                self.viewport.x0 - layout.location.x as f64,
-                self.viewport.y0 - layout.location.y as f64,
-            ) + this_viewport_origin,
-        );
-        self.viewport = parent_viewport.intersect(size.to_rect());
-        if let Some(this_viewport) = this_viewport {
-            self.viewport = self.viewport.intersect(this_viewport);
-        }
 
-        // Check if this is a fixed-positioned element
+        // Compute transform components once
+        let transform = {
+            let vs = view_state.borrow();
+            TransformComponents::from_layout_props(&vs.layout_props, size)
+        };
+
+        // Get positioning info
+        let this_viewport = view_state.borrow().viewport;
+        let viewport_origin = this_viewport.unwrap_or_default().origin().to_vec2();
         let is_fixed = view_state
             .borrow()
             .combined_style
             .get(crate::style::IsFixed);
-
-        // For fixed positioning, the element is positioned relative to the viewport (window)
-        // rather than relative to its parent. The `origin` from Taffy IS the viewport position
-        // (computed from inset-left, inset-top, etc.), so we use it directly without adding
-        // the parent's window_origin.
-        let window_origin = if is_fixed {
-            origin
-        } else {
-            origin + self.window_origin.to_vec2() - this_viewport_origin
-        };
-
-        // Compute translate offsets early so children are positioned at the TRANSFORMED location.
-        // CSS translate percentages are relative to the element's own dimensions.
-        let (translate_x, translate_y) = {
-            let vs = view_state.borrow();
-            let layout_props = &vs.layout_props;
-            let tx = match layout_props.translate_x() {
-                crate::unit::PxPct::Px(px) => px,
-                crate::unit::PxPct::Pct(pct) => size.width * pct / 100.,
-            };
-            let ty = match layout_props.translate_y() {
-                crate::unit::PxPct::Px(px) => px,
-                crate::unit::PxPct::Pct(pct) => size.height * pct / 100.,
-            };
-            (tx, ty)
-        };
-
-        // Apply translate to window_origin so children are positioned correctly.
-        // This ensures children of translated parents appear at the visual location.
-        let transformed_window_origin =
-            Point::new(window_origin.x + translate_x, window_origin.y + translate_y);
-        self.window_origin = transformed_window_origin;
-        {
-            view_state.borrow_mut().window_origin = transformed_window_origin;
-        }
-
-        // Compute this view's clip_rect in window coordinates.
-        // It's the intersection of the parent's clip_rect with this view's visible area.
-        // Use transformed_window_origin since clip_rect should be at the visual location.
-        let view_rect_in_window = size.to_rect().with_origin(transformed_window_origin);
-
-        // For absolute and fixed positioned elements, don't constrain clip_rect to parent's clip.
-        // This allows dropdowns, modals, tooltips, etc. to receive events even when
-        // they extend beyond their parent container (like a scroll view).
         let is_absolute = view_state.borrow().taffy_style.position == taffy::Position::Absolute;
-        let mut view_clip_rect = if is_absolute || is_fixed {
-            // Absolute/fixed elements can receive events anywhere they're rendered
-            view_rect_in_window
-        } else {
-            self.clip_rect.intersect(view_rect_in_window)
-        };
 
-        // If this view has a viewport (scroll view child), clip to the viewport bounds.
-        // The viewport defines the visible area of content, so events outside it should
-        // not reach this view or its children.
-        if let Some(vp) = this_viewport {
-            // Convert viewport to window coordinates.
-            // window_origin has been adjusted by -viewport_origin (for scroll offset),
-            // so to get the scroll container's window position, we add back viewport_origin.
-            // The clip rect is at the scroll container's position with viewport size.
-            let scroll_window_origin = window_origin + this_viewport_origin;
-            let viewport_in_window = Rect::new(
-                scroll_window_origin.x,
-                scroll_window_origin.y,
-                scroll_window_origin.x + vp.width(),
-                scroll_window_origin.y + vp.height(),
-            );
-            view_clip_rect = view_clip_rect.intersect(viewport_in_window);
-            // Also update clip_rect for children to be clipped to viewport
+        // Compute window origins
+        let origins = compute_window_origins(
+            origin,
+            self.window_origin,
+            viewport_origin,
+            transform.translate,
+            is_fixed,
+        );
+
+        // Update context and view state with visual origin
+        self.window_origin = origins.visual;
+        view_state.borrow_mut().window_origin = origins.visual;
+
+        // Update viewport
+        self.update_viewport(layout.location, viewport_origin, size, this_viewport);
+
+        // Compute and update clip rect
+        let mut view_clip_rect =
+            compute_clip_rect(size, origins.visual, self.clip_rect, is_absolute, is_fixed);
+        view_clip_rect =
+            apply_viewport_clipping(view_clip_rect, this_viewport, origins.base, viewport_origin);
+
+        if this_viewport.is_some() || is_absolute || is_fixed {
             self.clip_rect = view_clip_rect;
         }
 
-        // For absolute and fixed positioned elements, also update clip_rect for children.
-        // This ensures that children of absolute/fixed elements (like dropdown items)
-        // can receive events even when the element extends beyond
-        // its parent's clip area.
-        if is_absolute || is_fixed {
-            self.clip_rect = view_clip_rect;
-        }
+        // Notify listeners
+        notify_resize_listeners(id, size, origin);
+        notify_move_listeners(id, origins.base);
 
-        {
-            let view_state = view_state.borrow();
-            let mut resize_listeners = view_state.resize_listeners.borrow_mut();
-
-            let new_rect = size.to_rect().with_origin(origin);
-            if new_rect != resize_listeners.rect {
-                resize_listeners.rect = new_rect;
-
-                let callbacks = resize_listeners.callbacks.clone();
-
-                // explicitly dropping borrows before using callbacks
-                std::mem::drop(resize_listeners);
-                std::mem::drop(view_state);
-
-                for callback in callbacks {
-                    (*callback)(new_rect);
-                }
-            }
-        }
-
-        {
-            let view_state = view_state.borrow();
-            let mut move_listeners = view_state.move_listeners.borrow_mut();
-
-            if window_origin != move_listeners.window_origin {
-                move_listeners.window_origin = window_origin;
-
-                let callbacks = move_listeners.callbacks.clone();
-
-                // explicitly dropping borrows before using callbacks
-                std::mem::drop(move_listeners);
-                std::mem::drop(view_state);
-
-                for callback in callbacks {
-                    (*callback)(window_origin);
-                }
-            }
-        }
-
+        // Recursively compute children layouts
         let view = id.view();
         let child_layout_rect = view.borrow_mut().compute_layout(self);
 
-        let layout_rect = size.to_rect().with_origin(self.window_origin);
-        let layout_rect = if let Some(child_layout_rect) = child_layout_rect {
-            layout_rect.union(child_layout_rect)
-        } else {
-            layout_rect
-        };
+        // Compute final layout rect
+        let layout_rect = self.compute_final_layout_rect(size, child_layout_rect, &transform);
+        let view_clip_rect = transform.scale_rotation.transform_rect_bbox(view_clip_rect);
 
-        // Compute the CSS transform (scale and rotation only).
-        // Translate was already applied to window_origin above so children are positioned correctly.
-        // This transform is used for visual effects like scale/rotation around center.
-        let transform = {
-            let vs = view_state.borrow();
-            let layout_props = &vs.layout_props;
+        // Compute cumulative transform
+        let local_to_root = Affine::translate((self.window_origin.x, self.window_origin.y))
+            * transform.scale_rotation;
 
-            let mut transform = Affine::IDENTITY;
-
-            // NOTE: Translate is NOT included here - it's already applied to window_origin above.
-            // This ensures children are positioned at the transformed location.
-
-            // Scale and rotation around center
-            let scale_x = layout_props.scale_x().0 / 100.;
-            let scale_y = layout_props.scale_y().0 / 100.;
-            let center_x = size.width / 2.;
-            let center_y = size.height / 2.;
-            transform *= Affine::translate(Vec2 {
-                x: center_x,
-                y: center_y,
-            });
-            transform *= Affine::scale_non_uniform(scale_x, scale_y);
-            let rotation = layout_props.rotation().0;
-            transform *= Affine::rotate(rotation);
-            transform *= Affine::translate(Vec2 {
-                x: -center_x,
-                y: -center_y,
-            });
-
-            transform
-        };
-
-        // Create the full transform (including translate) for storage and painting.
-        // This combines the translate we computed earlier with scale/rotation.
-        let full_transform = Affine::translate(Vec2 {
-            x: translate_x,
-            y: translate_y,
-        }) * transform;
-
-        // Store the full transform (used by painting and coordinate transforms)
-        view_state.borrow_mut().transform = full_transform;
-
-        // layout_rect already includes translate via self.window_origin, so only apply scale/rotation
-        let layout_rect = transform.transform_rect_bbox(layout_rect);
-        // Same for clip_rect - already at transformed position, only apply scale/rotation
-        let view_clip_rect = transform.transform_rect_bbox(view_clip_rect);
-
-        // Compute the cumulative transform from local coordinates to root (window) coordinates.
-        // window_origin already includes translate, so we use the scale/rotation-only transform here.
-        // To convert from root coords to local: local = local_to_root.inverse() * root
-        let local_to_root_transform =
-            Affine::translate((self.window_origin.x, self.window_origin.y)) * transform;
-
+        // Store results
         {
             let mut vs = view_state.borrow_mut();
+            vs.transform = transform.full;
             vs.layout_rect = layout_rect;
             vs.clip_rect = view_clip_rect;
-            vs.local_to_root_transform = local_to_root_transform;
+            vs.local_to_root_transform = local_to_root;
         }
 
         self.restore();
-
         Some(layout_rect)
     }
+
+    fn update_viewport(
+        &mut self,
+        location: taffy::Point<f32>,
+        viewport_origin: Vec2,
+        size: Size,
+        this_viewport: Option<Rect>,
+    ) {
+        let parent_viewport = self.viewport.with_origin(
+            Point::new(
+                self.viewport.x0 - location.x as f64,
+                self.viewport.y0 - location.y as f64,
+            ) + viewport_origin,
+        );
+        self.viewport = parent_viewport.intersect(size.to_rect());
+        if let Some(vp) = this_viewport {
+            self.viewport = self.viewport.intersect(vp);
+        }
+    }
+
+    fn compute_final_layout_rect(
+        &self,
+        size: Size,
+        child_layout_rect: Option<Rect>,
+        transform: &TransformComponents,
+    ) -> Rect {
+        let layout_rect = size.to_rect().with_origin(self.window_origin);
+        let layout_rect = if let Some(child_rect) = child_layout_rect {
+            layout_rect.union(child_rect)
+        } else {
+            layout_rect
+        };
+        transform.scale_rotation.transform_rect_bbox(layout_rect)
+    }
 }
+
+// =============================================================================
+// LayoutCx - Taffy layout computation
+// =============================================================================
 
 /// Holds current layout state for given position in the tree.
 /// You'll use this in the `View::layout` implementation to call `layout_node` on children and to access any font
@@ -334,61 +393,19 @@ impl<'a> LayoutCx<'a> {
             .borrow_mut()
             .requested_changes
             .remove(ChangeFlags::LAYOUT);
+
         let combined_style = view_state.borrow().combined_style.clone();
         let is_fixed = combined_style.get(crate::style::IsFixed);
         let layout_style = view_state.borrow().layout_props.to_style();
         let animate_out_display = view_state.borrow().is_hidden_state.get_display();
+
         let mut style = combined_style
             .apply(layout_style)
             .apply_opt(animate_out_display, crate::style::Style::display)
             .to_taffy_style();
 
-        // For fixed positioning (CSS position: fixed), the element is positioned relative
-        // to the viewport. We need to compute the size based on the viewport.
-        //
-        // CSS behavior:
-        // - If size is 100% (size_full()), use viewport size
-        // - If both left/right (or top/bottom) are specified, compute size from viewport
-        //   e.g., inset(0) means: width = viewport_width - 0 - 0 = viewport_width
-        // - Otherwise, preserve the user's explicit size
         if is_fixed {
-            let root_size = self.window_state.root_size / self.window_state.scale;
-
-            // Helper to check if a LengthPercentageAuto value is a definite length
-            fn is_definite_length(val: &taffy::style::LengthPercentageAuto) -> Option<f32> {
-                // LengthPercentageAuto stores values in a CompactLength
-                // We check the tag to see if it's a length value
-                let raw = val.into_raw();
-                if raw.tag() == taffy::CompactLength::LENGTH_TAG {
-                    Some(raw.value())
-                } else {
-                    None
-                }
-            }
-
-            // Check if we should compute width from inset values
-            let left_len = is_definite_length(&style.inset.left);
-            let right_len = is_definite_length(&style.inset.right);
-            let top_len = is_definite_length(&style.inset.top);
-            let bottom_len = is_definite_length(&style.inset.bottom);
-
-            // If both left and right are specified (as lengths), compute width from viewport
-            if let (Some(left), Some(right)) = (left_len, right_len) {
-                let computed_width = (root_size.width as f32 - left - right).max(0.0);
-                style.size.width = taffy::style::Dimension::length(computed_width);
-            } else if style.size.width == taffy::style::Dimension::percent(1.0) {
-                // If size is 100%, convert to viewport size
-                style.size.width = taffy::style::Dimension::length(root_size.width as f32);
-            }
-
-            // If both top and bottom are specified (as lengths), compute height from viewport
-            if let (Some(top), Some(bottom)) = (top_len, bottom_len) {
-                let computed_height = (root_size.height as f32 - top - bottom).max(0.0);
-                style.size.height = taffy::style::Dimension::length(computed_height);
-            } else if style.size.height == taffy::style::Dimension::percent(1.0) {
-                // If size is 100%, convert to viewport size
-                style.size.height = taffy::style::Dimension::length(root_size.height as f32);
-            }
+            self.apply_fixed_positioning(&mut style);
         }
 
         let _ = id.taffy().borrow_mut().set_style(node, style);
@@ -399,6 +416,41 @@ impl<'a> LayoutCx<'a> {
         }
 
         node
+    }
+
+    /// Apply fixed positioning adjustments to the style.
+    fn apply_fixed_positioning(&self, style: &mut taffy::Style) {
+        let root_size = self.window_state.root_size / self.window_state.scale;
+
+        fn is_definite_length(val: &taffy::style::LengthPercentageAuto) -> Option<f32> {
+            let raw = val.into_raw();
+            if raw.tag() == taffy::CompactLength::LENGTH_TAG {
+                Some(raw.value())
+            } else {
+                None
+            }
+        }
+
+        let left_len = is_definite_length(&style.inset.left);
+        let right_len = is_definite_length(&style.inset.right);
+        let top_len = is_definite_length(&style.inset.top);
+        let bottom_len = is_definite_length(&style.inset.bottom);
+
+        // Width from inset or percentage
+        if let (Some(left), Some(right)) = (left_len, right_len) {
+            let computed = (root_size.width as f32 - left - right).max(0.0);
+            style.size.width = taffy::style::Dimension::length(computed);
+        } else if style.size.width == taffy::style::Dimension::percent(1.0) {
+            style.size.width = taffy::style::Dimension::length(root_size.width as f32);
+        }
+
+        // Height from inset or percentage
+        if let (Some(top), Some(bottom)) = (top_len, bottom_len) {
+            let computed = (root_size.height as f32 - top - bottom).max(0.0);
+            style.size.height = taffy::style::Dimension::length(computed);
+        } else if style.size.height == taffy::style::Dimension::percent(1.0) {
+            style.size.height = taffy::style::Dimension::length(root_size.height as f32);
+        }
     }
 
     /// Internal method used by Floem to invoke the user-defined `View::layout` method.
