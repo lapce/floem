@@ -113,16 +113,30 @@ impl<'a> ComputeLayoutCx<'a> {
         // This allows dropdowns, modals, tooltips, etc. to receive events even when
         // they extend beyond their parent container (like a scroll view).
         let is_absolute = view_state.borrow().taffy_style.position == taffy::Position::Absolute;
-        let view_clip_rect = if is_absolute {
+        let mut view_clip_rect = if is_absolute {
             // Absolute elements can receive events anywhere they're rendered
             view_rect_in_window
         } else {
             self.clip_rect.intersect(view_rect_in_window)
         };
 
-        // If this view has a viewport (scroll view), it clips its children.
-        // Update self.clip_rect for child layout.
-        if this_viewport.is_some() {
+        // If this view has a viewport (scroll view child), clip to the viewport bounds.
+        // The viewport defines the visible area of content, so events outside it should
+        // not reach this view or its children.
+        if let Some(vp) = this_viewport {
+            // Convert viewport to window coordinates.
+            // window_origin has been adjusted by -viewport_origin (for scroll offset),
+            // so to get the scroll container's window position, we add back viewport_origin.
+            // The clip rect is at the scroll container's position with viewport size.
+            let scroll_window_origin = window_origin + this_viewport_origin;
+            let viewport_in_window = Rect::new(
+                scroll_window_origin.x,
+                scroll_window_origin.y,
+                scroll_window_origin.x + vp.width(),
+                scroll_window_origin.y + vp.height(),
+            );
+            view_clip_rect = view_clip_rect.intersect(viewport_in_window);
+            // Also update clip_rect for children to be clipped to viewport
             self.clip_rect = view_clip_rect;
         }
 

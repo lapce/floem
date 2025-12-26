@@ -461,3 +461,103 @@ fn test_overlapping_scroll_containers() {
         "Right should receive click in overlap (later in DOM)"
     );
 }
+
+// =============================================================================
+// Scroll Content Outside Viewport Tests
+// =============================================================================
+
+/// Test that when scroll content extends outside the scroll viewport,
+/// clicking at window coordinates outside the viewport does NOT hit the content.
+///
+/// This tests the scenario where:
+/// - Scroll container is 100x100 at y=50 (window coords y=50-150)
+/// - Content is 100x300 (extends to content y=300)
+/// - Window is 300x300 to allow clicking below the scroll
+/// - Click at y=200 (outside scroll container) should NOT hit content
+#[test]
+fn test_scroll_content_outside_viewport_not_clickable() {
+    let tracker = ClickTracker::new();
+
+    // Large button that extends well beyond the scroll viewport
+    let button = tracker
+        .track_named("button", Empty::new())
+        .style(|s| s.size(100.0, 300.0));
+
+    // Scroll container: 100x100, positioned at y=50 via margin
+    let scroll = Scroll::new(button).style(|s| s.size(100.0, 100.0).margin_top(50.0));
+
+    // Window is 300x300 to have space below the scroll
+    let view = stack((scroll,)).style(|s| s.size(100.0, 300.0));
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 300.0);
+
+    // Click at y=100 - inside scroll viewport (y=50-150)
+    harness.click(50.0, 100.0);
+    assert!(
+        tracker.was_clicked(),
+        "Click inside scroll viewport should hit button"
+    );
+    tracker.reset();
+
+    // Click at y=200 - OUTSIDE scroll viewport (below y=150)
+    // The button content extends to y=300 in content coords, but the scroll
+    // clips at y=150 window coords, so this click should NOT hit the button.
+    harness.click(50.0, 200.0);
+    assert!(
+        !tracker.was_clicked(),
+        "Click outside scroll viewport should NOT hit button (content should be clipped)"
+    );
+}
+
+/// Test that scrolled-out content (above viewport) cannot receive events.
+/// When we scroll down, content that was visible is now clipped at the top.
+#[test]
+fn test_scrolled_out_content_top_not_clickable() {
+    let tracker = ClickTracker::new();
+
+    // Two buttons stacked vertically
+    let button1 = tracker
+        .track_named("button1", Empty::new())
+        .style(|s| s.size(100.0, 100.0));
+    let button2 = tracker
+        .track_named("button2", Empty::new())
+        .style(|s| s.size(100.0, 100.0));
+
+    let content = v_stack((button1, button2)).style(|s| s.size(100.0, 200.0));
+
+    // Scroll container: 100x100
+    let scroll = Scroll::new(content).style(|s| s.size(100.0, 100.0));
+
+    let view = stack((scroll,)).style(|s| s.size(100.0, 100.0));
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    // Initially, button1 is at y=0-100, button2 is at y=100-200 (below viewport)
+
+    // Click at y=50 - should hit button1
+    harness.click(50.0, 50.0);
+    assert_eq!(
+        tracker.clicked_names(),
+        vec!["button1"],
+        "Initially button1 should be clickable"
+    );
+    tracker.reset();
+
+    // Scroll down by 100px so button1 is now above viewport
+    harness.scroll_down(50.0, 50.0, 100.0);
+
+    // After scroll: button1 is at visual y=-100 to 0 (clipped)
+    // button2 is at visual y=0 to 100 (fully visible)
+
+    // Click at y=50 - should now hit button2 (not button1)
+    harness.click(50.0, 50.0);
+    assert_eq!(
+        tracker.clicked_names(),
+        vec!["button2"],
+        "After scrolling, button2 should receive click at y=50"
+    );
+    tracker.reset();
+
+    // The key test: button1 should NOT receive any clicks anymore
+    // because it's scrolled out of the viewport
+}
