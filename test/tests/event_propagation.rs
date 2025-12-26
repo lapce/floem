@@ -4,6 +4,7 @@
 //! - `on_click_stop` prevents events from bubbling to parent views
 //! - `on_click_cont` allows events to bubble to parent views
 
+use floem::event::EventPropagation;
 use floem_test::prelude::*;
 
 #[test]
@@ -1934,5 +1935,239 @@ fn test_counter_example_structure() {
         tracker.clicked_names(),
         vec!["increment"],
         "Increment button should receive click"
+    );
+}
+
+// =============================================================================
+// Parent's Sibling Tests - Verify events don't bubble sideways
+// =============================================================================
+
+/// Test that clicking on a nested child does NOT bubble to parent's sibling.
+///
+/// Structure:
+///   Parent (stack)
+///   ├── Sibling1 (with handler)
+///   └── Sibling2 (container)
+///       └── NestedChild (click target)
+///
+/// When clicking NestedChild, events should bubble:
+///   NestedChild → Sibling2 → Parent
+/// NOT to Sibling1 (parent's sibling).
+#[test]
+fn test_events_do_not_bubble_to_parents_sibling() {
+    use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
+
+    let sibling1_clicked = RwSignal::new(false);
+    let sibling2_clicked = RwSignal::new(false);
+    let nested_child_clicked = RwSignal::new(false);
+
+    let view = stack((
+        // Sibling1 - should NOT receive click
+        Empty::new()
+            .style(|s| s.size(50.0, 100.0))
+            .on_click_stop(move |_| {
+                sibling1_clicked.set(true);
+            }),
+        // Sibling2 - container with nested child
+        Container::new(
+            // NestedChild - click target
+            Empty::new()
+                .style(|s| s.size(40.0, 40.0))
+                .on_click_stop(move |_| {
+                    nested_child_clicked.set(true);
+                }),
+        )
+        .style(|s| s.size(50.0, 100.0))
+        .on_click(move |_| {
+            sibling2_clicked.set(true);
+            // Note: using on_click (not on_click_stop) so event continues bubbling
+            EventPropagation::Continue
+        }),
+    ))
+    .style(|s| s.size(100.0, 100.0).flex_row());
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    // Click on the nested child (right side of the view, within Sibling2)
+    harness.click(75.0, 50.0);
+
+    assert!(
+        nested_child_clicked.get(),
+        "NestedChild should receive click"
+    );
+    // Note: sibling2_clicked won't be set because nested_child uses on_click_stop
+    assert!(
+        !sibling1_clicked.get(),
+        "Sibling1 should NOT receive click - events should not bubble to parent's siblings"
+    );
+}
+
+/// Test the exact dialog scenario: clicking DialogHeader shouldn't close dialog.
+///
+/// Structure (mimics DialogContent):
+///   Overlay
+///   └── Stack
+///       ├── Backdrop (on_click_stop closes)
+///       └── Content (v_stack)
+///           ├── Header ← click target (no handler)
+///           └── Footer
+///
+/// Clicking Header should bubble to Content → Stack → Overlay.
+/// It should NOT reach Backdrop (sibling of Content).
+#[test]
+fn test_dialog_header_click_does_not_close() {
+    use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
+    use floem::views::Overlay;
+
+    let dialog_open = RwSignal::new(true);
+    let header_clicked = RwSignal::new(false);
+
+    let view = Overlay::new(
+        stack((
+            // Backdrop
+            Empty::new()
+                .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
+                .on_click_stop(move |_| {
+                    dialog_open.set(false);
+                }),
+            // Content (like DialogContent)
+            v_stack((
+                // Header - like DialogHeader (with click handler to track)
+                Empty::new()
+                    .style(|s| s.size(50.0, 20.0))
+                    .on_click(move |_| {
+                        header_clicked.set(true);
+                        EventPropagation::Continue
+                    }),
+                // Footer - like DialogFooter
+                Empty::new().style(|s| s.size(50.0, 20.0)),
+            ))
+            .style(|s| {
+                s.absolute()
+                    .inset_left(25.0)
+                    .inset_top(25.0)
+                    .size(50.0, 50.0)
+                    .z_index(10)
+            }),
+        ))
+        .style(|s| s.size(100.0, 100.0)),
+    );
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    // Click on the header (top of content area)
+    harness.click(50.0, 35.0);
+
+    assert!(header_clicked.get(), "Header should receive click");
+    assert!(
+        dialog_open.get(),
+        "Dialog should remain open - clicking header should NOT trigger backdrop's handler"
+    );
+}
+
+/// Test deeply nested structure - events bubble up ancestor chain only.
+///
+/// Structure:
+///   Root
+///   ├── BranchA (with handler)
+///   │   └── LeafA
+///   └── BranchB (with handler)
+///       └── LeafB ← click target
+///
+/// Clicking LeafB should bubble: LeafB → BranchB → Root
+/// Should NOT reach BranchA or LeafA.
+#[test]
+fn test_deeply_nested_no_cross_branch_bubbling() {
+    use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
+
+    let branch_a_clicked = RwSignal::new(false);
+    let branch_b_clicked = RwSignal::new(false);
+    let leaf_b_clicked = RwSignal::new(false);
+
+    let view = h_stack((
+        // BranchA
+        Container::new(
+            Empty::new().style(|s| s.size(40.0, 80.0)), // LeafA
+        )
+        .style(|s| s.size(50.0, 100.0))
+        .on_click_stop(move |_| {
+            branch_a_clicked.set(true);
+        }),
+        // BranchB
+        Container::new(
+            Empty::new()
+                .style(|s| s.size(40.0, 80.0))
+                .on_click_stop(move |_| {
+                    leaf_b_clicked.set(true);
+                }),
+        )
+        .style(|s| s.size(50.0, 100.0))
+        .on_click(move |_| {
+            branch_b_clicked.set(true);
+            EventPropagation::Continue
+        }),
+    ))
+    .style(|s| s.size(100.0, 100.0));
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    // Click on LeafB (right side)
+    harness.click(75.0, 50.0);
+
+    assert!(leaf_b_clicked.get(), "LeafB should receive click");
+    // branch_b_clicked won't be true because leaf_b uses on_click_stop
+    assert!(
+        !branch_a_clicked.get(),
+        "BranchA should NOT receive click - events don't cross branches"
+    );
+}
+
+/// Test that bubbling works correctly when nested child has no handler.
+///
+/// Structure:
+///   Stack
+///   ├── Sibling1 (handler)
+///   └── Sibling2 (handler)
+///       └── Child (NO handler) ← click target
+///
+/// Click on Child should bubble to Sibling2 (if using on_click, not on_click_stop).
+/// Should NOT reach Sibling1.
+#[test]
+fn test_bubbling_through_handler_less_child() {
+    use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
+
+    let sibling1_clicked = RwSignal::new(false);
+    let sibling2_clicked = RwSignal::new(false);
+
+    let view = h_stack((
+        // Sibling1
+        Empty::new()
+            .style(|s| s.size(50.0, 100.0))
+            .on_click_stop(move |_| {
+                sibling1_clicked.set(true);
+            }),
+        // Sibling2 with child that has no handler
+        Container::new(
+            Empty::new().style(|s| s.size(40.0, 80.0)), // Child - NO handler
+        )
+        .style(|s| s.size(50.0, 100.0))
+        .on_click_stop(move |_| {
+            sibling2_clicked.set(true);
+        }),
+    ))
+    .style(|s| s.size(100.0, 100.0));
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    // Click on the child inside Sibling2
+    harness.click(75.0, 50.0);
+
+    assert!(
+        sibling2_clicked.get(),
+        "Sibling2 should receive click (bubbled from child)"
+    );
+    assert!(
+        !sibling1_clicked.get(),
+        "Sibling1 should NOT receive click - bubbling goes up, not sideways"
     );
 }
