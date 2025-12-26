@@ -12,7 +12,7 @@ use floem::event::EventPropagation;
 use floem::headless::HeadlessHarness;
 use floem::taffy;
 use floem::unit::UnitExt;
-use floem::views::{Decorators, Empty, stack};
+use floem::views::{Decorators, Empty, Stack};
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -25,7 +25,7 @@ fn test_z_index_click_ordering() {
     let clicked_z1_clone = clicked_z1.clone();
     let clicked_z10_clone = clicked_z10.clone();
 
-    let view = stack((
+    let view = Stack::new((
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
             .on_click_stop(move |_| {
@@ -75,9 +75,9 @@ fn test_stacking_context_children_bounded_within_parent() {
     let clicked_child_clone = clicked_child.clone();
     let clicked_sibling_clone = clicked_sibling.clone();
 
-    let view = stack((
+    let view = Stack::new((
         // Wrapper (every view is a stacking context in the simplified model)
-        stack((Empty::new()
+        Stack::new((Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(10))
             .on_click_stop(move |_| {
                 clicked_child_clone.set(true);
@@ -128,9 +128,9 @@ fn test_stacking_context_bounds_children() {
     let clicked_child_clone = clicked_child.clone();
     let clicked_sibling_clone = clicked_sibling.clone();
 
-    let view = stack((
+    let view = Stack::new((
         // Parent with z-index 1 (creates stacking context)
-        stack((Empty::new()
+        Stack::new((Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(100))
             .on_click_stop(move |_| {
                 clicked_child_clone.set(true);
@@ -186,9 +186,9 @@ fn test_stacking_model_siblings_compete_at_same_level() {
     let clicked_b_clone = clicked_b.clone();
     let clicked_c_clone = clicked_c.clone();
 
-    let view = stack((
+    let view = Stack::new((
         // A (children are bounded within it)
-        stack((
+        Stack::new((
             Empty::new()
                 .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(3))
                 .on_click_stop(move |_| {
@@ -257,7 +257,7 @@ fn test_stacking_context_negative_z_index() {
     let clicked_b_clone = clicked_b.clone();
     let clicked_c_clone = clicked_c.clone();
 
-    let view = stack((
+    let view = Stack::new((
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(-1))
             .on_click_stop(move |_| {
@@ -307,9 +307,9 @@ fn test_stacking_context_transform_creates_context() {
     let clicked_child_clone = clicked_child.clone();
     let clicked_sibling_clone = clicked_sibling.clone();
 
-    let view = stack((
+    let view = Stack::new((
         // Parent with non-identity transform (creates stacking context even without z-index)
-        stack((Empty::new()
+        Stack::new((Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(100))
             .on_click_stop(move |_| {
                 clicked_child_clone.set(true);
@@ -362,13 +362,13 @@ fn test_stacking_model_deeply_nested_bounded() {
     let clicked_deep_clone = clicked_deep.clone();
     let clicked_sibling_clone = clicked_sibling.clone();
 
-    let view = stack((
+    let view = Stack::new((
         // Level1
-        stack((
+        Stack::new((
             // Level2
-            stack((
+            Stack::new((
                 // Level3
-                stack((Empty::new()
+                Stack::new((Empty::new()
                     .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(10))
                     .on_click_stop(move |_| {
                         clicked_deep_clone.set(true);
@@ -421,7 +421,7 @@ fn test_stacking_context_dom_order_tiebreaker() {
     let clicked_second_clone = clicked_second.clone();
     let clicked_third_clone = clicked_third.clone();
 
-    let view = stack((
+    let view = Stack::new((
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(5))
             .on_click_stop(move |_| {
@@ -475,16 +475,16 @@ fn test_stacking_model_all_views_are_stacking_contexts() {
     let clicked_bounded2_clone = clicked_bounded2.clone();
     let clicked_top_clone = clicked_top.clone();
 
-    let view = stack((
+    let view = Stack::new((
         // Wrapper (z=0, bounds its children)
-        stack((Empty::new()
+        Stack::new((Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(8))
             .on_click_stop(move |_| {
                 clicked_bounded_clone.set(true);
             }),))
         .style(|s| s.absolute().inset(0.0).size(100.0, 100.0)),
         // Parent (z=3, bounds its children)
-        stack((Empty::new()
+        Stack::new((Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(100))
             .on_click_stop(move |_| {
                 clicked_bounded2_clone.set(true);
@@ -536,7 +536,7 @@ fn test_stacking_context_partial_overlap() {
     let clicked_left_clone = clicked_left.clone();
     let clicked_right_clone = clicked_right.clone();
 
-    let view = stack((
+    let view = Stack::new((
         Empty::new()
             .style(|s| {
                 s.absolute()
@@ -605,7 +605,7 @@ fn test_stacking_context_pointer_events_none() {
     let clicked_top_clone = clicked_top.clone();
     let clicked_bottom_clone = clicked_bottom.clone();
 
-    let view = stack((
+    let view = Stack::new((
         Empty::new()
             .style(|s| {
                 s.absolute()
@@ -654,7 +654,7 @@ fn test_stacking_context_hidden_view() {
     let clicked_hidden_clone = clicked_hidden.clone();
     let clicked_visible_clone = clicked_visible.clone();
 
-    let view = stack((
+    let view = Stack::new((
         Empty::new()
             .style(|s| {
                 s.absolute()
@@ -704,8 +704,8 @@ fn test_stacking_context_hidden_parent_hides_children() {
     let clicked_child_clone = clicked_child.clone();
     let clicked_visible_clone = clicked_visible.clone();
 
-    let view = stack((
-        stack((Empty::new()
+    let view = Stack::new((
+        Stack::new((Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(100))
             .on_click_stop(move |_| {
                 clicked_child_clone.set(true);
@@ -761,8 +761,8 @@ fn test_stacking_context_hidden_in_escaped_context() {
     let v_clone = clicked_visible.clone();
     let s_clone = clicked_sibling.clone();
 
-    let view = stack((
-        stack((
+    let view = Stack::new((
+        Stack::new((
             Empty::new()
                 .style(|s| {
                     s.absolute()
@@ -821,7 +821,7 @@ fn test_stacking_context_hidden_does_not_bubble() {
     let p_clone = clicked_parent.clone();
     let c_clone = clicked_child.clone();
 
-    let view = stack((Empty::new()
+    let view = Stack::new((Empty::new()
         .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(5))
         .on_click(move |_| {
             c_clone.set(true);
@@ -866,11 +866,11 @@ fn test_stacking_context_nested_contexts() {
     let clicked_deep_clone = clicked_deep.clone();
     let clicked_sibling_clone = clicked_sibling.clone();
 
-    let view = stack((
+    let view = Stack::new((
         // Outer stacking context
-        stack((
+        Stack::new((
             // Inner stacking context
-            stack((Empty::new()
+            Stack::new((Empty::new()
                 .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(100))
                 .on_click_stop(move |_| {
                     clicked_deep_clone.set(true);
@@ -921,16 +921,16 @@ fn test_stacking_context_sibling_isolation() {
     let clicked_child_a_clone = clicked_child_a.clone();
     let clicked_child_b_clone = clicked_child_b.clone();
 
-    let view = stack((
+    let view = Stack::new((
         // ContextA (z=5)
-        stack((Empty::new()
+        Stack::new((Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(100))
             .on_click_stop(move |_| {
                 clicked_child_a_clone.set(true);
             }),))
         .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(5)),
         // ContextB (z=10)
-        stack((Empty::new()
+        Stack::new((Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
             .on_click_stop(move |_| {
                 clicked_child_b_clone.set(true);
@@ -972,7 +972,7 @@ fn test_stacking_context_event_bubbling() {
     let clicked_parent_clone = clicked_parent.clone();
     let clicked_child_clone = clicked_child.clone();
 
-    let view = stack((Empty::new()
+    let view = Stack::new((Empty::new()
         .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(5))
         .on_click(move |_| {
             clicked_child_clone.set(true);
@@ -1012,7 +1012,7 @@ fn test_stacking_context_bubbling_stops_on_stop() {
     let clicked_parent_clone = clicked_parent.clone();
     let clicked_child_clone = clicked_child.clone();
 
-    let view = stack((Empty::new()
+    let view = Stack::new((Empty::new()
         .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(5))
         .on_click_stop(move |_| {
             clicked_child_clone.set(true);
@@ -1053,7 +1053,7 @@ fn test_stacking_context_deep_bubbling() {
     let p_clone = clicked_parent.clone();
     let c_clone = clicked_child.clone();
 
-    let view = stack((stack((Empty::new()
+    let view = Stack::new((Stack::new((Empty::new()
         .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(5))
         .on_click(move |_| {
             c_clone.set(true);
@@ -1109,7 +1109,7 @@ fn test_stacking_context_bubbling_across_stacking_contexts() {
     let p_clone = clicked_parent.clone();
     let c_clone = clicked_child.clone();
 
-    let view = stack((stack((Empty::new()
+    let view = Stack::new((Stack::new((Empty::new()
         .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(3))
         .on_click(move |_| {
             c_clone.set(true);
@@ -1167,7 +1167,7 @@ fn test_stacking_context_multiple_escaped_children() {
     let c2 = clicked[2].clone();
     let c3 = clicked[3].clone();
 
-    let view = stack((stack((
+    let view = Stack::new((Stack::new((
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(3))
             .on_click_stop(move |_| c0.set(true)),
@@ -1219,9 +1219,9 @@ fn test_stacking_context_explicit_z_index_zero() {
     let clicked_child_clone = clicked_child.clone();
     let clicked_sibling_clone = clicked_sibling.clone();
 
-    let view = stack((
+    let view = Stack::new((
         // Parent with explicit z-index: 0
-        stack((Empty::new()
+        Stack::new((Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(100))
             .on_click_stop(move |_| {
                 clicked_child_clone.set(true);
@@ -1272,9 +1272,9 @@ fn test_opacity_creates_stacking_context() {
     let clicked_child_clone = clicked_child.clone();
     let clicked_sibling_clone = clicked_sibling.clone();
 
-    let view = stack((
+    let view = Stack::new((
         // Parent with opacity < 1 (should create stacking context)
-        stack((Empty::new()
+        Stack::new((Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(100))
             .on_click_stop(move |_| {
                 clicked_child_clone.set(true);
@@ -1323,9 +1323,9 @@ fn test_stacking_model_opacity_does_not_affect_stacking() {
     let clicked_child_clone = clicked_child.clone();
     let clicked_sibling_clone = clicked_sibling.clone();
 
-    let view = stack((
+    let view = Stack::new((
         // Parent with opacity = 1.0 (still bounds children in simplified stacking model)
-        stack((Empty::new()
+        Stack::new((Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(10))
             .on_click_stop(move |_| {
                 clicked_child_clone.set(true);
@@ -1371,8 +1371,8 @@ fn test_opacity_near_zero_creates_stacking_context() {
     let clicked_child_clone = clicked_child.clone();
     let clicked_sibling_clone = clicked_sibling.clone();
 
-    let view = stack((
-        stack((Empty::new()
+    let view = Stack::new((
+        Stack::new((Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(100))
             .on_click_stop(move |_| {
                 clicked_child_clone.set(true);
@@ -1421,9 +1421,9 @@ fn test_opacity_with_z_index_combination() {
     let clicked_a_clone = clicked_child_a.clone();
     let clicked_b_clone = clicked_child_b.clone();
 
-    let view = stack((
+    let view = Stack::new((
         // ParentA with z-index: 10 and opacity: 0.5
-        stack((Empty::new()
+        Stack::new((Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(100))
             .on_click_stop(move |_| {
                 clicked_a_clone.set(true);
@@ -1436,7 +1436,7 @@ fn test_opacity_with_z_index_combination() {
                 .opacity(0.5)
         }),
         // ParentB with z-index: 5
-        stack((Empty::new()
+        Stack::new((Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
             .on_click_stop(move |_| {
                 clicked_b_clone.set(true);
@@ -1476,11 +1476,11 @@ fn test_opacity_deeply_nested() {
     let clicked_deep_clone = clicked_deep.clone();
     let clicked_sibling_clone = clicked_sibling.clone();
 
-    let view = stack((
+    let view = Stack::new((
         // Level1 (no stacking context)
-        stack((
+        Stack::new((
             // Level2 (opacity creates stacking context)
-            stack((Empty::new()
+            Stack::new((Empty::new()
                 .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(100))
                 .on_click_stop(move |_| {
                     clicked_deep_clone.set(true);

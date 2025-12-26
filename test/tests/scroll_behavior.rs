@@ -438,7 +438,7 @@ fn test_click_after_scroll() {
     let clickable = tracker
         .track_named("target", Empty::new())
         .style(|s| s.size(100.0, 100.0));
-    let content = stack((top_spacer, clickable)).style(|s| s.flex_col().size(100.0, 300.0));
+    let content = Stack::new((top_spacer, clickable)).style(|s| s.flex_col().size(100.0, 300.0));
 
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
@@ -512,7 +512,7 @@ fn test_scroll_propagation_at_limit() {
     let inner_scroll = inner_tracker.track(Scroll::new(inner_content));
 
     // Outer scroll view with large content containing the inner scroll
-    let outer_content = stack((
+    let outer_content = Stack::new((
         inner_scroll.style(|s| s.size(100.0, 100.0)),
         Empty::new().style(|s| s.size(100.0, 300.0)),
     ))
@@ -801,10 +801,10 @@ fn test_scroll_view_click_after_scroll() {
         .track_named("button", Empty::new())
         .style(|s| s.size(100.0, 50.0).margin_top(150.0));
 
-    let content = stack((button,)).style(|s| s.size(200.0, 500.0).flex_col());
+    let content = Stack::new((button,)).style(|s| s.size(200.0, 500.0).flex_col());
     let scroll_view = Scroll::new(content).style(|s| s.size(200.0, 100.0));
 
-    let view = stack((scroll_view,)).style(|s| s.size(200.0, 100.0));
+    let view = Stack::new((scroll_view,)).style(|s| s.size(200.0, 100.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 200.0, 100.0);
 
@@ -835,9 +835,9 @@ fn test_clip_aware_hit_testing_clipped_content() {
         .track_named("button", Empty::new())
         .style(|s| s.size(100.0, 50.0).margin_top(150.0));
 
-    let content = stack((button,)).style(|s| s.size(200.0, 500.0).flex_col());
+    let content = Stack::new((button,)).style(|s| s.size(200.0, 500.0).flex_col());
     let scroll_view = Scroll::new(content).style(|s| s.size(200.0, 100.0));
-    let view = stack((scroll_view,)).style(|s| s.size(200.0, 100.0));
+    let view = Stack::new((scroll_view,)).style(|s| s.size(200.0, 100.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 200.0, 100.0);
 
@@ -865,9 +865,9 @@ fn test_clip_aware_hit_testing_visible_content() {
         .track_named("button", Empty::new())
         .style(|s| s.size(100.0, 50.0).margin_top(25.0));
 
-    let content = stack((button,)).style(|s| s.size(200.0, 500.0).flex_col());
+    let content = Stack::new((button,)).style(|s| s.size(200.0, 500.0).flex_col());
     let scroll_view = Scroll::new(content).style(|s| s.size(200.0, 100.0));
-    let view = stack((scroll_view,)).style(|s| s.size(200.0, 100.0));
+    let view = Stack::new((scroll_view,)).style(|s| s.size(200.0, 100.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 200.0, 100.0);
 
@@ -897,9 +897,9 @@ fn test_clip_aware_hit_testing_after_scroll_clipped() {
         .track_named("button2", Empty::new())
         .style(|s| s.size(100.0, 30.0).margin_top(110.0)); // 10 + 30 + 110 = 150
 
-    let content = stack((button1, button2)).style(|s| s.size(200.0, 500.0).flex_col());
+    let content = Stack::new((button1, button2)).style(|s| s.size(200.0, 500.0).flex_col());
     let scroll_view = Scroll::new(content).style(|s| s.size(200.0, 100.0));
-    let view = stack((scroll_view,)).style(|s| s.size(200.0, 100.0));
+    let view = Stack::new((scroll_view,)).style(|s| s.size(200.0, 100.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 200.0, 100.0);
 

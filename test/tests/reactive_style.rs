@@ -262,7 +262,7 @@ fn test_multiple_reactive_styles() {
     });
     let id2 = view2.view_id();
 
-    let view = stack((view1, view2)).style(|s| s.size(100.0, 50.0));
+    let view = Stack::new((view1, view2)).style(|s| s.size(100.0, 50.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 50.0);
 
@@ -332,7 +332,7 @@ fn test_counter_example_repaint_scenario() {
     });
     let reset_id = reset_btn.view_id();
 
-    let view = stack((increment_btn, reset_btn)).style(|s| s.size(200.0, 100.0));
+    let view = Stack::new((increment_btn, reset_btn)).style(|s| s.size(200.0, 100.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 200.0, 100.0);
 

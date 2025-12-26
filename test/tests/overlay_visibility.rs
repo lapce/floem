@@ -6,7 +6,7 @@
 
 use floem::headless::HeadlessHarness;
 use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
-use floem::views::{Decorators, Empty, Overlay, stack};
+use floem::views::{Decorators, Empty, Overlay, Stack};
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -21,7 +21,7 @@ fn test_overlay_wrapper_display_none() {
     let overlay_clone = clicked_overlay.clone();
     let bg_clone = clicked_bg.clone();
 
-    let view = stack((
+    let view = Stack::new((
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
             .on_click_stop(move |_| {
@@ -80,7 +80,7 @@ fn test_overlay_content_display_none() {
     let overlay_clone = clicked_overlay.clone();
     let bg_clone = clicked_bg.clone();
 
-    let view = stack((
+    let view = Stack::new((
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
             .on_click_stop(move |_| {

@@ -8,7 +8,7 @@
 
 use floem::HasViewId;
 use floem::headless::HeadlessHarness;
-use floem::views::{Clip, Decorators, Empty, Overlay, stack};
+use floem::views::{Clip, Decorators, Empty, Overlay, Stack};
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -28,7 +28,7 @@ fn test_fixed_element_fills_viewport() {
     let fixed_container = Empty::new().style(|s| s.fixed().inset(0.0));
     let fixed_id = fixed_container.view_id();
 
-    let view = stack((Overlay::new(fixed_container),)).style(|s| s.size(100.0, 100.0));
+    let view = Stack::new((Overlay::new(fixed_container),)).style(|s| s.size(100.0, 100.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
     harness.rebuild();
@@ -69,7 +69,7 @@ fn test_fixed_element_ignores_parent_position() {
         });
     let fixed_id = fixed_child.view_id();
 
-    let view = stack((stack((Overlay::new(fixed_child),)).style(|s| {
+    let view = Stack::new((Stack::new((Overlay::new(fixed_child),)).style(|s| {
         s.absolute()
             .inset_left(50.0)
             .inset_top(50.0)
@@ -115,8 +115,8 @@ fn test_fixed_element_children_use_viewport_percentages() {
     let child = Empty::new().style(|s| s.width_full().height_full());
     let child_id = child.view_id();
 
-    let view = stack((stack((Overlay::new(
-        stack((child,)).style(|s| s.fixed().inset(0.0)),
+    let view = Stack::new((Stack::new((Overlay::new(
+        Stack::new((child,)).style(|s| s.fixed().inset(0.0)),
     ),))
     .style(|s| {
         s.absolute()
@@ -162,7 +162,7 @@ fn test_fixed_element_receives_events_at_viewport_position() {
     let clicked = Rc::new(Cell::new(false));
     let clicked_clone = clicked.clone();
 
-    let view = stack((stack((Overlay::new(
+    let view = Stack::new((Stack::new((Overlay::new(
         Empty::new()
             .style(|s| s.fixed().inset(0.0))
             .on_click_stop(move |_| {
@@ -204,7 +204,7 @@ fn test_fixed_element_blocks_events_to_views_behind() {
     let bg_clone = clicked_bg.clone();
     let fixed_clone = clicked_fixed.clone();
 
-    let view = stack((
+    let view = Stack::new((
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
             .on_click_stop(move |_| {
@@ -256,8 +256,8 @@ fn test_fixed_element_escapes_parent_clip() {
     let fixed_clone = clicked_fixed.clone();
     let bg_clone = clicked_bg.clone();
 
-    let view = stack((
-        Clip::new(stack((Overlay::new(
+    let view = Stack::new((
+        Clip::new(Stack::new((Overlay::new(
             Empty::new()
                 .style(|s| s.fixed().inset(0.0))
                 .on_click_stop(move |_| {
@@ -308,7 +308,7 @@ fn test_hidden_fixed_element_does_not_block_events() {
     let bg_clone = clicked_bg.clone();
     let fixed_clone = clicked_fixed.clone();
 
-    let view = stack((
+    let view = Stack::new((
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
             .on_click_stop(move |_| {
@@ -352,7 +352,7 @@ fn test_fixed_element_in_paint_order() {
     let fixed_element = Empty::new().style(|s| s.fixed().inset(0.0));
     let fixed_id = fixed_element.view_id();
 
-    let view = stack((Overlay::new(fixed_element),)).style(|s| s.size(100.0, 100.0));
+    let view = Stack::new((Overlay::new(fixed_element),)).style(|s| s.size(100.0, 100.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
@@ -382,7 +382,7 @@ fn test_fixed_element_painted_after_regular_views() {
     let fixed_element = Empty::new().style(|s| s.fixed().inset(0.0));
     let fixed_id = fixed_element.view_id();
 
-    let view = stack((regular, Overlay::new(fixed_element))).style(|s| s.size(100.0, 100.0));
+    let view = Stack::new((regular, Overlay::new(fixed_element))).style(|s| s.size(100.0, 100.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
@@ -418,7 +418,7 @@ fn test_fixed_element_fills_large_viewport() {
     let fixed_element = Empty::new().style(|s| s.fixed().inset(0.0));
     let fixed_id = fixed_element.view_id();
 
-    let view = stack((Overlay::new(fixed_element),)).style(|s| s.size(100.0, 100.0));
+    let view = Stack::new((Overlay::new(fixed_element),)).style(|s| s.size(100.0, 100.0));
 
     // Use a larger viewport than the root stack
     let mut harness = HeadlessHarness::new_with_size(view, 500.0, 400.0);
@@ -469,12 +469,12 @@ fn test_fixed_container_child_percentage_positioning() {
     let centered_id = centered_child.view_id();
 
     let fixed_container =
-        stack((centered_child,)).style(|s| s.fixed().inset(0.0).width_full().height_full());
+        Stack::new((centered_child,)).style(|s| s.fixed().inset(0.0).width_full().height_full());
     let fixed_id = fixed_container.view_id();
 
-    let view = stack((
+    let view = Stack::new((
         // Nested parent at offset position (simulates dialog inside scroll container)
-        stack((Overlay::new(fixed_container),)).style(|s| {
+        Stack::new((Overlay::new(fixed_container),)).style(|s| {
             s.absolute()
                 .inset_left(100.0)
                 .inset_top(100.0)
@@ -565,9 +565,9 @@ fn test_fixed_container_centered_child_receives_click() {
         });
 
     let fixed_container =
-        stack((centered_child,)).style(|s| s.fixed().inset(0.0).width_full().height_full());
+        Stack::new((centered_child,)).style(|s| s.fixed().inset(0.0).width_full().height_full());
 
-    let view = stack((stack((Overlay::new(fixed_container),)).style(|s| {
+    let view = Stack::new((Stack::new((Overlay::new(fixed_container),)).style(|s| {
         s.absolute()
             .inset_left(100.0)
             .inset_top(100.0)
@@ -606,11 +606,11 @@ fn test_fixed_container_with_translate_centering() {
     let centered_id = centered_child.view_id();
 
     let fixed_container =
-        stack((centered_child,)).style(|s| s.fixed().inset(0.0).width_full().height_full());
+        Stack::new((centered_child,)).style(|s| s.fixed().inset(0.0).width_full().height_full());
 
-    let view = stack((
+    let view = Stack::new((
         // Nested at offset position
-        stack((Overlay::new(fixed_container),)).style(|s| {
+        Stack::new((Overlay::new(fixed_container),)).style(|s| {
             s.absolute()
                 .inset_left(100.0)
                 .inset_top(100.0)
@@ -689,9 +689,9 @@ fn test_fixed_element_window_origin() {
         Empty::new().style(|s| s.fixed().inset_left(10.0).inset_top(20.0).size(50.0, 50.0));
     let fixed_id = fixed_child.view_id();
 
-    let view = stack((
+    let view = Stack::new((
         // Parent at offset position
-        stack((Overlay::new(fixed_child),)).style(|s| {
+        Stack::new((Overlay::new(fixed_child),)).style(|s| {
             s.absolute()
                 .inset_left(100.0)
                 .inset_top(100.0)
@@ -749,9 +749,9 @@ fn test_fixed_element_with_inset_zero_window_origin() {
     let fixed_child = Empty::new().style(|s| s.fixed().inset(0.0).size_full());
     let fixed_id = fixed_child.view_id();
 
-    let view = stack((
+    let view = Stack::new((
         // Parent at offset position (should be ignored)
-        stack((Overlay::new(fixed_child),)).style(|s| {
+        Stack::new((Overlay::new(fixed_child),)).style(|s| {
             s.absolute()
                 .inset_left(100.0)
                 .inset_top(100.0)
@@ -808,9 +808,9 @@ fn test_non_fixed_element_window_origin_includes_parent() {
     let child = Empty::new().style(|s| s.size(50.0, 50.0));
     let child_id = child.view_id();
 
-    let view = stack((
+    let view = Stack::new((
         // Parent at offset position
-        stack((child,)).style(|s| {
+        Stack::new((child,)).style(|s| {
             s.absolute()
                 .inset_left(100.0)
                 .inset_top(100.0)
@@ -866,16 +866,16 @@ fn test_fixed_overlay_child_paint_at_viewport_origin() {
     let clicked_clone = clicked.clone();
 
     // The fixed style is on the child of Overlay, not the Overlay itself
-    let fixed_child = stack((Empty::new()
+    let fixed_child = Stack::new((Empty::new()
         .style(|s| s.absolute().inset(0.0))
         .on_click_stop(move |_| {
             clicked_clone.set(true);
         }),))
     .style(|s| s.fixed().inset(0.0));
 
-    let view = stack((
+    let view = Stack::new((
         // Parent positioned at (100, 100)
-        stack((Overlay::new(fixed_child),)).style(|s| {
+        Stack::new((Overlay::new(fixed_child),)).style(|s| {
             s.absolute()
                 .inset_left(100.0)
                 .inset_top(100.0)
@@ -928,12 +928,12 @@ fn test_fixed_overlay_child_with_scroll_offset() {
         });
 
     let fixed_container =
-        stack((clickable_child,)).style(|s| s.fixed().inset(0.0).width_full().height_full());
+        Stack::new((clickable_child,)).style(|s| s.fixed().inset(0.0).width_full().height_full());
 
     // Simulate a scroll container with offset content
-    let view = stack((stack((
+    let view = Stack::new((Stack::new((
         // Simulated scrolled content with padding/offset
-        stack((Overlay::new(fixed_container),)).style(|s| s.padding(20.0).size(500.0, 400.0)),
+        Stack::new((Overlay::new(fixed_container),)).style(|s| s.padding(20.0).size(500.0, 400.0)),
     ))
     .style(|s| {
         s.absolute()
@@ -971,10 +971,10 @@ fn test_single_fixed_overlay_receives_click() {
             clicked_clone.set(true);
         });
 
-    let view = stack((
+    let view = Stack::new((
         // Overlay inside container at offset (100, 100)
         // The fixed element should ignore this offset
-        stack((Overlay::new(fixed),)).style(|s| {
+        Stack::new((Overlay::new(fixed),)).style(|s| {
             s.absolute()
                 .inset_left(100.0)
                 .inset_top(100.0)
@@ -1022,16 +1022,16 @@ fn test_two_fixed_overlays_click_second() {
             clicked2_clone.set(true);
         });
 
-    let view = stack((
+    let view = Stack::new((
         // First overlay inside container at offset (100, 100)
-        stack((Overlay::new(fixed1),)).style(|s| {
+        Stack::new((Overlay::new(fixed1),)).style(|s| {
             s.absolute()
                 .inset_left(100.0)
                 .inset_top(100.0)
                 .size(50.0, 50.0)
         }),
         // Second overlay inside container at offset (200, 50)
-        stack((Overlay::new(fixed2),)).style(|s| {
+        Stack::new((Overlay::new(fixed2),)).style(|s| {
             s.absolute()
                 .inset_left(200.0)
                 .inset_top(50.0)
@@ -1072,16 +1072,16 @@ fn test_fixed_overlay_with_non_fixed_sibling() {
     // Non-fixed element at (300, 200) - this should NOT block the fixed element
     let non_fixed2 = Empty::new().style(|s| s.size(50.0, 50.0));
 
-    let view = stack((
+    let view = Stack::new((
         // First overlay with fixed child
-        stack((Overlay::new(fixed1),)).style(|s| {
+        Stack::new((Overlay::new(fixed1),)).style(|s| {
             s.absolute()
                 .inset_left(100.0)
                 .inset_top(100.0)
                 .size(50.0, 50.0)
         }),
         // Second overlay with non-fixed child
-        stack((Overlay::new(non_fixed2),)).style(|s| {
+        Stack::new((Overlay::new(non_fixed2),)).style(|s| {
             s.absolute()
                 .inset_left(200.0)
                 .inset_top(50.0)
@@ -1133,15 +1133,15 @@ fn test_two_fixed_overlays_non_overlapping() {
             clicked2_clone.set(true);
         });
 
-    let view = stack((
+    let view = Stack::new((
         // Both overlays have fixed children at non-overlapping viewport positions
-        stack((Overlay::new(fixed1),)).style(|s| {
+        Stack::new((Overlay::new(fixed1),)).style(|s| {
             s.absolute()
                 .inset_left(100.0)
                 .inset_top(100.0)
                 .size(50.0, 50.0)
         }),
-        stack((Overlay::new(fixed2),)).style(|s| {
+        Stack::new((Overlay::new(fixed2),)).style(|s| {
             s.absolute()
                 .inset_left(200.0)
                 .inset_top(50.0)
@@ -1179,7 +1179,7 @@ fn test_fixed_element_resizes_with_window() {
     let fixed_child = Empty::new().style(|s| s.fixed().inset(0.0));
     let fixed_id = fixed_child.view_id();
 
-    let view = stack((Overlay::new(fixed_child),)).style(|s| s.size(400.0, 300.0));
+    let view = Stack::new((Overlay::new(fixed_child),)).style(|s| s.size(400.0, 300.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 400.0, 300.0);
     harness.rebuild();
@@ -1235,7 +1235,7 @@ fn test_fixed_element_with_size_full_resizes() {
     let fixed_child = Empty::new().style(|s| s.fixed().inset(0.0).size_full());
     let fixed_id = fixed_child.view_id();
 
-    let view = stack((Overlay::new(fixed_child),)).style(|s| s.size(400.0, 300.0));
+    let view = Stack::new((Overlay::new(fixed_child),)).style(|s| s.size(400.0, 300.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 400.0, 300.0);
     harness.rebuild();
@@ -1289,9 +1289,9 @@ fn test_fixed_element_percentage_children_resize() {
     });
     let child_id = centered_child.view_id();
 
-    let fixed_container = stack((centered_child,)).style(|s| s.fixed().inset(0.0));
+    let fixed_container = Stack::new((centered_child,)).style(|s| s.fixed().inset(0.0));
 
-    let view = stack((Overlay::new(fixed_container),)).style(|s| s.size(400.0, 300.0));
+    let view = Stack::new((Overlay::new(fixed_container),)).style(|s| s.size(400.0, 300.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 400.0, 300.0);
     harness.rebuild();
@@ -1360,7 +1360,7 @@ fn test_fixed_element_unregisters_when_style_changes() {
     });
     let child_id = child.view_id();
 
-    let view = stack((Overlay::new(child),)).style(|s| s.size(400.0, 300.0));
+    let view = Stack::new((Overlay::new(child),)).style(|s| s.size(400.0, 300.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 400.0, 300.0);
     harness.rebuild();
@@ -1441,7 +1441,7 @@ fn test_element_registers_when_becoming_fixed() {
     });
     let child_id = child.view_id();
 
-    let view = stack((Overlay::new(child),)).style(|s| s.size(400.0, 300.0));
+    let view = Stack::new((Overlay::new(child),)).style(|s| s.size(400.0, 300.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 400.0, 300.0);
     harness.rebuild();

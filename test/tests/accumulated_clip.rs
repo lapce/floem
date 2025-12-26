@@ -34,7 +34,7 @@ fn test_scroll_clips_content_beyond_viewport() {
 
     // Important: make the window the same size as the scroll so clicks
     // outside scroll are also outside window
-    let view = stack((scroll,)).style(|s| s.size(100.0, 50.0));
+    let view = Stack::new((scroll,)).style(|s| s.size(100.0, 50.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 50.0);
 
@@ -67,7 +67,7 @@ fn test_scroll_clips_content_with_margin() {
     let content = Container::new(button).style(|s| s.size(100.0, 200.0));
     let scroll = Scroll::new(content).style(|s| s.size(100.0, 50.0));
 
-    let view = stack((scroll,)).style(|s| s.size(100.0, 50.0));
+    let view = Stack::new((scroll,)).style(|s| s.size(100.0, 50.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 50.0);
 
@@ -103,7 +103,7 @@ fn test_nested_scroll_simple() {
     let outer_scroll = Scroll::new(Container::new(inner_scroll).style(|s| s.size(100.0, 100.0)))
         .style(|s| s.size(60.0, 60.0));
 
-    let view = stack((outer_scroll,)).style(|s| s.size(60.0, 60.0));
+    let view = Stack::new((outer_scroll,)).style(|s| s.size(60.0, 60.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 60.0, 60.0);
 
@@ -139,7 +139,7 @@ fn test_nested_scroll_with_offset() {
     let outer_scroll = Scroll::new(Container::new(inner_scroll).style(|s| s.size(100.0, 100.0)))
         .style(|s| s.size(80.0, 80.0));
 
-    let view = stack((outer_scroll,)).style(|s| s.size(80.0, 80.0));
+    let view = Stack::new((outer_scroll,)).style(|s| s.size(80.0, 80.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 80.0, 80.0);
 
@@ -198,7 +198,7 @@ fn test_absolute_with_z_index_escapes_clip() {
     let scroll = Scroll::new(content).style(|s| s.size(100.0, 50.0));
 
     // Window is taller to see the escaped dropdown
-    let view = stack((scroll,)).style(|s| s.size(100.0, 120.0));
+    let view = Stack::new((scroll,)).style(|s| s.size(100.0, 120.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 120.0);
 
@@ -235,12 +235,12 @@ fn test_trigger_and_dropdown_click_dispatch() {
 
     // Stack holds trigger (normal flow) and dropdown (absolute)
     // The trigger takes up the top 30px, dropdown is positioned at y=30
-    let container = stack((trigger, dropdown)).style(|s| s.size(100.0, 30.0));
+    let container = Stack::new((trigger, dropdown)).style(|s| s.size(100.0, 30.0));
 
     // Scroll clips at 50px
     let scroll = Scroll::new(container).style(|s| s.size(100.0, 50.0));
 
-    let view = stack((scroll,)).style(|s| s.size(100.0, 120.0));
+    let view = Stack::new((scroll,)).style(|s| s.size(100.0, 120.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 120.0);
 
@@ -294,7 +294,7 @@ fn test_scroll_position_changes_clickable_area() {
     // Scroll viewport only shows 50px
     let scroll = Scroll::new(content).style(|s| s.size(100.0, 50.0));
 
-    let view = stack((scroll,)).style(|s| s.size(100.0, 50.0));
+    let view = Stack::new((scroll,)).style(|s| s.size(100.0, 50.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 50.0);
 
@@ -353,7 +353,7 @@ fn test_z_index_ordering_within_scroll() {
 
     let scroll = Scroll::new(content).style(|s| s.size(60.0, 60.0));
 
-    let view = stack((scroll,)).style(|s| s.size(60.0, 60.0));
+    let view = Stack::new((scroll,)).style(|s| s.size(60.0, 60.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 60.0, 60.0);
 
@@ -411,7 +411,7 @@ fn test_pointer_events_none_with_scroll_clip() {
     let content = layers((button, overlay)).style(|s| s.size(100.0, 100.0));
     let scroll = Scroll::new(content).style(|s| s.size(50.0, 50.0));
 
-    let view = stack((scroll,)).style(|s| s.size(50.0, 50.0));
+    let view = Stack::new((scroll,)).style(|s| s.size(50.0, 50.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 50.0, 50.0);
 
@@ -487,7 +487,7 @@ fn test_scroll_content_outside_viewport_not_clickable() {
     let scroll = Scroll::new(button).style(|s| s.size(100.0, 100.0).margin_top(50.0));
 
     // Window is 300x300 to have space below the scroll
-    let view = stack((scroll,)).style(|s| s.size(100.0, 300.0));
+    let view = Stack::new((scroll,)).style(|s| s.size(100.0, 300.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 300.0);
 
@@ -528,7 +528,7 @@ fn test_scrolled_out_content_top_not_clickable() {
     // Scroll container: 100x100
     let scroll = Scroll::new(content).style(|s| s.size(100.0, 100.0));
 
-    let view = stack((scroll,)).style(|s| s.size(100.0, 100.0));
+    let view = Stack::new((scroll,)).style(|s| s.size(100.0, 100.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 

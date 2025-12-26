@@ -6,14 +6,14 @@
 use floem::HasViewId;
 use floem::headless::HeadlessHarness;
 use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
-use floem::views::{Clip, Decorators, Empty, Label, Overlay, stack};
+use floem::views::{Clip, Decorators, Empty, Label, Overlay, Stack};
 use std::cell::Cell;
 use std::rc::Rc;
 
 #[test]
 fn test_overlay_new() {
     // Test that an Overlay can be created with static content
-    let view = stack((
+    let view = Stack::new((
         Label::new("Main content"),
         Overlay::new(Label::new("Overlay content")),
     ))
@@ -25,7 +25,7 @@ fn test_overlay_new() {
 #[test]
 fn test_overlay_derived() {
     // Test that an Overlay can be created with derived content
-    let view = stack((
+    let view = Stack::new((
         Label::new("Main content"),
         Overlay::derived(|| Label::derived(|| "Overlay content".to_string())),
     ))
@@ -39,7 +39,7 @@ fn test_overlay_with_visibility_control() {
     // Test that overlay visibility can be controlled via styles
     let visible = RwSignal::new(true);
 
-    let view = stack((
+    let view = Stack::new((
         Label::new("Main content"),
         Overlay::derived(move || {
             Label::derived(|| "Overlay content".to_string())
@@ -64,7 +64,7 @@ fn test_overlay_content_factory_called() {
     let factory_called = Rc::new(Cell::new(false));
     let factory_called_clone = factory_called.clone();
 
-    let view = stack((
+    let view = Stack::new((
         Label::new("Main content"),
         Overlay::derived(move || {
             factory_called_clone.set(true);
@@ -84,10 +84,10 @@ fn test_overlay_content_factory_called() {
 #[test]
 fn test_overlay_in_nested_structure() {
     // Test that Overlay works in nested view structures
-    let view = stack((stack((
+    let view = Stack::new((Stack::new((
         Label::new("Nested label"),
         Overlay::derived(|| {
-            stack((Label::new("Nested overlay"), Empty::new())).style(|s| s.size(50.0, 50.0))
+            Stack::new((Label::new("Nested overlay"), Empty::new())).style(|s| s.size(50.0, 50.0))
         }),
     ))
     .style(|s| s.size(80.0, 80.0)),))
@@ -99,7 +99,7 @@ fn test_overlay_in_nested_structure() {
 #[test]
 fn test_multiple_overlays() {
     // Test that multiple overlays can coexist
-    let view = stack((
+    let view = Stack::new((
         Label::new("Main content"),
         Overlay::new(Label::new("Overlay 1")),
         Overlay::new(Label::new("Overlay 2")),
@@ -112,7 +112,7 @@ fn test_multiple_overlays() {
 #[test]
 fn test_overlay_with_styled_content() {
     // Test that overlay content can be styled
-    let view = stack((
+    let view = Stack::new((
         Label::new("Main content"),
         Overlay::new(Label::new("Styled overlay").style(|s| {
             s.background(floem::peniko::Color::WHITE)
@@ -149,7 +149,7 @@ fn test_overlay_receives_events_before_regular_views() {
     let clicked_regular_clone = clicked_regular.clone();
     let clicked_overlay_clone = clicked_overlay.clone();
 
-    let view = stack((
+    let view = Stack::new((
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(100))
             .on_click_stop(move |_| {
@@ -199,7 +199,7 @@ fn test_multiple_overlays_respect_z_index() {
     let clicked1_clone = clicked_overlay1.clone();
     let clicked2_clone = clicked_overlay2.clone();
 
-    let view = stack((
+    let view = Stack::new((
         // First overlay with higher z-index
         Overlay::new(
             Empty::new()
@@ -253,7 +253,7 @@ fn test_overlay_dom_order_tiebreaker() {
     let clicked1_clone = clicked_overlay1.clone();
     let clicked2_clone = clicked_overlay2.clone();
 
-    let view = stack((
+    let view = Stack::new((
         Overlay::new(
             Empty::new()
                 .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
@@ -304,9 +304,9 @@ fn test_nested_overlay_escapes_parent_z_index() {
     let sibling_clone = clicked_sibling.clone();
     let overlay_clone = clicked_overlay.clone();
 
-    let view = stack((
+    let view = Stack::new((
         // Parent with low z-index containing an overlay
-        stack((Overlay::new(
+        Stack::new((Overlay::new(
             Empty::new()
                 .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
                 .on_click_stop(move |_| {
@@ -353,7 +353,7 @@ fn test_hidden_overlay_does_not_block_events() {
     let regular_clone = clicked_regular.clone();
     let overlay_clone = clicked_overlay.clone();
 
-    let view = stack((
+    let view = Stack::new((
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
             .on_click_stop(move |_| {
@@ -411,7 +411,7 @@ fn test_paint_order_overlays_after_regular_views() {
     let overlay_content = Empty::new().style(|s| s.absolute().inset(0.0).size(100.0, 100.0));
     let overlay_id = overlay_content.view_id();
 
-    let view = stack((regular, Overlay::new(overlay_content))).style(|s| s.size(100.0, 100.0));
+    let view = Stack::new((regular, Overlay::new(overlay_content))).style(|s| s.size(100.0, 100.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
@@ -451,7 +451,7 @@ fn test_paint_order_multiple_overlays_by_z_index() {
     let overlay2_content = Empty::new().style(|s| s.absolute().inset(0.0).size(100.0, 100.0));
     let overlay2_id = overlay2_content.view_id();
 
-    let view = stack((
+    let view = Stack::new((
         Overlay::new(overlay1_content).style(|s| s.z_index(10)),
         Overlay::new(overlay2_content).style(|s| s.z_index(1)),
     ))
@@ -496,7 +496,7 @@ fn test_paint_order_regular_views_by_z_index() {
     let v3 = Empty::new().style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(10));
     let v3_id = v3.view_id();
 
-    let view = stack((v1, v2, v3)).style(|s| s.size(100.0, 100.0));
+    let view = Stack::new((v1, v2, v3)).style(|s| s.size(100.0, 100.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
@@ -538,8 +538,8 @@ fn test_paint_order_nested_overlay_escapes_parent() {
     let sibling = Empty::new().style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(100));
     let sibling_id = sibling.view_id();
 
-    let view = stack((
-        stack((Overlay::new(overlay_content),))
+    let view = Stack::new((
+        Stack::new((Overlay::new(overlay_content),))
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1)),
         sibling,
     ))
@@ -589,9 +589,9 @@ fn test_overlay_escapes_parent_clip() {
     let overlay_clone = clicked_overlay.clone();
     let bg_clone = clicked_background.clone();
 
-    let view = stack((
+    let view = Stack::new((
         // Clipping parent using Clip view
-        Clip::new(stack((Overlay::new(
+        Clip::new(Stack::new((Overlay::new(
             Empty::new()
                 .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
                 .on_click_stop(move |_| {
@@ -640,7 +640,7 @@ fn test_overlay_painted_outside_parent_clip() {
     let overlay_content = Empty::new().style(|s| s.absolute().inset(0.0).size(100.0, 100.0));
     let overlay_id = overlay_content.view_id();
 
-    let view = stack((Clip::new(stack((Overlay::new(overlay_content),)))
+    let view = Stack::new((Clip::new(Stack::new((Overlay::new(overlay_content),)))
         .style(|s| s.absolute().inset(0.0).size(50.0, 50.0)),))
     .style(|s| s.size(100.0, 100.0));
 
@@ -677,11 +677,11 @@ fn test_overlay_escapes_nested_clips() {
     let overlay_clone = clicked_overlay.clone();
     let bg_clone = clicked_background.clone();
 
-    let view = stack((
+    let view = Stack::new((
         // Outer clipping container
         Clip::new(
             // Inner clipping container
-            Clip::new(stack((Overlay::new(
+            Clip::new(Stack::new((Overlay::new(
                 Empty::new()
                     .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
                     .on_click_stop(move |_| {
@@ -728,7 +728,7 @@ fn test_overlay_with_container_derived_rebuild() {
 
     let counter = RwSignal::new(0);
 
-    let view = stack((
+    let view = Stack::new((
         Label::new("Main content"),
         Overlay::new(
             Container::derived(move || {
@@ -766,10 +766,10 @@ fn test_overlay_with_nested_container_derived() {
 
     let open = RwSignal::new(true);
 
-    let view = stack((
+    let view = Stack::new((
         Label::new("Main content"),
         Overlay::new(
-            stack((
+            Stack::new((
                 // Backdrop
                 Empty::new().style(move |s| {
                     let is_open = open.get();
@@ -781,7 +781,7 @@ fn test_overlay_with_nested_container_derived() {
                 // Centering container with derived content
                 Container::new(Container::derived(move || {
                     let is_open = open.get();
-                    stack((Label::new("Dialog Title"), Label::new("Dialog Description"))).style(
+                    Stack::new((Label::new("Dialog Title"), Label::new("Dialog Description"))).style(
                         move |s| {
                             s.size(80.0, 60.0)
                                 .apply_if(!is_open, |s| s.display(floem::taffy::Display::None))
@@ -843,7 +843,7 @@ fn test_clip_only_affects_painting_not_events() {
     let child_clone = clicked_child.clone();
     let bg_clone = clicked_background.clone();
 
-    let view = stack((
+    let view = Stack::new((
         // Clipping parent
         Clip::new(
             Empty::new()

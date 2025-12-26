@@ -79,7 +79,7 @@ fn test_pointer_capture_routes_events_to_captured_view() {
         floem::event::EventPropagation::Continue
     });
 
-    let view = stack((left_with_capture, right)).style(|s| s.size(100.0, 100.0));
+    let view = Stack::new((left_with_capture, right)).style(|s| s.size(100.0, 100.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
@@ -244,7 +244,7 @@ fn test_capture_transfer_fires_lost_then_got() {
         floem::event::EventPropagation::Continue
     });
 
-    let view = stack((view1_with_capture, view2_with_capture)).style(|s| s.size(100.0, 100.0));
+    let view = Stack::new((view1_with_capture, view2_with_capture)).style(|s| s.size(100.0, 100.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
@@ -304,7 +304,7 @@ fn test_capture_prevents_sibling_from_receiving_events() {
         floem::event::EventPropagation::Continue
     });
 
-    let view = stack((left_with_capture, right)).style(|s| s.size(100.0, 100.0));
+    let view = Stack::new((left_with_capture, right)).style(|s| s.size(100.0, 100.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
@@ -430,7 +430,7 @@ fn test_touch_pointer_gets_implicit_capture() {
 
     let right = tracker.track("right", Empty::new().style(|s| s.size(50.0, 100.0)));
 
-    let view = stack((left, right)).style(|s| s.size(100.0, 100.0));
+    let view = Stack::new((left, right)).style(|s| s.size(100.0, 100.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
@@ -473,7 +473,7 @@ fn test_mouse_pointer_does_not_get_implicit_capture() {
 
     let right = tracker.track("right", Empty::new().style(|s| s.size(50.0, 100.0)));
 
-    let view = stack((left, right)).style(|s| s.size(100.0, 100.0));
+    let view = Stack::new((left, right)).style(|s| s.size(100.0, 100.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
@@ -525,7 +525,7 @@ fn test_explicit_capture_overrides_implicit_touch_capture() {
         floem::event::EventPropagation::Continue
     });
 
-    let view = stack((left_with_capture, right)).style(|s| s.size(100.0, 100.0));
+    let view = Stack::new((left_with_capture, right)).style(|s| s.size(100.0, 100.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 

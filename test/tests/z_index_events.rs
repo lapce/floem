@@ -179,7 +179,7 @@ fn test_partial_overlap_click_non_overlapping_region() {
     //
     let tracker = ClickTracker::new();
 
-    let view = stack((
+    let view = Stack::new((
         // Left view: 0-60 x, 0-60 y
         tracker.track_named("left", Empty::new()).style(|s| {
             s.absolute()
@@ -235,7 +235,7 @@ fn test_click_outside_all_views() {
     // Clicking outside all views should not trigger any handlers
     let tracker = ClickTracker::new();
 
-    let view = stack((tracker.track_named("small", Empty::new()).style(|s| {
+    let view = Stack::new((tracker.track_named("small", Empty::new()).style(|s| {
         s.absolute()
             .inset_left(10.0)
             .inset_top(10.0)
@@ -382,7 +382,7 @@ fn test_absolute_positioned_items() {
             .z_index(100)
     });
 
-    let view = stack((dropdown,)).style(|s| s.size(200.0, 200.0));
+    let view = Stack::new((dropdown,)).style(|s| s.size(200.0, 200.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
 
@@ -427,7 +427,7 @@ fn test_absolute_with_backdrop() {
             .z_index(99)
     });
 
-    let view = stack((backdrop, dropdown)).style(|s| s.size(200.0, 200.0));
+    let view = Stack::new((backdrop, dropdown)).style(|s| s.size(200.0, 200.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
 
@@ -973,12 +973,12 @@ fn test_select_like_no_explicit_container_width() {
 
     // Outer container has position:relative but NO explicit width
     // Width should come from the trigger's min_width
-    let select_container = Container::new(stack((trigger, backdrop, dropdown)))
+    let select_container = Container::new(Stack::new((trigger, backdrop, dropdown)))
         .style(|s| s.position(Position::Relative).min_width(120.0));
 
     // Wrap in v_stack like a real app would
-    let view =
-        Stack::vertical((select_container,)).style(|s| s.width_full().height_full().padding(50.0));
+    let view = Stack::vertical((select_container,))
+        .style(|s| s.width_full().height_full().padding(50.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 400.0, 400.0);
 
@@ -1038,7 +1038,7 @@ fn test_select_structure_with_inset_top_pct() {
         .track_named("trigger", Empty::new())
         .style(|s| s.min_width(120.0).height(36.0));
 
-    let select_container = Container::new(stack((trigger, backdrop, dropdown)))
+    let select_container = Container::new(Stack::new((trigger, backdrop, dropdown)))
         .style(|s| s.position(Position::Relative).min_width(120.0));
 
     let view =
@@ -1125,7 +1125,7 @@ fn test_display_none_to_visible_layout() {
         .track_named("trigger", Empty::new())
         .style(|s| s.width(100.0).height(36.0));
 
-    let view = Container::new(stack((trigger, backdrop, dropdown)))
+    let view = Container::new(Stack::new((trigger, backdrop, dropdown)))
         .style(|s| s.position(Position::Relative).width(200.0).height(200.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
@@ -1197,7 +1197,7 @@ fn test_display_toggle_multiple_times() {
         .track_named("trigger", Empty::new())
         .style(|s| s.width(100.0).height(36.0));
 
-    let view = Container::new(stack((trigger, backdrop, dropdown)))
+    let view = Container::new(Stack::new((trigger, backdrop, dropdown)))
         .style(|s| s.position(Position::Relative).width(200.0).height(200.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
@@ -1307,7 +1307,7 @@ fn test_inside_scroll_view_with_display_toggle() {
         .track_named("trigger", Empty::new())
         .style(|s| s.width(100.0).height(36.0));
 
-    let select_container = Container::new(stack((trigger, backdrop, dropdown)))
+    let select_container = Container::new(Stack::new((trigger, backdrop, dropdown)))
         .style(|s| s.position(Position::Relative).width(120.0));
 
     // Wrap in a content container inside a Scroll view - like the showcase
@@ -1397,7 +1397,7 @@ fn test_inset_top_pct_positioning() {
         .style(|s| s.width(100.0).height(36.0));
 
     // Container with position:relative - dropdown will be positioned relative to this
-    let select_container = Container::new(stack((trigger, backdrop, dropdown)))
+    let select_container = Container::new(Stack::new((trigger, backdrop, dropdown)))
         .style(|s| s.position(Position::Relative).width(120.0).height(36.0));
 
     let view =
@@ -1663,7 +1663,7 @@ fn test_dropdown_extends_beyond_scroll_area() {
         .track_named("trigger", Empty::new())
         .style(|s| s.width(100.0).height(36.0));
 
-    let select_container = Container::new(stack((trigger, backdrop, dropdown)))
+    let select_container = Container::new(Stack::new((trigger, backdrop, dropdown)))
         .style(|s| s.position(Position::Relative).width(120.0));
 
     // Content is taller than the scroll container

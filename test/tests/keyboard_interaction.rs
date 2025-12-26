@@ -154,7 +154,7 @@ fn test_only_one_view_focused_at_time() {
     let view2 = Empty::new().style(|s| s.size(50.0, 50.0).focusable(true));
     let id2 = view2.view_id();
 
-    let view = stack((view1, view2)).style(|s| s.size(100.0, 50.0));
+    let view = Stack::new((view1, view2)).style(|s| s.size(100.0, 50.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 50.0);
 
