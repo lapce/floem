@@ -374,12 +374,24 @@ impl PaintCx<'_> {
                 continue;
             }
 
-            // Check if this is a fixed-positioned overlay
-            let is_fixed = overlay_id
+            // Check if the overlay itself is fixed, or if its first child is fixed.
+            // When using Overlay::new(content.style(|s| s.fixed()...)), the fixed style
+            // is on the child, not the overlay itself.
+            let overlay_is_fixed = overlay_id
                 .state()
                 .borrow()
                 .combined_style
                 .get(crate::style::IsFixed);
+
+            let first_child_is_fixed = overlay_id.children().first().is_some_and(|child| {
+                child
+                    .state()
+                    .borrow()
+                    .combined_style
+                    .get(crate::style::IsFixed)
+            });
+
+            let is_fixed = overlay_is_fixed || first_child_is_fixed;
 
             // Accumulate transforms from root to overlay's parent
             // This ensures the overlay is painted at the correct window position
@@ -388,7 +400,11 @@ impl PaintCx<'_> {
             // For fixed-positioned overlays, we don't apply parent transforms
             // because they're positioned relative to the viewport, not their parent.
             // For regular overlays, we build the transform chain from root to parent.
-            if !is_fixed {
+            if is_fixed {
+                // For fixed positioning, reset transform to identity so the overlay
+                // is painted at the viewport origin, not offset by any previous transforms.
+                self.transform = Affine::IDENTITY;
+            } else {
                 // Build the transform chain from root to overlay's parent
                 let mut ancestors = Vec::new();
                 let mut current = overlay_id.parent();
@@ -413,8 +429,17 @@ impl PaintCx<'_> {
                 .renderer_mut()
                 .set_transform(self.transform);
 
-            // Now paint the overlay view (which will apply its own transform)
-            self.paint_view(overlay_id);
+            // Paint the overlay view.
+            // If the first child is fixed (but not the overlay itself), we paint
+            // children directly to avoid adding the overlay's layout.location.
+            // The overlay wrapper doesn't render anything itself.
+            if first_child_is_fixed && !overlay_is_fixed {
+                for child in overlay_id.children() {
+                    self.paint_view(child);
+                }
+            } else {
+                self.paint_view(overlay_id);
+            }
 
             self.restore();
         }

@@ -374,6 +374,23 @@ impl ViewId {
         self.state().borrow().transform
     }
 
+    /// Returns the window origin of this view.
+    ///
+    /// This is the position of the view in window (viewport) coordinates.
+    /// For fixed-positioned elements, this is the Taffy layout position.
+    /// For regular elements, this includes the cumulative parent offsets.
+    pub fn get_window_origin(&self) -> peniko::kurbo::Point {
+        self.state().borrow().window_origin
+    }
+
+    /// Returns the layout rect in window coordinates.
+    ///
+    /// This is the bounding rect that encompasses this view and its children,
+    /// positioned at the window origin. Useful for hit testing and paint bounds.
+    pub fn get_layout_rect(&self) -> peniko::kurbo::Rect {
+        self.state().borrow().layout_rect
+    }
+
     /// Returns true if the computed style for this view is marked as hidden by setting in this view, or any parent, `Hidden` to true. For hiding views, you should prefer to set `Hidden` to true rather than using `Display::None` as checking for `Hidden` is cheaper, more correct, and used for optimizations in Floem
     pub fn is_hidden(&self) -> bool {
         let state = self.state();

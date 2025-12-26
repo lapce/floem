@@ -105,9 +105,11 @@ impl<'a> ComputeLayoutCx<'a> {
             .get(crate::style::IsFixed);
 
         // For fixed positioning, the element is positioned relative to the viewport (window)
-        // rather than relative to its parent. So we set window_origin to (0, 0).
+        // rather than relative to its parent. The `origin` from Taffy IS the viewport position
+        // (computed from inset-left, inset-top, etc.), so we use it directly without adding
+        // the parent's window_origin.
         let window_origin = if is_fixed {
-            Point::ZERO
+            origin
         } else {
             origin + self.window_origin.to_vec2() - this_viewport_origin
         };
@@ -296,11 +298,31 @@ impl<'a> LayoutCx<'a> {
     ) -> NodeId {
         let view_state = id.state();
         let node = view_state.borrow().node;
-        if !view_state
+
+        // Check if this is a fixed element - they need special handling for window resize
+        let combined_style = view_state.borrow().combined_style.clone();
+        let is_fixed = combined_style.get(crate::style::IsFixed);
+
+        let root_size_changed = self.window_state.root_size_changed;
+        let has_layout_flag = view_state
             .borrow()
             .requested_changes
-            .contains(ChangeFlags::LAYOUT)
-        {
+            .contains(ChangeFlags::LAYOUT);
+
+        // Fixed elements need layout recalculation when root_size changes
+        let needs_fixed_size_update = is_fixed && root_size_changed;
+
+        // If no layout needed and root_size didn't change, we can skip entirely
+        if !has_layout_flag && !needs_fixed_size_update && !root_size_changed {
+            return node;
+        }
+
+        // If we're only here because root_size_changed (to traverse children for fixed descendants),
+        // but this non-fixed node doesn't need layout, just traverse children
+        if !has_layout_flag && !needs_fixed_size_update {
+            if has_children {
+                children(self);
+            }
             return node;
         }
         view_state
@@ -309,28 +331,57 @@ impl<'a> LayoutCx<'a> {
             .remove(ChangeFlags::LAYOUT);
         let layout_style = view_state.borrow().layout_props.to_style();
         let animate_out_display = view_state.borrow().is_hidden_state.get_display();
-        let combined_style = view_state.borrow().combined_style.clone();
-        let is_fixed = combined_style.get(crate::style::IsFixed);
         let mut style = combined_style
             .apply(layout_style)
             .apply_opt(animate_out_display, crate::style::Style::display)
             .to_taffy_style();
 
-        // For fixed positioning, set explicit dimensions to window size.
-        // This ensures percentage-based children are relative to the viewport.
+        // For fixed positioning (CSS position: fixed), the element is positioned relative
+        // to the viewport. We need to compute the size based on the viewport.
+        //
+        // CSS behavior:
+        // - If size is 100% (size_full()), use viewport size
+        // - If both left/right (or top/bottom) are specified, compute size from viewport
+        //   e.g., inset(0) means: width = viewport_width - 0 - 0 = viewport_width
+        // - Otherwise, preserve the user's explicit size
         if is_fixed {
             let root_size = self.window_state.root_size / self.window_state.scale;
-            style.size = taffy::prelude::Size {
-                width: taffy::style::Dimension::length(root_size.width as f32),
-                height: taffy::style::Dimension::length(root_size.height as f32),
-            };
-            // Fixed elements should be positioned at the origin relative to viewport
-            style.inset = taffy::prelude::Rect {
-                left: taffy::style::LengthPercentageAuto::length(0.0),
-                right: taffy::style::LengthPercentageAuto::auto(),
-                top: taffy::style::LengthPercentageAuto::length(0.0),
-                bottom: taffy::style::LengthPercentageAuto::auto(),
-            };
+
+            // Helper to check if a LengthPercentageAuto value is a definite length
+            fn is_definite_length(val: &taffy::style::LengthPercentageAuto) -> Option<f32> {
+                // LengthPercentageAuto stores values in a CompactLength
+                // We check the tag to see if it's a length value
+                let raw = val.into_raw();
+                if raw.tag() == taffy::CompactLength::LENGTH_TAG {
+                    Some(raw.value())
+                } else {
+                    None
+                }
+            }
+
+            // Check if we should compute width from inset values
+            let left_len = is_definite_length(&style.inset.left);
+            let right_len = is_definite_length(&style.inset.right);
+            let top_len = is_definite_length(&style.inset.top);
+            let bottom_len = is_definite_length(&style.inset.bottom);
+
+            // If both left and right are specified (as lengths), compute width from viewport
+            if let (Some(left), Some(right)) = (left_len, right_len) {
+                let computed_width = (root_size.width as f32 - left - right).max(0.0);
+                style.size.width = taffy::style::Dimension::length(computed_width);
+            } else if style.size.width == taffy::style::Dimension::percent(1.0) {
+                // If size is 100%, convert to viewport size
+                style.size.width = taffy::style::Dimension::length(root_size.width as f32);
+            }
+
+            // If both top and bottom are specified (as lengths), compute height from viewport
+            if let (Some(top), Some(bottom)) = (top_len, bottom_len) {
+                let computed_height = (root_size.height as f32 - top - bottom).max(0.0);
+                style.size.height = taffy::style::Dimension::length(computed_height);
+            } else if style.size.height == taffy::style::Dimension::percent(1.0) {
+                // If size is 100%, convert to viewport size
+                style.size.height = taffy::style::Dimension::length(root_size.height as f32);
+            }
         }
 
         let _ = id.taffy().borrow_mut().set_style(node, style);

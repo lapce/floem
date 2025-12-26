@@ -525,6 +525,9 @@ impl WindowHandle {
 
         self.compute_layout();
 
+        // Clear the flag after layout is complete
+        self.window_state.root_size_changed = false;
+
         taffy_duration
     }
 

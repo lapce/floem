@@ -64,6 +64,9 @@ pub struct WindowState {
     pub(crate) root_view_id: ViewId,
     pub(crate) root: Option<NodeId>,
     pub(crate) root_size: Size,
+    /// Set to true when root_size changes, cleared after layout.
+    /// Used to force fixed elements to recalculate their size.
+    pub(crate) root_size_changed: bool,
     pub(crate) scale: f64,
     pub(crate) scheduled_updates: Vec<FrameUpdate>,
     pub(crate) request_compute_layout: bool,
@@ -105,6 +108,7 @@ impl WindowState {
             pending_pointer_capture_target: PointerCaptureMap::new(),
             scale: 1.0,
             root_size: Size::ZERO,
+            root_size_changed: false,
             screen_size_bp: ScreenSizeBp::Xs,
             scheduled_updates: Vec::new(),
             request_paint: false,
@@ -354,6 +358,9 @@ impl WindowState {
     }
 
     pub fn set_root_size(&mut self, size: Size) {
+        if self.root_size != size {
+            self.root_size_changed = true;
+        }
         self.root_size = size;
         self.compute_layout();
     }

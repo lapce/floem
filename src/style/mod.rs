@@ -548,7 +548,11 @@ impl Style {
             if let Some(value) = value {
                 f(style, &value)
             } else {
-                style
+                // Use default value when prop is not set anywhere.
+                // This matches the probing behavior (line 515-516) and ensures
+                // layout styles inside with_context work even without an explicit theme.
+                let default_value = P::default_value();
+                f(style, &default_value)
             }
         });
 
