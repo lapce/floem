@@ -2,7 +2,7 @@ use floem::{
     peniko::{color::palette, Color},
     reactive::{Context, Scope},
     ui_events::keyboard::{Key, NamedKey},
-    views::{v_stack, Decorators, Empty, Label},
+    views::{Decorators, Empty, Label, Stack},
     IntoView, View,
 };
 
@@ -21,7 +21,7 @@ fn context_container<V: IntoView + 'static>(
     scope.enter(|| {
         Context::provide(color);
 
-        v_stack((colored_label(name), view_fn())).style(move |s| {
+        Stack::vertical((colored_label(name), view_fn())).style(move |s| {
             s.padding(10)
                 .border(1)
                 .border_color(color)
@@ -34,7 +34,7 @@ fn context_container<V: IntoView + 'static>(
 fn app_view() -> impl IntoView {
     Context::provide(palette::css::BLACK);
 
-    let view = v_stack((
+    let view = Stack::vertical((
         colored_label(String::from("app_view")),
         context_container(
             palette::css::HOT_PINK,

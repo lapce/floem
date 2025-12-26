@@ -8,7 +8,7 @@
 
 use floem::prelude::*;
 use floem::style::{Display, PointerEvents};
-use floem::views::{Container, Empty, Scroll};
+use floem::views::{Container, Empty, Scroll, Stack};
 use floem_test::{ClickTracker, HeadlessHarness, layers};
 
 // =============================================================================
@@ -289,7 +289,7 @@ fn test_scroll_position_changes_clickable_area() {
         .track_named("button2", Empty::new())
         .style(|s| s.size(100.0, 40.0));
 
-    let content = v_stack((button1, button2)).style(|s| s.size(100.0, 80.0));
+    let content = Stack::vertical((button1, button2)).style(|s| s.size(100.0, 80.0));
 
     // Scroll viewport only shows 50px
     let scroll = Scroll::new(content).style(|s| s.size(100.0, 50.0));
@@ -382,7 +382,7 @@ fn test_hidden_view_no_clip_effect() {
     let hidden_scroll = Scroll::new(Empty::new().style(|s| s.size(100.0, 100.0)))
         .style(|s| s.size(100.0, 50.0).display(Display::None));
 
-    let view = v_stack((hidden_scroll, visible_button)).style(|s| s.size(100.0, 50.0));
+    let view = Stack::vertical((hidden_scroll, visible_button)).style(|s| s.size(100.0, 50.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 50.0);
 
@@ -439,7 +439,7 @@ fn test_overlapping_scroll_containers() {
     // Right scroll overlaps left by using negative margin
     let right_scroll = Scroll::new(right_content).style(|s| s.size(50.0, 50.0).margin_left(-20.0));
 
-    let view = h_stack((left_scroll, right_scroll)).style(|s| s.size(80.0, 50.0));
+    let view = Stack::horizontal((left_scroll, right_scroll)).style(|s| s.size(80.0, 50.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 80.0, 50.0);
 
@@ -523,7 +523,7 @@ fn test_scrolled_out_content_top_not_clickable() {
         .track_named("button2", Empty::new())
         .style(|s| s.size(100.0, 100.0));
 
-    let content = v_stack((button1, button2)).style(|s| s.size(100.0, 200.0));
+    let content = Stack::vertical((button1, button2)).style(|s| s.size(100.0, 200.0));
 
     // Scroll container: 100x100
     let scroll = Scroll::new(content).style(|s| s.size(100.0, 100.0));

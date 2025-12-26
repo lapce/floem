@@ -10,7 +10,7 @@ use floem::{
             },
             text::{default_dark_color, SimpleStyling},
         },
-        stack, text_editor, Button, Decorators,
+        text_editor, Button, Decorators, Stack,
     },
     IntoView, View,
 };
@@ -48,10 +48,10 @@ fn app_view() -> impl IntoView {
         .placeholder("Some placeholder text");
     let doc = editor_a.doc();
 
-    let view = stack((
+    let view = Stack::new((
         editor_a,
         editor_b,
-        stack((
+        Stack::new((
             Button::new("Clear").action(move || {
                 doc.edit_single(
                     Selection::region(0, doc.text().len(), CursorAffinity::Backward),

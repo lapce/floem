@@ -3,13 +3,13 @@ use floem::{
     file::{FileDialogOptions, FileInfo, FileSpec},
     reactive::{RwSignal, SignalGet, SignalUpdate},
     text::Weight,
-    views::{h_stack, v_stack, Button, Decorators, Label},
+    views::{Button, Decorators, Label, Stack},
     IntoView,
 };
 
 pub fn files_view() -> impl IntoView {
     let files = RwSignal::new(String::new());
-    let view = h_stack((
+    let view = Stack::horizontal((
         Button::new("Select file").on_click_cont(move |_| {
             open_file(
                 FileDialogOptions::new()
@@ -87,9 +87,9 @@ pub fn files_view() -> impl IntoView {
     ))
     .style(|s| s.justify_center().gap(10));
 
-    v_stack((
+    Stack::vertical((
         view,
-        h_stack((
+        Stack::horizontal((
             "Path(s): ".style(|s| s.font_weight(Weight::BOLD)),
             Label::derived(move || files.get()),
         )),

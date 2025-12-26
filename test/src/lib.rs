@@ -50,7 +50,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use floem::prelude::*;
-use floem::views::{Decorators, stack_from_iter};
+use floem::views::{Decorators, Stack};
 
 // Re-export the headless harness from floem
 pub use floem::headless::*;
@@ -67,7 +67,7 @@ pub mod prelude {
     pub use floem::event::PointerId;
     pub use floem::headless::*;
     pub use floem::prelude::*;
-    pub use floem::views::{Container, Decorators, Empty, Scroll, stack, stack_from_iter};
+    pub use floem::views::{Container, Decorators, Empty, Scroll, Stack};
 }
 
 /// Tracks click events on views for testing.
@@ -267,7 +267,7 @@ pub fn layers<VT: ViewTuple + 'static>(children: VT) -> impl IntoView {
         .into_iter()
         .map(|v| v.style(|s| s.absolute().inset(0.0).size_full()));
 
-    stack_from_iter(children_iter).style(|s| s.size_full())
+    Stack::from_iter(children_iter).style(|s| s.size_full())
 }
 
 /// Extension trait for HeadlessHarness with convenient test methods.

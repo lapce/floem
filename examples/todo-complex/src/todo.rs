@@ -183,8 +183,7 @@ impl IntoView for TodoState {
             }
         });
 
-        let main_controls = (done_check, input)
-            .h_stack()
+        let main_controls = Stack::horizontal((done_check, input))
             .debug_name("Todo Checkbox and text input (main controls)")
             .style(|s| s.gap(10).width_full().items_center())
             .container()

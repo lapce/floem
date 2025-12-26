@@ -72,7 +72,7 @@ pub fn tab_view() -> impl IntoView {
             .with_theme(|s, t| s.border_color(t.border_muted()))
     });
 
-    let tabs_content_view = stack((tab(
+    let tabs_content_view = Stack::new((tab(
         move || active_tab.get(),
         move || tabs.get(),
         |tab| tab.idx,
@@ -81,8 +81,8 @@ pub fn tab_view() -> impl IntoView {
     .style(|s| s.size_full()),))
     .style(|s| s.size_full());
 
-    v_stack((
-        h_stack((
+    Stack::vertical((
+        Stack::horizontal((
             Button::new("add tab").action(move || {
                 tab_action.update(|a| {
                     *a = Action::Add;
@@ -104,7 +104,7 @@ pub fn tab_view() -> impl IntoView {
                 .items_center()
                 .align_content(AlignContent::SpaceAround)
         }),
-        stack((tabs_view, tabs_content_view)).style(|s| s.height(400.px()).width(500.px())),
+        Stack::new((tabs_view, tabs_content_view)).style(|s| s.height(400.px()).width(500.px())),
     ))
     .style(|s| s.size_full())
     .container()
@@ -116,7 +116,7 @@ pub fn tab_view() -> impl IntoView {
 }
 
 fn show_tab_content(tab: TabContent) -> impl IntoView {
-    v_stack((
+    Stack::vertical((
         tab.name.style(|s| s.font_size(15.).font_bold()),
         Label::derived(move || format!("{}", tab.idx)).style(|s| s.font_size(20.).font_bold()),
         "is now active".style(|s| s.font_size(13.)),

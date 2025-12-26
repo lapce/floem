@@ -21,7 +21,7 @@ pub fn canvas_view() -> impl IntoView {
     form((
         form_item(
             "Simple Canvas:",
-            h_stack((
+            Stack::horizontal((
                 canvas(move |cx, size| {
                     cx.fill(
                         &Rect::ZERO
@@ -48,7 +48,7 @@ pub fn canvas_view() -> impl IntoView {
 fn color_picker() -> impl IntoView {
     let color = RwSignal::new(css::AQUA);
 
-    let hue_opocity = v_stack((
+    let hue_opocity = Stack::vertical((
         HuePicker::new(move || color.get())
             .on_change(move |c| color.set(c))
             .style(|s| s.size_full().border(1).border_radius(8)),
@@ -59,7 +59,7 @@ fn color_picker() -> impl IntoView {
     .style(|s| s.gap(5).size_full())
     .debug_name("hue opacity");
 
-    let final_hue_op = h_stack((
+    let final_hue_op = Stack::horizontal((
         canvas(move |cx, size: Size| {
             let rect_path = Rect::ZERO.with_size(size).to_rounded_rect(8.);
 
@@ -76,7 +76,7 @@ fn color_picker() -> impl IntoView {
     .style(|s| s.gap(5).width_full().height_pct(20.))
     .debug_name("final and hue/opacity");
 
-    v_stack((
+    Stack::vertical((
         two_d_picker(color).style(|s| s.border(1).border_radius(8)),
         final_hue_op,
     ))

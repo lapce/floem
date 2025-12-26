@@ -325,7 +325,7 @@ fn test_nested_items_in_z_index_container() {
 
     let tracker = ClickTracker::new();
 
-    let items_container = v_stack((
+    let items_container = Stack::vertical((
         tracker.track_named("item0", Empty::new().style(|s| s.size(100.0, 30.0))),
         tracker.track_named("item1", Empty::new().style(|s| s.size(100.0, 30.0))),
         tracker.track_named("item2", Empty::new().style(|s| s.size(100.0, 30.0))),
@@ -605,7 +605,7 @@ fn test_with_vstack_items() {
 
     let tracker = ClickTracker::new();
 
-    let items_container = v_stack((
+    let items_container = Stack::vertical((
         tracker.track_named("item0", Empty::new().style(|s| s.size(100.0, 30.0))),
         tracker.track_named("item1", Empty::new().style(|s| s.size(100.0, 30.0))),
         tracker.track_named("item2", Empty::new().style(|s| s.size(100.0, 30.0))),
@@ -941,7 +941,7 @@ fn test_select_like_no_explicit_container_width() {
 
     let tracker = ClickTracker::new();
 
-    let items_container = v_stack((
+    let items_container = Stack::vertical((
         tracker.track_named("item0", Empty::new().style(|s| s.width_full().height(30.0))),
         tracker.track_named("item1", Empty::new().style(|s| s.width_full().height(30.0))),
         tracker.track_named("item2", Empty::new().style(|s| s.width_full().height(30.0))),
@@ -977,7 +977,8 @@ fn test_select_like_no_explicit_container_width() {
         .style(|s| s.position(Position::Relative).min_width(120.0));
 
     // Wrap in v_stack like a real app would
-    let view = v_stack((select_container,)).style(|s| s.width_full().height_full().padding(50.0));
+    let view =
+        Stack::vertical((select_container,)).style(|s| s.width_full().height_full().padding(50.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 400.0, 400.0);
 
@@ -1008,7 +1009,7 @@ fn test_select_structure_with_inset_top_pct() {
 
     let tracker = ClickTracker::new();
 
-    let items_container = v_stack((
+    let items_container = Stack::vertical((
         tracker.track_named("item0", Empty::new().style(|s| s.width_full().height(30.0))),
         tracker.track_named("item1", Empty::new().style(|s| s.width_full().height(30.0))),
         tracker.track_named("item2", Empty::new().style(|s| s.width_full().height(30.0))),
@@ -1040,7 +1041,8 @@ fn test_select_structure_with_inset_top_pct() {
     let select_container = Container::new(stack((trigger, backdrop, dropdown)))
         .style(|s| s.position(Position::Relative).min_width(120.0));
 
-    let view = v_stack((select_container,)).style(|s| s.width_full().height_full().padding(50.0));
+    let view =
+        Stack::vertical((select_container,)).style(|s| s.width_full().height_full().padding(50.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 400.0, 400.0);
 
@@ -1080,7 +1082,7 @@ fn test_display_none_to_visible_layout() {
     let tracker = ClickTracker::new();
     let is_open = RwSignal::new(false); // Start closed (display: None)
 
-    let items_container = v_stack((
+    let items_container = Stack::vertical((
         tracker.track_named("item0", Empty::new().style(|s| s.size(100.0, 30.0))),
         tracker.track_named("item1", Empty::new().style(|s| s.size(100.0, 30.0))),
         tracker.track_named("item2", Empty::new().style(|s| s.size(100.0, 30.0))),
@@ -1153,7 +1155,7 @@ fn test_display_toggle_multiple_times() {
     let tracker = ClickTracker::new();
     let is_open = RwSignal::new(true); // Start open
 
-    let items_container = v_stack((
+    let items_container = Stack::vertical((
         tracker.track_named("item0", Empty::new().style(|s| s.size(100.0, 30.0))),
         tracker.track_named("item1", Empty::new().style(|s| s.size(100.0, 30.0))),
     ));
@@ -1262,7 +1264,7 @@ fn test_inside_scroll_view_with_display_toggle() {
     let tracker = ClickTracker::new();
     let is_open = RwSignal::new(false); // Start closed like real Select
 
-    let items_container = v_stack((
+    let items_container = Stack::vertical((
         tracker.track_named("item0", Empty::new().style(|s| s.width(100.0).height(30.0))),
         tracker.track_named("item1", Empty::new().style(|s| s.width(100.0).height(30.0))),
         tracker.track_named("item2", Empty::new().style(|s| s.width(100.0).height(30.0))),
@@ -1350,7 +1352,7 @@ fn test_inset_top_pct_positioning() {
     let tracker = ClickTracker::new();
     let is_open = RwSignal::new(false);
 
-    let items_container = v_stack((
+    let items_container = Stack::vertical((
         tracker.track_named("item0", Empty::new().style(|s| s.width(100.0).height(30.0))),
         tracker.track_named("item1", Empty::new().style(|s| s.width(100.0).height(30.0))),
         tracker.track_named("item2", Empty::new().style(|s| s.width(100.0).height(30.0))),
@@ -1618,7 +1620,7 @@ fn test_dropdown_extends_beyond_scroll_area() {
     let tracker = ClickTracker::new();
     let is_open = RwSignal::new(false);
 
-    let items_container = v_stack((
+    let items_container = Stack::vertical((
         tracker.track_named("item0", Empty::new().style(|s| s.width(100.0).height(30.0))),
         tracker.track_named("item1", Empty::new().style(|s| s.width(100.0).height(30.0))),
         tracker.track_named("item2", Empty::new().style(|s| s.width(100.0).height(30.0))),

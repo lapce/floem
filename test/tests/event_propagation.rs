@@ -12,7 +12,7 @@ fn test_pointer_down_move_away_no_click() {
     // Pointer down on view, move away, then pointer up should NOT fire click
     let tracker = ClickTracker::new();
 
-    let view = stack((
+    let view = Stack::new((
         tracker
             .track_named("target", Empty::new())
             .style(|s| s.size(50.0, 50.0)),
@@ -43,7 +43,7 @@ fn test_pointer_down_move_away_move_back_clicks() {
     // Pointer down, move away, move back, then pointer up SHOULD fire click
     let tracker = ClickTracker::new();
 
-    let view = stack((
+    let view = Stack::new((
         tracker
             .track_named("target", Empty::new())
             .style(|s| s.size(50.0, 50.0)),
@@ -77,7 +77,7 @@ fn test_pointer_down_on_a_up_on_b_neither_clicks() {
     // Pointer down on view A, pointer up on view B - neither should get click
     let tracker = ClickTracker::new();
 
-    let view = stack((
+    let view = Stack::new((
         tracker
             .track_named("left", Empty::new())
             .style(|s| s.size(50.0, 100.0)),
@@ -317,7 +317,7 @@ fn test_clicking_state_persists_during_move() {
     let target = Empty::new().style(|s| s.size(50.0, 100.0));
     let target_id = target.view_id();
 
-    let view = stack((target, Empty::new().style(|s| s.size(50.0, 100.0))))
+    let view = Stack::new((target, Empty::new().style(|s| s.size(50.0, 100.0))))
         .style(|s| s.size(100.0, 100.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
@@ -499,7 +499,7 @@ fn test_sibling_views_no_bubbling_between_siblings() {
     // Clicking one sibling should not affect the other sibling
     let tracker = ClickTracker::new();
 
-    let view = stack((
+    let view = Stack::new((
         tracker
             .track_named("left", Empty::new())
             .style(|s| s.size(50.0, 100.0)),
@@ -568,7 +568,7 @@ fn test_clicking_state_cleared_for_all_views_on_pointer_up() {
     let child2 = Empty::new().style(|s| s.size(50.0, 100.0));
     let child2_id = child2.view_id();
 
-    let view = stack((child1, child2)).style(|s| s.size(100.0, 100.0));
+    let view = Stack::new((child1, child2)).style(|s| s.size(100.0, 100.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
@@ -1051,7 +1051,7 @@ fn test_nested_stack_click_no_z_index() {
 
     let tracker = ClickTracker::new();
 
-    let view = stack((stack((
+    let view = Stack::new((Stack::new((
         tracker
             .track_named("button1", Empty::new())
             .style(|s| s.size(50.0, 50.0)),
@@ -1104,7 +1104,7 @@ fn test_overlapping_siblings_no_cross_propagation() {
     let content_clicked = RwSignal::new(false);
 
     // Create overlapping siblings using stack with absolute positioning
-    let view = stack((
+    let view = Stack::new((
         // Backdrop - covers entire area, lower z-index
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
@@ -1174,7 +1174,7 @@ fn test_overlapping_siblings_click_outside_content() {
         });
     let content_id = content.view_id();
 
-    let view = stack((backdrop, content)).style(|s| s.size(100.0, 100.0));
+    let view = Stack::new((backdrop, content)).style(|s| s.size(100.0, 100.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
@@ -1225,7 +1225,7 @@ fn test_dialog_structure_content_click_no_backdrop() {
     let content_clicked = RwSignal::new(false);
 
     // Use stack instead of layers for consistent behavior
-    let view = stack((
+    let view = Stack::new((
         // Backdrop - clicking it closes dialog
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
@@ -1270,7 +1270,7 @@ fn test_dialog_structure_backdrop_click_closes() {
     let dialog_open = RwSignal::new(true);
 
     // Use stack instead of layers for consistent behavior
-    let view = stack((
+    let view = Stack::new((
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
             .on_click_stop(move |_| {
@@ -1307,7 +1307,7 @@ fn test_multiple_overlapping_layers_topmost_wins() {
     let layer3_clicked = RwSignal::new(false);
 
     // Use stack instead of layers for consistent behavior
-    let view = stack((
+    let view = Stack::new((
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
             .on_click_stop({
@@ -1365,7 +1365,7 @@ fn test_click_cont_bubbles_to_parent_not_siblings() {
     let order_clone2 = click_order.clone();
 
     // Use stack with a parent that tracks clicks
-    let view = stack((
+    let view = Stack::new((
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
             .on_click_stop({
@@ -1417,7 +1417,7 @@ fn test_no_handler_on_topmost_does_not_fall_through_to_sibling() {
 
     let backdrop_clicked = RwSignal::new(false);
 
-    let view = stack((
+    let view = Stack::new((
         // Backdrop with handler
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
@@ -1461,7 +1461,7 @@ fn test_overlapping_siblings_no_z_index_dom_order() {
     let content_clicked = RwSignal::new(false);
 
     // No explicit z-index - rely on DOM order (later = on top)
-    let view = stack((
+    let view = Stack::new((
         // Backdrop - comes first, so it's BELOW content
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
@@ -1519,7 +1519,7 @@ fn test_dialog_with_overlay() {
     let content_clicked = RwSignal::new(false);
 
     let view = Overlay::new(
-        stack((
+        Stack::new((
             // Backdrop - clicking it closes dialog
             Empty::new()
                 .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
@@ -1565,7 +1565,7 @@ fn test_dialog_with_container_derived() {
     let dialog_open = RwSignal::new(true);
     let content_clicked = RwSignal::new(false);
 
-    let view = stack((
+    let view = Stack::new((
         // Backdrop
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
@@ -1575,7 +1575,7 @@ fn test_dialog_with_container_derived() {
         // Content using Container::derived like the real dialog
         Container::derived(move || {
             // Simulate dialog content with header and footer
-            stack((
+            Stack::new((
                 Empty::new().style(|s| s.size(50.0, 20.0)), // Header
                 Empty::new().style(|s| s.size(50.0, 30.0)), // Footer
             ))
@@ -1617,7 +1617,7 @@ fn test_dialog_click_on_nested_button() {
     let dialog_open = RwSignal::new(true);
     let button_clicked = RwSignal::new(false);
 
-    let view = stack((
+    let view = Stack::new((
         // Backdrop
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
@@ -1626,7 +1626,7 @@ fn test_dialog_click_on_nested_button() {
             }),
         // Content with a clickable button inside
         Container::derived(move || {
-            stack((
+            Stack::new((
                 Empty::new().style(|s| s.size(50.0, 20.0)), // Header
                 // A button at the bottom of the dialog
                 Empty::new()
@@ -1676,7 +1676,7 @@ fn test_exact_dialog_structure() {
 
     let view = Overlay::with_id(
         id,
-        stack((
+        Stack::new((
             // Backdrop - exact same as dialog.rs
             Empty::new()
                 .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
@@ -1686,15 +1686,15 @@ fn test_exact_dialog_structure() {
             // Content - Container::derived like dialog.rs
             Container::derived(move || {
                 // Mimic DialogContent with DialogHeader and DialogFooter
-                stack((
+                Stack::new((
                     // DialogHeader
-                    stack((
+                    Stack::new((
                         floem::views::Label::new("Title"),
                         floem::views::Label::new("Description"),
                     ))
                     .style(|s| s.flex_col().gap(2.0)),
                     // DialogFooter with buttons
-                    stack((
+                    Stack::new((
                         Empty::new().style(|s| s.size(30.0, 20.0)), // Cancel button
                         Empty::new().style(|s| s.size(30.0, 20.0)), // Confirm button
                     ))
@@ -1746,7 +1746,7 @@ fn test_dialog_content_no_handler() {
 
     let view = Overlay::with_id(
         id,
-        stack((
+        Stack::new((
             // Backdrop
             Empty::new()
                 .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
@@ -1755,7 +1755,7 @@ fn test_dialog_content_no_handler() {
                 }),
             // Content - NO click handler!
             Container::derived(move || {
-                stack((
+                Stack::new((
                     floem::views::Label::new("Title"),
                     Empty::new().style(|s| s.size(30.0, 20.0)),
                 ))
@@ -1801,7 +1801,7 @@ fn test_dialog_with_translate_centering() {
 
     let view = Overlay::with_id(
         id,
-        stack((
+        Stack::new((
             // Backdrop
             Empty::new()
                 .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
@@ -1855,7 +1855,7 @@ fn test_dialog_with_translate_no_handler() {
 
     let view = Overlay::with_id(
         id,
-        stack((
+        Stack::new((
             // Backdrop
             Empty::new()
                 .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
@@ -1961,7 +1961,7 @@ fn test_overlay_fixed_translate_click_offset_bug() {
 
     // This replicates DialogContent structure exactly
     let view = Overlay::new(
-        stack((
+        Stack::new((
             // Backdrop - fills entire viewport
             Empty::new()
                 .style(|s| s.absolute().inset(0.0).z_index(1))
@@ -1969,7 +1969,7 @@ fn test_overlay_fixed_translate_click_offset_bug() {
                     backdrop_clicked.set(true);
                 }),
             // Content - centered using translate (like DialogContent)
-            v_stack((
+            Stack::vertical((
                 Empty::new().style(|s| s.size(60.0, 30.0)), // Header
                 Empty::new().style(|s| s.size(60.0, 30.0)), // Footer
             ))
@@ -2018,7 +2018,7 @@ fn test_overlay_fixed_no_translate() {
     let content_clicked = RwSignal::new(false);
 
     let view = Overlay::new(
-        stack((
+        Stack::new((
             // Backdrop
             Empty::new()
                 .style(|s| s.absolute().inset(0.0).z_index(1))
@@ -2060,7 +2060,7 @@ fn test_fixed_translate_no_overlay() {
     let content_clicked = RwSignal::new(false);
 
     // Same as dialog but using stack instead of Overlay
-    let view = stack((
+    let view = Stack::new((
         // Backdrop
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(200.0, 200.0).z_index(1))
@@ -2118,7 +2118,7 @@ fn test_overlay_fixed_click_corners() {
         let content_clicked = RwSignal::new(false);
 
         let view = Overlay::new(
-            stack((
+            Stack::new((
                 // Backdrop - fills entire area
                 Empty::new()
                     .style(|s| s.absolute().inset(0.0).z_index(1))
@@ -2195,7 +2195,7 @@ fn test_overlay_fixed_translate_click_corners() {
         let content_clicked = RwSignal::new(false);
 
         let view = Overlay::new(
-            stack((
+            Stack::new((
                 // Backdrop
                 Empty::new()
                     .style(|s| s.absolute().inset(0.0).z_index(1))
@@ -2268,7 +2268,7 @@ fn test_overlay_fixed_click_outside_content() {
         let content_clicked = RwSignal::new(false);
 
         let view = Overlay::new(
-            stack((
+            Stack::new((
                 // Backdrop
                 Empty::new()
                     .style(|s| s.absolute().inset(0.0).z_index(1))
@@ -2341,7 +2341,7 @@ fn test_no_overlay_fixed_translate_probe_boundary() {
         let content_clicked = RwSignal::new(false);
 
         // NO Overlay - just stack directly
-        let view = stack((
+        let view = Stack::new((
             Empty::new()
                 .style(|s| s.absolute().inset(0.0).z_index(1))
                 .on_click_stop({
@@ -2416,7 +2416,7 @@ fn test_overlay_fixed_translate_probe_boundary() {
         let content_clicked = RwSignal::new(false);
 
         let view = Overlay::new(
-            stack((
+            Stack::new((
                 Empty::new()
                     .style(|s| s.absolute().inset(0.0).z_index(1))
                     .on_click_stop({
@@ -2473,7 +2473,7 @@ fn test_overlay_fixed_translate_probe_boundary() {
         let content_clicked = RwSignal::new(false);
 
         let view = Overlay::new(
-            stack((
+            Stack::new((
                 Empty::new()
                     .style(|s| s.absolute().inset(0.0).z_index(1))
                     .on_click_stop({
@@ -2526,7 +2526,7 @@ fn test_overlay_fixed_translate_debug_layout() {
     let content_clicked = RwSignal::new(false);
 
     let view = Overlay::new(
-        stack((
+        Stack::new((
             // Backdrop
             Empty::new()
                 .style(|s| s.absolute().inset(0.0).z_index(1))
@@ -2612,7 +2612,7 @@ fn test_events_do_not_bubble_to_parents_sibling() {
     let sibling2_clicked = RwSignal::new(false);
     let nested_child_clicked = RwSignal::new(false);
 
-    let view = stack((
+    let view = Stack::new((
         // Sibling1 - should NOT receive click
         Empty::new()
             .style(|s| s.size(50.0, 100.0))
@@ -2676,7 +2676,7 @@ fn test_dialog_header_click_does_not_close() {
     let header_clicked = RwSignal::new(false);
 
     let view = Overlay::new(
-        stack((
+        Stack::new((
             // Backdrop
             Empty::new()
                 .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
@@ -2684,7 +2684,7 @@ fn test_dialog_header_click_does_not_close() {
                     dialog_open.set(false);
                 }),
             // Content (like DialogContent)
-            v_stack((
+            Stack::vertical((
                 // Header - like DialogHeader (with click handler to track)
                 Empty::new()
                     .style(|s| s.size(50.0, 20.0))
@@ -2737,7 +2737,7 @@ fn test_deeply_nested_no_cross_branch_bubbling() {
     let branch_b_clicked = RwSignal::new(false);
     let leaf_b_clicked = RwSignal::new(false);
 
-    let view = h_stack((
+    let view = Stack::horizontal((
         // BranchA
         Container::new(
             Empty::new().style(|s| s.size(40.0, 80.0)), // LeafA
@@ -2792,7 +2792,7 @@ fn test_bubbling_through_handler_less_child() {
     let sibling1_clicked = RwSignal::new(false);
     let sibling2_clicked = RwSignal::new(false);
 
-    let view = h_stack((
+    let view = Stack::horizontal((
         // Sibling1
         Empty::new()
             .style(|s| s.size(50.0, 100.0))
@@ -2848,7 +2848,7 @@ fn test_fixed_overlay_child_receives_click() {
     let child_clicked = RwSignal::new(false);
 
     let view = Overlay::new(
-        stack((
+        Stack::new((
             // Backdrop
             Empty::new()
                 .style(|s| s.absolute().inset(0.0))
@@ -2857,7 +2857,7 @@ fn test_fixed_overlay_child_receives_click() {
                     backdrop_clicked.set(true);
                 }),
             // Content - centered with translate
-            v_stack((
+            Stack::vertical((
                 // Clickable child (like a button)
                 Empty::new()
                     .style(|s| s.size(60.0, 30.0))
@@ -2927,7 +2927,7 @@ fn test_fixed_overlay_child_click_bounds() {
     let child_clicks = RwSignal::new(0);
 
     let view = Overlay::new(
-        stack((
+        Stack::new((
             // Backdrop
             Empty::new()
                 .style(|s| s.absolute().inset(0.0))
@@ -2937,7 +2937,7 @@ fn test_fixed_overlay_child_click_bounds() {
             // Content - centered with translate
             floem::views::Container::with_id(
                 content_id,
-                v_stack((
+                Stack::vertical((
                     // Clickable child with known ID
                     floem::views::Container::with_id(
                         child_id,
@@ -3039,7 +3039,7 @@ fn test_fixed_overlay_deeply_nested_child() {
     let level3_clicked = RwSignal::new(false);
 
     let view = Overlay::new(
-        stack((
+        Stack::new((
             // Backdrop
             Empty::new()
                 .style(|s| s.absolute().inset(0.0))
@@ -3121,13 +3121,13 @@ fn test_fixed_overlay_child_probe_bounds() {
     // Simple structure: backdrop + content with child
     // Content is 80x60 centered, child is 60x30 at top of content
     let view = Overlay::new(
-        stack((
+        Stack::new((
             Empty::new()
                 .style(|s| s.absolute().inset(0.0))
                 .on_click_stop(move |_| {
                     backdrop_clicks.update(|c| *c += 1);
                 }),
-            v_stack((floem::views::Container::with_id(
+            Stack::vertical((floem::views::Container::with_id(
                 child_id,
                 Empty::new().style(|s| s.size(60.0, 30.0)),
             )
@@ -3320,7 +3320,7 @@ fn test_absolute_element_clips_children() {
 
     // Absolute positioned container at (50, 50), size 100x100
     // Child inside is 50x50 at origin
-    let view = stack((
+    let view = Stack::new((
         // Background to catch clicks outside the absolute element
         Empty::new()
             .on_click_stop(move |_| {
