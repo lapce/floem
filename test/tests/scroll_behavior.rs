@@ -936,3 +936,125 @@ fn test_clip_aware_hit_testing_after_scroll_clipped() {
         "Button2 should be clickable after scrolling into view"
     );
 }
+
+// =============================================================================
+// Paint Order Tests for Partially Visible Items
+// =============================================================================
+
+/// Test that partially visible items at the bottom of a scroll view are painted.
+/// This verifies that items extending beyond the scroll viewport are still painted
+/// (and clipped), not skipped entirely.
+#[test]
+fn test_scroll_paints_partially_visible_bottom_item() {
+    // Create content with an item that will be partially visible at the bottom
+    // Content layout:
+    //   - Empty spacer: 80px tall (fills most of viewport)
+    //   - Target item: 40px tall (will extend 20px beyond viewport when at bottom)
+    //
+    // Viewport: 100px tall
+    // Target starts at y=80, ends at y=120
+    // So 20px of the target is visible (y=80-100), 20px is beyond viewport
+
+    let spacer = Empty::new().style(|s| s.size(100.0, 80.0));
+    let target = Empty::new().style(|s| s.size(100.0, 40.0));
+    let target_id = target.view_id();
+
+    let content = Stack::new((spacer, target)).style(|s| s.flex_col().size(100.0, 120.0));
+    let scroll_view = Scroll::new(content).style(|s| s.size(100.0, 100.0));
+
+    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
+
+    // Get paint order - the target should be in it even though it extends beyond viewport
+    let paint_order = harness.paint_and_get_order();
+
+    let target_painted = paint_order.contains(&target_id);
+    assert!(
+        target_painted,
+        "Partially visible item at bottom of scroll should be painted. Paint order: {:?}",
+        paint_order
+    );
+}
+
+/// Test that items entirely outside the scroll viewport are handled.
+/// Note: The paint_order may include all items in the tree for various reasons
+/// (e.g., layout computation, style updates). The important thing is that
+/// visible items ARE painted. The actual GPU clipping happens at render time.
+#[test]
+fn test_scroll_handles_invisible_items() {
+    // Create content with items:
+    //   - visible_item: at y=0, 50px tall (fully visible)
+    //   - invisible_item: at y=150, 50px tall (fully outside viewport)
+    //
+    // Viewport: 100px tall
+
+    let visible_item = Empty::new().style(|s| s.size(100.0, 50.0));
+    let visible_id = visible_item.view_id();
+
+    let spacer = Empty::new().style(|s| s.size(100.0, 100.0)); // Push invisible item below viewport
+
+    let invisible_item = Empty::new().style(|s| s.size(100.0, 50.0));
+    let _invisible_id = invisible_item.view_id();
+
+    let content = Stack::new((visible_item, spacer, invisible_item))
+        .style(|s| s.flex_col().size(100.0, 200.0));
+    let scroll_view = Scroll::new(content).style(|s| s.size(100.0, 100.0));
+
+    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
+
+    let paint_order = harness.paint_and_get_order();
+
+    // The key assertion: visible items ARE in the paint order
+    assert!(
+        paint_order.contains(&visible_id),
+        "Visible item should be painted"
+    );
+    // Note: invisible items may or may not be in paint_order depending on
+    // implementation details. The actual clipping happens at the GPU level.
+}
+
+/// Test that after scrolling, partially visible items at the new bottom are painted.
+#[test]
+fn test_scroll_paints_partially_visible_after_scroll() {
+    // Create tall content with multiple items
+    // After scrolling, an item at the new bottom edge should be painted even if partial
+
+    let item1 = Empty::new().style(|s| s.size(100.0, 50.0));
+    let item2 = Empty::new().style(|s| s.size(100.0, 50.0));
+    let item3 = Empty::new().style(|s| s.size(100.0, 50.0));
+    let item4 = Empty::new().style(|s| s.size(100.0, 50.0));
+    let item4_id = item4.view_id();
+    let item5 = Empty::new().style(|s| s.size(100.0, 50.0));
+    let item5_id = item5.view_id();
+
+    // Total height: 250px, viewport: 100px
+    let content =
+        Stack::new((item1, item2, item3, item4, item5)).style(|s| s.flex_col().size(100.0, 250.0));
+    let scroll_view = Scroll::new(content).style(|s| s.size(100.0, 100.0));
+
+    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
+
+    // Scroll down by 120px
+    // Viewport now shows y=120 to y=220
+    // item1: y=0-50 (above viewport, not visible)
+    // item2: y=50-100 (above viewport, not visible)
+    // item3: y=100-150 (partially visible at top: y=120-150 visible)
+    // item4: y=150-200 (fully visible)
+    // item5: y=200-250 (partially visible at bottom: y=200-220 visible)
+    harness.scroll_down(50.0, 50.0, 120.0);
+
+    let paint_order = harness.paint_and_get_order();
+
+    // item4 should definitely be painted (fully visible)
+    assert!(
+        paint_order.contains(&item4_id),
+        "Fully visible item4 should be painted after scroll"
+    );
+
+    // item5 should also be painted because 20px of it is visible
+    // The key test: partially visible items at the bottom ARE painted
+    assert!(
+        paint_order.contains(&item5_id),
+        "Partially visible item5 at bottom should be painted after scroll. Paint order: {:?}",
+        paint_order
+    );
+}
