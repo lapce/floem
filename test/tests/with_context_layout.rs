@@ -89,7 +89,7 @@ fn test_absolute_positioning_directly() {
     });
     let element_id = element.view_id();
 
-    let view = floem::views::stack((element,)).style(|s| s.size(200.0, 200.0));
+    let view = Stack::new((element,)).style(|s| s.size(200.0, 200.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
     harness.rebuild();
@@ -175,7 +175,7 @@ fn test_absolute_inside_with_context() {
     });
     let element_id = element.view_id();
 
-    let view = floem::views::stack((element,)).style(|s| s.size(200.0, 200.0));
+    let view = Stack::new((element,)).style(|s| s.size(200.0, 200.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
     harness.rebuild();
@@ -204,7 +204,7 @@ fn test_flex_inside_with_context() {
     let id = view.view_id();
 
     // Put it in a flex container with fixed width
-    let container = floem::views::stack((view,)).style(|s| s.flex_row().size(200.0, 100.0));
+    let container = Stack::new((view,)).style(|s| s.flex_row().size(200.0, 100.0));
 
     let mut harness = HeadlessHarness::new_with_size(container, 200.0, 200.0);
     harness.rebuild();
@@ -230,7 +230,7 @@ fn test_padding_inside_with_context() {
             .with_test_theme(|s, _t| s.padding(10.0))
     });
 
-    let view = floem::views::stack((container,)).style(|s| s.size(200.0, 200.0));
+    let view = Stack::new((container,)).style(|s| s.size(200.0, 200.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
     harness.rebuild();
@@ -259,7 +259,7 @@ fn test_margin_inside_with_context() {
     });
     let element_id = element.view_id();
 
-    let view = floem::views::stack((element,)).style(|s| s.size(200.0, 200.0));
+    let view = Stack::new((element,)).style(|s| s.size(200.0, 200.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
     harness.rebuild();
@@ -287,12 +287,12 @@ fn test_gap_inside_with_context() {
     let child2 = Empty::new().style(|s| s.size(50.0, 50.0));
     let child2_id = child2.view_id();
 
-    let container = floem::views::stack((child1, child2)).style(move |s| {
+    let container = Stack::new((child1, child2)).style(move |s| {
         s.set(TestThemeProp, theme)
             .with_test_theme(|s, _t| s.flex_row().gap(20.0))
     });
 
-    let view = floem::views::stack((container,)).style(|s| s.size(200.0, 200.0));
+    let view = Stack::new((container,)).style(|s| s.size(200.0, 200.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
     harness.rebuild();
@@ -357,7 +357,7 @@ fn test_mixed_layout_inside_outside_with_context() {
     });
     let element_id = element.view_id();
 
-    let view = floem::views::stack((element,)).style(|s| s.size(200.0, 200.0));
+    let view = Stack::new((element,)).style(|s| s.size(200.0, 200.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
     harness.rebuild();
@@ -438,8 +438,8 @@ fn test_size_with_inherited_context() {
     let child_id = child.view_id();
 
     // Parent sets the theme context
-    let parent = floem::views::stack((child,))
-        .style(move |s| s.size(300.0, 200.0).set(TestThemeProp, theme));
+    let parent =
+        Stack::new((child,)).style(move |s| s.size(300.0, 200.0).set(TestThemeProp, theme));
 
     let mut harness = HeadlessHarness::new_with_size(parent, 300.0, 200.0);
     harness.rebuild();
@@ -480,8 +480,8 @@ fn test_absolute_with_inherited_context() {
     let child_id = child.view_id();
 
     // Parent sets theme
-    let parent = floem::views::stack((child,))
-        .style(move |s| s.size(200.0, 200.0).set(TestThemeProp, theme));
+    let parent =
+        Stack::new((child,)).style(move |s| s.size(200.0, 200.0).set(TestThemeProp, theme));
 
     let mut harness = HeadlessHarness::new_with_size(parent, 200.0, 200.0);
     harness.rebuild();
@@ -523,8 +523,8 @@ fn test_container_derived_with_inherited_context() {
     let child_id = child.view_id();
 
     // Parent sets theme
-    let parent = floem::views::stack((child,))
-        .style(move |s| s.size(400.0, 300.0).set(TestThemeProp, theme));
+    let parent =
+        Stack::new((child,)).style(move |s| s.size(400.0, 300.0).set(TestThemeProp, theme));
 
     let mut harness = HeadlessHarness::new_with_size(parent, 400.0, 300.0);
     harness.rebuild();
@@ -574,7 +574,7 @@ fn test_layout_with_context_no_theme_set() {
     let child_id = child.view_id();
 
     // Parent does NOT set theme - this is the key difference!
-    let parent = floem::views::stack((child,)).style(|s| s.size(400.0, 300.0));
+    let parent = Stack::new((child,)).style(|s| s.size(400.0, 300.0));
 
     let mut harness = HeadlessHarness::new_with_size(parent, 400.0, 300.0);
     harness.rebuild();
@@ -624,7 +624,7 @@ fn test_container_derived_no_theme_set() {
     let child_id = child.view_id();
 
     // Parent does NOT set theme!
-    let parent = floem::views::stack((child,)).style(|s| s.size(400.0, 300.0));
+    let parent = Stack::new((child,)).style(|s| s.size(400.0, 300.0));
 
     let mut harness = HeadlessHarness::new_with_size(parent, 400.0, 300.0);
     harness.rebuild();
@@ -679,8 +679,8 @@ fn test_centering_with_inherited_context() {
     let child_id = child.view_id();
 
     // Parent sets theme
-    let parent = floem::views::stack((child,))
-        .style(move |s| s.size(400.0, 300.0).set(TestThemeProp, theme));
+    let parent =
+        Stack::new((child,)).style(move |s| s.size(400.0, 300.0).set(TestThemeProp, theme));
 
     let mut harness = HeadlessHarness::new_with_size(parent, 400.0, 300.0);
     harness.rebuild();

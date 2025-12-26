@@ -34,7 +34,9 @@ use crate::theme::StyleThemeExt;
 use crate::unit::{Pct, Px, PxPct, PxPctAuto};
 use crate::view::ViewTupleFlat;
 use crate::view::{IntoView, View};
-use crate::views::{ContainerExt, Decorators, Label, TooltipExt, canvas, stack, v_stack_from_iter};
+use crate::views::{
+    ContainerExt, Decorators, Label, Stack, TooltipExt, canvas, stack, v_stack_from_iter,
+};
 
 use super::FontSize;
 
@@ -150,14 +152,15 @@ where
                         .into_any()
                 });
 
-                stack((index_label, item_view)).style(|s| s.items_center().gap(8.0).padding(4.0))
+                Stack::new((index_label, item_view))
+                    .style(|s| s.items_center().gap(8.0).padding(4.0))
             }))
             .style(|s| s.gap(4.0))
         };
 
         // Return the tooltip view wrapped in the preview
         Some(
-            stack((preview, tooltip_view()))
+            Stack::new((preview, tooltip_view()))
                 .style(|s| s.gap(8.0))
                 .into_any(),
         )
@@ -263,7 +266,8 @@ impl<T: StylePropValue + 'static> StylePropValue for Vec<T> {
                         .into_any()
                 });
 
-                stack((index_label, item_view)).style(|s| s.items_center().gap(8.0).padding(4.0))
+                Stack::new((index_label, item_view))
+                    .style(|s| s.items_center().gap(8.0).padding(4.0))
             }))
             .style(|s| s.gap(4.0))
         };
@@ -492,7 +496,7 @@ impl StylePropValue for Gradient {
                 .margin_left(6.0)
         });
         Some(
-            stack((Label::new(format!("{self:?}")), color))
+            Stack::new((Label::new(format!("{self:?}")), color))
                 .style(|s| s.items_center())
                 .into_any(),
         )
@@ -636,7 +640,7 @@ impl StylePropValue for StrokeWrap {
                 rows.push(offset_row.into_any());
             }
 
-            v_stack_from_iter(rows).style(|s| {
+            Stack::vertical_from_iter(rows).style(|s| {
                 s.grid()
                     .grid_template_columns([auto(), fr(1.)])
                     .justify_center()

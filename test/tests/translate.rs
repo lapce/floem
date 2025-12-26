@@ -15,7 +15,7 @@
 use floem::HasViewId;
 use floem::headless::HeadlessHarness;
 use floem::unit::Pct;
-use floem::views::{Decorators, Empty, stack};
+use floem::views::{Decorators, Empty, Stack};
 
 // ============================================================================
 // Pixel-based translate tests (baseline)
@@ -33,7 +33,7 @@ fn test_translate_x_pixels() {
     });
     let element_id = element.view_id();
 
-    let view = stack((element,)).style(|s| s.size(200.0, 200.0));
+    let view = Stack::new((element,)).style(|s| s.size(200.0, 200.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
     harness.rebuild();
@@ -64,7 +64,7 @@ fn test_translate_y_pixels() {
     });
     let element_id = element.view_id();
 
-    let view = stack((element,)).style(|s| s.size(200.0, 200.0));
+    let view = Stack::new((element,)).style(|s| s.size(200.0, 200.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
     harness.rebuild();
@@ -98,7 +98,7 @@ fn test_translate_x_percentage() {
     });
     let element_id = element.view_id();
 
-    let view = stack((element,)).style(|s| s.size(200.0, 200.0));
+    let view = Stack::new((element,)).style(|s| s.size(200.0, 200.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
     harness.rebuild();
@@ -129,7 +129,7 @@ fn test_translate_y_percentage() {
     });
     let element_id = element.view_id();
 
-    let view = stack((element,)).style(|s| s.size(200.0, 200.0));
+    let view = Stack::new((element,)).style(|s| s.size(200.0, 200.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
     harness.rebuild();
@@ -160,7 +160,7 @@ fn test_translate_negative_percentage() {
     });
     let element_id = element.view_id();
 
-    let view = stack((element,)).style(|s| s.size(200.0, 200.0));
+    let view = Stack::new((element,)).style(|s| s.size(200.0, 200.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
     harness.rebuild();
@@ -201,7 +201,7 @@ fn test_center_with_translate() {
     });
     let element_id = element.view_id();
 
-    let view = stack((element,)).style(|s| s.size(200.0, 200.0));
+    let view = Stack::new((element,)).style(|s| s.size(200.0, 200.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
     harness.rebuild();
@@ -254,7 +254,7 @@ fn test_translate_percentage_scales_with_element_size() {
     });
     let small_id = small_element.view_id();
 
-    let view = stack((large_element, small_element)).style(|s| s.size(300.0, 200.0));
+    let view = Stack::new((large_element, small_element)).style(|s| s.size(300.0, 200.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 300.0, 200.0);
     harness.rebuild();

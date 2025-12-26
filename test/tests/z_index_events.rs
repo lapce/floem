@@ -472,7 +472,7 @@ fn test_absolute_with_negative_backdrop() {
             .z_index(99)
     });
 
-    let view = stack((backdrop, dropdown)).style(|s| s.size(200.0, 200.0));
+    let view = Stack::new((backdrop, dropdown)).style(|s| s.size(200.0, 200.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
 
@@ -522,7 +522,7 @@ fn test_with_trigger_sibling() {
         .track_named("trigger", Empty::new())
         .style(|s| s.width(100.0).height(36.0));
 
-    let view = stack((trigger, backdrop, dropdown)).style(|s| s.size(200.0, 200.0));
+    let view = Stack::new((trigger, backdrop, dropdown)).style(|s| s.size(200.0, 200.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
 
@@ -573,7 +573,7 @@ fn test_with_container_wrapper() {
         .track_named("trigger", Empty::new())
         .style(|s| s.width(100.0).height(36.0));
 
-    let view = Container::new(stack((trigger, backdrop, dropdown)))
+    let view = Container::new(Stack::new((trigger, backdrop, dropdown)))
         .style(|s| s.position(Position::Relative).width(200.0).height(200.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
@@ -632,7 +632,7 @@ fn test_with_vstack_items() {
         .track_named("trigger", Empty::new())
         .style(|s| s.width(100.0).height(36.0));
 
-    let view = Container::new(stack((trigger, backdrop, dropdown)))
+    let view = Container::new(Stack::new((trigger, backdrop, dropdown)))
         .style(|s| s.position(Position::Relative).width(200.0).height(200.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
@@ -664,7 +664,7 @@ fn test_inside_scroll_view() {
 
     let tracker = ClickTracker::new();
 
-    let items_container = v_stack((
+    let items_container = Stack::vertical((
         tracker.track_named("item0", Empty::new().style(|s| s.width_full().height(30.0))),
         tracker.track_named("item1", Empty::new().style(|s| s.width_full().height(30.0))),
         tracker.track_named("item2", Empty::new().style(|s| s.width_full().height(30.0))),
@@ -692,7 +692,7 @@ fn test_inside_scroll_view() {
         .track_named("trigger", Empty::new())
         .style(|s| s.width(120.0).height(36.0));
 
-    let content = Container::new(stack((trigger, backdrop, dropdown)))
+    let content = Container::new(Stack::new((trigger, backdrop, dropdown)))
         .style(|s| s.position(Position::Relative).width(200.0).height(500.0));
 
     // Wrap in Scroll like the showcase does
@@ -741,7 +741,7 @@ fn test_inset_left_right_without_width() {
 
     let tracker = ClickTracker::new();
 
-    let items_container = v_stack((
+    let items_container = Stack::vertical((
         tracker.track_named("item0", Empty::new().style(|s| s.width_full().height(30.0))),
         tracker.track_named("item1", Empty::new().style(|s| s.width_full().height(30.0))),
         tracker.track_named("item2", Empty::new().style(|s| s.width_full().height(30.0))),
@@ -770,7 +770,7 @@ fn test_inset_left_right_without_width() {
         .track_named("trigger", Empty::new())
         .style(|s| s.width(120.0).height(36.0));
 
-    let view = Container::new(stack((trigger, backdrop, dropdown)))
+    let view = Container::new(Stack::new((trigger, backdrop, dropdown)))
         .style(|s| s.position(Position::Relative).width(120.0).height(200.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 200.0, 250.0);
@@ -817,7 +817,7 @@ fn test_with_width_full_items_fixed() {
 
     let tracker = ClickTracker::new();
 
-    let items_container = v_stack((
+    let items_container = Stack::vertical((
         tracker.track_named("item0", Empty::new().style(|s| s.width_full().height(30.0))),
         tracker.track_named("item1", Empty::new().style(|s| s.width_full().height(30.0))),
         tracker.track_named("item2", Empty::new().style(|s| s.width_full().height(30.0))),
@@ -845,7 +845,7 @@ fn test_with_width_full_items_fixed() {
         .track_named("trigger", Empty::new())
         .style(|s| s.width(120.0).height(36.0));
 
-    let view = Container::new(stack((trigger, backdrop, dropdown)))
+    let view = Container::new(Stack::new((trigger, backdrop, dropdown)))
         .style(|s| s.position(Position::Relative).width(120.0).height(200.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 200.0, 250.0);
@@ -877,7 +877,7 @@ fn test_with_vstack_width_full() {
 
     let tracker = ClickTracker::new();
 
-    let items_container = v_stack((
+    let items_container = Stack::vertical((
         tracker.track_named("item0", Empty::new().style(|s| s.size(100.0, 30.0))),
         tracker.track_named("item1", Empty::new().style(|s| s.size(100.0, 30.0))),
         tracker.track_named("item2", Empty::new().style(|s| s.size(100.0, 30.0))),
@@ -905,7 +905,7 @@ fn test_with_vstack_width_full() {
         .track_named("trigger", Empty::new())
         .style(|s| s.width(120.0).height(36.0));
 
-    let view = Container::new(stack((trigger, backdrop, dropdown)))
+    let view = Container::new(Stack::new((trigger, backdrop, dropdown)))
         .style(|s| s.position(Position::Relative).width(120.0).height(200.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 200.0, 250.0);

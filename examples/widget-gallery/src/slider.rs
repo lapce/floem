@@ -13,7 +13,7 @@ pub fn slider_view() -> impl IntoView {
         form_item("Input Control:", text_input(input)),
         form_item(
             "Default Slider:",
-            stack((
+            Stack::new((
                 slider::Slider::new_rw(slider_state).style(|s| s.width(200)),
                 Label::derived(move || format!("{:.1}%", slider_state.get().0)),
             ))
@@ -21,7 +21,7 @@ pub fn slider_view() -> impl IntoView {
         ),
         form_item(
             "Unaligned Slider:",
-            stack((
+            Stack::new((
                 slider::Slider::new_rw(slider_state)
                     .slider_style(|s| {
                         s.accent_bar_height(30.pct())
@@ -35,7 +35,7 @@ pub fn slider_view() -> impl IntoView {
         ),
         form_item(
             "Progress bar:",
-            stack((
+            Stack::new((
                 slider::Slider::new(move || slider_state.get())
                     .slider_style(|s| s.handle_radius(0).edge_align(true))
                     .style(|s| s.width(200).set_disabled(true)),
