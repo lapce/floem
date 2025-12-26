@@ -363,12 +363,13 @@ fn hit_test_stacking_context(parent_id: ViewId, point: Point) -> Option<ViewId> 
             continue;
         }
 
-        // Check the view's layout rect with transforms applied
+        // Check the view's layout rect (already includes transforms from layout)
+        // Note: layout_rect is already transformed during layout (see layout/cx.rs:255-256),
+        // so we should NOT apply vs.transform again here.
         let layout_rect = vs.layout_rect;
-        let current_rect = vs.transform.transform_rect_bbox(layout_rect);
         drop(vs); // Drop borrow before recursing
 
-        if !current_rect.contains(point) {
+        if !layout_rect.contains(point) {
             // Check children anyway (the layout_rect might not contain point but children might)
             if let Some(target) = hit_test_stacking_context(item.view_id, point) {
                 return Some(target);

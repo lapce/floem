@@ -1408,6 +1408,49 @@ fn test_click_cont_bubbles_to_parent_not_siblings() {
     );
 }
 
+/// Test what happens when topmost view has NO click handler.
+///
+/// This tests whether the event falls through to sibling (spatial) or
+/// bubbles to parent (DOM-style). If Floem is truly DOM-style, the
+/// backdrop sibling should NOT receive the click.
+#[test]
+fn test_no_handler_on_topmost_does_not_fall_through_to_sibling() {
+    use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
+
+    let backdrop_clicked = RwSignal::new(false);
+
+    let view = stack((
+        // Backdrop with handler
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
+            .on_click_stop({
+                let clicked = backdrop_clicked;
+                move |_| clicked.set(true)
+            }),
+        // Content with NO handler - just styled
+        Empty::new().style(|s| {
+            s.absolute()
+                .inset_left(25.0)
+                .inset_top(25.0)
+                .size(50.0, 50.0)
+                .z_index(10)
+        }),
+    ))
+    .style(|s| s.size(100.0, 100.0));
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    // Click on content area - content has no handler, but event should NOT
+    // fall through to backdrop sibling
+    harness.click(50.0, 50.0);
+
+    assert!(
+        !backdrop_clicked.get(),
+        "Backdrop should NOT receive click when content (with no handler) is on top. \
+         Events should not fall through to siblings."
+    );
+}
+
 /// Test overlapping siblings without explicit z-index (DOM order determines stacking).
 ///
 /// In DOM, later siblings are rendered on top by default.
@@ -1455,6 +1498,405 @@ fn test_overlapping_siblings_no_z_index_dom_order() {
     assert!(
         !backdrop_clicked.get(),
         "Backdrop (earlier sibling) should NOT receive click when content is on top"
+    );
+}
+
+// =============================================================================
+// Overlay Tests - Testing event propagation with Overlay::with_id
+// =============================================================================
+
+/// Test dialog structure using Overlay::with_id (the actual dialog implementation).
+///
+/// This replicates the exact structure from dialog.rs:
+///   Overlay::with_id
+///   └── Stack
+///       ├── Backdrop (Empty with on_click_stop)
+///       └── Content (Container::derived with children)
+#[test]
+fn test_dialog_with_overlay() {
+    use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
+    use floem::views::Overlay;
+
+    let dialog_open = RwSignal::new(true);
+    let content_clicked = RwSignal::new(false);
+
+    let view = Overlay::new(
+        stack((
+            // Backdrop - clicking it closes dialog
+            Empty::new()
+                .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
+                .on_click_stop(move |_| {
+                    dialog_open.set(false);
+                }),
+            // Content - clicking it should NOT close dialog
+            Container::new(Empty::new().style(|s| s.size(50.0, 50.0)))
+                .style(|s| {
+                    s.absolute()
+                        .inset_left(25.0)
+                        .inset_top(25.0)
+                        .size(50.0, 50.0)
+                        .z_index(10)
+                })
+                .on_click_stop(move |_| {
+                    content_clicked.set(true);
+                }),
+        ))
+        .style(|s| s.size(100.0, 100.0)),
+    );
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    // Click on the content
+    harness.click(50.0, 50.0);
+
+    assert!(
+        content_clicked.get(),
+        "Content's click handler should have been called"
+    );
+    assert!(
+        dialog_open.get(),
+        "Dialog should still be open - backdrop's handler should NOT have been called"
+    );
+}
+
+/// Test dialog structure with Container::derived (actual dialog uses this).
+#[test]
+fn test_dialog_with_container_derived() {
+    use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
+
+    let dialog_open = RwSignal::new(true);
+    let content_clicked = RwSignal::new(false);
+
+    let view = stack((
+        // Backdrop
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
+            .on_click_stop(move |_| {
+                dialog_open.set(false);
+            }),
+        // Content using Container::derived like the real dialog
+        Container::derived(move || {
+            // Simulate dialog content with header and footer
+            stack((
+                Empty::new().style(|s| s.size(50.0, 20.0)), // Header
+                Empty::new().style(|s| s.size(50.0, 30.0)), // Footer
+            ))
+            .style(|s| s.flex_col())
+        })
+        .style(|s| {
+            s.absolute()
+                .inset_left(25.0)
+                .inset_top(25.0)
+                .size(50.0, 50.0)
+                .z_index(10)
+        })
+        .on_click_stop(move |_| {
+            content_clicked.set(true);
+        }),
+    ))
+    .style(|s| s.size(100.0, 100.0));
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    // Click on the content
+    harness.click(50.0, 50.0);
+
+    assert!(
+        content_clicked.get(),
+        "Content's click handler should have been called"
+    );
+    assert!(
+        dialog_open.get(),
+        "Dialog should still be open"
+    );
+}
+
+/// Test clicking on nested children within Container::derived content.
+///
+/// In the actual dialog, users click on buttons inside DialogFooter.
+/// This tests that clicks on nested elements don't propagate to backdrop.
+#[test]
+fn test_dialog_click_on_nested_button() {
+    use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
+
+    let dialog_open = RwSignal::new(true);
+    let button_clicked = RwSignal::new(false);
+
+    let view = stack((
+        // Backdrop
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
+            .on_click_stop(move |_| {
+                dialog_open.set(false);
+            }),
+        // Content with a clickable button inside
+        Container::derived(move || {
+            stack((
+                Empty::new().style(|s| s.size(50.0, 20.0)), // Header
+                // A button at the bottom of the dialog
+                Empty::new()
+                    .style(|s| s.size(40.0, 20.0))
+                    .on_click_stop(move |_| {
+                        button_clicked.set(true);
+                    }),
+            ))
+            .style(|s| s.flex_col().gap(10.0))
+        })
+        .style(|s| {
+            s.absolute()
+                .inset_left(25.0)
+                .inset_top(25.0)
+                .size(50.0, 50.0)
+                .z_index(10)
+        }),
+    ))
+    .style(|s| s.size(100.0, 100.0));
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    // Click on the button (within the content area)
+    harness.click(45.0, 55.0); // Approximately where the button would be
+
+    // Button should receive click, dialog should stay open
+    assert!(
+        button_clicked.get(),
+        "Button inside dialog content should receive click"
+    );
+    assert!(
+        dialog_open.get(),
+        "Dialog should still be open - backdrop's handler should NOT have been called"
+    );
+}
+
+/// Test the exact dialog structure with Overlay::with_id and Container::derived.
+#[test]
+fn test_exact_dialog_structure() {
+    use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
+    use floem::views::Overlay;
+    use floem::ViewId;
+
+    let dialog_open = RwSignal::new(true);
+    let content_clicked = RwSignal::new(false);
+    let id = ViewId::new();
+
+    let view = Overlay::with_id(
+        id,
+        stack((
+            // Backdrop - exact same as dialog.rs
+            Empty::new()
+                .style(|s| {
+                    s.absolute()
+                        .inset(0.0)
+                        .size(100.0, 100.0)
+                })
+                .on_click_stop(move |_| {
+                    dialog_open.set(false);
+                }),
+            // Content - Container::derived like dialog.rs
+            Container::derived(move || {
+                // Mimic DialogContent with DialogHeader and DialogFooter
+                stack((
+                    // DialogHeader
+                    stack((
+                        floem::views::Label::new("Title"),
+                        floem::views::Label::new("Description"),
+                    ))
+                    .style(|s| s.flex_col().gap(2.0)),
+                    // DialogFooter with buttons
+                    stack((
+                        Empty::new().style(|s| s.size(30.0, 20.0)), // Cancel button
+                        Empty::new().style(|s| s.size(30.0, 20.0)), // Confirm button
+                    ))
+                    .style(|s| s.flex_row().gap(4.0)),
+                ))
+                .style(|s| s.flex_col().gap(16.0))
+            })
+            .style(|s| {
+                s.absolute()
+                    .inset_left(25.0)
+                    .inset_top(25.0)
+                    .size(50.0, 50.0)
+                    .z_index(10)
+            })
+            .on_click_stop(move |_| {
+                content_clicked.set(true);
+            }),
+        ))
+        .style(|s| s.size(100.0, 100.0)),
+    );
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    // Click on the content
+    harness.click(50.0, 50.0);
+
+    assert!(
+        content_clicked.get(),
+        "Content's click handler should have been called"
+    );
+    assert!(
+        dialog_open.get(),
+        "Dialog should still be open - clicking content should not trigger backdrop"
+    );
+}
+
+/// Test dialog where content has NO explicit click handler.
+///
+/// This tests the scenario where the user removed .on_click_stop(|_| {}) from content.
+/// The content should still block clicks from reaching backdrop.
+#[test]
+fn test_dialog_content_no_handler() {
+    use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
+    use floem::views::Overlay;
+    use floem::ViewId;
+
+    let dialog_open = RwSignal::new(true);
+    let id = ViewId::new();
+
+    let view = Overlay::with_id(
+        id,
+        stack((
+            // Backdrop
+            Empty::new()
+                .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
+                .on_click_stop(move |_| {
+                    dialog_open.set(false);
+                }),
+            // Content - NO click handler!
+            Container::derived(move || {
+                stack((
+                    floem::views::Label::new("Title"),
+                    Empty::new().style(|s| s.size(30.0, 20.0)),
+                ))
+                .style(|s| s.flex_col().gap(8.0))
+            })
+            .style(|s| {
+                s.absolute()
+                    .inset_left(25.0)
+                    .inset_top(25.0)
+                    .size(50.0, 50.0)
+                    .z_index(10)
+            }),
+            // No on_click_stop here!
+        ))
+        .style(|s| s.size(100.0, 100.0)),
+    );
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    // Click on the content (which has no handler)
+    harness.click(50.0, 50.0);
+
+    assert!(
+        dialog_open.get(),
+        "Dialog should still be open - content without handler should block clicks from backdrop"
+    );
+}
+
+/// Test dialog structure with translate transforms for centering.
+///
+/// This tests the actual dialog pattern: content positioned at 50%/50% with
+/// translate -50%/-50% to center it.
+#[test]
+fn test_dialog_with_translate_centering() {
+    use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
+    use floem::unit::Pct;
+    use floem::views::Overlay;
+    use floem::ViewId;
+
+    let dialog_open = RwSignal::new(true);
+    let content_clicked = RwSignal::new(false);
+    let id = ViewId::new();
+
+    let view = Overlay::with_id(
+        id,
+        stack((
+            // Backdrop
+            Empty::new()
+                .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
+                .on_click_stop(move |_| {
+                    dialog_open.set(false);
+                }),
+            // Content - centered using translate (like actual dialog)
+            Container::derived(move || {
+                Empty::new().style(|s| s.size(30.0, 20.0))
+            })
+            .style(|s| {
+                s.absolute()
+                    .inset_left(Pct(50.0))     // left: 50%
+                    .inset_top(Pct(50.0))      // top: 50%
+                    .translate_x(Pct(-50.0))   // translateX: -50%
+                    .translate_y(Pct(-50.0))   // translateY: -50%
+                    .size(50.0, 50.0)
+            })
+            .on_click_stop(move |_| {
+                content_clicked.set(true);
+            }),
+        ))
+        .style(|s| s.size(100.0, 100.0)),
+    );
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    // Click on the center (where content should visually be)
+    // Content is positioned at (50, 50) with translate (-25, -25)
+    // Visual bounds: (25, 25) to (75, 75)
+    harness.click(50.0, 50.0);
+
+    assert!(
+        content_clicked.get(),
+        "Content's click handler should have been called"
+    );
+    assert!(
+        dialog_open.get(),
+        "Dialog should still be open - clicking content should not trigger backdrop"
+    );
+}
+
+/// Test dialog structure with translate but content has NO click handler.
+#[test]
+fn test_dialog_with_translate_no_handler() {
+    use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
+    use floem::unit::Pct;
+    use floem::views::Overlay;
+    use floem::ViewId;
+
+    let dialog_open = RwSignal::new(true);
+    let id = ViewId::new();
+
+    let view = Overlay::with_id(
+        id,
+        stack((
+            // Backdrop
+            Empty::new()
+                .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
+                .on_click_stop(move |_| {
+                    dialog_open.set(false);
+                }),
+            // Content - NO click handler, uses translate centering
+            Container::derived(move || {
+                Empty::new().style(|s| s.size(30.0, 20.0))
+            })
+            .style(|s| {
+                s.absolute()
+                    .inset_left(Pct(50.0))
+                    .inset_top(Pct(50.0))
+                    .translate_x(Pct(-50.0))
+                    .translate_y(Pct(-50.0))
+                    .size(50.0, 50.0)
+            }),
+        ))
+        .style(|s| s.size(100.0, 100.0)),
+    );
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    // Click on the visual center of content
+    harness.click(50.0, 50.0);
+
+    assert!(
+        dialog_open.get(),
+        "Dialog should remain open - content should block clicks even without handler"
     );
 }
 
