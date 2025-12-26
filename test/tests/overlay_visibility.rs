@@ -34,11 +34,7 @@ fn test_overlay_wrapper_display_none() {
                     overlay_clone.set(true);
                 }),
         )
-        .style(move |s| {
-            s.apply_if(!visible.get(), |s| {
-                s.display(floem::taffy::Display::None)
-            })
-        }),
+        .style(move |s| s.apply_if(!visible.get(), |s| s.display(floem::taffy::Display::None))),
     ))
     .style(|s| s.size(100.0, 100.0));
 

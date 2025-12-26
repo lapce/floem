@@ -299,36 +299,19 @@ impl<'a> LayoutCx<'a> {
         let view_state = id.state();
         let node = view_state.borrow().node;
 
-        // Check if this is a fixed element - they need special handling for window resize
-        let combined_style = view_state.borrow().combined_style.clone();
-        let is_fixed = combined_style.get(crate::style::IsFixed);
-
-        let root_size_changed = self.window_state.root_size_changed;
-        let has_layout_flag = view_state
+        if !view_state
             .borrow()
             .requested_changes
-            .contains(ChangeFlags::LAYOUT);
-
-        // Fixed elements need layout recalculation when root_size changes
-        let needs_fixed_size_update = is_fixed && root_size_changed;
-
-        // If no layout needed and root_size didn't change, we can skip entirely
-        if !has_layout_flag && !needs_fixed_size_update && !root_size_changed {
-            return node;
-        }
-
-        // If we're only here because root_size_changed (to traverse children for fixed descendants),
-        // but this non-fixed node doesn't need layout, just traverse children
-        if !has_layout_flag && !needs_fixed_size_update {
-            if has_children {
-                children(self);
-            }
+            .contains(ChangeFlags::LAYOUT)
+        {
             return node;
         }
         view_state
             .borrow_mut()
             .requested_changes
             .remove(ChangeFlags::LAYOUT);
+        let combined_style = view_state.borrow().combined_style.clone();
+        let is_fixed = combined_style.get(crate::style::IsFixed);
         let layout_style = view_state.borrow().layout_props.to_style();
         let animate_out_display = view_state.borrow().is_hidden_state.get_display();
         let mut style = combined_style

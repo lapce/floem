@@ -34,7 +34,9 @@ fn test_fixed_element_fills_viewport() {
     harness.rebuild();
 
     // Get the layout of the fixed element
-    let layout = fixed_id.get_layout().expect("Fixed element should have layout");
+    let layout = fixed_id
+        .get_layout()
+        .expect("Fixed element should have layout");
     let size = (layout.size.width as f64, layout.size.height as f64);
 
     assert!(
@@ -67,17 +69,21 @@ fn test_fixed_element_ignores_parent_position() {
         });
     let fixed_id = fixed_child.view_id();
 
-    let view = stack((
-        stack((Overlay::new(fixed_child),))
-            .style(|s| s.absolute().inset_left(50.0).inset_top(50.0).size(100.0, 100.0)),
-    ))
+    let view = stack((stack((Overlay::new(fixed_child),)).style(|s| {
+        s.absolute()
+            .inset_left(50.0)
+            .inset_top(50.0)
+            .size(100.0, 100.0)
+    }),))
     .style(|s| s.size(200.0, 200.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
     harness.rebuild();
 
     // Fixed element should fill the viewport
-    let layout = fixed_id.get_layout().expect("Fixed element should have layout");
+    let layout = fixed_id
+        .get_layout()
+        .expect("Fixed element should have layout");
     let size = (layout.size.width as f64, layout.size.height as f64);
 
     assert!(
@@ -109,12 +115,15 @@ fn test_fixed_element_children_use_viewport_percentages() {
     let child = Empty::new().style(|s| s.width_full().height_full());
     let child_id = child.view_id();
 
-    let view = stack((
-        stack((Overlay::new(
-            stack((child,)).style(|s| s.fixed().inset(0.0)),
-        ),))
-        .style(|s| s.absolute().inset_left(50.0).inset_top(50.0).size(100.0, 100.0)),
-    ))
+    let view = stack((stack((Overlay::new(
+        stack((child,)).style(|s| s.fixed().inset(0.0)),
+    ),))
+    .style(|s| {
+        s.absolute()
+            .inset_left(50.0)
+            .inset_top(50.0)
+            .size(100.0, 100.0)
+    }),))
     .style(|s| s.size(200.0, 200.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
@@ -153,16 +162,19 @@ fn test_fixed_element_receives_events_at_viewport_position() {
     let clicked = Rc::new(Cell::new(false));
     let clicked_clone = clicked.clone();
 
-    let view = stack((
-        stack((Overlay::new(
-            Empty::new()
-                .style(|s| s.fixed().inset(0.0))
-                .on_click_stop(move |_| {
-                    clicked_clone.set(true);
-                }),
-        ),))
-        .style(|s| s.absolute().inset_left(50.0).inset_top(50.0).size(100.0, 100.0)),
-    ))
+    let view = stack((stack((Overlay::new(
+        Empty::new()
+            .style(|s| s.fixed().inset(0.0))
+            .on_click_stop(move |_| {
+                clicked_clone.set(true);
+            }),
+    ),))
+    .style(|s| {
+        s.absolute()
+            .inset_left(50.0)
+            .inset_top(50.0)
+            .size(100.0, 100.0)
+    }),))
     .style(|s| s.size(200.0, 200.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
@@ -304,11 +316,7 @@ fn test_hidden_fixed_element_does_not_block_events() {
             }),
         Overlay::new(
             Empty::new()
-                .style(|s| {
-                    s.fixed()
-                        .inset(0.0)
-                        .display(floem::taffy::Display::None)
-                })
+                .style(|s| s.fixed().inset(0.0).display(floem::taffy::Display::None))
                 .on_click_stop(move |_| {
                     fixed_clone.set(true);
                 }),
@@ -383,8 +391,14 @@ fn test_fixed_element_painted_after_regular_views() {
     let regular_pos = paint_order.iter().position(|&id| id == regular_id);
     let fixed_pos = paint_order.iter().position(|&id| id == fixed_id);
 
-    assert!(regular_pos.is_some(), "Regular view should be in paint order");
-    assert!(fixed_pos.is_some(), "Fixed element should be in paint order");
+    assert!(
+        regular_pos.is_some(),
+        "Regular view should be in paint order"
+    );
+    assert!(
+        fixed_pos.is_some(),
+        "Fixed element should be in paint order"
+    );
 
     assert!(
         regular_pos.unwrap() < fixed_pos.unwrap(),
@@ -410,7 +424,9 @@ fn test_fixed_element_fills_large_viewport() {
     let mut harness = HeadlessHarness::new_with_size(view, 500.0, 400.0);
     harness.rebuild();
 
-    let layout = fixed_id.get_layout().expect("Fixed element should have layout");
+    let layout = fixed_id
+        .get_layout()
+        .expect("Fixed element should have layout");
     let size = (layout.size.width as f64, layout.size.height as f64);
 
     assert!(
@@ -452,15 +468,18 @@ fn test_fixed_container_child_percentage_positioning() {
     });
     let centered_id = centered_child.view_id();
 
-    let fixed_container = stack((centered_child,)).style(|s| {
-        s.fixed().inset(0.0).width_full().height_full()
-    });
+    let fixed_container =
+        stack((centered_child,)).style(|s| s.fixed().inset(0.0).width_full().height_full());
     let fixed_id = fixed_container.view_id();
 
     let view = stack((
         // Nested parent at offset position (simulates dialog inside scroll container)
-        stack((Overlay::new(fixed_container),))
-            .style(|s| s.absolute().inset_left(100.0).inset_top(100.0).size(50.0, 50.0)),
+        stack((Overlay::new(fixed_container),)).style(|s| {
+            s.absolute()
+                .inset_left(100.0)
+                .inset_top(100.0)
+                .size(50.0, 50.0)
+        }),
     ))
     .style(|s| s.size(400.0, 300.0));
 
@@ -468,11 +487,15 @@ fn test_fixed_container_child_percentage_positioning() {
     harness.rebuild();
 
     // Fixed container should fill viewport
-    let fixed_layout = fixed_id.get_layout().expect("Fixed container should have layout");
+    let fixed_layout = fixed_id
+        .get_layout()
+        .expect("Fixed container should have layout");
     eprintln!(
         "Fixed container: pos=({}, {}), size={}x{}",
-        fixed_layout.location.x, fixed_layout.location.y,
-        fixed_layout.size.width, fixed_layout.size.height
+        fixed_layout.location.x,
+        fixed_layout.location.y,
+        fixed_layout.size.width,
+        fixed_layout.size.height
     );
     assert!(
         (fixed_layout.size.width - 400.0).abs() < 0.1,
@@ -487,11 +510,15 @@ fn test_fixed_container_child_percentage_positioning() {
 
     // Centered child should be at 50% of VIEWPORT (200, 150)
     // NOT at 50% of nested_parent (which would be wrong)
-    let centered_layout = centered_id.get_layout().expect("Centered child should have layout");
+    let centered_layout = centered_id
+        .get_layout()
+        .expect("Centered child should have layout");
     eprintln!(
         "Centered child: pos=({}, {}), size={}x{}",
-        centered_layout.location.x, centered_layout.location.y,
-        centered_layout.size.width, centered_layout.size.height
+        centered_layout.location.x,
+        centered_layout.location.y,
+        centered_layout.size.width,
+        centered_layout.size.height
     );
 
     assert!(
@@ -537,14 +564,15 @@ fn test_fixed_container_centered_child_receives_click() {
             clicked_clone.set(true);
         });
 
-    let fixed_container = stack((centered_child,)).style(|s| {
-        s.fixed().inset(0.0).width_full().height_full()
-    });
+    let fixed_container =
+        stack((centered_child,)).style(|s| s.fixed().inset(0.0).width_full().height_full());
 
-    let view = stack((
-        stack((Overlay::new(fixed_container),))
-            .style(|s| s.absolute().inset_left(100.0).inset_top(100.0).size(50.0, 50.0)),
-    ))
+    let view = stack((stack((Overlay::new(fixed_container),)).style(|s| {
+        s.absolute()
+            .inset_left(100.0)
+            .inset_top(100.0)
+            .size(50.0, 50.0)
+    }),))
     .style(|s| s.size(400.0, 300.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 400.0, 300.0);
@@ -577,14 +605,17 @@ fn test_fixed_container_with_translate_centering() {
     });
     let centered_id = centered_child.view_id();
 
-    let fixed_container = stack((centered_child,)).style(|s| {
-        s.fixed().inset(0.0).width_full().height_full()
-    });
+    let fixed_container =
+        stack((centered_child,)).style(|s| s.fixed().inset(0.0).width_full().height_full());
 
     let view = stack((
         // Nested at offset position
-        stack((Overlay::new(fixed_container),))
-            .style(|s| s.absolute().inset_left(100.0).inset_top(100.0).size(50.0, 50.0)),
+        stack((Overlay::new(fixed_container),)).style(|s| {
+            s.absolute()
+                .inset_left(100.0)
+                .inset_top(100.0)
+                .size(50.0, 50.0)
+        }),
     ))
     .style(|s| s.size(400.0, 300.0));
 
@@ -597,9 +628,12 @@ fn test_fixed_container_with_translate_centering() {
 
     eprintln!(
         "Centered with translate: pos=({}, {}), size={}x{}, transform=({}, {})",
-        layout.location.x, layout.location.y,
-        layout.size.width, layout.size.height,
-        coeffs[4], coeffs[5]
+        layout.location.x,
+        layout.location.y,
+        layout.size.width,
+        layout.size.height,
+        coeffs[4],
+        coeffs[5]
     );
 
     // Position should be at 50% of viewport
@@ -651,18 +685,18 @@ fn test_fixed_element_window_origin() {
     // - fixed_child's window_origin should be (10, 20) - the Taffy position
     // - NOT (110, 120) which would be parent + Taffy position
 
-    let fixed_child = Empty::new().style(|s| {
-        s.fixed()
-            .inset_left(10.0)
-            .inset_top(20.0)
-            .size(50.0, 50.0)
-    });
+    let fixed_child =
+        Empty::new().style(|s| s.fixed().inset_left(10.0).inset_top(20.0).size(50.0, 50.0));
     let fixed_id = fixed_child.view_id();
 
     let view = stack((
         // Parent at offset position
-        stack((Overlay::new(fixed_child),))
-            .style(|s| s.absolute().inset_left(100.0).inset_top(100.0).size(50.0, 50.0)),
+        stack((Overlay::new(fixed_child),)).style(|s| {
+            s.absolute()
+                .inset_left(100.0)
+                .inset_top(100.0)
+                .size(50.0, 50.0)
+        }),
     ))
     .style(|s| s.size(400.0, 300.0));
 
@@ -673,7 +707,10 @@ fn test_fixed_element_window_origin() {
     let window_origin = fixed_id.get_window_origin();
     let layout_rect = fixed_id.get_layout_rect();
 
-    eprintln!("Fixed element window_origin: ({}, {})", window_origin.x, window_origin.y);
+    eprintln!(
+        "Fixed element window_origin: ({}, {})",
+        window_origin.x, window_origin.y
+    );
     eprintln!("Fixed element layout_rect: {:?}", layout_rect);
 
     // window_origin should be the Taffy position (10, 20), NOT offset by parent
@@ -714,8 +751,12 @@ fn test_fixed_element_with_inset_zero_window_origin() {
 
     let view = stack((
         // Parent at offset position (should be ignored)
-        stack((Overlay::new(fixed_child),))
-            .style(|s| s.absolute().inset_left(100.0).inset_top(100.0).size(50.0, 50.0)),
+        stack((Overlay::new(fixed_child),)).style(|s| {
+            s.absolute()
+                .inset_left(100.0)
+                .inset_top(100.0)
+                .size(50.0, 50.0)
+        }),
     ))
     .style(|s| s.size(400.0, 300.0));
 
@@ -725,10 +766,14 @@ fn test_fixed_element_with_inset_zero_window_origin() {
     let window_origin = fixed_id.get_window_origin();
     let layout = fixed_id.get_layout().expect("Should have layout");
 
-    eprintln!("Fixed (inset 0) window_origin: ({}, {})", window_origin.x, window_origin.y);
-    eprintln!("Fixed (inset 0) layout: pos=({}, {}), size={}x{}",
-        layout.location.x, layout.location.y,
-        layout.size.width, layout.size.height);
+    eprintln!(
+        "Fixed (inset 0) window_origin: ({}, {})",
+        window_origin.x, window_origin.y
+    );
+    eprintln!(
+        "Fixed (inset 0) layout: pos=({}, {}), size={}x{}",
+        layout.location.x, layout.location.y, layout.size.width, layout.size.height
+    );
 
     // window_origin should be (0, 0) - the Taffy position from inset(0)
     assert!(
@@ -765,8 +810,12 @@ fn test_non_fixed_element_window_origin_includes_parent() {
 
     let view = stack((
         // Parent at offset position
-        stack((child,))
-            .style(|s| s.absolute().inset_left(100.0).inset_top(100.0).size(200.0, 200.0)),
+        stack((child,)).style(|s| {
+            s.absolute()
+                .inset_left(100.0)
+                .inset_top(100.0)
+                .size(200.0, 200.0)
+        }),
     ))
     .style(|s| s.size(400.0, 300.0));
 
@@ -775,7 +824,10 @@ fn test_non_fixed_element_window_origin_includes_parent() {
 
     let window_origin = child_id.get_window_origin();
 
-    eprintln!("Non-fixed child window_origin: ({}, {})", window_origin.x, window_origin.y);
+    eprintln!(
+        "Non-fixed child window_origin: ({}, {})",
+        window_origin.x, window_origin.y
+    );
 
     // Non-fixed element should have window_origin that includes parent position
     // Child is at (0, 0) relative to parent, parent is at (100, 100)
@@ -814,19 +866,21 @@ fn test_fixed_overlay_child_paint_at_viewport_origin() {
     let clicked_clone = clicked.clone();
 
     // The fixed style is on the child of Overlay, not the Overlay itself
-    let fixed_child = stack((
-        Empty::new()
-            .style(|s| s.absolute().inset(0.0))
-            .on_click_stop(move |_| {
-                clicked_clone.set(true);
-            }),
-    ))
+    let fixed_child = stack((Empty::new()
+        .style(|s| s.absolute().inset(0.0))
+        .on_click_stop(move |_| {
+            clicked_clone.set(true);
+        }),))
     .style(|s| s.fixed().inset(0.0));
 
     let view = stack((
         // Parent positioned at (100, 100)
-        stack((Overlay::new(fixed_child),))
-            .style(|s| s.absolute().inset_left(100.0).inset_top(100.0).size(50.0, 50.0)),
+        stack((Overlay::new(fixed_child),)).style(|s| {
+            s.absolute()
+                .inset_left(100.0)
+                .inset_top(100.0)
+                .size(50.0, 50.0)
+        }),
     ))
     .style(|s| s.size(400.0, 300.0));
 
@@ -873,19 +927,20 @@ fn test_fixed_overlay_child_with_scroll_offset() {
             clicked_clone.set(true);
         });
 
-    let fixed_container = stack((clickable_child,)).style(|s| {
-        s.fixed().inset(0.0).width_full().height_full()
-    });
+    let fixed_container =
+        stack((clickable_child,)).style(|s| s.fixed().inset(0.0).width_full().height_full());
 
     // Simulate a scroll container with offset content
-    let view = stack((
-        stack((
-            // Simulated scrolled content with padding/offset
-            stack((Overlay::new(fixed_container),))
-                .style(|s| s.padding(20.0).size(500.0, 400.0)),
-        ))
-        .style(|s| s.absolute().inset_left(50.0).inset_top(50.0).size(200.0, 150.0)),
+    let view = stack((stack((
+        // Simulated scrolled content with padding/offset
+        stack((Overlay::new(fixed_container),)).style(|s| s.padding(20.0).size(500.0, 400.0)),
     ))
+    .style(|s| {
+        s.absolute()
+            .inset_left(50.0)
+            .inset_top(50.0)
+            .size(200.0, 150.0)
+    }),))
     .style(|s| s.size(400.0, 300.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 400.0, 300.0);
@@ -919,8 +974,12 @@ fn test_single_fixed_overlay_receives_click() {
     let view = stack((
         // Overlay inside container at offset (100, 100)
         // The fixed element should ignore this offset
-        stack((Overlay::new(fixed),))
-            .style(|s| s.absolute().inset_left(100.0).inset_top(100.0).size(50.0, 50.0)),
+        stack((Overlay::new(fixed),)).style(|s| {
+            s.absolute()
+                .inset_left(100.0)
+                .inset_top(100.0)
+                .size(50.0, 50.0)
+        }),
     ))
     .style(|s| s.size(400.0, 300.0));
 
@@ -953,18 +1012,31 @@ fn test_two_fixed_overlays_click_second() {
 
     // Second fixed element at (300, 200) with size 50x50 - far from first
     let fixed2 = Empty::new()
-        .style(|s| s.fixed().inset_left(300.0).inset_top(200.0).size(50.0, 50.0))
+        .style(|s| {
+            s.fixed()
+                .inset_left(300.0)
+                .inset_top(200.0)
+                .size(50.0, 50.0)
+        })
         .on_click_stop(move |_| {
             clicked2_clone.set(true);
         });
 
     let view = stack((
         // First overlay inside container at offset (100, 100)
-        stack((Overlay::new(fixed1),))
-            .style(|s| s.absolute().inset_left(100.0).inset_top(100.0).size(50.0, 50.0)),
+        stack((Overlay::new(fixed1),)).style(|s| {
+            s.absolute()
+                .inset_left(100.0)
+                .inset_top(100.0)
+                .size(50.0, 50.0)
+        }),
         // Second overlay inside container at offset (200, 50)
-        stack((Overlay::new(fixed2),))
-            .style(|s| s.absolute().inset_left(200.0).inset_top(50.0).size(50.0, 50.0)),
+        stack((Overlay::new(fixed2),)).style(|s| {
+            s.absolute()
+                .inset_left(200.0)
+                .inset_top(50.0)
+                .size(50.0, 50.0)
+        }),
     ))
     .style(|s| s.size(400.0, 300.0));
 
@@ -1002,11 +1074,19 @@ fn test_fixed_overlay_with_non_fixed_sibling() {
 
     let view = stack((
         // First overlay with fixed child
-        stack((Overlay::new(fixed1),))
-            .style(|s| s.absolute().inset_left(100.0).inset_top(100.0).size(50.0, 50.0)),
+        stack((Overlay::new(fixed1),)).style(|s| {
+            s.absolute()
+                .inset_left(100.0)
+                .inset_top(100.0)
+                .size(50.0, 50.0)
+        }),
         // Second overlay with non-fixed child
-        stack((Overlay::new(non_fixed2),))
-            .style(|s| s.absolute().inset_left(200.0).inset_top(50.0).size(50.0, 50.0)),
+        stack((Overlay::new(non_fixed2),)).style(|s| {
+            s.absolute()
+                .inset_left(200.0)
+                .inset_top(50.0)
+                .size(50.0, 50.0)
+        }),
     ))
     .style(|s| s.size(400.0, 300.0));
 
@@ -1043,17 +1123,30 @@ fn test_two_fixed_overlays_non_overlapping() {
 
     // Second fixed element at (300, 200) with size 50x50 - far from first
     let fixed2 = Empty::new()
-        .style(|s| s.fixed().inset_left(300.0).inset_top(200.0).size(50.0, 50.0))
+        .style(|s| {
+            s.fixed()
+                .inset_left(300.0)
+                .inset_top(200.0)
+                .size(50.0, 50.0)
+        })
         .on_click_stop(move |_| {
             clicked2_clone.set(true);
         });
 
     let view = stack((
         // Both overlays have fixed children at non-overlapping viewport positions
-        stack((Overlay::new(fixed1),))
-            .style(|s| s.absolute().inset_left(100.0).inset_top(100.0).size(50.0, 50.0)),
-        stack((Overlay::new(fixed2),))
-            .style(|s| s.absolute().inset_left(200.0).inset_top(50.0).size(50.0, 50.0)),
+        stack((Overlay::new(fixed1),)).style(|s| {
+            s.absolute()
+                .inset_left(100.0)
+                .inset_top(100.0)
+                .size(50.0, 50.0)
+        }),
+        stack((Overlay::new(fixed2),)).style(|s| {
+            s.absolute()
+                .inset_left(200.0)
+                .inset_top(50.0)
+                .size(50.0, 50.0)
+        }),
     ))
     .style(|s| s.size(400.0, 300.0));
 
@@ -1092,7 +1185,9 @@ fn test_fixed_element_resizes_with_window() {
     harness.rebuild();
 
     // Initial size should be 400x300
-    let layout = fixed_id.get_layout().expect("Fixed element should have layout");
+    let layout = fixed_id
+        .get_layout()
+        .expect("Fixed element should have layout");
     eprintln!(
         "Initial size: {}x{} (expected 400x300)",
         layout.size.width, layout.size.height
@@ -1113,7 +1208,9 @@ fn test_fixed_element_resizes_with_window() {
     harness.rebuild();
 
     // Check size after resize
-    let layout = fixed_id.get_layout().expect("Fixed element should have layout after resize");
+    let layout = fixed_id
+        .get_layout()
+        .expect("Fixed element should have layout after resize");
     eprintln!(
         "After resize: {}x{} (expected 800x600)",
         layout.size.width, layout.size.height
@@ -1156,7 +1253,9 @@ fn test_fixed_element_with_size_full_resizes() {
     harness.set_size(200.0, 150.0);
     harness.rebuild();
 
-    let layout = fixed_id.get_layout().expect("Layout should exist after resize");
+    let layout = fixed_id
+        .get_layout()
+        .expect("Layout should exist after resize");
     eprintln!(
         "After resize to 200x150: {}x{}",
         layout.size.width, layout.size.height
@@ -1219,7 +1318,9 @@ fn test_fixed_element_percentage_children_resize() {
     harness.rebuild();
 
     // After resize: 50% of 800 = 400, 50% of 600 = 300
-    let layout = child_id.get_layout().expect("Layout should exist after resize");
+    let layout = child_id
+        .get_layout()
+        .expect("Layout should exist after resize");
     eprintln!(
         "After resize child position: ({}, {}) (expected 400, 300)",
         layout.location.x, layout.location.y
@@ -1233,5 +1334,159 @@ fn test_fixed_element_percentage_children_resize() {
         (layout.location.y - 300.0).abs() < 0.1,
         "y after resize should be 300, got {}. Child did not reposition after window resize.",
         layout.location.y
+    );
+}
+
+// ============================================================================
+// Fixed Element Registration/Unregistration Tests
+// ============================================================================
+
+/// Test that when a view's style changes from fixed to non-fixed,
+/// it is properly unregistered and no longer resizes with the window.
+#[test]
+fn test_fixed_element_unregisters_when_style_changes() {
+    use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
+
+    // Signal to control whether the element is fixed
+    let is_fixed = RwSignal::new(true);
+
+    let child = Empty::new().style(move |s| {
+        if is_fixed.get() {
+            s.fixed().inset(0.0)
+        } else {
+            // Non-fixed: explicit size that won't change with window
+            s.size(100.0, 100.0)
+        }
+    });
+    let child_id = child.view_id();
+
+    let view = stack((Overlay::new(child),)).style(|s| s.size(400.0, 300.0));
+
+    let mut harness = HeadlessHarness::new_with_size(view, 400.0, 300.0);
+    harness.rebuild();
+
+    // Initially fixed: should fill viewport
+    let layout = child_id.get_layout().expect("Layout should exist");
+    assert!(
+        (layout.size.width - 400.0).abs() < 0.1,
+        "Fixed element should fill viewport width (400), got {}",
+        layout.size.width
+    );
+    assert!(
+        (layout.size.height - 300.0).abs() < 0.1,
+        "Fixed element should fill viewport height (300), got {}",
+        layout.size.height
+    );
+
+    // Resize window while still fixed
+    harness.set_size(800.0, 600.0);
+    harness.rebuild();
+
+    let layout = child_id
+        .get_layout()
+        .expect("Layout should exist after first resize");
+    assert!(
+        (layout.size.width - 800.0).abs() < 0.1,
+        "Fixed element should resize to new viewport width (800), got {}",
+        layout.size.width
+    );
+
+    // Change style to non-fixed
+    is_fixed.set(false);
+    harness.rebuild();
+
+    let layout = child_id
+        .get_layout()
+        .expect("Layout should exist after style change");
+    assert!(
+        (layout.size.width - 100.0).abs() < 0.1,
+        "Non-fixed element should have explicit size (100), got {}",
+        layout.size.width
+    );
+
+    // Resize window again - non-fixed element should NOT change size
+    harness.set_size(1000.0, 800.0);
+    harness.rebuild();
+
+    let layout = child_id
+        .get_layout()
+        .expect("Layout should exist after second resize");
+    assert!(
+        (layout.size.width - 100.0).abs() < 0.1,
+        "Non-fixed element should keep explicit size (100) after resize, got {}. \
+         Element was not properly unregistered from fixed_elements.",
+        layout.size.width
+    );
+    assert!(
+        (layout.size.height - 100.0).abs() < 0.1,
+        "Non-fixed element should keep explicit size (100) after resize, got {}",
+        layout.size.height
+    );
+}
+
+/// Test that switching from non-fixed to fixed properly registers the element.
+#[test]
+fn test_element_registers_when_becoming_fixed() {
+    use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
+
+    // Start as non-fixed
+    let is_fixed = RwSignal::new(false);
+
+    let child = Empty::new().style(move |s| {
+        if is_fixed.get() {
+            s.fixed().inset(0.0)
+        } else {
+            s.size(100.0, 100.0)
+        }
+    });
+    let child_id = child.view_id();
+
+    let view = stack((Overlay::new(child),)).style(|s| s.size(400.0, 300.0));
+
+    let mut harness = HeadlessHarness::new_with_size(view, 400.0, 300.0);
+    harness.rebuild();
+
+    // Initially non-fixed: explicit size
+    let layout = child_id.get_layout().expect("Layout should exist");
+    assert!(
+        (layout.size.width - 100.0).abs() < 0.1,
+        "Non-fixed element should have explicit size (100), got {}",
+        layout.size.width
+    );
+
+    // Resize - should NOT affect non-fixed element
+    harness.set_size(800.0, 600.0);
+    harness.rebuild();
+
+    let layout = child_id.get_layout().expect("Layout after resize");
+    assert!(
+        (layout.size.width - 100.0).abs() < 0.1,
+        "Non-fixed element should keep size (100) after resize, got {}",
+        layout.size.width
+    );
+
+    // Switch to fixed
+    is_fixed.set(true);
+    harness.rebuild();
+
+    let layout = child_id.get_layout().expect("Layout after becoming fixed");
+    assert!(
+        (layout.size.width - 800.0).abs() < 0.1,
+        "Fixed element should now fill viewport (800), got {}",
+        layout.size.width
+    );
+
+    // Resize again - should now affect fixed element
+    harness.set_size(1200.0, 900.0);
+    harness.rebuild();
+
+    let layout = child_id
+        .get_layout()
+        .expect("Layout after resize while fixed");
+    assert!(
+        (layout.size.width - 1200.0).abs() < 0.1,
+        "Fixed element should resize to new viewport (1200), got {}. \
+         Element was not properly registered in fixed_elements.",
+        layout.size.width
     );
 }

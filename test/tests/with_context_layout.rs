@@ -341,10 +341,7 @@ fn test_layout_outside_color_inside_with_context() {
     // Color should also work (set inside with_context)
     let style = harness.get_computed_style(id);
     let bg = style.get(floem::style::Background);
-    assert!(
-        bg.is_some(),
-        "Background should be set from with_context"
-    );
+    assert!(bg.is_some(), "Background should be set from with_context");
 }
 
 /// Test that some layout props outside and some inside work correctly.
@@ -441,9 +438,8 @@ fn test_size_with_inherited_context() {
     let child_id = child.view_id();
 
     // Parent sets the theme context
-    let parent = floem::views::stack((child,)).style(move |s| {
-        s.size(300.0, 200.0).set(TestThemeProp, theme)
-    });
+    let parent = floem::views::stack((child,))
+        .style(move |s| s.size(300.0, 200.0).set(TestThemeProp, theme));
 
     let mut harness = HeadlessHarness::new_with_size(parent, 300.0, 200.0);
     harness.rebuild();
@@ -484,9 +480,8 @@ fn test_absolute_with_inherited_context() {
     let child_id = child.view_id();
 
     // Parent sets theme
-    let parent = floem::views::stack((child,)).style(move |s| {
-        s.size(200.0, 200.0).set(TestThemeProp, theme)
-    });
+    let parent = floem::views::stack((child,))
+        .style(move |s| s.size(200.0, 200.0).set(TestThemeProp, theme));
 
     let mut harness = HeadlessHarness::new_with_size(parent, 200.0, 200.0);
     harness.rebuild();
@@ -516,23 +511,20 @@ fn test_container_derived_with_inherited_context() {
     let theme = TestTheme::default();
 
     // Container::derived like Dialog uses
-    let child = floem::views::Container::derived(|| {
-        Empty::new().style(|s| s.size(50.0, 30.0))
-    })
-    .style(|s| {
-        s.with_test_theme(|s, _t| {
-            s.absolute()
-                .inset_left(100.0)
-                .inset_top(75.0)
-                .size(200.0, 100.0)
-        })
-    });
+    let child = floem::views::Container::derived(|| Empty::new().style(|s| s.size(50.0, 30.0)))
+        .style(|s| {
+            s.with_test_theme(|s, _t| {
+                s.absolute()
+                    .inset_left(100.0)
+                    .inset_top(75.0)
+                    .size(200.0, 100.0)
+            })
+        });
     let child_id = child.view_id();
 
     // Parent sets theme
-    let parent = floem::views::stack((child,)).style(move |s| {
-        s.size(400.0, 300.0).set(TestThemeProp, theme)
-    });
+    let parent = floem::views::stack((child,))
+        .style(move |s| s.size(400.0, 300.0).set(TestThemeProp, theme));
 
     let mut harness = HeadlessHarness::new_with_size(parent, 400.0, 300.0);
     harness.rebuild();
@@ -620,17 +612,15 @@ fn test_layout_with_context_no_theme_set() {
 #[test]
 fn test_container_derived_no_theme_set() {
     // Container::derived like Dialog uses, with NO theme set anywhere
-    let child = floem::views::Container::derived(|| {
-        Empty::new().style(|s| s.size(50.0, 30.0))
-    })
-    .style(|s| {
-        s.with_test_theme(|s, _t| {
-            s.absolute()
-                .inset_left(100.0)
-                .inset_top(75.0)
-                .size(200.0, 100.0)
-        })
-    });
+    let child = floem::views::Container::derived(|| Empty::new().style(|s| s.size(50.0, 30.0)))
+        .style(|s| {
+            s.with_test_theme(|s, _t| {
+                s.absolute()
+                    .inset_left(100.0)
+                    .inset_top(75.0)
+                    .size(200.0, 100.0)
+            })
+        });
     let child_id = child.view_id();
 
     // Parent does NOT set theme!
@@ -689,9 +679,8 @@ fn test_centering_with_inherited_context() {
     let child_id = child.view_id();
 
     // Parent sets theme
-    let parent = floem::views::stack((child,)).style(move |s| {
-        s.size(400.0, 300.0).set(TestThemeProp, theme)
-    });
+    let parent = floem::views::stack((child,))
+        .style(move |s| s.size(400.0, 300.0).set(TestThemeProp, theme));
 
     let mut harness = HeadlessHarness::new_with_size(parent, 400.0, 300.0);
     harness.rebuild();
@@ -702,8 +691,12 @@ fn test_centering_with_inherited_context() {
 
     eprintln!(
         "Centered with inherited context: location=({}, {}), size={}x{}, transform=({}, {})",
-        layout.location.x, layout.location.y, layout.size.width, layout.size.height,
-        coeffs[4], coeffs[5]
+        layout.location.x,
+        layout.location.y,
+        layout.size.width,
+        layout.size.height,
+        coeffs[4],
+        coeffs[5]
     );
 
     // Expected: positioned at 50% of parent (200, 150)

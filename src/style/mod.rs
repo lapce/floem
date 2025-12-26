@@ -2384,7 +2384,8 @@ impl Style {
     /// Style::new().fixed().inset(0.0);
     /// ```
     pub fn fixed(self) -> Self {
-        self.position(taffy::style::Position::Absolute).is_fixed(true)
+        self.position(taffy::style::Position::Absolute)
+            .is_fixed(true)
     }
 
     /// Aligns flex items to stretch and fill the cross axis.

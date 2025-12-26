@@ -179,6 +179,22 @@ impl<'a> StyleCx<'a> {
         } else {
             self.window_state.focusable.remove(&view_id);
         }
+
+        // Track fixed elements for efficient window resize handling.
+        // When IsFixed changes, we need to request layout since fixed elements
+        // have their size computed differently (relative to viewport).
+        let new_is_fixed = computed_style.get(super::IsFixed);
+        let old_is_fixed = view_state.borrow().computed_style.get(super::IsFixed);
+        if new_is_fixed {
+            self.window_state.register_fixed_element(view_id);
+        } else {
+            self.window_state.unregister_fixed_element(view_id);
+        }
+        if new_is_fixed != old_is_fixed {
+            // Use request_layout directly so it's processed in current frame
+            view_id.request_layout();
+        }
+
         view_state.borrow_mut().computed_style = computed_style;
         self.hidden |= view_id.is_hidden();
 

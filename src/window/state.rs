@@ -64,9 +64,9 @@ pub struct WindowState {
     pub(crate) root_view_id: ViewId,
     pub(crate) root: Option<NodeId>,
     pub(crate) root_size: Size,
-    /// Set to true when root_size changes, cleared after layout.
-    /// Used to force fixed elements to recalculate their size.
-    pub(crate) root_size_changed: bool,
+    /// Set of ViewIds that have IsFixed style. When root_size changes,
+    /// we request layout on these views directly instead of traversing the tree.
+    pub(crate) fixed_elements: HashSet<ViewId>,
     pub(crate) scale: f64,
     pub(crate) scheduled_updates: Vec<FrameUpdate>,
     pub(crate) request_compute_layout: bool,
@@ -108,7 +108,7 @@ impl WindowState {
             pending_pointer_capture_target: PointerCaptureMap::new(),
             scale: 1.0,
             root_size: Size::ZERO,
-            root_size_changed: false,
+            fixed_elements: HashSet::new(),
             screen_size_bp: ScreenSizeBp::Xs,
             scheduled_updates: Vec::new(),
             request_paint: false,
@@ -170,6 +170,7 @@ impl WindowState {
         self.file_hovered.remove(&id);
         self.clicking.remove(&id);
         self.focusable.remove(&id);
+        self.fixed_elements.remove(&id);
         if self.focus == Some(id) {
             self.focus = None;
         }
@@ -359,10 +360,25 @@ impl WindowState {
 
     pub fn set_root_size(&mut self, size: Size) {
         if self.root_size != size {
-            self.root_size_changed = true;
+            // Request layout on all fixed elements since their size depends on root_size
+            for &id in &self.fixed_elements {
+                id.request_layout();
+            }
         }
         self.root_size = size;
         self.compute_layout();
+    }
+
+    /// Register a view as having fixed positioning.
+    /// Called when a view's style sets IsFixed to true.
+    pub fn register_fixed_element(&mut self, id: ViewId) {
+        self.fixed_elements.insert(id);
+    }
+
+    /// Unregister a view from fixed positioning.
+    /// Called when a view's style sets IsFixed to false.
+    pub fn unregister_fixed_element(&mut self, id: ViewId) {
+        self.fixed_elements.remove(&id);
     }
 
     pub fn compute_layout(&mut self) {
