@@ -1134,10 +1134,7 @@ fn test_overlapping_siblings_no_cross_propagation() {
 
     // DOM behavior: only content should receive the click, not backdrop
     // Even though backdrop is visually underneath, events don't propagate to siblings
-    assert!(
-        content_clicked.get(),
-        "Content should receive click"
-    );
+    assert!(content_clicked.get(), "Content should receive click");
     assert!(
         !backdrop_clicked.get(),
         "Backdrop should NOT receive click when content is clicked (DOM-style bubbling)"
@@ -1605,10 +1602,7 @@ fn test_dialog_with_container_derived() {
         content_clicked.get(),
         "Content's click handler should have been called"
     );
-    assert!(
-        dialog_open.get(),
-        "Dialog should still be open"
-    );
+    assert!(dialog_open.get(), "Dialog should still be open");
 }
 
 /// Test clicking on nested children within Container::derived content.
@@ -1671,9 +1665,9 @@ fn test_dialog_click_on_nested_button() {
 /// Test the exact dialog structure with Overlay::with_id and Container::derived.
 #[test]
 fn test_exact_dialog_structure() {
+    use floem::ViewId;
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::views::Overlay;
-    use floem::ViewId;
 
     let dialog_open = RwSignal::new(true);
     let content_clicked = RwSignal::new(false);
@@ -1684,11 +1678,7 @@ fn test_exact_dialog_structure() {
         stack((
             // Backdrop - exact same as dialog.rs
             Empty::new()
-                .style(|s| {
-                    s.absolute()
-                        .inset(0.0)
-                        .size(100.0, 100.0)
-                })
+                .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
                 .on_click_stop(move |_| {
                     dialog_open.set(false);
                 }),
@@ -1746,9 +1736,9 @@ fn test_exact_dialog_structure() {
 /// The content should still block clicks from reaching backdrop.
 #[test]
 fn test_dialog_content_no_handler() {
+    use floem::ViewId;
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::views::Overlay;
-    use floem::ViewId;
 
     let dialog_open = RwSignal::new(true);
     let id = ViewId::new();
@@ -1799,10 +1789,10 @@ fn test_dialog_content_no_handler() {
 /// translate -50%/-50% to center it.
 #[test]
 fn test_dialog_with_translate_centering() {
+    use floem::ViewId;
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::unit::Pct;
     use floem::views::Overlay;
-    use floem::ViewId;
 
     let dialog_open = RwSignal::new(true);
     let content_clicked = RwSignal::new(false);
@@ -1818,20 +1808,18 @@ fn test_dialog_with_translate_centering() {
                     dialog_open.set(false);
                 }),
             // Content - centered using translate (like actual dialog)
-            Container::derived(move || {
-                Empty::new().style(|s| s.size(30.0, 20.0))
-            })
-            .style(|s| {
-                s.absolute()
-                    .inset_left(Pct(50.0))     // left: 50%
-                    .inset_top(Pct(50.0))      // top: 50%
-                    .translate_x(Pct(-50.0))   // translateX: -50%
-                    .translate_y(Pct(-50.0))   // translateY: -50%
-                    .size(50.0, 50.0)
-            })
-            .on_click_stop(move |_| {
-                content_clicked.set(true);
-            }),
+            Container::derived(move || Empty::new().style(|s| s.size(30.0, 20.0)))
+                .style(|s| {
+                    s.absolute()
+                        .inset_left(Pct(50.0)) // left: 50%
+                        .inset_top(Pct(50.0)) // top: 50%
+                        .translate_x(Pct(-50.0)) // translateX: -50%
+                        .translate_y(Pct(-50.0)) // translateY: -50%
+                        .size(50.0, 50.0)
+                })
+                .on_click_stop(move |_| {
+                    content_clicked.set(true);
+                }),
         ))
         .style(|s| s.size(100.0, 100.0)),
     );
@@ -1856,10 +1844,10 @@ fn test_dialog_with_translate_centering() {
 /// Test dialog structure with translate but content has NO click handler.
 #[test]
 fn test_dialog_with_translate_no_handler() {
+    use floem::ViewId;
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::unit::Pct;
     use floem::views::Overlay;
-    use floem::ViewId;
 
     let dialog_open = RwSignal::new(true);
     let id = ViewId::new();
@@ -1874,10 +1862,7 @@ fn test_dialog_with_translate_no_handler() {
                     dialog_open.set(false);
                 }),
             // Content - NO click handler, uses translate centering
-            Container::derived(move || {
-                Empty::new().style(|s| s.size(30.0, 20.0))
-            })
-            .style(|s| {
+            Container::derived(move || Empty::new().style(|s| s.size(30.0, 20.0))).style(|s| {
                 s.absolute()
                     .inset_left(Pct(50.0))
                     .inset_top(Pct(50.0))
