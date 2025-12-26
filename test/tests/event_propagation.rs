@@ -1073,6 +1073,391 @@ fn test_nested_stack_click_no_z_index() {
     );
 }
 
+// =============================================================================
+// DOM-style Event Bubbling Tests - Overlapping Siblings
+// =============================================================================
+//
+// In DOM, events bubble UP the parent chain only, never to siblings.
+// This is important for modal dialogs where:
+//   - Backdrop is a sibling of DialogContent
+//   - Both visually overlap
+//   - Clicking DialogContent should NOT trigger Backdrop's click handler
+//
+// These tests verify that Floem implements DOM-style tree-based bubbling,
+// not spatial bubbling where overlapping views can intercept each other's events.
+
+/// Test that overlapping siblings don't receive each other's click events.
+///
+/// Structure:
+///   Stack
+///   ├── Backdrop (covers entire area, z-index lower)
+///   └── Content (smaller, overlaps backdrop, z-index higher)
+///
+/// DOM behavior: Click on Content should only hit Content, not Backdrop.
+/// Even though they visually overlap, they are siblings in the tree.
+#[test]
+fn test_overlapping_siblings_no_cross_propagation() {
+    use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
+
+    let backdrop_clicked = RwSignal::new(false);
+    let content_clicked = RwSignal::new(false);
+
+    // Create overlapping siblings using stack with absolute positioning
+    let view = stack((
+        // Backdrop - covers entire area, lower z-index
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
+            .on_click_stop({
+                let backdrop_clicked = backdrop_clicked;
+                move |_| backdrop_clicked.set(true)
+            }),
+        // Content - smaller, higher z-index, overlaps backdrop
+        Empty::new()
+            .style(|s| {
+                s.absolute()
+                    .inset_left(25.0)
+                    .inset_top(25.0)
+                    .size(50.0, 50.0)
+                    .z_index(10)
+            })
+            .on_click_stop({
+                let content_clicked = content_clicked;
+                move |_| content_clicked.set(true)
+            }),
+    ))
+    .style(|s| s.size(100.0, 100.0));
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    // Click on the content area (which overlaps backdrop)
+    harness.click(50.0, 50.0);
+
+    // DOM behavior: only content should receive the click, not backdrop
+    // Even though backdrop is visually underneath, events don't propagate to siblings
+    assert!(
+        content_clicked.get(),
+        "Content should receive click"
+    );
+    assert!(
+        !backdrop_clicked.get(),
+        "Backdrop should NOT receive click when content is clicked (DOM-style bubbling)"
+    );
+}
+
+/// Test that clicking outside overlapping content hits the backdrop only.
+#[test]
+fn test_overlapping_siblings_click_outside_content() {
+    use floem::HasViewId;
+    use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
+
+    let backdrop_clicked = RwSignal::new(false);
+    let content_clicked = RwSignal::new(false);
+
+    // Use stack instead of layers and apply styles directly
+    let backdrop = Empty::new()
+        .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
+        .on_click_stop({
+            let backdrop_clicked = backdrop_clicked;
+            move |_| backdrop_clicked.set(true)
+        });
+    let backdrop_id = backdrop.view_id();
+
+    let content = Empty::new()
+        .style(|s| {
+            s.absolute()
+                .inset_left(25.0)
+                .inset_top(25.0)
+                .size(50.0, 50.0)
+                .z_index(10)
+        })
+        .on_click_stop({
+            let content_clicked = content_clicked;
+            move |_| content_clicked.set(true)
+        });
+    let content_id = content.view_id();
+
+    let view = stack((backdrop, content)).style(|s| s.size(100.0, 100.0));
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    // Debug: check actual layout positions
+    let backdrop_layout = backdrop_id.get_layout().unwrap();
+    let content_layout = content_id.get_layout().unwrap();
+    eprintln!(
+        "Backdrop layout: pos=({}, {}), size={}x{}",
+        backdrop_layout.location.x,
+        backdrop_layout.location.y,
+        backdrop_layout.size.width,
+        backdrop_layout.size.height
+    );
+    eprintln!(
+        "Content layout: pos=({}, {}), size={}x{}",
+        content_layout.location.x,
+        content_layout.location.y,
+        content_layout.size.width,
+        content_layout.size.height
+    );
+
+    // Click outside the content area (on backdrop only)
+    harness.click(10.0, 10.0);
+
+    assert!(
+        backdrop_clicked.get(),
+        "Backdrop should receive click when clicking outside content"
+    );
+    assert!(
+        !content_clicked.get(),
+        "Content should NOT receive click when clicking outside its bounds"
+    );
+}
+
+/// Test dialog-like structure: backdrop + centered content.
+///
+/// This mirrors the exact dialog structure:
+///   Stack (fixed, fills viewport)
+///   ├── Backdrop (covers entire area, on_click_stop closes dialog)
+///   └── Content (centered, on_click_stop does nothing - just stops propagation)
+///
+/// Expected: Clicking content should NOT close dialog (shouldn't trigger backdrop).
+#[test]
+fn test_dialog_structure_content_click_no_backdrop() {
+    use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
+
+    let dialog_open = RwSignal::new(true);
+    let content_clicked = RwSignal::new(false);
+
+    // Use stack instead of layers for consistent behavior
+    let view = stack((
+        // Backdrop - clicking it closes dialog
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
+            .on_click_stop(move |_| {
+                dialog_open.set(false);
+            }),
+        // Content - clicking it should NOT close dialog
+        Empty::new()
+            .style(|s| {
+                s.absolute()
+                    .inset_left(25.0)
+                    .inset_top(25.0)
+                    .size(50.0, 50.0)
+                    .z_index(10)
+            })
+            .on_click_stop(move |_| {
+                content_clicked.set(true);
+            }),
+    ))
+    .style(|s| s.size(100.0, 100.0));
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    // Click on the content
+    harness.click(50.0, 50.0);
+
+    assert!(
+        content_clicked.get(),
+        "Content's click handler should have been called"
+    );
+    assert!(
+        dialog_open.get(),
+        "Dialog should still be open - backdrop's handler should NOT have been called"
+    );
+}
+
+/// Test that clicking backdrop (outside content) DOES close dialog.
+#[test]
+fn test_dialog_structure_backdrop_click_closes() {
+    use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
+
+    let dialog_open = RwSignal::new(true);
+
+    // Use stack instead of layers for consistent behavior
+    let view = stack((
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
+            .on_click_stop(move |_| {
+                dialog_open.set(false);
+            }),
+        Empty::new().style(|s| {
+            s.absolute()
+                .inset_left(25.0)
+                .inset_top(25.0)
+                .size(50.0, 50.0)
+                .z_index(10)
+        }),
+    ))
+    .style(|s| s.size(100.0, 100.0));
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    // Click on the backdrop (outside content area)
+    harness.click(10.0, 10.0);
+
+    assert!(
+        !dialog_open.get(),
+        "Dialog should be closed after clicking backdrop"
+    );
+}
+
+/// Test multiple overlapping layers - only topmost receives click.
+#[test]
+fn test_multiple_overlapping_layers_topmost_wins() {
+    use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
+
+    let layer1_clicked = RwSignal::new(false);
+    let layer2_clicked = RwSignal::new(false);
+    let layer3_clicked = RwSignal::new(false);
+
+    // Use stack instead of layers for consistent behavior
+    let view = stack((
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
+            .on_click_stop({
+                let clicked = layer1_clicked;
+                move |_| clicked.set(true)
+            }),
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(5))
+            .on_click_stop({
+                let clicked = layer2_clicked;
+                move |_| clicked.set(true)
+            }),
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(10))
+            .on_click_stop({
+                let clicked = layer3_clicked;
+                move |_| clicked.set(true)
+            }),
+    ))
+    .style(|s| s.size(100.0, 100.0));
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    harness.click(50.0, 50.0);
+
+    // Only the topmost layer should receive the click
+    assert!(
+        layer3_clicked.get(),
+        "Topmost layer (z-index 10) should receive click"
+    );
+    assert!(
+        !layer2_clicked.get(),
+        "Middle layer (z-index 5) should NOT receive click"
+    );
+    assert!(
+        !layer1_clicked.get(),
+        "Bottom layer (z-index 1) should NOT receive click"
+    );
+}
+
+/// Test that on_click_cont on topmost doesn't propagate to siblings.
+///
+/// Even with on_click_cont (continue propagation), events should only
+/// bubble to PARENTS, not to sibling layers below.
+#[test]
+fn test_click_cont_bubbles_to_parent_not_siblings() {
+    use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    let click_order = Rc::new(RefCell::new(Vec::<String>::new()));
+    let backdrop_clicked = RwSignal::new(false);
+
+    let order_clone = click_order.clone();
+    let order_clone2 = click_order.clone();
+
+    // Use stack with a parent that tracks clicks
+    let view = stack((
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
+            .on_click_stop({
+                let clicked = backdrop_clicked;
+                move |_| clicked.set(true)
+            }),
+        // Content uses on_click_cont - should bubble to parent, NOT to backdrop
+        Empty::new()
+            .style(|s| {
+                s.absolute()
+                    .inset_left(25.0)
+                    .inset_top(25.0)
+                    .size(50.0, 50.0)
+                    .z_index(10)
+            })
+            .on_click_cont(move |_| {
+                order_clone.borrow_mut().push("content".to_string());
+            }),
+    ))
+    .style(|s| s.size(100.0, 100.0))
+    .on_click_cont(move |_| {
+        order_clone2.borrow_mut().push("parent".to_string());
+    });
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    harness.click(50.0, 50.0);
+
+    // Should bubble: content -> parent (NOT content -> backdrop)
+    assert_eq!(
+        *click_order.borrow(),
+        vec!["content", "parent"],
+        "Click should bubble from content to parent"
+    );
+    assert!(
+        !backdrop_clicked.get(),
+        "Backdrop should NOT receive click (events don't propagate to siblings)"
+    );
+}
+
+/// Test overlapping siblings without explicit z-index (DOM order determines stacking).
+///
+/// In DOM, later siblings are rendered on top by default.
+/// This matches the dialog structure where backdrop comes before content.
+#[test]
+fn test_overlapping_siblings_no_z_index_dom_order() {
+    use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
+
+    let backdrop_clicked = RwSignal::new(false);
+    let content_clicked = RwSignal::new(false);
+
+    // No explicit z-index - rely on DOM order (later = on top)
+    let view = stack((
+        // Backdrop - comes first, so it's BELOW content
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
+            .on_click_stop({
+                let clicked = backdrop_clicked;
+                move |_| clicked.set(true)
+            }),
+        // Content - comes second, so it's ON TOP of backdrop
+        Empty::new()
+            .style(|s| {
+                s.absolute()
+                    .inset_left(25.0)
+                    .inset_top(25.0)
+                    .size(50.0, 50.0)
+            })
+            .on_click_stop({
+                let clicked = content_clicked;
+                move |_| clicked.set(true)
+            }),
+    ))
+    .style(|s| s.size(100.0, 100.0));
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    // Click on content area - content should receive, not backdrop
+    harness.click(50.0, 50.0);
+
+    assert!(
+        content_clicked.get(),
+        "Content (later sibling) should receive click"
+    );
+    assert!(
+        !backdrop_clicked.get(),
+        "Backdrop (earlier sibling) should NOT receive click when content is on top"
+    );
+}
+
 /// Test the counter example structure with multiple rows of buttons.
 ///
 /// This mirrors the actual counter example layout:
