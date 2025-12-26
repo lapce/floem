@@ -4,10 +4,9 @@
 //! - [`LayoutCx`] - Context for computing Taffy layout nodes
 //! - [`ComputeLayoutCx`] - Context for computing view positions after Taffy layout
 
-use peniko::kurbo::{Affine, Point, Rect, Size};
+use peniko::kurbo::{Affine, Point, Rect, Size, Vec2};
 use taffy::prelude::NodeId;
 
-use crate::style::Style;
 use crate::view::ViewId;
 use crate::view::{ChangeFlags, IsHiddenState, View};
 use crate::window::state::WindowState;
@@ -209,7 +208,49 @@ impl<'a> ComputeLayoutCx<'a> {
             layout_rect
         };
 
-        let transform = view_state.borrow().transform;
+        // Compute the CSS transform now that we have the element's size.
+        // CSS translate percentages are relative to the element's own dimensions.
+        let transform = {
+            let vs = view_state.borrow();
+            let layout_props = &vs.layout_props;
+
+            let mut transform = Affine::IDENTITY;
+
+            // Translate: percentages relative to element's own size
+            let transform_x = match layout_props.translate_x() {
+                crate::unit::PxPct::Px(px) => px,
+                crate::unit::PxPct::Pct(pct) => size.width * pct / 100.,
+            };
+            let transform_y = match layout_props.translate_y() {
+                crate::unit::PxPct::Px(px) => px,
+                crate::unit::PxPct::Pct(pct) => size.height * pct / 100.,
+            };
+            transform *= Affine::translate(Vec2 {
+                x: transform_x,
+                y: transform_y,
+            });
+
+            // Scale and rotation around center
+            let scale_x = layout_props.scale_x().0 / 100.;
+            let scale_y = layout_props.scale_y().0 / 100.;
+            let center_x = size.width / 2.;
+            let center_y = size.height / 2.;
+            transform *= Affine::translate(Vec2 {
+                x: center_x,
+                y: center_y,
+            });
+            transform *= Affine::scale_non_uniform(scale_x, scale_y);
+            let rotation = layout_props.rotation().0;
+            transform *= Affine::rotate(rotation);
+            transform *= Affine::translate(Vec2 {
+                x: -center_x,
+                y: -center_y,
+            });
+
+            transform
+        };
+        // Store the computed transform
+        view_state.borrow_mut().transform = transform;
         let layout_rect = transform.transform_rect_bbox(layout_rect);
 
         // Compute the cumulative transform from local coordinates to root (window) coordinates.

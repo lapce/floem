@@ -366,6 +366,14 @@ impl ViewId {
         Some(layout)
     }
 
+    /// Returns the CSS transform applied to this view.
+    ///
+    /// This returns the view's local transform (not including parent transforms).
+    /// The transform includes translate, rotate, and scale operations.
+    pub fn get_transform(&self) -> peniko::kurbo::Affine {
+        self.state().borrow().transform
+    }
+
     /// Returns true if the computed style for this view is marked as hidden by setting in this view, or any parent, `Hidden` to true. For hiding views, you should prefer to set `Hidden` to true rather than using `Display::None` as checking for `Hidden` is cheaper, more correct, and used for optimizations in Floem
     pub fn is_hidden(&self) -> bool {
         let state = self.state();

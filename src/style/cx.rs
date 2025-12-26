@@ -5,7 +5,6 @@
 //! - [`InteractionState`] - Captures current user interaction state for style resolution
 
 use floem_reactive::Scope;
-use peniko::kurbo::{Affine, Vec2};
 use std::rc::Rc;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -274,39 +273,9 @@ impl<'a> StyleCx<'a> {
 
         view_state.borrow_mut().combined_style = modified;
 
-        let mut transform = Affine::IDENTITY;
-
-        let transform_x = match view_state.borrow().layout_props.translate_x() {
-            crate::unit::PxPct::Px(px) => px,
-            crate::unit::PxPct::Pct(pct) => pct / 100.,
-        };
-        let transform_y = match view_state.borrow().layout_props.translate_y() {
-            crate::unit::PxPct::Px(px) => px,
-            crate::unit::PxPct::Pct(pct) => pct / 100.,
-        };
-        transform *= Affine::translate(Vec2 {
-            x: transform_x,
-            y: transform_y,
-        });
-
-        let scale_x = view_state.borrow().layout_props.scale_x().0 / 100.;
-        let scale_y = view_state.borrow().layout_props.scale_y().0 / 100.;
-        let size = view_id.layout_rect();
-        let center_x = size.width() / 2.;
-        let center_y = size.height() / 2.;
-        transform *= Affine::translate(Vec2 {
-            x: center_x,
-            y: center_y,
-        });
-        transform *= Affine::scale_non_uniform(scale_x, scale_y);
-        let rotation = view_state.borrow().layout_props.rotation().0;
-        transform *= Affine::rotate(rotation);
-        transform *= Affine::translate(Vec2 {
-            x: -center_x,
-            y: -center_y,
-        });
-
-        view_state.borrow_mut().transform = transform;
+        // Note: Transform computation moved to layout/cx.rs::compute_view_layout
+        // because CSS translate percentages are relative to the element's own size,
+        // which is only available after layout.
 
         // Simplified stacking model:
         // - Every view is implicitly a stacking context

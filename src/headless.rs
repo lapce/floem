@@ -91,6 +91,10 @@ impl HeadlessHarness {
     /// Note: When using the headless WindowHandle, this is typically called
     /// automatically via `process_update()` after event dispatch.
     pub fn rebuild(&mut self) {
+        // Process any scheduled updates first (style/layout requests from previous frame)
+        // This is needed because style changes call schedule_layout() which adds to
+        // scheduled_updates, not request_layout() which sets the LAYOUT flag directly.
+        self.window_handle.process_scheduled_updates();
         self.window_handle.process_update_no_paint();
     }
 

@@ -537,8 +537,9 @@ impl WindowHandle {
         clear_hit_test_cache();
     }
 
-    pub(crate) fn render_frame(&mut self, gpu_resources: Option<GpuResources>) {
-        // Processes updates scheduled on this frame.
+    /// Process any scheduled updates (style/layout/paint requests from previous frame).
+    /// This converts scheduled updates to immediate requests.
+    pub(crate) fn process_scheduled_updates(&mut self) {
         for update in mem::take(&mut self.window_state.scheduled_updates) {
             match update {
                 FrameUpdate::Style(id) => id.request_style(),
@@ -546,6 +547,11 @@ impl WindowHandle {
                 FrameUpdate::Paint(id) => self.window_state.request_paint(id),
             }
         }
+    }
+
+    pub(crate) fn render_frame(&mut self, gpu_resources: Option<GpuResources>) {
+        // Processes updates scheduled on this frame.
+        self.process_scheduled_updates();
 
         self.process_update_no_paint();
         self.paint(gpu_resources);
