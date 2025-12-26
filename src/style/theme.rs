@@ -167,12 +167,13 @@ impl DesignSystem {
 impl StylePropValue for DesignSystem {
     fn debug_view(&self) -> Option<AnyView> {
         use crate::prelude::*;
+        use crate::views::Stack;
 
         let design_system = self.clone();
         let is_expanded = RwSignal::new(false);
 
         let color_swatch = |label: &str, color: Color| {
-            stack((
+            Stack::new((
                 label.to_string().style(|s| s.width(120.0).font_size(12.0)),
                 color.debug_view().unwrap(),
             ))
@@ -180,7 +181,7 @@ impl StylePropValue for DesignSystem {
         };
 
         let scalar_field = |label: &str, value: f32| {
-            stack((
+            Stack::new((
                 label.to_string().style(|s| s.width(120.0).font_size(12.0)),
                 format!("{:.2}", value).style(|s| s.font_size(12.0)),
             ))
@@ -199,7 +200,7 @@ impl StylePropValue for DesignSystem {
             }.style(|s| s.size_full().with_theme(|s, t| s.color(t.text())))
         };
 
-        let header = stack((
+        let header = Stack::new((
             dyn_view(chevron)
                 .class(ButtonClass)
                 .style(|s| s.size(16.0, 16.0).padding(0.)),
@@ -217,9 +218,9 @@ impl StylePropValue for DesignSystem {
                 .cursor(CursorStyle::Pointer)
         });
 
-        let content = stack((
+        let content = Stack::new((
             header,
-            stack((
+            Stack::new((
                 color_swatch("bg_base", design_system.bg_base),
                 color_swatch("text_base", design_system.text_base),
                 color_swatch("primary_base", design_system.primary_base),

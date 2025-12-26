@@ -20,7 +20,7 @@ use web_time::{Duration, Instant};
 use crate::animate::{Bezier, Easing, Linear, Spring};
 use crate::theme::StyleThemeExt;
 use crate::view::{IntoView, View};
-use crate::views::{ContainerExt, Decorators, Label, TooltipExt, canvas, v_stack_from_iter};
+use crate::views::{ContainerExt, Decorators, Label, Stack, TooltipExt, canvas};
 
 use super::StylePropValue;
 use super::values::views;
@@ -226,7 +226,7 @@ impl Transition {
                 if !samples.is_empty() {
                     Some(views((
                         "Velocity:".style(|s| s.font_bold().min_width(80.0).justify_end()),
-                        v_stack_from_iter(samples).style(|s| s.gap(2.0)),
+                        Stack::vertical_from_iter(samples).style(|s| s.gap(2.0)),
                     )))
                 } else {
                     None
@@ -241,7 +241,7 @@ impl Transition {
                 rows.push(velocity_row.into_any());
             }
 
-            v_stack_from_iter(rows).style(|s| {
+            Stack::vertical_from_iter(rows).style(|s| {
                 s.grid()
                     .grid_template_columns([auto(), fr(1.)])
                     .justify_center()

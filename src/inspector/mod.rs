@@ -13,9 +13,7 @@ use crate::theme::StyleThemeExt as _;
 use crate::view::ChangeFlags;
 use crate::view::ViewId;
 use crate::view::{IntoView, View};
-use crate::views::{
-    ContainerExt, Decorators, Label, ScrollExt, dyn_container, stack, v_stack, v_stack_from_iter,
-};
+use crate::views::{ContainerExt, Decorators, Label, ScrollExt, Stack, dyn_container};
 use crate::window::state::WindowState;
 use crate::{AnyView, Clipboard, style};
 use floem_reactive::{Effect, RwSignal, Scope, SignalGet, SignalUpdate};
@@ -279,7 +277,7 @@ fn stats(capture: &Capture) -> impl IntoView + use<> {
     );
     let w = info("Window Width", format!("{}", capture.window_size.width));
     let h = info("Window Height", format!("{}", capture.window_size.height));
-    v_stack_from_iter(
+    Stack::vertical_from_iter(
         [
             style_time,
             layout_time,
@@ -426,13 +424,13 @@ fn selected_view(
 
             style_list.sort_unstable_by(|a, b| a.0.1.cmp(&b.0.1));
 
-            let style_list = v_stack_from_iter(style_list.into_iter().enumerate().map(
+            let style_list = Stack::vertical_from_iter(style_list.into_iter().enumerate().map(
                 |(idx, ((prop, name), value))| {
                     let name = name.strip_prefix("floem::style::").unwrap_or(&name);
                     let name = if direct.contains(&prop.key) {
                         Label::new(name).into_any()
                     } else {
-                        stack((
+                        Stack::new((
                             "Inherited".style(|s| {
                                 s.margin_right(5.0)
                                     .border(1.)
@@ -455,7 +453,7 @@ fn selected_view(
                         .get(&prop.info().transition_key)
                         .map(|v| v.downcast_ref::<Transition>().unwrap().clone())
                     {
-                        let transition = stack((
+                        let transition = Stack::new((
                             "Transition".style(|s| {
                                 s.margin_top(5.0)
                                     .margin_right(5.0)
@@ -470,9 +468,9 @@ fn selected_view(
                             transition.debug_view(),
                         ))
                         .style(|s| s.items_center());
-                        v = v_stack((v, transition)).into_any();
+                        v = Stack::vertical((v, transition)).into_any();
                     }
-                    stack((
+                    Stack::new((
                         name.style(|s| {
                             s.margin_right(5.0)
                                 .with_theme(|s, t| s.color(t.text_muted()))
@@ -504,7 +502,7 @@ fn selected_view(
                     .padding_right(10)
             });
 
-            let selected_view_info = v_stack_from_iter(
+            let selected_view_info = Stack::vertical_from_iter(
                 [name, id, count, x, y, w, h, tx, ty, tw, th]
                     .into_iter()
                     .enumerate()
@@ -530,7 +528,7 @@ fn selected_view(
             });
 
             let class_list_view =
-                v_stack_from_iter(view.classes.clone().into_iter().enumerate().map(
+                Stack::vertical_from_iter(view.classes.clone().into_iter().enumerate().map(
                     |(idx, class_ref)| {
                         let class_style = capture.state.styles.get(&view.id).map(|style| {
                             Style::new().apply_classes_from_context(&[class_ref], style)
@@ -612,12 +610,12 @@ fn selected_view(
                             });
 
                             let header_row =
-                                stack((class_header, count_badge)).style(|s| s.items_center());
+                                Stack::new((class_header, count_badge)).style(|s| s.items_center());
 
                             let props_view =
                                 if !props.is_empty() {
                                     Some(
-                                        v_stack_from_iter(props.into_iter().map(
+                                        Stack::vertical_from_iter(props.into_iter().map(
                                             |((prop, name), value)| {
                                                 let name = name
                                                     .strip_prefix("floem::style::")
@@ -633,7 +631,7 @@ fn selected_view(
                                                     .get(&prop.info().transition_key)
                                                     .and_then(|v| v.downcast_ref::<Transition>())
                                                 {
-                                                    let transition_badge = stack((
+                                                    let transition_badge = Stack::new((
                                                         "Transition".style(|s| {
                                                             s.margin_top(5.0)
                                                                 .margin_right(5.0)
@@ -651,10 +649,11 @@ fn selected_view(
                                                         format!("{:?}", transition),
                                                     ))
                                                     .style(|s| s.items_center());
-                                                    v = v_stack((v, transition_badge)).into_any();
+                                                    v = Stack::vertical((v, transition_badge))
+                                                        .into_any();
                                                 }
 
-                                                stack((
+                                                Stack::new((
                                                     Label::new(name)
                                                         .style(|s| {
                                                             s.margin_right(5.0).with_theme(
@@ -685,7 +684,7 @@ fn selected_view(
 
                             let selectors_view = if !selectors.is_empty() {
                                 Some(
-                                    v_stack_from_iter(selectors.into_iter().map(
+                                    Stack::vertical_from_iter(selectors.into_iter().map(
                                         |(selector_info, selector_style)| {
                                             let selector_name = selector_info.debug_string();
 
@@ -737,15 +736,16 @@ fn selected_view(
                                                     })
                                             });
 
-                                            let nested_header =
-                                                stack((selector_header, nested_count)).style(|s| {
-                                                    s.items_center()
-                                                        .padding_left(20.0)
-                                                        .padding_top(6.0)
-                                                });
+                                            let nested_header = Stack::new((
+                                                selector_header,
+                                                nested_count,
+                                            ))
+                                            .style(|s| {
+                                                s.items_center().padding_left(20.0).padding_top(6.0)
+                                            });
 
-                                            let nested_props_view =
-                                                v_stack_from_iter(nested_props.into_iter().map(
+                                            let nested_props_view = Stack::vertical_from_iter(
+                                                nested_props.into_iter().map(
                                                     |((prop, name), value)| {
                                                         let name = name
                                                             .strip_prefix("floem::style::")
@@ -758,7 +758,7 @@ fn selected_view(
                                                                 .into_any()
                                                             });
 
-                                                        stack((
+                                                        Stack::new((
                                                             Label::new(name)
                                                                 .style(|s| {
                                                                     s.margin_right(5.0).with_theme(
@@ -783,10 +783,11 @@ fn selected_view(
                                                                 .width_full()
                                                         })
                                                     },
-                                                ))
-                                                .style(|s| s.width_full());
+                                                ),
+                                            )
+                                            .style(|s| s.width_full());
 
-                                            v_stack((nested_header, nested_props_view))
+                                            Stack::vertical((nested_header, nested_props_view))
                                                 .style(|s| s.width_full())
                                         },
                                     ))
@@ -797,15 +798,17 @@ fn selected_view(
                             };
 
                             let content = match (props_view, selectors_view) {
-                                (Some(props), Some(selectors)) => v_stack((props, selectors))
-                                    .style(|s| s.width_full().gap(8))
-                                    .into_any(),
+                                (Some(props), Some(selectors)) => {
+                                    Stack::vertical((props, selectors))
+                                        .style(|s| s.width_full().gap(8))
+                                        .into_any()
+                                }
                                 (Some(props), None) => props.into_any(),
                                 (None, Some(selectors)) => selectors.into_any(),
                                 (None, None) => ().into_any(),
                             };
 
-                            v_stack((header_row, content)).style(move |s| {
+                            Stack::vertical((header_row, content)).style(move |s| {
                                 s.padding(8.0).width_full().border_radius(5.0).with_theme(
                                     move |s, t| {
                                         s.apply_if(idx.is_multiple_of(2), |s| {
@@ -818,7 +821,7 @@ fn selected_view(
                                 )
                             })
                         } else {
-                            stack((
+                            Stack::new((
                                 class_header,
                                 Label::new("(no properties)").style(|s| {
                                     s.margin_left(8.0)
@@ -847,7 +850,7 @@ fn selected_view(
                 ))
                 .style(|s| s.gap(4).width_full());
 
-            v_stack((
+            Stack::vertical((
                 selected_view_info,
                 style_header,
                 style_list,

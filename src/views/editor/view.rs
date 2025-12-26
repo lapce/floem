@@ -14,7 +14,7 @@ use crate::{
     text::{Attrs, AttrsList, TextLayout},
     view::ViewId,
     view::{IntoView, View},
-    views::{Decorators, Scroll, editor::keypress::KeypressKey, stack},
+    views::{Decorators, Scroll, Stack, editor::keypress::KeypressKey},
 };
 use floem_editor_core::{
     command::EditCommand,
@@ -1177,7 +1177,7 @@ pub fn editor_container_view(
     is_active: impl Fn(bool) -> bool + 'static + Copy,
     handle_key_event: impl Fn(KeypressKey) -> CommandExecuted + 'static,
 ) -> impl IntoView {
-    stack((
+    Stack::new((
         editor_gutter(editor),
         editor_content(editor, is_active, handle_key_event),
     ))

@@ -10,7 +10,7 @@ use peniko::{Brush, Color};
 use crate::theme::StyleThemeExt;
 use crate::unit::{PxPct, PxPctAuto};
 use crate::view::{IntoView, View};
-use crate::views::{ContainerExt, Decorators, TooltipExt, h_stack, v_stack, v_stack_from_iter};
+use crate::views::{ContainerExt, Decorators, Stack, TooltipExt};
 
 use super::values::{CombineResult, StrokeWrap, StylePropValue};
 
@@ -222,12 +222,12 @@ impl StylePropValue for Border {
                 ("Bottom:", border.bottom),
             ];
 
-            v_stack_from_iter(
+            Stack::vertical_from_iter(
                 sides
                     .into_iter()
                     .filter_map(|(l, v)| v.map(|v| (l, v)))
                     .map(|(label, value)| {
-                        h_stack((
+                        Stack::horizontal((
                             label.style(|s| s.font_weight(Weight::BOLD).width(80.0)),
                             value.debug_view().unwrap(),
                         ))
@@ -335,12 +335,12 @@ impl StylePropValue for BorderColor {
                 ("Bottom:", border_color.bottom),
             ];
 
-            v_stack_from_iter(
+            Stack::vertical_from_iter(
                 sides
                     .into_iter()
                     .filter_map(|(l, v)| v.map(|v| (l, v)))
                     .map(|(label, color)| {
-                        h_stack((
+                        Stack::horizontal((
                             label.style(|s| s.font_weight(Weight::BOLD).width(80.0)),
                             color.debug_view().unwrap(),
                         ))
@@ -461,12 +461,12 @@ impl StylePropValue for BorderRadius {
                 ("Bottom Right:", border_radius.bottom_right),
             ];
 
-            v_stack_from_iter(
+            Stack::vertical_from_iter(
                 corners
                     .into_iter()
                     .filter_map(|(l, v)| v.map(|v| (l, v)))
                     .map(|(label, radius)| {
-                        h_stack((
+                        Stack::horizontal((
                             label.style(|s| s.font_weight(Weight::BOLD).width(80.0)),
                             radius.debug_view().unwrap(),
                         ))
@@ -573,12 +573,12 @@ impl StylePropValue for Padding {
                 ("Bottom:", padding.bottom),
             ];
 
-            v_stack_from_iter(
+            Stack::vertical_from_iter(
                 sides
                     .into_iter()
                     .filter_map(|(l, v)| v.map(|v| (l, v)))
                     .map(|(label, padding)| {
-                        h_stack((
+                        Stack::horizontal((
                             label.style(|s| s.font_weight(Weight::BOLD).width(80.0)),
                             padding.debug_view().unwrap(),
                         ))
@@ -685,12 +685,12 @@ impl StylePropValue for Margin {
                 ("Bottom:", margin.bottom),
             ];
 
-            v_stack_from_iter(
+            Stack::vertical_from_iter(
                 sides
                     .into_iter()
                     .filter_map(|(l, v)| v.map(|v| (l, v)))
                     .map(|(label, margin)| {
-                        h_stack((
+                        Stack::horizontal((
                             label.style(|s| s.font_weight(Weight::BOLD).width(80.0)),
                             margin.debug_view().unwrap(),
                         ))
@@ -754,23 +754,23 @@ impl StylePropValue for BoxShadow {
 
         // Create a details section showing the shadow properties
         let details_view = move || {
-            v_stack((
-                h_stack((
+            Stack::vertical((
+                Stack::horizontal((
                     "Color:".style(|s| s.font_weight(Weight::BOLD).width(80.0)),
                     shadow.color.debug_view().unwrap(),
                 ))
                 .style(|s| s.items_center().gap(4.0)),
-                h_stack((
+                Stack::horizontal((
                     "Blur:".style(|s| s.font_weight(Weight::BOLD).width(80.0)),
                     format!("{:?}", shadow.blur_radius),
                 ))
                 .style(|s| s.items_center().gap(4.0)),
-                h_stack((
+                Stack::horizontal((
                     "Spread:".style(|s| s.font_weight(Weight::BOLD).width(80.0)),
                     format!("{:?}", shadow.spread),
                 ))
                 .style(|s| s.items_center().gap(4.0)),
-                h_stack((
+                Stack::horizontal((
                     "Offset:".style(|s| s.font_weight(Weight::BOLD).width(80.0)),
                     format!(
                         "L: {:?}, R: {:?}, T: {:?}, B: {:?}",

@@ -5,7 +5,7 @@ use crate::{
     style_class,
     view::IntoView,
     views::{
-        self, Decorators, ValueContainer, create_value_container_signals, h_stack, svg,
+        self, Decorators, Stack, ValueContainer, create_value_container_signals, svg,
         value_container,
     },
 };
@@ -134,7 +134,7 @@ impl Checkbox {
         let (inbound_signal, outbound_signal) = create_value_container_signals(checked);
 
         value_container(
-            h_stack((
+            Stack::horizontal((
                 checkbox_svg(inbound_signal.read_only(), custom_check).on_click_stop(move |_| {
                     let checked = inbound_signal.get_untracked();
                     outbound_signal.set(!checked);
@@ -171,7 +171,7 @@ impl Checkbox {
         label: impl Fn() -> S + 'static,
         custom_check: impl Into<String> + Clone + 'static,
     ) -> impl IntoView {
-        h_stack((
+        Stack::horizontal((
             checkbox_svg(checked, custom_check).on_click_stop(move |_| {
                 checked.update(|val| *val = !*val);
             }),

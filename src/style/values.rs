@@ -34,9 +34,7 @@ use crate::theme::StyleThemeExt;
 use crate::unit::{Pct, Px, PxPct, PxPctAuto};
 use crate::view::ViewTupleFlat;
 use crate::view::{IntoView, View};
-use crate::views::{
-    ContainerExt, Decorators, Label, Stack, TooltipExt, canvas, stack, v_stack_from_iter,
-};
+use crate::views::{ContainerExt, Decorators, Label, Stack, TooltipExt, canvas};
 
 use super::FontSize;
 
@@ -142,7 +140,7 @@ where
         let items = self.clone();
 
         let tooltip_view = move || {
-            v_stack_from_iter(items.iter().enumerate().map(|(i, item)| {
+            Stack::vertical_from_iter(items.iter().enumerate().map(|(i, item)| {
                 let index_label = Label::new(format!("[{}]", i))
                     .style(|s| s.with_theme(|s, t| s.color(t.text_muted())));
 
@@ -256,7 +254,7 @@ impl<T: StylePropValue + 'static> StylePropValue for Vec<T> {
 
         let items = self.clone();
         let tooltip_view = move || {
-            v_stack_from_iter(items.iter().enumerate().map(|(i, item)| {
+            Stack::vertical_from_iter(items.iter().enumerate().map(|(i, item)| {
                 let index_label = Label::new(format!("[{}]", i))
                     .style(|s| s.with_theme(|s, t| s.color(t.text_muted())));
 

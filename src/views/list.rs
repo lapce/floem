@@ -1,4 +1,4 @@
-use super::{Decorators, v_stack_from_iter};
+use super::{Decorators, Stack};
 use crate::context::StyleCx;
 use crate::event::EventPropagation;
 use crate::style::Style;
@@ -83,25 +83,26 @@ where
         list_id.update_state(ListUpdate::SelectionChanged(old_idx.flatten()));
         selection
     });
-    let stack = v_stack_from_iter(iterator.into_iter().enumerate().map(move |(index, v)| {
-        let id = ViewId::new();
-        let v = v.into_view().class(ListItemClass);
-        let child = v.id();
-        id.set_children([v]);
-        Item {
-            id,
-            selection,
-            index,
-            child,
-        }
-        .on_click_stop(move |_| {
-            if selection.get_untracked() != Some(index) {
-                selection.set(Some(index));
-                list_id.update_state(ListUpdate::Accept);
+    let stack =
+        Stack::vertical_from_iter(iterator.into_iter().enumerate().map(move |(index, v)| {
+            let id = ViewId::new();
+            let v = v.into_view().class(ListItemClass);
+            let child = v.id();
+            id.set_children([v]);
+            Item {
+                id,
+                selection,
+                index,
+                child,
             }
-        })
-    }))
-    .style(|s| s.width_full().height_full());
+            .on_click_stop(move |_| {
+                if selection.get_untracked() != Some(index) {
+                    selection.set(Some(index));
+                    list_id.update_state(ListUpdate::Accept);
+                }
+            })
+        }))
+        .style(|s| s.width_full().height_full());
     let length = stack.id().children().len();
     let child = stack.id();
     list_id.set_children([stack]);

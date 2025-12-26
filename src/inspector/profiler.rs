@@ -5,8 +5,7 @@ use crate::theme::StyleThemeExt;
 use crate::unit::UnitExt;
 use crate::view::IntoView;
 use crate::views::{
-    Button, Clip, Container, ContainerExt, Decorators, Label, Scroll, dyn_container, h_stack,
-    stack, v_stack, v_stack_from_iter,
+    Button, Clip, Container, ContainerExt, Decorators, Label, Scroll, Stack, dyn_container,
 };
 use floem_reactive::{RwSignal, Scope, SignalGet, SignalUpdate};
 use std::fmt::Display;
@@ -57,7 +56,7 @@ fn info(name: impl Display, value: String) -> impl IntoView {
 }
 
 fn info_row(name: String, view: impl IntoView + 'static) -> impl IntoView {
-    stack((
+    Stack::new((
         Label::new(name)
             .style(|s| {
                 s.margin_right(5.0)
@@ -108,7 +107,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
         .map(|(i, frame)| {
             let frame = frame.clone();
             let frame_ = frame.clone();
-            h_stack((
+            Stack::horizontal((
                 Label::new(format!("Frame #{i}")).style(|s| s.flex_grow(1.0)),
                 Label::new(format!("{:.4} ms", frame.sum.as_secs_f64() * 1000.0))
                     .style(|s| s.margin_right(16)),
@@ -144,7 +143,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
                     .end
                     .saturating_duration_since(event.start)
                     .as_secs_f64();
-                v_stack((
+                Stack::vertical((
                     info("Name", event.name.to_string()).style(|s| s.width_full()),
                     info("Time", format!("{:.4} ms", len * 1000.0)).style(|s| s.width_full()),
                 ))
@@ -159,9 +158,9 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
     )
     .style(|s| s.width_full());
 
-    let frames = v_stack((
+    let frames = Stack::vertical((
         header("Frames"),
-        Scroll::new(v_stack_from_iter(frames).style(|s| s.width_full()))
+        Scroll::new(Stack::vertical_from_iter(frames).style(|s| s.width_full()))
             .style(|s| {
                 s.flex_basis(0)
                     .min_height(0)
@@ -229,7 +228,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
                     })
                 });
                 Scroll::new(
-                    v_stack_from_iter(list)
+                    Stack::vertical_from_iter(list)
                         .style(move |s| s.min_width_pct(zoom.get() * 100.0).height_full()),
                 )
                 .scroll_style(|s| {
@@ -262,10 +261,11 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
             .with_theme(|s, t| s.background(t.bg_base()))
     });
 
-    let timeline = v_stack((header("Timeline"), timeline))
+    let timeline = Stack::vertical((header("Timeline"), timeline))
         .style(|s| s.min_width(0).flex_basis(0).flex_grow(1.0));
 
-    h_stack((frames, separator, timeline)).style(|s| s.height_full().width_full().max_width_full())
+    Stack::horizontal((frames, separator, timeline))
+        .style(|s| s.height_full().width_full().max_width_full())
 }
 
 thread_local! {
@@ -278,7 +278,7 @@ pub fn profiler(window_id: WindowId) -> impl IntoView {
     let profiling = RwSignal::new(false);
     let profile = PROFILE.with(|c| *c);
 
-    let button = h_stack((
+    let button = Stack::horizontal((
         Button::new(Label::derived(move || {
             if profiling.get() {
                 "Stop Profiling"
@@ -322,8 +322,8 @@ pub fn profiler(window_id: WindowId) -> impl IntoView {
     )
     .style(|s| s.width_full().min_height(0).flex_basis(0).flex_grow(1.0));
 
-    // FIXME: This needs an extra `container` or the `v_stack` ends up horizontal.
-    Container::new(v_stack((button, separator, lower)).style(|s| s.size_full()))
+    // FIXME: This needs an extra `container` or the `Stack::vertical` ends up horizontal.
+    Container::new(Stack::vertical((button, separator, lower)).style(|s| s.size_full()))
         .style(|s| s.size_full())
         .on_event_cont(EventListener::WindowClosed, move |_| {
             if profiling.get() {

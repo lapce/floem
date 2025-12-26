@@ -7,12 +7,12 @@ use crate::inspector::{
     update_select_view_id,
 };
 use crate::prelude::{
-    ViewTuple, dyn_container, h_stack, img_dynamic, scroll, stack, tab, text_input, v_stack,
-    virtual_stack,
+    ViewTuple, dyn_container, img_dynamic, scroll, tab, text_input, virtual_stack,
 };
 use crate::style::{FontSize, OverflowX, OverflowY, TextColor};
 use crate::theme::StyleThemeExt as _;
 use crate::unit::PxPctAuto;
+use crate::views::Stack;
 use crate::views::{
     Button, CheckboxClass, ContainerExt, Decorators, Label, ListClass, ListItemClass, Scroll,
     ScrollExt, TabSelectorClass, TooltipExt, resizable,
@@ -71,7 +71,7 @@ pub fn capture(window_id: WindowId) {
                         .with_theme(|s, t| s.background(t.border()))
                 });
 
-                let stack = v_stack((tabs, separator, tab));
+                let stack = Stack::vertical((tabs, separator, tab));
                 let id = stack.id();
                 stack
                     .style(|s| s.width_full().height_full())
@@ -319,7 +319,7 @@ fn capture_view(
         .pointer_events_none()
     });
 
-    let image = stack((image, selected_overlay, highlighted_overlay));
+    let image = Stack::new((image, selected_overlay, highlighted_overlay));
 
     let recapture = Button::new("Recapture").on_click_stop(move |_| {
         add_app_update_event(AppUpdateEvent::CaptureWindow {
@@ -337,12 +337,12 @@ fn capture_view(
         |it| *it,
         move |it| {
             match it {
-                0 => v_stack((
+                0 => Stack::vertical((
                     header("Selected View"),
                     selected_view(&capture_sig.get(), capture_view.selected),
                 ))
                 .into_any(),
-                1 => v_stack((
+                1 => Stack::vertical((
                     header("Stats"),
                     stats(&capture_sig.get()),
                     header("Renderer"),
@@ -366,8 +366,8 @@ fn capture_view(
         .style(move |s| s.apply_if(capture_view.selected.get().is_none(), |s| s.hide()))
         .action(move || capture_view.selected.set(None));
 
-    let tabs = v_stack((
-        h_stack((
+    let tabs = Stack::vertical((
+        Stack::horizontal((
             recapture,
             clear,
             "selected"
@@ -390,7 +390,7 @@ fn capture_view(
     ))
     .style(|s| s.size_full());
 
-    let left = v_stack((
+    let left = Stack::vertical((
         header("Captured Window"),
         resizable::resizable((Scroll::new(image).style(|s| s.max_height_pct(60.0)), tabs))
             .custom_sizes(move || vec![(0, size.height.min(500.))])
@@ -452,7 +452,7 @@ fn capture_view(
             }
         });
     let tree = if capture.root.warnings() {
-        v_stack((
+        Stack::vertical((
             header("Warnings")
                 .style(|s| s.with_theme(|s, t| s.color(t.warning_base)))
                 .tooltip(|| "requested changes is not empty"),
@@ -462,7 +462,7 @@ fn capture_view(
         ))
         .into_view()
     } else {
-        v_stack((header("View Tree"), search, tree)).into_view()
+        Stack::vertical((header("View Tree"), search, tree)).into_view()
     };
 
     let tree = tree.style(|s| s.height_full().min_width(0).flex_basis(0).flex_grow(1.0));
@@ -640,5 +640,6 @@ fn tree_node_name(view: &CapturedData, marge_left: f64) -> impl IntoView {
                 expanded.set(!expanded.get_untracked());
             }
         });
-    h_stack((checkbox, id, tab, name)).style(move |s| s.items_center().margin_left(marge_left))
+    Stack::horizontal((checkbox, id, tab, name))
+        .style(move |s| s.items_center().margin_left(marge_left))
 }
