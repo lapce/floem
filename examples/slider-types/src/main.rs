@@ -4,7 +4,7 @@ use floem::{
     prelude::{SignalGet, SignalUpdate},
     reactive::RwSignal,
     unit::{Pct, UnitExt},
-    views::{h_stack, slider, v_stack, Container, Decorators, Label},
+    views::{slider, Container, Decorators, Label, Stack},
     IntoView,
 };
 
@@ -22,35 +22,35 @@ fn app_view() -> impl IntoView {
     let ranged_slider_value_2 = RwSignal::new(-25.0);
     let ranged_slider_range_2 = -50.0..=100.0;
 
-    let regular_slider_stack = h_stack((
+    let regular_slider_stack = Stack::horizontal((
         regular_slider(regular_slider_value),
         Label::derived(move || format!("{:.2} %", regular_slider_value.get().0))
             .style(|s| s.font_size(18.0)),
     ))
     .style(|s| s.justify_between());
 
-    let auto_slider_stack = h_stack((
+    let auto_slider_stack = Stack::horizontal((
         auto_reactive_slider(auto_slider_value),
         Label::derived(move || format!("{:.2} %", auto_slider_value.get().0))
             .style(|s| s.font_size(18.0)),
     ))
     .style(|s| s.justify_between());
 
-    let ranged_slider_1_stack = h_stack((
+    let ranged_slider_1_stack = Stack::horizontal((
         ranged_slider(ranged_slider_value_1, ranged_slider_range_1, 10.0),
         Label::derived(move || format!("{}", ranged_slider_value_1.get()))
             .style(|s| s.font_size(18.0)),
     ))
     .style(|s| s.justify_between());
 
-    let ranged_slider_2_stack = h_stack((
+    let ranged_slider_2_stack = Stack::horizontal((
         ranged_slider(ranged_slider_value_2, ranged_slider_range_2, 1.0),
         Label::derived(move || format!("{}", ranged_slider_value_2.get()))
             .style(|s| s.font_size(18.0)),
     ))
     .style(|s| s.justify_between());
 
-    let view = v_stack((
+    let view = Stack::vertical((
         Label::derived(|| "Regular slider").style(|s| s.font_size(20)),
         regular_slider_stack,
         Label::derived(|| "RW slider").style(|s| s.font_size(20)),

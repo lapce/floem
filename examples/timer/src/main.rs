@@ -4,7 +4,7 @@ use floem::{
     action::exec_after,
     reactive::{DerivedRwSignal, Effect, RwSignal, SignalGet, SignalTrack, SignalUpdate},
     unit::{Pct, UnitExt},
-    views::{slider, stack, v_stack, Button, Container, Decorators, Label},
+    views::{slider, Button, Container, Decorators, Label, Stack},
     IntoView,
 };
 
@@ -54,10 +54,10 @@ fn app_view() -> impl IntoView {
 
     let reset_button = Button::new("Reset").action(move || elapsed_time.set(Duration::ZERO));
 
-    let view = v_stack((
-        stack((Label::new("Elapsed Time: "), elapsed_time_bar)).style(|s| s.justify_between()),
+    let view = Stack::vertical((
+        Stack::new((Label::new("Elapsed Time: "), elapsed_time_bar)).style(|s| s.justify_between()),
         elapsed_time_label,
-        stack((Label::new("Duration: "), duration_slider)).style(|s| s.justify_between()),
+        Stack::new((Label::new("Duration: "), duration_slider)).style(|s| s.justify_between()),
         reset_button,
     ))
     .style(|s| s.gap(5));

@@ -3,7 +3,7 @@ use ui_events::pointer::{PointerButton, PointerButtonEvent, PointerEvent};
 use crate::{
     action::{drag_window, toggle_window_maximized},
     event::{Event, EventListener},
-    id::ViewId,
+    view::ViewId,
     view::{IntoView, View},
 };
 

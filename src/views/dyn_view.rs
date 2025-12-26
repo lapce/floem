@@ -1,7 +1,7 @@
 use floem_reactive::{Scope, UpdaterEffect};
 
 use crate::{
-    id::ViewId,
+    view::ViewId,
     view::{IntoView, View},
 };
 

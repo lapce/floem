@@ -10,7 +10,7 @@ use floem::{
 use std::path::Path;
 
 fn sub_window_view(id: WindowId) -> impl IntoView {
-    v_stack((
+    Stack::vertical((
         Label::derived(move || String::from("This window has an icon from an SVG file."))
             .style(|s| s.font_size(30.0)),
         Button::new("Close this window").action(move || close_window(id)),
@@ -26,7 +26,7 @@ fn sub_window_view(id: WindowId) -> impl IntoView {
 }
 
 fn app_view() -> impl IntoView {
-    let view = v_stack((
+    let view = Stack::vertical((
         Label::derived(move || String::from("This window has an icon from a PNG file"))
             .style(|s| s.font_size(30.0)),
         Button::new("Open another window").action(|| {

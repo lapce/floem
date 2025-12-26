@@ -15,7 +15,5 @@ pub fn virtual_stack_view() -> impl IntoView {
         .scroll()
         .style(|s| s.width(100).height(200).border(1));
 
-    (button, virtual_stack)
-        .h_stack()
-        .style(|s| s.flex_col().row_gap(5).margin_top(10))
+    Stack::horizontal((button, virtual_stack)).style(|s| s.flex_col().row_gap(5).margin_top(10))
 }

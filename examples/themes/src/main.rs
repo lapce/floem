@@ -98,13 +98,13 @@ fn app_view() -> impl IntoView {
 
     let counter = RwSignal::new(0);
     let theme = RwSignal::new(false);
-    let view = stack((
+    let view = Stack::new((
         "Toggle Theme".class(Button).on_click_stop({
             move |_| {
                 theme.update(|theme| *theme = !*theme);
             }
         }),
-        stack((
+        Stack::new((
             views::Label::derived(move || format!("Value: {}", counter.get())).class(Label),
             "Increment".class(Button).on_click_stop({
                 move |_| {

@@ -7,7 +7,7 @@ fn main() {
 fn counter_view() -> impl IntoView {
     let mut counter = RwSignal::new(0);
 
-    h_stack((
+    Stack::horizontal((
         Button::new("Increment").action(move || counter += 1),
         Label::derived(move || format!("Value: {counter}")),
         Button::new("Decrement").action(move || counter -= 1),

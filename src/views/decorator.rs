@@ -13,7 +13,7 @@ use crate::{
     action::{set_window_menu, set_window_scale, set_window_title},
     animate::Animation,
     event::{Event, EventListener, EventPropagation},
-    menu::Menu,
+    platform::menu::Menu,
     style::{Style, StyleClass},
     view::{HasViewId, IntoView},
 };

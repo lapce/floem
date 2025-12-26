@@ -5,10 +5,7 @@ use floem::{
     style::{ScaleX, ScaleY, Style, Transition},
     text::Weight,
     unit::{DurationUnitExt, UnitExt},
-    views::{
-        dyn_container, h_stack, slider, svg, v_stack, ButtonClass, Container, Decorators, Stack,
-        SvgClass,
-    },
+    views::{dyn_container, slider, svg, ButtonClass, Container, Decorators, Stack, SvgClass},
     AnyView, IntoView,
 };
 
@@ -41,14 +38,14 @@ impl IntoView for SongInfo {
     type Intermediate = Stack;
 
     fn into_intermediate(self) -> Self::Intermediate {
-        let song_artist = v_stack((
+        let song_artist = Stack::vertical((
             self.title.style(|s| s.font_weight(Weight::MEDIUM)),
             self.artist
                 .style(|s| s.font_size(FONT_SIZE * 0.8).color(palette::css::GRAY)),
         ))
         .style(|s| s.gap(5.));
 
-        h_stack((
+        Stack::horizontal((
             ().style(|s| s.size(50, 50).border_radius(8).background(ICON)),
             song_artist,
         ))
@@ -80,7 +77,7 @@ impl PlayPause {
 pub fn music_player() -> impl IntoView {
     let song_info = RwSignal::new(SongInfo::default());
 
-    let now_playing = h_stack((
+    let now_playing = Stack::horizontal((
         svg(svg::MUSIC).style(|s| s.color(MUSIC_ICON)),
         "Now Playing".style(|s| s.font_weight(Weight::MEDIUM)),
     ))
@@ -93,7 +90,7 @@ pub fn music_player() -> impl IntoView {
     )
     .on_click_stop(move |_| play_pause_state.update(PlayPause::toggle));
 
-    let media_buttons = h_stack((
+    let media_buttons = Stack::horizontal((
         Container::new(svg(svg::BACKWARD)).class(ButtonClass),
         play_pause_button,
         Container::new(svg(svg::FORWARD)).class(ButtonClass),
@@ -105,7 +102,7 @@ pub fn music_player() -> impl IntoView {
             .class(SvgClass, |s| s.color(MUSIC_ICON))
     });
 
-    let card = v_stack((
+    let card = Stack::vertical((
         now_playing,
         dyn_container(move || song_info.get(), |info| info),
         slider::slider(move || 40.pct())

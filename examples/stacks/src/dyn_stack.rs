@@ -19,7 +19,5 @@ pub fn dyn_stack_view() -> impl IntoView {
     .scroll()
     .style(|s| s.width(100).height(200).border(1));
 
-    (button, stack)
-        .h_stack()
-        .style(|s| s.flex_col().row_gap(5).margin_top(10))
+    Stack::horizontal((button, stack)).style(|s| s.flex_col().row_gap(5).margin_top(10))
 }

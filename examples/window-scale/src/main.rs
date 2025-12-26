@@ -47,7 +47,8 @@ fn app_view() -> impl IntoView {
                 .set_disabled(counter.get() == 0)
         });
 
-    let counter_buttons = (increment_button, decrement_button, reset_to_zero_button).h_stack();
+    let counter_buttons =
+        Stack::horizontal((increment_button, decrement_button, reset_to_zero_button));
 
     let zoom_in_button = "Zoom In"
         .class(Button)
@@ -72,29 +73,26 @@ fn app_view() -> impl IntoView {
                 .set_disabled(window_scale.get() == 1.0)
         });
 
-    let scale_buttons = (zoom_in_button, zoom_out_button, zoom_reset_button)
-        .h_stack()
+    let scale_buttons = Stack::horizontal((zoom_in_button, zoom_out_button, zoom_reset_button))
         .style(|s| s.absolute().inset_top(0).inset_right(0));
 
-    let view = (value_label, counter_buttons, scale_buttons)
-        .v_stack()
-        .style(|s| {
-            s.size(100.pct(), 100.pct())
-                .items_center()
-                .justify_center()
-                .class(Button, |s| {
-                    s.border(1.0)
-                        .border_radius(10.0)
-                        .padding(10.0)
-                        .focus_visible(|s| s.border(2.).border_color(palette::css::BLUE))
-                        .disabled(|s| s.background(palette::css::LIGHT_GRAY))
-                        .hover(|s| s.background(palette::css::LIGHT_GREEN))
-                        .active(|s| {
-                            s.color(palette::css::WHITE)
-                                .background(palette::css::DARK_GREEN)
-                        })
-                })
-        });
+    let view = Stack::vertical((value_label, counter_buttons, scale_buttons)).style(|s| {
+        s.size(100.pct(), 100.pct())
+            .items_center()
+            .justify_center()
+            .class(Button, |s| {
+                s.border(1.0)
+                    .border_radius(10.0)
+                    .padding(10.0)
+                    .focus_visible(|s| s.border(2.).border_color(palette::css::BLUE))
+                    .disabled(|s| s.background(palette::css::LIGHT_GRAY))
+                    .hover(|s| s.background(palette::css::LIGHT_GREEN))
+                    .active(|s| {
+                        s.color(palette::css::WHITE)
+                            .background(palette::css::DARK_GREEN)
+                    })
+            })
+    });
 
     let id = view.id();
     view.on_event_stop(EventListener::KeyUp, move |e| {

@@ -126,7 +126,7 @@ objc2-foundation = { version = "0.3", default-features = false }
 objc2-app-kit = { version = "0.3", features = [
   "NSApplication",
   "NSResponder",
-  "NSView"
+  "NSView",
 ] }
 
 [features]
@@ -139,7 +139,7 @@ serde = [
   "peniko/serde",
   "lapce-xi-rope/serde",
   "smallvec/serde",
-  "floem-editor-core?/serde"
+  "floem-editor-core?/serde",
 ]
 editor = [
   "floem-editor-core",
@@ -171,6 +171,13 @@ rfd-async-std = ["dep:rfd", "rfd/async-std"]
 rfd-tokio = ["dep:rfd", "rfd/tokio"]
 crossbeam = ["dep:crossbeam", "floem_renderer/crossbeam"]
 localization = ["dep:fluent-bundle", "dep:unic-langid", "dep:sys-locale"]
+
+[dev-dependencies]
+criterion = { version = "0.8.1", features = ["html_reports"] }
+
+[[bench]]
+name = "event_dispatch"
+harness = false
 
 [profile.dev]
 opt-level = 1

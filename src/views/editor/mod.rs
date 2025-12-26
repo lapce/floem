@@ -171,7 +171,7 @@ pub struct Editor {
     pub(crate) editor_view_focused_value: RwSignal<bool>,
     pub editor_view_focused: Trigger,
     pub editor_view_focus_lost: Trigger,
-    pub editor_view_id: RwSignal<Option<crate::id::ViewId>>,
+    pub editor_view_id: RwSignal<Option<crate::view::ViewId>>,
 
     /// The current scroll position.
     pub scroll_delta: RwSignal<Vec2>,

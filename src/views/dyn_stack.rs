@@ -9,9 +9,9 @@ use smallvec::SmallVec;
 
 use crate::{
     context::UpdateCx,
-    id::ViewId,
+    view::ViewId,
     view::{IntoView, View},
-    window_state::WindowState,
+    window::state::WindowState,
 };
 
 pub(crate) type FxIndexSet<T> = indexmap::IndexSet<T, BuildHasherDefault<FxHasher>>;

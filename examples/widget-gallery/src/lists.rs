@@ -84,14 +84,13 @@ fn enhanced_list() -> impl IntoView {
             });
         });
 
-        (
+        Stack::horizontal((
             Checkbox::new_rw(checkbox_state)
                 .style(|s| s.with_theme(|s, t| s.selected(|s| s.color(t.text())))),
             label(item),
             x_mark(index),
-        )
-            .h_stack()
-            .style(move |s| s.items_center().gap(5).padding_left(6).height(item_height))
+        ))
+        .style(move |s| s.items_center().gap(5).padding_left(6).height(item_height))
     };
 
     VirtualList::with_view(move || long_list.get().enumerate(), item_view)

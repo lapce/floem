@@ -3,7 +3,7 @@
 use peniko::kurbo::Size;
 
 use crate::{
-    id::ViewId,
+    view::ViewId,
     view::{IntoView, View},
 };
 

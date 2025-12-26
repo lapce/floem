@@ -4,7 +4,7 @@ use floem::{
     peniko::color::palette,
     reactive::{RwSignal, SignalGet, Trigger},
     unit::DurationUnitExt,
-    views::{h_stack, Decorators},
+    views::{Decorators, Stack},
     IntoView,
 };
 
@@ -28,7 +28,7 @@ pub fn animation_view() -> impl IntoView {
     let pause = Trigger::new();
     let resume = Trigger::new();
 
-    h_stack((
+    Stack::horizontal((
         ().style(|s| s.background(palette::css::RED).size(500, 100))
             .animation(move |_| animation.get().duration(10.seconds())),
         ().style(|s| {

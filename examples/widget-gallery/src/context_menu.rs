@@ -1,7 +1,6 @@
 use floem::{
     menu::*,
-    prelude::ViewTuple,
-    views::{ButtonClass, Decorators},
+    views::{ButtonClass, Decorators, Stack},
     IntoView,
 };
 
@@ -86,7 +85,5 @@ pub fn menu_view() -> impl IntoView {
         .style(|s| s.padding(10.0).border(1.0))
         .context_menu(context_menu);
 
-    (popout_button, context_button)
-        .v_stack()
-        .style(|s| s.selectable(false))
+    Stack::vertical((popout_button, context_button)).style(|s| s.selectable(false))
 }

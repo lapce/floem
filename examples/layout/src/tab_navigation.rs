@@ -64,7 +64,7 @@ pub fn tab_navigation_view() -> impl IntoView {
     let tabs = RwSignal::new(tabs);
     let active_tab = RwSignal::new(0);
 
-    let tabs_bar = h_stack((
+    let tabs_bar = Stack::horizontal((
         tab_button(Tab::General, tabs, active_tab),
         tab_button(Tab::Settings, tabs, active_tab),
         tab_button(Tab::Feedback, tabs, active_tab),
@@ -98,7 +98,8 @@ pub fn tab_navigation_view() -> impl IntoView {
             .width_full()
     });
 
-    let settings_view = v_stack((tabs_bar, main_content)).style(|s| s.width_full().height_full());
+    let settings_view =
+        Stack::vertical((tabs_bar, main_content)).style(|s| s.width_full().height_full());
 
     let id = settings_view.id();
     settings_view.on_event_stop(EventListener::KeyUp, move |e| {

@@ -138,8 +138,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         );
     });
 
-    let left_side_bar = (side_tab_bar, new_window_button, inspector)
-        .v_stack()
+    let left_side_bar = Stack::vertical((side_tab_bar, new_window_button, inspector))
         .debug_name("Left Side Bar")
         .style(|s| s.height_full().row_gap(5.0));
 
@@ -154,8 +153,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
 
     let tab = tab.scroll().style(|s| s.size_full());
 
-    let view = (left_side_bar, tab)
-        .h_stack()
+    let view = Stack::horizontal((left_side_bar, tab))
         .style(|s| s.padding(5.0).width_full().height_full().col_gap(5.0))
         .window_title(|| "Widget Gallery".to_owned());
 

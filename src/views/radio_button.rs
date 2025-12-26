@@ -3,7 +3,7 @@ use crate::{
     style::StyleSelector,
     style_class,
     view::View,
-    views::{self, ContainerExt, Decorators, h_stack},
+    views::{self, ContainerExt, Decorators, Stack},
 };
 use floem_reactive::{SignalGet, SignalUpdate};
 
@@ -117,7 +117,7 @@ impl RadioButton {
         let clone = represented_value.clone();
 
         value_container(
-            h_stack((
+            Stack::horizontal((
                 radio_button_svg(represented_value.clone(), inbound_signal.read_only()),
                 views::Label::derived(label),
             ))
@@ -149,7 +149,7 @@ impl RadioButton {
         T: Eq + PartialEq + Clone + 'static,
     {
         let clone = represented_value.clone();
-        h_stack((
+        Stack::horizontal((
             radio_button_svg(represented_value, actual_value),
             views::Label::derived(label),
         ))
@@ -176,7 +176,7 @@ impl RadioButton {
         let cloneable_represented_value = represented_value.clone();
         let cloneable_represented_value_ = represented_value.clone();
 
-        h_stack((
+        Stack::horizontal((
             radio_button_svg(cloneable_represented_value.clone(), actual_value),
             views::Label::derived(label),
         ))

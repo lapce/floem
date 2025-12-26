@@ -1,11 +1,11 @@
 use std::fmt::Display;
 
-use floem::views::{Button, Label, StackExt};
+use floem::views::{Button, Label};
 use floem::{
     peniko::color::palette,
     reactive::{RwSignal, SignalGet, SignalUpdate},
     unit::UnitExt,
-    views::{dyn_container, text_input, v_stack, Decorators, RadioButton},
+    views::{dyn_container, text_input, Decorators, RadioButton, Stack},
     IntoView,
 };
 use strum::IntoEnumIterator;
@@ -64,9 +64,9 @@ pub fn app_view() -> impl IntoView {
 
     let did_booking = RwSignal::new(false);
 
-    let mode_picker = FlightMode::iter()
-        .map(move |fm| RadioButton::new_labeled_rw(fm, flight_mode, move || fm))
-        .h_stack();
+    let mode_picker = Stack::horizontal_from_iter(
+        FlightMode::iter().map(move |fm| RadioButton::new_labeled_rw(fm, flight_mode, move || fm)),
+    );
 
     let start_date_input = text_input(start_text)
         .placeholder("Start date")
@@ -97,7 +97,7 @@ pub fn app_view() -> impl IntoView {
         },
     );
 
-    v_stack((
+    Stack::vertical((
         mode_picker,
         start_date_input,
         return_date_input,

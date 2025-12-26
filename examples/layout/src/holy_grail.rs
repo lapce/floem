@@ -69,17 +69,14 @@ pub fn holy_grail_view() -> impl IntoView {
                 .min_width(150.0)
         });
 
-    let content = (side_bar_left, main_window, side_bar_right)
-        .h_stack()
-        .style(|s| {
-            s.position(Position::Absolute)
-                .inset_top(TOPBAR_HEIGHT)
-                .inset_bottom(0.0)
-                .width_full()
-        });
+    let content = Stack::horizontal((side_bar_left, main_window, side_bar_right)).style(|s| {
+        s.position(Position::Absolute)
+            .inset_top(TOPBAR_HEIGHT)
+            .inset_bottom(0.0)
+            .width_full()
+    });
 
-    (top_bar, content)
-        .v_stack()
+    Stack::vertical((top_bar, content))
         .style(|s| s.width_full().height_full())
         .on_event_stop(EventListener::KeyUp, move |e| {
             if let floem::event::Event::Key(KeyboardEvent {
