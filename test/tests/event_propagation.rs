@@ -1939,6 +1939,669 @@ fn test_counter_example_structure() {
 }
 
 // =============================================================================
+// Overlay + Fixed Position Bug Reproduction Tests
+// =============================================================================
+
+/// Test that reproduces the dialog bug: clicking on content triggers backdrop.
+///
+/// The actual DialogContent uses:
+/// - Overlay::with_id
+/// - Fixed positioning (.fixed().inset_0())
+/// - Content centered with left_1_2/top_1_2 + translate -50%
+///
+/// This test replicates that exact structure.
+#[test]
+fn test_overlay_fixed_translate_click_offset_bug() {
+    use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
+    use floem::unit::Pct;
+    use floem::views::Overlay;
+
+    let backdrop_clicked = RwSignal::new(false);
+    let content_clicked = RwSignal::new(false);
+
+    // This replicates DialogContent structure exactly
+    let view = Overlay::new(
+        stack((
+            // Backdrop - fills entire viewport
+            Empty::new()
+                .style(|s| s.absolute().inset(0.0).z_index(1))
+                .on_click_stop(move |_| {
+                    backdrop_clicked.set(true);
+                }),
+            // Content - centered using translate (like DialogContent)
+            v_stack((
+                Empty::new().style(|s| s.size(60.0, 30.0)), // Header
+                Empty::new().style(|s| s.size(60.0, 30.0)), // Footer
+            ))
+            .style(|s| {
+                s.absolute()
+                    .inset_left(Pct(50.0))
+                    .inset_top(Pct(50.0))
+                    .translate_x(Pct(-50.0))
+                    .translate_y(Pct(-50.0))
+                    .size(80.0, 80.0)
+                    .z_index(10)
+            })
+            .on_click_stop(move |_| {
+                content_clicked.set(true);
+            }),
+        ))
+        // This is the key: fixed positioning like DialogContent
+        .style(|s| s.fixed().inset(0.0).width_full().height_full()),
+    );
+
+    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+
+    // Click in the center where content should be
+    // Content is 80x80, centered at (100, 100) with translate -40, -40
+    // Visual bounds: (60, 60) to (140, 140)
+    eprintln!("Clicking at center (100, 100)");
+    harness.click(100.0, 100.0);
+
+    assert!(
+        content_clicked.get(),
+        "Content should receive click - clicking visually on content"
+    );
+    assert!(
+        !backdrop_clicked.get(),
+        "Backdrop should NOT receive click - content is on top"
+    );
+}
+
+/// Test overlay with fixed position but no translate (simpler case).
+#[test]
+fn test_overlay_fixed_no_translate() {
+    use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
+    use floem::views::Overlay;
+
+    let backdrop_clicked = RwSignal::new(false);
+    let content_clicked = RwSignal::new(false);
+
+    let view = Overlay::new(
+        stack((
+            // Backdrop
+            Empty::new()
+                .style(|s| s.absolute().inset(0.0).z_index(1))
+                .on_click_stop(move |_| {
+                    backdrop_clicked.set(true);
+                }),
+            // Content - positioned without translate
+            Empty::new()
+                .style(|s| {
+                    s.absolute()
+                        .inset_left(50.0)
+                        .inset_top(50.0)
+                        .size(100.0, 100.0)
+                        .z_index(10)
+                })
+                .on_click_stop(move |_| {
+                    content_clicked.set(true);
+                }),
+        ))
+        .style(|s| s.fixed().inset(0.0).width_full().height_full()),
+    );
+
+    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+
+    // Click in the content area (50, 50) to (150, 150)
+    harness.click(100.0, 100.0);
+
+    assert!(
+        content_clicked.get(),
+        "Content should receive click"
+    );
+    assert!(
+        !backdrop_clicked.get(),
+        "Backdrop should NOT receive click"
+    );
+}
+
+/// Test the exact DialogContent structure but without Overlay.
+#[test]
+fn test_fixed_translate_no_overlay() {
+    use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
+    use floem::unit::Pct;
+
+    let backdrop_clicked = RwSignal::new(false);
+    let content_clicked = RwSignal::new(false);
+
+    // Same as dialog but using stack instead of Overlay
+    let view = stack((
+        // Backdrop
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0).size(200.0, 200.0).z_index(1))
+            .on_click_stop(move |_| {
+                backdrop_clicked.set(true);
+            }),
+        // Content with translate centering
+        Empty::new()
+            .style(|s| {
+                s.absolute()
+                    .inset_left(Pct(50.0))
+                    .inset_top(Pct(50.0))
+                    .translate_x(Pct(-50.0))
+                    .translate_y(Pct(-50.0))
+                    .size(80.0, 80.0)
+                    .z_index(10)
+            })
+            .on_click_stop(move |_| {
+                content_clicked.set(true);
+            }),
+    ))
+    .style(|s| s.size(200.0, 200.0));
+
+    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+
+    // Click in center
+    harness.click(100.0, 100.0);
+
+    assert!(
+        content_clicked.get(),
+        "Content should receive click"
+    );
+    assert!(
+        !backdrop_clicked.get(),
+        "Backdrop should NOT receive click"
+    );
+}
+
+/// Test clicking at 4 corners of content with Overlay + fixed positioning.
+///
+/// This helps identify offset issues by testing exact boundary conditions.
+/// Content is positioned at (50, 50) with size (100, 100), so corners are:
+/// - Top-left: (50, 50)
+/// - Top-right: (149, 50)
+/// - Bottom-left: (50, 149)
+/// - Bottom-right: (149, 149)
+#[test]
+fn test_overlay_fixed_click_corners() {
+    use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
+    use floem::views::Overlay;
+
+    // Test each corner separately
+    for (name, x, y) in [
+        ("top-left", 55.0, 55.0),
+        ("top-right", 145.0, 55.0),
+        ("bottom-left", 55.0, 145.0),
+        ("bottom-right", 145.0, 145.0),
+        ("center", 100.0, 100.0),
+    ] {
+        let backdrop_clicked = RwSignal::new(false);
+        let content_clicked = RwSignal::new(false);
+
+        let view = Overlay::new(
+            stack((
+                // Backdrop - fills entire area
+                Empty::new()
+                    .style(|s| s.absolute().inset(0.0).z_index(1))
+                    .on_click_stop({
+                        let backdrop_clicked = backdrop_clicked;
+                        move |_| {
+                            eprintln!("[{}] Backdrop clicked!", name);
+                            backdrop_clicked.set(true);
+                        }
+                    }),
+                // Content - positioned at (50, 50) with size (100, 100)
+                Empty::new()
+                    .style(|s| {
+                        s.absolute()
+                            .inset_left(50.0)
+                            .inset_top(50.0)
+                            .size(100.0, 100.0)
+                            .z_index(10)
+                    })
+                    .on_click_stop({
+                        let content_clicked = content_clicked;
+                        move |_| {
+                            eprintln!("[{}] Content clicked!", name);
+                            content_clicked.set(true);
+                        }
+                    }),
+            ))
+            .style(|s| s.fixed().inset(0.0).width_full().height_full()),
+        );
+
+        let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+
+        eprintln!("Testing corner: {} at ({}, {})", name, x, y);
+        harness.click(x, y);
+
+        assert!(
+            content_clicked.get(),
+            "Corner {}: Content should receive click at ({}, {})",
+            name,
+            x,
+            y
+        );
+        assert!(
+            !backdrop_clicked.get(),
+            "Corner {}: Backdrop should NOT receive click at ({}, {})",
+            name,
+            x,
+            y
+        );
+    }
+}
+
+/// Test clicking at 4 corners with translate centering (like DialogContent).
+///
+/// Content is 80x80, centered in 200x200 viewport using translate.
+/// Position: left=50%, top=50%, translate(-50%, -50%)
+/// This means: layout position (100, 100), then translated by (-40, -40)
+/// Visual bounds: (60, 60) to (140, 140)
+#[test]
+fn test_overlay_fixed_translate_click_corners() {
+    use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
+    use floem::unit::Pct;
+    use floem::views::Overlay;
+
+    // Content visual bounds: (60, 60) to (140, 140)
+    for (name, x, y) in [
+        ("top-left", 65.0, 65.0),
+        ("top-right", 135.0, 65.0),
+        ("bottom-left", 65.0, 135.0),
+        ("bottom-right", 135.0, 135.0),
+        ("center", 100.0, 100.0),
+    ] {
+        let backdrop_clicked = RwSignal::new(false);
+        let content_clicked = RwSignal::new(false);
+
+        let view = Overlay::new(
+            stack((
+                // Backdrop
+                Empty::new()
+                    .style(|s| s.absolute().inset(0.0).z_index(1))
+                    .on_click_stop({
+                        let backdrop_clicked = backdrop_clicked;
+                        move |_| {
+                            eprintln!("[translate-{}] Backdrop clicked!", name);
+                            backdrop_clicked.set(true);
+                        }
+                    }),
+                // Content - centered using translate
+                Empty::new()
+                    .style(|s| {
+                        s.absolute()
+                            .inset_left(Pct(50.0))
+                            .inset_top(Pct(50.0))
+                            .translate_x(Pct(-50.0))
+                            .translate_y(Pct(-50.0))
+                            .size(80.0, 80.0)
+                            .z_index(10)
+                    })
+                    .on_click_stop({
+                        let content_clicked = content_clicked;
+                        move |_| {
+                            eprintln!("[translate-{}] Content clicked!", name);
+                            content_clicked.set(true);
+                        }
+                    }),
+            ))
+            .style(|s| s.fixed().inset(0.0).width_full().height_full()),
+        );
+
+        let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+
+        eprintln!(
+            "Testing translate corner: {} at ({}, {})",
+            name, x, y
+        );
+        harness.click(x, y);
+
+        assert!(
+            content_clicked.get(),
+            "Translate corner {}: Content should receive click at ({}, {})",
+            name,
+            x,
+            y
+        );
+        assert!(
+            !backdrop_clicked.get(),
+            "Translate corner {}: Backdrop should NOT receive click at ({}, {})",
+            name,
+            x,
+            y
+        );
+    }
+}
+
+/// Test clicking OUTSIDE content bounds to verify backdrop receives those clicks.
+#[test]
+fn test_overlay_fixed_click_outside_content() {
+    use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
+    use floem::views::Overlay;
+
+    // Content is at (50, 50) to (150, 150)
+    // These clicks should hit backdrop
+    for (name, x, y) in [
+        ("top-left-outside", 25.0, 25.0),
+        ("top-right-outside", 175.0, 25.0),
+        ("bottom-left-outside", 25.0, 175.0),
+        ("bottom-right-outside", 175.0, 175.0),
+    ] {
+        let backdrop_clicked = RwSignal::new(false);
+        let content_clicked = RwSignal::new(false);
+
+        let view = Overlay::new(
+            stack((
+                // Backdrop
+                Empty::new()
+                    .style(|s| s.absolute().inset(0.0).z_index(1))
+                    .on_click_stop({
+                        let backdrop_clicked = backdrop_clicked;
+                        move |_| {
+                            backdrop_clicked.set(true);
+                        }
+                    }),
+                // Content
+                Empty::new()
+                    .style(|s| {
+                        s.absolute()
+                            .inset_left(50.0)
+                            .inset_top(50.0)
+                            .size(100.0, 100.0)
+                            .z_index(10)
+                    })
+                    .on_click_stop({
+                        let content_clicked = content_clicked;
+                        move |_| {
+                            content_clicked.set(true);
+                        }
+                    }),
+            ))
+            .style(|s| s.fixed().inset(0.0).width_full().height_full()),
+        );
+
+        let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+
+        eprintln!("Testing outside: {} at ({}, {})", name, x, y);
+        harness.click(x, y);
+
+        assert!(
+            backdrop_clicked.get(),
+            "Outside {}: Backdrop SHOULD receive click at ({}, {})",
+            name,
+            x,
+            y
+        );
+        assert!(
+            !content_clicked.get(),
+            "Outside {}: Content should NOT receive click at ({}, {})",
+            name,
+            x,
+            y
+        );
+    }
+}
+
+/// Probe test: find exact boundary WITHOUT Overlay (for comparison).
+#[test]
+fn test_no_overlay_fixed_translate_probe_boundary() {
+    use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
+    use floem::unit::Pct;
+
+    // Same structure but without Overlay wrapper
+    let test_points = [
+        (60.0, 100.0, "x=60 (left edge)"),
+        (65.0, 100.0, "x=65 (inside left)"),
+        (100.0, 100.0, "x=100 (center)"),
+        (135.0, 100.0, "x=135 (inside right)"),
+    ];
+
+    eprintln!("\n=== NO OVERLAY: Horizontal probe (y=100) ===");
+    eprintln!("Content expected bounds: x=[60, 140], y=[60, 140]");
+
+    for (x, y, desc) in test_points {
+        let backdrop_clicked = RwSignal::new(false);
+        let content_clicked = RwSignal::new(false);
+
+        // NO Overlay - just stack directly
+        let view = stack((
+            Empty::new()
+                .style(|s| s.absolute().inset(0.0).z_index(1))
+                .on_click_stop({
+                    let backdrop_clicked = backdrop_clicked;
+                    move |_| backdrop_clicked.set(true)
+                }),
+            Empty::new()
+                .style(|s| {
+                    s.absolute()
+                        .inset_left(Pct(50.0))
+                        .inset_top(Pct(50.0))
+                        .translate_x(Pct(-50.0))
+                        .translate_y(Pct(-50.0))
+                        .size(80.0, 80.0)
+                        .z_index(10)
+                })
+                .on_click_stop({
+                    let content_clicked = content_clicked;
+                    move |_| content_clicked.set(true)
+                }),
+        ))
+        // Same fixed positioning
+        .style(|s| s.fixed().inset(0.0).width_full().height_full());
+
+        let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+        harness.click(x, y);
+
+        let hit = if content_clicked.get() {
+            "CONTENT"
+        } else if backdrop_clicked.get() {
+            "backdrop"
+        } else {
+            "NONE"
+        };
+
+        eprintln!("  ({:>5.1}, {:>5.1}) {} -> {}", x, y, desc, hit);
+    }
+}
+
+/// Probe test: find exact boundary where clicks start hitting content vs backdrop.
+#[test]
+fn test_overlay_fixed_translate_probe_boundary() {
+    use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
+    use floem::unit::Pct;
+    use floem::views::Overlay;
+
+    // Content visual bounds should be: (60, 60) to (140, 140)
+    // Test clicks at various x positions along y=100 (horizontal center line)
+    let test_points = [
+        (50.0, 100.0, "x=50 (before content)"),
+        (55.0, 100.0, "x=55 (before content)"),
+        (60.0, 100.0, "x=60 (left edge)"),
+        (65.0, 100.0, "x=65 (inside left)"),
+        (70.0, 100.0, "x=70 (inside)"),
+        (80.0, 100.0, "x=80 (inside)"),
+        (90.0, 100.0, "x=90 (inside)"),
+        (100.0, 100.0, "x=100 (center)"),
+        (110.0, 100.0, "x=110 (inside)"),
+        (120.0, 100.0, "x=120 (inside)"),
+        (130.0, 100.0, "x=130 (inside)"),
+        (135.0, 100.0, "x=135 (inside right)"),
+        (140.0, 100.0, "x=140 (right edge)"),
+        (145.0, 100.0, "x=145 (after content)"),
+        (150.0, 100.0, "x=150 (after content)"),
+    ];
+
+    eprintln!("\n=== Horizontal probe (y=100) ===");
+    eprintln!("Content expected bounds: x=[60, 140], y=[60, 140]");
+
+    for (x, y, desc) in test_points {
+        let backdrop_clicked = RwSignal::new(false);
+        let content_clicked = RwSignal::new(false);
+
+        let view = Overlay::new(
+            stack((
+                Empty::new()
+                    .style(|s| s.absolute().inset(0.0).z_index(1))
+                    .on_click_stop({
+                        let backdrop_clicked = backdrop_clicked;
+                        move |_| backdrop_clicked.set(true)
+                    }),
+                Empty::new()
+                    .style(|s| {
+                        s.absolute()
+                            .inset_left(Pct(50.0))
+                            .inset_top(Pct(50.0))
+                            .translate_x(Pct(-50.0))
+                            .translate_y(Pct(-50.0))
+                            .size(80.0, 80.0)
+                            .z_index(10)
+                    })
+                    .on_click_stop({
+                        let content_clicked = content_clicked;
+                        move |_| content_clicked.set(true)
+                    }),
+            ))
+            .style(|s| s.fixed().inset(0.0).width_full().height_full()),
+        );
+
+        let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+        harness.click(x, y);
+
+        let hit = if content_clicked.get() {
+            "CONTENT"
+        } else if backdrop_clicked.get() {
+            "backdrop"
+        } else {
+            "NONE"
+        };
+
+        eprintln!("  ({:>5.1}, {:>5.1}) {} -> {}", x, y, desc, hit);
+    }
+
+    // Also test vertical line at x=100
+    let test_points_y = [
+        (100.0, 50.0, "y=50 (before)"),
+        (100.0, 60.0, "y=60 (top edge)"),
+        (100.0, 70.0, "y=70 (inside)"),
+        (100.0, 100.0, "y=100 (center)"),
+        (100.0, 130.0, "y=130 (inside)"),
+        (100.0, 140.0, "y=140 (bottom edge)"),
+        (100.0, 150.0, "y=150 (after)"),
+    ];
+
+    eprintln!("\n=== Vertical probe (x=100) ===");
+
+    for (x, y, desc) in test_points_y {
+        let backdrop_clicked = RwSignal::new(false);
+        let content_clicked = RwSignal::new(false);
+
+        let view = Overlay::new(
+            stack((
+                Empty::new()
+                    .style(|s| s.absolute().inset(0.0).z_index(1))
+                    .on_click_stop({
+                        let backdrop_clicked = backdrop_clicked;
+                        move |_| backdrop_clicked.set(true)
+                    }),
+                Empty::new()
+                    .style(|s| {
+                        s.absolute()
+                            .inset_left(Pct(50.0))
+                            .inset_top(Pct(50.0))
+                            .translate_x(Pct(-50.0))
+                            .translate_y(Pct(-50.0))
+                            .size(80.0, 80.0)
+                            .z_index(10)
+                    })
+                    .on_click_stop({
+                        let content_clicked = content_clicked;
+                        move |_| content_clicked.set(true)
+                    }),
+            ))
+            .style(|s| s.fixed().inset(0.0).width_full().height_full()),
+        );
+
+        let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+        harness.click(x, y);
+
+        let hit = if content_clicked.get() {
+            "CONTENT"
+        } else if backdrop_clicked.get() {
+            "backdrop"
+        } else {
+            "NONE"
+        };
+
+        eprintln!("  ({:>5.1}, {:>5.1}) {} -> {}", x, y, desc, hit);
+    }
+}
+
+/// Debug test: print layout information for overlay + fixed + translate.
+#[test]
+fn test_overlay_fixed_translate_debug_layout() {
+    use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
+    use floem::unit::Pct;
+    use floem::views::Overlay;
+    use floem::ViewId;
+
+    let content_id = ViewId::new();
+    let backdrop_clicked = RwSignal::new(false);
+    let content_clicked = RwSignal::new(false);
+
+    let view = Overlay::new(
+        stack((
+            // Backdrop
+            Empty::new()
+                .style(|s| s.absolute().inset(0.0).z_index(1))
+                .on_click_stop(move |_| {
+                    backdrop_clicked.set(true);
+                }),
+            // Content with known ID
+            floem::views::Container::with_id(
+                content_id,
+                Empty::new().style(|s| s.size(60.0, 40.0)),
+            )
+            .style(|s| {
+                s.absolute()
+                    .inset_left(Pct(50.0))
+                    .inset_top(Pct(50.0))
+                    .translate_x(Pct(-50.0))
+                    .translate_y(Pct(-50.0))
+                    .size(80.0, 80.0)
+                    .z_index(10)
+            })
+            .on_click_stop(move |_| {
+                content_clicked.set(true);
+            }),
+        ))
+        .style(|s| s.fixed().inset(0.0).width_full().height_full()),
+    );
+
+    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    harness.rebuild();
+
+    // Print layout info for content
+    if let Some(layout) = content_id.get_layout() {
+        eprintln!("Content layout position: ({}, {})", layout.location.x, layout.location.y);
+        eprintln!("Content layout size: {}x{}", layout.size.width, layout.size.height);
+    }
+
+    let layout_rect = content_id.get_layout_rect();
+    eprintln!("Content layout_rect: {:?}", layout_rect);
+
+    let transform = content_id.get_transform();
+    let coeffs = transform.as_coeffs();
+    eprintln!(
+        "Content transform: translate({}, {})",
+        coeffs[4], coeffs[5]
+    );
+
+    // Click at center (100, 100) - should be inside content after transform
+    harness.click(100.0, 100.0);
+
+    eprintln!("After click at (100, 100):");
+    eprintln!("  content_clicked: {}", content_clicked.get());
+    eprintln!("  backdrop_clicked: {}", backdrop_clicked.get());
+
+    assert!(
+        content_clicked.get(),
+        "Content should receive click at center"
+    );
+}
+
+// =============================================================================
 // Parent's Sibling Tests - Verify events don't bubble sideways
 // =============================================================================
 
@@ -1989,7 +2652,9 @@ fn test_events_do_not_bubble_to_parents_sibling() {
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Click on the nested child (right side of the view, within Sibling2)
-    harness.click(75.0, 50.0);
+    // Sibling2 starts at x=50, NestedChild is 40x40 starting at (0,0) within Sibling2
+    // So NestedChild is at global coords (50, 0) to (90, 40)
+    harness.click(70.0, 20.0);
 
     assert!(
         nested_child_clicked.get(),
