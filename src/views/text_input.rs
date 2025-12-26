@@ -1,5 +1,5 @@
 #![deny(missing_docs)]
-use crate::action::{exec_after, set_ime_allowed, set_ime_cursor_area};
+use crate::action::{TimerToken, exec_after, set_ime_allowed, set_ime_cursor_area};
 use crate::event::{EventListener, EventPropagation};
 use crate::id::ViewId;
 use crate::reactive::{Effect, RwSignal};
@@ -18,6 +18,7 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{peniko::color::palette, style::Style, view::View};
 
+use std::cell::Cell;
 use std::{any::Any, ops::Range};
 
 use crate::text::{Attrs, AttrsList, FamilyOwned, TextLayout};
@@ -119,6 +120,7 @@ pub struct TextInput {
     last_cursor_action_on: Instant,
     window_origin: Option<Point>,
     last_ime_cursor_area: Option<(Point, Size)>,
+    cursor_blink_timer: Cell<Option<TimerToken>>,
 }
 
 /// Type of cursor movement in navigation.
@@ -234,6 +236,7 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
         on_enter: None,
         window_origin: None,
         last_ime_cursor_area: None,
+        cursor_blink_timer: Cell::new(None),
     }
     .on_event_stop(EventListener::FocusGained, move |_| {
         is_focused.set(true);
@@ -1358,6 +1361,9 @@ impl View for TextInput {
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
+        // Clear the timer token since this paint was triggered (possibly by the timer)
+        self.cursor_blink_timer.set(None);
+
         let text_node = self.text_node.unwrap();
         let node_layout = self
             .id
@@ -1366,10 +1372,8 @@ impl View for TextInput {
             .layout(text_node)
             .cloned()
             .unwrap_or_default();
-
         let location = node_layout.location;
         let text_start_point = Point::new(location.x as f64, location.y as f64);
-
         cx.save();
         cx.clip(&self.id.get_content_rect());
         cx.draw_text(
@@ -1381,26 +1385,26 @@ impl View for TextInput {
         if let Some(preedit) = &self.preedit {
             let start_idx = self.cursor_glyph_idx;
             let end_idx = start_idx + preedit.text.len();
-
             let start_hit = self.text_buf.hit_position(start_idx);
             let start_x = location.x as f64 + start_hit.point.x - self.clip_start_x;
             let end_x =
                 location.x as f64 + self.text_buf.hit_position(end_idx).point.x - self.clip_start_x;
-
             let color = self.style.color().unwrap_or(palette::css::BLACK);
             let y = location.y as f64 + start_hit.glyph_ascent;
-
             cx.fill(
                 &Rect::new(start_x, y, end_x, y + 1.0),
                 &Brush::Solid(color),
                 0.0,
             );
         }
-
         cx.restore();
 
         // skip rendering selection / cursor if we don't have focus
         if !cx.window_state.is_focused(&self.id()) {
+            // Cancel any pending blink timer when we lose focus
+            if let Some(token) = self.cursor_blink_timer.take() {
+                token.cancel();
+            }
             return;
         }
 
@@ -1413,7 +1417,10 @@ impl View for TextInput {
 
         if has_selection {
             self.paint_selection_rect(&node_layout, cx);
-            // we can skip drawing a cursor and handling blink
+            // Cancel blink timer when we have a selection
+            if let Some(token) = self.cursor_blink_timer.take() {
+                token.cancel();
+            }
             return;
         }
 
@@ -1434,11 +1441,14 @@ impl View for TextInput {
             cx.fill(&cursor_rect, &cursor_color, 0.0);
         }
 
-        // request paint either way if we're attempting draw a cursor
-        let id = self.id();
-        exec_after(Duration::from_millis(CURSOR_BLINK_INTERVAL_MS), move |_| {
-            id.request_paint();
-        });
+        // Only schedule a new blink timer if we don't already have one pending
+        if self.cursor_blink_timer.get().is_none() {
+            let id = self.id();
+            let timer = exec_after(Duration::from_millis(CURSOR_BLINK_INTERVAL_MS), move |_| {
+                id.request_paint();
+            });
+            self.cursor_blink_timer.set(Some(timer));
+        }
     }
 }
 

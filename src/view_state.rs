@@ -1,3 +1,5 @@
+#[cfg(not(feature = "simple_renderer"))]
+use crate::style::Opacity;
 use crate::{
     ViewId,
     animate::Animation,
@@ -71,7 +73,7 @@ impl<T> Stack<T> {
     }
 }
 
-#[cfg(feature = "vello")]
+#[cfg(not(feature = "simple_renderer"))]
 prop_extractor! {
     pub(crate) ViewStyleProps {
         pub border_radius: BorderRadiusProp,
@@ -83,10 +85,11 @@ prop_extractor! {
         pub border_color: BorderColorProp,
         pub background: Background,
         pub shadow: BoxShadowProp,
+        pub opacity: Opacity,
     }
 }
 // removing outlines to make clippy happy about progress fields not being read
-#[cfg(not(feature = "vello"))]
+#[cfg(feature = "simple_renderer")]
 prop_extractor! {
     pub(crate) ViewStyleProps {
         pub border_radius: BorderRadiusProp,

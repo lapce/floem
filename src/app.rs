@@ -22,6 +22,7 @@ use crate::{
     clipboard::Clipboard,
     inspector::Capture,
     profiler::Profile,
+    renderer::RendererKind,
     view::IntoView,
     window::{WindowConfig, WindowCreation},
 };
@@ -39,6 +40,7 @@ pub struct AppConfig {
     pub(crate) exit_on_close: bool,
     pub(crate) wgpu_features: wgpu::Features,
     pub(crate) global_theme_override: Option<Theme>,
+    pub(crate) renderer_preference: RendererKind,
 }
 
 impl Default for AppConfig {
@@ -47,6 +49,7 @@ impl Default for AppConfig {
             exit_on_close: !cfg!(target_os = "macos"),
             wgpu_features: wgpu::Features::default(),
             global_theme_override: None,
+            renderer_preference: RendererKind::Auto,
         }
     }
 }
@@ -70,6 +73,24 @@ impl AppConfig {
     #[inline]
     pub fn set_global_theme(mut self, theme: Theme) -> Self {
         self.global_theme_override = Some(theme);
+        self
+    }
+
+    /// Sets the preferred renderer type.
+    ///
+    /// The renderer preference determines which renderer backend to use.
+    /// If the preferred renderer fails to initialize, the system will fall back
+    /// to other available renderers in order of preference.
+    ///
+    /// # Examples
+    /// ```no_run
+    /// # use floem::{AppConfig, renderer::RendererKind};
+    /// let config = AppConfig::default()
+    ///     .renderer_preference(RendererKind::VelloCpu);
+    /// ```
+    #[inline]
+    pub fn renderer_preference(mut self, renderer: RendererKind) -> Self {
+        self.renderer_preference = renderer;
         self
     }
 }

@@ -1,4 +1,7 @@
-use floem::{prelude::*, style::CursorStyle};
+use floem::{
+    prelude::{palette::css, *},
+    style::CursorStyle,
+};
 
 fn sortable_item(
     name: &str,
@@ -86,6 +89,6 @@ pub fn draggable_view() -> impl IntoView {
         move |item_id| *item_id,
         move |item_id| sortable_item(items[item_id], sortable_items, dragger_id, item_id),
     )
-    .style(|s| s.flex_col().row_gap(5).padding(10))
+    .style(|s| s.flex_col().row_gap(5).padding(10).color(css::BLACK))
     .into_view()
 }
