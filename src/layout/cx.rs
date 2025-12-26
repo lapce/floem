@@ -67,14 +67,21 @@ impl TransformComponents {
 // =============================================================================
 
 /// Computed window origins for a view.
+///
+/// We track two origins because CSS transforms and move listeners need different values:
+/// - `base`: The logical position in window coords, ignoring CSS translate. This is what
+///   move listeners report since they care about where the element "should" be.
+/// - `visual`: The visual position including CSS translate. This is where the element
+///   actually appears and where children should be positioned relative to.
 #[derive(Clone, Copy)]
 struct WindowOrigins {
-    /// Position before transform (used for move listeners)
+    /// Position before CSS translate (used for move listeners)
     base: Point,
-    /// Position after translate (where children are positioned)
+    /// Position after CSS translate (where children are positioned)
     visual: Point,
 }
 
+/// Compute both window origins for a view based on its layout position.
 fn compute_window_origins(
     origin: Point,
     parent_window_origin: Point,
@@ -99,6 +106,14 @@ fn compute_window_origins(
 // Clip rect computation
 // =============================================================================
 
+/// Compute the clip rect for a view.
+///
+/// For normal flow elements, the clip rect is the intersection of the parent's
+/// accumulated clip rect and this view's bounds - ensuring the view can only
+/// receive events within its parent's visible area.
+///
+/// For absolute/fixed elements, the clip rect equals their own bounds since
+/// they escape the normal document flow and aren't clipped by ancestors.
 fn compute_clip_rect(
     size: Size,
     visual_origin: Point,
@@ -109,13 +124,17 @@ fn compute_clip_rect(
     let view_rect = size.to_rect().with_origin(visual_origin);
 
     if is_absolute || is_fixed {
-        // Absolute/fixed elements can receive events anywhere they're rendered
         view_rect
     } else {
         parent_clip_rect.intersect(view_rect)
     }
 }
 
+/// Apply additional clipping for scroll containers.
+///
+/// When a view has a viewport (scroll container), we need to further clip
+/// against the visible scroll area. The `scroll_origin` is where the scroll
+/// viewport appears in window coordinates (base position + scroll offset).
 fn apply_viewport_clipping(
     clip_rect: Rect,
     viewport: Option<Rect>,
@@ -123,6 +142,7 @@ fn apply_viewport_clipping(
     viewport_origin: Vec2,
 ) -> Rect {
     if let Some(vp) = viewport {
+        // scroll_origin: where the viewport's visible area starts in window coords
         let scroll_origin = base_window_origin + viewport_origin;
         let viewport_rect = Rect::new(
             scroll_origin.x,
@@ -248,20 +268,17 @@ impl<'a> ComputeLayoutCx<'a> {
         let origin = Point::new(layout.location.x as f64, layout.location.y as f64);
         let size = Size::new(layout.size.width as f64, layout.size.height as f64);
 
-        // Compute transform components once
-        let transform = {
+        // Extract all needed properties from view_state in a single borrow
+        let (transform, this_viewport, is_fixed, is_absolute) = {
             let vs = view_state.borrow();
-            TransformComponents::from_layout_props(&vs.layout_props, size)
+            (
+                TransformComponents::from_layout_props(&vs.layout_props, size),
+                vs.viewport,
+                vs.combined_style.get(crate::style::IsFixed),
+                vs.taffy_style.position == taffy::Position::Absolute,
+            )
         };
-
-        // Get positioning info
-        let this_viewport = view_state.borrow().viewport;
         let viewport_origin = this_viewport.unwrap_or_default().origin().to_vec2();
-        let is_fixed = view_state
-            .borrow()
-            .combined_style
-            .get(crate::style::IsFixed);
-        let is_absolute = view_state.borrow().taffy_style.position == taffy::Position::Absolute;
 
         // Compute window origins
         let origins = compute_window_origins(
@@ -279,17 +296,31 @@ impl<'a> ComputeLayoutCx<'a> {
         // Update viewport
         self.update_viewport(layout.location, viewport_origin, size, this_viewport);
 
-        // Compute and update clip rect
+        // Compute clip rect for this view
         let mut view_clip_rect =
             compute_clip_rect(size, origins.visual, self.clip_rect, is_absolute, is_fixed);
         view_clip_rect =
             apply_viewport_clipping(view_clip_rect, this_viewport, origins.base, viewport_origin);
 
+        // Propagate clip_rect to children only for views that establish clipping boundaries.
+        //
+        // Note: This does NOT mean normal flow elements don't clip children for hit testing.
+        // Here's how clipping actually works:
+        //
+        // 1. Every view computes its own `view_clip_rect` via `compute_clip_rect()`, which
+        //    does `parent_clip_rect.intersect(view_rect)` for normal flow elements.
+        // 2. Every view stores this result in `vs.clip_rect`.
+        // 3. Hit testing (in path.rs) checks each view's individual `clip_rect`.
+        //
+        // The `self.clip_rect` context variable is only updated for scroll containers,
+        // absolute, and fixed elements because these create new "clipping contexts" that
+        // their descendants should inherit. Normal flow elements inherit their parent's
+        // clip context, and their own bounds are enforced via their stored `vs.clip_rect`.
         if this_viewport.is_some() || is_absolute || is_fixed {
             self.clip_rect = view_clip_rect;
         }
 
-        // Notify listeners
+        // Notify listeners before processing children
         notify_resize_listeners(id, size, origin);
         notify_move_listeners(id, origins.base);
 
@@ -297,20 +328,24 @@ impl<'a> ComputeLayoutCx<'a> {
         let view = id.view();
         let child_layout_rect = view.borrow_mut().compute_layout(self);
 
-        // Compute final layout rect
+        // Compute final rects with transform applied.
+        // We use scale_rotation (not full transform) because window_origin already
+        // includes the translation component. The translate is "baked in" to the
+        // position, so we only need scale/rotation for bbox calculations.
         let layout_rect = self.compute_final_layout_rect(size, child_layout_rect, &transform);
-        let view_clip_rect = transform.scale_rotation.transform_rect_bbox(view_clip_rect);
+        let transformed_clip_rect = transform.scale_rotation.transform_rect_bbox(view_clip_rect);
 
-        // Compute cumulative transform
+        // Compute cumulative transform for coordinate conversion (local -> window).
+        // Translation comes from window_origin, scale/rotation from transform.
         let local_to_root = Affine::translate((self.window_origin.x, self.window_origin.y))
             * transform.scale_rotation;
 
-        // Store results
+        // Store computed layout results
         {
             let mut vs = view_state.borrow_mut();
             vs.transform = transform.full;
             vs.layout_rect = layout_rect;
-            vs.clip_rect = view_clip_rect;
+            vs.clip_rect = transformed_clip_rect;
             vs.local_to_root_transform = local_to_root;
         }
 
@@ -318,6 +353,16 @@ impl<'a> ComputeLayoutCx<'a> {
         Some(layout_rect)
     }
 
+    /// Update the viewport rect for child layout computation.
+    ///
+    /// The viewport tracks what portion of the view tree is currently visible,
+    /// used for virtualization and culling. This method transforms the parent's
+    /// viewport into this view's local coordinate space:
+    ///
+    /// 1. Shift by this view's location (parent coords -> local coords)
+    /// 2. Apply any scroll offset (viewport_origin)
+    /// 3. Intersect with this view's bounds
+    /// 4. Intersect with this view's explicit viewport if it's a scroll container
     fn update_viewport(
         &mut self,
         location: taffy::Point<f32>,
@@ -325,30 +370,41 @@ impl<'a> ComputeLayoutCx<'a> {
         size: Size,
         this_viewport: Option<Rect>,
     ) {
+        // Transform parent viewport to local coordinates
         let parent_viewport = self.viewport.with_origin(
             Point::new(
                 self.viewport.x0 - location.x as f64,
                 self.viewport.y0 - location.y as f64,
             ) + viewport_origin,
         );
+        // Clip to this view's bounds
         self.viewport = parent_viewport.intersect(size.to_rect());
+        // Further clip to scroll viewport if this is a scroll container
         if let Some(vp) = this_viewport {
             self.viewport = self.viewport.intersect(vp);
         }
     }
 
+    /// Compute the final layout rect for a view.
+    ///
+    /// The layout rect is the bounding box encompassing this view and all its
+    /// children, used for culling during paint. We union with children's rects
+    /// and apply the scale/rotation transform to get the axis-aligned bbox.
     fn compute_final_layout_rect(
         &self,
         size: Size,
         child_layout_rect: Option<Rect>,
         transform: &TransformComponents,
     ) -> Rect {
+        // Start with this view's rect in window coordinates
         let layout_rect = size.to_rect().with_origin(self.window_origin);
+        // Union with children's layout rect (which may extend beyond this view)
         let layout_rect = if let Some(child_rect) = child_layout_rect {
             layout_rect.union(child_rect)
         } else {
             layout_rect
         };
+        // Apply scale/rotation to get axis-aligned bounding box
         transform.scale_rotation.transform_rect_bbox(layout_rect)
     }
 }

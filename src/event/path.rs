@@ -353,8 +353,15 @@ fn hit_test_stacking_context(parent_id: ViewId, point: Point) -> Option<ViewId> 
             .map(|p| p == PointerEvents::None)
             .unwrap_or(false);
 
-        // Check clip rect first (for overflow:hidden containers like scroll views)
-        // Children may be outside clip rect (e.g., dropdowns), so still recurse.
+        // Check this view's clip_rect for hit testing.
+        //
+        // Each view has its own clip_rect computed during layout (see layout/cx.rs).
+        // For normal flow elements, clip_rect = parent_clip_rect.intersect(view_rect),
+        // which ensures children cannot receive events outside their parent's bounds.
+        // For absolute/fixed elements, clip_rect equals their own bounds.
+        //
+        // If point is outside clip_rect, we still recurse to children because they may
+        // have different clipping contexts (e.g., absolute-positioned dropdowns).
         if !vs.clip_rect.contains(point) {
             drop(vs);
             if let Some(target) = hit_test_stacking_context(item.view_id, point) {

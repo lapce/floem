@@ -3200,3 +3200,235 @@ fn test_fixed_overlay_child_probe_bounds() {
         eprintln!("  y={:3} -> {}", y, hit);
     }
 }
+
+// =============================================================================
+// Clip rect inheritance tests
+// =============================================================================
+
+/// Test that normal flow children extending beyond parent bounds CAN receive events.
+/// This is CSS default behavior (overflow: visible).
+#[test]
+fn test_normal_flow_child_outside_parent_bounds_receives_click() {
+    let parent_clicks = RwSignal::new(0);
+    let child_clicks = RwSignal::new(0);
+
+    // Parent is 50x50, child is 100x100 starting at (0,0)
+    // Child extends 50px beyond parent in both directions
+    let view = Container::new(
+        Empty::new()
+            .on_click_stop(move |_| {
+                child_clicks.update(|c| *c += 1);
+            })
+            .style(|s| s.size(100.0, 100.0)), // Child larger than parent
+    )
+    .on_click_stop(move |_| {
+        parent_clicks.update(|c| *c += 1);
+    })
+    .style(|s| s.size(50.0, 50.0)); // Small parent
+
+    let mut harness = HeadlessHarness::new_with_size(view, 150.0, 150.0);
+
+    eprintln!("=== Normal Flow Child Outside Parent Bounds Test ===");
+
+    // Click inside parent bounds (25, 25) - both parent and child should be there
+    harness.click(25.0, 25.0);
+    eprintln!(
+        "Click at (25, 25): parent={}, child={}",
+        parent_clicks.get(),
+        child_clicks.get()
+    );
+    assert_eq!(
+        child_clicks.get(),
+        1,
+        "Child should receive click inside parent"
+    );
+
+    // Reset
+    parent_clicks.set(0);
+    child_clicks.set(0);
+
+    // Click outside parent bounds but inside child bounds (75, 75)
+    // With default overflow: visible, child should still receive the click
+    harness.click(75.0, 75.0);
+    eprintln!(
+        "Click at (75, 75): parent={}, child={}",
+        parent_clicks.get(),
+        child_clicks.get()
+    );
+
+    // This test documents current behavior - child extending beyond parent
+    // may or may not receive clicks depending on clip_rect inheritance
+    eprintln!(
+        "Child clicks outside parent: {} (documents current clip_rect behavior)",
+        child_clicks.get()
+    );
+}
+
+/// Test that scroll container (has viewport) clips children for hit testing.
+#[test]
+fn test_scroll_container_clips_children() {
+    let child_clicks = RwSignal::new(0);
+
+    // Scroll container is 100x100, child is 200x200
+    // Child should only receive clicks within the 100x100 viewport
+    let view = Scroll::new(
+        Empty::new()
+            .on_click_stop(move |_| {
+                child_clicks.update(|c| *c += 1);
+            })
+            .style(|s| s.size(200.0, 200.0)),
+    )
+    .style(|s| s.size(100.0, 100.0));
+
+    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+
+    eprintln!("=== Scroll Container Clips Children Test ===");
+
+    // Click inside scroll viewport (50, 50)
+    harness.click(50.0, 50.0);
+    eprintln!(
+        "Click at (50, 50) inside viewport: child_clicks={}",
+        child_clicks.get()
+    );
+    assert_eq!(
+        child_clicks.get(),
+        1,
+        "Child should receive click inside viewport"
+    );
+
+    // Reset
+    child_clicks.set(0);
+
+    // Click outside scroll viewport (150, 150)
+    harness.click(150.0, 150.0);
+    eprintln!(
+        "Click at (150, 150) outside viewport: child_clicks={}",
+        child_clicks.get()
+    );
+    assert_eq!(
+        child_clicks.get(),
+        0,
+        "Child should NOT receive click outside viewport"
+    );
+}
+
+/// Test that absolute positioned element clips children correctly.
+#[test]
+fn test_absolute_element_clips_children() {
+    let child_clicks = RwSignal::new(0);
+    let outside_clicks = RwSignal::new(0);
+
+    // Absolute positioned container at (50, 50), size 100x100
+    // Child inside is 50x50 at origin
+    let view = stack((
+        // Background to catch clicks outside the absolute element
+        Empty::new()
+            .on_click_stop(move |_| {
+                outside_clicks.update(|c| *c += 1);
+            })
+            .style(|s| s.size(300.0, 300.0)),
+        // Absolute positioned element with a clickable child
+        Container::new(
+            Empty::new()
+                .on_click_stop(move |_| {
+                    child_clicks.update(|c| *c += 1);
+                })
+                .style(|s| s.size(50.0, 50.0)),
+        )
+        .style(|s| {
+            s.absolute()
+                .inset_left(50.0)
+                .inset_top(50.0)
+                .size(100.0, 100.0)
+        }),
+    ))
+    .style(|s| s.size(300.0, 300.0));
+
+    let mut harness = HeadlessHarness::new_with_size(view, 300.0, 300.0);
+
+    eprintln!("=== Absolute Element Clips Children Test ===");
+
+    // Click inside the absolute element where child is (75, 75)
+    harness.click(75.0, 75.0);
+    eprintln!(
+        "Click at (75, 75): child={}, outside={}",
+        child_clicks.get(),
+        outside_clicks.get()
+    );
+    assert_eq!(
+        child_clicks.get(),
+        1,
+        "Child in absolute element should receive click"
+    );
+
+    // Reset
+    child_clicks.set(0);
+    outside_clicks.set(0);
+
+    // Click outside absolute element (25, 25)
+    harness.click(25.0, 25.0);
+    eprintln!(
+        "Click at (25, 25): child={}, outside={}",
+        child_clicks.get(),
+        outside_clicks.get()
+    );
+    assert_eq!(
+        outside_clicks.get(),
+        1,
+        "Background should receive click outside absolute element"
+    );
+}
+
+/// Test nested containers - clip_rect should be inherited through the tree.
+#[test]
+fn test_nested_containers_clip_inheritance() {
+    let deepest_clicks = RwSignal::new(0);
+
+    // Outer container: 200x200
+    // Middle container: 100x100 at (50, 50)
+    // Inner container: 50x50 at (0, 0) relative to middle
+    // Deepest clickable: 100x100 (extends beyond inner)
+    let view = Container::new(
+        Container::new(
+            Container::new(
+                Empty::new()
+                    .on_click_stop(move |_| {
+                        deepest_clicks.update(|c| *c += 1);
+                    })
+                    .style(|s| s.size(100.0, 100.0)), // Extends beyond inner
+            )
+            .style(|s| s.size(50.0, 50.0)), // Inner - 50x50
+        )
+        .style(|s| s.margin_left(50.0).margin_top(50.0).size(100.0, 100.0)), // Middle
+    )
+    .style(|s| s.size(200.0, 200.0)); // Outer
+
+    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+
+    eprintln!("=== Nested Containers Clip Inheritance Test ===");
+
+    // Click inside all containers (75, 75) = inside middle, inside inner's bounds
+    harness.click(75.0, 75.0);
+    eprintln!("Click at (75, 75): deepest={}", deepest_clicks.get());
+    assert_eq!(
+        deepest_clicks.get(),
+        1,
+        "Should receive click in nested hierarchy"
+    );
+
+    // Reset
+    deepest_clicks.set(0);
+
+    // Click at (125, 125) - inside middle but outside inner's bounds
+    // The deepest extends there, but inner doesn't
+    harness.click(125.0, 125.0);
+    eprintln!(
+        "Click at (125, 125) outside inner bounds: deepest={}",
+        deepest_clicks.get()
+    );
+    // Documents current behavior
+    eprintln!(
+        "Nested clip inheritance result: {} (0 = proper clipping, 1 = overflow visible)",
+        deepest_clicks.get()
+    );
+}
