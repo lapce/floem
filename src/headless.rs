@@ -313,13 +313,14 @@ impl HeadlessHarness {
     /// 3. Run style recalculation via process_update
     pub fn process_pointer_up_styles(&mut self) {
         // Request style update for views that have Active selector
+        // Use selector-aware method to only update views with :active styles
         for id in self.window_handle.window_state.clicking.clone() {
             if self
                 .window_handle
                 .window_state
                 .has_style_for_sel(id, StyleSelector::Active)
             {
-                id.request_style_recursive();
+                id.request_style_for_selector_recursive(StyleSelector::Active);
             }
         }
 

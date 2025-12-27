@@ -103,6 +103,10 @@ struct CacheEntry {
     /// The parent's inherited style at the time of caching.
     /// Used for validation on lookup (Chromium's approach).
     parent_inherited: Rc<Style>,
+    /// Raw pointer to the parent style's Rc data for fast equality check.
+    /// During tree traversal, siblings share the same parent Rc<Style>,
+    /// so pointer comparison avoids expensive inherited_equal() calls.
+    parent_rc_ptr: *const Style,
     /// Whether classes were applied during resolution.
     classes_applied: bool,
     /// Last access time for LRU eviction.
@@ -122,14 +126,31 @@ impl CacheBucket {
     }
 
     /// Find an entry that matches the parent's inherited style.
-    fn find(&mut self, parent_style: &Style, clock: u64) -> Option<(Rc<Style>, bool)> {
+    ///
+    /// Uses a two-tier lookup strategy (inspired by Chromium):
+    /// 1. Fast path: pointer comparison - if the parent Rc is the same object,
+    ///    contents are guaranteed identical (common for siblings in tree traversal)
+    /// 2. Slow path: compare inherited property values for different Rc instances
+    ///    that may have equivalent content
+    fn find(&mut self, parent_style: &Rc<Style>, clock: u64) -> Option<(Rc<Style>, bool)> {
+        let parent_ptr = Rc::as_ptr(parent_style);
+
         for entry in &mut self.entries {
-            // Chromium's key insight: compare inherited properties, not just hash
+            // Fast path: same Rc instance (very common during tree traversal)
+            if std::ptr::eq(entry.parent_rc_ptr, parent_ptr) {
+                entry.last_access = clock;
+                return Some((entry.computed_style.clone(), entry.classes_applied));
+            }
+        }
+
+        // Slow path: check for equivalent inherited values in different Rc instances
+        for entry in &mut self.entries {
             if entry.parent_inherited.inherited_equal(parent_style) {
                 entry.last_access = clock;
                 return Some((entry.computed_style.clone(), entry.classes_applied));
             }
         }
+
         None
     }
 
@@ -138,6 +159,7 @@ impl CacheBucket {
         &mut self,
         computed_style: Style,
         parent_inherited: Style,
+        parent_rc_ptr: *const Style,
         classes_applied: bool,
         clock: u64,
     ) {
@@ -156,6 +178,7 @@ impl CacheBucket {
         self.entries.push(CacheEntry {
             computed_style: Rc::new(computed_style),
             parent_inherited: Rc::new(parent_inherited),
+            parent_rc_ptr,
             classes_applied,
             last_access: clock,
         });
@@ -218,11 +241,15 @@ impl StyleCache {
     /// This performs Chromium-style validation: even if the hash matches,
     /// we verify that the parent's inherited properties are equal.
     ///
+    /// Uses a two-tier lookup for performance:
+    /// 1. Fast path: pointer comparison (O(1)) - hits when same Rc instance
+    /// 2. Slow path: inherited_equal() comparison - for equivalent but different Rc instances
+    ///
     /// Returns `Some((style, classes_applied))` if found, `None` otherwise.
     pub fn get(
         &mut self,
         key: &StyleCacheKey,
-        parent_style: &Style,
+        parent_style: &Rc<Style>,
     ) -> Option<(Rc<Style>, bool)> {
         self.clock += 1;
 
@@ -240,11 +267,12 @@ impl StyleCache {
     /// Insert a style resolution result into the cache.
     ///
     /// We store the parent's inherited style so we can validate on lookup.
+    /// The parent Rc pointer is stored for fast pointer-based lookups.
     pub fn insert(
         &mut self,
         key: StyleCacheKey,
         computed_style: Style,
-        parent_style: &Style,
+        parent_style: &Rc<Style>,
         classes_applied: bool,
     ) {
         // Prune if we have too many entries
@@ -257,6 +285,8 @@ impl StyleCache {
 
         // Extract only inherited properties from parent for storage
         let parent_inherited = parent_style.inherited();
+        // Store pointer for fast comparison during lookup
+        let parent_rc_ptr = Rc::as_ptr(parent_style);
 
         let bucket = self
             .cache
@@ -264,7 +294,7 @@ impl StyleCache {
             .or_insert_with(CacheBucket::new);
 
         let old_len = bucket.len();
-        bucket.add(computed_style, parent_inherited, classes_applied, self.clock);
+        bucket.add(computed_style, parent_inherited, parent_rc_ptr, classes_applied, self.clock);
         let new_len = bucket.len();
 
         // Update entry count
@@ -512,6 +542,7 @@ impl Style {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use peniko::color::palette::css;
 
     #[test]
     fn test_interaction_state_bits() {
@@ -530,7 +561,7 @@ mod tests {
     fn test_cache_insert_and_get() {
         let mut cache = StyleCache::new();
         let style = Style::new();
-        let parent_style = Style::new();
+        let parent_style = Rc::new(Style::new());
 
         let key = StyleCacheKey {
             style_hash: 123,
@@ -550,8 +581,8 @@ mod tests {
     fn test_cache_parent_validation() {
         let mut cache = StyleCache::new();
         let style = Style::new();
-        let parent_style1 = Style::new().background(palette::css::RED);
-        let parent_style2 = Style::new().background(palette::css::BLUE);
+        let parent_style1 = Rc::new(Style::new().background(css::RED));
+        let parent_style2 = Rc::new(Style::new().background(css::BLUE));
 
         let key = StyleCacheKey {
             style_hash: 123,
@@ -563,20 +594,24 @@ mod tests {
         // Insert with parent_style1
         cache.insert(key.clone(), style.clone(), &parent_style1, false);
 
-        // Lookup with same parent should hit
+        // Lookup with same parent should hit (fast path: pointer comparison)
         let result = cache.get(&key, &parent_style1);
         assert!(result.is_some());
 
-        // Lookup with different parent should miss (different inherited values)
-        // Note: background is not inherited, so this will actually hit
-        // Let's use a truly inherited property for a proper test
+        // Lookup with different parent Rc but same content should also hit (slow path)
+        let parent_style1_clone = Rc::new(Style::new().background(css::RED));
+        let result = cache.get(&key, &parent_style1_clone);
+        assert!(result.is_some()); // background is not inherited, so inherited_equal returns true
+
+        // Suppress unused variable warning
+        let _ = parent_style2;
     }
 
     #[test]
     fn test_cache_stats() {
         let mut cache = StyleCache::new();
         let style = Style::new();
-        let parent_style = Style::new();
+        let parent_style = Rc::new(Style::new());
 
         let key = StyleCacheKey {
             style_hash: 123,
@@ -598,6 +633,31 @@ mod tests {
         assert_eq!(stats.hits, 1);
         assert_eq!(stats.misses, 1);
         assert_eq!(stats.insertions, 1);
+    }
+
+    #[test]
+    fn test_cache_pointer_fast_path() {
+        let mut cache = StyleCache::new();
+        let style = Style::new();
+        let parent_style = Rc::new(Style::new());
+
+        let key = StyleCacheKey {
+            style_hash: 123,
+            interaction_bits: 0,
+            screen_size: ScreenSizeBp::Xs,
+            classes_hash: 0,
+        };
+
+        cache.insert(key.clone(), style, &parent_style, false);
+
+        // Same Rc instance should hit via fast path (pointer comparison)
+        let result = cache.get(&key, &parent_style);
+        assert!(result.is_some());
+
+        // Different Rc instance with same content should still hit via slow path
+        let different_rc = Rc::new(Style::new());
+        let result = cache.get(&key, &different_rc);
+        assert!(result.is_some()); // Empty styles have equal inherited props
     }
 
     #[test]

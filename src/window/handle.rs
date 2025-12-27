@@ -869,16 +869,17 @@ impl WindowHandle {
 
                         if let Some(old_id) = old {
                             // To remove the styles applied by the Active selector
+                            // Use selector-aware method to only update views with :active styles
                             if cx
                                 .window_state
                                 .has_style_for_sel(old_id, StyleSelector::Active)
                             {
-                                old_id.request_style_recursive();
+                                old_id.request_style_for_selector_recursive(StyleSelector::Active);
                             }
                         }
 
                         if cx.window_state.has_style_for_sel(id, StyleSelector::Active) {
-                            id.request_style_recursive();
+                            id.request_style_for_selector_recursive(StyleSelector::Active);
                         }
                     }
                     UpdateMessage::ClearActive(id) => {

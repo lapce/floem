@@ -313,6 +313,7 @@ impl EventCx<'_> {
         }
 
         // Update active styles for clicking views on pointer down/up
+        // Use selector-aware method to only update views with :active styles
         let is_pointer_up = matches!(&event, Event::Pointer(PointerEvent::Up { .. }));
         if is_pointer_down || is_pointer_up {
             for id in self.window_state.clicking.clone() {
@@ -320,7 +321,7 @@ impl EventCx<'_> {
                     .window_state
                     .has_style_for_sel(id, StyleSelector::Active)
                 {
-                    id.request_style_recursive();
+                    id.request_style_for_selector_recursive(StyleSelector::Active);
                 }
             }
             if is_pointer_up {
@@ -585,7 +586,7 @@ impl EventCx<'_> {
                         .window_state
                         .has_style_for_sel(id, StyleSelector::Active)
                     {
-                        id.request_style_recursive();
+                        id.request_style_for_selector_recursive(StyleSelector::Active);
                     }
                     self.window_state.active = None;
                 }
@@ -620,7 +621,7 @@ impl EventCx<'_> {
                 .window_state
                 .has_style_for_sel(id, StyleSelector::Active)
             {
-                id.request_style_recursive();
+                id.request_style_for_selector_recursive(StyleSelector::Active);
             }
             self.window_state.active = None;
         }
@@ -1156,6 +1157,10 @@ impl EventCx<'_> {
 
     /// Handle hover state changes by sending PointerEnter/Leave events.
     /// Uses SmallVec for efficient iteration over small sets of hovered views.
+    ///
+    /// Optimizations:
+    /// - Early exit when hover/drag state hasn't changed (common case)
+    /// - Selector-aware style updates to only dirty views with :hover/:active styles
     #[inline]
     fn handle_hover_changes(
         &mut self,
@@ -1168,53 +1173,90 @@ impl EventCx<'_> {
         let hovered = self.window_state.hovered.clone();
         let dragging_over = self.window_state.dragging_over.clone();
 
-        // Process views that were hovered but no longer are (leave events)
-        for id in was_hovered.iter() {
-            if !hovered.contains(id) {
-                // Check if style update is needed
-                let view_state = id.state();
-                let needs_style_update = {
-                    let vs = view_state.borrow();
-                    vs.has_active_animation()
-                        || vs.has_style_selectors.has(StyleSelector::Hover)
-                        || vs.has_style_selectors.has(StyleSelector::Active)
-                };
-                if needs_style_update {
-                    id.request_style();
+        // Fast path: if hover state hasn't changed, skip all processing
+        // This is common when the pointer moves within the same view
+        let hover_changed = was_hovered != hovered;
+        let drag_changed = was_dragging_over != dragging_over;
+
+        if !hover_changed && !drag_changed {
+            return;
+        }
+
+        if hover_changed {
+            // Process views that were hovered but no longer are (leave events)
+            for id in was_hovered.iter() {
+                if !hovered.contains(id) {
+                    // Check if style update is needed
+                    let view_state = id.state();
+                    let (needs_style_update, has_hover, has_active) = {
+                        let vs = view_state.borrow();
+                        (
+                            vs.has_active_animation()
+                                || vs.has_style_selectors.has(StyleSelector::Hover)
+                                || vs.has_style_selectors.has(StyleSelector::Active),
+                            vs.has_style_selectors.has(StyleSelector::Hover),
+                            vs.has_style_selectors.has(StyleSelector::Active),
+                        )
+                    };
+                    if needs_style_update {
+                        // Use selector-aware updates to only dirty views with matching selectors
+                        if has_hover {
+                            id.request_style_for_selector_recursive(StyleSelector::Hover);
+                        } else if has_active {
+                            id.request_style_for_selector_recursive(StyleSelector::Active);
+                        } else {
+                            // Has animation but no hover/active selectors
+                            id.request_style();
+                        }
+                    }
+                    let leave_event = Event::Pointer(PointerEvent::Leave(pointer_info));
+                    self.dispatch_to_view(*id, &leave_event, true);
                 }
-                let leave_event = Event::Pointer(PointerEvent::Leave(pointer_info));
-                self.dispatch_to_view(*id, &leave_event, true);
             }
-        }
 
-        // Process views that are now hovered but weren't before (enter events)
-        for id in hovered.iter() {
-            if !was_hovered.contains(id) {
-                let view_state = id.state();
-                let needs_style_update = {
-                    let vs = view_state.borrow();
-                    vs.has_active_animation()
-                        || vs.has_style_selectors.has(StyleSelector::Hover)
-                        || vs.has_style_selectors.has(StyleSelector::Active)
-                };
-                if needs_style_update {
-                    id.request_style();
+            // Process views that are now hovered but weren't before (enter events)
+            for id in hovered.iter() {
+                if !was_hovered.contains(id) {
+                    let view_state = id.state();
+                    let (needs_style_update, has_hover, has_active) = {
+                        let vs = view_state.borrow();
+                        (
+                            vs.has_active_animation()
+                                || vs.has_style_selectors.has(StyleSelector::Hover)
+                                || vs.has_style_selectors.has(StyleSelector::Active),
+                            vs.has_style_selectors.has(StyleSelector::Hover),
+                            vs.has_style_selectors.has(StyleSelector::Active),
+                        )
+                    };
+                    if needs_style_update {
+                        // Use selector-aware updates to only dirty views with matching selectors
+                        if has_hover {
+                            id.request_style_for_selector_recursive(StyleSelector::Hover);
+                        } else if has_active {
+                            id.request_style_for_selector_recursive(StyleSelector::Active);
+                        } else {
+                            // Has animation but no hover/active selectors
+                            id.request_style();
+                        }
+                    }
+                    id.apply_event(&EventListener::PointerEnter, event);
                 }
-                id.apply_event(&EventListener::PointerEnter, event);
             }
         }
 
-        // Handle drag leave events (views that were dragged over but no longer are)
-        for id in was_dragging_over.iter() {
-            if !dragging_over.contains(id) {
-                id.apply_event(&EventListener::DragLeave, event);
+        if drag_changed {
+            // Handle drag leave events (views that were dragged over but no longer are)
+            for id in was_dragging_over.iter() {
+                if !dragging_over.contains(id) {
+                    id.apply_event(&EventListener::DragLeave, event);
+                }
             }
-        }
 
-        // Handle drag enter events (views that are now being dragged over)
-        for id in dragging_over.iter() {
-            if !was_dragging_over.contains(id) {
-                id.apply_event(&EventListener::DragEnter, event);
+            // Handle drag enter events (views that are now being dragged over)
+            for id in dragging_over.iter() {
+                if !was_dragging_over.contains(id) {
+                    id.apply_event(&EventListener::DragEnter, event);
+                }
             }
         }
     }

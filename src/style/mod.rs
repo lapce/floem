@@ -396,12 +396,16 @@ impl Style {
 
     /// Apply only inherited properties from `from` style to `to` style.
     /// This is used during style propagation to pass inherited values to children.
+    ///
+    /// Only properties marked as `inherited: true` in their `StylePropInfo` are applied.
+    /// This is more efficient than `apply_mut` when we only need to propagate
+    /// inherited properties like font-size, color, etc.
     pub fn apply_only_inherited(to: &mut Rc<Style>, from: &Style) {
-        // Simplified implementation - just clone from for now
-        // TODO: Full implementation should only apply properties marked as inherited
         if from.any_inherited() {
             let mut new_style = (**to).clone();
-            new_style.apply_mut(from.clone());
+            // Only apply properties marked as inherited, not all properties
+            let inherited = from.map.iter().filter(|(p, _)| p.inherited());
+            new_style.apply_iter(inherited);
             *to = Rc::new(new_style);
         }
     }

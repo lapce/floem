@@ -23,7 +23,7 @@ use crate::{
     event::{EventListener, EventPropagation},
     message::{CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES, UpdateMessage},
     platform::menu::Menu,
-    style::{Disabled, DisplayProp, Draggable, Focusable, PointerEvents, Style, StyleClassRef},
+    style::{Draggable, Focusable, PointerEvents, Style, StyleClassRef, StyleSelector},
     unit::PxPct,
     window::tracking::{is_known_root, window_id_for_root},
 };
@@ -509,6 +509,39 @@ impl ViewId {
         let state = self.state();
         state.borrow_mut().request_style_recursive = true;
         self.request_style();
+    }
+
+    /// Requests style for this view and descendants that have the specified selector.
+    ///
+    /// This is more efficient than `request_style_recursive` when only views with
+    /// certain selectors (like `:focus`, `:active`) need to be updated.
+    /// Views without the selector in their `has_style_selectors` are skipped.
+    ///
+    /// # Arguments
+    /// * `selector` - The selector type to check for (e.g., `StyleSelector::Focus`)
+    pub fn request_style_for_selector_recursive(&self, selector: StyleSelector) {
+        // Always request style for self (the root of the recursive call)
+        self.request_style();
+
+        // Recursively check children
+        fn request_for_descendants(id: ViewId, selector: StyleSelector) {
+            for child in id.children() {
+                let needs_update = {
+                    let state = child.state();
+                    let state = state.borrow();
+                    state.has_style_selectors.has(selector)
+                };
+
+                if needs_update {
+                    child.request_style();
+                }
+
+                // Always recurse to find nested views with the selector
+                request_for_descendants(child, selector);
+            }
+        }
+
+        request_for_descendants(*self, selector);
     }
 
     /// Request that this view gain the window focus
