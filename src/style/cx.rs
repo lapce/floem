@@ -3,6 +3,7 @@
 //! This module contains the context types used during the style phase:
 //! - [`StyleCx`] - Context for computing and propagating styles through the view tree
 //! - [`InteractionState`] - Captures current user interaction state for style resolution
+//! - [`StyleRecalcChange`] - Graduated change tracking for optimized style propagation
 
 use floem_reactive::Scope;
 use std::rc::Rc;
@@ -19,6 +20,7 @@ use crate::view::stacking::{invalidate_all_overlay_caches, invalidate_stacking_c
 use crate::view::{ChangeFlags, StackingInfo};
 use crate::window::state::WindowState;
 
+use super::recalc::StyleRecalcChange;
 use super::{Disabled, DisplayProp, Focusable, Style, StyleProp, ZIndex};
 
 /// The interaction state of a view, used to determine which style selectors apply.
@@ -151,22 +153,55 @@ impl<'a> StyleCx<'a> {
     }
 
     /// Internal method used by Floem to compute the styles for the view.
+    ///
+    /// This is a convenience wrapper that uses default change propagation.
+    /// For optimized recalculation with graduated propagation, use [`style_view_with_change`].
     pub fn style_view(&mut self, view_id: ViewId) {
+        self.style_view_with_change(view_id, StyleRecalcChange::NONE);
+    }
+
+    /// Compute styles for a view with graduated change propagation.
+    ///
+    /// The `change` parameter describes what kind of recalculation is needed,
+    /// enabling optimizations like:
+    /// - Skipping views that don't need recalc
+    /// - Using the inherited-only fast path when only inherited props changed
+    /// - Limiting recalc to immediate children vs entire subtrees
+    ///
+    /// See [`StyleRecalcChange`] for details on the propagation model.
+    pub fn style_view_with_change(&mut self, view_id: ViewId, change: StyleRecalcChange) {
         self.save();
         let view = view_id.view();
         let view_state = view_id.state();
+
+        // Check if this view needs processing
+        let view_is_dirty = {
+            let vs = view_state.borrow();
+            vs.requested_changes.contains(ChangeFlags::STYLE)
+                || vs.requested_changes.contains(ChangeFlags::VIEW_STYLE)
+        };
+
+        // Use the graduated change system to decide if we should process
+        if !change.should_recalc(view_is_dirty) {
+            self.restore();
+            return;
+        }
+
+        // Check if we can use the inherited-only fast path
+        let has_selectors = !view_state.borrow().has_style_selectors.is_empty();
+        if change.can_use_inherited_fast_path(has_selectors) && !view_is_dirty {
+            // FAST PATH: Only propagate inherited properties, skip full resolution
+            self.apply_inherited_only(view_id, change);
+            self.restore();
+            return;
+        }
+
+        // FULL PATH: Normal style resolution
         {
             let mut view_state = view_state.borrow_mut();
-            if !view_state.requested_changes.contains(ChangeFlags::STYLE)
-                && !view_state
-                    .requested_changes
-                    .contains(ChangeFlags::VIEW_STYLE)
-            {
-                self.restore();
-                return;
-            }
             view_state.requested_changes.remove(ChangeFlags::STYLE);
         }
+
         let view_class = view.borrow().view_class();
         {
             let mut view_state = view_state.borrow_mut();
@@ -214,7 +249,6 @@ impl<'a> StyleCx<'a> {
         self.disabled = view_interact_state.is_disabled;
 
         // Compute style with full selector/responsive/class resolution
-        // Cache is disabled for now - see below for cache code
         let (_combined, classes_applied) = view_id.state().borrow_mut().compute_combined(
             view_interact_state,
             self.window_state.screen_size_bp,
@@ -222,27 +256,15 @@ impl<'a> StyleCx<'a> {
             &self.current,
         );
 
-        // Cache code (disabled - use when beneficial):
-        // let input_style = view_state.borrow().style();
-        // let classes = view_state.borrow().classes.clone();
-        // let cache_key = StyleCacheKey::new(
-        //     &input_style,
-        //     &view_interact_state,
-        //     self.window_state.screen_size_bp,
-        //     &classes,
-        //     &self.current,
-        // );
-        // if let Some((cached_style, cached_classes_applied)) =
-        //     self.window_state.style_cache.get(&cache_key)
-        // {
-        //     view_state.borrow_mut().combined_style = (*cached_style).clone();
-        //     cached_classes_applied
-        // } else {
-        //     let (combined, applied) = view_id.state().borrow_mut().compute_combined(...);
-        //     self.window_state.style_cache.insert(cache_key, combined, applied);
-        //     applied
-        // };
+        // Determine how to propagate to children based on what happened
+        let child_change = if classes_applied {
+            // Classes were applied, children might match new class selectors
+            change.force_recalc_descendants()
+        } else {
+            change.for_children()
+        };
 
+        // Mark children for recalc if classes were applied
         if classes_applied {
             let children = view_id.children();
             for child in children {
@@ -378,6 +400,11 @@ impl<'a> StyleCx<'a> {
             }
         }
 
+        // Store the child change for views that need to process children in style_pass
+        self.window_state
+            .pending_child_change
+            .insert(view_id, child_change);
+
         view.borrow_mut().style_pass(self);
 
         let old_is_hidden_state = view_state.borrow().is_hidden_state;
@@ -442,6 +469,79 @@ impl<'a> StyleCx<'a> {
         }
 
         self.restore();
+    }
+
+    /// Fast path for inherited-only changes.
+    ///
+    /// When only inherited properties changed (e.g., font-size, color), we can skip
+    /// the full selector resolution and just propagate inherited values to children.
+    /// This is a significant optimization for deeply nested UIs.
+    fn apply_inherited_only(&mut self, view_id: ViewId, change: StyleRecalcChange) {
+        let view_state = view_id.state();
+        let view = view_id.view();
+
+        // Update inherited context from parent
+        Style::apply_only_inherited(&mut self.current, &self.direct);
+
+        // Clone combined_style before mutable borrow to avoid borrow conflicts
+        let combined_style = view_state.borrow().combined_style.clone();
+
+        // Recompute computed_style with new inherited values
+        {
+            let mut vs = view_state.borrow_mut();
+            let mut computed_style = (*self.current).clone();
+            computed_style.apply_mut(combined_style.clone());
+            vs.computed_style = computed_style;
+            vs.style_cx = Some((*self.current).clone());
+        }
+
+        // Update prop extractors with potentially changed inherited values
+        let mut transitioning = false;
+        {
+            let mut vs = view_state.borrow_mut();
+            vs.layout_props.read_explicit(
+                &combined_style,
+                &self.current,
+                &self.now,
+                &mut transitioning,
+            );
+            if transitioning {
+                self.window_state.schedule_layout(view_id);
+            }
+
+            vs.view_style_props.read_explicit(
+                &combined_style,
+                &self.current,
+                &self.now,
+                &mut transitioning,
+            );
+            if transitioning && !self.hidden {
+                self.window_state.schedule_style(view_id);
+            }
+        }
+
+        self.current_view = view_id;
+
+        // Store child change for views that process children in style_pass
+        let child_change = change.for_children();
+        self.window_state
+            .pending_child_change
+            .insert(view_id, child_change);
+
+        // Let the view do any custom style pass work
+        view.borrow_mut().style_pass(self);
+    }
+
+    /// Get the pending child change for a view.
+    ///
+    /// This is used by views that manually process their children in `style_pass`
+    /// to get the appropriate change propagation level.
+    pub fn get_child_change(&self, view_id: ViewId) -> StyleRecalcChange {
+        self.window_state
+            .pending_child_change
+            .get(&view_id)
+            .copied()
+            .unwrap_or(StyleRecalcChange::NONE)
     }
 
     pub fn now(&self) -> Instant {

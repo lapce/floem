@@ -391,6 +391,7 @@ impl WindowHandle {
             // if the window theme has been set manually then changes from the os shouldn't do anything
             return;
         }
+        let old_theme = self.window_state.light_dark_theme;
         if let Some(theme) = theme {
             // Only override the theme with the default if the user did not provide one
             if self.default_theme.is_some() {
@@ -403,6 +404,10 @@ impl WindowHandle {
             #[cfg(target_os = "windows")]
             {
                 self.set_menu_theme_for_windows(theme);
+            }
+            // Mark dark mode changed if theme actually changed
+            if theme != old_theme {
+                self.window_state.mark_dark_mode_changed();
             }
         } else {
             self.window_state.theme_overriden = false;
@@ -509,6 +514,10 @@ impl WindowHandle {
 
     fn style(&mut self) {
         let _start = Instant::now();
+
+        // Take any pending global recalc (dark mode, responsive changes)
+        let global_change = self.window_state.take_global_recalc();
+
         // Loop until no more views need styling
         // This handles the case where styling a parent marks children dirty
         // (e.g., when inherited properties change)
@@ -521,12 +530,15 @@ impl WindowHandle {
                 break;
             }
 
-            // Style each view in order
+            // Style each view in order, passing the global change for first iteration
             for view_id in traversal {
                 let cx = &mut StyleCx::new(&mut self.window_state, view_id);
-                cx.style_view(view_id);
+                cx.style_view_with_change(view_id, global_change);
             }
         }
+
+        // Clear pending child changes after style pass completes
+        self.window_state.pending_child_change.clear();
     }
 
     fn layout(&mut self) -> Duration {

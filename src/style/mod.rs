@@ -163,6 +163,7 @@ mod components;
 mod custom;
 mod cx;
 mod props;
+pub mod recalc;
 mod selectors;
 #[cfg(test)]
 mod tests;
@@ -188,6 +189,7 @@ pub use unit::{AnchorAbout, Angle, Auto, DurationUnitExt, Pct, Px, PxPct, PxPctA
 pub use values::{CombineResult, StrokeWrap, StyleMapValue, StylePropValue, StyleValue};
 
 pub use cache::{StyleCache, StyleCacheKey};
+pub use recalc::{InheritedChanges, InheritedGroups, Propagate, RecalcFlags, StyleRecalcChange};
 
 pub(crate) use props::{
     CONTEXT_MAPPINGS_INFO, CONTEXT_SELECTORS_INFO, ImHashMap, style_key_selector,

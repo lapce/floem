@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use muda::MenuId;
 use peniko::kurbo::{Point, Size, Vec2};
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::SmallVec;
 use taffy::{AvailableSpace, NodeId};
 use ui_events::pointer::PointerId;
@@ -19,7 +19,7 @@ use crate::{
     event::{Event, EventListener, clear_hit_test_cache},
     inspector::CaptureState,
     layout::responsive::{GridBreakpoints, ScreenSizeBp},
-    style::{CursorStyle, StyleCache, StyleSelector},
+    style::{CursorStyle, StyleCache, StyleSelector, recalc::StyleRecalcChange},
     view::VIEW_STORAGE,
     view::ViewId,
 };
@@ -101,6 +101,17 @@ pub struct WindowState {
     /// Cache for style resolution results.
     /// Views with identical styles and interaction states can share resolved styles.
     pub(crate) style_cache: StyleCache,
+
+    /// Pending child changes for graduated style propagation.
+    /// Maps view IDs to the change that should be propagated to their children.
+    /// This is populated during style_view and read by views that manually
+    /// process children in their style_pass.
+    pub(crate) pending_child_change: FxHashMap<ViewId, StyleRecalcChange>,
+
+    /// Pending global style recalc change.
+    /// Set when global state changes (dark mode, screen size) that require
+    /// propagating changes through the entire tree.
+    pub(crate) pending_global_recalc: StyleRecalcChange,
 }
 
 impl WindowState {
@@ -139,7 +150,32 @@ impl WindowState {
             context_menu: HashMap::new(),
             capture: None,
             style_cache: StyleCache::new(),
+            pending_child_change: FxHashMap::default(),
+            pending_global_recalc: StyleRecalcChange::NONE,
         }
+    }
+
+    /// Mark that dark mode changed, requiring style recalc with appropriate flags.
+    pub(crate) fn mark_dark_mode_changed(&mut self) {
+        use crate::style::recalc::{Propagate, RecalcFlags};
+        self.pending_global_recalc = self
+            .pending_global_recalc
+            .combine(&StyleRecalcChange::new(Propagate::RecalcDescendants)
+                .with_flags(RecalcFlags::DARK_MODE_CHANGED));
+    }
+
+    /// Mark that screen size breakpoint changed, requiring style recalc.
+    pub(crate) fn mark_responsive_changed(&mut self) {
+        use crate::style::recalc::{Propagate, RecalcFlags};
+        self.pending_global_recalc = self
+            .pending_global_recalc
+            .combine(&StyleRecalcChange::new(Propagate::RecalcDescendants)
+                .with_flags(RecalcFlags::RESPONSIVE_CHANGED));
+    }
+
+    /// Take the pending global recalc change and reset it.
+    pub(crate) fn take_global_recalc(&mut self) -> StyleRecalcChange {
+        std::mem::take(&mut self.pending_global_recalc)
     }
 
     /// This removes a view from the app state.
@@ -517,7 +553,10 @@ impl WindowState {
 
     pub(crate) fn update_screen_size_bp(&mut self, size: Size) {
         let bp = self.grid_bps.get_width_bp(size.width);
-        self.screen_size_bp = bp;
+        if bp != self.screen_size_bp {
+            self.screen_size_bp = bp;
+            self.mark_responsive_changed();
+        }
     }
 
     pub(crate) fn clear_focus(&mut self) {
