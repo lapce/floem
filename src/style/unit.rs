@@ -245,3 +245,30 @@ impl From<PxPctAuto> for LengthPercentageAuto {
         }
     }
 }
+
+/// Anchor point for transform-origin, used with rotate and scale transformations.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct AnchorAbout {
+    /// X coordinate as percentage (0.0 = left, 0.5 = center, 1.0 = right)
+    pub x: f64,
+    /// Y coordinate as percentage (0.0 = top, 0.5 = center, 1.0 = bottom)
+    pub y: f64,
+}
+
+impl AnchorAbout {
+    /// Center anchor point (default)
+    pub const CENTER: Self = Self { x: 0.5, y: 0.5 };
+    /// Top-left corner
+    pub const TOP_LEFT: Self = Self { x: 0.0, y: 0.0 };
+    /// Top-right corner
+    pub const TOP_RIGHT: Self = Self { x: 1.0, y: 0.0 };
+    /// Bottom-left corner
+    pub const BOTTOM_LEFT: Self = Self { x: 0.0, y: 1.0 };
+    /// Bottom-right corner
+    pub const BOTTOM_RIGHT: Self = Self { x: 1.0, y: 1.0 };
+
+    /// Returns the anchor point as fractions (0.0 to 1.0)
+    pub fn as_fractions(&self) -> (f64, f64) {
+        (self.x, self.y)
+    }
+}
