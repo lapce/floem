@@ -28,7 +28,10 @@ pub struct TransformComponents {
 
 impl TransformComponents {
     /// Compute CSS transform from transform properties.
-    pub fn from_transform_props(transform_props: &crate::style::TransformProps, size: Size) -> Self {
+    pub fn from_transform_props(
+        transform_props: &crate::style::TransformProps,
+        size: Size,
+    ) -> Self {
         // Compute translate
         let translate_x = match transform_props.translate_x() {
             crate::unit::PxPct::Px(px) => px,

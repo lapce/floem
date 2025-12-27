@@ -203,7 +203,8 @@ fn test_flex_gap() {
     let child2 = Empty::new().style(|s| s.size(50.0, 30.0));
     let child2_id = child2.view_id();
 
-    let container = Stack::new((child1, child2)).style(|s| s.flex_row().gap(20.0).size(200.0, 100.0));
+    let container =
+        Stack::new((child1, child2)).style(|s| s.flex_row().gap(20.0).size(200.0, 100.0));
 
     let mut harness = HeadlessHarness::new_with_size(container, 200.0, 200.0);
     harness.rebuild();
@@ -329,8 +330,7 @@ fn test_align_items_center() {
     let child = Empty::new().style(|s| s.size(50.0, 30.0));
     let child_id = child.view_id();
 
-    let container =
-        Stack::new((child,)).style(|s| s.flex_row().items_center().size(200.0, 100.0));
+    let container = Stack::new((child,)).style(|s| s.flex_row().items_center().size(200.0, 100.0));
 
     let mut harness = HeadlessHarness::new_with_size(container, 200.0, 200.0);
     harness.rebuild();
@@ -691,7 +691,8 @@ fn test_absolute_does_not_affect_siblings() {
     let normal_child = Empty::new().style(|s| s.size(50.0, 50.0));
     let normal_id = normal_child.view_id();
 
-    let container = Stack::new((absolute_child, normal_child)).style(|s| s.flex_row().size(200.0, 200.0));
+    let container =
+        Stack::new((absolute_child, normal_child)).style(|s| s.flex_row().size(200.0, 200.0));
 
     let mut harness = HeadlessHarness::new_with_size(container, 200.0, 200.0);
     harness.rebuild();
@@ -719,13 +720,16 @@ fn test_nested_flex_containers() {
         Stack::new((inner_child1, inner_child2)).style(|s| s.flex_col().gap(10.0));
     let inner_id = inner_container.view_id();
 
-    let outer_container = Stack::new((inner_container,)).style(|s| s.padding(20.0).size(200.0, 200.0));
+    let outer_container =
+        Stack::new((inner_container,)).style(|s| s.padding(20.0).size(200.0, 200.0));
 
     let mut harness = HeadlessHarness::new_with_size(outer_container, 200.0, 200.0);
     harness.rebuild();
 
     let inner_layout = inner_id.get_layout().expect("Inner layout should exist");
-    let child2_layout = inner_child2_id.get_layout().expect("Child2 layout should exist");
+    let child2_layout = inner_child2_id
+        .get_layout()
+        .expect("Child2 layout should exist");
 
     // Inner container should be offset by padding
     assert!(
@@ -878,8 +882,7 @@ fn test_border_affects_layout() {
     let child = Empty::new().style(|s| s.size_full());
     let child_id = child.view_id();
 
-    let container =
-        floem::views::Container::new(child).style(|s| s.border(5.0).size(100.0, 100.0));
+    let container = floem::views::Container::new(child).style(|s| s.border(5.0).size(100.0, 100.0));
 
     let mut harness = HeadlessHarness::new_with_size(container, 200.0, 200.0);
     harness.rebuild();

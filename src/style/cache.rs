@@ -288,13 +288,16 @@ impl StyleCache {
         // Store pointer for fast comparison during lookup
         let parent_rc_ptr = Rc::as_ptr(parent_style);
 
-        let bucket = self
-            .cache
-            .entry(key)
-            .or_insert_with(CacheBucket::new);
+        let bucket = self.cache.entry(key).or_insert_with(CacheBucket::new);
 
         let old_len = bucket.len();
-        bucket.add(computed_style, parent_inherited, parent_rc_ptr, classes_applied, self.clock);
+        bucket.add(
+            computed_style,
+            parent_inherited,
+            parent_rc_ptr,
+            classes_applied,
+            self.clock,
+        );
         let new_len = bucket.len();
 
         // Update entry count

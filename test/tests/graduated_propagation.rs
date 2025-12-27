@@ -319,9 +319,8 @@ fn test_disabled_state_propagates_to_children() {
     });
     let child_id = child.view_id();
 
-    let parent = Container::new(child).style(move |s| {
-        s.size(100.0, 100.0).set_disabled(disabled_signal.get())
-    });
+    let parent = Container::new(child)
+        .style(move |s| s.size(100.0, 100.0).set_disabled(disabled_signal.get()));
 
     let mut harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
 
@@ -443,10 +442,9 @@ fn test_very_deep_nesting_propagation() {
 
     fn create_deep_hierarchy(depth: usize, color_signal: RwSignal<Color>) -> Container {
         if depth == 0 {
-            Container::new(Empty::new().style(|s| {
-                s.size(10.0, 10.0)
-                    .with_test_color(|s, c| s.background(*c))
-            }))
+            Container::new(
+                Empty::new().style(|s| s.size(10.0, 10.0).with_test_color(|s, c| s.background(*c))),
+            )
             .style(|s| s.size(20.0, 20.0))
         } else {
             Container::new(create_deep_hierarchy(depth - 1, color_signal))

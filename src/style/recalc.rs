@@ -56,7 +56,10 @@ impl Propagate {
     /// Returns true if this propagation requires full style resolution.
     /// When false, the "inherited only" fast path can be used.
     pub fn requires_full_resolution(&self) -> bool {
-        matches!(self, Propagate::RecalcChildren | Propagate::RecalcDescendants)
+        matches!(
+            self,
+            Propagate::RecalcChildren | Propagate::RecalcDescendants
+        )
     }
 
     /// Returns true if all descendants need recalc, not just immediate children.
@@ -354,7 +357,10 @@ mod tests {
     fn test_for_children() {
         // RecalcDescendants stays
         let change = StyleRecalcChange::new(Propagate::RecalcDescendants);
-        assert_eq!(change.for_children().propagate(), Propagate::RecalcDescendants);
+        assert_eq!(
+            change.for_children().propagate(),
+            Propagate::RecalcDescendants
+        );
 
         // RecalcChildren becomes None (only immediate children)
         let change = StyleRecalcChange::new(Propagate::RecalcChildren);
@@ -374,8 +380,8 @@ mod tests {
         let change = StyleRecalcChange::new(Propagate::RecalcChildren);
         assert!(!change.can_use_inherited_fast_path(false));
 
-        let change = StyleRecalcChange::new(Propagate::InheritedOnly)
-            .with_flags(RecalcFlags::CLASS_CHANGED);
+        let change =
+            StyleRecalcChange::new(Propagate::InheritedOnly).with_flags(RecalcFlags::CLASS_CHANGED);
         assert!(!change.can_use_inherited_fast_path(false)); // class changed
     }
 

@@ -319,9 +319,7 @@ fn bench_inherited_prop_updates(c: &mut Criterion) {
             |b, &depth| {
                 let color_signal = RwSignal::new(palette::css::RED);
 
-                fn create_deep_with_inherited(
-                    depth: usize,
-                ) -> Container {
+                fn create_deep_with_inherited(depth: usize) -> Container {
                     if depth == 0 {
                         Container::new(Empty::new().style(|s| s.size(10.0, 10.0)))
                             .style(|s| s.size(20.0, 20.0))
@@ -363,9 +361,7 @@ fn bench_inherited_prop_updates(c: &mut Criterion) {
                 let color_signal = RwSignal::new(palette::css::RED);
 
                 let children: Vec<_> = (0..width)
-                    .map(|_| {
-                        Empty::new().style(|s| s.size(20.0, 20.0))
-                    })
+                    .map(|_| Empty::new().style(|s| s.size(20.0, 20.0)))
                     .collect();
 
                 let root = Stack::from_iter(children).style(move |s| {

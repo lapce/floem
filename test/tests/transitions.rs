@@ -308,9 +308,10 @@ fn test_transition_layout_schedules_updates_on_subsequent_frames() {
 
     let view = Empty::new().style(move |s| {
         let w = if is_wide.get() { 100.0 } else { 50.0 };
-        s.width(w)
-            .height(100.0)
-            .transition(floem::style::Width, Transition::linear(Duration::from_millis(100)))
+        s.width(w).height(100.0).transition(
+            floem::style::Width,
+            Transition::linear(Duration::from_millis(100)),
+        )
     });
     let id = view.view_id();
 

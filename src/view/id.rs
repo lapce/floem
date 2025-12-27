@@ -414,8 +414,7 @@ impl ViewId {
         let state = self.state();
         let state = state.borrow();
         // Check if this view has display:none OR was programmatically hidden by parent
-        state.is_hidden_state == IsHiddenState::Hidden
-            || state.parent_set_style_interaction.hidden
+        state.is_hidden_state == IsHiddenState::Hidden || state.parent_set_style_interaction.hidden
     }
 
     /// if the view has pointer events none

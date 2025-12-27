@@ -249,8 +249,10 @@ impl StylePropInfo {
                     val2.downcast_ref::<StyleMapValue<T>>(),
                 ) {
                     match (v1, v2) {
-                        (StyleMapValue::Val(a) | StyleMapValue::Animated(a),
-                         StyleMapValue::Val(b) | StyleMapValue::Animated(b)) => {
+                        (
+                            StyleMapValue::Val(a) | StyleMapValue::Animated(a),
+                            StyleMapValue::Val(b) | StyleMapValue::Animated(b),
+                        ) => {
                             // Compare by content hash since we don't have PartialEq
                             a.content_hash() == b.content_hash()
                         }

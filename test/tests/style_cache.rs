@@ -114,27 +114,19 @@ fn test_cache_miss_for_different_styles() {
 #[test]
 fn test_cache_miss_for_different_parent_inherited() {
     // Two parent containers with different inherited colors
-    let child1 = Empty::new().style(|s| {
-        s.size(30.0, 30.0)
-            .with_cache_color(|s, c| s.background(*c))
-    });
+    let child1 =
+        Empty::new().style(|s| s.size(30.0, 30.0).with_cache_color(|s, c| s.background(*c)));
     let child1_id = child1.view_id();
 
-    let child2 = Empty::new().style(|s| {
-        s.size(30.0, 30.0)
-            .with_cache_color(|s, c| s.background(*c))
-    });
+    let child2 =
+        Empty::new().style(|s| s.size(30.0, 30.0).with_cache_color(|s, c| s.background(*c)));
     let child2_id = child2.view_id();
 
-    let parent1 = Container::new(child1).style(|s| {
-        s.size(50.0, 50.0)
-            .set(CacheTestColor, palette::css::RED)
-    });
+    let parent1 =
+        Container::new(child1).style(|s| s.size(50.0, 50.0).set(CacheTestColor, palette::css::RED));
 
-    let parent2 = Container::new(child2).style(|s| {
-        s.size(50.0, 50.0)
-            .set(CacheTestColor, palette::css::GREEN)
-    });
+    let parent2 = Container::new(child2)
+        .style(|s| s.size(50.0, 50.0).set(CacheTestColor, palette::css::GREEN));
 
     let root = Stack::new((parent1, parent2)).style(|s| s.size(200.0, 100.0));
     let harness = HeadlessHarness::new_with_size(root, 200.0, 100.0);
@@ -163,16 +155,12 @@ fn test_cache_miss_for_different_parent_inherited() {
 fn test_cache_invalidation_on_inherited_change() {
     let color_signal = RwSignal::new(palette::css::RED);
 
-    let child = Empty::new().style(|s| {
-        s.size(50.0, 50.0)
-            .with_cache_color(|s, c| s.background(*c))
-    });
+    let child =
+        Empty::new().style(|s| s.size(50.0, 50.0).with_cache_color(|s, c| s.background(*c)));
     let child_id = child.view_id();
 
-    let parent = Container::new(child).style(move |s| {
-        s.size(100.0, 100.0)
-            .set(CacheTestColor, color_signal.get())
-    });
+    let parent = Container::new(child)
+        .style(move |s| s.size(100.0, 100.0).set(CacheTestColor, color_signal.get()));
 
     let mut harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
 
@@ -253,9 +241,8 @@ fn test_cache_with_disabled_state() {
     });
     let view_id = view.view_id();
 
-    let container = Container::new(view).style(move |s| {
-        s.size(150.0, 150.0).set_disabled(disabled_signal.get())
-    });
+    let container = Container::new(view)
+        .style(move |s| s.size(150.0, 150.0).set_disabled(disabled_signal.get()));
 
     let mut harness = HeadlessHarness::new_with_size(container, 150.0, 150.0);
 
@@ -300,9 +287,7 @@ fn test_cache_with_disabled_state() {
 fn test_cache_with_dynamic_style_changes() {
     let color_signal = RwSignal::new(palette::css::RED);
 
-    let view = Empty::new().style(move |s| {
-        s.size(100.0, 100.0).background(color_signal.get())
-    });
+    let view = Empty::new().style(move |s| s.size(100.0, 100.0).background(color_signal.get()));
     let id = view.view_id();
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
@@ -415,7 +400,10 @@ fn test_cache_with_many_identical_views() {
     for id in &ids {
         let style = harness.get_computed_style(*id);
         let bg = style.get(Background);
-        assert_eq!(bg, expected_bg, "All views should have identical backgrounds");
+        assert_eq!(
+            bg, expected_bg,
+            "All views should have identical backgrounds"
+        );
     }
 }
 
@@ -424,9 +412,9 @@ fn test_cache_with_many_identical_views() {
 fn test_cache_with_deep_nesting() {
     fn create_nested(depth: usize) -> Container {
         if depth == 0 {
-            Container::new(Empty::new().style(|s| {
-                s.size(10.0, 10.0).background(palette::css::GOLD)
-            }))
+            Container::new(
+                Empty::new().style(|s| s.size(10.0, 10.0).background(palette::css::GOLD)),
+            )
             .style(|s| s.size(20.0, 20.0))
         } else {
             Container::new(create_nested(depth - 1)).style(|s| s.size_full().padding(1.0))
@@ -495,20 +483,14 @@ fn test_cache_combined_inherited_and_local() {
 fn test_cache_rapid_updates() {
     let color_signal = RwSignal::new(palette::css::RED);
 
-    let view = Empty::new().style(move |s| {
-        s.size(100.0, 100.0).background(color_signal.get())
-    });
+    let view = Empty::new().style(move |s| s.size(100.0, 100.0).background(color_signal.get()));
     let id = view.view_id();
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Rapid updates
     for _ in 0..10 {
-        for color in [
-            palette::css::RED,
-            palette::css::BLUE,
-            palette::css::GREEN,
-        ] {
+        for color in [palette::css::RED, palette::css::BLUE, palette::css::GREEN] {
             color_signal.set(color);
             harness.rebuild();
 

@@ -2,17 +2,17 @@ use crate::{
     ViewId,
     animate::Animation,
     context::{
-        CleanupListeners, EventCallback, EventListenerVec, MenuCallback,
-        MoveListeners, ResizeCallback, ResizeListeners,
+        CleanupListeners, EventCallback, EventListenerVec, MenuCallback, MoveListeners,
+        ResizeCallback, ResizeListeners,
     },
-    style::InheritedInteractionCx,
     event::EventListener,
-    prop_extractor,
-    style::{
-        Background, BorderColorProp, BorderRadiusProp, BoxShadowProp, LayoutProps,
-        Outline, OutlineColor, Style, StyleClassRef, StyleSelectors, TransformProps,
-    },
     message::{CENTRAL_UPDATE_MESSAGES, UpdateMessage},
+    prop_extractor,
+    style::InheritedInteractionCx,
+    style::{
+        Background, BorderColorProp, BorderRadiusProp, BoxShadowProp, LayoutProps, Outline,
+        OutlineColor, Style, StyleClassRef, StyleSelectors, TransformProps,
+    },
 };
 use bitflags::bitflags;
 use imbl::HashSet;

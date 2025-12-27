@@ -158,19 +158,19 @@ impl WindowState {
     /// Mark that dark mode changed, requiring style recalc with appropriate flags.
     pub(crate) fn mark_dark_mode_changed(&mut self) {
         use crate::style::recalc::{Propagate, RecalcFlags};
-        self.pending_global_recalc = self
-            .pending_global_recalc
-            .combine(&StyleRecalcChange::new(Propagate::RecalcDescendants)
-                .with_flags(RecalcFlags::DARK_MODE_CHANGED));
+        self.pending_global_recalc = self.pending_global_recalc.combine(
+            &StyleRecalcChange::new(Propagate::RecalcDescendants)
+                .with_flags(RecalcFlags::DARK_MODE_CHANGED),
+        );
     }
 
     /// Mark that screen size breakpoint changed, requiring style recalc.
     pub(crate) fn mark_responsive_changed(&mut self) {
         use crate::style::recalc::{Propagate, RecalcFlags};
-        self.pending_global_recalc = self
-            .pending_global_recalc
-            .combine(&StyleRecalcChange::new(Propagate::RecalcDescendants)
-                .with_flags(RecalcFlags::RESPONSIVE_CHANGED));
+        self.pending_global_recalc = self.pending_global_recalc.combine(
+            &StyleRecalcChange::new(Propagate::RecalcDescendants)
+                .with_flags(RecalcFlags::RESPONSIVE_CHANGED),
+        );
     }
 
     /// Take the pending global recalc change and reset it.

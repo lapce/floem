@@ -123,8 +123,7 @@ fn test_deep_nesting_style_computation() {
     fn create_nested(depth: usize) -> Container {
         if depth == 0 {
             Container::new(
-                Empty::new()
-                    .style(|s| s.size(10.0, 10.0).background(palette::css::GOLD)),
+                Empty::new().style(|s| s.size(10.0, 10.0).background(palette::css::GOLD)),
             )
             .style(|s| s.size(20.0, 20.0))
         } else {

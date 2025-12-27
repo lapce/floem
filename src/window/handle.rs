@@ -576,6 +576,11 @@ impl WindowHandle {
                 FrameUpdate::Layout(id) => id.request_layout(),
                 FrameUpdate::Style(id) => {
                     self.window_state.style_dirty.insert(id);
+                    // Also set the STYLE flag so style_view doesn't skip this view
+                    id.state()
+                        .borrow_mut()
+                        .requested_changes
+                        .insert(crate::view::state::ChangeFlags::STYLE);
                 }
                 FrameUpdate::Paint(id) => self.window_state.request_paint(id),
             }

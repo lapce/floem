@@ -372,19 +372,34 @@ impl<'a> StyleCx<'a> {
             let mut vs = view_state.borrow_mut();
 
             // Layout properties (padding, margin, size, etc.)
-            vs.layout_props.read_explicit(&self.direct, &self.current, &self.now, &mut transitioning);
+            vs.layout_props.read_explicit(
+                &self.direct,
+                &self.current,
+                &self.now,
+                &mut transitioning,
+            );
             if transitioning {
                 self.window_state.schedule_layout(view_id);
             }
 
             // View style properties (background, border, etc.)
-            vs.view_style_props.read_explicit(&self.direct, &self.current, &self.now, &mut transitioning);
+            vs.view_style_props.read_explicit(
+                &self.direct,
+                &self.current,
+                &self.now,
+                &mut transitioning,
+            );
             if transitioning && !self.hidden {
                 self.window_state.schedule_style(view_id);
             }
 
             // Transform properties (translate, scale, rotation)
-            vs.view_transform_props.read_explicit(&self.direct, &self.current, &self.now, &mut transitioning);
+            vs.view_transform_props.read_explicit(
+                &self.direct,
+                &self.current,
+                &self.now,
+                &mut transitioning,
+            );
             if transitioning && !self.hidden {
                 self.window_state.schedule_layout(view_id);
             }
