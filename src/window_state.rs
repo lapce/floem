@@ -1,7 +1,8 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use muda::MenuId;
 use peniko::kurbo::{Point, Size};
+use rustc_hash::FxHashSet;
 use taffy::{AvailableSpace, NodeId};
 use winit::cursor::CursorIcon;
 use winit::window::Theme;
@@ -30,16 +31,18 @@ pub struct WindowState {
     pub(crate) scale: f64,
     pub(crate) scheduled_updates: Vec<FrameUpdate>,
     pub(crate) request_compute_layout: bool,
+    pub(crate) style_dirty: FxHashSet<ViewId>,
+    pub(crate) view_style_dirty: FxHashSet<ViewId>,
     pub(crate) request_paint: bool,
     pub(crate) dragging: Option<DragState>,
     pub(crate) drag_start: Option<(ViewId, Point)>,
-    pub(crate) dragging_over: HashSet<ViewId>,
+    pub(crate) dragging_over: FxHashSet<ViewId>,
     pub(crate) screen_size_bp: ScreenSizeBp,
     pub(crate) grid_bps: GridBreakpoints,
-    pub(crate) clicking: HashSet<ViewId>,
-    pub(crate) hovered: HashSet<ViewId>,
-    pub(crate) focusable: HashSet<ViewId>,
-    pub(crate) file_hovered: HashSet<ViewId>,
+    pub(crate) clicking: FxHashSet<ViewId>,
+    pub(crate) hovered: FxHashSet<ViewId>,
+    pub(crate) focusable: FxHashSet<ViewId>,
+    pub(crate) file_hovered: FxHashSet<ViewId>,
     // whether the window is in light or dark mode
     pub(crate) light_dark_theme: winit::window::Theme,
     // if `true`, then the window will not follow the os theme changes
@@ -70,13 +73,15 @@ impl WindowState {
             scheduled_updates: Vec::new(),
             request_paint: false,
             request_compute_layout: false,
+            view_style_dirty: Default::default(),
+            style_dirty: Default::default(),
             dragging: None,
             drag_start: None,
-            dragging_over: HashSet::new(),
-            clicking: HashSet::new(),
-            hovered: HashSet::new(),
-            focusable: HashSet::new(),
-            file_hovered: HashSet::new(),
+            dragging_over: FxHashSet::default(),
+            clicking: FxHashSet::default(),
+            hovered: FxHashSet::default(),
+            focusable: FxHashSet::default(),
+            file_hovered: FxHashSet::default(),
             theme_overriden: false,
             light_dark_theme: os_theme.unwrap_or(Theme::Light),
             cursor: None,
@@ -153,6 +158,72 @@ impl WindowState {
         self.clicking.contains(id)
     }
 
+    pub(crate) fn build_style_traversal(&mut self, root: ViewId) -> Vec<ViewId> {
+        let mut traversal =
+            Vec::with_capacity(self.style_dirty.len() + self.view_style_dirty.len());
+        // If capture is active, traverse all views
+        if self.capture.is_some() {
+            // Clear dirty flags because we're traversing everything
+            self.style_dirty.clear();
+            self.view_style_dirty.clear();
+            let mut stack = vec![root];
+            while let Some(view_id) = stack.pop() {
+                traversal.push(view_id);
+                let children = VIEW_STORAGE
+                    .with_borrow(|s| s.children.get(view_id).cloned().unwrap_or_default());
+                // Push in reverse order for left-to-right DFS
+                for child in children.iter().rev() {
+                    stack.push(*child);
+                }
+            }
+            // Don't return yet, fall through to sorting
+        } else {
+            // Collect all dirty views
+            let mut dirty_views = std::mem::take(&mut self.style_dirty);
+            for view_id in &self.view_style_dirty {
+                dirty_views.insert(*view_id);
+            }
+            if dirty_views.is_empty() {
+                return Vec::new();
+            }
+            // Iterative DFS collecting only dirty nodes
+            let mut stack = vec![root];
+            while let Some(view_id) = stack.pop() {
+                if dirty_views.remove(&view_id) {
+                    traversal.push(view_id);
+                    // Early exit if we've found all dirty nodes
+                    if dirty_views.is_empty() {
+                        break;
+                    }
+                }
+                let children = VIEW_STORAGE
+                    .with_borrow(|s| s.children.get(view_id).cloned().unwrap_or_default());
+                // Push in reverse order for left-to-right DFS
+                for child in children.iter().rev() {
+                    stack.push(*child);
+                }
+            }
+        }
+
+        // Ensure views with custom style parents come after those parents
+        // Scan backwards and bubble views up to after their custom parent if needed
+        let mut i = traversal.len();
+        while i > 0 {
+            i -= 1;
+            let view_id = traversal[i];
+            if let Some(style_parent) = view_id.state().borrow().style_cx_parent {
+                // Find where the custom parent is
+                if let Some(parent_pos) = traversal[..i].iter().position(|&v| v == style_parent) {
+                    // Move this view to right after its parent
+                    let view = traversal.remove(i);
+                    traversal.insert(parent_pos + 1, view);
+                }
+            }
+        }
+
+        traversal
+    }
+
     pub fn is_dark_mode(&self) -> bool {
         self.light_dark_theme == Theme::Dark
     }
@@ -175,6 +246,10 @@ impl WindowState {
 
     pub fn compute_layout(&mut self) {
         if let Some(root) = self.root {
+            let _ = self.root_view_id.taffy().borrow_mut().set_style(
+                root,
+                crate::style::Style::new().size_full().to_taffy_style(),
+            );
             let _ = self.root_view_id.taffy().borrow_mut().compute_layout(
                 root,
                 taffy::prelude::Size {

@@ -15,6 +15,12 @@ impl From<f32> for Pct {
     }
 }
 
+impl From<f64> for Pct {
+    fn from(value: f64) -> Self {
+        Pct(value)
+    }
+}
+
 impl From<i32> for Pct {
     fn from(value: i32) -> Self {
         Pct(value as f64)
@@ -24,6 +30,33 @@ impl From<i32> for Pct {
 /// Used for automatically computed values
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Auto;
+
+/// An angle value that can be in degrees or radians
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Angle {
+    /// Degrees (0-360)
+    Deg(f64),
+    /// Radians (0-2π)
+    Rad(f64),
+}
+
+impl Angle {
+    /// Convert the angle to radians
+    pub fn to_radians(self) -> f64 {
+        match self {
+            Angle::Deg(deg) => deg.to_radians(),
+            Angle::Rad(rad) => rad,
+        }
+    }
+
+    /// Convert the angle to degrees
+    pub fn to_degrees(self) -> f64 {
+        match self {
+            Angle::Deg(deg) => deg,
+            Angle::Rad(rad) => rad.to_degrees(),
+        }
+    }
+}
 
 impl From<f64> for Px {
     fn from(value: f64) -> Self {
@@ -144,6 +177,8 @@ impl DurationUnitExt for u64 {
 pub trait UnitExt {
     fn pct(self) -> Pct;
     fn px(self) -> Px;
+    fn deg(self) -> Angle;
+    fn rad(self) -> Angle;
 }
 
 impl UnitExt for f64 {
@@ -154,6 +189,14 @@ impl UnitExt for f64 {
     fn px(self) -> Px {
         Px(self)
     }
+
+    fn deg(self) -> Angle {
+        Angle::Deg(self)
+    }
+
+    fn rad(self) -> Angle {
+        Angle::Rad(self)
+    }
 }
 
 impl UnitExt for i32 {
@@ -163,6 +206,14 @@ impl UnitExt for i32 {
 
     fn px(self) -> Px {
         Px(self as f64)
+    }
+
+    fn deg(self) -> Angle {
+        Angle::Deg(self as f64)
+    }
+
+    fn rad(self) -> Angle {
+        Angle::Rad(self as f64)
     }
 }
 

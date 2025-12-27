@@ -9,7 +9,7 @@ use std::time::Duration;
 #[cfg(target_arch = "wasm32")]
 use web_time::Duration;
 
-use crate::style::{Style, StyleClass as _};
+use crate::style::{Style, StyleClass};
 use crate::views::Decorators;
 use crate::{
     action::{TimerToken, add_overlay, exec_after, remove_overlay},
@@ -49,7 +49,6 @@ pub struct Tooltip {
     tip: Rc<dyn Fn() -> Box<dyn View>>,
     /// A tooltip specific styles (currently its just a delay).
     style: TooltipStyle,
-    tip_style: Style,
     scale: f64,
     window_origin: Option<Point>,
 }
@@ -69,7 +68,6 @@ pub fn tooltip<V: IntoView + 'static, T: IntoView + 'static>(
         hover: None,
         overlay: overlay.clone(),
         style: Default::default(),
-        tip_style: Default::default(),
         scale: 1.0,
         window_origin: None,
     }
@@ -92,15 +90,14 @@ impl View for Tooltip {
                 if self.hover.map(|(_, t)| t) == Some(*token) {
                     let tip = self.tip.clone();
 
-                    let tip_style = self.tip_style.clone();
                     let point = window_origin
                         + self.hover.unwrap().0.to_vec2()
                         + (10. / self.scale, 10. / self.scale);
                     let overlay_id = add_overlay(
-                        ToolTipOverlay::new(tip().style(move |_| tip_style.clone()))
+                        ToolTipOverlay::new(tip())
                             .style(move |s| s.inset_left(point.x).inset_top(point.y)),
                     );
-                    // overlay_id.request_all();
+                    overlay_id.set_style_parent(self.id);
                     *self.overlay.borrow_mut() = Some(overlay_id);
                 }
             }
@@ -110,15 +107,6 @@ impl View for Tooltip {
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         self.style.read(cx);
         self.scale = cx.window_state.scale;
-
-        let (tip_style, _) =
-            Style::new().apply_classes_from_context(&[TooltipClass::class_ref()], &cx.current);
-
-        self.tip_style = tip_style;
-
-        for child in self.id.children() {
-            cx.style_view(child);
-        }
     }
 
     fn event_before_children(&mut self, cx: &mut EventCx, event: &Event) -> EventPropagation {
@@ -212,6 +200,10 @@ impl View for ToolTipOverlay {
                 .translate_x(self.offset.x)
                 .translate_y(self.offset.y),
         )
+    }
+
+    fn view_class(&self) -> Option<crate::style::StyleClassRef> {
+        Some(TooltipClass::class_ref())
     }
 
     fn compute_layout(

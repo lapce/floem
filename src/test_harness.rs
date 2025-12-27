@@ -228,6 +228,7 @@ impl TestHarness {
             is_selected: id.is_selected(),
             is_hovered: self.window_handle.window_state.is_hovered(&id),
             is_disabled: id.is_disabled(),
+            is_hidden: id.is_hidden(),
             is_focused: self.window_handle.window_state.is_focused(&id),
             is_clicking: self.window_handle.window_state.is_clicking(&id),
             is_dark_mode: self.window_handle.window_state.is_dark_mode(),
@@ -315,12 +316,10 @@ impl TestHarness {
     }
 
     /// Check if a view has pending style changes.
-    pub fn has_pending_style_change(&self, id: ViewId) -> bool {
-        use crate::view_state::ChangeFlags;
-        id.state()
-            .borrow()
-            .requested_changes
-            .contains(ChangeFlags::STYLE)
+    pub fn has_pending_style_change(&mut self, id: ViewId) -> bool {
+        self.window_handle.process_update_messages();
+        let window_state = &self.window_handle.window_state;
+        window_state.style_dirty.contains(&id) || window_state.view_style_dirty.contains(&id)
     }
 
     /// Get the viewport rectangle for a view, if one is set.

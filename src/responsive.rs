@@ -16,7 +16,7 @@ bitflags! {
 }
 
 #[derive(Hash, PartialEq, Eq, Clone, Copy, Debug)]
-pub(crate) enum ScreenSizeBp {
+pub enum ScreenSizeBp {
     Xs,
     Sm,
     Md,

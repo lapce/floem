@@ -32,11 +32,13 @@ impl ViewStorage {
     pub fn new() -> Self {
         let mut taffy = taffy::TaffyTree::default();
         taffy.disable_rounding();
-        let state_view_state = ViewState::new(&mut taffy);
+        let mut view_ids = SlotMap::<ViewId, ()>::default();
+        let stale_id = view_ids.insert(());
+        let state_view_state = ViewState::new(stale_id, &mut taffy);
 
         Self {
             taffy: Rc::new(RefCell::new(taffy)),
-            view_ids: Default::default(),
+            view_ids,
             views: Default::default(),
             children: Default::default(),
             parent: Default::default(),

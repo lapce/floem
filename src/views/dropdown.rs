@@ -18,11 +18,10 @@ use crate::{
     id::ViewId,
     prelude::ViewTuple,
     prop, prop_extractor,
-    style::{CustomStylable, CustomStyle, Style, StyleClass, Width},
+    style::{CustomStylable, CustomStyle, Style},
     style_class,
-    unit::PxPctAuto,
     view::{IntoView, View, default_compute_layout},
-    views::{ContainerExt, Decorators, Label, ScrollExt, scroll, svg},
+    views::{ContainerExt, Decorators, Label, ScrollExt, svg},
 };
 
 use super::list;
@@ -170,13 +169,13 @@ pub struct Dropdown<T: 'static> {
     main_fn: Box<ChildFn<T>>,
     list_view: ListViewFn<T>,
     list_item_fn: Rc<dyn Fn(&T) -> AnyView>,
-    list_style: Style,
     overlay_id: Option<ViewId>,
     window_origin: Option<Point>,
     on_accept: Option<Box<dyn Fn(T)>>,
     on_open: Option<Box<dyn Fn(bool)>>,
     style: DropdownStyle,
     index_to_item: OrdMap<usize, T>,
+    width: RwSignal<f64>,
 }
 
 enum Message {
@@ -199,18 +198,12 @@ impl<T: 'static + Clone + PartialEq> View for Dropdown<T> {
         if self.style.read(cx) {
             cx.window_state.request_paint(self.id);
         }
-        self.list_style = cx
-            .style()
-            .get_nested_map(scroll::ScrollClass::key())
-            .unwrap_or_default();
-
-        for child in self.id.children() {
-            cx.style_view(child);
-        }
     }
 
     fn compute_layout(&mut self, cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
         self.window_origin = Some(cx.window_origin);
+        let width = self.id.layout_rect().size().width;
+        self.width.set(width);
 
         default_compute_layout(self.id, cx)
     }
@@ -411,12 +404,12 @@ impl<T: Clone + std::cmp::PartialEq> Dropdown<T> {
             list_view,
             list_item_fn,
             index_to_item,
-            list_style: Style::new(),
             overlay_id: None,
             window_origin: None,
             on_accept: None,
             on_open: None,
             style: Default::default(),
+            width: RwSignal::new(0.),
         }
         .class(DropdownClass)
     }
@@ -548,7 +541,6 @@ impl<T: Clone + std::cmp::PartialEq> Dropdown<T> {
             self.id.request_layout();
             cx.window_state.compute_layout();
             if let Some(layout) = self.id.get_layout() {
-                self.update_list_style(layout.size.width as f64);
                 let point =
                     self.window_origin.unwrap_or_default() + (0., layout.size.height as f64);
                 self.create_overlay(point);
@@ -569,16 +561,8 @@ impl<T: Clone + std::cmp::PartialEq> Dropdown<T> {
         }
     }
 
-    fn update_list_style(&mut self, width: f64) {
-        if let PxPctAuto::Pct(pct) = self.list_style.get(Width) {
-            let new_width = width * pct / 100.0;
-            self.list_style = self.list_style.clone().width(new_width);
-        }
-    }
-
     fn create_overlay(&mut self, point: Point) {
         let list = self.list_view.clone();
-        let list_style = self.list_style.clone();
         let list_item_fn = self.list_item_fn.clone();
         self.overlay_id = Some(add_overlay({
             const DEFAULT_PADDING: f64 = 5.0;
@@ -634,13 +618,14 @@ impl<T: Clone + std::cmp::PartialEq> Dropdown<T> {
 
             list_id.request_focus();
 
+            let width = self.width;
             list.scroll()
                 .style(move |s| {
                     s.flex_col()
                         .pointer_events_auto()
                         .flex_grow(0.0)
                         .flex_shrink(1.0)
-                        .apply(list_style.clone())
+                        .width(width.get())
                 })
                 .container()
                 .on_resize(move |rect| {
@@ -656,6 +641,7 @@ impl<T: Clone + std::cmp::PartialEq> Dropdown<T> {
                         .pointer_events_none()
                 })
         }));
+        self.overlay_id.unwrap().set_style_parent(self.id);
     }
 
     /// Sets the custom style properties of the `Dropdown`.

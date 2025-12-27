@@ -1,16 +1,17 @@
 use crate::{
+    ViewId,
     animate::Animation,
     context::{
-        CleanupListeners, EventCallback, InteractionState, MenuCallback, MoveListeners,
+        CleanupListeners, EventCallback, InheritedInteractionCx, MenuCallback, MoveListeners,
         ResizeCallback, ResizeListeners,
     },
     event::EventListener,
     prop_extractor,
-    responsive::ScreenSizeBp,
     style::{
         Background, BorderColorProp, BorderRadiusProp, BoxShadowProp, LayoutProps, Outline,
-        OutlineColor, Style, StyleClassRef, StyleSelectors, resolve_nested_maps,
+        OutlineColor, Style, StyleClassRef, StyleSelectors, TransformProps,
     },
+    update::{CENTRAL_UPDATE_MESSAGES, UpdateMessage},
 };
 use bitflags::bitflags;
 use imbl::HashSet;
@@ -102,9 +103,7 @@ bitflags! {
     #[derive(Default, Copy, Clone, Debug)]
     #[must_use]
     pub(crate) struct ChangeFlags: u8 {
-        const STYLE = 1;
         const LAYOUT = 1 << 1;
-        const VIEW_STYLE = 1 << 2;
     }
 }
 
@@ -196,6 +195,7 @@ pub struct ViewState {
     pub(crate) layout_rect: Rect,
     pub(crate) layout_props: LayoutProps,
     pub(crate) view_style_props: ViewStyleProps,
+    pub(crate) view_transform_props: TransformProps,
     pub(crate) animations: Stack<Animation>,
     pub(crate) classes: Vec<StyleClassRef>,
     pub(crate) dragging_style: Option<Style>,
@@ -203,6 +203,16 @@ pub struct ViewState {
     pub(crate) combined_style: Style,
     /// The final style including inherited style from parent.
     pub(crate) computed_style: Style,
+    /// this can be used to make it so that a view will pull it's style context from a different parent.
+    /// This is useful for overlays that are children of the window root but should pull their style cx from the creating view
+    pub(crate) style_cx_parent: Option<ViewId>,
+    /// the style map that has the inherited properties that the chilren should use
+    pub(crate) style_cx: Option<Style>,
+    /// the style interaction cx that is saved after computing the final style.
+    /// This will be used as the base interaction for all **children** of this view as these are the inherited interactions
+    pub(crate) style_interaction_cx: InheritedInteractionCx,
+    /// This interaction context can be set by a parent on this view. This will be used when building the StyleCx for **this** view.
+    pub(crate) parent_set_style_interaction: InheritedInteractionCx,
     pub(crate) taffy_style: taffy::style::Style,
     pub(crate) event_listeners: HashMap<EventListener, Vec<Rc<RefCell<EventCallback>>>>,
     pub(crate) context_menu: Option<Rc<MenuCallback>>,
@@ -221,11 +231,14 @@ pub struct ViewState {
 }
 
 impl ViewState {
-    pub(crate) fn new(taffy: &mut taffy::TaffyTree) -> Self {
+    pub(crate) fn new(id: ViewId, taffy: &mut taffy::TaffyTree) -> Self {
         let mut style = Stack::<Style>::default();
         let view_style_offset = style.next_offset();
         style.push(Style::new());
 
+        CENTRAL_UPDATE_MESSAGES.with_borrow_mut(|m| m.push((id, UpdateMessage::RequestStyle(id))));
+        CENTRAL_UPDATE_MESSAGES
+            .with_borrow_mut(|m| m.push((id, UpdateMessage::RequestViewStyle(id))));
         Self {
             node: taffy.new_leaf(taffy::style::Style::DEFAULT).unwrap(),
             viewport: None,
@@ -254,105 +267,15 @@ impl ViewState {
             is_hidden_state: IsHiddenState::None,
             num_waiting_animations: 0,
             disable_default_events: HashSet::new(),
+            view_transform_props: Default::default(),
             transform: Affine::IDENTITY,
             stacking_info: StackingInfo::default(),
             debug_name: Default::default(),
+            style_cx_parent: None,
+            style_cx: None,
+            style_interaction_cx: Default::default(),
+            parent_set_style_interaction: Default::default(),
         }
-    }
-
-    /// the first returned bool is new_frame. the second is classes_applied
-    /// Returns `true` if a new frame is requested.
-    ///
-    // The context has the nested maps of classes and inherited properties
-    pub(crate) fn compute_combined(
-        &mut self,
-        interact_state: InteractionState,
-        screen_size_bp: ScreenSizeBp,
-        view_class: Option<StyleClassRef>,
-        context: &Style,
-        cx_hidden: bool,
-    ) -> (bool, bool) {
-        let mut new_frame = false;
-
-        // Build the initial combined style
-        let mut combined_style = Style::new();
-
-        let mut classes: SmallVec<[_; 4]> = SmallVec::new();
-
-        // Apply view class if provided
-        if let Some(view_class) = view_class {
-            classes.insert(0, view_class);
-        }
-
-        for class in &self.classes {
-            classes.push(*class);
-        }
-
-        let mut new_context = context.clone();
-        let mut new_classes = false;
-
-        // Capture selectors BEFORE any resolution.
-        // This must be done early because resolve_nested_maps removes selector nested maps
-        // after applying them, which would cause selectors() to miss them.
-        let self_style = self.style();
-
-        let mut selectors = self_style.selectors();
-
-        // Also capture selectors from class styles
-        for class in &classes {
-            if let Some(class_style) = context.get_nested_map(class.key) {
-                selectors = selectors.union(class_style.selectors());
-            }
-        }
-
-        self.has_style_selectors = selectors;
-
-        let (resolved_style, classes_applied) = resolve_nested_maps(
-            combined_style,
-            &interact_state,
-            screen_size_bp,
-            &classes,
-            &mut new_context,
-        );
-        combined_style = resolved_style;
-        new_classes |= classes_applied;
-
-        combined_style.apply_mut(self_style.clone());
-
-        let (resolved_style, classes_applied) = resolve_nested_maps(
-            combined_style,
-            &interact_state,
-            screen_size_bp,
-            &classes,
-            &mut new_context,
-        );
-        combined_style = resolved_style;
-        new_classes |= classes_applied;
-
-        // Process animations
-        for animation in self
-            .animations
-            .stack
-            .iter_mut()
-            .filter(|anim| anim.can_advance() || anim.should_apply_folded())
-        {
-            if animation.can_advance() {
-                new_frame = true;
-                animation.animate_into(&mut combined_style);
-                animation.advance();
-            } else {
-                animation.apply_folded(&mut combined_style)
-            }
-            debug_assert!(!animation.is_idle());
-        }
-
-        // Apply visibility
-        if cx_hidden {
-            combined_style = combined_style.hide();
-        }
-
-        self.combined_style = combined_style;
-        (new_frame, new_classes)
     }
 
     pub(crate) fn has_active_animation(&self) -> bool {

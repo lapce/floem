@@ -26,7 +26,7 @@ thread_local! {
 
 type DeferredUpdateMessages = HashMap<ViewId, Vec<(ViewId, Box<dyn Any>)>>;
 
-pub(crate) enum UpdateMessage {
+pub enum UpdateMessage {
     Focus(ViewId),
     ClearFocus(ViewId),
     ClearAppFocus,
@@ -35,6 +35,8 @@ pub(crate) enum UpdateMessage {
     WindowScale(f64),
     RequestPaint,
     State { id: ViewId, state: Box<dyn Any> },
+    RequestStyle(ViewId),
+    RequestViewStyle(ViewId),
     ToggleWindowMaximized,
     SetWindowMaximized(bool),
     MinimizeWindow,
