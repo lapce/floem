@@ -448,6 +448,24 @@ impl BorderRadius {
         self.bottom_right = Some(radius);
         self
     }
+
+    /// Resolve border radii to absolute pixels given the min side of the element.
+    /// Percentage values are resolved relative to the min side.
+    pub fn resolve_border_radii(&self, min_side: f64) -> peniko::kurbo::RoundedRectRadii {
+        fn resolve(val: Option<PxPct>, min_side: f64) -> f64 {
+            match val {
+                Some(PxPct::Px(px)) => px,
+                Some(PxPct::Pct(pct)) => min_side * pct / 100.0,
+                None => 0.0,
+            }
+        }
+        peniko::kurbo::RoundedRectRadii {
+            top_left: resolve(self.top_left, min_side),
+            top_right: resolve(self.top_right, min_side),
+            bottom_right: resolve(self.bottom_right, min_side),
+            bottom_left: resolve(self.bottom_left, min_side),
+        }
+    }
 }
 
 impl StylePropValue for BorderRadius {

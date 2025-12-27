@@ -27,23 +27,23 @@ pub struct TransformComponents {
 }
 
 impl TransformComponents {
-    /// Compute CSS transform from layout properties.
-    pub fn from_layout_props(layout_props: &crate::style::LayoutProps, size: Size) -> Self {
+    /// Compute CSS transform from transform properties.
+    pub fn from_transform_props(transform_props: &crate::style::TransformProps, size: Size) -> Self {
         // Compute translate
-        let translate_x = match layout_props.translate_x() {
+        let translate_x = match transform_props.translate_x() {
             crate::unit::PxPct::Px(px) => px,
             crate::unit::PxPct::Pct(pct) => size.width * pct / 100.,
         };
-        let translate_y = match layout_props.translate_y() {
+        let translate_y = match transform_props.translate_y() {
             crate::unit::PxPct::Px(px) => px,
             crate::unit::PxPct::Pct(pct) => size.height * pct / 100.,
         };
         let translate = Vec2::new(translate_x, translate_y);
 
         // Compute scale and rotation around center
-        let scale_x = layout_props.scale_x().0 / 100.;
-        let scale_y = layout_props.scale_y().0 / 100.;
-        let rotation = layout_props.rotation().0;
+        let scale_x = transform_props.scale_x().0 / 100.;
+        let scale_y = transform_props.scale_y().0 / 100.;
+        let rotation = transform_props.rotation().to_radians();
         let center = Vec2::new(size.width / 2., size.height / 2.);
 
         let scale_rotation = Affine::translate(center)
@@ -272,7 +272,7 @@ impl<'a> ComputeLayoutCx<'a> {
         let (transform, this_viewport, is_fixed, is_absolute) = {
             let vs = view_state.borrow();
             (
-                TransformComponents::from_layout_props(&vs.layout_props, size),
+                TransformComponents::from_transform_props(&vs.view_transform_props, size),
                 vs.viewport,
                 vs.combined_style.get(crate::style::IsFixed),
                 vs.taffy_style.position == taffy::Position::Absolute,

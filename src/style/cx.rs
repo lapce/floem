@@ -35,6 +35,8 @@ pub struct InteractionState {
     pub is_selected: bool,
     /// Whether this view is disabled.
     pub is_disabled: bool,
+    /// Whether this view is hidden.
+    pub is_hidden: bool,
     /// Whether this view has keyboard focus.
     pub is_focused: bool,
     /// Whether this view is being clicked (pointer down but not yet up).
@@ -45,6 +47,21 @@ pub struct InteractionState {
     pub is_file_hover: bool,
     /// Whether keyboard navigation is active.
     pub using_keyboard_navigation: bool,
+}
+
+/// Inherited interaction context that is propagated from parent to children.
+///
+/// These states can be set by parent views and are inherited by children,
+/// allowing parents to control the disabled, selected, or hidden state of
+/// entire subtrees.
+#[derive(Default, Debug, Clone, Copy)]
+pub struct InheritedInteractionCx {
+    /// Whether this view (or an ancestor) is disabled.
+    pub disabled: bool,
+    /// Whether this view (or an ancestor) is selected.
+    pub selected: bool,
+    /// Whether this view (or an ancestor) is hidden.
+    pub hidden: bool,
 }
 
 pub struct StyleCx<'a> {
@@ -95,6 +112,7 @@ impl<'a> StyleCx<'a> {
             is_selected: self.selected || id.is_selected(),
             is_hovered: self.window_state.is_hovered(id),
             is_disabled: id.is_disabled() || self.disabled,
+            is_hidden: id.is_hidden() || self.hidden,
             is_focused: self.window_state.is_focused(id),
             is_clicking: self.window_state.is_clicking(id),
             is_dark_mode: self.window_state.is_dark_mode(),
@@ -148,7 +166,7 @@ impl<'a> StyleCx<'a> {
 
         let view_interact_state = self.get_interact_state(&view_id);
         self.disabled = view_interact_state.is_disabled;
-        let (mut new_frame, classes_applied) = view_id.state().borrow_mut().compute_combined(
+        let (_combined_style, classes_applied) = view_id.state().borrow_mut().compute_combined(
             view_interact_state,
             self.window_state.screen_size_bp,
             view_class,
@@ -169,6 +187,7 @@ impl<'a> StyleCx<'a> {
         Style::apply_only_inherited(&mut self.current, &self.direct);
         let mut computed_style = (*self.current).clone();
         computed_style.apply_mut(self.direct.clone());
+        let mut transitioning = false;
         CaptureState::capture_style(view_id, self, computed_style.clone());
         if computed_style.get(Focusable)
             && !computed_style.get(Disabled)
@@ -209,9 +228,9 @@ impl<'a> StyleCx<'a> {
                 &self.direct,
                 &self.current,
                 &self.now,
-                &mut new_frame,
+                &mut transitioning,
             );
-            if new_frame {
+            if transitioning {
                 // If any transitioning layout props, schedule layout.
                 self.window_state.schedule_layout(view_id);
             }
@@ -220,9 +239,9 @@ impl<'a> StyleCx<'a> {
                 &self.direct,
                 &self.current,
                 &self.now,
-                &mut new_frame,
+                &mut transitioning,
             );
-            if new_frame && !self.hidden {
+            if transitioning && !self.hidden {
                 self.window_state.schedule_style(view_id);
             }
         }

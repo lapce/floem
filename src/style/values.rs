@@ -737,6 +737,25 @@ impl StylePropValue for Duration {
     }
 }
 
+impl StylePropValue for super::Angle {
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        let self_rad = self.to_radians();
+        let other_rad = other.to_radians();
+        self_rad
+            .interpolate(&other_rad, value)
+            .map(super::Angle::Rad)
+    }
+}
+
+impl StylePropValue for super::AnchorAbout {
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        Some(Self {
+            x: self.x + (other.x - self.x) * value,
+            y: self.y + (other.y - self.y) * value,
+        })
+    }
+}
+
 /// Internal storage for style property values in the style map.
 ///
 /// Unlike `StyleValue<T>` which is used in the public API, `StyleMapValue<T>`

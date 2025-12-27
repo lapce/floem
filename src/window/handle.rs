@@ -301,6 +301,7 @@ impl WindowHandle {
             os_theme.unwrap_or(winit::window::Theme::Light);
 
         // Run initial style and layout passes
+        window_handle.process_update_messages();
         window_handle.style();
         window_handle.layout();
         window_handle.compute_layout();
@@ -405,8 +406,8 @@ impl WindowHandle {
         if !change_from_os {
             self.window.set_theme(theme);
         }
+        self.id.request_style_recursive();
         self.id.request_all();
-        request_recursive_changes(self.id, ChangeFlags::STYLE);
         if let Some(theme) = theme {
             self.event(Event::ThemeChanged(theme));
         }
@@ -503,11 +504,19 @@ impl WindowHandle {
     }
 
     fn style(&mut self) {
-        let mut cx = StyleCx::new(&mut self.window_state, self.id);
-        if let Some(theme) = &self.default_theme {
-            cx.current = Rc::new(theme.inherited());
+        let start = Instant::now();
+        // Build explicit traversal order
+        let traversal = self.window_state.build_style_traversal(self.id);
+        if traversal.is_empty() {
+            self.window_state.style_dirty.clear();
+            self.window_state.view_style_dirty.clear();
         }
-        cx.style_view(self.id);
+
+        // Style each view in order
+        for view_id in traversal {
+            let cx = &mut StyleCx::new(&mut self.window_state, view_id);
+            cx.style_view(view_id);
+        }
     }
 
     fn layout(&mut self) -> Duration {
@@ -542,8 +551,10 @@ impl WindowHandle {
     pub(crate) fn process_scheduled_updates(&mut self) {
         for update in mem::take(&mut self.window_state.scheduled_updates) {
             match update {
-                FrameUpdate::Style(id) => id.request_style(),
                 FrameUpdate::Layout(id) => id.request_layout(),
+                FrameUpdate::Style(id) => {
+                    self.window_state.style_dirty.insert(id);
+                }
                 FrameUpdate::Paint(id) => self.window_state.request_paint(id),
             }
         }
@@ -783,7 +794,7 @@ impl WindowHandle {
         });
     }
 
-    fn process_update_messages(&mut self) {
+    pub(crate) fn process_update_messages(&mut self) {
         loop {
             self.process_central_messages();
             let msgs =
@@ -796,6 +807,12 @@ impl WindowHandle {
                     window_state: &mut self.window_state,
                 };
                 match msg {
+                    UpdateMessage::RequestStyle(id) => {
+                        self.window_state.style_dirty.insert(id);
+                    }
+                    UpdateMessage::RequestViewStyle(id) => {
+                        self.window_state.view_style_dirty.insert(id);
+                    }
                     UpdateMessage::RequestPaint => {
                         cx.window_state.request_paint = true;
                     }
@@ -1026,8 +1043,7 @@ impl WindowHandle {
     }
 
     fn needs_style(&mut self) -> bool {
-        let flags = self.id.state().borrow().requested_changes;
-        flags.contains(ChangeFlags::STYLE) || flags.contains(ChangeFlags::VIEW_STYLE)
+        !self.window_state.style_dirty.is_empty() || !self.window_state.view_style_dirty.is_empty()
     }
 
     fn has_deferred_update_messages(&self) -> bool {
@@ -1214,13 +1230,6 @@ impl WindowHandle {
             modifiers.set(Modifiers::ALT_GRAPH, true);
         }
         self.modifiers = modifiers;
-    }
-}
-
-fn request_recursive_changes(id: ViewId, changes: ChangeFlags) {
-    id.state().borrow_mut().requested_changes = changes;
-    for child in id.children() {
-        request_recursive_changes(child, changes);
     }
 }
 

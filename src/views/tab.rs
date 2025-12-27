@@ -277,15 +277,14 @@ impl<T> View for Tab<T> {
         }
     }
 
-    fn style_pass(&mut self, cx: &mut StyleCx<'_>) {
+    fn style_pass(&mut self, _cx: &mut StyleCx<'_>) {
         for (i, child) in self.id.children().into_iter().enumerate() {
             match self.active {
-                Some(act_idx) if act_idx == i => cx.style_view(child),
+                Some(act_idx) if act_idx == i => {
+                    child.parent_clear_hidden();
+                }
                 _ => {
-                    cx.save();
-                    cx.hidden();
-                    cx.style_view(child);
-                    cx.restore();
+                    child.parent_set_hidden();
                 }
             }
         }

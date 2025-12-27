@@ -423,12 +423,9 @@ impl<T> View for VirtualStack<T> {
                 .selected_idx
                 .contains(&(child_id_index + self.first_child_idx))
             {
-                cx.save();
-                cx.selected();
-                cx.style_view(child);
-                cx.restore();
+                child.parent_set_selected();
             } else {
-                cx.style_view(child);
+                child.parent_clear_selected();
             }
         }
     }

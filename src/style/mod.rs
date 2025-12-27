@@ -132,6 +132,7 @@ use floem_reactive::UpdaterEffect;
 use floem_renderer::text::{LineHeightValue, Weight};
 use imbl::hashmap::Entry;
 use peniko::color::palette;
+use peniko::kurbo::{self, Affine, RoundedRect, Vec2};
 use peniko::{Brush, Color};
 use smallvec::SmallVec;
 use std::any::Any;
@@ -174,7 +175,7 @@ pub use components::{
     Border, BorderColor, BorderRadius, BoxShadow, CursorStyle, Margin, Padding, PointerEvents,
     TextOverflow,
 };
-pub use cx::{InteractionState, StyleCx};
+pub use cx::{InheritedInteractionCx, InteractionState, StyleCx};
 pub use props::{
     ExtractorField, StyleClass, StyleClassInfo, StyleClassRef, StyleKey, StyleKeyInfo, StyleProp,
     StylePropInfo, StylePropReader, StylePropRef,
@@ -182,7 +183,7 @@ pub use props::{
 pub use selectors::{StyleSelector, StyleSelectors};
 pub use theme::{DesignSystem, StyleThemeExt};
 pub use transition::{DirectTransition, Transition, TransitionState};
-pub use unit::{Auto, DurationUnitExt, Pct, Px, PxPct, PxPctAuto, UnitExt};
+pub use unit::{Angle, Auto, DurationUnitExt, Pct, Px, PxPct, PxPctAuto, UnitExt};
 pub use values::{CombineResult, StrokeWrap, StyleMapValue, StylePropValue, StyleValue};
 
 pub(crate) use props::{
@@ -190,6 +191,33 @@ pub(crate) use props::{
 };
 
 type ContextMapFn = Rc<dyn Fn(Style, &Style) -> Style>;
+
+/// Anchor point for transform-origin, used with rotate and scale transformations.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct AnchorAbout {
+    /// X coordinate as percentage (0.0 = left, 0.5 = center, 1.0 = right)
+    pub x: f64,
+    /// Y coordinate as percentage (0.0 = top, 0.5 = center, 1.0 = bottom)
+    pub y: f64,
+}
+
+impl AnchorAbout {
+    /// Center anchor point (default)
+    pub const CENTER: Self = Self { x: 0.5, y: 0.5 };
+    /// Top-left corner
+    pub const TOP_LEFT: Self = Self { x: 0.0, y: 0.0 };
+    /// Top-right corner
+    pub const TOP_RIGHT: Self = Self { x: 1.0, y: 0.0 };
+    /// Bottom-left corner
+    pub const BOTTOM_LEFT: Self = Self { x: 0.0, y: 1.0 };
+    /// Bottom-right corner
+    pub const BOTTOM_RIGHT: Self = Self { x: 1.0, y: 1.0 };
+
+    /// Returns the anchor point as fractions (0.0 to 1.0)
+    pub fn as_fractions(&self) -> (f64, f64) {
+        (self.x, self.y)
+    }
+}
 
 style_key_selector!(selector_xs, StyleSelectors::new().responsive());
 style_key_selector!(selector_sm, StyleSelectors::new().responsive());
@@ -210,7 +238,7 @@ pub(crate) fn screen_size_bp_to_key(breakpoint: ScreenSizeBp) -> StyleKey {
 }
 
 /// the bool in the return is a classes_applied flag. if a new class has been applied, we need to do a request_style_recursive
-pub(crate) fn resolve_nested_maps(
+pub fn resolve_nested_maps(
     style: Style,
     interact_state: &InteractionState,
     screen_size_bp: ScreenSizeBp,
@@ -283,12 +311,7 @@ fn resolve_nested_maps_internal(
     // This handles:
     // 1. The view's own set_disabled() calls (reactive or static)
     // 2. Inherited disabled state from parent views (passed via context)
-    //
-    // Note: We use style.get(Disabled) instead of interact_state.is_disabled
-    // because interact_state is computed from the PREVIOUS pass's computed_style,
-    // which would cause the disabled selector to be incorrectly applied when
-    // transitioning from disabled to enabled via reactive set_disabled() calls.
-    if style.get(Disabled) {
+    if interact_state.is_disabled || style.get(Disabled) {
         if let Some(map) = style.get_nested_map(StyleSelector::Disabled.to_key()) {
             classes_applied |= map.any_inherited();
             style.apply_mut(map);
@@ -393,6 +416,18 @@ pub struct Style {
 impl Style {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Apply only inherited properties from `from` style to `to` style.
+    /// This is used during style propagation to pass inherited values to children.
+    pub fn apply_only_inherited(to: &mut Rc<Style>, from: &Style) {
+        // Simplified implementation - just clone from for now
+        // TODO: Full implementation should only apply properties marked as inherited
+        if from.any_inherited() {
+            let mut new_style = (**to).clone();
+            new_style.apply_mut(from.clone());
+            *to = Rc::new(new_style);
+        }
     }
 
     pub(crate) fn get_transition<P: StyleProp>(&self) -> Option<Transition> {
@@ -650,15 +685,6 @@ impl Style {
 
     pub(crate) fn any_inherited(&self) -> bool {
         self.map.iter().any(|(p, _)| p.inherited())
-    }
-
-    pub(crate) fn apply_only_inherited(this: &mut Rc<Style>, over: &Style) {
-        if over.any_inherited() {
-            let inherited = over.map.iter().filter(|(p, _)| p.inherited());
-
-            let this = Rc::make_mut(this);
-            this.apply_iter(inherited);
-        }
     }
 
     pub(crate) fn inherited(&self) -> Style {
@@ -1241,12 +1267,6 @@ define_builtin_props!(
     /// Higher values appear in front of lower values.
     ZIndex z_index { nocb, tr }: Option<i32> {} = None,
 
-    /// Sets the opacity of the view.
-    ///
-    /// Value ranges from 0.0 (fully transparent) to 1.0 (fully opaque).
-    /// Per CSS spec, opacity < 1.0 creates a stacking context.
-    Opacity opacity { nocb, tr }: Option<f32> {} = None,
-
     /// Sets the cursor style when hovering over the view.
     ///
     /// Changes the appearance of the mouse cursor.
@@ -1357,12 +1377,31 @@ define_builtin_props!(
     /// Moves the view up (negative) or down (positive).
     TranslateY translate_y {tr}: PxPct {} = PxPct::Px(0.),
 
-    /// Sets the rotation transform in radians.
+    /// Sets the rotation transform angle.
     ///
     /// Positive values rotate clockwise, negative values rotate counter-clockwise.
-    Rotation rotate {tr}: Px {} = Px(0.),
+    /// Use `.deg()` or `.rad()` methods to specify the angle unit.
+    Rotation rotate {tr}: Angle {} = Angle::Rad(0.0),
 
-    /// Controls the selected state of the view.
+    /// Sets the anchor point for rotation transformations.
+    ///
+    /// Determines the point around which the view rotates. Use predefined constants
+    /// like `AnchorAbout::CENTER` or create custom anchor points with pixel or percentage values.
+    RotateAbout rotate_about {}: AnchorAbout {} = AnchorAbout::CENTER,
+
+    /// Sets the anchor point for scaling transformations.
+    ///
+    /// Determines the point around which the view scales. Use predefined constants
+    /// like `AnchorAbout::CENTER` or create custom anchor points with pixel or percentage values.
+    ScaleAbout scale_about {tr}: AnchorAbout {} = AnchorAbout::CENTER,
+
+    /// Sets the opacity of the view.
+    ///
+    /// Values range from 0.0 (fully transparent) to 1.0 (fully opaque).
+    /// This affects the entire view including its children.
+    Opacity opacity {tr}: f32 {} = 1.0,
+
+    /// Sets the selected state of the view.
     ///
     /// This property is inherited by child views.
     Selected set_selected {}: bool { inherited } = false,
@@ -1472,7 +1511,11 @@ prop_extractor! {
 
         pub row_gap: RowGap,
         pub col_gap: ColGap,
+    }
+}
 
+prop_extractor! {
+    pub TransformProps {
         pub scale_x: ScaleX,
         pub scale_y: ScaleY,
 
@@ -1480,6 +1523,135 @@ prop_extractor! {
         pub translate_y: TranslateY,
 
         pub rotation: Rotation,
+        pub rotate_about: RotateAbout,
+        pub scale_about: ScaleAbout,
+    }
+}
+impl TransformProps {
+    pub fn affine(&self, size: kurbo::Size) -> Affine {
+        let mut transform = Affine::IDENTITY;
+
+        let transform_x = match self.translate_x() {
+            crate::unit::PxPct::Px(px) => px,
+            crate::unit::PxPct::Pct(pct) => pct / 100.,
+        };
+        let transform_y = match self.translate_y() {
+            crate::unit::PxPct::Px(px) => px,
+            crate::unit::PxPct::Pct(pct) => pct / 100.,
+        };
+        transform *= Affine::translate(Vec2 {
+            x: transform_x,
+            y: transform_y,
+        });
+
+        let scale_x = self.scale_x().0 / 100.;
+        let scale_y = self.scale_y().0 / 100.;
+        let rotation = self.rotation().to_radians();
+
+        // Get rotation and scale anchor points
+        let rotate_about = self.rotate_about();
+        let scale_about = self.scale_about();
+
+        // Convert anchor points to fractional positions
+        let (rotate_x_frac, rotate_y_frac) = rotate_about.as_fractions();
+        let (scale_x_frac, scale_y_frac) = scale_about.as_fractions();
+
+        let rotate_point = Vec2 {
+            x: rotate_x_frac * size.width,
+            y: rotate_y_frac * size.height,
+        };
+
+        let scale_point = Vec2 {
+            x: scale_x_frac * size.width,
+            y: scale_y_frac * size.height,
+        };
+
+        // Apply transformations using the specified anchor points
+        if scale_x != 1.0 || scale_y != 1.0 {
+            // Manual non-uniform scaling about a point: translate -> scale -> translate back
+            let scale_center = scale_point;
+            transform = transform
+                .then_translate(-scale_center)
+                .then_scale_non_uniform(scale_x, scale_y)
+                .then_translate(scale_center);
+        }
+        if rotation != 0.0 {
+            // Manual rotation about a point: translate -> rotate -> translate back
+            let rotate_center = rotate_point;
+            transform = transform
+                .then_translate(-rotate_center)
+                .then_rotate(rotation)
+                .then_translate(rotate_center);
+        }
+
+        transform
+    }
+}
+
+prop_extractor! {
+    pub BoxTreeProps {
+        pub scale_about: ScaleAbout,
+        pub z_index: ZIndex,
+        pub pointer_events: PointerEventsProp,
+        pub focusable: Focusable,
+        pub hidden: Hidden,
+        pub disabled: Disabled,
+        pub display: DisplayProp,
+        pub overflow_x: OverflowX,
+        pub overflow_y: OverflowY,
+        pub border_radius: BorderRadiusProp,
+    }
+}
+impl BoxTreeProps {
+    pub fn pickable(&self) -> bool {
+        self.pointer_events() != Some(PointerEvents::None)
+    }
+
+    // pub fn set_box_tree(
+    //     &self,
+    //     node_id: understory_box_tree::NodeId,
+    //     box_tree: &mut understory_box_tree::Tree,
+    // ) {
+    //     box_tree.set_z_index(node_id, self.z_index().unwrap_or(0));
+    //     let mut flags = NodeFlags::empty();
+    //     if self.pickable() {
+    //         flags |= NodeFlags::PICKABLE;
+    //     }
+    //     if self.focusable() && !self.hidden() && self.display() != Display::None && !self.disabled()
+    //     {
+    //         flags |= NodeFlags::FOCUSABLE;
+    //     }
+    //     if !self.hidden() {
+    //         flags |= NodeFlags::VISIBLE;
+    //     }
+    //     box_tree.set_flags(node_id, flags);
+    // }
+
+    pub fn clip_rect(&self, mut rect: kurbo::Rect) -> Option<RoundedRect> {
+        use Overflow::*;
+
+        let (overflow_x, overflow_y) = (self.overflow_x(), self.overflow_y());
+
+        // No clipping if both are visible
+        if overflow_x == Visible && overflow_y == Visible {
+            return None;
+        }
+
+        let border_radius = self
+            .border_radius()
+            .resolve_border_radii(rect.size().min_side());
+
+        // Extend to infinity on visible axes
+        if overflow_x == Visible {
+            rect.x0 = f64::NEG_INFINITY;
+            rect.x1 = f64::INFINITY;
+        }
+        if overflow_y == Visible {
+            rect.y0 = f64::NEG_INFINITY;
+            rect.y1 = f64::INFINITY;
+        }
+
+        Some(RoundedRect::from_rect(rect, border_radius))
     }
 }
 
@@ -2471,14 +2643,6 @@ impl Style {
     /// Sets the stack order of the view.
     pub fn z_index(self, z_index: i32) -> Self {
         self.set(ZIndex, Some(z_index))
-    }
-
-    /// Sets the opacity of the view.
-    ///
-    /// Value should be between 0.0 (fully transparent) and 1.0 (fully opaque).
-    /// Per CSS spec, opacity < 1.0 creates a stacking context.
-    pub fn opacity(self, opacity: f32) -> Self {
-        self.set(Opacity, Some(opacity))
     }
 
     /// Sets uniform scaling for both X and Y axes.

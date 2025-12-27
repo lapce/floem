@@ -46,7 +46,7 @@
 mod id;
 mod into_iter;
 pub(crate) mod stacking;
-mod state;
+pub(crate) mod state;
 mod storage;
 pub mod tuple;
 
@@ -481,11 +481,9 @@ pub trait View {
     /// Use this method to style the view's children.
     ///
     /// If the style changes needs other passes to run you're expected to call
-    /// `cx.window_state_mut().request_changes`.
+    /// `cx.window_state.style_dirty.insert(view_id)`.
     fn style_pass(&mut self, cx: &mut StyleCx<'_>) {
-        for child in self.id().children() {
-            cx.style_view(child);
-        }
+        let _ = cx;
     }
 
     /// Use this method to layout the view's children.

@@ -20,6 +20,7 @@ default-members = [
   "reactive",
   "editor-core",
   "ui-events-winit",
+  "test",
 ]
 
 [workspace.package]
@@ -178,6 +179,3 @@ criterion = { version = "0.8.1", features = ["html_reports"] }
 [[bench]]
 name = "event_dispatch"
 harness = false
-
-[profile.dev]
-opt-level = 1
