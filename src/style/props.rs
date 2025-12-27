@@ -109,6 +109,9 @@ pub(crate) type CombineFn = fn(val1: Rc<dyn Any>, val2: Rc<dyn Any>) -> Rc<dyn A
 /// Function pointer type for computing content hash of a style value.
 pub(crate) type HashAnyFn = fn(val: &dyn Any) -> u64;
 
+/// Function pointer type for comparing two style values for equality.
+pub(crate) type EqAnyFn = fn(val1: &dyn Any, val2: &dyn Any) -> bool;
+
 #[derive(Debug)]
 pub struct StylePropInfo {
     pub(crate) name: fn() -> &'static str,
@@ -122,6 +125,8 @@ pub struct StylePropInfo {
     pub(crate) transition_key: StyleKey,
     /// Computes a content-based hash for a style value.
     pub(crate) hash_any: HashAnyFn,
+    /// Compares two style values for equality.
+    pub(crate) eq_any: EqAnyFn,
 }
 
 impl StylePropInfo {
@@ -235,6 +240,30 @@ impl StylePropInfo {
                         "expected type {} for property {}",
                         type_name::<T>(),
                         std::any::type_name::<Name>(),
+                    )
+                }
+            },
+            eq_any: |val1, val2| {
+                if let (Some(v1), Some(v2)) = (
+                    val1.downcast_ref::<StyleMapValue<T>>(),
+                    val2.downcast_ref::<StyleMapValue<T>>(),
+                ) {
+                    match (v1, v2) {
+                        (StyleMapValue::Val(a) | StyleMapValue::Animated(a),
+                         StyleMapValue::Val(b) | StyleMapValue::Animated(b)) => {
+                            // Compare by content hash since we don't have PartialEq
+                            a.content_hash() == b.content_hash()
+                        }
+                        (StyleMapValue::Unset, StyleMapValue::Unset) => true,
+                        _ => false,
+                    }
+                } else {
+                    panic!(
+                        "expected type {} for property {}. Got typeids {:?} and {:?}",
+                        type_name::<T>(),
+                        std::any::type_name::<Name>(),
+                        val1.type_id(),
+                        val2.type_id()
                     )
                 }
             },

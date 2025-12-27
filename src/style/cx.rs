@@ -20,6 +20,7 @@ use crate::view::stacking::{invalidate_all_overlay_caches, invalidate_stacking_c
 use crate::view::{ChangeFlags, StackingInfo};
 use crate::window::state::WindowState;
 
+use super::cache::StyleCacheKey;
 use super::recalc::StyleRecalcChange;
 use super::{Disabled, DisplayProp, Focusable, Style, StyleProp, ZIndex};
 
@@ -248,13 +249,74 @@ impl<'a> StyleCx<'a> {
         };
         self.disabled = view_interact_state.is_disabled;
 
-        // Compute style with full selector/responsive/class resolution
-        let (_combined, classes_applied) = view_id.state().borrow_mut().compute_combined(
-            view_interact_state,
+        // Build class list for cache key
+        let mut all_classes = view_state.borrow().classes.clone();
+        if let Some(vc) = view_class {
+            all_classes.push(vc);
+        }
+
+        // Try cache lookup (but only for non-dirty views)
+        // Dirty views need full recomputation because something changed
+        let cache_key = StyleCacheKey::new(
+            &base_style,
+            &view_interact_state,
             self.window_state.screen_size_bp,
-            view_class,
-            &self.current,
+            &all_classes,
         );
+
+        let (combined, classes_applied) = if !view_is_dirty {
+            // View is not dirty - safe to check cache
+            if let Some((cached_style, cached_classes_applied)) =
+                self.window_state.style_cache.get(&cache_key, &self.current)
+            {
+                // Cache hit - use cached result
+                let combined = (*cached_style).clone();
+                view_state.borrow_mut().combined_style = combined.clone();
+                // Also update has_style_selectors from base style
+                view_state.borrow_mut().has_style_selectors = base_style.selectors();
+                (combined, cached_classes_applied)
+            } else {
+                // Cache miss - compute and cache
+                let (combined, classes_applied) = view_id.state().borrow_mut().compute_combined(
+                    view_interact_state,
+                    self.window_state.screen_size_bp,
+                    view_class,
+                    &self.current,
+                );
+
+                // Cache the result if cacheable
+                if super::cache::StyleCache::is_cacheable(&base_style) {
+                    self.window_state.style_cache.insert(
+                        cache_key,
+                        combined.clone(),
+                        &self.current,
+                        classes_applied,
+                    );
+                }
+
+                (combined, classes_applied)
+            }
+        } else {
+            // View is dirty - must recompute, don't use cache
+            let (combined, classes_applied) = view_id.state().borrow_mut().compute_combined(
+                view_interact_state,
+                self.window_state.screen_size_bp,
+                view_class,
+                &self.current,
+            );
+
+            // Cache the result for future use
+            if super::cache::StyleCache::is_cacheable(&base_style) {
+                self.window_state.style_cache.insert(
+                    cache_key,
+                    combined.clone(),
+                    &self.current,
+                    classes_applied,
+                );
+            }
+
+            (combined, classes_applied)
+        };
 
         // Determine how to propagate to children based on what happened
         let child_change = if classes_applied {

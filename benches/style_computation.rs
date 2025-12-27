@@ -282,6 +282,187 @@ fn bench_restyle_with_selectors(c: &mut Criterion) {
     group.finish();
 }
 
+/// Benchmark inherited prop updates (the use case where graduated propagation helps).
+///
+/// This tests the scenario where an ancestor sets an inherited prop and descendants
+/// use it. When the prop updates, views without selectors can use the inherited-only
+/// fast path instead of full selector resolution.
+fn bench_inherited_prop_updates(c: &mut Criterion) {
+    use floem::peniko::Color;
+    use floem::prop;
+    use floem::style::Style;
+
+    // Define an inherited prop for this benchmark
+    prop!(
+        pub BenchInheritedColor: Color { inherited } = palette::css::BLACK
+    );
+
+    trait BenchColorExt {
+        fn with_bench_color(self, f: impl Fn(Self, &Color) -> Self + 'static) -> Self
+        where
+            Self: Sized;
+    }
+
+    impl BenchColorExt for Style {
+        fn with_bench_color(self, f: impl Fn(Self, &Color) -> Self + 'static) -> Self {
+            self.with_context::<BenchInheritedColor>(f)
+        }
+    }
+
+    let mut group = c.benchmark_group("inherited_prop_updates");
+
+    // Benchmark: deep hierarchy with inherited prop
+    for depth in [5, 10, 20].iter() {
+        group.bench_with_input(
+            BenchmarkId::new("deep_hierarchy", depth),
+            depth,
+            |b, &depth| {
+                let color_signal = RwSignal::new(palette::css::RED);
+
+                fn create_deep_with_inherited(
+                    depth: usize,
+                ) -> Container {
+                    if depth == 0 {
+                        Container::new(Empty::new().style(|s| s.size(10.0, 10.0)))
+                            .style(|s| s.size(20.0, 20.0))
+                    } else {
+                        Container::new(create_deep_with_inherited(depth - 1))
+                            .style(|s| s.size_full().padding(1.0))
+                    }
+                }
+
+                let root = Container::new(create_deep_with_inherited(depth)).style(move |s| {
+                    s.size(200.0, 200.0)
+                        .set(BenchInheritedColor, color_signal.get())
+                });
+
+                let mut harness = HeadlessHarness::new_with_size(root, 200.0, 200.0);
+
+                b.iter(|| {
+                    // Toggle the inherited prop
+                    color_signal.update(|c| {
+                        *c = if *c == palette::css::RED {
+                            palette::css::BLUE
+                        } else {
+                            palette::css::RED
+                        };
+                    });
+                    harness.rebuild();
+                    black_box(harness.root_id());
+                });
+            },
+        );
+    }
+
+    // Benchmark: wide hierarchy (many siblings) with inherited prop
+    for width in [10, 50, 100].iter() {
+        group.bench_with_input(
+            BenchmarkId::new("wide_hierarchy", width),
+            width,
+            |b, &width| {
+                let color_signal = RwSignal::new(palette::css::RED);
+
+                let children: Vec<_> = (0..width)
+                    .map(|_| {
+                        Empty::new().style(|s| s.size(20.0, 20.0))
+                    })
+                    .collect();
+
+                let root = Stack::from_iter(children).style(move |s| {
+                    s.size(400.0, 400.0)
+                        .set(BenchInheritedColor, color_signal.get())
+                });
+
+                let mut harness = HeadlessHarness::new_with_size(root, 400.0, 400.0);
+
+                b.iter(|| {
+                    color_signal.update(|c| {
+                        *c = if *c == palette::css::RED {
+                            palette::css::BLUE
+                        } else {
+                            palette::css::RED
+                        };
+                    });
+                    harness.rebuild();
+                    black_box(harness.root_id());
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
+/// Benchmark inherited prop updates for views WITH selectors.
+///
+/// This tests views that have hover/active selectors which cannot use the
+/// inherited-only fast path and must do full style resolution.
+fn bench_inherited_with_selectors(c: &mut Criterion) {
+    use floem::peniko::Color;
+    use floem::prop;
+    use floem::style::Style;
+
+    prop!(
+        pub BenchInheritedColor2: Color { inherited } = palette::css::BLACK
+    );
+
+    trait BenchColorExt2 {
+        fn with_bench_color2(self, f: impl Fn(Self, &Color) -> Self + 'static) -> Self
+        where
+            Self: Sized;
+    }
+
+    impl BenchColorExt2 for Style {
+        fn with_bench_color2(self, f: impl Fn(Self, &Color) -> Self + 'static) -> Self {
+            self.with_context::<BenchInheritedColor2>(f)
+        }
+    }
+
+    let mut group = c.benchmark_group("inherited_with_selectors");
+
+    for width in [10, 50].iter() {
+        group.bench_with_input(
+            BenchmarkId::new("with_hover_selectors", width),
+            width,
+            |b, &width| {
+                let color_signal = RwSignal::new(palette::css::RED);
+
+                // Views with hover selector - cannot use inherited-only fast path
+                let children: Vec<_> = (0..width)
+                    .map(|_| {
+                        Empty::new().style(|s| {
+                            s.size(20.0, 20.0)
+                                .with_bench_color2(|s, c| s.background(*c))
+                                .hover(|s| s.border(1.0))
+                        })
+                    })
+                    .collect();
+
+                let root = Stack::from_iter(children).style(move |s| {
+                    s.size(400.0, 400.0)
+                        .set(BenchInheritedColor2, color_signal.get())
+                });
+
+                let mut harness = HeadlessHarness::new_with_size(root, 400.0, 400.0);
+
+                b.iter(|| {
+                    color_signal.update(|c| {
+                        *c = if *c == palette::css::RED {
+                            palette::css::BLUE
+                        } else {
+                            palette::css::RED
+                        };
+                    });
+                    harness.rebuild();
+                    black_box(harness.root_id());
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_identical_styles,
@@ -291,5 +472,7 @@ criterion_group!(
     bench_get_computed_style,
     bench_restyle_views,
     bench_restyle_with_selectors,
+    bench_inherited_prop_updates,
+    bench_inherited_with_selectors,
 );
 criterion_main!(benches);
