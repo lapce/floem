@@ -355,6 +355,21 @@ impl HeadlessHarness {
             .contains(ChangeFlags::STYLE)
     }
 
+    /// Check if there are scheduled updates for the next frame.
+    ///
+    /// This is useful for testing transitions, which schedule style updates
+    /// to animate across frames.
+    pub fn has_scheduled_updates(&self) -> bool {
+        !self.window_handle.window_state.scheduled_updates.is_empty()
+    }
+
+    /// Check if a view is in the style_dirty set.
+    ///
+    /// Views in this set will be processed during the next style pass.
+    pub fn is_style_dirty(&self, id: ViewId) -> bool {
+        self.window_handle.window_state.style_dirty.contains(&id)
+    }
+
     /// Get the viewport rectangle for a view, if one is set.
     ///
     /// This is typically set on children of scroll views to indicate
