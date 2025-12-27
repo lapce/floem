@@ -89,13 +89,29 @@ impl HeadlessHarness {
     /// for events to be dispatched correctly.
     ///
     /// Note: When using the headless WindowHandle, this is typically called
-    /// automatically via `process_update()` after event dispatch.
+    /// automatically via `process_update_no_paint()` after event dispatch.
     pub fn rebuild(&mut self) {
-        // Process any scheduled updates first (style/layout requests from previous frame)
-        // This is needed because style changes call schedule_layout() which adds to
-        // scheduled_updates, not request_layout() which sets the LAYOUT flag directly.
+        self.process_update_no_paint();
+    }
+
+    /// Run pending reactive effects and process all updates.
+    ///
+    /// Returns `true` if a repaint would be scheduled (style or layout changed).
+    /// This is the return value from the underlying `WindowHandle::process_update_no_paint()`.
+    ///
+    /// Use this method when you need to verify that style/layout changes
+    /// trigger repaints:
+    /// ```rust,ignore
+    /// signal.set(new_value);
+    /// let needs_repaint = harness.process_update_no_paint();
+    /// assert!(needs_repaint, "Style change should trigger repaint");
+    /// ```
+    pub fn process_update_no_paint(&mut self) -> bool {
+        // Process any scheduled updates (style/layout requests from previous frame)
         self.window_handle.process_scheduled_updates();
-        self.window_handle.process_update_no_paint();
+
+        // Run style and layout passes, returning whether paint is needed
+        self.window_handle.process_update_no_paint()
     }
 
     /// Get the root view ID.
