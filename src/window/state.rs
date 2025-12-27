@@ -19,7 +19,7 @@ use crate::{
     event::{Event, EventListener, clear_hit_test_cache},
     inspector::CaptureState,
     layout::responsive::{GridBreakpoints, ScreenSizeBp},
-    style::{CursorStyle, StyleSelector},
+    style::{CursorStyle, StyleCache, StyleSelector},
     view::VIEW_STORAGE,
     view::ViewId,
 };
@@ -97,6 +97,10 @@ pub struct WindowState {
 
     /// This is set if we're currently capturing the window for the inspector.
     pub(crate) capture: Option<CaptureState>,
+
+    /// Cache for style resolution results.
+    /// Views with identical styles and interaction states can share resolved styles.
+    pub(crate) style_cache: StyleCache,
 }
 
 impl WindowState {
@@ -134,6 +138,7 @@ impl WindowState {
             grid_bps: GridBreakpoints::default(),
             context_menu: HashMap::new(),
             capture: None,
+            style_cache: StyleCache::new(),
         }
     }
 
@@ -231,8 +236,8 @@ impl WindowState {
         } else {
             // Collect all dirty views
             let mut dirty_views = std::mem::take(&mut self.style_dirty);
-            for view_id in &self.view_style_dirty {
-                dirty_views.insert(*view_id);
+            for view_id in std::mem::take(&mut self.view_style_dirty) {
+                dirty_views.insert(view_id);
             }
             if dirty_views.is_empty() {
                 return Vec::new();

@@ -158,6 +158,7 @@ use crate::layout::responsive::{ScreenSize, ScreenSizeBp};
 // Import macros from crate root (they are #[macro_export] in props.rs)
 use crate::{prop, prop_extractor};
 
+mod cache;
 mod components;
 mod custom;
 mod cx;
@@ -185,6 +186,8 @@ pub use theme::{DesignSystem, StyleThemeExt};
 pub use transition::{DirectTransition, Transition, TransitionState};
 pub use unit::{AnchorAbout, Angle, Auto, DurationUnitExt, Pct, Px, PxPct, PxPctAuto, UnitExt};
 pub use values::{CombineResult, StrokeWrap, StyleMapValue, StylePropValue, StyleValue};
+
+pub use cache::{StyleCache, StyleCacheKey};
 
 pub(crate) use props::{
     CONTEXT_MAPPINGS_INFO, CONTEXT_SELECTORS_INFO, ImHashMap, style_key_selector,
@@ -234,13 +237,11 @@ fn resolve_nested_maps_internal(
     classes: &[StyleClassRef],
     depth: u32,
 ) -> (Style, bool) {
-    // const MAX_DEPTH: u32 = 20;
-    // if depth >= MAX_DEPTH {
-    //     return (style, false);
-    // }
-    // if depth > 10 {
-    //     dbg!(depth);
-    // }
+    // Prevent infinite recursion in case of circular style dependencies
+    const MAX_DEPTH: u32 = 20;
+    if depth >= MAX_DEPTH {
+        return (style, false);
+    }
 
     let mut changed = false;
     let mut classes_applied = false;
@@ -1384,11 +1385,6 @@ define_builtin_props!(
     /// This property is inherited by child views.
     Disabled set_disabled {}: bool { inherited } = false,
 
-    /// Controls the visibility of the view.
-    ///
-    /// This property is inherited by child views.
-    Hidden set_hidden {}: bool { inherited } = false,
-
     /// Controls whether the view can receive focus.
     ///
     /// Focus is necessary for keyboard interaction.
@@ -1567,7 +1563,6 @@ prop_extractor! {
         pub z_index: ZIndex,
         pub pointer_events: PointerEventsProp,
         pub focusable: Focusable,
-        pub hidden: Hidden,
         pub disabled: Disabled,
         pub display: DisplayProp,
         pub overflow_x: OverflowX,
@@ -2590,7 +2585,7 @@ impl Style {
 
     /// Hides the view from view and layout.
     pub fn hide(self) -> Self {
-        self.set(Hidden, true).set(DisplayProp, Display::None)
+        self.set(DisplayProp, Display::None)
     }
 
     /// Sets the view to use flexbox layout.

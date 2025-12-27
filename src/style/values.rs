@@ -55,6 +55,21 @@ pub trait StylePropValue: Clone + PartialEq + Debug {
     fn combine(&self, _other: &Self) -> CombineResult<Self> {
         CombineResult::Other
     }
+
+    /// Compute a content-based hash for this value.
+    ///
+    /// This hash is used for style caching - identical values should produce
+    /// identical hashes. The default implementation uses the Debug representation,
+    /// which works for most types. Types that implement Hash can override this
+    /// for better performance.
+    fn content_hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = rustc_hash::FxHasher::default();
+        // Use Debug representation as a stable string for hashing
+        let debug_str = format!("{:?}", self);
+        debug_str.hash(&mut hasher);
+        hasher.finish()
+    }
 }
 
 impl StylePropValue for i32 {

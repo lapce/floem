@@ -23,7 +23,7 @@ use crate::{
     event::{EventListener, EventPropagation},
     message::{CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES, UpdateMessage},
     platform::menu::Menu,
-    style::{Disabled, DisplayProp, Draggable, Focusable, Hidden, PointerEvents, Style, StyleClassRef},
+    style::{Disabled, DisplayProp, Draggable, Focusable, PointerEvents, Style, StyleClassRef},
     unit::PxPct,
     window::tracking::{is_known_root, window_id_for_root},
 };
@@ -406,22 +406,28 @@ impl ViewId {
         self.state().borrow().layout_rect
     }
 
-    /// Returns true if the computed style for this view is marked as hidden by setting in this view, or any parent, `Hidden` to true. For hiding views, you should prefer to set `Hidden` to true rather than using `Display::None` as checking for `Hidden` is cheaper, more correct, and used for optimizations in Floem
+    /// Returns true if this view is hidden, either by:
+    /// - Having `display: none` in its computed style
+    /// - Being hidden by a parent (via `parent_set_hidden()`)
     pub fn is_hidden(&self) -> bool {
-        self.state().borrow_mut().style_interaction_cx.hidden
+        use crate::view::state::IsHiddenState;
+        let state = self.state();
+        let state = state.borrow();
+        // Check if this view has display:none OR was programmatically hidden by parent
+        state.is_hidden_state == IsHiddenState::Hidden
+            || state.parent_set_style_interaction.hidden
     }
 
     /// if the view has pointer events none
     pub fn pointer_events_none(&self) -> bool {
         let state = self.state();
         let state = state.borrow();
-        state.computed_style.builtin().set_hidden()
-            || state
-                .computed_style
-                .builtin()
-                .pointer_events()
-                .map(|p| p == PointerEvents::None)
-                .unwrap_or(false)
+        state
+            .computed_style
+            .builtin()
+            .pointer_events()
+            .map(|p| p == PointerEvents::None)
+            .unwrap_or(false)
     }
 
     /// Returns true if the view is disabled
@@ -698,6 +704,9 @@ impl ViewId {
         if let Some(state) = state {
             let old_any_inherited = state.borrow().style().any_inherited();
             state.borrow_mut().style.set(offset, style);
+            // Immediately set the STYLE flag so code can detect
+            // that a style change is pending before process_update runs
+            self.request_changes(ChangeFlags::STYLE);
             if state.borrow().style().any_inherited() || old_any_inherited {
                 self.request_style_recursive();
             } else {

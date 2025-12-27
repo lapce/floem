@@ -7,11 +7,10 @@ use crate::{
     },
     style::InheritedInteractionCx,
     event::EventListener,
-    layout::responsive::ScreenSizeBp,
     prop_extractor,
     style::{
-        Background, BorderColorProp, BorderRadiusProp, BoxShadowProp, LayoutProps, Outline,
-        OutlineColor, Style, StyleClassRef, StyleSelectors, TransformProps,
+        Background, BorderColorProp, BorderRadiusProp, BoxShadowProp, LayoutProps,
+        Outline, OutlineColor, Style, StyleClassRef, StyleSelectors, TransformProps,
     },
     message::{CENTRAL_UPDATE_MESSAGES, UpdateMessage},
 };
@@ -313,17 +312,39 @@ impl ViewState {
     /// Returns the combined style and a flag indicating if new classes were applied.
     pub(crate) fn compute_combined(
         &mut self,
-        _interact_state: crate::style::InteractionState,
-        _screen_size_bp: crate::layout::responsive::ScreenSizeBp,
-        _view_class: Option<crate::style::StyleClassRef>,
-        _parent_style: &std::rc::Rc<Style>,
-        _hidden: bool,
+        interact_state: crate::style::InteractionState,
+        screen_size_bp: crate::layout::responsive::ScreenSizeBp,
+        view_class: Option<crate::style::StyleClassRef>,
+        parent_style: &std::rc::Rc<Style>,
     ) -> (Style, bool) {
-        // Simplified implementation - compute from stacked styles
-        // TODO: Full implementation should handle selectors, responsive styles, classes
-        let combined = self.style();
+        // Start with the combined stacked styles
+        let base_style = self.style();
+
+        // Extract and store selectors from the base style for selector detection.
+        // This enables has_style_for_selector() to work correctly, including for
+        // selectors defined inside with_context closures.
+        self.has_style_selectors = base_style.selectors();
+
+        // Build the full class list: view's classes + view type class
+        let mut all_classes = self.classes.clone();
+        if let Some(vc) = view_class {
+            all_classes.push(vc);
+        }
+
+        // Create a mutable context from the parent style
+        let mut context = (**parent_style).clone();
+
+        // Resolve all nested maps: selectors, responsive styles, and classes
+        let (combined, classes_applied) = crate::style::resolve_nested_maps(
+            base_style,
+            &interact_state,
+            screen_size_bp,
+            &all_classes,
+            &mut context,
+        );
+
         self.combined_style = combined.clone();
-        (combined, false)
+        (combined, classes_applied)
     }
 
     pub(crate) fn add_event_listener(

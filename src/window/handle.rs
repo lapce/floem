@@ -302,6 +302,10 @@ impl WindowHandle {
 
         // Run initial style and layout passes
         window_handle.process_update_messages();
+        // Mark root view as needing style so initial style pass runs compute_combined
+        // and populates has_style_selectors for selector detection
+        window_handle.id.request_style_recursive();
+        window_handle.process_update_messages();
         window_handle.style();
         window_handle.layout();
         window_handle.compute_layout();
@@ -504,18 +508,24 @@ impl WindowHandle {
     }
 
     fn style(&mut self) {
-        let start = Instant::now();
-        // Build explicit traversal order
-        let traversal = self.window_state.build_style_traversal(self.id);
-        if traversal.is_empty() {
-            self.window_state.style_dirty.clear();
-            self.window_state.view_style_dirty.clear();
-        }
+        let _start = Instant::now();
+        // Loop until no more views need styling
+        // This handles the case where styling a parent marks children dirty
+        // (e.g., when inherited properties change)
+        loop {
+            // Build explicit traversal order
+            let traversal = self.window_state.build_style_traversal(self.id);
+            if traversal.is_empty() {
+                self.window_state.style_dirty.clear();
+                self.window_state.view_style_dirty.clear();
+                break;
+            }
 
-        // Style each view in order
-        for view_id in traversal {
-            let cx = &mut StyleCx::new(&mut self.window_state, view_id);
-            cx.style_view(view_id);
+            // Style each view in order
+            for view_id in traversal {
+                let cx = &mut StyleCx::new(&mut self.window_state, view_id);
+                cx.style_view(view_id);
+            }
         }
     }
 
@@ -809,6 +819,11 @@ impl WindowHandle {
                 match msg {
                     UpdateMessage::RequestStyle(id) => {
                         self.window_state.style_dirty.insert(id);
+                        // Also set the STYLE flag so style_view doesn't skip this view
+                        id.state()
+                            .borrow_mut()
+                            .requested_changes
+                            .insert(crate::view::state::ChangeFlags::STYLE);
                     }
                     UpdateMessage::RequestViewStyle(id) => {
                         self.window_state.view_style_dirty.insert(id);

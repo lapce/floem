@@ -179,3 +179,7 @@ criterion = { version = "0.8.1", features = ["html_reports"] }
 [[bench]]
 name = "event_dispatch"
 harness = false
+
+[[bench]]
+name = "style_computation"
+harness = false

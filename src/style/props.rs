@@ -106,6 +106,9 @@ pub(crate) type InterpolateFn =
 
 pub(crate) type CombineFn = fn(val1: Rc<dyn Any>, val2: Rc<dyn Any>) -> Rc<dyn Any>;
 
+/// Function pointer type for computing content hash of a style value.
+pub(crate) type HashAnyFn = fn(val: &dyn Any) -> u64;
+
 #[derive(Debug)]
 pub struct StylePropInfo {
     pub(crate) name: fn() -> &'static str,
@@ -117,6 +120,8 @@ pub struct StylePropInfo {
     pub(crate) debug_view: fn(val: &dyn Any) -> Option<Box<dyn View>>,
     pub(crate) combine: CombineFn,
     pub(crate) transition_key: StyleKey,
+    /// Computes a content-based hash for a style value.
+    pub(crate) hash_any: HashAnyFn,
 }
 
 impl StylePropInfo {
@@ -219,6 +224,20 @@ impl StylePropInfo {
                 }
             },
             transition_key,
+            hash_any: |val| {
+                if let Some(v) = val.downcast_ref::<StyleMapValue<T>>() {
+                    match v {
+                        StyleMapValue::Val(v) | StyleMapValue::Animated(v) => v.content_hash(),
+                        StyleMapValue::Unset => 0, // Stable hash for unset
+                    }
+                } else {
+                    panic!(
+                        "expected type {} for property {}",
+                        type_name::<T>(),
+                        std::any::type_name::<Name>(),
+                    )
+                }
+            },
         }
     }
 }

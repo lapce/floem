@@ -259,7 +259,6 @@ impl HeadlessHarness {
             is_selected: id.is_selected(),
             is_hovered: self.window_handle.window_state.is_hovered(&id),
             is_disabled: id.is_disabled(),
-            is_hidden: id.is_hidden(),
             is_focused: self.window_handle.window_state.is_focused(&id),
             is_clicking: self.window_handle.window_state.is_clicking(&id),
             is_dark_mode: self.window_handle.window_state.is_dark_mode(),

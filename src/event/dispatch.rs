@@ -792,6 +792,15 @@ impl EventCx<'_> {
         let view_state = view_id.state();
         self.window_state.clicking.insert(view_id);
 
+        // Always request style update on pointer down to apply Active selector.
+        // TODO: optimize by checking has_style_selectors.has(Active) once we verify
+        // that has_style_selectors is reliably populated
+        self.window_state.style_dirty.insert(view_id);
+        view_state
+            .borrow_mut()
+            .requested_changes
+            .insert(crate::view::state::ChangeFlags::STYLE);
+
         let point = state.logical_point();
         let rect = view_id.get_size().unwrap_or_default().to_rect();
         let on_view = rect.contains(point);

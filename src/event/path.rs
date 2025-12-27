@@ -306,6 +306,7 @@ pub fn hit_test(root_id: ViewId, point: Point) -> Option<ViewId> {
     // to check the highest z-index first.
     let overlays = collect_overlays(root_id);
     for overlay_id in overlays.iter().rev() {
+        // Skip hidden or disabled overlays
         if overlay_id.is_hidden() || overlay_id.is_disabled() {
             continue;
         }
@@ -337,7 +338,7 @@ fn hit_test_stacking_context(parent_id: ViewId, point: Point) -> Option<ViewId> 
 
     // Iterate in reverse (highest z-index first, so topmost elements checked first)
     for item in items.iter().rev() {
-        // Skip hidden/disabled views
+        // Skip hidden or disabled views
         if item.view_id.is_hidden() || item.view_id.is_disabled() {
             continue;
         }
