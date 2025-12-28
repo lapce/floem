@@ -493,6 +493,12 @@ impl Style {
                         nested_style.content_hash().hash(&mut hasher);
                     }
                 }
+                StyleKeyInfo::ContextInherited => {
+                    // Bool flag - include in hash
+                    if let Some(b) = value.downcast_ref::<bool>() {
+                        b.hash(&mut hasher);
+                    }
+                }
                 StyleKeyInfo::Transition => {
                     // Transitions don't affect computed style output
                     // Use pointer hash for identity

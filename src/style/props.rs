@@ -561,10 +561,15 @@ pub enum StyleKeyInfo {
     /// This allows selectors defined inside `with_context` closures to be visible
     /// to floem's selector detection mechanism.
     ContextSelectors,
+    /// Flag indicating that context mappings set inherited properties.
+    /// When present (with value true), signals that children should be re-styled
+    /// when this view's style changes.
+    ContextInherited,
 }
 
 pub(crate) static CONTEXT_MAPPINGS_INFO: StyleKeyInfo = StyleKeyInfo::ContextMappings;
 pub(crate) static CONTEXT_SELECTORS_INFO: StyleKeyInfo = StyleKeyInfo::ContextSelectors;
+pub(crate) static CONTEXT_INHERITED_INFO: StyleKeyInfo = StyleKeyInfo::ContextInherited;
 
 #[derive(Copy, Clone)]
 pub struct StyleKey {
@@ -577,7 +582,8 @@ impl StyleKey {
             StyleKeyInfo::Selector(selectors) => selectors.debug_string(),
             StyleKeyInfo::Transition
             | StyleKeyInfo::ContextMappings
-            | StyleKeyInfo::ContextSelectors => String::new(),
+            | StyleKeyInfo::ContextSelectors
+            | StyleKeyInfo::ContextInherited => String::new(),
             StyleKeyInfo::Class(info) => (info.name)().to_string(),
             StyleKeyInfo::Prop(v) => (v.debug_any)(value),
         }
@@ -587,7 +593,8 @@ impl StyleKey {
             StyleKeyInfo::Selector(..)
             | StyleKeyInfo::Transition
             | StyleKeyInfo::ContextMappings
-            | StyleKeyInfo::ContextSelectors => false,
+            | StyleKeyInfo::ContextSelectors
+            | StyleKeyInfo::ContextInherited => false,
             StyleKeyInfo::Class(..) => true,
             StyleKeyInfo::Prop(v) => v.inherited,
         }
@@ -617,6 +624,7 @@ impl Debug for StyleKey {
             StyleKeyInfo::Transition => write!(f, "transition"),
             StyleKeyInfo::ContextMappings => write!(f, "ContextMappings"),
             StyleKeyInfo::ContextSelectors => write!(f, "ContextSelectors"),
+            StyleKeyInfo::ContextInherited => write!(f, "ContextInherited"),
             StyleKeyInfo::Class(v) => write!(f, "{}", (v.name)()),
             StyleKeyInfo::Prop(v) => write!(f, "{}", (v.name)()),
         }

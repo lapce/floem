@@ -192,7 +192,8 @@ pub use cache::{StyleCache, StyleCacheKey};
 pub use recalc::{InheritedChanges, InheritedGroups, Propagate, RecalcFlags, StyleRecalcChange};
 
 pub(crate) use props::{
-    CONTEXT_MAPPINGS_INFO, CONTEXT_SELECTORS_INFO, ImHashMap, style_key_selector,
+    CONTEXT_INHERITED_INFO, CONTEXT_MAPPINGS_INFO, CONTEXT_SELECTORS_INFO, ImHashMap,
+    style_key_selector,
 };
 
 type ContextMapFn = Rc<dyn Fn(Style, &Style) -> Style>;
@@ -548,6 +549,15 @@ impl Style {
             );
         }
 
+        // Store flag if context mappings set inherited properties.
+        // This ensures children are re-styled when this view's style changes.
+        if probed.any_inherited() {
+            let inherited_key = StyleKey {
+                info: &CONTEXT_INHERITED_INFO,
+            };
+            self.map.insert(inherited_key, Rc::new(true));
+        }
+
         let mapper: ContextMapFn = Rc::new(move |style: Style, context: &Style| {
             // Try getting the property from style first, then from context if not found
             let value = style.get_prop::<P>().or_else(|| {
@@ -617,6 +627,15 @@ impl Style {
             );
         }
 
+        // Store flag if context mappings set inherited properties.
+        // This ensures children are re-styled when this view's style changes.
+        if probed.any_inherited() {
+            let inherited_key = StyleKey {
+                info: &CONTEXT_INHERITED_INFO,
+            };
+            self.map.insert(inherited_key, Rc::new(true));
+        }
+
         let mapper: ContextMapFn = Rc::new(move |style: Style, context: &Style| {
             // Try getting the property from style first, then from context if not found
             let value = style.get_prop::<P>().or_else(|| {
@@ -664,7 +683,15 @@ impl Style {
     }
 
     pub(crate) fn any_inherited(&self) -> bool {
-        self.map.iter().any(|(p, _)| p.inherited())
+        // Check for direct inherited properties
+        if self.map.iter().any(|(p, _)| p.inherited()) {
+            return true;
+        }
+        // Check if context mappings set inherited properties
+        let inherited_key = StyleKey {
+            info: &CONTEXT_INHERITED_INFO,
+        };
+        self.map.contains_key(&inherited_key)
     }
 
     pub(crate) fn inherited(&self) -> Style {
@@ -769,6 +796,10 @@ impl Style {
                         e.insert(v.clone());
                     }
                 },
+                StyleKeyInfo::ContextInherited => {
+                    // Just set/replace the flag
+                    self.map.insert(*k, v.clone());
+                }
                 StyleKeyInfo::Transition => {
                     self.map.insert(*k, v.clone());
                 }
