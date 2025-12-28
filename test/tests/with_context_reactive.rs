@@ -135,8 +135,7 @@ fn test_signal_outside_with_context_is_tracked() {
 }
 
 /// Test that signals accessed INSIDE with_context are properly tracked.
-/// BUG: This currently FAILS because with_context stores the closure and
-/// executes it later, so the signal access is not tracked by the reactive effect.
+/// The closure is probed at construction time, which establishes reactive tracking.
 #[test]
 fn test_signal_inside_with_context_is_tracked() {
     let is_active = RwSignal::new(false);
