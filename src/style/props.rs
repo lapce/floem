@@ -556,8 +556,7 @@ pub enum StyleKeyInfo {
     Prop(StylePropInfo),
     Selector(StyleSelectors),
     Class(StyleClassInfo),
-    /// Context mappings with their probed metadata (selectors and inherited flags).
-    /// All context-related data is stored together for easier maintenance.
+    /// Storage for context mapping closures.
     ContextMappings,
 }
 

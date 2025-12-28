@@ -593,8 +593,7 @@ fn test_style_change_triggers_recalculation() {
 fn test_set_selected_sets_property() {
     let is_selected = RwSignal::new(false);
 
-    let view =
-        Empty::new().style(move |s| s.size(100.0, 100.0).set_selected(is_selected.get()));
+    let view = Empty::new().style(move |s| s.size(100.0, 100.0).set_selected(is_selected.get()));
     let id = view.view_id();
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
@@ -611,7 +610,10 @@ fn test_set_selected_sets_property() {
     // Now Selected should be true
     let style = harness.get_computed_style(id);
     let selected = style.get(Selected);
-    assert!(selected, "Selected property should be true after signal change");
+    assert!(
+        selected,
+        "Selected property should be true after signal change"
+    );
 }
 
 /// Test that the .selected() selector is applied when set_selected(true) is used.

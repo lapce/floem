@@ -193,21 +193,14 @@ pub use recalc::{InheritedChanges, InheritedGroups, Propagate, RecalcFlags, Styl
 
 pub(crate) use props::{CONTEXT_MAPPINGS_INFO, ImHashMap, style_key_selector};
 
+/// A closure that maps context values to style properties.
 type ContextMapFn = Rc<dyn Fn(Style, &Style) -> Style>;
 
-/// Stores context mappings along with metadata discovered during probing.
-///
-/// This struct consolidates all context-related information in one place,
-/// making it easier to extend and less error-prone than separate keys.
+/// Simple storage for context mapping closures.
+/// Unlike the old ContextMappings, this only stores the closures themselves -
+/// selector and inherited prop discovery happens via immediate evaluation.
 #[derive(Clone)]
-pub(crate) struct ContextMappings {
-    /// The closure functions that apply context values to styles
-    pub mappings: Vec<ContextMapFn>,
-    /// Selectors discovered by probing (e.g., :hover, :active inside with_context)
-    pub probed_selectors: StyleSelectors,
-    /// Whether the probed style sets any inherited properties (font-weight, color, etc.)
-    pub probed_has_inherited: bool,
-}
+pub(crate) struct ContextMappings(pub Vec<ContextMapFn>);
 
 style_key_selector!(selector_xs, StyleSelectors::new().responsive());
 style_key_selector!(selector_sm, StyleSelectors::new().responsive());
@@ -270,7 +263,7 @@ fn resolve_nested_maps_internal(
         changed = true;
     }
 
-    // Apply context mappings first
+    // Apply context mappings with actual ancestor values
     let (mut style, changed_new) = style.apply_context_mappings(context);
     if changed_new {
         changed = true;
@@ -464,16 +457,6 @@ impl Style {
     pub(crate) fn selectors(&self) -> StyleSelectors {
         let mut result = StyleSelectors::new();
 
-        // Check for selectors discovered from context mappings
-        let key = StyleKey {
-            info: &CONTEXT_MAPPINGS_INFO,
-        };
-        if let Some(ctx) = self.map.get(&key) {
-            if let Some(ctx_mappings) = ctx.downcast_ref::<ContextMappings>() {
-                result = result.union(ctx_mappings.probed_selectors);
-            }
-        }
-
         // Check for direct selectors
         for (k, v) in &self.map {
             if let StyleKeyInfo::Selector(selector) = k.info {
@@ -504,7 +487,6 @@ impl Style {
     pub fn apply_class<C: StyleClass>(mut self, _class: C) -> Style {
         if let Some(map) = self.map.get(&C::key()) {
             self.apply_mut(map.downcast_ref::<Style>().unwrap().clone());
-            self.apply_context_mappings_mut();
         }
         self
     }
@@ -513,39 +495,33 @@ impl Style {
         for selector in selectors {
             if let Some(map) = self.get_nested_map(selector.to_key()) {
                 self.apply_mut(map.apply_selectors(selectors));
-                self.apply_context_mappings_mut();
             }
         }
         if self.get(Selected) {
             if let Some(map) = self.get_nested_map(StyleSelector::Selected.to_key()) {
                 self.apply_mut(map.apply_selectors(&[StyleSelector::Selected]));
-                self.apply_context_mappings_mut();
             }
         }
         self
     }
 
-    /// Store a context mapping to be applied to nested styles.
+    /// Apply a context-based style transformation.
     ///
-    /// This also probes the closure with a default context value to discover
-    /// any selectors (like `.hover()` or `.active()`) defined inside it,
-    /// ensuring they're visible to floem's selector detection mechanism.
-    pub fn with_context<P: StyleProp>(
-        mut self,
-        f: impl Fn(Self, &P::Type) -> Self + 'static,
-    ) -> Self {
-        // Probe the closure with default value to discover selectors and inherited props.
-        // This ensures selectors defined inside with_context are visible
-        // to floem's selector detection (e.g., for :active style updates).
+    /// This evaluates the closure immediately with the context prop's default value
+    /// (for selector and inherited prop discovery), and also stores the closure to
+    /// be re-evaluated with actual ancestor context values during style resolution.
+    ///
+    /// Signal reactivity works because the outer style closure re-runs when signals change.
+    pub fn with_context<P: StyleProp>(self, f: impl Fn(Self, &P::Type) -> Self + 'static) -> Self {
+        // Evaluate immediately with default value for selector/inherited discovery.
+        // This ensures selectors defined inside with_context are visible.
         let default_value = P::default_value();
-        let probed = f(Style::new(), &default_value);
-        let discovered_selectors = probed.selectors();
-        let has_inherited = probed.has_inherited_props();
+        let result = f(self.clone(), &default_value);
 
+        // Create a closure for context-aware re-evaluation during style resolution.
         let mapper: ContextMapFn = Rc::new(move |style: Style, context: &Style| {
             // Try getting the property from style first, then from context if not found
             let value = style.get_prop::<P>().or_else(|| {
-                // Only look in context for props
                 let prop_key = P::key();
                 if let StyleKeyInfo::Prop(_) = prop_key.info {
                     context.get_prop::<P>()
@@ -557,57 +533,44 @@ impl Style {
             if let Some(value) = value {
                 f(style, &value)
             } else {
-                // Use default value when prop is not set anywhere.
-                // This matches the probing behavior and ensures
-                // layout styles inside with_context work even without an explicit theme.
                 let default_value = P::default_value();
                 f(style, &default_value)
             }
         });
 
+        // Store the closure for later context resolution
         let key = StyleKey {
             info: &CONTEXT_MAPPINGS_INFO,
         };
-
-        // Get or create the ContextMappings struct
-        let mut ctx_mappings = self
+        let mut ctx_mappings = result
             .map
             .get(&key)
             .and_then(|v| v.downcast_ref::<ContextMappings>())
             .cloned()
-            .unwrap_or_else(|| ContextMappings {
-                mappings: Vec::new(),
-                probed_selectors: StyleSelectors::default(),
-                probed_has_inherited: false,
-            });
+            .unwrap_or_else(|| ContextMappings(Vec::new()));
+        ctx_mappings.0.push(mapper);
 
-        // Merge in the new mapping and metadata
-        ctx_mappings.mappings.push(mapper);
-        ctx_mappings.probed_selectors = ctx_mappings.probed_selectors.union(discovered_selectors);
-        ctx_mappings.probed_has_inherited |= has_inherited;
-
-        self.map.insert(key, Rc::new(ctx_mappings));
-        self
+        // Start with the immediate result (has selectors/inherited props)
+        // but add our closure storage
+        let mut final_result = result;
+        final_result.map.insert(key, Rc::new(ctx_mappings));
+        final_result
     }
 
-    /// Store a context mapping for optional props.
+    /// Apply a context-based style transformation for optional props.
     ///
-    /// Like `with_context`, this probes the closure to discover selectors.
-    /// Note: Probing uses `None` as the default, so selectors are only discovered
-    /// if the closure handles the `None` case or if `T` has a `Default` impl.
+    /// Like `with_context`, this evaluates immediately with defaults for discovery,
+    /// and stores the closure for context-aware re-evaluation.
     pub fn with_context_opt<P: StyleProp<Type = Option<T>>, T: 'static + Default>(
-        mut self,
+        self,
         f: impl Fn(Self, T) -> Self + 'static,
     ) -> Self {
-        // Probe with default T value to discover selectors and inherited props
-        let probed = f(Style::new(), T::default());
-        let discovered_selectors = probed.selectors();
-        let has_inherited = probed.has_inherited_props();
+        // Evaluate immediately with default T value for selector/inherited discovery
+        let result = f(self.clone(), T::default());
 
+        // Create a closure for context-aware re-evaluation
         let mapper: ContextMapFn = Rc::new(move |style: Style, context: &Style| {
-            // Try getting the property from style first, then from context if not found
             let value = style.get_prop::<P>().or_else(|| {
-                // Only look in context for props
                 let prop_key = P::key();
                 if let StyleKeyInfo::Prop(_) = prop_key.info {
                     context.get_prop::<P>()
@@ -622,29 +585,21 @@ impl Style {
             }
         });
 
+        // Store the closure
         let key = StyleKey {
             info: &CONTEXT_MAPPINGS_INFO,
         };
-
-        // Get or create the ContextMappings struct
-        let mut ctx_mappings = self
+        let mut ctx_mappings = result
             .map
             .get(&key)
             .and_then(|v| v.downcast_ref::<ContextMappings>())
             .cloned()
-            .unwrap_or_else(|| ContextMappings {
-                mappings: Vec::new(),
-                probed_selectors: StyleSelectors::default(),
-                probed_has_inherited: false,
-            });
+            .unwrap_or_else(|| ContextMappings(Vec::new()));
+        ctx_mappings.0.push(mapper);
 
-        // Merge in the new mapping and metadata
-        ctx_mappings.mappings.push(mapper);
-        ctx_mappings.probed_selectors = ctx_mappings.probed_selectors.union(discovered_selectors);
-        ctx_mappings.probed_has_inherited |= has_inherited;
-
-        self.map.insert(key, Rc::new(ctx_mappings));
-        self
+        let mut final_result = result;
+        final_result.map.insert(key, Rc::new(ctx_mappings));
+        final_result
     }
 
     pub(crate) fn get_nested_map(&self, key: StyleKey) -> Option<Style> {
@@ -659,28 +614,9 @@ impl Style {
             .map(|map| map.downcast_ref::<Style>().unwrap().clone())
     }
 
-    /// Check if this style has any inherited properties (direct or from context mappings).
+    /// Check if this style has any inherited properties.
     /// Used to determine if children should be re-styled when this view's style changes.
     pub(crate) fn any_inherited(&self) -> bool {
-        // Check for direct inherited properties
-        if self.has_inherited_props() {
-            return true;
-        }
-        // Check if context mappings set inherited properties
-        let key = StyleKey {
-            info: &CONTEXT_MAPPINGS_INFO,
-        };
-        if let Some(ctx) = self.map.get(&key) {
-            if let Some(ctx_mappings) = ctx.downcast_ref::<ContextMappings>() {
-                return ctx_mappings.probed_has_inherited;
-            }
-        }
-        false
-    }
-
-    /// Check if this style directly sets any inherited properties.
-    /// Does NOT check context mappings - use any_inherited() for that.
-    pub(crate) fn has_inherited_props(&self) -> bool {
         self.map.iter().any(|(p, _)| p.inherited())
     }
 
@@ -758,10 +694,7 @@ impl Style {
                             Some(current) => {
                                 let current_ctx =
                                     current.downcast_mut::<ContextMappings>().unwrap();
-                                current_ctx.mappings.extend(new_ctx.mappings.iter().cloned());
-                                current_ctx.probed_selectors =
-                                    current_ctx.probed_selectors.union(new_ctx.probed_selectors);
-                                current_ctx.probed_has_inherited |= new_ctx.probed_has_inherited;
+                                current_ctx.0.extend(new_ctx.0.iter().cloned());
                             }
                             None => {
                                 let mut current = e
@@ -769,10 +702,7 @@ impl Style {
                                     .downcast_ref::<ContextMappings>()
                                     .unwrap()
                                     .clone();
-                                current.mappings.extend(new_ctx.mappings.iter().cloned());
-                                current.probed_selectors =
-                                    current.probed_selectors.union(new_ctx.probed_selectors);
-                                current.probed_has_inherited |= new_ctx.probed_has_inherited;
+                                current.0.extend(new_ctx.0.iter().cloned());
                                 *e.get_mut() = Rc::new(current);
                             }
                         }
@@ -824,6 +754,8 @@ impl Style {
         overrides.fold(self, |acc, x| acc.apply(x))
     }
 
+    /// Apply context mappings with the given context (inherited props from ancestors).
+    /// Returns the style with context values applied and a flag indicating if changes were made.
     pub(crate) fn apply_context_mappings(mut self, context: &Style) -> (Self, bool) {
         let key = StyleKey {
             info: &CONTEXT_MAPPINGS_INFO,
@@ -839,37 +771,17 @@ impl Style {
             self.map.remove(&key);
             changed = true;
 
-            for mapping in ctx_mappings.mappings {
+            for mapping in ctx_mappings.0 {
                 self = mapping(self, context);
             }
 
+            // Recursively apply any new context mappings that were introduced
             let (style, new_changed) = self.apply_context_mappings(context);
             self = style;
             changed |= new_changed;
         }
 
         (self, changed)
-    }
-
-    pub(crate) fn apply_context_mappings_mut(&mut self) {
-        let key = StyleKey {
-            info: &CONTEXT_MAPPINGS_INFO,
-        };
-
-        if let Some(ctx_mappings) = self
-            .map
-            .get(&key)
-            .and_then(|v| v.downcast_ref::<ContextMappings>())
-            .cloned()
-        {
-            self.map.remove(&key);
-
-            for mapping in ctx_mappings.mappings {
-                *self = mapping(self.clone(), self);
-            }
-
-            self.apply_context_mappings_mut();
-        }
     }
 }
 

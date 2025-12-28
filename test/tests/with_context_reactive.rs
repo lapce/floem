@@ -433,3 +433,443 @@ fn test_child_label_inherits_font_weight_from_parent() {
         label_style.get(FontWeight)
     );
 }
+
+// ============================================================================
+// Tests for selectors with actual (non-default) theme colors from ancestors
+// ============================================================================
+
+/// Test that hover selector uses actual theme colors from parent, not defaults.
+#[test]
+fn test_hover_selector_with_parent_theme_colors() {
+    // Create a custom theme with different colors than defaults
+    let custom_theme = TestTheme {
+        primary_bg: palette::css::RED,      // Different from default BLUE
+        secondary_bg: palette::css::YELLOW, // Different from default GRAY
+        primary_color: palette::css::GREEN,
+        secondary_color: palette::css::PURPLE,
+    };
+
+    // Child uses hover with theme colors
+    let child = Empty::new().style(|s| {
+        s.size(50.0, 50.0).with_test_theme(|s, theme| {
+            s.background(theme.secondary_bg)
+                .hover(|s| s.background(theme.primary_bg))
+        })
+    });
+    let child_id = child.view_id();
+
+    // Parent sets the custom theme
+    let root =
+        Container::new(child).style(move |s| s.size(100.0, 100.0).set(TestThemeProp, custom_theme));
+
+    let mut harness = HeadlessHarness::new_with_size(root, 100.0, 100.0);
+
+    // Initial: should use parent's secondary_bg (YELLOW), not default (GRAY)
+    let style = harness.get_computed_style(child_id);
+    let bg = style.get(Background);
+    assert!(
+        matches!(bg, Some(Brush::Solid(c)) if c == palette::css::YELLOW),
+        "Initial background should be YELLOW (from parent theme), not GRAY (default). Got {:?}",
+        bg
+    );
+
+    // Simulate hover
+    harness.pointer_move(25.0, 25.0);
+
+    // After hover: should use parent's primary_bg (RED), not default (BLUE)
+    let style = harness.get_computed_style(child_id);
+    let bg = style.get(Background);
+    assert!(
+        matches!(bg, Some(Brush::Solid(c)) if c == palette::css::RED),
+        "Hover background should be RED (from parent theme), not BLUE (default). Got {:?}",
+        bg
+    );
+}
+
+/// Test that active selector uses actual theme colors from parent.
+#[test]
+fn test_active_selector_with_parent_theme_colors() {
+    let custom_theme = TestTheme {
+        primary_bg: palette::css::ORANGE,
+        secondary_bg: palette::css::CYAN,
+        primary_color: palette::css::MAGENTA,
+        secondary_color: palette::css::LIME,
+    };
+
+    let child = Empty::new().style(|s| {
+        s.size(50.0, 50.0).with_test_theme(|s, theme| {
+            s.background(theme.secondary_bg)
+                .active(|s| s.background(theme.primary_bg))
+        })
+    });
+    let child_id = child.view_id();
+
+    let root =
+        Container::new(child).style(move |s| s.size(100.0, 100.0).set(TestThemeProp, custom_theme));
+
+    let mut harness = HeadlessHarness::new_with_size(root, 100.0, 100.0);
+
+    // Initial: CYAN from parent theme
+    let style = harness.get_computed_style(child_id);
+    let bg = style.get(Background);
+    assert!(
+        matches!(bg, Some(Brush::Solid(c)) if c == palette::css::CYAN),
+        "Initial should be CYAN from parent theme, got {:?}",
+        bg
+    );
+
+    // Simulate active (pointer down)
+    harness.pointer_down(25.0, 25.0);
+
+    // After active: ORANGE from parent theme
+    let style = harness.get_computed_style(child_id);
+    let bg = style.get(Background);
+    assert!(
+        matches!(bg, Some(Brush::Solid(c)) if c == palette::css::ORANGE),
+        "Active should be ORANGE from parent theme, got {:?}",
+        bg
+    );
+}
+
+/// Test multiple selectors (hover + active) with parent theme colors.
+#[test]
+fn test_multiple_selectors_with_parent_theme_colors() {
+    let custom_theme = TestTheme {
+        primary_bg: palette::css::RED,
+        secondary_bg: palette::css::GREEN,
+        primary_color: palette::css::BLUE,
+        secondary_color: palette::css::YELLOW,
+    };
+
+    let child = Empty::new().style(|s| {
+        s.size(50.0, 50.0).with_test_theme(|s, theme| {
+            s.background(theme.secondary_bg) // GREEN
+                .hover(|s| s.background(theme.primary_bg)) // RED on hover
+                .active(|s| s.background(theme.primary_color)) // BLUE on active
+        })
+    });
+    let child_id = child.view_id();
+
+    let root =
+        Container::new(child).style(move |s| s.size(100.0, 100.0).set(TestThemeProp, custom_theme));
+
+    let mut harness = HeadlessHarness::new_with_size(root, 100.0, 100.0);
+
+    // Initial: GREEN
+    let style = harness.get_computed_style(child_id);
+    assert!(
+        matches!(style.get(Background), Some(Brush::Solid(c)) if c == palette::css::GREEN),
+        "Initial should be GREEN, got {:?}",
+        style.get(Background)
+    );
+
+    // Hover: RED
+    harness.pointer_move(25.0, 25.0);
+    let style = harness.get_computed_style(child_id);
+    assert!(
+        matches!(style.get(Background), Some(Brush::Solid(c)) if c == palette::css::RED),
+        "Hover should be RED, got {:?}",
+        style.get(Background)
+    );
+
+    // Active (pointer down while hovering): BLUE
+    harness.pointer_down(25.0, 25.0);
+    let style = harness.get_computed_style(child_id);
+    assert!(
+        matches!(style.get(Background), Some(Brush::Solid(c)) if c == palette::css::BLUE),
+        "Active should be BLUE, got {:?}",
+        style.get(Background)
+    );
+}
+
+/// Test that when parent's theme changes, child's selector styles also update.
+#[test]
+fn test_selector_updates_when_parent_theme_changes() {
+    let theme_signal = RwSignal::new(TestTheme {
+        primary_bg: palette::css::RED,
+        secondary_bg: palette::css::GREEN,
+        primary_color: palette::css::WHITE,
+        secondary_color: palette::css::BLACK,
+    });
+
+    let child = Empty::new().style(|s| {
+        s.size(50.0, 50.0).with_test_theme(|s, theme| {
+            s.background(theme.secondary_bg)
+                .hover(|s| s.background(theme.primary_bg))
+        })
+    });
+    let child_id = child.view_id();
+
+    let root = Container::new(child)
+        .style(move |s| s.size(100.0, 100.0).set(TestThemeProp, theme_signal.get()));
+
+    let mut harness = HeadlessHarness::new_with_size(root, 100.0, 100.0);
+
+    // Hover to activate hover style
+    harness.pointer_move(25.0, 25.0);
+
+    // Initial hover: RED from first theme
+    let style = harness.get_computed_style(child_id);
+    assert!(
+        matches!(style.get(Background), Some(Brush::Solid(c)) if c == palette::css::RED),
+        "Initial hover should be RED, got {:?}",
+        style.get(Background)
+    );
+
+    // Change the theme
+    theme_signal.set(TestTheme {
+        primary_bg: palette::css::BLUE, // Changed!
+        secondary_bg: palette::css::YELLOW,
+        primary_color: palette::css::WHITE,
+        secondary_color: palette::css::BLACK,
+    });
+    harness.rebuild();
+
+    // Hover should now be BLUE from new theme
+    let style = harness.get_computed_style(child_id);
+    assert!(
+        matches!(style.get(Background), Some(Brush::Solid(c)) if c == palette::css::BLUE),
+        "After theme change, hover should be BLUE, got {:?}",
+        style.get(Background)
+    );
+}
+
+/// Test nested selectors with theme colors (hover containing focus_visible).
+#[test]
+fn test_nested_selectors_with_parent_theme_colors() {
+    let custom_theme = TestTheme {
+        primary_bg: palette::css::RED,
+        secondary_bg: palette::css::GREEN,
+        primary_color: palette::css::BLUE,
+        secondary_color: palette::css::YELLOW,
+    };
+
+    let child = Empty::new().keyboard_navigable().style(|s| {
+        s.size(50.0, 50.0).with_test_theme(|s, theme| {
+            s.background(theme.secondary_bg) // GREEN
+                .hover(|s| {
+                    s.background(theme.primary_bg) // RED on hover
+                        .focus_visible(|s| s.background(theme.primary_color)) // BLUE when focused while hovering
+                })
+        })
+    });
+    let child_id = child.view_id();
+
+    let root =
+        Container::new(child).style(move |s| s.size(100.0, 100.0).set(TestThemeProp, custom_theme));
+
+    let mut harness = HeadlessHarness::new_with_size(root, 100.0, 100.0);
+
+    // Initial: GREEN
+    let style = harness.get_computed_style(child_id);
+    assert!(
+        matches!(style.get(Background), Some(Brush::Solid(c)) if c == palette::css::GREEN),
+        "Initial should be GREEN, got {:?}",
+        style.get(Background)
+    );
+
+    // Hover: RED
+    harness.pointer_move(25.0, 25.0);
+    let style = harness.get_computed_style(child_id);
+    assert!(
+        matches!(style.get(Background), Some(Brush::Solid(c)) if c == palette::css::RED),
+        "Hover should be RED, got {:?}",
+        style.get(Background)
+    );
+}
+
+/// Test that selectors work with conditional theme usage based on signal.
+#[test]
+fn test_selector_with_conditional_theme_and_signal() {
+    let is_active = RwSignal::new(false);
+
+    let custom_theme = TestTheme {
+        primary_bg: palette::css::RED,
+        secondary_bg: palette::css::GREEN,
+        primary_color: palette::css::BLUE,
+        secondary_color: palette::css::YELLOW,
+    };
+
+    let child = Empty::new().style(move |s| {
+        s.size(50.0, 50.0).with_test_theme(move |s, theme| {
+            let base = if is_active.get() {
+                s.background(theme.primary_bg) // RED when active
+            } else {
+                s.background(theme.secondary_bg) // GREEN when inactive
+            };
+            // Hover always uses primary_color (BLUE)
+            base.hover(|s| s.background(theme.primary_color))
+        })
+    });
+    let child_id = child.view_id();
+
+    let root =
+        Container::new(child).style(move |s| s.size(100.0, 100.0).set(TestThemeProp, custom_theme));
+
+    let mut harness = HeadlessHarness::new_with_size(root, 100.0, 100.0);
+
+    // Initial (inactive): GREEN
+    let style = harness.get_computed_style(child_id);
+    assert!(
+        matches!(style.get(Background), Some(Brush::Solid(c)) if c == palette::css::GREEN),
+        "Initial (inactive) should be GREEN, got {:?}",
+        style.get(Background)
+    );
+
+    // Hover while inactive: BLUE
+    harness.pointer_move(25.0, 25.0);
+    let style = harness.get_computed_style(child_id);
+    assert!(
+        matches!(style.get(Background), Some(Brush::Solid(c)) if c == palette::css::BLUE),
+        "Hover while inactive should be BLUE, got {:?}",
+        style.get(Background)
+    );
+
+    // Move pointer away, then activate
+    harness.pointer_move(75.0, 75.0); // Outside child
+    is_active.set(true);
+    harness.rebuild();
+
+    // Active (not hovering): RED
+    let style = harness.get_computed_style(child_id);
+    assert!(
+        matches!(style.get(Background), Some(Brush::Solid(c)) if c == palette::css::RED),
+        "Active (not hovering) should be RED, got {:?}",
+        style.get(Background)
+    );
+
+    // Hover while active: still BLUE (hover overrides)
+    harness.pointer_move(25.0, 25.0);
+    let style = harness.get_computed_style(child_id);
+    assert!(
+        matches!(style.get(Background), Some(Brush::Solid(c)) if c == palette::css::BLUE),
+        "Hover while active should be BLUE, got {:?}",
+        style.get(Background)
+    );
+}
+
+/// Test deeply nested views all using parent's theme colors in selectors.
+#[test]
+fn test_deep_nesting_with_theme_selectors() {
+    let custom_theme = TestTheme {
+        primary_bg: palette::css::RED,
+        secondary_bg: palette::css::GREEN,
+        primary_color: palette::css::BLUE,
+        secondary_color: palette::css::YELLOW,
+    };
+
+    // Create a deep hierarchy where the leaf uses theme in hover
+    let leaf = Empty::new().style(|s| {
+        s.size(20.0, 20.0).with_test_theme(|s, theme| {
+            s.background(theme.secondary_bg)
+                .hover(|s| s.background(theme.primary_bg))
+        })
+    });
+    let leaf_id = leaf.view_id();
+
+    let level3 = Container::new(leaf).style(|s| s.size(40.0, 40.0));
+    let level2 = Container::new(level3).style(|s| s.size(60.0, 60.0));
+    let level1 = Container::new(level2).style(|s| s.size(80.0, 80.0));
+
+    // Theme is set at root, 4 levels above the leaf
+    let root = Container::new(level1)
+        .style(move |s| s.size(100.0, 100.0).set(TestThemeProp, custom_theme));
+
+    let mut harness = HeadlessHarness::new_with_size(root, 100.0, 100.0);
+
+    // Initial: GREEN from parent theme (inherited through 4 levels)
+    let style = harness.get_computed_style(leaf_id);
+    assert!(
+        matches!(style.get(Background), Some(Brush::Solid(c)) if c == palette::css::GREEN),
+        "Leaf initial should be GREEN from ancestor theme, got {:?}",
+        style.get(Background)
+    );
+
+    // Hover on leaf: RED from parent theme
+    harness.pointer_move(10.0, 10.0);
+    let style = harness.get_computed_style(leaf_id);
+    assert!(
+        matches!(style.get(Background), Some(Brush::Solid(c)) if c == palette::css::RED),
+        "Leaf hover should be RED from ancestor theme, got {:?}",
+        style.get(Background)
+    );
+}
+
+/// Test that sibling views each get correct theme colors in their selectors.
+#[test]
+fn test_siblings_with_theme_selectors() {
+    let custom_theme = TestTheme {
+        primary_bg: palette::css::RED,
+        secondary_bg: palette::css::GREEN,
+        primary_color: palette::css::BLUE,
+        secondary_color: palette::css::YELLOW,
+    };
+
+    let child1 = Empty::new().style(|s| {
+        s.size(40.0, 40.0).with_test_theme(|s, theme| {
+            s.background(theme.secondary_bg) // GREEN
+                .hover(|s| s.background(theme.primary_bg)) // RED
+        })
+    });
+    let child1_id = child1.view_id();
+
+    let child2 = Empty::new().style(|s| {
+        s.size(40.0, 40.0).with_test_theme(|s, theme| {
+            s.background(theme.secondary_color) // YELLOW
+                .hover(|s| s.background(theme.primary_color)) // BLUE
+        })
+    });
+    let child2_id = child2.view_id();
+
+    let container = Stack::new((child1, child2)).style(move |s| {
+        s.size(100.0, 100.0)
+            .flex_direction(floem::style::FlexDirection::Row)
+            .set(TestThemeProp, custom_theme)
+    });
+
+    let mut harness = HeadlessHarness::new_with_size(container, 100.0, 100.0);
+
+    // Initial: child1=GREEN, child2=YELLOW
+    let style1 = harness.get_computed_style(child1_id);
+    let style2 = harness.get_computed_style(child2_id);
+    assert!(
+        matches!(style1.get(Background), Some(Brush::Solid(c)) if c == palette::css::GREEN),
+        "Child1 initial should be GREEN, got {:?}",
+        style1.get(Background)
+    );
+    assert!(
+        matches!(style2.get(Background), Some(Brush::Solid(c)) if c == palette::css::YELLOW),
+        "Child2 initial should be YELLOW, got {:?}",
+        style2.get(Background)
+    );
+
+    // Hover on child1 (at x=20, which is in child1's area)
+    harness.pointer_move(20.0, 20.0);
+    let style1 = harness.get_computed_style(child1_id);
+    let style2 = harness.get_computed_style(child2_id);
+    assert!(
+        matches!(style1.get(Background), Some(Brush::Solid(c)) if c == palette::css::RED),
+        "Child1 hover should be RED, got {:?}",
+        style1.get(Background)
+    );
+    assert!(
+        matches!(style2.get(Background), Some(Brush::Solid(c)) if c == palette::css::YELLOW),
+        "Child2 should still be YELLOW (not hovered), got {:?}",
+        style2.get(Background)
+    );
+
+    // Hover on child2 (at x=60, which is in child2's area)
+    harness.pointer_move(60.0, 20.0);
+    let style1 = harness.get_computed_style(child1_id);
+    let style2 = harness.get_computed_style(child2_id);
+    assert!(
+        matches!(style1.get(Background), Some(Brush::Solid(c)) if c == palette::css::GREEN),
+        "Child1 should be GREEN (not hovered), got {:?}",
+        style1.get(Background)
+    );
+    assert!(
+        matches!(style2.get(Background), Some(Brush::Solid(c)) if c == palette::css::BLUE),
+        "Child2 hover should be BLUE, got {:?}",
+        style2.get(Background)
+    );
+}

@@ -490,16 +490,9 @@ impl Style {
                         nested_style.content_hash().hash(&mut hasher);
                     }
                 }
-                StyleKeyInfo::ContextMappings => {
-                    // Hash the metadata from ContextMappings
-                    if let Some(ctx) = value.downcast_ref::<crate::style::ContextMappings>() {
-                        ctx.probed_selectors.hash(&mut hasher);
-                        ctx.probed_has_inherited.hash(&mut hasher);
-                    }
-                }
-                StyleKeyInfo::Transition => {
-                    // Transitions don't affect computed style output
-                    // Use pointer hash for identity
+                StyleKeyInfo::ContextMappings | StyleKeyInfo::Transition => {
+                    // Context mappings and transitions use pointer hash for identity
+                    // since closures can't be meaningfully hashed
                     std::ptr::hash(std::rc::Rc::as_ptr(value), &mut hasher);
                 }
             }
