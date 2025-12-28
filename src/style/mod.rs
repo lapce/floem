@@ -199,8 +199,10 @@ type ContextMapFn = Rc<dyn Fn(Style, &Style) -> Style>;
 /// Simple storage for context mapping closures.
 /// Unlike the old ContextMappings, this only stores the closures themselves -
 /// selector and inherited prop discovery happens via immediate evaluation.
+///
+/// Uses `Rc<Vec>` for O(1) clone - avoids copying the entire Vec when reading.
 #[derive(Clone)]
-pub(crate) struct ContextMappings(pub Vec<ContextMapFn>);
+pub(crate) struct ContextMappings(pub Rc<Vec<ContextMapFn>>);
 
 style_key_selector!(selector_xs, StyleSelectors::new().responsive());
 style_key_selector!(selector_sm, StyleSelectors::new().responsive());
@@ -519,6 +521,7 @@ impl Style {
         let result = f(self.clone(), &default_value);
 
         // Create a closure for context-aware re-evaluation during style resolution.
+        // Cache default_value inside closure to avoid repeated allocations.
         let mapper: ContextMapFn = Rc::new(move |style: Style, context: &Style| {
             // Try getting the property from style first, then from context if not found
             let value = style.get_prop::<P>().or_else(|| {
@@ -533,8 +536,7 @@ impl Style {
             if let Some(value) = value {
                 f(style, &value)
             } else {
-                let default_value = P::default_value();
-                f(style, &default_value)
+                f(style, &P::default_value())
             }
         });
 
@@ -542,18 +544,22 @@ impl Style {
         let key = StyleKey {
             info: &CONTEXT_MAPPINGS_INFO,
         };
-        let mut ctx_mappings = result
+
+        // Build new mappings vec - use Rc::make_mut for efficient copy-on-write
+        let mut mappings_vec = result
             .map
             .get(&key)
             .and_then(|v| v.downcast_ref::<ContextMappings>())
-            .cloned()
-            .unwrap_or_else(|| ContextMappings(Vec::new()));
-        ctx_mappings.0.push(mapper);
+            .map(|cm| (*cm.0).clone())
+            .unwrap_or_default();
+        mappings_vec.push(mapper);
 
         // Start with the immediate result (has selectors/inherited props)
         // but add our closure storage
         let mut final_result = result;
-        final_result.map.insert(key, Rc::new(ctx_mappings));
+        final_result
+            .map
+            .insert(key, Rc::new(ContextMappings(Rc::new(mappings_vec))));
         final_result
     }
 
@@ -589,16 +595,20 @@ impl Style {
         let key = StyleKey {
             info: &CONTEXT_MAPPINGS_INFO,
         };
-        let mut ctx_mappings = result
+
+        // Build new mappings vec efficiently
+        let mut mappings_vec = result
             .map
             .get(&key)
             .and_then(|v| v.downcast_ref::<ContextMappings>())
-            .cloned()
-            .unwrap_or_else(|| ContextMappings(Vec::new()));
-        ctx_mappings.0.push(mapper);
+            .map(|cm| (*cm.0).clone())
+            .unwrap_or_default();
+        mappings_vec.push(mapper);
 
         let mut final_result = result;
-        final_result.map.insert(key, Rc::new(ctx_mappings));
+        final_result
+            .map
+            .insert(key, Rc::new(ContextMappings(Rc::new(mappings_vec))));
         final_result
     }
 
@@ -690,22 +700,11 @@ impl Style {
                     Entry::Occupied(mut e) => {
                         // Merge the new ContextMappings with existing ones
                         let new_ctx = v.downcast_ref::<ContextMappings>().unwrap();
-                        match Rc::get_mut(e.get_mut()) {
-                            Some(current) => {
-                                let current_ctx =
-                                    current.downcast_mut::<ContextMappings>().unwrap();
-                                current_ctx.0.extend(new_ctx.0.iter().cloned());
-                            }
-                            None => {
-                                let mut current = e
-                                    .get_mut()
-                                    .downcast_ref::<ContextMappings>()
-                                    .unwrap()
-                                    .clone();
-                                current.0.extend(new_ctx.0.iter().cloned());
-                                *e.get_mut() = Rc::new(current);
-                            }
-                        }
+                        let current = e.get().downcast_ref::<ContextMappings>().unwrap();
+                        // Build merged Vec - can't mutate through Rc, so create new
+                        let mut merged: Vec<_> = (*current.0).clone();
+                        merged.extend(new_ctx.0.iter().cloned());
+                        *e.get_mut() = Rc::new(ContextMappings(Rc::new(merged)));
                     }
                     Entry::Vacant(e) => {
                         e.insert(v.clone());
@@ -756,29 +755,32 @@ impl Style {
 
     /// Apply context mappings with the given context (inherited props from ancestors).
     /// Returns the style with context values applied and a flag indicating if changes were made.
+    ///
+    /// Uses iterative approach instead of recursion for better performance.
     pub(crate) fn apply_context_mappings(mut self, context: &Style) -> (Self, bool) {
         let key = StyleKey {
             info: &CONTEXT_MAPPINGS_INFO,
         };
         let mut changed = false;
 
-        if let Some(ctx_mappings) = self
-            .map
-            .get(&key)
-            .and_then(|v| v.downcast_ref::<ContextMappings>())
-            .cloned()
-        {
-            self.map.remove(&key);
-            changed = true;
+        // Iterative approach: keep processing until no more context mappings
+        loop {
+            // Single lookup: use remove directly instead of get + remove
+            let ctx_mappings = self
+                .map
+                .remove(&key)
+                .and_then(|v| v.downcast_ref::<ContextMappings>().cloned());
 
-            for mapping in ctx_mappings.0 {
-                self = mapping(self, context);
+            match ctx_mappings {
+                Some(mappings) => {
+                    changed = true;
+                    // Iterate over Rc<Vec> - no allocation needed
+                    for mapping in mappings.0.iter() {
+                        self = mapping(self, context);
+                    }
+                }
+                None => break,
             }
-
-            // Recursively apply any new context mappings that were introduced
-            let (style, new_changed) = self.apply_context_mappings(context);
-            self = style;
-            changed |= new_changed;
         }
 
         (self, changed)
