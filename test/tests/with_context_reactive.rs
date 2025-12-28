@@ -142,7 +142,7 @@ fn test_signal_inside_with_context_is_tracked() {
 
     let view = Empty::new().style(move |s| {
         s.size(100.0, 100.0).with_test_theme(move |s, theme| {
-            // Signal accessed INSIDE with_context - BUG: not tracked!
+            // Signal accessed INSIDE with_context - tracked via probing
             let active = is_active.get();
             if active {
                 s.background(theme.primary_bg)
@@ -184,7 +184,7 @@ fn test_signal_inside_with_context_is_tracked() {
     is_active.set(true);
     harness.rebuild();
 
-    // After change: active - BUG: style may not update
+    // After change: active - style updates correctly
     let style = harness.get_computed_style(id);
     let bg = style.get(Background);
     let color = style.get(TextColor);
@@ -384,9 +384,9 @@ fn test_click_changes_signal_inside_with_context() {
 }
 
 /// Test that a child Label inherits font-weight from parent when parent's style changes.
-/// BUG: This tests the actual sidebar issue - when a parent's style changes an inherited
-/// property (font-weight), child views like Label should also update, but they don't
-/// because they're not added to style_dirty.
+/// This tests the actual sidebar issue - when a parent's style changes an inherited
+/// property (font-weight), child views like Label should also update.
+/// Fixed by adding ContextInherited flag to propagate inherited changes to children.
 #[test]
 fn test_child_label_inherits_font_weight_from_parent() {
     use floem::views::Label;
