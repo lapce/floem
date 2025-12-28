@@ -1,12 +1,14 @@
 //! Tests for reactive signal tracking inside with_context closures.
 //!
-//! BUG: Signals accessed inside `with_context` closures are not tracked by the
-//! reactive system. The closure is stored and executed later during style resolution,
-//! not during the initial reactive effect tracking. This causes the style to not
-//! update when the signal changes.
+//! These tests verify that:
+//! 1. Signals accessed inside `with_context` closures are properly tracked
+//! 2. When inherited properties (like font-weight) change in a parent's with_context,
+//!    child views that inherit those properties are also re-styled
 //!
-//! Expected: Signal changes inside with_context should trigger style updates.
-//! Actual: Signal changes are ignored because they're not tracked.
+//! The fix involved:
+//! - Adding a `ContextInherited` flag to track when with_context closures set inherited props
+//! - Checking this flag in `any_inherited()` so `request_style_recursive()` is called
+//! - This ensures children are added to style_dirty when parent's inherited props change
 
 use floem::peniko::{Brush, Color};
 use floem::prelude::*;
