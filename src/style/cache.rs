@@ -484,19 +484,17 @@ impl Style {
                     let value_hash = (prop_info.hash_any)(value.as_ref());
                     value_hash.hash(&mut hasher);
                 }
-                StyleKeyInfo::Selector(_)
-                | StyleKeyInfo::Class(_)
-                | StyleKeyInfo::ContextMappings
-                | StyleKeyInfo::ContextSelectors => {
+                StyleKeyInfo::Selector(_) | StyleKeyInfo::Class(_) => {
                     // These contain nested Style maps - hash recursively
                     if let Some(nested_style) = value.downcast_ref::<Style>() {
                         nested_style.content_hash().hash(&mut hasher);
                     }
                 }
-                StyleKeyInfo::ContextInherited => {
-                    // Bool flag - include in hash
-                    if let Some(b) = value.downcast_ref::<bool>() {
-                        b.hash(&mut hasher);
+                StyleKeyInfo::ContextMappings => {
+                    // Hash the metadata from ContextMappings
+                    if let Some(ctx) = value.downcast_ref::<crate::style::ContextMappings>() {
+                        ctx.probed_selectors.hash(&mut hasher);
+                        ctx.probed_has_inherited.hash(&mut hasher);
                     }
                 }
                 StyleKeyInfo::Transition => {
