@@ -19,7 +19,6 @@ use crate::{
     prop, prop_extractor,
     style::{CustomStylable, CustomStyle, Style},
     style_class,
-    unit::PxPctAuto,
     view::ViewId,
     view::{IntoView, View, default_compute_layout},
     views::{ContainerExt, Decorators, Label, ScrollExt, svg},

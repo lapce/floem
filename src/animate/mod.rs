@@ -1074,10 +1074,6 @@ impl Animation {
         }
     }
 
-    pub(crate) fn apply_folded(&self, computed_style: &mut Style) {
-        computed_style.apply_mut(self.folded_style.clone());
-    }
-
     /// While advancing, this function can mutably apply it's animated props to a style.
     pub fn animate_into(&mut self, computed_style: &mut Style) {
         // TODO: OPTIMIZE. I've tried to make this efficient, but it would be good to work this over for eficiency because it is called on every frame during an animation.
@@ -1218,20 +1214,5 @@ impl Animation {
     /// returns true if the animation should auto reverse
     pub const fn is_auto_reverse(&self) -> bool {
         self.auto_reverse
-    }
-
-    /// returns true if the internal folded style of the animation should be applied.
-    ///
-    /// This is used when the animation cannot advance but the folded style should still be applied.
-    pub(crate) const fn should_apply_folded(&self) -> bool {
-        self.apply_when_finished
-            || match self.state_kind() {
-                AnimStateKind::Paused => true,
-                AnimStateKind::Idle
-                | AnimStateKind::Stopped
-                | AnimStateKind::PassInProgress
-                | AnimStateKind::PassFinished
-                | AnimStateKind::Completed => false,
-            }
     }
 }

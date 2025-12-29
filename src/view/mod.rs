@@ -449,8 +449,8 @@ where
 
     // 1. Clear all if requested
     if diff.clear {
-        for i in 0..children.len() {
-            if let Some((view_id, scope)) = children[i].take() {
+        for child in &mut *children {
+            if let Some((view_id, scope)) = child.take() {
                 views_to_remove.push(view_id);
                 scope.dispose();
             }

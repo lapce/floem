@@ -428,7 +428,7 @@ fn hash_classes(classes: &[StyleClassRef]) -> u64 {
 
 impl InteractionState {
     /// Pack interaction state into bits for efficient hashing.
-    fn to_bits(&self) -> u16 {
+    fn to_bits(self) -> u16 {
         let mut bits = 0u16;
         if self.is_hovered {
             bits |= 1 << 0;
