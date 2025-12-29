@@ -127,6 +127,9 @@ pub use text_input::*;
 mod empty;
 pub use empty::*;
 
+mod stem;
+pub use stem::Stem;
+
 mod canvas;
 pub use canvas::*;
 

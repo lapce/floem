@@ -167,6 +167,42 @@ impl<V: View> HasViewId for V {
     }
 }
 
+/// A trait for views that can accept children.
+///
+/// This provides a builder-pattern API for adding children to views,
+/// similar to GPUI's `ParentElement` trait. Both methods append to
+/// existing children rather than replacing them.
+///
+/// Views opt-in to this trait by implementing it. Not all views should
+/// have children (e.g., `Label`, `TextInput`), so there is no blanket
+/// implementation.
+///
+/// ## Example
+/// ```rust,ignore
+/// Stack::empty()
+///     .child(text("Header"))
+///     .children((0..5).map(|i| text(format!("Item {i}"))))
+///     .child(text("Footer"))
+/// ```
+pub trait ParentView: HasViewId + Sized {
+    /// Adds a single child to this view.
+    fn child(self, child: impl IntoView) -> Self {
+        self.view_id().add_child(child.into_any());
+        self
+    }
+
+    /// Adds multiple children to this view.
+    ///
+    /// Accepts arrays, tuples, vectors, and iterators of views.
+    fn children(self, children: impl IntoViewIter) -> Self {
+        // Eagerly collect to ensure view construction (which may access VIEW_STORAGE)
+        // completes before we add children to VIEW_STORAGE
+        let views: Vec<AnyView> = children.into_view_iter().collect();
+        self.view_id().append_children(views);
+        self
+    }
+}
+
 /// A wrapper type for lazy view construction.
 ///
 /// `LazyView<T>` wraps a value that will eventually be converted into a [`View`],

@@ -238,7 +238,8 @@ pub use taffy;
 pub use ui_events;
 pub use view::ViewId;
 pub use view::{
-    AnyView, HasViewId, IntoView, LazyView, View, default_compute_layout, recursively_layout_view,
+    AnyView, HasViewId, IntoView, LazyView, ParentView, View, default_compute_layout,
+    recursively_layout_view,
 };
 pub use view::{Stack, StackOffset};
 pub use window::{Urgency, WindowIdExt, WindowState, close_window, new_window};
@@ -252,7 +253,7 @@ pub mod prelude {
     pub use crate::view::IntoViewIter;
     pub use crate::view::ViewTuple;
     pub use crate::views::*;
-    pub use crate::{HasViewId, IntoView, View};
+    pub use crate::{HasViewId, IntoView, ParentView, View};
     #[allow(deprecated)]
     pub use floem_reactive::{
         RwSignal, SignalGet, SignalTrack, SignalUpdate, SignalWith, create_rw_signal, create_signal,

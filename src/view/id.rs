@@ -170,6 +170,29 @@ impl ViewId {
             s.parent.insert(child_id, Some(*self));
             s.views.insert(child_id, Rc::new(RefCell::new(child)));
         });
+        // Invalidate stacking cache since children changed
+        invalidate_stacking_cache(*self);
+    }
+
+    /// Append multiple children to this Id's list of children.
+    ///
+    /// This is more efficient than calling `add_child` multiple times
+    /// as it only borrows VIEW_STORAGE once.
+    ///
+    /// Takes a `Vec` to ensure views are fully constructed before borrowing
+    /// VIEW_STORAGE, avoiding potential borrow conflicts.
+    pub fn append_children(&self, children: Vec<Box<dyn View>>) {
+        VIEW_STORAGE.with_borrow_mut(|s| {
+            let children_list = s.children.entry(*self).unwrap().or_default();
+            for child in children {
+                let child_id = child.id();
+                children_list.push(child_id);
+                s.parent.insert(child_id, Some(*self));
+                s.views.insert(child_id, Rc::new(RefCell::new(child)));
+            }
+        });
+        // Invalidate stacking cache since children changed
+        invalidate_stacking_cache(*self);
     }
 
     /// Set the children views of this Id
