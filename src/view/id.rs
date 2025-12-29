@@ -6,6 +6,7 @@
 
 use std::{any::Any, cell::RefCell, rc::Rc};
 
+use floem_reactive::Scope;
 use peniko::kurbo::{Affine, Insets, Point, Rect, Size};
 use slotmap::new_key_type;
 use taffy::{Layout, NodeId, TaffyTree};
@@ -41,8 +42,21 @@ impl ViewId {
         VIEW_STORAGE.with_borrow_mut(|s| s.view_ids.insert(()))
     }
 
-    /// Remove this view id and all of it's children from the `VIEW_STORAGE`
+    /// Remove this view id and all of its children from the `VIEW_STORAGE`.
+    ///
+    /// Note: For full cleanup including taffy nodes and cleanup listeners,
+    /// use `window_state.remove_view()` or send an `UpdateMessage::RemoveViews`.
     pub fn remove(&self) {
+        // Dispose children scope if this view had reactive children
+        if let Some(scope) = self.take_children_scope() {
+            scope.dispose();
+        }
+        // Dispose keyed children scopes if this view had keyed reactive children
+        if let Some(keyed_children) = self.take_keyed_children() {
+            for (_child_id, scope) in keyed_children {
+                scope.dispose();
+            }
+        }
         // Get parent before removing, for stacking cache invalidation
         let parent = self.parent();
         VIEW_STORAGE.with_borrow_mut(|s| {
@@ -815,6 +829,17 @@ impl ViewId {
         self.add_update_message(UpdateMessage::WindowVisible(visible));
     }
 
+    /// Request removal of views during the update phase.
+    ///
+    /// This schedules the views to be removed with proper cleanup
+    /// (cleanup listeners, taffy nodes, recursive children removal).
+    /// Used by `keyed_children` for efficient keyed diffing.
+    pub fn request_remove_views(&self, view_ids: Vec<ViewId>) {
+        if !view_ids.is_empty() {
+            self.add_update_message(UpdateMessage::RemoveViews(view_ids));
+        }
+    }
+
     fn add_update_message(&self, msg: UpdateMessage) {
         let _ = CENTRAL_UPDATE_MESSAGES.try_with(|msgs| {
             let mut msgs = msgs.borrow_mut();
@@ -844,6 +869,36 @@ impl ViewId {
     /// Clear the custom style parent
     pub fn clear_style_parent(&self) {
         self.state().borrow_mut().style_cx_parent = None;
+    }
+
+    /// Set the children scope for reactive children.
+    ///
+    /// This stores the scope used by `ParentView::derived_children` so that
+    /// when children are updated, the old scope can be properly disposed.
+    pub fn set_children_scope(&self, scope: Scope) {
+        self.state().borrow_mut().children_scope = Some(scope);
+    }
+
+    /// Take and dispose the children scope, returning the old scope if it existed.
+    ///
+    /// This is called when reactive children are updated to clean up the old scope.
+    pub fn take_children_scope(&self) -> Option<Scope> {
+        self.state().borrow_mut().children_scope.take()
+    }
+
+    /// Set the keyed children state for reactive keyed children.
+    ///
+    /// This stores the children and their scopes used by `ParentView::keyed_children`.
+    /// Each child has its own scope that gets disposed when the child is removed.
+    pub fn set_keyed_children(&self, children: Vec<(ViewId, Scope)>) {
+        self.state().borrow_mut().keyed_children = Some(children);
+    }
+
+    /// Take the keyed children state, returning it if it existed.
+    ///
+    /// This is called when keyed children are updated to apply diffs.
+    pub fn take_keyed_children(&self) -> Option<Vec<(ViewId, Scope)>> {
+        self.state().borrow_mut().keyed_children.take()
     }
 
     /// Set the selected state for child views during styling.

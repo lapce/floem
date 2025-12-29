@@ -1049,6 +1049,11 @@ impl WindowHandle {
                             self.set_menu_theme_for_windows(new);
                         }
                     }
+                    UpdateMessage::RemoveViews(view_ids) => {
+                        for view_id in view_ids {
+                            cx.window_state.remove_view(view_id);
+                        }
+                    }
                 }
             }
         }

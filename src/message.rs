@@ -93,6 +93,9 @@ pub enum UpdateMessage {
     WindowVisible(bool),
     ViewTransitionAnimComplete(ViewId),
     SetTheme(Option<Theme>),
+    /// Remove views from the tree (used by keyed children).
+    /// Each view and its children will be properly cleaned up.
+    RemoveViews(Vec<ViewId>),
 }
 
 /// Context passed during the update phase of the view lifecycle.

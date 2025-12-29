@@ -174,19 +174,19 @@ impl<V> Diff<V> {
 }
 
 #[derive(Debug)]
-pub(crate) struct DiffOpMove {
+pub struct DiffOpMove {
     pub(crate) from: usize,
     pub(crate) to: usize,
 }
 
 #[derive(Debug)]
-pub(crate) struct DiffOpAdd<V> {
+pub struct DiffOpAdd<V> {
     pub(crate) at: usize,
     pub(crate) view: Option<V>,
 }
 
 #[derive(Debug)]
-pub(crate) struct DiffOpRemove {
+pub struct DiffOpRemove {
     pub(crate) at: usize,
 }
 
@@ -284,7 +284,7 @@ fn remove_index(
     Some(())
 }
 
-pub(super) fn apply_diff<T, VF>(
+pub(crate) fn apply_diff<T, VF>(
     view_id: ViewId,
     window_state: &mut WindowState,
     mut diff: Diff<T>,

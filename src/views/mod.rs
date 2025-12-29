@@ -73,7 +73,7 @@ pub use label::*;
 mod rich_text;
 pub use rich_text::*;
 
-mod dyn_stack;
+pub(crate) mod dyn_stack;
 pub use dyn_stack::*;
 
 mod svg;

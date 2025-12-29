@@ -14,6 +14,7 @@ use crate::{
         OutlineColor, Style, StyleClassRef, StyleSelectors, TransformProps,
     },
 };
+use floem_reactive::Scope;
 use bitflags::bitflags;
 use imbl::HashSet;
 use peniko::kurbo::{Affine, Point, Rect};
@@ -239,6 +240,12 @@ pub struct ViewState {
     pub(crate) local_to_root_transform: Affine,
     pub(crate) stacking_info: StackingInfo,
     pub(crate) debug_name: SmallVec<[String; 1]>,
+    /// Scope for reactive children (used by `ParentView::derived_children`).
+    /// When children are updated reactively, the old scope is disposed.
+    pub(crate) children_scope: Option<Scope>,
+    /// Keyed children state (used by `ParentView::keyed_children`).
+    /// Each child has its own scope that gets disposed when the child is removed.
+    pub(crate) keyed_children: Option<Vec<(ViewId, Scope)>>,
 }
 
 impl ViewState {
@@ -288,6 +295,8 @@ impl ViewState {
             style_cx: None,
             style_interaction_cx: Default::default(),
             parent_set_style_interaction: Default::default(),
+            children_scope: None,
+            keyed_children: None,
         }
     }
 

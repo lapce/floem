@@ -56,7 +56,10 @@ pub use state::*;
 pub(crate) use storage::*;
 pub use tuple::*;
 
-use floem_reactive::{ReadSignal, RwSignal, SignalGet};
+use floem_reactive::{Effect, ReadSignal, RwSignal, Scope, SignalGet, UpdaterEffect};
+use smallvec::SmallVec;
+use std::hash::Hash;
+use std::rc::Rc;
 use peniko::kurbo::*;
 use std::any::Any;
 use taffy::tree::NodeId;
@@ -67,7 +70,7 @@ use crate::{
     event::{Event, EventPropagation},
     style::{LayoutProps, Style, StyleClassRef},
     unit::PxPct,
-    views::{DynamicView, dyn_view},
+    views::{DynamicView, dyn_stack::diff, dyn_stack::FxIndexSet, dyn_stack::HashRun, dyn_view},
     window::state::WindowState,
 };
 use state::ViewStyleProps;
@@ -201,6 +204,295 @@ pub trait ParentView: HasViewId + Sized {
         self.view_id().append_children(views);
         self
     }
+
+    /// Adds reactive children that update when signals change.
+    ///
+    /// The children function is called initially and re-called whenever
+    /// its reactive dependencies change, replacing all children.
+    ///
+    /// ## Example
+    /// ```rust,ignore
+    /// use floem::prelude::*;
+    /// use floem::views::Stem;
+    ///
+    /// let items = RwSignal::new(vec!["a", "b", "c"]);
+    ///
+    /// Stem::new().derived_children(move || {
+    ///     items.get().into_iter().map(|item| text(item))
+    /// });
+    /// ```
+    fn derived_children<CF, C>(self, children_fn: CF) -> Self
+    where
+        CF: Fn() -> C + 'static,
+        C: IntoViewIter + 'static,
+    {
+        let id = self.view_id();
+        let children_fn = Box::new(Scope::current().enter_child(move |_| {
+            children_fn().into_view_iter().collect::<Vec<_>>()
+        }));
+
+        let (initial_children, initial_scope) = UpdaterEffect::new(
+            move || children_fn(()),
+            move |(new_children, new_scope): (Vec<AnyView>, Scope)| {
+                // Dispose old scope and remove old children
+                if let Some(old_scope) = id.take_children_scope() {
+                    old_scope.dispose();
+                }
+                // Set new children and store new scope
+                id.set_children_vec(new_children);
+                id.set_children_scope(new_scope);
+                id.request_all();
+            },
+        );
+
+        // Set initial children and scope
+        id.set_children_vec(initial_children);
+        id.set_children_scope(initial_scope);
+        self
+    }
+
+    /// Adds a single reactive child that updates when signals change.
+    ///
+    /// Similar to `dyn_container`, but as a method on `ParentView`.
+    /// When the state changes, the old child is replaced with a new one.
+    ///
+    /// ## Example
+    /// ```rust,ignore
+    /// use floem::prelude::*;
+    /// use floem::views::Stem;
+    ///
+    /// #[derive(Clone)]
+    /// enum ViewType { One, Two }
+    ///
+    /// let view_type = RwSignal::new(ViewType::One);
+    ///
+    /// Stem::new().derived_child(
+    ///     move || view_type.get(),
+    ///     |value| match value {
+    ///         ViewType::One => text("One"),
+    ///         ViewType::Two => text("Two"),
+    ///     }
+    /// );
+    /// ```
+    fn derived_child<S, SF, CF, V>(self, state_fn: SF, child_fn: CF) -> Self
+    where
+        SF: Fn() -> S + 'static,
+        CF: Fn(S) -> V + 'static,
+        V: IntoView + 'static,
+        S: 'static,
+    {
+        let id = self.view_id();
+
+        // Wrap child_fn to create scoped views, using Rc to share between effect and initial setup
+        let child_fn: Rc<dyn Fn(S) -> (AnyView, Scope)> =
+            Rc::new(Scope::current().enter_child(move |state: S| child_fn(state).into_any()));
+
+        let child_fn_for_effect = child_fn.clone();
+
+        // Create effect and get initial state
+        let initial_state = UpdaterEffect::new(state_fn, move |new_state: S| {
+            // Dispose old scope
+            if let Some(old_scope) = id.take_children_scope() {
+                old_scope.dispose();
+            }
+
+            // Get old child for removal
+            let old_children = id.children();
+
+            // Create new child
+            let (new_child, new_scope) = child_fn_for_effect(new_state);
+            let new_child_id = new_child.id();
+            new_child_id.set_parent(id);
+            new_child_id.set_view(new_child);
+            id.set_children_ids(vec![new_child_id]);
+            id.set_children_scope(new_scope);
+
+            // Request removal of old children
+            id.request_remove_views(old_children);
+            id.request_all();
+        });
+
+        // Create initial child from initial state
+        let (initial_child, initial_scope) = child_fn(initial_state);
+        let child_id = initial_child.id();
+        child_id.set_parent(id);
+        child_id.set_view(initial_child);
+        id.set_children_ids(vec![child_id]);
+        id.set_children_scope(initial_scope);
+        self
+    }
+
+    /// Adds keyed reactive children that efficiently update when signals change.
+    ///
+    /// Unlike `derived_children` which recreates all children on every update,
+    /// `keyed_children` uses keys to identify items and only creates/removes
+    /// children that actually changed. Views for unchanged items are reused.
+    ///
+    /// ## Arguments
+    /// - `items_fn`: A function that returns an iterator of items
+    /// - `key_fn`: A function that extracts a unique key from each item
+    /// - `view_fn`: A function that creates a view from an item
+    ///
+    /// ## Example
+    /// ```rust,ignore
+    /// use floem::prelude::*;
+    /// use floem::views::Stem;
+    ///
+    /// let items = RwSignal::new(vec!["a", "b", "c"]);
+    ///
+    /// Stem::new().keyed_children(
+    ///     move || items.get(),
+    ///     |item| *item,  // key by the item itself
+    ///     |item| text(item),
+    /// );
+    /// ```
+    fn keyed_children<IF, I, T, K, KF, VF, V>(self, items_fn: IF, key_fn: KF, view_fn: VF) -> Self
+    where
+        IF: Fn() -> I + 'static,
+        I: IntoIterator<Item = T>,
+        KF: Fn(&T) -> K + 'static,
+        K: Eq + Hash + 'static,
+        VF: Fn(T) -> V + 'static,
+        V: IntoView + 'static,
+        T: 'static,
+    {
+        let id = self.view_id();
+
+        // Wrap view_fn to create scoped views - each child gets its own scope
+        let view_fn = Scope::current().enter_child(move |item: T| view_fn(item).into_any());
+
+        // Initialize keyed children state
+        id.set_keyed_children(Vec::new());
+
+        Effect::new(move |prev_hash_run: Option<HashRun<FxIndexSet<K>>>| {
+            let items: SmallVec<[T; 128]> = items_fn().into_iter().collect();
+            let new_keys: FxIndexSet<K> = items.iter().map(&key_fn).collect();
+
+            // Take current children state
+            let mut children: Vec<Option<(ViewId, Scope)>> = id
+                .take_keyed_children()
+                .unwrap_or_default()
+                .into_iter()
+                .map(Some)
+                .collect();
+
+            if let Some(HashRun(prev_keys)) = prev_hash_run {
+                // Compute diff between old and new keys
+                let mut diff_result = diff::<K, T>(&prev_keys, &new_keys);
+
+                // Prepare items for added entries
+                let mut items: SmallVec<[Option<T>; 128]> =
+                    items.into_iter().map(Some).collect();
+                for added in &mut diff_result.added {
+                    added.view = items[added.at].take();
+                }
+
+                // Apply diff operations (returns views to remove)
+                let views_to_remove = apply_keyed_diff(id, &mut children, diff_result, &view_fn);
+
+                // Request removal via message (processed during update phase)
+                id.request_remove_views(views_to_remove);
+            } else {
+                // First run - create all children
+                for item in items {
+                    let (view, scope) = view_fn(item);
+                    let child_id = view.id();
+                    child_id.set_parent(id);
+                    child_id.set_view(view);
+                    children.push(Some((child_id, scope)));
+                }
+            }
+
+            // Update the actual children list
+            let children_ids: Vec<ViewId> = children
+                .iter()
+                .filter_map(|c| Some(c.as_ref()?.0))
+                .collect();
+            id.set_children_ids(children_ids);
+
+            // Store updated children state (convert back from Option)
+            let children_vec: Vec<(ViewId, Scope)> =
+                children.into_iter().flatten().collect();
+            id.set_keyed_children(children_vec);
+
+            id.request_all();
+            HashRun(new_keys)
+        });
+
+        self
+    }
+}
+
+/// Apply keyed diff operations to children.
+///
+/// Returns a list of ViewIds to remove (removal is deferred via message).
+fn apply_keyed_diff<T, VF>(
+    parent_id: ViewId,
+    children: &mut Vec<Option<(ViewId, Scope)>>,
+    diff: crate::views::dyn_stack::Diff<T>,
+    view_fn: &VF,
+) -> Vec<ViewId>
+where
+    VF: Fn(T) -> (AnyView, Scope),
+{
+    use crate::views::dyn_stack::{DiffOpAdd, DiffOpMove, DiffOpRemove};
+
+    let mut views_to_remove = Vec::new();
+
+    // Resize children if needed
+    if diff.added.len() > diff.removed.len() {
+        let target_size = children.len() + diff.added.len() - diff.removed.len();
+        children.resize_with(target_size, || None);
+    }
+
+    // Items to move (deferred to avoid overwriting)
+    let mut items_to_move = Vec::with_capacity(diff.moved.len());
+
+    // 1. Clear all if requested
+    if diff.clear {
+        for i in 0..children.len() {
+            if let Some((view_id, scope)) = children[i].take() {
+                views_to_remove.push(view_id);
+                scope.dispose();
+            }
+        }
+    }
+
+    // 2. Remove items (collect for deferred removal)
+    for DiffOpRemove { at } in diff.removed {
+        if let Some((view_id, scope)) = children[at].take() {
+            views_to_remove.push(view_id);
+            scope.dispose();
+        }
+    }
+
+    // 3. Collect items to move
+    for DiffOpMove { from, to } in diff.moved {
+        if let Some(item) = children[from].take() {
+            items_to_move.push((to, item));
+        }
+    }
+
+    // 4. Add new items
+    for DiffOpAdd { at, view } in diff.added {
+        if let Some(item) = view {
+            let (view, scope) = view_fn(item);
+            let child_id = view.id();
+            child_id.set_parent(parent_id);
+            child_id.set_view(view);
+            children[at] = Some((child_id, scope));
+        }
+    }
+
+    // 5. Apply moves
+    for (to, item) in items_to_move {
+        children[to] = Some(item);
+    }
+
+    // 6. Remove holes
+    children.retain(|c| c.is_some());
+
+    views_to_remove
 }
 
 /// A wrapper type for lazy view construction.
