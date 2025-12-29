@@ -227,6 +227,33 @@ impl Stack {
         }
     }
 
+    /// Creates a new stack with a specific ViewId from an iterator of views.
+    ///
+    /// This is useful for lazy view construction where the `ViewId` is created
+    /// before the view itself. Unlike `with_id`, this method pre-converts all
+    /// views before setting children, avoiding potential RefCell borrow conflicts.
+    ///
+    /// ## Example
+    /// ```rust,no_run
+    /// use floem::{ViewId, views::*};
+    ///
+    /// let id = ViewId::new();
+    /// Stack::from_iter_with_id(id, (0..5).map(|i| text(i)), None);
+    /// ```
+    pub fn from_iter_with_id<V: IntoView + 'static>(
+        id: ViewId,
+        children: impl IntoIterator<Item = V>,
+        direction: Option<FlexDirection>,
+    ) -> Self {
+        id.set_children_vec(
+            children
+                .into_iter()
+                .map(|v| -> Box<dyn View> { v.into_any() })
+                .collect(),
+        );
+        Stack { id, direction }
+    }
+
     /// Creates a new horizontal stack (row direction).
     ///
     /// ## Example
