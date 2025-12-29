@@ -57,11 +57,11 @@ pub(crate) use storage::*;
 pub use tuple::*;
 
 use floem_reactive::{Effect, ReadSignal, RwSignal, Scope, SignalGet, UpdaterEffect};
+use peniko::kurbo::*;
 use smallvec::SmallVec;
+use std::any::Any;
 use std::hash::Hash;
 use std::rc::Rc;
-use peniko::kurbo::*;
-use std::any::Any;
 use taffy::tree::NodeId;
 
 use crate::{
@@ -70,7 +70,7 @@ use crate::{
     event::{Event, EventPropagation},
     style::{LayoutProps, Style, StyleClassRef},
     unit::PxPct,
-    views::{DynamicView, dyn_stack::diff, dyn_stack::FxIndexSet, dyn_stack::HashRun, dyn_view},
+    views::{DynamicView, dyn_stack::FxIndexSet, dyn_stack::HashRun, dyn_stack::diff, dyn_view},
     window::state::WindowState,
 };
 use state::ViewStyleProps;
@@ -227,9 +227,10 @@ pub trait ParentView: HasViewId + Sized {
         C: IntoViewIter + 'static,
     {
         let id = self.view_id();
-        let children_fn = Box::new(Scope::current().enter_child(move |_| {
-            children_fn().into_view_iter().collect::<Vec<_>>()
-        }));
+        let children_fn = Box::new(
+            Scope::current()
+                .enter_child(move |_| children_fn().into_view_iter().collect::<Vec<_>>()),
+        );
 
         let (initial_children, initial_scope) = UpdaterEffect::new(
             move || children_fn(()),
@@ -381,8 +382,7 @@ pub trait ParentView: HasViewId + Sized {
                 let mut diff_result = diff::<K, T>(&prev_keys, &new_keys);
 
                 // Prepare items for added entries
-                let mut items: SmallVec<[Option<T>; 128]> =
-                    items.into_iter().map(Some).collect();
+                let mut items: SmallVec<[Option<T>; 128]> = items.into_iter().map(Some).collect();
                 for added in &mut diff_result.added {
                     added.view = items[added.at].take();
                 }
@@ -411,8 +411,7 @@ pub trait ParentView: HasViewId + Sized {
             id.set_children_ids(children_ids);
 
             // Store updated children state (convert back from Option)
-            let children_vec: Vec<(ViewId, Scope)> =
-                children.into_iter().flatten().collect();
+            let children_vec: Vec<(ViewId, Scope)> = children.into_iter().flatten().collect();
             id.set_keyed_children(children_vec);
 
             id.request_all();

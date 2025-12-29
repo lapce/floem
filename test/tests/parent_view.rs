@@ -259,12 +259,11 @@ fn test_derived_children_with_styled_children() {
             (0..count.get())
                 .map(|i| {
                     Empty::new().style(move |s| {
-                        s.size(20.0, 20.0)
-                            .background(if i % 2 == 0 {
-                                palette::css::RED
-                            } else {
-                                palette::css::BLUE
-                            })
+                        s.size(20.0, 20.0).background(if i % 2 == 0 {
+                            palette::css::RED
+                        } else {
+                            palette::css::BLUE
+                        })
                     })
                 })
                 .collect::<Vec<_>>()
@@ -355,7 +354,11 @@ fn test_stem_with_derived_children_works() {
 
     items.set(vec!["a", "b", "c", "d"]);
     harness.rebuild();
-    assert_eq!(id.children().len(), 4, "Should have 4 children after update");
+    assert_eq!(
+        id.children().len(),
+        4,
+        "Should have 4 children after update"
+    );
 
     // The view should still be functional after multiple updates
     items.set(vec![]);
@@ -450,11 +453,7 @@ fn test_keyed_children_updates_on_signal_change() {
     let items = RwSignal::new(vec!["a", "b", "c"]);
 
     let view = Stem::new()
-        .keyed_children(
-            move || items.get(),
-            |item| *item,
-            |_item| Empty::new(),
-        )
+        .keyed_children(move || items.get(), |item| *item, |_item| Empty::new())
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
@@ -492,11 +491,7 @@ fn test_keyed_children_reuses_unchanged_views() {
     let items = RwSignal::new(vec!["a", "b", "c"]);
 
     let view = Stem::new()
-        .keyed_children(
-            move || items.get(),
-            |item| *item,
-            |_item| Empty::new(),
-        )
+        .keyed_children(move || items.get(), |item| *item, |_item| Empty::new())
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
@@ -539,11 +534,7 @@ fn test_keyed_children_empty_signal() {
     let items: RwSignal<Vec<&str>> = RwSignal::new(vec![]);
 
     let view = Stem::new()
-        .keyed_children(
-            move || items.get(),
-            |item| *item,
-            |_item| Empty::new(),
-        )
+        .keyed_children(move || items.get(), |item| *item, |_item| Empty::new())
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
@@ -579,11 +570,7 @@ fn test_keyed_children_reordering() {
     let items = RwSignal::new(vec!["a", "b", "c"]);
 
     let view = Stem::new()
-        .keyed_children(
-            move || items.get(),
-            |item| *item,
-            |_item| Empty::new(),
-        )
+        .keyed_children(move || items.get(), |item| *item, |_item| Empty::new())
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
@@ -591,7 +578,11 @@ fn test_keyed_children_reordering() {
 
     // Get initial children IDs
     let initial_children: Vec<ViewId> = id.children();
-    let (id_a, id_b, id_c) = (initial_children[0], initial_children[1], initial_children[2]);
+    let (id_a, id_b, id_c) = (
+        initial_children[0],
+        initial_children[1],
+        initial_children[2],
+    );
 
     // Reverse the order
     items.set(vec!["c", "b", "a"]);
@@ -613,11 +604,7 @@ fn test_keyed_children_multiple_updates() {
     let items = RwSignal::new(vec!["a", "b"]);
 
     let view = Stem::new()
-        .keyed_children(
-            move || items.get(),
-            |item| *item,
-            |_item| Empty::new(),
-        )
+        .keyed_children(move || items.get(), |item| *item, |_item| Empty::new())
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
@@ -633,7 +620,11 @@ fn test_keyed_children_multiple_updates() {
 
     items.set(vec!["a", "b", "c", "d"]);
     harness.rebuild();
-    assert_eq!(id.children().len(), 4, "Should have 4 children after update");
+    assert_eq!(
+        id.children().len(),
+        4,
+        "Should have 4 children after update"
+    );
 
     items.set(vec![]);
     harness.rebuild();
@@ -645,7 +636,11 @@ fn test_keyed_children_multiple_updates() {
 
     items.set(vec!["new"]);
     harness.rebuild();
-    assert_eq!(id.children().len(), 1, "Should have 1 child after re-adding");
+    assert_eq!(
+        id.children().len(),
+        1,
+        "Should have 1 child after re-adding"
+    );
 }
 
 // =============================================================================
@@ -716,9 +711,12 @@ fn test_derived_child_passes_state() {
 
     let tracker_clone = tracker.clone();
     let view = Stem::new()
-        .derived_child(move || state.get(), move |value| {
-            tracker_clone.track_named(value, Empty::new().style(|s| s.size(100.0, 100.0)))
-        })
+        .derived_child(
+            move || state.get(),
+            move |value| {
+                tracker_clone.track_named(value, Empty::new().style(|s| s.size(100.0, 100.0)))
+            },
+        )
         .style(|s| s.size(100.0, 100.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);

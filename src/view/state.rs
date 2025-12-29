@@ -14,8 +14,8 @@ use crate::{
         OutlineColor, Style, StyleClassRef, StyleSelectors, TransformProps,
     },
 };
-use floem_reactive::Scope;
 use bitflags::bitflags;
+use floem_reactive::Scope;
 use imbl::HashSet;
 use peniko::kurbo::{Affine, Point, Rect};
 use smallvec::SmallVec;
