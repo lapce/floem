@@ -188,19 +188,48 @@ impl<V: View> HasViewId for V {
 ///     .child(text("Footer"))
 /// ```
 pub trait ParentView: HasViewId + Sized {
+    /// Returns the scope associated with this view, if any.
+    ///
+    /// Views that need to provide context to children should:
+    /// 1. Create a child scope in their constructor: `Scope::current().create_child()`
+    /// 2. Provide context in that scope: `scope.provide_context(...)`
+    /// 3. Override this method to return that scope
+    ///
+    /// When this returns `Some(scope)`, `child()` and `children()` will build
+    /// child views in child scopes of this scope, giving them access to the context.
+    fn scope(&self) -> Option<Scope> {
+        None
+    }
+
     /// Adds a single child to this view.
+    ///
+    /// If the parent provides a [`scope`](ParentView::scope), the child is built
+    /// inside that scope, giving it access to any context provided there.
     fn child(self, child: impl IntoView) -> Self {
-        self.view_id().add_child(child.into_any());
+        let view = if let Some(parent_scope) = self.scope() {
+            // Build child inside the parent's scope
+            parent_scope.enter(|| child.into_any())
+        } else {
+            child.into_any()
+        };
+        self.view_id().add_child(view);
         self
     }
 
     /// Adds multiple children to this view.
     ///
     /// Accepts arrays, tuples, vectors, and iterators of views.
+    /// If the parent provides a [`scope`](ParentView::scope), children are built
+    /// inside that scope, giving them access to any context provided there.
     fn children(self, children: impl IntoViewIter) -> Self {
-        // Eagerly collect to ensure view construction (which may access VIEW_STORAGE)
-        // completes before we add children to VIEW_STORAGE
-        let views: Vec<AnyView> = children.into_view_iter().collect();
+        let views: Vec<AnyView> = if let Some(parent_scope) = self.scope() {
+            // Build children inside the parent's scope
+            parent_scope.enter(|| children.into_view_iter().collect())
+        } else {
+            // Eagerly collect to ensure view construction (which may access VIEW_STORAGE)
+            // completes before we add children to VIEW_STORAGE
+            children.into_view_iter().collect()
+        };
         self.view_id().append_children(views);
         self
     }
@@ -227,8 +256,10 @@ pub trait ParentView: HasViewId + Sized {
         C: IntoViewIter + 'static,
     {
         let id = self.view_id();
+        // Use parent's scope if available, otherwise use current scope
+        let base_scope = self.scope().unwrap_or_else(Scope::current);
         let children_fn = Box::new(
-            Scope::current()
+            base_scope
                 .enter_child(move |_| children_fn().into_view_iter().collect::<Vec<_>>()),
         );
 
@@ -283,10 +314,12 @@ pub trait ParentView: HasViewId + Sized {
         S: 'static,
     {
         let id = self.view_id();
+        // Use parent's scope if available, otherwise use current scope
+        let base_scope = self.scope().unwrap_or_else(Scope::current);
 
         // Wrap child_fn to create scoped views, using Rc to share between effect and initial setup
         let child_fn: Rc<dyn Fn(S) -> (AnyView, Scope)> =
-            Rc::new(Scope::current().enter_child(move |state: S| child_fn(state).into_any()));
+            Rc::new(base_scope.enter_child(move |state: S| child_fn(state).into_any()));
 
         let child_fn_for_effect = child_fn.clone();
 
@@ -358,9 +391,11 @@ pub trait ParentView: HasViewId + Sized {
         T: 'static,
     {
         let id = self.view_id();
+        // Use parent's scope if available, otherwise use current scope
+        let base_scope = self.scope().unwrap_or_else(Scope::current);
 
         // Wrap view_fn to create scoped views - each child gets its own scope
-        let view_fn = Scope::current().enter_child(move |item: T| view_fn(item).into_any());
+        let view_fn = base_scope.enter_child(move |item: T| view_fn(item).into_any());
 
         // Initialize keyed children state
         id.set_keyed_children(Vec::new());
