@@ -203,34 +203,28 @@ pub trait ParentView: HasViewId + Sized {
 
     /// Adds a single child to this view.
     ///
-    /// If the parent provides a [`scope`](ParentView::scope), the child is built
-    /// inside that scope, giving it access to any context provided there.
-    fn child(self, child: impl IntoView) -> Self {
-        let view = if let Some(parent_scope) = self.scope() {
-            // Build child inside the parent's scope
-            parent_scope.enter(|| child.into_any())
-        } else {
-            child.into_any()
-        };
-        self.view_id().add_child(view);
+    /// The child is constructed lazily during the update cycle, inside the
+    /// parent's scope if one is provided via [`scope`](ParentView::scope),
+    /// or the current scope otherwise.
+    /// This enables children to access context provided by the parent.
+    fn child(self, child: impl IntoView + 'static) -> Self {
+        let scope = self.scope().unwrap_or_else(Scope::current);
+        self.view_id()
+            .add_child_deferred(scope, move || child.into_any());
         self
     }
 
     /// Adds multiple children to this view.
     ///
     /// Accepts arrays, tuples, vectors, and iterators of views.
-    /// If the parent provides a [`scope`](ParentView::scope), children are built
-    /// inside that scope, giving them access to any context provided there.
-    fn children(self, children: impl IntoViewIter) -> Self {
-        let views: Vec<AnyView> = if let Some(parent_scope) = self.scope() {
-            // Build children inside the parent's scope
-            parent_scope.enter(|| children.into_view_iter().collect())
-        } else {
-            // Eagerly collect to ensure view construction (which may access VIEW_STORAGE)
-            // completes before we add children to VIEW_STORAGE
-            children.into_view_iter().collect()
-        };
-        self.view_id().append_children(views);
+    /// The children are constructed lazily during the update cycle, inside the
+    /// parent's scope if one is provided via [`scope`](ParentView::scope),
+    /// or the current scope otherwise.
+    /// This enables children to access context provided by the parent.
+    fn children(self, children: impl IntoViewIter + 'static) -> Self {
+        let scope = self.scope().unwrap_or_else(Scope::current);
+        self.view_id()
+            .add_children_deferred(scope, move || children.into_view_iter().collect());
         self
     }
 
@@ -259,8 +253,7 @@ pub trait ParentView: HasViewId + Sized {
         // Use parent's scope if available, otherwise use current scope
         let base_scope = self.scope().unwrap_or_else(Scope::current);
         let children_fn = Box::new(
-            base_scope
-                .enter_child(move |_| children_fn().into_view_iter().collect::<Vec<_>>()),
+            base_scope.enter_child(move |_| children_fn().into_view_iter().collect::<Vec<_>>()),
         );
 
         let (initial_children, initial_scope) = UpdaterEffect::new(

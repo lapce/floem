@@ -1054,6 +1054,22 @@ impl WindowHandle {
                             cx.window_state.remove_view(view_id);
                         }
                     }
+                    UpdateMessage::AddChild {
+                        parent_id,
+                        mut child,
+                    } => {
+                        let view = child.build();
+                        parent_id.add_child(view);
+                        parent_id.request_all();
+                    }
+                    UpdateMessage::AddChildren {
+                        parent_id,
+                        mut children,
+                    } => {
+                        let views = children.build();
+                        parent_id.append_children(views);
+                        parent_id.request_all();
+                    }
                 }
             }
         }

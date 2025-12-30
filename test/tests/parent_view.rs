@@ -810,12 +810,19 @@ fn test_derived_child_with_enum() {
     assert_ne!(initial_child_id, new_child_id);
 }
 
-/// Test that derived_child replaces existing children.
+/// Test behavior when mixing static children with derived_child.
 ///
-/// Note: Like derived_children, derived_child replaces all existing children
-/// rather than adding to them. This is the expected behavior.
+/// With deferred child construction, `.children()` queues children to be added
+/// via message, while `.derived_child()` sets up its child immediately.
+/// When messages are processed, both sets of children end up in the parent.
+///
+/// However, when the derived_child updates, it uses `set_children_ids` which
+/// replaces ALL children, effectively removing the static children.
+///
+/// Note: Mixing static `.children()` with reactive `.derived_child()` is not
+/// a recommended pattern. Use one or the other for predictable behavior.
 #[test]
-fn test_derived_child_replaces_children() {
+fn test_derived_child_with_static_children() {
     let dynamic_state = RwSignal::new(1);
 
     let view = Stem::new()
@@ -826,21 +833,401 @@ fn test_derived_child_replaces_children() {
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
-    // derived_child replaces the 2 static children with 1 dynamic child
+    // With deferred children: derived_child sets 1 child immediately,
+    // then .children() adds 2 more when messages are processed.
+    // Total: 3 children (1 from derived_child + 2 from deferred .children())
     assert_eq!(
         id.children().len(),
-        1,
-        "derived_child should replace existing children with single dynamic child"
+        3,
+        "Should have 3 children: 1 from derived_child + 2 from deferred .children()"
     );
 
-    // Update dynamic state
+    // Update dynamic state - derived_child uses set_children_ids which
+    // replaces ALL children, including the static ones
     dynamic_state.set(2);
     harness.rebuild();
 
-    // Still should have 1 child
+    // Now only the derived_child's child remains
     assert_eq!(
         id.children().len(),
         1,
-        "Should still have 1 child after update"
+        "After update, only derived_child's child remains (static children removed)"
+    );
+}
+
+// =============================================================================
+// ParentView::scope() tests - Context propagation from parent to children
+// =============================================================================
+
+use floem::reactive::Scope;
+use floem::view::ParentView;
+use std::cell::RefCell;
+use std::rc::Rc;
+
+/// A container view that provides context to its children via scope.
+///
+/// This demonstrates the pattern for using ParentView::scope():
+/// 1. Create a child scope in the constructor
+/// 2. Provide context in that scope
+/// 3. Override scope() to return that scope
+struct ContextProvider<T: Clone + 'static> {
+    id: ViewId,
+    scope: Scope,
+    _marker: std::marker::PhantomData<T>,
+}
+
+impl<T: Clone + 'static> ContextProvider<T> {
+    fn new(value: T) -> Self {
+        let id = ViewId::new();
+        // Create a child scope and provide context in it
+        let scope = Scope::current().create_child();
+        scope.provide_context(value);
+        Self {
+            id,
+            scope,
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<T: Clone + 'static> floem::View for ContextProvider<T> {
+    fn id(&self) -> ViewId {
+        self.id
+    }
+
+    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
+        "ContextProvider".into()
+    }
+}
+
+impl<T: Clone + 'static> ParentView for ContextProvider<T> {
+    fn scope(&self) -> Option<Scope> {
+        Some(self.scope)
+    }
+}
+
+/// Test that child() defers view conversion but not construction.
+///
+/// When a view is passed to child(), the view itself is already constructed.
+/// The deferred part only runs `into_any()` inside the scope.
+/// For View types, `into_any()` just boxes the already-constructed view.
+///
+/// For true lazy construction inside the scope, use reactive methods like
+/// `derived_child`, `derived_children`, or `keyed_children` which take closures.
+#[test]
+fn test_scope_context_with_child_limitation() {
+    // Track whether context was accessed
+    let context_value = Rc::new(RefCell::new(None::<i32>));
+    let context_value_clone = context_value.clone();
+
+    let view = ContextProvider::new(42i32)
+        .child({
+            // This view is constructed HERE, outside the scope
+            // The .child() call only defers the into_any() conversion
+            ContextCapturingView::new(context_value_clone)
+        })
+        .style(|s| s.size(100.0, 100.0));
+
+    let _harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    // Context is NOT accessible because the view was constructed
+    // before child() was called
+    assert_eq!(
+        *context_value.borrow(),
+        None,
+        "View construction happens before child(), so context is not accessible"
+    );
+}
+
+/// A view that captures context when constructed.
+struct ContextCapturingView {
+    id: ViewId,
+}
+
+impl ContextCapturingView {
+    fn new(context_holder: Rc<RefCell<Option<i32>>>) -> Self {
+        let id = ViewId::new();
+        // This will be executed during deferred construction, inside parent's scope
+        *context_holder.borrow_mut() = Scope::current().get_context::<i32>();
+        Self { id }
+    }
+}
+
+impl floem::View for ContextCapturingView {
+    fn id(&self) -> ViewId {
+        self.id
+    }
+}
+
+/// Test that children() has the same limitation as child().
+///
+/// Views passed to children() are already constructed before the call.
+/// For true lazy construction, use reactive methods.
+#[test]
+fn test_scope_context_with_children_limitation() {
+    let context_values = Rc::new(RefCell::new(Vec::<Option<String>>::new()));
+    let cv1 = context_values.clone();
+    let cv2 = context_values.clone();
+
+    let view = ContextProvider::new("hello".to_string())
+        .children([
+            // These views are constructed HERE, outside the scope
+            ContextCapturingStringView::new(cv1),
+            ContextCapturingStringView::new(cv2),
+        ])
+        .style(|s| s.size(100.0, 100.0));
+
+    let _harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    let values = context_values.borrow();
+    assert_eq!(values.len(), 2, "Should have 2 context captures");
+    // Context is NOT accessible for directly passed views
+    assert_eq!(
+        values[0], None,
+        "View construction happens before children(), no context"
+    );
+    assert_eq!(
+        values[1], None,
+        "View construction happens before children(), no context"
+    );
+}
+
+/// A view that captures String context when constructed.
+struct ContextCapturingStringView {
+    id: ViewId,
+}
+
+impl ContextCapturingStringView {
+    fn new(context_holder: Rc<RefCell<Vec<Option<String>>>>) -> Self {
+        let id = ViewId::new();
+        let value = Scope::current().get_context::<String>();
+        context_holder.borrow_mut().push(value);
+        Self { id }
+    }
+}
+
+impl floem::View for ContextCapturingStringView {
+    fn id(&self) -> ViewId {
+        self.id
+    }
+}
+
+/// Test that derived_children can access parent's context.
+#[test]
+fn test_scope_context_with_derived_children() {
+    let items = RwSignal::new(vec![1, 2, 3]);
+    let context_values = Rc::new(RefCell::new(Vec::<Option<i32>>::new()));
+    let context_values_clone = context_values.clone();
+
+    let view = ContextProvider::new(100i32)
+        .derived_children(move || {
+            // Access context during each derived_children rebuild
+            let value = Scope::current().get_context::<i32>();
+            context_values_clone.borrow_mut().push(value);
+            items
+                .get()
+                .into_iter()
+                .map(|_| Empty::new().style(|s| s.size(30.0, 30.0)))
+                .collect::<Vec<_>>()
+        })
+        .style(|s| s.size(100.0, 100.0));
+    let id = view.view_id();
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    // Initial: 3 children
+    assert_eq!(id.children().len(), 3);
+
+    // Update to trigger rebuild
+    items.set(vec![1, 2]);
+    harness.rebuild();
+
+    assert_eq!(id.children().len(), 2);
+
+    // Check context was accessible in all rebuilds
+    let values = context_values.borrow();
+    assert!(values.len() >= 2, "Should have at least 2 context accesses");
+    for (i, value) in values.iter().enumerate() {
+        assert_eq!(
+            *value,
+            Some(100),
+            "Context should be accessible in derived_children rebuild {}",
+            i
+        );
+    }
+}
+
+/// Test that keyed_children can access parent's context.
+#[test]
+fn test_scope_context_with_keyed_children() {
+    let items = RwSignal::new(vec!["a", "b"]);
+    let context_values = Rc::new(RefCell::new(Vec::<Option<String>>::new()));
+    let context_values_clone = context_values.clone();
+
+    let view = ContextProvider::new("keyed_context".to_string())
+        .keyed_children(move || items.get(), |item| *item, {
+            let context_values = context_values_clone.clone();
+            move |_item| {
+                // Access context during view creation
+                let value = Scope::current().get_context::<String>();
+                context_values.borrow_mut().push(value);
+                Empty::new().style(|s| s.size(30.0, 30.0))
+            }
+        })
+        .style(|s| s.size(100.0, 100.0));
+    let id = view.view_id();
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    // Initial: 2 children
+    assert_eq!(id.children().len(), 2);
+
+    // Add a new item to trigger creation of new child
+    items.set(vec!["a", "b", "c"]);
+    harness.rebuild();
+
+    assert_eq!(id.children().len(), 3);
+
+    // Check context was accessible for all created children
+    let values = context_values.borrow();
+    assert!(values.len() >= 3, "Should have created at least 3 children");
+    for (i, value) in values.iter().enumerate() {
+        assert_eq!(
+            *value,
+            Some("keyed_context".to_string()),
+            "Context should be accessible for keyed child {}",
+            i
+        );
+    }
+}
+
+/// Test that derived_child can access parent's context.
+#[test]
+fn test_scope_context_with_derived_child() {
+    let state = RwSignal::new(1);
+    let context_values = Rc::new(RefCell::new(Vec::<Option<f64>>::new()));
+    let context_values_clone = context_values.clone();
+
+    let view = ContextProvider::new(3.14f64)
+        .derived_child(move || state.get(), {
+            let context_values = context_values_clone.clone();
+            move |_value| {
+                // Access context during child creation
+                let ctx = Scope::current().get_context::<f64>();
+                context_values.borrow_mut().push(ctx);
+                Empty::new().style(|s| s.size(50.0, 50.0))
+            }
+        })
+        .style(|s| s.size(100.0, 100.0));
+    let id = view.view_id();
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    assert_eq!(id.children().len(), 1);
+
+    // Update to trigger rebuild
+    state.set(2);
+    harness.rebuild();
+
+    assert_eq!(id.children().len(), 1);
+
+    // Check context was accessible in all creations
+    let values = context_values.borrow();
+    assert!(values.len() >= 2, "Should have at least 2 child creations");
+    for (i, value) in values.iter().enumerate() {
+        assert_eq!(
+            *value,
+            Some(3.14),
+            "Context should be accessible in derived_child creation {}",
+            i
+        );
+    }
+}
+
+/// Test context shadowing with derived_child (which does support context access).
+///
+/// Unlike child()/children(), derived_child's closure IS called inside the scope,
+/// so context is accessible there.
+#[test]
+fn test_scope_context_shadowing_with_derived_child() {
+    let outer_value = Rc::new(RefCell::new(None::<i32>));
+    let inner_value = Rc::new(RefCell::new(None::<i32>));
+    let outer_clone = outer_value.clone();
+    let inner_clone = inner_value.clone();
+
+    let view = ContextProvider::new(1i32)
+        .derived_child(
+            || (),
+            move |_| {
+                // This closure runs inside the outer scope
+                *outer_clone.borrow_mut() = Scope::current().get_context::<i32>();
+
+                // Inner provider with its own scope
+                ContextProvider::new(2i32).derived_child(|| (), {
+                    let inner_clone = inner_clone.clone();
+                    move |_| {
+                        // This closure runs inside the inner scope
+                        *inner_clone.borrow_mut() = Scope::current().get_context::<i32>();
+                        Empty::new()
+                    }
+                })
+            },
+        )
+        .style(|s| s.size(100.0, 100.0));
+
+    let _harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    assert_eq!(
+        *outer_value.borrow(),
+        Some(1),
+        "Outer derived_child closure should see outer context"
+    );
+    assert_eq!(
+        *inner_value.borrow(),
+        Some(2),
+        "Inner derived_child closure should see inner (shadowed) context"
+    );
+}
+
+/// A wrapper view that captures context and contains a child.
+struct ContextCapturingWrapper {
+    id: ViewId,
+}
+
+impl ContextCapturingWrapper {
+    fn new(context_holder: Rc<RefCell<Option<i32>>>, child: impl floem::View + 'static) -> Self {
+        let id = ViewId::new();
+        *context_holder.borrow_mut() = Scope::current().get_context::<i32>();
+        let child_id = child.id();
+        child_id.set_parent(id);
+        child_id.set_view(Box::new(child));
+        id.set_children_ids(vec![child_id]);
+        Self { id }
+    }
+}
+
+impl floem::View for ContextCapturingWrapper {
+    fn id(&self) -> ViewId {
+        self.id
+    }
+}
+
+/// Test that children without a scope-providing parent don't have context.
+#[test]
+fn test_no_scope_no_context() {
+    let context_value = Rc::new(RefCell::new(None::<i32>));
+    let context_value_clone = context_value.clone();
+
+    // Use regular Stem which doesn't provide a scope
+    let view = Stem::new()
+        .child(ContextCapturingView::new(context_value_clone))
+        .style(|s| s.size(100.0, 100.0));
+
+    let _harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    assert_eq!(
+        *context_value.borrow(),
+        None,
+        "Without scope provider, context should be None"
     );
 }

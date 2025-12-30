@@ -1,12 +1,13 @@
 use std::{any::Any, cell::RefCell, collections::HashMap};
 
+use floem_reactive::Scope;
 use peniko::kurbo::{Point, Rect, Size, Vec2};
 use ui_events::pointer::PointerId;
 use winit::window::{ResizeDirection, Theme};
 
 use crate::{
     platform::menu::Menu,
-    view::{View, ViewId},
+    view::{AnyView, View, ViewId},
     window::state::WindowState,
 };
 
@@ -96,9 +97,84 @@ pub enum UpdateMessage {
     /// Remove views from the tree (used by keyed children).
     /// Each view and its children will be properly cleaned up.
     RemoveViews(Vec<ViewId>),
+    /// Add a child to a parent view. The child is constructed lazily
+    /// when the message is processed, inside the parent's scope if provided.
+    AddChild {
+        parent_id: ViewId,
+        child: DeferredChild,
+    },
+    /// Add multiple children to a parent view. The children are constructed lazily
+    /// when the message is processed, inside the parent's scope if provided.
+    AddChildren {
+        parent_id: ViewId,
+        children: DeferredChildren,
+    },
 }
 
 /// Context passed during the update phase of the view lifecycle.
 pub struct UpdateCx<'a> {
     pub window_state: &'a mut WindowState,
+}
+
+/// A deferred child view that will be constructed when the message is processed.
+///
+/// Uses `Option` + `take()` pattern to allow `FnOnce` to be called from storage.
+/// The child is constructed inside the scope when `build()` is called.
+pub struct DeferredChild {
+    scope: Scope,
+    builder: Option<Box<dyn FnOnce() -> AnyView>>,
+}
+
+impl DeferredChild {
+    /// Create a new deferred child with a scope and a builder function.
+    ///
+    /// The builder will be called inside the given scope when `build()` is invoked.
+    pub fn new(scope: Scope, builder: impl FnOnce() -> AnyView + 'static) -> Self {
+        Self {
+            scope,
+            builder: Some(Box::new(builder)),
+        }
+    }
+
+    /// Build the child view inside the scope.
+    ///
+    /// # Panics
+    /// Panics if called more than once.
+    pub fn build(&mut self) -> AnyView {
+        let builder = self
+            .builder
+            .take()
+            .expect("DeferredChild::build called twice");
+        self.scope.enter(builder)
+    }
+}
+
+/// Multiple deferred children that will be constructed when the message is processed.
+pub struct DeferredChildren {
+    scope: Scope,
+    builder: Option<Box<dyn FnOnce() -> Vec<AnyView>>>,
+}
+
+impl DeferredChildren {
+    /// Create new deferred children with a scope and a builder function.
+    ///
+    /// The builder will be called inside the given scope when `build()` is invoked.
+    pub fn new(scope: Scope, builder: impl FnOnce() -> Vec<AnyView> + 'static) -> Self {
+        Self {
+            scope,
+            builder: Some(Box::new(builder)),
+        }
+    }
+
+    /// Build all children inside the scope.
+    ///
+    /// # Panics
+    /// Panics if called more than once.
+    pub fn build(&mut self) -> Vec<AnyView> {
+        let builder = self
+            .builder
+            .take()
+            .expect("DeferredChildren::build called twice");
+        self.scope.enter(builder)
+    }
 }

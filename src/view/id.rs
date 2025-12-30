@@ -22,12 +22,17 @@ use crate::{
     animate::{AnimStateCommand, Animation},
     context::{EventCallback, ResizeCallback},
     event::{EventListener, EventPropagation},
-    message::{CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES, UpdateMessage},
+    message::{
+        CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES, DeferredChild, DeferredChildren,
+        UpdateMessage,
+    },
     platform::menu::Menu,
     style::{Draggable, Focusable, PointerEvents, Style, StyleClassRef, StyleSelector},
     unit::PxPct,
     window::tracking::{is_known_root, window_id_for_root},
 };
+
+use super::AnyView;
 
 new_key_type! {
     /// A small unique identifier for an instance of a [View](crate::View).
@@ -838,6 +843,34 @@ impl ViewId {
         if !view_ids.is_empty() {
             self.add_update_message(UpdateMessage::RemoveViews(view_ids));
         }
+    }
+
+    /// Queue a child to be added during the next update cycle.
+    ///
+    /// The child will be constructed inside the given scope when the message
+    /// is processed. This enables lazy child construction where children are
+    /// built inside the parent's scope for context access.
+    pub fn add_child_deferred(&self, scope: Scope, child_fn: impl FnOnce() -> AnyView + 'static) {
+        self.add_update_message(UpdateMessage::AddChild {
+            parent_id: *self,
+            child: DeferredChild::new(scope, child_fn),
+        });
+    }
+
+    /// Queue multiple children to be added during the next update cycle.
+    ///
+    /// The children will be constructed inside the given scope when the message
+    /// is processed. This enables lazy children construction where children are
+    /// built inside the parent's scope for context access.
+    pub fn add_children_deferred(
+        &self,
+        scope: Scope,
+        children_fn: impl FnOnce() -> Vec<AnyView> + 'static,
+    ) {
+        self.add_update_message(UpdateMessage::AddChildren {
+            parent_id: *self,
+            children: DeferredChildren::new(scope, children_fn),
+        });
     }
 
     fn add_update_message(&self, msg: UpdateMessage) {
