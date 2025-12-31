@@ -812,12 +812,9 @@ fn test_derived_child_with_enum() {
 
 /// Test behavior when mixing static children with derived_child.
 ///
-/// With deferred child construction, `.children()` queues children to be added
-/// via message, while `.derived_child()` sets up its child immediately.
-/// When messages are processed, both sets of children end up in the parent.
-///
-/// However, when the derived_child updates, it uses `set_children_ids` which
-/// replaces ALL children, effectively removing the static children.
+/// With fully deferred child construction, both `.children()` and `.derived_child()`
+/// queue messages that are processed in order. When `derived_child` sets up,
+/// it calls `set_children_ids` which replaces any previously added children.
 ///
 /// Note: Mixing static `.children()` with reactive `.derived_child()` is not
 /// a recommended pattern. Use one or the other for predictable behavior.
@@ -833,25 +830,27 @@ fn test_derived_child_with_static_children() {
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
-    // With deferred children: derived_child sets 1 child immediately,
-    // then .children() adds 2 more when messages are processed.
-    // Total: 3 children (1 from derived_child + 2 from deferred .children())
-    assert_eq!(
-        id.children().len(),
-        3,
-        "Should have 3 children: 1 from derived_child + 2 from deferred .children()"
-    );
-
-    // Update dynamic state - derived_child uses set_children_ids which
-    // replaces ALL children, including the static ones
-    dynamic_state.set(2);
-    harness.rebuild();
-
-    // Now only the derived_child's child remains
+    // Both .children() and .derived_child() are now deferred.
+    // Messages are processed in order:
+    // 1. AddChildren adds 2 children
+    // 2. SetupReactiveChildren runs derived_child setup which calls set_children_ids,
+    //    replacing the 2 static children with 1 dynamic child.
+    // Result: only 1 child from derived_child
     assert_eq!(
         id.children().len(),
         1,
-        "After update, only derived_child's child remains (static children removed)"
+        "derived_child's set_children_ids replaces static children"
+    );
+
+    // Update dynamic state - derived_child recreates its child
+    dynamic_state.set(2);
+    harness.rebuild();
+
+    // Still only derived_child's child
+    assert_eq!(
+        id.children().len(),
+        1,
+        "After update, still only derived_child's child"
     );
 }
 

@@ -109,6 +109,11 @@ pub enum UpdateMessage {
         parent_id: ViewId,
         children: DeferredChildren,
     },
+    /// Set up reactive children (derived_children, derived_child, keyed_children).
+    /// The setup is deferred to ensure it runs inside the correct scope.
+    SetupReactiveChildren {
+        setup: DeferredReactiveSetup,
+    },
 }
 
 /// Context passed during the update phase of the view lifecycle.
@@ -176,5 +181,39 @@ impl DeferredChildren {
             .take()
             .expect("DeferredChildren::build called twice");
         self.scope.enter(builder)
+    }
+}
+
+/// Deferred setup for reactive children (derived_children, derived_child, keyed_children).
+///
+/// This captures all the setup logic in a closure that will be executed when the
+/// message is processed. The setup runs inside the scope to ensure proper context access.
+pub struct DeferredReactiveSetup {
+    scope: Scope,
+    setup: Option<Box<dyn FnOnce()>>,
+}
+
+impl DeferredReactiveSetup {
+    /// Create a new deferred reactive setup.
+    ///
+    /// The setup function will be called inside the given scope when `run()` is invoked.
+    /// It should set up the reactive effect and initial children.
+    pub fn new(scope: Scope, setup: impl FnOnce() + 'static) -> Self {
+        Self {
+            scope,
+            setup: Some(Box::new(setup)),
+        }
+    }
+
+    /// Run the setup inside the scope.
+    ///
+    /// # Panics
+    /// Panics if called more than once.
+    pub fn run(&mut self) {
+        let setup = self
+            .setup
+            .take()
+            .expect("DeferredReactiveSetup::run called twice");
+        self.scope.enter(setup)
     }
 }

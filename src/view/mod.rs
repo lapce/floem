@@ -252,27 +252,32 @@ pub trait ParentView: HasViewId + Sized {
         let id = self.view_id();
         // Use parent's scope if available, otherwise use current scope
         let base_scope = self.scope().unwrap_or_else(Scope::current);
-        let children_fn = Box::new(
-            base_scope.enter_child(move |_| children_fn().into_view_iter().collect::<Vec<_>>()),
-        );
 
-        let (initial_children, initial_scope) = UpdaterEffect::new(
-            move || children_fn(()),
-            move |(new_children, new_scope): (Vec<AnyView>, Scope)| {
-                // Dispose old scope and remove old children
-                if let Some(old_scope) = id.take_children_scope() {
-                    old_scope.dispose();
-                }
-                // Set new children and store new scope
-                id.set_children_vec(new_children);
-                id.set_children_scope(new_scope);
-                id.request_all();
-            },
-        );
+        // Defer the entire setup to message processing
+        id.setup_reactive_children_deferred(base_scope, move || {
+            let children_fn = Box::new(
+                Scope::current()
+                    .enter_child(move |_| children_fn().into_view_iter().collect::<Vec<_>>()),
+            );
 
-        // Set initial children and scope
-        id.set_children_vec(initial_children);
-        id.set_children_scope(initial_scope);
+            let (initial_children, initial_scope) = UpdaterEffect::new(
+                move || children_fn(()),
+                move |(new_children, new_scope): (Vec<AnyView>, Scope)| {
+                    // Dispose old scope and remove old children
+                    if let Some(old_scope) = id.take_children_scope() {
+                        old_scope.dispose();
+                    }
+                    // Set new children and store new scope
+                    id.set_children_vec(new_children);
+                    id.set_children_scope(new_scope);
+                    id.request_all();
+                },
+            );
+
+            // Set initial children and scope
+            id.set_children_vec(initial_children);
+            id.set_children_scope(initial_scope);
+        });
         self
     }
 
@@ -310,42 +315,45 @@ pub trait ParentView: HasViewId + Sized {
         // Use parent's scope if available, otherwise use current scope
         let base_scope = self.scope().unwrap_or_else(Scope::current);
 
-        // Wrap child_fn to create scoped views, using Rc to share between effect and initial setup
-        let child_fn: Rc<dyn Fn(S) -> (AnyView, Scope)> =
-            Rc::new(base_scope.enter_child(move |state: S| child_fn(state).into_any()));
+        // Defer the entire setup to message processing
+        id.setup_reactive_children_deferred(base_scope, move || {
+            // Wrap child_fn to create scoped views, using Rc to share between effect and initial setup
+            let child_fn: Rc<dyn Fn(S) -> (AnyView, Scope)> =
+                Rc::new(Scope::current().enter_child(move |state: S| child_fn(state).into_any()));
 
-        let child_fn_for_effect = child_fn.clone();
+            let child_fn_for_effect = child_fn.clone();
 
-        // Create effect and get initial state
-        let initial_state = UpdaterEffect::new(state_fn, move |new_state: S| {
-            // Dispose old scope
-            if let Some(old_scope) = id.take_children_scope() {
-                old_scope.dispose();
-            }
+            // Create effect and get initial state
+            let initial_state = UpdaterEffect::new(state_fn, move |new_state: S| {
+                // Dispose old scope
+                if let Some(old_scope) = id.take_children_scope() {
+                    old_scope.dispose();
+                }
 
-            // Get old child for removal
-            let old_children = id.children();
+                // Get old child for removal
+                let old_children = id.children();
 
-            // Create new child
-            let (new_child, new_scope) = child_fn_for_effect(new_state);
-            let new_child_id = new_child.id();
-            new_child_id.set_parent(id);
-            new_child_id.set_view(new_child);
-            id.set_children_ids(vec![new_child_id]);
-            id.set_children_scope(new_scope);
+                // Create new child
+                let (new_child, new_scope) = child_fn_for_effect(new_state);
+                let new_child_id = new_child.id();
+                new_child_id.set_parent(id);
+                new_child_id.set_view(new_child);
+                id.set_children_ids(vec![new_child_id]);
+                id.set_children_scope(new_scope);
 
-            // Request removal of old children
-            id.request_remove_views(old_children);
-            id.request_all();
+                // Request removal of old children
+                id.request_remove_views(old_children);
+                id.request_all();
+            });
+
+            // Create initial child from initial state
+            let (initial_child, initial_scope) = child_fn(initial_state);
+            let child_id = initial_child.id();
+            child_id.set_parent(id);
+            child_id.set_view(initial_child);
+            id.set_children_ids(vec![child_id]);
+            id.set_children_scope(initial_scope);
         });
-
-        // Create initial child from initial state
-        let (initial_child, initial_scope) = child_fn(initial_state);
-        let child_id = initial_child.id();
-        child_id.set_parent(id);
-        child_id.set_view(initial_child);
-        id.set_children_ids(vec![child_id]);
-        id.set_children_scope(initial_scope);
         self
     }
 
@@ -387,63 +395,67 @@ pub trait ParentView: HasViewId + Sized {
         // Use parent's scope if available, otherwise use current scope
         let base_scope = self.scope().unwrap_or_else(Scope::current);
 
-        // Wrap view_fn to create scoped views - each child gets its own scope
-        let view_fn = base_scope.enter_child(move |item: T| view_fn(item).into_any());
+        // Defer the entire setup to message processing
+        id.setup_reactive_children_deferred(base_scope, move || {
+            // Wrap view_fn to create scoped views - each child gets its own scope
+            let view_fn = Scope::current().enter_child(move |item: T| view_fn(item).into_any());
 
-        // Initialize keyed children state
-        id.set_keyed_children(Vec::new());
+            // Initialize keyed children state
+            id.set_keyed_children(Vec::new());
 
-        Effect::new(move |prev_hash_run: Option<HashRun<FxIndexSet<K>>>| {
-            let items: SmallVec<[T; 128]> = items_fn().into_iter().collect();
-            let new_keys: FxIndexSet<K> = items.iter().map(&key_fn).collect();
+            Effect::new(move |prev_hash_run: Option<HashRun<FxIndexSet<K>>>| {
+                let items: SmallVec<[T; 128]> = items_fn().into_iter().collect();
+                let new_keys: FxIndexSet<K> = items.iter().map(&key_fn).collect();
 
-            // Take current children state
-            let mut children: Vec<Option<(ViewId, Scope)>> = id
-                .take_keyed_children()
-                .unwrap_or_default()
-                .into_iter()
-                .map(Some)
-                .collect();
+                // Take current children state
+                let mut children: Vec<Option<(ViewId, Scope)>> = id
+                    .take_keyed_children()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(Some)
+                    .collect();
 
-            if let Some(HashRun(prev_keys)) = prev_hash_run {
-                // Compute diff between old and new keys
-                let mut diff_result = diff::<K, T>(&prev_keys, &new_keys);
+                if let Some(HashRun(prev_keys)) = prev_hash_run {
+                    // Compute diff between old and new keys
+                    let mut diff_result = diff::<K, T>(&prev_keys, &new_keys);
 
-                // Prepare items for added entries
-                let mut items: SmallVec<[Option<T>; 128]> = items.into_iter().map(Some).collect();
-                for added in &mut diff_result.added {
-                    added.view = items[added.at].take();
+                    // Prepare items for added entries
+                    let mut items: SmallVec<[Option<T>; 128]> =
+                        items.into_iter().map(Some).collect();
+                    for added in &mut diff_result.added {
+                        added.view = items[added.at].take();
+                    }
+
+                    // Apply diff operations (returns views to remove)
+                    let views_to_remove = apply_keyed_diff(id, &mut children, diff_result, &view_fn);
+
+                    // Request removal via message (processed during update phase)
+                    id.request_remove_views(views_to_remove);
+                } else {
+                    // First run - create all children
+                    for item in items {
+                        let (view, scope) = view_fn(item);
+                        let child_id = view.id();
+                        child_id.set_parent(id);
+                        child_id.set_view(view);
+                        children.push(Some((child_id, scope)));
+                    }
                 }
 
-                // Apply diff operations (returns views to remove)
-                let views_to_remove = apply_keyed_diff(id, &mut children, diff_result, &view_fn);
+                // Update the actual children list
+                let children_ids: Vec<ViewId> = children
+                    .iter()
+                    .filter_map(|c| Some(c.as_ref()?.0))
+                    .collect();
+                id.set_children_ids(children_ids);
 
-                // Request removal via message (processed during update phase)
-                id.request_remove_views(views_to_remove);
-            } else {
-                // First run - create all children
-                for item in items {
-                    let (view, scope) = view_fn(item);
-                    let child_id = view.id();
-                    child_id.set_parent(id);
-                    child_id.set_view(view);
-                    children.push(Some((child_id, scope)));
-                }
-            }
+                // Store updated children state (convert back from Option)
+                let children_vec: Vec<(ViewId, Scope)> = children.into_iter().flatten().collect();
+                id.set_keyed_children(children_vec);
 
-            // Update the actual children list
-            let children_ids: Vec<ViewId> = children
-                .iter()
-                .filter_map(|c| Some(c.as_ref()?.0))
-                .collect();
-            id.set_children_ids(children_ids);
-
-            // Store updated children state (convert back from Option)
-            let children_vec: Vec<(ViewId, Scope)> = children.into_iter().flatten().collect();
-            id.set_keyed_children(children_vec);
-
-            id.request_all();
-            HashRun(new_keys)
+                id.request_all();
+                HashRun(new_keys)
+            });
         });
 
         self

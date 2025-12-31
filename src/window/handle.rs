@@ -1070,6 +1070,9 @@ impl WindowHandle {
                         parent_id.append_children(views);
                         parent_id.request_all();
                     }
+                    UpdateMessage::SetupReactiveChildren { mut setup } => {
+                        setup.run();
+                    }
                 }
             }
         }

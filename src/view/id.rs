@@ -24,7 +24,7 @@ use crate::{
     event::{EventListener, EventPropagation},
     message::{
         CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES, DeferredChild, DeferredChildren,
-        UpdateMessage,
+        DeferredReactiveSetup, UpdateMessage,
     },
     platform::menu::Menu,
     style::{Draggable, Focusable, PointerEvents, Style, StyleClassRef, StyleSelector},
@@ -870,6 +870,21 @@ impl ViewId {
         self.add_update_message(UpdateMessage::AddChildren {
             parent_id: *self,
             children: DeferredChildren::new(scope, children_fn),
+        });
+    }
+
+    /// Queue a reactive children setup to run during the next update cycle.
+    ///
+    /// The setup function will be called inside the given scope when the message
+    /// is processed. This enables lazy setup of reactive children (derived_children,
+    /// derived_child, keyed_children) inside the correct scope for context access.
+    pub fn setup_reactive_children_deferred(
+        &self,
+        scope: Scope,
+        setup: impl FnOnce() + 'static,
+    ) {
+        self.add_update_message(UpdateMessage::SetupReactiveChildren {
+            setup: DeferredReactiveSetup::new(scope, setup),
         });
     }
 
