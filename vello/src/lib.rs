@@ -680,7 +680,7 @@ impl VelloRenderer {
             .draw_glyphs(&font)
             .font_size(run.font_size)
             .brush(run.color)
-            .hint(false)
+            .hint(true)
             .transform(transform)
             .draw(
                 Fill::NonZero,

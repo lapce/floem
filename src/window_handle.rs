@@ -90,6 +90,7 @@ pub(crate) struct WindowHandle {
 }
 
 impl WindowHandle {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         window: Box<dyn winit::window::Window>,
         gpu_resources: Option<GpuResources>,
@@ -98,6 +99,7 @@ impl WindowHandle {
         transparent: bool,
         apply_default_theme: bool,
         font_embolden: f32,
+        renderer_preference: crate::renderer::RendererKind,
     ) -> Self {
         let scope = Scope::new();
         let window_id = window.id();
@@ -158,6 +160,7 @@ impl WindowHandle {
                 scale,
                 size.get_untracked() * scale,
                 font_embolden,
+                renderer_preference,
             )
         } else {
             let gpu_resources_rx = GpuResources::request(
@@ -583,9 +586,9 @@ impl WindowHandle {
             pending_drag_paint: None,
             gpu_resources,
             window: self.window.clone(),
-            #[cfg(feature = "vello")]
+            #[cfg(not(feature = "simple_renderer"))]
             saved_layer_counts: Vec::new(),
-            #[cfg(feature = "vello")]
+            #[cfg(not(feature = "simple_renderer"))]
             layer_count: 0,
         };
         cx.paint_state

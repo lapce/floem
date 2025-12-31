@@ -1,11 +1,14 @@
 use floem::{
+    kurbo::Affine,
     menu::*,
-    prelude::ViewTuple,
+    prelude::{RwSignal, SignalGet, SignalUpdate, ViewTuple},
+    reactive::Effect,
     views::{ButtonClass, Decorators},
-    IntoView,
+    HasViewId, IntoView,
 };
 
 pub fn menu_view() -> impl IntoView {
+    let transform = RwSignal::new(Affine::IDENTITY);
     let export_submenu = |m: SubMenu| {
         m.item("PDF", |i| i.action(|| println!("Exporting as PDF...")))
             .item("PNG", |i| i.action(|| println!("Exporting as PNG...")))
@@ -40,15 +43,27 @@ pub fn menu_view() -> impl IntoView {
             })
     };
 
-    let transform_submenu = |m: SubMenu| {
+    let transform_submenu = move |m: SubMenu| {
         m.item("Rotate 90°", |i| {
-            i.action(|| println!("Rotating 90 degrees..."))
+            i.action(move || {
+                transform.update(|s| {
+                    *s = s.then_rotate(90f64.to_radians());
+                })
+            })
         })
         .item("Flip Horizontal", |i| {
-            i.action(|| println!("Flipping horizontally..."))
+            i.action(move || {
+                transform.update(|s| {
+                    *s *= Affine::FLIP_X;
+                })
+            })
         })
         .item("Flip Vertical", |i| {
-            i.action(|| println!("Flipping vertically..."))
+            i.action(move || {
+                transform.update(|s| {
+                    *s *= Affine::FLIP_Y;
+                })
+            })
         })
         .separator()
         .item("Reset Transform", |i| {
@@ -85,6 +100,12 @@ pub fn menu_view() -> impl IntoView {
         .class(ButtonClass)
         .style(|s| s.padding(10.0).border(1.0))
         .context_menu(context_menu);
+    let id = context_button.view_id();
+
+    Effect::new(move |_| {
+        let transform = transform.get();
+        id.set_transform(transform);
+    });
 
     (popout_button, context_button)
         .v_stack()

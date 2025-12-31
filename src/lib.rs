@@ -182,7 +182,7 @@ mod app;
 #[cfg(target_os = "macos")]
 mod app_delegate;
 mod app_handle;
-#[cfg(feature = "vello")]
+#[cfg(not(feature = "simple_renderer"))]
 mod border_path_iter;
 mod clipboard;
 pub mod context;
@@ -244,6 +244,7 @@ pub use imbl;
 pub use muda;
 pub use peniko;
 pub use peniko::kurbo;
+pub use renderer::RendererKind;
 pub use screen_layout::ScreenLayout;
 pub use taffy;
 pub use ui_events;

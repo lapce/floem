@@ -1,0 +1,18 @@
+[package]
+name = "floem_vello_cpu_renderer"
+version.workspace = true
+edition = "2024"
+repository = "https://github.com/lapce/floem"
+license.workspace = true
+
+[dependencies]
+peniko = { workspace = true }
+wgpu = { workspace = true }
+resvg = { workspace = true }
+
+anyhow = "1.0"
+bytemuck = "1.0"
+vello_cpu = { version = "0.0.4", default-features = false, features = ["std", "text"] }
+raw-window-handle = { workspace = true }
+floem_renderer = { path = "../renderer", version = "0.2.0" }
+softbuffer = "0.4.1"

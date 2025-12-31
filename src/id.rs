@@ -6,9 +6,9 @@
 
 use std::{any::Any, cell::RefCell, rc::Rc};
 
-use peniko::kurbo::{Affine, Insets, Point, Rect, Size};
+use peniko::kurbo::{Insets, Point, Rect, Size};
 use slotmap::new_key_type;
-use taffy::{Layout, NodeId, TaffyTree};
+use taffy::{Display, Layout, NodeId, TaffyTree};
 use winit::window::WindowId;
 
 use crate::{

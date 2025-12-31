@@ -3,6 +3,7 @@ resolver = "2"
 members = [
   "renderer",
   "vello",
+  "vello_cpu",
   "vger",
   "tiny_skia",
   "reactive",
@@ -15,6 +16,7 @@ default-members = [
   ".",
   "renderer",
   "vello",
+  "vello_cpu",
   "vger",
   "tiny_skia",
   "reactive",
@@ -86,8 +88,9 @@ strum_macros = { workspace = true, optional = true }
 paste = "1.0"
 floem_renderer = { path = "renderer", version = "0.2.0" }
 floem_vello_renderer = { path = "vello", version = "0.2.0", optional = true }
+floem_vello_cpu_renderer = { path = "vello_cpu", version = "0.2.0", optional = true }
 floem_vger_renderer = { path = "vger", version = "0.2.0", optional = true }
-floem_tiny_skia_renderer = { path = "tiny_skia", version = "0.2.0" }
+floem_tiny_skia_renderer = { path = "tiny_skia", version = "0.2.0", optional = true }
 floem_reactive = { path = "reactive", version = "0.2.0" }
 floem-editor-core = { path = "editor-core", version = "0.2.0", optional = true }
 copypasta = { version = "0.10", default-features = false, features = [
@@ -131,9 +134,17 @@ objc2-app-kit = { version = "0.3", features = [
 ] }
 
 [features]
-default = ["editor", "default-image-formats", "vger"]
+default = ["editor", "default-image-formats", "vello", "vello_cpu"]
+
+# Renderers - enable any combination you want
+# They are tried in order: vello -> vger -> vello_cpu -> tiny_skia
 vello = ["dep:floem_vello_renderer"]
-vger = ["dep:floem_vger_renderer"]
+vger = ["dep:floem_vger_renderer"]  
+vello_cpu = ["dep:floem_vello_cpu_renderer"]
+tiny_skia = ["dep:floem_tiny_skia_renderer"]
+
+# Feature flag for capabilities - simple renderer (vger) has limited features
+simple_renderer = []
 serde = [
   "dep:serde",
   "winit/serde",

@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-floem = { path = "../..", features = ["rfd-async-std", "vello"] }
+floem = { path = "../..", features = ["rfd-async-std", "vello", "vello_cpu"] }
 strum = { workspace = true }
 files = { path = "../files/", optional = true }
 stacks = { path = "../stacks/", optional = true }

@@ -84,7 +84,8 @@ impl ApplicationHandle {
                 } = &handle.paint_state
                 {
                     let (gpu_resources, surface) = rx.recv().unwrap().unwrap();
-                    let renderer = crate::renderer::Renderer::new(
+                    let renderer = crate::renderer::Renderer::new_with_kind(
+                        self.config.renderer_preference,
                         window.clone(),
                         gpu_resources.clone(),
                         surface,
@@ -548,6 +549,7 @@ impl ApplicationHandle {
             transparent,
             apply_default_theme,
             font_embolden,
+            self.config.renderer_preference,
         );
         self.window_handles.insert(window_id, window_handle);
     }

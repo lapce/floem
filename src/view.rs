@@ -716,7 +716,7 @@ fn paint_box_shadow(
         }
     }
 }
-#[cfg(feature = "vello")]
+#[cfg(not(feature = "simple_renderer"))]
 pub(crate) fn paint_outline(cx: &mut PaintCx, style: &ViewStyleProps, size: Size) {
     use crate::{
         border_path_iter::{BorderPath, BorderPathEvent},
@@ -768,7 +768,7 @@ pub(crate) fn paint_outline(cx: &mut PaintCx, style: &ViewStyleProps, size: Size
     assert!(current_path.is_empty());
 }
 
-#[cfg(not(feature = "vello"))]
+#[cfg(feature = "simple_renderer")]
 pub(crate) fn paint_outline(cx: &mut PaintCx, style: &ViewStyleProps, size: Size) {
     let outline = &style.outline().0;
     if outline.width == 0. {
@@ -785,7 +785,7 @@ pub(crate) fn paint_outline(cx: &mut PaintCx, style: &ViewStyleProps, size: Size
     );
 }
 
-#[cfg(not(feature = "vello"))]
+#[cfg(feature = "simple_renderer")]
 pub(crate) fn paint_border(
     cx: &mut PaintCx,
     layout_style: &LayoutProps,
@@ -874,7 +874,7 @@ pub(crate) fn paint_border(
     }
 }
 
-#[cfg(feature = "vello")]
+#[cfg(not(feature = "simple_renderer"))]
 pub(crate) fn paint_border(
     cx: &mut PaintCx,
     layout_style: &LayoutProps,

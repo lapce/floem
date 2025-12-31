@@ -1,6 +1,7 @@
 use floem_reactive::Scope;
 use floem_renderer::Renderer as FloemRenderer;
 use floem_renderer::gpu_resources::{GpuResourceError, GpuResources};
+use peniko::BlendMode;
 use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Shape, Size, Vec2};
 use smallvec::SmallVec;
 use std::{
@@ -74,6 +75,7 @@ pub struct DragState {
     pub(crate) release_location: Option<Point>,
 }
 
+#[derive(Debug)]
 pub(crate) enum FrameUpdate {
     Style(ViewId),
     Layout(ViewId),
@@ -1000,8 +1002,10 @@ impl<'a> StyleCx<'a> {
     pub fn style_view(&mut self) {
         let view_id = self.current_view;
 
-        let view = view_id.view();
+        let view_interact_state = self.get_interact_state(&view_id);
         let view_state = view_id.state();
+
+        let view = view_id.view();
 
         {
             let mut view_state = view_state.borrow_mut();
@@ -1026,7 +1030,6 @@ impl<'a> StyleCx<'a> {
             }
         }
 
-        let view_interact_state = self.get_interact_state(&view_id);
         let view_class = view.borrow().view_class();
 
         let (mut new_frame, classes_applied) = self.compute_combined(
@@ -1086,18 +1089,16 @@ impl<'a> StyleCx<'a> {
                 &mut new_frame,
             );
 
-            if view_state.view_transform_props.read_explicit(
+            view_state.view_transform_props.read_explicit(
                 &self.direct,
                 &self.current,
                 &self.now,
                 &mut new_frame,
-            ) || new_frame
-            {
-                self.window_state.schedule_layout(view_id);
-            }
+            );
         }
 
-        if new_frame {
+        // TODO: we should still be scheduling style here. the style pass should still run, we just shouldn't be repainting because of a hidden view.
+        if new_frame && !self.hidden {
             self.window_state.schedule_style(view_id);
         }
 
@@ -1106,7 +1107,10 @@ impl<'a> StyleCx<'a> {
         let taffy_style = self.direct.clone().apply(layout_style).to_taffy_style();
         if taffy_style != view_state.borrow().taffy_style {
             view_state.borrow_mut().taffy_style = taffy_style;
-            self.window_state.schedule_layout(view_id);
+            // TODO: we should still be requesting layout here. the layout should still run, we just shouldn't be repainting because of a hidden view.
+            if !self.hidden {
+                view_id.request_layout();
+            }
         }
 
         view.borrow_mut().style_pass(self);
@@ -1511,9 +1515,9 @@ pub struct PaintCx<'a> {
     pub(crate) pending_drag_paint: Option<PendingDragPaint>,
     pub gpu_resources: Option<GpuResources>,
     pub window: Arc<dyn Window>,
-    #[cfg(feature = "vello")]
+    #[cfg(not(feature = "simple_renderer"))]
     pub layer_count: usize,
-    #[cfg(feature = "vello")]
+    #[cfg(not(feature = "simple_renderer"))]
     pub saved_layer_counts: Vec<usize>,
 }
 
@@ -1521,12 +1525,12 @@ impl PaintCx<'_> {
     pub fn save(&mut self) {
         self.saved_transforms.push(self.transform);
         self.saved_clips.push(self.clip);
-        #[cfg(feature = "vello")]
+        #[cfg(not(feature = "simple_renderer"))]
         self.saved_layer_counts.push(self.layer_count);
     }
 
     pub fn restore(&mut self) {
-        #[cfg(feature = "vello")]
+        #[cfg(not(feature = "simple_renderer"))]
         {
             let saved_count = self.saved_layer_counts.pop().unwrap_or_default();
             while self.layer_count > saved_count {
@@ -1541,7 +1545,7 @@ impl PaintCx<'_> {
             .renderer_mut()
             .set_transform(self.transform);
 
-        #[cfg(not(feature = "vello"))]
+        #[cfg(feature = "simple_renderer")]
         {
             if let Some(rect) = self.clip {
                 self.paint_state.renderer_mut().clip(&rect);
@@ -1596,12 +1600,24 @@ impl PaintCx<'_> {
         if !is_empty {
             let view_style_props = view_state.borrow().view_style_props.clone();
             let layout_props = view_state.borrow().layout_props.clone();
+            let alpha = view_style_props.opacity();
+            if alpha != 1. {
+                self.push_layer(
+                    BlendMode::default(),
+                    alpha,
+                    Affine::IDENTITY,
+                    &size.to_rect(),
+                );
+            }
 
             paint_bg(self, &view_style_props, size);
 
             view.borrow_mut().paint(self);
             paint_border(self, &layout_props, &view_style_props, size);
-            paint_outline(self, &view_style_props, size)
+            paint_outline(self, &view_style_props, size);
+            if alpha != 1. {
+                self.pop_layer();
+            }
         }
         // Check if this view is being dragged and needs deferred painting
         if let Some(dragging) = self.window_state.dragging.as_ref() {
@@ -1719,7 +1735,7 @@ impl PaintCx<'_> {
 
     /// Clip the drawing area to the given shape.
     pub fn clip(&mut self, shape: &impl Shape) {
-        #[cfg(feature = "vello")]
+        #[cfg(not(feature = "simple_renderer"))]
         {
             use peniko::Mix;
 
@@ -1728,7 +1744,7 @@ impl PaintCx<'_> {
             self.clip = Some(shape.bounding_box().to_rounded_rect(0.0));
         }
 
-        #[cfg(not(feature = "vello"))]
+        #[cfg(feature = "simple_renderer")]
         {
             let rect = if let Some(rect) = shape.as_rect() {
                 rect.to_rounded_rect(0.0)
@@ -1849,8 +1865,10 @@ impl PaintState {
         scale: f64,
         size: Size,
         font_embolden: f32,
+        renderer_preference: crate::renderer::RendererKind,
     ) -> Self {
-        let renderer = crate::renderer::Renderer::new(
+        let renderer = crate::renderer::Renderer::new_with_kind(
+            renderer_preference,
             window.clone(),
             gpu_resources,
             surface,
