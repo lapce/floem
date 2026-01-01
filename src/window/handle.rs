@@ -1059,9 +1059,7 @@ impl WindowHandle {
                         mut child,
                     } => {
                         // Resolve scope by looking up parent's scope
-                        let scope = parent_id
-                            .find_scope()
-                            .unwrap_or_else(Scope::current);
+                        let scope = parent_id.find_scope().unwrap_or_else(Scope::current);
                         let view = child.build(scope);
                         parent_id.add_child(view);
                         parent_id.request_all();
@@ -1071,9 +1069,7 @@ impl WindowHandle {
                         mut children,
                     } => {
                         // Resolve scope by looking up parent's scope
-                        let scope = parent_id
-                            .find_scope()
-                            .unwrap_or_else(Scope::current);
+                        let scope = parent_id.find_scope().unwrap_or_else(Scope::current);
                         let views = children.build(scope);
                         parent_id.append_children(views);
                         parent_id.request_all();

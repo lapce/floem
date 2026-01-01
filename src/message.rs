@@ -222,10 +222,7 @@ impl DeferredReactiveSetup {
             .setup
             .take()
             .expect("DeferredReactiveSetup::run called twice");
-        let scope = self
-            .view_id
-            .find_scope()
-            .unwrap_or_else(Scope::current);
+        let scope = self.view_id.find_scope().unwrap_or_else(Scope::current);
         scope.enter(setup)
     }
 }

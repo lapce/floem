@@ -87,14 +87,16 @@ fn test_overlay_content_factory_called() {
 #[test]
 fn test_overlay_in_nested_structure() {
     // Test that Overlay works in nested view structures
-    let view = Stack::new((Stack::new((
-        Label::new("Nested label"),
-        Overlay::new().derived_children(|| {
-            [Stack::new((Label::new("Nested overlay"), Empty::new())).style(|s| s.size(50.0, 50.0))]
-        }),
-    ))
-    .style(|s| s.size(80.0, 80.0)),))
-    .style(|s| s.size(100.0, 100.0));
+    let view =
+        Stack::new((Stack::new((
+            Label::new("Nested label"),
+            Overlay::new().derived_children(|| {
+                [Stack::new((Label::new("Nested overlay"), Empty::new()))
+                    .style(|s| s.size(50.0, 50.0))]
+            }),
+        ))
+        .style(|s| s.size(80.0, 80.0)),))
+        .style(|s| s.size(100.0, 100.0));
 
     let _harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 }
@@ -418,7 +420,8 @@ fn test_paint_order_overlays_after_regular_views() {
     let overlay_content = Empty::new().style(|s| s.absolute().inset(0.0).size(100.0, 100.0));
     let overlay_id = overlay_content.view_id();
 
-    let view = Stack::new((regular, Overlay::new().child(overlay_content))).style(|s| s.size(100.0, 100.0));
+    let view = Stack::new((regular, Overlay::new().child(overlay_content)))
+        .style(|s| s.size(100.0, 100.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
@@ -653,8 +656,10 @@ fn test_overlay_painted_outside_parent_clip() {
     let overlay_content = Empty::new().style(|s| s.absolute().inset(0.0).size(100.0, 100.0));
     let overlay_id = overlay_content.view_id();
 
-    let view = Stack::new((Clip::new(Stack::new((Overlay::new().child(overlay_content),)))
-        .style(|s| s.absolute().inset(0.0).size(50.0, 50.0)),))
+    let view = Stack::new((
+        Clip::new(Stack::new((Overlay::new().child(overlay_content),)))
+            .style(|s| s.absolute().inset(0.0).size(50.0, 50.0)),
+    ))
     .style(|s| s.size(100.0, 100.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);

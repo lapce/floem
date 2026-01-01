@@ -291,10 +291,14 @@ pub trait ParentView: HasViewId + Sized {
         self
     }
 
-    /// Adds a single reactive child that updates when signals change.
+    /// Adds a single reactive child with explicit state tracking.
     ///
-    /// Similar to `dyn_container`, but as a method on `ParentView`.
-    /// When the state changes, the old child is replaced with a new one.
+    /// Takes two closures: one that tracks reactive dependencies and returns state,
+    /// and another that builds a view from that state. When the state changes,
+    /// the old child is replaced with a new one.
+    ///
+    /// For a simpler API where a single closure both tracks deps and returns a view,
+    /// use `derived_child` instead.
     ///
     /// The scope is resolved at build time by walking up the view hierarchy
     /// to find the nearest ancestor with a scope (via `ViewId::find_scope()`).
@@ -309,7 +313,7 @@ pub trait ParentView: HasViewId + Sized {
     ///
     /// let view_type = RwSignal::new(ViewType::One);
     ///
-    /// Stem::new().derived_child(
+    /// Stem::new().stateful_child(
     ///     move || view_type.get(),
     ///     |value| match value {
     ///         ViewType::One => text("One"),
@@ -317,7 +321,7 @@ pub trait ParentView: HasViewId + Sized {
     ///     }
     /// );
     /// ```
-    fn derived_child<S, SF, CF, V>(self, state_fn: SF, child_fn: CF) -> Self
+    fn stateful_child<S, SF, CF, V>(self, state_fn: SF, child_fn: CF) -> Self
     where
         SF: Fn() -> S + 'static,
         CF: Fn(S) -> V + 'static,
@@ -451,7 +455,8 @@ pub trait ParentView: HasViewId + Sized {
                     }
 
                     // Apply diff operations (returns views to remove)
-                    let views_to_remove = apply_keyed_diff(id, &mut children, diff_result, &view_fn);
+                    let views_to_remove =
+                        apply_keyed_diff(id, &mut children, diff_result, &view_fn);
 
                     // Request removal via message (processed during update phase)
                     id.request_remove_views(views_to_remove);
@@ -482,6 +487,90 @@ pub trait ParentView: HasViewId + Sized {
             });
         });
 
+        self
+    }
+
+    /// Adds a single reactive child that updates when signals change.
+    ///
+    /// The closure both tracks reactive dependencies and returns a view.
+    /// When any tracked dependency changes, the old child is replaced with
+    /// a new one built by calling the closure again.
+    ///
+    /// This is consistent with `derived_children` which also takes a single
+    /// closure. For explicit state tracking with separate closures, use
+    /// `stateful_child` instead.
+    ///
+    /// The scope is resolved at build time by walking up the view hierarchy
+    /// to find the nearest ancestor with a scope (via `ViewId::find_scope()`).
+    ///
+    /// ## Example
+    /// ```rust,ignore
+    /// use floem::prelude::*;
+    /// use floem::views::Stem;
+    ///
+    /// #[derive(Clone)]
+    /// enum ViewType { One, Two }
+    ///
+    /// let view_type = RwSignal::new(ViewType::One);
+    ///
+    /// Stem::new().derived_child(move || {
+    ///     match view_type.get() {  // tracking happens here
+    ///         ViewType::One => text("One").into_any(),
+    ///         ViewType::Two => text("Two").into_any(),
+    ///     }
+    /// });
+    /// ```
+    fn derived_child<CF, V>(self, child_fn: CF) -> Self
+    where
+        CF: Fn() -> V + 'static,
+        V: IntoView + 'static,
+    {
+        let id = self.view_id();
+
+        // If this view provides a scope, store it for descendant lookup
+        if let Some(scope) = self.scope() {
+            id.set_scope(scope);
+        }
+
+        // Defer the entire setup to message processing
+        // The scope is resolved via find_scope() when the message is processed
+        id.setup_reactive_children_deferred(move || {
+            // Wrap child_fn to create scoped views - each invocation gets its own scope
+            let child_fn =
+                Box::new(Scope::current().enter_child(move |_: ()| child_fn().into_any()));
+
+            // Use UpdaterEffect - the child_fn itself does the tracking
+            let (initial_child, initial_scope) = UpdaterEffect::new(
+                move || child_fn(()), // This tracks deps AND returns child
+                move |(new_child, new_scope): (AnyView, Scope)| {
+                    // Dispose old scope
+                    if let Some(old_scope) = id.take_children_scope() {
+                        old_scope.dispose();
+                    }
+
+                    // Get old children for removal
+                    let old_children = id.children();
+
+                    // Set up new child
+                    let new_child_id = new_child.id();
+                    new_child_id.set_parent(id);
+                    new_child_id.set_view(new_child);
+                    id.set_children_ids(vec![new_child_id]);
+                    id.set_children_scope(new_scope);
+
+                    // Request removal of old children
+                    id.request_remove_views(old_children);
+                    id.request_all();
+                },
+            );
+
+            // Set up initial child
+            let child_id = initial_child.id();
+            child_id.set_parent(id);
+            child_id.set_view(initial_child);
+            id.set_children_ids(vec![child_id]);
+            id.set_children_scope(initial_scope);
+        });
         self
     }
 }

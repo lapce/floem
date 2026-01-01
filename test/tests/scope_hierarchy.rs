@@ -12,8 +12,8 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use floem::reactive::{Context, Scope};
 use floem::prelude::*;
+use floem::reactive::{Context, Scope};
 use floem::views::{Decorators, Empty, Stem};
 use floem_test::prelude::*;
 use serial_test::serial;
@@ -79,7 +79,11 @@ fn test_scope_disposal_cascades() {
     child_scope.set_parent(parent_scope);
 
     // Signal should exist
-    assert_eq!(signal.get(), 42, "Signal should be readable before disposal");
+    assert_eq!(
+        signal.get(),
+        42,
+        "Signal should be readable before disposal"
+    );
 
     // Dispose parent - should cascade to child
     parent_scope.dispose();
@@ -605,11 +609,15 @@ fn test_scopes_at_a_and_c() {
 
     // D's scope should be parented to C's scope (nearest ancestor with scope)
     let d_scope_after = d_id.scope().expect("D should have scope");
-    let d_parent = d_scope_after.parent().expect("D's scope should have parent");
+    let d_parent = d_scope_after
+        .parent()
+        .expect("D's scope should have parent");
 
     // C's scope should be parented to A's scope
     let c_scope_after = c_id.scope().expect("C should have scope");
-    let c_parent = c_scope_after.parent().expect("C's scope should have parent");
+    let c_parent = c_scope_after
+        .parent()
+        .expect("C's scope should have parent");
 
     // Verify the chain: D -> C -> A
     assert!(d_parent.parent().is_some() || c_parent.parent().is_none());

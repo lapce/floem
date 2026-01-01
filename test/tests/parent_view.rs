@@ -431,7 +431,7 @@ fn test_derived_children_with_click_interaction() {
 // keyed_children tests
 // =============================================================================
 
-/// Test that keyed_children creates initial children.
+/// Test that derived_children creates initial children.
 #[test]
 fn test_keyed_children_initial() {
     let items = RwSignal::new(vec!["a", "b", "c"]);
@@ -456,7 +456,7 @@ fn test_keyed_children_initial() {
     );
 }
 
-/// Test that keyed_children updates when signal changes.
+/// Test that derived_children updates when signal changes.
 #[test]
 fn test_keyed_children_updates_on_signal_change() {
     let items = RwSignal::new(vec!["a", "b", "c"]);
@@ -495,7 +495,7 @@ fn test_keyed_children_updates_on_signal_change() {
     );
 }
 
-/// Test that keyed_children reuses views for unchanged keys.
+/// Test that derived_children reuses views for unchanged keys.
 #[test]
 fn test_keyed_children_reuses_unchanged_views() {
     let items = RwSignal::new(vec!["a", "b", "c"]);
@@ -539,7 +539,7 @@ fn test_keyed_children_reuses_unchanged_views() {
     );
 }
 
-/// Test that keyed_children works with empty signal.
+/// Test that derived_children works with empty signal.
 #[test]
 fn test_keyed_children_empty_signal() {
     let items: RwSignal<Vec<&str>> = RwSignal::new(vec![]);
@@ -575,7 +575,7 @@ fn test_keyed_children_empty_signal() {
     );
 }
 
-/// Test that keyed_children handles reordering correctly.
+/// Test that derived_children handles reordering correctly.
 #[test]
 fn test_keyed_children_reordering() {
     let items = RwSignal::new(vec!["a", "b", "c"]);
@@ -610,7 +610,7 @@ fn test_keyed_children_reordering() {
     assert_eq!(new_children[2], id_a, "Third should now be 'a'");
 }
 
-/// Test that keyed_children works with multiple updates.
+/// Test that derived_children works with multiple updates.
 #[test]
 fn test_keyed_children_multiple_updates() {
     let items = RwSignal::new(vec!["a", "b"]);
@@ -657,7 +657,7 @@ fn test_keyed_children_multiple_updates() {
 }
 
 // =============================================================================
-// derived_child tests
+// derived_child tests (single reactive child with combined function)
 // =============================================================================
 
 /// Test that derived_child creates initial child.
@@ -666,7 +666,10 @@ fn test_derived_child_initial() {
     let state = RwSignal::new(1);
 
     let view = Stem::new()
-        .derived_child(move || state.get(), |_value| Empty::new())
+        .derived_child(move || {
+            let _val = state.get(); // Track the signal
+            Empty::new()
+        })
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
@@ -686,7 +689,182 @@ fn test_derived_child_updates_on_signal_change() {
     let state = RwSignal::new(1);
 
     let view = Stem::new()
-        .derived_child(
+        .derived_child(move || {
+            let _val = state.get(); // Track the signal
+            Empty::new().style(move |s| s.size(30.0, 30.0))
+        })
+        .style(|s| s.size(100.0, 100.0));
+    let id = view.view_id();
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    // Get initial child ID
+    let initial_children: Vec<ViewId> = id.children();
+    assert_eq!(initial_children.len(), 1, "Should have 1 child initially");
+    let initial_child_id = initial_children[0];
+
+    // Update signal
+    state.set(2);
+    harness.rebuild();
+
+    // Get new child ID
+    let new_children: Vec<ViewId> = id.children();
+    assert_eq!(new_children.len(), 1, "Should still have 1 child");
+    let new_child_id = new_children[0];
+
+    // Child should be replaced (new ViewId)
+    assert_ne!(
+        initial_child_id, new_child_id,
+        "Child should be recreated when signal changes"
+    );
+}
+
+/// Test that derived_child works with enum-based view switching.
+#[test]
+fn test_derived_child_with_enum() {
+    #[derive(Clone, Copy)]
+    enum ViewType {
+        Small,
+        Large,
+    }
+
+    let view_type = RwSignal::new(ViewType::Small);
+    let tracker = ClickTracker::new();
+
+    let tracker_clone = tracker.clone();
+    let view = Stem::new()
+        .derived_child(move || match view_type.get() {
+            ViewType::Small => {
+                tracker_clone.track_named("small", Empty::new().style(|s| s.size(30.0, 30.0)))
+            }
+            ViewType::Large => {
+                tracker_clone.track_named("large", Empty::new().style(|s| s.size(80.0, 80.0)))
+            }
+        })
+        .style(|s| s.size(100.0, 100.0));
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    harness.rebuild(); // Process deferred children
+
+    // Click and verify the child is "small"
+    harness.click(15.0, 15.0);
+    assert_eq!(tracker.clicked_names(), vec!["small"]);
+
+    // Switch to large
+    tracker.reset();
+    view_type.set(ViewType::Large);
+    harness.rebuild();
+
+    // Click again and verify new child is "large"
+    harness.click(50.0, 50.0);
+    assert_eq!(tracker.clicked_names(), vec!["large"]);
+}
+
+/// Test that derived_child cleans up old children.
+#[test]
+fn test_derived_child_cleans_up_old_children() {
+    let state = RwSignal::new(1);
+
+    let view = Stem::new()
+        .derived_child(move || {
+            let _val = state.get(); // Track the signal
+            Empty::new()
+        })
+        .style(|s| s.size(100.0, 100.0));
+    let id = view.view_id();
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    // Collect initial child IDs
+    let mut all_child_ids: Vec<ViewId> = id.children();
+    assert_eq!(all_child_ids.len(), 1);
+
+    // Update multiple times
+    for i in 2..=5 {
+        state.set(i);
+        harness.rebuild();
+        let new_children = id.children();
+        assert_eq!(new_children.len(), 1, "Should always have exactly 1 child");
+        all_child_ids.extend(new_children);
+    }
+
+    // All child IDs should be unique (old ones were cleaned up and replaced)
+    let unique_ids: std::collections::HashSet<ViewId> = all_child_ids.iter().copied().collect();
+    assert_eq!(
+        unique_ids.len(),
+        all_child_ids.len(),
+        "All children should be unique (no reuse)"
+    );
+}
+
+/// Test that derived_child can use .into_any() for different return types.
+#[test]
+fn test_derived_child_with_into_any() {
+    let show_label = RwSignal::new(true);
+
+    let view = Stem::new()
+        .derived_child(move || {
+            if show_label.get() {
+                Label::new("Hello").into_any()
+            } else {
+                Empty::new().into_any()
+            }
+        })
+        .style(|s| s.size(100.0, 100.0));
+    let id = view.view_id();
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    harness.rebuild(); // Process deferred children
+
+    // Verify we have a child
+    let initial_children = id.children();
+    assert_eq!(initial_children.len(), 1, "Should have 1 child");
+    let initial_id = initial_children[0];
+
+    // Switch to Empty
+    show_label.set(false);
+    harness.rebuild();
+
+    // Verify child was replaced
+    let new_children = id.children();
+    assert_eq!(new_children.len(), 1, "Should still have 1 child");
+    assert_ne!(
+        initial_id, new_children[0],
+        "Child should be different after signal change"
+    );
+}
+
+// =============================================================================
+// stateful_child tests
+// =============================================================================
+
+/// Test that stateful_child creates initial child.
+#[test]
+fn test_stateful_child_initial() {
+    let state = RwSignal::new(1);
+
+    let view = Stem::new()
+        .stateful_child(move || state.get(), |_value| Empty::new())
+        .style(|s| s.size(100.0, 100.0));
+    let id = view.view_id();
+
+    let _harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+
+    let children = id.children();
+    assert_eq!(
+        children.len(),
+        1,
+        "stateful_child should create exactly one child"
+    );
+}
+
+/// Test that stateful_child updates when signal changes.
+#[test]
+fn test_stateful_child_updates_on_signal_change() {
+    let state = RwSignal::new(1);
+
+    let view = Stem::new()
+        .stateful_child(
             move || state.get(),
             |_value| Empty::new().style(move |s| s.size(30.0, 30.0)),
         )
@@ -716,15 +894,15 @@ fn test_derived_child_updates_on_signal_change() {
     );
 }
 
-/// Test that derived_child passes state to child function.
+/// Test that stateful_child passes state to child function.
 #[test]
-fn test_derived_child_passes_state() {
+fn test_stateful_child_passes_state() {
     let tracker = ClickTracker::new();
     let state = RwSignal::new("child_a");
 
     let tracker_clone = tracker.clone();
     let view = Stem::new()
-        .derived_child(
+        .stateful_child(
             move || state.get(),
             move |value| {
                 tracker_clone.track_named(value, Empty::new().style(|s| s.size(100.0, 100.0)))
@@ -749,13 +927,13 @@ fn test_derived_child_passes_state() {
     assert_eq!(tracker.clicked_names(), vec!["child_b"]);
 }
 
-/// Test that derived_child cleans up old children.
+/// Test that stateful_child cleans up old children.
 #[test]
-fn test_derived_child_cleans_up_old_children() {
+fn test_stateful_child_cleans_up_old_children() {
     let state = RwSignal::new(1);
 
     let view = Stem::new()
-        .derived_child(move || state.get(), |_value| Empty::new())
+        .stateful_child(move || state.get(), |_value| Empty::new())
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
@@ -783,9 +961,9 @@ fn test_derived_child_cleans_up_old_children() {
     );
 }
 
-/// Test that derived_child works with enum states.
+/// Test that stateful_child works with enum states.
 #[test]
-fn test_derived_child_with_enum() {
+fn test_stateful_child_with_enum() {
     #[derive(Clone, Copy)]
     enum ViewType {
         Empty,
@@ -795,7 +973,7 @@ fn test_derived_child_with_enum() {
     let view_type = RwSignal::new(ViewType::Empty);
 
     let view = Stem::new()
-        .derived_child(
+        .stateful_child(
             move || view_type.get(),
             |vt| match vt {
                 ViewType::Empty => Empty::new().into_any(),
@@ -824,47 +1002,47 @@ fn test_derived_child_with_enum() {
     assert_ne!(initial_child_id, new_child_id);
 }
 
-/// Test behavior when mixing static children with derived_child.
+/// Test behavior when mixing static children with stateful_child.
 ///
-/// With fully deferred child construction, both `.children()` and `.derived_child()`
-/// queue messages that are processed in order. When `derived_child` sets up,
+/// With fully deferred child construction, both `.children()` and `.stateful_child()`
+/// queue messages that are processed in order. When `stateful_child` sets up,
 /// it calls `set_children_ids` which replaces any previously added children.
 ///
-/// Note: Mixing static `.children()` with reactive `.derived_child()` is not
+/// Note: Mixing static `.children()` with reactive `.stateful_child()` is not
 /// a recommended pattern. Use one or the other for predictable behavior.
 #[test]
-fn test_derived_child_with_static_children() {
+fn test_stateful_child_with_static_children() {
     let dynamic_state = RwSignal::new(1);
 
     let view = Stem::new()
         .children([Empty::new(), Empty::new()])
-        .derived_child(move || dynamic_state.get(), |_| Empty::new())
+        .stateful_child(move || dynamic_state.get(), |_| Empty::new())
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
-    // Both .children() and .derived_child() are now deferred.
+    // Both .children() and .stateful_child() are now deferred.
     // Messages are processed in order:
     // 1. AddChildren adds 2 children
-    // 2. SetupReactiveChildren runs derived_child setup which calls set_children_ids,
+    // 2. SetupReactiveChildren runs stateful_child setup which calls set_children_ids,
     //    replacing the 2 static children with 1 dynamic child.
-    // Result: only 1 child from derived_child
+    // Result: only 1 child from stateful_child
     assert_eq!(
         id.children().len(),
         1,
-        "derived_child's set_children_ids replaces static children"
+        "stateful_child's set_children_ids replaces static children"
     );
 
-    // Update dynamic state - derived_child recreates its child
+    // Update dynamic state - stateful_child recreates its child
     dynamic_state.set(2);
     harness.rebuild();
 
-    // Still only derived_child's child
+    // Still only stateful_child's child
     assert_eq!(
         id.children().len(),
         1,
-        "After update, still only derived_child's child"
+        "After update, still only stateful_child's child"
     );
 }
 
@@ -1027,7 +1205,7 @@ impl floem::View for ContextCapturingStringView {
 
 /// Test that derived_children can access parent's context.
 #[test]
-fn test_scope_context_with_derived_children() {
+fn test_scope_context_with_stateful_children() {
     let items = RwSignal::new(vec![1, 2, 3]);
     let context_values = Rc::new(RefCell::new(Vec::<Option<i32>>::new()));
     let context_values_clone = context_values.clone();
@@ -1065,13 +1243,13 @@ fn test_scope_context_with_derived_children() {
         assert_eq!(
             *value,
             Some(100),
-            "Context should be accessible in derived_children rebuild {}",
+            "Context should be accessible in stateful_children rebuild {}",
             i
         );
     }
 }
 
-/// Test that keyed_children can access parent's context.
+/// Test that derived_children can access parent's context.
 #[test]
 fn test_scope_context_with_keyed_children() {
     let items = RwSignal::new(vec!["a", "b"]);
@@ -1116,15 +1294,15 @@ fn test_scope_context_with_keyed_children() {
     }
 }
 
-/// Test that derived_child can access parent's context.
+/// Test that stateful_child can access parent's context.
 #[test]
-fn test_scope_context_with_derived_child() {
+fn test_scope_context_with_stateful_child() {
     let state = RwSignal::new(1);
     let context_values = Rc::new(RefCell::new(Vec::<Option<f64>>::new()));
     let context_values_clone = context_values.clone();
 
     let view = ContextProvider::new(3.14f64)
-        .derived_child(move || state.get(), {
+        .stateful_child(move || state.get(), {
             let context_values = context_values_clone.clone();
             move |_value| {
                 // Access context during child creation
@@ -1154,32 +1332,32 @@ fn test_scope_context_with_derived_child() {
         assert_eq!(
             *value,
             Some(3.14),
-            "Context should be accessible in derived_child creation {}",
+            "Context should be accessible in stateful_child creation {}",
             i
         );
     }
 }
 
-/// Test context shadowing with derived_child (which does support context access).
+/// Test context shadowing with stateful_child (which does support context access).
 ///
-/// Unlike child()/children(), derived_child's closure IS called inside the scope,
+/// Unlike child()/children(), stateful_child's closure IS called inside the scope,
 /// so context is accessible there.
 #[test]
-fn test_scope_context_shadowing_with_derived_child() {
+fn test_scope_context_shadowing_with_stateful_child() {
     let outer_value = Rc::new(RefCell::new(None::<i32>));
     let inner_value = Rc::new(RefCell::new(None::<i32>));
     let outer_clone = outer_value.clone();
     let inner_clone = inner_value.clone();
 
     let view = ContextProvider::new(1i32)
-        .derived_child(
+        .stateful_child(
             || (),
             move |_| {
                 // This closure runs inside the outer scope
                 *outer_clone.borrow_mut() = Scope::current().get_context::<i32>();
 
                 // Inner provider with its own scope
-                ContextProvider::new(2i32).derived_child(|| (), {
+                ContextProvider::new(2i32).stateful_child(|| (), {
                     let inner_clone = inner_clone.clone();
                     move |_| {
                         // This closure runs inside the inner scope
@@ -1197,12 +1375,12 @@ fn test_scope_context_shadowing_with_derived_child() {
     assert_eq!(
         *outer_value.borrow(),
         Some(1),
-        "Outer derived_child closure should see outer context"
+        "Outer stateful_child closure should see outer context"
     );
     assert_eq!(
         *inner_value.borrow(),
         Some(2),
-        "Inner derived_child closure should see inner (shadowed) context"
+        "Inner stateful_child closure should see inner (shadowed) context"
     );
 }
 

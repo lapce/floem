@@ -245,7 +245,9 @@ mod tests {
         // Verify child is in parent's children set
         RUNTIME.with(|runtime| {
             let children = runtime.children.borrow();
-            let parent_children = children.get(&parent.0).expect("parent should have children");
+            let parent_children = children
+                .get(&parent.0)
+                .expect("parent should have children");
             assert!(parent_children.contains(&child.0));
         });
     }
@@ -299,7 +301,9 @@ mod tests {
         // Verify added to new parent's children
         RUNTIME.with(|runtime| {
             let children = runtime.children.borrow();
-            let new_children = children.get(&new_parent.0).expect("new parent should have children");
+            let new_children = children
+                .get(&new_parent.0)
+                .expect("new parent should have children");
             assert!(new_children.contains(&child.0));
         });
     }
