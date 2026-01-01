@@ -440,14 +440,14 @@ fn test_empty_hierarchy() {
 fn test_very_deep_nesting_propagation() {
     let color_signal = RwSignal::new(palette::css::RED);
 
-    fn create_deep_hierarchy(depth: usize, color_signal: RwSignal<Color>) -> Container {
+    fn create_deep_hierarchy(depth: usize, _color_signal: RwSignal<Color>) -> Container {
         if depth == 0 {
             Container::new(
                 Empty::new().style(|s| s.size(10.0, 10.0).with_test_color(|s, c| s.background(*c))),
             )
             .style(|s| s.size(20.0, 20.0))
         } else {
-            Container::new(create_deep_hierarchy(depth - 1, color_signal))
+            Container::new(create_deep_hierarchy(depth - 1, _color_signal))
                 .style(|s| s.size_full().padding(1.0))
         }
     }

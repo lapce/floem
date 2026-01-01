@@ -1299,7 +1299,7 @@ fn test_scope_context_with_stateful_child() {
     let context_values = Rc::new(RefCell::new(Vec::<Option<f64>>::new()));
     let context_values_clone = context_values.clone();
 
-    let view = ContextProvider::new(3.14f64)
+    let view = ContextProvider::new(std::f64::consts::PI)
         .stateful_child(move || state.get(), {
             let context_values = context_values_clone.clone();
             move |_value| {
@@ -1329,7 +1329,7 @@ fn test_scope_context_with_stateful_child() {
     for (i, value) in values.iter().enumerate() {
         assert_eq!(
             *value,
-            Some(3.14),
+            Some(std::f64::consts::PI),
             "Context should be accessible in stateful_child creation {}",
             i
         );
@@ -1380,29 +1380,6 @@ fn test_scope_context_shadowing_with_stateful_child() {
         Some(2),
         "Inner stateful_child closure should see inner (shadowed) context"
     );
-}
-
-/// A wrapper view that captures context and contains a child.
-struct ContextCapturingWrapper {
-    id: ViewId,
-}
-
-impl ContextCapturingWrapper {
-    fn new(context_holder: Rc<RefCell<Option<i32>>>, child: impl floem::View + 'static) -> Self {
-        let id = ViewId::new();
-        *context_holder.borrow_mut() = Scope::current().get_context::<i32>();
-        let child_id = child.id();
-        child_id.set_parent(id);
-        child_id.set_view(Box::new(child));
-        id.set_children_ids(vec![child_id]);
-        Self { id }
-    }
-}
-
-impl floem::View for ContextCapturingWrapper {
-    fn id(&self) -> ViewId {
-        self.id
-    }
 }
 
 /// Test that children without a scope-providing parent don't have context.

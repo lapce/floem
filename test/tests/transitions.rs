@@ -56,7 +56,7 @@ fn test_hover_triggers_transition() {
     // After hover, the transition should start - background should begin changing
     // The exact value depends on timing, but it should no longer be pure WHITE
     let style = harness.get_computed_style(id);
-    let bg = style.get(Background);
+    let _bg = style.get(Background);
 
     // On the first frame after hover, transition may not have started yet
     // but the target value should be applied

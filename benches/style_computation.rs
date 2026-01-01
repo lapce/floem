@@ -290,24 +290,11 @@ fn bench_restyle_with_selectors(c: &mut Criterion) {
 fn bench_inherited_prop_updates(c: &mut Criterion) {
     use floem::peniko::Color;
     use floem::prop;
-    use floem::style::Style;
 
     // Define an inherited prop for this benchmark
     prop!(
         pub BenchInheritedColor: Color { inherited } = palette::css::BLACK
     );
-
-    trait BenchColorExt {
-        fn with_bench_color(self, f: impl Fn(Self, &Color) -> Self + 'static) -> Self
-        where
-            Self: Sized;
-    }
-
-    impl BenchColorExt for Style {
-        fn with_bench_color(self, f: impl Fn(Self, &Color) -> Self + 'static) -> Self {
-            self.with_context::<BenchInheritedColor>(f)
-        }
-    }
 
     let mut group = c.benchmark_group("inherited_prop_updates");
 

@@ -725,7 +725,7 @@ mod test {
     fn test_slider_initial_value() {
         let percent = 53.0;
         let slider = Slider::new(move || percent);
-        assert_eq!(slider.percent, percent as f64);
+        assert_eq!(slider.percent, percent);
     }
 
     #[test]

@@ -228,7 +228,7 @@ fn test_multiple_scope_levels() {
     assert!(outer_scope.parent().is_none()); // Root has no parent
 
     // Context should be retrievable in inner scope
-    let ctx = inner_scope.enter(|| Context::get::<i32>());
+    let ctx = inner_scope.enter(Context::get::<i32>);
     assert_eq!(ctx, Some(3), "Should get innermost context");
 }
 
