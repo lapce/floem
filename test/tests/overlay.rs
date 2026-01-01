@@ -6,6 +6,7 @@
 use floem::HasViewId;
 use floem::headless::HeadlessHarness;
 use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
+use floem::view::ParentView;
 use floem::views::{Clip, Decorators, Empty, Label, Overlay, Stack};
 use std::cell::Cell;
 use std::rc::Rc;
@@ -15,7 +16,7 @@ fn test_overlay_new() {
     // Test that an Overlay can be created with static content
     let view = Stack::new((
         Label::new("Main content"),
-        Overlay::new(Label::new("Overlay content")),
+        Overlay::new().child(Label::new("Overlay content")),
     ))
     .style(|s| s.size(100.0, 100.0));
 
@@ -27,7 +28,7 @@ fn test_overlay_derived() {
     // Test that an Overlay can be created with derived content
     let view = Stack::new((
         Label::new("Main content"),
-        Overlay::derived(|| Label::derived(|| "Overlay content".to_string())),
+        Overlay::new().derived_children(|| [Label::derived(|| "Overlay content".to_string())]),
     ))
     .style(|s| s.size(100.0, 100.0));
 
@@ -41,9 +42,9 @@ fn test_overlay_with_visibility_control() {
 
     let view = Stack::new((
         Label::new("Main content"),
-        Overlay::derived(move || {
-            Label::derived(|| "Overlay content".to_string())
-                .style(move |s| s.apply_if(!visible.get(), |s| s.hide()))
+        Overlay::new().derived_children(move || {
+            [Label::derived(|| "Overlay content".to_string())
+                .style(move |s| s.apply_if(!visible.get(), |s| s.hide()))]
         }),
     ))
     .style(|s| s.size(100.0, 100.0));
@@ -66,19 +67,21 @@ fn test_overlay_content_factory_called() {
 
     let view = Stack::new((
         Label::new("Main content"),
-        Overlay::derived(move || {
+        Overlay::new().derived_children(move || {
             factory_called_clone.set(true);
-            Label::new("Overlay content")
+            [Label::new("Overlay content")]
         }),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let _harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     assert!(
         factory_called.get(),
         "Content factory should be called when overlay is created"
     );
+
+    drop(harness);
 }
 
 #[test]
@@ -86,8 +89,8 @@ fn test_overlay_in_nested_structure() {
     // Test that Overlay works in nested view structures
     let view = Stack::new((Stack::new((
         Label::new("Nested label"),
-        Overlay::derived(|| {
-            Stack::new((Label::new("Nested overlay"), Empty::new())).style(|s| s.size(50.0, 50.0))
+        Overlay::new().derived_children(|| {
+            [Stack::new((Label::new("Nested overlay"), Empty::new())).style(|s| s.size(50.0, 50.0))]
         }),
     ))
     .style(|s| s.size(80.0, 80.0)),))
@@ -101,8 +104,8 @@ fn test_multiple_overlays() {
     // Test that multiple overlays can coexist
     let view = Stack::new((
         Label::new("Main content"),
-        Overlay::new(Label::new("Overlay 1")),
-        Overlay::new(Label::new("Overlay 2")),
+        Overlay::new().child(Label::new("Overlay 1")),
+        Overlay::new().child(Label::new("Overlay 2")),
     ))
     .style(|s| s.size(100.0, 100.0));
 
@@ -114,7 +117,7 @@ fn test_overlay_with_styled_content() {
     // Test that overlay content can be styled
     let view = Stack::new((
         Label::new("Main content"),
-        Overlay::new(Label::new("Styled overlay").style(|s| {
+        Overlay::new().child(Label::new("Styled overlay").style(|s| {
             s.background(floem::peniko::Color::WHITE)
                 .padding(20.0)
                 .border_radius(8.0)
@@ -155,7 +158,7 @@ fn test_overlay_receives_events_before_regular_views() {
             .on_click_stop(move |_| {
                 clicked_regular_clone.set(true);
             }),
-        Overlay::new(
+        Overlay::new().child(
             Empty::new()
                 .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
                 .on_click_stop(move |_| {
@@ -201,23 +204,25 @@ fn test_multiple_overlays_respect_z_index() {
 
     let view = Stack::new((
         // First overlay with higher z-index
-        Overlay::new(
-            Empty::new()
-                .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
-                .on_click_stop(move |_| {
-                    clicked1_clone.set(true);
-                }),
-        )
-        .style(|s| s.z_index(10)),
+        Overlay::new()
+            .child(
+                Empty::new()
+                    .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
+                    .on_click_stop(move |_| {
+                        clicked1_clone.set(true);
+                    }),
+            )
+            .style(|s| s.z_index(10)),
         // Second overlay with lower z-index (later in DOM)
-        Overlay::new(
-            Empty::new()
-                .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
-                .on_click_stop(move |_| {
-                    clicked2_clone.set(true);
-                }),
-        )
-        .style(|s| s.z_index(1)),
+        Overlay::new()
+            .child(
+                Empty::new()
+                    .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
+                    .on_click_stop(move |_| {
+                        clicked2_clone.set(true);
+                    }),
+            )
+            .style(|s| s.z_index(1)),
     ))
     .style(|s| s.size(100.0, 100.0));
 
@@ -254,22 +259,24 @@ fn test_overlay_dom_order_tiebreaker() {
     let clicked2_clone = clicked_overlay2.clone();
 
     let view = Stack::new((
-        Overlay::new(
-            Empty::new()
-                .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
-                .on_click_stop(move |_| {
-                    clicked1_clone.set(true);
-                }),
-        )
-        .style(|s| s.z_index(5)),
-        Overlay::new(
-            Empty::new()
-                .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
-                .on_click_stop(move |_| {
-                    clicked2_clone.set(true);
-                }),
-        )
-        .style(|s| s.z_index(5)),
+        Overlay::new()
+            .child(
+                Empty::new()
+                    .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
+                    .on_click_stop(move |_| {
+                        clicked1_clone.set(true);
+                    }),
+            )
+            .style(|s| s.z_index(5)),
+        Overlay::new()
+            .child(
+                Empty::new()
+                    .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
+                    .on_click_stop(move |_| {
+                        clicked2_clone.set(true);
+                    }),
+            )
+            .style(|s| s.z_index(5)),
     ))
     .style(|s| s.size(100.0, 100.0));
 
@@ -306,7 +313,7 @@ fn test_nested_overlay_escapes_parent_z_index() {
 
     let view = Stack::new((
         // Parent with low z-index containing an overlay
-        Stack::new((Overlay::new(
+        Stack::new((Overlay::new().child(
             Empty::new()
                 .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
                 .on_click_stop(move |_| {
@@ -359,7 +366,7 @@ fn test_hidden_overlay_does_not_block_events() {
             .on_click_stop(move |_| {
                 regular_clone.set(true);
             }),
-        Overlay::new(
+        Overlay::new().child(
             Empty::new()
                 .style(|s| {
                     s.absolute()
@@ -411,7 +418,7 @@ fn test_paint_order_overlays_after_regular_views() {
     let overlay_content = Empty::new().style(|s| s.absolute().inset(0.0).size(100.0, 100.0));
     let overlay_id = overlay_content.view_id();
 
-    let view = Stack::new((regular, Overlay::new(overlay_content))).style(|s| s.size(100.0, 100.0));
+    let view = Stack::new((regular, Overlay::new().child(overlay_content))).style(|s| s.size(100.0, 100.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
@@ -452,12 +459,18 @@ fn test_paint_order_multiple_overlays_by_z_index() {
     let overlay2_id = overlay2_content.view_id();
 
     let view = Stack::new((
-        Overlay::new(overlay1_content).style(|s| s.z_index(10)),
-        Overlay::new(overlay2_content).style(|s| s.z_index(1)),
+        Overlay::new()
+            .child(overlay1_content)
+            .style(|s| s.z_index(10)),
+        Overlay::new()
+            .child(overlay2_content)
+            .style(|s| s.z_index(1)),
     ))
     .style(|s| s.size(100.0, 100.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    // Ensure deferred children are processed before checking paint order
+    harness.rebuild();
 
     let paint_order = harness.paint_and_get_order();
 
@@ -539,7 +552,7 @@ fn test_paint_order_nested_overlay_escapes_parent() {
     let sibling_id = sibling.view_id();
 
     let view = Stack::new((
-        Stack::new((Overlay::new(overlay_content),))
+        Stack::new((Overlay::new().child(overlay_content),))
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1)),
         sibling,
     ))
@@ -591,7 +604,7 @@ fn test_overlay_escapes_parent_clip() {
 
     let view = Stack::new((
         // Clipping parent using Clip view
-        Clip::new(Stack::new((Overlay::new(
+        Clip::new(Stack::new((Overlay::new().child(
             Empty::new()
                 .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
                 .on_click_stop(move |_| {
@@ -640,7 +653,7 @@ fn test_overlay_painted_outside_parent_clip() {
     let overlay_content = Empty::new().style(|s| s.absolute().inset(0.0).size(100.0, 100.0));
     let overlay_id = overlay_content.view_id();
 
-    let view = Stack::new((Clip::new(Stack::new((Overlay::new(overlay_content),)))
+    let view = Stack::new((Clip::new(Stack::new((Overlay::new().child(overlay_content),)))
         .style(|s| s.absolute().inset(0.0).size(50.0, 50.0)),))
     .style(|s| s.size(100.0, 100.0));
 
@@ -681,7 +694,7 @@ fn test_overlay_escapes_nested_clips() {
         // Outer clipping container
         Clip::new(
             // Inner clipping container
-            Clip::new(Stack::new((Overlay::new(
+            Clip::new(Stack::new((Overlay::new().child(
                 Empty::new()
                     .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
                     .on_click_stop(move |_| {
@@ -730,7 +743,7 @@ fn test_overlay_with_container_derived_rebuild() {
 
     let view = Stack::new((
         Label::new("Main content"),
-        Overlay::new(
+        Overlay::new().child(
             Container::derived(move || {
                 let count = counter.get();
                 Label::new(format!("Count: {}", count))
@@ -768,7 +781,7 @@ fn test_overlay_with_nested_container_derived() {
 
     let view = Stack::new((
         Label::new("Main content"),
-        Overlay::new(
+        Overlay::new().child(
             Stack::new((
                 // Backdrop
                 Empty::new().style(move |s| {

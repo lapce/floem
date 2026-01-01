@@ -246,6 +246,11 @@ pub struct ViewState {
     /// Keyed children state (used by `ParentView::keyed_children`).
     /// Each child has its own scope that gets disposed when the child is removed.
     pub(crate) keyed_children: Option<Vec<(ViewId, Scope)>>,
+    /// The scope associated with this view, if any.
+    /// Views that provide context to children should set this scope.
+    /// When set, children can access context provided in this scope.
+    /// The scope hierarchy is kept in sync with the view hierarchy for proper cleanup.
+    pub(crate) scope: Option<Scope>,
 }
 
 impl ViewState {
@@ -297,6 +302,7 @@ impl ViewState {
             parent_set_style_interaction: Default::default(),
             children_scope: None,
             keyed_children: None,
+            scope: None,
         }
     }
 

@@ -1058,7 +1058,11 @@ impl WindowHandle {
                         parent_id,
                         mut child,
                     } => {
-                        let view = child.build();
+                        // Resolve scope by looking up parent's scope
+                        let scope = parent_id
+                            .find_scope()
+                            .unwrap_or_else(Scope::current);
+                        let view = child.build(scope);
                         parent_id.add_child(view);
                         parent_id.request_all();
                     }
@@ -1066,7 +1070,11 @@ impl WindowHandle {
                         parent_id,
                         mut children,
                     } => {
-                        let views = children.build();
+                        // Resolve scope by looking up parent's scope
+                        let scope = parent_id
+                            .find_scope()
+                            .unwrap_or_else(Scope::current);
+                        let views = children.build(scope);
                         parent_id.append_children(views);
                         parent_id.request_all();
                     }
@@ -1076,6 +1084,9 @@ impl WindowHandle {
                 }
             }
         }
+        // After all messages are processed, re-parent any scopes that couldn't find
+        // a parent scope earlier (because the view tree wasn't fully assembled yet).
+        crate::view::process_pending_scope_reparents();
     }
 
     fn process_deferred_update_messages(&mut self) {
@@ -1287,6 +1298,41 @@ impl WindowHandle {
             modifiers.set(Modifiers::ALT_GRAPH, true);
         }
         self.modifiers = modifiers;
+    }
+
+    /// Clean up the window's view tree and reactive scope.
+    ///
+    /// This removes all views from VIEW_STORAGE and disposes the reactive scope,
+    /// ensuring proper cleanup for test isolation.
+    pub(crate) fn cleanup(&mut self) {
+        // Dispose the reactive scope FIRST to clean up effects.
+        // This stops any reactive effects from running during cleanup.
+        self.scope.dispose();
+
+        // Clear ALL message queues to prevent stale messages from affecting
+        // future windows that might reuse the same ViewId slots.
+        // We clear all messages, not just those for views we're removing,
+        // because the reactive scope disposal above might have queued new messages.
+        CENTRAL_UPDATE_MESSAGES.with_borrow_mut(|msgs| {
+            msgs.clear();
+        });
+        UPDATE_MESSAGES.with_borrow_mut(|msgs| {
+            msgs.clear();
+        });
+        CENTRAL_DEFERRED_UPDATE_MESSAGES.with_borrow_mut(|msgs| {
+            msgs.clear();
+        });
+        DEFERRED_UPDATE_MESSAGES.with_borrow_mut(|msgs| {
+            msgs.clear();
+        });
+
+        // Remove all views starting from the root
+        self.window_state.remove_view(self.id);
+
+        // Remove the window from the global window tracking map.
+        // This is crucial for test isolation - if not done, the old root ViewId
+        // will still be considered a "known root" when the ViewId slot is reused.
+        remove_window_id_mapping(&self.id, &self.window_id);
     }
 }
 

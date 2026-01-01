@@ -5,6 +5,7 @@
 //! - `on_click_cont` allows events to bubble to parent views
 
 use floem::event::EventPropagation;
+use floem::view::ParentView;
 use floem_test::prelude::*;
 
 #[test]
@@ -1506,7 +1507,7 @@ fn test_dialog_with_overlay() {
     let dialog_open = RwSignal::new(true);
     let content_clicked = RwSignal::new(false);
 
-    let view = Overlay::new(
+    let view = Overlay::new().child(
         Stack::new((
             // Backdrop - clicking it closes dialog
             Empty::new()
@@ -1654,16 +1655,13 @@ fn test_dialog_click_on_nested_button() {
 /// Test the exact dialog structure with Overlay::with_id and Container::derived.
 #[test]
 fn test_exact_dialog_structure() {
-    use floem::ViewId;
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::views::Overlay;
 
     let dialog_open = RwSignal::new(true);
     let content_clicked = RwSignal::new(false);
-    let id = ViewId::new();
 
-    let view = Overlay::with_id(
-        id,
+    let view = Overlay::new().child(
         Stack::new((
             // Backdrop - exact same as dialog.rs
             Empty::new()
@@ -1725,15 +1723,12 @@ fn test_exact_dialog_structure() {
 /// The content should still block clicks from reaching backdrop.
 #[test]
 fn test_dialog_content_no_handler() {
-    use floem::ViewId;
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::views::Overlay;
 
     let dialog_open = RwSignal::new(true);
-    let id = ViewId::new();
 
-    let view = Overlay::with_id(
-        id,
+    let view = Overlay::new().child(
         Stack::new((
             // Backdrop
             Empty::new()
@@ -1778,17 +1773,14 @@ fn test_dialog_content_no_handler() {
 /// translate -50%/-50% to center it.
 #[test]
 fn test_dialog_with_translate_centering() {
-    use floem::ViewId;
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::unit::Pct;
     use floem::views::Overlay;
 
     let dialog_open = RwSignal::new(true);
     let content_clicked = RwSignal::new(false);
-    let id = ViewId::new();
 
-    let view = Overlay::with_id(
-        id,
+    let view = Overlay::new().child(
         Stack::new((
             // Backdrop
             Empty::new()
@@ -1833,16 +1825,13 @@ fn test_dialog_with_translate_centering() {
 /// Test dialog structure with translate but content has NO click handler.
 #[test]
 fn test_dialog_with_translate_no_handler() {
-    use floem::ViewId;
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::unit::Pct;
     use floem::views::Overlay;
 
     let dialog_open = RwSignal::new(true);
-    let id = ViewId::new();
 
-    let view = Overlay::with_id(
-        id,
+    let view = Overlay::new().child(
         Stack::new((
             // Backdrop
             Empty::new()
@@ -1948,7 +1937,7 @@ fn test_overlay_fixed_translate_click_offset_bug() {
     let content_clicked = RwSignal::new(false);
 
     // This replicates DialogContent structure exactly
-    let view = Overlay::new(
+    let view = Overlay::new().child(
         Stack::new((
             // Backdrop - fills entire viewport
             Empty::new()
@@ -2005,7 +1994,7 @@ fn test_overlay_fixed_no_translate() {
     let backdrop_clicked = RwSignal::new(false);
     let content_clicked = RwSignal::new(false);
 
-    let view = Overlay::new(
+    let view = Overlay::new().child(
         Stack::new((
             // Backdrop
             Empty::new()
@@ -2105,7 +2094,7 @@ fn test_overlay_fixed_click_corners() {
         let backdrop_clicked = RwSignal::new(false);
         let content_clicked = RwSignal::new(false);
 
-        let view = Overlay::new(
+        let view = Overlay::new().child(
             Stack::new((
                 // Backdrop - fills entire area
                 Empty::new()
@@ -2176,7 +2165,7 @@ fn test_overlay_fixed_translate_click_corners() {
         let backdrop_clicked = RwSignal::new(false);
         let content_clicked = RwSignal::new(false);
 
-        let view = Overlay::new(
+        let view = Overlay::new().child(
             Stack::new((
                 // Backdrop
                 Empty::new()
@@ -2243,7 +2232,7 @@ fn test_overlay_fixed_click_outside_content() {
         let backdrop_clicked = RwSignal::new(false);
         let content_clicked = RwSignal::new(false);
 
-        let view = Overlay::new(
+        let view = Overlay::new().child(
             Stack::new((
                 // Backdrop
                 Empty::new()
@@ -2375,7 +2364,7 @@ fn test_overlay_fixed_translate_probe_boundary() {
         let backdrop_clicked = RwSignal::new(false);
         let content_clicked = RwSignal::new(false);
 
-        let view = Overlay::new(
+        let view = Overlay::new().child(
             Stack::new((
                 Empty::new()
                     .style(|s| s.absolute().inset(0.0).z_index(1))
@@ -2426,7 +2415,7 @@ fn test_overlay_fixed_translate_probe_boundary() {
         let backdrop_clicked = RwSignal::new(false);
         let content_clicked = RwSignal::new(false);
 
-        let view = Overlay::new(
+        let view = Overlay::new().child(
             Stack::new((
                 Empty::new()
                     .style(|s| s.absolute().inset(0.0).z_index(1))
@@ -2473,7 +2462,7 @@ fn test_overlay_fixed_translate_debug_layout() {
     let backdrop_clicked = RwSignal::new(false);
     let content_clicked = RwSignal::new(false);
 
-    let view = Overlay::new(
+    let view = Overlay::new().child(
         Stack::new((
             // Backdrop
             Empty::new()
@@ -2623,7 +2612,7 @@ fn test_dialog_header_click_does_not_close() {
     let dialog_open = RwSignal::new(true);
     let header_clicked = RwSignal::new(false);
 
-    let view = Overlay::new(
+    let view = Overlay::new().child(
         Stack::new((
             // Backdrop
             Empty::new()
@@ -2795,7 +2784,7 @@ fn test_fixed_overlay_child_receives_click() {
     let content_clicked = RwSignal::new(false);
     let child_clicked = RwSignal::new(false);
 
-    let view = Overlay::new(
+    let view = Overlay::new().child(
         Stack::new((
             // Backdrop
             Empty::new()
@@ -2874,7 +2863,7 @@ fn test_fixed_overlay_child_click_bounds() {
     let content_clicks = RwSignal::new(0);
     let child_clicks = RwSignal::new(0);
 
-    let view = Overlay::new(
+    let view = Overlay::new().child(
         Stack::new((
             // Backdrop
             Empty::new()
@@ -2986,7 +2975,7 @@ fn test_fixed_overlay_deeply_nested_child() {
     let level2_clicked = RwSignal::new(false);
     let level3_clicked = RwSignal::new(false);
 
-    let view = Overlay::new(
+    let view = Overlay::new().child(
         Stack::new((
             // Backdrop
             Empty::new()
@@ -3068,7 +3057,7 @@ fn test_fixed_overlay_child_probe_bounds() {
 
     // Simple structure: backdrop + content with child
     // Content is 80x60 centered, child is 60x30 at top of content
-    let view = Overlay::new(
+    let view = Overlay::new().child(
         Stack::new((
             Empty::new()
                 .style(|s| s.absolute().inset(0.0))

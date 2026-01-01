@@ -471,6 +471,15 @@ impl HeadlessHarness {
     }
 }
 
+impl Drop for HeadlessHarness {
+    fn drop(&mut self) {
+        // Clean up the view tree and reactive scope to ensure test isolation.
+        // Without this, views and reactive effects from previous tests can
+        // persist in VIEW_STORAGE and interfere with subsequent tests.
+        self.window_handle.cleanup();
+    }
+}
+
 /// Create a pointer down event at the given position.
 fn create_pointer_down(x: f64, y: f64) -> Event {
     create_pointer_down_with_count(x, y, 1)

@@ -124,88 +124,96 @@ pub struct UpdateCx<'a> {
 /// A deferred child view that will be constructed when the message is processed.
 ///
 /// Uses `Option` + `take()` pattern to allow `FnOnce` to be called from storage.
-/// The child is constructed inside the scope when `build()` is called.
+/// The scope is resolved at build time by looking up the parent's context scope.
 pub struct DeferredChild {
-    scope: Scope,
     builder: Option<Box<dyn FnOnce() -> AnyView>>,
 }
 
 impl DeferredChild {
-    /// Create a new deferred child with a scope and a builder function.
+    /// Create a new deferred child with a builder function.
     ///
-    /// The builder will be called inside the given scope when `build()` is invoked.
-    pub fn new(scope: Scope, builder: impl FnOnce() -> AnyView + 'static) -> Self {
+    /// The scope is not captured here - it will be resolved when `build()` is called
+    /// by looking up the parent's context scope in the view hierarchy.
+    pub fn new(builder: impl FnOnce() -> AnyView + 'static) -> Self {
         Self {
-            scope,
             builder: Some(Box::new(builder)),
         }
     }
 
-    /// Build the child view inside the scope.
+    /// Build the child view inside the given scope.
+    ///
+    /// The scope should be resolved by the caller (typically by looking up
+    /// the parent's context scope in the view hierarchy).
     ///
     /// # Panics
     /// Panics if called more than once.
-    pub fn build(&mut self) -> AnyView {
+    pub fn build(&mut self, scope: Scope) -> AnyView {
         let builder = self
             .builder
             .take()
             .expect("DeferredChild::build called twice");
-        self.scope.enter(builder)
+        scope.enter(builder)
     }
 }
 
 /// Multiple deferred children that will be constructed when the message is processed.
 pub struct DeferredChildren {
-    scope: Scope,
     builder: Option<Box<dyn FnOnce() -> Vec<AnyView>>>,
 }
 
 impl DeferredChildren {
-    /// Create new deferred children with a scope and a builder function.
+    /// Create new deferred children with a builder function.
     ///
-    /// The builder will be called inside the given scope when `build()` is invoked.
-    pub fn new(scope: Scope, builder: impl FnOnce() -> Vec<AnyView> + 'static) -> Self {
+    /// The scope is not captured here - it will be resolved when `build()` is called
+    /// by looking up the parent's context scope in the view hierarchy.
+    pub fn new(builder: impl FnOnce() -> Vec<AnyView> + 'static) -> Self {
         Self {
-            scope,
             builder: Some(Box::new(builder)),
         }
     }
 
-    /// Build all children inside the scope.
+    /// Build all children inside the given scope.
+    ///
+    /// The scope should be resolved by the caller (typically by looking up
+    /// the parent's context scope in the view hierarchy).
     ///
     /// # Panics
     /// Panics if called more than once.
-    pub fn build(&mut self) -> Vec<AnyView> {
+    pub fn build(&mut self, scope: Scope) -> Vec<AnyView> {
         let builder = self
             .builder
             .take()
             .expect("DeferredChildren::build called twice");
-        self.scope.enter(builder)
+        scope.enter(builder)
     }
 }
 
 /// Deferred setup for reactive children (derived_children, derived_child, keyed_children).
 ///
 /// This captures all the setup logic in a closure that will be executed when the
-/// message is processed. The setup runs inside the scope to ensure proper context access.
+/// message is processed. The scope is resolved at run time by looking up the parent's
+/// scope in the view hierarchy.
 pub struct DeferredReactiveSetup {
-    scope: Scope,
+    view_id: ViewId,
     setup: Option<Box<dyn FnOnce()>>,
 }
 
 impl DeferredReactiveSetup {
     /// Create a new deferred reactive setup.
     ///
-    /// The setup function will be called inside the given scope when `run()` is invoked.
-    /// It should set up the reactive effect and initial children.
-    pub fn new(scope: Scope, setup: impl FnOnce() + 'static) -> Self {
+    /// The setup function will be called inside the view's scope (resolved via `find_scope()`)
+    /// when `run()` is invoked. It should set up the reactive effect and initial children.
+    pub fn new(view_id: ViewId, setup: impl FnOnce() + 'static) -> Self {
         Self {
-            scope,
+            view_id,
             setup: Some(Box::new(setup)),
         }
     }
 
-    /// Run the setup inside the scope.
+    /// Run the setup inside the view's scope.
+    ///
+    /// The scope is resolved by walking up the view hierarchy to find the nearest
+    /// ancestor with a scope. If none is found, uses the current scope.
     ///
     /// # Panics
     /// Panics if called more than once.
@@ -214,6 +222,10 @@ impl DeferredReactiveSetup {
             .setup
             .take()
             .expect("DeferredReactiveSetup::run called twice");
-        self.scope.enter(setup)
+        let scope = self
+            .view_id
+            .find_scope()
+            .unwrap_or_else(Scope::current);
+        scope.enter(setup)
     }
 }

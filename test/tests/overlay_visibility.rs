@@ -6,6 +6,7 @@
 
 use floem::headless::HeadlessHarness;
 use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
+use floem::view::ParentView;
 use floem::views::{Decorators, Empty, Overlay, Stack};
 use std::cell::Cell;
 use std::rc::Rc;
@@ -27,14 +28,15 @@ fn test_overlay_wrapper_display_none() {
             .on_click_stop(move |_| {
                 bg_clone.set(true);
             }),
-        Overlay::new(
-            Empty::new()
-                .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
-                .on_click_stop(move |_| {
-                    overlay_clone.set(true);
-                }),
-        )
-        .style(move |s| s.apply_if(!visible.get(), |s| s.display(floem::taffy::Display::None))),
+        Overlay::new()
+            .child(
+                Empty::new()
+                    .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
+                    .on_click_stop(move |_| {
+                        overlay_clone.set(true);
+                    }),
+            )
+            .style(move |s| s.apply_if(!visible.get(), |s| s.display(floem::taffy::Display::None))),
     ))
     .style(|s| s.size(100.0, 100.0));
 
@@ -86,7 +88,7 @@ fn test_overlay_content_display_none() {
             .on_click_stop(move |_| {
                 bg_clone.set(true);
             }),
-        Overlay::new(
+        Overlay::new().child(
             Empty::new()
                 .style(move |s| {
                     s.absolute()

@@ -50,7 +50,7 @@ pub(crate) mod state;
 mod storage;
 pub mod tuple;
 
-pub use id::ViewId;
+pub use id::{ViewId, process_pending_scope_reparents};
 pub use into_iter::*;
 pub use state::*;
 pub(crate) use storage::*;
@@ -191,40 +191,43 @@ pub trait ParentView: HasViewId + Sized {
     /// Returns the scope associated with this view, if any.
     ///
     /// Views that need to provide context to children should:
-    /// 1. Create a child scope in their constructor: `Scope::current().create_child()`
+    /// 1. Create a scope in their constructor: `Scope::new()` or `Scope::current().create_child()`
     /// 2. Provide context in that scope: `scope.provide_context(...)`
     /// 3. Override this method to return that scope
     ///
-    /// When this returns `Some(scope)`, `child()` and `children()` will build
-    /// child views in child scopes of this scope, giving them access to the context.
+    /// When this returns `Some(scope)`, the scope is stored on the view (via `set_scope()`)
+    /// so that descendants can find it via `ViewId::find_scope()`.
     fn scope(&self) -> Option<Scope> {
         None
     }
 
     /// Adds a single child to this view.
     ///
-    /// The child is constructed lazily during the update cycle, inside the
-    /// parent's scope if one is provided via [`scope`](ParentView::scope),
-    /// or the current scope otherwise.
-    /// This enables children to access context provided by the parent.
+    /// The child is constructed lazily during the update cycle. The scope
+    /// is resolved at build time by walking up the view hierarchy to find
+    /// the nearest ancestor with a scope (via `ViewId::find_scope()`).
     fn child(self, child: impl IntoView + 'static) -> Self {
-        let scope = self.scope().unwrap_or_else(Scope::current);
-        self.view_id()
-            .add_child_deferred(scope, move || child.into_any());
+        // If this view provides a scope, store it for descendant lookup
+        if let Some(scope) = self.scope() {
+            self.view_id().set_scope(scope);
+        }
+        self.view_id().add_child_deferred(move || child.into_any());
         self
     }
 
     /// Adds multiple children to this view.
     ///
     /// Accepts arrays, tuples, vectors, and iterators of views.
-    /// The children are constructed lazily during the update cycle, inside the
-    /// parent's scope if one is provided via [`scope`](ParentView::scope),
-    /// or the current scope otherwise.
-    /// This enables children to access context provided by the parent.
+    /// The children are constructed lazily during the update cycle. The scope
+    /// is resolved at build time by walking up the view hierarchy to find
+    /// the nearest ancestor with a scope (via `ViewId::find_scope()`).
     fn children(self, children: impl IntoViewIter + 'static) -> Self {
-        let scope = self.scope().unwrap_or_else(Scope::current);
+        // If this view provides a scope, store it for descendant lookup
+        if let Some(scope) = self.scope() {
+            self.view_id().set_scope(scope);
+        }
         self.view_id()
-            .add_children_deferred(scope, move || children.into_view_iter().collect());
+            .add_children_deferred(move || children.into_view_iter().collect());
         self
     }
 
@@ -232,6 +235,9 @@ pub trait ParentView: HasViewId + Sized {
     ///
     /// The children function is called initially and re-called whenever
     /// its reactive dependencies change, replacing all children.
+    ///
+    /// The scope is resolved at build time by walking up the view hierarchy
+    /// to find the nearest ancestor with a scope (via `ViewId::find_scope()`).
     ///
     /// ## Example
     /// ```rust,ignore
@@ -250,11 +256,15 @@ pub trait ParentView: HasViewId + Sized {
         C: IntoViewIter + 'static,
     {
         let id = self.view_id();
-        // Use parent's scope if available, otherwise use current scope
-        let base_scope = self.scope().unwrap_or_else(Scope::current);
+
+        // If this view provides a scope, store it for descendant lookup
+        if let Some(scope) = self.scope() {
+            id.set_scope(scope);
+        }
 
         // Defer the entire setup to message processing
-        id.setup_reactive_children_deferred(base_scope, move || {
+        // The scope is resolved via find_scope() when the message is processed
+        id.setup_reactive_children_deferred(move || {
             let children_fn = Box::new(
                 Scope::current()
                     .enter_child(move |_| children_fn().into_view_iter().collect::<Vec<_>>()),
@@ -286,6 +296,9 @@ pub trait ParentView: HasViewId + Sized {
     /// Similar to `dyn_container`, but as a method on `ParentView`.
     /// When the state changes, the old child is replaced with a new one.
     ///
+    /// The scope is resolved at build time by walking up the view hierarchy
+    /// to find the nearest ancestor with a scope (via `ViewId::find_scope()`).
+    ///
     /// ## Example
     /// ```rust,ignore
     /// use floem::prelude::*;
@@ -312,11 +325,15 @@ pub trait ParentView: HasViewId + Sized {
         S: 'static,
     {
         let id = self.view_id();
-        // Use parent's scope if available, otherwise use current scope
-        let base_scope = self.scope().unwrap_or_else(Scope::current);
+
+        // If this view provides a scope, store it for descendant lookup
+        if let Some(scope) = self.scope() {
+            id.set_scope(scope);
+        }
 
         // Defer the entire setup to message processing
-        id.setup_reactive_children_deferred(base_scope, move || {
+        // The scope is resolved via find_scope() when the message is processed
+        id.setup_reactive_children_deferred(move || {
             // Wrap child_fn to create scoped views, using Rc to share between effect and initial setup
             let child_fn: Rc<dyn Fn(S) -> (AnyView, Scope)> =
                 Rc::new(Scope::current().enter_child(move |state: S| child_fn(state).into_any()));
@@ -363,6 +380,9 @@ pub trait ParentView: HasViewId + Sized {
     /// `keyed_children` uses keys to identify items and only creates/removes
     /// children that actually changed. Views for unchanged items are reused.
     ///
+    /// The scope is resolved at build time by walking up the view hierarchy
+    /// to find the nearest ancestor with a scope (via `ViewId::find_scope()`).
+    ///
     /// ## Arguments
     /// - `items_fn`: A function that returns an iterator of items
     /// - `key_fn`: A function that extracts a unique key from each item
@@ -392,11 +412,15 @@ pub trait ParentView: HasViewId + Sized {
         T: 'static,
     {
         let id = self.view_id();
-        // Use parent's scope if available, otherwise use current scope
-        let base_scope = self.scope().unwrap_or_else(Scope::current);
+
+        // If this view provides a scope, store it for descendant lookup
+        if let Some(scope) = self.scope() {
+            id.set_scope(scope);
+        }
 
         // Defer the entire setup to message processing
-        id.setup_reactive_children_deferred(base_scope, move || {
+        // The scope is resolved via find_scope() when the message is processed
+        id.setup_reactive_children_deferred(move || {
             // Wrap view_fn to create scoped views - each child gets its own scope
             let view_fn = Scope::current().enter_child(move |item: T| view_fn(item).into_any());
 

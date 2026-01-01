@@ -11,3 +11,4 @@ repository.workspace = true
 floem = { path = ".." }
 
 [dev-dependencies]
+serial_test = "3.2"

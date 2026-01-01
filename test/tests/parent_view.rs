@@ -29,7 +29,8 @@ fn test_parent_view_child() {
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let _harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    harness.rebuild(); // Process deferred children
 
     let children = id.children();
     assert_eq!(children.len(), 1, "Stem should have 1 child after .child()");
@@ -47,7 +48,8 @@ fn test_parent_view_children() {
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let _harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    harness.rebuild(); // Process deferred children
 
     let children = id.children();
     assert_eq!(
@@ -67,7 +69,8 @@ fn test_parent_view_multiple_child_calls() {
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let _harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    harness.rebuild(); // Process deferred children
 
     let children = id.children();
     assert_eq!(
@@ -87,7 +90,8 @@ fn test_parent_view_mixed_child_children() {
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let _harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    harness.rebuild(); // Process deferred children
 
     let children = id.children();
     assert_eq!(
@@ -113,7 +117,8 @@ fn test_derived_children_initial() {
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let _harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    harness.rebuild(); // Process deferred children
 
     let children = id.children();
     assert_eq!(
@@ -140,6 +145,7 @@ fn test_derived_children_updates_on_signal_change() {
     let id = view.view_id();
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    harness.rebuild(); // Process deferred children
 
     // Initial: 3 children
     assert_eq!(id.children().len(), 3, "Initial should have 3 children");
@@ -342,6 +348,7 @@ fn test_stem_with_derived_children_works() {
     let id = view.view_id();
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    harness.rebuild(); // Process deferred children
 
     // Verify initial children
     let children_before = id.children();
@@ -397,6 +404,7 @@ fn test_derived_children_with_click_interaction() {
         .style(|s| s.size(100.0, 100.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    harness.rebuild(); // Process deferred children
 
     // Click on the child
     harness.click(25.0, 25.0);
@@ -437,7 +445,8 @@ fn test_keyed_children_initial() {
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let _harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    harness.rebuild(); // Process deferred children
 
     let children = id.children();
     assert_eq!(
@@ -458,6 +467,7 @@ fn test_keyed_children_updates_on_signal_change() {
     let id = view.view_id();
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    harness.rebuild(); // Process deferred children
 
     // Initial: 3 children
     assert_eq!(id.children().len(), 3, "Initial should have 3 children");
@@ -496,6 +506,7 @@ fn test_keyed_children_reuses_unchanged_views() {
     let id = view.view_id();
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    harness.rebuild(); // Process deferred children
 
     // Get initial children IDs
     let initial_children: Vec<ViewId> = id.children();
@@ -575,6 +586,7 @@ fn test_keyed_children_reordering() {
     let id = view.view_id();
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    harness.rebuild(); // Process deferred children
 
     // Get initial children IDs
     let initial_children: Vec<ViewId> = id.children();
@@ -609,6 +621,7 @@ fn test_keyed_children_multiple_updates() {
     let id = view.view_id();
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    harness.rebuild(); // Process deferred children
 
     // Verify initial children
     assert_eq!(id.children().len(), 2, "Should have 2 initial children");
@@ -720,6 +733,7 @@ fn test_derived_child_passes_state() {
         .style(|s| s.size(100.0, 100.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    harness.rebuild(); // Process deferred children
 
     // Click and verify the child name
     harness.click(50.0, 50.0);
@@ -1033,6 +1047,7 @@ fn test_scope_context_with_derived_children() {
     let id = view.view_id();
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    harness.rebuild(); // Process deferred children
 
     // Initial: 3 children
     assert_eq!(id.children().len(), 3);
@@ -1077,6 +1092,7 @@ fn test_scope_context_with_keyed_children() {
     let id = view.view_id();
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    harness.rebuild(); // Process deferred children
 
     // Initial: 2 children
     assert_eq!(id.children().len(), 2);
@@ -1121,6 +1137,7 @@ fn test_scope_context_with_derived_child() {
     let id = view.view_id();
 
     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    harness.rebuild(); // Process deferred children
 
     assert_eq!(id.children().len(), 1);
 
@@ -1174,7 +1191,8 @@ fn test_scope_context_shadowing_with_derived_child() {
         )
         .style(|s| s.size(100.0, 100.0));
 
-    let _harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    harness.rebuild(); // Process deferred children
 
     assert_eq!(
         *outer_value.borrow(),

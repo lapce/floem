@@ -4,7 +4,7 @@
 //! [`ViewId`]s are unique identifiers for views.
 //! They're used to identify views in the view tree.
 
-use std::{any::Any, cell::RefCell, rc::Rc};
+use std::{any::Any, cell::RefCell, collections::HashSet, rc::Rc};
 
 use floem_reactive::Scope;
 use peniko::kurbo::{Affine, Insets, Point, Rect, Size};
@@ -16,6 +16,12 @@ use ui_events::pointer::PointerId;
 
 use super::stacking::{invalidate_all_overlay_caches, invalidate_stacking_cache};
 use super::{ChangeFlags, IntoView, StackOffset, VIEW_STORAGE, View, ViewState};
+
+thread_local! {
+    /// Views that have scopes but couldn't find a parent scope when added.
+    /// These need to be re-parented after the view tree is fully assembled.
+    static PENDING_SCOPE_REPARENTS: RefCell<HashSet<ViewId>> = RefCell::new(HashSet::new());
+}
 use crate::{
     ScreenLayout,
     action::add_update_message,
@@ -47,6 +53,14 @@ impl ViewId {
         VIEW_STORAGE.with_borrow_mut(|s| s.view_ids.insert(()))
     }
 
+    /// Check if this ViewId is still valid (exists in VIEW_STORAGE).
+    ///
+    /// A ViewId becomes invalid when it has been removed from the view tree.
+    /// This is useful for filtering out stale ViewIds from collections.
+    pub fn is_valid(&self) -> bool {
+        VIEW_STORAGE.with_borrow(|s| s.view_ids.contains_key(*self))
+    }
+
     /// Remove this view id and all of its children from the `VIEW_STORAGE`.
     ///
     /// Note: For full cleanup including taffy nodes and cleanup listeners,
@@ -70,11 +84,20 @@ impl ViewId {
             s.root.remove(*self);
             // Remove from overlays if registered
             s.overlays.remove(*self);
+            // Remove self from parent's children list
             if let Some(Some(parent)) = s.parent.get(*self) {
                 if let Some(children) = s.children.get_mut(*parent) {
                     children.retain(|c| c != self);
                 }
             }
+            // Clean up all SecondaryMap entries for this view to prevent
+            // stale data when slots are reused. SecondaryMaps don't auto-clean
+            // when the primary SlotMap key is removed.
+            s.children.remove(*self);
+            s.parent.remove(*self);
+            s.states.remove(*self);
+            s.views.remove(*self);
+            // Remove from primary SlotMap last
             s.view_ids.remove(*self);
         });
         // Invalidate parent's stacking cache since its children changed
@@ -183,12 +206,15 @@ impl ViewId {
 
     /// Add a child View to this Id's list of children
     pub fn add_child(&self, child: Box<dyn View>) {
+        let child_id = child.id();
         VIEW_STORAGE.with_borrow_mut(|s| {
-            let child_id = child.id();
             s.children.entry(*self).unwrap().or_default().push(child_id);
             s.parent.insert(child_id, Some(*self));
             s.views.insert(child_id, Rc::new(RefCell::new(child)));
         });
+        // Re-parent child's scope under nearest ancestor's scope to match view hierarchy.
+        // This ensures scope hierarchy matches view hierarchy for proper cleanup.
+        reparent_scope_if_needed(child_id, *self);
         // Invalidate stacking cache since children changed
         invalidate_stacking_cache(*self);
     }
@@ -201,6 +227,7 @@ impl ViewId {
     /// Takes a `Vec` to ensure views are fully constructed before borrowing
     /// VIEW_STORAGE, avoiding potential borrow conflicts.
     pub fn append_children(&self, children: Vec<Box<dyn View>>) {
+        let child_ids: Vec<ViewId> = children.iter().map(|c| c.id()).collect();
         VIEW_STORAGE.with_borrow_mut(|s| {
             let children_list = s.children.entry(*self).unwrap().or_default();
             for child in children {
@@ -210,6 +237,10 @@ impl ViewId {
                 s.views.insert(child_id, Rc::new(RefCell::new(child)));
             }
         });
+        // Re-parent child scopes under nearest ancestor's scope
+        for child_id in child_ids {
+            reparent_scope_if_needed(child_id, *self);
+        }
         // Invalidate stacking cache since children changed
         invalidate_stacking_cache(*self);
     }
@@ -217,7 +248,7 @@ impl ViewId {
     /// Set the children views of this Id
     /// See also [`Self::set_children_vec`]
     pub fn set_children<const N: usize, V: IntoView>(&self, children: [V; N]) {
-        VIEW_STORAGE.with_borrow_mut(|s| {
+        let children_ids: Vec<ViewId> = VIEW_STORAGE.with_borrow_mut(|s| {
             let mut children_ids = Vec::new();
             for child in children {
                 let child_view = child.into_view();
@@ -227,8 +258,13 @@ impl ViewId {
                 s.views
                     .insert(child_view_id, Rc::new(RefCell::new(child_view.into_any())));
             }
-            s.children.insert(*self, children_ids);
+            s.children.insert(*self, children_ids.clone());
+            children_ids
         });
+        // Re-parent child scopes under nearest ancestor's scope
+        for child_id in children_ids {
+            reparent_scope_if_needed(child_id, *self);
+        }
         // Invalidate stacking cache since children changed
         invalidate_stacking_cache(*self);
     }
@@ -246,7 +282,7 @@ impl ViewId {
     ///
     /// See also [`Self::set_children`] and [`Self::set_children_vec`]
     pub fn set_children_iter(&self, children: impl Iterator<Item = Box<dyn View>>) {
-        VIEW_STORAGE.with_borrow_mut(|s| {
+        let children_ids: Vec<ViewId> = VIEW_STORAGE.with_borrow_mut(|s| {
             let mut children_ids = Vec::new();
             for child_view in children {
                 let child_view_id = child_view.id();
@@ -255,8 +291,13 @@ impl ViewId {
                 s.views
                     .insert(child_view_id, Rc::new(RefCell::new(child_view)));
             }
-            s.children.insert(*self, children_ids);
+            s.children.insert(*self, children_ids.clone());
+            children_ids
         });
+        // Re-parent child scopes under nearest ancestor's scope
+        for child_id in children_ids {
+            reparent_scope_if_needed(child_id, *self);
+        }
         // Invalidate stacking cache since children changed
         invalidate_stacking_cache(*self);
     }
@@ -847,44 +888,36 @@ impl ViewId {
 
     /// Queue a child to be added during the next update cycle.
     ///
-    /// The child will be constructed inside the given scope when the message
-    /// is processed. This enables lazy child construction where children are
-    /// built inside the parent's scope for context access.
-    pub fn add_child_deferred(&self, scope: Scope, child_fn: impl FnOnce() -> AnyView + 'static) {
+    /// The child will be constructed when the message is processed. The scope
+    /// is resolved at build time by looking up the parent's context scope in
+    /// the view hierarchy, enabling proper context propagation.
+    pub fn add_child_deferred(&self, child_fn: impl FnOnce() -> AnyView + 'static) {
         self.add_update_message(UpdateMessage::AddChild {
             parent_id: *self,
-            child: DeferredChild::new(scope, child_fn),
+            child: DeferredChild::new(child_fn),
         });
     }
 
     /// Queue multiple children to be added during the next update cycle.
     ///
-    /// The children will be constructed inside the given scope when the message
-    /// is processed. This enables lazy children construction where children are
-    /// built inside the parent's scope for context access.
-    pub fn add_children_deferred(
-        &self,
-        scope: Scope,
-        children_fn: impl FnOnce() -> Vec<AnyView> + 'static,
-    ) {
+    /// The children will be constructed when the message is processed. The scope
+    /// is resolved at build time by looking up the parent's context scope in
+    /// the view hierarchy, enabling proper context propagation.
+    pub fn add_children_deferred(&self, children_fn: impl FnOnce() -> Vec<AnyView> + 'static) {
         self.add_update_message(UpdateMessage::AddChildren {
             parent_id: *self,
-            children: DeferredChildren::new(scope, children_fn),
+            children: DeferredChildren::new(children_fn),
         });
     }
 
     /// Queue a reactive children setup to run during the next update cycle.
     ///
-    /// The setup function will be called inside the given scope when the message
-    /// is processed. This enables lazy setup of reactive children (derived_children,
-    /// derived_child, keyed_children) inside the correct scope for context access.
-    pub fn setup_reactive_children_deferred(
-        &self,
-        scope: Scope,
-        setup: impl FnOnce() + 'static,
-    ) {
+    /// The setup function will be called inside the view's scope (resolved via `find_scope()`)
+    /// when the message is processed. This enables lazy setup of reactive children
+    /// (derived_children, derived_child, keyed_children) inside the correct scope for context access.
+    pub fn setup_reactive_children_deferred(&self, setup: impl FnOnce() + 'static) {
         self.add_update_message(UpdateMessage::SetupReactiveChildren {
-            setup: DeferredReactiveSetup::new(scope, setup),
+            setup: DeferredReactiveSetup::new(*self, setup),
         });
     }
 
@@ -949,6 +982,120 @@ impl ViewId {
         self.state().borrow_mut().keyed_children.take()
     }
 
+    /// Set the scope for this view.
+    ///
+    /// Views that provide context to children (like Combobox, Dialog, etc.) should
+    /// call this in their `into_view()` to store their scope. This scope is then
+    /// used when processing deferred children so they have access to the context.
+    ///
+    /// The scope hierarchy is kept in sync with the view hierarchy, so when
+    /// a parent scope is disposed, all child scopes are also disposed.
+    pub fn set_scope(&self, scope: Scope) {
+        self.state().borrow_mut().scope = Some(scope);
+    }
+
+    /// Get the scope for this view, if one was set.
+    pub fn scope(&self) -> Option<Scope> {
+        self.state().borrow().scope
+    }
+
+    /// Find the nearest ancestor (including self) that has a scope.
+    ///
+    /// This walks up the view tree to find the first view with a scope,
+    /// which should be used when building deferred children.
+    pub fn find_scope(&self) -> Option<Scope> {
+        // Check self first
+        if let Some(scope) = self.scope() {
+            return Some(scope);
+        }
+        // Walk up ancestors
+        let mut current = self.parent();
+        while let Some(parent_id) = current {
+            if let Some(scope) = parent_id.scope() {
+                return Some(scope);
+            }
+            current = parent_id.parent();
+        }
+        None
+    }
+}
+
+/// Re-parent a child view's scope under the nearest ancestor's scope.
+///
+/// This ensures that the Scope hierarchy matches the View hierarchy, which is
+/// important for proper cleanup - when a parent scope is disposed, all child
+/// scopes (and their signals/effects) are also disposed.
+///
+/// This handles the case where views are constructed eagerly (children created
+/// before parents) - the scopes may have been created in the wrong order, so
+/// we fix up the hierarchy when the view tree is assembled.
+///
+/// If the parent scope can't be found yet (because the view tree isn't fully
+/// assembled), the child is added to a pending list and will be re-parented
+/// later via `process_pending_scope_reparents`.
+fn reparent_scope_if_needed(child_id: ViewId, parent_id: ViewId) {
+    // Get child's scope (if it has one)
+    let child_scope = child_id.scope();
+    if let Some(child_scope) = child_scope {
+        // Find the nearest ancestor with a scope
+        if let Some(parent_scope) = parent_id.find_scope() {
+            // Guard: Don't create a cycle if same scope is on both views
+            if child_scope != parent_scope {
+                // Re-parent child's scope under parent's scope
+                child_scope.set_parent(parent_scope);
+            }
+        } else {
+            // Parent scope not found yet - the view tree might not be fully assembled.
+            // Add to pending list for later processing.
+            PENDING_SCOPE_REPARENTS.with_borrow_mut(|pending| {
+                pending.insert(child_id);
+            });
+        }
+    }
+}
+
+/// Process any views that had scope re-parenting deferred.
+///
+/// This should be called after the view tree is fully assembled (e.g., after
+/// processing all update messages). It attempts to re-parent scopes that
+/// couldn't find a parent scope when they were first added.
+pub fn process_pending_scope_reparents() {
+    // Fast path: skip if nothing pending (common case)
+    let has_pending = PENDING_SCOPE_REPARENTS.with_borrow(|pending| !pending.is_empty());
+    if !has_pending {
+        return;
+    }
+
+    PENDING_SCOPE_REPARENTS.with_borrow_mut(|pending| {
+        pending.retain(|child_id| {
+            // First check if this ViewId is still valid (not from a disposed view/window)
+            // This is important for parallel test isolation
+            if !child_id.is_valid() {
+                return false; // Remove stale ViewId from pending
+            }
+
+            // Check if view still exists and has a scope
+            let child_scope = child_id.scope();
+            if let Some(child_scope) = child_scope {
+                // Try to find a parent scope by walking up from the parent
+                if let Some(parent_id) = child_id.parent() {
+                    if let Some(parent_scope) = parent_id.find_scope() {
+                        // Guard: Don't create a cycle if same scope is on both views
+                        if child_scope != parent_scope {
+                            child_scope.set_parent(parent_scope);
+                        }
+                        return false; // Successfully handled, remove from pending
+                    }
+                }
+                true // Still pending, keep in the set
+            } else {
+                false // No scope, remove from pending
+            }
+        });
+    });
+}
+
+impl ViewId {
     /// Set the selected state for child views during styling.
     /// This should be used by parent views to propagate selected state to their children.
     /// Only requests a style update if the state actually changes.
