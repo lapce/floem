@@ -60,6 +60,7 @@ use floem_reactive::{Effect, ReadSignal, RwSignal, Scope, SignalGet, UpdaterEffe
 use peniko::kurbo::*;
 use smallvec::SmallVec;
 use std::any::Any;
+use std::cell::Cell;
 use std::hash::Hash;
 use std::rc::Rc;
 use taffy::tree::NodeId;
@@ -295,7 +296,8 @@ pub trait ParentView: HasViewId + Sized {
     ///
     /// Takes two closures: one that tracks reactive dependencies and returns state,
     /// and another that builds a view from that state. When the state changes,
-    /// the old child is replaced with a new one.
+    /// only the managed child is replaced while preserving any other siblings.
+    /// This allows mixing static children with a reactive child.
     ///
     /// For a simpler API where a single closure both tracks deps and returns a view,
     /// use `derived_child` instead.
@@ -335,45 +337,61 @@ pub trait ParentView: HasViewId + Sized {
             id.set_scope(scope);
         }
 
+        // Track the managed child's ViewId and Scope (append/track mode)
+        let managed_child: Rc<Cell<Option<(ViewId, Scope)>>> = Rc::new(Cell::new(None));
+        let managed_child_clone = managed_child.clone();
+
         // Defer the entire setup to message processing
-        // The scope is resolved via find_scope() when the message is processed
         id.setup_reactive_children_deferred(move || {
-            // Wrap child_fn to create scoped views, using Rc to share between effect and initial setup
             let child_fn: Rc<dyn Fn(S) -> (AnyView, Scope)> =
                 Rc::new(Scope::current().enter_child(move |state: S| child_fn(state).into_any()));
 
             let child_fn_for_effect = child_fn.clone();
+            let managed_child_for_effect = managed_child_clone.clone();
 
-            // Create effect and get initial state
             let initial_state = UpdaterEffect::new(state_fn, move |new_state: S| {
-                // Dispose old scope
-                if let Some(old_scope) = id.take_children_scope() {
+                // Get and dispose old managed child
+                if let Some((old_child_id, old_scope)) = managed_child_for_effect.take() {
                     old_scope.dispose();
+
+                    // Remove old child from children list
+                    let mut current_children = id.children();
+                    let pos = current_children
+                        .iter()
+                        .position(|&c| c == old_child_id)
+                        .unwrap_or(current_children.len());
+
+                    if pos < current_children.len() {
+                        current_children.remove(pos);
+                        id.request_remove_views(vec![old_child_id]);
+                    }
+
+                    // Create and insert new child
+                    let (new_child, new_scope) = child_fn_for_effect(new_state);
+                    let new_child_id = new_child.id();
+                    new_child_id.set_parent(id);
+                    new_child_id.set_view(new_child);
+
+                    let insert_pos = pos.min(current_children.len());
+                    current_children.insert(insert_pos, new_child_id);
+
+                    id.set_children_ids(current_children);
+                    managed_child_for_effect.set(Some((new_child_id, new_scope)));
                 }
-
-                // Get old child for removal
-                let old_children = id.children();
-
-                // Create new child
-                let (new_child, new_scope) = child_fn_for_effect(new_state);
-                let new_child_id = new_child.id();
-                new_child_id.set_parent(id);
-                new_child_id.set_view(new_child);
-                id.set_children_ids(vec![new_child_id]);
-                id.set_children_scope(new_scope);
-
-                // Request removal of old children
-                id.request_remove_views(old_children);
                 id.request_all();
             });
 
-            // Create initial child from initial state
+            // Create initial child and append to existing children
             let (initial_child, initial_scope) = child_fn(initial_state);
             let child_id = initial_child.id();
             child_id.set_parent(id);
             child_id.set_view(initial_child);
-            id.set_children_ids(vec![child_id]);
-            id.set_children_scope(initial_scope);
+
+            let mut current_children = id.children();
+            current_children.push(child_id);
+            id.set_children_ids(current_children);
+
+            managed_child_clone.set(Some((child_id, initial_scope)));
         });
         self
     }
@@ -493,8 +511,9 @@ pub trait ParentView: HasViewId + Sized {
     /// Adds a single reactive child that updates when signals change.
     ///
     /// The closure both tracks reactive dependencies and returns a view.
-    /// When any tracked dependency changes, the old child is replaced with
-    /// a new one built by calling the closure again.
+    /// When any tracked dependency changes, only the managed child is replaced
+    /// while preserving any other siblings. This allows mixing static children
+    /// with a reactive child.
     ///
     /// This is consistent with `derived_children` which also takes a single
     /// closure. For explicit state tracking with separate closures, use
@@ -532,44 +551,62 @@ pub trait ParentView: HasViewId + Sized {
             id.set_scope(scope);
         }
 
+        // Track the managed child's ViewId and Scope (append/track mode)
+        let managed_child: Rc<Cell<Option<(ViewId, Scope)>>> = Rc::new(Cell::new(None));
+        let managed_child_clone = managed_child.clone();
+
         // Defer the entire setup to message processing
-        // The scope is resolved via find_scope() when the message is processed
         id.setup_reactive_children_deferred(move || {
-            // Wrap child_fn to create scoped views - each invocation gets its own scope
             let child_fn =
                 Box::new(Scope::current().enter_child(move |_: ()| child_fn().into_any()));
 
-            // Use UpdaterEffect - the child_fn itself does the tracking
+            let managed_child_for_effect = managed_child_clone.clone();
+
             let (initial_child, initial_scope) = UpdaterEffect::new(
-                move || child_fn(()), // This tracks deps AND returns child
+                move || child_fn(()),
                 move |(new_child, new_scope): (AnyView, Scope)| {
-                    // Dispose old scope
-                    if let Some(old_scope) = id.take_children_scope() {
+                    // Get and dispose old managed child
+                    if let Some((old_child_id, old_scope)) = managed_child_for_effect.take() {
                         old_scope.dispose();
+
+                        // Remove old child from children list
+                        let mut current_children = id.children();
+                        let pos = current_children
+                            .iter()
+                            .position(|&c| c == old_child_id)
+                            .unwrap_or(current_children.len());
+
+                        if pos < current_children.len() {
+                            current_children.remove(pos);
+                            id.request_remove_views(vec![old_child_id]);
+                        }
+
+                        // Add new child at the same position (or end if not found)
+                        let new_child_id = new_child.id();
+                        new_child_id.set_parent(id);
+                        new_child_id.set_view(new_child);
+
+                        // Insert at the old position or append
+                        let insert_pos = pos.min(current_children.len());
+                        current_children.insert(insert_pos, new_child_id);
+
+                        id.set_children_ids(current_children);
+                        managed_child_for_effect.set(Some((new_child_id, new_scope)));
                     }
-
-                    // Get old children for removal
-                    let old_children = id.children();
-
-                    // Set up new child
-                    let new_child_id = new_child.id();
-                    new_child_id.set_parent(id);
-                    new_child_id.set_view(new_child);
-                    id.set_children_ids(vec![new_child_id]);
-                    id.set_children_scope(new_scope);
-
-                    // Request removal of old children
-                    id.request_remove_views(old_children);
                     id.request_all();
                 },
             );
 
-            // Set up initial child
+            // Append initial child to existing children
             let child_id = initial_child.id();
             child_id.set_parent(id);
             child_id.set_view(initial_child);
-            id.set_children_ids(vec![child_id]);
-            id.set_children_scope(initial_scope);
+
+            let mut current_children = id.children();
+            current_children.push(child_id);
+            id.set_children_ids(current_children);
+
+            managed_child_clone.set(Some((child_id, initial_scope)));
         });
         self
     }

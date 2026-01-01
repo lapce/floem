@@ -1004,12 +1004,11 @@ fn test_stateful_child_with_enum() {
 
 /// Test behavior when mixing static children with stateful_child.
 ///
-/// With fully deferred child construction, both `.children()` and `.stateful_child()`
-/// queue messages that are processed in order. When `stateful_child` sets up,
-/// it calls `set_children_ids` which replaces any previously added children.
+/// With the append/track pattern, both `.children()` and `.stateful_child()`
+/// work together. The `stateful_child` appends its managed child to any
+/// existing children and only replaces its own managed child on updates.
 ///
-/// Note: Mixing static `.children()` with reactive `.stateful_child()` is not
-/// a recommended pattern. Use one or the other for predictable behavior.
+/// This pattern is now fully supported for mixing static and reactive children.
 #[test]
 fn test_stateful_child_with_static_children() {
     let dynamic_state = RwSignal::new(1);
@@ -1025,24 +1024,23 @@ fn test_stateful_child_with_static_children() {
     // Both .children() and .stateful_child() are now deferred.
     // Messages are processed in order:
     // 1. AddChildren adds 2 children
-    // 2. SetupReactiveChildren runs stateful_child setup which calls set_children_ids,
-    //    replacing the 2 static children with 1 dynamic child.
-    // Result: only 1 child from stateful_child
+    // 2. SetupReactiveChildren runs stateful_child setup which APPENDS its child.
+    // Result: 3 children total (2 static + 1 dynamic)
     assert_eq!(
         id.children().len(),
-        1,
-        "stateful_child's set_children_ids replaces static children"
+        3,
+        "stateful_child appends to existing children"
     );
 
-    // Update dynamic state - stateful_child recreates its child
+    // Update dynamic state - stateful_child replaces only its managed child
     dynamic_state.set(2);
     harness.rebuild();
 
-    // Still only stateful_child's child
+    // Still 3 children: 2 static + 1 dynamic (the dynamic one was replaced in-place)
     assert_eq!(
         id.children().len(),
-        1,
-        "After update, still only stateful_child's child"
+        3,
+        "After update, still 3 children (static preserved, dynamic replaced in-place)"
     );
 }
 
@@ -1425,4 +1423,254 @@ fn test_no_scope_no_context() {
         None,
         "Without scope provider, context should be None"
     );
+}
+
+// =============================================================================
+// derived_child tests - preserves siblings (append/track mode)
+// =============================================================================
+
+/// Test that derived_child preserves static children.
+#[test]
+fn test_derived_child_preserves_siblings() {
+    let state = RwSignal::new(1);
+
+    let view = Stem::new()
+        .child(Empty::new()) // Static child 1
+        .derived_child(move || {
+            let _val = state.get();
+            Empty::new()
+        })
+        .child(Empty::new()) // Static child 2
+        .style(|s| s.size(100.0, 100.0));
+    let id = view.view_id();
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    harness.rebuild();
+
+    // Should have 3 children: static + reactive + static
+    assert_eq!(
+        id.children().len(),
+        3,
+        "derived_child should preserve sibling children"
+    );
+
+    // Update signal
+    state.set(2);
+    harness.rebuild();
+
+    // Still 3 children
+    assert_eq!(
+        id.children().len(),
+        3,
+        "After update, should still have 3 children"
+    );
+}
+
+/// Test that derived_child replaces only its managed child.
+#[test]
+fn test_derived_child_replaces_only_managed() {
+    let state = RwSignal::new(1);
+
+    let view = Stem::new()
+        .child(Empty::new()) // Static child
+        .derived_child(move || {
+            let _val = state.get();
+            Empty::new()
+        })
+        .style(|s| s.size(100.0, 100.0));
+    let id = view.view_id();
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    harness.rebuild();
+
+    let initial_children: Vec<ViewId> = id.children();
+    assert_eq!(initial_children.len(), 2);
+    let static_child_id = initial_children[0];
+    let reactive_child_id = initial_children[1];
+
+    // Update signal
+    state.set(2);
+    harness.rebuild();
+
+    let new_children: Vec<ViewId> = id.children();
+    assert_eq!(new_children.len(), 2);
+
+    // Static child should be the same
+    assert_eq!(
+        new_children[0], static_child_id,
+        "Static child should be preserved"
+    );
+
+    // Reactive child should be different
+    assert_ne!(
+        new_children[1], reactive_child_id,
+        "Reactive child should be replaced"
+    );
+}
+
+/// Test that derived_child maintains position when updating.
+#[test]
+fn test_derived_child_maintains_position() {
+    let state = RwSignal::new(1);
+
+    let view = Stem::new()
+        .child(Empty::new()) // Position 0
+        .derived_child(move || {
+            // Position 1
+            let _val = state.get();
+            Empty::new()
+        })
+        .child(Empty::new()) // Position 2
+        .style(|s| s.size(100.0, 100.0));
+    let id = view.view_id();
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    harness.rebuild();
+
+    let initial_children: Vec<ViewId> = id.children();
+    let (child0, _child1, child2) = (
+        initial_children[0],
+        initial_children[1],
+        initial_children[2],
+    );
+
+    // Update signal
+    state.set(2);
+    harness.rebuild();
+
+    let new_children: Vec<ViewId> = id.children();
+
+    // Position should be maintained
+    assert_eq!(new_children[0], child0, "Child at position 0 unchanged");
+    assert_eq!(new_children[2], child2, "Child at position 2 unchanged");
+    // Position 1 is the reactive child which changed
+}
+
+/// Test multiple derived_child calls.
+#[test]
+fn test_multiple_derived_child_calls() {
+    let state1 = RwSignal::new(1);
+    let state2 = RwSignal::new(10);
+
+    let view = Stem::new()
+        .derived_child(move || {
+            let _val = state1.get();
+            Empty::new()
+        })
+        .derived_child(move || {
+            let _val = state2.get();
+            Empty::new()
+        })
+        .style(|s| s.size(100.0, 100.0));
+    let id = view.view_id();
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    harness.rebuild();
+
+    assert_eq!(id.children().len(), 2, "Should have 2 reactive children");
+
+    let initial_children: Vec<ViewId> = id.children();
+
+    // Update only first signal
+    state1.set(2);
+    harness.rebuild();
+
+    let after_first_update: Vec<ViewId> = id.children();
+    assert_ne!(
+        after_first_update[0], initial_children[0],
+        "First child should change"
+    );
+    assert_eq!(
+        after_first_update[1], initial_children[1],
+        "Second child should stay same"
+    );
+
+    // Update only second signal
+    state2.set(20);
+    harness.rebuild();
+
+    let after_second_update: Vec<ViewId> = id.children();
+    assert_eq!(
+        after_second_update[0], after_first_update[0],
+        "First child should stay same"
+    );
+    assert_ne!(
+        after_second_update[1], after_first_update[1],
+        "Second child should change"
+    );
+}
+
+// =============================================================================
+// stateful_child sibling preservation tests
+// =============================================================================
+
+/// Test that stateful_child preserves static children.
+#[test]
+fn test_stateful_child_preserves_siblings() {
+    let state = RwSignal::new(1);
+
+    let view = Stem::new()
+        .child(Empty::new()) // Static child 1
+        .stateful_child(move || state.get(), |_val| Empty::new())
+        .child(Empty::new()) // Static child 2
+        .style(|s| s.size(100.0, 100.0));
+    let id = view.view_id();
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    harness.rebuild();
+
+    // Should have 3 children
+    assert_eq!(
+        id.children().len(),
+        3,
+        "stateful_child should preserve sibling children"
+    );
+
+    // Update signal
+    state.set(2);
+    harness.rebuild();
+
+    // Still 3 children
+    assert_eq!(
+        id.children().len(),
+        3,
+        "After update, should still have 3 children"
+    );
+}
+
+/// Test that stateful_child passes state correctly.
+#[test]
+fn test_stateful_child_passes_state_with_siblings() {
+    let tracker = ClickTracker::new();
+    let state = RwSignal::new("child_a");
+
+    let tracker_clone = tracker.clone();
+    let view = Stem::new()
+        .child(Empty::new().style(|s| s.size(30.0, 30.0))) // Static at y=0-30
+        .stateful_child(
+            move || state.get(),
+            move |value| {
+                tracker_clone.track_named(value, Empty::new().style(|s| s.size(30.0, 30.0)))
+            },
+        ) // Reactive at y=30-60
+        .style(|s| s.size(100.0, 100.0).flex_col());
+    let id = view.view_id();
+
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    harness.rebuild();
+
+    assert_eq!(id.children().len(), 2);
+
+    // Click on the reactive child area
+    harness.click(15.0, 45.0);
+    assert_eq!(tracker.clicked_names(), vec!["child_a"]);
+
+    // Update state
+    tracker.reset();
+    state.set("child_b");
+    harness.rebuild();
+
+    // Click again
+    harness.click(15.0, 45.0);
+    assert_eq!(tracker.clicked_names(), vec!["child_b"]);
 }
