@@ -22,24 +22,22 @@ use crate::view::{ParentView, View, ViewId};
 ///
 /// let show_dialog = RwSignal::new(false);
 ///
-/// v_stack((
-///     button("Show Dialog").action(move || show_dialog.set(true)),
+/// Stack::vertical((
+///     Button::new("Show Dialog").action(move || show_dialog.set(true)),
 ///     Overlay::new()
-///         .derived_child(
-///             move || show_dialog.get(),
-///             |visible| {
-///                 v_stack((
-///                     Label::derived(|| "This is a dialog!".to_string()),
-///                     button("Close").action(move || show_dialog.set(false)),
-///                 ))
-///                 .style(move |s| {
-///                     s.apply_if(!visible, |s| s.hide())
-///                         .background(Color::WHITE)
-///                         .padding(20)
-///                         .border_radius(8)
-///                 })
-///             },
-///         ),
+///         .derived_child(move || {
+///             let visible = show_dialog.get();
+///             Stack::vertical((
+///                 Label::derived(|| "This is a dialog!".to_string()),
+///                 Button::new("Close").action(move || show_dialog.set(false)),
+///             ))
+///             .style(move |s| {
+///                 s.apply_if(!visible, |s| s.hide())
+///                     .background(Color::WHITE)
+///                     .padding(20)
+///                     .border_radius(8)
+///             })
+///         }),
 /// ));
 /// ```
 ///
