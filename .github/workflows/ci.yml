@@ -25,6 +25,16 @@ jobs:
           - windows-latest
     runs-on: ${{ matrix.os }}
     steps:
+      - name: Free disk space on Ubuntu
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          df -h
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          df -h
+
       - name: Checkout repo
         uses: actions/checkout@v4
 
@@ -90,6 +100,14 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
+      - name: Free disk space on Ubuntu
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+
       - name: Checkout repo
         uses: actions/checkout@v4
 
