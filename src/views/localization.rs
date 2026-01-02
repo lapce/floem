@@ -5,7 +5,7 @@ use std::pin::Pin;
 use std::rc::Rc;
 
 use crate::style::{CustomStylable, CustomStyle, Style, StylePropValue};
-use crate::view_state::{Stack, StackOffset};
+use crate::view::{Stack as StackStruct, StackOffset};
 use crate::views::Decorators;
 use crate::{AnyView, IntoView, View, ViewId, prop, prop_extractor, style_class};
 use floem_reactive::UpdaterEffect;
@@ -66,12 +66,12 @@ impl StylePropValue for LocaleMap {
 
         let count = languages.len();
 
-        let view = stack((
+        let view = Stack::new((
             format!("Languages ({count})").style(|s| {
                 s.font_size(12.0)
                     .font_weight(floem_renderer::text::Weight::SEMIBOLD)
             }),
-            v_stack_from_iter(languages.into_iter().map(|lang| {
+            Stack::vertical_from_iter(languages.into_iter().map(|lang| {
                 lang.style(|s| {
                     s.font_size(11.0)
                         .color(Color::WHITE.with_alpha(0.7))
@@ -202,7 +202,7 @@ pub struct L10n {
     label_id: ViewId,
     key: String,
     args: FluentArgs<'static>,
-    arg_keys: Pin<Box<crate::view_state::Stack<String>>>, // Pinned allocation
+    arg_keys: Pin<Box<StackStruct<String>>>, // Pinned allocation
     locale: LanguageExtractor,
     fallback: FallBackExtractor,
     fallback_override: Option<String>,
@@ -222,7 +222,7 @@ impl L10n {
             label_id,
             key,
             args: FluentArgs::new(),
-            arg_keys: Box::pin(Stack { stack: smallvec![] }),
+            arg_keys: Box::pin(StackStruct { stack: smallvec![] }),
             locale: Default::default(),
             fallback: Default::default(),
             fallback_override: None,

@@ -35,8 +35,7 @@ fn app_view() -> impl IntoView {
         .action(|| AppCommand::NewTodo.execute())
         .style(|s| s.margin_horiz(10));
 
-    (todos_scroll, new_button)
-        .v_stack()
+    Stack::vertical((todos_scroll, new_button))
         .debug_name("Todos scroll list and new button")
         .style(|s| {
             s.gap(10)

@@ -2,11 +2,9 @@ use taffy::style::FlexDirection;
 
 use crate::{
     context::UpdateCx,
-    id::ViewId,
-    into_view_iter::IntoViewIter,
     style::{Style, StyleClassRef},
-    view::{IntoView, View},
-    view_tuple::ViewTuple,
+    view::ViewId,
+    view::{IntoView, IntoViewIter, View, ViewTuple},
 };
 
 /// A collection of static views. See [`stack`] and [`stack_from_iter`].
@@ -49,16 +47,19 @@ pub(crate) fn create_stack_with_id(
 ///     )),
 /// ));
 /// ```
+#[deprecated(since = "0.2.0", note = "Use Stack::new() instead")]
 pub fn stack<VT: ViewTuple + 'static>(children: VT) -> Stack {
     create_stack(children.into_views(), None)
 }
 
 /// A stack which defaults to `FlexDirection::Row`. See also [`v_stack`].
+#[deprecated(since = "0.2.0", note = "Use Stack::horizontal() instead")]
 pub fn h_stack<VT: ViewTuple + 'static>(children: VT) -> Stack {
     create_stack(children.into_views(), Some(FlexDirection::Row))
 }
 
 /// A stack which defaults to `FlexDirection::Column`. See also [`h_stack`].
+#[deprecated(since = "0.2.0", note = "Use Stack::vertical() instead")]
 pub fn v_stack<VT: ViewTuple + 'static>(children: VT) -> Stack {
     create_stack(children.into_views(), Some(FlexDirection::Column))
 }
@@ -101,6 +102,7 @@ where
 /// use floem::views::*;
 /// stack_from_iter(vec![1,1,2,2,3,4,5,6,7,8,9].iter().map(|val| text(val)));
 /// ```
+#[deprecated(since = "0.2.0", note = "Use Stack::from_iter() instead")]
 pub fn stack_from_iter<V>(iterator: impl IntoIterator<Item = V>) -> Stack
 where
     V: IntoView + 'static,
@@ -109,6 +111,7 @@ where
 }
 
 /// Creates a stack from an iterator of views. It defaults to `FlexDirection::Row`. See also [`v_stack_from_iter`].
+#[deprecated(since = "0.2.0", note = "Use Stack::horizontal_from_iter() instead")]
 pub fn h_stack_from_iter<V>(iterator: impl IntoIterator<Item = V>) -> Stack
 where
     V: IntoView + 'static,
@@ -116,7 +119,8 @@ where
     from_iter(iterator, Some(FlexDirection::Row))
 }
 
-/// Creates a stack from an iterator of views. It defaults to `FlexDirection::Column`.See also [`h_stack_from_iter`].
+/// Creates a stack from an iterator of views. It defaults to `FlexDirection::Column`. See also [`h_stack_from_iter`].
+#[deprecated(since = "0.2.0", note = "Use Stack::vertical_from_iter() instead")]
 pub fn v_stack_from_iter<V>(iterator: impl IntoIterator<Item = V>) -> Stack
 where
     V: IntoView + 'static,
@@ -190,7 +194,7 @@ impl Stack {
     /// use floem::{ViewId, views::Stack};
     ///
     /// let id = ViewId::new();
-    /// Stack::with_id(id, ("child 1", "child 2")).horizontal();
+    /// Stack::with_id(id, ("child 1", "child 2"));
     /// ```
     pub fn with_id(id: ViewId, children: impl IntoViewIter) -> Self {
         id.set_children_iter(children.into_view_iter());
@@ -200,16 +204,136 @@ impl Stack {
         }
     }
 
-    /// Sets the stack direction to horizontal (row).
-    pub fn horizontal(mut self) -> Self {
-        self.direction = Some(FlexDirection::Row);
-        self
+    /// Creates a new stack from an iterator of views.
+    ///
+    /// ## Example
+    /// ```rust,no_run
+    /// use floem::views::*;
+    ///
+    /// Stack::from_iter((0..5).map(|i| text(i)));
+    /// ```
+    #[allow(clippy::should_implement_trait)]
+    pub fn from_iter<V: IntoView + 'static>(children: impl IntoIterator<Item = V>) -> Self {
+        let id = ViewId::new();
+        id.set_children_vec(
+            children
+                .into_iter()
+                .map(|v| -> Box<dyn View> { v.into_any() })
+                .collect(),
+        );
+        Stack {
+            id,
+            direction: None,
+        }
     }
 
-    /// Sets the stack direction to vertical (column).
-    pub fn vertical(mut self) -> Self {
-        self.direction = Some(FlexDirection::Column);
-        self
+    /// Creates a new stack with a specific ViewId from an iterator of views.
+    ///
+    /// This is useful for lazy view construction where the `ViewId` is created
+    /// before the view itself. Unlike `with_id`, this method pre-converts all
+    /// views before setting children, avoiding potential RefCell borrow conflicts.
+    ///
+    /// ## Example
+    /// ```rust,no_run
+    /// use floem::{ViewId, views::*};
+    ///
+    /// let id = ViewId::new();
+    /// Stack::from_iter_with_id(id, (0..5).map(|i| text(i)), None);
+    /// ```
+    pub fn from_iter_with_id<V: IntoView + 'static>(
+        id: ViewId,
+        children: impl IntoIterator<Item = V>,
+        direction: Option<FlexDirection>,
+    ) -> Self {
+        id.set_children_vec(
+            children
+                .into_iter()
+                .map(|v| -> Box<dyn View> { v.into_any() })
+                .collect(),
+        );
+        Stack { id, direction }
+    }
+
+    /// Creates a new horizontal stack (row direction).
+    ///
+    /// ## Example
+    /// ```rust,no_run
+    /// use floem::views::*;
+    ///
+    /// Stack::horizontal((text("left"), text("right")));
+    /// ```
+    pub fn horizontal(children: impl IntoViewIter) -> Self {
+        let id = ViewId::new();
+        id.set_children_iter(children.into_view_iter());
+        Stack {
+            id,
+            direction: Some(FlexDirection::Row),
+        }
+    }
+
+    /// Creates a new vertical stack (column direction).
+    ///
+    /// ## Example
+    /// ```rust,no_run
+    /// use floem::views::*;
+    ///
+    /// Stack::vertical((text("top"), text("bottom")));
+    /// ```
+    pub fn vertical(children: impl IntoViewIter) -> Self {
+        let id = ViewId::new();
+        id.set_children_iter(children.into_view_iter());
+        Stack {
+            id,
+            direction: Some(FlexDirection::Column),
+        }
+    }
+
+    /// Creates a new horizontal stack from an iterator of views.
+    ///
+    /// ## Example
+    /// ```rust,no_run
+    /// use floem::views::*;
+    ///
+    /// Stack::horizontal_from_iter((0..5).map(|i| text(i)));
+    /// ```
+    pub fn horizontal_from_iter<V: IntoView + 'static>(
+        children: impl IntoIterator<Item = V>,
+    ) -> Self {
+        let id = ViewId::new();
+        id.set_children_vec(
+            children
+                .into_iter()
+                .map(|v| -> Box<dyn View> { v.into_any() })
+                .collect(),
+        );
+        Stack {
+            id,
+            direction: Some(FlexDirection::Row),
+        }
+    }
+
+    /// Creates a new vertical stack from an iterator of views.
+    ///
+    /// ## Example
+    /// ```rust,no_run
+    /// use floem::views::*;
+    ///
+    /// Stack::vertical_from_iter((0..5).map(|i| text(i)));
+    /// ```
+    pub fn vertical_from_iter<V: IntoView + 'static>(
+        children: impl IntoIterator<Item = V>,
+    ) -> Self {
+        let id = ViewId::new();
+        id.set_children_vec(
+            children
+                .into_iter()
+                .map(|v| -> Box<dyn View> { v.into_any() })
+                .collect(),
+        );
+        Stack {
+            id,
+            direction: Some(FlexDirection::Column),
+        }
     }
 
     pub fn add_class_by_idx(self, class: impl Fn(usize) -> StyleClassRef) -> Self {

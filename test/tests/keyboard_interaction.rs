@@ -21,7 +21,7 @@ fn test_focus_style_applied_when_focused() {
     });
     let id = view.view_id();
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Initially not focused
     assert!(!harness.is_focused(id), "Should not be focused initially");
@@ -53,7 +53,7 @@ fn test_focus_visible_selector_detected() {
     });
     let id = view.view_id();
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Check that focus_visible selector is detected
     assert!(
@@ -78,7 +78,7 @@ fn test_container_child_click_interaction() {
     });
     let container_id = container.view_id();
 
-    let mut harness = TestHarness::new_with_size(container, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(container, 100.0, 100.0);
 
     // Click on the child area
     harness.pointer_down(25.0, 25.0);
@@ -118,7 +118,7 @@ fn test_active_style_removed_after_pointer_up() {
     });
     let id = view.view_id();
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // Initial: BLUE
     let style = harness.get_computed_style(id);
@@ -154,9 +154,9 @@ fn test_only_one_view_focused_at_time() {
     let view2 = Empty::new().style(|s| s.size(50.0, 50.0).focusable(true));
     let id2 = view2.view_id();
 
-    let view = stack((view1, view2)).style(|s| s.size(100.0, 50.0));
+    let view = Stack::new((view1, view2)).style(|s| s.size(100.0, 50.0));
 
-    let mut harness = TestHarness::new_with_size(view, 100.0, 50.0);
+    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 50.0);
 
     // Click first view
     harness.click(25.0, 25.0);

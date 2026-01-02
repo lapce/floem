@@ -19,7 +19,7 @@ use crate::{
 /// Every Signal has a Scope created explicitly or implicitly,
 /// and when you Dispose the Scope, it will clean up all the Signals
 /// that belong to the Scope and all the child Scopes
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Scope(pub(crate) Id, pub(crate) PhantomData<()>);
 
 impl Default for Scope {
@@ -61,6 +61,54 @@ impl Scope {
             runtime.parents.borrow_mut().insert(child, self.0);
         });
         Scope(child, PhantomData)
+    }
+
+    /// Re-parent this scope to be a child of another scope.
+    ///
+    /// If this scope already has a parent, it will be removed from that parent first.
+    /// This is useful when the scope hierarchy needs to be adjusted after construction
+    /// to match the view hierarchy.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use floem_reactive::Scope;
+    /// let parent = Scope::new();
+    /// let child = Scope::new(); // Initially has no parent
+    ///
+    /// child.set_parent(parent);
+    /// // Now child is a child of parent, and will be disposed when parent is disposed
+    /// ```
+    pub fn set_parent(&self, new_parent: Scope) {
+        RUNTIME.with(|runtime| {
+            // Remove from old parent's children set (if any)
+            if let Some(old_parent) = runtime.parents.borrow_mut().remove(&self.0) {
+                if let Some(children) = runtime.children.borrow_mut().get_mut(&old_parent) {
+                    children.remove(&self.0);
+                }
+            }
+
+            // Add to new parent's children set
+            runtime
+                .children
+                .borrow_mut()
+                .entry(new_parent.0)
+                .or_default()
+                .insert(self.0);
+
+            // Set new parent
+            runtime.parents.borrow_mut().insert(self.0, new_parent.0);
+        });
+    }
+
+    /// Returns the parent scope of this scope, if any.
+    pub fn parent(&self) -> Option<Scope> {
+        RUNTIME.with(|runtime| {
+            runtime
+                .parents
+                .borrow()
+                .get(&self.0)
+                .map(|id| Scope(*id, PhantomData))
+        })
     }
 
     /// Create a new Signal under this Scope

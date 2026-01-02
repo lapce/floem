@@ -73,7 +73,7 @@ pub use label::*;
 mod rich_text;
 pub use rich_text::*;
 
-mod dyn_stack;
+pub(crate) mod dyn_stack;
 pub use dyn_stack::*;
 
 mod svg;
@@ -115,6 +115,9 @@ pub use tab::*;
 mod tooltip;
 pub use tooltip::*;
 
+mod overlay;
+pub use overlay::*;
+
 mod stack;
 pub use stack::*;
 
@@ -123,6 +126,9 @@ pub use text_input::*;
 
 mod empty;
 pub use empty::*;
+
+mod stem;
+pub use stem::Stem;
 
 mod canvas;
 pub use canvas::*;

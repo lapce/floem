@@ -13,7 +13,7 @@ pub mod right_sidebar;
 pub mod tab_navigation;
 
 fn list_item<V: IntoView + 'static>(name: String, view_fn: impl Fn() -> V) -> impl IntoView {
-    h_stack((
+    Stack::horizontal((
         Label::derived(move || name.clone()).style(|s| s),
         Container::new(view_fn()).style(|s| s.width_full().justify_content(AlignContent::End)),
     ))
@@ -21,7 +21,7 @@ fn list_item<V: IntoView + 'static>(name: String, view_fn: impl Fn() -> V) -> im
 }
 
 fn app_view() -> impl IntoView {
-    let view = v_stack((
+    let view = Stack::vertical((
         Label::derived(move || String::from("Static layouts"))
             .style(|s| s.font_size(30.0).margin_bottom(15.0)),
         list_item(String::from("Left sidebar"), move || {

@@ -4,14 +4,14 @@ use floem::{
     responsive::{range, ScreenSize},
     style::TextOverflow,
     unit::UnitExt,
-    views::{h_stack, stack, Decorators, Label},
+    views::{Decorators, Label, Stack},
     IntoView,
 };
 
 fn app_view() -> impl IntoView {
     let is_text_overflown = RwSignal::new(false);
 
-    stack({
+    Stack::new({
         (
             Label::derived(|| "Resize the window to see the magic").style(|s| {
                 s.border(1.0)
@@ -49,7 +49,7 @@ fn app_view() -> impl IntoView {
                     .max_width(800.)
                     .text_overflow(TextOverflow::Ellipsis)
             }),
-            h_stack((
+            Stack::horizontal((
                 Label::new("The text fits in the available width?:"),
                 Label::derived(move || {
                     if is_text_overflown.get() { "No" } else { "Yes" }.to_string()

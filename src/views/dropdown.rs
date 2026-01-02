@@ -15,11 +15,11 @@ use crate::{
     AnyView,
     action::{add_overlay, remove_overlay},
     event::{Event, EventListener, EventPropagation},
-    id::ViewId,
     prelude::ViewTuple,
     prop, prop_extractor,
     style::{CustomStylable, CustomStyle, Style},
     style_class,
+    view::ViewId,
     view::{IntoView, View, default_compute_layout},
     views::{ContainerExt, Decorators, Label, ScrollExt, svg},
 };

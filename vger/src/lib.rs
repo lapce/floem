@@ -500,7 +500,11 @@ impl Renderer for VgerRenderer {
         let clip = self.clip;
         for line in layout {
             if let Some(rect) = clip {
-                let y_top = pos.y + (line.line_y as f64) * scale;
+                // Use line_top for the actual top of the line, not line_y (which is the baseline)
+                // Glyphs extend upward from the baseline by their ascent, so using the baseline
+                // for clipping would incorrectly skip lines where the baseline is outside the clip
+                // but the visible portion of glyphs is still inside.
+                let y_top = pos.y + (line.line_top as f64) * scale;
                 let y_bot = y_top + (line.line_height as f64) * scale;
                 if y_bot < rect.y0 {
                     continue;

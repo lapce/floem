@@ -14,12 +14,12 @@ use crate::unit::Pct;
 use crate::{
     Renderer,
     event::EventPropagation,
-    id::ViewId,
     prop, prop_extractor,
     style::{Background, CustomStylable, Foreground, Height, Style},
     style_class,
     unit::{PxPct, PxPctAuto},
     view::View,
+    view::ViewId,
     views::Decorators,
 };
 
@@ -725,7 +725,7 @@ mod test {
     fn test_slider_initial_value() {
         let percent = 53.0;
         let slider = Slider::new(move || percent);
-        assert_eq!(slider.percent, percent as f64);
+        assert_eq!(slider.percent, percent);
     }
 
     #[test]

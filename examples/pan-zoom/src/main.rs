@@ -13,7 +13,7 @@ fn child_view() -> impl IntoView {
     let ferris_png = include_bytes!("./../../widget-gallery/assets/ferris.png");
     let ferris_svg = include_str!("./../../widget-gallery/assets/ferris.svg");
 
-    v_stack((
+    Stack::vertical((
         "Try panning to move and scrolling to zoom this view",
         button,
         Container::new(Container::new("Clipping example").style(|s| {
@@ -23,12 +23,12 @@ fn child_view() -> impl IntoView {
         }))
         .clip()
         .style(|s| s.border(1.0).border_radius(8.0).height(64.0).width(64.0)),
-        h_stack((
-            v_stack((
+        Stack::horizontal((
+            Stack::vertical((
                 img(move || ferris_png.to_vec()).style(|s| s.width(69.0).height(45.9)),
                 "PNG".style(|s| s.justify_center()),
             )),
-            v_stack((
+            Stack::vertical((
                 svg(ferris_svg).style(|s| s.unset_color().width(69.px()).height(45.9.px())),
                 "SVG".style(|s| s.justify_center()),
             )),

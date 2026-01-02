@@ -175,9 +175,7 @@ fn stat_item(label: &str, value: u32) -> impl IntoView {
         .to_string()
         .style(|s| s.font_size(12.0).color(css::GRAY));
 
-    (value_view, label_view)
-        .v_stack()
-        .style(|s| s.items_center())
+    Stack::vertical((value_view, label_view)).style(|s| s.items_center())
 }
 
 fn user_display(user_resource: Resource<Option<UserResult>>) -> impl IntoView {
@@ -214,12 +212,10 @@ fn user_display(user_resource: Resource<Option<UserResult>>) -> impl IntoView {
                     })
                     .unwrap_or_else(|| ().into_any());
 
-                let name_section = (login, username)
-                    .v_stack()
-                    .style(|s| s.items_start().justify_center());
+                let name_section =
+                    Stack::vertical((login, username)).style(|s| s.items_start().justify_center());
 
-                let header = (avatar, name_section)
-                    .h_stack()
+                let header = Stack::horizontal((avatar, name_section))
                     .style(|s| s.items_center().col_gap(15.0).margin_bottom(15.0));
 
                 let bio = user
@@ -232,13 +228,12 @@ fn user_display(user_resource: Resource<Option<UserResult>>) -> impl IntoView {
                     })
                     .unwrap_or_else(|| ().into_any());
 
-                let stats = (
+                let stats = Stack::horizontal((
                     stat_item("Repos", user.public_repos),
                     stat_item("Followers", user.followers),
                     stat_item("Following", user.following),
-                )
-                    .h_stack()
-                    .style(|s| s.col_gap(20.0).justify_center());
+                ))
+                .style(|s| s.col_gap(20.0).justify_center());
 
                 let open_url = user.html_url.clone();
                 let profile_link = Button::new(format!("View on GitHub: {}", user.html_url))
@@ -252,7 +247,7 @@ fn user_display(user_resource: Resource<Option<UserResult>>) -> impl IntoView {
                         let _ = open::that(open_url.clone());
                     });
 
-                (header, bio, stats, profile_link).v_stack().into_any()
+                Stack::vertical((header, bio, stats, profile_link)).into_any()
             }
             Some(Err(ApiError::NotFound)) => "User not found"
                 .style(|s| s.color(css::RED).font_size(16.0))
@@ -319,7 +314,7 @@ fn app_view() -> impl IntoView {
             .margin_bottom(30.0)
     });
 
-    let search_input = (
+    let search_input = Stack::vertical((
         "Username:".style(|s| s.font_size(14.0).margin_bottom(5.0)),
         text_input(username)
             .placeholder("e.g., octocat")
@@ -331,9 +326,8 @@ fn app_view() -> impl IntoView {
                     .width(300.0)
                     .focus(|s| s.border_color(css::BLUE))
             }),
-    )
-        .v_stack()
-        .style(|s| s.items_start().margin_bottom(20.0));
+    ))
+    .style(|s| s.items_start().margin_bottom(20.0));
 
     // Create token input with visibility toggle
     let token_input_container = {
@@ -360,8 +354,7 @@ fn app_view() -> impl IntoView {
                         .width(300.0)
                 });
 
-        (token_label, token_input, token_info)
-            .v_stack()
+        Stack::vertical((token_label, token_input, token_info))
             .style(|s| s.items_start().margin_bottom(20.0))
     };
 
@@ -418,7 +411,7 @@ fn app_view() -> impl IntoView {
             .font_style(floem::text::Style::Italic)
     });
 
-    (
+    Stack::vertical((
         title,
         search_input,
         token_input_container,
@@ -427,21 +420,20 @@ fn app_view() -> impl IntoView {
         user_display(user_resource),
         refresh_button,
         hint,
-    )
-        .v_stack()
-        .style(|s| {
-            s.size_full()
-                .items_center()
-                .justify_center()
-                .padding(20.0)
-                .background(floem::peniko::Color::from_rgb8(248, 249, 250))
+    ))
+    .style(|s| {
+        s.size_full()
+            .items_center()
+            .justify_center()
+            .padding(20.0)
+            .background(floem::peniko::Color::from_rgb8(248, 249, 250))
+    })
+    .window_title(|| "GitHub User Search".to_owned())
+    .style(|s| {
+        s.class(PlaceholderTextClass, |s| {
+            s.color(css::BLACK.with_alpha(0.35))
         })
-        .window_title(|| "GitHub User Search".to_owned())
-        .style(|s| {
-            s.class(PlaceholderTextClass, |s| {
-                s.color(css::BLACK.with_alpha(0.35))
-            })
-        })
+    })
 }
 
 fn main() {

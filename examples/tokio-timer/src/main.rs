@@ -55,17 +55,15 @@ fn app_view() -> impl IntoView {
         )
     });
 
-    let el_label_bar = ("Elapsed Time: ", gauge(progress))
-        .h_stack()
-        .style(|s| s.justify_between());
+    let el_label_bar =
+        Stack::horizontal(("Elapsed Time: ", gauge(progress))).style(|s| s.justify_between());
 
-    let dur_label_slider = ("Duration: ", thin_slider(target_pct))
-        .h_stack()
-        .style(|s| s.justify_between());
+    let dur_label_slider =
+        Stack::horizontal(("Duration: ", thin_slider(target_pct))).style(|s| s.justify_between());
 
     let reset_button = Button::new("Reset").action(move || started_at.set(Instant::now()));
 
-    v_stack((
+    Stack::vertical((
         el_label_bar,
         elapsed_time_label,
         dur_label_slider,

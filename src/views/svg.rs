@@ -10,11 +10,11 @@ use peniko::{
 use sha2::{Digest, Sha256};
 
 use crate::{
-    id::ViewId,
     prop, prop_extractor,
     style::{Style, TextColor},
     style_class,
     view::View,
+    view::ViewId,
 };
 
 use super::Decorators;

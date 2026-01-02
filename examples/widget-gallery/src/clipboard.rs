@@ -15,7 +15,7 @@ pub fn clipboard_view() -> impl IntoView {
         ),
         form_item(
             "Copy from input",
-            h_stack((
+            Stack::horizontal((
                 text_input(text1).style(|s| s.width_full().min_width(150)),
                 Button::new("Copy").action(move || {
                     let _ = Clipboard::set_contents(text1.get());
@@ -25,7 +25,7 @@ pub fn clipboard_view() -> impl IntoView {
         ),
         form_item(
             "Get clipboard",
-            v_stack((
+            Stack::vertical((
                 Button::new("Get clipboard").action(move || {
                     if let Ok(content) = Clipboard::get_contents() {
                         text2.set(content);

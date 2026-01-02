@@ -16,7 +16,7 @@ fn counter_view() -> impl IntoView {
 
     let mut counter = RwSignal::new(0);
 
-    let lang_tabs = h_stack((
+    let lang_tabs = Stack::horizontal((
         "System Default"
             .class(TabSelectorClass)
             .style(move |s| s.apply_if(langauge.get().is_none(), |s| s.set_selected(true)))
@@ -40,7 +40,7 @@ fn counter_view() -> impl IntoView {
     ))
     .style(|s| s.width_full().padding_top(30.).justify_center().gap(10.));
 
-    let value_controls = h_stack((
+    let value_controls = Stack::horizontal((
         l10n("inc")
             .fallback(|| "increment")
             .button()
@@ -55,8 +55,7 @@ fn counter_view() -> impl IntoView {
     ))
     .style(|s| s.size_full().items_center().justify_center().gap(10.));
 
-    (lang_tabs, value_controls)
-        .v_stack()
+    Stack::vertical((lang_tabs, value_controls))
         .style(move |s| {
             s.size_full()
                 .items_center()

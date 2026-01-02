@@ -1,6 +1,6 @@
 //! Testing utilities for Floem UI applications.
 //!
-//! This crate provides a test harness for testing Floem views without
+//! This crate provides a headless harness for testing Floem views without
 //! creating an actual window.
 //!
 //! # Example
@@ -16,7 +16,7 @@
 //!         Empty::new().style(|s| s.size(100.0, 100.0))
 //!     );
 //!
-//!     let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+//!     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 //!     harness.click(50.0, 50.0);
 //!
 //!     assert!(tracker.was_clicked());
@@ -38,7 +38,7 @@
 //!         tracker.track_named("front", Empty::new().z_index(10)),
 //!     ));
 //!
-//!     let mut harness = TestHarness::new_with_size(view, 100.0, 100.0);
+//!     let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 //!     harness.click(50.0, 50.0);
 //!
 //!     // Front (z-index 10) should receive the click
@@ -50,21 +50,24 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use floem::prelude::*;
-use floem::views::{Decorators, stack_from_iter};
+use floem::views::{Decorators, Stack};
 
-// Re-export the test harness from floem
-pub use floem::test_harness::*;
+// Re-export the headless harness from floem
+pub use floem::headless::*;
 
 // Re-export commonly used floem types for convenience
 pub use floem::ViewId;
 
 /// Prelude module for convenient imports in tests.
 pub mod prelude {
-    pub use super::{ClickTracker, ScrollTracker, TestHarnessExt, layer, layers};
+    pub use super::{
+        ClickTracker, HeadlessHarnessExt, PointerCaptureTracker, ScrollTracker, layer, layers,
+    };
     pub use floem::ViewId;
+    pub use floem::event::PointerId;
+    pub use floem::headless::*;
     pub use floem::prelude::*;
-    pub use floem::test_harness::*;
-    pub use floem::views::{Container, Decorators, Empty, Scroll, stack, stack_from_iter};
+    pub use floem::views::{Container, Decorators, Empty, Scroll, Stack};
 }
 
 /// Tracks click events on views for testing.
@@ -264,21 +267,21 @@ pub fn layers<VT: ViewTuple + 'static>(children: VT) -> impl IntoView {
         .into_iter()
         .map(|v| v.style(|s| s.absolute().inset(0.0).size_full()));
 
-    stack_from_iter(children_iter).style(|s| s.size_full())
+    Stack::from_iter(children_iter).style(|s| s.size_full())
 }
 
-/// Extension trait for TestHarness with convenient test methods.
-pub trait TestHarnessExt {
-    /// Create a new test harness with a specified size.
-    fn new_with_size(view: impl IntoView, width: f64, height: f64) -> TestHarness;
+/// Extension trait for HeadlessHarness with convenient test methods.
+pub trait HeadlessHarnessExt {
+    /// Create a new headless harness with a specified size.
+    fn new_with_size(view: impl IntoView, width: f64, height: f64) -> HeadlessHarness;
 }
 
-impl TestHarnessExt for TestHarness {
-    /// Create a new test harness with a specified size.
+impl HeadlessHarnessExt for HeadlessHarness {
+    /// Create a new headless harness with a specified size.
     ///
     /// This is a convenience method that combines `new()` and `set_size()`.
-    fn new_with_size(view: impl IntoView, width: f64, height: f64) -> TestHarness {
-        let mut harness = TestHarness::new(view);
+    fn new_with_size(view: impl IntoView, width: f64, height: f64) -> HeadlessHarness {
+        let mut harness = HeadlessHarness::new(view);
         harness.set_size(width, height);
         harness
     }
@@ -297,7 +300,7 @@ impl TestHarnessExt for TestHarness {
 /// let content = Empty::new().style(|s| s.size(200.0, 400.0));
 /// let scroll_view = scroll_tracker.track(Scroll::new(content));
 ///
-/// let mut harness = TestHarness::new_with_size(scroll_view, 100.0, 100.0);
+/// let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
 /// harness.scroll_vertical(50.0, 50.0, 50.0);
 ///
 /// let viewport = scroll_tracker.last_viewport().unwrap();
@@ -353,5 +356,162 @@ impl ScrollTracker {
     /// Reset the tracker, clearing all recorded viewports.
     pub fn reset(&self) {
         self.viewports.borrow_mut().clear();
+    }
+}
+
+/// Type alias for pointer event tracking with optional pointer ID.
+type PointerEventLog = Rc<RefCell<Vec<(String, Option<floem::event::PointerId>)>>>;
+
+/// Tracks pointer capture events on views for testing.
+///
+/// This helper makes it easy to verify which views received GotPointerCapture
+/// and LostPointerCapture events.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// let tracker = PointerCaptureTracker::new();
+///
+/// let view = tracker.track("my_view", my_view);
+/// // ... set pointer capture ...
+/// assert!(tracker.got_capture_count() > 0);
+/// ```
+#[derive(Clone, Default)]
+pub struct PointerCaptureTracker {
+    got_captures: Rc<RefCell<Vec<(String, floem::event::PointerId)>>>,
+    lost_captures: Rc<RefCell<Vec<(String, floem::event::PointerId)>>>,
+    pointer_downs: PointerEventLog,
+    pointer_moves: PointerEventLog,
+    pointer_ups: PointerEventLog,
+}
+
+impl PointerCaptureTracker {
+    /// Create a new pointer capture tracker.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Wrap a view to track pointer capture events with a name.
+    pub fn track<V: IntoView>(&self, name: &str, view: V) -> impl IntoView + use<V> {
+        use floem::event::{Event, EventListener};
+
+        let got_captures = self.got_captures.clone();
+        let lost_captures = self.lost_captures.clone();
+        let pointer_downs = self.pointer_downs.clone();
+        let pointer_moves = self.pointer_moves.clone();
+        let pointer_ups = self.pointer_ups.clone();
+        let name = name.to_string();
+
+        let name_got = name.clone();
+        let name_lost = name.clone();
+        let name_down = name.clone();
+        let name_move = name.clone();
+        let name_up = name.clone();
+
+        view.into_view()
+            .on_event(EventListener::GotPointerCapture, move |e| {
+                if let Event::GotPointerCapture(pointer_id) = e {
+                    got_captures
+                        .borrow_mut()
+                        .push((name_got.clone(), *pointer_id));
+                }
+                floem::event::EventPropagation::Continue
+            })
+            .on_event(EventListener::LostPointerCapture, move |e| {
+                if let Event::LostPointerCapture(pointer_id) = e {
+                    lost_captures
+                        .borrow_mut()
+                        .push((name_lost.clone(), *pointer_id));
+                }
+                floem::event::EventPropagation::Continue
+            })
+            .on_event(EventListener::PointerDown, move |e| {
+                if let Event::Pointer(floem::ui_events::pointer::PointerEvent::Down(pe)) = e {
+                    pointer_downs
+                        .borrow_mut()
+                        .push((name_down.clone(), pe.pointer.pointer_id));
+                }
+                floem::event::EventPropagation::Continue
+            })
+            .on_event(EventListener::PointerMove, move |e| {
+                if let Event::Pointer(floem::ui_events::pointer::PointerEvent::Move(pu)) = e {
+                    pointer_moves
+                        .borrow_mut()
+                        .push((name_move.clone(), pu.pointer.pointer_id));
+                }
+                floem::event::EventPropagation::Continue
+            })
+            .on_event(EventListener::PointerUp, move |e| {
+                if let Event::Pointer(floem::ui_events::pointer::PointerEvent::Up(pe)) = e {
+                    pointer_ups
+                        .borrow_mut()
+                        .push((name_up.clone(), pe.pointer.pointer_id));
+                }
+                floem::event::EventPropagation::Continue
+            })
+    }
+
+    /// Returns the number of GotPointerCapture events recorded.
+    pub fn got_capture_count(&self) -> usize {
+        self.got_captures.borrow().len()
+    }
+
+    /// Returns the number of LostPointerCapture events recorded.
+    pub fn lost_capture_count(&self) -> usize {
+        self.lost_captures.borrow().len()
+    }
+
+    /// Returns the names of views that got pointer capture, in order.
+    pub fn got_capture_names(&self) -> Vec<String> {
+        self.got_captures
+            .borrow()
+            .iter()
+            .map(|(name, _)| name.clone())
+            .collect()
+    }
+
+    /// Returns the names of views that lost pointer capture, in order.
+    pub fn lost_capture_names(&self) -> Vec<String> {
+        self.lost_captures
+            .borrow()
+            .iter()
+            .map(|(name, _)| name.clone())
+            .collect()
+    }
+
+    /// Returns the names of views that received PointerDown events, in order.
+    pub fn pointer_down_names(&self) -> Vec<String> {
+        self.pointer_downs
+            .borrow()
+            .iter()
+            .map(|(name, _)| name.clone())
+            .collect()
+    }
+
+    /// Returns the names of views that received PointerMove events, in order.
+    pub fn pointer_move_names(&self) -> Vec<String> {
+        self.pointer_moves
+            .borrow()
+            .iter()
+            .map(|(name, _)| name.clone())
+            .collect()
+    }
+
+    /// Returns the names of views that received PointerUp events, in order.
+    pub fn pointer_up_names(&self) -> Vec<String> {
+        self.pointer_ups
+            .borrow()
+            .iter()
+            .map(|(name, _)| name.clone())
+            .collect()
+    }
+
+    /// Reset the tracker, clearing all recorded events.
+    pub fn reset(&self) {
+        self.got_captures.borrow_mut().clear();
+        self.lost_captures.borrow_mut().clear();
+        self.pointer_downs.borrow_mut().clear();
+        self.pointer_moves.borrow_mut().clear();
+        self.pointer_ups.borrow_mut().clear();
     }
 }

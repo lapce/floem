@@ -11,12 +11,12 @@ use ui_events::pointer::PointerEvent;
 use crate::{
     Renderer,
     event::EventPropagation,
-    id::ViewId,
     prop, prop_extractor,
     style::{self, Foreground, Style},
     style_class,
     unit::PxPct,
     view::View,
+    view::ViewId,
     views::Decorators,
 };
 

@@ -179,45 +179,31 @@
 pub mod action;
 pub mod animate;
 mod app;
-#[cfg(target_os = "macos")]
-mod app_delegate;
-mod app_handle;
-#[cfg(feature = "vello")]
-mod border_path_iter;
-mod clipboard;
 pub mod context;
-pub mod dropped_file;
-pub mod easing;
 pub mod event;
 pub mod ext_event;
-pub mod file;
-#[cfg(any(feature = "rfd-async-std", feature = "rfd-tokio"))]
-pub mod file_action;
-pub(crate) mod id;
 mod inspector;
-pub mod into_view_iter;
-pub mod menu;
-pub mod mock_window;
-mod nav;
-mod profiler;
-mod renderer;
-pub mod responsive;
-mod screen_layout;
+pub mod layout;
+mod message;
+pub mod paint;
+pub mod platform;
+/// Re-export easing module from animate for backward compatibility.
+pub use animate::easing;
+/// Re-export dropped_file module from event for backward compatibility.
+pub use event::dropped_file;
+/// Re-export responsive module from layout for backward compatibility.
+pub use layout::responsive;
+/// Re-export file module from platform for backward compatibility.
+pub use platform::file;
+/// Re-export menu module from platform for backward compatibility.
+pub use platform::menu;
+/// Re-export view_tuple module from view for backward compatibility.
+pub use view::tuple as view_tuple;
+pub mod headless;
 pub mod style;
-pub mod test_harness;
-pub mod theme;
-pub mod unit;
-mod update;
-pub(crate) mod view;
-pub(crate) mod view_state;
-pub(crate) mod view_storage;
-pub mod view_tuple;
+pub mod view;
 pub mod views;
 pub mod window;
-mod window_handle;
-mod window_id;
-pub(crate) mod window_state;
-mod window_tracking;
 pub mod receiver_signal {
     //! Signals from Channels, Futures, and Streams.
     mod channel_signal;
@@ -233,35 +219,41 @@ pub mod receiver_signal {
 }
 
 pub use app::{AppConfig, AppEvent, Application, launch, quit_app, reopen};
-pub use clipboard::{Clipboard, ClipboardError};
 pub use floem_reactive as reactive;
 pub use floem_renderer::Renderer;
 pub use floem_renderer::Svg as RendererSvg;
 pub use floem_renderer::gpu_resources::GpuResources;
 pub use floem_renderer::text;
-pub use id::ViewId;
 pub use imbl;
+pub use layout::ScreenLayout;
 pub use muda;
 pub use peniko;
 pub use peniko::kurbo;
-pub use screen_layout::ScreenLayout;
+pub use platform::{
+    Clipboard, ClipboardError, FileDialogOptions, FileInfo, FileSpec, Menu, SubMenu,
+};
+#[cfg(any(feature = "rfd-async-std", feature = "rfd-tokio"))]
+pub use platform::{open_file, save_as};
 pub use taffy;
 pub use ui_events;
+pub use view::ViewId;
 pub use view::{
-    AnyView, HasViewId, IntoView, LazyView, View, default_compute_layout, recursively_layout_view,
+    AnyView, HasViewId, IntoView, LazyView, ParentView, View, default_compute_layout,
+    recursively_layout_view,
 };
-pub use view_state::{Stack, StackOffset};
-pub use window::{close_window, new_window};
-pub use window_id::{Urgency, WindowIdExt};
-pub use window_state::WindowState;
+pub use view::{Stack, StackOffset};
+pub use window::{Urgency, WindowIdExt, WindowState, close_window, new_window};
+
+/// Re-export unit and theme modules from style for backward compatibility.
+pub use style::{theme, unit};
 
 pub mod prelude {
     pub use crate::Renderer;
-    pub use crate::into_view_iter::IntoViewIter;
     pub use crate::unit::{DurationUnitExt, UnitExt};
-    pub use crate::view_tuple::ViewTuple;
+    pub use crate::view::IntoViewIter;
+    pub use crate::view::ViewTuple;
     pub use crate::views::*;
-    pub use crate::{HasViewId, IntoView, View};
+    pub use crate::{HasViewId, IntoView, ParentView, View};
     #[allow(deprecated)]
     pub use floem_reactive::{
         RwSignal, SignalGet, SignalTrack, SignalUpdate, SignalWith, create_rw_signal, create_signal,

@@ -215,9 +215,9 @@ mod tests {
 
     let doc = editor.doc();
 
-    let view = stack((
+    let view = Stack::new((
         editor,
-        stack((
+        Stack::new((
             Button::new("Clear").action(move || {
                 doc.edit_single(
                     Selection::region(0, doc.text().len(), CursorAffinity::Backward),
