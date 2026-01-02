@@ -216,4 +216,39 @@ impl Runtime {
     pub fn set_sync_effect_waker(waker: impl Fn() + Send + Sync + 'static) {
         SYNC_RUNTIME.set_waker(waker);
     }
+
+    /// Get the ID of the currently running effect, if any.
+    ///
+    /// This is useful for external reactive primitives that need to
+    /// integrate with the effect subscription system.
+    pub fn current_effect_id() -> Option<Id> {
+        RUNTIME.with(|runtime| {
+            runtime
+                .current_effect
+                .borrow()
+                .as_ref()
+                .map(|effect| effect.id())
+        })
+    }
+
+    /// Schedule an effect to be re-run by its ID.
+    ///
+    /// This is useful for external reactive primitives that need to
+    /// trigger effect updates without going through the signal system.
+    pub fn update_from_id(effect_id: Id) {
+        RUNTIME.with(|runtime| {
+            runtime.add_pending_effect(effect_id);
+            if !runtime.batching.get() {
+                runtime.run_pending_effects();
+            }
+        });
+    }
+
+    /// Check if an effect with the given ID still exists.
+    ///
+    /// This is useful for external reactive primitives to clean up
+    /// stale subscriber references when effects are disposed.
+    pub fn effect_exists(effect_id: Id) -> bool {
+        RUNTIME.with(|runtime| runtime.effects.borrow().contains_key(&effect_id))
+    }
 }
