@@ -228,10 +228,19 @@ pub fn resolve_nested_maps(
     interact_state: &InteractionState,
     screen_size_bp: ScreenSizeBp,
     classes: &[StyleClassRef],
-    context: &mut Style,
+    inherited_context: &mut Style,
+    class_context: &std::rc::Rc<Style>,
 ) -> (Style, bool) {
     // Start with depth 0 for the initial call
-    resolve_nested_maps_internal(style, interact_state, screen_size_bp, context, classes, 0)
+    resolve_nested_maps_internal(
+        style,
+        interact_state,
+        screen_size_bp,
+        inherited_context,
+        class_context,
+        classes,
+        0,
+    )
 }
 
 #[allow(
@@ -242,7 +251,8 @@ fn resolve_nested_maps_internal(
     style: Style,
     interact_state: &InteractionState,
     screen_size_bp: ScreenSizeBp,
-    context: &mut Style,
+    inherited_context: &mut Style,
+    class_context: &std::rc::Rc<Style>,
     classes: &[StyleClassRef],
     depth: u32,
 ) -> (Style, bool) {
@@ -255,18 +265,31 @@ fn resolve_nested_maps_internal(
     let mut changed = false;
     let mut classes_applied = false;
 
-    let (style, changed_new) = style.apply_classes_from_context(classes, context);
-    if changed_new {
-        for class in classes {
-            if let Some(nested) = context.remove_nested_map(class.key) {
-                classes_applied |= nested.any_inherited();
+    // Apply class styles from class_context ONLY on first call (depth == 0).
+    // On recursion, class styles have already been merged with the view's own styles,
+    // and selector nested maps have been consumed. Re-applying class styles would
+    // cause class selectors (like .selected(RED)) to override the view's own
+    // selectors (like .selected(BLUE)) that were already merged and applied.
+    let (style, changed_new) = if depth == 0 {
+        let (s, c) = style.apply_classes_from_context(classes, class_context);
+        if c {
+            for class in classes {
+                if let Some(nested) = class_context.get_nested_map(class.key) {
+                    classes_applied |= nested.any_inherited();
+                }
             }
         }
+        (s, c)
+    } else {
+        (style, false)
+    };
+
+    if changed_new {
         changed = true;
     }
 
-    // Apply context mappings with actual ancestor values
-    let (mut style, changed_new) = style.apply_context_mappings(context);
+    // Apply context mappings with actual ancestor values (from inherited context)
+    let (mut style, changed_new) = style.apply_context_mappings(inherited_context);
     if changed_new {
         changed = true;
     }
@@ -380,7 +403,8 @@ fn resolve_nested_maps_internal(
             style,
             interact_state,
             screen_size_bp,
-            context,
+            inherited_context,
+            class_context,
             classes,
             depth + 1,
         );
@@ -394,6 +418,14 @@ fn resolve_nested_maps_internal(
 #[derive(Default, Clone)]
 pub struct Style {
     pub(crate) map: ImHashMap<StyleKey, Rc<dyn Any>>,
+    /// Cached flag indicating whether this style contains any class maps.
+    /// This enables O(1) early-exit in `apply_only_class_maps` for the common case
+    /// where a view's style has no class definitions.
+    has_class_maps: bool,
+    /// Cached flag indicating whether this style contains any inherited properties.
+    /// This enables O(1) early-exit in `apply_only_inherited` for the common case
+    /// where a view's style has no inherited properties.
+    has_inherited: bool,
 }
 
 impl Style {
@@ -415,6 +447,56 @@ impl Style {
             new_style.apply_iter(inherited);
             *to = Rc::new(new_style);
         }
+    }
+
+    /// Apply inherited properties and class nested maps from `from` style to `to` style.
+    ///
+    /// This is used during style propagation to pass both inherited values and
+    /// class definitions to children. Class nested maps (like `.class(ListItemClass, ...)`)
+    /// need to flow to descendants so they can apply the styling when they have matching classes.
+    pub fn apply_inherited_and_class_maps(to: &mut Rc<Style>, from: &Style) {
+        let has_inherited = from.any_inherited();
+        // O(1) check using cached flag
+        let has_class_maps = from.has_class_maps;
+
+        if has_inherited || has_class_maps {
+            let mut new_style = (**to).clone();
+
+            // Apply inherited properties
+            if has_inherited {
+                let inherited = from.map.iter().filter(|(p, _)| p.inherited());
+                new_style.apply_iter(inherited);
+            }
+
+            // Apply class nested maps so they flow to descendants
+            if has_class_maps {
+                let class_maps = from
+                    .map
+                    .iter()
+                    .filter(|(k, _)| matches!(k.info, StyleKeyInfo::Class(..)));
+                new_style.apply_iter(class_maps);
+            }
+
+            *to = Rc::new(new_style);
+        }
+    }
+
+    /// Apply only class nested maps from `from` style to `to` style.
+    /// This is used during style propagation to pass class definitions to children.
+    ///
+    /// Only class nested maps (`.class(SomeClass, ...)`) are applied, not inherited props.
+    pub fn apply_only_class_maps(to: &mut Rc<Style>, from: &Style) {
+        // O(1) early exit for the common case where the style has no class maps
+        if !from.has_class_maps {
+            return;
+        }
+        let mut new_style = (**to).clone();
+        let class_maps = from
+            .map
+            .iter()
+            .filter(|(k, _)| matches!(k.info, StyleKeyInfo::Class(..)));
+        new_style.apply_iter(class_maps);
+        *to = Rc::new(new_style);
     }
 
     pub(crate) fn get_transition<P: StyleProp>(&self) -> Option<Transition> {
@@ -470,19 +552,45 @@ impl Style {
         result
     }
 
-    /// the returned boolean is true if a nested map was applied
+    /// Applies class styling from the context (inherited from ancestors) to this style.
+    ///
+    /// The view's own explicit styles take precedence over context class styles.
+    /// This is achieved by applying context class styles first, then applying
+    /// the view's own styles on top.
+    ///
+    /// Context mappings (from `with_context`/`with_theme`) are NOT propagated to
+    /// descendants because they're meant to be evaluated for the view that defined
+    /// them, not for child views. Including them would cause the closures to
+    /// regenerate styles that override the child's own explicit styles.
+    ///
+    /// The returned boolean is true if a nested map was applied.
     pub fn apply_classes_from_context(
         mut self,
         classes: &[StyleClassRef],
-        context: &Style,
+        class_context: &std::rc::Rc<Style>,
     ) -> (Style, bool) {
         let mut changed = false;
+
+        let context_mappings_key = StyleKey {
+            info: &CONTEXT_MAPPINGS_INFO,
+        };
+
+        // Apply class styles from class_context ON TOP of self.
+        // Class styling from ancestors (like parent's `.class(ButtonClass, ...)`)
+        // overrides the view's own base styles, similar to CSS where class rules
+        // from stylesheets override element defaults.
+        // Strip context mappings from class styles since they're meant for the
+        // defining view, not descendants.
         for class in classes {
-            if let Some(map) = context.get_nested_map(class.key) {
-                self.apply_mut(map);
+            if let Some(map) = class_context.get_nested_map(class.key) {
+                let mut class_style = map.clone();
+                // Remove context mappings so they don't override child's own styles
+                class_style.map.remove(&context_mappings_key);
+                self.apply_mut(class_style);
                 changed = true;
             }
         }
+
         (self, changed)
     }
 
@@ -626,8 +734,9 @@ impl Style {
 
     /// Check if this style has any inherited properties.
     /// Used to determine if children should be re-styled when this view's style changes.
+    /// O(1) using cached flag.
     pub(crate) fn any_inherited(&self) -> bool {
-        self.map.iter().any(|(p, _)| p.inherited())
+        self.has_inherited
     }
 
     pub(crate) fn inherited(&self) -> Style {
@@ -662,6 +771,7 @@ impl Style {
     }
 
     fn set_class(&mut self, class: StyleClassRef, map: Style) {
+        self.has_class_maps = true;
         self.set_map_selector(class.key, map)
     }
 
@@ -672,7 +782,12 @@ impl Style {
     fn apply_iter<'a>(&mut self, iter: impl Iterator<Item = (&'a StyleKey, &'a Rc<dyn Any>)>) {
         for (k, v) in iter {
             match k.info {
-                StyleKeyInfo::Class(..) | StyleKeyInfo::Selector(..) => match self.map.entry(*k) {
+                StyleKeyInfo::Class(..) | StyleKeyInfo::Selector(..) => {
+                    // Track class maps for O(1) early-exit in apply_only_class_maps
+                    if matches!(k.info, StyleKeyInfo::Class(..)) {
+                        self.has_class_maps = true;
+                    }
+                    match self.map.entry(*k) {
                     Entry::Occupied(mut e) => {
                         // We need to merge the new map with the existing map.
 
@@ -695,7 +810,7 @@ impl Style {
                     Entry::Vacant(e) => {
                         e.insert(v.clone());
                     }
-                },
+                }}
                 StyleKeyInfo::ContextMappings => match self.map.entry(*k) {
                     Entry::Occupied(mut e) => {
                         // Merge the new ContextMappings with existing ones
@@ -714,6 +829,10 @@ impl Style {
                     self.map.insert(*k, v.clone());
                 }
                 StyleKeyInfo::Prop(info) => {
+                    // Track inherited props for O(1) early-exit in apply_only_inherited
+                    if info.inherited {
+                        self.has_inherited = true;
+                    }
                     match self.map.entry(*k) {
                         Entry::Occupied(mut e) => {
                             // We need to merge the new map with the existing map.
@@ -1615,6 +1734,10 @@ impl Style {
                 return self;
             }
         };
+        // Track inherited props for O(1) early-exit in apply_only_inherited
+        if P::prop_ref().info().inherited {
+            self.has_inherited = true;
+        }
         self.map.insert(P::key(), Rc::new(insert));
         self
     }

@@ -14,12 +14,14 @@ use std::time::Instant;
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
 
+use std::rc::Rc;
+
 use crate::{
     context::FrameUpdate,
     event::{Event, EventListener, clear_hit_test_cache},
     inspector::CaptureState,
     layout::responsive::{GridBreakpoints, ScreenSizeBp},
-    style::{CursorStyle, StyleCache, StyleSelector, recalc::StyleRecalcChange},
+    style::{CursorStyle, Style, StyleCache, StyleSelector, recalc::StyleRecalcChange, theme::default_theme},
     view::VIEW_STORAGE,
     view::ViewId,
 };
@@ -112,6 +114,11 @@ pub struct WindowState {
     /// Set when global state changes (dark mode, screen size) that require
     /// propagating changes through the entire tree.
     pub(crate) pending_global_recalc: StyleRecalcChange,
+
+    /// The default theme style containing class definitions for built-in components.
+    /// This is used as the root style context for all views when no parent exists.
+    /// Contains styling like `.class(ListClass, |s| { s.class(ListItemClass, ...) })`.
+    pub(crate) default_theme: Rc<Style>,
 }
 
 impl WindowState {
@@ -152,7 +159,13 @@ impl WindowState {
             style_cache: StyleCache::new(),
             pending_child_change: FxHashMap::default(),
             pending_global_recalc: StyleRecalcChange::NONE,
+            default_theme: Rc::new(default_theme(os_theme.unwrap_or(Theme::Light))),
         }
+    }
+
+    /// Update the default theme when the OS theme changes.
+    pub(crate) fn update_default_theme(&mut self, theme: Theme) {
+        self.default_theme = Rc::new(default_theme(theme));
     }
 
     /// Mark that dark mode changed, requiring style recalc with appropriate flags.

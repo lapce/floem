@@ -397,6 +397,8 @@ impl WindowHandle {
             if self.default_theme.is_some() {
                 self.default_theme = Some(default_theme(theme));
             }
+            // Update the default theme in WindowState for style computation
+            self.window_state.update_default_theme(theme);
             self.window_state.light_dark_theme = theme;
             if !change_from_os {
                 self.window_state.theme_overriden = true
