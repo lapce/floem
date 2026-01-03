@@ -111,17 +111,27 @@ bitflags! {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum IsHiddenState {
+/// The current phase of visibility for enter/exit animations.
+///
+/// This enum tracks the display state during CSS-driven visibility transitions
+/// (e.g., animating from visible to display:none).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum VisibilityPhase {
+    /// Initial state - display not yet computed.
+    #[default]
+    Initial,
+    /// Visible with the given display mode.
     Visible(taffy::style::Display),
-    AnimatingOut(taffy::style::Display),
+    /// Exit animation in progress.
+    Animating(taffy::style::Display),
+    /// Hidden (display: none).
     Hidden,
-    None,
 }
-impl IsHiddenState {
+
+impl VisibilityPhase {
     pub(crate) fn get_display(&self) -> Option<taffy::style::Display> {
         match self {
-            IsHiddenState::AnimatingOut(dis) => Some(*dis),
+            VisibilityPhase::Animating(dis) => Some(*dis),
             _ => None,
         }
     }
@@ -137,28 +147,28 @@ impl IsHiddenState {
         let computed_has_hide = computed_display == taffy::Display::None;
         *self = match self {
             // initial states (makes it so that the animations aren't run on initial app/view load)
-            Self::None if computed_has_hide => Self::Hidden,
-            Self::None if !computed_has_hide => Self::Visible(computed_display),
+            Self::Initial if computed_has_hide => Self::Hidden,
+            Self::Initial if !computed_has_hide => Self::Visible(computed_display),
             // do nothing
             Self::Visible(dis) if !computed_has_hide => Self::Visible(*dis),
             // transition to hidden
             Self::Visible(dis) if computed_has_hide => {
                 let active_animations = remove_animations();
                 if active_animations {
-                    Self::AnimatingOut(*dis)
+                    Self::Animating(*dis)
                 } else {
                     Self::Hidden
                 }
             }
-            Self::AnimatingOut(_) if !computed_has_hide => {
+            Self::Animating(_) if !computed_has_hide => {
                 stop_reset_animations();
                 Self::Visible(computed_display)
             }
-            Self::AnimatingOut(dis) if computed_has_hide => {
+            Self::Animating(dis) if computed_has_hide => {
                 if num_waiting_anim() == 0 {
                     Self::Hidden
                 } else {
-                    Self::AnimatingOut(*dis)
+                    Self::Animating(*dis)
                 }
             }
             Self::Hidden if computed_has_hide => Self::Hidden,
@@ -168,6 +178,30 @@ impl IsHiddenState {
             }
             _ => unreachable!(),
         };
+    }
+}
+
+/// Controls view visibility state.
+///
+/// This struct consolidates two related aspects of visibility:
+/// - `phase`: CSS-driven visibility phase for enter/exit animations
+/// - `force_hidden`: API-driven hiding (e.g., Tab hiding inactive children)
+///
+/// When `force_hidden` is true, the view is immediately hidden without animations.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Visibility {
+    /// The current visibility phase (for enter/exit animations).
+    pub phase: VisibilityPhase,
+
+    /// When true, view is force-hidden via set_hidden() API.
+    /// This bypasses the normal transition logic.
+    pub force_hidden: bool,
+}
+
+impl Visibility {
+    /// Returns true if the view should be treated as hidden.
+    pub fn is_hidden(&self) -> bool {
+        self.force_hidden || self.phase == VisibilityPhase::Hidden
     }
 }
 
@@ -221,6 +255,8 @@ pub struct ViewState {
     pub(crate) style_interaction_cx: InheritedInteractionCx,
     /// This interaction context can be set by a parent on this view. This will be used when building the StyleCx for **this** view.
     pub(crate) parent_set_style_interaction: InheritedInteractionCx,
+    /// Controls view visibility including phase transitions and force-hidden state.
+    pub(crate) visibility: Visibility,
     pub(crate) taffy_style: taffy::style::Style,
     pub(crate) event_listeners: HashMap<EventListener, EventListenerVec>,
     pub(crate) context_menu: Option<Rc<MenuCallback>>,
@@ -230,7 +266,6 @@ pub struct ViewState {
     pub(crate) move_listeners: Rc<RefCell<MoveListeners>>,
     pub(crate) cleanup_listeners: Rc<RefCell<CleanupListeners>>,
     pub(crate) last_pointer_down: Option<PointerState>,
-    pub(crate) is_hidden_state: IsHiddenState,
     pub(crate) num_waiting_animations: u16,
     pub(crate) disable_default_events: HashSet<EventListener>,
     pub(crate) transform: Affine,
@@ -288,7 +323,6 @@ impl ViewState {
             cleanup_listeners: Default::default(),
             last_pointer_down: None,
             window_origin: Point::ZERO,
-            is_hidden_state: IsHiddenState::None,
             num_waiting_animations: 0,
             disable_default_events: HashSet::new(),
             view_transform_props: Default::default(),
@@ -300,6 +334,7 @@ impl ViewState {
             style_cx: None,
             style_interaction_cx: Default::default(),
             parent_set_style_interaction: Default::default(),
+            visibility: Visibility::default(),
             children_scope: None,
             keyed_children: None,
             scope: None,
@@ -383,5 +418,192 @@ impl ViewState {
 
     pub(crate) fn add_cleanup_listener(&mut self, action: Rc<dyn Fn()>) {
         self.cleanup_listeners.borrow_mut().push(action);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use taffy::Display;
+
+    // =========================================================================
+    // VisibilityPhase Unit Tests
+    // =========================================================================
+
+    /// Test Initial → Visible transition when display is not none.
+    #[test]
+    fn test_phase_initial_to_visible() {
+        let mut phase = VisibilityPhase::Initial;
+
+        phase.transition(
+            Display::Flex,
+            || false, // no animations
+            || {},
+            || {},
+            || 0,
+        );
+
+        assert_eq!(phase, VisibilityPhase::Visible(Display::Flex));
+    }
+
+    /// Test Initial → Hidden transition when display is none.
+    #[test]
+    fn test_phase_initial_to_hidden() {
+        let mut phase = VisibilityPhase::Initial;
+
+        phase.transition(Display::None, || false, || {}, || {}, || 0);
+
+        assert_eq!(phase, VisibilityPhase::Hidden);
+    }
+
+    /// Test Visible → Hidden transition when display changes to none (no animations).
+    #[test]
+    fn test_phase_visible_to_hidden_no_animation() {
+        let mut phase = VisibilityPhase::Visible(Display::Flex);
+
+        phase.transition(
+            Display::None,
+            || false, // no animations to run
+            || {},
+            || {},
+            || 0,
+        );
+
+        assert_eq!(phase, VisibilityPhase::Hidden);
+    }
+
+    /// Test Visible → Animating transition when display changes to none (with animations).
+    #[test]
+    fn test_phase_visible_to_animating_with_animation() {
+        let mut phase = VisibilityPhase::Visible(Display::Flex);
+
+        phase.transition(
+            Display::None,
+            || true, // has animations to run
+            || {},
+            || {},
+            || 1,
+        );
+
+        // Should enter Animating phase, preserving the original display
+        assert_eq!(phase, VisibilityPhase::Animating(Display::Flex));
+    }
+
+    /// Test Animating → Hidden transition when animations complete.
+    #[test]
+    fn test_phase_animating_to_hidden_when_complete() {
+        let mut phase = VisibilityPhase::Animating(Display::Flex);
+
+        phase.transition(
+            Display::None,
+            || false,
+            || {},
+            || {},
+            || 0, // no waiting animations
+        );
+
+        assert_eq!(phase, VisibilityPhase::Hidden);
+    }
+
+    /// Test Animating stays Animating while animations are running.
+    #[test]
+    fn test_phase_animating_stays_while_running() {
+        let mut phase = VisibilityPhase::Animating(Display::Flex);
+
+        phase.transition(
+            Display::None,
+            || false,
+            || {},
+            || {},
+            || 1, // still has waiting animations
+        );
+
+        assert_eq!(phase, VisibilityPhase::Animating(Display::Flex));
+    }
+
+    /// Test Animating → Visible when display changes back during animation.
+    #[test]
+    fn test_phase_animating_to_visible_on_cancel() {
+        let mut phase = VisibilityPhase::Animating(Display::Flex);
+        let mut stop_called = false;
+
+        phase.transition(
+            Display::Block, // display changed back to visible
+            || false,
+            || {},
+            || {
+                stop_called = true;
+            },
+            || 1,
+        );
+
+        assert!(stop_called, "stop_reset_animations should be called");
+        assert_eq!(phase, VisibilityPhase::Visible(Display::Block));
+    }
+
+    /// Test Hidden → Visible transition when display changes from none.
+    #[test]
+    fn test_phase_hidden_to_visible() {
+        let mut phase = VisibilityPhase::Hidden;
+        let mut add_called = false;
+
+        phase.transition(
+            Display::Flex,
+            || false,
+            || {
+                add_called = true;
+            },
+            || {},
+            || 0,
+        );
+
+        assert!(add_called, "add_animations should be called");
+        assert_eq!(phase, VisibilityPhase::Visible(Display::Flex));
+    }
+
+    /// Test Hidden stays Hidden when display is still none.
+    #[test]
+    fn test_phase_hidden_stays_hidden() {
+        let mut phase = VisibilityPhase::Hidden;
+
+        phase.transition(Display::None, || false, || {}, || {}, || 0);
+
+        assert_eq!(phase, VisibilityPhase::Hidden);
+    }
+
+    /// Test get_display() returns the preserved display during Animating phase.
+    #[test]
+    fn test_get_display_during_animating() {
+        let phase = VisibilityPhase::Animating(Display::Flex);
+        assert_eq!(phase.get_display(), Some(Display::Flex));
+
+        let phase = VisibilityPhase::Animating(Display::Block);
+        assert_eq!(phase.get_display(), Some(Display::Block));
+    }
+
+    /// Test get_display() returns None for non-Animating phases.
+    #[test]
+    fn test_get_display_for_other_phases() {
+        assert_eq!(VisibilityPhase::Initial.get_display(), None);
+        assert_eq!(VisibilityPhase::Visible(Display::Flex).get_display(), None);
+        assert_eq!(VisibilityPhase::Hidden.get_display(), None);
+    }
+
+    /// Test Visible stays Visible when display changes to different visible value.
+    #[test]
+    fn test_phase_visible_stays_with_different_display() {
+        let mut phase = VisibilityPhase::Visible(Display::Flex);
+
+        phase.transition(
+            Display::Block, // different display but still visible
+            || false,
+            || {},
+            || {},
+            || 0,
+        );
+
+        // Should stay Visible but with the original display (Flex)
+        // This is because the transition doesn't update the display value when staying visible
+        assert_eq!(phase, VisibilityPhase::Visible(Display::Flex));
     }
 }
