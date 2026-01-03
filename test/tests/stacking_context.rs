@@ -13,10 +13,12 @@ use floem::headless::HeadlessHarness;
 use floem::taffy;
 use floem::unit::UnitExt;
 use floem::views::{Decorators, Empty, Stack};
+use serial_test::serial;
 use std::cell::Cell;
 use std::rc::Rc;
 
 #[test]
+#[serial]
 fn test_z_index_click_ordering() {
     // Test that views with higher z-index receive clicks first
     let clicked_z1 = Rc::new(Cell::new(false));
@@ -56,6 +58,7 @@ fn test_z_index_click_ordering() {
 }
 
 #[test]
+#[serial]
 fn test_stacking_context_children_bounded_within_parent() {
     // Test simplified stacking: children are always bounded within their parent.
     // A child's z-index only competes with siblings at the same level.
@@ -108,6 +111,7 @@ fn test_stacking_context_children_bounded_within_parent() {
 }
 
 #[test]
+#[serial]
 fn test_stacking_context_bounds_children() {
     // Test CSS stacking context bounding: a child with high z-index inside a
     // stacking-context parent should be BOUNDED and NOT receive clicks before
@@ -161,6 +165,7 @@ fn test_stacking_context_bounds_children() {
 }
 
 #[test]
+#[serial]
 fn test_stacking_model_siblings_compete_at_same_level() {
     // In the simplified stacking model, z-index only competes with siblings at the same level.
     // Children are bounded within their parent.
@@ -237,6 +242,7 @@ fn test_stacking_model_siblings_compete_at_same_level() {
 }
 
 #[test]
+#[serial]
 fn test_stacking_context_negative_z_index() {
     // Test negative z-index: views with negative z-index are painted first
     // and receive events last.
@@ -289,6 +295,7 @@ fn test_stacking_context_negative_z_index() {
 }
 
 #[test]
+#[serial]
 fn test_stacking_context_transform_creates_context() {
     // Test that transform creates a stacking context, bounding children.
     //
@@ -342,6 +349,7 @@ fn test_stacking_context_transform_creates_context() {
 }
 
 #[test]
+#[serial]
 fn test_stacking_model_deeply_nested_bounded() {
     // In the simplified stacking model, deeply nested children are bounded at each level.
     // They don't "escape" to compete with ancestors' siblings.
@@ -403,6 +411,7 @@ fn test_stacking_model_deeply_nested_bounded() {
 }
 
 #[test]
+#[serial]
 fn test_stacking_context_dom_order_tiebreaker() {
     // Test DOM order as tiebreaker: when multiple views have the same z-index,
     // the later one in DOM order should receive events first (painted last).
@@ -453,6 +462,7 @@ fn test_stacking_context_dom_order_tiebreaker() {
 }
 
 #[test]
+#[serial]
 fn test_stacking_model_all_views_are_stacking_contexts() {
     // In the simplified stacking model, every view is a stacking context.
     // Children are always bounded within their parent.
@@ -519,6 +529,7 @@ fn test_stacking_model_all_views_are_stacking_contexts() {
 }
 
 #[test]
+#[serial]
 fn test_stacking_context_partial_overlap() {
     // Test partial overlap: click coordinates matter for hit testing.
     //
@@ -591,6 +602,7 @@ fn test_stacking_context_partial_overlap() {
 }
 
 #[test]
+#[serial]
 fn test_stacking_context_pointer_events_none() {
     // Test that views with pointer_events_none are skipped in event dispatch.
     //
@@ -640,6 +652,7 @@ fn test_stacking_context_pointer_events_none() {
 }
 
 #[test]
+#[serial]
 fn test_stacking_context_hidden_view() {
     // Test that hidden views are skipped in event dispatch.
     //
@@ -689,6 +702,7 @@ fn test_stacking_context_hidden_view() {
 }
 
 #[test]
+#[serial]
 fn test_stacking_context_hidden_parent_hides_children() {
     // Test that children of hidden views don't receive events.
     //
@@ -740,6 +754,7 @@ fn test_stacking_context_hidden_parent_hides_children() {
 }
 
 #[test]
+#[serial]
 fn test_stacking_context_hidden_in_escaped_context() {
     // Test hidden view that would otherwise escape to parent stacking context.
     //
@@ -805,6 +820,7 @@ fn test_stacking_context_hidden_in_escaped_context() {
 }
 
 #[test]
+#[serial]
 fn test_stacking_context_hidden_does_not_bubble() {
     // Test that events don't bubble through hidden ancestors.
     //
@@ -848,6 +864,7 @@ fn test_stacking_context_hidden_does_not_bubble() {
 }
 
 #[test]
+#[serial]
 fn test_stacking_context_nested_contexts() {
     // Test nested stacking contexts: a stacking context inside another stacking context.
     //
@@ -902,6 +919,7 @@ fn test_stacking_context_nested_contexts() {
 }
 
 #[test]
+#[serial]
 fn test_stacking_context_sibling_isolation() {
     // Test that sibling stacking contexts are isolated from each other.
     //
@@ -954,6 +972,7 @@ fn test_stacking_context_sibling_isolation() {
 }
 
 #[test]
+#[serial]
 fn test_stacking_context_event_bubbling() {
     // Test event bubbling with stacking context: when a child with z-index
     // handles an event and returns Continue, the event should bubble up
@@ -996,6 +1015,7 @@ fn test_stacking_context_event_bubbling() {
 }
 
 #[test]
+#[serial]
 fn test_stacking_context_bubbling_stops_on_stop() {
     // Test that bubbling stops when a handler returns Stop.
     //
@@ -1034,6 +1054,7 @@ fn test_stacking_context_bubbling_stops_on_stop() {
 }
 
 #[test]
+#[serial]
 fn test_stacking_context_deep_bubbling() {
     // Test event bubbling through multiple ancestor levels (no stacking contexts).
     //
@@ -1086,6 +1107,7 @@ fn test_stacking_context_deep_bubbling() {
 }
 
 #[test]
+#[serial]
 fn test_stacking_context_bubbling_across_stacking_contexts() {
     // Test event bubbling through nested stacking contexts (like web browser).
     //
@@ -1142,6 +1164,7 @@ fn test_stacking_context_bubbling_across_stacking_contexts() {
 }
 
 #[test]
+#[serial]
 fn test_stacking_context_multiple_escaped_children() {
     // Test multiple escaped children competing: highest z-index wins.
     //
@@ -1201,6 +1224,7 @@ fn test_stacking_context_multiple_escaped_children() {
 }
 
 #[test]
+#[serial]
 fn test_stacking_context_explicit_z_index_zero() {
     // Test explicit z-index: 0 creates stacking context (bounds children).
     //
@@ -1254,6 +1278,7 @@ fn test_stacking_context_explicit_z_index_zero() {
 // CSS spec: opacity < 1 creates a stacking context, bounding children
 
 #[test]
+#[serial]
 fn test_opacity_creates_stacking_context() {
     // Test that opacity < 1 creates a stacking context, bounding children.
     //
@@ -1305,6 +1330,7 @@ fn test_opacity_creates_stacking_context() {
 }
 
 #[test]
+#[serial]
 fn test_stacking_model_opacity_does_not_affect_stacking() {
     // In the simplified stacking model, opacity does not affect stacking behavior.
     // Every view is already a stacking context, so children are bounded.
@@ -1356,6 +1382,7 @@ fn test_stacking_model_opacity_does_not_affect_stacking() {
 }
 
 #[test]
+#[serial]
 fn test_opacity_near_zero_creates_stacking_context() {
     // Test that very low opacity (near 0) creates stacking context.
     //
@@ -1401,6 +1428,7 @@ fn test_opacity_near_zero_creates_stacking_context() {
 }
 
 #[test]
+#[serial]
 fn test_opacity_with_z_index_combination() {
     // Test that opacity combined with z-index works correctly.
     // The z-index determines the stacking order at the parent level.
@@ -1458,6 +1486,7 @@ fn test_opacity_with_z_index_combination() {
 }
 
 #[test]
+#[serial]
 fn test_opacity_deeply_nested() {
     // Test opacity stacking context with deep nesting.
     //

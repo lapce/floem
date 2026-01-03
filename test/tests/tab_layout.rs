@@ -5,6 +5,7 @@
 //! - Only the active tab contributes to the Tab container's size
 //! - Switching tabs updates layout correctly
 
+use serial_test::serial;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -19,6 +20,7 @@ use floem_test::prelude::*;
 /// Test that inactive tabs have zero size in layout.
 /// This was the original bug: hidden tabs still had full size.
 #[test]
+#[serial]
 fn test_inactive_tabs_have_zero_size() {
     let active_tab = RwSignal::new(Some(0usize));
     let tabs = vec![0, 1, 2];
@@ -76,6 +78,7 @@ fn test_inactive_tabs_have_zero_size() {
 
 /// Test that switching tabs changes which tab has layout.
 #[test]
+#[serial]
 fn test_switching_tabs_updates_child_sizes() {
     let active_tab = RwSignal::new(Some(0usize));
     let tabs = vec![0, 1];
@@ -139,6 +142,7 @@ fn test_switching_tabs_updates_child_sizes() {
 
 /// Test that Tab with no active tab hides all children.
 #[test]
+#[serial]
 fn test_no_active_tab_all_hidden() {
     let active_tab = RwSignal::new(None::<usize>);
     let tabs = vec![0, 1];
@@ -180,6 +184,7 @@ fn test_no_active_tab_all_hidden() {
 
 /// Test that set_hidden() makes a view not participate in layout.
 #[test]
+#[serial]
 fn test_set_hidden_removes_from_layout() {
     let child1 = Empty::new().style(|s| s.size(50.0, 30.0));
     let child1_id = child1.view_id();
@@ -222,6 +227,7 @@ fn test_set_hidden_removes_from_layout() {
 
 /// Test that is_hidden() returns correct state.
 #[test]
+#[serial]
 fn test_is_hidden_state() {
     let view = Empty::new().style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
@@ -248,6 +254,7 @@ fn test_is_hidden_state() {
 
 /// Test that set_visible() can restore a hidden view.
 #[test]
+#[serial]
 fn test_set_visible_clears_hidden_flag() {
     let view = Empty::new().style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
@@ -285,6 +292,7 @@ fn test_set_visible_clears_hidden_flag() {
 
 /// Test that hidden children don't affect flex container siblings.
 #[test]
+#[serial]
 fn test_hidden_child_doesnt_affect_flex_siblings() {
     let child1 = Empty::new().style(|s| s.size(50.0, 30.0));
     let _child1_id = child1.view_id();
@@ -333,6 +341,7 @@ fn test_hidden_child_doesnt_affect_flex_siblings() {
 
 /// Test that set_hidden() and set_visible() can be called multiple times.
 #[test]
+#[serial]
 fn test_hidden_toggle_multiple_times() {
     let view = Empty::new().style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
@@ -377,6 +386,7 @@ fn test_hidden_toggle_multiple_times() {
 
 /// Test that set_hidden() on already hidden view is idempotent.
 #[test]
+#[serial]
 fn test_set_hidden_idempotent() {
     let view = Empty::new().style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
@@ -400,6 +410,7 @@ fn test_set_hidden_idempotent() {
 
 /// Test that set_visible() on already visible view is idempotent.
 #[test]
+#[serial]
 fn test_set_visible_idempotent() {
     let view = Empty::new().style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
@@ -424,6 +435,7 @@ fn test_set_visible_idempotent() {
 
 /// Test that hidden state interacts correctly with display:none style.
 #[test]
+#[serial]
 fn test_hidden_with_display_none_style() {
     let is_display_none = RwSignal::new(false);
 
@@ -490,6 +502,7 @@ fn test_hidden_with_display_none_style() {
 
 /// Test that nested hidden views work correctly.
 #[test]
+#[serial]
 fn test_nested_hidden_views() {
     let inner = Empty::new().style(|s| s.size(50.0, 50.0));
     let inner_id = inner.view_id();
@@ -530,6 +543,7 @@ fn test_nested_hidden_views() {
 
 /// Test that hiding a view removes it from hit testing.
 #[test]
+#[serial]
 fn test_hidden_view_not_clickable() {
     let tracker = ClickTracker::new();
 
@@ -566,6 +580,7 @@ fn test_hidden_view_not_clickable() {
 
 /// Test that flex-row display is properly restored after set_visible().
 #[test]
+#[serial]
 fn test_flex_row_display_recovered_after_visible() {
     let child1 = Empty::new().style(|s| s.size(50.0, 30.0));
     let child2 = Empty::new().style(|s| s.size(50.0, 30.0));
@@ -606,6 +621,7 @@ fn test_flex_row_display_recovered_after_visible() {
 
 /// Test that flex-col display is properly restored after set_visible().
 #[test]
+#[serial]
 fn test_flex_col_display_recovered_after_visible() {
     let child1 = Empty::new().style(|s| s.size(50.0, 30.0));
     let child2 = Empty::new().style(|s| s.size(50.0, 30.0));
@@ -646,6 +662,7 @@ fn test_flex_col_display_recovered_after_visible() {
 
 /// Test that Tab properly restores display when switching tabs.
 #[test]
+#[serial]
 fn test_tab_restores_display_on_switch() {
     let active_tab = RwSignal::new(Some(0usize));
     let tabs = vec![0, 1];

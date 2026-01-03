@@ -9,6 +9,7 @@
 //! - Scroll to specific positions works
 
 use floem_test::prelude::*;
+use serial_test::serial;
 
 // =============================================================================
 // Basic Scroll Event Tests
@@ -16,6 +17,7 @@ use floem_test::prelude::*;
 
 /// Test that scrolling down moves the viewport.
 #[test]
+#[serial]
 fn test_scroll_down_moves_viewport() {
     let scroll_tracker = ScrollTracker::new();
 
@@ -43,6 +45,7 @@ fn test_scroll_down_moves_viewport() {
 
 /// Test that scrolling up from middle position works.
 #[test]
+#[serial]
 fn test_scroll_up_moves_viewport() {
     let scroll_tracker = ScrollTracker::new();
 
@@ -73,6 +76,7 @@ fn test_scroll_up_moves_viewport() {
 /// Using just size() can result in the layout engine constraining the child to
 /// the scroll view's size due to overflow settings.
 #[test]
+#[serial]
 fn test_scroll_horizontal() {
     let scroll_tracker = ScrollTracker::new();
 
@@ -104,6 +108,7 @@ fn test_scroll_horizontal() {
 /// Note: Due to layout constraints, horizontal scrolling may not work in all configurations.
 /// This test verifies at least vertical scrolling works with diagonal input.
 #[test]
+#[serial]
 fn test_scroll_diagonal() {
     let scroll_tracker = ScrollTracker::new();
 
@@ -134,6 +139,7 @@ fn test_scroll_diagonal() {
 
 /// Test that scroll position is clamped at top.
 #[test]
+#[serial]
 fn test_scroll_clamped_at_top() {
     let scroll_tracker = ScrollTracker::new();
 
@@ -158,6 +164,7 @@ fn test_scroll_clamped_at_top() {
 
 /// Test that scroll position is clamped at bottom.
 #[test]
+#[serial]
 fn test_scroll_clamped_at_bottom() {
     let scroll_tracker = ScrollTracker::new();
 
@@ -183,6 +190,7 @@ fn test_scroll_clamped_at_bottom() {
 
 /// Test that scroll position is clamped at left.
 #[test]
+#[serial]
 fn test_scroll_clamped_at_left() {
     let scroll_tracker = ScrollTracker::new();
 
@@ -205,6 +213,7 @@ fn test_scroll_clamped_at_left() {
 
 /// Test that scroll position is clamped at right.
 #[test]
+#[serial]
 fn test_scroll_clamped_at_right() {
     let scroll_tracker = ScrollTracker::new();
 
@@ -234,6 +243,7 @@ fn test_scroll_clamped_at_right() {
 
 /// Test that scrolling does nothing when content fits in viewport.
 #[test]
+#[serial]
 fn test_no_scroll_when_content_fits() {
     let scroll_tracker = ScrollTracker::new();
 
@@ -259,6 +269,7 @@ fn test_no_scroll_when_content_fits() {
 
 /// Test that scrolling does nothing when content is smaller than viewport.
 #[test]
+#[serial]
 fn test_no_scroll_when_content_smaller() {
     let scroll_tracker = ScrollTracker::new();
 
@@ -286,6 +297,7 @@ fn test_no_scroll_when_content_smaller() {
 
 /// Test that multiple scroll events accumulate correctly.
 #[test]
+#[serial]
 fn test_multiple_scroll_events_accumulate() {
     let scroll_tracker = ScrollTracker::new();
 
@@ -309,6 +321,7 @@ fn test_multiple_scroll_events_accumulate() {
 
 /// Test scroll up and down cancels out.
 #[test]
+#[serial]
 fn test_scroll_up_down_cancels() {
     let scroll_tracker = ScrollTracker::new();
 
@@ -335,6 +348,7 @@ fn test_scroll_up_down_cancels() {
 
 /// Test that viewport size matches container size.
 #[test]
+#[serial]
 fn test_viewport_size_matches_container() {
     let scroll_tracker = ScrollTracker::new();
 
@@ -372,6 +386,7 @@ fn test_viewport_size_matches_container() {
 
 /// Test that line-based scrolling works.
 #[test]
+#[serial]
 fn test_scroll_by_lines() {
     let scroll_tracker = ScrollTracker::new();
 
@@ -402,6 +417,7 @@ fn test_scroll_by_lines() {
 
 /// Test that clicks pass through to content in scroll view.
 #[test]
+#[serial]
 fn test_click_passes_through_scroll() {
     let tracker = ClickTracker::new();
 
@@ -429,6 +445,7 @@ fn test_click_passes_through_scroll() {
 
 /// Test that clicks work correctly after scrolling.
 #[test]
+#[serial]
 fn test_click_after_scroll() {
     let tracker = ClickTracker::new();
     let scroll_tracker = ScrollTracker::new();
@@ -477,6 +494,7 @@ fn test_click_after_scroll() {
 
 /// Test that clicking on scrollbar track doesn't propagate to content.
 #[test]
+#[serial]
 fn test_scrollbar_click_doesnt_hit_content() {
     let tracker = ClickTracker::new();
 
@@ -503,6 +521,7 @@ fn test_scrollbar_click_doesnt_hit_content() {
 
 /// Test that scroll events propagate when at scroll limit (with propagation enabled).
 #[test]
+#[serial]
 fn test_scroll_propagation_at_limit() {
     let outer_tracker = ScrollTracker::new();
     let inner_tracker = ScrollTracker::new();
@@ -539,6 +558,7 @@ fn test_scroll_propagation_at_limit() {
 
 /// Test scrolling with very small viewport.
 #[test]
+#[serial]
 fn test_scroll_small_viewport() {
     let scroll_tracker = ScrollTracker::new();
 
@@ -559,6 +579,7 @@ fn test_scroll_small_viewport() {
 
 /// Test scroll view with dynamically changing content size.
 #[test]
+#[serial]
 fn test_scroll_after_resize() {
     let scroll_tracker = ScrollTracker::new();
 
@@ -590,6 +611,7 @@ fn test_scroll_after_resize() {
 
 /// Test that viewport y1/x1 are always >= y0/x0.
 #[test]
+#[serial]
 fn test_viewport_bounds_valid() {
     let scroll_tracker = ScrollTracker::new();
 
@@ -621,6 +643,7 @@ fn test_viewport_bounds_valid() {
 
 /// Test that on_scroll callback receives correct viewports.
 #[test]
+#[serial]
 fn test_on_scroll_callback_values() {
     let scroll_tracker = ScrollTracker::new();
 
@@ -653,6 +676,7 @@ fn test_on_scroll_callback_values() {
 
 /// Test scroll position helper method.
 #[test]
+#[serial]
 fn test_scroll_position_helper() {
     let scroll_tracker = ScrollTracker::new();
 
@@ -689,6 +713,7 @@ fn test_scroll_position_helper() {
 
 /// Test that scroll tracker reset clears recorded viewports.
 #[test]
+#[serial]
 fn test_scroll_tracker_reset() {
     let scroll_tracker = ScrollTracker::new();
 
@@ -726,6 +751,7 @@ fn test_scroll_tracker_reset() {
 /// Note: Horizontal scrolling may not work in all layout configurations.
 /// This test verifies the API works but may pass even if actual scrolling doesn't happen.
 #[test]
+#[serial]
 fn test_scroll_left_right() {
     let scroll_tracker = ScrollTracker::new();
 
@@ -763,6 +789,7 @@ fn test_scroll_left_right() {
 
 /// Test that scroll_up and scroll_down work correctly.
 #[test]
+#[serial]
 fn test_scroll_up_down() {
     let scroll_tracker = ScrollTracker::new();
 
@@ -793,6 +820,7 @@ fn test_scroll_up_down() {
 
 /// Test that clicks work correctly after scrolling.
 #[test]
+#[serial]
 fn test_scroll_view_click_after_scroll() {
     let tracker = ClickTracker::new();
 
@@ -827,6 +855,7 @@ fn test_scroll_view_click_after_scroll() {
 /// Test that clicks on content outside the scroll view's visible area
 /// don't trigger click handlers (clip-aware hit testing).
 #[test]
+#[serial]
 fn test_clip_aware_hit_testing_clipped_content() {
     let tracker = ClickTracker::new();
 
@@ -857,6 +886,7 @@ fn test_clip_aware_hit_testing_clipped_content() {
 /// Test that clicks on content inside the scroll view's visible area
 /// do trigger click handlers.
 #[test]
+#[serial]
 fn test_clip_aware_hit_testing_visible_content() {
     let tracker = ClickTracker::new();
 
@@ -885,6 +915,7 @@ fn test_clip_aware_hit_testing_visible_content() {
 /// Test that after scrolling, content that moves out of view
 /// no longer receives clicks.
 #[test]
+#[serial]
 fn test_clip_aware_hit_testing_after_scroll_clipped() {
     let tracker = ClickTracker::new();
 
@@ -945,6 +976,7 @@ fn test_clip_aware_hit_testing_after_scroll_clipped() {
 /// This verifies that items extending beyond the scroll viewport are still painted
 /// (and clipped), not skipped entirely.
 #[test]
+#[serial]
 fn test_scroll_paints_partially_visible_bottom_item() {
     // Create content with an item that will be partially visible at the bottom
     // Content layout:
@@ -980,6 +1012,7 @@ fn test_scroll_paints_partially_visible_bottom_item() {
 /// (e.g., layout computation, style updates). The important thing is that
 /// visible items ARE painted. The actual GPU clipping happens at render time.
 #[test]
+#[serial]
 fn test_scroll_handles_invisible_items() {
     // Create content with items:
     //   - visible_item: at y=0, 50px tall (fully visible)
@@ -1014,6 +1047,7 @@ fn test_scroll_handles_invisible_items() {
 
 /// Test that after scrolling, partially visible items at the new bottom are painted.
 #[test]
+#[serial]
 fn test_scroll_paints_partially_visible_after_scroll() {
     // Create tall content with multiple items
     // After scrolling, an item at the new bottom edge should be painted even if partial

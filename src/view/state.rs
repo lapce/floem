@@ -248,8 +248,12 @@ pub struct ViewState {
     /// this can be used to make it so that a view will pull it's style context from a different parent.
     /// This is useful for overlays that are children of the window root but should pull their style cx from the creating view
     pub(crate) style_cx_parent: Option<ViewId>,
-    /// the style map that has the inherited properties that the chilren should use
+    /// The style map that has the inherited properties that the children should use.
+    /// Contains only properties marked as `inherited` (font-size, color, etc.)
     pub(crate) style_cx: Option<Style>,
+    /// The class context that has class nested maps for children to apply.
+    /// Contains `.class(SomeClass, ...)` definitions that flow to descendants.
+    pub(crate) class_cx: Option<Style>,
     /// the style interaction cx that is saved after computing the final style.
     /// This will be used as the base interaction for all **children** of this view as these are the inherited interactions
     pub(crate) style_interaction_cx: InheritedInteractionCx,
@@ -332,6 +336,7 @@ impl ViewState {
             debug_name: Default::default(),
             style_cx_parent: None,
             style_cx: None,
+            class_cx: None,
             style_interaction_cx: Default::default(),
             parent_set_style_interaction: Default::default(),
             visibility: Visibility::default(),
@@ -360,12 +365,19 @@ impl ViewState {
 
     /// Compute the combined style by applying selectors, responsive styles, and classes.
     /// Returns the combined style and a flag indicating if new classes were applied.
+    ///
+    /// Takes two separate contexts:
+    /// - `inherited_context`: Contains inherited properties (font-size, color, etc.)
+    ///   Used for `with_context` evaluation and inherited prop resolution.
+    /// - `class_context`: Contains class nested maps (`.class(SomeClass, ...)`)
+    ///   Used for class styling that flows from ancestors.
     pub(crate) fn compute_combined(
         &mut self,
         interact_state: crate::style::InteractionState,
         screen_size_bp: crate::layout::responsive::ScreenSizeBp,
         view_class: Option<crate::style::StyleClassRef>,
-        parent_style: &std::rc::Rc<Style>,
+        inherited_context: &std::rc::Rc<Style>,
+        class_context: &std::rc::Rc<Style>,
     ) -> (Style, bool) {
         // Start with the combined stacked styles
         let base_style = self.style();
@@ -381,8 +393,8 @@ impl ViewState {
             all_classes.push(vc);
         }
 
-        // Create a mutable context from the parent style
-        let mut context = (**parent_style).clone();
+        // Create mutable contexts - inherited for with_context evaluation
+        let mut inherited_ctx = (**inherited_context).clone();
 
         // Resolve all nested maps: selectors, responsive styles, and classes
         let (combined, classes_applied) = crate::style::resolve_nested_maps(
@@ -390,7 +402,8 @@ impl ViewState {
             &interact_state,
             screen_size_bp,
             &all_classes,
-            &mut context,
+            &mut inherited_ctx,
+            class_context,
         );
 
         self.combined_style = combined.clone();

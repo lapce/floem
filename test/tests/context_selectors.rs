@@ -15,6 +15,7 @@ use floem::prelude::*;
 use floem::prop;
 use floem::style::{Background, Style, StyleSelector};
 use floem_test::prelude::*;
+use serial_test::serial;
 
 // Define a simple theme prop for testing
 prop!(
@@ -59,6 +60,7 @@ impl TestThemeExt for Style {
 
 /// Test that selectors defined inside `with_context` are detected.
 #[test]
+#[serial]
 fn test_active_selector_detected_inside_with_context() {
     let view = Empty::new().style(|s| {
         s.size(100.0, 100.0).with_test_theme(|s, t| {
@@ -79,6 +81,7 @@ fn test_active_selector_detected_inside_with_context() {
 
 /// Test that hover selectors inside `with_context` are detected.
 #[test]
+#[serial]
 fn test_hover_selector_detected_inside_with_context() {
     let view = Empty::new().style(|s| {
         s.size(100.0, 100.0).with_test_theme(|s, t| {
@@ -99,6 +102,7 @@ fn test_hover_selector_detected_inside_with_context() {
 
 /// Test that multiple selectors inside `with_context` are all detected.
 #[test]
+#[serial]
 fn test_multiple_selectors_detected_inside_with_context() {
     let view = Empty::new().style(|s| {
         s.size(100.0, 100.0).with_test_theme(|s, _t| {
@@ -128,6 +132,7 @@ fn test_multiple_selectors_detected_inside_with_context() {
 
 /// Test that active style is applied when clicking a view with active selector inside with_context.
 #[test]
+#[serial]
 fn test_active_style_applied_from_with_context() {
     let theme = TestTheme::default();
     let view = Empty::new().style(move |s| {
@@ -177,6 +182,7 @@ fn test_active_style_applied_from_with_context() {
 
 /// Test that hover style is applied when hovering a view with hover selector inside with_context.
 #[test]
+#[serial]
 fn test_hover_style_applied_from_with_context() {
     let theme = TestTheme::default();
     let view = Empty::new().style(move |s| {
@@ -226,6 +232,7 @@ fn test_hover_style_applied_from_with_context() {
 
 /// Test nested with_context calls - selectors should still be detected.
 #[test]
+#[serial]
 fn test_nested_with_context_selectors_detected() {
     let view = Empty::new().style(|s| {
         s.size(100.0, 100.0).with_test_theme(|s, _t| {
@@ -248,6 +255,7 @@ fn test_nested_with_context_selectors_detected() {
 
 /// Test that selectors work when using theme values inside the selector closure.
 #[test]
+#[serial]
 fn test_active_style_uses_theme_values() {
     // Set up theme with specific colors
     let theme = TestTheme {
@@ -292,6 +300,7 @@ fn test_active_style_uses_theme_values() {
 
 /// Test that clicking state is properly set for views with active selector inside with_context.
 #[test]
+#[serial]
 fn test_clicking_state_set_for_with_context_active() {
     let view = Empty::new().style(|s| {
         s.size(100.0, 100.0).with_test_theme(|s, _t| {
@@ -327,6 +336,7 @@ fn test_clicking_state_set_for_with_context_active() {
 
 /// Test that disabled selector inside with_context is detected.
 #[test]
+#[serial]
 fn test_disabled_selector_detected_inside_with_context() {
     let theme = TestTheme::default();
     let view = Empty::new().style(move |s| {
@@ -349,6 +359,7 @@ fn test_disabled_selector_detected_inside_with_context() {
 
 /// Test that focus selector inside with_context is detected.
 #[test]
+#[serial]
 fn test_focus_selector_detected_inside_with_context() {
     let theme = TestTheme::default();
     let view = Empty::new().style(move |s| {
@@ -371,6 +382,7 @@ fn test_focus_selector_detected_inside_with_context() {
 
 /// Test that focus_visible selector inside with_context is detected.
 #[test]
+#[serial]
 fn test_focus_visible_selector_detected_inside_with_context() {
     let theme = TestTheme::default();
     let view = Empty::new().style(move |s| {
@@ -393,6 +405,7 @@ fn test_focus_visible_selector_detected_inside_with_context() {
 
 /// Test that dragging selector inside with_context is detected.
 #[test]
+#[serial]
 fn test_dragging_selector_detected_inside_with_context() {
     let theme = TestTheme::default();
     let view = Empty::new().style(move |s| {
@@ -415,6 +428,7 @@ fn test_dragging_selector_detected_inside_with_context() {
 
 /// Test that selected selector inside with_context is detected.
 #[test]
+#[serial]
 fn test_selected_selector_detected_inside_with_context() {
     let theme = TestTheme::default();
     let view = Empty::new().style(move |s| {
@@ -437,6 +451,7 @@ fn test_selected_selector_detected_inside_with_context() {
 
 /// Test that disabled style inside with_context is applied correctly.
 #[test]
+#[serial]
 fn test_disabled_style_applied_from_with_context() {
     let theme = TestTheme::default();
     let view = Empty::new().style(move |s| {
@@ -468,6 +483,7 @@ fn test_disabled_style_applied_from_with_context() {
 
 /// Test that selectors inside with_context work with style merging.
 #[test]
+#[serial]
 fn test_with_context_selectors_merge_correctly() {
     let theme = TestTheme::default();
     let view = Empty::new()
@@ -510,6 +526,7 @@ fn test_with_context_selectors_merge_correctly() {
 
 /// Test that active style triggers paint when clicking.
 #[test]
+#[serial]
 fn test_active_style_triggers_paint() {
     let view = Empty::new().style(|s| {
         s.size(100.0, 100.0)
@@ -551,6 +568,7 @@ fn test_active_style_triggers_paint() {
 
 /// Test that style is requested when clicking state changes.
 #[test]
+#[serial]
 fn test_style_request_on_clicking() {
     let view = Empty::new().style(|s| {
         s.size(100.0, 100.0)

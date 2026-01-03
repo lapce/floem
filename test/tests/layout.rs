@@ -6,12 +6,14 @@
 use floem::prelude::*;
 use floem::unit::Pct;
 use floem_test::prelude::*;
+use serial_test::serial;
 
 // =============================================================================
 // Basic Sizing Tests
 // =============================================================================
 
 #[test]
+#[serial]
 fn test_explicit_size() {
     let view = Empty::new().style(|s| s.size(100.0, 50.0));
     let id = view.view_id();
@@ -33,6 +35,7 @@ fn test_explicit_size() {
 }
 
 #[test]
+#[serial]
 fn test_width_and_height_separate() {
     let view = Empty::new().style(|s| s.width(80.0).height(40.0));
     let id = view.view_id();
@@ -54,6 +57,7 @@ fn test_width_and_height_separate() {
 }
 
 #[test]
+#[serial]
 fn test_min_width_and_min_height() {
     // Content would be 0, but min-size forces larger
     let view = Empty::new().style(|s| s.min_width(60.0).min_height(30.0));
@@ -76,6 +80,7 @@ fn test_min_width_and_min_height() {
 }
 
 #[test]
+#[serial]
 fn test_max_width_and_max_height() {
     // Explicit size larger than max should be clamped
     let view = Empty::new().style(|s| s.size(200.0, 200.0).max_width(100.0).max_height(50.0));
@@ -98,6 +103,7 @@ fn test_max_width_and_max_height() {
 }
 
 #[test]
+#[serial]
 fn test_percentage_size() {
     let child = Empty::new().style(|s| s.width(Pct(50.0)).height(Pct(25.0)));
     let child_id = child.view_id();
@@ -121,6 +127,7 @@ fn test_percentage_size() {
 }
 
 #[test]
+#[serial]
 fn test_size_full() {
     let child = Empty::new().style(|s| s.size_full());
     let child_id = child.view_id();
@@ -148,6 +155,7 @@ fn test_size_full() {
 // =============================================================================
 
 #[test]
+#[serial]
 fn test_flex_row_basic() {
     let child1 = Empty::new().style(|s| s.size(50.0, 30.0));
     let child2 = Empty::new().style(|s| s.size(50.0, 30.0));
@@ -173,6 +181,7 @@ fn test_flex_row_basic() {
 }
 
 #[test]
+#[serial]
 fn test_flex_column_basic() {
     let child1 = Empty::new().style(|s| s.size(50.0, 30.0));
     let child2 = Empty::new().style(|s| s.size(50.0, 30.0));
@@ -198,6 +207,7 @@ fn test_flex_column_basic() {
 }
 
 #[test]
+#[serial]
 fn test_flex_gap() {
     let child1 = Empty::new().style(|s| s.size(50.0, 30.0));
     let child2 = Empty::new().style(|s| s.size(50.0, 30.0));
@@ -219,6 +229,7 @@ fn test_flex_gap() {
 }
 
 #[test]
+#[serial]
 fn test_flex_grow() {
     let child1 = Empty::new().style(|s| s.flex_grow(1.0).height(30.0));
     let child1_id = child1.view_id();
@@ -247,6 +258,7 @@ fn test_flex_grow() {
 }
 
 #[test]
+#[serial]
 fn test_flex_grow_unequal() {
     let child1 = Empty::new().style(|s| s.flex_grow(1.0).height(30.0));
     let child1_id = child1.view_id();
@@ -275,6 +287,7 @@ fn test_flex_grow_unequal() {
 }
 
 #[test]
+#[serial]
 fn test_flex_shrink() {
     // Children have base width 150 each = 300, but container is only 200
     let child1 = Empty::new().style(|s| s.width(150.0).flex_shrink(1.0).height(30.0));
@@ -304,6 +317,7 @@ fn test_flex_shrink() {
 }
 
 #[test]
+#[serial]
 fn test_flex_basis() {
     let child1 = Empty::new().style(|s| s.flex_basis(80.0).height(30.0));
     let child1_id = child1.view_id();
@@ -326,6 +340,7 @@ fn test_flex_basis() {
 // =============================================================================
 
 #[test]
+#[serial]
 fn test_align_items_center() {
     let child = Empty::new().style(|s| s.size(50.0, 30.0));
     let child_id = child.view_id();
@@ -345,6 +360,7 @@ fn test_align_items_center() {
 }
 
 #[test]
+#[serial]
 fn test_align_items_end() {
     let child = Empty::new().style(|s| s.size(50.0, 30.0));
     let child_id = child.view_id();
@@ -364,6 +380,7 @@ fn test_align_items_end() {
 }
 
 #[test]
+#[serial]
 fn test_justify_content_center() {
     let child = Empty::new().style(|s| s.size(50.0, 30.0));
     let child_id = child.view_id();
@@ -384,6 +401,7 @@ fn test_justify_content_center() {
 }
 
 #[test]
+#[serial]
 fn test_justify_content_space_between() {
     let child1 = Empty::new().style(|s| s.size(50.0, 30.0));
     let child1_id = child1.view_id();
@@ -417,6 +435,7 @@ fn test_justify_content_space_between() {
 // =============================================================================
 
 #[test]
+#[serial]
 fn test_padding_uniform() {
     let child = Empty::new().style(|s| s.size(50.0, 50.0));
     let child_id = child.view_id();
@@ -441,6 +460,7 @@ fn test_padding_uniform() {
 }
 
 #[test]
+#[serial]
 fn test_padding_directional() {
     let child = Empty::new().style(|s| s.size(50.0, 50.0));
     let child_id = child.view_id();
@@ -470,6 +490,7 @@ fn test_padding_directional() {
 }
 
 #[test]
+#[serial]
 fn test_padding_reduces_content_area() {
     // Child with size_full should respect parent's padding
     let child = Empty::new().style(|s| s.size_full());
@@ -500,6 +521,7 @@ fn test_padding_reduces_content_area() {
 // =============================================================================
 
 #[test]
+#[serial]
 fn test_margin_uniform() {
     let child = Empty::new().style(|s| s.margin(15.0).size(50.0, 50.0));
     let child_id = child.view_id();
@@ -523,6 +545,7 @@ fn test_margin_uniform() {
 }
 
 #[test]
+#[serial]
 fn test_margin_directional() {
     let child = Empty::new().style(|s| {
         s.margin_left(5.0)
@@ -552,6 +575,7 @@ fn test_margin_directional() {
 }
 
 #[test]
+#[serial]
 fn test_margin_auto_centering() {
     // margin_horiz_auto should center horizontally in flex container
     let child = Empty::new().style(|s| s.margin_horiz(floem::style::Auto).size(50.0, 50.0));
@@ -576,6 +600,7 @@ fn test_margin_auto_centering() {
 // =============================================================================
 
 #[test]
+#[serial]
 fn test_absolute_positioning() {
     let child = Empty::new().style(|s| {
         s.absolute()
@@ -604,6 +629,7 @@ fn test_absolute_positioning() {
 }
 
 #[test]
+#[serial]
 fn test_absolute_inset_all() {
     // inset(0) should fill the parent
     let child = Empty::new().style(|s| s.absolute().inset(0.0));
@@ -628,6 +654,7 @@ fn test_absolute_inset_all() {
 }
 
 #[test]
+#[serial]
 fn test_absolute_inset_with_size() {
     // Explicit size takes precedence over filling via inset
     let child = Empty::new().style(|s| s.absolute().inset(0.0).size(50.0, 40.0));
@@ -652,6 +679,7 @@ fn test_absolute_inset_with_size() {
 }
 
 #[test]
+#[serial]
 fn test_absolute_percentage_positioning() {
     let child = Empty::new().style(|s| {
         s.absolute()
@@ -680,6 +708,7 @@ fn test_absolute_percentage_positioning() {
 }
 
 #[test]
+#[serial]
 fn test_absolute_does_not_affect_siblings() {
     // Absolute positioned elements should not affect layout of siblings
     let absolute_child = Empty::new().style(|s| {
@@ -711,6 +740,7 @@ fn test_absolute_does_not_affect_siblings() {
 // =============================================================================
 
 #[test]
+#[serial]
 fn test_nested_flex_containers() {
     let inner_child1 = Empty::new().style(|s| s.size(30.0, 30.0));
     let inner_child2 = Empty::new().style(|s| s.size(30.0, 30.0));
@@ -747,6 +777,7 @@ fn test_nested_flex_containers() {
 }
 
 #[test]
+#[serial]
 fn test_deeply_nested_percentage() {
     // Test that percentage sizing works through multiple levels
     let deep_child = Empty::new().style(|s| s.width(Pct(50.0)).height(Pct(50.0)));
@@ -778,6 +809,7 @@ fn test_deeply_nested_percentage() {
 // =============================================================================
 
 #[test]
+#[serial]
 fn test_aspect_ratio_with_width() {
     let child = Empty::new().style(|s| s.width(100.0).aspect_ratio(2.0)); // 2:1 ratio
     let child_id = child.view_id();
@@ -802,6 +834,7 @@ fn test_aspect_ratio_with_width() {
 }
 
 #[test]
+#[serial]
 fn test_aspect_ratio_with_height() {
     let child = Empty::new().style(|s| s.height(100.0).aspect_ratio(0.5)); // 1:2 ratio
     let child_id = child.view_id();
@@ -830,6 +863,7 @@ fn test_aspect_ratio_with_height() {
 // =============================================================================
 
 #[test]
+#[serial]
 fn test_display_none_hides_element() {
     let child = Empty::new().style(|s| s.display(floem::taffy::Display::None).size(50.0, 50.0));
     let child_id = child.view_id();
@@ -854,6 +888,7 @@ fn test_display_none_hides_element() {
 }
 
 #[test]
+#[serial]
 fn test_display_none_does_not_affect_siblings() {
     let hidden = Empty::new().style(|s| s.display(floem::taffy::Display::None).size(100.0, 100.0));
     let visible = Empty::new().style(|s| s.size(50.0, 50.0));
@@ -878,6 +913,7 @@ fn test_display_none_does_not_affect_siblings() {
 // =============================================================================
 
 #[test]
+#[serial]
 fn test_border_affects_layout() {
     let child = Empty::new().style(|s| s.size_full());
     let child_id = child.view_id();
@@ -906,6 +942,7 @@ fn test_border_affects_layout() {
 // =============================================================================
 
 #[test]
+#[serial]
 fn test_transform_does_not_affect_layout_size() {
     // Transforms should affect painting but not layout
     let child = Empty::new().style(|s| s.size(50.0, 50.0).scale(Pct(200.0)));
@@ -935,6 +972,7 @@ fn test_transform_does_not_affect_layout_size() {
 // =============================================================================
 
 #[test]
+#[serial]
 fn test_window_origin_accumulates() {
     let deep_child = Empty::new().style(|s| s.size(20.0, 20.0));
     let deep_id = deep_child.view_id();

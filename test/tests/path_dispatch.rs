@@ -13,12 +13,14 @@
 //! - Multiple click types (single, double, secondary) all bubble correctly
 
 use floem_test::prelude::*;
+use serial_test::serial;
 
 // =============================================================================
 // Click Bubbling Tests - Verify Click bubbles through entire path
 // =============================================================================
 
 #[test]
+#[serial]
 fn test_click_bubbles_to_parent_with_handler() {
     // Click on child (no handler) should bubble to parent (with handler)
     let tracker = ClickTracker::new();
@@ -47,6 +49,7 @@ fn test_click_bubbles_to_parent_with_handler() {
 }
 
 #[test]
+#[serial]
 fn test_click_bubbles_through_multiple_ancestors() {
     // Click on deeply nested child should bubble through all ancestors
     let tracker = ClickTracker::new();
@@ -82,6 +85,7 @@ fn test_click_bubbles_through_multiple_ancestors() {
 }
 
 #[test]
+#[serial]
 fn test_click_stop_at_child_prevents_parent_handler() {
     // When child returns Stop, parent handler should NOT fire
     let tracker = ClickTracker::new();
@@ -108,6 +112,7 @@ fn test_click_stop_at_child_prevents_parent_handler() {
 }
 
 #[test]
+#[serial]
 fn test_click_stop_in_middle_prevents_further_bubbling() {
     // Stop in the middle of the path prevents further bubbling
     let tracker = ClickTracker::new();
@@ -141,6 +146,7 @@ fn test_click_stop_in_middle_prevents_further_bubbling() {
 }
 
 #[test]
+#[serial]
 fn test_click_bubbles_with_z_index_layers() {
     // Click on z-index layered view should still bubble to parent
     let tracker = ClickTracker::new();
@@ -174,6 +180,7 @@ fn test_click_bubbles_with_z_index_layers() {
 }
 
 #[test]
+#[serial]
 fn test_click_with_cont_bubbles_through_layers() {
     // When layered view uses cont, click should bubble to container
     let tracker = ClickTracker::new();
@@ -205,6 +212,7 @@ fn test_click_with_cont_bubbles_through_layers() {
 // =============================================================================
 
 #[test]
+#[serial]
 fn test_double_click_bubbles_to_parent() {
     // DoubleClick on child (no handler) should bubble to parent
     let tracker = ClickTracker::new();
@@ -234,6 +242,7 @@ fn test_double_click_bubbles_to_parent() {
 }
 
 #[test]
+#[serial]
 fn test_double_click_at_target_fires_first() {
     // When both child and parent have DoubleClick handlers, child fires first
     let tracker = ClickTracker::new();
@@ -265,6 +274,7 @@ fn test_double_click_at_target_fires_first() {
 // =============================================================================
 
 #[test]
+#[serial]
 fn test_secondary_click_bubbles_to_parent() {
     // SecondaryClick on child (no handler) should bubble to parent
     let tracker = ClickTracker::new();
@@ -293,6 +303,7 @@ fn test_secondary_click_bubbles_to_parent() {
 }
 
 #[test]
+#[serial]
 fn test_secondary_click_at_target_fires_first() {
     // When both child and parent have SecondaryClick handlers, child fires first
     let tracker = ClickTracker::new();
@@ -324,6 +335,7 @@ fn test_secondary_click_at_target_fires_first() {
 // =============================================================================
 
 #[test]
+#[serial]
 fn test_click_is_synthetic_after_pointer_up() {
     // This test verifies that click handlers work correctly with the
     // new synthetic click dispatch (click fires after PointerUp completes)
@@ -370,6 +382,7 @@ fn test_click_is_synthetic_after_pointer_up() {
 // =============================================================================
 
 #[test]
+#[serial]
 fn test_path_includes_all_ancestors() {
     // Verify that the event path includes all ancestors from target to root
     use std::cell::RefCell;
@@ -427,6 +440,7 @@ fn test_path_includes_all_ancestors() {
 // =============================================================================
 
 #[test]
+#[serial]
 fn test_hit_test_finds_topmost_z_index() {
     // Hit test should find the topmost (highest z-index) view
     let tracker = ClickTracker::new();
@@ -450,6 +464,7 @@ fn test_hit_test_finds_topmost_z_index() {
 }
 
 #[test]
+#[serial]
 fn test_hit_test_uses_dom_order_for_equal_z_index() {
     // When z-indices are equal, later in DOM order should be on top
     let tracker = ClickTracker::new();
@@ -473,6 +488,7 @@ fn test_hit_test_uses_dom_order_for_equal_z_index() {
 }
 
 #[test]
+#[serial]
 fn test_hit_test_respects_pointer_events_none() {
     // Views with pointer_events_none should not receive clicks
     let tracker = ClickTracker::new();
@@ -502,6 +518,7 @@ fn test_hit_test_respects_pointer_events_none() {
 // =============================================================================
 
 #[test]
+#[serial]
 fn test_click_outside_all_children_hits_container() {
     // Clicking in container area but outside all children should hit container
     let tracker = ClickTracker::new();
@@ -529,6 +546,7 @@ fn test_click_outside_all_children_hits_container() {
 }
 
 #[test]
+#[serial]
 fn test_multiple_clicks_each_bubble_separately() {
     // Multiple clicks should each follow the full bubbling path
     let tracker = ClickTracker::new();
@@ -557,6 +575,7 @@ fn test_multiple_clicks_each_bubble_separately() {
 }
 
 #[test]
+#[serial]
 fn test_click_on_disabled_view_does_not_bubble() {
     // Disabled views should not receive or bubble clicks
     let tracker = ClickTracker::new();
@@ -587,6 +606,7 @@ fn test_click_on_disabled_view_does_not_bubble() {
 }
 
 #[test]
+#[serial]
 fn test_hidden_view_does_not_receive_click() {
     // Hidden views should not be hit tested
     let tracker = ClickTracker::new();

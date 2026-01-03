@@ -515,9 +515,10 @@ impl ViewId {
 
     /// Returns true if the view is selected
     ///
-    /// This is done by checking if the style for this view has `Selected` set to true.
+    /// This is done by checking if the parent has set this view as selected
+    /// via `parent_set_selected()`.
     pub fn is_selected(&self) -> bool {
-        self.state().borrow_mut().style_interaction_cx.selected
+        self.state().borrow().parent_set_style_interaction.selected
     }
 
     /// Check if this id can be focused.

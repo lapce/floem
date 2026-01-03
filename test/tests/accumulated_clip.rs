@@ -10,6 +10,7 @@ use floem::prelude::*;
 use floem::style::{Display, PointerEvents};
 use floem::views::{Container, Empty, Scroll, Stack};
 use floem_test::{ClickTracker, HeadlessHarness, layers};
+use serial_test::serial;
 
 // =============================================================================
 // Basic Scroll Clip Tests
@@ -21,6 +22,7 @@ use floem_test::{ClickTracker, HeadlessHarness, layers};
 /// This is the fundamental clip behavior: a tall button inside a short scroll
 /// should only be clickable within the scroll's visible area.
 #[test]
+#[serial]
 fn test_scroll_clips_content_beyond_viewport() {
     let tracker = ClickTracker::new();
 
@@ -56,6 +58,7 @@ fn test_scroll_clips_content_beyond_viewport() {
 
 /// Test that content below scroll viewport (using margin) doesn't receive clicks.
 #[test]
+#[serial]
 fn test_scroll_clips_content_with_margin() {
     let tracker = ClickTracker::new();
 
@@ -88,6 +91,7 @@ fn test_scroll_clips_content_with_margin() {
 
 /// Test nested scrolls with simple non-overlapping structure.
 #[test]
+#[serial]
 fn test_nested_scroll_simple() {
     let tracker = ClickTracker::new();
 
@@ -125,6 +129,7 @@ fn test_nested_scroll_simple() {
 
 /// Test nested scroll where inner scroll is offset within outer.
 #[test]
+#[serial]
 fn test_nested_scroll_with_offset() {
     let tracker = ClickTracker::new();
 
@@ -174,6 +179,7 @@ fn test_nested_scroll_with_offset() {
 /// Test that absolute positioned elements with z-index can receive clicks
 /// outside their parent's clip bounds.
 #[test]
+#[serial]
 fn test_absolute_with_z_index_escapes_clip() {
     let tracker = ClickTracker::new();
 
@@ -214,6 +220,7 @@ fn test_absolute_with_z_index_escapes_clip() {
 
 /// Test the trigger vs dropdown scenario: trigger inside scroll, dropdown extending below.
 #[test]
+#[serial]
 fn test_trigger_and_dropdown_click_dispatch() {
     let tracker = ClickTracker::new();
 
@@ -278,6 +285,7 @@ fn test_trigger_and_dropdown_click_dispatch() {
 
 /// Test that scrolling changes which parts of content are clickable.
 #[test]
+#[serial]
 fn test_scroll_position_changes_clickable_area() {
     let tracker = ClickTracker::new();
 
@@ -339,6 +347,7 @@ fn test_scroll_position_changes_clickable_area() {
 
 /// Test z-index ordering within a clipped region.
 #[test]
+#[serial]
 fn test_z_index_ordering_within_scroll() {
     let tracker = ClickTracker::new();
 
@@ -372,6 +381,7 @@ fn test_z_index_ordering_within_scroll() {
 
 /// Test that hidden views don't affect hit testing.
 #[test]
+#[serial]
 fn test_hidden_view_no_clip_effect() {
     let tracker = ClickTracker::new();
 
@@ -393,6 +403,7 @@ fn test_hidden_view_no_clip_effect() {
 
 /// Test pointer_events: none combined with clips.
 #[test]
+#[serial]
 fn test_pointer_events_none_with_scroll_clip() {
     let tracker = ClickTracker::new();
 
@@ -425,6 +436,7 @@ fn test_pointer_events_none_with_scroll_clip() {
 
 /// Test overlapping scroll containers (side by side with overlap).
 #[test]
+#[serial]
 fn test_overlapping_scroll_containers() {
     let tracker = ClickTracker::new();
 
@@ -475,6 +487,7 @@ fn test_overlapping_scroll_containers() {
 /// - Window is 300x300 to allow clicking below the scroll
 /// - Click at y=200 (outside scroll container) should NOT hit content
 #[test]
+#[serial]
 fn test_scroll_content_outside_viewport_not_clickable() {
     let tracker = ClickTracker::new();
 
@@ -512,6 +525,7 @@ fn test_scroll_content_outside_viewport_not_clickable() {
 /// Test that scrolled-out content (above viewport) cannot receive events.
 /// When we scroll down, content that was visible is now clipped at the top.
 #[test]
+#[serial]
 fn test_scrolled_out_content_top_not_clickable() {
     let tracker = ClickTracker::new();
 

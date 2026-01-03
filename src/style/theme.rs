@@ -336,7 +336,7 @@ pub fn item_selected_style() -> Style {
     Style::new().selected(|s| {
         s.with_theme(|s, t| {
             s.background(t.primary())
-                .color(t.bg_base)
+                .color(t.bg_base())
                 .hover(|s| s.background(t.primary_muted()))
         })
         .transition_background(Transition::linear(100.millis()))
@@ -578,7 +578,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
                 s.with_theme(|s, t| {
                     s.hover(|s| s.background(t.bg_elevated())).selected(|s| {
                         s.background(t.primary())
-                            .color(t.bg_base)
+                            .color(t.bg_base())
                             .hover(|s| s.background(t.primary_muted()))
                             .transition_background(Transition::linear(100.millis()))
                     })

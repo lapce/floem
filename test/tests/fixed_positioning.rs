@@ -10,6 +10,7 @@ use floem::HasViewId;
 use floem::headless::HeadlessHarness;
 use floem::view::ParentView;
 use floem::views::{Clip, Decorators, Empty, Overlay, Stack};
+use serial_test::serial;
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -18,6 +19,7 @@ use std::rc::Rc;
 // ============================================================================
 
 #[test]
+#[serial]
 fn test_fixed_element_fills_viewport() {
     // Test that a fixed element with inset(0) fills the entire viewport.
     //
@@ -48,6 +50,7 @@ fn test_fixed_element_fills_viewport() {
 }
 
 #[test]
+#[serial]
 fn test_fixed_element_ignores_parent_position() {
     // Test that a fixed element is positioned at viewport origin,
     // regardless of where its parent is positioned.
@@ -105,6 +108,7 @@ fn test_fixed_element_ignores_parent_position() {
 }
 
 #[test]
+#[serial]
 fn test_fixed_element_children_use_viewport_percentages() {
     // Test that children of a fixed element use viewport-relative percentages.
     //
@@ -148,6 +152,7 @@ fn test_fixed_element_children_use_viewport_percentages() {
 // ============================================================================
 
 #[test]
+#[serial]
 fn test_fixed_element_receives_events_at_viewport_position() {
     // Test that a fixed element receives events at its viewport-relative position,
     // not at a position relative to its DOM parent.
@@ -192,6 +197,7 @@ fn test_fixed_element_receives_events_at_viewport_position() {
 }
 
 #[test]
+#[serial]
 fn test_fixed_element_blocks_events_to_views_behind() {
     // Test that a fixed element blocks events to views behind it.
     //
@@ -237,6 +243,7 @@ fn test_fixed_element_blocks_events_to_views_behind() {
 // ============================================================================
 
 #[test]
+#[serial]
 fn test_fixed_element_escapes_parent_clip() {
     // Test that a fixed element inside a Clip parent still receives events
     // outside the clip bounds.
@@ -294,6 +301,7 @@ fn test_fixed_element_escapes_parent_clip() {
 // ============================================================================
 
 #[test]
+#[serial]
 fn test_hidden_fixed_element_does_not_block_events() {
     // Test that a hidden fixed element does not block events to views below.
     //
@@ -347,6 +355,7 @@ fn test_hidden_fixed_element_does_not_block_events() {
 // ============================================================================
 
 #[test]
+#[serial]
 fn test_fixed_element_in_paint_order() {
     // Test that a fixed element appears in the paint order.
 
@@ -368,6 +377,7 @@ fn test_fixed_element_in_paint_order() {
 }
 
 #[test]
+#[serial]
 fn test_fixed_element_painted_after_regular_views() {
     // Test that a fixed overlay element is painted after regular views.
     //
@@ -413,6 +423,7 @@ fn test_fixed_element_painted_after_regular_views() {
 // ============================================================================
 
 #[test]
+#[serial]
 fn test_fixed_element_fills_large_viewport() {
     // Test that a fixed element correctly fills a large viewport.
     // This verifies the fixed sizing works with different initial viewport sizes.
@@ -443,6 +454,7 @@ fn test_fixed_element_fills_large_viewport() {
 // ============================================================================
 
 #[test]
+#[serial]
 fn test_fixed_container_child_percentage_positioning() {
     // Test the dialog centering pattern:
     // - Fixed container fills viewport
@@ -536,6 +548,7 @@ fn test_fixed_container_child_percentage_positioning() {
 }
 
 #[test]
+#[serial]
 fn test_fixed_container_centered_child_receives_click() {
     // Test that a centered child inside a fixed container receives clicks
     // at the correct viewport-relative position.
@@ -591,6 +604,7 @@ fn test_fixed_container_centered_child_receives_click() {
 }
 
 #[test]
+#[serial]
 fn test_fixed_container_with_translate_centering() {
     // Test the complete dialog centering pattern with translate:
     // position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
@@ -675,6 +689,7 @@ fn test_fixed_container_with_translate_centering() {
 // ensuring fixed elements are positioned at the correct window coordinates.
 
 #[test]
+#[serial]
 fn test_fixed_element_window_origin() {
     // Test that a fixed element's window_origin is its Taffy layout position,
     // NOT offset by the parent's position.
@@ -743,6 +758,7 @@ fn test_fixed_element_window_origin() {
 }
 
 #[test]
+#[serial]
 fn test_fixed_element_with_inset_zero_window_origin() {
     // Test that a fixed element with inset(0) and size_full() has window_origin at (0, 0)
     // and fills the viewport.
@@ -805,6 +821,7 @@ fn test_fixed_element_with_inset_zero_window_origin() {
 }
 
 #[test]
+#[serial]
 fn test_non_fixed_element_window_origin_includes_parent() {
     // Verify that NON-fixed elements DO include parent position in window_origin.
     // This is the expected behavior for regular elements.
@@ -856,6 +873,7 @@ fn test_non_fixed_element_window_origin_includes_parent() {
 // the viewport origin, not offset by previous paint transforms.
 
 #[test]
+#[serial]
 fn test_fixed_overlay_child_paint_at_viewport_origin() {
     // Test that when an Overlay's CHILD is fixed-positioned (not the Overlay itself),
     // it still paints at the viewport origin.
@@ -902,6 +920,7 @@ fn test_fixed_overlay_child_paint_at_viewport_origin() {
 }
 
 #[test]
+#[serial]
 fn test_fixed_overlay_child_with_scroll_offset() {
     // Test that fixed positioning works correctly when inside a scrolled container.
     // This simulates the Dialog inside Scroll scenario from the showcase.
@@ -961,6 +980,7 @@ fn test_fixed_overlay_child_with_scroll_offset() {
 }
 
 #[test]
+#[serial]
 fn test_single_fixed_overlay_receives_click() {
     // Simplified test: single fixed overlay inside an offset container.
     // The fixed element should receive clicks at its viewport position,
@@ -999,6 +1019,7 @@ fn test_single_fixed_overlay_receives_click() {
 }
 
 #[test]
+#[serial]
 fn test_two_fixed_overlays_click_second() {
     // Test that the second fixed overlay can receive clicks when there are two overlays.
     // This verifies that clicking on the second overlay works (simpler case).
@@ -1060,6 +1081,7 @@ fn test_two_fixed_overlays_click_second() {
 }
 
 #[test]
+#[serial]
 fn test_fixed_overlay_with_non_fixed_sibling() {
     // Test that a fixed overlay works when there's a sibling overlay without fixed positioning.
     // This helps diagnose if the issue is with fixed positioning or overlay ordering.
@@ -1106,6 +1128,7 @@ fn test_fixed_overlay_with_non_fixed_sibling() {
 }
 
 #[test]
+#[serial]
 fn test_two_fixed_overlays_non_overlapping() {
     // Test that multiple fixed overlays with non-overlapping regions both receive clicks
     // at their respective positions. Each overlay has a fixed child at a different
@@ -1175,6 +1198,7 @@ fn test_two_fixed_overlays_non_overlapping() {
 // the window/viewport size changes.
 
 #[test]
+#[serial]
 fn test_fixed_element_resizes_with_window() {
     // Test that a fixed element with inset(0) resizes when the window resizes.
     //
@@ -1233,6 +1257,7 @@ fn test_fixed_element_resizes_with_window() {
 }
 
 #[test]
+#[serial]
 fn test_fixed_element_with_size_full_resizes() {
     // Test that a fixed element with size_full() resizes when the window resizes.
     // This is the pattern used by Dialog: fixed().inset_0().size_full()
@@ -1278,6 +1303,7 @@ fn test_fixed_element_with_size_full_resizes() {
 }
 
 #[test]
+#[serial]
 fn test_fixed_element_percentage_children_resize() {
     // Test that children using percentage positioning within a fixed container
     // update their positions when the window resizes.
@@ -1349,6 +1375,7 @@ fn test_fixed_element_percentage_children_resize() {
 /// Test that when a view's style changes from fixed to non-fixed,
 /// it is properly unregistered and no longer resizes with the window.
 #[test]
+#[serial]
 fn test_fixed_element_unregisters_when_style_changes() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 
@@ -1431,6 +1458,7 @@ fn test_fixed_element_unregisters_when_style_changes() {
 
 /// Test that switching from non-fixed to fixed properly registers the element.
 #[test]
+#[serial]
 fn test_element_registers_when_becoming_fixed() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 
