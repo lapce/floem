@@ -122,10 +122,18 @@ pub struct WindowState {
     /// This is used as the root style context for all views when no parent exists.
     /// Contains styling like `.class(ListClass, |s| { s.class(ListItemClass, ...) })`.
     pub(crate) default_theme: Rc<Style>,
+
+    /// Cached inherited props from default_theme for root views.
+    /// This avoids recomputing the inherited props from default_theme on every StyleCx::new().
+    /// Updated when default_theme changes (on theme switch).
+    pub(crate) default_theme_inherited: Rc<Style>,
 }
 
 impl WindowState {
     pub fn new(root_view_id: ViewId, os_theme: Option<Theme>) -> Self {
+        let theme = default_theme(os_theme.unwrap_or(Theme::Light));
+        let inherited = Self::extract_inherited_props(&theme);
+
         Self {
             root: None,
             root_view_id,
@@ -162,13 +170,27 @@ impl WindowState {
             style_cache: StyleCache::new(),
             pending_child_change: FxHashMap::default(),
             pending_global_recalc: StyleRecalcChange::NONE,
-            default_theme: Rc::new(default_theme(os_theme.unwrap_or(Theme::Light))),
+            default_theme: Rc::new(theme),
+            default_theme_inherited: Rc::new(inherited),
         }
+    }
+
+    /// Extract inherited props from a theme style for root view initialization.
+    fn extract_inherited_props(theme: &Style) -> Style {
+        let mut inherited_style = Style::new();
+        if theme.any_inherited() {
+            let inherited_props = theme.map.iter().filter(|(k, _)| k.inherited());
+            inherited_style.apply_iter(inherited_props);
+        }
+        inherited_style
     }
 
     /// Update the default theme when the OS theme changes.
     pub(crate) fn update_default_theme(&mut self, theme: Theme) {
-        self.default_theme = Rc::new(default_theme(theme));
+        let new_theme = default_theme(theme);
+        let inherited = Self::extract_inherited_props(&new_theme);
+        self.default_theme = Rc::new(new_theme);
+        self.default_theme_inherited = Rc::new(inherited);
     }
 
     /// Mark that dark mode changed, requiring style recalc with appropriate flags.

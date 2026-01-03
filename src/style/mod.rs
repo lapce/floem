@@ -558,10 +558,12 @@ impl Style {
     /// This is achieved by applying context class styles first, then applying
     /// the view's own styles on top.
     ///
-    /// Context mappings (from `with_context`/`with_theme`) are NOT propagated to
-    /// descendants because they're meant to be evaluated for the view that defined
-    /// them, not for child views. Including them would cause the closures to
-    /// regenerate styles that override the child's own explicit styles.
+    /// Context mappings (from `with_context`/`with_theme`) from class styles are
+    /// merged with the view's own context mappings. Class mappings run first (as
+    /// defaults), then view's own mappings run (allowing overrides). This ensures
+    /// that theme class styles can use `with_context` for context-aware styling
+    /// (like toggle button height based on font size) while still allowing views
+    /// to override via their own `with_context` closures.
     ///
     /// The returned boolean is true if a nested map was applied.
     pub fn apply_classes_from_context(
@@ -579,15 +581,37 @@ impl Style {
         // Class styling from ancestors (like parent's `.class(ButtonClass, ...)`)
         // overrides the view's own base styles, similar to CSS where class rules
         // from stylesheets override element defaults.
-        // Strip context mappings from class styles since they're meant for the
-        // defining view, not descendants.
+        //
+        // Context mappings (from `with_context`/`with_theme`) from class styles are
+        // merged with the view's own context mappings. Class mappings run first (as
+        // defaults), then view's own mappings run (allowing overrides).
         for class in classes {
             if let Some(map) = class_context.get_nested_map(class.key) {
                 let mut class_style = map.clone();
-                // Remove context mappings so they don't override child's own styles
-                class_style.map.remove(&context_mappings_key);
+                // Extract class style's context mappings before applying other props
+                let class_ctx_mappings = class_style.map.remove(&context_mappings_key);
                 self.apply_mut(class_style);
                 changed = true;
+
+                // Merge context mappings with correct order:
+                // class mappings FIRST (defaults), view's SECOND (overrides)
+                if let Some(class_mappings_rc) = class_ctx_mappings {
+                    let class_mappings =
+                        class_mappings_rc.downcast_ref::<ContextMappings>().unwrap();
+
+                    match self.map.entry(context_mappings_key) {
+                        Entry::Occupied(mut e) => {
+                            let view_mappings = e.get().downcast_ref::<ContextMappings>().unwrap();
+                            // Class first, then view's
+                            let mut merged: Vec<_> = (*class_mappings.0).clone();
+                            merged.extend(view_mappings.0.iter().cloned());
+                            *e.get_mut() = Rc::new(ContextMappings(Rc::new(merged)));
+                        }
+                        Entry::Vacant(e) => {
+                            e.insert(class_mappings_rc);
+                        }
+                    }
+                }
             }
         }
 
@@ -779,7 +803,10 @@ impl Style {
         BuiltinStyle { style: self }
     }
 
-    fn apply_iter<'a>(&mut self, iter: impl Iterator<Item = (&'a StyleKey, &'a Rc<dyn Any>)>) {
+    pub(crate) fn apply_iter<'a>(
+        &mut self,
+        iter: impl Iterator<Item = (&'a StyleKey, &'a Rc<dyn Any>)>,
+    ) {
         for (k, v) in iter {
             match k.info {
                 StyleKeyInfo::Class(..) | StyleKeyInfo::Selector(..) => {

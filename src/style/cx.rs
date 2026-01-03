@@ -120,10 +120,13 @@ impl<'a> StyleCx<'a> {
                 parent_interaction.selected,
             )
         } else {
-            // Root view: inherited starts empty, class context starts from default theme
-            // The default theme contains class definitions like `.class(ListClass, ...)`
+            // Root view: use cached inherited props from default theme.
+            // The default theme sets props like font_size(14.0) at root level which should
+            // be accessible via with_context in all descendant views.
+            // We use the pre-computed cache to avoid iterating through the theme map
+            // on every StyleCx::new() call.
             (
-                Rc::new(Style::new()),
+                window_state.default_theme_inherited.clone(),
                 window_state.default_theme.clone(),
                 false,
                 false,
