@@ -152,8 +152,7 @@ fn test_list_default_theme_selected_style() {
 
     // We'll track the list item wrapper IDs (not the labels inside)
     // by checking the list's children after creation
-    let list_view = list(items.into_iter().map(|item| Label::new(item)))
-        .style(|s| s.width(200.0).height(120.0));
+    let list_view = list(items.into_iter().map(Label::new)).style(|s| s.width(200.0).height(120.0));
 
     let list_id = list_view.view_id();
     let _harness = HeadlessHarness::new_with_size(list_view, 200.0, 120.0);

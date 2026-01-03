@@ -59,8 +59,7 @@ fn test_parent_class_styling_flows_to_child() {
 fn test_theme_list_class_selected_styling() {
     let items = vec!["A", "B", "C"];
 
-    let list_view = list(items.into_iter().map(|item| Label::new(item)))
-        .style(|s| s.width(200.0).height(120.0));
+    let list_view = list(items.into_iter().map(Label::new)).style(|s| s.width(200.0).height(120.0));
 
     let list_id = list_view.view_id();
     let _harness = HeadlessHarness::new_with_size(list_view, 200.0, 120.0);
@@ -99,8 +98,7 @@ fn test_theme_list_class_selected_styling() {
 fn test_theme_list_item_hover_styling() {
     let items = vec!["Hover", "Me"];
 
-    let list_view =
-        list(items.into_iter().map(|item| Label::new(item))).style(|s| s.width(200.0).height(80.0));
+    let list_view = list(items.into_iter().map(Label::new)).style(|s| s.width(200.0).height(80.0));
 
     let list_id = list_view.view_id();
     let mut harness = HeadlessHarness::new_with_size(list_view, 200.0, 80.0);
