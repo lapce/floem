@@ -51,6 +51,7 @@ use crate::{
     theme::default_theme,
     view::ChangeFlags,
     view::ViewId,
+    view::stacking::clear_all_stacking_caches,
     view::{IntoView, View},
 };
 
@@ -1326,6 +1327,11 @@ impl WindowHandle {
 
         // Remove all views starting from the root
         self.window_state.remove_view(self.id);
+
+        // Clear all caches that might hold stale ViewId references.
+        // This is crucial for test isolation when tests run on the same thread.
+        clear_hit_test_cache();
+        clear_all_stacking_caches();
 
         // Remove the window from the global window tracking map.
         // This is crucial for test isolation - if not done, the old root ViewId

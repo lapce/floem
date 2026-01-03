@@ -21,6 +21,7 @@ use floem::prelude::*;
 use floem::style::{FontSize, Style};
 use floem::views::toggle_button;
 use floem_test::prelude::*;
+use serial_test::serial;
 
 /// Helper extension trait for testing with FontSize context.
 trait FontSizeContextExt {
@@ -47,6 +48,7 @@ impl FontSizeContextExt for Style {
 /// KNOWN ISSUE: This test demonstrates the bug where font_size from the default
 /// theme is not accessible via with_context.
 #[test]
+#[serial]
 fn test_font_size_from_default_theme() {
     // View that uses font_size from context to set its height
     let view = Empty::new().style(|s| {
@@ -90,6 +92,7 @@ fn test_font_size_from_default_theme() {
 /// This should work because the parent sets font_size directly, which then
 /// propagates to the inherited context for children.
 #[test]
+#[serial]
 fn test_font_size_from_explicit_parent() {
     // Child uses font_size from context
     let child = Empty::new().style(|s| {
@@ -121,6 +124,7 @@ fn test_font_size_from_explicit_parent() {
 
 /// Test deeply nested view receiving font_size from ancestor.
 #[test]
+#[serial]
 fn test_font_size_deeply_nested() {
     // Grandchild uses font_size from context
     let grandchild = Empty::new().style(|s| {
@@ -162,6 +166,7 @@ fn test_font_size_deeply_nested() {
 /// If font_size is not accessible, the height will be derived from aspect_ratio
 /// and the available width, causing the toggle to expand incorrectly.
 #[test]
+#[serial]
 fn test_toggle_button_height_from_theme_font_size() {
     let toggle = toggle_button(|| true).style(|s| s.width(50.0));
     let toggle_id = toggle.view_id();
@@ -201,6 +206,7 @@ fn test_toggle_button_height_from_theme_font_size() {
 ///
 /// This is the workaround scenario where font_size is explicitly set.
 #[test]
+#[serial]
 fn test_toggle_button_height_with_explicit_font_size() {
     let toggle = toggle_button(|| true);
     let toggle_id = toggle.view_id();
@@ -231,6 +237,7 @@ fn test_toggle_button_height_with_explicit_font_size() {
 ///
 /// The original issue was toggle buttons expanding to fill the grid cell.
 #[test]
+#[serial]
 fn test_toggle_button_in_grid() {
     use floem::taffy::prelude::{auto, fr};
 
@@ -270,6 +277,7 @@ fn test_toggle_button_in_grid() {
 
 /// Test toggle button in grid with explicit parent font_size (workaround).
 #[test]
+#[serial]
 fn test_toggle_button_in_grid_with_font_size() {
     use floem::taffy::prelude::{auto, fr};
 
@@ -315,6 +323,7 @@ fn test_toggle_button_in_grid_with_font_size() {
 ///
 /// This diagnostic test helps understand why font_size might not be accessible.
 #[test]
+#[serial]
 fn test_inherited_context_contents() {
     use std::cell::Cell;
     use std::rc::Rc;
@@ -353,6 +362,7 @@ fn test_inherited_context_contents() {
 
 /// Test with explicit font_size to verify with_context mechanism works.
 #[test]
+#[serial]
 fn test_with_context_works_when_font_size_is_explicit() {
     use std::cell::Cell;
     use std::rc::Rc;
@@ -407,6 +417,7 @@ fn test_with_context_works_when_font_size_is_explicit() {
 /// `.class(ToggleButtonClass, |_| toggle_button_style)`.
 /// When the class style is applied, the context mapping is stripped.
 #[test]
+#[serial]
 fn test_class_style_context_mappings_stripped() {
     // Create a custom class and define a style with with_context for it
     floem::style_class!(TestContextClass);
@@ -452,6 +463,7 @@ fn test_class_style_context_mappings_stripped() {
 ///
 /// This should pass because the view's own context mappings are not stripped.
 #[test]
+#[serial]
 fn test_view_own_context_mappings_work() {
     // View with its own with_context (not from a class)
     let child = Empty::new().style(|s| {

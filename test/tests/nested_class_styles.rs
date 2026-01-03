@@ -35,6 +35,7 @@ use floem::peniko::Color;
 use floem::prelude::*;
 use floem::views::{Container, Empty};
 use floem_test::prelude::*;
+use serial_test::serial;
 
 // =============================================================================
 // Test Classes
@@ -50,15 +51,15 @@ floem::style_class!(pub ItemClass);
 
 /// Test that a view receives class styles from its direct parent's class definition.
 #[test]
+#[serial]
 fn test_direct_nested_class_style() {
     // Child with ItemClass
     let child = Empty::new().class(ItemClass).style(|s| s.width(50.0));
     let child_id = child.view_id();
 
     // Parent defines ItemClass style
-    let parent = Container::new(child).style(|s| {
-        s.size(200.0, 200.0).class(ItemClass, |s| s.height(30.0))
-    });
+    let parent =
+        Container::new(child).style(|s| s.size(200.0, 200.0).class(ItemClass, |s| s.height(30.0)));
 
     let mut harness = HeadlessHarness::new_with_size(parent, 200.0, 200.0);
     harness.rebuild();
@@ -77,6 +78,7 @@ fn test_direct_nested_class_style() {
 /// Parent has OuterClass.
 /// Child has ItemClass and should receive the nested style.
 #[test]
+#[serial]
 fn test_verify_nested_class_propagation() {
     // Child with ItemClass
     let child = Empty::new().class(ItemClass).style(|s| s.width(50.0));
@@ -117,13 +119,16 @@ fn test_verify_nested_class_propagation() {
 
 /// Test nested class styles: OuterClass defines style for ItemClass.
 #[test]
+#[serial]
 fn test_outer_class_defines_item_style() {
     // Item with ItemClass
     let item = Empty::new().class(ItemClass).style(|s| s.width(50.0));
     let item_id = item.view_id();
 
     // Container with OuterClass that defines ItemClass style
-    let outer = Container::new(item).class(OuterClass).style(|s| s.size(200.0, 200.0));
+    let outer = Container::new(item)
+        .class(OuterClass)
+        .style(|s| s.size(200.0, 200.0));
 
     // Root defines OuterClass with nested ItemClass style
     let root = Container::new(outer).style(|s| {
@@ -152,16 +157,21 @@ fn test_outer_class_defines_item_style() {
 ///
 /// This follows CSS semantics where more specific selectors take precedence.
 #[test]
+#[serial]
 fn test_multiple_nested_paths_specificity() {
     // Item with ItemClass
     let item = Empty::new().class(ItemClass).style(|s| s.width(50.0));
     let item_id = item.view_id();
 
     // Inner container with InnerClass
-    let inner = Container::new(item).class(InnerClass).style(|s| s.size(100.0, 100.0));
+    let inner = Container::new(item)
+        .class(InnerClass)
+        .style(|s| s.size(100.0, 100.0));
 
     // Outer container with OuterClass
-    let outer = Container::new(inner).class(OuterClass).style(|s| s.size(200.0, 200.0));
+    let outer = Container::new(inner)
+        .class(OuterClass)
+        .style(|s| s.size(200.0, 200.0));
 
     // Root defines BOTH:
     // 1. OuterClass -> ItemClass (general path)
@@ -203,16 +213,21 @@ fn test_multiple_nested_paths_specificity() {
 /// they ALL apply (CSS-like behavior). This is correct - non-conflicting
 /// properties from multiple matching selectors accumulate.
 #[test]
+#[serial]
 fn test_css_like_padding_accumulation() {
     // Item with ItemClass
     let item = Empty::new().class(ItemClass).style(|s| s.size(50.0, 20.0));
     let item_id = item.view_id();
 
     // Inner container with InnerClass
-    let inner = Container::new(item).class(InnerClass).style(|s| s.size(100.0, 100.0));
+    let inner = Container::new(item)
+        .class(InnerClass)
+        .style(|s| s.size(100.0, 100.0));
 
     // Outer container with OuterClass
-    let outer = Container::new(inner).class(OuterClass).style(|s| s.size(200.0, 200.0));
+    let outer = Container::new(inner)
+        .class(OuterClass)
+        .style(|s| s.size(200.0, 200.0));
 
     // Root defines:
     // 1. OuterClass -> ItemClass with padding_left(10)
@@ -250,13 +265,16 @@ fn test_css_like_padding_accumulation() {
 /// When multiple class paths define with_context closures, they ALL run
 /// (CSS-like accumulation). For the same property, the closer ancestor wins.
 #[test]
+#[serial]
 fn test_context_mappings_from_multiple_paths() {
     // Item with ItemClass that will receive context-based styling
     let item = Empty::new().class(ItemClass).style(|s| s.width(50.0));
     let item_id = item.view_id();
 
     // Inner container with InnerClass
-    let inner = Container::new(item).class(InnerClass).style(|s| s.size(100.0, 100.0));
+    let inner = Container::new(item)
+        .class(InnerClass)
+        .style(|s| s.size(100.0, 100.0));
 
     // Outer container with OuterClass
     let outer = Container::new(inner)
@@ -318,6 +336,7 @@ fn test_context_mappings_from_multiple_paths() {
 /// In CSS terms: when an element matches multiple selectors, all rules apply.
 /// For conflicting properties, the closer ancestor (higher specificity) wins.
 #[test]
+#[serial]
 fn test_css_like_style_accumulation_from_multiple_paths() {
     floem::style_class!(ListClass);
     floem::style_class!(ListItemClass);
@@ -325,9 +344,7 @@ fn test_css_like_style_accumulation_from_multiple_paths() {
     floem::style_class!(ScrollClass);
 
     // List item (like items in a dropdown list)
-    let item = Empty::new()
-        .class(ListItemClass)
-        .style(|s| s.width(100.0));
+    let item = Empty::new().class(ListItemClass).style(|s| s.width(100.0));
     let item_id = item.view_id();
 
     // List container - has ListClass (this is key!)
@@ -411,6 +428,7 @@ fn test_css_like_style_accumulation_from_multiple_paths() {
 /// styles from BOTH paths. This is correct CSS-like behavior - theme authors
 /// should design class styles to either not overlap or explicitly override.
 #[test]
+#[serial]
 fn test_with_context_from_multiple_class_paths() {
     use std::cell::Cell;
     use std::rc::Rc;
@@ -428,9 +446,7 @@ fn test_with_context_from_multiple_class_paths() {
     let dropdown_path_clone = dropdown_path_ran.clone();
 
     // List item
-    let item = Empty::new()
-        .class(ListItemClass)
-        .style(|s| s.width(100.0));
+    let item = Empty::new().class(ListItemClass).style(|s| s.width(100.0));
     let item_id = item.view_id();
 
     // List container
@@ -528,6 +544,7 @@ fn test_with_context_from_multiple_class_paths() {
 /// When different properties are set by different class paths, they ALL apply.
 /// This is correct CSS-like behavior - non-conflicting properties accumulate.
 #[test]
+#[serial]
 fn test_css_like_different_properties_accumulate() {
     use std::cell::Cell;
     use std::rc::Rc;
@@ -625,6 +642,7 @@ fn test_css_like_different_properties_accumulate() {
 
 /// Test that ListItemClass inside ListClass gets the correct style.
 #[test]
+#[serial]
 fn test_list_item_inside_list_class() {
     floem::style_class!(ListClass);
     floem::style_class!(ListItemClass);
@@ -670,15 +688,15 @@ fn test_list_item_inside_list_class() {
 
 /// Test that class styles only apply to views with matching classes.
 #[test]
+#[serial]
 fn test_class_style_requires_matching_class() {
     // Item WITHOUT ItemClass
     let item = Empty::new().style(|s| s.size(50.0, 20.0));
     let item_id = item.view_id();
 
     // Parent defines ItemClass style
-    let parent = Container::new(item).style(|s| {
-        s.size(200.0, 200.0).class(ItemClass, |s| s.height(100.0))
-    });
+    let parent =
+        Container::new(item).style(|s| s.size(200.0, 200.0).class(ItemClass, |s| s.height(100.0)));
 
     let mut harness = HeadlessHarness::new_with_size(parent, 200.0, 200.0);
     harness.rebuild();
@@ -695,6 +713,7 @@ fn test_class_style_requires_matching_class() {
 
 /// Test deeply nested class style inheritance.
 #[test]
+#[serial]
 fn test_deeply_nested_class_inheritance() {
     floem::style_class!(Level1);
     floem::style_class!(Level2);
@@ -704,9 +723,15 @@ fn test_deeply_nested_class_inheritance() {
     let target = Empty::new().class(TargetClass).style(|s| s.width(50.0));
     let target_id = target.view_id();
 
-    let l3 = Container::new(target).class(Level3).style(|s| s.size(80.0, 80.0));
-    let l2 = Container::new(l3).class(Level2).style(|s| s.size(120.0, 120.0));
-    let l1 = Container::new(l2).class(Level1).style(|s| s.size(160.0, 160.0));
+    let l3 = Container::new(target)
+        .class(Level3)
+        .style(|s| s.size(80.0, 80.0));
+    let l2 = Container::new(l3)
+        .class(Level2)
+        .style(|s| s.size(120.0, 120.0));
+    let l1 = Container::new(l2)
+        .class(Level1)
+        .style(|s| s.size(160.0, 160.0));
 
     // Define deeply nested class style
     let root = Container::new(l1).style(|s| {
