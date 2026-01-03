@@ -731,7 +731,10 @@ mod tests {
         // key1 should still hit with its original value
         let result = cache.get(&key1, &parent_style);
         assert!(result.is_some(), "key1 should still hit");
-        assert!(!result.unwrap().1, "classes_applied should be false for key1");
+        assert!(
+            !result.unwrap().1,
+            "classes_applied should be false for key1"
+        );
     }
 
     #[test]
@@ -818,8 +821,7 @@ mod tests {
         let initial_hash = class_context.content_hash();
 
         // Create a style with class maps (like parent's direct style would have)
-        let direct_style = Style::new()
-            .class(TestClass2, |s| s.background(css::GREEN));
+        let direct_style = Style::new().class(TestClass2, |s| s.background(css::GREEN));
 
         // Apply class maps to class_context (simulating what cx.rs does)
         Style::apply_only_class_maps(&mut class_context, &direct_style);

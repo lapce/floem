@@ -326,7 +326,6 @@ impl<'a> StyleCx<'a> {
         // via Rc::make_mut will clone the inner data and change the pointer.
         let class_context_changed = Rc::as_ptr(&self.class_context) != old_class_context_ptr;
 
-
         // ─────────────────────────────────────────────────────────────────────
         // Phase 6: Propagate changes to children if needed
         // ─────────────────────────────────────────────────────────────────────

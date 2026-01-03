@@ -27,9 +27,8 @@ fn test_parent_class_styling_flows_to_child() {
     let child_id = child.view_id();
 
     let parent = Container::new(child).style(|s| {
-        s.size(100.0, 100.0).class(TestChildClass, |s| {
-            s.background(palette::css::RED)
-        })
+        s.size(100.0, 100.0)
+            .class(TestChildClass, |s| s.background(palette::css::RED))
     });
 
     let _harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
@@ -100,8 +99,8 @@ fn test_theme_list_class_selected_styling() {
 fn test_theme_list_item_hover_styling() {
     let items = vec!["Hover", "Me"];
 
-    let list_view = list(items.into_iter().map(|item| Label::new(item)))
-        .style(|s| s.width(200.0).height(80.0));
+    let list_view =
+        list(items.into_iter().map(|item| Label::new(item))).style(|s| s.width(200.0).height(80.0));
 
     let list_id = list_view.view_id();
     let mut harness = HeadlessHarness::new_with_size(list_view, 200.0, 80.0);
@@ -140,17 +139,14 @@ fn test_theme_list_item_hover_styling() {
 fn test_deeply_nested_class_styling() {
     floem::style_class!(DeepClass);
 
-    let grandchild = Empty::new()
-        .class(DeepClass)
-        .style(|s| s.size(20.0, 20.0));
+    let grandchild = Empty::new().class(DeepClass).style(|s| s.size(20.0, 20.0));
     let grandchild_id = grandchild.view_id();
 
     let child = Container::new(grandchild).style(|s| s.size(50.0, 50.0));
 
     let parent = Container::new(child).style(|s| {
-        s.size(100.0, 100.0).class(DeepClass, |s| {
-            s.background(palette::css::PURPLE)
-        })
+        s.size(100.0, 100.0)
+            .class(DeepClass, |s| s.background(palette::css::PURPLE))
     });
 
     let _harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
@@ -203,13 +199,11 @@ fn test_child_style_overrides_parent_class_style() {
     floem::style_class!(OverrideClass);
 
     // Child has its own .selected() styling that should override parent's class styling
-    let child = Empty::new()
-        .class(OverrideClass)
-        .style(|s| {
-            s.size(50.0, 50.0)
-                .set_selected(true)
-                .selected(|s| s.background(palette::css::BLUE)) // Child's own selected styling
-        });
+    let child = Empty::new().class(OverrideClass).style(|s| {
+        s.size(50.0, 50.0)
+            .set_selected(true)
+            .selected(|s| s.background(palette::css::BLUE)) // Child's own selected styling
+    });
     let child_id = child.view_id();
 
     // Parent defines class styling for OverrideClass with different selected color
@@ -231,4 +225,3 @@ fn test_child_style_overrides_parent_class_style() {
         bg
     );
 }
-

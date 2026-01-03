@@ -81,9 +81,7 @@ fn test_class_on_sibling_doesnt_affect_inherited() {
     // Two siblings: one uses class, one uses inherited
     // They should be independent
 
-    let class_child = Empty::new()
-        .class(TestClass)
-        .style(|s| s.size(50.0, 50.0));
+    let class_child = Empty::new().class(TestClass).style(|s| s.size(50.0, 50.0));
     let class_child_id = class_child.view_id();
 
     let inherited_child = Empty::new().style(|s| {
@@ -129,9 +127,7 @@ fn test_inherited_change_doesnt_affect_class_child() {
     let color_signal = RwSignal::new(palette::css::RED);
 
     // Child uses ONLY class styling, not inherited
-    let class_child = Empty::new()
-        .class(TestClass)
-        .style(|s| s.size(50.0, 50.0));
+    let class_child = Empty::new().class(TestClass).style(|s| s.size(50.0, 50.0));
     let class_child_id = class_child.view_id();
 
     let parent = Container::new(class_child).style(move |s| {
@@ -183,9 +179,7 @@ fn test_both_inherited_and_class_change_together() {
     let inherited_child_id = inherited_child.view_id();
 
     // Child uses class
-    let class_child = Empty::new()
-        .class(TestClass)
-        .style(|s| s.size(50.0, 50.0));
+    let class_child = Empty::new().class(TestClass).style(|s| s.size(50.0, 50.0));
     let class_child_id = class_child.view_id();
 
     let parent = Stack::new((inherited_child, class_child)).style(move |s| {
@@ -287,9 +281,7 @@ fn test_inherited_only_no_class() {
 /// Test class styling with no inherited props.
 #[test]
 fn test_class_only_no_inherited() {
-    let child = Empty::new()
-        .class(TestClass)
-        .style(|s| s.size(50.0, 50.0));
+    let child = Empty::new().class(TestClass).style(|s| s.size(50.0, 50.0));
     let child_id = child.view_id();
 
     let parent = Container::new(child).style(|s| {
@@ -325,9 +317,7 @@ fn test_deep_nesting_mixed_inherited_and_class() {
     });
     let inherited_leaf_id = inherited_leaf.view_id();
 
-    let class_leaf = Empty::new()
-        .class(TestClass)
-        .style(|s| s.size(20.0, 20.0));
+    let class_leaf = Empty::new().class(TestClass).style(|s| s.size(20.0, 20.0));
     let class_leaf_id = class_leaf.view_id();
 
     let level2 = Stack::new((inherited_leaf, class_leaf)).style(|s| s.size(50.0, 50.0));
@@ -365,13 +355,11 @@ fn test_view_uses_both_inherited_and_class() {
     // Child uses inherited for one property, class provides another
     // They should not conflict
 
-    let child = Empty::new()
-        .class(TestClass)
-        .style(|s| {
-            s.size(50.0, 50.0)
-                // Use inherited color for border
-                .with_test_color(|s, color| s.border_color(*color).border(2.0))
-        });
+    let child = Empty::new().class(TestClass).style(|s| {
+        s.size(50.0, 50.0)
+            // Use inherited color for border
+            .with_test_color(|s, color| s.border_color(*color).border(2.0))
+    });
     let child_id = child.view_id();
 
     let parent = Container::new(child).style(|s| {

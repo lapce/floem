@@ -21,7 +21,10 @@ use crate::{
     event::{Event, EventListener, clear_hit_test_cache},
     inspector::CaptureState,
     layout::responsive::{GridBreakpoints, ScreenSizeBp},
-    style::{CursorStyle, Style, StyleCache, StyleSelector, recalc::StyleRecalcChange, theme::default_theme},
+    style::{
+        CursorStyle, Style, StyleCache, StyleSelector, recalc::StyleRecalcChange,
+        theme::default_theme,
+    },
     view::VIEW_STORAGE,
     view::ViewId,
 };

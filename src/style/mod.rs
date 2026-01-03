@@ -788,29 +788,30 @@ impl Style {
                         self.has_class_maps = true;
                     }
                     match self.map.entry(*k) {
-                    Entry::Occupied(mut e) => {
-                        // We need to merge the new map with the existing map.
+                        Entry::Occupied(mut e) => {
+                            // We need to merge the new map with the existing map.
 
-                        let v = v.downcast_ref::<Style>().unwrap();
-                        match Rc::get_mut(e.get_mut()) {
-                            Some(current) => {
-                                current
-                                    .downcast_mut::<Style>()
-                                    .unwrap()
-                                    .apply_mut(v.clone());
-                            }
-                            None => {
-                                let mut current =
-                                    e.get_mut().downcast_ref::<Style>().unwrap().clone();
-                                current.apply_mut(v.clone());
-                                *e.get_mut() = Rc::new(current);
+                            let v = v.downcast_ref::<Style>().unwrap();
+                            match Rc::get_mut(e.get_mut()) {
+                                Some(current) => {
+                                    current
+                                        .downcast_mut::<Style>()
+                                        .unwrap()
+                                        .apply_mut(v.clone());
+                                }
+                                None => {
+                                    let mut current =
+                                        e.get_mut().downcast_ref::<Style>().unwrap().clone();
+                                    current.apply_mut(v.clone());
+                                    *e.get_mut() = Rc::new(current);
+                                }
                             }
                         }
+                        Entry::Vacant(e) => {
+                            e.insert(v.clone());
+                        }
                     }
-                    Entry::Vacant(e) => {
-                        e.insert(v.clone());
-                    }
-                }}
+                }
                 StyleKeyInfo::ContextMappings => match self.map.entry(*k) {
                     Entry::Occupied(mut e) => {
                         // Merge the new ContextMappings with existing ones
