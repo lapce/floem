@@ -641,16 +641,17 @@ fn test_css_like_different_properties_accumulate() {
 }
 
 /// Test that ListItemClass inside ListClass gets the correct style.
+///
+/// CSS-like semantics: class styling applies for properties not set inline.
+/// The item sets width inline, but height comes from class styling.
 #[test]
 #[serial]
 fn test_list_item_inside_list_class() {
     floem::style_class!(ListClass);
     floem::style_class!(ListItemClass);
 
-    // List item
-    let item = Empty::new()
-        .class(ListItemClass)
-        .style(|s| s.width(100.0).height(20.0));
+    // List item - sets width inline, but NOT height (will come from class)
+    let item = Empty::new().class(ListItemClass).style(|s| s.width(100.0));
     let item_id = item.view_id();
 
     // List container
@@ -675,9 +676,10 @@ fn test_list_item_inside_list_class() {
         layout.size.width, layout.size.height
     );
 
+    // Height comes from class styling (35.0) since item didn't set height inline
     assert!(
         (layout.size.height - 35.0).abs() < 0.1,
-        "Item inside ListClass should get height=35, got {}",
+        "Item inside ListClass should get height=35 from class styling, got {}",
         layout.size.height
     );
 }

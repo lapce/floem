@@ -10,12 +10,14 @@ use floem::prelude::*;
 use floem::style::Background;
 use floem::views::list;
 use floem_test::prelude::*;
+use serial_test::serial;
 
 /// Test that list items have correct selected styling.
 ///
 /// Note: The list view starts with index 0 selected by default.
 /// This tests that selection styling is properly applied.
 #[test]
+#[serial]
 fn test_list_item_selected_style_on_click() {
     let items = vec!["Item 1", "Item 2", "Item 3"];
 
@@ -86,6 +88,7 @@ fn test_list_item_selected_style_on_click() {
 
 /// Test that selecting a different item removes selected style from the previous one.
 #[test]
+#[serial]
 fn test_list_item_selection_change() {
     let items = vec!["A", "B", "C"];
 
@@ -147,6 +150,7 @@ fn test_list_item_selection_change() {
 /// The default theme defines selected styling for ListItemClass with
 /// a primary background color. This test verifies that styling is applied.
 #[test]
+#[serial]
 fn test_list_default_theme_selected_style() {
     let items = vec!["One", "Two", "Three"];
 

@@ -567,7 +567,7 @@ impl Style {
     ///
     /// The returned boolean is true if a nested map was applied.
     pub fn apply_classes_from_context(
-        mut self,
+        self,
         classes: &[StyleClassRef],
         class_context: &std::rc::Rc<Style>,
     ) -> (Style, bool) {
@@ -577,45 +577,85 @@ impl Style {
             info: &CONTEXT_MAPPINGS_INFO,
         };
 
-        // Apply class styles from class_context ON TOP of self.
-        // Class styling from ancestors (like parent's `.class(ButtonClass, ...)`)
-        // overrides the view's own base styles, similar to CSS where class rules
-        // from stylesheets override element defaults.
+        // CSS-like specificity: inline styles (the view's own styles) have higher
+        // specificity than class styles from ancestors. We achieve this by:
+        // 1. Building up class styles as a base
+        // 2. Applying the view's own styles on top
         //
         // Context mappings (from `with_context`/`with_theme`) from class styles are
         // merged with the view's own context mappings. Class mappings run first (as
         // defaults), then view's own mappings run (allowing overrides).
+
+        // Save the view's own styles and context mappings
+        let view_style = self;
+        let view_ctx_mappings = view_style.map.get(&context_mappings_key).cloned();
+
+        // Start with an empty style and build up from class styles
+        let mut result = Style::new();
+        let mut all_class_mappings: Vec<ContextMapFn> = Vec::new();
+
         for class in classes {
             if let Some(map) = class_context.get_nested_map(class.key) {
                 let mut class_style = map.clone();
                 // Extract class style's context mappings before applying other props
-                let class_ctx_mappings = class_style.map.remove(&context_mappings_key);
-                self.apply_mut(class_style);
-                changed = true;
-
-                // Merge context mappings with correct order:
-                // class mappings FIRST (defaults), view's SECOND (overrides)
-                if let Some(class_mappings_rc) = class_ctx_mappings {
+                if let Some(class_mappings_rc) = class_style.map.remove(&context_mappings_key) {
                     let class_mappings =
                         class_mappings_rc.downcast_ref::<ContextMappings>().unwrap();
-
-                    match self.map.entry(context_mappings_key) {
-                        Entry::Occupied(mut e) => {
-                            let view_mappings = e.get().downcast_ref::<ContextMappings>().unwrap();
-                            // Class first, then view's
-                            let mut merged: Vec<_> = (*class_mappings.0).clone();
-                            merged.extend(view_mappings.0.iter().cloned());
-                            *e.get_mut() = Rc::new(ContextMappings(Rc::new(merged)));
-                        }
-                        Entry::Vacant(e) => {
-                            e.insert(class_mappings_rc);
-                        }
-                    }
+                    all_class_mappings.extend(class_mappings.0.iter().cloned());
                 }
+                // Apply class style to result (later classes override earlier ones)
+                result.apply_mut(class_style);
+                changed = true;
             }
         }
 
-        (self, changed)
+        // Now apply view's own styles ON TOP of class styles (inline styles win)
+        result.apply_mut(view_style.clone());
+
+        // CSS-like specificity fix: The view's inline selector styles (like .selected())
+        // should override class styles, but class context mappings (like with_theme) run
+        // AFTER this and might override them. To fix this, we wrap the view's selector
+        // nested maps in a context mapping that runs LAST, after all class context mappings.
+        //
+        // Extract selector nested maps from view_style and add them as a context mapping
+        // that runs last.
+        let view_selector_keys: Vec<_> = view_style
+            .map
+            .keys()
+            .filter(|k| matches!(k.info, StyleKeyInfo::Selector(..)))
+            .cloned()
+            .collect();
+
+        if !view_selector_keys.is_empty() {
+            let view_selectors: HashMap<StyleKey, Rc<dyn Any>> = view_selector_keys
+                .iter()
+                .filter_map(|k| view_style.map.get(k).map(|v| (*k, v.clone())))
+                .collect();
+
+            // Add a context mapping that re-applies the view's selector styles LAST
+            let restore_selectors: ContextMapFn = Rc::new(move |mut s: Style, _ctx: &Style| {
+                for (k, v) in view_selectors.iter() {
+                    // Use apply_iter to merge correctly
+                    s.apply_iter(std::iter::once((k, v)));
+                }
+                s
+            });
+            all_class_mappings.push(restore_selectors);
+        }
+
+        // Merge context mappings: class mappings FIRST (defaults), view's SECOND (overrides)
+        if !all_class_mappings.is_empty() || view_ctx_mappings.is_some() {
+            if let Some(view_mappings_rc) = view_ctx_mappings {
+                let view_mappings = view_mappings_rc.downcast_ref::<ContextMappings>().unwrap();
+                all_class_mappings.extend(view_mappings.0.iter().cloned());
+            }
+            result.map.insert(
+                context_mappings_key,
+                Rc::new(ContextMappings(Rc::new(all_class_mappings))),
+            );
+        }
+
+        (result, changed)
     }
 
     pub fn apply_class<C: StyleClass>(mut self, _class: C) -> Style {

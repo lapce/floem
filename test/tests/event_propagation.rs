@@ -7,8 +7,10 @@
 use floem::event::EventPropagation;
 use floem::view::ParentView;
 use floem_test::prelude::*;
+use serial_test::serial;
 
 #[test]
+#[serial]
 fn test_pointer_down_move_away_no_click() {
     // Pointer down on view, move away, then pointer up should NOT fire click
     let tracker = ClickTracker::new();
@@ -40,6 +42,7 @@ fn test_pointer_down_move_away_no_click() {
 }
 
 #[test]
+#[serial]
 fn test_pointer_down_move_away_move_back_clicks() {
     // Pointer down, move away, move back, then pointer up SHOULD fire click
     let tracker = ClickTracker::new();
@@ -74,6 +77,7 @@ fn test_pointer_down_move_away_move_back_clicks() {
 }
 
 #[test]
+#[serial]
 fn test_pointer_down_on_a_up_on_b_neither_clicks() {
     // Pointer down on view A, pointer up on view B - neither should get click
     let tracker = ClickTracker::new();
@@ -104,6 +108,7 @@ fn test_pointer_down_on_a_up_on_b_neither_clicks() {
 }
 
 #[test]
+#[serial]
 fn test_hidden_view_no_click() {
     // Hidden views should not receive clicks
     let tracker = ClickTracker::new();
@@ -124,6 +129,7 @@ fn test_hidden_view_no_click() {
 }
 
 #[test]
+#[serial]
 fn test_hidden_view_click_passes_through() {
     // Clicks should pass through hidden views to views behind them
     let tracker = ClickTracker::new();
@@ -146,6 +152,7 @@ fn test_hidden_view_click_passes_through() {
 }
 
 #[test]
+#[serial]
 fn test_double_click_fires_double_click_handler() {
     // Double click should fire double click handler, not single click handler
     let tracker = ClickTracker::new();
@@ -170,6 +177,7 @@ fn test_double_click_fires_double_click_handler() {
 }
 
 #[test]
+#[serial]
 fn test_single_click_does_not_fire_double_click() {
     // Single click should NOT fire double click handler
     let tracker = ClickTracker::new();
@@ -191,6 +199,7 @@ fn test_single_click_does_not_fire_double_click() {
 }
 
 #[test]
+#[serial]
 fn test_secondary_click_fires_secondary_handler() {
     // Secondary (right) click should fire secondary click handler
     let tracker = ClickTracker::new();
@@ -211,6 +220,7 @@ fn test_secondary_click_fires_secondary_handler() {
 }
 
 #[test]
+#[serial]
 fn test_primary_click_does_not_fire_secondary_handler() {
     // Primary (left) click should NOT fire secondary click handler
     let tracker = ClickTracker::new();
@@ -231,6 +241,7 @@ fn test_primary_click_does_not_fire_secondary_handler() {
 }
 
 #[test]
+#[serial]
 fn test_pointer_events_none_passes_through() {
     // Views with pointer_events_none should not receive clicks
     let tracker = ClickTracker::new();
@@ -256,6 +267,7 @@ fn test_pointer_events_none_passes_through() {
 }
 
 #[test]
+#[serial]
 fn test_pointer_events_none_child_parent_still_receives() {
     // Parent should still receive clicks even if child has pointer_events_none
     let tracker = ClickTracker::new();
@@ -284,6 +296,7 @@ fn test_pointer_events_none_child_parent_still_receives() {
 }
 
 #[test]
+#[serial]
 fn test_clicking_state_during_pointer_down() {
     // View should be in "clicking" state between pointer down and pointer up
     let view = Empty::new().style(|s| s.size(100.0, 100.0));
@@ -313,6 +326,7 @@ fn test_clicking_state_during_pointer_down() {
 }
 
 #[test]
+#[serial]
 fn test_clicking_state_persists_during_move() {
     // Clicking state persists during pointer movement (cleared only on up/down)
     let target = Empty::new().style(|s| s.size(50.0, 100.0));
@@ -346,6 +360,7 @@ fn test_clicking_state_persists_during_move() {
 }
 
 #[test]
+#[serial]
 fn test_click_stop_prevents_bubbling() {
     // When child uses on_click_stop, parent should NOT receive the click
     let tracker = ClickTracker::new();
@@ -373,6 +388,7 @@ fn test_click_stop_prevents_bubbling() {
 }
 
 #[test]
+#[serial]
 fn test_click_cont_allows_bubbling() {
     // When child uses on_click_cont, parent SHOULD also receive the click
     let tracker = ClickTracker::new();
@@ -401,6 +417,7 @@ fn test_click_cont_allows_bubbling() {
 }
 
 #[test]
+#[serial]
 fn test_bubbling_order_child_then_parent() {
     // Verify that child receives the event before parent during bubbling
     let tracker = ClickTracker::new();
@@ -435,6 +452,7 @@ fn test_bubbling_order_child_then_parent() {
 }
 
 #[test]
+#[serial]
 fn test_stop_in_middle_prevents_further_bubbling() {
     // If middle view stops propagation, grandparent should NOT receive the click
     let tracker = ClickTracker::new();
@@ -469,6 +487,7 @@ fn test_stop_in_middle_prevents_further_bubbling() {
 }
 
 #[test]
+#[serial]
 fn test_click_outside_child_only_hits_parent() {
     // Clicking in parent area but outside child should only trigger parent
     let tracker = ClickTracker::new();
@@ -496,6 +515,7 @@ fn test_click_outside_child_only_hits_parent() {
 }
 
 #[test]
+#[serial]
 fn test_sibling_views_no_bubbling_between_siblings() {
     // Clicking one sibling should not affect the other sibling
     let tracker = ClickTracker::new();
@@ -538,6 +558,7 @@ fn test_sibling_views_no_bubbling_between_siblings() {
 // =============================================================================
 
 #[test]
+#[serial]
 fn test_clicking_state_cleared_immediately_after_pointer_up() {
     // Clicking state should be cleared immediately after pointer up event is processed
     let view = Empty::new().style(|s| s.size(100.0, 100.0));
@@ -561,6 +582,7 @@ fn test_clicking_state_cleared_immediately_after_pointer_up() {
 }
 
 #[test]
+#[serial]
 fn test_clicking_state_cleared_for_all_views_on_pointer_up() {
     // When multiple views are in clicking state, ALL should be cleared on pointer up
     let child1 = Empty::new().style(|s| s.size(50.0, 100.0));
@@ -591,6 +613,7 @@ fn test_clicking_state_cleared_for_all_views_on_pointer_up() {
 }
 
 #[test]
+#[serial]
 fn test_clicking_state_cleared_after_click_handler_runs() {
     // The clicking state should be cleared AFTER the click handler has a chance to run
     use std::cell::Cell;
@@ -623,6 +646,7 @@ fn test_clicking_state_cleared_after_click_handler_runs() {
 }
 
 #[test]
+#[serial]
 fn test_nested_views_clicking_state_cleared() {
     // Parent and child both get clicking state on pointer down
     // Both should be cleared on pointer up
@@ -657,6 +681,7 @@ fn test_nested_views_clicking_state_cleared() {
 }
 
 #[test]
+#[serial]
 fn test_clicking_state_not_set_on_pointer_up_only() {
     // Pointer up without prior pointer down should not set clicking state
     let view = Empty::new().style(|s| s.size(100.0, 100.0));
@@ -674,6 +699,7 @@ fn test_clicking_state_not_set_on_pointer_up_only() {
 }
 
 #[test]
+#[serial]
 fn test_rapid_click_sequence_clears_clicking_state() {
     // Rapid clicks should properly clear clicking state between each
     let view = Empty::new().style(|s| s.size(100.0, 100.0));
@@ -719,6 +745,7 @@ fn test_rapid_click_sequence_clears_clicking_state() {
 }
 
 #[test]
+#[serial]
 fn test_clicking_state_cleared_even_when_pointer_up_outside_view() {
     // If pointer down on view, then up outside, clicking should still be cleared
     let view = Empty::new().style(|s| s.size(50.0, 50.0));
@@ -744,6 +771,7 @@ fn test_clicking_state_cleared_even_when_pointer_up_outside_view() {
 }
 
 #[test]
+#[serial]
 fn test_interaction_state_reflects_clicking() {
     // The interaction state should accurately reflect clicking state
     let view = Empty::new().style(|s| s.size(100.0, 100.0));
@@ -773,6 +801,7 @@ fn test_interaction_state_reflects_clicking() {
 }
 
 #[test]
+#[serial]
 fn test_interaction_state_after_style_recomputation() {
     // After recomputing styles, the interaction state should still be correct
     use floem::peniko::color::palette::css;
@@ -811,6 +840,7 @@ fn test_interaction_state_after_style_recomputation() {
 }
 
 #[test]
+#[serial]
 fn test_active_style_with_full_click_cycle() {
     // Test a complete click cycle with Active style handling
     use floem::peniko::color::palette::css;
@@ -854,6 +884,7 @@ fn test_active_style_with_full_click_cycle() {
 }
 
 #[test]
+#[serial]
 fn test_clicking_state_persists_when_pointer_leaves_view() {
     // Clicking state should persist when pointer moves out of the view
     // (only cleared on pointer up, not on pointer leave)
@@ -889,6 +920,7 @@ fn test_clicking_state_persists_when_pointer_leaves_view() {
 }
 
 #[test]
+#[serial]
 fn test_clicking_state_after_pointer_move_and_style_update() {
     // After pointer move out and style recalculation, clicking should still be set
     use floem::peniko::color::palette::css;
@@ -922,6 +954,7 @@ fn test_clicking_state_after_pointer_move_and_style_update() {
 }
 
 #[test]
+#[serial]
 fn test_hover_state_cleared_on_pointer_leave() {
     // Hover state should be cleared when pointer leaves view
     let view = Empty::new().style(|s| s.size(50.0, 50.0));
@@ -957,6 +990,7 @@ fn test_hover_state_cleared_on_pointer_leave() {
 // =============================================================================
 
 #[test]
+#[serial]
 fn test_active_style_applied_during_click() {
     // Verify that the :active style is actually applied to the computed style
     use floem::peniko::Brush;
@@ -1043,6 +1077,7 @@ fn test_active_style_applied_during_click() {
 /// This reproduces the counter example structure where nested stacks
 /// with clickable elements have no z-index set.
 #[test]
+#[serial]
 fn test_nested_stack_click_no_z_index() {
     // Structure:
     //   Root Stack (flex column)
@@ -1098,6 +1133,7 @@ fn test_nested_stack_click_no_z_index() {
 /// DOM behavior: Click on Content should only hit Content, not Backdrop.
 /// Even though they visually overlap, they are siblings in the tree.
 #[test]
+#[serial]
 fn test_overlapping_siblings_no_cross_propagation() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 
@@ -1139,6 +1175,7 @@ fn test_overlapping_siblings_no_cross_propagation() {
 
 /// Test that clicking outside overlapping content hits the backdrop only.
 #[test]
+#[serial]
 fn test_overlapping_siblings_click_outside_content() {
     use floem::HasViewId;
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
@@ -1207,6 +1244,7 @@ fn test_overlapping_siblings_click_outside_content() {
 ///
 /// Expected: Clicking content should NOT close dialog (shouldn't trigger backdrop).
 #[test]
+#[serial]
 fn test_dialog_structure_content_click_no_backdrop() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 
@@ -1253,6 +1291,7 @@ fn test_dialog_structure_content_click_no_backdrop() {
 
 /// Test that clicking backdrop (outside content) DOES close dialog.
 #[test]
+#[serial]
 fn test_dialog_structure_backdrop_click_closes() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 
@@ -1288,6 +1327,7 @@ fn test_dialog_structure_backdrop_click_closes() {
 
 /// Test multiple overlapping layers - only topmost receives click.
 #[test]
+#[serial]
 fn test_multiple_overlapping_layers_topmost_wins() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 
@@ -1342,6 +1382,7 @@ fn test_multiple_overlapping_layers_topmost_wins() {
 /// Even with on_click_cont (continue propagation), events should only
 /// bubble to PARENTS, not to sibling layers below.
 #[test]
+#[serial]
 fn test_click_cont_bubbles_to_parent_not_siblings() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use std::cell::RefCell;
@@ -1401,6 +1442,7 @@ fn test_click_cont_bubbles_to_parent_not_siblings() {
 /// bubbles to parent (DOM-style). If Floem is truly DOM-style, the
 /// backdrop sibling should NOT receive the click.
 #[test]
+#[serial]
 fn test_no_handler_on_topmost_does_not_fall_through_to_sibling() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 
@@ -1443,6 +1485,7 @@ fn test_no_handler_on_topmost_does_not_fall_through_to_sibling() {
 /// In DOM, later siblings are rendered on top by default.
 /// This matches the dialog structure where backdrop comes before content.
 #[test]
+#[serial]
 fn test_overlapping_siblings_no_z_index_dom_order() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 
@@ -1500,6 +1543,7 @@ fn test_overlapping_siblings_no_z_index_dom_order() {
 ///       ├── Backdrop (Empty with on_click_stop)
 ///       └── Content (Container::derived with children)
 #[test]
+#[serial]
 fn test_dialog_with_overlay() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::views::Overlay;
@@ -1548,6 +1592,7 @@ fn test_dialog_with_overlay() {
 
 /// Test dialog structure with Container::derived (actual dialog uses this).
 #[test]
+#[serial]
 fn test_dialog_with_container_derived() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 
@@ -1600,6 +1645,7 @@ fn test_dialog_with_container_derived() {
 /// In the actual dialog, users click on buttons inside DialogFooter.
 /// This tests that clicks on nested elements don't propagate to backdrop.
 #[test]
+#[serial]
 fn test_dialog_click_on_nested_button() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 
@@ -1654,6 +1700,7 @@ fn test_dialog_click_on_nested_button() {
 
 /// Test the exact dialog structure with Overlay::with_id and Container::derived.
 #[test]
+#[serial]
 fn test_exact_dialog_structure() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::views::Overlay;
@@ -1722,6 +1769,7 @@ fn test_exact_dialog_structure() {
 /// This tests the scenario where the user removed .on_click_stop(|_| {}) from content.
 /// The content should still block clicks from reaching backdrop.
 #[test]
+#[serial]
 fn test_dialog_content_no_handler() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::views::Overlay;
@@ -1772,6 +1820,7 @@ fn test_dialog_content_no_handler() {
 /// This tests the actual dialog pattern: content positioned at 50%/50% with
 /// translate -50%/-50% to center it.
 #[test]
+#[serial]
 fn test_dialog_with_translate_centering() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::unit::Pct;
@@ -1824,6 +1873,7 @@ fn test_dialog_with_translate_centering() {
 
 /// Test dialog structure with translate but content has NO click handler.
 #[test]
+#[serial]
 fn test_dialog_with_translate_no_handler() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::unit::Pct;
@@ -1874,6 +1924,7 @@ fn test_dialog_with_translate_no_handler() {
 ///       ├── "Decrement" button
 ///       └── "Reset" button
 #[test]
+#[serial]
 fn test_counter_example_structure() {
     let tracker = ClickTracker::new();
 
@@ -1928,6 +1979,7 @@ fn test_counter_example_structure() {
 ///
 /// This test replicates that exact structure.
 #[test]
+#[serial]
 fn test_overlay_fixed_translate_click_offset_bug() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::unit::Pct;
@@ -1987,6 +2039,7 @@ fn test_overlay_fixed_translate_click_offset_bug() {
 
 /// Test overlay with fixed position but no translate (simpler case).
 #[test]
+#[serial]
 fn test_overlay_fixed_no_translate() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::views::Overlay;
@@ -2029,6 +2082,7 @@ fn test_overlay_fixed_no_translate() {
 
 /// Test the exact DialogContent structure but without Overlay.
 #[test]
+#[serial]
 fn test_fixed_translate_no_overlay() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::unit::Pct;
@@ -2079,6 +2133,7 @@ fn test_fixed_translate_no_overlay() {
 /// - Bottom-left: (50, 149)
 /// - Bottom-right: (149, 149)
 #[test]
+#[serial]
 fn test_overlay_fixed_click_corners() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::views::Overlay;
@@ -2149,6 +2204,7 @@ fn test_overlay_fixed_click_corners() {
 /// This means: layout position (100, 100), then translated by (-40, -40)
 /// Visual bounds: (60, 60) to (140, 140)
 #[test]
+#[serial]
 fn test_overlay_fixed_translate_click_corners() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::unit::Pct;
@@ -2217,6 +2273,7 @@ fn test_overlay_fixed_translate_click_corners() {
 
 /// Test clicking OUTSIDE content bounds to verify backdrop receives those clicks.
 #[test]
+#[serial]
 fn test_overlay_fixed_click_outside_content() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::views::Overlay;
@@ -2276,6 +2333,7 @@ fn test_overlay_fixed_click_outside_content() {
 
 /// Probe test: find exact boundary WITHOUT Overlay (for comparison).
 #[test]
+#[serial]
 fn test_no_overlay_fixed_translate_probe_boundary() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::unit::Pct;
@@ -2332,6 +2390,7 @@ fn test_no_overlay_fixed_translate_probe_boundary() {
 
 /// Probe test: find exact boundary where clicks start hitting content vs backdrop.
 #[test]
+#[serial]
 fn test_overlay_fixed_translate_probe_boundary() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::unit::Pct;
@@ -2452,6 +2511,7 @@ fn test_overlay_fixed_translate_probe_boundary() {
 
 /// Debug test: print layout information for overlay + fixed + translate.
 #[test]
+#[serial]
 fn test_overlay_fixed_translate_debug_layout() {
     use floem::ViewId;
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
@@ -2542,6 +2602,7 @@ fn test_overlay_fixed_translate_debug_layout() {
 ///   NestedChild → Sibling2 → Parent
 /// NOT to Sibling1 (parent's sibling).
 #[test]
+#[serial]
 fn test_events_do_not_bubble_to_parents_sibling() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 
@@ -2605,6 +2666,7 @@ fn test_events_do_not_bubble_to_parents_sibling() {
 /// Clicking Header should bubble to Content → Stack → Overlay.
 /// It should NOT reach Backdrop (sibling of Content).
 #[test]
+#[serial]
 fn test_dialog_header_click_does_not_close() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::views::Overlay;
@@ -2667,6 +2729,7 @@ fn test_dialog_header_click_does_not_close() {
 /// Clicking LeafB should bubble: LeafB → BranchB → Root
 /// Should NOT reach BranchA or LeafA.
 #[test]
+#[serial]
 fn test_deeply_nested_no_cross_branch_bubbling() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 
@@ -2723,6 +2786,7 @@ fn test_deeply_nested_no_cross_branch_bubbling() {
 /// Click on Child should bubble to Sibling2 (if using on_click, not on_click_stop).
 /// Should NOT reach Sibling1.
 #[test]
+#[serial]
 fn test_bubbling_through_handler_less_child() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 
@@ -2775,6 +2839,7 @@ fn test_bubbling_through_handler_less_child() {
 ///       └── Content (fixed, centered with translate)
 ///           └── ClickableChild (button-like element)
 #[test]
+#[serial]
 fn test_fixed_overlay_child_receives_click() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::unit::Pct;
@@ -2850,6 +2915,7 @@ fn test_fixed_overlay_child_receives_click() {
 
 /// Test clicking at multiple positions inside the child to verify hit detection bounds.
 #[test]
+#[serial]
 fn test_fixed_overlay_child_click_bounds() {
     use floem::ViewId;
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
@@ -2965,6 +3031,7 @@ fn test_fixed_overlay_child_click_bounds() {
 
 /// Test that nested children at various depths receive clicks correctly.
 #[test]
+#[serial]
 fn test_fixed_overlay_deeply_nested_child() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::unit::Pct;
@@ -3044,6 +3111,7 @@ fn test_fixed_overlay_deeply_nested_child() {
 
 /// Probe test to find exact hit detection bounds for child element.
 #[test]
+#[serial]
 fn test_fixed_overlay_child_probe_bounds() {
     use floem::ViewId;
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
@@ -3145,6 +3213,7 @@ fn test_fixed_overlay_child_probe_bounds() {
 /// Test that normal flow children extending beyond parent bounds CAN receive events.
 /// This is CSS default behavior (overflow: visible).
 #[test]
+#[serial]
 fn test_normal_flow_child_outside_parent_bounds_receives_click() {
     let parent_clicks = RwSignal::new(0);
     let child_clicks = RwSignal::new(0);
@@ -3203,6 +3272,7 @@ fn test_normal_flow_child_outside_parent_bounds_receives_click() {
 
 /// Test that scroll container (has viewport) clips children for hit testing.
 #[test]
+#[serial]
 fn test_scroll_container_clips_children() {
     let child_clicks = RwSignal::new(0);
 
@@ -3251,6 +3321,7 @@ fn test_scroll_container_clips_children() {
 
 /// Test that absolute positioned element clips children correctly.
 #[test]
+#[serial]
 fn test_absolute_element_clips_children() {
     let child_clicks = RwSignal::new(0);
     let outside_clicks = RwSignal::new(0);
@@ -3318,6 +3389,7 @@ fn test_absolute_element_clips_children() {
 
 /// Test nested containers - clip_rect should be inherited through the tree.
 #[test]
+#[serial]
 fn test_nested_containers_clip_inheritance() {
     let deepest_clicks = RwSignal::new(0);
 

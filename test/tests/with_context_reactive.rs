@@ -17,6 +17,7 @@ use floem::reactive::RwSignal;
 use floem::style::{Background, FontWeight, Style, TextColor};
 use floem::text::Weight;
 use floem_test::prelude::*;
+use serial_test::serial;
 
 // Define a simple theme prop for testing
 prop!(
@@ -64,6 +65,7 @@ impl TestThemeExt for Style {
 /// Test that signals accessed OUTSIDE with_context are properly tracked.
 /// This should pass - it's the baseline for comparison.
 #[test]
+#[serial]
 fn test_signal_outside_with_context_is_tracked() {
     let is_active = RwSignal::new(false);
 
@@ -137,6 +139,7 @@ fn test_signal_outside_with_context_is_tracked() {
 /// Test that signals accessed INSIDE with_context are properly tracked.
 /// The closure is probed at construction time, which establishes reactive tracking.
 #[test]
+#[serial]
 fn test_signal_inside_with_context_is_tracked() {
     let is_active = RwSignal::new(false);
 
@@ -212,6 +215,7 @@ fn test_signal_inside_with_context_is_tracked() {
 /// Test with a closure-based signal accessor (like SidebarMenuButton's is_active prop).
 /// This replicates the exact pattern used in the sidebar component.
 #[test]
+#[serial]
 fn test_closure_signal_inside_with_context() {
     use std::rc::Rc;
 
@@ -268,6 +272,7 @@ fn test_closure_signal_inside_with_context() {
 
 /// Test that multiple views with signals inside with_context all update correctly.
 #[test]
+#[serial]
 fn test_multiple_views_with_signals_inside_with_context() {
     let active_index = RwSignal::new(0usize);
 
@@ -333,6 +338,7 @@ fn test_multiple_views_with_signals_inside_with_context() {
 /// Test click handler changing signal that affects with_context style.
 /// This is the exact scenario from the sidebar bug.
 #[test]
+#[serial]
 fn test_click_changes_signal_inside_with_context() {
     let is_active = RwSignal::new(false);
 
@@ -388,6 +394,7 @@ fn test_click_changes_signal_inside_with_context() {
 /// property (font-weight), child views like Label should also update.
 /// Fixed by adding ContextInherited flag to propagate inherited changes to children.
 #[test]
+#[serial]
 fn test_child_label_inherits_font_weight_from_parent() {
     use floem::views::Label;
 
@@ -440,6 +447,7 @@ fn test_child_label_inherits_font_weight_from_parent() {
 
 /// Test that hover selector uses actual theme colors from parent, not defaults.
 #[test]
+#[serial]
 fn test_hover_selector_with_parent_theme_colors() {
     // Create a custom theme with different colors than defaults
     let custom_theme = TestTheme {
@@ -488,6 +496,7 @@ fn test_hover_selector_with_parent_theme_colors() {
 
 /// Test that active selector uses actual theme colors from parent.
 #[test]
+#[serial]
 fn test_active_selector_with_parent_theme_colors() {
     let custom_theme = TestTheme {
         primary_bg: palette::css::ORANGE,
@@ -533,6 +542,7 @@ fn test_active_selector_with_parent_theme_colors() {
 
 /// Test multiple selectors (hover + active) with parent theme colors.
 #[test]
+#[serial]
 fn test_multiple_selectors_with_parent_theme_colors() {
     let custom_theme = TestTheme {
         primary_bg: palette::css::RED,
@@ -584,6 +594,7 @@ fn test_multiple_selectors_with_parent_theme_colors() {
 
 /// Test that when parent's theme changes, child's selector styles also update.
 #[test]
+#[serial]
 fn test_selector_updates_when_parent_theme_changes() {
     let theme_signal = RwSignal::new(TestTheme {
         primary_bg: palette::css::RED,
@@ -636,6 +647,7 @@ fn test_selector_updates_when_parent_theme_changes() {
 
 /// Test nested selectors with theme colors (hover containing focus_visible).
 #[test]
+#[serial]
 fn test_nested_selectors_with_parent_theme_colors() {
     let custom_theme = TestTheme {
         primary_bg: palette::css::RED,
@@ -680,6 +692,7 @@ fn test_nested_selectors_with_parent_theme_colors() {
 
 /// Test that selectors work with conditional theme usage based on signal.
 #[test]
+#[serial]
 fn test_selector_with_conditional_theme_and_signal() {
     let is_active = RwSignal::new(false);
 
@@ -750,6 +763,7 @@ fn test_selector_with_conditional_theme_and_signal() {
 
 /// Test deeply nested views all using parent's theme colors in selectors.
 #[test]
+#[serial]
 fn test_deep_nesting_with_theme_selectors() {
     let custom_theme = TestTheme {
         primary_bg: palette::css::RED,
@@ -797,6 +811,7 @@ fn test_deep_nesting_with_theme_selectors() {
 
 /// Test that sibling views each get correct theme colors in their selectors.
 #[test]
+#[serial]
 fn test_siblings_with_theme_selectors() {
     let custom_theme = TestTheme {
         primary_bg: palette::css::RED,

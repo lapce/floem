@@ -5,8 +5,10 @@
 
 use floem::style::Position;
 use floem_test::prelude::*;
+use serial_test::serial;
 
 #[test]
+#[serial]
 fn test_higher_z_index_receives_click_first() {
     let tracker = ClickTracker::new();
 
@@ -29,6 +31,7 @@ fn test_higher_z_index_receives_click_first() {
 }
 
 #[test]
+#[serial]
 fn test_negative_z_index_receives_click_last() {
     let tracker = ClickTracker::new();
 
@@ -50,6 +53,7 @@ fn test_negative_z_index_receives_click_last() {
 }
 
 #[test]
+#[serial]
 fn test_dom_order_when_z_index_equal() {
     let tracker = ClickTracker::new();
 
@@ -72,6 +76,7 @@ fn test_dom_order_when_z_index_equal() {
 }
 
 #[test]
+#[serial]
 fn test_stacking_context_boundary() {
     // Test that grandchild's z-index doesn't escape parent's stacking context
     //
@@ -106,6 +111,7 @@ fn test_stacking_context_boundary() {
 }
 
 #[test]
+#[serial]
 fn test_hit_test_respects_z_index() {
     // Test the hit_test function directly
     let view = layers((
@@ -122,6 +128,7 @@ fn test_hit_test_respects_z_index() {
 }
 
 #[test]
+#[serial]
 fn test_click_tracker_reset() {
     let tracker = ClickTracker::new();
 
@@ -141,6 +148,7 @@ fn test_click_tracker_reset() {
 }
 
 #[test]
+#[serial]
 fn test_multiple_z_index_layers() {
     // Test sorting with more than 2 elements including negative, zero, and positive
     let tracker = ClickTracker::new();
@@ -165,6 +173,7 @@ fn test_multiple_z_index_layers() {
 }
 
 #[test]
+#[serial]
 fn test_partial_overlap_click_non_overlapping_region() {
     // Test clicking on a region where only one view exists
     //
@@ -231,6 +240,7 @@ fn test_partial_overlap_click_non_overlapping_region() {
 }
 
 #[test]
+#[serial]
 fn test_click_outside_all_views() {
     // Clicking outside all views should not trigger any handlers
     let tracker = ClickTracker::new();
@@ -256,6 +266,7 @@ fn test_click_outside_all_views() {
 }
 
 #[test]
+#[serial]
 fn test_extreme_z_index_values() {
     // Test with very large z-index values
     let tracker = ClickTracker::new();
@@ -278,6 +289,7 @@ fn test_extreme_z_index_values() {
 }
 
 #[test]
+#[serial]
 fn test_select_like_structure_simple() {
     // Simplified test: nested item inside a container with z-index
     // Structure:
@@ -310,6 +322,7 @@ fn test_select_like_structure_simple() {
 }
 
 #[test]
+#[serial]
 fn test_nested_items_in_z_index_container() {
     // Test that items inside a z-index container can receive clicks
     // when there's a v_stack between the container and the items.
@@ -361,6 +374,7 @@ fn test_nested_items_in_z_index_container() {
 }
 
 #[test]
+#[serial]
 fn test_absolute_positioned_items() {
     // Test that items inside an absolutely positioned z-index container
     // can receive clicks.
@@ -397,6 +411,7 @@ fn test_absolute_positioned_items() {
 }
 
 #[test]
+#[serial]
 fn test_absolute_with_backdrop() {
     // Test with backdrop behind dropdown
     //
@@ -442,6 +457,7 @@ fn test_absolute_with_backdrop() {
 }
 
 #[test]
+#[serial]
 fn test_absolute_with_negative_backdrop() {
     // Test with backdrop that has negative offsets
     //
@@ -487,6 +503,7 @@ fn test_absolute_with_negative_backdrop() {
 }
 
 #[test]
+#[serial]
 fn test_with_trigger_sibling() {
     // Test with a trigger sibling (non-absolute positioned)
     //
@@ -537,6 +554,7 @@ fn test_with_trigger_sibling() {
 }
 
 #[test]
+#[serial]
 fn test_with_container_wrapper() {
     // Test with an outer Container wrapper (position: relative)
     //
@@ -589,6 +607,7 @@ fn test_with_container_wrapper() {
 }
 
 #[test]
+#[serial]
 fn test_with_vstack_items() {
     // Test with v_stack containing items (same as nested items test)
     //
@@ -648,6 +667,7 @@ fn test_with_vstack_items() {
 }
 
 #[test]
+#[serial]
 fn test_inside_scroll_view() {
     // Test that items inside a Scroll view can receive clicks
     // This matches the showcase structure where Select is inside a Scroll
@@ -724,6 +744,7 @@ fn test_inside_scroll_view() {
 }
 
 #[test]
+#[serial]
 fn test_inset_left_right_without_width() {
     // Test the EXACT structure used by the Select component
     // This tests whether inset_left(0) + inset_right(0) properly propagates width
@@ -797,6 +818,7 @@ fn test_inset_left_right_without_width() {
 }
 
 #[test]
+#[serial]
 fn test_with_width_full_items_fixed() {
     // Test with items using width_full() - FIXED by adding width_full() to v_stack
     //
@@ -861,6 +883,7 @@ fn test_with_width_full_items_fixed() {
 }
 
 #[test]
+#[serial]
 fn test_with_vstack_width_full() {
     // Test with v_stack using width_full() - to narrow down the issue
     //
@@ -921,6 +944,7 @@ fn test_with_vstack_width_full() {
 }
 
 #[test]
+#[serial]
 fn test_select_like_no_explicit_container_width() {
     // Test structure that matches the real Select component issue:
     // - Outer container has position:relative but NO explicit width (gets it from trigger)
@@ -993,6 +1017,7 @@ fn test_select_like_no_explicit_container_width() {
 }
 
 #[test]
+#[serial]
 fn test_select_structure_with_inset_top_pct() {
     // Test with inset_top_pct(100.0) like the actual Select component uses
     // This positions the dropdown at 100% of the parent's height (below the trigger)
@@ -1058,6 +1083,7 @@ fn test_select_structure_with_inset_top_pct() {
 }
 
 #[test]
+#[serial]
 fn test_display_none_to_visible_layout() {
     // Test that children have correct layout when parent's display changes from None to visible.
     //
@@ -1145,6 +1171,7 @@ fn test_display_none_to_visible_layout() {
 }
 
 #[test]
+#[serial]
 fn test_display_toggle_multiple_times() {
     // Test that layout is correct after multiple display toggles.
     //
@@ -1241,6 +1268,7 @@ fn test_display_toggle_multiple_times() {
 }
 
 #[test]
+#[serial]
 fn test_inside_scroll_view_with_display_toggle() {
     // Test that z-index event dispatch works correctly when the dropdown is inside a Scroll view
     // and starts with display:None.
@@ -1333,6 +1361,7 @@ fn test_inside_scroll_view_with_display_toggle() {
 }
 
 #[test]
+#[serial]
 fn test_inset_top_pct_positioning() {
     // Test z-index event dispatch with percentage-based positioning (inset_top_pct)
     // This mimics the Select component which uses inset_top_pct(100.0) to position
@@ -1420,6 +1449,7 @@ fn test_inset_top_pct_positioning() {
 }
 
 #[test]
+#[serial]
 fn test_explicit_z_index_zero_vs_auto_hit_testing() {
     // Test CSS spec behavior: z-index: 0 (explicit) receives clicks before z-index: auto
     // at the same z-level because explicit z-index creates a stacking context.
@@ -1453,6 +1483,7 @@ fn test_explicit_z_index_zero_vs_auto_hit_testing() {
 }
 
 #[test]
+#[serial]
 fn test_z_index_auto_vs_explicit_zero_dom_order() {
     // Test that when there are multiple z-index: auto and z-index: 0 views,
     // DOM order serves as a tiebreaker within each group.
@@ -1487,6 +1518,7 @@ fn test_z_index_auto_vs_explicit_zero_dom_order() {
 }
 
 #[test]
+#[serial]
 fn test_z_index_auto_vs_explicit_zero_with_positive() {
     // Test that z-index: 1 beats both z-index: 0 and z-index: auto
     //
@@ -1516,6 +1548,7 @@ fn test_z_index_auto_vs_explicit_zero_with_positive() {
 }
 
 #[test]
+#[serial]
 fn test_z_index_auto_vs_explicit_zero_with_negative() {
     // Test that z-index: 0 beats z-index: -1, and z-index: auto beats z-index: -1
     //
@@ -1545,6 +1578,7 @@ fn test_z_index_auto_vs_explicit_zero_with_negative() {
 }
 
 #[test]
+#[serial]
 fn test_stacking_model_both_children_bounded() {
     // In the simplified stacking model, every view is a stacking context that bounds its children.
     // Neither child escapes - they compete at their parent's level only.
@@ -1590,6 +1624,7 @@ fn test_stacking_model_both_children_bounded() {
 }
 
 #[test]
+#[serial]
 fn test_dropdown_extends_beyond_scroll_area() {
     // Test that z-index event dispatch works correctly when a dropdown extends
     // beyond the scroll container's visible area.

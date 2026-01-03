@@ -8,10 +8,12 @@ use floem::headless::HeadlessHarness;
 use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 use floem::view::ParentView;
 use floem::views::{Clip, Decorators, Empty, Label, Overlay, Stack};
+use serial_test::serial;
 use std::cell::Cell;
 use std::rc::Rc;
 
 #[test]
+#[serial]
 fn test_overlay_new() {
     // Test that an Overlay can be created with static content
     let view = Stack::new((
@@ -24,6 +26,7 @@ fn test_overlay_new() {
 }
 
 #[test]
+#[serial]
 fn test_overlay_derived() {
     // Test that an Overlay can be created with derived content
     let view = Stack::new((
@@ -36,6 +39,7 @@ fn test_overlay_derived() {
 }
 
 #[test]
+#[serial]
 fn test_overlay_with_visibility_control() {
     // Test that overlay visibility can be controlled via styles
     let visible = RwSignal::new(true);
@@ -60,6 +64,7 @@ fn test_overlay_with_visibility_control() {
 }
 
 #[test]
+#[serial]
 fn test_overlay_content_factory_called() {
     // Test that the content factory is called when creating overlay
     let factory_called = Rc::new(Cell::new(false));
@@ -85,6 +90,7 @@ fn test_overlay_content_factory_called() {
 }
 
 #[test]
+#[serial]
 fn test_overlay_in_nested_structure() {
     // Test that Overlay works in nested view structures
     let view =
@@ -102,6 +108,7 @@ fn test_overlay_in_nested_structure() {
 }
 
 #[test]
+#[serial]
 fn test_multiple_overlays() {
     // Test that multiple overlays can coexist
     let view = Stack::new((
@@ -115,6 +122,7 @@ fn test_multiple_overlays() {
 }
 
 #[test]
+#[serial]
 fn test_overlay_with_styled_content() {
     // Test that overlay content can be styled
     let view = Stack::new((
@@ -135,6 +143,7 @@ fn test_overlay_with_styled_content() {
 // ============================================================================
 
 #[test]
+#[serial]
 fn test_overlay_receives_events_before_regular_views() {
     // Test that overlays receive events before regular views, even if
     // the regular view has a higher z-index.
@@ -185,6 +194,7 @@ fn test_overlay_receives_events_before_regular_views() {
 }
 
 #[test]
+#[serial]
 fn test_multiple_overlays_respect_z_index() {
     // Test that multiple overlays respect z-index ordering among themselves.
     // The z-index must be on the Overlay view itself, not just its content.
@@ -243,6 +253,7 @@ fn test_multiple_overlays_respect_z_index() {
 }
 
 #[test]
+#[serial]
 fn test_overlay_dom_order_tiebreaker() {
     // Test that when overlays have equal z-index, DOM order is used as tiebreaker.
     // The z-index must be on the Overlay view itself.
@@ -294,6 +305,7 @@ fn test_overlay_dom_order_tiebreaker() {
 }
 
 #[test]
+#[serial]
 fn test_nested_overlay_escapes_parent_z_index() {
     // Test that an overlay nested inside a low z-index parent still
     // receives events before a higher z-index sibling.
@@ -347,6 +359,7 @@ fn test_nested_overlay_escapes_parent_z_index() {
 }
 
 #[test]
+#[serial]
 fn test_hidden_overlay_does_not_block_events() {
     // Test that a hidden overlay does not block events to views below.
     //
@@ -402,6 +415,7 @@ fn test_hidden_overlay_does_not_block_events() {
 // ============================================================================
 
 #[test]
+#[serial]
 fn test_paint_order_overlays_after_regular_views() {
     // Test that overlays are painted after regular views.
     //
@@ -445,6 +459,7 @@ fn test_paint_order_overlays_after_regular_views() {
 }
 
 #[test]
+#[serial]
 fn test_paint_order_multiple_overlays_by_z_index() {
     // Test that multiple overlays are painted in z-index order (low to high).
     //
@@ -494,6 +509,7 @@ fn test_paint_order_multiple_overlays_by_z_index() {
 }
 
 #[test]
+#[serial]
 fn test_paint_order_regular_views_by_z_index() {
     // Test that regular views (non-overlays) are painted in z-index order.
     //
@@ -537,6 +553,7 @@ fn test_paint_order_regular_views_by_z_index() {
 }
 
 #[test]
+#[serial]
 fn test_paint_order_nested_overlay_escapes_parent() {
     // Test that an overlay nested inside a low z-index parent is still painted
     // after its high z-index sibling.
@@ -584,6 +601,7 @@ fn test_paint_order_nested_overlay_escapes_parent() {
 // ============================================================================
 
 #[test]
+#[serial]
 fn test_overlay_escapes_parent_clip() {
     // Test that an overlay inside a Clip view still receives events
     // outside the clip bounds.
@@ -640,6 +658,7 @@ fn test_overlay_escapes_parent_clip() {
 }
 
 #[test]
+#[serial]
 fn test_overlay_painted_outside_parent_clip() {
     // Test that an overlay is painted even when it extends outside
     // its parent's clipping region.
@@ -675,6 +694,7 @@ fn test_overlay_painted_outside_parent_clip() {
 }
 
 #[test]
+#[serial]
 fn test_overlay_escapes_nested_clips() {
     // Test that an overlay escapes multiple levels of clipping parents.
     //
@@ -735,6 +755,7 @@ fn test_overlay_escapes_nested_clips() {
 // ============================================================================
 
 #[test]
+#[serial]
 fn test_overlay_with_container_derived_rebuild() {
     // Test that Container::derived inside Overlay::new works correctly
     // when the derived content is rebuilt.
@@ -776,6 +797,7 @@ fn test_overlay_with_container_derived_rebuild() {
 }
 
 #[test]
+#[serial]
 fn test_overlay_with_nested_container_derived() {
     // More complex case: nested Container::derived inside Overlay
     // This tests the pattern used in Dialog component.
@@ -841,6 +863,7 @@ fn test_overlay_with_nested_container_derived() {
 }
 
 #[test]
+#[serial]
 fn test_clip_only_affects_painting_not_events() {
     // Document current behavior: Clip only affects painting, not event dispatch.
     // Children inside a Clip still receive events outside the clip bounds.
