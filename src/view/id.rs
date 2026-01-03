@@ -489,15 +489,9 @@ impl ViewId {
         self.state().borrow().layout_rect
     }
 
-    /// Returns true if this view is hidden, either by:
-    /// - Having `display: none` in its computed style
-    /// - Being hidden by a parent (via `parent_set_hidden()`)
+    /// Returns true if this view is hidden.
     pub fn is_hidden(&self) -> bool {
-        use crate::view::state::IsHiddenState;
-        let state = self.state();
-        let state = state.borrow();
-        // Check if this view has display:none OR was programmatically hidden by parent
-        state.is_hidden_state == IsHiddenState::Hidden || state.parent_set_style_interaction.hidden
+        self.state().borrow().visibility.is_hidden()
     }
 
     /// if the view has pointer events none
@@ -1172,41 +1166,45 @@ impl ViewId {
         }
     }
 
-    /// Set the hidden state for child views during styling.
-    /// This should be used by parent views to propagate hidden state to their children.
-    /// Only requests a style update if the state actually changes.
-    pub fn parent_set_hidden(&self) {
+    /// Hide this view from layout. Sets the visibility state directly.
+    /// Skips the normal transition animation logic.
+    pub fn set_hidden(&self) {
+        use crate::view::state::VisibilityPhase;
         let changed = {
             let state = self.state();
             let mut state = state.borrow_mut();
-            if !state.parent_set_style_interaction.hidden {
-                state.parent_set_style_interaction.hidden = true;
+            if !state.visibility.force_hidden {
+                state.visibility.force_hidden = true;
+                state.visibility.phase = VisibilityPhase::Hidden;
                 true
             } else {
                 false
             }
         };
         if changed {
-            self.request_style();
+            self.request_layout();
         }
     }
 
-    /// Clear the hidden state for child views during styling.
-    /// This should be used by parent views to clear hidden state propagation to their children.
-    /// Only requests a style update if the state actually changes.
-    pub fn parent_clear_hidden(&self) {
+    /// Show this view in layout. Clears the force-hidden state.
+    pub fn set_visible(&self) {
+        use crate::view::state::VisibilityPhase;
         let changed = {
             let state = self.state();
             let mut state = state.borrow_mut();
-            if state.parent_set_style_interaction.hidden {
-                state.parent_set_style_interaction.hidden = false;
+            if state.visibility.force_hidden {
+                state.visibility.force_hidden = false;
+                // Reset phase to Initial so the normal transition logic can run
+                state.visibility.phase = VisibilityPhase::Initial;
                 true
             } else {
                 false
             }
         };
         if changed {
+            // Request both style (for transition) and layout (for size recalc)
             self.request_style();
+            self.request_layout();
         }
     }
 }

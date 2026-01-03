@@ -8,7 +8,8 @@ use peniko::kurbo::{Affine, Point, Rect, Size, Vec2};
 use taffy::prelude::NodeId;
 
 use crate::view::ViewId;
-use crate::view::{ChangeFlags, IsHiddenState, View};
+use crate::view::state::VisibilityPhase;
+use crate::view::{ChangeFlags, View};
 use crate::window::state::WindowState;
 
 // =============================================================================
@@ -259,7 +260,7 @@ impl<'a> ComputeLayoutCx<'a> {
         let view_state = id.state();
 
         // Early return for hidden views
-        if view_state.borrow().is_hidden_state == IsHiddenState::Hidden {
+        if view_state.borrow().visibility.is_hidden() {
             view_state.borrow_mut().layout_rect = Rect::ZERO;
             return None;
         }
@@ -456,11 +457,21 @@ impl<'a> LayoutCx<'a> {
         let combined_style = view_state.borrow().combined_style.clone();
         let is_fixed = combined_style.get(crate::style::IsFixed);
         let layout_style = view_state.borrow().layout_props.to_style();
-        let animate_out_display = view_state.borrow().is_hidden_state.get_display();
+        let visibility = view_state.borrow().visibility;
+        // For Animating, preserve the original display; for Hidden/force_hidden, force None
+        let display_override = if visibility.force_hidden {
+            Some(taffy::Display::None)
+        } else {
+            match visibility.phase {
+                VisibilityPhase::Animating(dis) => Some(dis),
+                VisibilityPhase::Hidden => Some(taffy::Display::None),
+                _ => None,
+            }
+        };
 
         let mut style = combined_style
             .apply(layout_style)
-            .apply_opt(animate_out_display, crate::style::Style::display)
+            .apply_opt(display_override, crate::style::Style::display)
             .to_taffy_style();
 
         if is_fixed {

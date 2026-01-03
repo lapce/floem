@@ -54,19 +54,12 @@ pub struct InteractionState {
 ///
 /// These states can be set by parent views and are inherited by children,
 /// allowing parents to control the disabled or selected state of entire subtrees.
-///
-/// Note: The `hidden` field is only used by `parent_set_style_interaction` for
-/// programmatic hiding (e.g., Tab view hiding inactive tabs). For style-based
-/// hiding via `display: none`, use `is_hidden_state` instead.
 #[derive(Default, Debug, Clone, Copy)]
 pub struct InheritedInteractionCx {
     /// Whether this view (or an ancestor) is disabled.
     pub disabled: bool,
     /// Whether this view (or an ancestor) is selected.
     pub selected: bool,
-    /// Whether this view was hidden by a parent (via `parent_set_hidden()`).
-    /// Only used by `parent_set_style_interaction`, not `style_interaction_cx`.
-    pub hidden: bool,
 }
 
 pub struct StyleCx<'a> {
@@ -95,7 +88,7 @@ impl<'a> StyleCx<'a> {
             .or_else(|| view_id.parent());
 
         // Initialize inherited context from parent's style_cx
-        let (current, disabled, selected, hidden) = if let Some(parent_id) = style_parent {
+        let (current, disabled, selected) = if let Some(parent_id) = style_parent {
             let parent_state = parent_id.state();
             let parent_state = parent_state.borrow();
             let inherited_style = parent_state
@@ -108,11 +101,9 @@ impl<'a> StyleCx<'a> {
                 inherited_style,
                 parent_interaction.disabled,
                 parent_interaction.selected,
-                parent_state.is_hidden_state == crate::view::state::IsHiddenState::Hidden
-                    || parent_state.parent_set_style_interaction.hidden,
             )
         } else {
-            (Default::default(), false, false, false)
+            (Default::default(), false, false)
         };
 
         Self {
@@ -126,7 +117,7 @@ impl<'a> StyleCx<'a> {
             saved_selected: Default::default(),
             saved_hidden: Default::default(),
             disabled,
-            hidden,
+            hidden: false,
             selected,
         }
     }
@@ -134,10 +125,6 @@ impl<'a> StyleCx<'a> {
     /// Marks the current context as selected.
     pub fn selected(&mut self) {
         self.selected = true;
-    }
-
-    pub fn hidden(&mut self) {
-        self.hidden = true;
     }
 
     /// Internal method used by Floem to compute the styles for the view.
@@ -351,16 +338,16 @@ impl<'a> StyleCx<'a> {
 
         // Update inherited state for children
         let view_is_disabled = computed_style.get(Disabled);
-        let view_is_display_none = computed_style.get(DisplayProp) == taffy::Display::None;
+        let view_is_display_none = computed_style.get(DisplayProp) == taffy::Display::None
+            || view_state.borrow().visibility.force_hidden;
         view_state.borrow_mut().computed_style = computed_style;
         self.disabled = self.disabled || view_is_disabled;
-        self.hidden = self.hidden || view_is_display_none;
+        self.hidden = view_is_display_none;
 
         // Store inherited interaction state for hit testing
         view_state.borrow_mut().style_interaction_cx = InheritedInteractionCx {
             disabled: self.disabled,
             selected: self.selected,
-            hidden: false,
         };
 
         self.current_view = view_id;
@@ -440,36 +427,41 @@ impl<'a> StyleCx<'a> {
         view.borrow_mut().style_pass(self);
 
         // Handle visibility transitions and animations
-        let old_is_hidden_state = view_state.borrow().is_hidden_state;
-        let mut is_hidden_state = old_is_hidden_state;
-        let computed_display = view_state.borrow().combined_style.get(DisplayProp);
-        is_hidden_state.transition(
-            computed_display,
-            || {
-                let count = animations_on_remove(view_id, Scope::current());
-                view_state.borrow_mut().num_waiting_animations = count;
-                count > 0
-            },
-            || {
-                animations_on_create(view_id);
-            },
-            || {
-                stop_reset_remove_animations(view_id);
-            },
-            || view_state.borrow().num_waiting_animations,
-        );
+        // Skip transition if view has been explicitly hidden via set_hidden()
+        let force_hidden = view_state.borrow().visibility.force_hidden;
+        if !force_hidden {
+            let old_phase = view_state.borrow().visibility.phase;
+            let mut phase = old_phase;
+            let computed_display = view_state.borrow().combined_style.get(DisplayProp);
+            phase.transition(
+                computed_display,
+                || {
+                    let count = animations_on_remove(view_id, Scope::current());
+                    view_state.borrow_mut().num_waiting_animations = count;
+                    count > 0
+                },
+                || {
+                    animations_on_create(view_id);
+                },
+                || {
+                    stop_reset_remove_animations(view_id);
+                },
+                || view_state.borrow().num_waiting_animations,
+            );
 
-        // Invalidate stacking cache if hidden state changed
-        if old_is_hidden_state != is_hidden_state {
-            invalidate_stacking_cache(view_id);
+            // Invalidate stacking cache if visibility phase changed
+            if old_phase != phase {
+                invalidate_stacking_cache(view_id);
+            }
+
+            view_state.borrow_mut().visibility.phase = phase;
         }
-
-        view_state.borrow_mut().is_hidden_state = is_hidden_state;
+        let phase = view_state.borrow().visibility.phase;
         let modified = view_state
             .borrow()
             .combined_style
             .clone()
-            .apply_opt(is_hidden_state.get_display(), Style::display);
+            .apply_opt(phase.get_display(), Style::display);
 
         view_state.borrow_mut().combined_style = modified;
 
