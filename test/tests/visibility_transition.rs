@@ -333,7 +333,10 @@ fn test_hidden_to_visible_transition() {
     harness.rebuild();
 
     // Should now be visible
-    assert!(!id.is_hidden(), "Should be visible after removing display:none");
+    assert!(
+        !id.is_hidden(),
+        "Should be visible after removing display:none"
+    );
 
     // Layout should have proper size
     let layout = id.get_layout().expect("Should have layout");

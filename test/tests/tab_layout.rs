@@ -88,9 +88,8 @@ fn test_switching_tabs_updates_child_sizes() {
         move || tabs.clone(),
         |t| *t,
         move |t| {
-            let view = Empty::new().style(move |s| {
-                s.width(100.0).height(if t == 0 { 80.0 } else { 120.0 })
-            });
+            let view = Empty::new()
+                .style(move |s| s.width(100.0).height(if t == 0 { 80.0 } else { 120.0 }));
             child_ids_clone.borrow_mut().push(view.view_id());
             view
         },
@@ -294,8 +293,7 @@ fn test_hidden_child_doesnt_affect_flex_siblings() {
     let child3 = Empty::new().style(|s| s.size(50.0, 30.0));
     let child3_id = child3.view_id();
 
-    let container =
-        Stack::new((child1, child2, child3)).style(|s| s.flex_row().size(200.0, 100.0));
+    let container = Stack::new((child1, child2, child3)).style(|s| s.flex_row().size(200.0, 100.0));
 
     let mut harness = HeadlessHarness::new_with_size(container, 200.0, 100.0);
     harness.rebuild();
@@ -443,10 +441,7 @@ fn test_hidden_with_display_none_style() {
 
     // Initially visible
     let layout = id.get_layout().expect("View should have layout");
-    assert!(
-        (layout.size.width - 100.0).abs() < 0.1,
-        "Initially visible"
-    );
+    assert!((layout.size.width - 100.0).abs() < 0.1, "Initially visible");
 
     // Set display:none via style
     is_display_none.set(true);

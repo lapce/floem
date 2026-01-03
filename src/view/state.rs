@@ -451,13 +451,7 @@ mod tests {
     fn test_phase_initial_to_hidden() {
         let mut phase = VisibilityPhase::Initial;
 
-        phase.transition(
-            Display::None,
-            || false,
-            || {},
-            || {},
-            || 0,
-        );
+        phase.transition(Display::None, || false, || {}, || {}, || 0);
 
         assert_eq!(phase, VisibilityPhase::Hidden);
     }
@@ -572,13 +566,7 @@ mod tests {
     fn test_phase_hidden_stays_hidden() {
         let mut phase = VisibilityPhase::Hidden;
 
-        phase.transition(
-            Display::None,
-            || false,
-            || {},
-            || {},
-            || 0,
-        );
+        phase.transition(Display::None, || false, || {}, || {}, || 0);
 
         assert_eq!(phase, VisibilityPhase::Hidden);
     }
