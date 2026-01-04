@@ -353,6 +353,40 @@ impl<'a> StyleCx<'a> {
         let mut computed_style = (*self.inherited).clone();
         computed_style.apply_mut(self.direct.clone());
 
+        // ─────────────────────────────────────────────────────────────────────
+        // Phase 5.5: Process animations
+        // ─────────────────────────────────────────────────────────────────────
+        // Animations modify the computed style by interpolating between keyframe values.
+        // We process animations here, after the base style is computed but before
+        // it's stored, so animated values override static style values.
+        let mut has_active_animation = false;
+        {
+            let mut vs = view_state.borrow_mut();
+            for animation in vs
+                .animations
+                .stack
+                .iter_mut()
+                .filter(|anim| anim.can_advance() || anim.should_apply_folded())
+            {
+                if animation.can_advance() {
+                    has_active_animation = true;
+                    animation.animate_into(&mut computed_style);
+                    animation.advance();
+                } else {
+                    animation.apply_folded(&mut computed_style);
+                }
+                debug_assert!(
+                    !animation.is_idle(),
+                    "Animation should not be idle after processing"
+                );
+            }
+        }
+
+        // Schedule next frame if any animation is in progress
+        if has_active_animation {
+            self.window_state.schedule_style(view_id);
+        }
+
         CaptureState::capture_style(view_id, self, computed_style.clone());
 
         // Update focusable set
@@ -405,30 +439,28 @@ impl<'a> StyleCx<'a> {
         // ─────────────────────────────────────────────────────────────────────
         // Phase 7: Extract layout and transform properties
         // ─────────────────────────────────────────────────────────────────────
+        // We read from the computed_style (which includes animated values) rather than
+        // from the raw styles, so that animations affect layout and visual properties.
         let mut transitioning = false;
         {
             let mut vs = view_state.borrow_mut();
 
+            // Clone the computed style to avoid borrow conflicts with the mutable
+            // borrow needed for the extractors. This includes animated values.
+            let computed = vs.computed_style.clone();
+
             // Layout properties (padding, margin, size, etc.)
-            vs.layout_props.read_explicit(
-                &self.direct,
-                &self.inherited,
-                &self.now,
-                &mut transitioning,
-            );
+            vs.layout_props
+                .read_explicit(&computed, &computed, &self.now, &mut transitioning);
 
             // View style properties (background, border, etc.)
-            vs.view_style_props.read_explicit(
-                &self.direct,
-                &self.inherited,
-                &self.now,
-                &mut transitioning,
-            );
+            vs.view_style_props
+                .read_explicit(&computed, &computed, &self.now, &mut transitioning);
 
             // Transform properties (translate, scale, rotation)
             vs.view_transform_props.read_explicit(
-                &self.direct,
-                &self.inherited,
+                &computed,
+                &computed,
                 &self.now,
                 &mut transitioning,
             );
