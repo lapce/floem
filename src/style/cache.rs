@@ -57,6 +57,11 @@ pub struct StyleCacheKey {
     screen_size: ScreenSizeBp,
     /// Hash of the applied classes.
     classes_hash: u64,
+    /// Pointer to the class context Rc (used as identity).
+    /// Using pointer instead of content_hash() for O(1) key creation.
+    /// This works because the same logical class_context shares the same Rc instance
+    /// across siblings, and Rc::make_mut creates a new Rc when content changes.
+    class_context_ptr: usize,
 }
 
 impl StyleCacheKey {
@@ -66,12 +71,15 @@ impl StyleCacheKey {
         interact_state: &InteractionState,
         screen_size_bp: ScreenSizeBp,
         classes: &[StyleClassRef],
+        class_context: &Rc<Style>,
     ) -> Self {
         Self {
             style_hash: style.content_hash(),
             interaction_bits: interact_state.to_bits(),
             screen_size: screen_size_bp,
             classes_hash: hash_classes(classes),
+            // O(1) pointer comparison instead of O(n) content_hash
+            class_context_ptr: Rc::as_ptr(class_context) as usize,
         }
     }
 }
@@ -82,6 +90,7 @@ impl PartialEq for StyleCacheKey {
             && self.interaction_bits == other.interaction_bits
             && self.screen_size == other.screen_size
             && self.classes_hash == other.classes_hash
+            && self.class_context_ptr == other.class_context_ptr
     }
 }
 
@@ -93,6 +102,7 @@ impl Hash for StyleCacheKey {
         self.interaction_bits.hash(state);
         self.screen_size.hash(state);
         self.classes_hash.hash(state);
+        self.class_context_ptr.hash(state);
     }
 }
 
@@ -568,6 +578,7 @@ mod tests {
             interaction_bits: 0,
             screen_size: ScreenSizeBp::Xs,
             classes_hash: 0,
+            class_context_ptr: 0,
         };
 
         cache.insert(key.clone(), style, &parent_style, false);
@@ -589,6 +600,7 @@ mod tests {
             interaction_bits: 0,
             screen_size: ScreenSizeBp::Xs,
             classes_hash: 0,
+            class_context_ptr: 0,
         };
 
         // Insert with parent_style1
@@ -618,6 +630,7 @@ mod tests {
             interaction_bits: 0,
             screen_size: ScreenSizeBp::Xs,
             classes_hash: 0,
+            class_context_ptr: 0,
         };
 
         // Miss
@@ -646,6 +659,7 @@ mod tests {
             interaction_bits: 0,
             screen_size: ScreenSizeBp::Xs,
             classes_hash: 0,
+            class_context_ptr: 0,
         };
 
         cache.insert(key.clone(), style, &parent_style, false);
@@ -667,5 +681,157 @@ mod tests {
 
         // Two empty styles should be equal
         assert!(style1.inherited_equal(&style2));
+    }
+
+    #[test]
+    fn test_different_class_context_causes_cache_miss() {
+        let mut cache = StyleCache::new();
+        let style = Style::new();
+        let parent_style = Rc::new(Style::new());
+
+        // Create two keys with different class_context_hash
+        let key1 = StyleCacheKey {
+            style_hash: 123,
+            interaction_bits: 0,
+            screen_size: ScreenSizeBp::Xs,
+            classes_hash: 0,
+            class_context_ptr: 100, // Different class context pointer
+        };
+
+        let key2 = StyleCacheKey {
+            style_hash: 123,
+            interaction_bits: 0,
+            screen_size: ScreenSizeBp::Xs,
+            classes_hash: 0,
+            class_context_ptr: 200, // Different class context pointer
+        };
+
+        // Insert with key1
+        cache.insert(key1.clone(), style.clone(), &parent_style, false);
+
+        // Lookup with key1 should hit
+        let result = cache.get(&key1, &parent_style);
+        assert!(result.is_some(), "Same key should hit cache");
+
+        // Lookup with key2 (different class_context_hash) should miss
+        let result = cache.get(&key2, &parent_style);
+        assert!(
+            result.is_none(),
+            "Different class_context_hash should cause cache miss"
+        );
+
+        // Insert with key2
+        cache.insert(key2.clone(), style.clone(), &parent_style, true);
+
+        // Now key2 should hit
+        let result = cache.get(&key2, &parent_style);
+        assert!(result.is_some(), "After insert, key2 should hit");
+        assert!(result.unwrap().1, "classes_applied should be true for key2");
+
+        // key1 should still hit with its original value
+        let result = cache.get(&key1, &parent_style);
+        assert!(result.is_some(), "key1 should still hit");
+        assert!(
+            !result.unwrap().1,
+            "classes_applied should be false for key1"
+        );
+    }
+
+    #[test]
+    fn test_cache_key_with_class_context() {
+        // Test that StyleCacheKey::new correctly incorporates class_context
+        let style = Style::new();
+        let interact_state = InteractionState::default();
+        let classes: Vec<StyleClassRef> = vec![];
+
+        let class_context1 = Rc::new(Style::new());
+        let class_context2 = Rc::new(Style::new().background(css::RED));
+
+        let key1 = StyleCacheKey::new(
+            &style,
+            &interact_state,
+            ScreenSizeBp::Xs,
+            &classes,
+            &class_context1,
+        );
+
+        let key2 = StyleCacheKey::new(
+            &style,
+            &interact_state,
+            ScreenSizeBp::Xs,
+            &classes,
+            &class_context2,
+        );
+
+        // Keys with different class contexts should not be equal
+        assert_ne!(
+            key1, key2,
+            "Keys with different class contexts should not be equal"
+        );
+
+        // Same class context should produce equal keys
+        let key1_again = StyleCacheKey::new(
+            &style,
+            &interact_state,
+            ScreenSizeBp::Xs,
+            &classes,
+            &class_context1,
+        );
+        assert_eq!(key1, key1_again, "Same inputs should produce equal keys");
+    }
+
+    #[test]
+    fn test_content_hash_changes_with_class_map() {
+        use crate::style_class;
+
+        // Define a test class
+        style_class!(TestClass);
+
+        // Create a base style
+        let base = Style::new().background(css::RED);
+        let hash1 = base.content_hash();
+
+        // Verify hash is consistent
+        assert_eq!(base.content_hash(), hash1, "Hash should be consistent");
+
+        // Clone the style and add a class map
+        let cloned = base.clone();
+        let cloned = cloned.class(TestClass, |s| s.background(css::BLUE));
+
+        // Get the hash after adding class
+        let hash2 = cloned.content_hash();
+
+        // The hash should be different after adding a class map
+        assert_ne!(
+            hash1, hash2,
+            "Hash should be different after adding class map"
+        );
+    }
+
+    #[test]
+    fn test_apply_only_class_maps_changes_hash() {
+        use crate::style_class;
+        use std::rc::Rc;
+
+        // Define a test class
+        style_class!(TestClass2);
+
+        // Create initial class_context (empty)
+        let mut class_context = Rc::new(Style::new());
+        let initial_hash = class_context.content_hash();
+
+        // Create a style with class maps (like parent's direct style would have)
+        let direct_style = Style::new().class(TestClass2, |s| s.background(css::GREEN));
+
+        // Apply class maps to class_context (simulating what cx.rs does)
+        Style::apply_only_class_maps(&mut class_context, &direct_style);
+
+        // The class_context hash should now be different (new Rc with modified content)
+        let final_hash = class_context.content_hash();
+
+        assert_ne!(
+            initial_hash, final_hash,
+            "Class context hash should change after applying class maps"
+        );
     }
 }

@@ -625,8 +625,13 @@ impl<T: Clone + std::cmp::PartialEq> Dropdown<T> {
                         .pointer_events_auto()
                         .flex_grow(0.0)
                         .flex_shrink(1.0)
-                        .width(width.get())
                 })
+                // Wrap scroll in a container that constrains width to match the dropdown button.
+                // The theme sets width_full() on ScrollClass inside DropdownClass, which would
+                // otherwise expand to fill the full overlay. This container ensures the scroll
+                // (and its items) are sized to match the dropdown trigger width.
+                .container()
+                .style(move |s| s.width(width.get()))
                 .container()
                 .on_resize(move |rect| {
                     overlay_size.set(Some(rect.size()));

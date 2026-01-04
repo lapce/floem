@@ -531,7 +531,8 @@ fn selected_view(
                 Stack::vertical_from_iter(view.classes.clone().into_iter().enumerate().map(
                     |(idx, class_ref)| {
                         let class_style = capture.state.styles.get(&view.id).map(|style| {
-                            Style::new().apply_classes_from_context(&[class_ref], style)
+                            let style_rc = std::rc::Rc::new(style.clone());
+                            Style::new().apply_classes_from_context(&[class_ref], &style_rc)
                         });
 
                         let class_name = format!("{:?}", class_ref.key);
