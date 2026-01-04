@@ -122,10 +122,8 @@ fn test_theme_list_item_hover_styling() {
 
     // The item should exist - if we got here without panicking, the structure is valid
     // The actual hover styling test would require a real windowing system
-    assert!(
-        second_item.children().is_empty() || true,
-        "List item should exist"
-    );
+    // Just verify we can access the item without panicking
+    let _ = second_item.children();
 }
 
 /// Test that deeply nested class styling works.

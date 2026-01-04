@@ -8,7 +8,7 @@
 //! These tests verify that this transform is computed correctly for various
 //! scenarios including nesting, CSS transforms (scale, rotate), and combinations.
 
-use floem::kurbo::{Affine, Point};
+use floem::kurbo::Point;
 use floem::prelude::*;
 use floem::unit::Pct;
 use floem_test::prelude::*;

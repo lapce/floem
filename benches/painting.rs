@@ -55,7 +55,7 @@ fn create_deep_tree_with_transforms(depth: usize) -> impl IntoView {
         } else {
             Container::new(build_nested(remaining - 1)).style(move |s| {
                 // Alternate between scale and translate
-                if remaining % 2 == 0 {
+                if remaining.is_multiple_of(2) {
                     s.padding(2.0).size(80.0, 80.0).scale(Pct(95.0))
                 } else {
                     s.padding(2.0).size(80.0, 80.0).translate_x(1.0)
@@ -118,7 +118,8 @@ fn bench_paint_flat_tree(c: &mut Criterion) {
             let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
             b.iter(|| {
-                black_box(harness.paint());
+                harness.paint();
+                black_box(());
             });
         });
     }
@@ -139,7 +140,8 @@ fn bench_paint_deep_tree(c: &mut Criterion) {
             let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
             b.iter(|| {
-                black_box(harness.paint());
+                harness.paint();
+                black_box(());
             });
         });
     }
@@ -164,7 +166,8 @@ fn bench_paint_with_transforms(c: &mut Criterion) {
                 let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
 
                 b.iter(|| {
-                    black_box(harness.paint());
+                    harness.paint();
+                    black_box(());
                 });
             },
         );
@@ -177,7 +180,8 @@ fn bench_paint_with_transforms(c: &mut Criterion) {
             let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
 
             b.iter(|| {
-                black_box(harness.paint());
+                harness.paint();
+                black_box(());
             });
         });
     }
@@ -201,7 +205,8 @@ fn bench_paint_wide_tree(c: &mut Criterion) {
             let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
             b.iter(|| {
-                black_box(harness.paint());
+                harness.paint();
+                black_box(());
             });
         });
     }
@@ -224,7 +229,8 @@ fn bench_paint_order_tracking(c: &mut Criterion) {
             let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
             b.iter(|| {
-                black_box(harness.paint());
+                harness.paint();
+                black_box(());
             });
         });
 
@@ -261,7 +267,8 @@ fn bench_repaint_after_change(c: &mut Criterion) {
                 b.iter(|| {
                     // Simulate a frame: process updates and paint
                     harness.rebuild();
-                    black_box(harness.paint());
+                    harness.paint();
+                    black_box(());
                 });
             },
         );

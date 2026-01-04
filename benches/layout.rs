@@ -110,7 +110,8 @@ fn bench_layout_flat_tree(c: &mut Criterion) {
             b.iter(|| {
                 // Force layout recomputation
                 harness.set_size(200.0, 200.0);
-                black_box(harness.rebuild());
+                harness.rebuild();
+                black_box(());
             });
         });
     }
@@ -128,7 +129,8 @@ fn bench_layout_deep_tree(c: &mut Criterion) {
 
             b.iter(|| {
                 harness.set_size(200.0, 200.0);
-                black_box(harness.rebuild());
+                harness.rebuild();
+                black_box(());
             });
         });
     }
@@ -155,7 +157,8 @@ fn bench_layout_transform_computation(c: &mut Criterion) {
 
                 b.iter(|| {
                     harness.set_size(200.0, 200.0);
-                    black_box(harness.rebuild());
+                    harness.rebuild();
+                    black_box(());
                 });
             },
         );
@@ -173,7 +176,8 @@ fn bench_layout_transform_computation(c: &mut Criterion) {
 
                 b.iter(|| {
                     harness.set_size(200.0, 200.0);
-                    black_box(harness.rebuild());
+                    harness.rebuild();
+                    black_box(());
                 });
             },
         );
@@ -188,7 +192,8 @@ fn bench_layout_transform_computation(c: &mut Criterion) {
 
                 b.iter(|| {
                     harness.set_size(200.0, 200.0);
-                    black_box(harness.rebuild());
+                    harness.rebuild();
+                    black_box(());
                 });
             },
         );
@@ -215,7 +220,8 @@ fn bench_layout_wide_tree(c: &mut Criterion) {
 
             b.iter(|| {
                 harness.set_size(200.0, 200.0);
-                black_box(harness.rebuild());
+                harness.rebuild();
+                black_box(());
             });
         });
     }
@@ -231,7 +237,8 @@ fn bench_layout_wide_tree(c: &mut Criterion) {
 
             b.iter(|| {
                 harness.set_size(200.0, 200.0);
-                black_box(harness.rebuild());
+                harness.rebuild();
+                black_box(());
             });
         });
     }
@@ -258,7 +265,8 @@ fn bench_incremental_layout(c: &mut Criterion) {
                 // Alternate size to force layout
                 size = if size == 200.0 { 201.0 } else { 200.0 };
                 harness.set_size(size, size);
-                black_box(harness.rebuild());
+                harness.rebuild();
+                black_box(());
             });
         });
     }
