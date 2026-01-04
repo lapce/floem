@@ -421,10 +421,10 @@ impl EventCx<'_> {
         let view_state = view_id.state();
 
         // Single borrow to extract all needed fields (hot path optimization)
-        let (local_to_root, disable_default, is_pointer_none) = {
+        let (visual_transform, disable_default, is_pointer_none) = {
             let vs = view_state.borrow();
             (
-                vs.local_to_root_transform,
+                vs.visual_transform,
                 event
                     .listener()
                     .is_some_and(|l| vs.disable_default_events.contains(&l)),
@@ -433,7 +433,7 @@ impl EventCx<'_> {
             )
         };
 
-        let event = absolute_event.clone().transform(local_to_root);
+        let event = absolute_event.clone().transform(visual_transform);
         let can_process = !disable_default && !is_pointer_none;
 
         // Phase 1: Let view handle event before children
@@ -602,19 +602,9 @@ impl EventCx<'_> {
 
         let id = self.window_state.active.unwrap();
 
-        // Single borrow to get both window_origin and viewport
-        let view_state = id.state();
-        let (window_origin, viewport) = {
-            let vs = view_state.borrow();
-            (vs.window_origin, vs.viewport.unwrap_or_default())
-        };
-        let layout = id.get_layout().unwrap_or_default();
-        let transform = Affine::translate((
-            window_origin.x - layout.location.x as f64 + viewport.x0,
-            window_origin.y - layout.location.y as f64 + viewport.y0,
-        ));
-        let transformed_event = event.clone().transform(transform);
-        self.dispatch_to_view(id, &transformed_event, true);
+        // dispatch_to_view handles the coordinate transformation internally
+        // using visual_transform, so we pass the event unchanged
+        self.dispatch_to_view(id, event, true);
 
         if let Event::Pointer(PointerEvent::Up { .. }) = event {
             if self
@@ -632,19 +622,9 @@ impl EventCx<'_> {
     /// Similar to dispatch_to_active_view, but specifically for pointer capture.
     /// Events are transformed to the capture target's local coordinate space.
     fn dispatch_to_captured_view(&mut self, capture_target: ViewId, event: &Event) {
-        // Single borrow to get both window_origin and viewport
-        let view_state = capture_target.state();
-        let (window_origin, viewport) = {
-            let vs = view_state.borrow();
-            (vs.window_origin, vs.viewport.unwrap_or_default())
-        };
-        let layout = capture_target.get_layout().unwrap_or_default();
-        let transform = Affine::translate((
-            window_origin.x - layout.location.x as f64 + viewport.x0,
-            window_origin.y - layout.location.y as f64 + viewport.y0,
-        ));
-        let transformed_event = event.clone().transform(transform);
-        self.dispatch_to_view(capture_target, &transformed_event, true);
+        // dispatch_to_view handles the coordinate transformation internally
+        // using visual_transform, so we pass the event unchanged
+        self.dispatch_to_view(capture_target, event, true);
     }
 
     // =========================================================================

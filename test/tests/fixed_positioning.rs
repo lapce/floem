@@ -723,7 +723,7 @@ fn test_fixed_element_window_origin() {
     harness.rebuild();
 
     // Get the window_origin - this is what determines paint position
-    let window_origin = fixed_id.get_window_origin();
+    let window_origin = fixed_id.get_visual_origin();
     let layout_rect = fixed_id.get_layout_rect();
 
     eprintln!(
@@ -783,7 +783,7 @@ fn test_fixed_element_with_inset_zero_window_origin() {
     let mut harness = HeadlessHarness::new_with_size(view, 400.0, 300.0);
     harness.rebuild();
 
-    let window_origin = fixed_id.get_window_origin();
+    let window_origin = fixed_id.get_visual_origin();
     let layout = fixed_id.get_layout().expect("Should have layout");
 
     eprintln!(
@@ -843,7 +843,7 @@ fn test_non_fixed_element_window_origin_includes_parent() {
     let mut harness = HeadlessHarness::new_with_size(view, 400.0, 300.0);
     harness.rebuild();
 
-    let window_origin = child_id.get_window_origin();
+    let window_origin = child_id.get_visual_origin();
 
     eprintln!(
         "Non-fixed child window_origin: ({}, {})",

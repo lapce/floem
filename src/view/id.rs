@@ -472,13 +472,28 @@ impl ViewId {
         self.state().borrow().transform
     }
 
-    /// Returns the window origin of this view.
+    /// Returns the view's visual position in window coordinates.
     ///
-    /// This is the position of the view in window (viewport) coordinates.
-    /// For fixed-positioned elements, this is the Taffy layout position.
-    /// For regular elements, this includes the cumulative parent offsets.
+    /// This is derived from `visual_transform`, which is the single source
+    /// of truth for a view's position. For views without CSS scale/rotate transforms,
+    /// this equals the layout position plus CSS translate. For views with scale/rotate,
+    /// this includes the effect of center-based transforms.
+    pub fn get_visual_origin(&self) -> peniko::kurbo::Point {
+        self.state().borrow().visual_origin()
+    }
+
+    /// Returns the view's window origin (layout position after CSS translate).
+    ///
+    /// This is the position used for child layout and does NOT include scale/rotate effects.
+    /// For the position including all CSS transforms (scale, rotate), use `get_visual_origin()`.
+    ///
+    /// The difference between `window_origin` and `visual_origin`:
+    /// - `window_origin`: Position from layout + CSS translate (used for child positioning)
+    /// - `visual_origin`: Position from visual_transform (includes center-based scale/rotate)
+    ///
+    /// For views without scale/rotate transforms, these values are identical.
     pub fn get_window_origin(&self) -> peniko::kurbo::Point {
-        self.state().borrow().window_origin
+        self.state().borrow().window_origin()
     }
 
     /// Returns the layout rect in window coordinates.
@@ -487,6 +502,21 @@ impl ViewId {
     /// positioned at the window origin. Useful for hit testing and paint bounds.
     pub fn get_layout_rect(&self) -> peniko::kurbo::Rect {
         self.state().borrow().layout_rect
+    }
+
+    /// Returns the complete local-to-window coordinate transform.
+    ///
+    /// This transform converts coordinates from this view's local space to window
+    /// coordinates. It combines:
+    /// - The view's position in the window
+    /// - Any CSS transforms (scale, rotate)
+    ///
+    /// To convert a local point to window coordinates: `visual_transform * point`
+    /// To convert a window point to local coordinates: `visual_transform.inverse() * point`
+    ///
+    /// This is the transform used by event dispatch to convert pointer coordinates.
+    pub fn get_visual_transform(&self) -> peniko::kurbo::Affine {
+        self.state().borrow().visual_transform
     }
 
     /// Returns true if this view is hidden.

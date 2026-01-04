@@ -75,17 +75,20 @@ impl TransformComponents {
 /// We track two origins because CSS transforms and move listeners need different values:
 /// - `base`: The logical position in window coords, ignoring CSS translate. This is what
 ///   move listeners report since they care about where the element "should" be.
-/// - `visual`: The visual position including CSS translate. This is where the element
-///   actually appears and where children should be positioned relative to.
+/// - `translated`: The position after CSS translate. This becomes `window_origin` and is
+///   used for child positioning. Note: this does NOT include scale/rotate effects.
 #[derive(Clone, Copy)]
 struct WindowOrigins {
     /// Position before CSS translate (used for move listeners)
     base: Point,
-    /// Position after CSS translate (where children are positioned)
-    visual: Point,
+    /// Position after CSS translate (stored as window_origin, used for child positioning)
+    translated: Point,
 }
 
-/// Compute both window origins for a view based on its layout position.
+/// Compute window origins for a view based on its layout position.
+///
+/// The window origin is used for child positioning and is different from
+/// `visual_transform.translation()` which includes scale/rotate effects.
 fn compute_window_origins(
     origin: Point,
     parent_window_origin: Point,
@@ -101,9 +104,9 @@ fn compute_window_origins(
         origin + parent_window_origin.to_vec2() - viewport_origin
     };
 
-    let visual = Point::new(base.x + translate.x, base.y + translate.y);
+    let translated = Point::new(base.x + translate.x, base.y + translate.y);
 
-    WindowOrigins { base, visual }
+    WindowOrigins { base, translated }
 }
 
 // =============================================================================
@@ -208,13 +211,23 @@ fn notify_move_listeners(id: ViewId, base_window_origin: Point) {
 pub struct ComputeLayoutCx<'a> {
     pub window_state: &'a mut WindowState,
     pub(crate) viewport: Rect,
+    /// The accumulated layout position for child positioning.
+    ///
+    /// This is the parent's visual position (layout + CSS translate, but NOT scale/rotate).
+    /// Children use this to compute their window position. This is different from
+    /// `ViewState::visual_origin()` which is derived from `visual_transform.translation()`
+    /// and includes the effect of center-based scale/rotate transforms.
     pub(crate) window_origin: Point,
     /// The accumulated clip rect in window coordinates. Views outside this rect
     /// are clipped by ancestor overflow:hidden/scroll containers.
     pub(crate) clip_rect: Rect,
+    /// Accumulated transform from local coordinates to window coordinates.
+    /// This includes all ancestor transforms (translate, scale, rotate).
+    pub(crate) visual_transform: Affine,
     pub(crate) saved_viewports: Vec<Rect>,
     pub(crate) saved_window_origins: Vec<Point>,
     pub(crate) saved_clip_rects: Vec<Rect>,
+    pub(crate) saved_visual_transforms: Vec<Affine>,
 }
 
 impl<'a> ComputeLayoutCx<'a> {
@@ -224,12 +237,19 @@ impl<'a> ComputeLayoutCx<'a> {
             viewport,
             window_origin: Point::ZERO,
             clip_rect: Rect::new(-1e9, -1e9, 1e9, 1e9),
+            visual_transform: Affine::IDENTITY,
             saved_viewports: Vec::new(),
             saved_window_origins: Vec::new(),
             saved_clip_rects: Vec::new(),
+            saved_visual_transforms: Vec::new(),
         }
     }
 
+    /// Returns the accumulated layout position for child positioning.
+    ///
+    /// This is the visual position (layout + CSS translate) that children use
+    /// to compute their window positions. Note: this does NOT include the effect
+    /// of CSS scale/rotate transforms.
     pub fn window_origin(&self) -> Point {
         self.window_origin
     }
@@ -238,6 +258,7 @@ impl<'a> ComputeLayoutCx<'a> {
         self.saved_viewports.push(self.viewport);
         self.saved_window_origins.push(self.window_origin);
         self.saved_clip_rects.push(self.clip_rect);
+        self.saved_visual_transforms.push(self.visual_transform);
     }
 
     pub fn restore(&mut self) {
@@ -247,6 +268,10 @@ impl<'a> ComputeLayoutCx<'a> {
             .saved_clip_rects
             .pop()
             .unwrap_or(Rect::new(-1e9, -1e9, 1e9, 1e9));
+        self.visual_transform = self
+            .saved_visual_transforms
+            .pop()
+            .unwrap_or(Affine::IDENTITY);
     }
 
     pub fn current_viewport(&self) -> Rect {
@@ -284,7 +309,7 @@ impl<'a> ComputeLayoutCx<'a> {
         };
         let viewport_origin = this_viewport.unwrap_or_default().origin().to_vec2();
 
-        // Compute window origins
+        // Compute window origins (for child positioning, NOT the same as visual_transform)
         let origins = compute_window_origins(
             origin,
             self.window_origin,
@@ -293,16 +318,20 @@ impl<'a> ComputeLayoutCx<'a> {
             is_fixed,
         );
 
-        // Update context and view state with visual origin
-        self.window_origin = origins.visual;
-        view_state.borrow_mut().window_origin = origins.visual;
+        // Update context with visual origin for child traversal
+        self.window_origin = origins.translated;
 
         // Update viewport
         self.update_viewport(layout.location, viewport_origin, size, this_viewport);
 
         // Compute clip rect for this view
-        let mut view_clip_rect =
-            compute_clip_rect(size, origins.visual, self.clip_rect, is_absolute, is_fixed);
+        let mut view_clip_rect = compute_clip_rect(
+            size,
+            origins.translated,
+            self.clip_rect,
+            is_absolute,
+            is_fixed,
+        );
         view_clip_rect =
             apply_viewport_clipping(view_clip_rect, this_viewport, origins.base, viewport_origin);
 
@@ -328,6 +357,27 @@ impl<'a> ComputeLayoutCx<'a> {
         notify_resize_listeners(id, size, origin);
         notify_move_listeners(id, origins.base);
 
+        // Compute the accumulated visual transform.
+        // This transform converts coordinates from this view's local space to window coordinates.
+        //
+        // The formula is: parent_visual_transform * translate(layout_offset - viewport_scroll) * css_transform
+        //
+        // For fixed-positioned views, we reset to identity since they're positioned relative
+        // to the viewport, not their parent's transform.
+        let layout_offset = Vec2::new(layout.location.x as f64, layout.location.y as f64);
+        let visual_transform = if is_fixed {
+            // Fixed positioning: relative to viewport, ignore parent transforms
+            Affine::translate(origin.to_vec2()) * transform.full
+        } else {
+            // Normal positioning: accumulate parent transform
+            self.visual_transform
+                * Affine::translate(layout_offset - viewport_origin)
+                * transform.full
+        };
+
+        // Update context for children - they will inherit this view's accumulated transform
+        self.visual_transform = visual_transform;
+
         // Recursively compute children layouts
         let view = id.view();
         let child_layout_rect = view.borrow_mut().compute_layout(self);
@@ -339,18 +389,14 @@ impl<'a> ComputeLayoutCx<'a> {
         let layout_rect = self.compute_final_layout_rect(size, child_layout_rect, &transform);
         let transformed_clip_rect = transform.scale_rotation.transform_rect_bbox(view_clip_rect);
 
-        // Compute cumulative transform for coordinate conversion (local -> window).
-        // Translation comes from window_origin, scale/rotation from transform.
-        let local_to_root = Affine::translate((self.window_origin.x, self.window_origin.y))
-            * transform.scale_rotation;
-
         // Store computed layout results
         {
             let mut vs = view_state.borrow_mut();
             vs.transform = transform.full;
             vs.layout_rect = layout_rect;
             vs.clip_rect = transformed_clip_rect;
-            vs.local_to_root_transform = local_to_root;
+            vs.visual_transform = visual_transform;
+            vs.window_origin = origins.translated;
         }
 
         self.restore();
