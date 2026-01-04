@@ -1215,4 +1215,28 @@ impl Animation {
     pub const fn is_auto_reverse(&self) -> bool {
         self.auto_reverse
     }
+
+    /// Returns true if the internal folded style of the animation should be applied.
+    ///
+    /// This is used when the animation cannot advance but the folded style should still be applied.
+    /// For example, when the animation is paused or when `apply_when_finished` is set.
+    pub fn should_apply_folded(&self) -> bool {
+        self.apply_when_finished
+            || match self.state_kind() {
+                AnimStateKind::Paused => true,
+                AnimStateKind::Idle
+                | AnimStateKind::Stopped
+                | AnimStateKind::PassInProgress
+                | AnimStateKind::PassFinished
+                | AnimStateKind::Completed => false,
+            }
+    }
+
+    /// Apply the folded (last computed) style values to the given computed style.
+    ///
+    /// This is used when the animation is paused or completed but should still
+    /// apply its last interpolated values.
+    pub fn apply_folded(&self, computed_style: &mut Style) {
+        computed_style.apply_mut(self.folded_style.clone());
+    }
 }
