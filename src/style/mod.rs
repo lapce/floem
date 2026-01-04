@@ -571,6 +571,19 @@ impl Style {
         classes: &[StyleClassRef],
         class_context: &std::rc::Rc<Style>,
     ) -> (Style, bool) {
+        // Fast path: if no classes or no class maps in context, return unchanged
+        if classes.is_empty() || !class_context.has_class_maps {
+            return (self, false);
+        }
+
+        // Check if any of the classes actually have definitions in the context
+        let has_matching_classes = classes
+            .iter()
+            .any(|class| class_context.get_nested_map(class.key).is_some());
+        if !has_matching_classes {
+            return (self, false);
+        }
+
         let mut changed = false;
 
         let context_mappings_key = StyleKey {
@@ -610,41 +623,40 @@ impl Style {
         }
 
         // Now apply view's own styles ON TOP of class styles (inline styles win)
+        // We move the view_style into result to avoid cloning when possible
         result.apply_mut(view_style.clone());
 
-        // CSS-like specificity fix: The view's inline selector styles (like .selected())
-        // should override class styles, but class context mappings (like with_theme) run
-        // AFTER this and might override them. To fix this, we wrap the view's selector
-        // nested maps in a context mapping that runs LAST, after all class context mappings.
-        //
-        // Extract selector nested maps from view_style and add them as a context mapping
-        // that runs last.
-        let view_selector_keys: Vec<_> = view_style
-            .map
-            .keys()
-            .filter(|k| matches!(k.info, StyleKeyInfo::Selector(..)))
-            .cloned()
-            .collect();
-
-        if !view_selector_keys.is_empty() {
-            let view_selectors: HashMap<StyleKey, Rc<dyn Any>> = view_selector_keys
-                .iter()
-                .filter_map(|k| view_style.map.get(k).map(|v| (*k, v.clone())))
+        // Merge context mappings: class mappings FIRST (defaults), view's SECOND (overrides)
+        // Only do selector extraction if there are class context mappings that could override them
+        if !all_class_mappings.is_empty() {
+            // CSS-like specificity fix: The view's inline selector styles (like .selected())
+            // should override class styles, but class context mappings (like with_theme) run
+            // AFTER this and might override them. To fix this, we wrap the view's selector
+            // nested maps in a context mapping that runs LAST, after all class context mappings.
+            let view_selector_keys: Vec<_> = view_style
+                .map
+                .keys()
+                .filter(|k| matches!(k.info, StyleKeyInfo::Selector(..)))
+                .cloned()
                 .collect();
 
-            // Add a context mapping that re-applies the view's selector styles LAST
-            let restore_selectors: ContextMapFn = Rc::new(move |mut s: Style, _ctx: &Style| {
-                for (k, v) in view_selectors.iter() {
-                    // Use apply_iter to merge correctly
-                    s.apply_iter(std::iter::once((k, v)));
-                }
-                s
-            });
-            all_class_mappings.push(restore_selectors);
-        }
+            if !view_selector_keys.is_empty() {
+                let view_selectors: HashMap<StyleKey, Rc<dyn Any>> = view_selector_keys
+                    .iter()
+                    .filter_map(|k| view_style.map.get(k).map(|v| (*k, v.clone())))
+                    .collect();
 
-        // Merge context mappings: class mappings FIRST (defaults), view's SECOND (overrides)
-        if !all_class_mappings.is_empty() || view_ctx_mappings.is_some() {
+                // Add a context mapping that re-applies the view's selector styles LAST
+                let restore_selectors: ContextMapFn = Rc::new(move |mut s: Style, _ctx: &Style| {
+                    for (k, v) in view_selectors.iter() {
+                        s.apply_iter(std::iter::once((k, v)));
+                    }
+                    s
+                });
+                all_class_mappings.push(restore_selectors);
+            }
+
+            // Add view's own context mappings AFTER class mappings (so view's override)
             if let Some(view_mappings_rc) = view_ctx_mappings {
                 let view_mappings = view_mappings_rc.downcast_ref::<ContextMappings>().unwrap();
                 all_class_mappings.extend(view_mappings.0.iter().cloned());
@@ -653,6 +665,9 @@ impl Style {
                 context_mappings_key,
                 Rc::new(ContextMappings(Rc::new(all_class_mappings))),
             );
+        } else if let Some(view_mappings_rc) = view_ctx_mappings {
+            // No class mappings, just preserve view's own context mappings
+            result.map.insert(context_mappings_key, view_mappings_rc);
         }
 
         (result, changed)
