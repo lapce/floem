@@ -14,6 +14,7 @@ use floem::reactive::Trigger;
 use floem::style::Background;
 use floem::unit::DurationUnitExt;
 use floem_test::prelude::*;
+use serial_test::serial;
 
 // =============================================================================
 // Animation Scheduling Tests
@@ -24,6 +25,7 @@ use floem_test::prelude::*;
 /// When an animation is active, the system should schedule repaints/style updates
 /// to advance the animation on each frame.
 #[test]
+#[serial]
 fn test_animation_schedules_updates() {
     let view = Empty::new()
         .style(|s| s.size(100.0, 100.0).background(palette::css::RED))
@@ -47,6 +49,7 @@ fn test_animation_schedules_updates() {
 
 /// Test that repeating animation continues to schedule updates.
 #[test]
+#[serial]
 fn test_repeating_animation_schedules_continuous_updates() {
     let view = Empty::new()
         .style(|s| s.size(100.0, 100.0).background(palette::css::RED))
@@ -79,6 +82,7 @@ fn test_repeating_animation_schedules_continuous_updates() {
 ///
 /// The computed style should reflect interpolated animation values.
 #[test]
+#[serial]
 fn test_animation_applies_background_color() {
     let view = Empty::new()
         .style(|s| s.size(100.0, 100.0).background(palette::css::RED))
@@ -105,6 +109,7 @@ fn test_animation_applies_background_color() {
 
 /// Test that animation with size keyframes affects layout.
 #[test]
+#[serial]
 fn test_animation_affects_size() {
     // Start with a small size, animate to larger
     let view = Empty::new().style(|s| s.size(50.0, 50.0)).animation(|_| {
@@ -135,6 +140,7 @@ fn test_animation_affects_size() {
 
 /// Test that pause trigger stops animation updates.
 #[test]
+#[serial]
 fn test_animation_pause_stops_updates() {
     let pause = Trigger::new();
     let pause_clone = pause.clone();
@@ -170,6 +176,7 @@ fn test_animation_pause_stops_updates() {
 
 /// Test that resume trigger restarts animation after pause.
 #[test]
+#[serial]
 fn test_animation_resume_after_pause() {
     let pause = Trigger::new();
     let resume = Trigger::new();
@@ -211,6 +218,7 @@ fn test_animation_resume_after_pause() {
 
 /// Test that multiple animations on a view all contribute to style updates.
 #[test]
+#[serial]
 fn test_multiple_animations_schedule_updates() {
     let view = Empty::new()
         .style(|s| {
@@ -247,6 +255,7 @@ fn test_multiple_animations_schedule_updates() {
 /// Test the exact animation pattern used in widget-gallery example.
 /// This test replicates the animation setup from examples/widget-gallery/src/animation.rs
 #[test]
+#[serial]
 fn test_widget_gallery_animation_pattern() {
     let animation = RwSignal::new(
         Animation::new()
@@ -290,6 +299,7 @@ fn test_widget_gallery_animation_pattern() {
 
 /// Test that animation with computed_style keyframe works.
 #[test]
+#[serial]
 fn test_computed_style_keyframe() {
     let view = Empty::new()
         .style(|s| s.size(100.0, 100.0).background(palette::css::GREEN))
@@ -325,6 +335,7 @@ fn test_computed_style_keyframe() {
 
 /// Test that animation with delay doesn't immediately apply end state.
 #[test]
+#[serial]
 fn test_animation_with_delay() {
     let view = Empty::new()
         .style(|s| s.size(100.0, 100.0).background(palette::css::RED))
@@ -349,6 +360,7 @@ fn test_animation_with_delay() {
 /// Test that animation actually progresses over multiple frames.
 /// This test verifies that the animation state changes between frames.
 #[test]
+#[serial]
 fn test_animation_progresses_over_frames() {
     let view = Empty::new()
         .style(|s| s.size(100.0, 100.0).background(palette::css::RED))
@@ -396,6 +408,7 @@ fn test_animation_progresses_over_frames() {
 
 /// Test that animation works with dynamically created views (like in tab component).
 #[test]
+#[serial]
 fn test_animation_in_dynamic_container() {
     use floem::views::dyn_container;
 
@@ -447,6 +460,7 @@ fn test_animation_in_dynamic_container() {
 
 /// Test auto_reverse animation scheduling.
 #[test]
+#[serial]
 fn test_auto_reverse_animation() {
     let view = Empty::new()
         .style(|s| s.size(100.0, 100.0).background(palette::css::RED))
@@ -487,6 +501,7 @@ fn test_auto_reverse_animation() {
 /// This is a regression test for the bug where Phase 7 was reading from
 /// non-animated styles instead of the animated computed_style.
 #[test]
+#[serial]
 fn test_animated_size_affects_layout() {
     // Start at 50x50, animate to 150x150
     let view = Empty::new().style(|s| s.size(50.0, 50.0)).animation(|_| {
@@ -536,6 +551,7 @@ fn test_animated_size_affects_layout() {
 /// Verifies that animate_into() actually modifies the computed_style
 /// and that this style is stored correctly.
 #[test]
+#[serial]
 fn test_animated_background_in_computed_style() {
     // Animate from RED to BLUE
     let view = Empty::new()
@@ -585,6 +601,7 @@ fn test_animated_background_in_computed_style() {
 /// Verifies the full animation cycle affects layout.
 /// Uses apply_when_finished(true) to keep the final values after completion.
 #[test]
+#[serial]
 fn test_size_animation_reaches_target() {
     // Animate from 50 to 200 over 50ms
     let view = Empty::new().style(|s| s.size(50.0, 50.0)).animation(|_| {
@@ -621,6 +638,7 @@ fn test_size_animation_reaches_target() {
 ///
 /// Verifies that both size and other properties animate together.
 #[test]
+#[serial]
 fn test_multiple_property_animation() {
     use floem::style::BorderRadiusProp;
 
@@ -669,6 +687,7 @@ fn test_multiple_property_animation() {
 ///
 /// Verifies that the folded_style mechanism works for paused animations.
 #[test]
+#[serial]
 fn test_paused_animation_maintains_values() {
     let pause = Trigger::new();
     let pause_clone = pause.clone();
