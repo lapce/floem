@@ -75,14 +75,14 @@ impl TransformComponents {
 /// We track two origins because CSS transforms and move listeners need different values:
 /// - `base`: The logical position in window coords, ignoring CSS translate. This is what
 ///   move listeners report since they care about where the element "should" be.
-/// - `visual`: The visual position including CSS translate. This is the `window_origin`
-///   that children use for positioning. Note: this does NOT include scale/rotate effects.
+/// - `translated`: The position after CSS translate. This becomes `window_origin` and is
+///   used for child positioning. Note: this does NOT include scale/rotate effects.
 #[derive(Clone, Copy)]
 struct WindowOrigins {
     /// Position before CSS translate (used for move listeners)
     base: Point,
-    /// Position after CSS translate (where children are positioned)
-    visual: Point,
+    /// Position after CSS translate (stored as window_origin, used for child positioning)
+    translated: Point,
 }
 
 /// Compute window origins for a view based on its layout position.
@@ -104,9 +104,9 @@ fn compute_window_origins(
         origin + parent_window_origin.to_vec2() - viewport_origin
     };
 
-    let visual = Point::new(base.x + translate.x, base.y + translate.y);
+    let translated = Point::new(base.x + translate.x, base.y + translate.y);
 
-    WindowOrigins { base, visual }
+    WindowOrigins { base, translated }
 }
 
 // =============================================================================
@@ -319,14 +319,19 @@ impl<'a> ComputeLayoutCx<'a> {
         );
 
         // Update context with visual origin for child traversal
-        self.window_origin = origins.visual;
+        self.window_origin = origins.translated;
 
         // Update viewport
         self.update_viewport(layout.location, viewport_origin, size, this_viewport);
 
         // Compute clip rect for this view
-        let mut view_clip_rect =
-            compute_clip_rect(size, origins.visual, self.clip_rect, is_absolute, is_fixed);
+        let mut view_clip_rect = compute_clip_rect(
+            size,
+            origins.translated,
+            self.clip_rect,
+            is_absolute,
+            is_fixed,
+        );
         view_clip_rect =
             apply_viewport_clipping(view_clip_rect, this_viewport, origins.base, viewport_origin);
 
@@ -391,7 +396,7 @@ impl<'a> ComputeLayoutCx<'a> {
             vs.layout_rect = layout_rect;
             vs.clip_rect = transformed_clip_rect;
             vs.visual_transform = visual_transform;
-            vs.window_origin = origins.visual;
+            vs.window_origin = origins.translated;
         }
 
         self.restore();
