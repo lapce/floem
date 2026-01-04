@@ -482,6 +482,20 @@ impl ViewId {
         self.state().borrow().visual_origin()
     }
 
+    /// Returns the view's window origin (layout position after CSS translate).
+    ///
+    /// This is the position used for child layout and does NOT include scale/rotate effects.
+    /// For the position including all CSS transforms (scale, rotate), use `get_visual_origin()`.
+    ///
+    /// The difference between `window_origin` and `visual_origin`:
+    /// - `window_origin`: Position from layout + CSS translate (used for child positioning)
+    /// - `visual_origin`: Position from visual_transform (includes center-based scale/rotate)
+    ///
+    /// For views without scale/rotate transforms, these values are identical.
+    pub fn get_window_origin(&self) -> peniko::kurbo::Point {
+        self.state().borrow().window_origin()
+    }
+
     /// Returns the layout rect in window coordinates.
     ///
     /// This is the bounding rect that encompasses this view and its children,

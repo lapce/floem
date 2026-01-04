@@ -67,10 +67,10 @@ impl TransformComponents {
 }
 
 // =============================================================================
-// Layout origin computation
+// Window origin computation
 // =============================================================================
 
-/// Computed layout origins for a view.
+/// Computed window origins for a view.
 ///
 /// We track two origins because CSS transforms and move listeners need different values:
 /// - `base`: The logical position in window coords, ignoring CSS translate. This is what
@@ -78,24 +78,24 @@ impl TransformComponents {
 /// - `visual`: The visual position including CSS translate. This is the `window_origin`
 ///   that children use for positioning. Note: this does NOT include scale/rotate effects.
 #[derive(Clone, Copy)]
-struct LayoutOrigins {
+struct WindowOrigins {
     /// Position before CSS translate (used for move listeners)
     base: Point,
     /// Position after CSS translate (where children are positioned)
     visual: Point,
 }
 
-/// Compute layout origins for a view based on its layout position.
+/// Compute window origins for a view based on its layout position.
 ///
 /// The window origin is used for child positioning and is different from
 /// `visual_transform.translation()` which includes scale/rotate effects.
-fn compute_layout_origins(
+fn compute_window_origins(
     origin: Point,
     parent_window_origin: Point,
     viewport_origin: Vec2,
     translate: Vec2,
     is_fixed: bool,
-) -> LayoutOrigins {
+) -> WindowOrigins {
     let base = if is_fixed {
         // Fixed positioning: relative to viewport, not parent
         origin
@@ -106,7 +106,7 @@ fn compute_layout_origins(
 
     let visual = Point::new(base.x + translate.x, base.y + translate.y);
 
-    LayoutOrigins { base, visual }
+    WindowOrigins { base, visual }
 }
 
 // =============================================================================
@@ -309,8 +309,8 @@ impl<'a> ComputeLayoutCx<'a> {
         };
         let viewport_origin = this_viewport.unwrap_or_default().origin().to_vec2();
 
-        // Compute layout origins (for child positioning, NOT the same as visual_transform)
-        let origins = compute_layout_origins(
+        // Compute window origins (for child positioning, NOT the same as visual_transform)
+        let origins = compute_window_origins(
             origin,
             self.window_origin,
             viewport_origin,
@@ -391,6 +391,7 @@ impl<'a> ComputeLayoutCx<'a> {
             vs.layout_rect = layout_rect;
             vs.clip_rect = transformed_clip_rect;
             vs.visual_transform = visual_transform;
+            vs.window_origin = origins.visual;
         }
 
         self.restore();

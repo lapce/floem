@@ -276,6 +276,10 @@ pub struct ViewState {
     /// This combines the view's position and any CSS transforms.
     /// Use the inverse to convert from window coordinates to local coordinates.
     pub(crate) visual_transform: Affine,
+    /// The window origin for this view (layout position after CSS translate).
+    /// This is the position used for child layout and does NOT include scale/rotate effects.
+    /// For the position including all CSS transforms, use `visual_transform.translation()`.
+    pub(crate) window_origin: Point,
     pub(crate) stacking_info: StackingInfo,
     pub(crate) debug_name: SmallVec<[String; 1]>,
     /// Scope for reactive children (used by `ParentView::derived_children`).
@@ -330,6 +334,7 @@ impl ViewState {
             view_transform_props: Default::default(),
             transform: Affine::IDENTITY,
             visual_transform: Affine::IDENTITY,
+            window_origin: Point::ZERO,
             stacking_info: StackingInfo::default(),
             debug_name: Default::default(),
             style_cx_parent: None,
@@ -362,6 +367,14 @@ impl ViewState {
     pub(crate) fn visual_origin(&self) -> Point {
         let t = self.visual_transform.translation();
         Point::new(t.x, t.y)
+    }
+
+    /// Returns the view's window origin (layout position after CSS translate).
+    ///
+    /// This is the position used for child layout and does NOT include scale/rotate effects.
+    /// For the position including all CSS transforms, use `visual_origin()`.
+    pub(crate) fn window_origin(&self) -> Point {
+        self.window_origin
     }
 
     pub(crate) fn style(&self) -> Style {
