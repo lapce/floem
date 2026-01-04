@@ -266,17 +266,16 @@ pub struct ViewState {
     pub(crate) context_menu: Option<Rc<MenuCallback>>,
     pub(crate) popout_menu: Option<Rc<MenuCallback>>,
     pub(crate) resize_listeners: Rc<RefCell<ResizeListeners>>,
-    pub(crate) window_origin: Point,
     pub(crate) move_listeners: Rc<RefCell<MoveListeners>>,
     pub(crate) cleanup_listeners: Rc<RefCell<CleanupListeners>>,
     pub(crate) last_pointer_down: Option<PointerState>,
     pub(crate) num_waiting_animations: u16,
     pub(crate) disable_default_events: HashSet<EventListener>,
     pub(crate) transform: Affine,
-    /// The cumulative transform from this view's local coordinates to root (window) coordinates.
-    /// This combines the view's position (window_origin) and any CSS transforms.
-    /// Use the inverse to convert from root coordinates to local coordinates.
-    pub(crate) local_to_root_transform: Affine,
+    /// The cumulative transform from this view's local coordinates to window coordinates.
+    /// This combines the view's position and any CSS transforms.
+    /// Use the inverse to convert from window coordinates to local coordinates.
+    pub(crate) visual_transform: Affine,
     pub(crate) stacking_info: StackingInfo,
     pub(crate) debug_name: SmallVec<[String; 1]>,
     /// Scope for reactive children (used by `ParentView::derived_children`).
@@ -326,12 +325,11 @@ impl ViewState {
             move_listeners: Default::default(),
             cleanup_listeners: Default::default(),
             last_pointer_down: None,
-            window_origin: Point::ZERO,
             num_waiting_animations: 0,
             disable_default_events: HashSet::new(),
             view_transform_props: Default::default(),
             transform: Affine::IDENTITY,
-            local_to_root_transform: Affine::IDENTITY,
+            visual_transform: Affine::IDENTITY,
             stacking_info: StackingInfo::default(),
             debug_name: Default::default(),
             style_cx_parent: None,
@@ -353,6 +351,17 @@ impl ViewState {
             }
         }
         false
+    }
+
+    /// Returns the view's visual position in window coordinates.
+    ///
+    /// This is derived from `visual_transform`, which is the single source
+    /// of truth for a view's position. For views without CSS scale/rotate transforms,
+    /// this equals the layout position plus CSS translate. For views with scale/rotate,
+    /// this includes the effect of center-based transforms.
+    pub(crate) fn visual_origin(&self) -> Point {
+        let t = self.visual_transform.translation();
+        Point::new(t.x, t.y)
     }
 
     pub(crate) fn style(&self) -> Style {

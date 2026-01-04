@@ -558,7 +558,8 @@ fn bench_active_view_dispatch(c: &mut Criterion) {
                     harness.pointer_down(black_box(offset + 10.0), black_box(y));
                     // All these moves go through dispatch_to_active_view
                     for i in 0..10 {
-                        harness.pointer_move(black_box(offset + 10.0 + i as f64 * 6.0), black_box(y));
+                        harness
+                            .pointer_move(black_box(offset + 10.0 + i as f64 * 6.0), black_box(y));
                     }
                     harness.pointer_up(black_box(offset + 70.0), black_box(y));
                 });

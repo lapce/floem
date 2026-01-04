@@ -12,7 +12,7 @@
 //!
 //! But this produces coordinates relative to the parent, not the view itself.
 //! The correct transformation should use just `window_origin` (matching
-//! how `local_to_root_transform` is computed during layout).
+//! how `window_transform` is computed during layout).
 
 use floem::prelude::*;
 use floem::views::slider;
@@ -104,10 +104,10 @@ fn test_slider_deeply_nested_maintains_value() {
         .style(|s| s.width(200.0).height(20.0));
 
     // Nest the slider multiple levels deep
-    let view = Container::new(Container::new(Container::new(slider_view).style(|s| {
-        s.padding(20.0)
-    }))
-    .style(|s| s.padding(30.0)))
+    let view = Container::new(
+        Container::new(Container::new(slider_view).style(|s| s.padding(20.0)))
+            .style(|s| s.padding(30.0)),
+    )
     .style(|s| s.padding(50.0).size(400.0, 200.0));
 
     let mut harness = HeadlessHarness::new_with_size(view, 400.0, 200.0);

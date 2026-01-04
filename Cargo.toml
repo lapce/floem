@@ -183,3 +183,11 @@ harness = false
 [[bench]]
 name = "style_computation"
 harness = false
+
+[[bench]]
+name = "painting"
+harness = false
+
+[[bench]]
+name = "layout"
+harness = false

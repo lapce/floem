@@ -983,7 +983,7 @@ fn test_window_origin_accumulates() {
     let mut harness = HeadlessHarness::new_with_size(level1, 200.0, 200.0);
     harness.rebuild();
 
-    let window_origin = deep_id.get_window_origin();
+    let window_origin = deep_id.get_visual_origin();
     // level1 padding: 20, level2 padding: 10, total: 30
     assert!(
         (window_origin.x - 30.0).abs() < 0.1,
