@@ -492,6 +492,83 @@ fn bench_no_listeners_path(c: &mut Criterion) {
     group.finish();
 }
 
+/// Benchmarks for the active view dispatch path.
+/// This path is taken when a view sets itself as "active" (e.g., slider during drag).
+/// Events are then dispatched via dispatch_to_active_view instead of path-based dispatch.
+///
+/// Uses real Slider widget which calls cx.update_active() on pointer down.
+fn bench_active_view_dispatch(c: &mut Criterion) {
+    use floem::views::slider;
+
+    let mut group = c.benchmark_group("active_view_dispatch");
+
+    // Create a slider nested at various depths to test dispatch_to_active_view
+    fn create_slider_tree(depth: usize) -> impl IntoView {
+        fn build_nested(remaining: usize) -> Container {
+            if remaining == 0 {
+                // Innermost: the slider (which sets itself as active on pointer down)
+                Container::new(
+                    slider::Slider::new(|| 50.0.pct()).style(|s| s.width(80.0).height(20.0)),
+                )
+                .style(|s| s.size(100.0, 100.0))
+            } else {
+                Container::new(build_nested(remaining - 1))
+                    .style(|s| s.padding(5.0).size(100.0, 100.0))
+            }
+        }
+        build_nested(depth)
+    }
+
+    // Benchmark pointer_up after pointer_down (uses dispatch_to_active_view)
+    // The slider sets itself as active on pointer_down, so pointer_up goes through
+    // dispatch_to_active_view with the coordinate transformation we're testing.
+    for depth in [0, 1, 5, 10].iter() {
+        group.bench_with_input(
+            BenchmarkId::new("slider_click", depth),
+            depth,
+            |b, &depth| {
+                let view = create_slider_tree(depth);
+                let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+
+                // Calculate slider position based on nesting depth
+                // Each level adds 5px padding
+                let offset = depth as f64 * 5.0 + 10.0; // slider is ~10px from container edge
+
+                b.iter(|| {
+                    harness.pointer_down(black_box(offset + 40.0), black_box(offset + 10.0));
+                    harness.pointer_up(black_box(offset + 40.0), black_box(offset + 10.0));
+                });
+            },
+        );
+    }
+
+    // Benchmark drag sequence with slider (multiple moves via dispatch_to_active_view)
+    for depth in [0, 1, 5].iter() {
+        group.bench_with_input(
+            BenchmarkId::new("slider_drag", depth),
+            depth,
+            |b, &depth| {
+                let view = create_slider_tree(depth);
+                let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+
+                let offset = depth as f64 * 5.0 + 10.0;
+                let y = offset + 10.0;
+
+                b.iter(|| {
+                    harness.pointer_down(black_box(offset + 10.0), black_box(y));
+                    // All these moves go through dispatch_to_active_view
+                    for i in 0..10 {
+                        harness.pointer_move(black_box(offset + 10.0 + i as f64 * 6.0), black_box(y));
+                    }
+                    harness.pointer_up(black_box(offset + 70.0), black_box(y));
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_flat_tree_dispatch,
@@ -503,6 +580,7 @@ criterion_group!(
     bench_event_sequence,
     bench_cache_effectiveness,
     bench_no_listeners_path,
+    bench_active_view_dispatch,
 );
 
 criterion_main!(benches);

@@ -602,19 +602,9 @@ impl EventCx<'_> {
 
         let id = self.window_state.active.unwrap();
 
-        // Single borrow to get both window_origin and viewport
-        let view_state = id.state();
-        let (window_origin, viewport) = {
-            let vs = view_state.borrow();
-            (vs.window_origin, vs.viewport.unwrap_or_default())
-        };
-        let layout = id.get_layout().unwrap_or_default();
-        let transform = Affine::translate((
-            window_origin.x - layout.location.x as f64 + viewport.x0,
-            window_origin.y - layout.location.y as f64 + viewport.y0,
-        ));
-        let transformed_event = event.clone().transform(transform);
-        self.dispatch_to_view(id, &transformed_event, true);
+        // dispatch_to_view handles the coordinate transformation internally
+        // using local_to_root_transform, so we pass the event unchanged
+        self.dispatch_to_view(id, event, true);
 
         if let Event::Pointer(PointerEvent::Up { .. }) = event {
             if self
@@ -632,19 +622,9 @@ impl EventCx<'_> {
     /// Similar to dispatch_to_active_view, but specifically for pointer capture.
     /// Events are transformed to the capture target's local coordinate space.
     fn dispatch_to_captured_view(&mut self, capture_target: ViewId, event: &Event) {
-        // Single borrow to get both window_origin and viewport
-        let view_state = capture_target.state();
-        let (window_origin, viewport) = {
-            let vs = view_state.borrow();
-            (vs.window_origin, vs.viewport.unwrap_or_default())
-        };
-        let layout = capture_target.get_layout().unwrap_or_default();
-        let transform = Affine::translate((
-            window_origin.x - layout.location.x as f64 + viewport.x0,
-            window_origin.y - layout.location.y as f64 + viewport.y0,
-        ));
-        let transformed_event = event.clone().transform(transform);
-        self.dispatch_to_view(capture_target, &transformed_event, true);
+        // dispatch_to_view handles the coordinate transformation internally
+        // using local_to_root_transform, so we pass the event unchanged
+        self.dispatch_to_view(capture_target, event, true);
     }
 
     // =========================================================================
