@@ -637,11 +637,15 @@ fn test_size_animation_reaches_target() {
 /// Test that multiple properties can be animated simultaneously.
 ///
 /// Verifies that both size and other properties animate together.
+/// This test uses apply_when_finished to verify final animated values
+/// rather than relying on timing-sensitive mid-animation checks.
 #[test]
 #[serial]
 fn test_multiple_property_animation() {
     use floem::style::BorderRadiusProp;
 
+    // Use a very short animation with apply_when_finished to test that
+    // multiple properties are animated and reach their final values
     let view = Empty::new()
         .style(|s| s.size(50.0, 50.0).border_radius(0.0))
         .animation(|_| {
@@ -650,36 +654,31 @@ fn test_multiple_property_animation() {
                 .keyframe(100, |f| {
                     f.style(|s| s.size(150.0, 150.0).border_radius(20.0))
                 })
-                .duration(Duration::from_millis(200)) // Longer duration for more reliable timing
+                .duration(Duration::from_millis(30)) // Very short duration
+                .apply_when_finished(true) // Keep final values
         });
     let id = view.view_id();
 
     let mut harness = HeadlessHarness::new_with_size(view, 400.0, 400.0);
 
-    // First rebuild - animation starts
-    harness.rebuild();
-    let initial_size = harness.get_size(id).unwrap();
-
-    // Run multiple rebuild cycles with sleeps to ensure animation progresses
-    for _ in 0..5 {
-        std::thread::sleep(Duration::from_millis(30));
+    // Run enough rebuild cycles to complete the animation
+    for _ in 0..10 {
         harness.rebuild();
+        std::thread::sleep(Duration::from_millis(10));
     }
 
-    let mid_size = harness.get_size(id).unwrap();
-    let mid_style = harness.get_computed_style(id);
+    let final_size = harness.get_size(id).unwrap();
+    let final_style = harness.get_computed_style(id);
 
-    // Size should have increased after ~150ms of a 200ms animation
+    // Size should have reached or be near target (150x150)
     assert!(
-        mid_size.width > initial_size.width || mid_size.height > initial_size.height,
-        "Size should animate: {:?} -> {:?}",
-        initial_size,
-        mid_size
+        final_size.width >= 100.0 && final_size.height >= 100.0,
+        "Size should animate to target: got {:?}",
+        final_size
     );
 
-    // Border radius should also be in the computed style
-    // The BorderRadiusProp returns a BorderRadius struct, check it has non-default values
-    let border_radius = mid_style.get(BorderRadiusProp);
+    // Border radius should be in the computed style
+    let border_radius = final_style.get(BorderRadiusProp);
     assert!(
         border_radius.top_left.is_some() || border_radius.top_right.is_some(),
         "Border radius should be animated in computed style"
