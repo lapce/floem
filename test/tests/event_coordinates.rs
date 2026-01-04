@@ -6,7 +6,7 @@
 //! - `event.point()` returns coordinates in the receiving view's local space
 //! - Nested views accumulate parent offsets (padding, margins, position)
 //! - CSS transforms (scale, rotate, translate) affect coordinate transformation
-//! - The inverse of `window_transform` is used to convert window coords to local
+//! - The inverse of `visual_transform` is used to convert window coords to local
 
 use floem::kurbo::Point;
 use floem::prelude::*;

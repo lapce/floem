@@ -603,7 +603,7 @@ impl EventCx<'_> {
         let id = self.window_state.active.unwrap();
 
         // dispatch_to_view handles the coordinate transformation internally
-        // using window_transform, so we pass the event unchanged
+        // using visual_transform, so we pass the event unchanged
         self.dispatch_to_view(id, event, true);
 
         if let Event::Pointer(PointerEvent::Up { .. }) = event {
@@ -623,7 +623,7 @@ impl EventCx<'_> {
     /// Events are transformed to the capture target's local coordinate space.
     fn dispatch_to_captured_view(&mut self, capture_target: ViewId, event: &Event) {
         // dispatch_to_view handles the coordinate transformation internally
-        // using window_transform, so we pass the event unchanged
+        // using visual_transform, so we pass the event unchanged
         self.dispatch_to_view(capture_target, event, true);
     }
 

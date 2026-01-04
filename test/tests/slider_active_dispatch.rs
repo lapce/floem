@@ -11,8 +11,8 @@
 //!   transform = translate(window_origin - layout.location + viewport)
 //!
 //! But this produces coordinates relative to the parent, not the view itself.
-//! The correct transformation should use just `window_origin` (matching
-//! how `window_transform` is computed during layout).
+//! The correct transformation should use just `visual_origin` (matching
+//! how `visual_transform` is computed during layout).
 
 use floem::prelude::*;
 use floem::views::slider;

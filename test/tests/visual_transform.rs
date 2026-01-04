@@ -1,9 +1,9 @@
-//! Tests for window_transform correctness.
+//! Tests for visual_transform correctness.
 //!
-//! The `window_transform` is the complete coordinate transformation from
+//! The `visual_transform` is the complete coordinate transformation from
 //! a view's local coordinate space to window (root) coordinates. It should equal:
 //!
-//!   translate(window_origin) * scale_rotation
+//!   translate(visual_origin) * scale_rotation
 //!
 //! These tests verify that this transform is computed correctly for various
 //! scenarios including nesting, CSS transforms (scale, rotate), and combinations.
@@ -20,7 +20,7 @@ use serial_test::serial;
 
 #[test]
 #[serial]
-fn test_window_transform_at_origin() {
+fn test_visual_transform_at_origin() {
     // A view at the origin with no transforms should have identity transform
     let view = Empty::new().style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
@@ -29,32 +29,32 @@ fn test_window_transform_at_origin() {
     harness.rebuild();
 
     let transform = id.get_visual_transform();
-    let window_origin = id.get_visual_origin();
+    let visual_origin = id.get_visual_origin();
 
     // At origin, transform should be identity (or just the small offset if any)
     assert!(
-        (window_origin.x).abs() < 0.1 && (window_origin.y).abs() < 0.1,
-        "View at origin should have window_origin near (0,0), got ({}, {})",
-        window_origin.x,
-        window_origin.y
+        (visual_origin.x).abs() < 0.1 && (visual_origin.y).abs() < 0.1,
+        "View at origin should have visual_origin near (0,0), got ({}, {})",
+        visual_origin.x,
+        visual_origin.y
     );
 
-    // Transform translation should match window_origin
+    // Transform translation should match visual_origin
     let translation = transform.translation();
     assert!(
-        (translation.x - window_origin.x).abs() < 0.1,
-        "Transform translation.x should match window_origin.x"
+        (translation.x - visual_origin.x).abs() < 0.1,
+        "Transform translation.x should match visual_origin.x"
     );
     assert!(
-        (translation.y - window_origin.y).abs() < 0.1,
-        "Transform translation.y should match window_origin.y"
+        (translation.y - visual_origin.y).abs() < 0.1,
+        "Transform translation.y should match visual_origin.y"
     );
 }
 
 #[test]
 #[serial]
-fn test_window_transform_with_padding() {
-    // A view inside a container with padding should have window_origin offset
+fn test_visual_transform_with_padding() {
+    // A view inside a container with padding should have visual_origin offset
     let inner = Empty::new().style(|s| s.size(50.0, 50.0));
     let inner_id = inner.view_id();
 
@@ -64,18 +64,18 @@ fn test_window_transform_with_padding() {
     harness.rebuild();
 
     let transform = inner_id.get_visual_transform();
-    let window_origin = inner_id.get_visual_origin();
+    let visual_origin = inner_id.get_visual_origin();
 
     // Inner view should be at (30, 30) due to parent padding
     assert!(
-        (window_origin.x - 30.0).abs() < 0.1,
-        "window_origin.x should be 30 (padding), got {}",
-        window_origin.x
+        (visual_origin.x - 30.0).abs() < 0.1,
+        "visual_origin.x should be 30 (padding), got {}",
+        visual_origin.x
     );
     assert!(
-        (window_origin.y - 30.0).abs() < 0.1,
-        "window_origin.y should be 30 (padding), got {}",
-        window_origin.y
+        (visual_origin.y - 30.0).abs() < 0.1,
+        "visual_origin.y should be 30 (padding), got {}",
+        visual_origin.y
     );
 
     // Transform translation should match
@@ -94,7 +94,7 @@ fn test_window_transform_with_padding() {
 
 #[test]
 #[serial]
-fn test_window_transform_nested_accumulates() {
+fn test_visual_transform_nested_accumulates() {
     // Deeply nested views should accumulate all parent offsets
     let deep = Empty::new().style(|s| s.size(20.0, 20.0));
     let deep_id = deep.view_id();
@@ -109,13 +109,13 @@ fn test_window_transform_nested_accumulates() {
     harness.rebuild();
 
     let transform = deep_id.get_visual_transform();
-    let window_origin = deep_id.get_visual_origin();
+    let visual_origin = deep_id.get_visual_origin();
 
     // Total offset: 10 + 20 + 30 = 60
     assert!(
-        (window_origin.x - 60.0).abs() < 0.1,
-        "Nested window_origin.x should be 60, got {}",
-        window_origin.x
+        (visual_origin.x - 60.0).abs() < 0.1,
+        "Nested visual_origin.x should be 60, got {}",
+        visual_origin.x
     );
 
     let translation = transform.translation();
@@ -132,7 +132,7 @@ fn test_window_transform_nested_accumulates() {
 
 #[test]
 #[serial]
-fn test_window_transform_with_scale() {
+fn test_visual_transform_with_scale() {
     // A view with CSS scale transform
     let view = Empty::new().style(|s| s.size(100.0, 100.0).scale(Pct(200.0))); // 2x scale
     let id = view.view_id();
@@ -151,18 +151,18 @@ fn test_window_transform_with_scale() {
         css_coeffs[0]
     );
 
-    // window_transform should incorporate the scale
+    // visual_transform should incorporate the scale
     let coeffs = transform.as_coeffs();
     assert!(
         (coeffs[0] - 2.0).abs() < 0.1,
-        "window_transform should have scale 2.0, got {}",
+        "visual_transform should have scale 2.0, got {}",
         coeffs[0]
     );
 }
 
 #[test]
 #[serial]
-fn test_window_transform_with_translate() {
+fn test_visual_transform_with_translate() {
     // A view with CSS translate
     let view = Empty::new().style(|s| s.size(50.0, 50.0).translate_x(20.0).translate_y(10.0));
     let id = view.view_id();
@@ -171,19 +171,19 @@ fn test_window_transform_with_translate() {
     harness.rebuild();
 
     let transform = id.get_visual_transform();
-    let window_origin = id.get_visual_origin();
+    let visual_origin = id.get_visual_origin();
 
-    // CSS translate affects window_origin
-    // window_origin should include the translate
+    // CSS translate affects visual_origin
+    // visual_origin should include the translate
     assert!(
-        (window_origin.x - 20.0).abs() < 0.1,
-        "window_origin.x should include translate (20), got {}",
-        window_origin.x
+        (visual_origin.x - 20.0).abs() < 0.1,
+        "visual_origin.x should include translate (20), got {}",
+        visual_origin.x
     );
     assert!(
-        (window_origin.y - 10.0).abs() < 0.1,
-        "window_origin.y should include translate (10), got {}",
-        window_origin.y
+        (visual_origin.y - 10.0).abs() < 0.1,
+        "visual_origin.y should include translate (10), got {}",
+        visual_origin.y
     );
 
     // Transform translation should match
@@ -197,7 +197,7 @@ fn test_window_transform_with_translate() {
 
 #[test]
 #[serial]
-fn test_window_transform_with_rotation() {
+fn test_visual_transform_with_rotation() {
     // A view with CSS rotation (90 degrees)
     let view = Empty::new().style(|s| {
         s.size(50.0, 50.0).rotate(90.0.deg()) // 90 degrees
@@ -222,19 +222,19 @@ fn test_window_transform_with_rotation() {
         css_coeffs[3]
     );
 
-    // window_transform should incorporate the rotation
+    // visual_transform should incorporate the rotation
     let coeffs = transform.as_coeffs();
     assert!(
         (coeffs[0]).abs() < 0.1 && (coeffs[1] - 1.0).abs() < 0.1,
-        "window_transform should have 90 degree rotation"
+        "visual_transform should have 90 degree rotation"
     );
 }
 
 #[test]
 #[serial]
-fn test_window_transform_combined_transforms() {
+fn test_visual_transform_combined_transforms() {
     // A view with position + translate + scale.
-    // window_origin is derived from window_transform, so it equals
+    // visual_origin is derived from visual_transform, so it equals
     // the transform's translation component.
     let inner = Empty::new().style(|s| {
         s.size(40.0, 40.0).translate_x(10.0).scale(Pct(150.0)) // 1.5x scale
@@ -247,7 +247,7 @@ fn test_window_transform_combined_transforms() {
     harness.rebuild();
 
     let transform = inner_id.get_visual_transform();
-    let window_origin = inner_id.get_visual_origin();
+    let visual_origin = inner_id.get_visual_origin();
 
     // Transform should have scale 1.5
     let coeffs = transform.as_coeffs();
@@ -270,12 +270,12 @@ fn test_window_transform_combined_transforms() {
         coeffs[4]
     );
 
-    // window_origin now equals translation (single source of truth)
+    // visual_origin now equals translation (single source of truth)
     let translation = transform.translation();
     assert!(
-        (window_origin.x - translation.x).abs() < 0.1,
-        "window_origin.x ({}) should equal translation.x ({})",
-        window_origin.x,
+        (visual_origin.x - translation.x).abs() < 0.1,
+        "visual_origin.x ({}) should equal translation.x ({})",
+        visual_origin.x,
         translation.x
     );
 
@@ -295,7 +295,7 @@ fn test_window_transform_combined_transforms() {
 
 #[test]
 #[serial]
-fn test_window_transform_point_conversion() {
+fn test_visual_transform_point_conversion() {
     // Test that we can convert points correctly using the transform
     let inner = Empty::new().style(|s| s.size(100.0, 100.0));
     let inner_id = inner.view_id();
@@ -413,7 +413,7 @@ fn test_point_conversion_with_scale() {
 #[serial]
 fn test_nested_transforms_parent_rotation_child_scale() {
     // Parent has rotation, child has scale
-    // The window_transform should include both transforms
+    // The visual_transform should include both transforms
     let inner = Empty::new().style(|s| s.size(40.0, 40.0).scale(Pct(200.0)));
     let inner_id = inner.view_id();
 
@@ -445,7 +445,7 @@ fn test_nested_transforms_parent_rotation_child_scale() {
     let has_rotation = inner_coeffs[1].abs() > 0.1;
     assert!(
         has_rotation,
-        "Inner's window_transform should include parent's rotation. \
+        "Inner's visual_transform should include parent's rotation. \
          Coeffs: {:?}. Expected non-zero b (coeffs[1]) for rotation.",
         inner_coeffs
     );

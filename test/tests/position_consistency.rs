@@ -3,13 +3,13 @@
 //! These tests verify that the various position-related fields in ViewState
 //! are consistent with each other:
 //!
-//! - `window_origin`: The view's visual position in window coordinates
-//! - `window_transform`: Complete transform from local to window coords
+//! - `visual_origin`: The view's visual position in window coordinates
+//! - `visual_transform`: Complete transform from local to window coords
 //! - `layout_rect`: Bounding box in window coords (includes children)
 //!
 //! Key invariants:
-//! - window_origin.x == window_transform.translation().x (without scale/rotate)
-//! - layout_rect.origin() == window_origin (for views without CSS transforms)
+//! - visual_origin.x == visual_transform.translation().x (without scale/rotate)
+//! - layout_rect.origin() == visual_origin (for views without CSS transforms)
 //! - layout_rect union includes all descendants' bounds
 
 use floem::kurbo::Point;
@@ -19,7 +19,7 @@ use floem_test::prelude::*;
 use serial_test::serial;
 
 // =============================================================================
-// window_origin and window_transform consistency
+// visual_origin and visual_transform consistency
 // =============================================================================
 
 #[test]
@@ -89,7 +89,7 @@ fn test_window_origin_matches_transform_with_translate() {
 #[test]
 #[serial]
 fn test_window_origin_equals_translation_with_scale() {
-    // window_origin is derived from window_transform, so it equals
+    // visual_origin is derived from visual_transform, so it equals
     // translation() even for views with CSS transforms.
     let view = Empty::new().style(|s| s.size(100.0, 100.0).scale(Pct(200.0)));
     let id = view.view_id();
@@ -317,8 +317,8 @@ fn test_transform_is_identity_without_css_transforms() {
 
 #[test]
 #[serial]
-fn test_window_transform_invertible() {
-    // window_transform should be invertible for coordinate conversion
+fn test_visual_transform_invertible() {
+    // visual_transform should be invertible for coordinate conversion
     let inner = Empty::new().style(|s| s.size(40.0, 40.0));
     let inner_id = inner.view_id();
 
@@ -351,7 +351,7 @@ fn test_window_transform_invertible() {
 
 #[test]
 #[serial]
-fn test_window_transform_with_scale_invertible() {
+fn test_visual_transform_with_scale_invertible() {
     // Transform with scale should also be invertible
     let view = Empty::new().style(|s| s.size(100.0, 100.0).scale(Pct(150.0)));
     let id = view.view_id();

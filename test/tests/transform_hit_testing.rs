@@ -6,7 +6,7 @@
 //! - CSS transforms affect visual appearance
 //! - layout_rect is computed with transforms applied (axis-aligned bounding box)
 //! - Hit testing uses layout_rect which includes transform effects
-//! - Event coordinates are transformed to local space using window_transform inverse
+//! - Event coordinates are transformed to local space using visual_transform inverse
 //!
 //! Note: CSS transforms in Floem are center-based, meaning scale/rotate happen around
 //! the element's center, not its origin.
@@ -304,7 +304,7 @@ fn test_transform_with_z_index_stacking() {
 fn test_scaled_view_receives_correct_local_coordinates() {
     // When clicking on a scaled view, the event coordinates should be in local space.
     // CSS scale is center-based, so the math is:
-    //   window_transform = translate(center) * scale(s) * translate(-center)
+    //   visual_transform = translate(center) * scale(s) * translate(-center)
     //   root_to_local = translate(center) * scale(1/s) * translate(-center)
     //
     // For a 100x100 view with 2x scale, center is (50, 50):
