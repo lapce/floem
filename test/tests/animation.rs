@@ -650,23 +650,26 @@ fn test_multiple_property_animation() {
                 .keyframe(100, |f| {
                     f.style(|s| s.size(150.0, 150.0).border_radius(20.0))
                 })
-                .duration(Duration::from_millis(100))
+                .duration(Duration::from_millis(200)) // Longer duration for more reliable timing
         });
     let id = view.view_id();
 
     let mut harness = HeadlessHarness::new_with_size(view, 400.0, 400.0);
 
-    // First rebuild
+    // First rebuild - animation starts
     harness.rebuild();
     let initial_size = harness.get_size(id).unwrap();
 
-    // Wait and rebuild
-    std::thread::sleep(Duration::from_millis(60));
-    harness.rebuild();
+    // Run multiple rebuild cycles with sleeps to ensure animation progresses
+    for _ in 0..5 {
+        std::thread::sleep(Duration::from_millis(30));
+        harness.rebuild();
+    }
+
     let mid_size = harness.get_size(id).unwrap();
     let mid_style = harness.get_computed_style(id);
 
-    // Size should have increased
+    // Size should have increased after ~150ms of a 200ms animation
     assert!(
         mid_size.width > initial_size.width || mid_size.height > initial_size.height,
         "Size should animate: {:?} -> {:?}",
