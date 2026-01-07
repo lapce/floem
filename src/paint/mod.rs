@@ -393,36 +393,18 @@ impl PaintCx<'_> {
 
             let is_fixed = overlay_is_fixed || first_child_is_fixed;
 
-            // Accumulate transforms from root to overlay's parent
-            // This ensures the overlay is painted at the correct window position
+            // Set up the transform for the overlay.
+            // This ensures the overlay is painted at the correct window position.
             self.save();
 
-            // For fixed-positioned overlays, we don't apply parent transforms
-            // because they're positioned relative to the viewport, not their parent.
-            // For regular overlays, we build the transform chain from root to parent.
+            // For fixed-positioned overlays, we reset to identity since they're
+            // positioned relative to the viewport, not their parent.
+            // For regular overlays, we use the parent's pre-computed visual_transform.
             if is_fixed {
-                // For fixed positioning, reset transform to identity so the overlay
-                // is painted at the viewport origin, not offset by any previous transforms.
                 self.transform = Affine::IDENTITY;
-            } else {
-                // Build the transform chain from root to overlay's parent
-                let mut ancestors = Vec::new();
-                let mut current = overlay_id.parent();
-                while let Some(ancestor) = current {
-                    ancestors.push(ancestor);
-                    current = ancestor.parent();
-                }
-
-                // Apply transforms from root down to parent (reverse order)
-                for ancestor in ancestors.into_iter().rev() {
-                    if let Some(layout) = ancestor.get_layout() {
-                        self.transform *= Affine::translate(Vec2 {
-                            x: layout.location.x as f64,
-                            y: layout.location.y as f64,
-                        });
-                        self.transform *= ancestor.state().borrow().transform;
-                    }
-                }
+            } else if let Some(parent) = overlay_id.parent() {
+                // Use parent's pre-computed transform directly (O(1) instead of O(depth))
+                self.transform = parent.state().borrow().visual_transform;
             }
 
             self.paint_state
@@ -506,16 +488,17 @@ impl PaintCx<'_> {
     pub fn transform(&mut self, id: ViewId) -> Size {
         if let Some(layout) = id.get_layout() {
             let offset = layout.location;
-            self.transform *= Affine::translate(Vec2 {
-                x: offset.x as f64,
-                y: offset.y as f64,
-            });
-            self.transform *= id.state().borrow().transform;
+
+            // Use the pre-computed visual_transform directly instead of accumulating.
+            // This transform is computed during layout and includes all ancestor transforms.
+            self.transform = id.state().borrow().visual_transform;
 
             self.paint_state
                 .renderer_mut()
                 .set_transform(self.transform);
 
+            // Adjust clip rect to local coordinates by subtracting the layout offset.
+            // This keeps clips in the current view's coordinate space for intersection tests.
             if let Some(rect) = self.clip.as_mut() {
                 let raidus = rect.radii();
                 *rect = rect

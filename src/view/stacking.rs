@@ -69,6 +69,17 @@ pub(crate) fn invalidate_all_overlay_caches() {
     });
 }
 
+/// Clears all stacking context caches.
+/// Used during window cleanup to ensure test isolation.
+pub(crate) fn clear_all_stacking_caches() {
+    STACKING_CONTEXT_CACHE.with(|cache| {
+        cache.borrow_mut().clear();
+    });
+    OVERLAY_ORDER_CACHE.with(|cache| {
+        cache.borrow_mut().clear();
+    });
+}
+
 /// Collects direct children of a view, sorted by z-index.
 ///
 /// In the simplified stacking model:

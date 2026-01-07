@@ -13,10 +13,12 @@ use floem::peniko::Brush;
 use floem::prelude::*;
 use floem::style::{Background, Disabled, Selected};
 use floem_test::prelude::*;
+use serial_test::serial;
 
 /// Test that a reactive style closure re-runs when its signal changes.
 /// This test verifies the basic reactive style update mechanism.
 #[test]
+#[serial]
 fn test_reactive_style_updates_on_signal_change() {
     let counter = RwSignal::new(0);
 
@@ -59,6 +61,7 @@ fn test_reactive_style_updates_on_signal_change() {
 /// Test that the Disabled property is set correctly via set_disabled().
 /// This verifies that set_disabled(true) sets the Disabled property in the style.
 #[test]
+#[serial]
 fn test_set_disabled_sets_property() {
     let counter = RwSignal::new(0);
 
@@ -95,6 +98,7 @@ fn test_set_disabled_sets_property() {
 /// not the NEW style. This means .disabled() selector isn't applied on the
 /// first style pass after set_disabled(true) is set.
 #[test]
+#[serial]
 fn test_disabled_selector_applied_on_first_pass() {
     let counter = RwSignal::new(0);
 
@@ -139,6 +143,7 @@ fn test_disabled_selector_applied_on_first_pass() {
 /// This is exactly the bug the user reported: clicking "Increment" doesn't
 /// update the "Reset to 0" button's appearance until hover/leave.
 #[test]
+#[serial]
 fn test_disabled_to_enabled_transition() {
     let counter = RwSignal::new(0);
 
@@ -200,6 +205,7 @@ fn test_disabled_to_enabled_transition() {
 /// computed_style has been updated to include Disabled: true AND we force
 /// a style recalculation.
 #[test]
+#[serial]
 fn test_disabled_selector_after_style_request() {
     let counter = RwSignal::new(0);
 
@@ -241,6 +247,7 @@ fn test_disabled_selector_after_style_request() {
 
 /// Test that multiple reactive styles on different views update correctly.
 #[test]
+#[serial]
 fn test_multiple_reactive_styles() {
     let signal = RwSignal::new(false);
 
@@ -312,6 +319,7 @@ fn test_multiple_reactive_styles() {
 /// This test simulates the bug reported: clicking "Increment" doesn't cause
 /// the "Reset to 0" button to update its appearance.
 #[test]
+#[serial]
 fn test_counter_example_repaint_scenario() {
     let counter = RwSignal::new(0);
 
@@ -373,6 +381,7 @@ fn test_counter_example_repaint_scenario() {
 /// 2. Mark the view's style as dirty
 /// 3. Recompute styles and return true from process_update_no_paint() indicating repaint needed
 #[test]
+#[serial]
 fn test_reactive_style_change_requests_repaint() {
     let color_signal = RwSignal::new(palette::css::RED);
 
@@ -408,6 +417,7 @@ fn test_reactive_style_change_requests_repaint() {
 /// This simulates the real-world scenario where a click handler changes
 /// a signal that affects another view's style.
 #[test]
+#[serial]
 fn test_click_triggered_style_change_requests_repaint() {
     let is_active = RwSignal::new(false);
 
@@ -468,6 +478,7 @@ fn test_click_triggered_style_change_requests_repaint() {
 /// This directly tests that when a view requests style recalculation,
 /// a repaint is also scheduled.
 #[test]
+#[serial]
 fn test_request_style_triggers_repaint() {
     let view = Empty::new().style(|s| s.size(100.0, 100.0).background(palette::css::GRAY));
     let id = view.view_id();
@@ -489,6 +500,7 @@ fn test_request_style_triggers_repaint() {
 
 /// Test that style changes during event handling trigger repaint.
 #[test]
+#[serial]
 fn test_style_change_in_event_handler_triggers_repaint() {
     let counter = RwSignal::new(0);
 
@@ -533,6 +545,7 @@ fn test_style_change_in_event_handler_triggers_repaint() {
 
 /// Test that style changes trigger style recalculation flag.
 #[test]
+#[serial]
 fn test_style_change_triggers_recalculation() {
     let counter = RwSignal::new(0);
 
@@ -590,6 +603,7 @@ fn test_style_change_triggers_recalculation() {
 
 /// Test that the Selected property can be set reactively via set_selected().
 #[test]
+#[serial]
 fn test_set_selected_sets_property() {
     let is_selected = RwSignal::new(false);
 
@@ -621,6 +635,7 @@ fn test_set_selected_sets_property() {
 /// KNOWN BUG: This test may FAIL because resolve_nested_maps checks
 /// interact_state.is_selected which may be computed from the OLD computed_style.
 #[test]
+#[serial]
 fn test_selected_selector_applied_on_first_pass() {
     let is_selected = RwSignal::new(true);
 
@@ -648,6 +663,7 @@ fn test_selected_selector_applied_on_first_pass() {
 
 /// Test transition from not-selected to selected.
 #[test]
+#[serial]
 fn test_not_selected_to_selected_transition() {
     let is_selected = RwSignal::new(false);
 
@@ -687,6 +703,7 @@ fn test_not_selected_to_selected_transition() {
 
 /// Test that selected-to-not-selected transition works correctly.
 #[test]
+#[serial]
 fn test_selected_to_not_selected_transition() {
     let is_selected = RwSignal::new(true);
 
@@ -731,6 +748,7 @@ fn test_selected_to_not_selected_transition() {
 /// Test combining disabled and selected selectors.
 /// This tests the interaction between multiple state-based selectors.
 #[test]
+#[serial]
 fn test_disabled_and_selected_selectors_combined() {
     let is_disabled = RwSignal::new(false);
     let is_selected = RwSignal::new(false);
@@ -783,6 +801,7 @@ fn test_disabled_and_selected_selectors_combined() {
 
 /// Test that multiple rapid state changes are handled correctly.
 #[test]
+#[serial]
 fn test_rapid_state_changes() {
     let state = RwSignal::new(0);
 
@@ -841,6 +860,7 @@ fn test_rapid_state_changes() {
 /// Test that a view's style updates when its sibling's state changes.
 /// This simulates the sidebar menu button scenario.
 #[test]
+#[serial]
 fn test_sibling_state_affects_other_sibling() {
     let active_index = RwSignal::new(0);
 
@@ -904,6 +924,7 @@ fn test_sibling_state_affects_other_sibling() {
 
 /// Test that nested style closures with selectors work correctly.
 #[test]
+#[serial]
 fn test_nested_selector_with_reactive_state() {
     let is_active = RwSignal::new(false);
 
@@ -942,6 +963,7 @@ fn test_nested_selector_with_reactive_state() {
 /// Test that hover + selected combination works correctly.
 /// This simulates a menu item that is both selected and being hovered.
 #[test]
+#[serial]
 fn test_hover_and_selected_combination() {
     let is_selected = RwSignal::new(true);
 
@@ -1004,6 +1026,7 @@ fn test_hover_and_selected_combination() {
 
 /// Test clicking a button to change selection (simulates real UI interaction).
 #[test]
+#[serial]
 fn test_click_changes_selection_style() {
     let selected_id = RwSignal::new(0usize);
 

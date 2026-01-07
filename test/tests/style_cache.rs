@@ -13,6 +13,7 @@ use floem::prelude::*;
 use floem::prop;
 use floem::style::{Background, Style};
 use floem_test::prelude::*;
+use serial_test::serial;
 
 // ============================================================================
 // Test Helpers
@@ -45,6 +46,7 @@ floem::style_class!(pub CacheTestClass);
 
 /// Test that views with identical styles share cached results.
 #[test]
+#[serial]
 fn test_cache_hit_for_identical_styles() {
     // Create multiple views with exactly the same style
     let views: Vec<_> = (0..5)
@@ -78,6 +80,7 @@ fn test_cache_hit_for_identical_styles() {
 
 /// Test that views with different styles have different computed results.
 #[test]
+#[serial]
 fn test_cache_miss_for_different_styles() {
     let view1 = Empty::new().style(|s| s.size(50.0, 50.0).background(palette::css::RED));
     let id1 = view1.view_id();
@@ -112,6 +115,7 @@ fn test_cache_miss_for_different_styles() {
 /// This is the key Chromium-inspired validation - two views with identical
 /// base styles but different parent inherited values should NOT share cache.
 #[test]
+#[serial]
 fn test_cache_miss_for_different_parent_inherited() {
     // Two parent containers with different inherited colors
     let child1 =
@@ -152,6 +156,7 @@ fn test_cache_miss_for_different_parent_inherited() {
 
 /// Test that inherited value changes correctly invalidate cache.
 #[test]
+#[serial]
 fn test_cache_invalidation_on_inherited_change() {
     let color_signal = RwSignal::new(palette::css::RED);
 
@@ -192,6 +197,7 @@ fn test_cache_invalidation_on_inherited_change() {
 
 /// Test that hover state changes correctly bypass cache.
 #[test]
+#[serial]
 fn test_cache_with_hover_state() {
     let view = Empty::new().style(|s| {
         s.size(100.0, 100.0)
@@ -231,6 +237,7 @@ fn test_cache_with_hover_state() {
 
 /// Test that disabled state changes correctly bypass cache.
 #[test]
+#[serial]
 fn test_cache_with_disabled_state() {
     let disabled_signal = RwSignal::new(false);
 
@@ -284,6 +291,7 @@ fn test_cache_with_disabled_state() {
 
 /// Test that dynamic style changes correctly invalidate cache.
 #[test]
+#[serial]
 fn test_cache_with_dynamic_style_changes() {
     let color_signal = RwSignal::new(palette::css::RED);
 
@@ -320,55 +328,54 @@ fn test_cache_with_dynamic_style_changes() {
 }
 
 /// Test cache behavior with class application.
+///
+/// CSS-like semantics: inline styles have higher specificity than class styles.
+/// This test verifies that:
+/// 1. Class styling from parent applies to child with that class
+/// 2. Child's inline styles override class styles (specificity)
 #[test]
+#[serial]
 fn test_cache_with_class_application() {
-    let use_class = RwSignal::new(false);
-
-    let child = Empty::new()
+    // First test: child with NO inline background receives class styling
+    let child1 = Empty::new()
         .class(CacheTestClass)
-        .style(|s| s.size(50.0, 50.0).background(palette::css::GRAY));
-    let child_id = child.view_id();
+        .style(|s| s.size(50.0, 50.0));
+    let child1_id = child1.view_id();
 
-    let parent = Container::new(child).style(move |s| {
-        let base = s.size(100.0, 100.0);
-        if use_class.get() {
-            base.class(CacheTestClass, |s| s.background(palette::css::PURPLE))
-        } else {
-            base
-        }
+    let parent1 = Container::new(child1).style(|s| {
+        s.size(100.0, 100.0)
+            .class(CacheTestClass, |s| s.background(palette::css::PURPLE))
     });
 
-    let mut harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
+    let harness1 = HeadlessHarness::new_with_size(parent1, 100.0, 100.0);
 
-    // Initial: child should be GRAY
-    let style = harness.get_computed_style(child_id);
-    let bg = style.get(Background);
-    assert!(
-        matches!(bg, Some(Brush::Solid(c)) if c == palette::css::GRAY),
-        "Initial should be GRAY"
-    );
-
-    // Enable class
-    use_class.set(true);
-    harness.rebuild();
-
-    let style = harness.get_computed_style(child_id);
+    let style = harness1.get_computed_style(child1_id);
     let bg = style.get(Background);
     assert!(
         matches!(bg, Some(Brush::Solid(c)) if c == palette::css::PURPLE),
-        "With class should be PURPLE, got {:?}",
+        "Child without inline bg should get PURPLE from class styling, got {:?}",
         bg
     );
 
-    // Disable class
-    use_class.set(false);
-    harness.rebuild();
+    // Second test: child WITH inline background - inline wins over class
+    let child2 = Empty::new()
+        .class(CacheTestClass)
+        .style(|s| s.size(50.0, 50.0).background(palette::css::GRAY));
+    let child2_id = child2.view_id();
 
-    let style = harness.get_computed_style(child_id);
+    let parent2 = Container::new(child2).style(|s| {
+        s.size(100.0, 100.0)
+            .class(CacheTestClass, |s| s.background(palette::css::PURPLE))
+    });
+
+    let harness2 = HeadlessHarness::new_with_size(parent2, 100.0, 100.0);
+
+    let style = harness2.get_computed_style(child2_id);
     let bg = style.get(Background);
     assert!(
         matches!(bg, Some(Brush::Solid(c)) if c == palette::css::GRAY),
-        "Without class should be GRAY"
+        "Child with inline bg should keep GRAY (inline wins), got {:?}",
+        bg
     );
 }
 
@@ -378,6 +385,7 @@ fn test_cache_with_class_application() {
 
 /// Test that cache works correctly with many identical views.
 #[test]
+#[serial]
 fn test_cache_with_many_identical_views() {
     let views: Vec<_> = (0..100)
         .map(|_| {
@@ -409,6 +417,7 @@ fn test_cache_with_many_identical_views() {
 
 /// Test deep nesting with cache.
 #[test]
+#[serial]
 fn test_cache_with_deep_nesting() {
     fn create_nested(depth: usize) -> Container {
         if depth == 0 {
@@ -435,6 +444,7 @@ fn test_cache_with_deep_nesting() {
 
 /// Test cache with combined inherited props and local style changes.
 #[test]
+#[serial]
 fn test_cache_combined_inherited_and_local() {
     let inherited_color = RwSignal::new(palette::css::RED);
     let local_padding = RwSignal::new(5.0);
@@ -480,6 +490,7 @@ fn test_cache_combined_inherited_and_local() {
 
 /// Test rapid style updates don't cause cache issues.
 #[test]
+#[serial]
 fn test_cache_rapid_updates() {
     let color_signal = RwSignal::new(palette::css::RED);
 

@@ -281,10 +281,10 @@ impl<T> View for Tab<T> {
         for (i, child) in self.id.children().into_iter().enumerate() {
             match self.active {
                 Some(act_idx) if act_idx == i => {
-                    child.parent_clear_hidden();
+                    child.set_visible();
                 }
                 _ => {
-                    child.parent_set_hidden();
+                    child.set_hidden();
                 }
             }
         }

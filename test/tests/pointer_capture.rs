@@ -10,12 +10,14 @@
 use floem::event::{Event, EventListener, PointerId};
 use floem::ui_events::pointer::PointerEvent;
 use floem_test::prelude::*;
+use serial_test::serial;
 
 // =============================================================================
 // Basic Capture API Tests
 // =============================================================================
 
 #[test]
+#[serial]
 fn test_set_pointer_capture_fires_got_capture_event() {
     // When a view calls set_pointer_capture, it should receive GotPointerCapture
     let tracker = PointerCaptureTracker::new();
@@ -58,6 +60,7 @@ fn test_set_pointer_capture_fires_got_capture_event() {
 }
 
 #[test]
+#[serial]
 fn test_pointer_capture_routes_events_to_captured_view() {
     // When a view has capture, pointer events should route to it even when
     // the pointer is over a different view
@@ -100,6 +103,7 @@ fn test_pointer_capture_routes_events_to_captured_view() {
 }
 
 #[test]
+#[serial]
 fn test_pointer_capture_auto_released_on_pointer_up() {
     // Capture should be automatically released on pointer up
     let tracker = PointerCaptureTracker::new();
@@ -147,6 +151,7 @@ fn test_pointer_capture_auto_released_on_pointer_up() {
 }
 
 #[test]
+#[serial]
 fn test_release_pointer_capture_fires_lost_capture_event() {
     // Explicitly calling release_pointer_capture should fire LostPointerCapture
     let tracker = PointerCaptureTracker::new();
@@ -210,6 +215,7 @@ fn test_release_pointer_capture_fires_lost_capture_event() {
 // =============================================================================
 
 #[test]
+#[serial]
 fn test_capture_transfer_fires_lost_then_got() {
     // When capture transfers from one view to another, the order should be:
     // 1. LostPointerCapture to old view
@@ -285,6 +291,7 @@ fn test_capture_transfer_fires_lost_then_got() {
 // =============================================================================
 
 #[test]
+#[serial]
 fn test_capture_prevents_sibling_from_receiving_events() {
     // When left view has capture, right view should not receive pointer events
     let tracker = PointerCaptureTracker::new();
@@ -338,6 +345,7 @@ fn test_capture_prevents_sibling_from_receiving_events() {
 // =============================================================================
 
 #[test]
+#[serial]
 fn test_capture_on_hidden_view_not_activated() {
     // Setting capture on a hidden view should not activate
     let tracker = PointerCaptureTracker::new();
@@ -364,6 +372,7 @@ fn test_capture_on_hidden_view_not_activated() {
 }
 
 #[test]
+#[serial]
 fn test_multiple_pointer_down_up_cycles() {
     // Multiple click cycles should properly set and release capture each time
     let tracker = PointerCaptureTracker::new();
@@ -421,6 +430,7 @@ fn test_multiple_pointer_down_up_cycles() {
 // =============================================================================
 
 #[test]
+#[serial]
 fn test_touch_pointer_gets_implicit_capture() {
     // Touch pointers should automatically get implicit capture per W3C spec
     let tracker = PointerCaptureTracker::new();
@@ -464,6 +474,7 @@ fn test_touch_pointer_gets_implicit_capture() {
 }
 
 #[test]
+#[serial]
 fn test_mouse_pointer_does_not_get_implicit_capture() {
     // Mouse pointers should NOT get implicit capture (only touch does)
     let tracker = PointerCaptureTracker::new();
@@ -503,6 +514,7 @@ fn test_mouse_pointer_does_not_get_implicit_capture() {
 }
 
 #[test]
+#[serial]
 fn test_explicit_capture_overrides_implicit_touch_capture() {
     // If handler sets explicit capture during PointerDown, it should be used
     // instead of implicit touch capture
@@ -550,6 +562,7 @@ fn test_explicit_capture_overrides_implicit_touch_capture() {
 }
 
 #[test]
+#[serial]
 fn test_handler_sees_capture_during_pointer_up() {
     // Handler should see that capture is still active during PointerUp
     // (auto-release happens AFTER PointerUp is dispatched)

@@ -12,6 +12,7 @@ use floem::prelude::*;
 use floem::prop;
 use floem::style::{Background, Style};
 use floem_test::prelude::*;
+use serial_test::serial;
 
 // ============================================================================
 // Test Helpers
@@ -46,6 +47,7 @@ floem::style_class!(pub TestButtonClass);
 /// This exercises the inherited-only fast path when the parent's
 /// inherited prop changes but children don't have selectors.
 #[test]
+#[serial]
 fn test_inherited_prop_propagates_to_deep_children() {
     let color_signal = RwSignal::new(palette::css::RED);
 
@@ -92,6 +94,7 @@ fn test_inherited_prop_propagates_to_deep_children() {
 
 /// Test that multiple siblings all receive inherited prop updates.
 #[test]
+#[serial]
 fn test_inherited_prop_propagates_to_siblings() {
     let color_signal = RwSignal::new(palette::css::GREEN);
 
@@ -146,6 +149,7 @@ fn test_inherited_prop_propagates_to_siblings() {
 /// Test that views with hover selector still work correctly.
 /// These views cannot use the inherited-only fast path.
 #[test]
+#[serial]
 fn test_hover_selector_view_updates_correctly() {
     let view = Empty::new().style(|s| {
         s.size(100.0, 100.0)
@@ -187,6 +191,7 @@ fn test_hover_selector_view_updates_correctly() {
 /// Views with selectors (like hover) cannot use the inherited-only fast path,
 /// but they should still receive inherited prop updates correctly.
 #[test]
+#[serial]
 fn test_child_with_selectors_receives_inherited_updates() {
     let color_signal = RwSignal::new(palette::css::RED);
 
@@ -235,6 +240,7 @@ fn test_child_with_selectors_receives_inherited_updates() {
 
 /// Test that applying a class triggers proper child recalculation.
 #[test]
+#[serial]
 fn test_class_application_triggers_child_recalc() {
     // Define a class that sets background
     let class_style = Style::new()
@@ -261,13 +267,18 @@ fn test_class_application_triggers_child_recalc() {
 }
 
 /// Test that class changes on parent affect children correctly.
+///
+/// CSS-like semantics: class styling applies when child has no inline style
+/// for that property. When class styling is enabled/disabled, child updates.
 #[test]
+#[serial]
 fn test_dynamic_class_change_updates_children() {
     let use_class = RwSignal::new(false);
 
+    // Child has NO inline background - should receive class styling when enabled
     let child = Empty::new()
         .class(TestButtonClass)
-        .style(|s| s.size(50.0, 50.0).background(palette::css::GRAY));
+        .style(|s| s.size(50.0, 50.0));
     let child_id = child.view_id();
 
     let parent = Container::new(child).style(move |s| {
@@ -281,19 +292,20 @@ fn test_dynamic_class_change_updates_children() {
 
     let mut harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
 
-    // Initial: child should be GRAY (class not applied at parent)
+    // Initial: no class styling, no background
     let style = harness.get_computed_style(child_id);
     let bg = style.get(Background);
     assert!(
-        matches!(bg, Some(Brush::Solid(c)) if c == palette::css::GRAY),
-        "Initial child should be GRAY"
+        bg.is_none(),
+        "Initial child should have no background, got {:?}",
+        bg
     );
 
     // Enable class at parent
     use_class.set(true);
     harness.rebuild();
 
-    // Child should now be LIME (class applied at parent)
+    // Child should now be LIME (class styling applied)
     let style = harness.get_computed_style(child_id);
     let bg = style.get(Background);
     assert!(
@@ -309,6 +321,7 @@ fn test_dynamic_class_change_updates_children() {
 
 /// Test that disabled state propagates correctly to children.
 #[test]
+#[serial]
 fn test_disabled_state_propagates_to_children() {
     let disabled_signal = RwSignal::new(false);
 
@@ -352,6 +365,7 @@ fn test_disabled_state_propagates_to_children() {
 
 /// Test rapid successive style updates are handled correctly.
 #[test]
+#[serial]
 fn test_rapid_style_updates() {
     let color_signal = RwSignal::new(palette::css::RED);
 
@@ -382,6 +396,7 @@ fn test_rapid_style_updates() {
 
 /// Test combined inherited prop and local style changes.
 #[test]
+#[serial]
 fn test_combined_inherited_and_local_changes() {
     let inherited_color = RwSignal::new(palette::css::RED);
     let local_padding = RwSignal::new(5.0);
@@ -425,6 +440,7 @@ fn test_combined_inherited_and_local_changes() {
 
 /// Test empty view hierarchy.
 #[test]
+#[serial]
 fn test_empty_hierarchy() {
     let view = Empty::new().style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
@@ -437,6 +453,7 @@ fn test_empty_hierarchy() {
 
 /// Test very deep nesting (stress test for propagation).
 #[test]
+#[serial]
 fn test_very_deep_nesting_propagation() {
     let color_signal = RwSignal::new(palette::css::RED);
 
@@ -470,6 +487,7 @@ fn test_very_deep_nesting_propagation() {
 
 /// Test that views without any styles still work.
 #[test]
+#[serial]
 fn test_unstyled_views() {
     let child = Empty::new();
     let child_id = child.view_id();

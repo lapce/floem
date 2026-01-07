@@ -107,9 +107,9 @@ pub fn clear_hit_test_cache() {
 pub struct EventPathNode {
     /// The view ID for this node.
     pub view_id: ViewId,
-    /// Transform from local coordinates to root (window) coordinates.
-    /// Use the inverse to convert from root to local.
-    pub local_to_root: Affine,
+    /// Transform from local coordinates to window coordinates.
+    /// Use the inverse to convert from window to local.
+    pub visual_transform: Affine,
     /// Whether this view has any event listeners registered.
     pub has_event_listeners: bool,
     /// Whether this view has a context menu.
@@ -243,7 +243,7 @@ pub fn build_event_path(target: ViewId) -> EventPath {
 
         let node = EventPathNode {
             view_id,
-            local_to_root: borrowed.local_to_root_transform,
+            visual_transform: borrowed.visual_transform,
             has_event_listeners: !borrowed.event_listeners.is_empty(),
             has_context_menu: borrowed.context_menu.is_some(),
             has_popout_menu: borrowed.popout_menu.is_some(),
@@ -443,7 +443,7 @@ pub fn dispatch_through_path(
         }
 
         // Transform event to local coordinates
-        let local_event = event.clone().transform(node.local_to_root);
+        let local_event = event.clone().transform(node.visual_transform);
 
         // Call event_before_children
         let view = node.view_id.view();
@@ -465,7 +465,7 @@ pub fn dispatch_through_path(
         }
 
         // Transform event to local coordinates
-        let local_event = event.clone().transform(node.local_to_root);
+        let local_event = event.clone().transform(node.visual_transform);
 
         // Handle built-in behaviors for ALL nodes in the path (not just target).
         // This matches the original stacking-context dispatch behavior where
@@ -562,9 +562,9 @@ pub fn dispatch_click_through_path(
         let view_state = view_id.state();
 
         // Transform event to local coordinates for bounds check
-        let local_event = event.clone().transform(node.local_to_root);
+        let local_event = event.clone().transform(node.visual_transform);
         let local_point = state.logical_point();
-        let local_point = node.local_to_root.inverse() * local_point;
+        let local_point = node.visual_transform.inverse() * local_point;
 
         let rect = view_id.get_size().unwrap_or_default().to_rect();
         let on_view = rect.contains(local_point);
@@ -894,7 +894,7 @@ mod tests {
 
         path.push(EventPathNode {
             view_id: target_id,
-            local_to_root: Affine::IDENTITY,
+            visual_transform: Affine::IDENTITY,
             has_event_listeners: true,
             has_context_menu: false,
             has_popout_menu: false,
@@ -905,7 +905,7 @@ mod tests {
         });
         path.push(EventPathNode {
             view_id: parent_id,
-            local_to_root: Affine::IDENTITY,
+            visual_transform: Affine::IDENTITY,
             has_event_listeners: false,
             has_context_menu: false,
             has_popout_menu: false,
@@ -916,7 +916,7 @@ mod tests {
         });
         path.push(EventPathNode {
             view_id: root_id,
-            local_to_root: Affine::IDENTITY,
+            visual_transform: Affine::IDENTITY,
             has_event_listeners: false,
             has_context_menu: false,
             has_popout_menu: false,

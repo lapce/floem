@@ -8,9 +8,11 @@
 use floem::prelude::*;
 use floem::views::{Decorators, Empty, Label, Stem};
 use floem_test::prelude::*;
+use serial_test::serial;
 
 /// Test that Stem::new() creates an empty view with no children.
 #[test]
+#[serial]
 fn test_stem_new_has_no_children() {
     let view = Stem::new().style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
@@ -23,6 +25,7 @@ fn test_stem_new_has_no_children() {
 
 /// Test that ParentView::child() adds a single child.
 #[test]
+#[serial]
 fn test_parent_view_child() {
     let view = Stem::new()
         .child(Empty::new().style(|s| s.size(50.0, 50.0)))
@@ -38,6 +41,7 @@ fn test_parent_view_child() {
 
 /// Test that ParentView::children() adds multiple children.
 #[test]
+#[serial]
 fn test_parent_view_children() {
     let view = Stem::new()
         .children((
@@ -61,6 +65,7 @@ fn test_parent_view_children() {
 
 /// Test that multiple .child() calls append children.
 #[test]
+#[serial]
 fn test_parent_view_multiple_child_calls() {
     let view = Stem::new()
         .child(Empty::new())
@@ -82,6 +87,7 @@ fn test_parent_view_multiple_child_calls() {
 
 /// Test that .child() and .children() can be mixed.
 #[test]
+#[serial]
 fn test_parent_view_mixed_child_children() {
     let view = Stem::new()
         .child(Empty::new())
@@ -103,6 +109,7 @@ fn test_parent_view_mixed_child_children() {
 
 /// Test that derived_children creates initial children.
 #[test]
+#[serial]
 fn test_derived_children_initial() {
     let items = RwSignal::new(vec!["a", "b", "c"]);
 
@@ -130,6 +137,7 @@ fn test_derived_children_initial() {
 
 /// Test that derived_children updates when signal changes.
 #[test]
+#[serial]
 fn test_derived_children_updates_on_signal_change() {
     let items = RwSignal::new(vec!["a", "b", "c"]);
 
@@ -175,6 +183,7 @@ fn test_derived_children_updates_on_signal_change() {
 
 /// Test that derived_children cleans up old children when updating.
 #[test]
+#[serial]
 fn test_derived_children_cleans_up_old_children() {
     let items = RwSignal::new(vec!["a", "b", "c"]);
 
@@ -215,6 +224,7 @@ fn test_derived_children_cleans_up_old_children() {
 
 /// Test that derived_children works with empty signal.
 #[test]
+#[serial]
 fn test_derived_children_empty_signal() {
     let items: RwSignal<Vec<&str>> = RwSignal::new(vec![]);
 
@@ -257,6 +267,7 @@ fn test_derived_children_empty_signal() {
 
 /// Test that derived_children works with complex view builders.
 #[test]
+#[serial]
 fn test_derived_children_with_styled_children() {
     let count = RwSignal::new(3);
 
@@ -302,6 +313,7 @@ fn test_derived_children_with_styled_children() {
 
 /// Test that derived_children triggers repaint when children change.
 #[test]
+#[serial]
 fn test_derived_children_triggers_repaint() {
     let items = RwSignal::new(vec!["a"]);
 
@@ -333,6 +345,7 @@ fn test_derived_children_triggers_repaint() {
 /// (Testing actual scope cleanup is difficult without access to internals,
 /// but we verify the view works correctly with reactive children)
 #[test]
+#[serial]
 fn test_stem_with_derived_children_works() {
     let items = RwSignal::new(vec!["a", "b"]);
 
@@ -379,6 +392,7 @@ fn test_stem_with_derived_children_works() {
 
 /// Test derived_children with click interaction.
 #[test]
+#[serial]
 fn test_derived_children_with_click_interaction() {
     let count = RwSignal::new(1);
     let tracker = ClickTracker::new();
@@ -433,6 +447,7 @@ fn test_derived_children_with_click_interaction() {
 
 /// Test that derived_children creates initial children.
 #[test]
+#[serial]
 fn test_keyed_children_initial() {
     let items = RwSignal::new(vec!["a", "b", "c"]);
 
@@ -458,6 +473,7 @@ fn test_keyed_children_initial() {
 
 /// Test that derived_children updates when signal changes.
 #[test]
+#[serial]
 fn test_keyed_children_updates_on_signal_change() {
     let items = RwSignal::new(vec!["a", "b", "c"]);
 
@@ -497,6 +513,7 @@ fn test_keyed_children_updates_on_signal_change() {
 
 /// Test that derived_children reuses views for unchanged keys.
 #[test]
+#[serial]
 fn test_keyed_children_reuses_unchanged_views() {
     let items = RwSignal::new(vec!["a", "b", "c"]);
 
@@ -541,6 +558,7 @@ fn test_keyed_children_reuses_unchanged_views() {
 
 /// Test that derived_children works with empty signal.
 #[test]
+#[serial]
 fn test_keyed_children_empty_signal() {
     let items: RwSignal<Vec<&str>> = RwSignal::new(vec![]);
 
@@ -577,6 +595,7 @@ fn test_keyed_children_empty_signal() {
 
 /// Test that derived_children handles reordering correctly.
 #[test]
+#[serial]
 fn test_keyed_children_reordering() {
     let items = RwSignal::new(vec!["a", "b", "c"]);
 
@@ -612,6 +631,7 @@ fn test_keyed_children_reordering() {
 
 /// Test that derived_children works with multiple updates.
 #[test]
+#[serial]
 fn test_keyed_children_multiple_updates() {
     let items = RwSignal::new(vec!["a", "b"]);
 
@@ -662,6 +682,7 @@ fn test_keyed_children_multiple_updates() {
 
 /// Test that derived_child creates initial child.
 #[test]
+#[serial]
 fn test_derived_child_initial() {
     let state = RwSignal::new(1);
 
@@ -685,6 +706,7 @@ fn test_derived_child_initial() {
 
 /// Test that derived_child updates when signal changes.
 #[test]
+#[serial]
 fn test_derived_child_updates_on_signal_change() {
     let state = RwSignal::new(1);
 
@@ -721,6 +743,7 @@ fn test_derived_child_updates_on_signal_change() {
 
 /// Test that derived_child works with enum-based view switching.
 #[test]
+#[serial]
 fn test_derived_child_with_enum() {
     #[derive(Clone, Copy)]
     enum ViewType {
@@ -762,6 +785,7 @@ fn test_derived_child_with_enum() {
 
 /// Test that derived_child cleans up old children.
 #[test]
+#[serial]
 fn test_derived_child_cleans_up_old_children() {
     let state = RwSignal::new(1);
 
@@ -799,6 +823,7 @@ fn test_derived_child_cleans_up_old_children() {
 
 /// Test that derived_child can use .into_any() for different return types.
 #[test]
+#[serial]
 fn test_derived_child_with_into_any() {
     let show_label = RwSignal::new(true);
 
@@ -840,6 +865,7 @@ fn test_derived_child_with_into_any() {
 
 /// Test that stateful_child creates initial child.
 #[test]
+#[serial]
 fn test_stateful_child_initial() {
     let state = RwSignal::new(1);
 
@@ -860,6 +886,7 @@ fn test_stateful_child_initial() {
 
 /// Test that stateful_child updates when signal changes.
 #[test]
+#[serial]
 fn test_stateful_child_updates_on_signal_change() {
     let state = RwSignal::new(1);
 
@@ -896,6 +923,7 @@ fn test_stateful_child_updates_on_signal_change() {
 
 /// Test that stateful_child passes state to child function.
 #[test]
+#[serial]
 fn test_stateful_child_passes_state() {
     let tracker = ClickTracker::new();
     let state = RwSignal::new("child_a");
@@ -929,6 +957,7 @@ fn test_stateful_child_passes_state() {
 
 /// Test that stateful_child cleans up old children.
 #[test]
+#[serial]
 fn test_stateful_child_cleans_up_old_children() {
     let state = RwSignal::new(1);
 
@@ -963,6 +992,7 @@ fn test_stateful_child_cleans_up_old_children() {
 
 /// Test that stateful_child works with enum states.
 #[test]
+#[serial]
 fn test_stateful_child_with_enum() {
     #[derive(Clone, Copy)]
     enum ViewType {
@@ -1010,6 +1040,7 @@ fn test_stateful_child_with_enum() {
 ///
 /// This pattern is now fully supported for mixing static and reactive children.
 #[test]
+#[serial]
 fn test_stateful_child_with_static_children() {
     let dynamic_state = RwSignal::new(1);
 
@@ -1104,6 +1135,7 @@ impl<T: Clone + 'static> ParentView for ContextProvider<T> {
 /// For true lazy construction inside the scope, use reactive methods like
 /// `derived_child`, `derived_children`, or `keyed_children` which take closures.
 #[test]
+#[serial]
 fn test_scope_context_with_child_limitation() {
     // Track whether context was accessed
     let context_value = Rc::new(RefCell::new(None::<i32>));
@@ -1153,6 +1185,7 @@ impl floem::View for ContextCapturingView {
 /// Views passed to children() are already constructed before the call.
 /// For true lazy construction, use reactive methods.
 #[test]
+#[serial]
 fn test_scope_context_with_children_limitation() {
     let context_values = Rc::new(RefCell::new(Vec::<Option<String>>::new()));
     let cv1 = context_values.clone();
@@ -1203,6 +1236,7 @@ impl floem::View for ContextCapturingStringView {
 
 /// Test that derived_children can access parent's context.
 #[test]
+#[serial]
 fn test_scope_context_with_stateful_children() {
     let items = RwSignal::new(vec![1, 2, 3]);
     let context_values = Rc::new(RefCell::new(Vec::<Option<i32>>::new()));
@@ -1249,6 +1283,7 @@ fn test_scope_context_with_stateful_children() {
 
 /// Test that derived_children can access parent's context.
 #[test]
+#[serial]
 fn test_scope_context_with_keyed_children() {
     let items = RwSignal::new(vec!["a", "b"]);
     let context_values = Rc::new(RefCell::new(Vec::<Option<String>>::new()));
@@ -1294,6 +1329,7 @@ fn test_scope_context_with_keyed_children() {
 
 /// Test that stateful_child can access parent's context.
 #[test]
+#[serial]
 fn test_scope_context_with_stateful_child() {
     let state = RwSignal::new(1);
     let context_values = Rc::new(RefCell::new(Vec::<Option<f64>>::new()));
@@ -1341,6 +1377,7 @@ fn test_scope_context_with_stateful_child() {
 /// Unlike child()/children(), stateful_child's closure IS called inside the scope,
 /// so context is accessible there.
 #[test]
+#[serial]
 fn test_scope_context_shadowing_with_stateful_child() {
     let outer_value = Rc::new(RefCell::new(None::<i32>));
     let inner_value = Rc::new(RefCell::new(None::<i32>));
@@ -1384,6 +1421,7 @@ fn test_scope_context_shadowing_with_stateful_child() {
 
 /// Test that children without a scope-providing parent don't have context.
 #[test]
+#[serial]
 fn test_no_scope_no_context() {
     let context_value = Rc::new(RefCell::new(None::<i32>));
     let context_value_clone = context_value.clone();
@@ -1408,6 +1446,7 @@ fn test_no_scope_no_context() {
 
 /// Test that derived_child preserves static children.
 #[test]
+#[serial]
 fn test_derived_child_preserves_siblings() {
     let state = RwSignal::new(1);
 
@@ -1445,6 +1484,7 @@ fn test_derived_child_preserves_siblings() {
 
 /// Test that derived_child replaces only its managed child.
 #[test]
+#[serial]
 fn test_derived_child_replaces_only_managed() {
     let state = RwSignal::new(1);
 
@@ -1487,6 +1527,7 @@ fn test_derived_child_replaces_only_managed() {
 
 /// Test that derived_child maintains position when updating.
 #[test]
+#[serial]
 fn test_derived_child_maintains_position() {
     let state = RwSignal::new(1);
 
@@ -1525,6 +1566,7 @@ fn test_derived_child_maintains_position() {
 
 /// Test multiple derived_child calls.
 #[test]
+#[serial]
 fn test_multiple_derived_child_calls() {
     let state1 = RwSignal::new(1);
     let state2 = RwSignal::new(10);
@@ -1583,6 +1625,7 @@ fn test_multiple_derived_child_calls() {
 
 /// Test that stateful_child preserves static children.
 #[test]
+#[serial]
 fn test_stateful_child_preserves_siblings() {
     let state = RwSignal::new(1);
 
@@ -1617,6 +1660,7 @@ fn test_stateful_child_preserves_siblings() {
 
 /// Test that stateful_child passes state correctly.
 #[test]
+#[serial]
 fn test_stateful_child_passes_state_with_siblings() {
     let tracker = ClickTracker::new();
     let state = RwSignal::new("child_a");

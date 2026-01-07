@@ -12,6 +12,7 @@ use floem::prelude::*;
 use floem::prop;
 use floem::style::Style;
 use floem_test::prelude::*;
+use serial_test::serial;
 
 // Define a simple theme prop for testing
 prop!(
@@ -58,6 +59,7 @@ impl TestThemeExt for Style {
 
 /// Baseline test: size applied directly works.
 #[test]
+#[serial]
 fn test_size_applied_directly() {
     let view = Empty::new().style(|s| s.size(100.0, 50.0));
     let id = view.view_id();
@@ -80,6 +82,7 @@ fn test_size_applied_directly() {
 
 /// Baseline test: absolute positioning works outside with_context.
 #[test]
+#[serial]
 fn test_absolute_positioning_directly() {
     let element = Empty::new().style(|s| {
         s.absolute()
@@ -116,6 +119,7 @@ fn test_absolute_positioning_directly() {
 /// KNOWN ISSUE: This test may fail because layout properties inside
 /// `with_context` are not properly applied during taffy style computation.
 #[test]
+#[serial]
 fn test_size_inside_with_context() {
     let theme = TestTheme::default();
     let view = Empty::new().style(move |s| {
@@ -142,6 +146,7 @@ fn test_size_inside_with_context() {
 
 /// Test that width set inside with_context is applied.
 #[test]
+#[serial]
 fn test_width_inside_with_context() {
     let theme = TestTheme::default();
     let view = Empty::new().style(move |s| {
@@ -163,6 +168,7 @@ fn test_width_inside_with_context() {
 
 /// Test that absolute positioning inside with_context is applied.
 #[test]
+#[serial]
 fn test_absolute_inside_with_context() {
     let theme = TestTheme::default();
     let element = Empty::new().style(move |s| {
@@ -195,6 +201,7 @@ fn test_absolute_inside_with_context() {
 
 /// Test that flex properties inside with_context are applied.
 #[test]
+#[serial]
 fn test_flex_inside_with_context() {
     let theme = TestTheme::default();
     let view = Empty::new().style(move |s| {
@@ -220,6 +227,7 @@ fn test_flex_inside_with_context() {
 
 /// Test that padding inside with_context is applied.
 #[test]
+#[serial]
 fn test_padding_inside_with_context() {
     let theme = TestTheme::default();
     let child = Empty::new().style(|s| s.size(50.0, 50.0));
@@ -251,6 +259,7 @@ fn test_padding_inside_with_context() {
 
 /// Test that margin inside with_context is applied.
 #[test]
+#[serial]
 fn test_margin_inside_with_context() {
     let theme = TestTheme::default();
     let element = Empty::new().style(move |s| {
@@ -280,6 +289,7 @@ fn test_margin_inside_with_context() {
 
 /// Test that gap inside with_context is applied.
 #[test]
+#[serial]
 fn test_gap_inside_with_context() {
     let theme = TestTheme::default();
 
@@ -313,6 +323,7 @@ fn test_gap_inside_with_context() {
 
 /// Test that layout props outside with_context and color inside work together.
 #[test]
+#[serial]
 fn test_layout_outside_color_inside_with_context() {
     let theme = TestTheme::default();
     let view = Empty::new().style(move |s| {
@@ -346,6 +357,7 @@ fn test_layout_outside_color_inside_with_context() {
 
 /// Test that some layout props outside and some inside work correctly.
 #[test]
+#[serial]
 fn test_mixed_layout_inside_outside_with_context() {
     let theme = TestTheme::default();
     let element = Empty::new().style(move |s| {
@@ -393,6 +405,7 @@ fn test_mixed_layout_inside_outside_with_context() {
 
 /// Test using theme values for sizing.
 #[test]
+#[serial]
 fn test_theme_value_for_size() {
     let theme = TestTheme {
         primary: palette::css::BLUE,
@@ -430,6 +443,7 @@ fn test_theme_value_for_size() {
 /// KNOWN ISSUE: This test demonstrates the bug where layout properties inside
 /// with_context don't work when the context value is inherited from parent.
 #[test]
+#[serial]
 fn test_size_with_inherited_context() {
     let theme = TestTheme::default();
 
@@ -465,6 +479,7 @@ fn test_size_with_inherited_context() {
 
 /// Test absolute positioning with inherited context.
 #[test]
+#[serial]
 fn test_absolute_with_inherited_context() {
     let theme = TestTheme::default();
 
@@ -507,6 +522,7 @@ fn test_absolute_with_inherited_context() {
 
 /// Test with Container::derived (like Dialog uses)
 #[test]
+#[serial]
 fn test_container_derived_with_inherited_context() {
     let theme = TestTheme::default();
 
@@ -561,6 +577,7 @@ fn test_container_derived_with_inherited_context() {
 /// Test layout props when theme is NOT set anywhere (uses default value).
 /// This is the exact scenario that fails in floem-shadcn's test.
 #[test]
+#[serial]
 fn test_layout_with_context_no_theme_set() {
     // Theme is NOT set anywhere - with_context will use default value
     let child = Empty::new().style(|s| {
@@ -610,6 +627,7 @@ fn test_layout_with_context_no_theme_set() {
 
 /// Test with Container::derived and no theme set (exactly like floem-shadcn's failing test)
 #[test]
+#[serial]
 fn test_container_derived_no_theme_set() {
     // Container::derived like Dialog uses, with NO theme set anywhere
     let child = floem::views::Container::derived(|| Empty::new().style(|s| s.size(50.0, 30.0)))
@@ -660,6 +678,7 @@ fn test_container_derived_no_theme_set() {
 
 /// Test the dialog centering pattern with inherited context
 #[test]
+#[serial]
 fn test_centering_with_inherited_context() {
     use floem::unit::Pct;
 
