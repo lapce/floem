@@ -211,7 +211,7 @@ impl<T: 'static + Clone + PartialEq> View for Dropdown<T> {
     fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(state) = state.downcast::<Message>() {
             match *state {
-                Message::OpenState(true) => self.open_dropdown(cx),
+                Message::OpenState(true) => self.open_dropdown(),
                 Message::OpenState(false) => self.close_dropdown(),
                 Message::ListFocusLost => self.close_dropdown(),
                 Message::ListSelect(val) => {
@@ -536,10 +536,9 @@ impl<T: Clone + std::cmp::PartialEq> Dropdown<T> {
         }
     }
 
-    fn open_dropdown(&mut self, cx: &mut crate::context::UpdateCx) {
+    fn open_dropdown(&mut self) {
         if self.overlay_id.is_none() {
             self.id.request_layout();
-            cx.window_state.compute_layout();
             if let Some(layout) = self.id.get_layout() {
                 let point =
                     self.window_origin.unwrap_or_default() + (0., layout.size.height as f64);

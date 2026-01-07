@@ -9,7 +9,7 @@ use std::{any::Any, cell::RefCell, collections::HashSet, rc::Rc};
 use floem_reactive::Scope;
 use peniko::kurbo::{Affine, Insets, Point, Rect, Size};
 use slotmap::new_key_type;
-use taffy::{Layout, NodeId, TaffyTree};
+use taffy::{Layout, NodeId};
 use winit::window::WindowId;
 
 use ui_events::pointer::PointerId;
@@ -22,6 +22,7 @@ thread_local! {
     /// These need to be re-parented after the view tree is fully assembled.
     static PENDING_SCOPE_REPARENTS: RefCell<HashSet<ViewId>> = RefCell::new(HashSet::new());
 }
+use crate::view::LayoutTree;
 use crate::{
     ScreenLayout,
     action::add_update_message,
@@ -134,8 +135,9 @@ impl ViewId {
         VIEW_STORAGE.with_borrow(|s| s.overlays.contains_key(*self))
     }
 
-    /// Get access to the taffy tree
-    pub fn taffy(&self) -> Rc<RefCell<TaffyTree>> {
+    /// Get access to the layout tree tree
+    /// TODO: rename layout tree
+    pub fn taffy(&self) -> Rc<RefCell<LayoutTree>> {
         VIEW_STORAGE.with_borrow(|s| s.taffy.clone())
     }
 
@@ -187,6 +189,7 @@ impl ViewId {
                         Rc::new(RefCell::new(ViewState::new(
                             *self,
                             &mut s.taffy.borrow_mut(),
+                            &mut s.box_tree.borrow_mut(),
                         )))
                     })
                     .clone()

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::platform::menu_types::MenuId;
 
-use peniko::kurbo::{Point, Size, Vec2};
+use peniko::kurbo::{Affine, Point, Rect, Size, Vec2};
 use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::SmallVec;
 use taffy::{AvailableSpace, NodeId};
@@ -15,6 +15,7 @@ use crate::platform::Instant;
 use std::rc::Rc;
 
 use crate::{
+    VisualId,
     context::FrameUpdate,
     event::{Event, EventListener, clear_hit_test_cache},
     inspector::CaptureState,
@@ -23,8 +24,7 @@ use crate::{
         CursorStyle, Style, StyleCache, StyleSelector, recalc::StyleRecalcChange,
         theme::default_theme,
     },
-    view::VIEW_STORAGE,
-    view::ViewId,
+    view::{LayoutNodeCx, MeasureCx, VIEW_STORAGE, ViewId},
 };
 
 /// A small set of ViewIds, optimized for small collections (< 8 items).
@@ -514,7 +514,6 @@ impl WindowState {
             }
         }
         self.root_size = size;
-        self.compute_layout();
     }
 
     /// Register a view as having fixed positioning.
@@ -531,17 +530,70 @@ impl WindowState {
 
     pub fn compute_layout(&mut self) {
         if let Some(root) = self.root {
+            let mut measure_context = MeasureCx::default();
             let _ = self.root_view_id.taffy().borrow_mut().set_style(
                 root,
                 crate::style::Style::new().size_full().to_taffy_style(),
             );
-            let _ = self.root_view_id.taffy().borrow_mut().compute_layout(
-                root,
-                taffy::prelude::Size {
-                    width: AvailableSpace::Definite((self.root_size.width / self.scale) as f32),
-                    height: AvailableSpace::Definite((self.root_size.height / self.scale) as f32),
-                },
-            );
+            let _ = self
+                .root_view_id
+                .taffy()
+                .borrow_mut()
+                .compute_layout_with_measure(
+                    root,
+                    taffy::prelude::Size {
+                        width: AvailableSpace::Definite((self.root_size.width / self.scale) as f32),
+                        height: AvailableSpace::Definite(
+                            (self.root_size.height / self.scale) as f32,
+                        ),
+                    },
+                    |known_dimensions, available_space, node_id, node_context, style| {
+                        match node_context {
+                            Some(LayoutNodeCx::Custom {
+                                measure,
+                                finalize: _,
+                            }) => measure(
+                                known_dimensions,
+                                available_space,
+                                node_id,
+                                style,
+                                &mut measure_context,
+                            ),
+                            None => taffy::Size::ZERO,
+                        }
+                    },
+                );
+
+            // Finalize nodes that requested it
+            let taffy = self.root_view_id.taffy();
+            let taffy = taffy.borrow();
+            for node_id in measure_context.needs_finalization {
+                if let Ok(layout) = taffy.layout(node_id)
+                    && let Some(LayoutNodeCx::Custom {
+                        finalize: Some(f), ..
+                    }) = taffy.get_node_context(node_id)
+                {
+                    f(node_id, layout);
+                }
+            }
+        }
+    }
+
+    pub fn commit_box_tree(&mut self) {
+        if let Some(root) = self.root {
+            compute_absolute_transforms_and_boxes(root, Affine::IDENTITY, Vec2::ZERO, None);
+            let damage = VIEW_STORAGE.with_borrow(|s| s.box_tree.borrow_mut().commit());
+            // for id in self.needs_post_layout.iter() {
+            //     let lcx = &mut LayoutCx::new(*id);
+            //     id.view().borrow_mut().post_layout(lcx);
+            // }
+            let cursor = self.last_cursor_location;
+            for damage_rect in &damage.dirty_rects {
+                if damage_rect.contains(cursor) {
+                    //     GlobalEventCx::new(self, Event::VisualDamageOverCursor)
+                    //         .update_hover_from_point(cursor);
+                }
+            }
         }
     }
 
@@ -666,4 +718,82 @@ impl WindowState {
             id.scroll_to(None);
         }
     }
+}
+
+fn compute_absolute_transforms_and_boxes(
+    node: NodeId,
+    parent_transform_for_children: Affine,
+    parent_scroll_context: Vec2,
+    parent_box_node: Option<VisualId>,
+) {
+    VIEW_STORAGE.with_borrow(|s| {
+        let mut scroll_ctx = parent_scroll_context;
+        let taffy = s.taffy.borrow();
+        let layout = taffy.layout(node).unwrap();
+
+        let local_pos = Point::new(layout.location.x as f64, layout.location.y as f64);
+        let size = Size::new(layout.size.width as f64, layout.size.height as f64);
+
+        let (view_id, local_transform, scroll_offset) =
+            if let Some(&view_id) = s.taffy_to_view.get(&node) {
+                let state = s.states.get(view_id);
+                let style_transform = state
+                    .as_ref()
+                    .map(|s| s.borrow().view_transform_props.affine(size))
+                    .unwrap_or_default();
+                let transform = state
+                    .as_ref()
+                    .map(|s| s.borrow().transform)
+                    .unwrap_or_default();
+                let scroll = state
+                    .as_ref()
+                    .map(|s| s.borrow().child_translation)
+                    .unwrap_or_default();
+                (Some(view_id), style_transform * transform, scroll)
+            } else {
+                (None, Affine::IDENTITY, Vec2::ZERO)
+            };
+
+        let local_transform = local_transform
+            * parent_transform_for_children
+            * Affine::translate(local_pos.to_vec2());
+
+        // What this views children should use as their parent transform (includes scroll )
+        let children_parent_transform = Affine::translate(-scroll_offset);
+
+        let current_box_node = if let Some(view_id) = view_id {
+            if scroll_offset != Vec2::ZERO {
+                scroll_ctx += scroll_offset;
+            }
+            if let Some(s) = s.states.get(view_id) {
+                s.borrow_mut().scroll_ctx = scroll_ctx;
+            }
+
+            let local_rect = Rect::from_origin_size(Point::ZERO, size);
+            // Insert or update in box tree
+            let box_node_id = s.states.get(view_id).map(|s| s.borrow().visual_id).unwrap();
+            s.box_tree
+                .borrow_mut()
+                .set_local_bounds(box_node_id.0, local_rect);
+            s.box_tree
+                .borrow_mut()
+                .set_local_transform(box_node_id.0, local_transform);
+
+            Some(box_node_id)
+        } else {
+            parent_box_node
+        };
+
+        // Traverse children with the current box node as their parent
+        if let Ok(children) = taffy.children(node) {
+            for &child in &children {
+                compute_absolute_transforms_and_boxes(
+                    child,
+                    children_parent_transform,
+                    scroll_ctx,
+                    current_box_node,
+                );
+            }
+        }
+    });
 }

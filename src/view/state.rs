@@ -8,16 +8,16 @@ use crate::{
     event::EventListener,
     message::{CENTRAL_UPDATE_MESSAGES, UpdateMessage},
     prop_extractor,
-    style::InheritedInteractionCx,
     style::{
-        Background, BorderColorProp, BorderRadiusProp, BoxShadowProp, LayoutProps, Outline,
-        OutlineColor, Style, StyleClassRef, StyleSelectors, TransformProps,
+        Background, BorderColorProp, BorderRadiusProp, BoxShadowProp, InheritedInteractionCx,
+        LayoutProps, Outline, OutlineColor, Style, StyleClassRef, StyleSelectors, TransformProps,
     },
+    view::LayoutTree,
 };
 use bitflags::bitflags;
 use floem_reactive::Scope;
 use imbl::HashSet;
-use peniko::kurbo::{Affine, Point, Rect};
+use peniko::kurbo::{Affine, Point, Rect, Vec2};
 use smallvec::SmallVec;
 use std::{cell::RefCell, collections::HashMap, marker::PhantomData, rc::Rc};
 use taffy::tree::NodeId;
@@ -221,6 +221,7 @@ pub struct StackingInfo {
 /// View state stores internal state associated with a view which is owned and managed by Floem.
 pub struct ViewState {
     pub(crate) node: NodeId,
+    pub(crate) visual_id: crate::VisualId,
     pub(crate) requested_changes: ChangeFlags,
     pub(crate) style: Stack<Style>,
     /// We store the stack offset to the view style to keep the api consistent but it should
@@ -229,6 +230,10 @@ pub struct ViewState {
     /// Layout is requested on all direct and indirect children.
     pub(crate) request_style_recursive: bool,
     pub(crate) has_style_selectors: StyleSelectors,
+    // the translation value that this view applies to children elements. Scroll view can use this to scroll.
+    pub(crate) child_translation: Vec2,
+    // total accumulated offset from all scroll ancestors. This is updated when updating the box tree
+    pub(crate) scroll_ctx: Vec2,
     pub(crate) viewport: Option<Rect>,
     pub(crate) layout_rect: Rect,
     /// The visible clip area in window coordinates. This is the intersection of
@@ -296,16 +301,20 @@ pub struct ViewState {
 }
 
 impl ViewState {
-    pub(crate) fn new(id: ViewId, taffy: &mut taffy::TaffyTree) -> Self {
+    pub(crate) fn new(id: ViewId, taffy: &mut LayoutTree, box_tree: &mut crate::BoxTree) -> Self {
         let mut style = Stack::<Style>::default();
         let view_style_offset = style.next_offset();
         style.push(Style::new());
+
+        let visual_id =
+            crate::VisualId(box_tree.insert(None, understory_box_tree::LocalNode::default()));
 
         CENTRAL_UPDATE_MESSAGES.with_borrow_mut(|m| m.push((id, UpdateMessage::RequestStyle(id))));
         CENTRAL_UPDATE_MESSAGES
             .with_borrow_mut(|m| m.push((id, UpdateMessage::RequestViewStyle(id))));
         Self {
             node: taffy.new_leaf(taffy::style::Style::DEFAULT).unwrap(),
+            visual_id,
             viewport: None,
             style,
             view_style_offset,
@@ -325,6 +334,8 @@ impl ViewState {
             event_listeners: HashMap::new(),
             context_menu: None,
             popout_menu: None,
+            child_translation: Vec2::ZERO,
+            scroll_ctx: Vec2::ZERO,
             resize_listeners: Default::default(),
             move_listeners: Default::default(),
             cleanup_listeners: Default::default(),

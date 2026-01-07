@@ -218,6 +218,10 @@ pub mod receiver_signal {
     pub use stream_signal::*;
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct VisualId(pub(crate) understory_box_tree::NodeId);
+pub type BoxTree = understory_box_tree::Tree<understory_index::backends::GridF64>;
+
 pub use app::{AppConfig, AppEvent, Application, launch, quit_app, reopen};
 pub use floem_reactive as reactive;
 pub use floem_renderer::Renderer;

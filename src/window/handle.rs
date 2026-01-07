@@ -36,6 +36,7 @@ use crate::platform::context_menu::context_menu_view;
 use crate::reactive::SignalWith;
 #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
 use crate::unit::UnitExt;
+use crate::view::LayoutTree;
 #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
 use crate::views::{Container, Decorators, Stack};
 use crate::{
@@ -563,6 +564,7 @@ impl WindowHandle {
 
         let start = Instant::now();
         cx.window_state.compute_layout();
+        cx.window_state.commit_box_tree();
         let taffy_duration = Instant::now().saturating_duration_since(start);
 
         self.compute_layout();
@@ -683,10 +685,7 @@ impl WindowHandle {
         }
         request_changes(self.id);
 
-        fn get_taffy_depth(
-            taffy: Rc<RefCell<taffy::TaffyTree>>,
-            root: taffy::tree::NodeId,
-        ) -> usize {
+        fn get_taffy_depth(taffy: Rc<RefCell<LayoutTree>>, root: taffy::tree::NodeId) -> usize {
             let children = taffy.borrow().children(root).unwrap();
             if children.is_empty() {
                 1
