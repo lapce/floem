@@ -162,7 +162,7 @@ pub fn exec_after(duration: Duration, action: impl FnOnce(TimerToken) + 'static)
     let view = get_current_view();
     let action = move |token| {
         let current_view = get_current_view();
-        set_current_view(view);
+        set_current_view(view.root());
         action(token);
         set_current_view(current_view);
     };
@@ -247,11 +247,6 @@ pub fn set_window_title(title: String) {
 /// Focus the window.
 pub fn focus_window() {
     add_update_message(UpdateMessage::FocusWindow);
-}
-
-/// Clear the app focus.
-pub fn clear_app_focus() {
-    add_update_message(UpdateMessage::ClearAppFocus);
 }
 
 /// Set whether ime input is shown.

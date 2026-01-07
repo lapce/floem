@@ -30,21 +30,21 @@ use winit::{
 use super::state::WindowState;
 use super::tracking::{remove_window_id_mapping, store_window_id_mapping};
 use crate::event::dropped_file::FileDragEvent;
+use crate::event::{GlobalEventCx, ImeEvent, WindowEvent};
+use crate::layout::PostLayoutCx;
 #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
 use crate::platform::context_menu::context_menu_view;
 #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
 use crate::reactive::SignalWith;
 #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
 use crate::unit::UnitExt;
-use crate::view::LayoutTree;
+use crate::view::{LayoutTree, VIEW_STORAGE};
 #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
 use crate::views::{Container, Decorators, Stack};
 use crate::{
     Application,
     app::UserEvent,
-    context::{
-        ComputeLayoutCx, EventCx, FrameUpdate, LayoutCx, PaintCx, PaintState, StyleCx, UpdateCx,
-    },
+    context::{FrameUpdate, LayoutCx, PaintCx, PaintState, StyleCx, UpdateCx},
     event::{Event, clear_hit_test_cache},
     inspector::{self, Capture, CaptureState, CapturedView, profiler::Profile},
     message::{
@@ -53,7 +53,6 @@ use crate::{
     },
     style::{CursorStyle, Style, StyleSelector},
     theme::default_theme,
-    view::ChangeFlags,
     view::ViewId,
     view::stacking::clear_all_stacking_caches,
     view::{IntoView, View},
@@ -93,6 +92,14 @@ pub(crate) struct WindowHandle {
     pub(crate) event_reducer: WindowEventReducer,
 }
 
+impl Drop for WindowHandle {
+    fn drop(&mut self) {
+        VIEW_STORAGE.with_borrow_mut(|s| {
+            s.box_tree.remove(&self.id);
+        })
+    }
+}
+
 impl WindowHandle {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
@@ -107,7 +114,7 @@ impl WindowHandle {
     ) -> Self {
         let scope = Scope::new();
         let window_id = window.id();
-        let id = ViewId::new();
+        let id = ViewId::new_root();
         let scale = window.scale_factor();
         let size: LogicalSize<f64> = window.surface_size().to_logical(scale);
         let size = Size::new(size.width, size.height);
@@ -221,13 +228,14 @@ impl WindowHandle {
         window_handle
             .window_state
             .set_root_size(size.get_untracked());
+        window_handle.process_update_no_paint();
 
         window_handle.window_state.light_dark_theme =
             os_theme.unwrap_or(winit::window::Theme::Light);
 
-        window_handle.event(Event::ThemeChanged(
+        window_handle.event(Event::Window(WindowEvent::ThemeChanged(
             window_handle.window_state.light_dark_theme,
-        ));
+        )));
         window_handle.window_state.mark_dark_mode_changed();
         window_handle.size(size.get_untracked());
         window_handle
@@ -248,7 +256,7 @@ impl WindowHandle {
         let scope = Scope::new();
         let mock_window = MockWindow::with_size(size_val.width as u32, size_val.height as u32);
         let window_id = mock_window.id();
-        let id = ViewId::new();
+        let id = ViewId::new_root();
         let size = scope.create_rw_signal(size_val);
         let os_theme = mock_window.theme();
         let is_maximized = mock_window.is_maximized();
@@ -323,7 +331,7 @@ impl WindowHandle {
         window_handle.process_update_messages();
         window_handle.style();
         window_handle.layout();
-        window_handle.compute_layout();
+        window_handle.commit_box_tree();
 
         window_handle
     }
@@ -347,7 +355,7 @@ impl WindowHandle {
     }
 
     pub fn event(&mut self, event: Event) {
-        set_current_view(self.id);
+        set_current_view(self.id.root());
 
         // Check event type for platform-specific context menu handling
         #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
@@ -355,11 +363,7 @@ impl WindowHandle {
         #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
         let is_pointer_up = matches!(&event, Event::Pointer(PointerEvent::Up { .. }));
 
-        // Use the shared event dispatch logic
-        let mut cx = EventCx {
-            window_state: &mut self.window_state,
-        };
-        cx.dispatch_event(self.id, self.main_view, event);
+        GlobalEventCx::new(&mut self.window_state).run(event);
 
         // Platform-specific context menu handling
         #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
@@ -391,7 +395,7 @@ impl WindowHandle {
         self.scale = scale;
         let scale = self.scale * self.window_state.scale;
         self.paint_state.set_scale(scale);
-        self.event(Event::WindowScaleChanged(scale));
+        self.event(Event::Window(WindowEvent::ScaleChanged(scale)));
         self.schedule_repaint();
     }
 
@@ -427,14 +431,14 @@ impl WindowHandle {
         self.id.request_style_recursive();
         self.id.request_all();
         if let Some(theme) = theme {
-            self.event(Event::ThemeChanged(theme));
+            self.event(Event::Window(WindowEvent::ThemeChanged(theme)));
         }
     }
 
     pub(crate) fn size(&mut self, size: Size) {
         self.size.set(size);
         self.window_state.update_screen_size_bp(size);
-        self.event(Event::WindowResized(size));
+        self.event(Event::Window(WindowEvent::Resized(size)));
         let scale = self.scale * self.window_state.scale;
         self.paint_state.resize(scale, size * self.scale);
         self.window_state.set_root_size(size);
@@ -442,18 +446,19 @@ impl WindowHandle {
         let is_maximized = self.window.is_maximized();
         if is_maximized != self.is_maximized {
             self.is_maximized = is_maximized;
-            self.event(Event::WindowMaximizeChanged(is_maximized));
+            self.event(Event::Window(WindowEvent::MaximizeChanged(is_maximized)));
         }
 
         self.style();
         self.layout();
+        self.commit_box_tree();
         self.process_update();
         self.schedule_repaint();
     }
 
     pub(crate) fn position(&mut self, point: Point) {
         self.window_position = point;
-        self.event(Event::WindowMoved(point));
+        self.event(Event::Window(WindowEvent::Moved(point)));
     }
 
     pub(crate) fn file_drag_event(&mut self, file_drag_event: FileDragEvent) {
@@ -473,37 +478,11 @@ impl WindowHandle {
     }
 
     pub(crate) fn pointer_event(&mut self, pointer_event: PointerEvent) {
-        match &pointer_event {
-            PointerEvent::Move(pointer_update) => {
-                let pos = pointer_update.current.logical_point();
-                if self.cursor_position != pos {
-                    self.cursor_position = pos;
-                }
+        if let PointerEvent::Move(pointer_update) = &pointer_event {
+            let pos = pointer_update.current.logical_point();
+            if self.cursor_position != pos {
+                self.cursor_position = pos;
             }
-            PointerEvent::Leave(_pointer_info) => {
-                set_current_view(self.id);
-                let cx = EventCx {
-                    window_state: &mut self.window_state,
-                };
-                let was_hovered = std::mem::take(&mut cx.window_state.hovered);
-                for id in was_hovered {
-                    let view_state = id.state();
-                    if view_state
-                        .borrow()
-                        .has_style_selectors
-                        .has(StyleSelector::Hover)
-                        || view_state
-                            .borrow()
-                            .has_style_selectors
-                            .has(StyleSelector::Active)
-                        || view_state.borrow().has_active_animation()
-                    {
-                        id.request_style();
-                    }
-                }
-                self.process_update();
-            }
-            _ => {}
         }
 
         self.event(Event::Pointer(pointer_event));
@@ -515,9 +494,9 @@ impl WindowHandle {
             if let Some(window_menu) = &self.window_menu {
                 window_menu.init_for_nsapp();
             }
-            self.event(Event::WindowGotFocus);
+            self.event(Event::Window(WindowEvent::FocusGained));
         } else {
-            self.event(Event::WindowLostFocus);
+            self.event(Event::Window(WindowEvent::FocusLost));
         }
     }
 
@@ -538,9 +517,10 @@ impl WindowHandle {
             }
 
             // Style each view in order, passing the global change for first iteration
+            // dbg!(traversal.len());
             for view_id in traversal {
                 let cx = &mut StyleCx::new(&mut self.window_state, view_id);
-                cx.style_view_with_change(view_id, global_change);
+                cx.style_view(view_id, global_change);
             }
             if self.window_state.capture.is_some() {
                 // we need to break if capture because when capturing we style all views so no need to loop here.
@@ -554,31 +534,29 @@ impl WindowHandle {
     }
 
     fn layout(&mut self) -> Duration {
-        let mut cx = LayoutCx::new(&mut self.window_state);
-
-        cx.window_state.root = {
-            let view = self.id.view();
-            let mut view = view.borrow_mut();
-            Some(cx.layout_view(view.as_mut()))
-        };
+        let cx = LayoutCx::new(&mut self.window_state);
 
         let start = Instant::now();
         cx.window_state.compute_layout();
-        cx.window_state.commit_box_tree();
-        let taffy_duration = Instant::now().saturating_duration_since(start);
+        let taffy_duration = start.elapsed();
 
-        self.compute_layout();
+        let needs_post: Vec<_> = cx.window_state.needs_post_layout.iter().copied().collect();
+        for id in needs_post {
+            if let Some(layout) = id.get_layout() {
+                let cx = PostLayoutCx::new(cx.window_state, &layout);
+                id.view().borrow_mut().post_layout(cx);
+            }
+        }
 
         taffy_duration
     }
 
-    fn compute_layout(&mut self) {
-        self.window_state.request_compute_layout = false;
-        let viewport = (self.window_state.root_size / self.window_state.scale).to_rect();
-        let mut cx = ComputeLayoutCx::new(&mut self.window_state, viewport);
-        cx.compute_view_layout(self.id);
-        // Invalidate hit test cache since layout rects have changed
-        clear_hit_test_cache();
+    fn commit_box_tree(&mut self) -> Duration {
+        let start = Instant::now();
+        self.window_state.commit_box_tree();
+        self.window_state.needs_box_tree_commit = false;
+
+        start.elapsed()
     }
 
     /// Process any scheduled updates (style/layout/paint requests from previous frame).
@@ -586,14 +564,14 @@ impl WindowHandle {
     pub(crate) fn process_scheduled_updates(&mut self) {
         for update in mem::take(&mut self.window_state.scheduled_updates) {
             match update {
-                FrameUpdate::Layout(id) => id.request_layout(),
+                FrameUpdate::Layout => {
+                    self.window_state.needs_layout = true;
+                }
+                FrameUpdate::BoxTreeCommit => {
+                    self.window_state.needs_box_tree_commit = true;
+                }
                 FrameUpdate::Style(id) => {
                     self.window_state.style_dirty.insert(id);
-                    // Also set the STYLE flag so style_view doesn't skip this view
-                    id.state()
-                        .borrow_mut()
-                        .requested_changes
-                        .insert(crate::view::state::ChangeFlags::STYLE);
                 }
                 FrameUpdate::Paint(id) => self.window_state.request_paint(id),
             }
@@ -666,7 +644,7 @@ impl WindowHandle {
     pub(crate) fn capture(&mut self, gpu_resources: Option<GpuResources>) -> Capture {
         // Capture the view before we run `style` and `layout` to catch missing `request_style`` or
         // `request_layout` flags.
-        let root_layout = self.id.layout_rect();
+        let root_layout = self.id.get_layout_rect();
         let root = CapturedView::capture(self.id, &mut self.window_state, root_layout);
 
         self.window_state.capture = Some(CaptureState::default());
@@ -678,7 +656,7 @@ impl WindowHandle {
         // Ensure we run layout and styling again for accurate timing. We also need to ensure
         // styles are recomputed to capture them.
         fn request_changes(id: ViewId) {
-            id.state().borrow_mut().requested_changes = ChangeFlags::all();
+            id.request_all();
             for child in id.children() {
                 request_changes(child);
             }
@@ -703,8 +681,9 @@ impl WindowHandle {
         self.style();
         let post_style = Instant::now();
 
-        let taffy_root_node = self.id.state().borrow().node;
+        let taffy_root_node = self.id.state().borrow().layout_id;
         let taffy_duration = self.layout();
+        let _box_tree_duration = self.commit_box_tree();
         let post_layout = Instant::now();
         let window = self.paint(gpu_resources);
         let end = Instant::now();
@@ -747,7 +726,8 @@ impl WindowHandle {
                 self.process_update_messages();
                 let needs_style = self.needs_style();
                 let needs_layout = self.needs_layout();
-                if !needs_layout && !needs_style && !self.window_state.request_compute_layout {
+                let needs_box = self.needs_box_tree_commit();
+                if !needs_layout && !needs_style && !needs_box {
                     break;
                 }
 
@@ -761,8 +741,9 @@ impl WindowHandle {
                     self.layout();
                 }
 
-                if self.window_state.request_compute_layout {
-                    self.compute_layout();
+                if self.needs_box_tree_commit() {
+                    paint = true;
+                    self.commit_box_tree();
                 }
             }
             if !self.has_deferred_update_messages() {
@@ -786,24 +767,8 @@ impl WindowHandle {
                     let removed_central_msgs =
                         std::mem::replace(central_msgs, Vec::with_capacity(central_msgs.len()));
                     for (id, msg) in removed_central_msgs {
-                        if let Some(root) = id.root() {
-                            let msgs = msgs.entry(root).or_default();
-                            msgs.push(msg);
-                        } else {
-                            // Messages that are not for our root get put back - they may
-                            // belong to another window, or may be construction-time messages
-                            // for a View that does not yet have a window but will momentarily.
-                            //
-                            // Note that if there is a plethora of events for ids which were created
-                            // but never assigned to any view, they will probably pile up in here,
-                            // and if that becomes a real problem, we may want a garbage collection
-                            // mechanism, or give every message a max-touch-count and discard it
-                            // if it survives too many iterations through here. Unclear if there
-                            // are real-world app development patterns where that could actually be
-                            // an issue. Since any such mechanism would have some overhead, there
-                            // should be a proven need before building one.
-                            central_msgs.push((id, msg));
-                        }
+                        let msgs = msgs.entry(id.root()).or_default();
+                        msgs.push(msg);
                     }
                 });
             }
@@ -817,14 +782,9 @@ impl WindowHandle {
                         &mut *central_msgs.borrow_mut(),
                         Vec::with_capacity(msgs.len()),
                     );
-                    let unprocessed = &mut *central_msgs.borrow_mut();
                     for (id, msg) in removed_central_msgs {
-                        if let Some(root) = id.root() {
-                            let msgs = msgs.entry(root).or_default();
-                            msgs.push((id, msg));
-                        } else {
-                            unprocessed.push((id, msg));
-                        }
+                        let msgs = msgs.entry(id.root()).or_default();
+                        msgs.push((id, msg));
                     }
                 });
             }
@@ -846,43 +806,30 @@ impl WindowHandle {
                 match msg {
                     UpdateMessage::RequestStyle(id) => {
                         self.window_state.style_dirty.insert(id);
-                        // Also set the STYLE flag so style_view doesn't skip this view
-                        id.state()
-                            .borrow_mut()
-                            .requested_changes
-                            .insert(crate::view::state::ChangeFlags::STYLE);
                     }
                     UpdateMessage::RequestViewStyle(id) => {
                         self.window_state.view_style_dirty.insert(id);
+                    }
+                    UpdateMessage::RequestLayout => {
+                        self.window_state.needs_layout = true;
+                    }
+                    UpdateMessage::RequestBoxTreeCommit => {
+                        self.window_state.needs_box_tree_commit = true;
                     }
                     UpdateMessage::RequestPaint => {
                         cx.window_state.request_paint = true;
                     }
                     UpdateMessage::Focus(id) => {
-                        if cx.window_state.focus != Some(id) {
-                            let old = cx.window_state.focus;
-                            cx.window_state.focus = Some(id);
-                            cx.window_state.focus_changed(old, cx.window_state.focus);
-                        }
+                        GlobalEventCx::new(cx.window_state).update_focus(id, false);
                     }
-                    UpdateMessage::ClearFocus(id) => {
-                        if cx.window_state.focus == Some(id) {
-                            cx.window_state.clear_focus();
-                            cx.window_state.focus_changed(Some(id), None);
-                        }
-                    }
-                    UpdateMessage::ClearAppFocus => {
-                        let focus = cx.window_state.focus;
-                        cx.window_state.clear_focus();
-                        if let Some(id) = focus {
-                            cx.window_state.focus_changed(Some(id), None);
-                        }
+                    UpdateMessage::ClearFocus => {
+                        GlobalEventCx::new(cx.window_state).update_focus_from_path(&[], false);
                     }
                     UpdateMessage::Active(id) => {
                         let old = cx.window_state.active;
                         cx.window_state.active = Some(id);
 
-                        if let Some(old_id) = old {
+                        if let Some(old_id) = old.and_then(|id| id.exact_view_id()) {
                             // To remove the styles applied by the Active selector
                             // Use selector-aware method to only update views with :active styles
                             if cx
@@ -893,14 +840,14 @@ impl WindowHandle {
                             }
                         }
 
-                        if cx.window_state.has_style_for_sel(id, StyleSelector::Active) {
-                            id.request_style_for_selector_recursive(StyleSelector::Active);
+                        if let Some(id) = id.exact_view_id() {
+                            if cx.window_state.has_style_for_sel(id, StyleSelector::Active) {
+                                id.request_style_for_selector_recursive(StyleSelector::Active);
+                            }
                         }
                     }
-                    UpdateMessage::ClearActive(id) => {
-                        if Some(id) == cx.window_state.active {
-                            cx.window_state.active = None;
-                        }
+                    UpdateMessage::ClearActive => {
+                        cx.window_state.active = None;
                     }
                     UpdateMessage::SetPointerCapture {
                         view_id,
@@ -1082,6 +1029,9 @@ impl WindowHandle {
                     UpdateMessage::SetupReactiveChildren { mut setup } => {
                         setup.run();
                     }
+                    UpdateMessage::NeedsPostLayout(id) => {
+                        self.window_state.needs_post_layout.insert(id);
+                    }
                 }
             }
         }
@@ -1104,11 +1054,11 @@ impl WindowHandle {
     }
 
     fn needs_layout(&mut self) -> bool {
-        self.id
-            .state()
-            .borrow()
-            .requested_changes
-            .contains(ChangeFlags::LAYOUT)
+        self.window_state.needs_layout
+    }
+
+    fn needs_box_tree_commit(&mut self) -> bool {
+        self.window_state.needs_box_tree_commit
     }
 
     fn needs_style(&mut self) -> bool {
@@ -1125,6 +1075,23 @@ impl WindowHandle {
     }
 
     fn set_cursor(&mut self) {
+        if self.window_state.needs_cursor_resolution {
+            let mut temp = None;
+            for hover in self.window_state.hover_state.current_path() {
+                if let Some(cursor) = hover
+                    .exact_view_id()
+                    .and_then(|id| id.state().borrow().cursor())
+                {
+                    temp = Some(cursor);
+                }
+                // it is important that the node cursors override the widget cursor because non View nodes will have a widget that maps to the parent View that they are associated with
+                if let Some(cursor) = self.window_state.visual_id_cursors.get(hover) {
+                    temp = Some(*cursor);
+                }
+            }
+            self.window_state.needs_cursor_resolution = false;
+            self.window_state.cursor = temp;
+        }
         let cursor = match self.window_state.cursor {
             Some(CursorStyle::Default) => CursorIcon::Default,
             Some(CursorStyle::Pointer) => CursorIcon::Pointer,
@@ -1149,9 +1116,9 @@ impl WindowHandle {
             Some(CursorStyle::NwseResize) => CursorIcon::NwseResize,
             None => CursorIcon::Default,
         };
-        if cursor != self.window_state.last_cursor {
+        if cursor != self.window_state.last_cursor_icon {
             self.window.set_cursor(cursor.into());
-            self.window_state.last_cursor = cursor;
+            self.window_state.last_cursor_icon = cursor;
         }
     }
 
@@ -1160,7 +1127,7 @@ impl WindowHandle {
     }
 
     pub(crate) fn destroy(&mut self) {
-        self.event(Event::WindowClosed);
+        self.event(Event::Window(WindowEvent::Closed));
         self.scope.dispose();
         remove_window_id_mapping(&self.id, &self.window_id);
     }
@@ -1283,29 +1250,20 @@ impl WindowHandle {
     }
 
     pub(crate) fn ime(&mut self, ime: Ime) {
-        match ime {
-            Ime::Enabled => {
-                self.event(Event::ImeEnabled);
-            }
-            Ime::Preedit(text, cursor) => {
-                self.event(Event::ImePreedit { text, cursor });
-            }
-            Ime::Commit(text) => {
-                self.event(Event::ImeCommit(text));
-            }
-            Ime::Disabled => {
-                self.event(Event::ImeDisabled);
-            }
+        let floem_ime = match ime {
+            Ime::Enabled => ImeEvent::Enabled,
+            Ime::Preedit(text, cursor) => ImeEvent::Preedit { text, cursor },
+            Ime::Commit(text) => ImeEvent::Commit(text),
+            Ime::Disabled => ImeEvent::Disabled,
             Ime::DeleteSurrounding {
                 before_bytes,
                 after_bytes,
-            } => {
-                self.event(Event::ImeDeleteSurrounding {
-                    before_bytes,
-                    after_bytes,
-                });
-            }
-        }
+            } => ImeEvent::DeleteSurrounding {
+                before_bytes,
+                after_bytes,
+            },
+        };
+        self.event(Event::Ime(floem_ime));
     }
 
     pub(crate) fn modifiers_changed(&mut self, modifiers: Modifiers) {
@@ -1359,12 +1317,15 @@ impl WindowHandle {
 }
 
 pub(crate) fn get_current_view() -> ViewId {
-    CURRENT_RUNNING_VIEW_HANDLE.with(|running| *running.borrow())
+    CURRENT_RUNNING_VIEW_HANDLE
+        .with(|running| *running.borrow())
+        .expect("view id must have been set before getting")
 }
 /// Set this view handle to the current running view handle
 pub(crate) fn set_current_view(id: ViewId) {
+    // dbg!(id.0);
     CURRENT_RUNNING_VIEW_HANDLE.with(|running| {
-        *running.borrow_mut() = id;
+        *running.borrow_mut() = Some(id);
     });
 }
 

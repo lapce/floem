@@ -1,5 +1,5 @@
 use floem::{
-    context::PaintCx,
+    context::{EventCx, PaintCx},
     event::{Event, EventPropagation},
     kurbo::{Affine, Circle, Point, Rect, Shape, Size, Stroke},
     peniko::{
@@ -130,6 +130,7 @@ pub struct SatValuePicker {
 impl SatValuePicker {
     pub fn new(color: impl Fn() -> Color + 'static) -> Self {
         let id = ViewId::new();
+        id.needs_post_layout();
         let color = UpdaterEffect::new(color, move |c| id.update_state(c));
         Self {
             id,
@@ -164,9 +165,8 @@ impl View for SatValuePicker {
         self.id
     }
 
-    fn compute_layout(&mut self, _cx: &mut floem::context::ComputeLayoutCx) -> Option<Rect> {
+    fn post_layout(&mut self, _post_layout_cx: floem::layout::PostLayoutCx) {
         self.size = self.id.get_size().unwrap_or_default();
-        None
     }
 
     fn update(&mut self, _cx: &mut floem::context::UpdateCx, state: Box<dyn std::any::Any>) {
@@ -175,13 +175,9 @@ impl View for SatValuePicker {
         }
     }
 
-    fn event_before_children(
-        &mut self,
-        _cx: &mut floem::context::EventCx,
-        event: &Event,
-    ) -> EventPropagation {
+    fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
         if let Some(on_change) = &self.on_change {
-            match event {
+            match &cx.event {
                 Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. })) => {
                     self.current_color = self.position_to_hsl(state.logical_point());
                     on_change(self.current_color.convert());
@@ -260,6 +256,7 @@ pub struct HuePicker {
 impl HuePicker {
     pub fn new(color: impl Fn() -> Color + 'static) -> Self {
         let id = ViewId::new();
+        id.needs_post_layout();
         let color = UpdaterEffect::new(color, move |c| id.update_state(c));
         Self {
             id,
@@ -291,9 +288,8 @@ impl View for HuePicker {
         self.id
     }
 
-    fn compute_layout(&mut self, _cx: &mut floem::context::ComputeLayoutCx) -> Option<Rect> {
+    fn post_layout(&mut self, _post_layout_cx: floem::layout::PostLayoutCx) {
         self.size = self.id.get_size().unwrap_or_default();
-        None
     }
 
     fn update(&mut self, _cx: &mut floem::context::UpdateCx, state: Box<dyn std::any::Any>) {
@@ -302,13 +298,9 @@ impl View for HuePicker {
         }
     }
 
-    fn event_before_children(
-        &mut self,
-        _cx: &mut floem::context::EventCx,
-        event: &Event,
-    ) -> EventPropagation {
+    fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
         if let Some(on_change) = &self.on_change {
-            match event {
+            match &cx.event {
                 Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. })) => {
                     self.current_color = self.position_to_hsl(state.logical_point());
                     on_change(self.current_color.convert());
@@ -389,6 +381,7 @@ pub struct OpacityPicker {
 impl OpacityPicker {
     pub fn new(color: impl Fn() -> Color + 'static) -> Self {
         let id = ViewId::new();
+        id.needs_post_layout();
         let color = UpdaterEffect::new(color, move |c| id.update_state(c));
         Self {
             id,
@@ -416,9 +409,8 @@ impl View for OpacityPicker {
         self.id
     }
 
-    fn compute_layout(&mut self, _cx: &mut floem::context::ComputeLayoutCx) -> Option<Rect> {
+    fn post_layout(&mut self, _post_layout_cx: floem::layout::PostLayoutCx) {
         self.size = self.id.get_size().unwrap_or_default();
-        None
     }
 
     fn update(&mut self, _cx: &mut floem::context::UpdateCx, state: Box<dyn std::any::Any>) {
@@ -427,13 +419,9 @@ impl View for OpacityPicker {
         }
     }
 
-    fn event_before_children(
-        &mut self,
-        _cx: &mut floem::context::EventCx,
-        event: &Event,
-    ) -> EventPropagation {
+    fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
         if let Some(on_change) = &self.on_change {
-            match event {
+            match &cx.event {
                 Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. })) => {
                     self.current_color = self.position_to_alpha(state.logical_point());
                     on_change(self.current_color);

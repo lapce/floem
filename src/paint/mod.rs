@@ -27,6 +27,7 @@ use crossbeam::channel::Receiver;
 #[cfg(not(feature = "crossbeam"))]
 use std::sync::mpsc::Receiver;
 
+use crate::VisualId;
 use crate::action::exec_after;
 use crate::animate::{Easing, Linear};
 use crate::view::ViewId;
@@ -41,7 +42,7 @@ std::thread_local! {
     /// and memory footprint of PaintCx or PaintState or ViewId with a field for it.
     /// This is ephemerally set before paint calls that are painting the view in a
     /// location other than its natural one for purposes of drag and drop.
-    static CURRENT_DRAG_PAINTING_ID : std::cell::Cell<Option<ViewId>> = const { std::cell::Cell::new(None) };
+    static CURRENT_DRAG_PAINTING_ID : std::cell::Cell<Option<VisualId>> = const { std::cell::Cell::new(None) };
 
     /// Paint order tracker for testing purposes.
     /// When enabled, records the ViewIds in the order they are painted.
@@ -115,7 +116,7 @@ fn record_paint(id: ViewId) {
 /// Information needed to paint a dragged view overlay after the main tree painting.
 /// This ensures the drag overlay always appears on top of all other content.
 pub(crate) struct PendingDragPaint {
-    pub id: ViewId,
+    pub id: VisualId,
     pub base_transform: Affine,
 }
 
@@ -176,7 +177,8 @@ impl PaintCx<'_> {
     /// paint a *draggable* image of itself during a drag (likely
     /// `draggable()` was called on the `View` or `ViewId`) as opposed
     /// to a normal paint in order to alter the way it renders itself.
-    pub fn is_drag_paint(&self, id: ViewId) -> bool {
+    pub fn is_drag_paint(&self, id: impl Into<VisualId>) -> bool {
+        let id = id.into();
         // This could be an associated function, but it is likely
         // a Good Thing to restrict access to cases when the caller actually
         // has a PaintCx, and that doesn't make it a breaking change to
@@ -218,6 +220,10 @@ impl PaintCx<'_> {
             return;
         }
 
+        if id.get_visual_rect().is_zero_area() {
+            return;
+        }
+
         // Record paint order for testing (fast path: skip if not recording)
         if self.record_paint_order {
             record_paint(id);
@@ -227,27 +233,25 @@ impl PaintCx<'_> {
         let view_state = id.state();
 
         self.save();
-        let size = self.transform(id);
-        let is_empty = self
-            .clip
-            .map(|rect| rect.rect().intersect(size.to_rect()).is_zero_area())
-            .unwrap_or(false);
-        if !is_empty {
-            let view_style_props = view_state.borrow().view_style_props.clone();
-            let layout_props = view_state.borrow().layout_props.clone();
-
-            paint_bg(self, &view_style_props, size);
-
-            view.borrow_mut().paint(self);
-            paint_border(self, &layout_props, &view_style_props, size);
-            paint_outline(self, &view_style_props, size)
+        self.transform(id);
+        let layout_rect_local = id.get_layout_rect_local();
+        if let Some(clip) = id.get_local_clip() {
+            self.clip(&clip);
         }
+        let view_style_props = view_state.borrow().view_style_props.clone();
+        let layout_props = view_state.borrow().layout_props.clone();
+
+        paint_bg(self, &view_style_props, layout_rect_local);
+
+        view.borrow_mut().paint(self);
+        paint_border(self, &layout_props, &view_style_props, layout_rect_local);
+        paint_outline(self, &view_style_props, layout_rect_local);
         // Check if this view is being dragged and needs deferred painting
-        if let Some(dragging) = self.window_state.dragging.as_ref() {
-            if dragging.id == id {
+        if let Some(dragging) = self.window_state.drag_state.state.as_ref() {
+            if dragging.id == id.get_visual_id() {
                 // Store the pending drag paint info - actual painting happens after tree traversal
                 self.pending_drag_paint = Some(PendingDragPaint {
-                    id,
+                    id: id.get_visual_id(),
                     base_transform: self.transform,
                 });
             }
@@ -266,7 +270,7 @@ impl PaintCx<'_> {
         let id = pending.id;
         let base_transform = pending.base_transform;
 
-        let Some(dragging) = self.window_state.dragging.as_ref() else {
+        let Some(dragging) = self.window_state.drag_state.state.as_ref() else {
             return;
         };
 
@@ -290,7 +294,7 @@ impl PaintCx<'_> {
 
                 // Schedule next animation frame
                 exec_after(Duration::from_millis(8), move |_| {
-                    id.request_paint();
+                    id.view_id().request_paint();
                 });
 
                 Some(base_transform * Affine::translate(release_offset * offset_scale))
@@ -300,60 +304,52 @@ impl PaintCx<'_> {
             }
         } else {
             // Handle active dragging
-            let translation = self.window_state.last_cursor_location.to_vec2() - dragging.offset;
+            let translation = self.window_state.last_pointer.0.to_vec2() - dragging.offset;
             Some(base_transform.with_translation(translation))
         };
 
-        if let Some(transform) = transform {
-            let view = id.view();
-            let view_state = id.state();
+        // if let Some(transform) = transform {
+        //     let view = id.view();
+        //     let view_state = id.state();
 
-            self.save();
-            self.transform = transform;
-            self.paint_state
-                .renderer_mut()
-                .set_transform(self.transform);
-            self.clear_clip();
+        //     self.save();
+        //     self.transform = transform;
+        //     self.paint_state
+        //         .renderer_mut()
+        //         .set_transform(self.transform);
+        //     self.clear_clip();
 
-            // Get size from layout
-            let size = if let Some(layout) = id.get_layout() {
-                Size::new(layout.size.width as f64, layout.size.height as f64)
-            } else {
-                Size::ZERO
-            };
+        //     // Get size from layout
+        //     let layout_rect_local = id.get_visual_rect();
 
-            // Apply styles
-            let style = view_state.borrow().combined_style.clone();
-            let mut view_style_props = view_state.borrow().view_style_props.clone();
+        //     // Apply styles
+        //     let style = view_state.borrow().combined_style.clone();
+        //     let mut view_style_props = view_state.borrow().view_style_props.clone();
 
-            if let Some(dragging_style) = view_state.borrow().dragging_style.clone() {
-                let style = style.apply(dragging_style);
-                let mut _new_frame = false;
-                view_style_props.read_explicit(&style, &style, &Instant::now(), &mut _new_frame);
-            }
+        //     if let Some(dragging_style) = view_state.borrow().dragging_style.clone() {
+        //         let style = style.apply(dragging_style);
+        //         let mut _new_frame = false;
+        //         view_style_props.read_explicit(&style, &style, &Instant::now(), &mut _new_frame);
+        //     }
 
-            // Paint with drag styling
-            let layout_props = view_state.borrow().layout_props.clone();
+        //     // Paint with drag styling
+        //     let layout_props = view_state.borrow().layout_props.clone();
 
-            // Important: If any method early exit points are added in this
-            // code block, they MUST call CURRENT_DRAG_PAINTING_ID.take() before
-            // returning.
+        //     // Important: If any method early exit points are added in this
+        //     // code block, they MUST call CURRENT_DRAG_PAINTING_ID.take() before
+        //     // returning.
 
-            CURRENT_DRAG_PAINTING_ID.set(Some(id));
+        //     CURRENT_DRAG_PAINTING_ID.set(Some(id));
 
-            paint_bg(self, &view_style_props, size);
-            view.borrow_mut().paint(self);
-            paint_border(self, &layout_props, &view_style_props, size);
-            paint_outline(self, &view_style_props, size);
+        //     paint_bg(self, &view_style_props, layout_rect_local);
+        //     view.borrow_mut().paint(self);
+        //     paint_border(self, &layout_props, &view_style_props, layout_rect_local);
+        //     paint_outline(self, &view_style_props, layout_rect_local);
 
-            self.restore();
+        //     self.restore();
 
-            CURRENT_DRAG_PAINTING_ID.take();
-        }
-
-        if drag_set_to_none {
-            self.window_state.dragging = None;
-        }
+        //     CURRENT_DRAG_PAINTING_ID.take();
+        // }
     }
 
     /// Paint all registered overlays for the given root view.
@@ -378,15 +374,13 @@ impl PaintCx<'_> {
                 .state()
                 .borrow()
                 .combined_style
-                .get(crate::style::IsFixed);
+                .builtin()
+                .is_fixed();
 
-            let first_child_is_fixed = overlay_id.children().first().is_some_and(|child| {
-                child
-                    .state()
-                    .borrow()
-                    .combined_style
-                    .get(crate::style::IsFixed)
-            });
+            let first_child_is_fixed = overlay_id
+                .children()
+                .first()
+                .is_some_and(|child| child.state().borrow().combined_style.builtin().is_fixed());
 
             let is_fixed = overlay_is_fixed || first_child_is_fixed;
 
@@ -401,7 +395,7 @@ impl PaintCx<'_> {
                 self.transform = Affine::IDENTITY;
             } else if let Some(parent) = overlay_id.parent() {
                 // Use parent's pre-computed transform directly (O(1) instead of O(depth))
-                self.transform = parent.state().borrow().visual_transform;
+                self.transform = parent.get_visual_transform();
             }
 
             self.paint_state
@@ -482,13 +476,13 @@ impl PaintCx<'_> {
         }
     }
 
-    pub fn transform(&mut self, id: ViewId) -> Size {
+    pub fn transform(&mut self, id: ViewId) {
         if let Some(layout) = id.get_layout() {
             let offset = layout.location;
 
             // Use the pre-computed visual_transform directly instead of accumulating.
             // This transform is computed during layout and includes all ancestor transforms.
-            self.transform = id.state().borrow().visual_transform;
+            self.transform = id.get_visual_transform();
 
             self.paint_state
                 .renderer_mut()
@@ -503,15 +497,7 @@ impl PaintCx<'_> {
                     .with_origin(rect.origin() - Vec2::new(offset.x as f64, offset.y as f64))
                     .to_rounded_rect(raidus);
             }
-
-            Size::new(layout.size.width as f64, layout.size.height as f64)
-        } else {
-            Size::ZERO
         }
-    }
-
-    pub fn is_focused(&self, id: ViewId) -> bool {
-        self.window_state.is_focused(&id)
     }
 }
 

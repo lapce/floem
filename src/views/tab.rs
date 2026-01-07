@@ -264,7 +264,7 @@ impl<T> View for Tab<T> {
                 }
                 TabState::Active(active) => {
                     self.active.replace(active);
-                    self.id.request_style_recursive();
+                    self.id.request_style();
                 }
                 TabState::None => {
                     self.active.take();

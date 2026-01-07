@@ -27,6 +27,7 @@ pub fn draggable_sidebar_view() -> impl IntoView {
         s.border_right(1.0)
             .border_top(1.0)
             .border_color(Color::from_rgb8(205, 205, 205))
+            .flex_grow(1.)
     });
 
     let main_window = Scroll::new(
@@ -40,9 +41,7 @@ pub fn draggable_sidebar_view() -> impl IntoView {
     )
     .style(|s| {
         s.flex_col()
-            .flex_basis(0)
-            .min_width(0)
-            .flex_grow(1.0)
+            .width_full()
             .border_top(1.0)
             .border_color(Color::from_rgb8(205, 205, 205))
     });
@@ -58,12 +57,12 @@ pub fn draggable_sidebar_view() -> impl IntoView {
         });
 
     let id = view.id();
-    view.on_event_stop(EventListener::KeyUp, move |e| {
+    view.on_event_stop(EventListener::KeyUp, move |cx| {
         if let floem::event::Event::Key(KeyboardEvent {
             state: KeyState::Up,
             key,
             ..
-        }) = e
+        }) = &cx.event
         {
             if *key == Key::Named(NamedKey::F11) {
                 id.inspect();

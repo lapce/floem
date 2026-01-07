@@ -159,9 +159,9 @@ pub(crate) fn collect_overlays(root_id: ViewId) -> SmallVec<[ViewId; 4]> {
         s.overlays
             .keys()
             .filter(|&overlay_id| {
-                // Compute actual root by walking up the parent chain
-                let actual_root = s.root_view_id(overlay_id);
-                actual_root == Some(root_id)
+                // Validate actual root
+                let actual_root = overlay_id.root();
+                actual_root == root_id
             })
             .collect()
     });

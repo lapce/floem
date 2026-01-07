@@ -1,27 +1,27 @@
 use crate::{
     ViewId,
+    action::add_update_message,
     animate::Animation,
     context::{
         CleanupListeners, EventCallback, EventListenerVec, MenuCallback, MoveListeners,
         ResizeCallback, ResizeListeners,
     },
     event::EventListener,
-    message::{CENTRAL_UPDATE_MESSAGES, UpdateMessage},
+    message::UpdateMessage,
     prop_extractor,
     style::{
-        Background, BorderColorProp, BorderRadiusProp, BoxShadowProp, InheritedInteractionCx,
-        LayoutProps, Outline, OutlineColor, Style, StyleClassRef, StyleSelectors, TransformProps,
+        Background, BorderColorProp, BorderRadiusProp, BoxShadowProp, BoxTreeProps, CursorStyle,
+        InheritedInteractionCx, LayoutProps, Outline, OutlineColor, Style, StyleClassRef,
+        StyleSelectors, TransformProps,
     },
     view::LayoutTree,
 };
-use bitflags::bitflags;
 use floem_reactive::Scope;
 use imbl::HashSet;
-use peniko::kurbo::{Affine, Point, Rect, Vec2};
+use peniko::kurbo::{Affine, Point, Vec2};
 use smallvec::SmallVec;
 use std::{cell::RefCell, collections::HashMap, marker::PhantomData, rc::Rc};
 use taffy::tree::NodeId;
-use ui_events::pointer::PointerState;
 
 /// A stack of view attributes. Each entry is associated with a view decorator call.
 #[derive(Debug)]
@@ -98,16 +98,6 @@ prop_extractor! {
         pub border_color: BorderColorProp,
         pub background: Background,
         pub shadow: BoxShadowProp,
-    }
-}
-
-bitflags! {
-    #[derive(Default, Copy, Clone, Debug)]
-    #[must_use]
-    pub(crate) struct ChangeFlags: u8 {
-        const LAYOUT = 1 << 1;
-        const STYLE = 1 << 2;
-        const VIEW_STYLE = 1 << 3;
     }
 }
 
@@ -220,9 +210,8 @@ pub struct StackingInfo {
 
 /// View state stores internal state associated with a view which is owned and managed by Floem.
 pub struct ViewState {
-    pub(crate) node: NodeId,
+    pub(crate) layout_id: NodeId,
     pub(crate) visual_id: crate::VisualId,
-    pub(crate) requested_changes: ChangeFlags,
     pub(crate) style: Stack<Style>,
     /// We store the stack offset to the view style to keep the api consistent but it should
     /// always be the first offset.
@@ -234,15 +223,10 @@ pub struct ViewState {
     pub(crate) child_translation: Vec2,
     // total accumulated offset from all scroll ancestors. This is updated when updating the box tree
     pub(crate) scroll_ctx: Vec2,
-    pub(crate) viewport: Option<Rect>,
-    pub(crate) layout_rect: Rect,
-    /// The visible clip area in window coordinates. This is the intersection of
-    /// the view's layout_rect with all ancestor clip bounds (from overflow: hidden/scroll).
-    /// Used for clip-aware hit testing - clicks outside this rect should not hit the view.
-    pub(crate) clip_rect: Rect,
     pub(crate) layout_props: LayoutProps,
     pub(crate) view_style_props: ViewStyleProps,
     pub(crate) view_transform_props: TransformProps,
+    pub(crate) box_tree_props: BoxTreeProps,
     pub(crate) animations: Stack<Animation>,
     pub(crate) classes: Vec<StyleClassRef>,
     pub(crate) dragging_style: Option<Style>,
@@ -266,6 +250,10 @@ pub struct ViewState {
     pub(crate) parent_set_style_interaction: InheritedInteractionCx,
     /// Controls view visibility including phase transitions and force-hidden state.
     pub(crate) visibility: Visibility,
+    /// The cursor style set by the style pass on the view. There is also the [`Self::user_cursor`] that takes precedance over this cursor.
+    pub(crate) style_cursor: Option<CursorStyle>,
+    /// the cursor style that a user can set on a view through the `ViewId`. This takes precedance over style_cursor.
+    pub(crate) user_cursor: Option<CursorStyle>,
     pub(crate) taffy_style: taffy::style::Style,
     pub(crate) event_listeners: HashMap<EventListener, EventListenerVec>,
     pub(crate) context_menu: Option<Rc<MenuCallback>>,
@@ -273,18 +261,10 @@ pub struct ViewState {
     pub(crate) resize_listeners: Rc<RefCell<ResizeListeners>>,
     pub(crate) move_listeners: Rc<RefCell<MoveListeners>>,
     pub(crate) cleanup_listeners: Rc<RefCell<CleanupListeners>>,
-    pub(crate) last_pointer_down: Option<PointerState>,
     pub(crate) num_waiting_animations: u16,
     pub(crate) disable_default_events: HashSet<EventListener>,
+    /// This transform is user settable and is a transfrom that is applied after the transfrom from the `view_transform_props` which is the transfrom applied by style properties.
     pub(crate) transform: Affine,
-    /// The cumulative transform from this view's local coordinates to window coordinates.
-    /// This combines the view's position and any CSS transforms.
-    /// Use the inverse to convert from window coordinates to local coordinates.
-    pub(crate) visual_transform: Affine,
-    /// The window origin for this view (layout position after CSS translate).
-    /// This is the position used for child layout and does NOT include scale/rotate effects.
-    /// For the position including all CSS transforms, use `visual_transform.translation()`.
-    pub(crate) window_origin: Point,
     pub(crate) stacking_info: StackingInfo,
     pub(crate) debug_name: SmallVec<[String; 1]>,
     /// Scope for reactive children (used by `ParentView::derived_children`).
@@ -301,28 +281,32 @@ pub struct ViewState {
 }
 
 impl ViewState {
-    pub(crate) fn new(id: ViewId, taffy: &mut LayoutTree, box_tree: &mut crate::BoxTree) -> Self {
+    pub(crate) fn new(
+        id: ViewId,
+        root_id: ViewId,
+        taffy: &mut LayoutTree,
+        box_tree: &mut crate::BoxTree,
+    ) -> Self {
         let mut style = Stack::<Style>::default();
         let view_style_offset = style.next_offset();
         style.push(Style::new());
 
-        let visual_id =
-            crate::VisualId(box_tree.insert(None, understory_box_tree::LocalNode::default()));
+        let visual_id = crate::VisualId(
+            box_tree.insert(None, understory_box_tree::LocalNode::default()),
+            root_id,
+        );
 
-        CENTRAL_UPDATE_MESSAGES.with_borrow_mut(|m| m.push((id, UpdateMessage::RequestStyle(id))));
-        CENTRAL_UPDATE_MESSAGES
-            .with_borrow_mut(|m| m.push((id, UpdateMessage::RequestViewStyle(id))));
+        add_update_message(UpdateMessage::RequestStyle(id));
+        add_update_message(UpdateMessage::RequestViewStyle(id));
+
         Self {
-            node: taffy.new_leaf(taffy::style::Style::DEFAULT).unwrap(),
+            layout_id: taffy.new_leaf(taffy::style::Style::DEFAULT).unwrap(),
             visual_id,
-            viewport: None,
             style,
             view_style_offset,
-            layout_rect: Rect::ZERO,
-            clip_rect: Rect::ZERO,
             layout_props: Default::default(),
             view_style_props: Default::default(),
-            requested_changes: ChangeFlags::all(),
+            box_tree_props: Default::default(),
             request_style_recursive: false,
             has_style_selectors: StyleSelectors::default(),
             animations: Default::default(),
@@ -339,13 +323,10 @@ impl ViewState {
             resize_listeners: Default::default(),
             move_listeners: Default::default(),
             cleanup_listeners: Default::default(),
-            last_pointer_down: None,
             num_waiting_animations: 0,
             disable_default_events: HashSet::new(),
             view_transform_props: Default::default(),
             transform: Affine::IDENTITY,
-            visual_transform: Affine::IDENTITY,
-            window_origin: Point::ZERO,
             stacking_info: StackingInfo::default(),
             debug_name: Default::default(),
             style_cx_parent: None,
@@ -354,6 +335,8 @@ impl ViewState {
             style_interaction_cx: Default::default(),
             parent_set_style_interaction: Default::default(),
             visibility: Visibility::default(),
+            style_cursor: None,
+            user_cursor: None,
             children_scope: None,
             keyed_children: None,
             scope: None,
@@ -369,31 +352,16 @@ impl ViewState {
         false
     }
 
-    /// Returns the view's visual position in window coordinates.
-    ///
-    /// This is derived from `visual_transform`, which is the single source
-    /// of truth for a view's position. For views without CSS scale/rotate transforms,
-    /// this equals the layout position plus CSS translate. For views with scale/rotate,
-    /// this includes the effect of center-based transforms.
-    pub(crate) fn visual_origin(&self) -> Point {
-        let t = self.visual_transform.translation();
-        Point::new(t.x, t.y)
-    }
-
-    /// Returns the view's window origin (layout position after CSS translate).
-    ///
-    /// This is the position used for child layout and does NOT include scale/rotate effects.
-    /// For the position including all CSS transforms, use `visual_origin()`.
-    pub(crate) fn window_origin(&self) -> Point {
-        self.window_origin
-    }
-
     pub(crate) fn style(&self) -> Style {
         let mut result = Style::new();
         for entry in self.style.stack.iter() {
             result.apply_mut(entry.clone());
         }
         result
+    }
+
+    pub fn cursor(&self) -> Option<CursorStyle> {
+        self.style_cursor.or(self.user_cursor)
     }
 
     /// Compute the combined style by applying selectors, responsive styles, and classes.
@@ -438,6 +406,19 @@ impl ViewState {
             &inherited_ctx,
             class_context,
         );
+
+        let visibility = self.visibility;
+        // For Animating, preserve the original display; for Hidden/force_hidden, force None
+        let display_override = if visibility.force_hidden {
+            Some(taffy::Display::None)
+        } else {
+            match visibility.phase {
+                VisibilityPhase::Animating(dis) => Some(dis),
+                VisibilityPhase::Hidden => Some(taffy::Display::None),
+                _ => None,
+            }
+        };
+        let combined = combined.apply_opt(display_override, crate::style::Style::display);
 
         self.combined_style = combined.clone();
         (combined, classes_applied)

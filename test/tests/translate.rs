@@ -39,7 +39,7 @@ fn test_translate_x_pixels() {
     harness.rebuild();
 
     // The transform should include a 20px x translation
-    let transform = element_id.get_transform();
+    let transform = element_id.get_visual_transform();
 
     // Extract translation from the affine transform
     let coeffs = transform.as_coeffs();
@@ -69,7 +69,7 @@ fn test_translate_y_pixels() {
     let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
     harness.rebuild();
 
-    let transform = element_id.get_transform();
+    let transform = element_id.get_visual_transform();
 
     let coeffs = transform.as_coeffs();
     let translate_y = coeffs[5]; // f coefficient is y translation
@@ -103,7 +103,7 @@ fn test_translate_x_percentage() {
     let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
     harness.rebuild();
 
-    let transform = element_id.get_transform();
+    let transform = element_id.get_visual_transform();
 
     let coeffs = transform.as_coeffs();
     let translate_x = coeffs[4];
@@ -134,7 +134,7 @@ fn test_translate_y_percentage() {
     let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
     harness.rebuild();
 
-    let transform = element_id.get_transform();
+    let transform = element_id.get_visual_transform();
 
     let coeffs = transform.as_coeffs();
     let translate_y = coeffs[5];
@@ -165,7 +165,7 @@ fn test_translate_negative_percentage() {
     let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
     harness.rebuild();
 
-    let transform = element_id.get_transform();
+    let transform = element_id.get_visual_transform();
 
     let coeffs = transform.as_coeffs();
     let translate_x = coeffs[4];
@@ -206,7 +206,7 @@ fn test_center_with_translate() {
     let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
     harness.rebuild();
 
-    let transform = element_id.get_transform();
+    let transform = element_id.get_visual_transform();
 
     let coeffs = transform.as_coeffs();
     let translate_x = coeffs[4];
@@ -259,8 +259,8 @@ fn test_translate_percentage_scales_with_element_size() {
     let mut harness = HeadlessHarness::new_with_size(view, 300.0, 200.0);
     harness.rebuild();
 
-    let large_transform = large_id.get_transform();
-    let small_transform = small_id.get_transform();
+    let large_transform = large_id.get_visual_transform();
+    let small_transform = small_id.get_visual_transform();
 
     let large_translate_x = large_transform.as_coeffs()[4];
     let small_translate_x = small_transform.as_coeffs()[4];

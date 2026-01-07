@@ -37,7 +37,7 @@ fn simple_list() -> impl IntoView {
         .list()
         .style(|s| s.width_full().class(LabelClass, |s| s.height(24)))
         .scroll()
-        .style(|s| s.size(100, 200).apply(border_style(true)))
+        .style(|s| s.size(100, 800).apply(border_style(true)))
 }
 
 fn enhanced_list() -> impl IntoView {

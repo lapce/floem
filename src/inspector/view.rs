@@ -9,7 +9,7 @@ use crate::inspector::{
 use crate::prelude::{
     ViewTuple, dyn_container, img_dynamic, scroll, tab, text_input, virtual_stack,
 };
-use crate::style::{FontSize, OverflowX, OverflowY, TextColor};
+use crate::style::{CustomStylable, FontSize, OverflowX, OverflowY, TextColor};
 use crate::theme::StyleThemeExt as _;
 use crate::unit::PxPctAuto;
 use crate::views::Stack;
@@ -76,7 +76,7 @@ pub fn capture(window_id: WindowId) {
                 stack
                     .style(|s| s.width_full().height_full())
                     .on_event(EventListener::KeyUp, move |e| {
-                        if let Event::Key(e) = e {
+                        if let Event::Key(e) = &e.event {
                             if e.key == keyboard::Key::Named(NamedKey::F11) && e.modifiers.shift() {
                                 id.inspect();
                                 return EventPropagation::Stop;
@@ -119,7 +119,6 @@ fn inspector_view(
                 .class(scroll::Handle, |s| {
                     s.border_radius(4.0)
                         .background(Color::from_rgba8(166, 166, 166, 140))
-                        .set(scroll::Thickness, 16.0)
                         .set(scroll::Rounded, false)
                         .active(|s| s.background(Color::from_rgb8(166, 166, 166)))
                         .hover(|s| s.background(Color::from_rgb8(184, 184, 184)))
@@ -176,12 +175,12 @@ fn capture_view(
             .focusable(true)
     })
     .on_event_stop(EventListener::KeyUp, {
-        move |event: &Event| {
+        move |cx| {
             if let Event::Key(KeyboardEvent {
                 state: KeyState::Up,
                 key,
                 ..
-            }) = event
+            }) = &cx.event
             {
                 match key {
                     keyboard::Key::Named(NamedKey::ArrowUp) => {
@@ -217,8 +216,8 @@ fn capture_view(
     })
     .on_event_stop(EventListener::PointerUp, {
         let capture_ = capture_.clone();
-        move |event: &Event| {
-            if let Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. })) = event {
+        move |cx| {
+            if let Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. })) = &cx.event {
                 let find_ids = capture_
                     .root
                     .find_all_by_pos(state.logical_point())
@@ -240,8 +239,9 @@ fn capture_view(
         }
     })
     .on_event_stop(EventListener::PointerMove, {
-        move |event: &Event| {
-            if let Event::Pointer(PointerEvent::Move(PointerUpdate { current: state, .. })) = event
+        move |cx| {
+            if let Event::Pointer(PointerEvent::Move(PointerUpdate { current: state, .. })) =
+                &cx.event
             {
                 let find_ids = capture_
                     .root
@@ -353,7 +353,7 @@ fn capture_view(
             }
             .style(|s| s.width_full())
             .scroll()
-            .scroll_style(|s| s.handle_thickness(6.).shrink_to_fit())
+            .custom_style(|s| s.shrink_to_fit())
             .style(|s| {
                 s.set(OverflowX, taffy::Overflow::Visible)
                     .set(OverflowY, taffy::Overflow::Scroll)
@@ -407,8 +407,8 @@ fn capture_view(
     let search = text_input(search_str)
         .style(|s| s.width_full())
         .placeholder("View Search...")
-        .on_event_stop(EventListener::KeyUp, move |event: &Event| {
-            if let Event::Key(KeyboardEvent { key, .. }) = event {
+        .on_event_stop(EventListener::KeyUp, move |cx| {
+            if let Event::Key(KeyboardEvent { key, .. }) = &cx.event {
                 match key {
                     keyboard::Key::Named(NamedKey::ArrowUp) => {
                         let id = match_ids.try_update(|(match_index, ids)| {
@@ -495,7 +495,7 @@ fn view_tree(
     })
     .scroll()
     .style(|s| s.flex_grow(1.0))
-    .scroll_style(|s| s.shrink_to_fit())
+    .custom_style(|s| s.shrink_to_fit())
     .on_event_cont(EventListener::PointerLeave, move |_| {
         capture_signal_clone.highlighted.set(None)
     })

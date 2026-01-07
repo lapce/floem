@@ -5,6 +5,8 @@ use super::{
     Background, BoxShadow, CursorStyle, CustomStyle, FontSize, Foreground, Style, StylePropValue,
     Transition,
 };
+use crate::views::editor::SelectionColor;
+use crate::views::resizable::ResizableHandleClass;
 use crate::{
     AnyView, prop, style_class,
     views::{
@@ -385,7 +387,16 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
             s.background(t.bg_elevated())
                 .padding(t.padding())
                 .disabled(|s| s.background(t.bg_disabled()).color(t.text_muted()))
-                .active(|s| s.background(t.bg_elevated()))
+                .active(|s| {
+                    s.with_context_opt::<Background, _>(|s, b| {
+                        let color = if let Brush::Solid(c) = b {
+                            Some(c.map_lightness(|l| l + 0.1))
+                        } else {
+                            None
+                        };
+                        s.apply_opt(color, |s, c| s.background(c))
+                    })
+                })
         })
         .transition(Background, Transition::linear(100.millis()))
         .justify_center()
@@ -432,6 +443,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
         })
         .transition(Background, Transition::linear(100.millis()))
         .class(CheckboxClass, |s| s.focusable(false))
+        .selectable(false)
         .focus(|s| {
             s.class(CheckboxClass, |s| {
                 s.with_theme(|s, t| s.border_color(t.primary()))
@@ -471,6 +483,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
         .with_theme(move |s, t| {
             s.col_gap(t.padding())
                 .padding(t.padding())
+                .selectable(false)
                 .border_radius(t.border_radius())
                 .hover(|s| s.background(t.primary_muted().with_alpha(0.7)))
                 .active(|s| {
@@ -513,7 +526,8 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
         .with_theme(|s, t| {
             s.background(t.bg_base())
                 .padding(t.padding())
-                .cursor_color(t.primary_muted().with_alpha(0.5))
+                .set(SelectionColor, t.primary_muted().with_alpha(0.5))
+                .cursor_color(t.primary_muted())
                 .hover(|s| s.background(t.bg_elevated()))
                 .disabled(|s| s.background(t.bg_disabled()).color(t.text_muted()))
         })
@@ -598,11 +612,8 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
         .class(TabSelectorClass, |_| tab_selector_style)
         .custom_style_class(|s: scroll::ScrollCustomStyle| {
             s.handle_border_radius(4.0)
-                .handle_thickness(16.0)
                 .handle_rounded(false)
-                .apply_if(cfg!(target_os = "macos"), |s| {
-                    s.handle_rounded(true).handle_thickness(10)
-                })
+                .apply_if(cfg!(target_os = "macos"), |s| s.handle_rounded(true))
         })
         .class(scroll::Handle, |s| {
             s.with_theme(|s, t| {
@@ -668,7 +679,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
                         })
                 })
         })
-        .class(ResizableClass, |s| {
+        .class(ResizableHandleClass, |s| {
             s.with_theme(|s, t| {
                 s.custom(|cs: ResizableCustomStyle| {
                     cs.handle_thickness(3.)

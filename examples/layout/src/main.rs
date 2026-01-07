@@ -14,10 +14,10 @@ pub mod tab_navigation;
 
 fn list_item<V: IntoView + 'static>(name: String, view_fn: impl Fn() -> V) -> impl IntoView {
     Stack::horizontal((
-        Label::derived(move || name.clone()).style(|s| s),
+        name.style(|s| s.width_full()),
         Container::new(view_fn()).style(|s| s.width_full().justify_content(AlignContent::End)),
     ))
-    .style(|s| s.width(200))
+    .style(|s| s.width(250))
 }
 
 fn app_view() -> impl IntoView {
@@ -96,12 +96,12 @@ fn app_view() -> impl IntoView {
     });
 
     let id = view.id();
-    view.on_event_stop(EventListener::KeyUp, move |e| {
+    view.on_event_stop(EventListener::KeyUp, move |cx| {
         if let Event::Key(KeyboardEvent {
             state: KeyState::Up,
             key,
             ..
-        }) = e
+        }) = &cx.event
         {
             if *key == Key::Named(NamedKey::F11) {
                 id.inspect();

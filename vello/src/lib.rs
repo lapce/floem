@@ -276,7 +276,7 @@ impl Renderer for VelloRenderer {
         self.scene.push_layer(
             blend,
             alpha,
-            self.transform.then_scale(self.window_scale) * transform,
+            (self.transform * transform).then_scale(self.window_scale),
             clip,
         );
     }

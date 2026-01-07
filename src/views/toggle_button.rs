@@ -8,6 +8,7 @@ use peniko::kurbo::{Point, Size};
 use ui_events::keyboard::{Key, KeyState, KeyboardEvent, NamedKey};
 use ui_events::pointer::PointerEvent;
 
+use crate::event::{Event, FocusEvent};
 use crate::{
     Renderer,
     event::EventPropagation,
@@ -132,17 +133,17 @@ impl View for ToggleButton {
         }
     }
 
-    fn event_before_children(
-        &mut self,
-        cx: &mut crate::context::EventCx,
-        event: &crate::event::Event,
-    ) -> EventPropagation {
-        match event {
-            crate::event::Event::Pointer(PointerEvent::Down { .. }) => {
-                cx.update_active(self.id);
+    fn event(&mut self, cx: &mut crate::context::EventCx) -> EventPropagation {
+        if cx.phase != crate::event::Phase::Capture {
+            return EventPropagation::Continue;
+        }
+
+        match &cx.event {
+            Event::Pointer(PointerEvent::Down { .. }) => {
+                cx.window_state.update_active(self.id);
                 self.held = ToggleState::Held;
             }
-            crate::event::Event::Pointer(PointerEvent::Up { .. }) => {
+            Event::Pointer(PointerEvent::Up { .. }) => {
                 self.id.request_layout();
 
                 // if held and pointer up. toggle the position (toggle state drag already changed the position)
@@ -169,7 +170,7 @@ impl View for ToggleButton {
                 }
                 self.held = ToggleState::Nothing;
             }
-            crate::event::Event::Pointer(PointerEvent::Move(pu)) => {
+            Event::Pointer(PointerEvent::Move(pu)) => {
                 let point = pu.current.logical_point();
                 if self.held == ToggleState::Held || self.held == ToggleState::Drag {
                     self.held = ToggleState::Drag;
@@ -210,10 +211,10 @@ impl View for ToggleButton {
                     }
                 }
             }
-            crate::event::Event::FocusLost => {
+            Event::Focus(FocusEvent::Lost) => {
                 self.held = ToggleState::Nothing;
             }
-            crate::event::Event::Key(KeyboardEvent {
+            Event::Key(KeyboardEvent {
                 state: KeyState::Down,
                 key,
                 ..
@@ -229,22 +230,22 @@ impl View for ToggleButton {
         EventPropagation::Continue
     }
 
-    fn compute_layout(
-        &mut self,
-        _cx: &mut crate::context::ComputeLayoutCx,
-    ) -> Option<peniko::kurbo::Rect> {
-        let layout = self.id.get_layout().unwrap_or_default();
-        let size = layout.size;
-        self.width = size.width;
-        let circle_radius = match self.style.circle_rad() {
-            PxPct::Px(px) => px as f32,
-            PxPct::Pct(pct) => size.width.min(size.height) / 2. * (pct as f32 / 100.),
-        };
-        self.radius = circle_radius;
-        self.update_restrict_position(false);
+    // fn compute_layout(
+    //     &mut self,
+    //     _cx: &mut crate::context::ComputeLayoutCx,
+    // ) -> Option<peniko::kurbo::Rect> {
+    //     let layout = self.id.get_layout().unwrap_or_default();
+    //     let size = layout.size;
+    //     self.width = size.width;
+    //     let circle_radius = match self.style.circle_rad() {
+    //         PxPct::Px(px) => px as f32,
+    //         PxPct::Pct(pct) => size.width.min(size.height) / 2. * (pct as f32 / 100.),
+    //     };
+    //     self.radius = circle_radius;
+    //     self.update_restrict_position(false);
 
-        None
-    }
+    //     None
+    // }
 
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         if self.style.read(cx) {

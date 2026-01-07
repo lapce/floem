@@ -108,7 +108,7 @@ pub fn create_ext_action<T: Send + 'static>(
                 if let Some(event) = data.lock().take() {
                     Effect::untrack(|| {
                         let current_view = get_current_view();
-                        set_current_view(view);
+                        set_current_view(view.root());
                         let action = action.take().unwrap();
                         action(event);
                         set_current_view(current_view);

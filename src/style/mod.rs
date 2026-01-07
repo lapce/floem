@@ -139,6 +139,7 @@ use std::collections::HashMap;
 use std::fmt::{self, Debug};
 use std::rc::Rc;
 use taffy::GridTemplateComponent;
+use understory_box_tree::NodeFlags;
 
 pub use taffy::style::{
     AlignContent, AlignItems, BoxSizing, Dimension, Display, FlexDirection, FlexWrap,
@@ -155,8 +156,9 @@ use taffy::{
 
 use crate::layout::responsive::{ScreenSize, ScreenSizeBp};
 
+use crate::views::editor::SelectionColor;
 // Import macros from crate root (they are #[macro_export] in props.rs)
-use crate::{prop, prop_extractor};
+use crate::{BoxTree, VisualId, prop, prop_extractor};
 
 mod cache;
 mod components;
@@ -186,7 +188,7 @@ pub use selectors::{StyleSelector, StyleSelectors};
 pub use theme::{DesignSystem, StyleThemeExt};
 pub use transition::{DirectTransition, Transition, TransitionState};
 pub use unit::{AnchorAbout, Angle, Auto, DurationUnitExt, Pct, Px, PxPct, PxPctAuto, UnitExt};
-pub use values::{CombineResult, StrokeWrap, StyleMapValue, StylePropValue, StyleValue};
+pub use values::{CombineResult, ObjectFit, StrokeWrap, StyleMapValue, StylePropValue, StyleValue};
 
 pub use cache::{StyleCache, StyleCacheKey};
 pub use recalc::{InheritedChanges, InheritedGroups, Propagate, RecalcFlags, StyleRecalcChange};
@@ -233,7 +235,7 @@ pub fn resolve_nested_maps(
 ) -> (Style, bool) {
     let mut classes_applied = false;
 
-    // Phase_ 1: Resolve class styles (with selectors, collecting context mappings)
+    // Phase 1: Resolve class styles (with selectors, collecting context mappings)
     let (class_style, mut class_context_mappings) = resolve_classes_collecting_mappings(
         classes,
         interact_state,
@@ -252,10 +254,9 @@ pub fn resolve_nested_maps(
     let mut i = 0;
     while i < class_context_mappings.len() {
         let mapping = class_context_mappings[i].clone();
-        let combined_context = inherited_context
-            .clone()
-            .apply(view_style.clone())
-            .apply(context_result.clone());
+        let mut combined_context = inherited_context.clone();
+        combined_context.apply_mut_no_mappings(view_style.clone());
+        combined_context.apply_mut_no_mappings(context_result.clone());
         let mapped = mapping(context_result.clone(), &combined_context);
         let (resolved, new_mappings) =
             resolve_selectors_collecting_mappings(mapped, interact_state, screen_size_bp);
@@ -298,7 +299,7 @@ fn resolve_classes_collecting_mappings(
             *classes_applied = true;
             let (resolved, class_mappings) =
                 resolve_style_collecting_mappings(map.clone(), interact_state, screen_size_bp);
-            result.apply_mut(resolved);
+            result.apply_mut_no_mappings(resolved);
             mappings.extend(class_mappings);
         }
     }
@@ -1544,6 +1545,13 @@ define_builtin_props!(
     /// Maintains width-to-height proportions during layout.
     AspectRatio aspect_ratio {tr}: Option<f32> {} = None,
 
+    /// Controls how replaced content (like images) should be resized to fit its container.
+    ///
+    /// This property specifies how an image or other replaced element should be resized
+    /// to fit within its container while potentially preserving its aspect ratio.
+    /// Corresponds to the CSS `object-fit` property.
+    ObjectFitProp object_fit {}: ObjectFit {} = ObjectFit::Fill,
+
     /// Sets the gap between columns in grid or flex layouts.
     ///
     /// Creates space between items in the horizontal direction.
@@ -1553,6 +1561,35 @@ define_builtin_props!(
     ///
     /// Creates space between items in the vertical direction.
     RowGap row_gap { nocb, tr }: PxPct {} = PxPct::Px(0.),
+
+    /// Width of the scrollbar track in pixels.
+    ///
+    /// This property reserves space for scrollbars when `overflow_x` or `overflow_y` is set to `Scroll`.
+    /// The reserved space reduces the available content area but ensures content doesn't flow under the scrollbar.
+    ///
+    /// **Layout behavior:**
+    /// - When `overflow_y: Scroll`, reserves `scrollbar_width` from the right side of the container
+    /// - When `overflow_x: Scroll`, reserves `scrollbar_width` from the bottom of the container
+    /// - Space is reserved inside the container's bounds, reducing the content rect size
+    /// - No space is reserved for `overflow: Hidden`, `Visible`, or `Clip`
+    ///
+    /// **Example:**
+    /// ```rust,ignore
+    /// // Reserve 10px for scrollbar
+    /// .scrollbar_width(10.0)
+    ///
+    /// // Thinner scrollbar for compact UI
+    /// .scrollbar_width(6.0)
+    /// ```
+    ///
+    /// **Default:** `8px`
+    ScrollbarWidth scrollbar_width {tr}: Px {} = Px(8.),
+
+    /// How children overflowing their container in Y axis should affect layout
+    OverflowX overflow_x {}: Overflow {} = Overflow::default(),
+
+    /// How children overflowing their container in X axis should affect layout
+    OverflowY overflow_y {}: Overflow {} = Overflow::default(),
 
     /// Sets the horizontal scale transform.
     ///
@@ -1657,16 +1694,6 @@ impl BuiltinStyle<'_> {
             .unwrap_or(PxPctAuto::Px(0.0))
     }
 }
-
-prop!(
-    /// How children overflowing their container in Y axis should affect layout
-    pub OverflowX: Overflow {} = Overflow::default()
-);
-
-prop!(
-    /// How children overflowing their container in X axis should affect layout
-    pub OverflowY: Overflow {} = Overflow::default()
-);
 
 prop_extractor! {
     pub FontProps {
@@ -1782,7 +1809,6 @@ impl TransformProps {
 
 prop_extractor! {
     pub BoxTreeProps {
-        pub scale_about: ScaleAbout,
         pub z_index: ZIndex,
         pub pointer_events: PointerEventsProp,
         pub focusable: Focusable,
@@ -1798,25 +1824,20 @@ impl BoxTreeProps {
         self.pointer_events() != Some(PointerEvents::None)
     }
 
-    // pub fn set_box_tree(
-    //     &self,
-    //     node_id: understory_box_tree::NodeId,
-    //     box_tree: &mut understory_box_tree::Tree,
-    // ) {
-    //     box_tree.set_z_index(node_id, self.z_index().unwrap_or(0));
-    //     let mut flags = NodeFlags::empty();
-    //     if self.pickable() {
-    //         flags |= NodeFlags::PICKABLE;
-    //     }
-    //     if self.focusable() && !self.hidden() && self.display() != Display::None && !self.disabled()
-    //     {
-    //         flags |= NodeFlags::FOCUSABLE;
-    //     }
-    //     if !self.hidden() {
-    //         flags |= NodeFlags::VISIBLE;
-    //     }
-    //     box_tree.set_flags(node_id, flags);
-    // }
+    pub fn set_box_tree(&self, visual_id: VisualId, box_tree: &mut BoxTree, force_hidden: bool) {
+        // box_tree.set_z_index(visual_id.0, self.z_index().unwrap_or(0));
+        let mut flags = NodeFlags::empty();
+        if self.pickable() {
+            flags |= NodeFlags::PICKABLE;
+        }
+        if self.focusable() && self.display() != Display::None && !self.disabled() {
+            flags |= NodeFlags::FOCUSABLE;
+        }
+        if self.display() != Display::None && !force_hidden {
+            flags |= NodeFlags::VISIBLE;
+        }
+        box_tree.set_flags(visual_id.0, flags);
+    }
 
     pub fn clip_rect(&self, mut rect: kurbo::Rect) -> Option<RoundedRect> {
         use Overflow::*;
@@ -1876,7 +1897,7 @@ impl LayoutProps {
 prop_extractor! {
     pub SelectionStyle {
         pub corner_radius: SelectionCornerRadius,
-        pub selection_color: CursorColor,
+        pub selection_color: SelectionColor,
     }
 }
 
@@ -2980,6 +3001,7 @@ impl Style {
             grid_auto_rows: style.grid_auto_rows(),
             grid_auto_columns: style.grid_auto_columns(),
             grid_auto_flow: style.grid_auto_flow(),
+            scrollbar_width: style.scrollbar_width().0 as f32,
             ..Default::default()
         }
     }

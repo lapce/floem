@@ -141,7 +141,7 @@ fn test_visual_transform_with_scale() {
     harness.rebuild();
 
     let transform = id.get_visual_transform();
-    let css_transform = id.get_transform();
+    let css_transform = id.get_visual_transform();
 
     // CSS transform should have scale
     let css_coeffs = css_transform.as_coeffs();
@@ -208,7 +208,7 @@ fn test_visual_transform_with_rotation() {
     harness.rebuild();
 
     let transform = id.get_visual_transform();
-    let css_transform = id.get_transform();
+    let css_transform = id.get_visual_transform();
 
     // CSS transform should have rotation
     // For 90 degree rotation: [cos, sin, -sin, cos, tx, ty] = [0, 1, -1, 0, tx, ty]

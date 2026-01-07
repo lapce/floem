@@ -37,6 +37,7 @@ pub struct Canvas {
 /// ```
 pub fn canvas(paint: impl Fn(&mut PaintCx, Size) + 'static) -> Canvas {
     let id = ViewId::new();
+    id.needs_post_layout();
 
     Canvas {
         id,
@@ -55,12 +56,15 @@ impl View for Canvas {
         "Canvas".into()
     }
 
-    fn compute_layout(
-        &mut self,
-        _cx: &mut crate::context::ComputeLayoutCx,
-    ) -> Option<peniko::kurbo::Rect> {
+    // fn compute_layout(
+    //     &mut self,
+    //     _cx: &mut crate::context::ComputeLayoutCx,
+    // ) -> Option<peniko::kurbo::Rect> {
+    //     None
+    // }
+
+    fn post_layout(&mut self, _post_layout_cx: crate::layout::PostLayoutCx) {
         self.size = self.id.get_size().unwrap_or_default();
-        None
     }
 
     fn paint(&mut self, cx: &mut PaintCx) {

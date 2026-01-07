@@ -4,7 +4,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use slotmap::{SecondaryMap, SlotMap};
 
 use super::{AnyView, state::ViewState};
-use crate::{BoxTree, IntoView, VisualId, view::ViewId};
+use crate::{BoxTree, IntoView, VisualId, view::ViewId, window::handle::set_current_view};
 
 thread_local! {
     pub(crate) static VIEW_STORAGE: RefCell<ViewStorage> = Default::default();
@@ -64,22 +64,24 @@ impl std::fmt::Debug for LayoutNodeCx {
 }
 
 pub(crate) struct ViewStorage {
+    /// a map from the root view id to a taffy tree
     pub(crate) taffy: Rc<RefCell<taffy::TaffyTree<LayoutNodeCx>>>,
-    pub(crate) box_tree: Rc<RefCell<crate::BoxTree>>,
+    /// a map from the root view id to a box tree
+    pub(crate) box_tree: FxHashMap<ViewId, Rc<RefCell<crate::BoxTree>>>,
     pub(crate) view_ids: SlotMap<ViewId, ()>,
     pub(crate) views: SecondaryMap<ViewId, Rc<RefCell<AnyView>>>,
     pub(crate) children: SecondaryMap<ViewId, Vec<ViewId>>,
     // the parent of a View
     pub(crate) parent: SecondaryMap<ViewId, Option<ViewId>>,
     /// Cache the root [`ViewId`] for a view
-    pub(crate) root: SecondaryMap<ViewId, Option<ViewId>>,
+    pub(crate) root: SecondaryMap<ViewId, ViewId>,
     pub(crate) states: SecondaryMap<ViewId, Rc<RefCell<ViewState>>>,
     pub(crate) stale_view_state: Rc<RefCell<ViewState>>,
     pub(crate) stale_view: Rc<RefCell<AnyView>>,
     /// Views registered as overlays - maps overlay ViewId to its window root ViewId
     pub(crate) overlays: SecondaryMap<ViewId, ViewId>,
     pub(crate) taffy_to_view: FxHashMap<taffy::NodeId, ViewId>,
-    pub(crate) box_tree_to_view: FxHashMap<VisualId, ViewId>,
+    pub(crate) visual_id_to_view: FxHashMap<VisualId, ViewId>,
 }
 
 impl Default for ViewStorage {
@@ -90,23 +92,29 @@ impl Default for ViewStorage {
 
 impl ViewStorage {
     pub fn new() -> Self {
+        // a taffy tree that is used for the stale view state. this will just be dropped
         let mut taffy = taffy::TaffyTree::<LayoutNodeCx>::new();
         taffy.disable_rounding();
         let mut view_ids = SlotMap::<ViewId, ()>::default();
         let stale_id = view_ids.insert(());
+        let mut root = SecondaryMap::new();
+        root.insert(stale_id, stale_id);
+        set_current_view(stale_id);
 
-        let mut box_tree = BoxTree::with_backend(understory_index::backends::GridF64::new(10.));
+        // a box tree that is used for the stale view state. this will just be dropped
+        let mut box_tree = BoxTree::with_backend(understory_index::backends::GridF64::new(100.));
+        // let mut box_tree = BoxTree::new();
 
-        let state_view_state = ViewState::new(stale_id, &mut taffy, &mut box_tree);
+        let state_view_state = ViewState::new(stale_id, stale_id, &mut taffy, &mut box_tree);
 
         Self {
             taffy: Rc::new(RefCell::new(taffy)),
-            box_tree: Rc::new(RefCell::new(box_tree)),
+            box_tree: FxHashMap::default(),
             view_ids,
             views: Default::default(),
             children: Default::default(),
             parent: Default::default(),
-            root: Default::default(),
+            root,
             states: Default::default(),
             stale_view_state: Rc::new(RefCell::new(state_view_state)),
             stale_view: Rc::new(RefCell::new(
@@ -117,19 +125,57 @@ impl ViewStorage {
             )),
             overlays: Default::default(),
             taffy_to_view: FxHashMap::default(),
-            box_tree_to_view: FxHashMap::default(),
+            visual_id_to_view: FxHashMap::default(),
         }
     }
 
-    /// Returns the deepest view ID encountered traversing parents.  It does *not* guarantee
-    /// that it is a real window root; any caller should perform the same test
-    /// of `window_tracking::is_known_root()` that `ViewId.root()` does before
-    /// assuming the returned value is really a window root.
-    pub(crate) fn root_view_id(&self, id: ViewId) -> Option<ViewId> {
-        if let Some(p) = self.parent.get(id).unwrap_or(&None) {
-            self.root_view_id(*p)
+    pub(crate) fn box_tree(&mut self, view_id: ViewId) -> Rc<RefCell<BoxTree>> {
+        let root = self
+            .root
+            .get(view_id)
+            .expect("all view ids are created with a root");
+        self.box_tree
+            .entry(*root)
+            .or_insert_with(|| {
+                Rc::new(RefCell::new(BoxTree::with_backend(
+                    understory_index::backends::GridF64::new(100.),
+                )))
+            })
+            .clone()
+    }
+
+    pub(crate) fn state(&mut self, id: ViewId) -> Rc<RefCell<ViewState>> {
+        if !self.view_ids.contains_key(id) {
+            // if view_ids doesn't have this view id, that means it's been cleaned up,
+            // so we shouldn't create a new ViewState for this Id.
+            self.stale_view_state.clone()
         } else {
-            Some(id)
+            let root = self
+                .root
+                .get(id)
+                .expect("all view ids are created with a root");
+            self.states
+                .entry(id)
+                .unwrap()
+                .or_insert_with(|| {
+                    let taffy = self.taffy.clone();
+                    let box_tree = self.box_tree.entry(*root).or_insert_with(|| {
+                        Rc::new(RefCell::new(BoxTree::with_backend(
+                            understory_index::backends::GridF64::new(100.),
+                        )))
+                    });
+                    let state = Rc::new(RefCell::new(ViewState::new(
+                        id,
+                        *root,
+                        &mut taffy.borrow_mut(),
+                        &mut box_tree.borrow_mut(),
+                    )));
+                    // Add to reverse mapping
+                    self.taffy_to_view.insert(state.borrow().layout_id, id);
+                    self.visual_id_to_view.insert(state.borrow().visual_id, id);
+                    state
+                })
+                .clone()
         }
     }
 }

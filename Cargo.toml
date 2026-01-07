@@ -42,8 +42,9 @@ rust-version.workspace = true
 license.workspace = true
 
 [workspace.dependencies]
-peniko = { version = "0.5.0" }
+peniko = { version = "0.5.0", features = ["serde"] }
 serde = { version = "1.0" }
+serde_json = { version = "1.0" }
 lapce-xi-rope = "0.4.0"
 strum = { version = "0.27", features = ["derive"] }
 strum_macros = { version = "0.27" }
@@ -78,6 +79,7 @@ unicode-segmentation = { workspace = true }
 peniko = { workspace = true }
 imbl.workspace = true
 serde = { workspace = true, optional = true }
+serde_json = { workspace = true }
 lapce-xi-rope = { workspace = true, optional = true }
 strum = { workspace = true, optional = true }
 strum_macros = { workspace = true, optional = true }
@@ -105,7 +107,10 @@ fluent-bundle = { version = "0.16", optional = true }
 unic-langid = { version = "0.9", optional = true }
 sys-locale = { version = "0.3.2", optional = true }
 understory_box_tree = {path = "../understory/understory_box_tree"}
+understory_event_state = {path = "../understory/understory_event_state"}
+understory_responder = {path = "../understory/understory_responder"}
 understory_index = {path = "../understory/understory_index"}
+understory_focus = {path = "../understory/understory_focus", features = ["box_tree_adapter"]}
 
 [target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
 muda = { workspace = true }
@@ -131,7 +136,7 @@ objc2-app-kit = { version = "0.3", features = [
 ] }
 
 [features]
-default = ["editor", "default-image-formats", "vger"]
+default = ["editor", "default-image-formats", "vger", "serde"]
 vello = ["dep:floem_vello_renderer"]
 vger = ["dep:floem_vger_renderer"]
 serde = [
@@ -193,3 +198,6 @@ harness = false
 [[bench]]
 name = "animation"
 harness = false
+
+[patch.crates-io]
+ui-events = {path = "../ui-events/ui-events"}

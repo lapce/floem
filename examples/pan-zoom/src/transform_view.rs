@@ -44,7 +44,7 @@ pub fn transform_view<V: IntoView + 'static>(
     let child_center = RwSignal::new(
         child
             .id()
-            .layout_rect()
+            .get_layout_rect()
             .with_origin(kurbo::Point::ZERO)
             .center(),
     );
@@ -103,7 +103,6 @@ impl View for TransformView {
         if let Ok(state) = state.downcast() {
             self.view_transform.set(*state);
             let window_state = &mut cx.window_state;
-            window_state.request_compute_layout_recursive(self.id());
             window_state.request_paint(self.id());
         }
     }

@@ -705,7 +705,7 @@ fn test_centering_with_inherited_context() {
     harness.rebuild();
 
     let layout = child_id.get_layout().expect("Layout should exist");
-    let transform = child_id.get_transform();
+    let transform = child_id.get_visual_transform();
     let coeffs = transform.as_coeffs();
 
     eprintln!(

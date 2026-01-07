@@ -11,10 +11,10 @@ use crate::views::Decorators;
 use crate::{
     action::{TimerToken, add_overlay, exec_after, remove_overlay},
     context::{EventCx, UpdateCx},
-    event::{Event, EventPropagation},
+    event::{Event, EventPropagation, Phase},
     prop, prop_extractor, style_class,
     view::ViewId,
-    view::{IntoView, View, default_compute_layout},
+    view::{IntoView, View},
 };
 
 style_class!(
@@ -106,10 +106,13 @@ impl View for Tooltip {
         self.scale = cx.window_state.scale;
     }
 
-    fn event_before_children(&mut self, cx: &mut EventCx, event: &Event) -> EventPropagation {
-        match &event {
+    fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
+        if cx.phase != Phase::Capture {
+            return EventPropagation::Continue;
+        }
+        match &cx.event {
             Event::Pointer(PointerEvent::Move(pu)) => {
-                if self.overlay.borrow().is_none() && cx.window_state.dragging.is_none() {
+                if self.overlay.borrow().is_none() {
                     let id = self.id();
                     let token = exec_after(self.style.delay(), move |token| {
                         id.update_state(token);
@@ -126,14 +129,6 @@ impl View for Tooltip {
             _ => {}
         }
         EventPropagation::Continue
-    }
-
-    fn compute_layout(
-        &mut self,
-        cx: &mut crate::context::ComputeLayoutCx,
-    ) -> Option<peniko::kurbo::Rect> {
-        self.window_origin = Some(cx.window_origin);
-        default_compute_layout(self.id, cx)
     }
 }
 
@@ -203,25 +198,25 @@ impl View for ToolTipOverlay {
         Some(TooltipClass::class_ref())
     }
 
-    fn compute_layout(
-        &mut self,
-        cx: &mut crate::context::ComputeLayoutCx,
-    ) -> Option<peniko::kurbo::Rect> {
-        if let (Some(parent_size), Some(layout)) = (self.id.parent_size(), self.id.get_layout()) {
-            use crate::kurbo::Size;
+    // fn compute_layout(
+    //     &mut self,
+    //     cx: &mut crate::context::ComputeLayoutCx,
+    // ) -> Option<peniko::kurbo::Rect> {
+    //     if let (Some(parent_size), Some(layout)) = (self.id.parent_size(), self.id.get_layout()) {
+    //         use crate::kurbo::Size;
 
-            let bottom_right = taffy::Size::from(layout.location) + layout.size;
-            let bottom_right = Size::new(bottom_right.width as _, bottom_right.height as _);
+    //         let bottom_right = taffy::Size::from(layout.location) + layout.size;
+    //         let bottom_right = Size::new(bottom_right.width as _, bottom_right.height as _);
 
-            let new_offset = (parent_size - bottom_right).min(Size::ZERO);
-            let new_offset = Point::new(new_offset.width, new_offset.height);
+    //         let new_offset = (parent_size - bottom_right).min(Size::ZERO);
+    //         let new_offset = Point::new(new_offset.width, new_offset.height);
 
-            if self.offset != new_offset {
-                self.offset = new_offset;
-                self.id().request_style();
-            }
-        }
+    //         if self.offset != new_offset {
+    //             self.offset = new_offset;
+    //             self.id().request_style();
+    //         }
+    //     }
 
-        default_compute_layout(self.id, cx)
-    }
+    //     default_compute_layout(self.id, cx)
+    // }
 }

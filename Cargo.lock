@@ -1389,6 +1389,7 @@ dependencies = [
  "rfd",
  "rustc-hash 2.1.1",
  "serde",
+ "serde_json",
  "sha2",
  "slotmap",
  "smallvec",
@@ -1399,6 +1400,11 @@ dependencies = [
  "tokio",
  "ui-events",
  "ui-events-floem-winit",
+ "understory_box_tree",
+ "understory_event_state",
+ "understory_focus",
+ "understory_index",
+ "understory_responder",
  "unic-langid",
  "unicode-segmentation",
  "wasm-bindgen-futures",
@@ -1765,6 +1771,12 @@ name = "foldhash"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2"
+
+[[package]]
+name = "foldhash"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "font-types"
@@ -2384,7 +2396,7 @@ checksum = "9229cfe53dfd69f0609a49f65461bd93001ea1ef889cd5529dd176593f5338a1"
 dependencies = [
  "allocator-api2",
  "equivalent",
- "foldhash",
+ "foldhash 0.1.5",
 ]
 
 [[package]]
@@ -2392,6 +2404,9 @@ name = "hashbrown"
 version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "841d1cc9bed7f9236f321df977030373f4a4163ae1a7dbfe1a51a2c1a51d9100"
+dependencies = [
+ "foldhash 0.2.0",
+]
 
 [[package]]
 name = "hashlink"
@@ -5785,8 +5800,6 @@ checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
 [[package]]
 name = "ui-events"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a57da61c5700db75d28822c56068295055ec216996560af57a5d4a457914d34"
 dependencies = [
  "dpi 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "keyboard-types 0.8.3",
@@ -5802,6 +5815,43 @@ dependencies = [
  "ui-events",
  "web-time",
 ]
+
+[[package]]
+name = "understory_box_tree"
+version = "0.0.1"
+dependencies = [
+ "bitflags 2.10.0",
+ "kurbo 0.12.0",
+ "understory_index",
+]
+
+[[package]]
+name = "understory_event_state"
+version = "0.1.0"
+dependencies = [
+ "kurbo 0.12.0",
+]
+
+[[package]]
+name = "understory_focus"
+version = "0.1.0"
+dependencies = [
+ "kurbo 0.12.0",
+ "understory_box_tree",
+ "understory_index",
+]
+
+[[package]]
+name = "understory_index"
+version = "0.0.1"
+dependencies = [
+ "hashbrown 0.16.1",
+ "smallvec",
+]
+
+[[package]]
+name = "understory_responder"
+version = "0.1.0"
 
 [[package]]
 name = "unic-langid"
@@ -6466,7 +6516,6 @@ version = "0.1.0"
 dependencies = [
  "files",
  "floem",
- "stacks",
  "strum",
 ]
 

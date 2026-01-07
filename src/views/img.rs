@@ -1,101 +1,192 @@
 //! Module defining image view and its properties: style, position and fit.
 #![deny(missing_docs)]
-use std::{path::PathBuf, sync::Arc};
+use std::{cell::RefCell, path::PathBuf, rc::Rc, sync::Arc};
 
 use floem_reactive::Effect;
 use peniko::{Blob, ImageAlphaType, ImageData};
 use sha2::{Digest, Sha256};
-use taffy::NodeId;
 
-use crate::{Renderer, style::Style, unit::UnitExt, view::View, view::ViewId};
+use crate::{
+    Renderer, prop_extractor,
+    style::ObjectFit,
+    view::{LayoutNodeCx, MeasureFn, View, ViewId},
+};
 
-/// Holds information about image position and size inside container.
-pub struct ImageStyle {
-    fit: ObjectFit,
-    position: ObjectPosition,
+/// Holds information about image dimensions for layout calculations.
+#[derive(Clone)]
+pub struct ImageLayoutData {
+    /// Natural width of the image in pixels
+    natural_width: u32,
+    /// Natural height of the image in pixels
+    natural_height: u32,
 }
 
-/// How the content of a replaced element, such as an img or video, should be resized to fit its container.
-/// See <https://developer.mozilla.org/en-US/docs/Web/CSS/object-fit>.
-pub enum ObjectFit {
-    /// The replaced content is sized to fill the element's content box.
-    /// The entire object will completely fill the box.
-    /// If the object's aspect ratio does not match the aspect ratio of its box, then the object will be stretched to fit.
-    Fill,
-    /// The replaced content is scaled to maintain its aspect ratio while fitting within the element's content box.
-    /// The entire object is made to fill the box, while preserving its aspect ratio, so the object will be "letterboxed"
-    /// if its aspect ratio does not match the aspect ratio of the box.
-    Contain,
-    /// The content is sized to maintain its aspect ratio while filling the element's entire content box.
-    /// If the object's aspect ratio does not match the aspect ratio of its box, then the object will be clipped to fit.
-    Cover,
-    /// The content is sized as if none or contain were specified, whichever would result in a smaller concrete object size.
-    ScaleDown,
-    /// The replaced content is not resized.
-    None,
-}
-
-/// Specifies the alignment of the element's contents within the element's box.
-///
-/// Areas of the box which aren't covered by the replaced element's object will show the element's background.
-/// See <https://developer.mozilla.org/en-US/docs/Web/CSS/object-position>.
-pub struct ObjectPosition {
-    #[allow(unused)]
-    horiz: HorizPosition,
-    #[allow(unused)]
-    vert: VertPosition,
-}
-
-/// Specifies object position on horizontal axis inside the element's box.
-pub enum HorizPosition {
-    /// Top position inside the element's box on the horizontal axis.
-    Top,
-    /// Center position inside the element's box on the horizontal axis.
-    Center,
-    /// Bottom position inside the element's box on the horizontal axis.
-    Bot,
-    /// Horizontal position inside the element's box as **pixels**.
-    Px(f64),
-    /// Horizontal position inside the element's box as **percent**.
-    Pct(f64),
-}
-
-/// Specifies object position on vertical axis inside the element's box.
-pub enum VertPosition {
-    /// Left position inside the element's box on the vertical axis.
-    Left,
-    /// Center position inside the element's box on the vertical axis.
-    Center,
-    /// Right position inside the element's box on the vertical axis.
-    Right,
-    /// Vertical position inside the element's box as **pixels**.
-    Px(f64),
-    /// Vertical position inside the element's box as **percent**.
-    Pct(f64),
-}
-
-impl ImageStyle {
-    /// Default setting for the image position (center & fit)
-    pub const BASE: Self = ImageStyle {
-        position: ObjectPosition {
-            horiz: HorizPosition::Center,
-            vert: VertPosition::Center,
-        },
-        fit: ObjectFit::Fill,
-    };
-
-    /// How the content should be resized to fit its container.
-    pub fn fit(mut self, fit: ObjectFit) -> Self {
-        self.fit = fit;
-        self
+impl ImageLayoutData {
+    /// Create new image layout data
+    pub fn new(width: u32, height: u32) -> Self {
+        Self {
+            natural_width: width,
+            natural_height: height,
+        }
     }
 
-    /// Specifies the alignment of the element's contents within the element's box.
-    ///
-    /// Areas of the box which aren't covered by the replaced element's object will show the element's background.
-    pub fn object_pos(mut self, obj_pos: ObjectPosition) -> Self {
-        self.position = obj_pos;
-        self
+    /// Get the natural aspect ratio of the image
+    pub fn aspect_ratio(&self) -> f32 {
+        if self.natural_height == 0 {
+            1.0
+        } else {
+            self.natural_width as f32 / self.natural_height as f32
+        }
+    }
+
+    /// Create a taffy layout function for image sizing following CSS rules
+    pub fn create_taffy_layout_fn(
+        layout_data: Rc<RefCell<Self>>,
+        object_fit: ObjectFit,
+    ) -> Box<MeasureFn> {
+        Box::new(
+            move |known_dimensions, available_space, _node_id, _style, _measure_ctx| {
+                use taffy::*;
+
+                let data = layout_data.borrow();
+                let natural_width = data.natural_width as f32;
+                let natural_height = data.natural_height as f32;
+                let natural_aspect = data.aspect_ratio();
+
+                // If both dimensions are explicitly set, use them
+                if let (Some(w), Some(h)) = (known_dimensions.width, known_dimensions.height) {
+                    return Size {
+                        width: w,
+                        height: h,
+                    };
+                }
+
+                // Helper to compute size based on object-fit behavior
+                let compute_size = |container_width: f32, container_height: f32| -> Size<f32> {
+                    match object_fit {
+                        ObjectFit::Fill => {
+                            // Stretch to fill - use container size
+                            Size {
+                                width: container_width,
+                                height: container_height,
+                            }
+                        }
+                        ObjectFit::Contain => {
+                            // Fit inside maintaining aspect ratio
+                            let container_aspect = container_width / container_height;
+                            if natural_aspect > container_aspect {
+                                // Image is wider - constrain by width
+                                Size {
+                                    width: container_width,
+                                    height: container_width / natural_aspect,
+                                }
+                            } else {
+                                // Image is taller - constrain by height
+                                Size {
+                                    width: container_height * natural_aspect,
+                                    height: container_height,
+                                }
+                            }
+                        }
+                        ObjectFit::Cover => {
+                            // Cover entire container maintaining aspect ratio
+                            let container_aspect = container_width / container_height;
+                            if natural_aspect > container_aspect {
+                                // Image is wider - constrain by height
+                                Size {
+                                    width: container_height * natural_aspect,
+                                    height: container_height,
+                                }
+                            } else {
+                                // Image is taller - constrain by width
+                                Size {
+                                    width: container_width,
+                                    height: container_width / natural_aspect,
+                                }
+                            }
+                        }
+                        ObjectFit::None => {
+                            // Use natural size
+                            Size {
+                                width: natural_width,
+                                height: natural_height,
+                            }
+                        }
+                        ObjectFit::ScaleDown => {
+                            // Like contain but don't scale up
+                            let container_aspect = container_width / container_height;
+                            let (scaled_width, scaled_height) = if natural_aspect > container_aspect
+                            {
+                                (container_width, container_width / natural_aspect)
+                            } else {
+                                (container_height * natural_aspect, container_height)
+                            };
+
+                            // Don't scale up beyond natural size
+                            Size {
+                                width: scaled_width.min(natural_width),
+                                height: scaled_height.min(natural_height),
+                            }
+                        }
+                    }
+                };
+
+                // If only width is set, compute height from aspect ratio
+                if let Some(w) = known_dimensions.width {
+                    let h = known_dimensions.height.unwrap_or_else(|| {
+                        // Use aspect ratio to compute height
+                        w / natural_aspect
+                    });
+                    return Size {
+                        width: w,
+                        height: h,
+                    };
+                }
+
+                // If only height is set, compute width from aspect ratio
+                if let Some(h) = known_dimensions.height {
+                    let w = h * natural_aspect;
+                    return Size {
+                        width: w,
+                        height: h,
+                    };
+                }
+
+                // No explicit dimensions - use available space and object-fit
+                match (available_space.width, available_space.height) {
+                    (AvailableSpace::Definite(w), AvailableSpace::Definite(h)) => {
+                        compute_size(w, h)
+                    }
+                    (AvailableSpace::Definite(w), _) => {
+                        // Only width available
+                        Size {
+                            width: w,
+                            height: w / natural_aspect,
+                        }
+                    }
+                    (_, AvailableSpace::Definite(h)) => {
+                        // Only height available
+                        Size {
+                            width: h * natural_aspect,
+                            height: h,
+                        }
+                    }
+                    _ => {
+                        // No constraints - use natural size
+                        Size {
+                            width: natural_width,
+                            height: natural_height,
+                        }
+                    }
+                }
+            },
+        )
+    }
+}
+
+prop_extractor! {
+    Extractor {
+        object_fit: crate::style::ObjectFitProp,
     }
 }
 
@@ -104,7 +195,8 @@ pub struct Img {
     id: ViewId,
     img: Option<peniko::ImageBrush>,
     img_hash: Option<Vec<u8>>,
-    content_node: Option<NodeId>,
+    layout_data: Rc<RefCell<ImageLayoutData>>,
+    style: Extractor,
 }
 
 /// A view that can display an image and controls its position.
@@ -205,14 +297,41 @@ pub fn img_from_path(image: impl Fn() -> PathBuf + 'static) -> Img {
 
 pub(crate) fn img_dynamic(image: impl Fn() -> peniko::ImageBrush + 'static) -> Img {
     let id = ViewId::new();
+    let layout_data = Rc::new(RefCell::new(ImageLayoutData::new(0, 0)));
+
     Effect::new(move |_| {
         id.update_state(image());
     });
-    Img {
+
+    let mut img = Img {
         id,
         img: None,
         img_hash: None,
-        content_node: None,
+        layout_data,
+        style: Extractor::default(),
+    };
+
+    img.set_taffy_layout();
+    img
+}
+
+impl Img {
+    fn set_taffy_layout(&mut self) {
+        let taffy = self.id.taffy();
+        let taffy_node = self.id.taffy_node();
+        let mut taffy = taffy.borrow_mut();
+
+        let object_fit = self.style.object_fit();
+        let layout_fn =
+            ImageLayoutData::create_taffy_layout_fn(self.layout_data.clone(), object_fit);
+
+        let _ = taffy.set_node_context(
+            taffy_node,
+            Some(LayoutNodeCx::Custom {
+                measure: layout_fn,
+                finalize: None,
+            }),
+        );
     }
 }
 
@@ -231,43 +350,28 @@ impl View for Img {
             hasher.update(img.image.data.data());
             self.img_hash = Some(hasher.finalize().to_vec());
 
+            // Update layout data with new image dimensions
+            let width = img.image.width;
+            let height = img.image.height;
+            self.layout_data.borrow_mut().natural_width = width;
+            self.layout_data.borrow_mut().natural_height = height;
+
             self.img = Some(*img);
             self.id.request_layout();
         }
     }
 
-    fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::tree::NodeId {
-        cx.layout_node(self.id(), true, |_cx| {
-            if self.content_node.is_none() {
-                self.content_node = Some(
-                    self.id
-                        .taffy()
-                        .borrow_mut()
-                        .new_leaf(taffy::style::Style::DEFAULT)
-                        .unwrap(),
-                );
-            }
-            let content_node = self.content_node.unwrap();
-
-            let (width, height) = self
-                .img
-                .as_ref()
-                .map(|img| (img.image.width, img.image.height))
-                .unwrap_or((0, 0));
-
-            let style = Style::new()
-                .width((width as f64).px())
-                .height((height as f64).px())
-                .to_taffy_style();
-            let _ = self.id.taffy().borrow_mut().set_style(content_node, style);
-
-            vec![content_node]
-        })
+    fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
+        if self.style.read(cx) {
+            // object_fit changed, update taffy layout
+            self.set_taffy_layout();
+            self.id.request_layout();
+        }
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         if let Some(ref img) = self.img {
-            let rect = self.id.get_content_rect();
+            let rect = self.id.get_content_rect_local();
             cx.draw_img(
                 floem_renderer::Img {
                     img: img.clone(),

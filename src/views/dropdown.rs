@@ -20,7 +20,7 @@ use crate::{
     style::{CustomStylable, CustomStyle, Style},
     style_class,
     view::ViewId,
-    view::{IntoView, View, default_compute_layout},
+    view::{IntoView, View},
     views::{ContainerExt, Decorators, Label, ScrollExt, svg},
 };
 
@@ -200,13 +200,13 @@ impl<T: 'static + Clone + PartialEq> View for Dropdown<T> {
         }
     }
 
-    fn compute_layout(&mut self, cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
-        self.window_origin = Some(cx.window_origin);
-        let width = self.id.layout_rect().size().width;
-        self.width.set(width);
+    // fn compute_layout(&mut self, cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
+    //     self.window_origin = Some(cx.window_origin);
+    //     let width = self.id.get_layout_rect().size().width;
+    //     self.width.set(width);
 
-        default_compute_layout(self.id, cx)
-    }
+    //     default_compute_layout(self.id, cx)
+    // }
 
     fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(state) = state.downcast::<Message>() {
@@ -244,12 +244,12 @@ impl<T: 'static + Clone + PartialEq> View for Dropdown<T> {
         }
     }
 
-    fn event_before_children(
-        &mut self,
-        _cx: &mut crate::context::EventCx,
-        event: &Event,
-    ) -> EventPropagation {
-        match event {
+    fn event(&mut self, cx: &mut crate::context::EventCx) -> EventPropagation {
+        if cx.phase != crate::event::Phase::Capture {
+            return EventPropagation::Continue;
+        }
+
+        match &cx.event {
             e if e.is_pointer_down() => {
                 self.swap_state();
                 return EventPropagation::Stop;

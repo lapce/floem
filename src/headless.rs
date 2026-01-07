@@ -23,6 +23,7 @@
 
 use peniko::kurbo::{Point, Size};
 
+use crate::VisualId;
 use crate::context::InteractionState;
 use crate::event::Event;
 use crate::event::path::hit_test;
@@ -243,44 +244,46 @@ impl HeadlessHarness {
         self.dispatch_event(create_scroll_lines_event(x, y, lines_x, lines_y))
     }
 
-    /// Find the view at the given position (hit test).
-    pub fn view_at(&self, x: f64, y: f64) -> Option<ViewId> {
-        hit_test(self.root_id(), Point::new(x, y))
+    /// Find the visual id at the given position (hit test).
+    pub fn visual_id_at(&self, x: f64, y: f64) -> Option<VisualId> {
+        hit_test(self.root_id(), Point::new(x, y)).map(|v| v.0)
     }
 
     /// Check if a view is currently in the "clicking" state (pointer down but not up).
-    pub fn is_clicking(&self, id: ViewId) -> bool {
-        self.window_handle.window_state.is_clicking(&id)
+    pub fn is_clicking(&self, id: impl Into<VisualId>) -> bool {
+        self.window_handle.window_state.is_clicking(id)
     }
 
     /// Check if a view is currently hovered.
-    pub fn is_hovered(&self, id: ViewId) -> bool {
-        self.window_handle.window_state.is_hovered(&id)
+    pub fn is_hovered(&self, id: impl Into<VisualId>) -> bool {
+        self.window_handle.window_state.is_hovered(id)
     }
 
     /// Check if a view is currently focused.
-    pub fn is_focused(&self, id: ViewId) -> bool {
-        self.window_handle.window_state.is_focused(&id)
+    pub fn is_focused(&self, id: impl Into<VisualId>) -> bool {
+        self.window_handle.window_state.is_focused(id)
     }
 
     /// Check if a view is currently active.
-    pub fn is_active(&self, id: ViewId) -> bool {
-        self.window_handle.window_state.is_active(&id)
+    pub fn is_active(&self, id: impl Into<VisualId>) -> bool {
+        self.window_handle.window_state.is_active(id)
     }
 
     /// Get the current interaction state for a view.
     ///
     /// This returns the same state used during style computation to determine
     /// which style selectors (hover, active, focused, etc.) apply to the view.
-    pub fn get_interaction_state(&self, id: ViewId) -> InteractionState {
+    pub fn get_interaction_state(&self, id: impl Into<VisualId>) -> InteractionState {
+        let id: VisualId = id.into();
+        let view_id = id.view_id();
         InteractionState {
-            is_selected: id.is_selected(),
-            is_hovered: self.window_handle.window_state.is_hovered(&id),
-            is_disabled: id.is_disabled(),
-            is_focused: self.window_handle.window_state.is_focused(&id),
-            is_clicking: self.window_handle.window_state.is_clicking(&id),
+            is_selected: view_id.is_selected(),
+            is_hovered: self.window_handle.window_state.is_hovered(id),
+            is_disabled: view_id.is_disabled(),
+            is_focused: self.window_handle.window_state.is_focused(id),
+            is_clicking: self.window_handle.window_state.is_clicking(id),
             is_dark_mode: self.window_handle.window_state.is_dark_mode(),
-            is_file_hover: self.window_handle.window_state.is_file_hover(&id),
+            is_file_hover: self.window_handle.window_state.is_file_hover(id),
             using_keyboard_navigation: self.window_handle.window_state.keyboard_navigation,
         }
     }
@@ -326,25 +329,9 @@ impl HeadlessHarness {
     /// Request style recalculation for views with Active selector, then recompute.
     ///
     /// This simulates the full pointer-up flow:
-    /// 1. Request style update for views with Active selector
-    /// 2. Clear clicking state
-    /// 3. Run style recalculation via process_update
+    /// 1. Run style recalculation via process_update
     pub fn process_pointer_up_styles(&mut self) {
-        // Request style update for views that have Active selector
-        // Use selector-aware method to only update views with :active styles
-        for id in self.window_handle.window_state.clicking.clone() {
-            if self
-                .window_handle
-                .window_state
-                .has_style_for_sel(id, StyleSelector::Active)
-            {
-                id.request_style_for_selector_recursive(StyleSelector::Active);
-            }
-        }
-
-        // Clicking state should already be cleared by dispatch_event,
-        // but clear it here too for safety
-        self.window_handle.window_state.clicking.clear();
+        // requests for style updates caused by mouse events are handled in the event code
 
         // Run full update cycle
         self.window_handle.process_update_no_paint();
@@ -366,11 +353,12 @@ impl HeadlessHarness {
 
     /// Check if a view has pending style changes.
     pub fn has_pending_style_change(&self, id: ViewId) -> bool {
-        use crate::view::state::ChangeFlags;
-        id.state()
-            .borrow()
-            .requested_changes
-            .contains(ChangeFlags::STYLE)
+        self.window_handle.window_state.style_dirty.contains(&id)
+            || self
+                .window_handle
+                .window_state
+                .view_style_dirty
+                .contains(&id)
     }
 
     /// Check if there are scheduled updates for the next frame.
@@ -388,19 +376,11 @@ impl HeadlessHarness {
         self.window_handle.window_state.style_dirty.contains(&id)
     }
 
-    /// Get the viewport rectangle for a view, if one is set.
-    ///
-    /// This is typically set on children of scroll views to indicate
-    /// which portion of the child is currently visible.
-    pub fn get_viewport(&self, id: ViewId) -> Option<peniko::kurbo::Rect> {
-        id.state().borrow().viewport
-    }
-
     /// Get the layout rectangle for a view.
     ///
     /// This is the rectangle in window coordinates where the view is positioned.
     pub fn get_layout_rect(&self, id: ViewId) -> peniko::kurbo::Rect {
-        id.state().borrow().layout_rect
+        id.get_layout_rect()
     }
 
     /// Get the size of a view from its layout.

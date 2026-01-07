@@ -102,12 +102,12 @@ pub fn tab_navigation_view() -> impl IntoView {
         Stack::vertical((tabs_bar, main_content)).style(|s| s.width_full().height_full());
 
     let id = settings_view.id();
-    settings_view.on_event_stop(EventListener::KeyUp, move |e| {
+    settings_view.on_event_stop(EventListener::KeyUp, move |cx| {
         if let Event::Key(KeyboardEvent {
             state: KeyState::Up,
             key,
             ..
-        }) = e
+        }) = &cx.event
         {
             if *key == Key::Named(NamedKey::F11) {
                 id.inspect();

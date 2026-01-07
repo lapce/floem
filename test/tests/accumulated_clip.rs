@@ -7,7 +7,6 @@
 //! 4. Nested clips accumulate (intersect) properly
 
 use floem::prelude::*;
-use floem::style::{Display, PointerEvents};
 use floem::views::{Container, Empty, Scroll, Stack};
 use floem_test::{ClickTracker, HeadlessHarness, layers};
 use serial_test::serial;
@@ -390,7 +389,7 @@ fn test_hidden_view_no_clip_effect() {
         .style(|s| s.size(100.0, 50.0));
 
     let hidden_scroll = Scroll::new(Empty::new().style(|s| s.size(100.0, 100.0)))
-        .style(|s| s.size(100.0, 50.0).display(Display::None));
+        .style(|s| s.size(100.0, 50.0).hide());
 
     let view = Stack::vertical((hidden_scroll, visible_button)).style(|s| s.size(100.0, 50.0));
 
@@ -412,12 +411,8 @@ fn test_pointer_events_none_with_scroll_clip() {
         .style(|s| s.size(100.0, 100.0));
 
     // Overlay with pointer_events: none
-    let overlay = Empty::new().style(|s| {
-        s.absolute()
-            .inset(0.0)
-            .z_index(100)
-            .pointer_events(PointerEvents::None)
-    });
+    let overlay =
+        Empty::new().style(|s| s.absolute().inset(0.0).z_index(100).pointer_events_none());
 
     let content = layers((button, overlay)).style(|s| s.size(100.0, 100.0));
     let scroll = Scroll::new(content).style(|s| s.size(50.0, 50.0));

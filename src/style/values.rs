@@ -114,6 +114,189 @@ impl<T: StylePropValue> StylePropValue for Line<T> {}
 impl StylePropValue for taffy::GridAutoFlow {}
 impl StylePropValue for GridPlacement {}
 
+/// How the content of a replaced element, such as an img, should be resized to fit its container.
+/// Corresponds to the CSS `object-fit` property.
+/// See <https://developer.mozilla.org/en-US/docs/Web/CSS/object-fit>.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ObjectFit {
+    /// The replaced content is sized to fill the element's content box.
+    /// The entire object will completely fill the box.
+    /// If the object's aspect ratio does not match the aspect ratio of its box,
+    /// then the object will be stretched to fit.
+    Fill,
+    /// The replaced content is scaled to maintain its aspect ratio while fitting
+    /// within the element's content box. The entire object is made to fill the box,
+    /// while preserving its aspect ratio, so the object will be "letterboxed"
+    /// if its aspect ratio does not match the aspect ratio of the box.
+    Contain,
+    /// The content is sized to maintain its aspect ratio while filling the element's
+    /// entire content box. If the object's aspect ratio does not match the aspect
+    /// ratio of its box, then the object will be clipped to fit.
+    Cover,
+    /// The content is sized as if none or contain were specified, whichever would
+    /// result in a smaller concrete object size.
+    ScaleDown,
+    /// The replaced content is not resized.
+    None,
+}
+
+impl Default for ObjectFit {
+    fn default() -> Self {
+        ObjectFit::Fill
+    }
+}
+
+impl StylePropValue for ObjectFit {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        use peniko::kurbo::RoundedRect;
+
+        let object_fit = *self;
+        let container_color = RwSignal::new(palette::css::GRAY);
+        let image_color = RwSignal::new(palette::css::BLUE);
+
+        // Visual preview showing how an image with 2:1 aspect ratio fits in a square container
+        let preview = canvas(move |cx, size| {
+            let width = size.width;
+            let height = size.height;
+            let padding = 4.0;
+            let container_size = width.min(height) - padding * 2.0;
+
+            // Draw container box (square)
+            let container_x = (width - container_size) / 2.0;
+            let container_y = (height - container_size) / 2.0;
+            let container_rect = RoundedRect::from_rect(
+                kurbo::Rect::new(
+                    container_x,
+                    container_y,
+                    container_x + container_size,
+                    container_y + container_size,
+                ),
+                2.0,
+            );
+            cx.stroke(
+                &container_rect,
+                container_color.get(),
+                &Stroke {
+                    width: 1.5,
+                    ..Default::default()
+                },
+            );
+
+            // Simulate an image with 2:1 aspect ratio (wider than tall)
+            let image_aspect = 2.0;
+            let (img_width, img_height) = match object_fit {
+                ObjectFit::Fill => {
+                    // Stretch to fill container
+                    (container_size, container_size)
+                }
+                ObjectFit::Contain => {
+                    // Fit inside while maintaining aspect ratio
+                    // Image is 2:1, container is 1:1, so width is the constraint
+                    let w = container_size;
+                    let h = w / image_aspect;
+                    (w, h)
+                }
+                ObjectFit::Cover => {
+                    // Cover entire container while maintaining aspect ratio
+                    // Height is the constraint
+                    let h = container_size;
+                    let w = h * image_aspect;
+                    (w, h)
+                }
+                ObjectFit::ScaleDown => {
+                    // Like contain but don't scale up
+                    // Assume natural image size is smaller than container
+                    let natural_w = container_size * 0.6;
+                    let natural_h = natural_w / image_aspect;
+                    (natural_w, natural_h)
+                }
+                ObjectFit::None => {
+                    // Natural size (simulated as 60% of container)
+                    let natural_w = container_size * 0.6;
+                    let natural_h = natural_w / image_aspect;
+                    (natural_w, natural_h)
+                }
+            };
+
+            // Center the image in the container
+            let img_x = container_x + (container_size - img_width) / 2.0;
+            let img_y = container_y + (container_size - img_height) / 2.0;
+
+            // Clip to container bounds for Cover mode
+            if matches!(object_fit, ObjectFit::Cover) {
+                // Draw the image rect (it will extend beyond container)
+                let img_rect = RoundedRect::from_rect(
+                    kurbo::Rect::new(
+                        img_x,
+                        img_y,
+                        img_x + img_width,
+                        img_y + img_height,
+                    ),
+                    2.0,
+                );
+                // Show it as semi-transparent to indicate it's clipped
+                let clipped_color = image_color.get().with_alpha(0.7);
+                cx.fill(&img_rect, clipped_color, 0.0);
+            } else {
+                // Draw the image rect normally
+                let img_rect = RoundedRect::from_rect(
+                    kurbo::Rect::new(
+                        img_x,
+                        img_y,
+                        img_x + img_width,
+                        img_y + img_height,
+                    ),
+                    2.0,
+                );
+                cx.fill(&img_rect, image_color.get(), 0.0);
+            }
+        })
+        .style(|s| s.width(70.0).height(70.0))
+        .container()
+        .style(move |s| {
+            s.padding(4.0)
+                .border(1.)
+                .border_radius(5.0)
+                .with_theme(move |s, t| {
+                    container_color.set(t.text_muted());
+                    image_color.set(t.primary());
+                    s.border_color(t.border())
+                })
+        });
+
+        let label_text = match object_fit {
+            ObjectFit::Fill => "Fill",
+            ObjectFit::Contain => "Contain",
+            ObjectFit::Cover => "Cover",
+            ObjectFit::ScaleDown => "ScaleDown",
+            ObjectFit::None => "None",
+        };
+
+        let tooltip_view = move || {
+            let description = match object_fit {
+                ObjectFit::Fill => "Stretches content to fill the box.\nMay distort aspect ratio.",
+                ObjectFit::Contain => "Scales content to fit inside the box.\nPreserves aspect ratio (letterboxed).",
+                ObjectFit::Cover => "Scales content to cover the box.\nPreserves aspect ratio (may clip).",
+                ObjectFit::ScaleDown => "Like 'contain' but won't scale up.\nNever larger than natural size.",
+                ObjectFit::None => "Content keeps its natural size.\nMay overflow or be smaller than box.",
+            };
+
+            Stack::vertical((
+                Label::new(label_text).style(|s| s.font_bold()),
+                Label::new(description).style(|s| s.with_theme(|s, t| s.color(t.text_muted()))),
+            ))
+            .style(|s| s.gap(8.0).padding(12.0).max_width(220.0))
+        };
+
+        Some(
+            preview
+                .tooltip(tooltip_view)
+                .style(|s| s.items_center())
+                .into_any()
+        )
+    }
+}
+
 impl<A: smallvec::Array> StylePropValue for SmallVec<A>
 where
     <A as smallvec::Array>::Item: StylePropValue,

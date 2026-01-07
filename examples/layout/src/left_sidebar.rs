@@ -62,12 +62,12 @@ pub fn left_sidebar_view() -> impl IntoView {
     let view = Stack::vertical((top_bar, content)).style(|s| s.width_full().height_full());
 
     let id = view.id();
-    view.on_event_stop(EventListener::KeyUp, move |e| {
+    view.on_event_stop(EventListener::KeyUp, move |cx| {
         if let floem::event::Event::Key(KeyboardEvent {
             state: KeyState::Up,
             key,
             ..
-        }) = e
+        }) = &cx.event
         {
             if *key == Key::Named(NamedKey::F11) {
                 id.inspect();

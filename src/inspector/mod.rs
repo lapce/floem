@@ -6,11 +6,9 @@ use crate::context::StyleCx;
 use crate::event::{Event, EventListener, EventPropagation};
 use crate::prelude::ViewTuple;
 use crate::style::{
-    Focusable, FontSize, OverflowX, OverflowY, Style, StyleClassRef, StyleKeyInfo, StylePropRef,
-    Transition,
+    FontSize, OverflowX, OverflowY, Style, StyleClassRef, StyleKeyInfo, StylePropRef, Transition,
 };
 use crate::theme::StyleThemeExt as _;
-use crate::view::ChangeFlags;
 use crate::view::ViewId;
 use crate::view::{IntoView, View};
 use crate::views::{ContainerExt, Decorators, Label, ScrollExt, Stack, dyn_container};
@@ -43,7 +41,6 @@ pub struct CapturedView {
     taffy: Layout,
     children: Vec<Rc<CapturedView>>,
     direct_style: Style,
-    requested_changes: ChangeFlags,
     keyboard_navigable: bool,
     classes: Vec<StyleClassRef>,
     focused: bool,
@@ -51,13 +48,13 @@ pub struct CapturedView {
 
 impl CapturedView {
     pub fn capture(id: ViewId, window_state: &mut WindowState, clip: Rect) -> Self {
-        let layout = id.layout_rect();
+        let layout = id.get_layout_rect();
         let taffy = id.get_layout().unwrap_or_default();
         let view_state = id.state();
         let view_state = view_state.borrow();
         let combined_style = view_state.combined_style.clone();
-        let keyboard_navigable = view_state.combined_style.get(Focusable);
-        let focused = window_state.focus == Some(id);
+        let keyboard_navigable = view_state.combined_style.builtin().focusable();
+        let focused = window_state.focus_state.current_path().last() == Some(&id.get_visual_id());
         let clipped = layout.intersect(clip);
         let custom_name = &view_state.debug_name;
         let classes = view_state.classes.clone();
@@ -81,7 +78,6 @@ impl CapturedView {
             layout,
             taffy,
             direct_style: combined_style,
-            requested_changes: view_state.requested_changes,
             keyboard_navigable,
             focused,
             classes,
@@ -127,7 +123,7 @@ impl CapturedView {
     }
 
     fn warnings(&self) -> bool {
-        !self.requested_changes.is_empty() || self.children.iter().any(|child| child.warnings())
+        false
     }
 }
 
@@ -181,8 +177,8 @@ fn add_event<T: View + 'static>(
     })
     .on_event_stop(EventListener::KeyDown, {
         let capture = capture.clone();
-        move |event| {
-            if let Event::Key(KeyboardEvent { key, modifiers, .. }) = event {
+        move |cx| {
+            if let Event::Key(KeyboardEvent { key, modifiers, .. }) = &cx.event {
                 match key {
                     keyboard::Key::Named(NamedKey::ArrowUp) => {
                         let rs = find_relative_view_by_id_with_self(id, &capture.root);

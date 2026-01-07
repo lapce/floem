@@ -8,6 +8,7 @@ use winit::window::{ResizeDirection, Theme};
 use crate::{
     platform::menu::Menu,
     view::{AnyView, View, ViewId},
+    visual_id::VisualId,
     window::state::WindowState,
 };
 
@@ -27,17 +28,16 @@ thread_local! {
     pub(crate) static DEFERRED_UPDATE_MESSAGES: RefCell<DeferredUpdateMessages> = Default::default();
     /// It stores the active view handle, so that when you dispatch an action, it knows
     /// which view handle it submitted to
-    pub(crate) static CURRENT_RUNNING_VIEW_HANDLE: RefCell<ViewId> = RefCell::new(ViewId::new());
+    pub(crate) static CURRENT_RUNNING_VIEW_HANDLE: RefCell<Option<ViewId>> = const { RefCell::new(None) };
 }
 
 type DeferredUpdateMessages = HashMap<ViewId, Vec<(ViewId, Box<dyn Any>)>>;
 
 pub enum UpdateMessage {
-    Focus(ViewId),
-    ClearFocus(ViewId),
-    ClearAppFocus,
-    Active(ViewId),
-    ClearActive(ViewId),
+    Focus(VisualId),
+    ClearFocus,
+    Active(VisualId),
+    ClearActive,
     /// Set pointer capture for a view (W3C Pointer Events API).
     SetPointerCapture {
         view_id: ViewId,
@@ -50,6 +50,8 @@ pub enum UpdateMessage {
     },
     WindowScale(f64),
     RequestPaint,
+    RequestLayout,
+    RequestBoxTreeCommit,
     State {
         id: ViewId,
         state: Box<dyn Any>,
@@ -115,6 +117,8 @@ pub enum UpdateMessage {
     SetupReactiveChildren {
         setup: DeferredReactiveSetup,
     },
+    /// Specify that this view needs to have a post layout method from the view trait called
+    NeedsPostLayout(ViewId),
 }
 
 /// Context passed during the update phase of the view lifecycle.

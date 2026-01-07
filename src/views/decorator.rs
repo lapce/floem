@@ -13,7 +13,7 @@ use crate::{
     ViewId,
     action::{set_window_scale, set_window_title},
     animate::Animation,
-    event::{Event, EventListener, EventPropagation},
+    event::{Event, EventCx, EventListener, EventPropagation},
     platform::menu::Menu,
     style::{Style, StyleClass},
     view::{HasViewId, IntoView},
@@ -226,7 +226,7 @@ pub trait Decorators: IntoView {
     fn on_event(
         self,
         listener: EventListener,
-        action: impl FnMut(&Event) -> EventPropagation + 'static,
+        action: impl FnMut(&mut EventCx) -> EventPropagation + 'static,
     ) -> Self::Intermediate {
         let intermediate = self.into_intermediate();
         intermediate
@@ -242,7 +242,7 @@ pub trait Decorators: IntoView {
         self,
         key: Key,
         cmp: impl Fn(Modifiers) -> bool + 'static,
-        action: impl Fn(&Event) + 'static,
+        mut action: impl FnMut(&mut EventCx) + 'static,
     ) -> Self::Intermediate {
         self.on_event(EventListener::KeyDown, move |e| {
             if let Event::Key(KeyboardEvent {
@@ -250,7 +250,7 @@ pub trait Decorators: IntoView {
                 key: event_key,
                 modifiers,
                 ..
-            }) = e
+            }) = &e.event
             {
                 if *event_key == key && cmp(*modifiers) {
                     action(e);
@@ -268,7 +268,7 @@ pub trait Decorators: IntoView {
         self,
         key: Key,
         cmp: impl Fn(Modifiers) -> bool + 'static,
-        action: impl Fn(&Event) + 'static,
+        mut action: impl FnMut(&mut EventCx) + 'static,
     ) -> Self::Intermediate {
         self.on_event(EventListener::KeyUp, move |e| {
             if let Event::Key(KeyboardEvent {
@@ -276,7 +276,7 @@ pub trait Decorators: IntoView {
                 key: event_key,
                 modifiers,
                 ..
-            }) = e
+            }) = &e.event
             {
                 if *event_key == key && cmp(*modifiers) {
                     action(e);
@@ -292,7 +292,7 @@ pub trait Decorators: IntoView {
     fn on_event_cont(
         self,
         listener: EventListener,
-        action: impl Fn(&Event) + 'static,
+        mut action: impl FnMut(&mut EventCx) + 'static,
     ) -> Self::Intermediate {
         self.on_event(listener, move |e| {
             action(e);
@@ -305,7 +305,7 @@ pub trait Decorators: IntoView {
     fn on_event_stop(
         self,
         listener: EventListener,
-        action: impl Fn(&Event) + 'static,
+        mut action: impl FnMut(&mut EventCx) + 'static,
     ) -> Self::Intermediate {
         self.on_event(listener, move |e| {
             action(e);
@@ -316,14 +316,14 @@ pub trait Decorators: IntoView {
     /// Add an event handler for [`EventListener::Click`].
     fn on_click(
         self,
-        action: impl FnMut(&Event) -> EventPropagation + 'static,
+        action: impl FnMut(&mut EventCx) -> EventPropagation + 'static,
     ) -> Self::Intermediate {
         self.on_event(EventListener::Click, action)
     }
 
     /// Add an event handler for [`EventListener::Click`]. This event will be handled with
     /// the given handler and the event will continue propagating.
-    fn on_click_cont(self, action: impl Fn(&Event) + 'static) -> Self::Intermediate {
+    fn on_click_cont(self, mut action: impl FnMut(&mut EventCx) + 'static) -> Self::Intermediate {
         self.on_click(move |e| {
             action(e);
             EventPropagation::Continue
@@ -332,7 +332,7 @@ pub trait Decorators: IntoView {
 
     /// Add an event handler for [`EventListener::Click`]. This event will be handled with
     /// the given handler and the event will stop propagating.
-    fn on_click_stop(self, mut action: impl FnMut(&Event) + 'static) -> Self::Intermediate {
+    fn on_click_stop(self, mut action: impl FnMut(&mut EventCx) + 'static) -> Self::Intermediate {
         self.on_click(move |e| {
             action(e);
             EventPropagation::Stop
@@ -350,14 +350,17 @@ pub trait Decorators: IntoView {
     /// Add an event handler for [`EventListener::DoubleClick`]
     fn on_double_click(
         self,
-        action: impl Fn(&Event) -> EventPropagation + 'static,
+        action: impl FnMut(&mut EventCx) -> EventPropagation + 'static,
     ) -> Self::Intermediate {
         self.on_event(EventListener::DoubleClick, action)
     }
 
     /// Add an event handler for [`EventListener::DoubleClick`]. This event will be handled with
     /// the given handler and the event will continue propagating.
-    fn on_double_click_cont(self, action: impl Fn(&Event) + 'static) -> Self::Intermediate {
+    fn on_double_click_cont(
+        self,
+        mut action: impl FnMut(&mut EventCx) + 'static,
+    ) -> Self::Intermediate {
         self.on_double_click(move |e| {
             action(e);
             EventPropagation::Continue
@@ -366,7 +369,10 @@ pub trait Decorators: IntoView {
 
     /// Add an event handler for [`EventListener::DoubleClick`]. This event will be handled with
     /// the given handler and the event will stop propagating.
-    fn on_double_click_stop(self, action: impl Fn(&Event) + 'static) -> Self::Intermediate {
+    fn on_double_click_stop(
+        self,
+        mut action: impl FnMut(&mut EventCx) + 'static,
+    ) -> Self::Intermediate {
         self.on_double_click(move |e| {
             action(e);
             EventPropagation::Stop
@@ -376,14 +382,17 @@ pub trait Decorators: IntoView {
     /// Add an event handler for [`EventListener::SecondaryClick`]. This is most often the "Right" click.
     fn on_secondary_click(
         self,
-        action: impl Fn(&Event) -> EventPropagation + 'static,
+        action: impl FnMut(&mut EventCx) -> EventPropagation + 'static,
     ) -> Self::Intermediate {
         self.on_event(EventListener::SecondaryClick, action)
     }
 
     /// Add an event handler for [`EventListener::SecondaryClick`]. This is most often the "Right" click.
     /// This event will be handled with the given handler and the event will continue propagating.
-    fn on_secondary_click_cont(self, action: impl Fn(&Event) + 'static) -> Self::Intermediate {
+    fn on_secondary_click_cont(
+        self,
+        mut action: impl FnMut(&mut EventCx) + 'static,
+    ) -> Self::Intermediate {
         self.on_secondary_click(move |e| {
             action(e);
             EventPropagation::Continue
@@ -392,7 +401,10 @@ pub trait Decorators: IntoView {
 
     /// Add an event handler for [`EventListener::SecondaryClick`]. This is most often the "Right" click.
     /// This event will be handled with the given handler and the event will stop propagating.
-    fn on_secondary_click_stop(self, action: impl Fn(&Event) + 'static) -> Self::Intermediate {
+    fn on_secondary_click_stop(
+        self,
+        mut action: impl FnMut(&mut EventCx) + 'static,
+    ) -> Self::Intermediate {
         self.on_secondary_click(move |e| {
             action(e);
             EventPropagation::Stop
@@ -475,7 +487,7 @@ pub trait Decorators: IntoView {
         let id = intermediate.view_id();
         Effect::new(move |_| {
             when();
-            id.clear_focus();
+            ViewId::clear_focus(&id);
         });
         intermediate
     }
@@ -489,7 +501,7 @@ pub trait Decorators: IntoView {
         let id = intermediate.view_id();
         Effect::new(move |_| {
             when();
-            id.request_focus();
+            ViewId::request_focus(&id);
         });
         intermediate
     }

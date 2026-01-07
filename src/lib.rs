@@ -218,9 +218,76 @@ pub mod receiver_signal {
     pub use stream_signal::*;
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct VisualId(pub(crate) understory_box_tree::NodeId);
+mod visual_id {
+    use crate::{ViewId, view::VIEW_STORAGE};
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    // #[repr(transparent)]
+    pub struct VisualId(pub(crate) understory_box_tree::NodeId, pub(crate) ViewId);
+    // impl From<understory_box_tree::NodeId> for VisualId {
+    //     fn from(value: understory_box_tree::NodeId) -> Self {
+    //         Self(value)
+    //     }
+    // }
+    // impl From<&understory_box_tree::NodeId> for VisualId {
+    //     fn from(value: &understory_box_tree::NodeId) -> Self {
+    //         Self(*value)
+    //     }
+    // }
+    impl VisualId {
+        pub fn view_id(&self) -> crate::ViewId {
+            VIEW_STORAGE.with_borrow(|s| {
+                s.visual_id_to_view
+                    .get(self)
+                    .copied()
+                    .expect("all visual ids are created with an associated ViewId")
+            })
+        }
+
+        pub fn exact_view_id(&self) -> Option<crate::ViewId> {
+            VIEW_STORAGE.with_borrow(|s| {
+                let view_id = s
+                    .visual_id_to_view
+                    .get(self)
+                    .copied()
+                    .expect("all visual ids are created with an associated ViewId");
+                let visual_id_of_view = s.states.get(view_id)?.borrow().visual_id;
+                if visual_id_of_view == *self {
+                    Some(view_id)
+                } else {
+                    None
+                }
+            })
+        }
+    }
+
+    /// Extension trait for zero-cost casting between Vec<NodeId> and Vec<VisualId>
+    pub(crate) trait CastIds<T> {
+        /// Cast a Vec of IDs to another ID type with the same layout.
+        ///
+        /// # Safety
+        /// This is safe because VisualId is #[repr(transparent)] over NodeId,
+        /// guaranteeing identical memory layout. We use transmute to reinterpret
+        /// the Vec without any runtime overhead.
+        fn cast_ids(self, root_id: ViewId) -> Vec<T>;
+    }
+
+    impl CastIds<VisualId> for Vec<understory_box_tree::NodeId> {
+        fn cast_ids(self, root_id: ViewId) -> Vec<VisualId> {
+            self.iter().map(|id| VisualId(*id, root_id)).collect()
+        }
+    }
+
+    impl CastIds<understory_box_tree::NodeId> for Vec<VisualId> {
+        fn cast_ids(self, _root_id: ViewId) -> Vec<understory_box_tree::NodeId> {
+            self.iter().map(|id| id.0).collect()
+        }
+    }
+}
+pub use visual_id::VisualId;
+
 pub type BoxTree = understory_box_tree::Tree<understory_index::backends::GridF64>;
+// pub type BoxTree = understory_box_tree::Tree;
 
 pub use app::{AppConfig, AppEvent, Application, launch, quit_app, reopen};
 pub use floem_reactive as reactive;
@@ -243,10 +310,7 @@ pub use platform::{Menu, SubMenu};
 pub use taffy;
 pub use ui_events;
 pub use view::ViewId;
-pub use view::{
-    AnyView, HasViewId, IntoView, LazyView, ParentView, View, default_compute_layout,
-    recursively_layout_view,
-};
+pub use view::{AnyView, HasViewId, IntoView, LazyView, ParentView, View};
 pub use view::{Stack, StackOffset};
 pub use window::{Urgency, WindowIdExt, WindowState, close_window, new_window};
 

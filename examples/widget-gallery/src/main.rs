@@ -26,7 +26,7 @@ use floem::{
     muda::{AboutMetadataBuilder, PredefinedMenuItem},
     new_window,
     prelude::*,
-    style::{Background, CursorStyle, Transition},
+    style::{Background, CursorStyle, CustomStylable, Transition},
     theme::StyleThemeExt,
     ui_events::keyboard::{Key, KeyState, KeyboardEvent, Modifiers, NamedKey},
     window::{Theme, WindowConfig, WindowId},
@@ -88,10 +88,11 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         .get()
         .into_iter()
         .map(move |item| {
-            item.debug_name(item).style(move |s| {
-                s.flex_row()
-                    .font_size(18.)
+            item.style(move |s| {
+                s.font_size(18.)
                     .height(36.0)
+                    .width_full()
+                    .items_center()
                     .transition(Background, Transition::ease_in_out(100.millis()))
                     .active(|s| {
                         s.with_theme(|s, t| {
@@ -111,7 +112,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
     let side_tab_bar = side_bar_list
         .scroll()
         .debug_name("Side Tab Bar")
-        .scroll_style(|s| s.shrink_to_fit().handle_thickness(8.))
+        .custom_style(|s| s.shrink_to_fit())
         .style(|s| {
             s.border(1.)
                 .flex_col()
@@ -300,13 +301,13 @@ fn app_view(window_id: WindowId) -> impl IntoView {
             .inset_right(15.)
     }));
 
-    view.on_event_stop(EventListener::KeyUp, move |e| {
+    view.on_event_stop(EventListener::KeyUp, move |cx| {
         if let Event::Key(KeyboardEvent {
             state: KeyState::Up,
             key,
             modifiers,
             ..
-        }) = e
+        }) = &cx.event
         {
             if *key == Key::Named(NamedKey::F11) {
                 floem::action::inspect();

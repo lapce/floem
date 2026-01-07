@@ -4,7 +4,7 @@ use crate::{
     Renderer,
     action::{set_ime_allowed, set_ime_cursor_area},
     context::{LayoutCx, PaintCx, UpdateCx},
-    event::{Event, EventListener, EventPropagation},
+    event::{Event, EventListener, EventPropagation, ImeEvent},
     kurbo::{BezPath, Line, Point, Rect, Size, Vec2},
     peniko::Color,
     reactive::{Effect, Memo, RwSignal, Scope},
@@ -12,8 +12,7 @@ use crate::{
     style_class,
     taffy::tree::NodeId,
     text::{Attrs, AttrsList, TextLayout},
-    view::ViewId,
-    view::{IntoView, View},
+    view::{IntoView, View, ViewId},
     views::{Decorators, Scroll, Stack, editor::keypress::KeypressKey},
 };
 use floem_editor_core::{
@@ -22,6 +21,7 @@ use floem_editor_core::{
     mode::{Mode, VisualMode},
 };
 use floem_reactive::{SignalGet, SignalTrack, SignalUpdate, SignalWith};
+use peniko::Brush;
 use ui_events::{
     keyboard::{Key, KeyState, KeyboardEvent, Modifiers},
     pointer::{PointerButton, PointerButtonEvent, PointerEvent},
@@ -350,7 +350,7 @@ impl EditorView {
     fn paint_normal_selection(
         cx: &mut PaintCx,
         ed: &Editor,
-        color: Color,
+        color: &Brush,
         screen_lines: &ScreenLines,
         start_offset: usize,
         end_offset: usize,
@@ -430,7 +430,7 @@ impl EditorView {
     pub fn paint_linewise_selection(
         cx: &mut PaintCx,
         ed: &Editor,
-        color: Color,
+        color: &Brush,
         screen_lines: &ScreenLines,
         start_offset: usize,
         end_offset: usize,
@@ -479,7 +479,7 @@ impl EditorView {
     pub fn paint_blockwise_selection(
         cx: &mut PaintCx,
         ed: &Editor,
-        color: Color,
+        color: &Brush,
         screen_lines: &ScreenLines,
         start_offset: usize,
         end_offset: usize,
@@ -579,7 +579,7 @@ impl EditorView {
                 EditorView::paint_normal_selection(
                     cx,
                     ed,
-                    selection_color,
+                    &selection_color,
                     screen_lines,
                     start_offset,
                     end_offset,
@@ -595,7 +595,7 @@ impl EditorView {
                 EditorView::paint_linewise_selection(
                     cx,
                     ed,
-                    selection_color,
+                    &selection_color,
                     screen_lines,
                     start.min(end),
                     start.max(end),
@@ -611,7 +611,7 @@ impl EditorView {
                 EditorView::paint_blockwise_selection(
                     cx,
                     ed,
-                    selection_color,
+                    &selection_color,
                     screen_lines,
                     start.min(end),
                     start.max(end),
@@ -626,7 +626,7 @@ impl EditorView {
                     EditorView::paint_normal_selection(
                         cx,
                         ed,
-                        selection_color,
+                        &selection_color,
                         screen_lines,
                         start.min(end),
                         start.max(end),
@@ -794,7 +794,7 @@ impl EditorView {
         }
 
         let is_active = if let Some(view_id) = view_id {
-            is_active && cx.window_state.is_focused(&view_id)
+            is_active && cx.window_state.is_focused(view_id)
         } else {
             is_active
         };
@@ -861,64 +861,64 @@ impl View for EditorView {
 
     fn update(&mut self, _cx: &mut UpdateCx, _state: Box<dyn std::any::Any>) {}
 
-    fn layout(&mut self, cx: &mut LayoutCx) -> crate::taffy::tree::NodeId {
-        cx.layout_node(self.id, true, |_cx| {
-            let editor = self.editor.get_untracked();
+    // fn layout(&mut self, cx: &mut LayoutCx) -> crate::taffy::tree::NodeId {
+    //     cx.layout_node(self.id, true, |_cx| {
+    //         let editor = self.editor.get_untracked();
 
-            let parent_size = editor.parent_size.get_untracked();
+    //         let parent_size = editor.parent_size.get_untracked();
 
-            if self.inner_node.is_none() {
-                self.inner_node = Some(self.id.new_taffy_node());
-            }
+    //         if self.inner_node.is_none() {
+    //             self.inner_node = Some(self.id.new_taffy_node());
+    //         }
 
-            let screen_lines = editor.screen_lines.get_untracked();
-            for (line, _) in screen_lines.iter_lines_y() {
-                // fill in text layout cache so that max width is correct.
-                editor.text_layout(line);
-            }
+    //         let screen_lines = editor.screen_lines.get_untracked();
+    //         for (line, _) in screen_lines.iter_lines_y() {
+    //             // fill in text layout cache so that max width is correct.
+    //             editor.text_layout(line);
+    //         }
 
-            let inner_node = self.inner_node.unwrap();
+    //         let inner_node = self.inner_node.unwrap();
 
-            // TODO: don't assume there's a constant line height
-            let line_height = f64::from(editor.line_height(0));
+    //         // TODO: don't assume there's a constant line height
+    //         let line_height = f64::from(editor.line_height(0));
 
-            let width = editor.max_line_width().max(parent_size.width());
-            let last_line_height = line_height * (editor.last_vline().get() + 1) as f64;
-            let height = last_line_height.max(parent_size.height());
+    //         let width = editor.max_line_width().max(parent_size.width());
+    //         let last_line_height = line_height * (editor.last_vline().get() + 1) as f64;
+    //         let height = last_line_height.max(parent_size.height());
 
-            let margin_bottom = if editor.es.with_untracked(|es| es.scroll_beyond_last_line()) {
-                parent_size.height().min(last_line_height) - line_height
-            } else {
-                0.0
-            };
+    //         let margin_bottom = if editor.es.with_untracked(|es| es.scroll_beyond_last_line()) {
+    //             parent_size.height().min(last_line_height) - line_height
+    //         } else {
+    //             0.0
+    //         };
 
-            let style = Style::new()
-                .width(width)
-                .height(height)
-                .margin_bottom(margin_bottom)
-                .to_taffy_style();
-            let _ = self.id.taffy().borrow_mut().set_style(inner_node, style);
+    //         let style = Style::new()
+    //             .width(width)
+    //             .height(height)
+    //             .margin_bottom(margin_bottom)
+    //             .to_taffy_style();
+    //         let _ = self.id.taffy().borrow_mut().set_style(inner_node, style);
 
-            vec![inner_node]
-        })
-    }
+    //         vec![inner_node]
+    //     })
+    // }
 
-    fn compute_layout(&mut self, cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
-        let editor = self.editor.get_untracked();
+    // fn compute_layout(&mut self, cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
+    //     let editor = self.editor.get_untracked();
 
-        let viewport = cx.current_viewport();
-        if editor.viewport.with_untracked(|v| v != &viewport) {
-            editor.viewport.set(viewport);
-        }
+    //     let viewport = cx.current_viewport();
+    //     if editor.viewport.with_untracked(|v| v != &viewport) {
+    //         editor.viewport.set(viewport);
+    //     }
 
-        if let Some(parent) = self.id.parent() {
-            let parent_size = parent.layout_rect();
-            if editor.parent_size.with_untracked(|ps| ps != &parent_size) {
-                editor.parent_size.set(parent_size);
-            }
-        }
-        None
-    }
+    //     if let Some(parent) = self.id.parent() {
+    //         let parent_size = parent.get_layout_rect();
+    //         if editor.parent_size.with_untracked(|ps| ps != &parent_size) {
+    //             editor.parent_size.set(parent_size);
+    //         }
+    //     }
+    //     None
+    // }
 
     fn paint(&mut self, cx: &mut PaintCx) {
         let ed = self.editor.get_untracked();
@@ -1053,12 +1053,12 @@ pub fn editor_view(
         editor.with_untracked(|ed| ed.commit_preedit());
         set_ime_allowed(false);
     })
-    .on_event(EventListener::ImePreedit, move |event| {
+    .on_event(EventListener::ImePreedit, move |cx| {
         if !is_active.get_untracked() || !focused.get_untracked() {
             return EventPropagation::Continue;
         }
 
-        if let Event::ImePreedit { text, cursor } = event {
+        if let Event::Ime(ImeEvent::Preedit { text, cursor }) = &cx.event {
             editor.with_untracked(|ed| {
                 if text.is_empty() {
                     ed.clear_preedit();
@@ -1084,12 +1084,12 @@ pub fn editor_view(
         }
         EventPropagation::Stop
     })
-    .on_event(EventListener::ImeCommit, move |event| {
+    .on_event(EventListener::ImeCommit, move |cx| {
         if !is_active.get_untracked() || !focused.get_untracked() {
             return EventPropagation::Continue;
         }
 
-        if let Event::ImeCommit(text) = event {
+        if let Event::Ime(ImeEvent::Commit(text)) = &cx.event {
             editor.with_untracked(|ed| {
                 ed.clear_preedit();
                 ed.receive_char(text);
@@ -1207,8 +1207,8 @@ pub fn editor_gutter(editor: RwSignal<Editor>) -> impl IntoView {
         .on_resize(move |rect| {
             gutter_rect.set(rect);
         })
-        .on_event_stop(EventListener::PointerWheel, move |event| {
-            if let Some(vec2) = event.pixel_scroll_delta_vec2() {
+        .on_event_stop(EventListener::PointerWheel, move |cx| {
+            if let Some(vec2) = cx.event.pixel_scroll_delta_vec2() {
                 scroll_delta.set(vec2);
             }
         })
@@ -1240,10 +1240,10 @@ fn editor_content(
             .on_event_cont(EventListener::FocusLost, move |_| {
                 editor.with_untracked(|ed| ed.editor_view_focus_lost.notify())
             })
-            .on_event_cont(EventListener::PointerDown, move |event| {
+            .on_event_cont(EventListener::PointerDown, move |cx| {
                 if let Event::Pointer(
                     pointer_event @ PointerEvent::Down(PointerButtonEvent { state, button, .. }),
-                ) = event
+                ) = &cx.event
                 {
                     id.request_active();
                     id.request_focus();
@@ -1254,23 +1254,25 @@ fn editor_content(
                     }
                 }
             })
-            .on_event_cont(EventListener::PointerMove, move |event| {
-                if let Event::Pointer(PointerEvent::Move(pu)) = event {
+            .on_event_cont(EventListener::PointerMove, move |cx| {
+                if let Event::Pointer(PointerEvent::Move(pu)) = &cx.event {
                     editor.get_untracked().pointer_move(&pu.current);
                 }
             })
-            .on_event_cont(EventListener::PointerUp, move |event| {
-                if let Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. })) = event {
+            .on_event_cont(EventListener::PointerUp, move |cx| {
+                if let Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. })) =
+                    &cx.event
+                {
                     editor.get_untracked().pointer_up(state);
                 }
             })
-            .on_event_stop(EventListener::KeyDown, move |event| {
+            .on_event_stop(EventListener::KeyDown, move |cx| {
                 let Event::Key(
                     key_event @ KeyboardEvent {
                         state: KeyState::Down,
                         ..
                     },
-                ) = event
+                ) = &cx.event
                 else {
                     return;
                 };

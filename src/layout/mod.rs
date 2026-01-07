@@ -10,6 +10,6 @@ mod cx;
 pub mod responsive;
 mod screen;
 
-pub use cx::{ComputeLayoutCx, LayoutCx};
+pub use cx::{LayoutCx, PostLayoutCx};
 pub use responsive::{GridBreakpoints, ScreenSize, range};
 pub use screen::{ScreenLayout, screen_layout_for_window, try_create_screen_layout};

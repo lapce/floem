@@ -3,12 +3,9 @@ use smallvec::SmallVec;
 use std::{cell::RefCell, rc::Rc};
 
 use crate::platform::menu::Menu;
-use crate::{
-    event::{Event, EventPropagation},
-    view::ViewId,
-};
+use crate::{event::EventPropagation, view::ViewId};
 
-pub type EventCallback = dyn FnMut(&Event) -> EventPropagation;
+pub type EventCallback = dyn FnMut(&mut EventCx) -> EventPropagation;
 pub type ResizeCallback = dyn Fn(Rect);
 pub type MenuCallback = dyn Fn() -> Menu;
 
@@ -34,17 +31,16 @@ pub(crate) type CleanupListeners = Vec<Rc<dyn Fn()>>;
 
 pub(crate) enum FrameUpdate {
     Style(ViewId),
-    Layout(ViewId),
+    Layout,
+    BoxTreeCommit,
     Paint(ViewId),
 }
 
 // Re-export EventCx from event module for backward compatibility
 pub use crate::event::EventCx;
-// Re-export DragState from window_state
-pub use crate::window::state::DragState;
 
 // Re-export layout context types from layout module for backward compatibility
-pub use crate::layout::{ComputeLayoutCx, LayoutCx};
+pub use crate::layout::LayoutCx;
 // Re-export style context types from style module for backward compatibility
 pub use crate::style::{InteractionState, StyleCx};
 // Re-export paint context types from paint module for backward compatibility

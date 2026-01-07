@@ -112,12 +112,12 @@ where
         child,
         onaccept: None,
     }
-    .on_event(EventListener::KeyDown, move |e| {
+    .on_event(EventListener::KeyDown, move |cx| {
         if let Event::Key(KeyboardEvent {
             state: KeyState::Down,
             key,
             ..
-        }) = e
+        }) = &cx.event
         {
             match key {
                 Key::Named(NamedKey::Home) => {

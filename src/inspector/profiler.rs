@@ -1,6 +1,7 @@
 use super::header;
 use crate::app::{AppUpdateEvent, add_app_update_event};
 use crate::event::{EventListener, EventPropagation};
+use crate::style::CustomStylable;
 use crate::theme::StyleThemeExt;
 use crate::unit::UnitExt;
 use crate::view::IntoView;
@@ -157,14 +158,12 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
 
     let frames = Stack::vertical((
         header("Frames"),
-        Scroll::new(Stack::vertical_from_iter(frames).style(|s| s.width_full()))
-            .style(|s| {
-                s.flex_basis(0)
-                    .min_height(0)
-                    .flex_grow(1.0)
-                    .with_theme(|s, t| s.background(t.bg_base()))
-            })
-            .scroll_style(|s| s.handle_thickness(6.)),
+        Scroll::new(Stack::vertical_from_iter(frames).style(|s| s.width_full())).style(|s| {
+            s.flex_basis(0)
+                .min_height(0)
+                .flex_grow(1.0)
+                .with_theme(|s, t| s.background(t.bg_base()))
+        }),
         header("Event").style(|s| {
             s.with_theme(|s, t| {
                 s.border_top(1)
@@ -228,14 +227,10 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
                     Stack::vertical_from_iter(list)
                         .style(move |s| s.min_width_pct(zoom.get() * 100.0).height_full()),
                 )
-                .scroll_style(|s| {
-                    s.handle_thickness(6.)
-                        .vertical_track_inset(5.)
-                        .show_bars_when_idle(false)
-                })
+                .custom_style(|s| s.vertical_track_inset(5.).show_bars_when_idle(false))
                 .style(|s| s.height_full().min_width(0).flex_basis(0).flex_grow(1.0))
                 .on_event(EventListener::PointerWheel, move |e| {
-                    if let Some(delta) = e.pixel_scroll_delta_vec2() {
+                    if let Some(delta) = e.event.pixel_scroll_delta_vec2() {
                         zoom.set(zoom.get() * (1.0 - delta.y / 400.0));
                         EventPropagation::Stop
                     } else {

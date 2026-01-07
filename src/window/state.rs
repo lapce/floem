@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap};
 
 use crate::platform::menu_types::MenuId;
 
@@ -6,7 +6,8 @@ use peniko::kurbo::{Affine, Point, Rect, Size, Vec2};
 use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::SmallVec;
 use taffy::{AvailableSpace, NodeId};
-use ui_events::pointer::PointerId;
+use ui_events::pointer::{PointerId, PointerInfo};
+use understory_event_state::{click::ClickState, focus::FocusState, hover::HoverState};
 use winit::cursor::CursorIcon;
 use winit::window::Theme;
 
@@ -15,9 +16,9 @@ use crate::platform::Instant;
 use std::rc::Rc;
 
 use crate::{
-    VisualId,
+    BoxTree,
     context::FrameUpdate,
-    event::{Event, EventListener, clear_hit_test_cache},
+    event::{DragTracker, Event, WindowEvent, clear_hit_test_cache},
     inspector::CaptureState,
     layout::responsive::{GridBreakpoints, ScreenSizeBp},
     style::{
@@ -25,6 +26,7 @@ use crate::{
         theme::default_theme,
     },
     view::{LayoutNodeCx, MeasureCx, VIEW_STORAGE, ViewId},
+    visual_id::VisualId,
 };
 
 /// A small set of ViewIds, optimized for small collections (< 8 items).
@@ -32,27 +34,24 @@ use crate::{
 /// Inspired by Chromium's approach for event listener collections.
 pub(crate) type ViewIdSmallSet = SmallVec<[ViewId; 8]>;
 
+/// A small set of ViewIds, optimized for small collections (< 8 items).
+/// Uses linear search which is faster than hashing for small N.
+/// Inspired by Chromium's approach for event listener collections.
+pub(crate) type VisualIdSmallSet = SmallVec<[VisualId; 8]>;
+
 /// A small map from PointerId to ViewId, optimized for the common case of 1-2 pointers.
 /// Most applications only have a mouse pointer or a few touch points active at once.
 /// Uses linear search which is faster than HashMap for small N due to cache locality.
-pub(crate) type PointerCaptureMap = SmallVec<[(PointerId, ViewId); 2]>;
-
-/// Tracks the state of a view being dragged.
-pub struct DragState {
-    pub(crate) id: ViewId,
-    pub(crate) offset: Vec2,
-    pub(crate) released_at: Option<Instant>,
-    pub(crate) release_location: Option<Point>,
-}
+pub(crate) type PointerCaptureMap = SmallVec<[(PointerId, VisualId); 2]>;
 
 /// Encapsulates and owns the global state of the application,
 pub struct WindowState {
-    /// keyboard focus
-    pub(crate) focus: Option<ViewId>,
-    pub(crate) prev_focus: Option<ViewId>,
     /// when a view is active, it gets mouse event even when the mouse is
     /// not on it
-    pub(crate) active: Option<ViewId>,
+    pub(crate) active: Option<VisualId>,
+
+    pub(crate) layout_tree: Rc<RefCell<taffy::TaffyTree<LayoutNodeCx>>>,
+    pub(crate) box_tree: Rc<RefCell<BoxTree>>,
 
     /// Per-pointer capture tracking inspired by Chromium's PointerEventManager.
     /// Maps pointer IDs to the view that has captured that pointer.
@@ -66,26 +65,25 @@ pub struct WindowState {
     pub(crate) pending_pointer_capture_target: PointerCaptureMap,
 
     pub(crate) root_view_id: ViewId,
-    pub(crate) root: Option<NodeId>,
+    pub(crate) root_layout_node: NodeId,
     pub(crate) root_size: Size,
     /// Set of ViewIds that have IsFixed style. When root_size changes,
     /// we request layout on these views directly instead of traversing the tree.
     pub(crate) fixed_elements: FxHashSet<ViewId>,
     pub(crate) scale: f64,
     pub(crate) scheduled_updates: Vec<FrameUpdate>,
-    pub(crate) request_compute_layout: bool,
     pub(crate) style_dirty: FxHashSet<ViewId>,
     pub(crate) view_style_dirty: FxHashSet<ViewId>,
     pub(crate) request_paint: bool,
-    pub(crate) dragging: Option<DragState>,
-    pub(crate) drag_start: Option<(ViewId, Point)>,
-    pub(crate) dragging_over: ViewIdSmallSet,
+    pub(crate) drag_state: DragTracker,
     pub(crate) screen_size_bp: ScreenSizeBp,
     pub(crate) grid_bps: GridBreakpoints,
-    pub(crate) clicking: FxHashSet<ViewId>,
-    pub(crate) hovered: ViewIdSmallSet,
+    pub(crate) click_state: ClickState<Rc<[VisualId]>>,
+    pub(crate) hover_state: HoverState<VisualId>,
+    pub(crate) focus_state: FocusState<VisualId>,
     pub(crate) focusable: FxHashSet<ViewId>,
-    pub(crate) file_hovered: FxHashSet<ViewId>,
+    pub(crate) file_hover_state: HoverState<VisualId>,
+    pub(crate) visual_id_cursors: FxHashMap<VisualId, CursorStyle>,
     // whether the window is in light or dark mode
     pub(crate) light_dark_theme: winit::window::Theme,
     // if `true`, then the window will not follow the os theme changes
@@ -93,8 +91,9 @@ pub struct WindowState {
     /// This keeps track of all views that have an animation,
     /// regardless of the status of the animation
     pub(crate) cursor: Option<CursorStyle>,
-    pub(crate) last_cursor: CursorIcon,
-    pub(crate) last_cursor_location: Point,
+    pub(crate) needs_cursor_resolution: bool,
+    pub(crate) last_cursor_icon: CursorIcon,
+    pub(crate) last_pointer: (Point, PointerInfo),
     pub(crate) keyboard_navigation: bool,
     pub(crate) context_menu: HashMap<MenuId, Box<dyn Fn()>>,
 
@@ -125,18 +124,28 @@ pub struct WindowState {
     /// This avoids recomputing the inherited props from default_theme on every StyleCx::new().
     /// Updated when default_theme changes (on theme switch).
     pub(crate) default_theme_inherited: Rc<Style>,
+
+    /// Tracking for views that have requested to have a post layout pass run.
+    ///
+    /// Most views do not need this, but some need it always, so tracking it here is an optimization to only call the method for views that need it.
+    pub(crate) needs_post_layout: FxHashSet<ViewId>,
+    pub(crate) needs_layout: bool,
+    pub(crate) needs_box_tree_commit: bool,
 }
 
 impl WindowState {
     pub fn new(root_view_id: ViewId, os_theme: Option<Theme>) -> Self {
         let theme = default_theme(os_theme.unwrap_or(Theme::Light));
         let inherited = Self::extract_inherited_props(&theme);
+        let box_tree = VIEW_STORAGE.with_borrow_mut(|s| s.box_tree(root_view_id));
+        let layout_tree = VIEW_STORAGE.with_borrow_mut(|s| s.taffy.clone());
+        let root_layout_node = root_view_id.taffy_node();
 
         Self {
-            root: None,
+            root_layout_node,
             root_view_id,
-            focus: None,
-            prev_focus: None,
+            layout_tree,
+            box_tree,
             active: None,
             pointer_capture_target: PointerCaptureMap::new(),
             pending_pointer_capture_target: PointerCaptureMap::new(),
@@ -146,30 +155,42 @@ impl WindowState {
             screen_size_bp: ScreenSizeBp::Xs,
             scheduled_updates: Vec::new(),
             request_paint: false,
-            request_compute_layout: false,
             view_style_dirty: Default::default(),
             style_dirty: Default::default(),
-            dragging: None,
-            drag_start: None,
-            dragging_over: ViewIdSmallSet::new(),
-            clicking: FxHashSet::default(),
-            hovered: ViewIdSmallSet::new(),
+            drag_state: DragTracker::new(),
+            focus_state: FocusState::new(),
+            click_state: ClickState::new(),
+            hover_state: HoverState::new(),
+            file_hover_state: HoverState::new(),
+            visual_id_cursors: FxHashMap::default(),
             focusable: FxHashSet::default(),
-            file_hovered: FxHashSet::default(),
             theme_overriden: false,
             light_dark_theme: os_theme.unwrap_or(Theme::Light),
             cursor: None,
-            last_cursor: CursorIcon::Default,
-            last_cursor_location: Default::default(),
+            needs_cursor_resolution: false,
+            last_cursor_icon: CursorIcon::Default,
+            last_pointer: (
+                Point::ZERO,
+                PointerInfo {
+                    pointer_id: None,
+                    persistent_device_id: None,
+                    pointer_type: ui_events::pointer::PointerType::Unknown,
+                },
+            ),
             keyboard_navigation: false,
             grid_bps: GridBreakpoints::default(),
             context_menu: HashMap::new(),
             capture: None,
             style_cache: StyleCache::new(),
             pending_child_change: FxHashMap::default(),
-            pending_global_recalc: StyleRecalcChange::NONE,
+            pending_global_recalc: StyleRecalcChange::new(
+                crate::style::Propagate::RecalcDescendants,
+            ),
             default_theme: Rc::new(theme),
             default_theme_inherited: Rc::new(inherited),
+            needs_layout: true,
+            needs_box_tree_commit: true,
+            needs_post_layout: FxHashSet::default(),
         }
     }
 
@@ -234,7 +255,7 @@ impl WindowState {
             action();
         }
 
-        let node = view_state.borrow().node;
+        let node = view_state.borrow().layout_id;
         let taffy = id.taffy();
         let mut taffy = taffy.borrow_mut();
 
@@ -245,45 +266,51 @@ impl WindowState {
             }
         }
         let _ = taffy.remove(node);
+
+        let box_tree = id.box_tree();
+        // Remove from box tree first
+        let this_visual_id = id.get_visual_id();
+        box_tree.borrow_mut().reparent(this_visual_id.0, None);
         id.remove();
-        self.dragging_over.retain(|x| *x != id);
-        self.clicking.remove(&id);
-        self.hovered.retain(|x| *x != id);
-        self.file_hovered.remove(&id);
-        self.clicking.remove(&id);
         self.focusable.remove(&id);
         self.fixed_elements.remove(&id);
-        if self.focus == Some(id) {
-            self.focus = None;
-        }
-        if self.prev_focus == Some(id) {
-            self.prev_focus = None;
-        }
 
-        if self.active == Some(id) {
+        if self.active == Some(this_visual_id) {
             self.active = None;
         }
 
         // Clean up pointer capture state for removed view
-        self.pointer_capture_target.retain(|(_, v)| *v != id);
+        self.pointer_capture_target
+            .retain(|(_, v)| *v != this_visual_id);
         self.pending_pointer_capture_target
-            .retain(|(_, v)| *v != id);
+            .retain(|(_, v)| *v != this_visual_id);
     }
 
-    pub fn is_hovered(&self, id: &ViewId) -> bool {
-        self.hovered.contains(id)
+    pub fn is_hovered(&self, id: impl Into<VisualId>) -> bool {
+        let id = id.into();
+        self.hover_state.current_path().contains(&id)
     }
 
-    pub fn is_focused(&self, id: &ViewId) -> bool {
-        self.focus.map(|f| &f == id).unwrap_or(false)
+    pub fn is_file_hover(&self, id: impl Into<VisualId>) -> bool {
+        let id = id.into();
+        self.file_hover_state.current_path().contains(&id)
     }
 
-    pub fn is_active(&self, id: &ViewId) -> bool {
-        self.active.map(|a| &a == id).unwrap_or(false)
+    pub fn is_focused(&self, id: impl Into<VisualId>) -> bool {
+        self.focus_state
+            .current_path()
+            .last()
+            .map(|f| *f == id.into())
+            .unwrap_or(false)
     }
 
-    pub fn is_clicking(&self, id: &ViewId) -> bool {
-        self.clicking.contains(id)
+    pub fn is_active(&self, id: impl Into<VisualId>) -> bool {
+        self.active.map(|a| a == id.into()).unwrap_or(false)
+    }
+
+    pub fn is_clicking(&self, id: impl Into<VisualId>) -> bool {
+        let id = id.into();
+        self.click_state.presses().any(|p| p.target.contains(&id))
     }
 
     pub(crate) fn build_style_traversal(&mut self, root: ViewId) -> Vec<ViewId> {
@@ -292,8 +319,6 @@ impl WindowState {
         // If capture is active, traverse all views
         if self.capture.is_some() {
             // Clear dirty flags because we're traversing everything
-            self.style_dirty.clear();
-            self.view_style_dirty.clear();
             let mut stack = vec![root];
             while let Some(view_id) = stack.pop() {
                 traversal.push(view_id);
@@ -307,9 +332,9 @@ impl WindowState {
             // Don't return yet, fall through to sorting
         } else {
             // Collect all dirty views
-            let mut dirty_views = std::mem::take(&mut self.style_dirty);
-            for view_id in std::mem::take(&mut self.view_style_dirty) {
-                dirty_views.insert(view_id);
+            let mut dirty_views = self.style_dirty.clone();
+            for view_id in &self.view_style_dirty {
+                dirty_views.insert(*view_id);
             }
             if dirty_views.is_empty() {
                 return Vec::new();
@@ -356,12 +381,9 @@ impl WindowState {
         self.light_dark_theme == Theme::Dark
     }
 
-    pub fn is_file_hover(&self, id: &ViewId) -> bool {
-        self.file_hovered.contains(id)
-    }
-
     pub fn is_dragging(&self) -> bool {
-        self.dragging
+        self.drag_state
+            .state
             .as_ref()
             .map(|d| d.released_at.is_none())
             .unwrap_or(false)
@@ -381,17 +403,21 @@ impl WindowState {
     /// Note: Unlike the web API, this doesn't validate that the pointer is active
     /// (has button pressed). The caller should ensure this constraint if needed.
     #[inline]
-    pub(crate) fn set_pointer_capture(&mut self, pointer_id: PointerId, target: ViewId) -> bool {
+    pub(crate) fn set_pointer_capture(
+        &mut self,
+        pointer_id: PointerId,
+        target: impl Into<VisualId>,
+    ) -> bool {
         // Update existing entry or push new one
         if let Some(entry) = self
             .pending_pointer_capture_target
             .iter_mut()
             .find(|(id, _)| *id == pointer_id)
         {
-            entry.1 = target;
+            entry.1 = target.into();
         } else {
             self.pending_pointer_capture_target
-                .push((pointer_id, target));
+                .push((pointer_id, target.into()));
         }
         true
     }
@@ -403,7 +429,7 @@ impl WindowState {
     pub(crate) fn release_pointer_capture(
         &mut self,
         pointer_id: PointerId,
-        target: ViewId,
+        target: impl Into<VisualId>,
     ) -> bool {
         if self.has_pointer_capture(pointer_id, target) {
             self.remove_pending_capture(pointer_id);
@@ -445,15 +471,20 @@ impl WindowState {
 
     /// Set the active capture target for a pointer.
     #[inline]
-    pub(crate) fn set_active_capture(&mut self, pointer_id: PointerId, target: ViewId) {
+    pub(crate) fn set_active_capture(
+        &mut self,
+        pointer_id: PointerId,
+        target: impl Into<VisualId>,
+    ) {
         if let Some(entry) = self
             .pointer_capture_target
             .iter_mut()
             .find(|(id, _)| *id == pointer_id)
         {
-            entry.1 = target;
+            entry.1 = target.into();
         } else {
-            self.pointer_capture_target.push((pointer_id, target));
+            self.pointer_capture_target
+                .push((pointer_id, target.into()));
         }
     }
 
@@ -462,7 +493,12 @@ impl WindowState {
     /// Following Chromium's behavior, this checks the pending map since
     /// that represents the "intent" of the capture state.
     #[inline]
-    pub(crate) fn has_pointer_capture(&self, pointer_id: PointerId, target: ViewId) -> bool {
+    pub(crate) fn has_pointer_capture(
+        &self,
+        pointer_id: PointerId,
+        target: impl Into<VisualId>,
+    ) -> bool {
+        let target = target.into();
         self.pending_pointer_capture_target
             .iter()
             .any(|(id, v)| *id == pointer_id && *v == target)
@@ -470,7 +506,7 @@ impl WindowState {
 
     /// Get the pending capture target for a pointer.
     #[inline]
-    pub(crate) fn get_pending_capture_target(&self, pointer_id: PointerId) -> Option<ViewId> {
+    pub(crate) fn get_pending_capture_target(&self, pointer_id: PointerId) -> Option<VisualId> {
         self.pending_pointer_capture_target
             .iter()
             .find(|(id, _)| *id == pointer_id)
@@ -482,7 +518,7 @@ impl WindowState {
     /// If the pointer has an active capture, returns the capture target.
     /// Otherwise returns None, indicating normal hit-testing should be used.
     #[inline]
-    pub(crate) fn get_pointer_capture_target(&self, pointer_id: PointerId) -> Option<ViewId> {
+    pub(crate) fn get_pointer_capture_target(&self, pointer_id: PointerId) -> Option<VisualId> {
         self.pointer_capture_target
             .iter()
             .find(|(id, _)| *id == pointer_id)
@@ -492,7 +528,8 @@ impl WindowState {
     /// Check if any pointer has active capture to the given view.
     #[inline]
     #[allow(dead_code)]
-    pub(crate) fn has_any_capture(&self, target: ViewId) -> bool {
+    pub(crate) fn has_any_capture(&self, target: impl Into<VisualId>) -> bool {
+        let target = target.into();
         self.pointer_capture_target
             .iter()
             .any(|(_, v)| *v == target)
@@ -529,72 +566,82 @@ impl WindowState {
     }
 
     pub fn compute_layout(&mut self) {
-        if let Some(root) = self.root {
-            let mut measure_context = MeasureCx::default();
-            let _ = self.root_view_id.taffy().borrow_mut().set_style(
-                root,
-                crate::style::Style::new().size_full().to_taffy_style(),
-            );
-            let _ = self
-                .root_view_id
-                .taffy()
-                .borrow_mut()
-                .compute_layout_with_measure(
-                    root,
-                    taffy::prelude::Size {
-                        width: AvailableSpace::Definite((self.root_size.width / self.scale) as f32),
-                        height: AvailableSpace::Definite(
-                            (self.root_size.height / self.scale) as f32,
-                        ),
-                    },
-                    |known_dimensions, available_space, node_id, node_context, style| {
-                        match node_context {
-                            Some(LayoutNodeCx::Custom {
-                                measure,
-                                finalize: _,
-                            }) => measure(
-                                known_dimensions,
-                                available_space,
-                                node_id,
-                                style,
-                                &mut measure_context,
-                            ),
-                            None => taffy::Size::ZERO,
-                        }
-                    },
-                );
+        let mut measure_context = MeasureCx::default();
+        let _ = self.root_view_id.taffy().borrow_mut().set_style(
+            self.root_layout_node,
+            crate::style::Style::new().size_full().to_taffy_style(),
+        );
 
-            // Finalize nodes that requested it
-            let taffy = self.root_view_id.taffy();
-            let taffy = taffy.borrow();
-            for node_id in measure_context.needs_finalization {
-                if let Ok(layout) = taffy.layout(node_id)
-                    && let Some(LayoutNodeCx::Custom {
-                        finalize: Some(f), ..
-                    }) = taffy.get_node_context(node_id)
+        let _ = self
+            .root_view_id
+            .taffy()
+            .borrow_mut()
+            .compute_layout_with_measure(
+                self.root_layout_node,
+                taffy::prelude::Size {
+                    width: AvailableSpace::Definite((self.root_size.width / self.scale) as f32),
+                    height: AvailableSpace::Definite((self.root_size.height / self.scale) as f32),
+                },
+                |known_dimensions, available_space, node_id, node_context, style| match node_context
                 {
-                    f(node_id, layout);
-                }
+                    Some(LayoutNodeCx::Custom {
+                        measure,
+                        finalize: _,
+                    }) => measure(
+                        known_dimensions,
+                        available_space,
+                        node_id,
+                        style,
+                        &mut measure_context,
+                    ),
+                    None => taffy::Size::ZERO,
+                },
+            );
+
+        self.needs_layout = false;
+
+        // Finalize nodes that requested it
+        let taffy = self.root_view_id.taffy();
+        let taffy = taffy.borrow();
+        for node_id in measure_context.needs_finalization {
+            if let Ok(layout) = taffy.layout(node_id)
+                && let Some(LayoutNodeCx::Custom {
+                    finalize: Some(f), ..
+                }) = taffy.get_node_context(node_id)
+            {
+                f(node_id, layout);
             }
         }
+
+        self.needs_box_tree_commit = true;
     }
 
     pub fn commit_box_tree(&mut self) {
-        if let Some(root) = self.root {
-            compute_absolute_transforms_and_boxes(root, Affine::IDENTITY, Vec2::ZERO, None);
-            let damage = VIEW_STORAGE.with_borrow(|s| s.box_tree.borrow_mut().commit());
-            // for id in self.needs_post_layout.iter() {
-            //     let lcx = &mut LayoutCx::new(*id);
-            //     id.view().borrow_mut().post_layout(lcx);
-            // }
-            let cursor = self.last_cursor_location;
-            for damage_rect in &damage.dirty_rects {
-                if damage_rect.contains(cursor) {
-                    //     GlobalEventCx::new(self, Event::VisualDamageOverCursor)
-                    //         .update_hover_from_point(cursor);
-                }
+        let start = Instant::now();
+        let box_tree = self.box_tree.clone();
+        let layout_tree = self.layout_tree.clone();
+        compute_absolute_transforms_and_boxes(
+            layout_tree,
+            box_tree,
+            self.root_layout_node,
+            Affine::IDENTITY,
+            Vec2::ZERO,
+            None,
+        );
+        let damage = self.box_tree.borrow_mut().commit();
+        let pointer = self.last_pointer;
+        for damage_rect in &damage.dirty_rects {
+            if damage_rect.contains(pointer.0) {
+                clear_hit_test_cache();
+                crate::event::GlobalEventCx::new(self).update_hover_from_point(
+                    pointer.0,
+                    pointer.1,
+                    &Event::Window(WindowEvent::ChangeUnderCursor),
+                );
             }
         }
+        self.needs_box_tree_commit = false;
+        // dbg!(start.elapsed());
     }
 
     /// Requests that the style pass will run for `id` on the next frame, and ensures new frame is
@@ -605,8 +652,14 @@ impl WindowState {
 
     /// Requests that the layout pass will run for `id` on the next frame, and ensures new frame is
     /// scheduled to happen.
-    pub fn schedule_layout(&mut self, id: ViewId) {
-        self.scheduled_updates.push(FrameUpdate::Layout(id));
+    pub fn schedule_layout(&mut self) {
+        self.scheduled_updates.push(FrameUpdate::Layout);
+    }
+
+    /// Requests that the box tree be commited pass will run for `id` on the next frame, and ensures new frame is
+    /// scheduled to happen.
+    pub fn schedule_box_tree_commit(&mut self) {
+        self.scheduled_updates.push(FrameUpdate::BoxTreeCommit);
     }
 
     /// Requests that the paint pass will run for `id` on the next frame, and ensures new frame is
@@ -615,27 +668,25 @@ impl WindowState {
         self.scheduled_updates.push(FrameUpdate::Paint(id));
     }
 
-    /// Requests that `compute_layout` will run for `_id` and all direct and indirect children.
-    pub fn request_compute_layout_recursive(&mut self, _id: ViewId) {
-        self.request_compute_layout = true;
-    }
-
     // `Id` is unused currently, but could be used to calculate damage regions.
     pub fn request_paint(&mut self, _id: ViewId) {
         self.request_paint = true;
     }
 
-    pub(crate) fn update_active(&mut self, id: ViewId) {
+    pub fn update_active(&mut self, id: impl Into<VisualId>) {
         if self.active.is_some() {
             // the first update_active wins, so if there's active set,
             // don't do anything.
             return;
         }
+        let id = id.into();
         self.active = Some(id);
 
-        // To apply the styles of the Active selector
-        if self.has_style_for_sel(id, StyleSelector::Active) {
-            id.request_style();
+        if let Some(id) = id.exact_view_id() {
+            // To apply the styles of the Active selector
+            if self.has_style_for_sel(id, StyleSelector::Active) {
+                id.request_style();
+            }
         }
     }
 
@@ -647,38 +698,7 @@ impl WindowState {
         }
     }
 
-    pub(crate) fn clear_focus(&mut self) {
-        if let Some(old_id) = self.focus {
-            // To remove the styles applied by the Focus selector
-            if self.has_style_for_sel(old_id, StyleSelector::Focus)
-                || self.has_style_for_sel(old_id, StyleSelector::FocusVisible)
-            {
-                old_id.request_style();
-            }
-        }
-
-        if self.focus.is_some() {
-            self.prev_focus = self.focus;
-        }
-        self.focus = None;
-    }
-
-    pub(crate) fn update_focus(&mut self, id: ViewId, keyboard_navigation: bool) {
-        if self.focus.is_some() {
-            return;
-        }
-
-        self.focus = Some(id);
-        self.keyboard_navigation = keyboard_navigation;
-
-        if self.has_style_for_sel(id, StyleSelector::Focus)
-            || self.has_style_for_sel(id, StyleSelector::FocusVisible)
-        {
-            id.request_style();
-        }
-    }
-
-    pub(crate) fn has_style_for_sel(&mut self, id: ViewId, selector_kind: StyleSelector) -> bool {
+    pub(crate) fn has_style_for_sel(&self, id: ViewId, selector_kind: StyleSelector) -> bool {
         let view_state = id.state();
         let view_state = view_state.borrow();
 
@@ -692,49 +712,69 @@ impl WindowState {
         self.context_menu = actions;
     }
 
-    pub(crate) fn focus_changed(&mut self, old: Option<ViewId>, new: Option<ViewId>) {
-        if let Some(old_id) = old {
-            // To remove the styles applied by the Focus selector
-            // Use selector-aware method to only update views that have focus styles
-            if self.has_style_for_sel(old_id, StyleSelector::Focus) {
-                old_id.request_style_for_selector_recursive(StyleSelector::Focus);
-            }
-            if self.has_style_for_sel(old_id, StyleSelector::FocusVisible) {
-                old_id.request_style_for_selector_recursive(StyleSelector::FocusVisible);
-            }
-            old_id.apply_event(&EventListener::FocusLost, &Event::FocusLost);
-        }
-
-        if let Some(id) = new {
-            // To apply the styles of the Focus selector
-            // Use selector-aware method to only update views that have focus styles
-            if self.has_style_for_sel(id, StyleSelector::Focus) {
-                id.request_style_for_selector_recursive(StyleSelector::Focus);
-            }
-            if self.has_style_for_sel(id, StyleSelector::FocusVisible) {
-                id.request_style_for_selector_recursive(StyleSelector::FocusVisible);
-            }
-            id.apply_event(&EventListener::FocusGained, &Event::FocusGained);
-            id.scroll_to(None);
-        }
+    /// returns the previously set cursor if there was one
+    pub fn set_cursor(
+        &mut self,
+        id: impl Into<VisualId>,
+        cursor: CursorStyle,
+    ) -> Option<CursorStyle> {
+        self.needs_cursor_resolution = true;
+        self.visual_id_cursors.insert(id.into(), cursor)
     }
+
+    /// returns the previously set cursor if there was one
+    pub fn clear_cursor(&mut self, id: impl Into<VisualId>) -> Option<CursorStyle> {
+        self.needs_cursor_resolution = true;
+        self.visual_id_cursors.remove(&id.into())
+    }
+
+    // pub(crate) fn focus_changed(&mut self, old: Option<ViewId>, new: Option<ViewId>) {
+    //     if let Some(old_id) = old {
+    //         // To remove the styles applied by the Focus selector
+    //         // Use selector-aware method to only update views that have focus styles
+    //         if self.has_style_for_sel(old_id, StyleSelector::Focus) {
+    //             old_id.request_style_for_selector_recursive(StyleSelector::Focus);
+    //         }
+    //         if self.has_style_for_sel(old_id, StyleSelector::FocusVisible) {
+    //             old_id.request_style_for_selector_recursive(StyleSelector::FocusVisible);
+    //         }
+    //         old_id.apply_event(&EventListener::FocusLost, &Event::FocusLost);
+    //     }
+
+    //     if let Some(id) = new {
+    //         // To apply the styles of the Focus selector
+    //         // Use selector-aware method to only update views that have focus styles
+    //         if self.has_style_for_sel(id, StyleSelector::Focus) {
+    //             id.request_style_for_selector_recursive(StyleSelector::Focus);
+    //         }
+    //         if self.has_style_for_sel(id, StyleSelector::FocusVisible) {
+    //             id.request_style_for_selector_recursive(StyleSelector::FocusVisible);
+    //         }
+    //         id.apply_event(&EventListener::FocusGained, &Event::FocusGained);
+    //         id.scroll_to(None);
+    //     }
+    // }
 }
 
 fn compute_absolute_transforms_and_boxes(
+    layout_tree: Rc<RefCell<taffy::TaffyTree<LayoutNodeCx>>>,
+    box_tree: Rc<RefCell<BoxTree>>,
     node: NodeId,
     parent_transform_for_children: Affine,
     parent_scroll_context: Vec2,
     parent_box_node: Option<VisualId>,
 ) {
+    // ) -> TreeNodeData {
     VIEW_STORAGE.with_borrow(|s| {
         let mut scroll_ctx = parent_scroll_context;
-        let taffy = s.taffy.borrow();
+        let taffy = layout_tree.borrow();
         let layout = taffy.layout(node).unwrap();
 
         let local_pos = Point::new(layout.location.x as f64, layout.location.y as f64);
         let size = Size::new(layout.size.width as f64, layout.size.height as f64);
+        let local_rect = Rect::from_origin_size(Point::ZERO, size);
 
-        let (view_id, local_transform, scroll_offset) =
+        let (view_id, local_transform, scroll_offset, clip) =
             if let Some(&view_id) = s.taffy_to_view.get(&node) {
                 let state = s.states.get(view_id);
                 let style_transform = state
@@ -749,9 +789,12 @@ fn compute_absolute_transforms_and_boxes(
                     .as_ref()
                     .map(|s| s.borrow().child_translation)
                     .unwrap_or_default();
-                (Some(view_id), style_transform * transform, scroll)
+                let clip = state
+                    .as_ref()
+                    .and_then(|s| s.borrow().box_tree_props.clip_rect(local_rect));
+                (Some(view_id), style_transform * transform, scroll, clip)
             } else {
-                (None, Affine::IDENTITY, Vec2::ZERO)
+                (None, Affine::IDENTITY, Vec2::ZERO, None)
             };
 
         let local_transform = local_transform
@@ -769,13 +812,13 @@ fn compute_absolute_transforms_and_boxes(
                 s.borrow_mut().scroll_ctx = scroll_ctx;
             }
 
-            let local_rect = Rect::from_origin_size(Point::ZERO, size);
             // Insert or update in box tree
             let box_node_id = s.states.get(view_id).map(|s| s.borrow().visual_id).unwrap();
-            s.box_tree
+            box_tree
                 .borrow_mut()
                 .set_local_bounds(box_node_id.0, local_rect);
-            s.box_tree
+            box_tree.borrow_mut().set_local_clip(box_node_id.0, clip);
+            box_tree
                 .borrow_mut()
                 .set_local_transform(box_node_id.0, local_transform);
 
@@ -784,16 +827,30 @@ fn compute_absolute_transforms_and_boxes(
             parent_box_node
         };
 
-        // Traverse children with the current box node as their parent
+        // Collect children data
+        let mut children_data = Vec::new();
         if let Ok(children) = taffy.children(node) {
+            drop(taffy);
             for &child in &children {
                 compute_absolute_transforms_and_boxes(
+                    layout_tree.clone(),
+                    box_tree.clone(),
                     child,
                     children_parent_transform,
                     scroll_ctx,
                     current_box_node,
                 );
+                children_data.push(());
             }
         }
-    });
+
+        //     // Build tree node data
+        //     TreeNodeData {
+        //         view_id: view_id.map(|id| format!("{:?}", id)),
+        //         local_bounds: local_rect,
+        //         local_clip: clip,
+        //         local_transform,
+        //         children: children_data,
+        //     }
+    })
 }

@@ -2566,10 +2566,10 @@ fn test_overlay_fixed_translate_debug_layout() {
         );
     }
 
-    let layout_rect = content_id.get_layout_rect();
+    let visual_rect = content_id.get_visual_rect();
     eprintln!("Content layout_rect: {:?}", layout_rect);
 
-    let transform = content_id.get_transform();
+    let transform = content_id.get_visual_transform();
     let coeffs = transform.as_coeffs();
     eprintln!("Content transform: translate({}, {})", coeffs[4], coeffs[5]);
 
@@ -2983,7 +2983,7 @@ fn test_fixed_overlay_child_click_bounds() {
             content_layout.size.height
         );
     }
-    let content_rect = content_id.get_layout_rect();
+    let content_rect = content_id.get_visual_rect();
     eprintln!("Content layout_rect: {:?}", content_rect);
 
     if let Some(child_layout) = child_id.get_layout() {
@@ -2995,7 +2995,7 @@ fn test_fixed_overlay_child_click_bounds() {
             child_layout.size.height
         );
     }
-    let child_rect = child_id.get_layout_rect();
+    let child_rect = child_id.get_visual_rect();
     eprintln!("Child layout_rect: {:?}", child_rect);
 
     // Test clicks at various positions
@@ -3158,8 +3158,8 @@ fn test_fixed_overlay_child_probe_bounds() {
     eprintln!("=== Fixed Overlay Child Probe Bounds ===");
 
     // Get actual child bounds
-    let child_rect = child_id.get_layout_rect();
-    eprintln!("Child layout_rect: {:?}", child_rect);
+    let child_rect = child_id.get_visual_rect();
+    eprintln!("Child visual_rect: {:?}", child_rect);
 
     // Window: 200x200
     // Content: 80x60 at center (100, 100) with translate(-40, -30)

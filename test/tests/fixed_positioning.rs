@@ -641,7 +641,7 @@ fn test_fixed_container_with_translate_centering() {
     harness.rebuild();
 
     let layout = centered_id.get_layout().expect("Should have layout");
-    let transform = centered_id.get_transform();
+    let transform = centered_id.get_visual_transform();
     let coeffs = transform.as_coeffs();
 
     eprintln!(
@@ -724,13 +724,13 @@ fn test_fixed_element_window_origin() {
 
     // Get the window_origin - this is what determines paint position
     let window_origin = fixed_id.get_visual_origin();
-    let layout_rect = fixed_id.get_layout_rect();
+    let visual_rect = fixed_id.get_visual_rect();
 
     eprintln!(
         "Fixed element window_origin: ({}, {})",
         window_origin.x, window_origin.y
     );
-    eprintln!("Fixed element layout_rect: {:?}", layout_rect);
+    eprintln!("Fixed element layout_rect: {:?}", visual_rect);
 
     // window_origin should be the Taffy position (10, 20), NOT offset by parent
     assert!(
@@ -746,14 +746,14 @@ fn test_fixed_element_window_origin() {
 
     // layout_rect should be positioned at window_origin with the element's size
     assert!(
-        (layout_rect.x0 - 10.0).abs() < 0.1,
+        (visual_rect.x0 - 10.0).abs() < 0.1,
         "layout_rect.x0 should be 10, got {}",
-        layout_rect.x0
+        visual_rect.x0
     );
     assert!(
-        (layout_rect.y0 - 20.0).abs() < 0.1,
+        (visual_rect.y0 - 20.0).abs() < 0.1,
         "layout_rect.y0 should be 20, got {}",
-        layout_rect.y0
+        visual_rect.y0
     );
 }
 
