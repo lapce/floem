@@ -570,6 +570,212 @@ fn bench_active_view_dispatch(c: &mut Criterion) {
     group.finish();
 }
 
+/// Benchmarks specifically designed to test cache THRASHING - worst-case scenarios.
+/// These simulate fast pointer movement where the cache provides little to no benefit.
+fn bench_cache_thrashing(c: &mut Criterion) {
+    let mut group = c.benchmark_group("cache_thrashing");
+
+    // Scenario 1: Grid of non-overlapping sibling views (shared ancestry, different targets)
+    // Create a 5x5 grid of views that are all siblings, so they share the same parent path
+    // but each is a different target. Pointer movement across the grid will thrash the cache.
+    fn create_grid_siblings(grid_size: usize) -> impl IntoView {
+        let cell_size = 18.0;
+        let gap = 2.0;
+        let total_size = (cell_size + gap) * grid_size as f64;
+
+        let children: Vec<_> = (0..grid_size)
+            .flat_map(|row| {
+                (0..grid_size).map(move |col| {
+                    let x = col as f64 * (cell_size + gap);
+                    let y = row as f64 * (cell_size + gap);
+                    Empty::new().style(move |s| {
+                        s.absolute()
+                            .inset_left(x)
+                            .inset_top(y)
+                            .size(cell_size, cell_size)
+                    })
+                })
+            })
+            .collect();
+
+        Stack::from_iter(children).style(move |s| s.size(total_size, total_size))
+    }
+
+    // Benchmark: Diagonal movement across grid (hits different target each time)
+    // With 5x5 = 25 views, a 2-entry cache will thrash constantly
+    group.bench_function("diagonal_across_grid_5x5_shared_ancestry", |b| {
+        let size = 100;
+        let view = create_grid_siblings(size);
+        let mut harness =
+            HeadlessHarness::new_with_size(view, size as f64 * 25., size as f64 * 25.);
+
+        b.iter(|| {
+            // Move diagonally across the grid, hitting a different view each time
+            for i in 0..50 {
+                let row = i / size;
+                let col = i % size;
+                let x = col as f64 * 20.0 + 9.0; // center of cell
+                let y = row as f64 * 20.0 + 9.0;
+                harness.pointer_move(black_box(x), black_box(y));
+            }
+        });
+    });
+
+    // Benchmark: Random movement across grid
+    group.bench_function("random_movement_grid_5x5_shared_ancestry", |b| {
+        let view = create_grid_siblings(5);
+        let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+
+        // Pre-generate random positions to avoid measurement noise
+        let positions: Vec<(f64, f64)> = vec![
+            (9.0, 9.0),   // (0,0)
+            (69.0, 49.0), // (3,2)
+            (29.0, 89.0), // (1,4)
+            (89.0, 29.0), // (4,1)
+            (49.0, 69.0), // (2,3)
+            (9.0, 49.0),  // (0,2)
+            (89.0, 89.0), // (4,4)
+            (29.0, 29.0), // (1,1)
+            (69.0, 9.0),  // (3,0)
+            (49.0, 49.0), // (2,2)
+            (9.0, 89.0),  // (0,4)
+            (89.0, 9.0),  // (4,0)
+            (29.0, 69.0), // (1,3)
+            (69.0, 29.0), // (3,1)
+            (49.0, 9.0),  // (2,0)
+        ];
+
+        b.iter(|| {
+            for &(x, y) in &positions {
+                harness.pointer_move(black_box(x), black_box(y));
+            }
+        });
+    });
+
+    // Scenario 2: Completely different ancestry - separate tree roots
+    // Create multiple separate container trees positioned at different locations.
+    // Events hitting different trees will have completely different ancestor paths.
+    fn create_separate_trees() -> impl IntoView {
+        Stack::new((
+            // Tree 1: top-left
+            Container::new(
+                Container::new(Empty::new().style(|s| s.size(20.0, 20.0)))
+                    .style(|s| s.padding(5.0)),
+            )
+            .style(|s| s.absolute().inset_left(0.0).inset_top(0.0).size(30.0, 30.0)),
+            // Tree 2: top-right
+            Container::new(
+                Container::new(Empty::new().style(|s| s.size(20.0, 20.0)))
+                    .style(|s| s.padding(5.0)),
+            )
+            .style(|s| {
+                s.absolute()
+                    .inset_left(70.0)
+                    .inset_top(0.0)
+                    .size(30.0, 30.0)
+            }),
+            // Tree 3: bottom-left
+            Container::new(
+                Container::new(Empty::new().style(|s| s.size(20.0, 20.0)))
+                    .style(|s| s.padding(5.0)),
+            )
+            .style(|s| {
+                s.absolute()
+                    .inset_left(0.0)
+                    .inset_top(70.0)
+                    .size(30.0, 30.0)
+            }),
+            // Tree 4: bottom-right
+            Container::new(
+                Container::new(Empty::new().style(|s| s.size(20.0, 20.0)))
+                    .style(|s| s.padding(5.0)),
+            )
+            .style(|s| {
+                s.absolute()
+                    .inset_left(70.0)
+                    .inset_top(70.0)
+                    .size(30.0, 30.0)
+            }),
+        ))
+        .style(|s| s.size(100.0, 100.0))
+    }
+
+    // Benchmark: Moving between completely separate trees
+    // This is the absolute worst case - no shared ancestry, complete cache misses
+    group.bench_function("separate_trees_no_shared_ancestry", |b| {
+        let view = create_separate_trees();
+        let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+
+        b.iter(|| {
+            // Cycle through all 4 trees - each has completely different ancestry
+            harness.pointer_move(black_box(15.0), black_box(15.0)); // Tree 1
+            harness.pointer_move(black_box(85.0), black_box(15.0)); // Tree 2
+            harness.pointer_move(black_box(15.0), black_box(85.0)); // Tree 3
+            harness.pointer_move(black_box(85.0), black_box(85.0)); // Tree 4
+            harness.pointer_move(black_box(15.0), black_box(15.0)); // Tree 1 again
+            harness.pointer_move(black_box(85.0), black_box(15.0)); // Tree 2 again
+            harness.pointer_move(black_box(15.0), black_box(85.0)); // Tree 3 again
+            harness.pointer_move(black_box(85.0), black_box(85.0)); // Tree 4 again
+        });
+    });
+
+    // Benchmark: Rapid alternation between 10 different targets (siblings)
+    // Shows cache thrashing with moderate number of targets
+    fn create_horizontal_strip(count: usize) -> impl IntoView {
+        let cell_width = 18.0;
+        let gap = 2.0;
+
+        let children: Vec<_> = (0..count)
+            .map(|i| {
+                let x = i as f64 * (cell_width + gap);
+                Empty::new().style(move |s| {
+                    s.absolute()
+                        .inset_left(x)
+                        .inset_top(10.0)
+                        .size(cell_width, 80.0)
+                })
+            })
+            .collect();
+
+        Stack::from_iter(children).style(|s| s.size(400.0, 100.0))
+    }
+
+    group.bench_function("rapid_alternation_10_siblings", |b| {
+        let view = create_horizontal_strip(10);
+        let mut harness = HeadlessHarness::new_with_size(view, 400.0, 100.0);
+
+        b.iter(|| {
+            // Alternate rapidly between 10 different targets
+            for i in 0..20 {
+                let x = (i % 10) as f64 * 20.0 + 9.0;
+                harness.pointer_move(black_box(x), black_box(50.0));
+            }
+        });
+    });
+
+    // Benchmark: Simulated "fast mouse swipe" - continuous movement
+    // Models real-world fast cursor movement where each position hits different view
+    group.bench_function("fast_swipe_across_grid", |b| {
+        let size = 50;
+        let view = create_grid_siblings(size);
+        let mut harness =
+            HeadlessHarness::new_with_size(view, size as f64 * 25., size as f64 * 25.);
+
+        b.iter(|| {
+            // Simulate a fast diagonal swipe from top-left to bottom-right
+            // Each step hits a different cell
+            for i in 0..50 {
+                let progress = i as f64 / 50.0;
+                let x = progress * 190.0 + 5.0;
+                let y = progress * 190.0 + 5.0;
+                harness.pointer_move(black_box(x), black_box(y));
+            }
+        });
+    });
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_flat_tree_dispatch,
@@ -582,6 +788,7 @@ criterion_group!(
     bench_cache_effectiveness,
     bench_no_listeners_path,
     bench_active_view_dispatch,
+    bench_cache_thrashing,
 );
 
 criterion_main!(benches);
