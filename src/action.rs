@@ -28,7 +28,6 @@ use crate::{
     window::tracking::with_window,
 };
 
-#[cfg(any(feature = "rfd-async-std", feature = "rfd-tokio"))]
 pub use crate::platform::file_action::*;
 
 /// Add an update message

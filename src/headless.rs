@@ -92,6 +92,8 @@ impl HeadlessHarness {
     /// automatically via `process_update_no_paint()` after event dispatch.
     pub fn rebuild(&mut self) {
         self.process_update_no_paint();
+        // process a second time to handle updates after processing deferred updates
+        self.process_update_no_paint();
     }
 
     /// Run pending reactive effects and process all updates.
