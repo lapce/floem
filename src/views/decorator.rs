@@ -10,6 +10,7 @@ use std::rc::Rc;
 use ui_events::keyboard::{Key, KeyState, KeyboardEvent, Modifiers};
 
 use crate::{
+    ViewId,
     action::{set_window_menu, set_window_scale, set_window_title},
     animate::Animation,
     event::{Event, EventListener, EventPropagation},
@@ -164,7 +165,7 @@ pub trait Decorators: IntoView {
             if apply {
                 id.add_class(C::class_ref());
             } else {
-                id.remove_class(C::class_ref());
+                ViewId::remove_class(&id, C::class_ref());
             }
         });
         intermediate

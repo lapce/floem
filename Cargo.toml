@@ -71,9 +71,7 @@ rustc-hash = "2.1"
 smallvec = "1.15"
 educe = "0.6"
 taffy = { version = "0.9.1", features = ["grid"] }
-rfd = { version = "0.15", default-features = false, features = [
-  "xdg-portal",
-], optional = true }
+rfd = { version = "0.17.1", default-features = true}
 tokio = { version = "1", features = ["sync", "rt"], optional = true }
 raw-window-handle = { workspace = true }
 unicode-segmentation = { workspace = true }
@@ -168,8 +166,6 @@ image-tiff = ["image/tiff"]
 image-webp = ["image/webp"]
 tokio = ["dep:tokio"]
 # rfd (file dialog) async runtime
-rfd-async-std = ["dep:rfd", "rfd/async-std"]
-rfd-tokio = ["dep:rfd", "rfd/tokio"]
 crossbeam = ["dep:crossbeam", "floem_renderer/crossbeam"]
 localization = ["dep:fluent-bundle", "dep:unic-langid", "dep:sys-locale"]
 

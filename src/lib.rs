@@ -232,7 +232,6 @@ pub use peniko::kurbo;
 pub use platform::{
     Clipboard, ClipboardError, FileDialogOptions, FileInfo, FileSpec, Menu, SubMenu,
 };
-#[cfg(any(feature = "rfd-async-std", feature = "rfd-tokio"))]
 pub use platform::{open_file, save_as};
 pub use taffy;
 pub use ui_events;

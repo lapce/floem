@@ -4,4 +4,4 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-floem = { path = "../..", features = ["rfd-async-std"] }
+floem = { path = "../.." }
