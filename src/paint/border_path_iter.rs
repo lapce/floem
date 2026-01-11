@@ -94,7 +94,7 @@ impl<'a> Iterator for BorderPathIter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         assert!(
-            self.total_len >= 0.0,
+            self.total_len > 0.0,
             "Total length must be positive. Total_len: {}",
             self.total_len
         );

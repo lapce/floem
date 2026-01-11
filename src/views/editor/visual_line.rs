@@ -875,7 +875,7 @@ impl Lines {
 
             debug_assert_eq!(
                 line_index, 0,
-                "Line index was zero. This likely indicates keeping an rvline past when it was valid."
+                "Line index was not zero. This likely indicates keeping an rvline past when it was valid."
             );
 
             rope_text.offset_of_line(line)
