@@ -1,0 +1,13 @@
+[package]
+name = "floem_store"
+version.workspace = true
+edition = "2021"
+repository = "https://github.com/lapce/floem"
+description = "Elm-style state management for Floem with structural field access"
+license.workspace = true
+
+[dependencies]
+floem_reactive = { path = "../reactive", version = "0.2.0" }
+floem_store_derive = { path = "../store-derive", version = "0.2.0" }
+indexmap = "2.7"
+parking_lot = { workspace = true }
