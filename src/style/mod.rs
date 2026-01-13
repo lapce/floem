@@ -228,191 +228,217 @@ pub fn resolve_nested_maps(
     interact_state: &InteractionState,
     screen_size_bp: ScreenSizeBp,
     classes: &[StyleClassRef],
-    inherited_context: &mut Style,
-    class_context: &std::rc::Rc<Style>,
+    inherited_context: &Style,
+    class_context: &Style,
 ) -> (Style, bool) {
-    // Start with depth 0 for the initial call
-    resolve_nested_maps_internal(
-        style,
+    let mut classes_applied = false;
+
+    // Phase_ 1: Resolve class styles (with selectors, collecting context mappings)
+    let (class_style, mut class_context_mappings) = resolve_classes_collecting_mappings(
+        classes,
         interact_state,
         screen_size_bp,
-        inherited_context,
         class_context,
-        classes,
-        0,
-    )
+        &mut classes_applied,
+    );
+
+    // Phase 2: Resolve view's inline style (with selectors, collecting context mappings)
+    let (view_style, mut view_context_mappings) =
+        resolve_style_collecting_mappings(style, interact_state, screen_size_bp);
+
+    // Phase 3: Apply class context mappings (with recursive resolution)
+    // Use class_style as the base, context includes class_style + view_style
+    let mut context_result = class_style.clone();
+    let mut i = 0;
+    while i < class_context_mappings.len() {
+        let mapping = class_context_mappings[i].clone();
+        let combined_context = inherited_context
+            .clone()
+            .apply(view_style.clone())
+            .apply(context_result.clone());
+        let mapped = mapping(context_result.clone(), &combined_context);
+        let (resolved, new_mappings) =
+            resolve_selectors_collecting_mappings(mapped, interact_state, screen_size_bp);
+        context_result.apply_mut_no_mappings(resolved);
+        class_context_mappings.splice(i + 1..i + 1, new_mappings);
+        i += 1;
+    }
+
+    // Apply view style over the context result (view style wins)
+    let mut result = context_result.apply(view_style);
+
+    // Phase 4: Apply view context mappings over result (with recursive resolution)
+    let mut i = 0;
+    while i < view_context_mappings.len() {
+        let mapping = view_context_mappings[i].clone();
+        let combined_context = inherited_context.clone().apply(result.clone());
+        let mapped = mapping(result.clone(), &combined_context);
+        let (resolved, new_mappings) =
+            resolve_selectors_collecting_mappings(mapped, interact_state, screen_size_bp);
+        result.apply_mut_no_mappings(resolved);
+        view_context_mappings.splice(i + 1..i + 1, new_mappings);
+        i += 1;
+    }
+
+    (result, classes_applied)
 }
 
-#[allow(
-    clippy::only_used_in_recursion,
-    reason = "for debugging it's nice to have the depth"
-)]
-fn resolve_nested_maps_internal(
+fn resolve_classes_collecting_mappings(
+    classes: &[StyleClassRef],
+    interact_state: &InteractionState,
+    screen_size_bp: ScreenSizeBp,
+    class_context: &Style,
+    classes_applied: &mut bool,
+) -> (Style, Vec<ContextMapFn>) {
+    let mut result = Style::new();
+    let mut mappings = Vec::new();
+
+    for class in classes {
+        if let Some(map) = class_context.get_nested_map(class.key) {
+            *classes_applied = true;
+            let (resolved, class_mappings) =
+                resolve_style_collecting_mappings(map.clone(), interact_state, screen_size_bp);
+            result.apply_mut(resolved);
+            mappings.extend(class_mappings);
+        }
+    }
+
+    (result, mappings)
+}
+
+fn resolve_style_collecting_mappings(
     style: Style,
     interact_state: &InteractionState,
     screen_size_bp: ScreenSizeBp,
-    inherited_context: &mut Style,
-    class_context: &std::rc::Rc<Style>,
-    classes: &[StyleClassRef],
-    depth: u32,
-) -> (Style, bool) {
-    // Prevent infinite recursion in case of circular style dependencies
+) -> (Style, Vec<ContextMapFn>) {
+    let mut mappings = Vec::new();
+
+    // Extract context mappings from style before resolving
+    if let Some(style_mappings) = extract_context_mappings(&style) {
+        mappings.extend(style_mappings);
+    }
+
+    // Resolve all selectors (and collect any new mappings found)
+    let (resolved, selector_mappings) =
+        resolve_selectors_collecting_mappings(style, interact_state, screen_size_bp);
+    mappings.extend(selector_mappings);
+
+    (resolved, mappings)
+}
+
+fn resolve_selectors_collecting_mappings(
+    mut style: Style,
+    interact_state: &InteractionState,
+    screen_size_bp: ScreenSizeBp,
+) -> (Style, Vec<ContextMapFn>) {
     const MAX_DEPTH: u32 = 20;
-    if depth >= MAX_DEPTH {
-        return (style, false);
-    }
+    let mut depth = 0;
+    let mut all_mappings = Vec::new();
 
-    let mut changed = false;
-    let mut classes_applied = false;
+    loop {
+        if depth >= MAX_DEPTH {
+            break;
+        }
+        depth += 1;
 
-    // Apply class styles from class_context ONLY on first call (depth == 0).
-    // On recursion, class styles have already been merged with the view's own styles,
-    // and selector nested maps have been consumed. Re-applying class styles would
-    // cause class selectors (like .selected(RED)) to override the view's own
-    // selectors (like .selected(BLUE)) that were already merged and applied.
-    let (style, changed_new) = if depth == 0 {
-        let (s, c) = style.apply_classes_from_context(classes, class_context);
-        if c {
-            for class in classes {
-                if let Some(nested) = class_context.get_nested_map(class.key) {
-                    classes_applied |= nested.any_inherited();
+        let mut changed = false;
+
+        // Helper to apply a nested map and collect any context mappings from it
+        let mut apply_nested = |style: &mut Style, key: StyleKey| -> bool {
+            if let Some(map) = style.get_nested_map(key) {
+                // Extract mappings before applying
+                if let Some(mappings) = extract_context_mappings(&map) {
+                    all_mappings.extend(mappings);
                 }
+                style.apply_mut_no_mappings(map);
+                style.remove_nested_map(key);
+                true
+            } else {
+                false
             }
-        }
-        (s, c)
-    } else {
-        (style, false)
-    };
+        };
 
-    if changed_new {
-        changed = true;
-    }
-
-    // Apply context mappings with actual ancestor values (from inherited context)
-    let (mut style, changed_new) = style.apply_context_mappings(inherited_context);
-    if changed_new {
-        changed = true;
-    }
-
-    // Apply screen size breakpoints
-    if let Some(map) = style.get_nested_map(screen_size_bp_to_key(screen_size_bp)) {
-        classes_applied |= map.any_inherited();
-        style.apply_mut(map);
-        style.remove_nested_map(screen_size_bp_to_key(screen_size_bp));
-        changed = true;
-    }
-
-    // DarkMode
-    if interact_state.is_dark_mode {
-        if let Some(map) = style.get_nested_map(StyleSelector::DarkMode.to_key()) {
-            classes_applied |= map.any_inherited();
-            style.apply_mut(map);
-            style.remove_nested_map(StyleSelector::DarkMode.to_key());
+        // Apply screen size breakpoints
+        if apply_nested(&mut style, screen_size_bp_to_key(screen_size_bp)) {
             changed = true;
         }
-    }
 
-    // Disabled state (takes precedence)
-    // Use style.get(Disabled) to check the current style's disabled state.
-    // This handles:
-    // 1. The view's own set_disabled() calls (reactive or static)
-    // 2. Inherited disabled state from parent views (passed via context)
-    if interact_state.is_disabled || style.get(Disabled) {
-        if let Some(map) = style.get_nested_map(StyleSelector::Disabled.to_key()) {
-            classes_applied |= map.any_inherited();
-            style.apply_mut(map);
-            style.remove_nested_map(StyleSelector::Disabled.to_key());
+        // DarkMode
+        if interact_state.is_dark_mode && apply_nested(&mut style, StyleSelector::DarkMode.to_key())
+        {
             changed = true;
         }
-    } else {
-        // Other states only apply if not disabled
 
-        // Selected
-        if interact_state.is_selected || style.get(Selected) {
-            if let Some(map) = style.get_nested_map(StyleSelector::Selected.to_key()) {
-                classes_applied |= map.any_inherited();
-                style.apply_mut(map);
-                style.remove_nested_map(StyleSelector::Selected.to_key());
+        // Disabled state
+        if interact_state.is_disabled || style.get(Disabled) {
+            if apply_nested(&mut style, StyleSelector::Disabled.to_key()) {
                 changed = true;
             }
-        }
-
-        // Hover
-        if interact_state.is_hovered {
-            if let Some(map) = style.get_nested_map(StyleSelector::Hover.to_key()) {
-                classes_applied |= map.any_inherited();
-                style.apply_mut(map);
-                style.remove_nested_map(StyleSelector::Hover.to_key());
-                changed = true;
-            }
-        }
-
-        // File Hover
-        if interact_state.is_file_hover {
-            if let Some(map) = style.get_nested_map(StyleSelector::FileHover.to_key()) {
-                classes_applied |= map.any_inherited();
-                style.apply_mut(map);
-                style.remove_nested_map(StyleSelector::FileHover.to_key());
-                changed = true;
-            }
-        }
-
-        // Focus states
-        if interact_state.is_focused {
-            if let Some(map) = style.get_nested_map(StyleSelector::Focus.to_key()) {
-                classes_applied |= map.any_inherited();
-                style.apply_mut(map);
-                style.remove_nested_map(StyleSelector::Focus.to_key());
+        } else {
+            // Selected
+            if (interact_state.is_selected || style.get(Selected))
+                && apply_nested(&mut style, StyleSelector::Selected.to_key())
+            {
                 changed = true;
             }
 
-            if interact_state.using_keyboard_navigation {
-                if let Some(map) = style.get_nested_map(StyleSelector::FocusVisible.to_key()) {
-                    classes_applied |= map.any_inherited();
-                    style.apply_mut(map);
-                    style.remove_nested_map(StyleSelector::FocusVisible.to_key());
+            // Hover
+            if interact_state.is_hovered && apply_nested(&mut style, StyleSelector::Hover.to_key())
+            {
+                changed = true;
+            }
+
+            // File Hover
+            if interact_state.is_file_hover
+                && apply_nested(&mut style, StyleSelector::FileHover.to_key())
+            {
+                changed = true;
+            }
+
+            // Focus states
+            if interact_state.is_focused {
+                if apply_nested(&mut style, StyleSelector::Focus.to_key()) {
                     changed = true;
                 }
 
-                if interact_state.is_clicking {
-                    if let Some(map) = style.get_nested_map(StyleSelector::Active.to_key()) {
-                        classes_applied |= map.any_inherited();
-                        style.apply_mut(map);
-                        style.remove_nested_map(StyleSelector::Active.to_key());
+                if interact_state.using_keyboard_navigation {
+                    if apply_nested(&mut style, StyleSelector::FocusVisible.to_key()) {
+                        changed = true;
+                    }
+
+                    if interact_state.is_clicking
+                        && apply_nested(&mut style, StyleSelector::Active.to_key())
+                    {
                         changed = true;
                     }
                 }
             }
-        }
 
-        // Active (mouse)
-        if interact_state.is_clicking && !interact_state.using_keyboard_navigation {
-            if let Some(map) = style.get_nested_map(StyleSelector::Active.to_key()) {
-                classes_applied |= map.any_inherited();
-                style.apply_mut(map);
-                style.remove_nested_map(StyleSelector::Active.to_key());
+            // Active (mouse)
+            if interact_state.is_clicking
+                && !interact_state.using_keyboard_navigation
+                && apply_nested(&mut style, StyleSelector::Active.to_key())
+            {
                 changed = true;
             }
         }
+
+        if !changed {
+            break;
+        }
     }
 
-    // Recurse once at the end if anything changed
-    // if changed && depth + 1 < MAX_DEPTH {
-    if changed {
-        let (new_style, recursive_classes_applied) = resolve_nested_maps_internal(
-            style,
-            interact_state,
-            screen_size_bp,
-            inherited_context,
-            class_context,
-            classes,
-            depth + 1,
-        );
-        style = new_style;
-        classes_applied |= recursive_classes_applied;
-    }
+    (style, all_mappings)
+}
 
-    (style, classes_applied)
+fn extract_context_mappings(style: &Style) -> Option<Vec<ContextMapFn>> {
+    let key = StyleKey {
+        info: &CONTEXT_MAPPINGS_INFO,
+    };
+    style.map.get(&key).map(|rc| {
+        let mappings = rc.downcast_ref::<ContextMappings>().unwrap();
+        mappings.0.iter().cloned().collect()
+    })
 }
 
 #[derive(Default, Clone)]
@@ -930,8 +956,71 @@ impl Style {
         }
     }
 
+    pub(crate) fn apply_iter_no_mappings<'a>(
+        &mut self,
+        iter: impl Iterator<Item = (&'a StyleKey, &'a Rc<dyn Any>)>,
+    ) {
+        for (k, v) in iter {
+            match k.info {
+                StyleKeyInfo::Class(..) | StyleKeyInfo::Selector(..) => {
+                    // Track class maps for O(1) early-exit in apply_only_class_maps
+                    if matches!(k.info, StyleKeyInfo::Class(..)) {
+                        self.has_class_maps = true;
+                    }
+                    match self.map.entry(*k) {
+                        Entry::Occupied(mut e) => {
+                            // We need to merge the new map with the existing map.
+
+                            let v = v.downcast_ref::<Style>().unwrap();
+                            match Rc::get_mut(e.get_mut()) {
+                                Some(current) => {
+                                    current
+                                        .downcast_mut::<Style>()
+                                        .unwrap()
+                                        .apply_mut(v.clone());
+                                }
+                                None => {
+                                    let mut current =
+                                        e.get_mut().downcast_ref::<Style>().unwrap().clone();
+                                    current.apply_mut(v.clone());
+                                    *e.get_mut() = Rc::new(current);
+                                }
+                            }
+                        }
+                        Entry::Vacant(e) => {
+                            e.insert(v.clone());
+                        }
+                    }
+                }
+                StyleKeyInfo::Transition => {
+                    self.map.insert(*k, v.clone());
+                }
+                StyleKeyInfo::Prop(info) => {
+                    // Track inherited props for O(1) early-exit in apply_only_inherited
+                    if info.inherited {
+                        self.has_inherited = true;
+                    }
+                    match self.map.entry(*k) {
+                        Entry::Occupied(mut e) => {
+                            // We need to merge the new map with the existing map.
+                            e.insert((info.combine)(e.get().clone(), v.clone()));
+                        }
+                        Entry::Vacant(e) => {
+                            e.insert(v.clone());
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
     pub(crate) fn apply_mut(&mut self, over: Style) {
         self.apply_iter(over.map.iter());
+    }
+
+    pub(crate) fn apply_mut_no_mappings(&mut self, over: Style) {
+        self.apply_iter_no_mappings(over.map.iter());
     }
 
     /// Apply another `Style` to this style, returning a new `Style` with the overrides
@@ -955,38 +1044,38 @@ impl Style {
         overrides.fold(self, |acc, x| acc.apply(x))
     }
 
-    /// Apply context mappings with the given context (inherited props from ancestors).
-    /// Returns the style with context values applied and a flag indicating if changes were made.
-    ///
-    /// Uses iterative approach instead of recursion for better performance.
-    pub(crate) fn apply_context_mappings(mut self, context: &Style) -> (Self, bool) {
-        let key = StyleKey {
-            info: &CONTEXT_MAPPINGS_INFO,
-        };
-        let mut changed = false;
+    // /// Apply context mappings with the given context (inherited props from ancestors).
+    // /// Returns the style with context values applied and a flag indicating if changes were made.
+    // ///
+    // /// Uses iterative approach instead of recursion for better performance.
+    // pub(crate) fn apply_context_mappings(mut self, context: &Style) -> (Self, bool) {
+    //     let key = StyleKey {
+    //         info: &CONTEXT_MAPPINGS_INFO,
+    //     };
+    //     let mut changed = false;
 
-        // Iterative approach: keep processing until no more context mappings
-        loop {
-            // Single lookup: use remove directly instead of get + remove
-            let ctx_mappings = self
-                .map
-                .remove(&key)
-                .and_then(|v| v.downcast_ref::<ContextMappings>().cloned());
+    //     // Iterative approach: keep processing until no more context mappings
+    //     loop {
+    //         // Single lookup: use remove directly instead of get + remove
+    //         let ctx_mappings = self
+    //             .map
+    //             .remove(&key)
+    //             .and_then(|v| v.downcast_ref::<ContextMappings>().cloned());
 
-            match ctx_mappings {
-                Some(mappings) => {
-                    changed = true;
-                    // Iterate over Rc<Vec> - no allocation needed
-                    for mapping in mappings.0.iter() {
-                        self = mapping(self, context);
-                    }
-                }
-                None => break,
-            }
-        }
+    //         match ctx_mappings {
+    //             Some(mappings) => {
+    //                 changed = true;
+    //                 // Iterate over Rc<Vec> - no allocation needed
+    //                 for mapping in mappings.0.iter() {
+    //                     self = mapping(self, context);
+    //                 }
+    //             }
+    //             None => break,
+    //         }
+    //     }
 
-        (self, changed)
-    }
+    //     (self, changed)
+    // }
 }
 
 impl Debug for Style {

@@ -217,6 +217,7 @@ impl WindowHandle {
         window_handle.event(Event::ThemeChanged(
             window_handle.window_state.light_dark_theme,
         ));
+        window_handle.window_state.mark_dark_mode_changed();
         window_handle.size(size.get_untracked());
         window_handle
     }
@@ -392,7 +393,7 @@ impl WindowHandle {
             // if the window theme has been set manually then changes from the os shouldn't do anything
             return;
         }
-        let old_theme = self.window_state.light_dark_theme;
+        self.window_state.mark_dark_mode_changed();
         if let Some(theme) = theme {
             // Only override the theme with the default if the user did not provide one
             if self.default_theme.is_some() {
@@ -409,9 +410,7 @@ impl WindowHandle {
                 self.set_menu_theme_for_windows(theme);
             }
             // Mark dark mode changed if theme actually changed
-            if theme != old_theme {
-                self.window_state.mark_dark_mode_changed();
-            }
+            // if theme != old_theme {}
         } else {
             self.window_state.theme_overriden = false;
         }
@@ -516,8 +515,6 @@ impl WindowHandle {
     }
 
     fn style(&mut self) {
-        let _start = Instant::now();
-
         // Take any pending global recalc (dark mode, responsive changes)
         let global_change = self.window_state.take_global_recalc();
 

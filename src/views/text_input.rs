@@ -2,7 +2,7 @@
 use crate::action::{exec_after, set_ime_allowed, set_ime_cursor_area};
 use crate::event::{EventListener, EventPropagation};
 use crate::reactive::{Effect, RwSignal};
-use crate::style::{FontFamily, FontProps, PaddingProp, SelectionStyle, TextAlignProp};
+use crate::style::{FontFamily, FontProps, PaddingProp, SelectionStyle, StyleClass, TextAlignProp};
 use crate::style::{FontStyle, FontWeight, TextColor};
 use crate::unit::{PxPct, PxPctAuto};
 use crate::view::ViewId;
@@ -1282,7 +1282,13 @@ impl View for TextInput {
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         let style = cx.style();
 
-        let placeholder_style = style.clone().apply_class(PlaceholderTextClass);
+        let placeholder_style = cx.resolve_nested_maps(
+            style.clone(),
+            &[PlaceholderTextClass::class_ref()],
+            false,
+            false,
+            false,
+        );
         self.placeholder_style.read_style(cx, &placeholder_style);
 
         if self.font.read(cx) {
