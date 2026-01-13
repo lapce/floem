@@ -156,13 +156,13 @@ impl<'a> StyleCx<'a> {
         self.selected = true;
     }
 
-    /// Internal method used by Floem to compute the styles for the view.
-    ///
-    /// This is a convenience wrapper that uses default change propagation.
-    /// For optimized recalculation with graduated propagation, use [`style_view_with_change`].
-    pub fn style_view(&mut self, view_id: ViewId) {
-        self.style_view_with_change(view_id, StyleRecalcChange::NONE);
-    }
+    // /// Internal method used by Floem to compute the styles for the view.
+    // ///
+    // /// This is a convenience wrapper that uses default change propagation.
+    // /// For optimized recalculation with graduated propagation, use [`style_view_with_change`].
+    // pub fn style_view(&mut self, view_id: ViewId) {
+    //     self.style_view_with_change(view_id, StyleRecalcChange::NONE);
+    // }
 
     /// Compute styles for a view with graduated change propagation.
     ///

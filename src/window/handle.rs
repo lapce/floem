@@ -538,6 +538,11 @@ impl WindowHandle {
                 let cx = &mut StyleCx::new(&mut self.window_state, view_id);
                 cx.style_view_with_change(view_id, global_change);
             }
+            if self.window_state.capture.is_some() {
+                // we need to break if capture because when capturing we style all views so no need to loop here.
+                // we style all views so that the capture can accurately report how long a full style takes
+                break;
+            }
         }
 
         // Clear pending child changes after style pass completes
