@@ -416,7 +416,7 @@ impl ViewState {
         }
 
         // Create mutable contexts - inherited for with_context evaluation
-        let mut inherited_ctx = (**inherited_context).clone();
+        let inherited_ctx = (**inherited_context).clone();
 
         // Resolve all nested maps: selectors, responsive styles, and classes
         let (combined, classes_applied) = crate::style::resolve_nested_maps(
@@ -424,7 +424,7 @@ impl ViewState {
             &interact_state,
             screen_size_bp,
             &all_classes,
-            &mut inherited_ctx,
+            &inherited_ctx,
             class_context,
         );
 

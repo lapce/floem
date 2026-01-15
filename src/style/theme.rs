@@ -99,7 +99,7 @@ impl DesignSystem {
     // Border
 
     pub fn border(&self) -> Color {
-        let adjustment = if self.is_dark { 0.15 } else { -0.15 };
+        let adjustment = if self.is_dark { 0.25 } else { -0.25 };
         self.bg_base.map_lightness(|l| l + adjustment)
     }
 
@@ -390,6 +390,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
         .transition(Background, Transition::linear(100.millis()))
         .justify_center()
         .items_center()
+        .cursor(CursorStyle::Pointer)
         .hover(|s| s.with_theme(|s, t| s.background(t.bg_overlay())))
         .apply(focus_style())
         .apply(border_style(true));
@@ -406,6 +407,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
         })
         .transition(Background, Transition::linear(100.millis()))
         .focus(|s| s.with_theme(|s, t| s.hover(|s| s.background(t.bg_overlay()))))
+        .cursor(CursorStyle::Pointer)
         .apply(border_style(true))
         .apply(hover_style())
         .apply(focus_style());
@@ -500,7 +502,6 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
                 .hover(|s| s.background(t.bg_overlay()))
         })
         .aspect_ratio(2.)
-        .border(1.)
         // .focus(|s| s.with_theme(|s, t| s.hover(|s| s.background(t.bg_overlay()))))
         .border_radius(50.pct())
         .set(ToggleButtonCircleRad, 75.pct())
@@ -609,6 +610,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
                     .active(|s| s.background(t.text_muted()))
                     .hover(|s| s.background(t.text_muted()))
             })
+            .transition_background(Transition::ease_in_out(Duration::from_millis(300)))
         })
         .class(scroll::Track, |s| {
             s.with_theme(|s, t| s.hover(|s| s.background(t.border().with_alpha(0.3))))

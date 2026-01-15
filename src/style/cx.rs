@@ -15,6 +15,7 @@ use web_time::Instant;
 
 use crate::animate::{AnimStateKind, RepeatMode};
 use crate::inspector::CaptureState;
+use crate::style::{StyleClassRef, resolve_nested_maps};
 use crate::view::ViewId;
 use crate::view::stacking::{invalidate_all_overlay_caches, invalidate_stacking_cache};
 use crate::view::{ChangeFlags, StackingInfo};
@@ -73,12 +74,7 @@ pub struct StyleCx<'a> {
     /// Separate from inherited to allow independent propagation and caching.
     pub(crate) class_context: Rc<Style>,
     pub(crate) direct: Style,
-    saved_inherited: Vec<Rc<Style>>,
-    saved_class_context: Vec<Rc<Style>>,
     pub(crate) now: Instant,
-    saved_disabled: Vec<bool>,
-    saved_selected: Vec<bool>,
-    saved_hidden: Vec<bool>,
     disabled: bool,
     hidden: bool,
     selected: bool,
@@ -139,12 +135,7 @@ impl<'a> StyleCx<'a> {
             inherited,
             class_context,
             direct: Default::default(),
-            saved_inherited: Default::default(),
-            saved_class_context: Default::default(),
             now: Instant::now(),
-            saved_disabled: Default::default(),
-            saved_selected: Default::default(),
-            saved_hidden: Default::default(),
             disabled,
             hidden: false,
             selected,
@@ -174,7 +165,6 @@ impl<'a> StyleCx<'a> {
     ///
     /// See [`StyleRecalcChange`] for details on the propagation model.
     pub fn style_view_with_change(&mut self, view_id: ViewId, change: StyleRecalcChange) {
-        self.save();
         let view = view_id.view();
         let view_state = view_id.state();
 
@@ -190,14 +180,12 @@ impl<'a> StyleCx<'a> {
         };
 
         if !change.should_recalc(view_is_dirty) {
-            self.restore();
             return;
         }
 
         // Fast path: only propagate inherited properties, skip full resolution
         if change.can_use_inherited_fast_path(has_selectors) && !view_is_dirty {
             self.apply_inherited_only(view_id, change);
-            self.restore();
             return;
         }
 
@@ -210,10 +198,12 @@ impl<'a> StyleCx<'a> {
 
             // Clear STYLE flag
             vs.requested_changes.remove(ChangeFlags::STYLE);
+            self.window_state.style_dirty.remove(&view_id);
 
             // Update view style if needed
             if vs.requested_changes.contains(ChangeFlags::VIEW_STYLE) {
                 vs.requested_changes.remove(ChangeFlags::VIEW_STYLE);
+                self.window_state.view_style_dirty.remove(&view_id);
                 if let Some(view_style) = view.borrow().view_style() {
                     let offset = vs.view_style_offset;
                     vs.style.set(offset, view_style);
@@ -247,8 +237,9 @@ impl<'a> StyleCx<'a> {
         // Phase 3: Build interaction state for selector matching
         // ─────────────────────────────────────────────────────────────────────
         let this_view_disabled = base_style.get(Disabled);
+        let this_view_selected = base_style.builtin().set_selected();
         let view_interact_state = InteractionState {
-            is_selected: self.selected || selected_from_state,
+            is_selected: self.selected || selected_from_state || this_view_selected,
             is_hovered: self.window_state.is_hovered(&view_id),
             is_disabled: this_view_disabled || self.disabled,
             is_focused: self.window_state.is_focused(&view_id),
@@ -258,6 +249,7 @@ impl<'a> StyleCx<'a> {
             using_keyboard_navigation: self.window_state.keyboard_navigation,
         };
         self.disabled = view_interact_state.is_disabled;
+        self.selected = view_interact_state.is_selected;
 
         // ─────────────────────────────────────────────────────────────────────
         // Phase 4: Resolve combined style (with cache optimization)
@@ -402,6 +394,7 @@ impl<'a> StyleCx<'a> {
         // Track fixed elements for viewport-relative sizing
         let new_is_fixed = computed_style.get(super::IsFixed);
         let view_is_disabled = computed_style.get(Disabled);
+        let view_is_selected = computed_style.builtin().set_selected();
         let view_is_display_none = computed_style.get(DisplayProp) == taffy::Display::None;
 
         // Update view state in a single borrow
@@ -416,7 +409,7 @@ impl<'a> StyleCx<'a> {
             vs.computed_style = computed_style;
             vs.style_interaction_cx = InheritedInteractionCx {
                 disabled: self.disabled || view_is_disabled,
-                selected: self.selected,
+                selected: self.selected || view_is_selected,
             };
 
             (old_fixed, old_taffy, force_hid)
@@ -432,8 +425,9 @@ impl<'a> StyleCx<'a> {
             view_id.request_layout();
         }
 
-        self.disabled = self.disabled || view_is_disabled;
-        self.hidden = view_is_display_none || force_hidden;
+        self.disabled |= view_is_disabled;
+        self.hidden |= view_is_display_none || force_hidden;
+        self.selected |= view_is_selected;
         self.current_view = view_id;
 
         // ─────────────────────────────────────────────────────────────────────
@@ -554,8 +548,6 @@ impl<'a> StyleCx<'a> {
                 };
             }
         }
-
-        self.restore();
     }
 
     /// Fast path for inherited-only changes.
@@ -619,6 +611,37 @@ impl<'a> StyleCx<'a> {
         view.borrow_mut().style_pass(self);
     }
 
+    pub fn resolve_nested_maps(
+        &self,
+        style: Style,
+        classes: &[StyleClassRef],
+        is_focused: bool,
+        is_clicking: bool,
+        is_file_hover: bool,
+    ) -> Style {
+        let this_disabled = style.get(Disabled);
+        let this_selected = style.builtin().set_selected();
+        let interact_state = InteractionState {
+            is_selected: self.selected || this_selected,
+            is_hovered: false,
+            is_disabled: this_disabled || self.disabled,
+            is_focused,
+            is_clicking,
+            is_dark_mode: self.window_state.is_dark_mode(),
+            is_file_hover,
+            using_keyboard_navigation: self.window_state.keyboard_navigation,
+        };
+        resolve_nested_maps(
+            style,
+            &interact_state,
+            self.window_state.screen_size_bp,
+            classes,
+            &self.inherited,
+            &self.class_context,
+        )
+        .0
+    }
+
     /// Get the pending child change for a view.
     ///
     /// This is used by views that manually process their children in `style_pass`
@@ -633,22 +656,6 @@ impl<'a> StyleCx<'a> {
 
     pub fn now(&self) -> Instant {
         self.now
-    }
-
-    pub fn save(&mut self) {
-        self.saved_inherited.push(self.inherited.clone());
-        self.saved_class_context.push(self.class_context.clone());
-        self.saved_disabled.push(self.disabled);
-        self.saved_selected.push(self.selected);
-        self.saved_hidden.push(self.hidden);
-    }
-
-    pub fn restore(&mut self) {
-        self.inherited = self.saved_inherited.pop().unwrap_or_default();
-        self.class_context = self.saved_class_context.pop().unwrap_or_default();
-        self.disabled = self.saved_disabled.pop().unwrap_or_default();
-        self.selected = self.saved_selected.pop().unwrap_or_default();
-        self.hidden = self.saved_hidden.pop().unwrap_or_default();
     }
 
     pub fn get_prop<P: StyleProp>(&self, _prop: P) -> Option<P::Type> {
