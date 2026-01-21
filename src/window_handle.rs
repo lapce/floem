@@ -422,14 +422,6 @@ impl WindowHandle {
                 }
             }
             cx.app_state.clicking.clear();
-
-            #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-            if self.context_menu.with_untracked(|c| c.is_some()) {
-                // we had a pointer up event
-                // if context menu is still shown
-                // we should hide it
-                self.context_menu.set(None);
-            }
         }
 
         self.process_update();
