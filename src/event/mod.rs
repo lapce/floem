@@ -92,6 +92,8 @@ pub enum EventListener {
     ImeDisabled,
     /// Receives [`Event::ImePreedit`]
     ImePreedit,
+    /// Receives [`Event::ImeDeleteSurrounding`]
+    ImeDeleteSurrounding,
     /// Receives [`Event::ImeCommit`]
     ImeCommit,
     /// Receives [`Event::PointerWheel`]
@@ -138,6 +140,10 @@ pub enum Event {
         cursor: Option<(usize, usize)>,
     },
     ImeCommit(String),
+    ImeDeleteSurrounding {
+        before_bytes: usize,
+        after_bytes: usize,
+    },
     WindowGotFocus,
     WindowLostFocus,
     WindowClosed,
@@ -201,6 +207,7 @@ impl Event {
             | Event::ImeEnabled
             | Event::ImeDisabled
             | Event::ImePreedit { .. }
+            | Event::ImeDeleteSurrounding { .. }
             | Event::ImeCommit(_)
             | Event::FileDrag(
                 FileDragEvent::DragEntered { .. }
@@ -337,6 +344,7 @@ impl Event {
             | Event::ImeEnabled
             | Event::ImeDisabled
             | Event::ImePreedit { .. }
+            | Event::ImeDeleteSurrounding { .. }
             | Event::ThemeChanged(_)
             | Event::ImeCommit(_)
             | Event::WindowClosed
@@ -373,6 +381,7 @@ impl Event {
             Event::ImeEnabled => Some(EventListener::ImeEnabled),
             Event::ImeDisabled => Some(EventListener::ImeDisabled),
             Event::ImePreedit { .. } => Some(EventListener::ImePreedit),
+            Event::ImeDeleteSurrounding { .. } => Some(EventListener::ImeDeleteSurrounding),
             Event::ImeCommit(_) => Some(EventListener::ImeCommit),
             Event::WindowClosed => Some(EventListener::WindowClosed),
             Event::WindowResized(_) => Some(EventListener::WindowResized),

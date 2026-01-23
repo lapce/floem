@@ -96,7 +96,7 @@ pub struct TextInput {
     placeholder_style: PlaceholderStyle,
     selection_style: SelectionStyle,
     preedit: Option<Preedit>,
-    // Index of where are we in the main buffer.
+    // Index of where are we in the main buffer, in bytes.
     cursor_glyph_idx: usize,
     // This can be retrieved from the glyph, but we store it for efficiency.
     cursor_x: f64,
@@ -1249,6 +1249,37 @@ impl View for TextInput {
                 } else {
                     // clear preedit and queue UI update
                     self.preedit.take().is_some()
+                }
+            }
+            Event::ImeDeleteSurrounding {
+                before_bytes,
+                after_bytes,
+            } => {
+                if self.is_focused {
+                    self.buffer.update(|buf| {
+                        // If the index falls inside a character, delete that character too.
+                        // This only happens on desynchronized input:
+                        // 1. IME sends a request with index on code point boundary
+                        // 2. Another source shifts text around
+                        // 3. Request arrives.
+                        // This situation is expected to be rare, so not trying to be too clever at handling it.
+                        let before_start = buf[..self.cursor_glyph_idx]
+                            .char_indices()
+                            .rev()
+                            .find(|(index, _)| self.cursor_glyph_idx - index >= *before_bytes)
+                            .map(|(i, _)| i)
+                            .unwrap_or(0);
+                        let after_end = buf[self.cursor_glyph_idx..]
+                            .char_indices()
+                            .map(|(index, _)| index)
+                            .find(|index| index >= after_bytes)
+                            .map(|i| i + self.cursor_glyph_idx)
+                            .unwrap_or(buf.len());
+                        buf.replace_range(before_start..after_end, "");
+                    });
+                    true
+                } else {
+                    false
                 }
             }
             Event::ImeCommit(text) => {

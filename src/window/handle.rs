@@ -1286,8 +1286,14 @@ impl WindowHandle {
             Ime::Disabled => {
                 self.event(Event::ImeDisabled);
             }
-            Ime::DeleteSurrounding { .. } => {
-                // TODO?
+            Ime::DeleteSurrounding {
+                before_bytes,
+                after_bytes,
+            } => {
+                self.event(Event::ImeDeleteSurrounding {
+                    before_bytes,
+                    after_bytes,
+                });
             }
         }
     }
