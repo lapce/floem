@@ -14,7 +14,7 @@ use std::{future::Future, sync::Arc};
 use crossbeam::channel::{bounded as sync_channel, Receiver};
 #[cfg(not(feature = "crossbeam"))]
 use std::sync::mpsc::{sync_channel, Receiver};
-use wgpu::Backends;
+use wgpu::{Backends, InstanceFlags};
 
 use winit::window::{Window, WindowId};
 
@@ -52,6 +52,7 @@ impl GpuResources {
     ) -> Receiver<Result<(Self, wgpu::Surface<'static>), GpuResourceError>> {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: Backends::from_env().unwrap_or(Backends::all()),
+            flags: InstanceFlags::from_env_or_default(),
             ..Default::default()
         });
         // Channel passing to do async out-of-band within the winit event_loop since wasm can't
