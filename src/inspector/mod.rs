@@ -157,13 +157,8 @@ pub struct CaptureState {
 
 impl CaptureState {
     pub(crate) fn capture_style(id: ViewId, cx: &mut StyleCx, computed_style: Style) {
-        if cx.window_state.capture.is_some() {
-            cx.window_state
-                .capture
-                .as_mut()
-                .unwrap()
-                .styles
-                .insert(id, computed_style);
+        if let Some(capture) = cx.window_state.capture.as_mut() {
+            capture.styles.insert(id, computed_style);
         }
     }
 }
