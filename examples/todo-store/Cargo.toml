@@ -1,0 +1,8 @@
+[package]
+name = "todo-store"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+floem = { path = "../.." }
+floem_store = { path = "../../store" }
