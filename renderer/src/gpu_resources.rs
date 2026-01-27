@@ -14,7 +14,7 @@ use std::{future::Future, sync::Arc};
 use crossbeam::channel::{bounded as sync_channel, Receiver};
 #[cfg(not(feature = "crossbeam"))]
 use std::sync::mpsc::{sync_channel, Receiver};
-use wgpu::Backends;
+use wgpu::{Backends, Limits};
 
 use winit::window::{Window, WindowId};
 
@@ -90,6 +90,7 @@ impl GpuResources {
                             &wgpu::DeviceDescriptor {
                                 label: None,
                                 required_features,
+                                required_limits: wgpu::Limits::downlevel_defaults(),
                                 ..Default::default()
                             },
                             None,
