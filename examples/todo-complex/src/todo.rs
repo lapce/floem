@@ -3,7 +3,7 @@ use std::{hash::Hasher, sync::atomic::AtomicU64, time::Instant};
 use floem::{
     action::{debounce_action, exec_after},
     easing::Spring,
-    event::{Event, EventListener},
+    event::Event,
     kurbo::Stroke,
     menu::Menu,
     muda::{self, NativeIcon},
@@ -127,15 +127,14 @@ impl IntoView for TodoState {
                     )
                     .class(SvgClass, |s| s.size_pct(50., 50.))
             })
-            .on_key_down(Key::Named(NamedKey::Enter), |_| true, |_| {})
-            .on_event_stop(EventListener::PointerDown, move |_| {});
+            .on_key_down(Key::Named(NamedKey::Enter), |_| true, |_, _| {});
 
         let input = text_input(self.description)
             .placeholder("New To-Do")
             .into_view();
         let input_id = input.id();
         let input = input
-            .disable_default_event(move || (EventListener::PointerDown, !is_active))
+            .disable_default_event(move || (listener::PointerDown, !is_active))
             .style(move |s| {
                 s.width_full()
                     .apply_if(!is_active.get(), |s| s.cursor(CursorStyle::Default))
@@ -157,18 +156,18 @@ impl IntoView for TodoState {
             .on_key_down(
                 Key::Named(NamedKey::Enter),
                 |m| m.is_empty(),
-                move |_| {
+                move |_, _| {
                     AppCommand::Escape.execute();
                 },
             )
-            .on_event_stop(EventListener::PointerDown, move |_| {
+            .on_event_stop(listener::PointerDown, move |_, _| {
                 AppCommand::SetSelected(self).execute();
             })
-            .on_event_stop(EventListener::DoubleClick, move |_| {
+            .on_event_stop(listener::DoubleClick, move |_, _| {
                 AppCommand::SetActive(self).execute();
                 input_id.request_focus();
             })
-            .on_event_stop(EventListener::FocusGained, move |_| {
+            .on_event_stop(listener::FocusGained, move |_, _| {
                 AppCommand::SetActive(self).execute();
                 input_focused.notify();
             });
@@ -187,11 +186,13 @@ impl IntoView for TodoState {
             .debug_name("Todo Checkbox and text input (main controls)")
             .style(|s| s.gap(10).width_full().items_center())
             .container()
-            .on_double_click_stop(move |_| {
+            .on_event_stop(listener::DoubleClick, move |_, _| {
                 AppCommand::SetActive(self).execute();
             })
-            .on_click_stop(move |e| {
-                let Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. })) = e else {
+            .on_event_stop(listener::Click, move |cx, _| {
+                let Some(Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. }))) =
+                    &cx.caused_by
+                else {
                     return;
                 };
                 if state.modifiers == OS_MOD {

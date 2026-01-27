@@ -15,7 +15,7 @@ use floem_test::prelude::*;
 fn test_focus_style_applied_when_focused() {
     let view = Empty::new().style(|s| {
         s.size(100.0, 100.0)
-            .focusable(true)
+            .keyboard_navigable(true)
             .background(palette::css::BLUE)
             .focus(|s| s.background(palette::css::YELLOW))
     });
@@ -47,7 +47,7 @@ fn test_focus_style_applied_when_focused() {
 fn test_focus_visible_selector_detected() {
     let view = Empty::new().style(|s| {
         s.size(100.0, 100.0)
-            .focusable(true)
+            .keyboard_navigable(true)
             .background(palette::css::BLUE)
             .focus_visible(|s| s.background(palette::css::ORANGE))
     });
@@ -148,10 +148,10 @@ fn test_active_style_removed_after_pointer_up() {
 /// Test multiple focusable views - only one should be focused at a time.
 #[test]
 fn test_only_one_view_focused_at_time() {
-    let view1 = Empty::new().style(|s| s.size(50.0, 50.0).focusable(true));
+    let view1 = Empty::new().style(|s| s.size(50.0, 50.0).keyboard_navigable(true));
     let id1 = view1.view_id();
 
-    let view2 = Empty::new().style(|s| s.size(50.0, 50.0).focusable(true));
+    let view2 = Empty::new().style(|s| s.size(50.0, 50.0).keyboard_navigable(true));
     let id2 = view2.view_id();
 
     let view = Stack::new((view1, view2)).style(|s| s.size(100.0, 50.0));

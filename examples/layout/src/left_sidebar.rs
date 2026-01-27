@@ -1,4 +1,4 @@
-use floem::{event::EventListener, imbl, prelude::*, style::Position};
+use floem::{imbl, prelude::*, style::Position};
 
 const SIDEBAR_WIDTH: f64 = 140.0;
 const TOPBAR_HEIGHT: f64 = 30.0;
@@ -59,19 +59,11 @@ pub fn left_sidebar_view() -> impl IntoView {
             .width_full()
     });
 
-    let view = Stack::vertical((top_bar, content)).style(|s| s.width_full().height_full());
-
-    let id = view.id();
-    view.on_event_stop(EventListener::KeyUp, move |cx| {
-        if let floem::event::Event::Key(KeyboardEvent {
-            state: KeyState::Up,
-            key,
-            ..
-        }) = &cx.event
-        {
+    Stack::vertical((top_bar, content))
+        .style(|s| s.width_full().height_full())
+        .on_event_stop(listener::KeyUp, move |_cx, KeyboardEvent { key, .. }| {
             if *key == Key::Named(NamedKey::F11) {
-                id.inspect();
+                floem::action::inspect();
             }
-        }
-    })
+        })
 }

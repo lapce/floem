@@ -264,9 +264,9 @@ impl HeadlessHarness {
         self.window_handle.window_state.is_focused(id)
     }
 
-    /// Check if a view is currently active.
-    pub fn is_active(&self, id: impl Into<VisualId>) -> bool {
-        self.window_handle.window_state.is_active(id)
+    /// Check if a view has pointer capture.
+    pub fn has_capture(&self, id: impl Into<VisualId>) -> bool {
+        self.window_handle.window_state.has_capture(id)
     }
 
     /// Get the current interaction state for a view.

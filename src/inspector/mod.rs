@@ -2,18 +2,20 @@ mod data;
 pub(crate) mod profiler;
 mod view;
 
-use crate::context::StyleCx;
-use crate::event::{Event, EventListener, EventPropagation};
-use crate::prelude::ViewTuple;
-use crate::style::{
-    FontSize, OverflowX, OverflowY, Style, StyleClassRef, StyleKeyInfo, StylePropRef, Transition,
+use crate::{
+    AnyView, Clipboard,
+    context::StyleCx,
+    event::{EventPropagation, listener},
+    prelude::ViewTuple,
+    style::{
+        self, FontSize, OverflowX, OverflowY, Style, StyleClassRef, StyleKeyInfo, StylePropRef,
+        Transition,
+    },
+    theme::StyleThemeExt as _,
+    view::{IntoView, View, ViewId},
+    views::{ContainerExt, Decorators, Label, ScrollExt, Stack, dyn_container},
+    window::state::WindowState,
 };
-use crate::theme::StyleThemeExt as _;
-use crate::view::ViewId;
-use crate::view::{IntoView, View};
-use crate::views::{ContainerExt, Decorators, Label, ScrollExt, Stack, dyn_container};
-use crate::window::state::WindowState;
-use crate::{AnyView, Clipboard, style};
 use floem_reactive::{Effect, RwSignal, Scope, SignalGet, SignalUpdate};
 use peniko::color::palette;
 use peniko::kurbo::{Point, Rect, Size};
@@ -53,7 +55,7 @@ impl CapturedView {
         let view_state = id.state();
         let view_state = view_state.borrow();
         let combined_style = view_state.combined_style.clone();
-        let keyboard_navigable = view_state.combined_style.builtin().focusable();
+        let keyboard_navigable = view_state.combined_style.builtin().keyboard_navigable();
         let focused = window_state.focus_state.current_path().last() == Some(&id.get_visual_id());
         let clipped = layout.intersect(clip);
         let custom_name = &view_state.debug_name;
@@ -165,9 +167,9 @@ fn add_event<T: View + 'static>(
     datas: RwSignal<CapturedDatas>,
 ) -> impl View + use<T> {
     let capture = capture.clone();
-    row.on_secondary_click({
+    row.on_event(listener::SecondaryClick, {
         let name = name.clone();
-        move |_| {
+        move |_, _| {
             if !name.is_empty() {
                 // TODO: Log error
                 let _ = Clipboard::set_contents(name.clone());
@@ -175,40 +177,36 @@ fn add_event<T: View + 'static>(
             EventPropagation::Stop
         }
     })
-    .on_event_stop(EventListener::KeyDown, {
+    .on_event_stop(listener::KeyDown, {
         let capture = capture.clone();
-        move |cx| {
-            if let Event::Key(KeyboardEvent { key, modifiers, .. }) = &cx.event {
-                match key {
-                    keyboard::Key::Named(NamedKey::ArrowUp) => {
-                        let rs = find_relative_view_by_id_with_self(id, &capture.root);
-                        let Some(ids) = rs else {
-                            return;
-                        };
-                        if !modifiers.ctrl() {
-                            if let Some(id) = ids.big_brother_id {
-                                update_select_view_id(id, &capture_view, true, datas);
-                            }
-                        } else if let Some(id) = ids.parent_id {
-                            update_select_view_id(id, &capture_view, true, datas);
-                        }
+        move |_cx, KeyboardEvent { key, modifiers, .. }| match key {
+            keyboard::Key::Named(NamedKey::ArrowUp) => {
+                let rs = find_relative_view_by_id_with_self(id, &capture.root);
+                let Some(ids) = rs else {
+                    return;
+                };
+                if !modifiers.ctrl() {
+                    if let Some(id) = ids.big_brother_id {
+                        update_select_view_id(id, &capture_view, true, datas);
                     }
-                    keyboard::Key::Named(NamedKey::ArrowDown) => {
-                        let rs = find_relative_view_by_id_with_self(id, &capture.root);
-                        let Some(ids) = rs else {
-                            return;
-                        };
-                        if !modifiers.ctrl() {
-                            if let Some(id) = ids.next_brother_id {
-                                update_select_view_id(id, &capture_view, true, datas);
-                            }
-                        } else if let Some(id) = ids.child_id {
-                            update_select_view_id(id, &capture_view, true, datas);
-                        }
-                    }
-                    _ => {}
+                } else if let Some(id) = ids.parent_id {
+                    update_select_view_id(id, &capture_view, true, datas);
                 }
             }
+            keyboard::Key::Named(NamedKey::ArrowDown) => {
+                let rs = find_relative_view_by_id_with_self(id, &capture.root);
+                let Some(ids) = rs else {
+                    return;
+                };
+                if !modifiers.ctrl() {
+                    if let Some(id) = ids.next_brother_id {
+                        update_select_view_id(id, &capture_view, true, datas);
+                    }
+                } else if let Some(id) = ids.child_id {
+                    update_select_view_id(id, &capture_view, true, datas);
+                }
+            }
+            _ => {}
         }
     })
 }

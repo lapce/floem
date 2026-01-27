@@ -21,6 +21,9 @@ thread_local! {
     /// These need to be re-parented after the view tree is fully assembled.
     static PENDING_SCOPE_REPARENTS: RefCell<HashSet<ViewId>> = RefCell::new(HashSet::new());
 }
+use crate::context::EventCallbackConfig;
+use crate::event::DispatchKind;
+use crate::event::listener::EventListenerKey;
 use crate::view::LayoutTree;
 use crate::window::handle::get_current_view;
 use crate::{BoxTree, VisualId};
@@ -28,14 +31,13 @@ use crate::{
     ScreenLayout,
     action::add_update_message,
     animate::{AnimStateCommand, Animation},
-    context::{EventCallback, ResizeCallback},
-    event::EventListener,
+    context::EventCallback,
     message::{
         CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES, DeferredChild, DeferredChildren,
         DeferredReactiveSetup, UpdateMessage,
     },
     platform::menu::Menu,
-    style::{Draggable, Focusable, PointerEvents, Style, StyleClassRef, StyleSelector},
+    style::{Focusable, PointerEvents, Style, StyleClassRef, StyleSelector},
     window::tracking::window_id_for_root,
 };
 
@@ -254,7 +256,7 @@ impl ViewId {
     /// set the transform on a view that is applied after style transforms
     pub fn set_transform(&self, transform: Affine) {
         self.state().borrow_mut().transform = transform;
-        self.request_box_tree_commit();
+        self.request_box_tree_update_for_view();
     }
 
     pub(crate) fn state(&self) -> Rc<RefCell<ViewState>> {
@@ -265,7 +267,7 @@ impl ViewId {
     pub(crate) fn view(&self) -> Rc<RefCell<Box<dyn View>>> {
         VIEW_STORAGE.with_borrow(|s| {
             s.views.get(*self).cloned().unwrap_or_else(|| {
-                dbg!("stale");
+                eprintln!("stale");
                 s.stale_view.clone()
             })
         })
@@ -573,12 +575,13 @@ impl ViewId {
     /// This is the transform used by event dispatch to convert pointer coordinates.
     pub fn get_visual_transform(&self) -> peniko::kurbo::Affine {
         let visual_id = self.get_visual_id();
-        VIEW_STORAGE
-            .with_borrow_mut(|s| {
-                let box_tree = s.box_tree(*self);
-                box_tree.borrow().world_transform(visual_id.0)
-            })
-            .unwrap_or_default()
+        VIEW_STORAGE.with_borrow_mut(|s| {
+            let box_tree = s.box_tree(*self);
+            match box_tree.borrow().world_transform(visual_id.0) {
+                Ok(transform) => transform,
+                Err(transform) => transform.value().unwrap(),
+            }
+        })
     }
 
     /// Return the world-space axis-aligned bounding box for this view.
@@ -588,13 +591,14 @@ impl ViewId {
     /// or rounded clips.
     pub fn get_visual_rect(&self) -> Rect {
         let visual_id = self.get_visual_id();
-        VIEW_STORAGE
-            .with_borrow_mut(|s| {
-                let box_tree = s.box_tree(*self);
+        VIEW_STORAGE.with_borrow_mut(|s| {
+            let box_tree = s.box_tree(*self);
 
-                box_tree.borrow().world_bounds(visual_id.0)
-            })
-            .unwrap_or_default()
+            match box_tree.borrow().world_bounds(visual_id.0) {
+                Ok(bounds) => bounds,
+                Err(bounds) => bounds.value().unwrap(),
+            }
+        })
     }
 
     /// Returns the view's visual position (after applying all clips clips and css transforms) in window coordinates.
@@ -603,9 +607,11 @@ impl ViewId {
         VIEW_STORAGE
             .with_borrow_mut(|s| {
                 let box_tree = s.box_tree(*self);
-                box_tree.borrow().world_bounds(visual_id.0)
+                match box_tree.borrow().world_bounds(visual_id.0) {
+                    Ok(bounds) => bounds,
+                    Err(bounds) => bounds.value().unwrap(),
+                }
             })
-            .unwrap_or_default()
             .origin()
     }
 
@@ -713,9 +719,9 @@ impl ViewId {
     /// Set a translation that will affect children.
     ///
     /// If you have a view that visually affects how far children should scroll, set it here.
-    pub fn set_child_translation(&self, child_translation: peniko::kurbo::Vec2) {
+    pub fn set_child_translation(&self, child_translation: peniko::kurbo::Vec2) -> bool {
         let state = self.state();
-        let needs_box_tree_commit = {
+        let needs_box_tree_update = {
             let mut state = state.borrow_mut();
             if state.child_translation != child_translation {
                 state.child_translation = child_translation;
@@ -724,9 +730,12 @@ impl ViewId {
                 false
             }
         };
-        if needs_box_tree_commit {
-            self.request_box_tree_commit();
+        if needs_box_tree_update {
+            for child in self.children() {
+                child.request_box_tree_update_for_view();
+            }
         }
+        needs_box_tree_update
     }
 
     /// set the clip rectange in local coordinates in the box tree
@@ -777,13 +786,6 @@ impl ViewId {
         self.state().borrow().computed_style.get(Focusable)
     }
 
-    /// Check if this id can be dragged.
-    ///
-    /// This is done by checking if the style for this view has `Draggable` set to true.
-    pub fn can_drag(&self) -> bool {
-        self.state().borrow().computed_style.get(Draggable)
-    }
-
     /// Request that this the `id` view be styled, laid out and painted again.
     /// This will recursively request this for all parents.
     pub fn request_all(&self) {
@@ -799,7 +801,21 @@ impl ViewId {
         add_update_message(UpdateMessage::RequestLayout);
     }
 
-    /// Request that this view have it's layout pass run
+    /// Request that the box tree be updated from the layout tree (full walk) and committed.
+    /// Use this after layout changes that affect the entire tree.
+    pub fn request_box_tree_update(&self) {
+        add_update_message(UpdateMessage::RequestBoxTreeUpdate);
+    }
+
+    /// Request that this specific view's box tree node be updated and committed.
+    /// This is more efficient than a full tree update when only this view changed
+    /// (e.g., after a transform or scroll offset change).
+    pub fn request_box_tree_update_for_view(&self) {
+        add_update_message(UpdateMessage::RequestBoxTreeUpdateForView(*self));
+    }
+
+    /// Request that the box tree be committed without updating from layout.
+    /// Use this when you've manually updated box tree nodes and just need to commit.
     pub fn request_box_tree_commit(&self) {
         add_update_message(UpdateMessage::RequestBoxTreeCommit);
     }
@@ -887,23 +903,10 @@ impl ViewId {
         self.state().borrow_mut().popout_menu = Some(Rc::new(menu));
     }
 
-    /// Request that this view receive the active state (mark that this element is currently being interacted with)
-    ///
-    /// When an View has Active, it will receive events such as mouse events, even if the mouse is not directly over this view.
-    /// This is usefor for views such as Sliders, where the mouse event should be sent to the slider view as long as the mouse is pressed down,
-    /// even if the mouse moves out of the view, or even out of the Window.
-    pub fn request_active(&self) {
-        self.add_update_message(UpdateMessage::Active(self.get_visual_id()));
-    }
-
-    /// Request that the active state be cleared from the window
-    pub fn clear_active(&self) {
-        self.add_update_message(UpdateMessage::ClearActive);
-    }
-
     // =========================================================================
-    // Pointer Capture API (W3C Pointer Events inspired)
+    // Pointer Capture API (W3C Pointer Events)
     // =========================================================================
+    //
 
     /// Set pointer capture for this view.
     ///
@@ -998,21 +1001,16 @@ impl ViewId {
     }
 
     /// Add an callback on an action for a given `EventListener`
-    pub fn add_event_listener(&self, listener: EventListener, action: Box<EventCallback>) {
+    pub(crate) fn add_event_listener(
+        &self,
+        listener: EventListenerKey,
+        action: Box<EventCallback>,
+        config: EventCallbackConfig,
+    ) {
         let state = self.state();
-        state.borrow_mut().add_event_listener(listener, action);
-    }
-
-    /// Set a callback that should be run when the size of the view changes
-    pub fn add_resize_listener(&self, action: Rc<ResizeCallback>) {
-        let state = self.state();
-        state.borrow_mut().add_resize_listener(action);
-    }
-
-    /// Set a callback that should be run when the position of the view changes
-    pub fn add_move_listener(&self, action: Rc<dyn Fn(Point)>) {
-        let state = self.state();
-        state.borrow_mut().add_move_listener(action);
+        state
+            .borrow_mut()
+            .add_event_listener(listener, action, config);
     }
 
     /// Set a callback that should be run when the view is removed from the view tree
@@ -1070,7 +1068,7 @@ impl ViewId {
     /// Disables the default view behavior for the specified event.
     ///
     /// Children will still see the event, but the view event function will not be called nor the event listeners on the view
-    pub fn disable_default_event(&self, event: EventListener) {
+    pub fn disable_default_event(&self, event: EventListenerKey) {
         self.state()
             .borrow_mut()
             .disable_default_events
@@ -1078,7 +1076,7 @@ impl ViewId {
     }
 
     /// Re-enables the default view behavior for a previously disabled event.
-    pub fn remove_disable_default_event(&self, event: EventListener) {
+    pub fn remove_disable_default_event(&self, event: EventListenerKey) {
         self.state()
             .borrow_mut()
             .disable_default_events
@@ -1264,9 +1262,85 @@ impl ViewId {
         })
     }
 
-    /// use this if your view wants to run the layout function after any window layout change
-    pub fn needs_post_layout(&self) {
-        self.add_update_message(UpdateMessage::NeedsPostLayout(*self));
+    /// use this if your view wants to receive a [`LayoutChanged`](crate::context::LayoutChanged) event when the layout changes.
+    pub fn has_layout_listener(&self) {
+        self.add_update_message(UpdateMessage::HasLayoutListener(*self));
+    }
+
+    /// use this if your view wants to receive a [`VisualChanged`](crate::context::VisualChanged) event when the visual position changes.
+    pub fn has_visual_change_listener(&self) {
+        self.add_update_message(UpdateMessage::HasVisualChangedListener(*self));
+    }
+
+    pub(crate) fn get_layout_window_origin(&self) -> Point {
+        self.state().borrow().layout_window_origin
+    }
+
+    /// Dispatch an event to this view using the specified routing strategy.
+    ///
+    /// This queues an event to be dispatched during the next event processing cycle.
+    /// The event will be routed according to the `dispatch_kind` parameter.
+    ///
+    /// # Arguments
+    ///
+    /// * `event` - The event to dispatch
+    /// * `dispatch_kind` - The routing strategy to use:
+    ///   - `DispatchKind::Directed { target, phases }` - Routes to target with specified phases
+    ///     - Use `Phases::all()` for full capture/bubble
+    ///     - Use `Phases::TARGET` for direct dispatch only
+    ///     - Use `Phases::BUBBLE` for bubble-only dispatch
+    ///   - `DispatchKind::Spatial { point, phases }` - Routes based on hit testing at a point
+    ///   - `DispatchKind::Subtree { target, respect_propagation }` - Routes to target and all descendants
+    ///   - `DispatchKind::Focused { phases }` - Routes to currently focused view
+    ///   - `DispatchKind::Global { respect_propagation }` - Broadcasts to all views
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// // Dispatch a click directly to a specific view (target only, no propagation)
+    /// view_id.dispatch_event(
+    ///     Event::Interaction(InteractionEvent::Click),
+    ///     DispatchKind::Directed {
+    ///         target: view_id.get_visual_id(),
+    ///         phases: Phases::TARGET
+    ///     }
+    /// );
+    ///
+    /// // Dispatch a key event with full capture/bubble phases
+    /// view_id.dispatch_event(
+    ///     Event::Key(key_event),
+    ///     DispatchKind::Directed {
+    ///         target: focused_view,
+    ///         phases: Phases::all()
+    ///     }
+    /// );
+    /// ```
+    pub fn dispatch_event(&self, event: crate::event::Event, dispatch_kind: DispatchKind) {
+        self.dispatch_event_with_caused_by(event, dispatch_kind, None);
+    }
+
+    /// Dispatch an event with an optional causing event.
+    ///
+    /// This is similar to `dispatch_event`, but allows you to specify an event that caused
+    /// this dispatch. The causing event will be available in the `EventCx::caused_by` field.
+    ///
+    /// # Arguments
+    ///
+    /// * `event` - The event to dispatch
+    /// * `dispatch_kind` - The routing strategy to use
+    /// * `caused_by` - An optional event that caused this dispatch (e.g., a PointerDown that caused a Click)
+    pub fn dispatch_event_with_caused_by(
+        &self,
+        event: crate::event::Event,
+        dispatch_kind: DispatchKind,
+        caused_by: Option<crate::event::Event>,
+    ) {
+        self.add_update_message(UpdateMessage::DispatchEvent {
+            id: *self,
+            event,
+            dispatch_kind,
+            caused_by,
+        });
     }
 }
 

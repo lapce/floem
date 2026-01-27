@@ -1,8 +1,8 @@
-use std::{cell::RefCell, collections::HashMap};
+use std::{cell::RefCell, collections::HashMap, time::Duration};
 
 use crate::platform::menu_types::MenuId;
 
-use peniko::kurbo::{Affine, Point, Rect, Size, Vec2};
+use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Size, Vec2};
 use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::SmallVec;
 use taffy::{AvailableSpace, NodeId};
@@ -11,16 +11,16 @@ use understory_event_state::{click::ClickState, focus::FocusState, hover::HoverS
 use winit::cursor::CursorIcon;
 use winit::window::Theme;
 
-use crate::platform::Instant;
-
 use std::rc::Rc;
 
 use crate::{
     BoxTree,
+    action::{add_update_message, exec_after},
     context::FrameUpdate,
     event::{DragTracker, Event, WindowEvent, clear_hit_test_cache},
     inspector::CaptureState,
     layout::responsive::{GridBreakpoints, ScreenSizeBp},
+    message::UpdateMessage,
     style::{
         CursorStyle, Style, StyleCache, StyleSelector, recalc::StyleRecalcChange,
         theme::default_theme,
@@ -46,10 +46,6 @@ pub(crate) type PointerCaptureMap = SmallVec<[(PointerId, VisualId); 2]>;
 
 /// Encapsulates and owns the global state of the application,
 pub struct WindowState {
-    /// when a view is active, it gets mouse event even when the mouse is
-    /// not on it
-    pub(crate) active: Option<VisualId>,
-
     pub(crate) layout_tree: Rc<RefCell<taffy::TaffyTree<LayoutNodeCx>>>,
     pub(crate) box_tree: Rc<RefCell<BoxTree>>,
 
@@ -75,7 +71,7 @@ pub struct WindowState {
     pub(crate) style_dirty: FxHashSet<ViewId>,
     pub(crate) view_style_dirty: FxHashSet<ViewId>,
     pub(crate) request_paint: bool,
-    pub(crate) drag_state: DragTracker,
+    pub(crate) drag_tracker: DragTracker,
     pub(crate) screen_size_bp: ScreenSizeBp,
     pub(crate) grid_bps: GridBreakpoints,
     pub(crate) click_state: ClickState<Rc<[VisualId]>>,
@@ -125,12 +121,16 @@ pub struct WindowState {
     /// Updated when default_theme changes (on theme switch).
     pub(crate) default_theme_inherited: Rc<Style>,
 
-    /// Tracking for views that have requested to have a post layout pass run.
-    ///
-    /// Most views do not need this, but some need it always, so tracking it here is an optimization to only call the method for views that need it.
-    pub(crate) needs_post_layout: FxHashSet<ViewId>,
+    /// Tracking for views that have a layout listener
+    pub(crate) has_layout_listener: FxHashSet<ViewId>,
+    /// Tracking for views that have a visual position listener
+    pub(crate) has_visual_changed_listener: FxHashSet<ViewId>,
     pub(crate) needs_layout: bool,
+    pub(crate) needs_box_tree_from_layout: bool,
     pub(crate) needs_box_tree_commit: bool,
+    /// Views that need their box tree node updated (e.g., after transform or scroll changes).
+    /// These are processed after layout and before commit.
+    pub(crate) views_needing_box_tree_update: FxHashSet<ViewId>,
 }
 
 impl WindowState {
@@ -146,7 +146,6 @@ impl WindowState {
             root_view_id,
             layout_tree,
             box_tree,
-            active: None,
             pointer_capture_target: PointerCaptureMap::new(),
             pending_pointer_capture_target: PointerCaptureMap::new(),
             scale: 1.0,
@@ -157,7 +156,7 @@ impl WindowState {
             request_paint: false,
             view_style_dirty: Default::default(),
             style_dirty: Default::default(),
-            drag_state: DragTracker::new(),
+            drag_tracker: DragTracker::new(),
             focus_state: FocusState::new(),
             click_state: ClickState::new(),
             hover_state: HoverState::new(),
@@ -189,8 +188,11 @@ impl WindowState {
             default_theme: Rc::new(theme),
             default_theme_inherited: Rc::new(inherited),
             needs_layout: true,
+            needs_box_tree_from_layout: true,
             needs_box_tree_commit: true,
-            needs_post_layout: FxHashSet::default(),
+            has_layout_listener: FxHashSet::default(),
+            has_visual_changed_listener: FxHashSet::default(),
+            views_needing_box_tree_update: FxHashSet::default(),
         }
     }
 
@@ -275,10 +277,6 @@ impl WindowState {
         self.focusable.remove(&id);
         self.fixed_elements.remove(&id);
 
-        if self.active == Some(this_visual_id) {
-            self.active = None;
-        }
-
         // Clean up pointer capture state for removed view
         self.pointer_capture_target
             .retain(|(_, v)| *v != this_visual_id);
@@ -304,13 +302,14 @@ impl WindowState {
             .unwrap_or(false)
     }
 
-    pub fn is_active(&self, id: impl Into<VisualId>) -> bool {
-        self.active.map(|a| a == id.into()).unwrap_or(false)
-    }
-
     pub fn is_clicking(&self, id: impl Into<VisualId>) -> bool {
         let id = id.into();
         self.click_state.presses().any(|p| p.target.contains(&id))
+    }
+
+    /// Check if a view has pointer capture for any pointer.
+    pub fn has_capture(&self, id: impl Into<VisualId>) -> bool {
+        self.has_any_capture(id)
     }
 
     pub(crate) fn build_style_traversal(&mut self, root: ViewId) -> Vec<ViewId> {
@@ -382,11 +381,7 @@ impl WindowState {
     }
 
     pub fn is_dragging(&self) -> bool {
-        self.drag_state
-            .state
-            .as_ref()
-            .map(|d| d.released_at.is_none())
-            .unwrap_or(false)
+        self.drag_tracker.is_dragging()
     }
 
     // =========================================================================
@@ -616,24 +611,171 @@ impl WindowState {
         self.needs_box_tree_commit = true;
     }
 
-    pub fn commit_box_tree(&mut self) {
-        let start = Instant::now();
+    // =========================================================================
+    // Box Tree Update System
+    // =========================================================================
+    //
+    // The box tree update system has three separate operations:
+    //
+    // 1. update_box_tree_from_layout() - Full tree walk after layout
+    //    - Called automatically after layout completes
+    //    - Updates all box tree nodes from layout tree and view state
+    //
+    // 2. update_box_tree_for_view(view_id) - Single view update (non-recursive)
+    //    - Used when a specific view changes (transform, scroll offset, etc.)
+    //    - More efficient than full tree walk
+    //    - Children inherit changes through box tree's hierarchical system
+    //
+    // 3. commit_box_tree() - Commit and handle damage
+    //    - Called after any update operation
+    //    - Computes world transforms and damage regions
+    //    - Updates hover state if pointer is in damaged area
+    //
+    // The commit happens separately from updates so multiple updates can be
+    // batched before committing. The `needs_box_tree_commit` flag tracks
+    // whether a commit is needed.
+
+    /// Update the box tree from the layout tree by walking the entire tree.
+    ///
+    /// This walks the layout tree recursively and updates all box tree nodes with:
+    /// - Local bounds from layout
+    /// - Local transforms from view state
+    /// - Scroll offsets
+    /// - Clip rectangles
+    ///
+    /// This should be called after layout completes to sync all box tree properties.
+    /// The commit will happen separately when `commit_box_tree()` is called.
+    pub fn update_box_tree_from_layout(&mut self) {
         let box_tree = self.box_tree.clone();
         let layout_tree = self.layout_tree.clone();
         compute_absolute_transforms_and_boxes(
             layout_tree,
             box_tree,
             self.root_layout_node,
-            Affine::IDENTITY,
-            Vec2::ZERO,
-            None,
+            Vec2::ZERO, // parent_scroll - root has no parent scroll
+            Vec2::ZERO, // parent_scroll_ctx - root has no accumulated scroll
         );
+        // Clear pending individual updates since the full tree walk handled everything
+        self.views_needing_box_tree_update.clear();
+        self.needs_box_tree_from_layout = false;
+        self.needs_box_tree_commit = true;
+    }
+
+    /// Update the box tree for a specific view only (non-recursive).
+    /// This is efficient for updating a single view's transform, scroll offset, or clip
+    /// without walking the layout tree. Children's transforms are not recalculated here;
+    /// they'll be handled by the box tree's hierarchical transform system during commit.
+    pub fn update_box_tree_for_view(&mut self, view_id: ViewId) {
+        VIEW_STORAGE.with_borrow(|s| {
+            let state = s.states.get(view_id);
+
+            if let Some(state) = state {
+                let layout_node = state.borrow().layout_id;
+                let layout = self.layout_tree.borrow().layout(layout_node).ok().copied();
+
+                if let Some(layout) = layout {
+                    // Get parent's scroll offset and scroll_ctx
+                    let (parent_scroll, parent_scroll_ctx) =
+                        if let Some(parent_id) = s.parent.get(view_id).and_then(|p| *p) {
+                            s.states
+                                .get(parent_id)
+                                .map(|p| {
+                                    let p = p.borrow();
+                                    (p.child_translation, p.scroll_ctx)
+                                })
+                                .unwrap_or((Vec2::ZERO, Vec2::ZERO))
+                        } else {
+                            (Vec2::ZERO, Vec2::ZERO)
+                        };
+
+                    let props = compute_view_box_properties(
+                        view_id,
+                        layout,
+                        parent_scroll,
+                        parent_scroll_ctx,
+                    );
+
+                    // Update box tree
+                    let mut box_tree = self.box_tree.borrow_mut();
+                    box_tree.set_local_bounds(props.visual_id.0, props.local_rect);
+                    box_tree.set_local_clip(props.visual_id.0, props.clip);
+                    box_tree.set_local_transform(props.visual_id.0, props.local_transform);
+                }
+            }
+        });
+        self.needs_box_tree_commit = true;
+    }
+
+    /// Process all pending individual box tree updates.
+    /// This should be called after layout and before commit.
+    pub fn process_pending_box_tree_updates(&mut self) {
+        let views = std::mem::take(&mut self.views_needing_box_tree_update);
+        for view_id in views {
+            self.update_box_tree_for_view(view_id);
+        }
+    }
+
+    /// Commit the box tree changes and handle damage regions.
+    /// This should be called after updating the box tree (either from layout or for specific views).
+    pub fn commit_box_tree(&mut self) {
+        if let Some(dragging) = &mut self.drag_tracker.active_drag
+            && let Some(dragging_preview) = dragging.dragging_preview.clone()
+        {
+            let local_bounds = self
+                .box_tree
+                .borrow()
+                .local_bounds(dragging_preview.visual_id.0)
+                .unwrap_or_default();
+
+            // Get current world transform and update natural position (detects layout changes)
+            let current_transform = self
+                .box_tree
+                .borrow()
+                .compute_world_transform(dragging_preview.visual_id.0)
+                .unwrap_or(Affine::IDENTITY);
+
+            let natural_position = dragging.update_and_get_natural_position(current_transform);
+
+            // Calculate the drag point offset (where user grabbed within the element)
+            let drag_point_offset = Point::new(
+                local_bounds.width() * (dragging_preview.drag_point_pct.0.0 / 100.0),
+                local_bounds.height() * (dragging_preview.drag_point_pct.1.0 / 100.0),
+            );
+
+            // Calculate and apply position
+            let new_point =
+                dragging.calculate_position(natural_position, drag_point_offset);
+            dragging.record_applied_translation(new_point);
+
+            self.box_tree
+                .borrow_mut()
+                .set_world_translation(dragging_preview.visual_id.0, new_point);
+
+            // Schedule next animation frame if needed
+            if dragging.should_schedule_animation_frame() {
+                let timer = exec_after(Duration::from_millis(8), move |_| {
+                    add_update_message(UpdateMessage::RequestBoxTreeCommit);
+                });
+                dragging.animation_timer = Some(timer);
+            }
+        }
+
+        // Clean up completed animations
+        if let Some(dragging) = &self.drag_tracker.active_drag {
+            if dragging.released_at.is_some() && dragging.is_animation_complete() {
+                self.views_needing_box_tree_update
+                    .insert(dragging.visual_id.view_id());
+                self.drag_tracker.active_drag = None;
+            }
+        }
+
         let damage = self.box_tree.borrow_mut().commit();
         let pointer = self.last_pointer;
         for damage_rect in &damage.dirty_rects {
             if damage_rect.contains(pointer.0) {
                 clear_hit_test_cache();
-                crate::event::GlobalEventCx::new(self).update_hover_from_point(
+                let root_visual_id = self.root_view_id.get_visual_id();
+                crate::event::GlobalEventCx::new(self, root_visual_id).update_hover_from_point(
                     pointer.0,
                     pointer.1,
                     &Event::Window(WindowEvent::ChangeUnderCursor),
@@ -641,7 +783,6 @@ impl WindowState {
             }
         }
         self.needs_box_tree_commit = false;
-        // dbg!(start.elapsed());
     }
 
     /// Requests that the style pass will run for `id` on the next frame, and ensures new frame is
@@ -671,23 +812,6 @@ impl WindowState {
     // `Id` is unused currently, but could be used to calculate damage regions.
     pub fn request_paint(&mut self, _id: ViewId) {
         self.request_paint = true;
-    }
-
-    pub fn update_active(&mut self, id: impl Into<VisualId>) {
-        if self.active.is_some() {
-            // the first update_active wins, so if there's active set,
-            // don't do anything.
-            return;
-        }
-        let id = id.into();
-        self.active = Some(id);
-
-        if let Some(id) = id.exact_view_id() {
-            // To apply the styles of the Active selector
-            if self.has_style_for_sel(id, StyleSelector::Active) {
-                id.request_style();
-            }
-        }
     }
 
     pub(crate) fn update_screen_size_bp(&mut self, size: Size) {
@@ -727,130 +851,123 @@ impl WindowState {
         self.needs_cursor_resolution = true;
         self.visual_id_cursors.remove(&id.into())
     }
+}
 
-    // pub(crate) fn focus_changed(&mut self, old: Option<ViewId>, new: Option<ViewId>) {
-    //     if let Some(old_id) = old {
-    //         // To remove the styles applied by the Focus selector
-    //         // Use selector-aware method to only update views that have focus styles
-    //         if self.has_style_for_sel(old_id, StyleSelector::Focus) {
-    //             old_id.request_style_for_selector_recursive(StyleSelector::Focus);
-    //         }
-    //         if self.has_style_for_sel(old_id, StyleSelector::FocusVisible) {
-    //             old_id.request_style_for_selector_recursive(StyleSelector::FocusVisible);
-    //         }
-    //         old_id.apply_event(&EventListener::FocusLost, &Event::FocusLost);
-    //     }
+struct ViewBoxProperties {
+    visual_id: VisualId,
+    local_rect: Rect,
+    local_transform: Affine,
+    scroll_offset: Vec2,
+    scroll_ctx: Vec2,
+    clip: Option<RoundedRect>,
+}
 
-    //     if let Some(id) = new {
-    //         // To apply the styles of the Focus selector
-    //         // Use selector-aware method to only update views that have focus styles
-    //         if self.has_style_for_sel(id, StyleSelector::Focus) {
-    //             id.request_style_for_selector_recursive(StyleSelector::Focus);
-    //         }
-    //         if self.has_style_for_sel(id, StyleSelector::FocusVisible) {
-    //             id.request_style_for_selector_recursive(StyleSelector::FocusVisible);
-    //         }
-    //         id.apply_event(&EventListener::FocusGained, &Event::FocusGained);
-    //         id.scroll_to(None);
-    //     }
-    // }
+// New helper function to compute view's box tree properties
+fn compute_view_box_properties(
+    view_id: ViewId,
+    layout: taffy::Layout,
+    parent_scroll: Vec2,
+    parent_scroll_ctx: Vec2,
+) -> ViewBoxProperties {
+    let size = Size::new(layout.size.width as f64, layout.size.height as f64);
+    let local_rect = Rect::from_origin_size(Point::ZERO, size);
+    let local_pos = Point::new(layout.location.x as f64, layout.location.y as f64);
+
+    VIEW_STORAGE.with_borrow(|s| {
+        let state = s.states.get(view_id).unwrap();
+        let state_borrow = state.borrow();
+
+        let style_transform = state_borrow.view_transform_props.affine(size);
+        let view_local_transform = style_transform * state_borrow.transform;
+        let scroll_offset = state_borrow.child_translation;
+        let clip = state_borrow.box_tree_props.clip_rect(local_rect);
+        let visual_id = state_borrow.visual_id;
+
+        drop(state_borrow);
+
+        // Compute scroll context
+        let scroll_ctx = if parent_scroll != Vec2::ZERO {
+            parent_scroll_ctx + parent_scroll
+        } else {
+            parent_scroll_ctx
+        };
+
+        // Compute local transform
+        let parent_transform_for_children = Affine::translate(-parent_scroll);
+        let local_transform = view_local_transform
+            * parent_transform_for_children
+            * Affine::translate(local_pos.to_vec2());
+
+        // Compute layout window origin (position in window coordinates after scrolling)
+        let layout_window_origin =
+            Point::new(local_pos.x - scroll_ctx.x, local_pos.y - scroll_ctx.y);
+
+        // Update state
+        let mut state_mut = state.borrow_mut();
+        state_mut.scroll_ctx = scroll_ctx;
+        state_mut.layout_window_origin = layout_window_origin;
+
+        ViewBoxProperties {
+            visual_id,
+            local_rect,
+            local_transform,
+            scroll_offset,
+            scroll_ctx,
+            clip,
+        }
+    })
 }
 
 fn compute_absolute_transforms_and_boxes(
     layout_tree: Rc<RefCell<taffy::TaffyTree<LayoutNodeCx>>>,
     box_tree: Rc<RefCell<BoxTree>>,
     node: NodeId,
-    parent_transform_for_children: Affine,
-    parent_scroll_context: Vec2,
-    parent_box_node: Option<VisualId>,
+    parent_scroll: Vec2,
+    parent_scroll_ctx: Vec2,
 ) {
-    // ) -> TreeNodeData {
     VIEW_STORAGE.with_borrow(|s| {
-        let mut scroll_ctx = parent_scroll_context;
         let taffy = layout_tree.borrow();
-        let layout = taffy.layout(node).unwrap();
+        let layout = *taffy.layout(node).unwrap();
+        let children = taffy.children(node).ok().map(|c| c.to_vec());
+        drop(taffy);
 
-        let local_pos = Point::new(layout.location.x as f64, layout.location.y as f64);
-        let size = Size::new(layout.size.width as f64, layout.size.height as f64);
-        let local_rect = Rect::from_origin_size(Point::ZERO, size);
+        if let Some(&view_id) = s.taffy_to_view.get(&node) {
+            let props =
+                compute_view_box_properties(view_id, layout, parent_scroll, parent_scroll_ctx);
 
-        let (view_id, local_transform, scroll_offset, clip) =
-            if let Some(&view_id) = s.taffy_to_view.get(&node) {
-                let state = s.states.get(view_id);
-                let style_transform = state
-                    .as_ref()
-                    .map(|s| s.borrow().view_transform_props.affine(size))
-                    .unwrap_or_default();
-                let transform = state
-                    .as_ref()
-                    .map(|s| s.borrow().transform)
-                    .unwrap_or_default();
-                let scroll = state
-                    .as_ref()
-                    .map(|s| s.borrow().child_translation)
-                    .unwrap_or_default();
-                let clip = state
-                    .as_ref()
-                    .and_then(|s| s.borrow().box_tree_props.clip_rect(local_rect));
-                (Some(view_id), style_transform * transform, scroll, clip)
-            } else {
-                (None, Affine::IDENTITY, Vec2::ZERO, None)
-            };
-
-        let local_transform = local_transform
-            * parent_transform_for_children
-            * Affine::translate(local_pos.to_vec2());
-
-        // What this views children should use as their parent transform (includes scroll )
-        let children_parent_transform = Affine::translate(-scroll_offset);
-
-        let current_box_node = if let Some(view_id) = view_id {
-            if scroll_offset != Vec2::ZERO {
-                scroll_ctx += scroll_offset;
-            }
-            if let Some(s) = s.states.get(view_id) {
-                s.borrow_mut().scroll_ctx = scroll_ctx;
+            // Update box tree
+            {
+                let mut box_tree = box_tree.borrow_mut();
+                box_tree.set_local_bounds(props.visual_id.0, props.local_rect);
+                box_tree.set_local_clip(props.visual_id.0, props.clip);
+                box_tree.set_local_transform(props.visual_id.0, props.local_transform);
             }
 
-            // Insert or update in box tree
-            let box_node_id = s.states.get(view_id).map(|s| s.borrow().visual_id).unwrap();
-            box_tree
-                .borrow_mut()
-                .set_local_bounds(box_node_id.0, local_rect);
-            box_tree.borrow_mut().set_local_clip(box_node_id.0, clip);
-            box_tree
-                .borrow_mut()
-                .set_local_transform(box_node_id.0, local_transform);
-
-            Some(box_node_id)
+            // Recurse with this view's scroll offset
+            if let Some(children) = children {
+                for &child in &children {
+                    compute_absolute_transforms_and_boxes(
+                        layout_tree.clone(),
+                        box_tree.clone(),
+                        child,
+                        props.scroll_offset,
+                        props.scroll_ctx,
+                    );
+                }
+            }
         } else {
-            parent_box_node
-        };
-
-        // Collect children data
-        let mut children_data = Vec::new();
-        if let Ok(children) = taffy.children(node) {
-            drop(taffy);
-            for &child in &children {
-                compute_absolute_transforms_and_boxes(
-                    layout_tree.clone(),
-                    box_tree.clone(),
-                    child,
-                    children_parent_transform,
-                    scroll_ctx,
-                    current_box_node,
-                );
-                children_data.push(());
+            // No view for this layout node, just recurse with parent's values
+            if let Some(children) = children {
+                for &child in &children {
+                    compute_absolute_transforms_and_boxes(
+                        layout_tree.clone(),
+                        box_tree.clone(),
+                        child,
+                        parent_scroll,
+                        parent_scroll_ctx,
+                    );
+                }
             }
         }
-
-        //     // Build tree node data
-        //     TreeNodeData {
-        //         view_id: view_id.map(|id| format!("{:?}", id)),
-        //         local_bounds: local_rect,
-        //         local_clip: clip,
-        //         local_transform,
-        //         children: children_data,
-        //     }
     })
 }

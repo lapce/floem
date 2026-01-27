@@ -1,4 +1,4 @@
-use floem::{event::EventListener, prelude::*, taffy::Position};
+use floem::{prelude::*, taffy::Position};
 
 const SIDEBAR_WIDTH: f64 = 140.0;
 const TOPBAR_HEIGHT: f64 = 30.0;
@@ -78,16 +78,9 @@ pub fn holy_grail_view() -> impl IntoView {
 
     Stack::vertical((top_bar, content))
         .style(|s| s.width_full().height_full())
-        .on_event_stop(EventListener::KeyUp, move |cx| {
-            if let floem::event::Event::Key(KeyboardEvent {
-                state: KeyState::Up,
-                key,
-                ..
-            }) = &cx.event
-            {
-                if *key == Key::Named(NamedKey::F11) {
-                    floem::action::inspect();
-                }
+        .on_event_stop(listener::KeyUp, move |_cx, KeyboardEvent { key, .. }| {
+            if *key == Key::Named(NamedKey::F11) {
+                floem::action::inspect();
             }
         })
 }

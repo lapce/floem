@@ -3,10 +3,10 @@ use crate::{
     action::add_update_message,
     animate::Animation,
     context::{
-        CleanupListeners, EventCallback, EventListenerVec, MenuCallback, MoveListeners,
-        ResizeCallback, ResizeListeners,
+        CleanupListeners, EventCallback, EventCallbackConfig, EventListenerVec, LayoutChanged,
+        MenuCallback,
     },
-    event::EventListener,
+    event::listener::{self, EventListenerKey},
     message::UpdateMessage,
     prop_extractor,
     style::{
@@ -19,8 +19,9 @@ use crate::{
 use floem_reactive::Scope;
 use imbl::HashSet;
 use peniko::kurbo::{Affine, Point, Vec2};
+use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
-use std::{cell::RefCell, collections::HashMap, marker::PhantomData, rc::Rc};
+use std::{cell::RefCell, marker::PhantomData, rc::Rc};
 use taffy::tree::NodeId;
 
 /// A stack of view attributes. Each entry is associated with a view decorator call.
@@ -255,14 +256,14 @@ pub struct ViewState {
     /// the cursor style that a user can set on a view through the `ViewId`. This takes precedance over style_cursor.
     pub(crate) user_cursor: Option<CursorStyle>,
     pub(crate) taffy_style: taffy::style::Style,
-    pub(crate) event_listeners: HashMap<EventListener, EventListenerVec>,
+    pub(crate) event_listeners: FxHashMap<EventListenerKey, EventListenerVec>,
+    pub(crate) layout_window_origin: Point,
+    pub(crate) layout: Option<LayoutChanged>,
     pub(crate) context_menu: Option<Rc<MenuCallback>>,
     pub(crate) popout_menu: Option<Rc<MenuCallback>>,
-    pub(crate) resize_listeners: Rc<RefCell<ResizeListeners>>,
-    pub(crate) move_listeners: Rc<RefCell<MoveListeners>>,
     pub(crate) cleanup_listeners: Rc<RefCell<CleanupListeners>>,
     pub(crate) num_waiting_animations: u16,
-    pub(crate) disable_default_events: HashSet<EventListener>,
+    pub(crate) disable_default_events: HashSet<EventListenerKey>,
     /// This transform is user settable and is a transfrom that is applied after the transfrom from the `view_transform_props` which is the transfrom applied by style properties.
     pub(crate) transform: Affine,
     pub(crate) stacking_info: StackingInfo,
@@ -315,13 +316,13 @@ impl ViewState {
             computed_style: Style::new(),
             taffy_style: taffy::style::Style::DEFAULT,
             dragging_style: None,
-            event_listeners: HashMap::new(),
+            event_listeners: FxHashMap::default(),
+            layout_window_origin: Point::ZERO,
+            layout: None,
             context_menu: None,
             popout_menu: None,
             child_translation: Vec2::ZERO,
             scroll_ctx: Vec2::ZERO,
-            resize_listeners: Default::default(),
-            move_listeners: Default::default(),
             cleanup_listeners: Default::default(),
             num_waiting_animations: 0,
             disable_default_events: HashSet::new(),
@@ -426,21 +427,14 @@ impl ViewState {
 
     pub(crate) fn add_event_listener(
         &mut self,
-        listener: EventListener,
+        listener: listener::EventListenerKey,
         action: Box<EventCallback>,
+        config: EventCallbackConfig,
     ) {
         self.event_listeners
             .entry(listener)
             .or_default()
-            .push(Rc::new(RefCell::new(action)));
-    }
-
-    pub(crate) fn add_resize_listener(&mut self, action: Rc<ResizeCallback>) {
-        self.resize_listeners.borrow_mut().callbacks.push(action);
-    }
-
-    pub(crate) fn add_move_listener(&mut self, action: Rc<dyn Fn(Point)>) {
-        self.move_listeners.borrow_mut().callbacks.push(action);
+            .push((Rc::new(RefCell::new(action)), config));
     }
 
     pub(crate) fn add_cleanup_listener(&mut self, action: Rc<dyn Fn()>) {

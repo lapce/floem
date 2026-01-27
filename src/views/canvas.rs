@@ -1,7 +1,11 @@
 use floem_reactive::SignalTracker;
 use peniko::kurbo::Size;
 
-use crate::{context::PaintCx, view::View, view::ViewId};
+use crate::{
+    context::{LayoutChanged, LayoutChangedListener, PaintCx},
+    event::listener::EventListenerTrait,
+    view::{View, ViewId},
+};
 
 /// A Canvas view. See the docs for [canvas()].
 #[allow(clippy::type_complexity)]
@@ -37,13 +41,19 @@ pub struct Canvas {
 /// ```
 pub fn canvas(paint: impl Fn(&mut PaintCx, Size) + 'static) -> Canvas {
     let id = ViewId::new();
-    id.needs_post_layout();
+    id.has_layout_listener();
 
     Canvas {
         id,
         paint_fn: Box::new(paint),
         size: Default::default(),
         tracker: None,
+    }
+}
+
+impl Canvas {
+    fn post_layout(&mut self, new_layout: &LayoutChanged) {
+        self.size = new_layout.new_box.size();
     }
 }
 
@@ -56,15 +66,12 @@ impl View for Canvas {
         "Canvas".into()
     }
 
-    // fn compute_layout(
-    //     &mut self,
-    //     _cx: &mut crate::context::ComputeLayoutCx,
-    // ) -> Option<peniko::kurbo::Rect> {
-    //     None
-    // }
-
-    fn post_layout(&mut self, _post_layout_cx: crate::layout::PostLayoutCx) {
-        self.size = self.id.get_size().unwrap_or_default();
+    fn event(&mut self, cx: &mut crate::event::EventCx) -> crate::event::EventPropagation {
+        // in order to use this we had to set `id.has_layout_listener`.
+        if let Some(new_layout) = LayoutChangedListener::extract(&cx.event) {
+            self.post_layout(new_layout);
+        }
+        crate::event::EventPropagation::Continue
     }
 
     fn paint(&mut self, cx: &mut PaintCx) {

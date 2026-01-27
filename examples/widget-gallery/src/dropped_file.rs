@@ -1,7 +1,6 @@
 use crate::form::{form, form_item};
 use floem::{
-    dropped_file::FileDragEvent,
-    event::{Event, EventListener},
+    dropped_file::FileDragDropped,
     prelude::*,
     theme::HoverTargetClass,
     ui_events::keyboard::{Key, NamedKey},
@@ -21,17 +20,18 @@ pub fn dropped_file_view() -> impl IntoView {
         .on_key_up(
             Key::Named(NamedKey::F11),
             |m| m.is_empty(),
-            move |_| floem::action::inspect(),
+            move |_, _| floem::action::inspect(),
         )
-        .on_event_stop(EventListener::DroppedFiles, move |cx| {
-            if let Event::FileDrag(e @ FileDragEvent::DragDropped { paths, .. }) = &cx.event {
+        .on_event_stop(
+            listener::DroppedFiles,
+            move |_cx, e @ FileDragDropped { paths, .. }| {
                 println!("DroppedFile {e:?}");
                 filename.set(format!(
                     "{:?}",
                     paths.first().expect("at least one to start a drag")
                 ));
-            }
-        });
+            },
+        );
 
     form((
         form_item("Files:", Label::derived(move || filename.get())),

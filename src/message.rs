@@ -6,6 +6,7 @@ use ui_events::pointer::PointerId;
 use winit::window::{ResizeDirection, Theme};
 
 use crate::{
+    event::{DispatchKind, Event},
     platform::menu::Menu,
     view::{AnyView, View, ViewId},
     visual_id::VisualId,
@@ -36,8 +37,6 @@ type DeferredUpdateMessages = HashMap<ViewId, Vec<(ViewId, Box<dyn Any>)>>;
 pub enum UpdateMessage {
     Focus(VisualId),
     ClearFocus,
-    Active(VisualId),
-    ClearActive,
     /// Set pointer capture for a view (W3C Pointer Events API).
     SetPointerCapture {
         view_id: ViewId,
@@ -51,6 +50,11 @@ pub enum UpdateMessage {
     WindowScale(f64),
     RequestPaint,
     RequestLayout,
+    /// Request that the box tree be updated from the layout tree (full walk) and committed
+    RequestBoxTreeUpdate,
+    /// Request that a specific view's box tree node be updated and committed
+    RequestBoxTreeUpdateForView(ViewId),
+    /// Request that the box tree be committed without updating from layout
     RequestBoxTreeCommit,
     State {
         id: ViewId,
@@ -117,8 +121,14 @@ pub enum UpdateMessage {
     SetupReactiveChildren {
         setup: DeferredReactiveSetup,
     },
-    /// Specify that this view needs to have a post layout method from the view trait called
-    NeedsPostLayout(ViewId),
+    HasLayoutListener(ViewId),
+    HasVisualChangedListener(ViewId),
+    DispatchEvent {
+        id: ViewId,
+        event: Event,
+        dispatch_kind: DispatchKind,
+        caused_by: Option<Event>,
+    },
 }
 
 /// Context passed during the update phase of the view lifecycle.

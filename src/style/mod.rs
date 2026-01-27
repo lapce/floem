@@ -196,7 +196,7 @@ pub use recalc::{InheritedChanges, InheritedGroups, Propagate, RecalcFlags, Styl
 pub(crate) use props::{CONTEXT_MAPPINGS_INFO, ImHashMap, style_key_selector};
 
 /// A closure that maps context values to style properties.
-type ContextMapFn = Rc<dyn Fn(Style, &Style) -> Style>;
+type ContextMapFn = Rc<dyn Fn(Style, Box<dyn Fn(StyleKey) -> Option<Rc<dyn Any>>>) -> Style>;
 
 /// Simple storage for context mapping closures.
 /// Unlike the old ContextMappings, this only stores the closures themselves -
@@ -254,12 +254,28 @@ pub fn resolve_nested_maps(
     let mut i = 0;
     while i < class_context_mappings.len() {
         let mapping = class_context_mappings[i].clone();
-        let mut combined_context = inherited_context.clone();
-        combined_context.apply_mut_no_mappings(view_style.clone());
-        combined_context.apply_mut_no_mappings(context_result.clone());
-        let mapped = mapping(context_result.clone(), &combined_context);
+        let mapped = mapping(
+            context_result.clone(),
+            Box::new({
+                let view_style = view_style.clone();
+                let context_result = context_result.clone();
+                let inherited_context = inherited_context.clone();
+                move |k| {
+                    view_style
+                        .map
+                        .get(&k)
+                        .or_else(|| {
+                            context_result
+                                .map
+                                .get(&k)
+                                .or_else(|| inherited_context.map.get(&k))
+                        })
+                        .cloned()
+                }
+            }),
+        );
         let (resolved, new_mappings) =
-            resolve_selectors_collecting_mappings(mapped, interact_state, screen_size_bp);
+            resolve_style_collecting_mappings(mapped, interact_state, screen_size_bp);
         context_result.apply_mut_no_mappings(resolved);
         class_context_mappings.splice(i + 1..i + 1, new_mappings);
         i += 1;
@@ -270,12 +286,27 @@ pub fn resolve_nested_maps(
 
     // Phase 4: Apply view context mappings over result (with recursive resolution)
     let mut i = 0;
+    let mut combined_context = inherited_context.clone();
     while i < view_context_mappings.len() {
         let mapping = view_context_mappings[i].clone();
-        let combined_context = inherited_context.clone().apply(result.clone());
-        let mapped = mapping(result.clone(), &combined_context);
+        combined_context.apply_mut_no_mappings(result.clone());
+        let mapped = mapping(
+            result.clone(),
+            Box::new({
+                let result = result.clone();
+                let inherited_context = inherited_context.clone();
+                move |k| {
+                    result
+                        .clone()
+                        .map
+                        .get(&k)
+                        .or_else(|| inherited_context.map.get(&k))
+                        .cloned()
+                }
+            }),
+        );
         let (resolved, new_mappings) =
-            resolve_selectors_collecting_mappings(mapped, interact_state, screen_size_bp);
+            resolve_style_collecting_mappings(mapped, interact_state, screen_size_bp);
         result.apply_mut_no_mappings(resolved);
         view_context_mappings.splice(i + 1..i + 1, new_mappings);
         i += 1;
@@ -308,14 +339,14 @@ fn resolve_classes_collecting_mappings(
 }
 
 fn resolve_style_collecting_mappings(
-    style: Style,
+    mut style: Style,
     interact_state: &InteractionState,
     screen_size_bp: ScreenSizeBp,
 ) -> (Style, Vec<ContextMapFn>) {
     let mut mappings = Vec::new();
 
     // Extract context mappings from style before resolving
-    if let Some(style_mappings) = extract_context_mappings(&style) {
+    if let Some(style_mappings) = extract_context_mappings(&mut style) {
         mappings.extend(style_mappings);
     }
 
@@ -346,9 +377,9 @@ fn resolve_selectors_collecting_mappings(
 
         // Helper to apply a nested map and collect any context mappings from it
         let mut apply_nested = |style: &mut Style, key: StyleKey| -> bool {
-            if let Some(map) = style.get_nested_map(key) {
+            if let Some(mut map) = style.get_nested_map(key) {
                 // Extract mappings before applying
-                if let Some(mappings) = extract_context_mappings(&map) {
+                if let Some(mappings) = extract_context_mappings(&mut map) {
                     all_mappings.extend(mappings);
                 }
                 style.apply_mut_no_mappings(map);
@@ -432,11 +463,11 @@ fn resolve_selectors_collecting_mappings(
     (style, all_mappings)
 }
 
-fn extract_context_mappings(style: &Style) -> Option<Vec<ContextMapFn>> {
+fn extract_context_mappings(style: &mut Style) -> Option<Vec<ContextMapFn>> {
     let key = StyleKey {
         info: &CONTEXT_MAPPINGS_INFO,
     };
-    style.map.get(&key).map(|rc| {
+    style.map.remove(&key).map(|rc| {
         let mappings = rc.downcast_ref::<ContextMappings>().unwrap();
         mappings.0.iter().cloned().collect()
     })
@@ -674,7 +705,7 @@ impl Style {
                     .collect();
 
                 // Add a context mapping that re-applies the view's selector styles LAST
-                let restore_selectors: ContextMapFn = Rc::new(move |mut s: Style, _ctx: &Style| {
+                let restore_selectors: ContextMapFn = Rc::new(move |mut s: Style, _| {
                     for (k, v) in view_selectors.iter() {
                         s.apply_iter(std::iter::once((k, v)));
                     }
@@ -729,30 +760,25 @@ impl Style {
     ///
     /// Signal reactivity works because the outer style closure re-runs when signals change.
     pub fn with_context<P: StyleProp>(self, f: impl Fn(Self, &P::Type) -> Self + 'static) -> Self {
-        // Evaluate immediately with default value for selector/inherited discovery.
-        // This ensures selectors defined inside with_context are visible.
-        let default_value = P::default_value();
-        let result = f(self.clone(), &default_value);
-
         // Create a closure for context-aware re-evaluation during style resolution.
         // Cache default_value inside closure to avoid repeated allocations.
-        let mapper: ContextMapFn = Rc::new(move |style: Style, context: &Style| {
-            // Try getting the property from style first, then from context if not found
-            let value = style.get_prop::<P>().or_else(|| {
-                let prop_key = P::key();
-                if let StyleKeyInfo::Prop(_) = prop_key.info {
-                    context.get_prop::<P>()
-                } else {
-                    None
-                }
-            });
+        let mapper: ContextMapFn = Rc::new(
+            move |style: Style, context: Box<dyn Fn(StyleKey) -> Option<Rc<dyn Any>>>| {
+                // Try getting the property from style first, then from context if not found
+                let value = context(P::key()).and_then(|v| {
+                    v.downcast_ref::<StyleMapValue<P::Type>>()
+                        .unwrap()
+                        .as_ref()
+                        .cloned()
+                });
 
-            if let Some(value) = value {
-                f(style, &value)
-            } else {
-                f(style, &P::default_value())
-            }
-        });
+                if let Some(value) = value {
+                    f(style, &value)
+                } else {
+                    f(style, &P::default_value())
+                }
+            },
+        );
 
         // Store the closure for later context resolution
         let key = StyleKey {
@@ -760,7 +786,7 @@ impl Style {
         };
 
         // Build new mappings vec - use Rc::make_mut for efficient copy-on-write
-        let mut mappings_vec = result
+        let mut mappings_vec = self
             .map
             .get(&key)
             .and_then(|v| v.downcast_ref::<ContextMappings>())
@@ -770,7 +796,7 @@ impl Style {
 
         // Start with the immediate result (has selectors/inherited props)
         // but add our closure storage
-        let mut final_result = result;
+        let mut final_result = self;
         final_result
             .map
             .insert(key, Rc::new(ContextMappings(Rc::new(mappings_vec))));
@@ -781,29 +807,27 @@ impl Style {
     ///
     /// Like `with_context`, this evaluates immediately with defaults for discovery,
     /// and stores the closure for context-aware re-evaluation.
-    pub fn with_context_opt<P: StyleProp<Type = Option<T>>, T: 'static + Default>(
+    pub fn with_context_opt<P: StyleProp<Type = Option<T>>, T: 'static + Default + Clone>(
         self,
         f: impl Fn(Self, T) -> Self + 'static,
     ) -> Self {
-        // Evaluate immediately with default T value for selector/inherited discovery
-        let result = f(self.clone(), T::default());
-
         // Create a closure for context-aware re-evaluation
-        let mapper: ContextMapFn = Rc::new(move |style: Style, context: &Style| {
-            let value = style.get_prop::<P>().or_else(|| {
-                let prop_key = P::key();
-                if let StyleKeyInfo::Prop(_) = prop_key.info {
-                    context.get_prop::<P>()
-                } else {
-                    None
-                }
-            });
+        let mapper: ContextMapFn = Rc::new(
+            move |style: Style, context: Box<dyn Fn(StyleKey) -> Option<Rc<dyn Any>>>| {
+                // Try getting the property from style first, then from context if not found
+                let value = context(P::key()).and_then(|v| {
+                    v.downcast_ref::<StyleMapValue<P::Type>>()
+                        .unwrap()
+                        .as_ref()
+                        .cloned()
+                });
 
-            match value {
-                Some(Some(value)) => f(style, value),
-                _ => style,
-            }
-        });
+                match value {
+                    Some(Some(value)) => f(style, value),
+                    _ => style,
+                }
+            },
+        );
 
         // Store the closure
         let key = StyleKey {
@@ -811,7 +835,7 @@ impl Style {
         };
 
         // Build new mappings vec efficiently
-        let mut mappings_vec = result
+        let mut mappings_vec = self
             .map
             .get(&key)
             .and_then(|v| v.downcast_ref::<ContextMappings>())
@@ -819,7 +843,7 @@ impl Style {
             .unwrap_or_default();
         mappings_vec.push(mapper);
 
-        let mut final_result = result;
+        let mut final_result = self;
         final_result
             .map
             .insert(key, Rc::new(ContextMappings(Rc::new(mappings_vec))));
@@ -1645,15 +1669,8 @@ define_builtin_props!(
     /// This property is inherited by child views.
     Disabled set_disabled {}: bool { inherited } = false,
 
-    /// Controls whether the view can receive focus.
-    ///
-    /// Focus is necessary for keyboard interaction.
-    Focusable focusable {}: bool { } = false,
-
-    /// Controls whether the view can be dragged.
-    ///
-    /// Enables drag-and-drop functionality for the view.
-    Draggable draggable {}: bool { } = false,
+    /// Controls whether the view can receive focus during navigation such as tab or arrow navigation.
+    Focusable keyboard_navigable {}: bool { } = false,
 );
 
 impl BuiltinStyle<'_> {
@@ -2051,6 +2068,11 @@ impl Style {
     /// Sets the height as a percentage of the parent container.
     pub fn height_pct(self, height: f64) -> Self {
         self.height(height.pct())
+    }
+
+    #[deprecated(note = "use `Style::keyboard_navigable instead`")]
+    pub fn focusable(self, keyboard_focusable: bool) -> Self {
+        self.keyboard_navigable(keyboard_focusable)
     }
 
     /// Sets the gap between columns in grid or flex layouts.

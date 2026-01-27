@@ -70,7 +70,7 @@ fn counter_view() -> impl IntoView {
         .on_key_down(
             Key::Named(NamedKey::F11),
             |_| true,
-            |_| {
+            |_, _| {
                 inspect();
             },
         )

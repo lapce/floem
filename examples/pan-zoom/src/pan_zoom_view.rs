@@ -3,7 +3,7 @@ use std::{collections::VecDeque, time::Duration};
 use floem::{
     IntoView, View,
     action::exec_after,
-    event::{Event, EventPropagation},
+    event::{Event, EventPropagation, PointerScrollEventExt},
     kurbo::{self, Vec2},
     ui_events::pointer::{PointerButtonEvent, PointerEvent, PointerUpdate},
 };
@@ -92,12 +92,8 @@ impl View for PanZoomView {
         self.id
     }
 
-    fn event_before_children(
-        &mut self,
-        _cx: &mut floem::context::EventCx,
-        event: &Event,
-    ) -> EventPropagation {
-        match event {
+    fn event(&mut self, cx: &mut floem::context::EventCx) -> EventPropagation {
+        match &cx.event {
             Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. })) => {
                 self.dragging = true;
                 self.drag_cursor_pos = Some(state.logical_point());
@@ -140,17 +136,16 @@ impl View for PanZoomView {
                     self.drag_velocity = kurbo::Vec2::ZERO;
                 }
             }
-            e @ Event::Pointer(PointerEvent::Scroll(_)) => {
-                if let Some(delta) = e.pixel_scroll_delta_vec2() {
-                    let scale = 1. - delta.y / 40.;
+            Event::Pointer(PointerEvent::Scroll(pse)) => {
+                let delta = pse.resolve_to_points(None, None);
+                let scale = 1. - delta.y / 40.;
 
-                    self.target_scale *= scale;
-                    if self.zoom_start_time.is_none() {
-                        self.zoom_start_time = Some(std::time::Instant::now());
-                        self.schedule_update();
-                    } else {
-                        self.zoom_start_time = Some(std::time::Instant::now());
-                    }
+                self.target_scale *= scale;
+                if self.zoom_start_time.is_none() {
+                    self.zoom_start_time = Some(std::time::Instant::now());
+                    self.schedule_update();
+                } else {
+                    self.zoom_start_time = Some(std::time::Instant::now());
                 }
             }
             _ => {}

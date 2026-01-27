@@ -1,6 +1,6 @@
 use super::header;
 use crate::app::{AppUpdateEvent, add_app_update_event};
-use crate::event::{EventListener, EventPropagation};
+use crate::event::{EventPropagation, PointerScrollEventExt, listener};
 use crate::style::CustomStylable;
 use crate::theme::StyleThemeExt;
 use crate::unit::UnitExt;
@@ -110,7 +110,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
                 Label::new(format!("{:.4} ms", frame.sum.as_secs_f64() * 1000.0))
                     .style(|s| s.margin_right(16)),
             ))
-            .on_click_stop(move |_| {
+            .action(move || {
                 selected_frame.set(Some(frame.clone()));
                 zoom.set(1.0);
             })
@@ -219,7 +219,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
                                     .hover(|s| s.background(t.primary().with_alpha(0.5)))
                             })
                     })
-                    .on_event_cont(EventListener::PointerEnter, move |_| {
+                    .on_event_cont(listener::PointerEnter, move |_, _| {
                         hovered_event.set(Some(event_.clone()))
                     })
                 });
@@ -229,13 +229,10 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
                 )
                 .custom_style(|s| s.vertical_track_inset(5.).show_bars_when_idle(false))
                 .style(|s| s.height_full().min_width(0).flex_basis(0).flex_grow(1.0))
-                .on_event(EventListener::PointerWheel, move |e| {
-                    if let Some(delta) = e.event.pixel_scroll_delta_vec2() {
-                        zoom.set(zoom.get() * (1.0 - delta.y / 400.0));
-                        EventPropagation::Stop
-                    } else {
-                        EventPropagation::Continue
-                    }
+                .on_event(listener::PointerWheel, move |_cx, se| {
+                    let delta = se.resolve_to_points(None, None);
+                    zoom.set(zoom.get() * (1.0 - delta.y / 400.0));
+                    EventPropagation::Stop
                 })
                 .into_any()
             } else {
@@ -278,7 +275,7 @@ pub fn profiler(window_id: WindowId) -> impl IntoView {
                 "Start Profiling"
             }
         }))
-        .on_click_stop(move |_| {
+        .action(move || {
             add_app_update_event(AppUpdateEvent::ProfileWindow {
                 window_id,
                 end_profile: if profiling.get() {
@@ -317,7 +314,7 @@ pub fn profiler(window_id: WindowId) -> impl IntoView {
     // FIXME: This needs an extra `container` or the `Stack::vertical` ends up horizontal.
     Container::new(Stack::vertical((button, separator, lower)).style(|s| s.size_full()))
         .style(|s| s.size_full())
-        .on_event_cont(EventListener::WindowClosed, move |_| {
+        .on_event_cont(listener::WindowClosed, move |_, _| {
             if profiling.get() {
                 add_app_update_event(AppUpdateEvent::ProfileWindow {
                     window_id,

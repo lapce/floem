@@ -49,8 +49,8 @@ impl RadioButton {
 
         value_container(
             radio_button_svg(represented_value.clone(), inbound_signal.read_only())
-                .style(|s| s.focusable(true))
-                .on_click_stop(move |_| {
+                .style(|s| s.keyboard_navigable(true))
+                .action(move || {
                     outbound_signal.set(represented_value.clone());
                 }),
             move || outbound_signal.get(),
@@ -70,7 +70,7 @@ impl RadioButton {
     {
         let clone = represented_value.clone();
         radio_button_svg(represented_value, actual_value).style(move |s| {
-            s.focusable(true)
+            s.keyboard_navigable(true)
                 .apply_if(clone == actual_value.get(), |s| s.set_selected(true))
         })
     }
@@ -91,12 +91,12 @@ impl RadioButton {
 
         radio_button_svg(cloneable_represented_value.clone(), actual_value)
             .style(move |s| {
-                s.focusable(true)
+                s.keyboard_navigable(true)
                     .apply_if(cloneable_represented_value_ == actual_value.get(), |s| {
                         s.set_selected(true)
                     })
             })
-            .on_click_stop(move |_| {
+            .action(move || {
                 actual_value.set(cloneable_represented_value.clone());
             })
     }
@@ -124,12 +124,12 @@ impl RadioButton {
             .class(LabeledRadioButtonClass)
             .style(move |s| {
                 s.items_center()
-                    .focusable(true)
+                    .keyboard_navigable(true)
                     .apply_if(clone == inbound_signal.get(), |s| {
                         s.apply_selectors(&[StyleSelector::Selected])
                     })
             })
-            .on_click_stop(move |_| {
+            .action(move || {
                 outbound_signal.set(represented_value.clone());
             }),
             move || outbound_signal.get(),
@@ -156,7 +156,7 @@ impl RadioButton {
         .class(LabeledRadioButtonClass)
         .style(move |s| {
             s.items_center()
-                .focusable(true)
+                .keyboard_navigable(true)
                 .apply_if(clone == actual_value.get(), |s| s.set_selected(true))
         })
     }
@@ -182,12 +182,12 @@ impl RadioButton {
         ))
         .class(LabeledRadioButtonClass)
         .style(move |s| {
-            s.items_center().focusable(true).apply_if(
+            s.items_center().keyboard_navigable(true).apply_if(
                 cloneable_represented_value_.clone() == actual_value.get(),
                 |s| s.set_selected(true),
             )
         })
-        .on_click_stop(move |_| {
+        .action(move || {
             actual_value.set(cloneable_represented_value.clone());
         })
     }

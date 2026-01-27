@@ -29,6 +29,7 @@ pub fn list_view() -> impl IntoView {
             .grid_template_rows([auto(), auto(), length(20.), auto(), auto()])
             .row_gap(20)
             .justify_items(JustifyItems::Center)
+            .selectable(false)
     })
 }
 

@@ -1,11 +1,11 @@
 use floem::{
     close_window,
-    event::{Event, EventListener},
+    event::Event,
     kurbo::Size,
     new_window,
     prelude::*,
     window::{Icon, RgbaIcon, WindowConfig, WindowId},
-    Application, IntoView, View,
+    Application, IntoView,
 };
 use std::path::Path;
 
@@ -26,7 +26,7 @@ fn sub_window_view(id: WindowId) -> impl IntoView {
 }
 
 fn app_view() -> impl IntoView {
-    let view = Stack::vertical((
+    Stack::vertical((
         Label::derived(move || String::from("This window has an icon from a PNG file"))
             .style(|s| s.font_size(30.0)),
         Button::new("Open another window").action(|| {
@@ -49,19 +49,10 @@ fn app_view() -> impl IntoView {
             .width_full()
             .height_full()
             .row_gap(10.0)
-    });
-
-    let id = view.id();
-    view.on_event_stop(EventListener::KeyUp, move |e| {
-        if let Event::Key(KeyboardEvent {
-            state: KeyState::Up,
-            key,
-            ..
-        }) = e
-        {
-            if *key == Key::Named(NamedKey::F11) {
-                id.inspect();
-            }
+    })
+    .on_event_stop(listener::KeyUp, move |_cx, KeyboardEvent { key, .. }| {
+        if let Key::Named(NamedKey::F11) = key {
+            floem::action::inspect();
         }
     })
 }

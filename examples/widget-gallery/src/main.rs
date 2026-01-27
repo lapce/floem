@@ -20,7 +20,7 @@ pub mod texteditor;
 
 use floem::{
     action::{add_overlay, set_theme, set_window_menu, toggle_global_theme, toggle_window_theme},
-    event::{Event, EventListener},
+    event::Event,
     kurbo::Size,
     menu::*,
     muda::{AboutMetadataBuilder, PredefinedMenuItem},
@@ -301,14 +301,9 @@ fn app_view(window_id: WindowId) -> impl IntoView {
             .inset_right(15.)
     }));
 
-    view.on_event_stop(EventListener::KeyUp, move |cx| {
-        if let Event::Key(KeyboardEvent {
-            state: KeyState::Up,
-            key,
-            modifiers,
-            ..
-        }) = &cx.event
-        {
+    view.on_event_stop(
+        listener::KeyUp,
+        move |_cx, KeyboardEvent { modifiers, key, .. }| {
             if *key == Key::Named(NamedKey::F11) {
                 floem::action::inspect();
             } else if *key == Key::Character("q".into()) && modifiers.contains(Modifiers::META) {
@@ -316,8 +311,8 @@ fn app_view(window_id: WindowId) -> impl IntoView {
             } else if *key == Key::Character("w".into()) && modifiers.contains(Modifiers::META) {
                 floem::close_window(window_id);
             }
-        }
-    })
+        },
+    )
 }
 
 fn main() {

@@ -1,6 +1,6 @@
 #![deny(missing_docs)]
 use crate::action::{exec_after, set_ime_allowed, set_ime_cursor_area};
-use crate::event::{EventListener, EventPropagation, ImeEvent, Phase};
+use crate::event::{EventPropagation, ImeEvent, Phase, listener};
 use crate::reactive::{Effect, RwSignal};
 use crate::style::{FontFamily, FontProps, SelectionStyle, Style, StyleClass, TextAlignProp};
 use crate::style::{FontStyle, FontWeight, TextColor};
@@ -126,6 +126,8 @@ pub struct TextInput {
     last_pointer_down: Point,
     last_cursor_action_on: Instant,
     last_ime_cursor_area: Option<(Point, Size)>,
+    text_node: Option<taffy::NodeId>,
+    layout_node: Option<taffy::NodeId>,
 }
 
 /// Type of cursor movement in navigation.
@@ -224,7 +226,7 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
             buffer,
             last_buffer: buffer.get_untracked(),
         },
-        layout_data: Rc::new(RefCell::new(TextLayoutData::new())),
+        layout_data: Rc::new(RefCell::new(TextLayoutData::new(Some(id)))),
         style: Default::default(),
         font: FontProps::default(),
         cursor_x: 0.0,
@@ -237,16 +239,18 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
         last_cursor_action_on: Instant::now(),
         on_enter: None,
         last_ime_cursor_area: None,
+        text_node: None,
+        layout_node: None,
     };
 
     text_input.update_text_layout();
     text_input.set_taffy_layout();
     text_input
-        .on_event_stop(EventListener::FocusGained, move |_| {
+        .on_event_stop(listener::FocusGained, move |_, _| {
             is_focused.set(true);
             set_ime_allowed(true);
         })
-        .on_event_stop(EventListener::FocusLost, move |_| {
+        .on_event_stop(listener::FocusLost, move |_, _| {
             is_focused.set(false);
             set_ime_allowed(false);
         })
@@ -363,6 +367,9 @@ impl TextInput {
         let layout_fn = TextLayoutData::create_taffy_layout_fn(self.layout_data.clone());
         let finalize_fn = TextLayoutData::create_finalize_fn(self.layout_data.clone());
 
+        self.text_node = Some(text_node);
+        self.layout_node = Some(taffy_node);
+
         taffy
             .set_node_context(
                 text_node,
@@ -461,7 +468,16 @@ impl TextInput {
     }
 
     fn get_cursor_rect(&self) -> Rect {
-        let node_location = self.id.get_content_rect_local().origin();
+        let (Some(parent_node), Some(text_node)) = (self.layout_node, self.text_node) else {
+            return Rect::ZERO;
+        };
+
+        let node_location = self
+            .id
+            .get_content_rect_relative(text_node, parent_node)
+            .unwrap_or_default()
+            .origin();
+
         let text_height = self.glyph_max_size.height;
 
         let cursor_start = Point::new(
@@ -508,7 +524,15 @@ impl TextInput {
     }
 
     fn get_box_position(&self, pos_x: f64) -> usize {
-        let text_loc = self.id.get_content_rect_local().origin();
+        let (Some(parent_node), Some(text_node)) = (self.layout_node, self.text_node) else {
+            return 0;
+        };
+
+        let text_loc = self
+            .id
+            .get_content_rect_relative(text_node, parent_node)
+            .unwrap_or_default()
+            .origin();
 
         self.layout_data
             .borrow()
@@ -528,8 +552,15 @@ impl TextInput {
             return Rect::ZERO;
         };
 
+        let (Some(parent_node), Some(text_node)) = (self.layout_node, self.text_node) else {
+            return Rect::ZERO;
+        };
+
         let text_height = self.glyph_max_size.height;
-        let node_rect = self.id.get_content_rect_local();
+        let node_rect = self
+            .id
+            .get_content_rect_relative(text_node, parent_node)
+            .unwrap_or_default();
         let visible_width = node_rect.size().width;
 
         let (selection_start_x, selection_end_x) = self
@@ -558,7 +589,7 @@ impl TextInput {
 
     /// Determine approximate max size of a single glyph, given the current font weight & size
     fn get_font_glyph_max_size(&self) -> Size {
-        let mut tmp = TextLayoutData::new();
+        let mut tmp = TextLayoutData::new(None);
         let attrs_list = self.get_text_attrs();
         let align = self.style.text_align();
         tmp.set_text("W", attrs_list, align);
@@ -588,7 +619,14 @@ impl TextInput {
             return;
         }
 
-        let content_rect = self.id.get_content_rect_local();
+        let (Some(parent_node), Some(text_node)) = (self.layout_node, self.text_node) else {
+            return;
+        };
+
+        let content_rect = self
+            .id
+            .get_content_rect_relative(text_node, parent_node)
+            .unwrap_or_default();
         let text_loc = content_rect.origin();
         let visual_origin = self.id.get_visual_origin();
 
@@ -1198,7 +1236,7 @@ impl View for TextInput {
                 self.commit_preedit();
                 self.update_ime_cursor_area();
 
-                if is_focused && !cx.window_state.is_active(self.id) {
+                if is_focused && !cx.window_state.has_capture(self.id) {
                     self.selection = None;
                     self.cursor_glyph_idx = self.buffer.with_untracked(|buf| buf.len());
                 }
@@ -1241,9 +1279,12 @@ impl View for TextInput {
             Event::Pointer(PointerEvent::Down(PointerButtonEvent {
                 button: Some(PointerButton::Primary),
                 state,
+                pointer,
                 ..
             })) => {
-                cx.window_state.update_active(self.id);
+                if let Some(pointer_id) = pointer.pointer_id {
+                    cx.window_state.set_pointer_capture(pointer_id, self.id);
+                }
                 let point = state.logical_point();
                 self.last_pointer_down = point;
 
@@ -1262,7 +1303,7 @@ impl View for TextInput {
                 true
             }
             Event::Pointer(PointerEvent::Move(pu)) => {
-                if cx.window_state.is_active(self.id)
+                if cx.window_state.has_capture(self.id)
                     && self.buffer.with_untracked(|buff| !buff.is_empty())
                 {
                     if self.commit_preedit() {
@@ -1411,7 +1452,15 @@ impl View for TextInput {
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        let text_start_point = self.id.get_content_rect_local().origin();
+        let (Some(parent_node), Some(text_node)) = (self.layout_node, self.text_node) else {
+            return;
+        };
+
+        let text_start_point = self
+            .id
+            .get_content_rect_relative(text_node, parent_node)
+            .unwrap_or_default()
+            .origin();
 
         cx.save();
         let mut clip_rect = self.id.get_layout_rect_local();

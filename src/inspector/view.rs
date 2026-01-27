@@ -1,30 +1,31 @@
 use super::profiler::profiler;
-use crate::app::{AppUpdateEvent, add_app_update_event};
-use crate::event::{Event, EventListener, EventPropagation};
-use crate::inspector::data::{CapturedData, CapturedDatas};
-use crate::inspector::{
-    CAPTURE, Capture, CaptureView, RUNNING, add_event, find_view, header, selected_view, stats,
-    update_select_view_id,
+use crate::{
+    IntoView, View, ViewId,
+    app::{AppUpdateEvent, add_app_update_event},
+    event::{EventPropagation, listener},
+    inspector::{
+        CAPTURE, Capture, CaptureView, RUNNING, add_event,
+        data::{CapturedData, CapturedDatas},
+        find_view, header, selected_view, stats, update_select_view_id,
+    },
+    new_window,
+    prelude::{ViewTuple, dyn_container, img_dynamic, scroll, tab, text_input, virtual_stack},
+    style::{CustomStylable, FontSize, OverflowX, OverflowY, TextColor},
+    theme::StyleThemeExt as _,
+    unit::PxPctAuto,
+    views::{
+        Button, CheckboxClass, ContainerExt, Decorators, Label, ListClass, ListItemClass, Scroll,
+        ScrollExt, Stack, TabSelectorClass, TooltipExt, resizable,
+    },
+    window::WindowConfig,
 };
-use crate::prelude::{
-    ViewTuple, dyn_container, img_dynamic, scroll, tab, text_input, virtual_stack,
-};
-use crate::style::{CustomStylable, FontSize, OverflowX, OverflowY, TextColor};
-use crate::theme::StyleThemeExt as _;
-use crate::unit::PxPctAuto;
-use crate::views::Stack;
-use crate::views::{
-    Button, CheckboxClass, ContainerExt, Decorators, Label, ListClass, ListItemClass, Scroll,
-    ScrollExt, TabSelectorClass, TooltipExt, resizable,
-};
-use crate::window::WindowConfig;
-use crate::{IntoView, View, ViewId, new_window};
 use floem_reactive::{Effect, RwSignal, SignalGet, SignalUpdate};
-use peniko::Color;
-use peniko::color::palette;
+use peniko::{Color, color::palette};
 use std::rc::Rc;
-use ui_events::keyboard::{self, KeyState, KeyboardEvent, NamedKey};
-use ui_events::pointer::{PointerButtonEvent, PointerEvent, PointerUpdate};
+use ui_events::{
+    keyboard::{self, KeyboardEvent, NamedKey},
+    pointer::{PointerButtonEvent, PointerUpdate},
+};
 use winit::window::WindowId;
 
 pub fn capture(window_id: WindowId) {
@@ -38,7 +39,7 @@ pub fn capture(window_id: WindowId) {
                 let tab_item = |name, index| {
                     Label::new(name)
                         .class(TabSelectorClass)
-                        .on_click_stop(move |_| selected.set(index))
+                        .action(move || selected.set(index))
                         .style(move |s| s.set_selected(selected.get() == index))
                 };
 
@@ -75,16 +76,14 @@ pub fn capture(window_id: WindowId) {
                 let id = stack.id();
                 stack
                     .style(|s| s.width_full().height_full())
-                    .on_event(EventListener::KeyUp, move |e| {
-                        if let Event::Key(e) = &e.event {
-                            if e.key == keyboard::Key::Named(NamedKey::F11) && e.modifiers.shift() {
-                                id.inspect();
-                                return EventPropagation::Stop;
-                            }
+                    .on_event(listener::KeyUp, move |_cx, e| {
+                        if e.key == keyboard::Key::Named(NamedKey::F11) && e.modifiers.shift() {
+                            id.inspect();
+                            return EventPropagation::Stop;
                         }
                         EventPropagation::Continue
                     })
-                    .on_event(EventListener::WindowClosed, |_| {
+                    .on_event(listener::WindowClosed, |_, _| {
                         RUNNING.set(false);
                         EventPropagation::Continue
                     })
@@ -172,103 +171,88 @@ fn capture_view(
             .height(image_height + 2.0)
             .margin_bottom(21.0)
             .margin_right(21.0)
-            .focusable(true)
+            .keyboard_navigable(true)
     })
-    .on_event_stop(EventListener::KeyUp, {
-        move |cx| {
-            if let Event::Key(KeyboardEvent {
-                state: KeyState::Up,
-                key,
-                ..
-            }) = &cx.event
-            {
-                match key {
-                    keyboard::Key::Named(NamedKey::ArrowUp) => {
-                        let id = contain_ids.try_update(|(match_index, ids)| {
-                            if !ids.is_empty() {
-                                if *match_index == 0 {
-                                    *match_index = ids.len() - 1;
-                                } else {
-                                    *match_index -= 1;
-                                }
-                            }
-                            ids.get(*match_index).copied()
-                        });
-                        if let Some(Some(id)) = id {
-                            update_select_view_id(id, &capture_view, false, datas);
+    .on_event_stop(listener::KeyUp, {
+        move |_cx, KeyboardEvent { key, .. }| match key {
+            keyboard::Key::Named(NamedKey::ArrowUp) => {
+                let id = contain_ids.try_update(|(match_index, ids)| {
+                    if !ids.is_empty() {
+                        if *match_index == 0 {
+                            *match_index = ids.len() - 1;
+                        } else {
+                            *match_index -= 1;
                         }
                     }
-                    keyboard::Key::Named(NamedKey::ArrowDown) => {
-                        let id = contain_ids.try_update(|(match_index, ids)| {
-                            if !ids.is_empty() {
-                                *match_index = (*match_index + 1) % ids.len();
-                            }
-                            ids.get(*match_index).copied()
-                        });
-                        if let Some(Some(id)) = id {
-                            update_select_view_id(id, &capture_view, false, datas);
-                        }
-                    }
-                    _ => {}
+                    ids.get(*match_index).copied()
+                });
+                if let Some(Some(id)) = id {
+                    update_select_view_id(id, &capture_view, false, datas);
                 }
             }
+            keyboard::Key::Named(NamedKey::ArrowDown) => {
+                let id = contain_ids.try_update(|(match_index, ids)| {
+                    if !ids.is_empty() {
+                        *match_index = (*match_index + 1) % ids.len();
+                    }
+                    ids.get(*match_index).copied()
+                });
+                if let Some(Some(id)) = id {
+                    update_select_view_id(id, &capture_view, false, datas);
+                }
+            }
+            _ => {}
         }
     })
-    .on_event_stop(EventListener::PointerUp, {
+    .on_event_stop(listener::PointerUp, {
         let capture_ = capture_.clone();
-        move |cx| {
-            if let Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. })) = &cx.event {
-                let find_ids = capture_
-                    .root
-                    .find_all_by_pos(state.logical_point())
-                    .iter()
-                    .filter(|id| !id.is_hidden())
-                    .cloned()
-                    .collect::<Vec<_>>();
-                if !find_ids.is_empty() {
-                    let first = contain_ids.try_update(|(index, ids)| {
-                        *index = 0;
-                        let _ = std::mem::replace(ids, find_ids);
-                        ids.first().copied()
-                    });
-                    if let Some(Some(id)) = first {
-                        update_select_view_id(id, &capture_view, false, datas);
-                    }
+        move |_cx, PointerButtonEvent { state, .. }| {
+            let find_ids = capture_
+                .root
+                .find_all_by_pos(state.logical_point())
+                .iter()
+                .filter(|id| !id.is_hidden())
+                .cloned()
+                .collect::<Vec<_>>();
+            if !find_ids.is_empty() {
+                let first = contain_ids.try_update(|(index, ids)| {
+                    *index = 0;
+                    let _ = std::mem::replace(ids, find_ids);
+                    ids.first().copied()
+                });
+                if let Some(Some(id)) = first {
+                    update_select_view_id(id, &capture_view, false, datas);
                 }
             }
         }
     })
-    .on_event_stop(EventListener::PointerMove, {
-        move |cx| {
-            if let Event::Pointer(PointerEvent::Move(PointerUpdate { current: state, .. })) =
-                &cx.event
-            {
-                let find_ids = capture_
-                    .root
-                    .find_all_by_pos(state.logical_point())
-                    .iter()
-                    .filter(|id| !id.is_hidden())
-                    .cloned()
-                    .collect::<Vec<_>>();
-                if !find_ids.is_empty() {
-                    if let Some(Some(first)) = contain_ids.try_update(|(index, ids)| {
-                        *index = 0;
-                        let _ = std::mem::replace(ids, find_ids);
-                        ids.first().copied()
-                    }) {
-                        if capture_view.highlighted.get() != Some(first) {
-                            capture_view.highlighted.set(Some(first));
-                        }
-                    } else {
-                        capture_view.highlighted.set(None);
+    .on_event_stop(listener::PointerMove, {
+        move |_cx, PointerUpdate { current: state, .. }| {
+            let find_ids = capture_
+                .root
+                .find_all_by_pos(state.logical_point())
+                .iter()
+                .filter(|id| !id.is_hidden())
+                .cloned()
+                .collect::<Vec<_>>();
+            if !find_ids.is_empty() {
+                if let Some(Some(first)) = contain_ids.try_update(|(index, ids)| {
+                    *index = 0;
+                    let _ = std::mem::replace(ids, find_ids);
+                    ids.first().copied()
+                }) {
+                    if capture_view.highlighted.get() != Some(first) {
+                        capture_view.highlighted.set(Some(first));
                     }
                 } else {
                     capture_view.highlighted.set(None);
                 }
+            } else {
+                capture_view.highlighted.set(None);
             }
         }
     })
-    .on_event_cont(EventListener::PointerLeave, move |_| {
+    .on_event_cont(listener::PointerLeave, move |_, _| {
         capture_view.highlighted.set(None)
     });
 
@@ -321,7 +305,7 @@ fn capture_view(
 
     let image = Stack::new((image, selected_overlay, highlighted_overlay));
 
-    let recapture = Button::new("Recapture").on_click_stop(move |_| {
+    let recapture = Button::new("Recapture").action(move || {
         add_app_update_event(AppUpdateEvent::CaptureWindow {
             window_id,
             capture: capture_s.write_only(),
@@ -376,14 +360,14 @@ fn capture_view(
                         .margin_left(PxPctAuto::Auto)
                 })
                 .class(TabSelectorClass)
-                .on_click_stop(move |_| active_tab.set(0)),
+                .action(move || active_tab.set(0)),
             "stats"
                 .style(move |s| {
                     s.apply_if(active_tab.get() == 1, |s| s.set_selected(true))
                         .margin_right(PxPctAuto::Auto)
                 })
                 .class(TabSelectorClass)
-                .on_click_stop(move |_| active_tab.set(1)),
+                .action(move || active_tab.set(1)),
         ))
         .style(|s| s.items_end().gap(10).padding_top(5)),
         tab,
@@ -407,50 +391,49 @@ fn capture_view(
     let search = text_input(search_str)
         .style(|s| s.width_full())
         .placeholder("View Search...")
-        .on_event_stop(EventListener::KeyUp, move |cx| {
-            if let Event::Key(KeyboardEvent { key, .. }) = &cx.event {
-                match key {
-                    keyboard::Key::Named(NamedKey::ArrowUp) => {
-                        let id = match_ids.try_update(|(match_index, ids)| {
-                            if !ids.is_empty() {
-                                if *match_index == 0 {
-                                    *match_index = ids.len() - 1;
-                                } else {
-                                    *match_index -= 1;
-                                }
+        .on_event_stop(
+            listener::KeyUp,
+            move |_cx, KeyboardEvent { key, .. }| match key {
+                keyboard::Key::Named(NamedKey::ArrowUp) => {
+                    let id = match_ids.try_update(|(match_index, ids)| {
+                        if !ids.is_empty() {
+                            if *match_index == 0 {
+                                *match_index = ids.len() - 1;
+                            } else {
+                                *match_index -= 1;
                             }
-                            ids.get(*match_index).copied()
-                        });
-                        if let Some(Some(id)) = id {
-                            update_select_view_id(id, &capture_view, false, datas);
                         }
-                    }
-                    keyboard::Key::Named(NamedKey::ArrowDown) => {
-                        let id = match_ids.try_update(|(match_index, ids)| {
-                            if !ids.is_empty() {
-                                *match_index = (*match_index + 1) % ids.len();
-                            }
-                            ids.get(*match_index).copied()
-                        });
-                        if let Some(Some(id)) = id {
-                            update_select_view_id(id, &capture_view, false, datas);
-                        }
-                    }
-                    _ => {
-                        let content = inner_search.get();
-                        let ids = find_view(&content, &root);
-                        let first = match_ids.try_update(|(index, match_ids)| {
-                            *index = 0;
-                            let _ = std::mem::replace(match_ids, ids);
-                            match_ids.first().copied()
-                        });
-                        if let Some(Some(id)) = first {
-                            update_select_view_id(id, &capture_view, false, datas);
-                        }
+                        ids.get(*match_index).copied()
+                    });
+                    if let Some(Some(id)) = id {
+                        update_select_view_id(id, &capture_view, false, datas);
                     }
                 }
-            }
-        });
+                keyboard::Key::Named(NamedKey::ArrowDown) => {
+                    let id = match_ids.try_update(|(match_index, ids)| {
+                        if !ids.is_empty() {
+                            *match_index = (*match_index + 1) % ids.len();
+                        }
+                        ids.get(*match_index).copied()
+                    });
+                    if let Some(Some(id)) = id {
+                        update_select_view_id(id, &capture_view, false, datas);
+                    }
+                }
+                _ => {
+                    let content = inner_search.get();
+                    let ids = find_view(&content, &root);
+                    let first = match_ids.try_update(|(index, match_ids)| {
+                        *index = 0;
+                        let _ = std::mem::replace(match_ids, ids);
+                        match_ids.first().copied()
+                    });
+                    if let Some(Some(id)) = first {
+                        update_select_view_id(id, &capture_view, false, datas);
+                    }
+                }
+            },
+        );
     let tree = if capture.root.warnings() {
         Stack::vertical((
             header("Warnings")
@@ -496,10 +479,10 @@ fn view_tree(
     .scroll()
     .style(|s| s.flex_grow(1.0))
     .custom_style(|s| s.shrink_to_fit())
-    .on_event_cont(EventListener::PointerLeave, move |_| {
+    .on_event_cont(listener::PointerLeave, move |_, _| {
         capture_signal_clone.highlighted.set(None)
     })
-    .on_click_stop(move |_| capture_signal_clone.selected.set(None))
+    .action(move || capture_signal_clone.selected.set(None))
     .scroll_to(move || {
         let focus_line = focus_line.get();
         Some((0.0, focus_line as f64 * 20.0).into())
@@ -529,7 +512,7 @@ fn tree_node(
         .container()
         .style(move |s| {
             s.height(height)
-                .focusable(true)
+                .keyboard_navigable(true)
                 //     .apply_if(highlighted.get() == Some(id), |s| {
                 //         s.background(Color::from_rgba8(228, 237, 216, 160))
                 //     })
@@ -542,8 +525,8 @@ fn tree_node(
                     // }
                 })
         })
-        .on_click_stop(move |_| selected.set(Some(id)))
-        .on_event_cont(EventListener::PointerEnter, move |_| {
+        .action(move || selected.set(Some(id)))
+        .on_event_cont(listener::PointerEnter, move |_, _| {
             highlighted.set(Some(id))
         });
     let row = add_event(
@@ -635,7 +618,7 @@ fn tree_node_name(view: &CapturedData, marge_left: f64) -> impl IntoView {
             }
             None => s.width(12.0).height(12.0).margin_right(4.0),
         })
-        .on_click_stop(move |_| {
+        .action(move || {
             if let Some(expanded) = ty {
                 expanded.set(!expanded.get_untracked());
             }

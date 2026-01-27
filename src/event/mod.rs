@@ -13,8 +13,13 @@ use winit::window::Theme;
 use dpi::LogicalPosition;
 
 mod dispatch;
+mod drag_state;
 pub mod dropped_file;
 pub(crate) mod path;
+pub use drag_state::DragConfig;
+pub(crate) use drag_state::DragTracker;
+
+pub mod listener;
 
 pub use dropped_file::FileDragEvent;
 pub use path::clear_hit_test_cache;
@@ -22,6 +27,227 @@ pub use path::clear_hit_test_cache;
 pub use dispatch::*;
 
 use crate::VisualId;
+
+use std::any::Any;
+
+// Trait for custom events
+pub trait CustomEvent: Any + 'static + std::fmt::Debug {
+    /// Get the unique key for this event type
+    fn listener_key() -> listener::EventListenerKey
+    where
+        Self: Sized;
+
+    /// Get the listener key for this trait object
+    fn listener_key_dyn(&self) -> listener::EventListenerKey;
+
+    fn transform(&mut self, transform: Affine) {
+        let _ = transform;
+    }
+
+    fn allow_disabled(&self) -> bool {
+        false
+    }
+
+    /// Clone this event into a Box without requiring Clone on the trait
+    fn clone_box(&self) -> Box<dyn CustomEvent>;
+
+    /// Downcast helper
+    fn as_any(&self) -> &dyn Any;
+}
+
+#[macro_export]
+macro_rules! custom_event {
+    // Struct variant with custom extractor, EventData type, and trait methods
+    (
+        $(#[$meta:meta])*
+        $v:vis struct $name:ident {
+            $($(#[$field_meta:meta])* $field_vis:vis $field:ident: $ty:ty),* $(,)?
+        },
+        $event_data:ty,
+        $extract:expr
+        $(, transform = $transform:expr)?
+        $(, allow_disabled = $allow_disabled:expr)?
+    ) => {
+        $(#[$meta])*
+        #[derive(Debug, Clone)]
+        $v struct $name {
+            $(
+                $(#[$field_meta])*
+                $field_vis $field: $ty,
+            )*
+        }
+        ::paste::paste! {
+            $crate::event_listener!(
+                #[doc = "Listener for `" $name "` events"]
+                $v [<$name Listener>]: $event_data,
+                |event| {
+                    if let $crate::event::Event::Custom(custom) = event {
+                        custom.as_any().downcast_ref::<$name>()
+                            .and_then($extract)
+                            .map(|e| e as &dyn std::any::Any)
+                    } else {
+                        None
+                    }
+                }
+            );
+        }
+        impl $crate::event::CustomEvent for $name {
+            fn listener_key() -> $crate::event::listener::EventListenerKey {
+                ::paste::paste! {
+                    <[<$name Listener>] as $crate::event::listener::EventListenerTrait>::listener_key()
+                }
+            }
+            fn listener_key_dyn(&self) -> $crate::event::listener::EventListenerKey {
+                Self::listener_key()
+            }
+
+            $(
+                fn transform(&mut self, transform: $crate::kurbo::Affine) {
+                    ($transform)(self, transform)
+                }
+            )?
+
+            $(
+                fn allow_disabled(&self) -> bool {
+                    ($allow_disabled)(self)
+                }
+            )?
+
+            fn as_any(&self) -> &dyn std::any::Any {
+                self
+            }
+
+            fn clone_box(&self) -> Box<dyn $crate::event::CustomEvent> {
+                Box::new(self.clone())
+            }
+        }
+        impl $name {
+            /// Get the event listener for this custom event
+            pub fn listener() -> ::paste::paste! { [<$name Listener>] } {
+                ::paste::paste! { [<$name Listener>] }
+            }
+        }
+    };
+
+    // Struct variant without custom extractor (default: EventData = Self, extract = identity)
+    (
+        $(#[$meta:meta])*
+        $v:vis struct $name:ident {
+            $($(#[$field_meta:meta])* $field_vis:vis $field:ident: $ty:ty),* $(,)?
+        }
+        $(, transform = $transform:expr)?
+        $(, allow_disabled = $allow_disabled:expr)?
+    ) => {
+        $crate::custom_event! {
+            $(#[$meta])*
+            $v struct $name {
+                $($(#[$field_meta])* $field_vis $field: $ty,)*
+            },
+            $name,
+            |data: &$name| -> Option<&$name> { Some(data) }
+            $(, transform = $transform)?
+            $(, allow_disabled = $allow_disabled)?
+        }
+    };
+
+    // Enum variants with similar extensions...
+    (
+        $(#[$meta:meta])*
+        $v:vis enum $name:ident {
+            $($(#[$variant_meta:meta])* $variant:ident $({ $($(#[$field_meta:meta])* $field_vis:vis $field:ident: $ty:ty),* $(,)? })?),* $(,)?
+        },
+        $event_data:ty,
+        $extract:expr
+        $(, transform = $transform:expr)?
+        $(, allow_disabled = $allow_disabled:expr)?
+    ) => {
+        $(#[$meta])*
+        #[derive(Debug, Clone)]
+        $v enum $name {
+            $(
+                $(#[$variant_meta])*
+                $variant $({
+                    $(
+                        $(#[$field_meta])*
+                        $field_vis $field: $ty,
+                    )*
+                })?
+            ),*
+        }
+        ::paste::paste! {
+            $crate::event_listener!(
+                #[doc = "Listener for `" $name "` events"]
+                $v [<$name Listener>]: $event_data,
+                |event| {
+                    if let $crate::event::Event::Custom(custom) = event {
+                        custom.as_any().downcast_ref::<$name>()
+                            .and_then($extract)
+                            .map(|e| e as &dyn std::any::Any)
+                    } else {
+                        None
+                    }
+                }
+            );
+        }
+        impl $crate::event::CustomEvent for $name {
+            fn listener_key() -> $crate::event::listener::EventListenerKey {
+                ::paste::paste! {
+                    <[<$name Listener>] as $crate::event::listener::EventListenerTrait>::listener_key()
+                }
+            }
+            fn listener_key_dyn(&self) -> $crate::event::listener::EventListenerKey {
+                Self::listener_key()
+            }
+
+            $(
+                fn transform(&mut self, transform: $crate::kurbo::Affine) {
+                    ($transform)(self, transform)
+                }
+            )?
+
+            $(
+                fn allow_disabled(&self) -> bool {
+                    ($allow_disabled)(self)
+                }
+            )?
+
+            fn as_any(&self) -> &dyn std::any::Any {
+                self
+            }
+
+            fn clone_box(&self) -> Box<dyn $crate::event::CustomEvent> {
+                Box::new(self.clone())
+            }
+        }
+        impl $name {
+            /// Get the event listener for this custom event
+            pub fn listener() -> ::paste::paste! { [<$name Listener>] } {
+                ::paste::paste! { [<$name Listener>] }
+            }
+        }
+    };
+
+    // Enum variant without custom extractor
+    (
+        $(#[$meta:meta])*
+        $v:vis enum $name:ident {
+            $($(#[$variant_meta:meta])* $variant:ident $({ $($(#[$field_meta:meta])* $field_vis:vis $field:ident: $ty:ty),* $(,)? })?),* $(,)?
+        }
+        $(, transform = $transform:expr)?
+        $(, allow_disabled = $allow_disabled:expr)?
+    ) => {
+        $crate::custom_event! {
+            $(#[$meta])*
+            $v enum $name {
+                $($(#[$variant_meta])* $variant $({ $($(#[$field_meta])* $field_vis $field: $ty,)* })?),*
+            },
+            $name,
+            |data: &$name| -> Option<&$name> { Some(data) }
+            $(, transform = $transform)?
+            $(, allow_disabled = $allow_disabled)?
+        }
+    };
+}
 
 /// Phases of event propagation.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -63,96 +289,6 @@ impl EventPropagation {
     pub fn is_processed(&self) -> bool {
         matches!(self, EventPropagation::Stop)
     }
-}
-
-#[derive(Debug, Hash, PartialEq, Eq, Copy, Clone)]
-pub enum EventListener {
-    /// Receives [`Event::Key`] with `KeyState::Down`
-    KeyDown,
-    /// Receives [`Event::Key`] with `KeyState::Up`
-    KeyUp,
-    /// Receives [`Event::Interaction`] `Click` variant
-    Click,
-    /// Receives [`Event::Interaction`] `DoubleClick` variant
-    DoubleClick,
-    /// Receives [`Event::Interaction`] `SecondaryClick` variant
-    SecondaryClick,
-    /// Receives [`Event::Drag`] `Start` variant
-    DragStart,
-    /// Receives [`Event::Drag`] `End` variant
-    DragEnd,
-    /// Receives [`Event::Drag`] `Move` variant
-    DragOver,
-    /// Receives [`Event::Drag`] `Enter` variant
-    DragEnter,
-    /// Receives [`Event::Drag`] `Leave` variant
-    DragLeave,
-    /// Receives [`Event::Pointer`] `Down` variant
-    PointerDown,
-    /// Receives [`Event::Pointer`] `Move` variant
-    PointerMove,
-    /// Receives [`Event::Pointer`] `Up` variant
-    PointerUp,
-    /// Receives [`Event::Pointer`] `Enter` variant
-    PointerEnter,
-    /// Receives [`Event::Pointer`] `Leave` variant
-    PointerLeave,
-    /// Receives [`Event::Pointer`] `Cancel` variant
-    PointerCancel,
-    /// Fired when a view gains pointer capture
-    GotPointerCapture,
-    /// Fired when a view loses pointer capture
-    LostPointerCapture,
-    /// Receives [`Event::Pointer`] `Gesture` variant with `PinchGesture`
-    PinchGesture,
-    /// Receives [`Event::Ime`] `Enabled` variant
-    ImeEnabled,
-    /// Receives [`Event::Ime`] `Disabled` variant
-    ImeDisabled,
-    /// Receives [`Event::Ime`] `Preedit` variant
-    ImePreedit,
-    /// Receives [`Event::ImeDeleteSurrounding`]
-    ImeDeleteSurrounding,
-    /// Receives [`Event::Ime`] `Commit` variant
-    ImeCommit,
-    /// Receives [`Event::Ime`] `DeleteSurrounding` variant
-    DeleteSurrounding,
-    /// Receives [`Event::Pointer`] `Scroll` variant
-    PointerWheel,
-    /// Receives [`Event::Focus`] `Gained` variant
-    FocusGained,
-    /// Receives [`Event::Focus`] `Lost` variant
-    FocusLost,
-    /// Receives [`Event::Window`] `ThemeChanged` variant
-    ThemeChanged,
-    /// Receives [`Event::Window`] `Closed` variant
-    WindowClosed,
-    /// Receives [`Event::Window`] `Resized` variant
-    WindowResized,
-    /// Receives [`Event::Window`] `Moved` variant
-    WindowMoved,
-    /// Receives [`Event::Window`] `FocusGained` variant
-    WindowGotFocus,
-    /// Receives [`Event::Window`] `FocusLost` variant
-    WindowLostFocus,
-    /// Receives [`Event::Window`] `MaximizeChanged` variant
-    WindowMaximizeChanged,
-    /// Receives [`Event::Window`] `ScaleChanged` variant
-    WindowScaleChanged,
-    /// Receives [`Event::FileDrag`] `DragDropped` variant
-    DroppedFiles,
-    /// Receives [`Event::FileDrag`] `DragEntered` variant
-    FileDragEnter,
-    /// Receives [`Event::FileDrag`] `DragMoved` variant
-    FileDragMove,
-    /// Receives [`Event::FileDrag`] `DragLeft` variant
-    FileDragLeave,
-    /// Receives [`Event::Focus`] `EnteredSubtree` variant
-    FocusEnteredSubtree,
-    /// Receives [`Event::Focus`] `LeftSubtree` variant
-    FocusLeftSubtree,
-    /// Receives [`Event::Window`] `ChangeUnderCursor` variant
-    WindowChangeUnderCursor,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
@@ -256,6 +392,9 @@ pub enum ImeEvent {
     Disabled,
 }
 
+/// High-level interaction events that abstract over pointer and keyboard input.
+/// These events represent user intent (clicking, double-clicking, etc.)
+/// regardless of the input method used.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum InteractionEvent {
     /// Single click (pointer or keyboard activated)
@@ -279,73 +418,378 @@ pub enum WindowEvent {
     ChangeUnderCursor,
 }
 
+// ============================================================================
+// Shared Event Data Structures
+// ============================================================================
+
+/// Event data for when a drag operation starts.
+///
+/// Only sent to the element being dragged via [`DragSourceEvent::Start`].
 #[derive(Clone, Debug)]
-pub enum DragEvent {
-    /// Drag operation started
-    Start {
-        /// The visual being dragged
-        visual_id: VisualId,
-        /// Pointer state when drag started
-        state: PointerState,
-        /// Which button initiated the drag
-        button: PointerButton,
-        /// Pointer identity
-        pointer: PointerInfo,
-    },
-
-    /// Pointer moved during drag
-    Move {
-        /// The visual being dragged
-        visual_id: VisualId,
-        /// Current pointer state
-        state: PointerState,
-        /// Pointer identity
-        pointer: PointerInfo,
-        /// Offset from drag start position
-        offset: Vec2,
-    },
-
-    /// Dragged element entered a potential drop target
-    Enter {
-        /// The visual being dragged
-        dragged_visual: VisualId,
-        /// The drop target visual
-        drop_target: VisualId,
-        /// Current pointer state
-        state: PointerState,
-        /// Pointer identity
-        pointer: PointerInfo,
-    },
-
-    /// Dragged element left a potential drop target
-    Leave {
-        /// The visual being dragged
-        dragged_visual: VisualId,
-        /// The drop target visual that was left
-        drop_target: VisualId,
-        /// Current pointer state
-        state: PointerState,
-        /// Pointer identity
-        pointer: PointerInfo,
-    },
-
-    /// Drag ended (pointer released)
-    /// Dispatch will determine which visuals should receive this event
-    End {
-        /// The visual being dragged
-        visual_id: VisualId,
-        /// Final pointer state
-        state: PointerState,
-        /// Which button was released
-        button: PointerButton,
-        /// Pointer identity
-        pointer: PointerInfo,
-        /// Total offset from start
-        offset: Vec2,
-    },
+pub struct DragStartEvent {
+    /// Pointer state when drag started
+    pub start_state: PointerState,
+    /// Current pointer state which may differ from the start state if the threshold is greater than 0
+    pub current_state: PointerState,
+    /// Which button initiated the drag
+    pub button: Option<PointerButton>,
+    /// Pointer identity
+    pub pointer: PointerInfo,
+    /// Custom data passed from the drag source
+    pub custom_data: Option<std::rc::Rc<dyn std::any::Any>>,
 }
 
-#[derive(Debug, Clone)]
+/// Event data for when the pointer moves during a drag operation.
+///
+/// Only sent to the element being dragged via [`DragSourceEvent::Move`].
+#[derive(Clone, Debug)]
+pub struct DragMoveEvent {
+    /// The starting state of the drag
+    pub start_state: PointerState,
+    /// The current state of the pointer
+    pub current_state: PointerState,
+    /// Which button initiated the drag
+    pub button: Option<PointerButton>,
+    /// Pointer identity
+    pub pointer: PointerInfo,
+    /// Custom data passed from the drag source
+    pub custom_data: Option<std::rc::Rc<dyn std::any::Any>>,
+}
+
+/// Event data for when a dragged element enters a drop target, or when a drop target
+/// is entered by a dragged element.
+///
+/// This struct is shared between:
+/// - [`DragSourceEvent::Enter`] - sent to the element being dragged
+/// - [`DragTargetEvent::Enter`] - sent to the drop target being entered
+#[derive(Clone, Debug)]
+pub struct DragEnterEvent {
+    /// The "other" element involved in this enter event.
+    ///
+    /// When sent to the dragged element (via [`DragSourceEvent::Enter`]):
+    /// This is the drop target element that was just entered.
+    ///
+    /// When sent to a drop target (via [`DragTargetEvent::Enter`]):
+    /// This is the dragged element that just entered.
+    pub other_element: VisualId,
+    /// The pointer state from when the drag started
+    pub start_state: PointerState,
+    /// The current state of the pointer
+    pub current_state: PointerState,
+    /// Which button initiated the drag
+    pub button: Option<PointerButton>,
+    /// Pointer identity
+    pub pointer: PointerInfo,
+    /// Custom data passed from the drag source
+    pub custom_data: Option<std::rc::Rc<dyn std::any::Any>>,
+}
+
+/// Event data for when a dragged element leaves a drop target, or when a drop target
+/// is left by a dragged element.
+///
+/// This struct is shared between:
+/// - [`DragSourceEvent::Leave`] - sent to the element being dragged
+/// - [`DragTargetEvent::Leave`] - sent to the drop target being left
+#[derive(Clone, Debug)]
+pub struct DragLeaveEvent {
+    /// The "other" element involved in this leave event.
+    ///
+    /// When sent to the dragged element (via [`DragSourceEvent::Leave`]):
+    /// This is the drop target element that was just left.
+    ///
+    /// When sent to a drop target (via [`DragTargetEvent::Leave`]):
+    /// This is the dragged element that just left.
+    pub other_element: VisualId,
+    /// The pointer state from when the drag started
+    pub start_state: PointerState,
+    /// Current pointer state
+    pub current_state: PointerState,
+    /// Which button initiated the drag
+    pub button: Option<PointerButton>,
+    /// Pointer identity
+    pub pointer: PointerInfo,
+    /// Custom data passed from the drag source
+    pub custom_data: Option<std::rc::Rc<dyn std::any::Any>>,
+}
+
+/// Event data for when a drag operation completes with a drop.
+///
+/// This struct is shared between:
+/// - [`DragSourceEvent::Drop`] - sent to the element being dragged
+/// - [`DragTargetEvent::Drop`] - sent to the drop target (which can call `prevent_default()` to accept)
+#[derive(Clone, Debug)]
+pub struct DragDropEvent {
+    /// The "other" element involved in this drop event.
+    ///
+    /// When sent to the dragged element (via [`DragSourceEvent::Drop`]):
+    /// This is the drop target element where the drop occurred, or `None` if dropped
+    /// outside any valid drop target.
+    ///
+    /// When sent to a drop target (via [`DragTargetEvent::Drop`]):
+    /// This is always `Some` containing the dragged element that was dropped.
+    pub other_element: Option<VisualId>,
+    /// The pointer state from when the drag started
+    pub start_state: PointerState,
+    /// Final pointer state
+    pub current_state: PointerState,
+    /// Which button initiated the drag and has now been released
+    pub button: Option<PointerButton>,
+    /// Pointer identity
+    pub pointer: PointerInfo,
+    /// Custom data passed from the drag source
+    pub custom_data: Option<std::rc::Rc<dyn std::any::Any>>,
+}
+
+/// Event data for when a drag operation is cancelled.
+///
+/// Only sent to the element being dragged via [`DragSourceEvent::Cancel`].
+/// Occurs when the drag is aborted (e.g., Escape key pressed, pointer left window,
+/// or pointer released without a valid drop target accepting the drop).
+#[derive(Clone, Debug)]
+pub struct DragCancelEvent {
+    /// The pointer state from when the drag started
+    pub start_state: PointerState,
+    /// Final pointer state
+    pub current_state: PointerState,
+    /// Which button initiated the drag
+    pub button: Option<PointerButton>,
+    /// Pointer identity
+    pub pointer: PointerInfo,
+    /// Custom data passed from the drag source
+    pub custom_data: Option<std::rc::Rc<dyn std::any::Any>>,
+}
+
+// ============================================================================
+// Event Enums
+// ============================================================================
+
+/// Events sent to the element being dragged during a drag operation.
+///
+/// These events track the lifecycle of the drag from the perspective of the source element:
+/// - Starting and moving
+/// - Entering and leaving potential drop targets
+/// - Completing with either a drop or cancellation
+///
+/// The dragged element receives all these events and can use them to provide visual feedback,
+/// track what targets are being hovered over, and respond to the outcome of the drag.
+#[derive(Clone, Debug)]
+pub enum DragSourceEvent {
+    /// Drag operation started - sent when the pointer has moved beyond the drag threshold
+    /// while the button is held down.
+    Start(DragStartEvent),
+
+    /// Pointer moved during drag - sent as the pointer moves while dragging.
+    Move(DragMoveEvent),
+
+    /// The dragged element entered a potential drop target.
+    /// `other_element` is the target that was entered.
+    Enter(DragEnterEvent),
+
+    /// The dragged element left a potential drop target.
+    /// `other_element` is the target that was left.
+    Leave(DragLeaveEvent),
+
+    /// Drag was dropped - sent when the pointer is released.
+    /// `other_element` is the drop target if one accepted the drop, `None` otherwise.
+    Drop(DragDropEvent),
+
+    /// Drag was cancelled - sent when the drag is aborted
+    /// (e.g., Escape key pressed, pointer left window, or no target accepted the drop).
+    Cancel(DragCancelEvent),
+}
+
+/// Events sent to potential drop targets during a drag operation.
+///
+/// These events allow drop targets to:
+/// - Know when a dragged element is hovering over them (Enter/Leave)
+/// - Accept or reject drops by calling `prevent_default()` on the Drop event
+/// - Provide visual feedback during drag hover
+/// - Access information about the dragged element via `other_element`
+///
+/// Drop targets only receive events when a dragged element is directly over them.
+#[derive(Clone, Debug)]
+pub enum DragTargetEvent {
+    /// A dragged element entered this drop target.
+    /// `other_element` is the element being dragged.
+    Enter(DragEnterEvent),
+
+    /// A dragged element left this drop target.
+    /// `other_element` is the element being dragged.
+    Leave(DragLeaveEvent),
+
+    /// A dragged element was dropped on this target - sent when the pointer is released
+    /// while over this target. `other_element` is the element being dragged.
+    ///
+    /// Call `prevent_default()` to accept the drop. If no target accepts, the dragged
+    /// element will receive a `Cancel` event instead.
+    Drop(DragDropEvent),
+}
+
+impl DragSourceEvent {
+    /// Get the current pointer state for this drag event.
+    pub fn current_state(&self) -> &PointerState {
+        match self {
+            Self::Start(e) => &e.current_state,
+            Self::Move(e) => &e.current_state,
+            Self::Enter(e) => &e.current_state,
+            Self::Leave(e) => &e.current_state,
+            Self::Drop(e) => &e.current_state,
+            Self::Cancel(e) => &e.current_state,
+        }
+    }
+
+    /// Get a mutable reference to the current pointer state for this drag event.
+    pub fn current_state_mut(&mut self) -> &mut PointerState {
+        match self {
+            Self::Start(e) => &mut e.current_state,
+            Self::Move(e) => &mut e.current_state,
+            Self::Enter(e) => &mut e.current_state,
+            Self::Leave(e) => &mut e.current_state,
+            Self::Drop(e) => &mut e.current_state,
+            Self::Cancel(e) => &mut e.current_state,
+        }
+    }
+
+    /// Get the pointer state from when the drag started.
+    pub fn start_state(&self) -> &PointerState {
+        match self {
+            Self::Start(e) => &e.start_state,
+            Self::Move(e) => &e.start_state,
+            Self::Enter(e) => &e.start_state,
+            Self::Leave(e) => &e.start_state,
+            Self::Drop(e) => &e.start_state,
+            Self::Cancel(e) => &e.start_state,
+        }
+    }
+
+    /// Get the pointer button that initiated this drag.
+    pub fn button(&self) -> Option<PointerButton> {
+        match self {
+            Self::Start(e) => e.button,
+            Self::Move(e) => e.button,
+            Self::Enter(e) => e.button,
+            Self::Leave(e) => e.button,
+            Self::Drop(e) => e.button,
+            Self::Cancel(e) => e.button,
+        }
+    }
+
+    /// Get the pointer identity information.
+    pub fn pointer(&self) -> &PointerInfo {
+        match self {
+            Self::Start(e) => &e.pointer,
+            Self::Move(e) => &e.pointer,
+            Self::Enter(e) => &e.pointer,
+            Self::Leave(e) => &e.pointer,
+            Self::Drop(e) => &e.pointer,
+            Self::Cancel(e) => &e.pointer,
+        }
+    }
+
+    /// Get a mutable reference to the pointer state from when the drag started.
+    pub fn start_state_mut(&mut self) -> &mut PointerState {
+        match self {
+            Self::Start(e) => &mut e.start_state,
+            Self::Move(e) => &mut e.start_state,
+            Self::Enter(e) => &mut e.start_state,
+            Self::Leave(e) => &mut e.start_state,
+            Self::Drop(e) => &mut e.start_state,
+            Self::Cancel(e) => &mut e.start_state,
+        }
+    }
+}
+
+impl DragTargetEvent {
+    /// Get the current pointer state for this drag event.
+    pub fn current_state(&self) -> &PointerState {
+        match self {
+            Self::Enter(e) => &e.current_state,
+            Self::Leave(e) => &e.current_state,
+            Self::Drop(e) => &e.current_state,
+        }
+    }
+
+    /// Get a mutable reference to the current pointer state for this drag event.
+    pub fn current_state_mut(&mut self) -> &mut PointerState {
+        match self {
+            Self::Enter(e) => &mut e.current_state,
+            Self::Leave(e) => &mut e.current_state,
+            Self::Drop(e) => &mut e.current_state,
+        }
+    }
+
+    /// Get the pointer state from when the drag started.
+    pub fn start_state(&self) -> &PointerState {
+        match self {
+            Self::Enter(e) => &e.start_state,
+            Self::Leave(e) => &e.start_state,
+            Self::Drop(e) => &e.start_state,
+        }
+    }
+
+    /// Get the pointer button that initiated this drag.
+    pub fn button(&self) -> Option<PointerButton> {
+        match self {
+            Self::Enter(e) => e.button,
+            Self::Leave(e) => e.button,
+            Self::Drop(e) => e.button,
+        }
+    }
+
+    /// Get the pointer identity information.
+    pub fn pointer(&self) -> &PointerInfo {
+        match self {
+            Self::Enter(e) => &e.pointer,
+            Self::Leave(e) => &e.pointer,
+            Self::Drop(e) => &e.pointer,
+        }
+    }
+
+    /// Get the ID of the element being dragged (the source element).
+    pub fn dragged_element(&self) -> Option<VisualId> {
+        match self {
+            Self::Enter(e) => Some(e.other_element),
+            Self::Leave(e) => Some(e.other_element),
+            Self::Drop(e) => e.other_element,
+        }
+    }
+
+    /// Get a mutable reference to the pointer state from when the drag started.
+    pub fn start_state_mut(&mut self) -> &mut PointerState {
+        match self {
+            Self::Enter(e) => &mut e.start_state,
+            Self::Leave(e) => &mut e.start_state,
+            Self::Drop(e) => &mut e.start_state,
+        }
+    }
+
+    /// Returns `true` if the drag target event is [`Enter`].
+    ///
+    /// [`Enter`]: DragTargetEvent::Enter
+    #[must_use]
+    pub fn is_enter(&self) -> bool {
+        matches!(self, Self::Enter(..))
+    }
+
+    /// Returns `true` if the drag target event is [`Leave`].
+    ///
+    /// [`Leave`]: DragTargetEvent::Leave
+    #[must_use]
+    pub fn is_leave(&self) -> bool {
+        matches!(self, Self::Leave(..))
+    }
+
+    /// Returns `true` if the drag target event is [`Drop`].
+    ///
+    /// [`Drop`]: DragTargetEvent::Drop
+    #[must_use]
+    pub fn is_drop(&self) -> bool {
+        matches!(self, Self::Drop(..))
+    }
+}
+
+// Update Event enum
+#[derive(Debug)]
 pub enum Event {
     Pointer(PointerEvent),
     Key(ui_events::keyboard::KeyboardEvent),
@@ -354,8 +798,41 @@ pub enum Event {
     Ime(ImeEvent),
     Focus(FocusEvent),
     Window(WindowEvent),
+    /// High-level interaction events that abstract over pointer and keyboard input.
+    /// These events represent user intent (clicking, double-clicking, etc.)
+    /// regardless of the input method used.
+    /// These are emitted after the cooresponding events that cause them.
     Interaction(InteractionEvent),
-    Drag(DragEvent),
+    /// Drag target events - sent to potential drop targets when a dragged element
+    /// interacts with them (enters, leaves, or is dropped on them).
+    DragTarget(DragTargetEvent),
+    /// Drag source events - sent to the element being dragged throughout the
+    /// drag operation lifecycle (start, move, enter/leave targets, drop, cancel).
+    DragSource(DragSourceEvent),
+    Custom(Box<dyn CustomEvent>),
+    /// Sentinel value used internally when temporarily moving an event out of EventCx.
+    /// This allows event handlers to receive both &mut EventCx and typed event data without
+    /// borrow conflicts. If you see this variant in your event handler, you're likely accessing
+    /// cx.event directly - use the typed event data parameter passed to your handler instead.
+    Extracted,
+}
+impl Clone for Event {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Pointer(arg0) => Self::Pointer(arg0.clone()),
+            Self::Key(arg0) => Self::Key(arg0.clone()),
+            Self::FileDrag(arg0) => Self::FileDrag(arg0.clone()),
+            Self::PointerCapture(arg0) => Self::PointerCapture(*arg0),
+            Self::Ime(arg0) => Self::Ime(arg0.clone()),
+            Self::Focus(arg0) => Self::Focus(*arg0),
+            Self::Window(arg0) => Self::Window(*arg0),
+            Self::Interaction(arg0) => Self::Interaction(*arg0),
+            Self::DragTarget(arg0) => Self::DragTarget(arg0.clone()),
+            Self::DragSource(arg0) => Self::DragSource(arg0.clone()),
+            Self::Custom(arg0) => Self::Custom(arg0.clone_box()),
+            Self::Extracted => Self::Extracted,
+        }
+    }
 }
 
 impl Event {
@@ -363,17 +840,15 @@ impl Event {
         matches!(self, Event::Key(_))
     }
 
-    pub(crate) fn is_pointer(&self) -> bool {
+    pub fn is_pointer(&self) -> bool {
         matches!(self, Event::Pointer(_))
     }
 
-    #[allow(unused)]
-    pub(crate) fn is_pointer_down(&self) -> bool {
+    pub fn is_pointer_down(&self) -> bool {
         matches!(self, Event::Pointer(PointerEvent::Down { .. }))
     }
 
-    #[allow(unused)]
-    pub(crate) fn is_pointer_up(&self) -> bool {
+    pub fn is_pointer_up(&self) -> bool {
         matches!(self, Event::Pointer(PointerEvent::Up { .. }))
     }
 
@@ -381,7 +856,8 @@ impl Event {
     pub(crate) fn is_keyboard_trigger(&self) -> bool {
         match self {
             Event::Key(key) => {
-                matches!(key.code, Code::NumpadEnter | Code::Enter | Code::Space)
+                key.state == KeyState::Up
+                    && matches!(key.code, Code::NumpadEnter | Code::Enter | Code::Space)
             }
             _ => false,
         }
@@ -417,39 +893,12 @@ impl Event {
             // Interaction events (click, double click, etc.) should not trigger on disabled views
             Event::Interaction(_) => false,
             // Drag events should not be initiated or handled by disabled views
-            Event::Drag(_) => false,
-        }
-    }
-
-    pub fn pixel_scroll_delta_vec2(&self) -> Option<Vec2> {
-        if let Event::Pointer(PointerEvent::Scroll(PointerScrollEvent { delta, state, .. })) = self
-        {
-            match delta {
-                ScrollDelta::PixelDelta(delta) => {
-                    let log = delta.to_logical(state.scale_factor);
-                    Some(Vec2 { x: log.x, y: log.y })
-                }
-                ScrollDelta::LineDelta(x, y) => {
-                    // Convert line delta to pixel delta
-                    // 20 pixels per line is a reasonable default for most UIs
-                    const LINE_HEIGHT: f64 = 20.0;
-                    Some(Vec2 {
-                        x: (*x as f64) * LINE_HEIGHT,
-                        y: (*y as f64) * LINE_HEIGHT,
-                    })
-                }
-                ScrollDelta::PageDelta(x, y) => {
-                    // Page deltas are synthetic (e.g., clicking scrollbar well)
-                    // Use a larger multiplier for page scrolling
-                    const PAGE_HEIGHT: f64 = 200.0;
-                    Some(Vec2 {
-                        x: (*x as f64) * PAGE_HEIGHT,
-                        y: (*y as f64) * PAGE_HEIGHT,
-                    })
-                }
+            Event::DragTarget(_) | Event::DragSource(_) => false,
+            // allow custom events to decide
+            Event::Custom(custom) => custom.allow_disabled(),
+            Event::Extracted => {
+                unreachable!("this event should never be dispatched")
             }
-        } else {
-            None
         }
     }
 
@@ -461,29 +910,7 @@ impl Event {
             | Event::Pointer(PointerEvent::Scroll(PointerScrollEvent { state, .. })) => {
                 Some(state.logical_point())
             }
-            Event::FileDrag(
-                FileDragEvent::DragEntered {
-                    position,
-                    scale_factor,
-                    ..
-                }
-                | FileDragEvent::DragMoved {
-                    position,
-                    scale_factor,
-                }
-                | FileDragEvent::DragDropped {
-                    position,
-                    scale_factor,
-                    ..
-                }
-                | FileDragEvent::DragLeft {
-                    position: Some(position),
-                    scale_factor,
-                },
-            ) => {
-                let log_pos = position.to_logical(*scale_factor);
-                Some(Point::new(log_pos.x, log_pos.y))
-            }
+            Event::FileDrag(file_drag_event) => file_drag_event.logical_point(),
             _ => None,
         }
     }
@@ -494,7 +921,7 @@ impl Event {
 
     pub fn transform(mut self, transform: Affine) -> Event {
         match &mut self {
-            Event::Pointer(
+            Self::Pointer(
                 PointerEvent::Down(PointerButtonEvent { state, .. })
                 | PointerEvent::Up(PointerButtonEvent { state, .. })
                 | PointerEvent::Gesture(PointerGestureEvent { state, .. })
@@ -507,25 +934,25 @@ impl Event {
                     .to_physical(state.scale_factor);
                 state.position = phys_pos;
             }
-            Event::FileDrag(
-                FileDragEvent::DragEntered {
+            Self::FileDrag(
+                FileDragEvent::DragEntered(dropped_file::FileDragEntered {
                     position,
                     scale_factor,
                     ..
-                }
-                | FileDragEvent::DragMoved {
+                })
+                | FileDragEvent::DragMoved(dropped_file::FileDragMoved {
                     position,
                     scale_factor,
-                }
-                | FileDragEvent::DragDropped {
+                })
+                | FileDragEvent::DragDropped(dropped_file::FileDragDropped {
                     position,
                     scale_factor,
                     ..
-                }
-                | FileDragEvent::DragLeft {
+                })
+                | FileDragEvent::DragLeft(dropped_file::FileDragLeft {
                     position: Some(position),
                     scale_factor,
-                },
+                }),
             ) => {
                 let log_pos = position.to_logical(*scale_factor);
                 let point = Point::new(log_pos.x, log_pos.y);
@@ -534,87 +961,123 @@ impl Event {
                     .to_physical(*scale_factor);
                 *position = phys_pos;
             }
-            Event::Drag(
-                DragEvent::Start { state, .. }
-                | DragEvent::Move { state, .. }
-                | DragEvent::Enter { state, .. }
-                | DragEvent::Leave { state, .. }
-                | DragEvent::End { state, .. },
-            ) => {
+            Self::DragTarget(de) => {
+                // Transform current state
+                let state = de.current_state_mut();
                 let point = state.logical_point();
                 let transformed_point = transform.inverse() * point;
                 let phys_pos = LogicalPosition::new(transformed_point.x, transformed_point.y)
                     .to_physical(state.scale_factor);
                 state.position = phys_pos;
+
+                // Transform start state
+                let start_state = de.start_state_mut();
+                let start_point = start_state.logical_point();
+                let transformed_start_point = transform.inverse() * start_point;
+                let phys_start_pos =
+                    LogicalPosition::new(transformed_start_point.x, transformed_start_point.y)
+                        .to_physical(start_state.scale_factor);
+                start_state.position = phys_start_pos;
             }
-            Event::Pointer(
+            Self::DragSource(de) => {
+                // Transform current state
+                let state = de.current_state_mut();
+                let point = state.logical_point();
+                let transformed_point = transform.inverse() * point;
+                let phys_pos = LogicalPosition::new(transformed_point.x, transformed_point.y)
+                    .to_physical(state.scale_factor);
+                state.position = phys_pos;
+
+                // Transform start state
+                let start_state = de.start_state_mut();
+                let start_point = start_state.logical_point();
+                let transformed_start_point = transform.inverse() * start_point;
+                let phys_start_pos =
+                    LogicalPosition::new(transformed_start_point.x, transformed_start_point.y)
+                        .to_physical(start_state.scale_factor);
+                start_state.position = phys_start_pos;
+            }
+            Self::Pointer(
                 PointerEvent::Cancel(_) | PointerEvent::Leave(_) | PointerEvent::Enter(_),
             )
-            | Event::FileDrag(FileDragEvent::DragLeft { position: None, .. })
-            | Event::Key(_)
-            | Event::PointerCapture(_)
-            | Event::Focus(_)
-            | Event::Ime(_)
-            | Event::Window(_)
-            | Event::Interaction(_) => {}
+            | Self::FileDrag(FileDragEvent::DragLeft(dropped_file::FileDragLeft {
+                position: None,
+                ..
+            }))
+            | Self::Key(_)
+            | Self::PointerCapture(_)
+            | Self::Focus(_)
+            | Self::Ime(_)
+            | Self::Window(_)
+            | Self::Interaction(_)
+            | Self::Extracted => {}
+            // TODO: make dyn custom event impl clone then use transform method
+            Self::Custom(_custom) => {}
         }
         self
     }
 
-    pub fn listener(&self) -> EventListener {
+    pub fn listener_key(&self) -> listener::EventListenerKey {
+        use listener::*;
         match self {
-            Event::Pointer(PointerEvent::Down { .. }) => EventListener::PointerDown,
-            Event::Pointer(PointerEvent::Up { .. }) => EventListener::PointerUp,
-            Event::Pointer(PointerEvent::Move(_)) => EventListener::PointerMove,
-            Event::Pointer(PointerEvent::Scroll { .. }) => EventListener::PointerWheel,
-            Event::Pointer(PointerEvent::Leave(_)) => EventListener::PointerLeave,
-            Event::Pointer(PointerEvent::Enter(_)) => EventListener::PointerEnter,
-            Event::Pointer(PointerEvent::Cancel(_)) => EventListener::PointerCancel,
-            Event::Pointer(PointerEvent::Gesture(_)) => EventListener::PinchGesture,
-            Event::PointerCapture(PointerCaptureEvent::Gained(_)) => {
-                EventListener::GotPointerCapture
+            Self::Pointer(PointerEvent::Down { .. }) => PointerDown::listener_key(),
+            Self::Pointer(PointerEvent::Up { .. }) => PointerUp::listener_key(),
+            Self::Pointer(PointerEvent::Move(_)) => PointerMove::listener_key(),
+            Self::Pointer(PointerEvent::Scroll { .. }) => PointerWheel::listener_key(),
+            Self::Pointer(PointerEvent::Leave(_)) => PointerLeave::listener_key(),
+            Self::Pointer(PointerEvent::Enter(_)) => PointerEnter::listener_key(),
+            Self::Pointer(PointerEvent::Cancel(_)) => PointerCancel::listener_key(),
+            Self::Pointer(PointerEvent::Gesture(_)) => PinchGesture::listener_key(),
+            Self::PointerCapture(PointerCaptureEvent::Gained(_)) => {
+                GainedPointerCapture::listener_key()
             }
-            Event::PointerCapture(PointerCaptureEvent::Lost(_)) => {
-                EventListener::LostPointerCapture
+            Self::PointerCapture(PointerCaptureEvent::Lost(_)) => {
+                LostPointerCapture::listener_key()
             }
-            Event::Key(KeyboardEvent {
+            Self::Key(KeyboardEvent {
                 state: KeyState::Down,
                 ..
-            }) => EventListener::KeyDown,
-            Event::Key(KeyboardEvent {
+            }) => KeyDown::listener_key(),
+            Self::Key(KeyboardEvent {
                 state: KeyState::Up,
                 ..
-            }) => EventListener::KeyUp,
-            Event::Ime(ImeEvent::Enabled) => EventListener::ImeEnabled,
-            Event::Ime(ImeEvent::Disabled) => EventListener::ImeDisabled,
-            Event::Ime(ImeEvent::Preedit { .. }) => EventListener::ImePreedit,
-            Event::Ime(ImeEvent::Commit(_)) => EventListener::ImeCommit,
-            Event::Ime(ImeEvent::DeleteSurrounding { .. }) => EventListener::ImeDeleteSurrounding,
-            Event::Focus(FocusEvent::Lost) => EventListener::FocusLost,
-            Event::Focus(FocusEvent::Gained) => EventListener::FocusGained,
-            Event::Focus(FocusEvent::EnteredSubtree) => EventListener::FocusEnteredSubtree,
-            Event::Focus(FocusEvent::LeftSubtree) => EventListener::FocusLeftSubtree,
-            Event::Window(WindowEvent::Closed) => EventListener::WindowClosed,
-            Event::Window(WindowEvent::Resized(_)) => EventListener::WindowResized,
-            Event::Window(WindowEvent::Moved(_)) => EventListener::WindowMoved,
-            Event::Window(WindowEvent::MaximizeChanged(_)) => EventListener::WindowMaximizeChanged,
-            Event::Window(WindowEvent::ScaleChanged(_)) => EventListener::WindowScaleChanged,
-            Event::Window(WindowEvent::FocusGained) => EventListener::WindowGotFocus,
-            Event::Window(WindowEvent::FocusLost) => EventListener::WindowLostFocus,
-            Event::Window(WindowEvent::ThemeChanged(_)) => EventListener::ThemeChanged,
-            Event::Window(WindowEvent::ChangeUnderCursor) => EventListener::WindowChangeUnderCursor,
-            Event::Interaction(InteractionEvent::Click) => EventListener::Click,
-            Event::Interaction(InteractionEvent::DoubleClick) => EventListener::DoubleClick,
-            Event::Interaction(InteractionEvent::SecondaryClick) => EventListener::SecondaryClick,
-            Event::FileDrag(FileDragEvent::DragDropped { .. }) => EventListener::DroppedFiles,
-            Event::FileDrag(FileDragEvent::DragEntered { .. }) => EventListener::FileDragEnter,
-            Event::FileDrag(FileDragEvent::DragMoved { .. }) => EventListener::FileDragMove,
-            Event::FileDrag(FileDragEvent::DragLeft { .. }) => EventListener::FileDragLeave,
-            Event::Drag(DragEvent::Start { .. }) => EventListener::DragStart,
-            Event::Drag(DragEvent::Move { .. }) => EventListener::DragOver,
-            Event::Drag(DragEvent::Enter { .. }) => EventListener::DragEnter,
-            Event::Drag(DragEvent::Leave { .. }) => EventListener::DragLeave,
-            Event::Drag(DragEvent::End { .. }) => EventListener::DragEnd,
+            }) => KeyUp::listener_key(),
+            Self::Ime(ImeEvent::Enabled) => ImeEnabled::listener_key(),
+            Self::Ime(ImeEvent::Disabled) => ImeDisabled::listener_key(),
+            Self::Ime(ImeEvent::Preedit { .. }) => ImePreedit::listener_key(),
+            Self::Ime(ImeEvent::Commit(_)) => ImeCommit::listener_key(),
+            Self::Ime(ImeEvent::DeleteSurrounding { .. }) => ImeDeleteSurrounding::listener_key(),
+            Self::Focus(FocusEvent::Lost) => FocusLost::listener_key(),
+            Self::Focus(FocusEvent::Gained) => FocusGained::listener_key(),
+            Self::Focus(FocusEvent::EnteredSubtree) => FocusEnteredSubtree::listener_key(),
+            Self::Focus(FocusEvent::LeftSubtree) => FocusLeftSubtree::listener_key(),
+            Self::Window(WindowEvent::Closed) => WindowClosed::listener_key(),
+            Self::Window(WindowEvent::Resized(_)) => WindowResized::listener_key(),
+            Self::Window(WindowEvent::Moved(_)) => WindowMoved::listener_key(),
+            Self::Window(WindowEvent::MaximizeChanged(_)) => WindowMaximizeChanged::listener_key(),
+            Self::Window(WindowEvent::ScaleChanged(_)) => WindowScaleChanged::listener_key(),
+            Self::Window(WindowEvent::FocusGained) => WindowGainedFocus::listener_key(),
+            Self::Window(WindowEvent::FocusLost) => WindowLostFocus::listener_key(),
+            Self::Window(WindowEvent::ThemeChanged(_)) => ThemeChanged::listener_key(),
+            Self::Window(WindowEvent::ChangeUnderCursor) => WindowChangeUnderCursor::listener_key(),
+            Self::Interaction(InteractionEvent::Click) => Click::listener_key(),
+            Self::Interaction(InteractionEvent::DoubleClick) => DoubleClick::listener_key(),
+            Self::Interaction(InteractionEvent::SecondaryClick) => SecondaryClick::listener_key(),
+            Self::FileDrag(FileDragEvent::DragDropped { .. }) => DroppedFiles::listener_key(),
+            Self::FileDrag(FileDragEvent::DragEntered { .. }) => FileDragEnter::listener_key(),
+            Self::FileDrag(FileDragEvent::DragMoved { .. }) => FileDragMove::listener_key(),
+            Self::FileDrag(FileDragEvent::DragLeft { .. }) => FileDragLeave::listener_key(),
+            Self::DragSource(DragSourceEvent::Start(..)) => DragStart::listener_key(),
+            Self::DragSource(DragSourceEvent::Move(..)) => DragMove::listener_key(),
+            Self::DragSource(DragSourceEvent::Enter(..)) => DragSourceEnter::listener_key(),
+            Self::DragSource(DragSourceEvent::Leave(..)) => DragSourceLeave::listener_key(),
+            Self::DragSource(DragSourceEvent::Drop(..)) => DragSourceDrop::listener_key(),
+            Self::DragSource(DragSourceEvent::Cancel(..)) => DragCancel::listener_key(),
+            Self::DragTarget(DragTargetEvent::Enter(..)) => DragTargetEnter::listener_key(),
+            Self::DragTarget(DragTargetEvent::Leave(..)) => DragTargetLeave::listener_key(),
+            Self::DragTarget(DragTargetEvent::Drop(..)) => DragTargetDrop::listener_key(),
+            Self::Extracted => Extracted::listener_key(),
+            Self::Custom(custom) => custom.listener_key_dyn(),
         }
     }
 
@@ -625,266 +1088,51 @@ impl Event {
     fn is_move(&self) -> bool {
         matches!(self, Event::Pointer(PointerEvent::Move(_)))
     }
+
+    pub fn new_custom(custom: impl CustomEvent) -> Self {
+        Self::Custom(Box::new(custom))
+    }
 }
 
-use std::time::Instant;
-
-/// Tracks the state of a visual being dragged.
-pub struct DragState {
-    pub(crate) id: VisualId,
-    pub(crate) start_state: PointerState,
-    pub(crate) offset: Vec2,
-    pub(crate) pointer: PointerInfo,
-    pub(crate) button: PointerButton,
-    pub(crate) released_at: Option<Instant>,
-    pub(crate) release_location: Option<Point>,
-}
-
-pub struct DragTracker {
-    /// Current drag state, if a drag is in progress
-    pub(crate) state: Option<DragState>,
-    /// Minimum distance (in logical pixels) pointer must move before drag starts
-    threshold: f64,
-    /// Whether the pointer has moved past the threshold distance
-    /// When false, state exists but we're waiting to exceed threshold
-    /// When true, drag events are being emitted
-    threshold_exceeded: bool,
-    /// Hover state for tracking drag enter/leave events
-    hover_state: understory_event_state::hover::HoverState<VisualId>,
-}
-
-impl DragTracker {
-    pub fn new() -> Self {
-        Self {
-            state: None,
-            threshold: 3.0, // Common default: 3 logical pixels
-            threshold_exceeded: false,
-            hover_state: understory_event_state::hover::HoverState::new(),
-        }
-    }
-
-    pub fn with_threshold(mut self, threshold: f64) -> Self {
-        self.threshold = threshold;
-        self
-    }
-
-    /// Returns true if a drag has started (threshold has been exceeded)
-    pub fn is_dragging(&self) -> bool {
-        self.threshold_exceeded
-    }
-
-    /// Returns the current drag state, if any
-    pub fn drag_state(&self) -> Option<&DragState> {
-        self.state.as_ref()
-    }
-
-    /// Handle a pointer down event - potential drag start
-    /// Returns None - drag doesn't actually start until threshold is exceeded
-    pub fn on_pointer_down(
-        &mut self,
-        visual_id: VisualId,
-        button_event: &PointerButtonEvent,
-    ) -> Option<DragEvent> {
-        // Only track left button drags by default (or customize as needed)
-        if button_event.button != Some(PointerButton::Primary) {
-            return None;
-        }
-
-        self.state = Some(DragState {
-            id: visual_id,
-            start_state: button_event.state.clone(),
-            offset: Vec2::ZERO,
-            pointer: button_event.pointer,
-            button: button_event.button.unwrap_or(PointerButton::Primary),
-            released_at: None,
-            release_location: None,
-        });
-        self.threshold_exceeded = false;
-
-        None // Don't emit Start event yet
-    }
-
-    /// Handle a pointer move event - check threshold and generate drag events
+pub trait PointerScrollEventExt {
+    /// Resolve scroll delta to points/pixels.
     ///
-    /// `hover_path` should be the current hover path from the window's hover state
-    pub fn on_pointer_move(
-        &mut self,
-        move_event: &PointerUpdate,
-        hover_path: &[VisualId],
-    ) -> Vec<DragEvent> {
-        let state = match self.state.as_mut() {
-            Some(s) => s,
-            None => return Vec::new(),
-        };
+    /// Converts the scroll delta to a pixel-based Vec2, using the provided line and page sizes
+    /// when available. Falls back to reasonable defaults if not provided.
+    ///
+    /// # Arguments
+    /// * `line_size` - Optional size to use for line-based scrolling (e.g., mouse wheel clicks)
+    /// * `page_size` - Optional size to use for page-based scrolling (e.g., page up/down)
+    fn resolve_to_points(&self, line_size: Option<Size>, page_size: Option<Size>) -> Vec2;
+}
 
-        let start_pos = state.start_state.logical_point();
-        let current_pos = move_event.current.logical_point();
-        let new_offset = Vec2::new(current_pos.x - start_pos.x, current_pos.y - start_pos.y);
-
-        let mut events = Vec::new();
-
-        // Check if we've exceeded the threshold to start dragging
-        if !self.threshold_exceeded {
-            let distance = (new_offset.x * new_offset.x + new_offset.y * new_offset.y).sqrt();
-            if distance >= self.threshold {
-                self.threshold_exceeded = true;
-                events.push(DragEvent::Start {
-                    visual_id: state.id,
-                    state: state.start_state.clone(),
-                    button: state.button,
-                    pointer: state.pointer,
-                });
-            } else {
-                // Haven't exceeded threshold yet
-                return events;
+impl PointerScrollEventExt for PointerScrollEvent {
+    fn resolve_to_points(&self, line_size: Option<Size>, page_size: Option<Size>) -> Vec2 {
+        match &self.delta {
+            ScrollDelta::PixelDelta(delta) => {
+                let log = delta.to_logical(self.state.scale_factor);
+                Vec2 { x: log.x, y: log.y }
             }
-        }
-
-        // Update offset
-        state.offset = new_offset;
-
-        // Emit Move event
-        events.push(DragEvent::Move {
-            visual_id: state.id,
-            state: move_event.current.clone(),
-            pointer: move_event.pointer,
-            offset: new_offset,
-        });
-
-        // Extract values needed for hover state update before dropping the borrow
-        let dragged_id = state.id;
-        let pointer_info = state.pointer;
-        let current_state = move_event.current.clone();
-
-        // Drop the mutable borrow so we can update hover state
-        drop(state);
-
-        // Update hover state and generate Enter/Leave events
-        let hover_events = self.hover_state.update_path(hover_path);
-        for hover_event in hover_events {
-            match hover_event {
-                understory_event_state::hover::HoverEvent::Enter(drop_target) => {
-                    // Don't send Enter if we're hovering over the dragged item itself
-                    if drop_target != dragged_id {
-                        events.push(DragEvent::Enter {
-                            dragged_visual: dragged_id,
-                            drop_target,
-                            state: current_state.clone(),
-                            pointer: pointer_info,
-                        });
-                    }
+            ScrollDelta::LineDelta(x, y) => {
+                // Convert line delta to pixel delta
+                // Use provided line size or fall back to reasonable default
+                let line_height = line_size.map(|s| s.height).unwrap_or(20.0);
+                let line_width = line_size.map(|s| s.width).unwrap_or(20.0);
+                Vec2 {
+                    x: (*x as f64) * line_width,
+                    y: (*y as f64) * line_height,
                 }
-                understory_event_state::hover::HoverEvent::Leave(drop_target) => {
-                    events.push(DragEvent::Leave {
-                        dragged_visual: dragged_id,
-                        drop_target,
-                        state: current_state.clone(),
-                        pointer: pointer_info,
-                    });
+            }
+            ScrollDelta::PageDelta(x, y) => {
+                // Page deltas are synthetic (e.g., clicking scrollbar well)
+                // Use provided page size or fall back to larger multiplier
+                let page_height = page_size.map(|s| s.height).unwrap_or(200.0);
+                let page_width = page_size.map(|s| s.width).unwrap_or(200.0);
+                Vec2 {
+                    x: (*x as f64) * page_width,
+                    y: (*y as f64) * page_height,
                 }
             }
         }
-
-        events
-    }
-
-    /// Handle a pointer up event - end the drag
-    ///
-    /// Returns both the drag end event and any hover leave events from clearing the hover state
-    pub fn on_pointer_up(&mut self, button_event: &PointerButtonEvent) -> Vec<DragEvent> {
-        let state = match self.state.take() {
-            Some(s) => s,
-            None => return Vec::new(),
-        };
-
-        // If we never started actually dragging (didn't exceed threshold), just clear state
-        if !self.threshold_exceeded {
-            self.threshold_exceeded = false;
-            self.hover_state.clear();
-            return Vec::new();
-        }
-
-        let mut events = Vec::new();
-
-        // Clear hover state and generate Leave events first
-        let hover_events = self.hover_state.clear();
-        for hover_event in hover_events {
-            if let understory_event_state::hover::HoverEvent::Leave(drop_target) = hover_event {
-                events.push(DragEvent::Leave {
-                    dragged_visual: state.id,
-                    drop_target,
-                    state: button_event.state.clone(),
-                    pointer: state.pointer,
-                });
-            }
-        }
-
-        // Emit drag end event - dispatch will route it to appropriate views
-        events.push(DragEvent::End {
-            visual_id: state.id,
-            state: button_event.state.clone(),
-            button: state.button,
-            pointer: button_event.pointer,
-            offset: state.offset,
-        });
-
-        // Reset state
-        self.threshold_exceeded = false;
-
-        events
-    }
-
-    /// Handle pointer cancel - abort the drag
-    pub fn on_pointer_cancel(&mut self) -> Vec<DragEvent> {
-        let state = match self.state.take() {
-            Some(s) => s,
-            None => return Vec::new(),
-        };
-
-        if !self.threshold_exceeded {
-            self.hover_state.clear();
-            return Vec::new();
-        }
-
-        let mut events = Vec::new();
-
-        // Clear hover state and generate Leave events
-        let hover_events = self.hover_state.clear();
-        for hover_event in hover_events {
-            if let understory_event_state::hover::HoverEvent::Leave(drop_target) = hover_event {
-                events.push(DragEvent::Leave {
-                    dragged_visual: state.id,
-                    drop_target,
-                    state: state.start_state.clone(),
-                    pointer: state.pointer,
-                });
-            }
-        }
-
-        // Create end event with start state as we don't have current
-        events.push(DragEvent::End {
-            visual_id: state.id,
-            state: state.start_state.clone(),
-            button: state.button,
-            pointer: state.pointer,
-            offset: state.offset,
-        });
-
-        self.threshold_exceeded = false;
-
-        events
-    }
-
-    /// Reset the tracker state (useful if you need to cancel drag externally)
-    pub fn reset(&mut self) {
-        self.state = None;
-        self.threshold_exceeded = false;
-        self.hover_state.clear();
-    }
-}
-
-impl Default for DragTracker {
-    fn default() -> Self {
-        Self::new()
     }
 }

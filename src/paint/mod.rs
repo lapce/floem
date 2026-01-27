@@ -30,8 +30,8 @@ use std::sync::mpsc::Receiver;
 use crate::VisualId;
 use crate::action::exec_after;
 use crate::animate::{Easing, Linear};
-use crate::view::ViewId;
 use crate::view::stacking::{collect_overlays, collect_stacking_context_items};
+use crate::view::{VIEW_STORAGE, ViewId};
 use crate::view::{paint_bg, paint_border, paint_outline};
 use crate::window::state::WindowState;
 
@@ -42,7 +42,7 @@ std::thread_local! {
     /// and memory footprint of PaintCx or PaintState or ViewId with a field for it.
     /// This is ephemerally set before paint calls that are painting the view in a
     /// location other than its natural one for purposes of drag and drop.
-    static CURRENT_DRAG_PAINTING_ID : std::cell::Cell<Option<VisualId>> = const { std::cell::Cell::new(None) };
+    pub(crate) static CURRENT_DRAG_PAINTING_ID : std::cell::Cell<Option<VisualId>> = const { std::cell::Cell::new(None) };
 
     /// Paint order tracker for testing purposes.
     /// When enabled, records the ViewIds in the order they are painted.
@@ -128,7 +128,6 @@ pub struct PaintCx<'a> {
     pub(crate) saved_transforms: Vec<Affine>,
     pub(crate) saved_clips: Vec<Option<RoundedRect>>,
     /// Pending drag paint info, to be painted after the main tree.
-    pub(crate) pending_drag_paint: Option<PendingDragPaint>,
     pub gpu_resources: Option<GpuResources>,
     pub window: Arc<dyn Window>,
     #[cfg(feature = "vello")]
@@ -200,12 +199,12 @@ impl PaintCx<'_> {
         let items = collect_stacking_context_items(id);
 
         for item in items.iter() {
-            if item.view_id.is_hidden() {
+            if item.visual_id.is_hidden() {
                 continue;
             }
 
             // Paint the child view (which will recursively paint its own children)
-            self.paint_view(item.view_id);
+            self.paint_view(item.visual_id);
         }
     }
 
@@ -220,7 +219,14 @@ impl PaintCx<'_> {
             return;
         }
 
-        if id.get_visual_rect().is_zero_area() {
+        // if id.get_visual_rect().is_zero_area() {
+        //     return;
+        // }
+
+        if CURRENT_DRAG_PAINTING_ID.get().is_none()
+            && let Some(dragging) = self.window_state.drag_tracker.dragging_element()
+            && dragging == id.get_visual_id()
+        {
             return;
         }
 
@@ -247,110 +253,94 @@ impl PaintCx<'_> {
         paint_border(self, &layout_props, &view_style_props, layout_rect_local);
         paint_outline(self, &view_style_props, layout_rect_local);
         // Check if this view is being dragged and needs deferred painting
-        if let Some(dragging) = self.window_state.drag_state.state.as_ref() {
-            if dragging.id == id.get_visual_id() {
-                // Store the pending drag paint info - actual painting happens after tree traversal
-                self.pending_drag_paint = Some(PendingDragPaint {
-                    id: id.get_visual_id(),
-                    base_transform: self.transform,
-                });
-            }
-        }
 
         self.restore();
     }
 
     /// Paint the drag overlay after the main tree has been painted.
     /// This ensures the dragged view always appears on top of all other content.
-    pub fn paint_pending_drag(&mut self) {
-        let Some(pending) = self.pending_drag_paint.take() else {
-            return;
-        };
+    // pub fn paint_pending_drag(&mut self) {
+    //     let id = dragging.visual_id;
+    //     let base_transform = match VIEW_STORAGE
+    //         .with_borrow_mut(|s| s.box_tree(id.1).borrow().world_transform(id.0))
+    //     {
+    //         Ok(t) => t,
+    //         Err(e) => e.value().unwrap(),
+    //     };
 
-        let id = pending.id;
-        let base_transform = pending.base_transform;
+    //     let mut drag_set_to_none = false;
+    //     let transform = if let Some((released_at, release_location)) =
+    //         dragging.released_at.zip(dragging.release_location)
+    //     {
+    //         let easing = Linear;
+    //         const ANIMATION_DURATION_MS: f64 = 300.0;
+    //         let elapsed = released_at.elapsed().as_millis() as f64;
+    //         let progress = elapsed / ANIMATION_DURATION_MS;
 
-        let Some(dragging) = self.window_state.drag_state.state.as_ref() else {
-            return;
-        };
+    //         if !easing.finished(progress) {
+    //             let offset_scale = 1.0 - easing.eval(progress);
+    //             let release_offset = release_location.to_vec2() - dragging.offset();
 
-        if dragging.id != id {
-            return;
-        }
+    //             // Schedule next animation frame
+    //             exec_after(Duration::from_millis(8), move |_| {
+    //                 id.view_id().request_paint();
+    //             });
 
-        let mut drag_set_to_none = false;
+    //             Some(base_transform * Affine::translate(release_offset * offset_scale))
+    //         } else {
+    //             drag_set_to_none = true;
+    //             None
+    //         }
+    //     } else {
+    //         // Handle active dragging - translate by current offset
+    //         Some(base_transform * Affine::translate(dragging.offset()))
+    //     };
 
-        let transform = if let Some((released_at, release_location)) =
-            dragging.released_at.zip(dragging.release_location)
-        {
-            let easing = Linear;
-            const ANIMATION_DURATION_MS: f64 = 300.0;
-            let elapsed = released_at.elapsed().as_millis() as f64;
-            let progress = elapsed / ANIMATION_DURATION_MS;
+    //     if let Some(transform) = transform {
+    //         let view_id = id.view_id();
+    //         let view_state = view_id.state();
 
-            if !(easing.finished(progress)) {
-                let offset_scale = 1.0 - easing.eval(progress);
-                let release_offset = release_location.to_vec2() - dragging.offset;
+    //         self.save();
+    //         self.transform = transform;
+    //         self.paint_state
+    //             .renderer_mut()
+    //             .set_transform(self.transform);
+    //         self.clear_clip();
 
-                // Schedule next animation frame
-                exec_after(Duration::from_millis(8), move |_| {
-                    id.view_id().request_paint();
-                });
+    //         // Get size from layout
+    //         let layout_rect_local = view_id.get_visual_rect();
 
-                Some(base_transform * Affine::translate(release_offset * offset_scale))
-            } else {
-                drag_set_to_none = true;
-                None
-            }
-        } else {
-            // Handle active dragging
-            let translation = self.window_state.last_pointer.0.to_vec2() - dragging.offset;
-            Some(base_transform.with_translation(translation))
-        };
+    //         // Apply styles
+    //         let style = view_state.borrow().combined_style.clone();
+    //         let mut view_style_props = view_state.borrow().view_style_props.clone();
 
-        // if let Some(transform) = transform {
-        //     let view = id.view();
-        //     let view_state = id.state();
+    //         if let Some(dragging_style) = view_state.borrow().dragging_style.clone() {
+    //             let style = style.apply(dragging_style);
+    //             let mut _new_frame = false;
+    //             view_style_props.read_explicit(&style, &style, &Instant::now(), &mut _new_frame);
+    //         }
 
-        //     self.save();
-        //     self.transform = transform;
-        //     self.paint_state
-        //         .renderer_mut()
-        //         .set_transform(self.transform);
-        //     self.clear_clip();
+    //         // Paint with drag styling
+    //         let layout_props = view_state.borrow().layout_props.clone();
 
-        //     // Get size from layout
-        //     let layout_rect_local = id.get_visual_rect();
+    //         // Important: If any method early exit points are added in this
+    //         // code block, they MUST call CURRENT_DRAG_PAINTING_ID.take() before
+    //         // returning.
+    //         CURRENT_DRAG_PAINTING_ID.set(Some(id));
+    //         paint_bg(self, &view_style_props, layout_rect_local);
+    //         let view = view_id.view();
+    //         view.borrow_mut().paint(self);
+    //         paint_border(self, &layout_props, &view_style_props, layout_rect_local);
+    //         paint_outline(self, &view_style_props, layout_rect_local);
+    //         self.restore();
+    //         CURRENT_DRAG_PAINTING_ID.take();
+    //     }
 
-        //     // Apply styles
-        //     let style = view_state.borrow().combined_style.clone();
-        //     let mut view_style_props = view_state.borrow().view_style_props.clone();
-
-        //     if let Some(dragging_style) = view_state.borrow().dragging_style.clone() {
-        //         let style = style.apply(dragging_style);
-        //         let mut _new_frame = false;
-        //         view_style_props.read_explicit(&style, &style, &Instant::now(), &mut _new_frame);
-        //     }
-
-        //     // Paint with drag styling
-        //     let layout_props = view_state.borrow().layout_props.clone();
-
-        //     // Important: If any method early exit points are added in this
-        //     // code block, they MUST call CURRENT_DRAG_PAINTING_ID.take() before
-        //     // returning.
-
-        //     CURRENT_DRAG_PAINTING_ID.set(Some(id));
-
-        //     paint_bg(self, &view_style_props, layout_rect_local);
-        //     view.borrow_mut().paint(self);
-        //     paint_border(self, &layout_props, &view_style_props, layout_rect_local);
-        //     paint_outline(self, &view_style_props, layout_rect_local);
-
-        //     self.restore();
-
-        //     CURRENT_DRAG_PAINTING_ID.take();
-        // }
-    }
+    //     // Clean up drag state if animation finished
+    //     if drag_set_to_none {
+    //         self.window_state.drag_tracker.reset();
+    //     }
+    // }
 
     /// Paint all registered overlays for the given root view.
     ///

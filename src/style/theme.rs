@@ -5,6 +5,7 @@ use super::{
     Background, BoxShadow, CursorStyle, CustomStyle, FontSize, Foreground, Style, StylePropValue,
     Transition,
 };
+use crate::style::Selectable;
 use crate::views::editor::SelectionColor;
 use crate::views::resizable::ResizableHandleClass;
 use crate::{
@@ -14,7 +15,7 @@ use crate::{
         LabeledRadioButtonClass, ListClass, ListItemClass, PlaceholderTextClass, RadioButtonClass,
         RadioButtonDotClass, SvgClass, TabSelectorClass, TextInputClass, ToggleButtonCircleRad,
         ToggleButtonClass, ToggleButtonInset, TooltipClass, dropdown,
-        resizable::{ResizableClass, ResizableCustomStyle},
+        resizable::ResizableCustomStyle,
         scroll,
         slider::{SliderClass, SliderCustomStyle},
     },
@@ -210,7 +211,7 @@ impl StylePropValue for DesignSystem {
                 .to_string()
                 .style(|s| s.font_size(14.0).font_weight(Weight::SEMIBOLD)),
         ))
-        .on_click_stop(move |_| {
+        .action(move || {
             is_expanded.update(|v| *v = !*v);
         })
         .style(|s| {
@@ -318,7 +319,7 @@ pub fn focus_style() -> Style {
     let focus_visible_applied_style = Style::new().outline(3.0);
 
     Style::new()
-        .focusable(true)
+        .keyboard_navigable(true)
         .with_theme(|s, t| s.outline_color(t.primary().with_alpha(0.5)))
         .focus_visible(|_| focus_visible_applied_style.clone())
 }
@@ -382,15 +383,22 @@ pub fn overlay_style() -> Style {
 
 pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
     let button_style = Style::new()
-        .custom_style_class(|s: LabelCustomStyle| s.selectable(false))
+        .selectable(false)
         .with_theme(|s, t| {
+            let is_dark = t.is_dark;
             s.background(t.bg_elevated())
                 .padding(t.padding())
-                .disabled(|s| s.background(t.bg_disabled()).color(t.text_muted()))
-                .active(|s| {
-                    s.with_context_opt::<Background, _>(|s, b| {
+                .disabled(|s| {
+                    s.background(t.bg_disabled())
+                        .color(t.text_muted())
+                        .unset_cursor()
+                })
+                .hover(|s| s.background(t.bg_overlay()))
+                .active(move |s| {
+                    s.with_context_opt::<Background, _>(move |s, b| {
+                        let adjustment = if is_dark { 0.1 } else { -0.2 };
                         let color = if let Brush::Solid(c) = b {
-                            Some(c.map_lightness(|l| l + 0.1))
+                            Some(c.map_lightness(|l| l + adjustment))
                         } else {
                             None
                         };
@@ -402,7 +410,6 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
         .justify_center()
         .items_center()
         .cursor(CursorStyle::Pointer)
-        .hover(|s| s.with_theme(|s, t| s.background(t.bg_overlay())))
         .apply(focus_style())
         .apply(border_style(true));
 
@@ -414,6 +421,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
                 .disabled(|s| {
                     s.background(t.bg_elevated().with_alpha(0.3))
                         .color(t.text_muted())
+                        .unset_cursor()
                 })
         })
         .transition(Background, Transition::linear(100.millis()))
@@ -434,15 +442,18 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
                         .background(t.primary())
                 })
                 .disabled(|s| {
-                    s.color(t.text_muted()).class(CheckboxClass, |s| {
-                        s.background(t.bg_disabled())
-                            .color(t.text_muted())
-                            .hover(|s| s.background(t.bg_elevated().with_alpha(0.3)))
-                    })
+                    s.unset_cursor()
+                        .color(t.text_muted())
+                        .class(CheckboxClass, |s| {
+                            s.background(t.bg_disabled())
+                                .color(t.text_muted())
+                                .hover(|s| s.background(t.bg_elevated().with_alpha(0.3)))
+                        })
                 })
         })
+        .cursor(CursorStyle::Pointer)
         .transition(Background, Transition::linear(100.millis()))
-        .class(CheckboxClass, |s| s.focusable(false))
+        .class(CheckboxClass, |s| s.keyboard_navigable(false))
         .selectable(false)
         .focus(|s| {
             s.class(CheckboxClass, |s| {
@@ -461,8 +472,13 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
             s.background(t.bg_base())
                 .active(|s| s.background(t.bg_base()))
                 .hover(|s| s.background(t.bg_elevated()))
-                .disabled(|s| s.background(t.bg_disabled()).color(t.text_muted()))
+                .disabled(|s| {
+                    s.background(t.bg_disabled())
+                        .color(t.text_muted())
+                        .unset_cursor()
+                })
         })
+        .cursor(CursorStyle::Pointer)
         .transition(Background, Transition::linear(100.millis()))
         .focus(|s| s.with_theme(|s, t| s.hover(|s| s.background(t.bg_overlay()))))
         .border_radius(100.pct())
@@ -492,9 +508,10 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
                     })
                 })
                 .selected(|s| s.disabled(|s| s.color(t.bg_elevated())))
-                .disabled(|s| s.color(t.text_muted()))
+                .disabled(|s| s.color(t.text_muted()).unset_cursor())
         })
-        .class(RadioButtonClass, |s| s.focusable(false))
+        .cursor(CursorStyle::Pointer)
+        .class(RadioButtonClass, |s| s.keyboard_navigable(false))
         .transition(Background, Transition::linear(100.millis()))
         .focus(|s| {
             s.with_theme(|s, t| s.hover(|s| s.background(t.primary().with_alpha(0.7))))
@@ -529,7 +546,11 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
                 .set(SelectionColor, t.primary_muted().with_alpha(0.5))
                 .cursor_color(t.primary_muted())
                 .hover(|s| s.background(t.bg_elevated()))
-                .disabled(|s| s.background(t.bg_disabled()).color(t.text_muted()))
+                .disabled(|s| {
+                    s.background(t.bg_disabled())
+                        .color(t.text_muted())
+                        .unset_cursor()
+                })
         })
         .focus(|s| s.with_theme(|s, t| s.hover(|s| s.background(t.bg_overlay()))))
         .apply(border_style(true))
@@ -556,6 +577,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
         .transition(Foreground, Transition::linear(100.millis()))
         .justify_center()
         .items_center()
+        .text_clip()
         .apply(focus_style())
         .apply(hover_style());
 
@@ -586,6 +608,9 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
         .class(LabelClass, |s| {
             s.with_theme(|s, t| {
                 s.custom(|s: LabelCustomStyle| s.selection_color(t.primary_muted().with_alpha(0.5)))
+            })
+            .with_context::<Selectable>(|s, selectable| {
+                s.apply_if(*selectable, |s| s.cursor(CursorStyle::Text))
             })
         })
         .class(ListClass, |s| {
@@ -624,7 +649,10 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
             .transition_background(Transition::ease_in_out(Duration::from_millis(300)))
         })
         .class(scroll::Track, |s| {
-            s.with_theme(|s, t| s.hover(|s| s.background(t.border().with_alpha(0.3))))
+            s.with_theme(|s, t| {
+                s.background(css::PINK)
+                    .hover(|s| s.background(t.border().with_alpha(0.3)))
+            })
         })
         .class(ToggleButtonClass, |_| toggle_button_style)
         .class(SliderClass, |s| {

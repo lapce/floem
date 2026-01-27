@@ -4,7 +4,7 @@ use floem::{
     responsive::{range, ScreenSize},
     style::TextOverflow,
     unit::UnitExt,
-    views::{Decorators, Label, Stack},
+    views::{Decorators, Label, Stack, TextOverflowChanged},
     IntoView,
 };
 
@@ -36,9 +36,12 @@ fn app_view() -> impl IntoView {
             Label::new(
                 "Long text that will overflow on smaller screens since the available width is less",
             )
-            .on_text_overflow(move |is_overflown| {
-                is_text_overflown.set(is_overflown);
-            })
+            .on_event_stop(
+                TextOverflowChanged::listener(),
+                move |_cx, TextOverflowChanged { is_overflowing, .. }| {
+                    is_text_overflown.set(*is_overflowing);
+                },
+            )
             .style(move |s| {
                 s.background(palette::css::DIM_GRAY)
                     .padding(10.0)

@@ -49,7 +49,9 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
+use floem::kurbo::Vec2;
 use floem::prelude::*;
+use floem::views::scroll::ScrollChanged;
 use floem::views::{Decorators, Stack};
 
 // Re-export the headless harness from floem
@@ -106,7 +108,7 @@ impl ClickTracker {
     pub fn track<V: IntoView>(&self, view: V) -> impl IntoView + use<V> {
         let clicks = self.clicks.clone();
         let count = self.count.clone();
-        view.into_view().on_click_stop(move |_| {
+        view.into_view().action(move || {
             clicks.borrow_mut().push(None);
             count.set(count.get() + 1);
         })
@@ -119,7 +121,7 @@ impl ClickTracker {
         let clicks = self.clicks.clone();
         let count = self.count.clone();
         let name = name.to_string();
-        view.into_view().on_click_stop(move |_| {
+        view.into_view().action(move || {
             clicks.borrow_mut().push(Some(name.clone()));
             count.set(count.get() + 1);
         })
@@ -132,7 +134,7 @@ impl ClickTracker {
         let clicks = self.clicks.clone();
         let count = self.count.clone();
         let name = name.to_string();
-        view.into_view().on_click_cont(move |_| {
+        view.into_view().action(move || {
             clicks.borrow_mut().push(Some(name.clone()));
             count.set(count.get() + 1);
         })
@@ -181,10 +183,11 @@ impl ClickTracker {
         let clicks = self.double_clicks.clone();
         let count = self.double_click_count.clone();
         let name = name.to_string();
-        view.into_view().on_double_click_stop(move |_| {
-            clicks.borrow_mut().push(Some(name.clone()));
-            count.set(count.get() + 1);
-        })
+        view.into_view()
+            .on_event_stop(listener::DoubleClick, move |_, _| {
+                clicks.borrow_mut().push(Some(name.clone()));
+                count.set(count.get() + 1);
+            })
     }
 
     /// Returns the number of double clicks recorded.
@@ -212,10 +215,11 @@ impl ClickTracker {
         let clicks = self.secondary_clicks.clone();
         let count = self.secondary_click_count.clone();
         let name = name.to_string();
-        view.into_view().on_secondary_click_stop(move |_| {
-            clicks.borrow_mut().push(Some(name.clone()));
-            count.set(count.get() + 1);
-        })
+        view.into_view()
+            .on_event_stop(listener::SecondaryClick, move |_, _| {
+                clicks.borrow_mut().push(Some(name.clone()));
+                count.set(count.get() + 1);
+            })
     }
 
     /// Returns the number of secondary (right) clicks recorded.
@@ -311,7 +315,7 @@ pub use floem::kurbo::{Point, Rect};
 
 #[derive(Clone, Default)]
 pub struct ScrollTracker {
-    viewports: Rc<RefCell<Vec<Rect>>>,
+    offsets: Rc<RefCell<Vec<Vec2>>>,
 }
 
 impl ScrollTracker {
@@ -322,40 +326,40 @@ impl ScrollTracker {
 
     /// Wrap a Scroll view to track its viewport changes.
     pub fn track(&self, scroll: floem::views::Scroll) -> floem::views::Scroll {
-        let viewports = self.viewports.clone();
-        scroll.on_scroll(move |viewport| {
-            viewports.borrow_mut().push(viewport);
+        let viewports = self.offsets.clone();
+        scroll.on_event_stop(ScrollChanged::listener(), move |_cx, state| {
+            viewports.borrow_mut().push(state.offset);
         })
     }
 
     /// Returns true if any scroll events have been recorded.
     pub fn has_scrolled(&self) -> bool {
-        !self.viewports.borrow().is_empty()
+        !self.offsets.borrow().is_empty()
     }
 
     /// Returns the number of scroll events recorded.
     pub fn scroll_count(&self) -> usize {
-        self.viewports.borrow().len()
+        self.offsets.borrow().len()
     }
 
     /// Returns the last recorded viewport, if any.
-    pub fn last_viewport(&self) -> Option<Rect> {
-        self.viewports.borrow().last().copied()
+    pub fn last_offset(&self) -> Option<Vec2> {
+        self.offsets.borrow().last().copied()
     }
 
     /// Returns all recorded viewports in order.
-    pub fn viewports(&self) -> Vec<Rect> {
-        self.viewports.borrow().clone()
+    pub fn offsets(&self) -> Vec<Vec2> {
+        self.offsets.borrow().clone()
     }
 
     /// Returns the current scroll position (top-left of viewport).
     pub fn scroll_position(&self) -> Option<Point> {
-        self.last_viewport().map(|v| v.origin())
+        self.last_offset().map(|v| v.to_point())
     }
 
     /// Reset the tracker, clearing all recorded viewports.
     pub fn reset(&self) {
-        self.viewports.borrow_mut().clear();
+        self.offsets.borrow_mut().clear();
     }
 }
 
@@ -393,7 +397,7 @@ impl PointerCaptureTracker {
 
     /// Wrap a view to track pointer capture events with a name.
     pub fn track<V: IntoView>(&self, name: &str, view: V) -> impl IntoView + use<V> {
-        use floem::event::{Event, EventListener};
+        use floem::event::Event;
 
         let got_captures = self.got_captures.clone();
         let lost_captures = self.lost_captures.clone();
@@ -409,44 +413,34 @@ impl PointerCaptureTracker {
         let name_up = name.clone();
 
         view.into_view()
-            .on_event(EventListener::GotPointerCapture, move |e| {
-                if let Event::GotPointerCapture(pointer_id) = e {
-                    got_captures
-                        .borrow_mut()
-                        .push((name_got.clone(), *pointer_id));
-                }
+            .on_event(listener::GainedPointerCapture, move |_cx, pointer_id| {
+                got_captures
+                    .borrow_mut()
+                    .push((name_got.clone(), *pointer_id));
                 floem::event::EventPropagation::Continue
             })
-            .on_event(EventListener::LostPointerCapture, move |e| {
-                if let Event::LostPointerCapture(pointer_id) = e {
-                    lost_captures
-                        .borrow_mut()
-                        .push((name_lost.clone(), *pointer_id));
-                }
+            .on_event(listener::LostPointerCapture, move |_cx, pointer_id| {
+                lost_captures
+                    .borrow_mut()
+                    .push((name_lost.clone(), *pointer_id));
                 floem::event::EventPropagation::Continue
             })
-            .on_event(EventListener::PointerDown, move |e| {
-                if let Event::Pointer(floem::ui_events::pointer::PointerEvent::Down(pe)) = e {
-                    pointer_downs
-                        .borrow_mut()
-                        .push((name_down.clone(), pe.pointer.pointer_id));
-                }
+            .on_event(listener::PointerDown, move |_cx, pe| {
+                pointer_downs
+                    .borrow_mut()
+                    .push((name_down.clone(), pe.pointer.pointer_id));
                 floem::event::EventPropagation::Continue
             })
-            .on_event(EventListener::PointerMove, move |e| {
-                if let Event::Pointer(floem::ui_events::pointer::PointerEvent::Move(pu)) = e {
-                    pointer_moves
-                        .borrow_mut()
-                        .push((name_move.clone(), pu.pointer.pointer_id));
-                }
+            .on_event(listener::PointerMove, move |_cx, pu| {
+                pointer_moves
+                    .borrow_mut()
+                    .push((name_move.clone(), pu.pointer.pointer_id));
                 floem::event::EventPropagation::Continue
             })
-            .on_event(EventListener::PointerUp, move |e| {
-                if let Event::Pointer(floem::ui_events::pointer::PointerEvent::Up(pe)) = e {
-                    pointer_ups
-                        .borrow_mut()
-                        .push((name_up.clone(), pe.pointer.pointer_id));
-                }
+            .on_event(listener::PointerUp, move |_cx, pe| {
+                pointer_ups
+                    .borrow_mut()
+                    .push((name_up.clone(), pe.pointer.pointer_id));
                 floem::event::EventPropagation::Continue
             })
     }

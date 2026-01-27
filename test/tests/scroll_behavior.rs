@@ -3,7 +3,7 @@
 //! These tests verify that:
 //! - Scroll views respond to wheel events correctly
 //! - Scroll position is clamped to valid bounds
-//! - Scroll callbacks are invoked with correct viewport
+//! - Scroll callbacks are invoked with correct offset
 //! - Horizontal and vertical scrolling work independently
 //! - Nested scroll views behave correctly
 //! - Scroll to specific positions works
@@ -15,10 +15,10 @@ use serial_test::serial;
 // Basic Scroll Event Tests
 // =============================================================================
 
-/// Test that scrolling down moves the viewport.
+/// Test that scrolling down moves the offset.
 #[test]
 #[serial]
-fn test_scroll_down_moves_viewport() {
+fn test_scroll_down_moves_offset() {
     let scroll_tracker = ScrollTracker::new();
 
     // Create content larger than viewport
@@ -33,20 +33,18 @@ fn test_scroll_down_moves_viewport() {
     // Verify scroll happened
     assert!(scroll_tracker.has_scrolled(), "Should have scrolled");
 
-    let viewport = scroll_tracker
-        .last_viewport()
-        .expect("Should have viewport");
+    let offset = scroll_tracker.last_offset().expect("Should have viewport");
     assert!(
-        viewport.y0 > 0.0,
-        "Viewport y0 should be positive after scrolling down, got {}",
-        viewport.y0
+        offset.y > 0.0,
+        "Offset y should be positive after scrolling down, got {}",
+        offset.y
     );
 }
 
 /// Test that scrolling up from middle position works.
 #[test]
 #[serial]
-fn test_scroll_up_moves_viewport() {
+fn test_scroll_up_moves_offset() {
     let scroll_tracker = ScrollTracker::new();
 
     let content = Empty::new().style(|s| s.size(100.0, 400.0));
@@ -56,15 +54,15 @@ fn test_scroll_up_moves_viewport() {
 
     // Scroll down first
     harness.scroll_down(50.0, 50.0, 100.0);
-    let initial_y = scroll_tracker.last_viewport().unwrap().y0;
+    let initial_y = scroll_tracker.last_offset().unwrap().y;
 
     // Scroll up
     harness.scroll_up(50.0, 50.0, 50.0);
 
-    let final_y = scroll_tracker.last_viewport().unwrap().y0;
+    let final_y = scroll_tracker.last_offset().unwrap().y;
     assert!(
         final_y < initial_y,
-        "Viewport should move up when scrolling up, initial: {}, final: {}",
+        "Offset should move up when scrolling up, initial: {}, final: {}",
         initial_y,
         final_y
     );
@@ -91,13 +89,11 @@ fn test_scroll_horizontal() {
 
     // Check if scroll happened - if content isn't actually wider, this may not work
     if scroll_tracker.has_scrolled() {
-        let viewport = scroll_tracker
-            .last_viewport()
-            .expect("Should have viewport");
+        let offset = scroll_tracker.last_offset().expect("Should have viewport");
         assert!(
-            viewport.x0 >= 0.0,
-            "Viewport x0 should be non-negative, got {}",
-            viewport.x0
+            offset.x >= 0.0,
+            "Viewport x should be non-negative, got {}",
+            offset.x
         );
     }
     // Note: horizontal scrolling may not work in all layout configurations
@@ -121,14 +117,12 @@ fn test_scroll_diagonal() {
     // Scroll diagonally (negative deltas = scroll down/right)
     harness.scroll(50.0, 50.0, -50.0, -50.0);
 
-    let viewport = scroll_tracker
-        .last_viewport()
-        .expect("Should have viewport");
+    let offset = scroll_tracker.last_offset().expect("Should have viewport");
     // At minimum, vertical scrolling should work
     assert!(
-        viewport.y0 > 0.0,
-        "y0 should be positive after diagonal scroll, got y0={}",
-        viewport.y0
+        offset.y > 0.0,
+        "y should be positive after diagonal scroll, got y={}",
+        offset.y
     );
     // Horizontal may or may not work depending on layout
 }
@@ -152,11 +146,11 @@ fn test_scroll_clamped_at_top() {
     harness.scroll_up(50.0, 50.0, 100.0);
 
     // If scrolled, position should be at 0
-    if let Some(viewport) = scroll_tracker.last_viewport() {
+    if let Some(offset) = scroll_tracker.last_offset() {
         assert!(
-            viewport.y0 >= 0.0,
-            "Viewport y0 should not be negative, got {}",
-            viewport.y0
+            offset.y >= 0.0,
+            "Offset y should not be negative, got {}",
+            offset.y
         );
     }
     // If no scroll event, that's also valid (nothing to scroll)
@@ -176,15 +170,13 @@ fn test_scroll_clamped_at_bottom() {
     // Try to scroll way past the bottom
     harness.scroll_down(50.0, 50.0, 1000.0);
 
-    let viewport = scroll_tracker
-        .last_viewport()
-        .expect("Should have viewport");
+    let offset = scroll_tracker.last_offset().expect("Should have viewport");
 
     // Maximum scroll is content_height - viewport_height = 400 - 100 = 300
     assert!(
-        viewport.y0 <= 300.0,
-        "Viewport y0 should not exceed max scroll, got {}",
-        viewport.y0
+        offset.y <= 300.0,
+        "Offset y should not exceed max scroll, got {}",
+        offset.y
     );
 }
 
@@ -202,11 +194,11 @@ fn test_scroll_clamped_at_left() {
     // Try to scroll left from initial position
     harness.scroll_left(50.0, 50.0, 100.0);
 
-    if let Some(viewport) = scroll_tracker.last_viewport() {
+    if let Some(offset) = scroll_tracker.last_offset() {
         assert!(
-            viewport.x0 >= 0.0,
-            "Viewport x0 should not be negative, got {}",
-            viewport.x0
+            offset.x >= 0.0,
+            "Offset x0 should not be negative, got {}",
+            offset.x
         );
     }
 }
@@ -225,15 +217,13 @@ fn test_scroll_clamped_at_right() {
     // Try to scroll way past the right
     harness.scroll_right(50.0, 50.0, 1000.0);
 
-    let viewport = scroll_tracker
-        .last_viewport()
-        .expect("Should have viewport");
+    let offset = scroll_tracker.last_offset().expect("Should have offset");
 
-    // Maximum scroll is content_width - viewport_width = 400 - 100 = 300
+    // Maximum scroll is content_width - offset_width = 400 - 100 = 300
     assert!(
-        viewport.x0 <= 300.0,
-        "Viewport x0 should not exceed max scroll, got {}",
-        viewport.x0
+        offset.x <= 300.0,
+        "Offset x0 should not exceed max scroll, got {}",
+        offset.x
     );
 }
 
@@ -241,13 +231,13 @@ fn test_scroll_clamped_at_right() {
 // No-Scroll Scenarios
 // =============================================================================
 
-/// Test that scrolling does nothing when content fits in viewport.
+/// Test that scrolling does nothing when content fits in offset.
 #[test]
 #[serial]
 fn test_no_scroll_when_content_fits() {
     let scroll_tracker = ScrollTracker::new();
 
-    // Content same size as viewport
+    // Content same size as offset
     let content = Empty::new().style(|s| s.size(100.0, 100.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
@@ -258,22 +248,22 @@ fn test_no_scroll_when_content_fits() {
 
     // No scroll should occur since content fits
     // Note: The scroll view might still emit a callback with y0=0
-    if let Some(viewport) = scroll_tracker.last_viewport() {
+    if let Some(offset) = scroll_tracker.last_offset() {
         assert!(
-            viewport.y0 == 0.0,
-            "Viewport should stay at 0 when content fits, got {}",
-            viewport.y0
+            offset.y == 0.0,
+            "Offset should stay at 0 when content fits, got {}",
+            offset.y
         );
     }
 }
 
-/// Test that scrolling does nothing when content is smaller than viewport.
+/// Test that scrolling does nothing when content is smaller than offset.
 #[test]
 #[serial]
 fn test_no_scroll_when_content_smaller() {
     let scroll_tracker = ScrollTracker::new();
 
-    // Content smaller than viewport
+    // Content smaller than offset
     let content = Empty::new().style(|s| s.size(50.0, 50.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
@@ -282,11 +272,11 @@ fn test_no_scroll_when_content_smaller() {
     harness.scroll_down(50.0, 50.0, 50.0);
 
     // No meaningful scroll should occur
-    if let Some(viewport) = scroll_tracker.last_viewport() {
+    if let Some(offset) = scroll_tracker.last_offset() {
         assert!(
-            viewport.y0 == 0.0,
-            "Viewport should stay at 0 when content is smaller, got {}",
-            viewport.y0
+            offset.y == 0.0,
+            "Offset should stay at 0 when content is smaller, got {}",
+            offset.y
         );
     }
 }
@@ -311,11 +301,11 @@ fn test_multiple_scroll_events_accumulate() {
     harness.scroll_down(50.0, 50.0, 20.0);
     harness.scroll_down(50.0, 50.0, 20.0);
 
-    let viewport = scroll_tracker.last_viewport().unwrap();
+    let offset = scroll_tracker.last_offset().unwrap();
     assert!(
-        viewport.y0 >= 60.0 - 1.0, // Allow small tolerance
+        offset.y >= 60.0 - 1.0, // Allow small tolerance
         "Accumulated scroll should be at least 60, got {}",
-        viewport.y0
+        offset.y
     );
 }
 
@@ -334,22 +324,22 @@ fn test_scroll_up_down_cancels() {
     harness.scroll_down(50.0, 50.0, 100.0);
     harness.scroll_up(50.0, 50.0, 100.0);
 
-    let viewport = scroll_tracker.last_viewport().unwrap();
+    let offset = scroll_tracker.last_offset().unwrap();
     assert!(
-        viewport.y0.abs() < 1.0,
+        offset.y.abs() < 1.0,
         "Scroll should cancel out to ~0, got {}",
-        viewport.y0
+        offset.y
     );
 }
 
 // =============================================================================
-// Viewport Size Tests
+// Offset Size Tests
 // =============================================================================
 
-/// Test that viewport size matches container size.
+/// Test that offset size matches container size.
 #[test]
 #[serial]
-fn test_viewport_size_matches_container() {
+fn test_offset_size_matches_container() {
     let scroll_tracker = ScrollTracker::new();
 
     let content = Empty::new().style(|s| s.size(100.0, 400.0));
@@ -357,25 +347,23 @@ fn test_viewport_size_matches_container() {
 
     let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
 
-    // Scroll to trigger a viewport update
+    // Scroll to trigger a offset update
     harness.scroll_down(50.0, 50.0, 10.0);
 
-    let viewport = scroll_tracker
-        .last_viewport()
-        .expect("Should have viewport");
+    let offset = scroll_tracker.last_offset().expect("Should have offset");
 
-    // Viewport size should approximately match container size
-    let width = viewport.x1 - viewport.x0;
-    let height = viewport.y1 - viewport.y0;
+    // Offset size should approximately match container size
+    let width = offset.x1 - offset.x;
+    let height = offset.y1 - offset.y;
 
     assert!(
         (width - 100.0).abs() < 2.0,
-        "Viewport width should be ~100, got {}",
+        "Offset width should be ~100, got {}",
         width
     );
     assert!(
         (height - 100.0).abs() < 2.0,
-        "Viewport height should be ~100, got {}",
+        "Offset height should be ~100, got {}",
         height
     );
 }
@@ -399,15 +387,13 @@ fn test_scroll_by_lines() {
     // LineDelta is converted: 20 pixels per line
     harness.scroll_lines(50.0, 50.0, 0.0, -3.0);
 
-    let viewport = scroll_tracker
-        .last_viewport()
-        .expect("Should have viewport");
+    let offset = scroll_tracker.last_offset().expect("Should have offset");
 
     // 3 lines * 20 pixels = 60 pixels
     assert!(
-        viewport.y0 > 0.0,
-        "Should have scrolled down by lines, got y0={}",
-        viewport.y0
+        offset.y > 0.0,
+        "Should have scrolled down by lines, got y={}",
+        offset.y
     );
 }
 
@@ -472,7 +458,7 @@ fn test_click_after_scroll() {
     harness.scroll_down(50.0, 50.0, 200.0);
 
     // Now clicking should hit the clickable area
-    // The click is in viewport coordinates, so we need to click where
+    // The click is in offset coordinates, so we need to click where
     // the target would be after scrolling
     harness.click(50.0, 50.0);
 
@@ -480,9 +466,9 @@ fn test_click_after_scroll() {
     // after scrolling - the scroll view translates events
     if scroll_tracker.has_scrolled() {
         // If scroll worked, check if target is now visible
-        let viewport = scroll_tracker.last_viewport().unwrap();
-        if viewport.y0 >= 200.0 {
-            // Target should now be at top of viewport
+        let offset = scroll_tracker.last_offset().unwrap();
+        if offset.y >= 200.0 {
+            // Target should now be at top of offset
             // Click might work - depends on event translation
         }
     }
@@ -572,8 +558,8 @@ fn test_scroll_small_viewport() {
     harness.scroll_down(5.0, 5.0, 50.0);
 
     // Verify we got a valid viewport
-    if let Some(viewport) = scroll_tracker.last_viewport() {
-        assert!(viewport.y0 >= 0.0, "Viewport should be valid after scroll");
+    if let Some(offset) = scroll_tracker.last_offset() {
+        assert!(offset.y >= 0.0, "Viewport should be valid after scroll");
     }
 }
 
@@ -590,7 +576,7 @@ fn test_scroll_after_resize() {
 
     // Scroll down
     harness.scroll_down(50.0, 50.0, 150.0);
-    let _scroll_before = scroll_tracker.last_viewport().unwrap().y0;
+    let _scroll_before = scroll_tracker.last_offset().unwrap().y;
 
     // Resize the harness (container) - make it smaller
     harness.set_size(100.0, 50.0);
@@ -600,11 +586,11 @@ fn test_scroll_after_resize() {
     harness.scroll_down(50.0, 25.0, 50.0);
 
     // Should still work after resize
-    if let Some(viewport) = scroll_tracker.last_viewport() {
+    if let Some(viewport) = scroll_tracker.last_offset() {
         assert!(
-            viewport.y0 > 0.0,
-            "Should be able to scroll after resize, got y0={}",
-            viewport.y0
+            viewport.y > 0.0,
+            "Should be able to scroll after resize, got y={}",
+            viewport.y
         );
     }
 }
@@ -623,14 +609,14 @@ fn test_viewport_bounds_valid() {
     // Scroll in various directions
     harness.scroll(50.0, 50.0, -50.0, -50.0);
 
-    for viewport in scroll_tracker.viewports() {
+    for viewport in scroll_tracker.offsets() {
         assert!(
-            viewport.x1 >= viewport.x0,
+            viewport.x1 >= viewport.x,
             "x1 should be >= x0: {:?}",
             viewport
         );
         assert!(
-            viewport.y1 >= viewport.y0,
+            viewport.y1 >= viewport.y,
             "y1 should be >= y0: {:?}",
             viewport
         );
@@ -657,19 +643,16 @@ fn test_on_scroll_callback_values() {
     harness.scroll_down(50.0, 50.0, 30.0);
     harness.scroll_down(50.0, 50.0, 30.0);
 
-    let viewports = scroll_tracker.viewports();
-    assert!(
-        viewports.len() >= 3,
-        "Should have multiple viewport updates"
-    );
+    let offsets = scroll_tracker.offsets();
+    assert!(offsets.len() >= 3, "Should have multiple viewport updates");
 
     // Each subsequent viewport should show increased scroll (or same if clamped)
-    for i in 1..viewports.len() {
+    for i in 1..offsets.len() {
         assert!(
-            viewports[i].y0 >= viewports[i - 1].y0,
+            offsets[i].y >= offsets[i - 1].y,
             "Scroll position should not decrease: {:?} vs {:?}",
-            viewports[i - 1],
-            viewports[i]
+            offsets[i - 1],
+            offsets[i]
         );
     }
 }
@@ -737,7 +720,7 @@ fn test_scroll_tracker_reset() {
         "Count should be 0 after reset"
     );
     assert!(
-        scroll_tracker.last_viewport().is_none(),
+        scroll_tracker.last_offset().is_none(),
         "No viewport after reset"
     );
 }
@@ -765,14 +748,14 @@ fn test_scroll_left_right() {
     harness.scroll_right(50.0, 50.0, 100.0);
 
     // If horizontal scrolling worked, verify the position
-    if let Some(viewport) = scroll_tracker.last_viewport() {
-        let after_right = viewport.x0;
+    if let Some(offset) = scroll_tracker.last_offset() {
+        let after_right = offset.x;
 
         // Scroll left
         harness.scroll_left(50.0, 50.0, 50.0);
 
-        if let Some(viewport) = scroll_tracker.last_viewport() {
-            let after_left = viewport.x0;
+        if let Some(offset) = scroll_tracker.last_offset() {
+            let after_left = offset.x;
             // If horizontal scroll worked, left scroll should decrease x0
             if after_right > 0.0 {
                 assert!(
@@ -800,12 +783,12 @@ fn test_scroll_up_down() {
 
     // Scroll down
     harness.scroll_down(50.0, 50.0, 100.0);
-    let after_down = scroll_tracker.last_viewport().unwrap().y0;
+    let after_down = scroll_tracker.last_offset().unwrap().y;
     assert!(after_down > 0.0, "Should have scrolled down");
 
     // Scroll up
     harness.scroll_up(50.0, 50.0, 50.0);
-    let after_up = scroll_tracker.last_viewport().unwrap().y0;
+    let after_up = scroll_tracker.last_offset().unwrap().y;
     assert!(
         after_up < after_down,
         "Should have scrolled up: before={}, after={}",

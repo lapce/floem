@@ -24,16 +24,15 @@ use crate::{
     AppEvent,
     action::{Timer, TimerToken},
     context::PaintState,
-    event::dropped_file::FileDragEvent::{self, DragDropped},
+    dropped_file,
+    event::dropped_file::FileDragEvent,
     ext_event::EXT_EVENT_HANDLER,
     inspector::{
         Capture,
         profiler::{Profile, ProfileEvent},
     },
     view::View,
-    window::WindowConfig,
-    window::handle::WindowHandle,
-    window::id::process_window_updates,
+    window::{WindowConfig, handle::WindowHandle, id::process_window_updates},
 };
 
 pub(crate) struct ApplicationHandle {
@@ -260,31 +259,39 @@ impl ApplicationHandle {
                 self.close_window(window_id, event_loop);
             }
             WindowEvent::DragDropped { paths, position } => {
-                window_handle.file_drag_event(DragDropped {
-                    paths,
-                    position: PhysicalPosition::new(position.x, position.y),
-                    scale_factor: window_handle.scale,
-                });
+                window_handle.file_drag_event(FileDragEvent::DragDropped(
+                    dropped_file::FileDragDropped {
+                        paths,
+                        position: PhysicalPosition::new(position.x, position.y),
+                        scale_factor: window_handle.scale,
+                    },
+                ));
             }
             WindowEvent::DragEntered { paths, position } => {
-                window_handle.file_drag_event(FileDragEvent::DragEntered {
-                    paths,
-                    position: PhysicalPosition::new(position.x, position.y),
-                    scale_factor: window_handle.scale,
-                });
+                window_handle.file_drag_event(FileDragEvent::DragEntered(
+                    dropped_file::FileDragEntered {
+                        paths,
+                        position: PhysicalPosition::new(position.x, position.y),
+                        scale_factor: window_handle.scale,
+                    },
+                ));
             }
             WindowEvent::DragMoved { position } => {
-                window_handle.file_drag_event(FileDragEvent::DragMoved {
-                    position: PhysicalPosition::new(position.x, position.y),
-                    scale_factor: window_handle.scale,
-                });
+                window_handle.file_drag_event(FileDragEvent::DragMoved(
+                    dropped_file::FileDragMoved {
+                        position: PhysicalPosition::new(position.x, position.y),
+                        scale_factor: window_handle.scale,
+                    },
+                ));
             }
             WindowEvent::DragLeft { position } => {
                 let pos = position.map(|p| PhysicalPosition::new(p.x, p.y));
-                window_handle.file_drag_event(FileDragEvent::DragLeft {
-                    position: pos,
-                    scale_factor: window_handle.scale,
-                });
+                window_handle.file_drag_event(FileDragEvent::DragLeft(
+                    dropped_file::FileDragLeft {
+                        position: pos,
+                        scale_factor: window_handle.scale,
+                    },
+                ));
             }
             WindowEvent::Focused(focused) => {
                 window_handle.focused(focused);

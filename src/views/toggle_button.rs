@@ -4,7 +4,7 @@
 
 use floem_reactive::{Effect, SignalGet, SignalUpdate};
 use peniko::Brush;
-use peniko::kurbo::{Point, Size};
+use peniko::kurbo::Point;
 use ui_events::keyboard::{Key, KeyState, KeyboardEvent, NamedKey};
 use ui_events::pointer::PointerEvent;
 
@@ -65,10 +65,8 @@ pub struct ToggleButton {
     id: ViewId,
     state: bool,
     ontoggle: Option<Box<dyn Fn(bool)>>,
-    position: f32,
+    position: f64,
     held: ToggleState,
-    width: f32,
-    radius: f32,
     style: ToggleStyle,
 }
 
@@ -110,6 +108,7 @@ pub struct ToggleButton {
 ///```
 /// ### Reactivity
 /// This function is reactive and will reactively respond to changes.
+#[deprecated]
 pub fn toggle_button(state: impl Fn() -> bool + 'static) -> ToggleButton {
     ToggleButton::new(state)
 }
@@ -125,11 +124,14 @@ impl View for ToggleButton {
 
     fn update(&mut self, _cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(state) = state.downcast::<bool>() {
-            if self.held == ToggleState::Nothing {
-                self.update_restrict_position(true);
-            }
             self.state = *state;
-            self.id.request_layout();
+            let size = self.id.get_layout_rect_local().size();
+            let circle_radius = match self.style.circle_rad() {
+                PxPct::Px(px) => px,
+                PxPct::Pct(pct) => size.width.min(size.height) / 2. * (pct / 100.),
+            };
+            self.update_restrict_position(size.width, circle_radius);
+            self.id.request_paint();
         }
     }
 
@@ -138,30 +140,32 @@ impl View for ToggleButton {
             return EventPropagation::Continue;
         }
 
+        let size = self.id.get_content_rect_local().size();
+
         match &cx.event {
-            Event::Pointer(PointerEvent::Down { .. }) => {
-                cx.window_state.update_active(self.id);
+            Event::Pointer(PointerEvent::Down(e)) => {
+                if let Some(pointer_id) = e.pointer.pointer_id {
+                    cx.window_state.set_pointer_capture(pointer_id, self.id);
+                }
                 self.held = ToggleState::Held;
             }
             Event::Pointer(PointerEvent::Up { .. }) => {
-                self.id.request_layout();
-
                 // if held and pointer up. toggle the position (toggle state drag already changed the position)
                 if self.held == ToggleState::Held {
-                    if self.position > self.width / 2. {
+                    if self.position > size.width / 2. {
                         self.position = 0.;
                     } else {
-                        self.position = self.width;
+                        self.position = size.width;
                     }
                 }
                 // set the state based on the position of the slider
                 if self.held == ToggleState::Held {
-                    if self.state && self.position < self.width / 2. {
+                    if self.state && self.position < size.width / 2. {
                         self.state = false;
                         if let Some(ontoggle) = &self.ontoggle {
                             ontoggle(false);
                         }
-                    } else if !self.state && self.position > self.width / 2. {
+                    } else if !self.state && self.position > size.width / 2. {
                         self.state = true;
                         if let Some(ontoggle) = &self.ontoggle {
                             ontoggle(true);
@@ -176,32 +180,30 @@ impl View for ToggleButton {
                     self.held = ToggleState::Drag;
                     match self.style.switch_behavior() {
                         ToggleHandleBehavior::Follow => {
-                            self.position = point.x as f32;
-                            if self.position > self.width / 2. && !self.state {
+                            self.position = point.x;
+                            if self.position > size.width / 2. && !self.state {
                                 self.state = true;
                                 if let Some(ontoggle) = &self.ontoggle {
                                     ontoggle(true);
                                 }
-                            } else if self.position < self.width / 2. && self.state {
+                            } else if self.position < size.width / 2. && self.state {
                                 self.state = false;
                                 if let Some(ontoggle) = &self.ontoggle {
                                     ontoggle(false);
                                 }
                             }
-                            self.id.request_layout();
                         }
                         ToggleHandleBehavior::Snap => {
-                            if point.x as f32 > self.width / 2. && !self.state {
-                                self.position = self.width;
+                            if point.x > size.width / 2. && !self.state {
+                                self.position = size.width;
                                 self.id.request_layout();
                                 self.state = true;
                                 if let Some(ontoggle) = &self.ontoggle {
                                     ontoggle(true);
                                 }
-                            } else if (point.x as f32) < self.width / 2. && self.state {
+                            } else if point.x < size.width / 2. && self.state {
                                 self.position = 0.;
                                 // self.held = ToggleState::Nothing;
-                                self.id.request_layout();
                                 self.state = false;
                                 if let Some(ontoggle) = &self.ontoggle {
                                     ontoggle(false);
@@ -227,25 +229,14 @@ impl View for ToggleButton {
             }
             _ => {}
         }
+        let size = self.id.get_layout_rect_local().size();
+        let circle_radius = match self.style.circle_rad() {
+            PxPct::Px(px) => px,
+            PxPct::Pct(pct) => size.width.min(size.height) / 2. * (pct / 100.),
+        };
+        self.update_restrict_position(size.width, circle_radius);
         EventPropagation::Continue
     }
-
-    // fn compute_layout(
-    //     &mut self,
-    //     _cx: &mut crate::context::ComputeLayoutCx,
-    // ) -> Option<peniko::kurbo::Rect> {
-    //     let layout = self.id.get_layout().unwrap_or_default();
-    //     let size = layout.size;
-    //     self.width = size.width;
-    //     let circle_radius = match self.style.circle_rad() {
-    //         PxPct::Px(px) => px as f32,
-    //         PxPct::Pct(pct) => size.width.min(size.height) / 2. * (pct as f32 / 100.),
-    //     };
-    //     self.radius = circle_radius;
-    //     self.update_restrict_position(false);
-
-    //     None
-    // }
 
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         if self.style.read(cx) {
@@ -254,10 +245,14 @@ impl View for ToggleButton {
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        let layout = self.id.get_layout().unwrap_or_default();
-        let size = Size::new(layout.size.width as f64, layout.size.height as f64);
-        let circle_point = Point::new(self.position as f64, size.to_rect().center().y);
-        let circle = crate::kurbo::Circle::new(circle_point, self.radius as f64);
+        let size = self.id.get_layout_rect_local().size();
+        let circle_radius = match self.style.circle_rad() {
+            PxPct::Px(px) => px,
+            PxPct::Pct(pct) => size.width.min(size.height) / 2. * (pct / 100.),
+        };
+        self.update_restrict_position(size.width, circle_radius);
+        let circle_point = Point::new(self.position, size.to_rect().center().y);
+        let circle = crate::kurbo::Circle::new(circle_point, circle_radius);
         if let Some(color) = self.style.foreground() {
             cx.fill(&circle, &color, 0.);
         }
@@ -265,20 +260,20 @@ impl View for ToggleButton {
 }
 
 impl ToggleButton {
-    fn update_restrict_position(&mut self, end_pos: bool) {
+    fn update_restrict_position(&mut self, width: f64, radius: f64) {
         let inset = match self.style.inset() {
-            PxPct::Px(px) => px as f32,
-            PxPct::Pct(pct) => (self.width * (pct as f32 / 100.)).min(self.width / 2.),
+            PxPct::Px(px) => px,
+            PxPct::Pct(pct) => (width * (pct / 100.)).min(width / 2.),
         };
 
-        if self.held == ToggleState::Nothing || end_pos {
-            self.position = if self.state { self.width } else { 0. };
+        if self.held == ToggleState::Nothing {
+            self.position = if self.state { width } else { 0. };
         }
 
         self.position = self
             .position
-            .max(self.radius + inset)
-            .min(self.width - self.radius - inset);
+            .max(radius + inset)
+            .min(width - radius - inset);
     }
 
     /// Create new [ToggleButton].
@@ -332,8 +327,6 @@ impl ToggleButton {
             ontoggle: None,
             position: 0.0,
             held: ToggleState::Nothing,
-            width: 0.,
-            radius: 0.,
             style: Default::default(),
         }
         .class(ToggleButtonClass)

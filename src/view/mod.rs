@@ -68,7 +68,6 @@ use crate::{
     Renderer,
     context::{EventCx, PaintCx, StyleCx, UpdateCx},
     event::EventPropagation,
-    layout::PostLayoutCx,
     style::{LayoutProps, Style, StyleClassRef},
     unit::PxPct,
     views::{
@@ -992,13 +991,6 @@ pub trait View {
         let _ = cx;
     }
 
-    /// Use this method if you need to run custom code after a layout pass. You must notify the window that your view requires post layout with `ViewId::needs_post_layout`.
-    ///
-    /// This will be run after layout if there was a change in the layout of this function.
-    fn post_layout(&mut self, post_layout_cx: PostLayoutCx) {
-        let _ = post_layout_cx;
-    }
-
     fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
         // these are here to just ignore these arguments in the default case
         let _ = cx;
@@ -1051,10 +1043,6 @@ impl View for Box<dyn View> {
 
     fn style_pass(&mut self, cx: &mut StyleCx) {
         (**self).style_pass(cx)
-    }
-
-    fn post_layout(&mut self, post_layout_cx: PostLayoutCx) {
-        (**self).post_layout(post_layout_cx);
     }
 
     fn event(&mut self, cx: &mut EventCx) -> EventPropagation {

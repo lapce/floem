@@ -2,13 +2,14 @@ use std::{any::Any, cell::RefCell, fmt::Display, mem::swap, rc::Rc};
 
 use crate::{
     Clipboard, ViewId,
-    context::{EventCx, PaintCx, UpdateCx},
-    event::{Event, EventListener, EventPropagation, FocusEvent},
+    context::{EventCx, LayoutChangedListener, PaintCx, UpdateCx},
+    custom_event,
+    event::{Event, EventPropagation, FocusEvent, listener},
+    prelude::EventListenerTrait,
     prop_extractor,
     style::{
-        CursorStyle, CustomStylable, CustomStyle, FontProps, LineHeight, Selectable,
-        SelectionCornerRadius, SelectionStyle, Style, TextAlignProp, TextColor, TextOverflow,
-        TextOverflowProp,
+        CustomStylable, CustomStyle, FontProps, LineHeight, Selectable, SelectionCornerRadius,
+        SelectionStyle, Style, TextAlignProp, TextColor, TextOverflow, TextOverflowProp,
     },
     style_class,
     text::{Attrs, AttrsList, FamilyOwned, TextLayout},
@@ -55,10 +56,14 @@ pub struct TextLayoutData {
     text_align: Option<Align>,
     /// Text overflow behavior
     text_overflow: TextOverflow,
+    /// Previous overflow state for detecting changes
+    last_overflow_state: Option<bool>,
+    /// an optional view id. When this is set, the text overflow event will be dispatched to this view.
+    view_id: Option<ViewId>,
 }
 
 impl TextLayoutData {
-    pub fn new() -> Self {
+    pub fn new(view_id: Option<ViewId>) -> Self {
         Self {
             text_layout: None,
             original_text: String::new(),
@@ -68,6 +73,8 @@ impl TextLayoutData {
             attrs_list: AttrsList::new(Attrs::new()),
             text_align: None,
             text_overflow: TextOverflow::Clip,
+            last_overflow_state: None,
+            view_id,
         }
     }
 
@@ -86,7 +93,7 @@ impl TextLayoutData {
         self.available_text_layout = None;
     }
 
-    pub fn set_text_overflow(&mut self, text_overflow: crate::style::TextOverflow) {
+    pub fn set_text_overflow(&mut self, text_overflow: TextOverflow) {
         if self.text_overflow != text_overflow {
             self.text_overflow = text_overflow;
             // Clear cached overflow layouts when overflow mode changes
@@ -124,11 +131,16 @@ impl TextLayoutData {
     /// Temporarily modifies text_layout size but restores it after.
     pub fn compute_overflow_size(
         &mut self,
-        available_width: f32,
+        width_constraint: Option<f32>,
         text_overflow: TextOverflow,
     ) -> peniko::kurbo::Size {
         let Some(text_layout) = self.text_layout.as_mut() else {
             return peniko::kurbo::Size::new(0.0, 14.0);
+        };
+
+        let Some(available_width) = width_constraint else {
+            text_layout.clear_size();
+            return text_layout.size();
         };
 
         match text_overflow {
@@ -169,56 +181,73 @@ impl TextLayoutData {
         };
 
         let natural_width = text_layout.size().width as f32;
-        let overflows = natural_width > final_width + 1.;
+        let overflows = natural_width > final_width;
+
+        // Check if overflow state changed
+        let overflow_changed = self.last_overflow_state != Some(overflows);
+        self.last_overflow_state = Some(overflows);
 
         if !overflows {
             self.clear_overflow_state();
-            return;
+        } else {
+            if self.available_width == Some(final_width) {
+                return; // Already finalized for this width, no change
+            }
+
+            match self.text_overflow {
+                TextOverflow::Ellipsis => {
+                    let mut dots_text = TextLayout::new();
+                    dots_text.set_text("...", self.attrs_list.clone(), self.text_align);
+                    let dots_width = dots_text.size().width as f32;
+                    let width_left = final_width - dots_width;
+
+                    let hit_point = text_layout.hit_point(Point::new(width_left as f64, 0.0));
+                    let index = hit_point.index;
+
+                    let new_text = if index > 0 {
+                        format!("{}...", &self.original_text[..index])
+                    } else {
+                        "".to_string()
+                    };
+
+                    // Only create a new layout if the text actually changed
+                    if self.available_text.as_ref() != Some(&new_text) {
+                        let mut layout = TextLayout::new();
+                        layout.set_text(&new_text, self.attrs_list.clone(), self.text_align);
+                        self.available_text = Some(new_text);
+                        self.available_text_layout = Some(layout);
+                    }
+                    self.available_width = Some(final_width);
+                }
+                TextOverflow::Wrap => {
+                    // Reuse existing available_text_layout if we have one, just update size
+                    if let Some(ref mut layout) = self.available_text_layout {
+                        layout.set_size(final_width, f32::MAX);
+                    } else {
+                        // First time - clone from base layout
+                        let mut layout = text_layout.clone();
+                        layout.set_size(final_width, f32::MAX);
+                        self.available_text_layout = Some(layout);
+                    }
+                    self.available_width = Some(final_width);
+                }
+                _ => {
+                    self.clear_overflow_state();
+                }
+            }
         }
 
-        if self.available_width == Some(final_width) {
-            return; // Already finalized for this width
-        }
-
-        match self.text_overflow {
-            TextOverflow::Ellipsis => {
-                let mut dots_text = TextLayout::new();
-                dots_text.set_text("...", self.attrs_list.clone(), self.text_align);
-                let dots_width = dots_text.size().width as f32;
-                let width_left = final_width - dots_width;
-
-                let hit_point = text_layout.hit_point(Point::new(width_left as f64, 0.0));
-                let index = hit_point.index;
-
-                let new_text = if index > 0 {
-                    format!("{}...", &self.original_text[..index])
-                } else {
-                    "".to_string()
-                };
-
-                // Only create a new layout if the text actually changed
-                if self.available_text.as_ref() != Some(&new_text) {
-                    let mut layout = TextLayout::new();
-                    layout.set_text(&new_text, self.attrs_list.clone(), self.text_align);
-                    self.available_text = Some(new_text);
-                    self.available_text_layout = Some(layout);
-                }
-                self.available_width = Some(final_width);
-            }
-            TextOverflow::Wrap => {
-                // Reuse existing available_text_layout if we have one, just update size
-                if let Some(ref mut layout) = self.available_text_layout {
-                    layout.set_size(final_width, f32::MAX);
-                } else {
-                    // First time - clone from base layout
-                    let mut layout = text_layout.clone();
-                    layout.set_size(final_width, f32::MAX);
-                    self.available_text_layout = Some(layout);
-                }
-                self.available_width = Some(final_width);
-            }
-            _ => {
-                self.clear_overflow_state();
+        if overflow_changed {
+            if let Some(id) = self.view_id {
+                id.dispatch_event(
+                    Event::new_custom(TextOverflowChanged {
+                        is_overflowing: overflows,
+                    }),
+                    crate::event::DispatchKind::Directed {
+                        target: id.get_visual_id(),
+                        phases: crate::context::Phases::TARGET,
+                    },
+                );
             }
         }
     }
@@ -234,15 +263,10 @@ impl TextLayoutData {
                 measure_ctx.needs_finalization(node_id);
 
                 // Get text layout info
-                let (has_text_layout, natural_size, text_overflow) = {
+                let (has_text_layout, text_overflow) = {
                     let layout_data = layout_data.borrow();
                     let has_text = layout_data.text_layout.is_some();
-                    let size = layout_data
-                        .text_layout
-                        .as_ref()
-                        .map(|tl| tl.size())
-                        .unwrap_or_else(|| peniko::kurbo::Size::new(0.0, 14.0));
-                    (has_text, size, layout_data.text_overflow)
+                    (has_text, layout_data.text_overflow)
                 };
 
                 if !has_text_layout {
@@ -252,65 +276,35 @@ impl TextLayoutData {
                     };
                 }
 
-                let natural_width = natural_size.width as f32;
-
                 // Determine the effective width for layout
-                let effective_width: Option<f32> = if let Some(w) = known_dimensions.width {
-                    if w == 0.0 {
-                        match available_space.height {
-                            AvailableSpace::MinContent | AvailableSpace::MaxContent => None,
-                            AvailableSpace::Definite(_) => Some(w),
-                        }
-                    } else {
-                        Some(w)
-                    }
-                } else {
-                    match available_space.width {
+                let width_constraint: Option<f32> =
+                    known_dimensions.width.or(match available_space.width {
                         AvailableSpace::Definite(w) => Some(w),
                         AvailableSpace::MinContent => match text_overflow {
-                            crate::style::TextOverflow::Wrap => {
+                            TextOverflow::Wrap => {
                                 // TODO:
                                 // Calculate min-content: width of longest unbreakable word
                                 // let mut layout_data = layout_data.borrow_mut();
                                 // let min_width = layout_data.compute_min_content_width();
                                 Some(0.)
                             }
-                            crate::style::TextOverflow::Ellipsis => {
+                            TextOverflow::Ellipsis => {
                                 // TODO: similar to wrap
                                 Some(0.)
                             }
-                            _ => None, // just use natural width and let it clip
+                            TextOverflow::Clip => None,
                         },
                         AvailableSpace::MaxContent => None,
-                    }
-                };
+                    });
 
                 // Calculate the actual text size based on effective width
-                let text_size = if let Some(width) = effective_width {
-                    let overflows = natural_width > width + 1.;
-
-                    if overflows {
-                        // Just compute what the size would be
-                        match text_overflow {
-                            crate::style::TextOverflow::Ellipsis
-                            | crate::style::TextOverflow::Wrap => {
-                                let mut layout_data = layout_data.borrow_mut();
-                                layout_data.compute_overflow_size(width, text_overflow)
-                            }
-                            _ => {
-                                // Clip mode
-                                peniko::kurbo::Size::new(width as f64, natural_size.height)
-                            }
-                        }
-                    } else {
-                        natural_size
-                    }
-                } else {
-                    natural_size
+                let text_size = {
+                    let mut layout_data = layout_data.borrow_mut();
+                    layout_data.compute_overflow_size(width_constraint, text_overflow)
                 };
 
                 Size {
-                    width: known_dimensions.width.unwrap_or(text_size.width as f32),
+                    width: known_dimensions.width.unwrap_or(text_size.width as f32) + 0.5,
                     height: known_dimensions.height.unwrap_or(text_size.height as f32),
                 }
             },
@@ -322,12 +316,6 @@ impl TextLayoutData {
             let mut layout_data = layout_data.borrow_mut();
             layout_data.finalize_for_width(layout.content_box_width());
         })
-    }
-}
-
-impl Default for TextLayoutData {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -346,10 +334,42 @@ style_class!(
     pub LabelClass
 );
 
-// TODO: make this a custom event
-struct TextOverflowListener {
-    last_is_overflown: Option<bool>,
-    on_change_fn: Box<dyn Fn(bool) + 'static>,
+custom_event! {
+    /// Event fired when a text view's overflow state changes.
+    ///
+    /// This is fired when text transitions between fitting within its bounds and overflowing,
+    /// or vice versa. The overflow state depends on the `text_overflow` style property:
+    ///
+    /// - `TextOverflow::Clip`: Text is clipped at the boundary
+    /// - `TextOverflow::Ellipsis`: Text is truncated with "..." when it overflows
+    /// - `TextOverflow::Wrap`: Text wraps to multiple lines (changes line count, not overflow state)
+    ///
+    /// # Use Cases
+    ///
+    /// - Show/hide a "more" button when text is truncated
+    /// - Toggle between single-line and multi-line display modes
+    /// - Display tooltips with full text when content is clipped
+    /// - Update UI indicators when text fits or overflows
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// "Some long text that might overflow"
+    ///     .style(|s| s.text_overflow(TextOverflow::Ellipsis))
+    ///     .on_event(TextOverflowChanged::listener(), |cx, event| {
+    ///         if event.is_overflowing {
+    ///             println!("Text is now overflowing and truncated");
+    ///         } else {
+    ///             println!("Text fits completely");
+    ///         }
+    ///         EventPropagation::Continue
+    ///     })
+    /// ```
+    #[derive(Copy, PartialEq)]
+    pub struct TextOverflowChanged {
+        /// Whether the text is currently overflowing its bounds
+        pub is_overflowing: bool,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -366,7 +386,6 @@ pub struct Label {
     label: String,
     /// Layout data containing text layouts and overflow handling logic
     layout_data: Rc<RefCell<TextLayoutData>>,
-    text_overflow_listener: Option<TextOverflowListener>,
     selection_state: SelectionState,
     selection_range: Option<(Cursor, Cursor)>,
     selection_style: SelectionStyle,
@@ -378,14 +397,14 @@ pub struct Label {
 
 impl Label {
     fn new_internal(id: ViewId, label: String) -> Self {
-        let layout_data = Rc::new(RefCell::new(TextLayoutData::new()));
+        id.has_layout_listener();
+        let layout_data = Rc::new(RefCell::new(TextLayoutData::new(Some(id))));
         let mut label = Label {
             id,
             label,
             layout_data,
             text_node: None,
             layout_node: None,
-            text_overflow_listener: None,
             selection_state: SelectionState::None,
             selection_range: None,
             selection_style: Default::default(),
@@ -433,7 +452,7 @@ impl Label {
             move || label().to_string(),
             move |new_label| id.update_state(new_label),
         );
-        Self::new_internal(id, initial_label).on_event_cont(EventListener::FocusLost, move |_| {
+        Self::new_internal(id, initial_label).on_event_cont(listener::FocusLost, move |_, _| {
             id.request_layout();
         })
     }
@@ -481,14 +500,6 @@ pub fn label<S: Display + 'static>(label: impl Fn() -> S + 'static) -> Label {
 }
 
 impl Label {
-    pub fn on_text_overflow(mut self, is_text_overflown_fn: impl Fn(bool) + 'static) -> Self {
-        self.text_overflow_listener = Some(TextOverflowListener {
-            on_change_fn: Box::new(is_text_overflown_fn),
-            last_is_overflown: None,
-        });
-        self
-    }
-
     fn get_attrs_list(&self) -> AttrsList {
         let mut attrs = Attrs::new().color(self.style.color().unwrap_or(palette::css::BLACK));
         if let Some(font_size) = self.font.size() {
@@ -597,17 +608,16 @@ impl Label {
         self.handle_modifier_cmd(&event.into())
     }
 
-    fn paint_selection(&self, text_layout: &TextLayout, paint_cx: &mut PaintCx) {
+    fn paint_selection(&self, text_layout: &TextLayout, text_loc: Point, paint_cx: &mut PaintCx) {
         if let Some((start_c, end_c)) = &self.selection_range {
-            let location = self.id.get_content_rect_local().origin();
             let ss = &self.selection_style;
             let selection_color = ss.selection_color();
 
             for run in text_layout.layout_runs() {
                 if let Some((mut start_x, width)) = run.highlight(*start_c, *end_c) {
-                    start_x += location.x as f32;
+                    start_x += text_loc.x as f32;
                     let end_x = width + start_x;
-                    let start_y = location.y + run.line_top as f64;
+                    let start_y = text_loc.y + run.line_top as f64;
                     let end_y = start_y + run.line_height as f64;
                     let rect = Rect::new(start_x.into(), start_y, end_x.into(), end_y)
                         .to_rounded_rect(ss.corner_radius());
@@ -659,19 +669,25 @@ impl View for Label {
     }
 
     fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
+        if let Some(layout) = LayoutChangedListener::extract(&cx.event) {
+            self.layout_data
+                .borrow_mut()
+                .finalize_for_width(layout.new_content_box.width() as f32);
+        }
         match &cx.event {
             Event::Focus(FocusEvent::Lost) => {
-                self.id.set_cursor(None);
                 self.selection_state = SelectionState::None;
                 self.selection_range = None;
                 cx.window_state.request_paint(self.id);
                 return EventPropagation::Continue;
             }
-            Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. })) => {
+            Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, pointer, .. })) => {
                 if self.style.text_selectable() {
                     self.selection_range = None;
                     self.selection_state = SelectionState::Ready(state.logical_point());
-                    cx.window_state.update_active(self.id);
+                    if let Some(pointer_id) = pointer.pointer_id {
+                        cx.window_state.set_pointer_capture(pointer_id, self.id);
+                    }
                     cx.window_state.request_paint(self.id);
                 }
             }
@@ -699,7 +715,6 @@ impl View for Label {
                             SelectionState::Selecting(start, pu.current.logical_point());
                         self.set_selection_range();
                         cx.window_state.request_paint(self.id);
-                        self.id.request_active();
                         self.id.request_focus();
                     }
                 }
@@ -723,11 +738,6 @@ impl View for Label {
                 }
             }
             _ => {}
-        }
-        if self.selection_state == SelectionState::None {
-            self.id.set_cursor(None);
-        } else {
-            self.id.set_cursor(Some(CursorStyle::Text));
         }
         EventPropagation::Continue
     }
@@ -759,7 +769,6 @@ impl View for Label {
             return;
         }
 
-        // let text_loc = self.id.get_content_rect_local().origin();
         let (Some(parent_node), Some(text_node)) = (self.layout_node, self.text_node) else {
             return;
         };
@@ -773,7 +782,7 @@ impl View for Label {
         self.with_effective_text_layout(|l| {
             cx.draw_text(l, text_loc);
             if cx.window_state.is_focused(self.id) {
-                self.paint_selection(l, cx);
+                self.paint_selection(l, text_loc, cx);
             }
         });
     }

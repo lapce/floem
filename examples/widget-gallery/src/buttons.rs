@@ -2,11 +2,11 @@ use floem::{
     peniko::{color::palette, Color},
     prelude::{
         palette::css::{DARK_GRAY, WHITE_SMOKE},
-        RwSignal, SignalGet,
+        *,
     },
     style::CursorStyle,
     theme::StyleThemeExt,
-    views::{toggle_button, Button, Decorators, ToggleButton, ToggleHandleBehavior},
+    views::{Button, Decorators, ToggleButton, ToggleHandleBehavior},
     IntoView,
 };
 
@@ -43,13 +43,13 @@ pub fn button_view() -> impl IntoView {
         ),
         form_item(
             "Secondary click button:",
-            Button::new("Right click me").on_secondary_click_stop(|_| {
+            Button::new("Right click me").on_event_stop(listener::SecondaryClick, |_, _| {
                 println!("Secondary mouse button click.");
             }),
         ),
         form_item(
             "Toggle button - Snap:",
-            toggle_button(|| true)
+            ToggleButton::new(|| true)
                 .on_toggle(|_| {
                     println!("Button Toggled");
                 })
@@ -57,7 +57,7 @@ pub fn button_view() -> impl IntoView {
         ),
         form_item(
             "Toggle button - Follow:",
-            toggle_button(|| true)
+            ToggleButton::new(|| true)
                 .on_toggle(|_| {
                     println!("Button Toggled");
                 })

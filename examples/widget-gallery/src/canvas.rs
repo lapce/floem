@@ -1,5 +1,5 @@
 use floem::{
-    context::{EventCx, PaintCx},
+    context::{EventCx, LayoutChanged, LayoutChangedListener, PaintCx},
     event::{Event, EventPropagation},
     kurbo::{Affine, Circle, Point, Rect, Shape, Size, Stroke},
     peniko::{
@@ -26,13 +26,13 @@ pub fn canvas_view() -> impl IntoView {
                     cx.fill(
                         &Rect::ZERO
                             .with_size(size)
-                            .to_rounded_rect(if rounded.get() { 8. } else { 0. }),
+                            .to_rounded_rect(if rounded.get() { 32. } else { 0. }),
                         css::PURPLE,
                         0.,
                     );
                 })
                 .style(|s| s.size(100, 300)),
-                Button::new("toggle")
+                Button::new("toggle rounded corners")
                     .action(move || rounded.update(|s| *s = !*s))
                     .style(|s| s.height(30)),
             ))
@@ -130,7 +130,7 @@ pub struct SatValuePicker {
 impl SatValuePicker {
     pub fn new(color: impl Fn() -> Color + 'static) -> Self {
         let id = ViewId::new();
-        id.needs_post_layout();
+        id.has_layout_listener();
         let color = UpdaterEffect::new(color, move |c| id.update_state(c));
         Self {
             id,
@@ -159,14 +159,14 @@ impl SatValuePicker {
         self.on_change = Some(Box::new(on_change));
         self
     }
+
+    fn post_layout(&mut self, new_layout: &LayoutChanged) {
+        self.size = new_layout.new_box.size();
+    }
 }
 impl View for SatValuePicker {
     fn id(&self) -> ViewId {
         self.id
-    }
-
-    fn post_layout(&mut self, _post_layout_cx: floem::layout::PostLayoutCx) {
-        self.size = self.id.get_size().unwrap_or_default();
     }
 
     fn update(&mut self, _cx: &mut floem::context::UpdateCx, state: Box<dyn std::any::Any>) {
@@ -176,18 +176,24 @@ impl View for SatValuePicker {
     }
 
     fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
+        if let Some(new_layout) = LayoutChangedListener::extract(&cx.event) {
+            self.post_layout(new_layout);
+        }
         if let Some(on_change) = &self.on_change {
             match &cx.event {
-                Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. })) => {
+                Event::Pointer(PointerEvent::Down(PointerButtonEvent {
+                    state, pointer, ..
+                })) => {
                     self.current_color = self.position_to_hsl(state.logical_point());
                     on_change(self.current_color.convert());
                     self.track = true;
-                    self.id.request_active();
+                    if let Some(pointer_id) = pointer.pointer_id {
+                        self.id.set_pointer_capture(pointer_id);
+                    }
                 }
                 Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. })) => {
                     self.current_color = self.position_to_hsl(state.logical_point());
                     on_change(self.current_color.convert());
-                    self.id.clear_active();
                     self.track = false;
                 }
                 Event::Pointer(PointerEvent::Move(pu)) => {
@@ -256,7 +262,7 @@ pub struct HuePicker {
 impl HuePicker {
     pub fn new(color: impl Fn() -> Color + 'static) -> Self {
         let id = ViewId::new();
-        id.needs_post_layout();
+        id.has_layout_listener();
         let color = UpdaterEffect::new(color, move |c| id.update_state(c));
         Self {
             id,
@@ -281,15 +287,15 @@ impl HuePicker {
         self.on_change = Some(Box::new(on_change));
         self
     }
+
+    fn post_layout(&mut self, new_layout: &LayoutChanged) {
+        self.size = new_layout.new_box.size();
+    }
 }
 
 impl View for HuePicker {
     fn id(&self) -> ViewId {
         self.id
-    }
-
-    fn post_layout(&mut self, _post_layout_cx: floem::layout::PostLayoutCx) {
-        self.size = self.id.get_size().unwrap_or_default();
     }
 
     fn update(&mut self, _cx: &mut floem::context::UpdateCx, state: Box<dyn std::any::Any>) {
@@ -299,18 +305,24 @@ impl View for HuePicker {
     }
 
     fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
+        if let Some(new_layout) = LayoutChangedListener::extract(&cx.event) {
+            self.post_layout(new_layout);
+        }
         if let Some(on_change) = &self.on_change {
             match &cx.event {
-                Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. })) => {
+                Event::Pointer(PointerEvent::Down(PointerButtonEvent {
+                    state, pointer, ..
+                })) => {
                     self.current_color = self.position_to_hsl(state.logical_point());
                     on_change(self.current_color.convert());
                     self.track = true;
-                    self.id.request_active();
+                    if let Some(pointer_id) = pointer.pointer_id {
+                        self.id.set_pointer_capture(pointer_id);
+                    }
                 }
                 Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. })) => {
                     self.current_color = self.position_to_hsl(state.logical_point());
                     on_change(self.current_color.convert());
-                    self.id.clear_active();
                     self.track = false;
                 }
                 Event::Pointer(PointerEvent::Move(pu)) => {
@@ -381,7 +393,7 @@ pub struct OpacityPicker {
 impl OpacityPicker {
     pub fn new(color: impl Fn() -> Color + 'static) -> Self {
         let id = ViewId::new();
-        id.needs_post_layout();
+        id.has_layout_listener();
         let color = UpdaterEffect::new(color, move |c| id.update_state(c));
         Self {
             id,
@@ -402,15 +414,15 @@ impl OpacityPicker {
         self.on_change = Some(Box::new(on_change));
         self
     }
+
+    fn post_layout(&mut self, layout_changed: &LayoutChanged) {
+        self.size = layout_changed.new_box.size();
+    }
 }
 
 impl View for OpacityPicker {
     fn id(&self) -> ViewId {
         self.id
-    }
-
-    fn post_layout(&mut self, _post_layout_cx: floem::layout::PostLayoutCx) {
-        self.size = self.id.get_size().unwrap_or_default();
     }
 
     fn update(&mut self, _cx: &mut floem::context::UpdateCx, state: Box<dyn std::any::Any>) {
@@ -420,18 +432,24 @@ impl View for OpacityPicker {
     }
 
     fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
+        if let Some(new_layout) = LayoutChangedListener::extract(&cx.event) {
+            self.post_layout(new_layout);
+        }
         if let Some(on_change) = &self.on_change {
             match &cx.event {
-                Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. })) => {
+                Event::Pointer(PointerEvent::Down(PointerButtonEvent {
+                    state, pointer, ..
+                })) => {
                     self.current_color = self.position_to_alpha(state.logical_point());
                     on_change(self.current_color);
                     self.track = true;
-                    self.id.request_active();
+                    if let Some(pointer_id) = pointer.pointer_id {
+                        self.id.set_pointer_capture(pointer_id);
+                    }
                 }
                 Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. })) => {
                     self.current_color = self.position_to_alpha(state.logical_point());
                     on_change(self.current_color);
-                    self.id.clear_active();
                     self.track = false;
                 }
                 Event::Pointer(PointerEvent::Move(pu)) => {

@@ -51,6 +51,6 @@ pub fn stacks_view() -> impl IntoView {
     view.on_key_up(
         Key::Named(NamedKey::F11),
         |m| m.is_empty(),
-        move |_| id.inspect(),
+        move |_, _| id.inspect(),
     )
 }

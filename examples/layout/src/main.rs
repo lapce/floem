@@ -1,5 +1,5 @@
 use floem::{
-    event::{Event, EventListener},
+    event::Event,
     kurbo::Size,
     prelude::*,
     style::AlignContent,
@@ -21,7 +21,7 @@ fn list_item<V: IntoView + 'static>(name: String, view_fn: impl Fn() -> V) -> im
 }
 
 fn app_view() -> impl IntoView {
-    let view = Stack::vertical((
+    Stack::vertical((
         Label::derived(move || String::from("Static layouts"))
             .style(|s| s.font_size(30.0).margin_bottom(15.0)),
         list_item(String::from("Left sidebar"), move || {
@@ -93,19 +93,10 @@ fn app_view() -> impl IntoView {
             .height_full()
             .padding(10.0)
             .row_gap(10.0)
-    });
-
-    let id = view.id();
-    view.on_event_stop(EventListener::KeyUp, move |cx| {
-        if let Event::Key(KeyboardEvent {
-            state: KeyState::Up,
-            key,
-            ..
-        }) = &cx.event
-        {
-            if *key == Key::Named(NamedKey::F11) {
-                id.inspect();
-            }
+    })
+    .on_event_stop(listener::KeyUp, move |_cx, KeyboardEvent { key, .. }| {
+        if let Key::Named(NamedKey::F11) = key {
+            floem::action::inspect();
         }
     })
     .window_title(|| String::from("Layout examples"))

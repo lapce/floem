@@ -4,9 +4,8 @@
 //! - [`LayoutCx`] - Context for computing Taffy layout nodes
 //! - [`ComputeLayoutCx`] - Context for computing view positions after Taffy layout
 
-use peniko::kurbo::{Point, Rect, Size, Vec2};
+use peniko::kurbo::{Point, Vec2};
 
-use crate::view::ViewId;
 use crate::window::state::WindowState;
 
 // =============================================================================
@@ -50,71 +49,6 @@ fn compute_window_origins(
     let translated = base + translate;
 
     WindowOrigins { base, translated }
-}
-
-// =============================================================================
-// Clip rect computation
-// =============================================================================
-
-/// Compute the clip rect for a view.
-///
-/// For normal flow elements, the clip rect is the intersection of the parent's
-/// accumulated clip rect and this view's bounds - ensuring the view can only
-/// receive events within its parent's visible area.
-///
-/// For absolute/fixed elements, the clip rect equals their own bounds since
-/// they escape the normal document flow and aren't clipped by ancestors.
-fn compute_clip_rect(
-    size: Size,
-    visual_origin: Point,
-    parent_clip_rect: Rect,
-    is_absolute: bool,
-    is_fixed: bool,
-) -> Rect {
-    let view_rect = size.to_rect().with_origin(visual_origin);
-
-    if is_absolute || is_fixed {
-        view_rect
-    } else {
-        parent_clip_rect.intersect(view_rect)
-    }
-}
-
-// =============================================================================
-// Listener notification
-// =============================================================================
-
-fn notify_resize_listeners(id: ViewId, size: Size, origin: Point) {
-    let view_state = id.state();
-    let vs = view_state.borrow();
-    let mut resize_listeners = vs.resize_listeners.borrow_mut();
-
-    let new_rect = size.to_rect().with_origin(origin);
-    if new_rect != resize_listeners.rect {
-        resize_listeners.rect = new_rect;
-        let callbacks = resize_listeners.callbacks.clone();
-        std::mem::drop(resize_listeners);
-        std::mem::drop(vs);
-        for callback in callbacks {
-            (*callback)(new_rect);
-        }
-    }
-}
-
-fn notify_move_listeners(id: ViewId, base_window_origin: Point) {
-    let view_state = id.state();
-    let vs = view_state.borrow();
-    let mut move_listeners = vs.move_listeners.borrow_mut();
-
-    if base_window_origin != move_listeners.window_origin {
-        move_listeners.window_origin = base_window_origin;
-        let callbacks = move_listeners.callbacks.clone();
-        std::mem::drop(move_listeners);
-        std::mem::drop(vs);
-        for callback in callbacks {
-            (*callback)(base_window_origin);
-        }
-    }
 }
 
 // =============================================================================
@@ -224,19 +158,6 @@ impl<'a> LayoutCx<'a> {
             style.size.height = taffy::style::Dimension::length(computed);
         } else if style.size.height == taffy::style::Dimension::percent(1.0) {
             style.size.height = taffy::style::Dimension::length(root_size.height as f32);
-        }
-    }
-}
-
-pub struct PostLayoutCx<'a> {
-    pub window_state: &'a mut WindowState,
-    pub layout: &'a taffy::Layout,
-}
-impl<'a> PostLayoutCx<'a> {
-    pub fn new(window_state: &'a mut WindowState, layout: &'a taffy::Layout) -> Self {
-        Self {
-            window_state,
-            layout,
         }
     }
 }

@@ -1,5 +1,5 @@
 use floem::{
-    event::{Event, EventListener},
+    event::Event,
     imbl,
     prelude::*,
     style::{CursorStyle, Position},
@@ -98,20 +98,11 @@ pub fn tab_navigation_view() -> impl IntoView {
             .width_full()
     });
 
-    let settings_view =
-        Stack::vertical((tabs_bar, main_content)).style(|s| s.width_full().height_full());
-
-    let id = settings_view.id();
-    settings_view.on_event_stop(EventListener::KeyUp, move |cx| {
-        if let Event::Key(KeyboardEvent {
-            state: KeyState::Up,
-            key,
-            ..
-        }) = &cx.event
-        {
+    Stack::vertical((tabs_bar, main_content))
+        .style(|s| s.width_full().height_full())
+        .on_event_stop(listener::KeyUp, move |_cx, KeyboardEvent { key, .. }| {
             if *key == Key::Named(NamedKey::F11) {
-                id.inspect();
+                floem::action::inspect();
             }
-        }
-    })
+        })
 }

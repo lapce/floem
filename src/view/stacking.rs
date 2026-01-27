@@ -10,12 +10,12 @@ use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 use std::{cell::RefCell, rc::Rc};
 
-use crate::view::ViewId;
+use crate::{VisualId, view::ViewId};
 
 /// An item to be painted within a stacking context (direct child of parent).
 #[derive(Debug, Clone)]
 pub(crate) struct StackingContextItem {
-    pub view_id: ViewId,
+    pub visual_id: VisualId,
     pub z_index: i32,
     pub dom_order: usize,
 }
@@ -97,6 +97,9 @@ pub(crate) fn collect_stacking_context_items(parent_id: ViewId) -> Rc<StackingCo
         return items;
     }
 
+    // TODO: Get the z-index from the box tree.
+    // TODO: In event dispatch, use our own code with this stacking context cache to reconstruct root path instead of using understory
+
     // Cache miss - collect direct children
     let mut items = StackingContextItems::new();
     let mut has_non_zero_z = false;
@@ -113,7 +116,7 @@ pub(crate) fn collect_stacking_context_items(parent_id: ViewId) -> Rc<StackingCo
         }
 
         items.push(StackingContextItem {
-            view_id: child,
+            visual_id: child,
             z_index,
             dom_order,
         });
@@ -220,7 +223,7 @@ mod tests {
 
     /// Helper to extract view IDs from stacking context items
     fn get_view_ids(items: &[StackingContextItem]) -> Vec<ViewId> {
-        items.iter().map(|item| item.view_id).collect()
+        items.iter().map(|item| item.visual_id).collect()
     }
 
     /// Helper to extract z-indices from stacking context items
@@ -242,7 +245,7 @@ mod tests {
 
         let result = collect_stacking_context_items(parent);
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0].view_id, child);
+        assert_eq!(result[0].visual_id, child);
     }
 
     #[test]

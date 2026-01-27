@@ -1,50 +1,83 @@
-use std::any::Any;
+use std::{any::Any, cell::RefCell, rc::Rc};
 
 use floem_reactive::Effect;
 use floem_renderer::{
     Renderer,
-    text::{Attrs, AttrsList, AttrsOwned, TextLayout},
+    text::{Attrs, AttrsList, AttrsOwned},
 };
-use peniko::{
-    Color,
-    color::palette,
-    kurbo::{Point, Rect},
-};
+use peniko::{Color, color::palette};
 use smallvec::{SmallVec, smallvec};
 use taffy::tree::NodeId;
 
-use crate::{
-    IntoView,
-    context::UpdateCx,
-    style::{Style, TextOverflow},
-    unit::PxPct,
-    view::View,
-    view::ViewId,
-};
+use crate::{IntoView, context::UpdateCx, view::LayoutNodeCx, view::View, view::ViewId};
+
+use super::label::TextLayoutData;
 
 pub struct RichText {
     id: ViewId,
-    text_layout: TextLayout,
+    /// Layout data containing text layouts and overflow handling logic
+    layout_data: Rc<RefCell<TextLayoutData>>,
     text_node: Option<NodeId>,
-    text_overflow: TextOverflow,
-    available_width: Option<f32>,
-    available_text_layout: Option<TextLayout>,
+    layout_node: Option<NodeId>,
 }
 
-pub fn rich_text(text_layout: impl Fn() -> TextLayout + 'static) -> RichText {
+pub fn rich_text(
+    text: String,
+    attrs_list: AttrsList,
+    text_fn: impl Fn() -> (String, AttrsList) + 'static,
+) -> RichText {
     let id = ViewId::new();
-    let text = text_layout();
     Effect::new(move |_| {
-        let new_text_layout = text_layout();
-        id.update_state(new_text_layout);
+        let (new_text, new_attrs) = text_fn();
+        id.update_state((new_text, new_attrs));
     });
-    RichText {
+
+    let layout_data = Rc::new(RefCell::new(TextLayoutData::new(Some(id))));
+
+    // Initialize the layout data with the text and attrs
+    {
+        let mut data = layout_data.borrow_mut();
+        data.set_text(&text, attrs_list, None);
+        data.set_text_overflow(crate::style::TextOverflow::Wrap);
+    }
+
+    let mut rich_text = RichText {
         id,
-        text_layout: text,
+        layout_data,
         text_node: None,
-        text_overflow: TextOverflow::Wrap,
-        available_width: None,
-        available_text_layout: None,
+        layout_node: None,
+    };
+
+    rich_text.set_taffy_layout();
+    rich_text
+}
+
+impl RichText {
+    fn set_taffy_layout(&mut self) {
+        let taffy_node = self.id.taffy_node();
+        let taffy = self.id.taffy();
+        let mut taffy = taffy.borrow_mut();
+        let text_node = taffy
+            .new_leaf(taffy::Style {
+                ..taffy::Style::DEFAULT
+            })
+            .unwrap();
+
+        let layout_fn = TextLayoutData::create_taffy_layout_fn(self.layout_data.clone());
+        let finalize_fn = TextLayoutData::create_finalize_fn(self.layout_data.clone());
+        self.text_node = Some(text_node);
+        self.layout_node = Some(taffy_node);
+
+        taffy
+            .set_node_context(
+                text_node,
+                Some(LayoutNodeCx::Custom {
+                    measure: layout_fn,
+                    finalize: Some(finalize_fn),
+                }),
+            )
+            .unwrap();
+        taffy.set_children(taffy_node, &[text_node]).unwrap();
     }
 }
 
@@ -54,111 +87,52 @@ impl View for RichText {
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
-        format!(
-            "RichText: {:?}",
-            self.text_layout
-                .lines()
-                .iter()
-                .map(|text| text.text())
-                .collect::<String>()
-        )
-        .into()
+        self.layout_data
+            .borrow()
+            .get_text_layout()
+            .map(|layout| {
+                format!(
+                    "RichText: {:?}",
+                    layout
+                        .lines()
+                        .iter()
+                        .map(|text| text.text())
+                        .collect::<String>()
+                )
+            })
+            .unwrap_or_else(|| "RichText: <empty>".to_string())
+            .into()
     }
 
     fn update(&mut self, _cx: &mut UpdateCx, state: Box<dyn Any>) {
-        if let Ok(state) = state.downcast() {
-            self.text_layout = *state;
-            self.available_width = None;
-            self.available_text_layout = None;
+        if let Ok(state) = state.downcast::<(String, AttrsList)>() {
+            let (text, attrs_list) = *state;
+
+            let mut data = self.layout_data.borrow_mut();
+            data.set_text(&text, attrs_list, None);
+            data.set_text_overflow(crate::style::TextOverflow::Wrap);
+            drop(data);
+
             self.id.request_layout();
         }
     }
 
-    // fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::tree::NodeId {
-    //     cx.layout_node(self.id(), true, |_cx| {
-    //         let size = self.text_layout.size();
-    //         let width = size.width as f32;
-    //         let mut height = size.height as f32;
-
-    //         if let Some(t) = self.available_text_layout.as_ref() {
-    //             height = height.max(t.size().height as f32);
-    //         }
-
-    //         if self.text_node.is_none() {
-    //             self.text_node = Some(
-    //                 self.id
-    //                     .taffy()
-    //                     .borrow_mut()
-    //                     .new_leaf(taffy::style::Style::DEFAULT)
-    //                     .unwrap(),
-    //             );
-    //         }
-    //         let text_node = self.text_node.unwrap();
-
-    //         let style = Style::new().width(width).height(height).to_taffy_style();
-    //         let _ = self.id.taffy().borrow_mut().set_style(text_node, style);
-    //         vec![text_node]
-    //     })
-    // }
-
-    // fn compute_layout(&mut self, _cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
-    //     let layout = self.id.get_layout().unwrap_or_default();
-    //     let view_state = self.id.state();
-    //     let (padding_left, padding_right) = {
-    //         let view_state = view_state.borrow();
-    //         let style = view_state.combined_style.builtin();
-    //         let padding_left = match style.padding_left() {
-    //             PxPct::Px(padding) => padding as f32,
-    //             PxPct::Pct(pct) => pct as f32 * layout.size.width,
-    //         };
-    //         let padding_right = match style.padding_right() {
-    //             PxPct::Px(padding) => padding as f32,
-    //             PxPct::Pct(pct) => pct as f32 * layout.size.width,
-    //         };
-    //         self.text_overflow = style.text_overflow();
-    //         (padding_left, padding_right)
-    //     };
-
-    //     let padding = padding_left + padding_right;
-    //     let width = self.text_layout.size().width as f32;
-    //     let available_width = layout.size.width - padding;
-    //     if self.text_overflow == TextOverflow::Wrap {
-    //         if width > available_width {
-    //             if self.available_width != Some(available_width) {
-    //                 let mut text_layout = self.text_layout.clone();
-    //                 text_layout.set_size(available_width, f32::MAX);
-    //                 self.available_text_layout = Some(text_layout);
-    //                 self.available_width = Some(available_width);
-    //                 self.id.request_layout();
-    //             }
-    //         } else {
-    //             if self.available_text_layout.is_some() {
-    //                 self.id.request_layout();
-    //             }
-    //             self.available_text_layout = None;
-    //             self.available_width = None;
-    //         }
-    //     }
-
-    //     None
-    // }
-
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        let text_node = self.text_node.unwrap();
-        let location = self
+        let (Some(parent_node), Some(text_node)) = (self.layout_node, self.text_node) else {
+            return;
+        };
+
+        let text_loc = self
             .id
-            .taffy()
-            .borrow_mut()
-            .layout(text_node)
-            .cloned()
+            .get_content_rect_relative(text_node, parent_node)
             .unwrap_or_default()
-            .location;
-        let point = Point::new(location.x as f64, location.y as f64);
-        if let Some(text_layout) = self.available_text_layout.as_ref() {
-            cx.draw_text(text_layout, point);
-        } else {
-            cx.draw_text(&self.text_layout, point);
-        }
+            .origin();
+
+        self.layout_data
+            .borrow()
+            .with_effective_text_layout(|layout| {
+                cx.draw_text(layout, text_loc);
+            });
     }
 }
 
@@ -229,17 +203,25 @@ impl IntoView for RichSpanOwned {
     type Intermediate = RichText;
 
     fn into_intermediate(self) -> Self::Intermediate {
-        let mut layout = TextLayout::new();
         let mut attrs_list = AttrsList::new(Attrs::new().color(palette::css::BLACK));
-        for span in self.spans {
+        for span in self.spans.clone() {
             attrs_list.add_span(span.0, span.1.as_attrs());
         }
 
-        layout.set_text(&self.text, attrs_list, None);
-        rich_text(move || layout.clone())
+        let text = self.text.clone();
+        let text_clone = self.text.clone();
+        let spans = self.spans.clone();
+
+        rich_text(text, attrs_list, move || {
+            let mut attrs_list = AttrsList::new(Attrs::new().color(palette::css::BLACK));
+            for span in spans.clone() {
+                attrs_list.add_span(span.0, span.1.as_attrs());
+            }
+            (text_clone.clone(), attrs_list)
+        })
     }
 }
-impl IntoView for RichSpan<'_> {
+impl<'a> IntoView for RichSpan<'a> {
     type V = RichText;
     type Intermediate = RichText;
 

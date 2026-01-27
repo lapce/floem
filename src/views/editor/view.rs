@@ -3,8 +3,8 @@ use std::{collections::HashMap, ops::RangeInclusive, rc::Rc};
 use crate::{
     Renderer,
     action::{set_ime_allowed, set_ime_cursor_area},
-    context::{LayoutCx, PaintCx, UpdateCx},
-    event::{Event, EventListener, EventPropagation, ImeEvent},
+    context::{LayoutChanged, LayoutCx, PaintCx, UpdateCx, VisualChanged},
+    event::{CustomEvent, Event, EventPropagation, ImeEvent, PointerScrollEventExt, listener},
     kurbo::{BezPath, Line, Point, Rect, Size, Vec2},
     peniko::Color,
     reactive::{Effect, Memo, RwSignal, Scope},
@@ -1039,8 +1039,8 @@ pub fn editor_view(
         is_active,
         inner_node: None,
     }
-    .style(|s| s.focusable(true))
-    .on_event_cont(EventListener::FocusGained, move |_| {
+    .style(|s| s.keyboard_navigable(true))
+    .on_event_cont(listener::FocusGained, move |_, _| {
         focused.set(true);
         prev_ime_area.set(None);
 
@@ -1048,12 +1048,12 @@ pub fn editor_view(
             set_ime_allowed(true);
         }
     })
-    .on_event_cont(EventListener::FocusLost, move |_| {
+    .on_event_cont(listener::FocusLost, move |_, _| {
         focused.set(false);
         editor.with_untracked(|ed| ed.commit_preedit());
         set_ime_allowed(false);
     })
-    .on_event(EventListener::ImePreedit, move |cx| {
+    .on_event(listener::ImePreedit, move |cx, _| {
         if !is_active.get_untracked() || !focused.get_untracked() {
             return EventPropagation::Continue;
         }
@@ -1084,17 +1084,15 @@ pub fn editor_view(
         }
         EventPropagation::Stop
     })
-    .on_event(EventListener::ImeCommit, move |cx| {
+    .on_event(listener::ImeCommit, move |_cx, text| {
         if !is_active.get_untracked() || !focused.get_untracked() {
             return EventPropagation::Continue;
         }
 
-        if let Event::Ime(ImeEvent::Commit(text)) = &cx.event {
-            editor.with_untracked(|ed| {
-                ed.clear_preedit();
-                ed.receive_char(text);
-            });
-        }
+        editor.with_untracked(|ed| {
+            ed.clear_preedit();
+            ed.receive_char(text);
+        });
         EventPropagation::Stop
     })
     .class(EditorViewClass)
@@ -1204,13 +1202,16 @@ pub fn editor_gutter(editor: RwSignal<Editor>) -> impl IntoView {
     let gutter_rect = RwSignal::new(Rect::ZERO);
 
     editor_gutter_view(editor)
-        .on_resize(move |rect| {
-            gutter_rect.set(rect);
-        })
-        .on_event_stop(EventListener::PointerWheel, move |cx| {
-            if let Some(vec2) = cx.event.pixel_scroll_delta_vec2() {
-                scroll_delta.set(vec2);
-            }
+        .on_event_stop(
+            LayoutChanged::listener(),
+            move |_cx, LayoutChanged { new_box, .. }| {
+                gutter_rect.set(*new_box);
+            },
+        )
+        .on_event_stop(listener::PointerWheel, move |_cx, pse| {
+            // TODO: Get the line and page size here
+            let delta = pse.resolve_to_points(None, None);
+            scroll_delta.set(delta);
         })
 }
 
@@ -1234,70 +1235,66 @@ fn editor_content(
         ed.editor_view_id.set(Some(id));
 
         editor_content_view
-            .on_event_cont(EventListener::FocusGained, move |_| {
+            .on_event_cont(listener::FocusGained, move |_, _| {
                 editor.with_untracked(|ed| ed.editor_view_focused.notify())
             })
-            .on_event_cont(EventListener::FocusLost, move |_| {
+            .on_event_cont(listener::FocusLost, move |_, _| {
                 editor.with_untracked(|ed| ed.editor_view_focus_lost.notify())
             })
-            .on_event_cont(EventListener::PointerDown, move |cx| {
-                if let Event::Pointer(
-                    pointer_event @ PointerEvent::Down(PointerButtonEvent { state, button, .. }),
-                ) = &cx.event
-                {
-                    id.request_active();
+            .on_event_cont(
+                listener::PointerDown,
+                move |_cx,
+                      PointerButtonEvent {
+                          button,
+                          state,
+                          pointer,
+                      }| {
+                    if let Some(pointer_id) = pointer.pointer_id {
+                        id.set_pointer_capture(pointer_id);
+                    }
                     id.request_focus();
-                    if pointer_event.is_primary_pointer() {
+                    if pointer.is_primary_pointer() {
                         editor.get_untracked().pointer_down_primary(state);
                     } else if button.is_some_and(|b| b == PointerButton::Secondary) {
                         editor.get_untracked().right_click(state);
                     }
-                }
+                },
+            )
+            .on_event_cont(listener::PointerMove, move |_cx, pu| {
+                editor.get_untracked().pointer_move(&pu.current);
             })
-            .on_event_cont(EventListener::PointerMove, move |cx| {
-                if let Event::Pointer(PointerEvent::Move(pu)) = &cx.event {
-                    editor.get_untracked().pointer_move(&pu.current);
-                }
-            })
-            .on_event_cont(EventListener::PointerUp, move |cx| {
-                if let Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. })) =
-                    &cx.event
-                {
+            .on_event_cont(
+                listener::PointerUp,
+                move |_cx, PointerButtonEvent { state, .. }| {
                     editor.get_untracked().pointer_up(state);
-                }
-            })
-            .on_event_stop(EventListener::KeyDown, move |cx| {
-                let Event::Key(
-                    key_event @ KeyboardEvent {
-                        state: KeyState::Down,
-                        ..
-                    },
-                ) = &cx.event
-                else {
-                    return;
-                };
+                },
+            )
+            .on_event_stop(
+                listener::KeyDown,
+                move |_cx, KeyboardEvent { key, modifiers, .. }| {
+                    handle_key_event(KeypressKey {
+                        key: key.clone(),
+                        modifiers: *modifiers,
+                    });
 
-                handle_key_event(KeypressKey {
-                    key: key_event.key.clone(),
-                    modifiers: key_event.modifiers,
-                });
+                    let mut mods = modifiers.clone();
+                    mods.set(Modifiers::SHIFT, false);
+                    mods.set(Modifiers::ALT, false);
+                    #[cfg(target_os = "macos")]
+                    mods.set(Modifiers::ALT, false);
 
-                let mut mods = key_event.modifiers;
-                mods.set(Modifiers::SHIFT, false);
-                mods.set(Modifiers::ALT, false);
-                #[cfg(target_os = "macos")]
-                mods.set(Modifiers::ALT, false);
-
-                if mods.is_empty() {
-                    if let Key::Character(c) = &key_event.key {
-                        editor.get_untracked().receive_char(c);
+                    if mods.is_empty() {
+                        if let Key::Character(c) = &key {
+                            editor.get_untracked().receive_char(c);
+                        }
                     }
-                }
-            })
+                },
+            )
             .style(|s| s.min_size_full())
     })
-    .on_move(move |point| {
-        window_origin.set(point);
+    .on_event_stop(VisualChanged::listener(), move |_cx, change| {
+        // TODO: does this need to be the visual window origin or the layout window origin?
+        window_origin.set(change.visual_window_origin());
     })
     .scroll_to(move || scroll_to.get().map(Vec2::to_point))
     .scroll_delta(move || scroll_delta.get())

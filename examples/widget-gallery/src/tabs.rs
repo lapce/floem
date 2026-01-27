@@ -72,13 +72,12 @@ pub fn tab_view() -> impl IntoView {
             .with_theme(|s, t| s.border_color(t.border_muted()))
     });
 
-    let tabs_content_view = Stack::new((tab(
+    let tabs_content_view = tab(
         move || active_tab.get(),
         move || tabs.get(),
         |tab| tab.idx,
         show_tab_content,
     )
-    .style(|s| s.size_full()),))
     .style(|s| s.size_full());
 
     Stack::vertical((

@@ -1,6 +1,5 @@
 use floem::{
     animate::Animation,
-    event::EventListener as EL,
     peniko::color::palette,
     reactive::{RwSignal, SignalGet, Trigger},
     unit::DurationUnitExt,

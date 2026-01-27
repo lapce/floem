@@ -4,26 +4,44 @@
 use floem_reactive::Effect;
 use peniko::kurbo::{Axis, Point, Rect, RoundedRect, RoundedRectRadii, Stroke, Vec2};
 use peniko::{Brush, Color};
+use std::{cell::RefCell, rc::Rc};
 use taffy::Overflow;
-use ui_events::pointer::{PointerButton, PointerButtonEvent, PointerEvent, PointerScrollEvent};
+use ui_events::pointer::PointerEvent;
 
+use crate::context::{LayoutChanged, LayoutChangedListener};
+use crate::event::listener::EventListenerTrait;
+use crate::event::{DispatchKind, PointerScrollEventExt};
 use crate::style::ScrollbarWidth;
 use crate::{
-    Renderer,
-    context::{EventCx, PaintCx},
+    BoxTree, Renderer, VisualId,
+    context::{EventCx, PaintCx, StyleCx},
     event::{Event, EventPropagation, Phase},
     prop, prop_extractor,
     style::{
         Background, BorderColorProp, BorderRadiusProp, CustomStylable, CustomStyle, OverflowX,
-        OverflowY, Style, StyleSelector,
+        OverflowY, Style, StyleClass,
     },
     style_class,
     unit::{Px, PxPct},
     view::{IntoView, View},
 };
-use crate::{ViewId, WindowState};
+use crate::{ViewId, WindowState, custom_event};
+use understory_box_tree::NodeFlags;
 
 use super::Decorators;
+
+custom_event! {
+    /// Event fired when a scroll view's scroll position changes
+    ///
+    /// This event is fired whenever the visible viewport of the scroll view changes,
+    /// either through user interaction (scrolling with mouse wheel, dragging scrollbars)
+    /// or programmatic changes to the scroll offset.
+    #[derive(Copy, PartialEq)]
+    pub struct ScrollChanged {
+        /// The scroll offset as a vector (how far scrolled from origin)
+        pub offset: Vec2,
+    }
+}
 
 enum ScrollState {
     EnsureVisible(Rect),
@@ -51,17 +69,392 @@ impl Vec2Ext for Vec2 {
     }
 }
 
-/// Denotes which scrollbar, if any, is currently being dragged.
-#[derive(Debug, Copy, Clone)]
-enum BarHeldState {
-    /// Neither scrollbar is being dragged.
-    None,
-    /// Vertical scrollbar is being dragged. Contains an `f64` with
-    /// the initial y-offset of the dragging input.
-    Vertical(f64, Vec2),
-    /// Horizontal scrollbar is being dragged. Contains an `f64` with
-    /// the initial x-offset of the dragging input.
-    Horizontal(f64, Vec2),
+#[derive(Debug, Clone)]
+struct ScrollHandle {
+    visual_id: VisualId,
+    box_tree: Rc<RefCell<BoxTree>>,
+    axis: Axis,
+    /// The initial scroll offset when dragging started
+    drag_start_offset: Option<Vec2>,
+    /// The initial pointer position when dragging started
+    drag_start_point: Option<f64>,
+    style: ScrollTrackStyle,
+}
+
+impl ScrollHandle {
+    fn new(parent_id: ViewId, axis: Axis) -> Self {
+        let box_tree = parent_id.box_tree();
+        let visual_id = parent_id.create_child_visual_id();
+
+        Self {
+            visual_id,
+            box_tree,
+            axis,
+            drag_start_offset: None,
+            drag_start_point: None,
+            style: Default::default(),
+        }
+    }
+
+    fn style(&mut self, cx: &mut StyleCx) {
+        let interact_state = cx.get_interact_state(self.visual_id);
+        let resolved = cx.resolve_nested_maps_with_state(
+            Style::new(),
+            &[Handle::class_ref()],
+            &interact_state,
+        );
+        self.style.read_style(cx, &resolved);
+    }
+
+    fn event(
+        &mut self,
+        cx: &mut EventCx,
+        scroll_offset: &mut Vec2,
+        is_scrolling_or_interacting: &mut bool,
+        parent_id: ViewId,
+        child_id: ViewId,
+    ) {
+        match &cx.event {
+            Event::Pointer(PointerEvent::Down(e)) => {
+                if let Some(pointer_id) = e.pointer.pointer_id {
+                    cx.window_state
+                        .set_pointer_capture(pointer_id, self.visual_id);
+                }
+                let pos = e.state.logical_point();
+                self.drag_start_point = Some(pos.get_coord(self.axis));
+                self.drag_start_offset = Some(*scroll_offset);
+                *is_scrolling_or_interacting = true;
+                cx.window_state.request_paint(parent_id);
+            }
+            Event::Pointer(PointerEvent::Up(_)) => {
+                self.drag_start_point = None;
+                self.drag_start_offset = None;
+            }
+            Event::Pointer(PointerEvent::Move(u)) => {
+                if cx.window_state.has_capture(self.visual_id) {
+                    if let (Some(start_point), Some(initial_offset)) =
+                        (self.drag_start_point, self.drag_start_offset)
+                    {
+                        let pos = u.current.logical_point();
+
+                        // Calculate scale (content_size / viewport_size)
+                        let viewport_size = parent_id
+                            .get_content_rect_local()
+                            .size()
+                            .get_coord(self.axis);
+                        let content_size =
+                            child_id.get_layout_rect_local().size().get_coord(self.axis);
+                        let scale = content_size / viewport_size;
+
+                        let scroll_delta = (pos.get_coord(self.axis) - start_point) * scale;
+
+                        let mut new_offset = initial_offset;
+                        new_offset.set_coord(
+                            self.axis,
+                            initial_offset.get_coord(self.axis) + scroll_delta,
+                        );
+
+                        // Apply scroll
+                        let viewport_size_vec = parent_id.get_content_rect_local().size();
+                        let content_size_vec = child_id.get_layout_rect_local().size();
+                        let max_scroll = (content_size_vec.to_vec2() - viewport_size_vec.to_vec2())
+                            .max_by_component(Vec2::ZERO);
+
+                        *scroll_offset = new_offset
+                            .max_by_component(Vec2::ZERO)
+                            .min_by_component(max_scroll);
+                        parent_id.set_child_translation(*scroll_offset);
+                    }
+                }
+            }
+            Event::Pointer(PointerEvent::Enter(_)) => {
+                *is_scrolling_or_interacting = true;
+                cx.window_state.request_paint(parent_id);
+            }
+            Event::Pointer(PointerEvent::Leave(_)) => {
+                if !cx.window_state.has_capture(self.visual_id) {
+                    *is_scrolling_or_interacting = false;
+                    cx.window_state.request_paint(parent_id);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn set_position(
+        &mut self,
+        scroll_offset: Vec2,
+        viewport: Rect,
+        full_rect: Rect,
+        content_size: peniko::kurbo::Size,
+        scrollbar_width: f64,
+        bar_inset: f64,
+    ) {
+        let viewport_size = viewport.size().get_coord(self.axis);
+        let content_size_val = content_size.get_coord(self.axis);
+        let full_rect_size = full_rect.size().get_coord(self.axis);
+
+        // No scrollbar if content fits in viewport
+        if viewport_size >= (content_size_val - f64::EPSILON) {
+            // Hide the handle
+            self.box_tree
+                .borrow_mut()
+                .set_flags(self.visual_id.0, NodeFlags::empty());
+            return;
+        }
+
+        // Calculate scrollbar handle size and position
+        let percent_visible = viewport_size / content_size_val;
+        let max_scroll = content_size_val - viewport_size;
+        let scroll_offset_val = scroll_offset.get_coord(self.axis);
+
+        let percent_scrolled = if max_scroll > 0.0 {
+            scroll_offset_val / max_scroll
+        } else {
+            0.0
+        };
+
+        let handle_length = (percent_visible * full_rect_size).ceil().max(15.);
+
+        let track_length = full_rect_size;
+        let available_travel = track_length - handle_length;
+        let handle_offset = (available_travel * percent_scrolled).ceil();
+
+        let rect = match self.axis {
+            Axis::Vertical => {
+                let x0 = full_rect.width() - scrollbar_width - bar_inset;
+                let y0 = handle_offset;
+                let x1 = full_rect.width() - bar_inset;
+                let y1 = handle_offset + handle_length;
+                Rect::new(x0, y0, x1, y1)
+            }
+            Axis::Horizontal => {
+                let x0 = handle_offset;
+                let y0 = full_rect.height() - scrollbar_width - bar_inset;
+                let x1 = handle_offset + handle_length;
+                let y1 = full_rect.height() - bar_inset;
+                Rect::new(x0, y0, x1, y1)
+            }
+        };
+
+        self.box_tree
+            .borrow_mut()
+            .set_local_bounds(self.visual_id.0, rect);
+        self.box_tree
+            .borrow_mut()
+            .set_flags(self.visual_id.0, NodeFlags::VISIBLE | NodeFlags::PICKABLE);
+        self.box_tree.borrow_mut().set_z_index(self.visual_id.0, 2);
+    }
+
+    fn paint(&self, cx: &mut PaintCx) {
+        let box_tree = self.box_tree.borrow();
+        let bounds = match box_tree.world_bounds(self.visual_id.0) {
+            Ok(bounds) => bounds,
+            Err(bounds) => bounds.value().unwrap(),
+        };
+
+        let transform = match box_tree.world_transform(self.visual_id.0) {
+            Ok(transform) => transform,
+            Err(transform) => transform.value().unwrap(),
+        };
+        let rect = transform.transform_rect_bbox(bounds);
+        cx.set_transform(transform);
+
+        let radius = if self.style.rounded() {
+            match self.axis {
+                Axis::Vertical => RoundedRectRadii::from_single_radius((rect.x1 - rect.x0) / 2.),
+                Axis::Horizontal => RoundedRectRadii::from_single_radius((rect.y1 - rect.y0) / 2.),
+            }
+        } else {
+            let size = rect.size().min_side();
+            let border_radius = self.style.border_radius();
+            RoundedRectRadii {
+                top_left: crate::view::border_radius(
+                    border_radius.top_left.unwrap_or(PxPct::Px(0.)),
+                    size,
+                ),
+                top_right: crate::view::border_radius(
+                    border_radius.top_right.unwrap_or(PxPct::Px(0.)),
+                    size,
+                ),
+                bottom_left: crate::view::border_radius(
+                    border_radius.bottom_left.unwrap_or(PxPct::Px(0.)),
+                    size,
+                ),
+                bottom_right: crate::view::border_radius(
+                    border_radius.bottom_right.unwrap_or(PxPct::Px(0.)),
+                    size,
+                ),
+            }
+        };
+
+        let edge_width = self.style.border().0;
+        let rect_with_border = rect.inset(-edge_width / 2.0);
+        let rounded_rect = rect_with_border.to_rounded_rect(radius);
+
+        cx.fill(
+            &rounded_rect,
+            &self.style.color().unwrap_or(HANDLE_COLOR),
+            0.0,
+        );
+
+        if edge_width > 0.0 {
+            if let Some(color) = self.style.border_color().right {
+                cx.stroke(&rounded_rect, &color, &Stroke::new(edge_width));
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ScrollTrack {
+    visual_id: VisualId,
+    box_tree: Rc<RefCell<BoxTree>>,
+    axis: Axis,
+    style: ScrollTrackStyle,
+}
+
+impl ScrollTrack {
+    fn new(parent_id: ViewId, axis: Axis) -> Self {
+        let box_tree = parent_id.box_tree();
+        let visual_id = parent_id.create_child_visual_id();
+
+        Self {
+            visual_id,
+            box_tree,
+            axis,
+            style: Default::default(),
+        }
+    }
+
+    fn style(&mut self, cx: &mut StyleCx) {
+        let interact_state = cx.get_interact_state(self.visual_id);
+        let resolved =
+            cx.resolve_nested_maps_with_state(Style::new(), &[Track::class_ref()], &interact_state);
+        self.style.read_style(cx, &resolved);
+    }
+
+    fn event(
+        &mut self,
+        cx: &mut EventCx,
+        scroll_offset: &mut Vec2,
+        is_scrolling_or_interacting: &mut bool,
+        parent_id: ViewId,
+        child_id: ViewId,
+    ) {
+        match &cx.event {
+            Event::Pointer(PointerEvent::Down(e)) => {
+                let pos = e.state.logical_point();
+
+                // Inline click_track logic
+                let viewport = parent_id.get_content_rect_local();
+                let full_rect = parent_id.get_layout_rect_local();
+                let content_size = child_id.get_layout_rect_local().size();
+
+                let pos_val = pos.get_coord(self.axis);
+                let viewport_size = viewport.size().get_coord(self.axis);
+                let content_size_val = content_size.get_coord(self.axis);
+                let full_rect_size = full_rect.size().get_coord(self.axis);
+
+                let percent_visible = viewport_size / content_size_val;
+                let handle_length = (percent_visible * full_rect_size).ceil().max(15.);
+                let max_scroll = content_size_val - viewport_size;
+
+                let track_length = full_rect_size;
+                let available_travel = track_length - handle_length;
+
+                let target_handle_offset = (pos_val - handle_length / 2.0)
+                    .max(0.0)
+                    .min(available_travel);
+                let target_percent = if available_travel > 0.0 {
+                    target_handle_offset / available_travel
+                } else {
+                    0.0
+                };
+
+                let new_offset = (target_percent * max_scroll).clamp(0.0, max_scroll);
+
+                scroll_offset.set_coord(self.axis, new_offset);
+                parent_id.set_child_translation(*scroll_offset);
+
+                *is_scrolling_or_interacting = true;
+                cx.window_state.request_paint(parent_id);
+            }
+            Event::Pointer(PointerEvent::Enter(_)) => {
+                *is_scrolling_or_interacting = true;
+                cx.window_state.request_paint(parent_id);
+            }
+            Event::Pointer(PointerEvent::Leave(_)) => {
+                *is_scrolling_or_interacting = false;
+                cx.window_state.request_paint(parent_id);
+            }
+            _ => {}
+        }
+    }
+
+    fn set_position(
+        &mut self,
+        viewport: Rect,
+        full_rect: Rect,
+        content_size: peniko::kurbo::Size,
+        scrollbar_width: f64,
+        bar_inset: f64,
+    ) {
+        let viewport_size = viewport.size().get_coord(self.axis);
+        let content_size_val = content_size.get_coord(self.axis);
+
+        // No scrollbar if content fits in viewport
+        if viewport_size >= (content_size_val - f64::EPSILON) {
+            // Hide the track
+            self.box_tree
+                .borrow_mut()
+                .set_flags(self.visual_id.0, NodeFlags::empty());
+            return;
+        }
+
+        let rect = match self.axis {
+            Axis::Vertical => {
+                let x0 = full_rect.width() - scrollbar_width - bar_inset;
+                let y0 = 0.0;
+                let x1 = full_rect.width() - bar_inset;
+                let y1 = full_rect.height();
+                Rect::new(x0, y0, x1, y1)
+            }
+            Axis::Horizontal => {
+                let x0 = 0.0;
+                let y0 = full_rect.height() - scrollbar_width - bar_inset;
+                let x1 = full_rect.width();
+                let y1 = full_rect.height() - bar_inset;
+                Rect::new(x0, y0, x1, y1)
+            }
+        };
+
+        self.box_tree
+            .borrow_mut()
+            .set_local_bounds(self.visual_id.0, rect);
+        self.box_tree
+            .borrow_mut()
+            .set_flags(self.visual_id.0, NodeFlags::VISIBLE | NodeFlags::PICKABLE);
+        self.box_tree.borrow_mut().set_z_index(self.visual_id.0, 1);
+    }
+
+    fn paint(&self, cx: &mut PaintCx) {
+        let box_tree = self.box_tree.borrow();
+        let bounds = match box_tree.world_bounds(self.visual_id.0) {
+            Ok(bounds) => bounds,
+            Err(bounds) => bounds.value().unwrap(),
+        };
+
+        let transform = match box_tree.world_transform(self.visual_id.0) {
+            Ok(transform) => transform,
+            Err(transform) => transform.value().unwrap(),
+        };
+        let rect = transform.transform_rect_bbox(bounds);
+
+        if let Some(color) = self.style.color() {
+            cx.fill(&rect, &color, 0.0);
+        }
+    }
 }
 
 style_class!(
@@ -147,21 +540,13 @@ pub struct Scroll {
     child: ViewId,
     // any time this changes, we must update the scroll_offset in the ViewState.
     scroll_offset: Vec2,
-    onscroll: Option<Box<dyn Fn(Rect)>>,
-    held: BarHeldState,
-    v_handle_hover: bool,
-    h_handle_hover: bool,
-    v_track_hover: bool,
-    h_track_hover: bool,
+    v_handle: ScrollHandle,
+    h_handle: ScrollHandle,
+    v_track: ScrollTrack,
+    h_track: ScrollTrack,
     /// Tracks whether user is currently interacting with scrollbars or recently scrolled
     is_scrolling_or_interacting: bool,
-    handle_style: ScrollTrackStyle,
-    handle_active_style: ScrollTrackStyle,
-    handle_hover_style: ScrollTrackStyle,
-    track_style: ScrollTrackStyle,
-    track_hover_style: ScrollTrackStyle,
     scroll_style: ScrollStyle,
-    clip_rect: Option<RoundedRect>,
 }
 
 /// Create a new scroll view
@@ -182,46 +567,30 @@ impl Scroll {
     /// ```
     pub fn new(child: impl IntoView) -> Self {
         let id = ViewId::new();
+        id.has_layout_listener();
+
         let child = child.into_any();
         let child_id = child.id();
         id.add_child(child);
-        // id.needs_post_layout();
         // we need to first set the clip rect to zero so that virtual items don't set a large initial size
         id.set_box_tree_clip(Some(RoundedRect::from_rect(Rect::ZERO, 0.)));
 
         Scroll {
             id,
             child: child_id,
-            onscroll: None,
             scroll_offset: Vec2::ZERO,
-            held: BarHeldState::None,
-            v_handle_hover: false,
-            h_handle_hover: false,
-            v_track_hover: false,
-            h_track_hover: false,
+            v_handle: ScrollHandle::new(id, Axis::Vertical),
+            h_handle: ScrollHandle::new(id, Axis::Horizontal),
+            v_track: ScrollTrack::new(id, Axis::Vertical),
+            h_track: ScrollTrack::new(id, Axis::Horizontal),
             is_scrolling_or_interacting: false,
-            handle_style: Default::default(),
-            handle_active_style: Default::default(),
-            handle_hover_style: Default::default(),
-            track_style: Default::default(),
-            track_hover_style: Default::default(),
             scroll_style: Default::default(),
-            clip_rect: None,
         }
         .class(ScrollClass)
     }
 }
 
 impl Scroll {
-    /// Sets a callback that will be triggered whenever the scroll position changes.
-    ///
-    /// This callback receives the viewport rectangle that represents the currently
-    /// visible portion of the scrollable content.
-    pub fn on_scroll(mut self, onscroll: impl Fn(Rect) + 'static) -> Self {
-        self.onscroll = Some(Box::new(onscroll));
-        self
-    }
-
     /// Ensures that a specific rectangular area is visible within the scroll view by automatically
     /// scrolling to it if necessary.
     ///
@@ -332,9 +701,20 @@ impl Scroll {
         self.scroll_offset = new_scroll_offset
             .max_by_component(Vec2::ZERO)
             .min_by_component(max_scroll);
-        self.id.set_child_translation(self.scroll_offset);
+        let change = self.id.set_child_translation(self.scroll_offset);
+        if change {
+            self.id.dispatch_event(
+                Event::new_custom(ScrollChanged {
+                    offset: self.scroll_offset,
+                }),
+                DispatchKind::Directed {
+                    target: self.id.get_visual_id(),
+                    phases: crate::context::Phases::TARGET,
+                },
+            );
+        }
 
-        if self.scroll_offset != old_scroll_offset {
+        if change {
             Some(self.scroll_offset - old_scroll_offset)
         } else {
             None
@@ -400,44 +780,8 @@ impl Scroll {
         self.do_scroll_to(new_offset.to_point());
     }
 
-    fn click_bar_area(&mut self, pos: Point, axis: Axis) {
-        let viewport = self.id.get_content_rect_local();
-        let full_rect = self.id.get_layout_rect_local();
-        let content_size = self.child.get_layout_rect_local().size();
-
-        let pos_val = pos.get_coord(axis);
-        let viewport_size = viewport.size().get_coord(axis);
-        let content_size_val = content_size.get_coord(axis);
-        let full_rect_size = full_rect.size().get_coord(axis);
-
-        // Calculate handle properties
-        let percent_visible = viewport_size / content_size_val;
-        let handle_length = (percent_visible * full_rect_size).ceil().max(15.);
-        let max_scroll = content_size_val - viewport_size;
-
-        // Convert click position to percentage along the track
-        let track_length = full_rect_size;
-        let available_travel = track_length - handle_length;
-
-        // Center the handle at the click position
-        let target_handle_offset = (pos_val - handle_length / 2.0)
-            .max(0.0)
-            .min(available_travel);
-        let target_percent = if available_travel > 0.0 {
-            target_handle_offset / available_travel
-        } else {
-            0.0
-        };
-
-        // Map percentage to scroll offset
-        let new_offset = (target_percent * max_scroll).clamp(0.0, max_scroll);
-
-        self.scroll_offset.set_coord(axis, new_offset);
-        self.id.set_child_translation(self.scroll_offset);
-    }
-
     // TODO: make this work
-    fn do_scroll_to_view(&mut self, target: ViewId, target_rect: Option<Rect>) {
+    fn do_scroll_to_view(&mut self, _target: ViewId, _target_rect: Option<Rect>) {
         // todo!()
         // if target.layout().is_none() || target.is_hidden() {
         //     return;
@@ -469,328 +813,45 @@ impl Scroll {
         // self.do_ensure_visible(rect_in_child, lcx);
     }
 
-    fn v_handle_style(&self) -> &ScrollTrackStyle {
-        if let BarHeldState::Vertical(..) = self.held {
-            &self.handle_active_style
-        } else if self.v_handle_hover {
-            &self.handle_hover_style
-        } else {
-            &self.handle_style
-        }
-    }
-
-    fn h_handle_style(&self) -> &ScrollTrackStyle {
-        if let BarHeldState::Horizontal(..) = self.held {
-            &self.handle_active_style
-        } else if self.h_handle_hover {
-            &self.handle_hover_style
-        } else {
-            &self.handle_style
-        }
-    }
-
-    fn scroll_scale(&self, axis: Axis) -> f64 {
-        let viewport_size = self.id.get_content_rect_local().size().get_coord(axis);
-        let content_size = self.child.get_layout_rect_local().size().get_coord(axis);
-
-        content_size / viewport_size
-    }
-
-    fn calc_handle_bounds(&self, axis: Axis) -> Option<Rect> {
-        let viewport = self.id.get_content_rect_local();
-        let full_rect = self.id.get_layout_rect_local();
+    fn post_layout(&mut self, layout: &LayoutChanged) {
+        let viewport = layout.content_box_local();
+        let full_rect = layout.box_local();
         let content_size = self.child.get_layout_rect_local().size();
+        let scrollbar_width = self.scroll_style.scrollbar_width().0;
+        let v_bar_inset = self.scroll_style.vertical_bar_inset().0;
+        let h_bar_inset = self.scroll_style.horizontal_bar_inset().0;
 
-        let viewport_size = viewport.size().get_coord(axis);
-        let content_size_val = content_size.get_coord(axis);
-        let full_rect_size = full_rect.size().get_coord(axis);
-
-        // No scrollbar if content fits in viewport
-        if viewport_size >= (content_size_val - f64::EPSILON) {
-            return None;
-        }
-
-        let bar_width = self.scroll_style.scrollbar_width().0;
-        let bar_inset = match axis {
-            Axis::Vertical => self.scroll_style.vertical_bar_inset().0,
-            Axis::Horizontal => self.scroll_style.horizontal_bar_inset().0,
-        };
-
-        // Calculate scrollbar handle size and position
-        let percent_visible = viewport_size / content_size_val;
-        let max_scroll = content_size_val - viewport_size;
-        let scroll_offset = self.scroll_offset.get_coord(axis);
-
-        let percent_scrolled = if max_scroll > 0.0 {
-            scroll_offset / max_scroll
-        } else {
-            0.0
-        };
-
-        // Handle length proportional to visible content, with minimum size
-        // TODO: make the minimum size configurable
-        let handle_length = (percent_visible * full_rect_size).ceil().max(15.);
-
-        // Position handle within the available track space
-        let track_length = full_rect_size;
-        let available_travel = track_length - handle_length;
-        let handle_offset = (available_travel * percent_scrolled).ceil();
-
-        // Position in viewport's local coordinates
-        let rect = match axis {
-            Axis::Vertical => {
-                let x0 = full_rect.width() - bar_width - bar_inset;
-                let y0 = handle_offset;
-                let x1 = full_rect.width() - bar_inset;
-                let y1 = handle_offset + handle_length;
-                Rect::new(x0, y0, x1, y1)
-            }
-            Axis::Horizontal => {
-                let x0 = handle_offset;
-                let y0 = full_rect.height() - bar_width - bar_inset;
-                let x1 = handle_offset + handle_length;
-                let y1 = full_rect.height() - bar_inset;
-                Rect::new(x0, y0, x1, y1)
-            }
-        };
-
-        Some(rect)
-    }
-
-    fn calc_bar_bounds(&self, axis: Axis) -> Option<Rect> {
-        let viewport = self.id.get_content_rect_local();
-        let full_rect = self.id.get_layout_rect_local();
-        let content_size = self.child.get_layout_rect_local().size();
-        let viewport_size = viewport.size().get_coord(axis);
-        let content_size_val = content_size.get_coord(axis);
-
-        // No scrollbar if content fits in viewport
-        if viewport_size >= (content_size_val - f64::EPSILON) {
-            return None;
-        }
-
-        let bar_width = self.scroll_style.scrollbar_width().0;
-        let bar_inset = match axis {
-            Axis::Vertical => self.scroll_style.vertical_bar_inset().0,
-            Axis::Horizontal => self.scroll_style.horizontal_bar_inset().0,
-        };
-
-        let rect = match axis {
-            Axis::Vertical => {
-                let x0 = full_rect.width() - bar_width - bar_inset;
-                let y0 = 0.0;
-                let x1 = full_rect.width() - bar_inset;
-                let y1 = full_rect.height();
-                Rect::new(x0, y0, x1, y1)
-            }
-            Axis::Horizontal => {
-                let x0 = 0.0;
-                let y0 = full_rect.height() - bar_width - bar_inset;
-                let x1 = full_rect.width();
-                let y1 = full_rect.height() - bar_inset;
-                Rect::new(x0, y0, x1, y1)
-            }
-        };
-
-        Some(rect)
-    }
-
-    fn point_hits_bar(&self, pos: Point, axis: Axis) -> bool {
-        let bounds = self.calc_bar_bounds(axis);
-
-        bounds
-            .map(|mut bounds| {
-                let viewport = self.id.get_layout_rect_local();
-                match axis {
-                    // stretch out the hit area to be to the edge of the view
-                    Axis::Horizontal => bounds.y1 = viewport.y1,
-                    Axis::Vertical => bounds.x1 = viewport.x1,
-                }
-                bounds.contains(pos)
-            })
-            .unwrap_or(false)
-    }
-
-    fn point_hits_handle(&self, pos: Point, axis: Axis) -> bool {
-        let bounds = self.calc_handle_bounds(axis);
-
-        bounds
-            .map(|mut bounds| {
-                let viewport = self.id.get_layout_rect_local();
-                match axis {
-                    // stretch out the hit area to be to the edge of the view
-                    Axis::Horizontal => bounds.y1 = viewport.y1,
-                    Axis::Vertical => bounds.x1 = viewport.x1,
-                }
-                bounds.contains(pos)
-            })
-            .unwrap_or(false)
-    }
-
-    /// true if either scrollbar is currently held down/being dragged
-    fn are_bars_held(&self) -> bool {
-        !matches!(self.held, BarHeldState::None)
-    }
-
-    fn update_hover_states(&mut self, pos: Point) {
-        // pos is already in local coordinates, no need to adjust by scroll offset
-
-        let v_handle_hover = self.point_hits_handle(pos, Axis::Vertical);
-        if self.v_handle_hover != v_handle_hover {
-            self.v_handle_hover = v_handle_hover;
-            self.id.request_paint();
-        }
-
-        let h_handle_hover = self.point_hits_handle(pos, Axis::Horizontal);
-        if self.h_handle_hover != h_handle_hover {
-            self.h_handle_hover = h_handle_hover;
-            self.id.request_paint();
-        }
-
-        let v_track_hover = self.point_hits_bar(pos, Axis::Vertical);
-        if self.v_track_hover != v_track_hover {
-            self.v_track_hover = v_track_hover;
-            self.id.request_paint();
-        }
-
-        let h_track_hover = self.point_hits_bar(pos, Axis::Horizontal);
-        if self.h_track_hover != h_track_hover {
-            self.h_track_hover = h_track_hover;
-            self.id.request_paint();
-        }
-
-        // Set scrolling/interacting state if hovering over scrollbars
-        let any_hover =
-            self.v_handle_hover || self.h_handle_hover || self.v_track_hover || self.h_track_hover;
-        if any_hover != self.is_scrolling_or_interacting {
-            self.is_scrolling_or_interacting = any_hover;
-            self.id.request_paint();
-        }
-    }
-
-    fn draw_bars(&self, cx: &mut PaintCx) {
-        // Check if scrollbars should be shown based on the show_bars_when_idle property
-        if !self.scroll_style.show_bars_when_idle() && !self.is_scrolling_or_interacting {
-            return;
-        }
-
-        let raw_layout_rect = self.id.get_layout_rect_local();
-
-        let radius = |style: &ScrollTrackStyle, rect: Rect, vertical| {
-            if style.rounded() {
-                if vertical {
-                    RoundedRectRadii::from_single_radius((rect.x1 - rect.x0) / 2.)
-                } else {
-                    RoundedRectRadii::from_single_radius((rect.y1 - rect.y0) / 2.)
-                }
-            } else {
-                let size = rect.size().min_side();
-                let border_radius = style.border_radius();
-                RoundedRectRadii {
-                    top_left: crate::view::border_radius(
-                        border_radius.top_left.unwrap_or(PxPct::Px(0.)),
-                        size,
-                    ),
-                    top_right: crate::view::border_radius(
-                        border_radius.top_right.unwrap_or(PxPct::Px(0.)),
-                        size,
-                    ),
-                    bottom_left: crate::view::border_radius(
-                        border_radius.bottom_left.unwrap_or(PxPct::Px(0.)),
-                        size,
-                    ),
-                    bottom_right: crate::view::border_radius(
-                        border_radius.bottom_right.unwrap_or(PxPct::Px(0.)),
-                        size,
-                    ),
-                }
-            }
-        };
-
-        if let Some(bounds) = self.calc_handle_bounds(Axis::Vertical) {
-            let style = self.v_handle_style();
-            let track_style =
-                if self.v_track_hover || matches!(self.held, BarHeldState::Vertical(..)) {
-                    &self.track_hover_style
-                } else {
-                    &self.track_style
-                };
-
-            if let Some(color) = track_style.color() {
-                let mut bounds = bounds;
-                bounds.y0 = raw_layout_rect.y0;
-                bounds.y1 = raw_layout_rect.y1;
-                cx.fill(&bounds, &color, 0.0);
-            }
-            let edge_width = style.border().0;
-            let rect = bounds.inset(-edge_width / 2.0);
-            let rect = rect.to_rounded_rect(radius(style, rect, true));
-            cx.fill(&rect, &style.color().unwrap_or(HANDLE_COLOR), 0.0);
-            if edge_width > 0.0 {
-                if let Some(color) = style.border_color().right {
-                    cx.stroke(&rect, &color, &Stroke::new(edge_width));
-                }
-            }
-        }
-
-        // Horizontal bar
-        if let Some(bounds) = self.calc_handle_bounds(Axis::Horizontal) {
-            let style = self.h_handle_style();
-            let track_style =
-                if self.h_track_hover || matches!(self.held, BarHeldState::Horizontal(..)) {
-                    &self.track_hover_style
-                } else {
-                    &self.track_style
-                };
-
-            if let Some(color) = track_style.color() {
-                let mut bounds = bounds;
-                bounds.x0 = raw_layout_rect.x0;
-                bounds.x1 = raw_layout_rect.x1;
-                cx.fill(&bounds, &color, 0.0);
-            }
-            let edge_width = style.border().0;
-            let rect = bounds.inset(-edge_width / 2.0);
-            let rect = rect.to_rounded_rect(radius(style, rect, false));
-            cx.fill(&rect, &style.color().unwrap_or(HANDLE_COLOR), 0.0);
-            if edge_width > 0.0 {
-                if let Some(color) = style.border_color().right {
-                    cx.stroke(&rect, &color, &Stroke::new(edge_width));
-                }
-            }
-        }
-    }
-
-    fn get_clip_rect(&self, radii: RoundedRectRadii) -> Option<RoundedRect> {
-        let should_clip_x = matches!(
-            self.scroll_style.overflow_x(),
-            taffy::Overflow::Clip | taffy::Overflow::Hidden | taffy::Overflow::Scroll
+        self.v_track.set_position(
+            viewport,
+            full_rect,
+            content_size,
+            scrollbar_width,
+            v_bar_inset,
         );
-        let should_clip_y = matches!(
-            self.scroll_style.overflow_y(),
-            taffy::Overflow::Clip | taffy::Overflow::Hidden | taffy::Overflow::Scroll
+        self.h_track.set_position(
+            viewport,
+            full_rect,
+            content_size,
+            scrollbar_width,
+            h_bar_inset,
         );
 
-        if should_clip_x && should_clip_y {
-            // Clip both axes
-            Some(self.id.get_content_rect_local().to_rounded_rect(radii))
-        } else if should_clip_x || should_clip_y {
-            // Clip only one axis - extend the other to child content bounds
-            let child_content_rect = self.child.get_content_rect_local();
-            let mut clip_rect = self.id.get_content_rect_local();
-            if !should_clip_x {
-                clip_rect.x0 = child_content_rect.x0 - self.scroll_offset.x;
-                clip_rect.x1 = child_content_rect.x1 - self.scroll_offset.x;
-            }
-            if !should_clip_y {
-                clip_rect.y0 = child_content_rect.y0 - self.scroll_offset.y;
-                clip_rect.y1 = child_content_rect.y1 - self.scroll_offset.y;
-            }
-            Some(clip_rect.to_rounded_rect(0.))
-        } else {
-            // Both are Visible, no clipping
-            None
-        }
+        self.v_handle.set_position(
+            self.scroll_offset,
+            viewport,
+            full_rect,
+            content_size,
+            scrollbar_width,
+            v_bar_inset,
+        );
+        self.h_handle.set_position(
+            self.scroll_offset,
+            viewport,
+            full_rect,
+            content_size,
+            scrollbar_width,
+            h_bar_inset,
+        );
     }
 }
 
@@ -841,7 +902,7 @@ impl View for Scroll {
                     self.do_scroll_to_view(id, None);
                 }
             }
-            self.id.request_box_tree_commit();
+            self.id.request_box_tree_update_for_view();
         }
     }
 
@@ -854,143 +915,91 @@ impl View for Scroll {
     }
 
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
-        let style = cx.style();
-
         self.scroll_style.read(cx);
 
-        let handle_style = style.clone().apply_class(Handle);
-        self.handle_style.read_style(cx, &handle_style);
-        self.handle_hover_style.read_style(
-            cx,
-            &handle_style
-                .clone()
-                .apply_selectors(&[StyleSelector::Hover]),
-        );
-        self.handle_active_style
-            .read_style(cx, &handle_style.apply_selectors(&[StyleSelector::Active]));
-
-        let track_style = style.apply_class(Track);
-        self.track_style.read_style(cx, &track_style);
-        self.track_hover_style
-            .read_style(cx, &track_style.apply_selectors(&[StyleSelector::Hover]));
+        self.v_handle.style(cx);
+        self.h_handle.style(cx);
+        self.v_track.style(cx);
+        self.h_track.style(cx);
     }
 
     fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
-        if cx.phase != Phase::Bubble {
-            return EventPropagation::Continue;
-        }
-
-        let is_pointer_leave = cx
-            .listeners
-            .contains(&crate::event::EventListener::PointerLeave);
-        if is_pointer_leave && !cx.window_state.is_active(self.id) {
-            self.v_handle_hover = false;
-            self.h_handle_hover = false;
-            self.v_track_hover = false;
-            self.h_track_hover = false;
-            self.is_scrolling_or_interacting = false;
-            cx.window_state.request_paint(self.id);
+        // in order to use this we had to set `id.has_layout_listener`.
+        if let Some(new_layout) = LayoutChangedListener::extract(&cx.event) {
+            self.post_layout(new_layout);
             return EventPropagation::Stop;
         }
-        if self.scroll_style.hide_bar() {
-            return EventPropagation::Continue;
+        // Handle events targeted at our visual IDs (handles and tracks)
+        if cx.phase == Phase::Target {
+            if cx.target == self.v_handle.visual_id {
+                self.v_handle.event(
+                    cx,
+                    &mut self.scroll_offset,
+                    &mut self.is_scrolling_or_interacting,
+                    self.id,
+                    self.child,
+                );
+                return EventPropagation::Stop;
+            }
+            if cx.target == self.h_handle.visual_id {
+                self.h_handle.event(
+                    cx,
+                    &mut self.scroll_offset,
+                    &mut self.is_scrolling_or_interacting,
+                    self.id,
+                    self.child,
+                );
+                return EventPropagation::Stop;
+            }
+            if cx.target == self.v_track.visual_id {
+                self.v_track.event(
+                    cx,
+                    &mut self.scroll_offset,
+                    &mut self.is_scrolling_or_interacting,
+                    self.id,
+                    self.child,
+                );
+                return EventPropagation::Stop;
+            }
+            if cx.target == self.h_track.visual_id {
+                self.h_track.event(
+                    cx,
+                    &mut self.scroll_offset,
+                    &mut self.is_scrolling_or_interacting,
+                    self.id,
+                    self.child,
+                );
+                return EventPropagation::Stop;
+            }
         }
 
-        match &cx.event {
-            Event::Pointer(PointerEvent::Down(PointerButtonEvent {
-                button: Some(PointerButton::Primary),
-                state,
-                ..
-            })) => {
-                let pos = state.logical_point();
+        // Handle scroll wheel events in bubble phase
+        if cx.phase == Phase::Bubble {
+            if let Event::Pointer(PointerEvent::Scroll(pse)) = &cx.event {
+                let size = self.id.get_layout_rect_local().size();
+                let delta = pse.resolve_to_points(None, Some(size));
+                let delta = -if self.scroll_style.vertical_scroll_as_horizontal()
+                    && delta.x == 0.0
+                    && delta.y != 0.0
+                {
+                    Vec2::new(delta.y, delta.x)
+                } else {
+                    delta
+                };
 
-                // Check vertical scrollbar
-                if self.point_hits_bar(pos, Axis::Vertical) {
-                    if !self.point_hits_handle(pos, Axis::Vertical) {
-                        self.click_bar_area(pos, Axis::Vertical);
-                    }
-                    self.held = BarHeldState::Vertical(pos.y, self.scroll_offset);
-                    cx.window_state.update_active(self.id());
+                let change = self.apply_scroll_delta(delta);
 
-                    cx.window_state.request_paint(self.id);
-                    return EventPropagation::Stop;
-                }
-
-                // Check horizontal scrollbar
-                if self.point_hits_bar(pos, Axis::Horizontal) {
-                    if !self.point_hits_handle(pos, Axis::Horizontal) {
-                        self.click_bar_area(pos, Axis::Horizontal);
-                    }
-                    self.held = BarHeldState::Horizontal(pos.x, self.scroll_offset);
-                    cx.window_state.update_active(self.id());
-
-                    cx.window_state.request_paint(self.id);
-                    return EventPropagation::Stop;
-                }
-            }
-
-            Event::Pointer(PointerEvent::Up { .. }) => {
-                if self.are_bars_held() {
-                    self.held = BarHeldState::None;
+                if change.is_some() {
+                    self.is_scrolling_or_interacting = true;
                     cx.window_state.request_paint(self.id);
                 }
+
+                return if self.scroll_style.propagate_pointer_wheel() && change.is_none() {
+                    EventPropagation::Continue
+                } else {
+                    EventPropagation::Stop
+                };
             }
-
-            Event::Pointer(PointerEvent::Move(pu)) => {
-                let pos = pu.current.logical_point();
-                self.update_hover_states(pos);
-                match self.held {
-                    BarHeldState::Vertical(start_y, initial_offset) => {
-                        let scale = self.scroll_scale(Axis::Vertical);
-                        let scroll_delta = (pos.y - start_y) * scale;
-                        self.do_scroll_to(Point::new(
-                            initial_offset.x,
-                            initial_offset.y + scroll_delta,
-                        ));
-                    }
-                    BarHeldState::Horizontal(start_x, initial_offset) => {
-                        let scale = self.scroll_scale(Axis::Horizontal);
-                        let scroll_delta = (pos.x - start_x) * scale;
-                        self.do_scroll_to(Point::new(
-                            initial_offset.x + scroll_delta,
-                            initial_offset.y,
-                        ));
-                    }
-                    BarHeldState::None
-                        if self.point_hits_bar(pos, Axis::Vertical)
-                            || self.point_hits_bar(pos, Axis::Horizontal) =>
-                    {
-                        return EventPropagation::Stop;
-                    }
-                    _ => {}
-                }
-            }
-
-            Event::Pointer(PointerEvent::Scroll(PointerScrollEvent { state, .. })) => {
-                if let Some(delta) = cx.event.pixel_scroll_delta_vec2() {
-                    let delta = -if self.scroll_style.vertical_scroll_as_horizontal()
-                        && delta.x == 0.0
-                        && delta.y != 0.0
-                    {
-                        Vec2::new(delta.y, delta.x)
-                    } else {
-                        delta
-                    };
-
-                    let change = self.apply_scroll_delta(delta);
-
-                    // Check if the scroll bars now hover
-                    self.update_hover_states(state.logical_point());
-
-                    return if self.scroll_style.propagate_pointer_wheel() && change.is_none() {
-                        EventPropagation::Continue
-                    } else {
-                        EventPropagation::Stop
-                    };
-                }
-            }
-
-            _ => {}
         }
 
         EventPropagation::Continue
@@ -1005,8 +1014,18 @@ impl View for Scroll {
         cx.paint_view(self.child);
         let post = cx.transform;
         assert_eq!(pre, post);
+
         if !self.scroll_style.hide_bar() {
-            self.draw_bars(cx);
+            // Check if scrollbars should be shown based on the show_bars_when_idle property
+            if self.scroll_style.show_bars_when_idle() || self.is_scrolling_or_interacting {
+                // Paint tracks first (lower z-index)
+                self.v_track.paint(cx);
+                self.h_track.paint(cx);
+
+                // Paint handles (higher z-index)
+                self.v_handle.paint(cx);
+                self.h_handle.paint(cx);
+            }
         }
     }
 }

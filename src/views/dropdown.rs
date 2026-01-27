@@ -8,19 +8,19 @@ use std::{any::Any, rc::Rc};
 
 use floem_reactive::{Effect, RwSignal, Scope, SignalGet, SignalUpdate, UpdaterEffect};
 use imbl::OrdMap;
-use peniko::kurbo::{Point, Rect, Size};
+use peniko::kurbo::{Point, Size};
 use ui_events::keyboard::{Key, NamedKey};
 
 use crate::{
     AnyView,
     action::{add_overlay, remove_overlay},
-    event::{Event, EventListener, EventPropagation},
+    context::LayoutChanged,
+    event::{Event, EventPropagation, listener},
     prelude::ViewTuple,
     prop, prop_extractor,
     style::{CustomStylable, CustomStyle, Style},
     style_class,
-    view::ViewId,
-    view::{IntoView, View},
+    view::{IntoView, View, ViewId},
     views::{ContainerExt, Decorators, Label, ScrollExt, svg},
 };
 
@@ -362,8 +362,8 @@ impl<T: Clone + std::cmp::PartialEq> Dropdown<T> {
                 let items_view = index_to_item_clone_.values().map(list_item_fn);
 
                 let list = list(items_view)
-                    .on_accept(move |opt_idx| {
-                        if let Some(idx) = opt_idx {
+                    .on_event_stop(crate::views::list::ListAccept::listener(), move |_, event| {
+                        if let Some(idx) = event.selection {
                             let val = index_to_item_clone
                                 .get(&idx)
                                 .expect("Index should exist in the map")
@@ -374,10 +374,9 @@ impl<T: Clone + std::cmp::PartialEq> Dropdown<T> {
                         }
                     })
                     .style(|s| s.width_full())
-                    .on_event_stop(EventListener::FocusLost, move |_| {
+                    .on_event_stop(listener::FocusLost, move |_, _| {
                         dropdown_id.update_state(Message::ListFocusLost);
-                    })
-                    .on_event_stop(EventListener::PointerMove, |_| {});
+                    });
 
                 list.selection().set(active);
 
@@ -594,26 +593,31 @@ impl<T: Clone + std::cmp::PartialEq> Dropdown<T> {
             );
             let list_id = list.id();
 
-            let list = list.on_resize(move |rect| {
-                if let Some(parent_layout) = list_id.parent().and_then(|p| p.get_layout()) {
-                    // resolve size of the scroll view if it wasn't squished
-                    let margin = parent_layout.margin;
-                    let padding = parent_layout.padding;
-                    let border = parent_layout.border;
+            let list = list.on_event_stop(
+                LayoutChanged::listener(),
+                move |_cx, LayoutChanged { new_box, .. }| {
+                    if let Some(parent_layout) = list_id.parent().and_then(|p| p.get_layout()) {
+                        // resolve size of the scroll view if it wasn't squished
+                        let margin = parent_layout.margin;
+                        let padding = parent_layout.padding;
+                        let border = parent_layout.border;
 
-                    let indent_size = Size::new(
-                        (margin.horizontal_components().sum()
-                            + border.horizontal_components().sum()
-                            + padding.horizontal_components().sum()) as _,
-                        (margin.vertical_components().sum()
-                            + padding.vertical_components().sum()
-                            + border.vertical_components().sum()) as _,
-                    );
-                    let size = rect.size() + indent_size;
+                        let indent_size = Size::new(
+                            (margin.horizontal_components().sum()
+                                + border.horizontal_components().sum()
+                                + padding.horizontal_components().sum())
+                                as _,
+                            (margin.vertical_components().sum()
+                                + padding.vertical_components().sum()
+                                + border.vertical_components().sum())
+                                as _,
+                        );
+                        let size = new_box.size() + indent_size;
 
-                    list_size.set(Some(size));
-                }
-            });
+                        list_size.set(Some(size));
+                    }
+                },
+            );
 
             list_id.request_focus();
 
@@ -632,9 +636,12 @@ impl<T: Clone + std::cmp::PartialEq> Dropdown<T> {
                 .container()
                 .style(move |s| s.width(width.get()))
                 .container()
-                .on_resize(move |rect| {
-                    overlay_size.set(Some(rect.size()));
-                })
+                .on_event_stop(
+                    LayoutChanged::listener(),
+                    move |_cx, LayoutChanged { new_box, .. }| {
+                        overlay_size.set(Some(new_box.size()));
+                    },
+                )
                 .style(move |s| {
                     let inset = inset.get();
                     s.absolute()

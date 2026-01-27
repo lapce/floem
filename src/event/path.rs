@@ -7,7 +7,6 @@
 use std::{cell::RefCell, rc::Rc};
 
 use peniko::kurbo::Point;
-use understory_box_tree::NodeFlags;
 
 use crate::{VisualId, view::ViewId};
 
@@ -121,31 +120,27 @@ pub fn clear_hit_test_cache() {
 /// Optional tuple of (target VisualId, path from root to target as Rc<[VisualId]>)
 pub fn hit_test(root_id: ViewId, point: Point) -> Option<(VisualId, Rc<[VisualId]>)> {
     let root_visual_id = root_id.get_visual_id();
-
     // Check cache first
     if let Some(cached_result) =
         HIT_TEST_CACHE.with(|cache| cache.borrow().lookup(root_visual_id, point))
     {
-        // dbg!(&cached_result);
         return cached_result;
     }
-
     // Cache miss - query Understory
     let box_tree = root_id.box_tree();
-    // dbg!(box_tree.borrow());
-    let hit = box_tree.borrow().hit_test_point(
+    let hit_ids = box_tree.borrow().hit_test_all(
         point,
-        understory_box_tree::QueryFilter {
-            required_flags: NodeFlags::VISIBLE | NodeFlags::PICKABLE,
-        },
+        understory_box_tree::QueryFilter::new().visible().pickable(),
     );
 
-    let result = hit.map(|h| {
+    let result = if let Some(&top_hit) = hit_ids.first() {
         use crate::visual_id::CastIds;
-        let target = crate::VisualId(h.node, root_id);
-        let path: Vec<_> = h.path.cast_ids(root_id);
-        (target, path.into())
-    });
+        let target = crate::VisualId(top_hit, root_id);
+        let path: Vec<_> = hit_ids.cast_ids(root_id);
+        Some((target, path.into()))
+    } else {
+        None
+    };
 
     // Cache the result
     HIT_TEST_CACHE.with(|cache| {
@@ -153,7 +148,5 @@ pub fn hit_test(root_id: ViewId, point: Point) -> Option<(VisualId, Rc<[VisualId
             .borrow_mut()
             .insert(root_visual_id, point, result.clone())
     });
-
-    // dbg!(&result);
     result
 }

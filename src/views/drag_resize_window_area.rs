@@ -2,10 +2,9 @@ use winit::window::ResizeDirection;
 
 use crate::{
     action::drag_resize_window,
-    event::EventListener,
+    event::listener,
     style::CursorStyle,
-    view::ViewId,
-    view::{IntoView, View},
+    view::{IntoView, View, ViewId},
 };
 
 use super::Decorators;
@@ -33,7 +32,7 @@ pub fn drag_resize_window_area<V: IntoView + 'static>(
     let id = ViewId::new();
     id.set_children([child.into_view()]);
     DragResizeWindowArea { id }
-        .on_event_stop(EventListener::PointerDown, move |_| {
+        .on_event_stop(listener::PointerDown, move |_, _| {
             drag_resize_window(direction)
         })
         .style(move |s| {

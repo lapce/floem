@@ -1,6 +1,5 @@
 use floem::{
     action::set_window_scale,
-    event::{Event, EventListener},
     kurbo::{Point, Size},
     prelude::*,
     reactive::{Context, UpdaterEffect},
@@ -78,7 +77,7 @@ pub fn launch_with_track<V: IntoView + 'static>(app_view: impl FnOnce() -> V + '
                 .on_key_down(
                     Key::Character("=".into()),
                     |m| m == OS_MOD,
-                    move |_| {
+                    move |_, _| {
                         app_config.update(|ac| {
                             ac.window_scale *= 1.1;
                             floem::action::set_window_scale(ac.window_scale);
@@ -88,7 +87,7 @@ pub fn launch_with_track<V: IntoView + 'static>(app_view: impl FnOnce() -> V + '
                 .on_key_down(
                     Key::Character("-".into()),
                     |m| m == OS_MOD,
-                    move |_| {
+                    move |_, _| {
                         app_config.update(|ac| {
                             ac.window_scale /= 1.1;
                             floem::action::set_window_scale(ac.window_scale);
@@ -98,26 +97,22 @@ pub fn launch_with_track<V: IntoView + 'static>(app_view: impl FnOnce() -> V + '
                 .on_key_down(
                     Key::Character("0".into()),
                     |m| m == OS_MOD,
-                    move |_| {
+                    move |_, _| {
                         app_config.update(|ac| {
                             ac.window_scale = 1.;
                             floem::action::set_window_scale(ac.window_scale);
                         });
                     },
                 )
-                .on_event_stop(EventListener::WindowMoved, move |event| {
-                    if let Event::WindowMoved(position) = event {
-                        app_config.update(|val| {
-                            val.position = *position;
-                        })
-                    }
+                .on_event_stop(listener::WindowMoved, move |_cx, position| {
+                    app_config.update(|val| {
+                        val.position = *position;
+                    })
                 })
-                .on_event_stop(EventListener::WindowResized, move |event| {
-                    if let Event::WindowResized(size) = event {
-                        app_config.update(|val| {
-                            val.size = *size;
-                        })
-                    }
+                .on_event_stop(listener::WindowResized, move |_cx, size| {
+                    app_config.update(|val| {
+                        val.size = *size;
+                    })
                 })
         },
         Some(window_config),

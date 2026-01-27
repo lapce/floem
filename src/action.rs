@@ -244,6 +244,11 @@ pub fn set_window_title(title: String) {
     add_update_message(UpdateMessage::SetWindowTitle { title });
 }
 
+/// Clear the focus from this window
+pub fn clear_focus() {
+    add_update_message(UpdateMessage::ClearFocus);
+}
+
 /// Focus the window.
 pub fn focus_window() {
     add_update_message(UpdateMessage::FocusWindow);

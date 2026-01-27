@@ -1,19 +1,38 @@
-use super::{Decorators, Stack};
-use crate::context::StyleCx;
-use crate::event::EventPropagation;
+use super::Decorators;
+use crate::context::{Phases, StyleCx};
+use crate::event::listener;
+use crate::event::{DispatchKind, Event, EventPropagation};
 use crate::style::Style;
 use crate::style_class;
 use crate::view::IntoView;
+use crate::view::View;
 use crate::view::ViewId;
-use crate::{
-    event::{Event, EventListener},
-    view::View,
-};
+use crate::{AnyView, custom_event};
 use floem_reactive::{Effect, RwSignal, SignalGet, SignalUpdate};
-use ui_events::keyboard::{Key, KeyState, KeyboardEvent, NamedKey};
+use ui_events::keyboard::{Key, KeyboardEvent, NamedKey};
 
 style_class!(pub ListClass);
 style_class!(pub ListItemClass);
+
+custom_event! {
+    /// Event fired when a list's selection changes
+    #[derive(Copy, PartialEq)]
+    pub struct ListSelectionChanged {
+        /// The previous selection index
+        pub old_selection: Option<usize>,
+        /// The new selection index
+        pub new_selection: Option<usize>,
+    }
+}
+
+custom_event! {
+    /// Event fired when a list item is accepted (Enter key or Space)
+    #[derive(Copy, PartialEq)]
+    pub struct ListAccept {
+        /// The accepted selection index
+        pub selection: Option<usize>,
+    }
+}
 
 enum ListUpdate {
     SelectionChanged(Option<usize>),
@@ -31,8 +50,6 @@ pub(crate) struct Item {
 pub struct List {
     id: ViewId,
     selection: RwSignal<Option<usize>>,
-    onaccept: Option<Box<dyn Fn(Option<usize>)>>,
-    child: ViewId,
 }
 
 impl List {
@@ -47,12 +64,6 @@ impl List {
             let selection = self.selection.get();
             on_select(selection);
         });
-        self
-    }
-
-    /// Adds a callback for user list selection with the `Enter` key.
-    pub fn on_accept(mut self, on_accept: impl Fn(Option<usize>) + 'static) -> Self {
-        self.onaccept = Some(Box::new(on_accept));
         self
     }
 }
@@ -78,13 +89,31 @@ where
 {
     let list_id = ViewId::new();
     let selection = RwSignal::new(Some(0));
-    Effect::new(move |old_idx: Option<Option<usize>>| {
-        let selection = selection.get();
-        list_id.update_state(ListUpdate::SelectionChanged(old_idx.flatten()));
-        selection
+    Effect::new(move |old_sel: Option<Option<usize>>| {
+        let new_sel = selection.get();
+        let old_sel = old_sel.flatten();
+
+        if old_sel != new_sel {
+            // Dispatch custom event when selection changes
+            list_id.dispatch_event(
+                Event::new_custom(ListSelectionChanged {
+                    old_selection: old_sel,
+                    new_selection: new_sel,
+                }),
+                DispatchKind::Directed {
+                    target: list_id.get_visual_id(),
+                    phases: Phases::TARGET,
+                },
+            );
+            list_id.update_state(ListUpdate::SelectionChanged(old_sel));
+        }
+
+        new_sel
     });
-    let stack =
-        Stack::vertical_from_iter(iterator.into_iter().enumerate().map(move |(index, v)| {
+    let children = iterator
+        .into_iter()
+        .enumerate()
+        .map(move |(index, v)| {
             let id = ViewId::new();
             let v = v.into_view().class(ListItemClass);
             let child = v.id();
@@ -95,89 +124,79 @@ where
                 index,
                 child,
             }
-            .on_click_stop(move |_| {
+            .action(move || {
                 if selection.get_untracked() != Some(index) {
                     selection.set(Some(index));
                     list_id.update_state(ListUpdate::Accept);
                 }
             })
-        }))
-        .style(|s| s.width_full().height_full());
-    let length = stack.id().children().len();
-    let child = stack.id();
-    list_id.set_children([stack]);
+        })
+        .map(|v| -> Box<dyn View> { v.into_any() })
+        .collect::<Vec<AnyView>>();
+    let length = children.len();
+    list_id.set_children_vec(children);
     List {
         id: list_id,
         selection,
-        child,
-        onaccept: None,
     }
-    .on_event(EventListener::KeyDown, move |cx| {
-        if let Event::Key(KeyboardEvent {
-            state: KeyState::Down,
-            key,
-            ..
-        }) = &cx.event
-        {
-            match key {
-                Key::Named(NamedKey::Home) => {
-                    if length > 0 {
-                        selection.set(Some(0));
-                    }
-                    EventPropagation::Stop
+    .on_event(
+        listener::KeyDown,
+        move |_cx, KeyboardEvent { key, .. }| match key {
+            Key::Named(NamedKey::Home) => {
+                if length > 0 {
+                    selection.set(Some(0));
                 }
-                Key::Named(NamedKey::End) => {
-                    if length > 0 {
-                        selection.set(Some(length - 1));
-                    }
-                    EventPropagation::Stop
-                }
-                Key::Named(NamedKey::ArrowUp) => {
-                    let current = selection.get_untracked();
-                    match current {
-                        Some(i) => {
-                            if i > 0 {
-                                selection.set(Some(i - 1));
-                            }
-                        }
-                        None => {
-                            if length > 0 {
-                                selection.set(Some(length - 1));
-                            }
-                        }
-                    }
-                    EventPropagation::Stop
-                }
-                Key::Named(NamedKey::Enter) => {
-                    list_id.update_state(ListUpdate::Accept);
-                    EventPropagation::Stop
-                }
-                Key::Character(c) if c == " " => {
-                    list_id.update_state(ListUpdate::Accept);
-                    EventPropagation::Stop
-                }
-                Key::Named(NamedKey::ArrowDown) => {
-                    let current = selection.get_untracked();
-                    match current {
-                        Some(i) => {
-                            if i < length - 1 {
-                                selection.set(Some(i + 1));
-                            }
-                        }
-                        None => {
-                            if length > 0 {
-                                selection.set(Some(0));
-                            }
-                        }
-                    }
-                    EventPropagation::Stop
-                }
-                _ => EventPropagation::Continue,
+                EventPropagation::Stop
             }
-        } else {
-            EventPropagation::Continue
-        }
-    })
+            Key::Named(NamedKey::End) => {
+                if length > 0 {
+                    selection.set(Some(length - 1));
+                }
+                EventPropagation::Stop
+            }
+            Key::Named(NamedKey::ArrowUp) => {
+                let current = selection.get_untracked();
+                match current {
+                    Some(i) => {
+                        if i > 0 {
+                            selection.set(Some(i - 1));
+                        }
+                    }
+                    None => {
+                        if length > 0 {
+                            selection.set(Some(length - 1));
+                        }
+                    }
+                }
+                EventPropagation::Stop
+            }
+            Key::Named(NamedKey::Enter) => {
+                list_id.update_state(ListUpdate::Accept);
+                EventPropagation::Stop
+            }
+            Key::Character(c) if c == " " => {
+                list_id.update_state(ListUpdate::Accept);
+                EventPropagation::Stop
+            }
+            Key::Named(NamedKey::ArrowDown) => {
+                let current = selection.get_untracked();
+                match current {
+                    Some(i) => {
+                        if i < length - 1 {
+                            selection.set(Some(i + 1));
+                        }
+                    }
+                    None => {
+                        if length > 0 {
+                            selection.set(Some(0));
+                        }
+                    }
+                }
+                EventPropagation::Stop
+            }
+            _ => EventPropagation::Continue,
+        },
+    )
     .class(ListClass)
 }
 
@@ -186,24 +205,35 @@ impl View for List {
         self.id
     }
 
+    fn view_style(&self) -> Option<Style> {
+        Some(Style::new().flex_col())
+    }
+
     fn update(&mut self, _cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(change) = state.downcast::<ListUpdate>() {
             match *change {
                 ListUpdate::SelectionChanged(old_idx) => {
                     if let Some(old_idx) = old_idx {
-                        let child = self.child.children()[old_idx];
+                        let child = self.id.children()[old_idx];
                         child.request_style_recursive();
                     }
                     if let Some(index) = self.selection.get_untracked() {
-                        let child = self.child.children()[index];
+                        let child = self.id.children()[index];
                         child.request_style_recursive();
                         child.scroll_to(None);
                     }
                 }
                 ListUpdate::Accept => {
-                    if let Some(on_accept) = &self.onaccept {
-                        on_accept(self.selection.get_untracked());
-                    }
+                    let selection = self.selection.get_untracked();
+
+                    // Dispatch custom event
+                    self.id.dispatch_event(
+                        Event::new_custom(ListAccept { selection }),
+                        DispatchKind::Directed {
+                            target: self.id.get_visual_id(),
+                            phases: Phases::TARGET,
+                        },
+                    );
                 }
             }
         }

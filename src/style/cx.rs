@@ -373,7 +373,7 @@ impl<'a> StyleCx<'a> {
         CaptureState::capture_style(view_id, self, computed_style.clone());
 
         // Update focusable set
-        let is_focusable = computed_style.builtin().focusable()
+        let is_focusable = computed_style.builtin().keyboard_navigable()
             && !computed_style.builtin().set_disabled()
             && computed_style.builtin().display() != taffy::Display::None;
         if is_focusable {
@@ -460,7 +460,7 @@ impl<'a> StyleCx<'a> {
                 let visual_id = vs.visual_id;
                 let box_tree = &mut box_tree.borrow_mut();
                 let old_flags = box_tree.flags(visual_id.0);
-                // box_tree.set_z_index(visual_id.0, self.z_index().unwrap_or(0));
+                box_tree.set_local_z_index(visual_id.0, vs.box_tree_props.z_index());
                 let mut flags = NodeFlags::empty();
                 if props.pickable() {
                     flags |= NodeFlags::PICKABLE;
@@ -747,7 +747,7 @@ impl<'a> StyleCx<'a> {
             // is_hidden: self.hidden | icx.hidden,
             is_hovered: self.window_state.is_hovered(id),
             is_focused: self.window_state.is_focused(id),
-            is_clicking: self.window_state.is_clicking(id) || self.window_state.active == Some(id),
+            is_clicking: self.window_state.is_clicking(id),
             is_dark_mode: self.window_state.is_dark_mode(),
             is_file_hover: self.window_state.is_file_hover(id),
             using_keyboard_navigation: self.window_state.keyboard_navigation,

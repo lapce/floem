@@ -2,8 +2,8 @@ use std::{any::Any, cell::RefCell, rc::Rc};
 
 use crate::{
     BoxTree, ViewId, VisualId,
-    context::{EventCx, PaintCx, UpdateCx},
-    event::{Event, EventPropagation, Phase},
+    context::{EventCx, LayoutChangedListener, PaintCx, UpdateCx},
+    event::{Event, EventPropagation, InteractionEvent, Phase},
     prelude::*,
     prop, prop_extractor,
     style::{
@@ -34,7 +34,7 @@ style_class!(
 
 pub(crate) fn create_resizable(children: Vec<Box<dyn View>>) -> ResizableStack {
     let id = ViewId::new();
-    id.needs_post_layout();
+    id.has_layout_listener();
 
     let mut view_children = Vec::new();
     let mut child_ids = Vec::new();
@@ -216,21 +216,18 @@ impl Handle {
     }
 
     fn event(&mut self, cx: &mut EventCx, axis: Axis) {
-        if cx
-            .listeners
-            .contains(&crate::event::EventListener::DoubleClick)
-        {
-            // Reset to equal sizes
-            self.affected_child_id
-                .update_state(ResizeChildMessage::ClearBasis);
-            self.next_child_id
-                .update_state(ResizeChildMessage::ClearBasis);
-            return;
-        }
-
         match &cx.event.clone() {
+            Event::Interaction(InteractionEvent::DoubleClick) => {
+                // Reset to equal sizes
+                self.affected_child_id
+                    .update_state(ResizeChildMessage::ClearBasis);
+                self.next_child_id
+                    .update_state(ResizeChildMessage::ClearBasis);
+            }
             Event::Pointer(PointerEvent::Down(e)) => {
-                cx.window_state.update_active(self.visual_id);
+                if let Some(pointer_id) = e.pointer.pointer_id {
+                    cx.window_state.set_pointer_capture(pointer_id, self.visual_id);
+                }
                 self.down_point = Some(e.state.logical_point());
             }
             Event::Pointer(PointerEvent::Leave(_)) => {
@@ -248,7 +245,7 @@ impl Handle {
                 let cursor = self.handle_style.cursor().unwrap_or(cursor);
                 cx.window_state.set_cursor(self.visual_id, cursor);
 
-                if cx.window_state.is_active(self.visual_id)
+                if cx.window_state.has_capture(self.visual_id)
                     && let Some(start_point) = self.down_point
                     && u.current.logical_point().distance(start_point).abs() > 1.
                 {
@@ -332,10 +329,14 @@ impl Handle {
 
     fn paint(&self, cx: &mut PaintCx<'_>, axis: Axis) {
         let box_tree = self.box_tree.borrow();
-        let transform = box_tree
-            .world_transform(self.visual_id.0)
-            .unwrap_or_default();
-        let rect = box_tree.world_bounds(self.visual_id.0).unwrap_or_default();
+        let transform = match box_tree.world_transform(self.visual_id.0) {
+            Ok(transform) => transform,
+            Err(transform) => transform.value().unwrap(),
+        };
+        let rect = match box_tree.world_bounds(self.visual_id.0) {
+            Ok(bounds) => bounds,
+            Err(bounds) => bounds.value().unwrap(),
+        };
         let rect = transform.transform_rect_bbox(rect);
         let thickness = self.handle_style.thickness().0;
 
@@ -387,12 +388,6 @@ impl View for ResizableStack {
         self.re_style.read(cx);
         for handle in self.handles.values_mut() {
             handle.style(cx, self.re_style.direction().axis());
-        }
-    }
-
-    fn post_layout(&mut self, _cx: crate::layout::PostLayoutCx) {
-        for handle in self.handles.values_mut() {
-            handle.set_position(self.re_style.direction().axis());
         }
     }
 
@@ -452,6 +447,10 @@ impl View for ResizableStack {
     }
 
     fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
+        // for this to work we had to set `id.has_layout_listener`.
+        if let Some(_) = LayoutChangedListener::extract(&cx.event) {
+            self.post_layout();
+        }
         if cx.phase == Phase::Target {
             if let Some(handle) = self.handles.get_mut(&cx.target) {
                 handle.event(cx, self.re_style.direction().axis());
@@ -518,6 +517,12 @@ impl ResizableStack {
         style: impl Fn(ResizableCustomStyle) -> ResizableCustomStyle + 'static,
     ) -> Self {
         self.custom_style(style)
+    }
+
+    fn post_layout(&mut self) {
+        for handle in self.handles.values_mut() {
+            handle.set_position(self.re_style.direction().axis());
+        }
     }
 }
 

@@ -1,4 +1,5 @@
 use floem::{
+    action::inspect,
     reactive::{RwSignal, SignalGet, SignalUpdate},
     ui_events::keyboard::{Key, NamedKey},
     unit::UnitExt,
@@ -48,7 +49,7 @@ pub fn editor_view() -> impl IntoView {
         .placeholder("Some placeholder text");
     let doc = editor_a.doc();
 
-    let view = Stack::new((
+    Stack::new((
         editor_a,
         editor_b,
         Stack::new((
@@ -78,12 +79,10 @@ pub fn editor_view() -> impl IntoView {
             .gap(10)
             .items_center()
             .justify_center()
-    });
-
-    let id = view.id();
-    view.on_key_up(
+    })
+    .on_key_up(
         Key::Named(NamedKey::F11),
         |m| m.is_empty(),
-        move |_| id.inspect(),
+        move |_, _| inspect(),
     )
 }
