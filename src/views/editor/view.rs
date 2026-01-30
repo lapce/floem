@@ -751,6 +751,8 @@ impl EditorView {
         let indent_text_width = indent_text.hit_position(indent_unit.len()).point.x;
 
         if ed.es.with(|s| s.show_indent_guide()) {
+            // Cache the indent guide color outside the loop to avoid repeated signal access
+            let indent_guide_color = ed.es.with_untracked(|es| es.indent_guide());
             for (line, y) in screen_lines.iter_lines_y() {
                 let text_layout = ed.text_layout(line);
                 let line_height = f64::from(ed.line_height(line));
@@ -758,7 +760,7 @@ impl EditorView {
                 while x + 1.0 < text_layout.indent {
                     cx.stroke(
                         &Line::new(Point::new(x, y), Point::new(x, y + line_height)),
-                        ed.es.with(|es| es.indent_guide()),
+                        indent_guide_color,
                         &peniko::kurbo::Stroke::new(1.),
                     );
                     x += indent_text_width;
@@ -773,24 +775,27 @@ impl EditorView {
         };
         Self::paint_cursor_caret(cx, ed, is_active, screen_lines);
 
+        // Pre-create whitespace indicator TextLayouts outside the loop.
+        // This avoids creating new TextLayout objects for every line, which is expensive.
+        // We use line 0's font properties, consistent with how indent guides are rendered.
+        // TODO: consider caching these in the Editor if font properties change frequently.
+        let whitespace_color = ed.es.with_untracked(|es| es.visible_whitespace());
+        let ws_attrs = Attrs::new()
+            .color(whitespace_color)
+            .family(&family)
+            .font_size(style.font_size(edid, 0) as f32);
+        let ws_attrs_list = AttrsList::new(ws_attrs);
+        let mut space_text = TextLayout::new();
+        space_text.set_text("·", ws_attrs_list.clone(), None);
+        let mut tab_text = TextLayout::new();
+        tab_text.set_text("→", ws_attrs_list, None);
+
         for (line, y) in screen_lines.iter_lines_y() {
             let text_layout = ed.text_layout(line);
 
             EditorView::paint_extra_style(cx, &text_layout.extra_style, y, viewport);
 
             if let Some(whitespaces) = &text_layout.whitespaces {
-                let family = style.font_family(edid, line);
-                let font_size = style.font_size(edid, line) as f32;
-                let attrs = Attrs::new()
-                    .color(ed.es.with_untracked(|es| es.visible_whitespace()))
-                    .family(&family)
-                    .font_size(font_size);
-                let attrs_list = AttrsList::new(attrs);
-                let mut space_text = TextLayout::new();
-                space_text.set_text("·", attrs_list.clone(), None);
-                let mut tab_text = TextLayout::new();
-                tab_text.set_text("→", attrs_list, None);
-
                 for (c, (x0, _x1)) in whitespaces.iter() {
                     match *c {
                         '\t' => {
