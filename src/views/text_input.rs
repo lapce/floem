@@ -1276,6 +1276,7 @@ impl View for TextInput {
                             .map(|i| i + self.cursor_glyph_idx)
                             .unwrap_or(buf.len());
                         buf.replace_range(before_start..after_end, "");
+                        self.cursor_glyph_idx = before_start;
                     });
                     true
                 } else {
