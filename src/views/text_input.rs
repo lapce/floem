@@ -72,8 +72,9 @@ struct BufferState {
 impl BufferState {
     fn update(&mut self, update: impl FnOnce(&mut String)) {
         self.buffer.update(|s| {
+            let last = s.clone();
             update(s);
-            self.last_buffer.clone_from(s);
+            self.last_buffer = last;
         });
     }
 
