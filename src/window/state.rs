@@ -1,6 +1,10 @@
 use std::collections::HashMap;
 
+#[cfg(target_arch = "wasm32")]
+use crate::platform::wasm_stubs::MenuId;
+#[cfg(not(target_arch = "wasm32"))]
 use muda::MenuId;
+
 use peniko::kurbo::{Point, Size, Vec2};
 use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::SmallVec;

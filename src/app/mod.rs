@@ -4,8 +4,11 @@ pub(crate) mod handle;
 
 use std::{cell::RefCell, rc::Rc};
 
+#[cfg(target_arch = "wasm32")]
+use crate::platform::wasm_stubs::MenuId;
 #[cfg(feature = "crossbeam")]
 use crossbeam::channel::{Receiver, Sender, unbounded as channel};
+#[cfg(not(target_arch = "wasm32"))]
 use muda::MenuId;
 #[cfg(not(feature = "crossbeam"))]
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -41,6 +44,7 @@ thread_local! {
 pub struct AppConfig {
     pub(crate) exit_on_close: bool,
     pub(crate) wgpu_features: wgpu::Features,
+    pub(crate) wgpu_backends: Option<wgpu::Backends>,
     pub(crate) global_theme_override: Option<Theme>,
 }
 
@@ -49,6 +53,7 @@ impl Default for AppConfig {
         Self {
             exit_on_close: !cfg!(target_os = "macos"),
             wgpu_features: wgpu::Features::default(),
+            wgpu_backends: None,
             global_theme_override: None,
         }
     }

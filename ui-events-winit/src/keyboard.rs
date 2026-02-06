@@ -3,7 +3,7 @@
 
 //! Support routines for converting keyboard data from [`winit`]
 
-use std::string::ToString as _;
+use alloc::string::ToString as _;
 
 use ui_events::keyboard::{Code, Key, KeyState, KeyboardEvent, Location, Modifiers, NamedKey};
 use winit::keyboard::{KeyLocation, ModifiersState};

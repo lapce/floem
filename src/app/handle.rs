@@ -145,11 +145,21 @@ impl ApplicationHandle {
                         }
                     }
                 }
+                #[cfg(not(target_arch = "wasm32"))]
                 AppUpdateEvent::MenuAction { action_id } => {
                     for (_, handle) in self.window_handles.iter_mut() {
                         if handle.window_state.context_menu.contains_key(&action_id)
                             || handle.window_menu_actions.contains_key(&action_id)
                         {
+                            handle.menu_action(&action_id);
+                            break;
+                        }
+                    }
+                }
+                #[cfg(target_arch = "wasm32")]
+                AppUpdateEvent::MenuAction { action_id } => {
+                    for (_, handle) in self.window_handles.iter_mut() {
+                        if handle.window_state.context_menu.contains_key(&action_id) {
                             handle.menu_action(&action_id);
                             break;
                         }
@@ -396,7 +406,6 @@ impl ApplicationHandle {
         #[cfg(target_arch = "wasm32")]
         {
             use wgpu::web_sys::wasm_bindgen::JsCast;
-            use winit::platform::web::WindowAttributesExtWeb;
 
             let parent_id = web_config.expect("Specify an id for the canvas.").canvas_id;
             let doc = web_sys::window()
@@ -414,7 +423,9 @@ impl ApplicationHandle {
                 canvas.set_height(size.height as u32);
             }
 
-            window_attributes = window_attributes.with_canvas(Some(canvas));
+            let web_attrs =
+                winit::platform::web::WindowAttributesWeb::default().with_canvas(Some(canvas));
+            window_attributes = window_attributes.with_platform_attributes(Box::new(web_attrs));
         };
 
         if let Some(Point { x, y }) = position {
@@ -545,6 +556,7 @@ impl ApplicationHandle {
             window,
             self.gpu_resources.clone(),
             self.config.wgpu_features,
+            self.config.wgpu_backends,
             view_fn,
             transparent,
             apply_default_theme,

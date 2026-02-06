@@ -12,9 +12,14 @@ use ui_events::keyboard::{Key, KeyboardEvent, NamedKey};
 use crate::event::{Event, EventListener};
 use crate::platform::menu::MudaMenu;
 use crate::style::CursorStyle;
+
+#[cfg(target_arch = "wasm32")]
+use crate::platform::wasm_stubs as muda;
 use crate::unit::UnitExt;
 use crate::view::{IntoView, View};
 use crate::views::{Container, Decorators, Label, Stack, svg};
+#[cfg(not(target_arch = "wasm32"))]
+use muda;
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 enum MenuDisplay {

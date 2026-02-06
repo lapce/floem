@@ -28,6 +28,7 @@ use crate::{
     window::tracking::with_window,
 };
 
+#[cfg(not(target_arch = "wasm32"))]
 pub use crate::platform::file_action::*;
 
 /// Add an update message
@@ -235,6 +236,8 @@ pub fn show_context_menu(menu: Menu, pos: Option<Point>) {
 /// - Windows: Yes
 /// - macOS: Yes
 /// - Linux: No
+/// - wasm32: No
+#[cfg(not(target_arch = "wasm32"))]
 pub fn set_window_menu(menu: Menu) {
     add_update_message(UpdateMessage::WindowMenu { menu });
 }
