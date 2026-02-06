@@ -1257,6 +1257,10 @@ impl View for TextInput {
             } => {
                 if self.is_focused {
                     self.buffer.update(|buf| {
+                        if let Some(selection) = self.selection.take() {
+                            self.cursor_glyph_idx = selection.start;
+                            buf.replace_range(selection, "");
+                        }
                         // If the index falls inside a character, delete that character too.
                         // This only happens on desynchronized input:
                         // 1. IME sends a request with index on code point boundary
