@@ -1,5 +1,5 @@
 #![deny(missing_docs)]
-use crate::action::{exec_after, set_ime_allowed, set_ime_cursor_area};
+use crate::action::{exec_after, set_ime_allowed, set_ime_cursor_area, set_ime_surrounding_text};
 use crate::event::{EventListener, EventPropagation};
 use crate::reactive::{Effect, RwSignal};
 use crate::style::{FontFamily, FontProps, PaddingProp, SelectionStyle, StyleClass, TextAlignProp};
@@ -15,10 +15,11 @@ use floem_renderer::Renderer;
 use ui_events::keyboard::{Key, KeyState, KeyboardEvent, Modifiers, NamedKey};
 use ui_events::pointer::{PointerButton, PointerButtonEvent, PointerEvent};
 use unicode_segmentation::UnicodeSegmentation;
+use winit::window::ImeSurroundingText;
 
 use crate::{peniko::color::palette, style::Style, view::View};
 
-use std::{any::Any, ops::Range};
+use std::{any::Any, cmp, ops::Range};
 
 use crate::platform::{Duration, Instant};
 use crate::text::{Attrs, AttrsList, FamilyOwned, TextLayout};
@@ -235,11 +236,10 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
     }
     .on_event_stop(EventListener::FocusGained, move |_| {
         is_focused.set(true);
-        set_ime_allowed(true);
     })
     .on_event_stop(EventListener::FocusLost, move |_| {
         is_focused.set(false);
-        set_ime_allowed(false);
+        set_ime_allowed(false, None);
     })
     .class(TextInputClass)
 }
@@ -291,6 +291,45 @@ fn get_word_based_motion(event: &KeyboardEvent) -> Option<Movement> {
             .modifiers
             .contains(Modifiers::META)
             .then_some(Movement::Line));
+}
+
+fn new_surrounding_text(text: &str, cursor: usize, anchor: usize) -> Option<ImeSurroundingText> {
+    // Maximum message size enforced by winit is 3999
+    let maxlen = cmp::min(3999, text.len());
+    let (start, end) = (cmp::min(cursor, anchor), cmp::max(cursor, anchor));
+    let (start, end) = if end - start > maxlen {
+        // Arbitrary number. A buffer around cursor (not anchor) if the whole selection doesn't fit.
+        const MINIMUM_SURROUNDING_BYTES: usize = 10;
+
+        if cursor > anchor {
+            let cursor_end = cmp::min(cursor + MINIMUM_SURROUNDING_BYTES, text.len());
+            (cursor_end.saturating_sub(maxlen), cursor_end)
+        } else {
+            let cursor_end = cursor.saturating_sub(MINIMUM_SURROUNDING_BYTES);
+            (cursor_end, cmp::min(cursor_end + maxlen, text.len()))
+        }
+    } else {
+        // Arbitrary number, based on a guess about how long an autocompletion context should be.
+        const IDEAL_SURROUNDING_BYTES: usize = 100;
+        let start = start.saturating_sub(IDEAL_SURROUNDING_BYTES);
+        let end = cmp::min(end + IDEAL_SURROUNDING_BYTES, text.len());
+        (start, end)
+    };
+
+    let start = text.ceil_char_boundary(start);
+    let end = text.floor_char_boundary(end);
+
+    let text = &text[start..end];
+    let cursor = cursor - start;
+    let anchor = cmp::min(anchor.saturating_sub(start), 3999);
+
+    match ImeSurroundingText::new(text.into(), cursor, anchor) {
+        Ok(request) => Some(request),
+        Err(e) => {
+            eprintln!("Failed to create surrounding text: {e:?}");
+            None
+        }
+    }
 }
 
 const DEFAULT_FONT_SIZE: f32 = 14.0;
@@ -549,6 +588,28 @@ impl TextInput {
         };
     }
 
+    fn calculate_surrounding_text(&self, text: &str) -> Option<ImeSurroundingText> {
+        let anchor = if let Some(Range { start, end }) = self.selection {
+            if self.cursor_glyph_idx == start {
+                end
+            } else {
+                start
+            }
+        } else {
+            self.cursor_glyph_idx
+        };
+        new_surrounding_text(text, self.cursor_glyph_idx, anchor)
+    }
+
+    fn update_surrounding_text(&self, buf: &str) {
+        if !self.is_focused {
+            return;
+        }
+        if let Some(surrounding) = self.calculate_surrounding_text(buf) {
+            set_ime_surrounding_text(surrounding);
+        }
+    }
+
     fn update_ime_cursor_area(&mut self) {
         if !self.is_focused {
             return;
@@ -595,8 +656,8 @@ impl TextInput {
 
             if self.is_focused {
                 // toggle IME to flush external preedit state
-                set_ime_allowed(false);
-                set_ime_allowed(true);
+                set_ime_allowed(false, None);
+                set_ime_allowed(true, None);
                 // ime area will be set in compute_layout
             }
 
@@ -1135,6 +1196,14 @@ impl View for TextInput {
             let is_focused = *state;
 
             if self.is_focused != is_focused {
+                if is_focused {
+                    self.buffer.buffer.with_untracked(|buf| {
+                        let surrounding = self.calculate_surrounding_text(buf);
+                        set_ime_allowed(true, surrounding);
+                    });
+                } else {
+                    set_ime_allowed(false, None);
+                }
                 self.is_focused = is_focused;
                 self.last_ime_cursor_area = None;
 
@@ -1154,12 +1223,14 @@ impl View for TextInput {
                 if updated {
                     self.buffer.last_buffer.clone_from(buf);
                 }
-
                 updated
             });
 
             if text_updated {
                 self.update_text_layout();
+                self.buffer.buffer.with_untracked(|buf| {
+                    self.update_surrounding_text(buf);
+                });
                 self.id.request_layout();
             }
         } else {
@@ -1484,7 +1555,7 @@ impl View for TextInput {
 
 #[cfg(test)]
 mod tests {
-    use crate::views::text_input::get_dbl_click_selection;
+    use crate::views::text_input::{get_dbl_click_selection, new_surrounding_text};
 
     use super::replace_range;
 
@@ -1657,5 +1728,131 @@ mod tests {
         let range = get_dbl_click_selection(2, &s);
 
         assert_eq!(range, 0..s.len());
+    }
+
+    /// Surrounding text equality. Fields are not public, so it can't be deconstructed.
+    macro_rules! sureq {
+        ($surrounding:expr, $expected:expr $(,)?) => {
+            let surrounding = $surrounding;
+            match $expected {
+                None => assert_eq!(surrounding, None),
+                Some((text, cursor, anchor)) => {
+                    if let Some(surrounding) = surrounding {
+                        assert_eq!(
+                            (text, cursor, anchor),
+                            (
+                                surrounding.text(),
+                                surrounding.cursor(),
+                                surrounding.anchor()
+                            ),
+                        )
+                    } else {
+                        panic!("assertion 'surrounding is Some' failed");
+                    }
+                }
+            }
+        };
+    }
+
+    #[test]
+    fn surrounding_text() {
+        sureq!(new_surrounding_text("test", 1, 1), Some(("test", 1, 1)),);
+        sureq!(new_surrounding_text("test", 1, 2), Some(("test", 1, 2)),);
+        sureq!(new_surrounding_text("test", 2, 1), Some(("test", 2, 1)));
+        sureq!(new_surrounding_text("test", 2, 5), None);
+        sureq!(new_surrounding_text("test", 5, 5), None);
+    }
+
+    #[test]
+    fn surrounding_text_multibyte() {
+        // 4 bytes, 2 code points. Valid indices: 0, 2, 4.
+        sureq!(new_surrounding_text("łł", 2, 2), Some(("łł", 2, 2)));
+        sureq!(new_surrounding_text("łł", 1, 1), None);
+        sureq!(new_surrounding_text("łł", 1, 2), None);
+        sureq!(new_surrounding_text("łł", 2, 1), None);
+    }
+
+    /// create a pattern to make manual inspection easier when problems arise.
+    fn generate_text_pattern() -> String {
+        let mut pattern = [b'A'; 5000];
+        let max = b'Z' - b'A';
+        pattern
+            .iter_mut()
+            .enumerate()
+            .for_each(|(i, b)| *b += (i % max as usize) as u8);
+        str::from_utf8(pattern.as_slice()).unwrap().into()
+    }
+
+    #[test]
+    fn surrounding_text_large_text() {
+        let text = generate_text_pattern();
+        sureq!(
+            new_surrounding_text(&text, 1, 1),
+            Some((&text[0..101], 1, 1))
+        );
+        sureq!(
+            new_surrounding_text(&text, 1, 100),
+            Some((&text[0..200], 1, 100))
+        );
+        sureq!(
+            new_surrounding_text(&text, 200, 200),
+            Some((&text[100..300], 100, 100))
+        );
+        sureq!(
+            new_surrounding_text(&text, 200, 500),
+            Some((&text[100..600], 100, 400))
+        );
+        sureq!(
+            new_surrounding_text(&text, 4999, 4999),
+            Some((&text[4899..5000], 100, 100))
+        );
+        sureq!(
+            new_surrounding_text(&text, 4800, 4800),
+            Some((&text[4700..4900], 100, 100))
+        );
+        sureq!(
+            new_surrounding_text(&text, 2000, 2000),
+            Some((&text[1900..2100], 100, 100))
+        );
+    }
+
+    #[test]
+    fn surrounding_text_large_selection() {
+        let text = generate_text_pattern();
+        sureq!(
+            new_surrounding_text(&text, 0, 5000),
+            Some((&text[0..3999], 0, 3999))
+        );
+        sureq!(
+            new_surrounding_text(&text, 5000, 0),
+            Some((&text[1001..5000], 3999, 0))
+        );
+
+        sureq!(
+            new_surrounding_text(&text, 0, 4000),
+            Some((&text[0..3999], 0, 3999))
+        );
+        sureq!(
+            new_surrounding_text(&text, 5000, 1000),
+            Some((&text[1001..5000], 3999, 0))
+        );
+
+        sureq!(
+            new_surrounding_text(&text, 4000, 0),
+            Some((&text[11..4010], 3989, 0))
+        );
+        sureq!(
+            new_surrounding_text(&text, 1000, 5000),
+            Some((&text[990..4989], 10, 3999))
+        );
+
+        sureq!(
+            new_surrounding_text(&text, 500, 4500),
+            Some((&text[490..4489], 10, 3999))
+        );
+        sureq!(
+            new_surrounding_text(&text, 4500, 500),
+            Some((&text[511..4510], 3989, 0))
+        );
     }
 }

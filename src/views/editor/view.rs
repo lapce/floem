@@ -996,7 +996,7 @@ pub fn editor_view(
             allows_ime.set(allowing_ime);
 
             if focused {
-                set_ime_allowed(allowing_ime);
+                set_ime_allowed(allowing_ime, None);
             }
         }
 
@@ -1045,13 +1045,13 @@ pub fn editor_view(
         prev_ime_area.set(None);
 
         if allows_ime.get_untracked() {
-            set_ime_allowed(true);
+            set_ime_allowed(true, None);
         }
     })
     .on_event_cont(EventListener::FocusLost, move |_| {
         focused.set(false);
         editor.with_untracked(|ed| ed.commit_preedit());
-        set_ime_allowed(false);
+        set_ime_allowed(false, None);
     })
     .on_event(EventListener::ImePreedit, move |event| {
         if !is_active.get_untracked() || !focused.get_untracked() {
