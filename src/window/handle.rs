@@ -980,7 +980,10 @@ impl WindowHandle {
                     UpdateMessage::SetWindowTitle { title } => {
                         self.window.set_title(&title);
                     }
-                    UpdateMessage::SetImeAllowed { allowed } => {
+                    UpdateMessage::SetImeAllowed {
+                        allowed,
+                        surrounding_text,
+                    } => {
                         if self.window.ime_capabilities().is_some() != allowed {
                             let ime = if allowed {
                                 let position = LogicalPosition::new(0, 0);
@@ -989,14 +992,22 @@ impl WindowHandle {
                                     .with_cursor_area(position.into(), size.into())
                                     .with_hint_and_purpose(ImeHint::NONE, ImePurpose::Normal);
 
+                                let caps = ImeCapabilities::new()
+                                    .with_hint_and_purpose()
+                                    .with_cursor_area();
+
+                                let (caps, request_data) =
+                                    if let Some(surrounding_text) = surrounding_text {
+                                        (
+                                            caps.with_surrounding_text(),
+                                            request_data.with_surrounding_text(surrounding_text),
+                                        )
+                                    } else {
+                                        (caps, request_data)
+                                    };
+
                                 ImeRequest::Enable(
-                                    ImeEnableRequest::new(
-                                        ImeCapabilities::new()
-                                            .with_hint_and_purpose()
-                                            .with_cursor_area(),
-                                        request_data,
-                                    )
-                                    .unwrap(),
+                                    ImeEnableRequest::new(caps, request_data).unwrap(),
                                 )
                             } else {
                                 ImeRequest::Disable
@@ -1024,6 +1035,20 @@ impl WindowHandle {
                             self.window
                                 .request_ime_update(ImeRequest::Update(
                                     ImeRequestData::default().with_cursor_area(position, size),
+                                ))
+                                .unwrap();
+                        }
+                    }
+                    UpdateMessage::SetImeSurroundingText(surrounding) => {
+                        if self
+                            .window
+                            .ime_capabilities()
+                            .map(|caps| caps.surrounding_text())
+                            .unwrap_or(false)
+                        {
+                            self.window
+                                .request_ime_update(ImeRequest::Update(
+                                    ImeRequestData::default().with_surrounding_text(surrounding),
                                 ))
                                 .unwrap();
                         }

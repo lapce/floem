@@ -1,5 +1,5 @@
 #![deny(missing_docs)]
-use crate::action::{exec_after, set_ime_allowed, set_ime_cursor_area};
+use crate::action::{exec_after, set_ime_allowed, set_ime_cursor_area, set_ime_surrounding_text};
 use crate::event::{EventListener, EventPropagation};
 use crate::reactive::{Effect, RwSignal};
 use crate::style::{FontFamily, FontProps, PaddingProp, SelectionStyle, StyleClass, TextAlignProp};
@@ -15,10 +15,11 @@ use floem_renderer::Renderer;
 use ui_events::keyboard::{Key, KeyState, KeyboardEvent, Modifiers, NamedKey};
 use ui_events::pointer::{PointerButton, PointerButtonEvent, PointerEvent};
 use unicode_segmentation::UnicodeSegmentation;
+use winit::window::ImeSurroundingText;
 
 use crate::{peniko::color::palette, style::Style, view::View};
 
-use std::{any::Any, ops::Range};
+use std::{any::Any, cmp, ops::Range};
 
 use crate::platform::{Duration, Instant};
 use crate::text::{Attrs, AttrsList, FamilyOwned, TextLayout};
@@ -235,11 +236,10 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
     }
     .on_event_stop(EventListener::FocusGained, move |_| {
         is_focused.set(true);
-        set_ime_allowed(true);
     })
     .on_event_stop(EventListener::FocusLost, move |_| {
         is_focused.set(false);
-        set_ime_allowed(false);
+        set_ime_allowed(false, None);
     })
     .class(TextInputClass)
 }
@@ -291,6 +291,31 @@ fn get_word_based_motion(event: &KeyboardEvent) -> Option<Movement> {
             .modifiers
             .contains(Modifiers::META)
             .then_some(Movement::Line));
+}
+
+fn new_surrounding_text(text: &str, cursor: usize, anchor: usize) -> Option<ImeSurroundingText> {
+    const SURROUNDING_BYTES: usize = 10;
+    // Maximum message size enforced by winit is 4000
+    let maxlen = cmp::min(4000, text.len());
+    let (start, end) = if cursor > anchor {
+        let cursor_end = cmp::min(cursor + SURROUNDING_BYTES, text.len());
+        (cursor_end.saturating_sub(maxlen), cursor_end)
+    } else {
+        let cursor_end = cursor.saturating_sub(SURROUNDING_BYTES);
+        (cursor_end, cmp::max(cursor_end + maxlen, text.len()))
+    };
+    let start = text.ceil_char_boundary(start);
+    let end = text.floor_char_boundary(end);
+    let text = &text[start..end];
+    let cursor = cursor - start;
+    let anchor = anchor - start;
+    match ImeSurroundingText::new(text.into(), cursor, anchor) {
+        Ok(request) => Some(request),
+        Err(e) => {
+            eprintln!("Failed to create surrounding text: {e:?}");
+            None
+        }
+    }
 }
 
 const DEFAULT_FONT_SIZE: f32 = 14.0;
@@ -549,6 +574,28 @@ impl TextInput {
         };
     }
 
+    fn calculate_surrounding_text(&self, text: &str) -> Option<ImeSurroundingText> {
+        let anchor = if let Some(Range { start, end }) = self.selection {
+            if self.cursor_glyph_idx == start {
+                end
+            } else {
+                start
+            }
+        } else {
+            self.cursor_glyph_idx
+        };
+        new_surrounding_text(text, self.cursor_glyph_idx, anchor)
+    }
+
+    fn update_surrounding_text(&self, buf: &str) {
+        if !self.is_focused {
+            return;
+        }
+        if let Some(surrounding) = self.calculate_surrounding_text(buf) {
+            set_ime_surrounding_text(surrounding);
+        }
+    }
+
     fn update_ime_cursor_area(&mut self) {
         if !self.is_focused {
             return;
@@ -595,8 +642,8 @@ impl TextInput {
 
             if self.is_focused {
                 // toggle IME to flush external preedit state
-                set_ime_allowed(false);
-                set_ime_allowed(true);
+                set_ime_allowed(false, None);
+                set_ime_allowed(true, None);
                 // ime area will be set in compute_layout
             }
 
@@ -1135,6 +1182,14 @@ impl View for TextInput {
             let is_focused = *state;
 
             if self.is_focused != is_focused {
+                if is_focused {
+                    self.buffer.buffer.with_untracked(|buf| {
+                        let surrounding = self.calculate_surrounding_text(buf);
+                        set_ime_allowed(true, surrounding);
+                    });
+                } else {
+                    set_ime_allowed(false, None);
+                }
                 self.is_focused = is_focused;
                 self.last_ime_cursor_area = None;
 
@@ -1154,12 +1209,14 @@ impl View for TextInput {
                 if updated {
                     self.buffer.last_buffer.clone_from(buf);
                 }
-
                 updated
             });
 
             if text_updated {
                 self.update_text_layout();
+                self.buffer.buffer.with_untracked(|buf| {
+                    self.update_surrounding_text(buf);
+                });
                 self.id.request_layout();
             }
         } else {
