@@ -4,10 +4,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use ui_events::pointer::PointerEvent;
 
-#[cfg(not(target_arch = "wasm32"))]
-use std::time::Duration;
-#[cfg(target_arch = "wasm32")]
-use web_time::Duration;
+use crate::platform::Duration;
 
 use crate::style::{Style, StyleClass};
 use crate::views::Decorators;

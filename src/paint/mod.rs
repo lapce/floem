@@ -20,10 +20,7 @@ use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use winit::window::Window;
 
-#[cfg(not(target_arch = "wasm32"))]
-use std::time::{Duration, Instant};
-#[cfg(target_arch = "wasm32")]
-use web_time::{Duration, Instant};
+use crate::platform::{Duration, Instant};
 
 #[cfg(feature = "crossbeam")]
 use crossbeam::channel::Receiver;

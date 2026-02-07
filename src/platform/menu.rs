@@ -1,13 +1,12 @@
-use muda::IsMenuItem;
-use muda::{
-    CheckMenuItem, IconMenuItem, MenuId, MenuItem as MudaMenuItem, NativeIcon, PredefinedMenuItem,
-    accelerator::Accelerator,
+use super::menu_types::{
+    Accelerator, CheckMenuItem, Icon, IconMenuItem, IsMenuItem, MenuId, MenuItem as MudaMenuItem,
+    NativeIcon, PredefinedMenuItem,
 };
+
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-pub use muda::Menu as MudaMenu;
-pub use muda::Submenu as MudaSubmenu;
+pub use super::menu_types::{Menu as MudaMenu, Submenu as MudaSubmenu};
 
 static COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -36,7 +35,7 @@ pub struct ItemBuilder<State = NoCheckNoIcon> {
     state: std::marker::PhantomData<State>,
     // State-specific data
     checked: Option<bool>,
-    icon: Option<muda::Icon>,
+    icon: Option<Icon>,
     native_icon: Option<NativeIcon>,
 }
 
@@ -69,7 +68,7 @@ impl ItemBuilder<NoCheckNoIcon> {
         }
     }
 
-    pub fn icon(self, icon: muda::Icon) -> ItemBuilder<HasIcon> {
+    pub fn icon(self, icon: Icon) -> ItemBuilder<HasIcon> {
         ItemBuilder {
             id: self.id,
             text: self.text,
@@ -117,13 +116,13 @@ impl<State> ItemBuilder<State> {
 }
 
 trait BuildMenuItem {
-    fn build_menu_item(self) -> Box<dyn muda::IsMenuItem>;
+    fn build_menu_item(self) -> Box<dyn IsMenuItem>;
     fn get_id(&self) -> &MenuId;
     fn take_action(&mut self) -> Option<MenuAction>;
 }
 
 impl BuildMenuItem for ItemBuilder<NoCheckNoIcon> {
-    fn build_menu_item(self) -> Box<dyn muda::IsMenuItem> {
+    fn build_menu_item(self) -> Box<dyn IsMenuItem> {
         Box::new(MudaMenuItem::with_id(
             self.id.clone(),
             &self.text,
@@ -142,7 +141,7 @@ impl BuildMenuItem for ItemBuilder<NoCheckNoIcon> {
 }
 
 impl BuildMenuItem for ItemBuilder<HasCheck> {
-    fn build_menu_item(self) -> Box<dyn muda::IsMenuItem> {
+    fn build_menu_item(self) -> Box<dyn IsMenuItem> {
         Box::new(CheckMenuItem::with_id(
             self.id.clone(),
             &self.text,
@@ -162,7 +161,7 @@ impl BuildMenuItem for ItemBuilder<HasCheck> {
 }
 
 impl BuildMenuItem for ItemBuilder<HasIcon> {
-    fn build_menu_item(self) -> Box<dyn muda::IsMenuItem> {
+    fn build_menu_item(self) -> Box<dyn IsMenuItem> {
         Box::new(IconMenuItem::with_id(
             self.id.clone(),
             &self.text,
@@ -182,7 +181,7 @@ impl BuildMenuItem for ItemBuilder<HasIcon> {
 }
 
 impl BuildMenuItem for ItemBuilder<HasNativeIcon> {
-    fn build_menu_item(self) -> Box<dyn muda::IsMenuItem> {
+    fn build_menu_item(self) -> Box<dyn IsMenuItem> {
         let item = IconMenuItem::with_id(
             self.id.clone(),
             &self.text,
@@ -241,7 +240,7 @@ impl MenuBuilder<MudaSubmenu, NoIcon> {
         }
     }
 
-    pub fn icon(self, icon: muda::Icon) -> MenuBuilder<MudaSubmenu, self::HasIcon> {
+    pub fn icon(self, icon: Icon) -> MenuBuilder<MudaSubmenu, self::HasIcon> {
         self.menu.set_icon(Some(icon));
         MenuBuilder {
             menu: self.menu,

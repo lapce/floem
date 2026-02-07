@@ -1,9 +1,12 @@
+#[cfg(not(target_arch = "wasm32"))]
 use std::collections::HashMap;
 use std::{cell::RefCell, mem, rc::Rc, sync::Arc};
 
-use muda::MenuId;
-#[cfg(not(target_arch = "wasm32"))]
-use std::time::{Duration, Instant};
+use crate::platform::menu_types::{Menu as MudaMenu, MenuId};
+#[cfg(target_os = "windows")]
+use muda::MenuTheme as MudaMenuTheme;
+
+use crate::platform::{Duration, Instant};
 use ui_events::keyboard::{Key, KeyboardEvent, Modifiers, NamedKey};
 use ui_events::pointer::PointerEvent;
 use ui_events_winit::WindowEventReducer;
@@ -27,13 +30,13 @@ use winit::{
 use super::state::WindowState;
 use super::tracking::{remove_window_id_mapping, store_window_id_mapping};
 use crate::event::dropped_file::FileDragEvent;
-#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+#[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
 use crate::platform::context_menu::context_menu_view;
-#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+#[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
 use crate::reactive::SignalWith;
-#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+#[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
 use crate::unit::UnitExt;
-#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+#[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
 use crate::views::{Container, Decorators, Stack};
 use crate::{
     Application,
@@ -80,18 +83,22 @@ pub(crate) struct WindowHandle {
     pub(crate) modifiers: Modifiers,
     pub(crate) cursor_position: Point,
     pub(crate) window_position: Point,
-    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-    pub(crate) context_menu: RwSignal<Option<(muda::Menu, Point, bool)>>,
+    #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
+    pub(crate) context_menu: RwSignal<Option<(MudaMenu, Point, bool)>>,
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) window_menu_actions: HashMap<MenuId, Box<dyn Fn()>>,
-    pub(crate) window_menu: Option<muda::Menu>,
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) window_menu: Option<MudaMenu>,
     pub(crate) event_reducer: WindowEventReducer,
 }
 
 impl WindowHandle {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         window: Box<dyn winit::window::Window>,
         gpu_resources: Option<GpuResources>,
         required_features: wgpu::Features,
+        backends: Option<wgpu::Backends>,
         view_fn: impl FnOnce(winit::window::WindowId) -> Box<dyn View> + 'static,
         transparent: bool,
         apply_default_theme: bool,
@@ -110,17 +117,17 @@ impl WindowHandle {
 
         set_current_view(id);
 
-        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+        #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
         let context_menu = scope.create_rw_signal(None);
 
-        #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
+        #[cfg(not(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32")))]
         let view = scope.enter(move || {
             let main_view = view_fn(window_id);
             let main_view_id = main_view.id();
             (main_view_id, main_view)
         });
 
-        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+        #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
         let view = scope.enter(move || {
             let main_view = view_fn(window_id);
             let main_view_id = main_view.id();
@@ -163,6 +170,7 @@ impl WindowHandle {
                     Application::send_proxy_event(UserEvent::GpuResourcesUpdate { window_id });
                 },
                 required_features,
+                backends,
                 window.clone(),
             );
             PaintState::new_pending(
@@ -198,9 +206,11 @@ impl WindowHandle {
             modifiers: Modifiers::default(),
             cursor_position: Point::ZERO,
             window_position: Point::ZERO,
-            #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+            #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
             context_menu,
+            #[cfg(not(target_arch = "wasm32"))]
             window_menu_actions: HashMap::new(),
+            #[cfg(not(target_arch = "wasm32"))]
             window_menu: None,
             event_reducer: WindowEventReducer::default(),
         };
@@ -288,9 +298,11 @@ impl WindowHandle {
             modifiers: Modifiers::default(),
             cursor_position: Point::ZERO,
             window_position: Point::ZERO,
-            #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+            #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
             context_menu: scope.create_rw_signal(None),
+            #[cfg(not(target_arch = "wasm32"))]
             window_menu_actions: HashMap::new(),
+            #[cfg(not(target_arch = "wasm32"))]
             window_menu: None,
             event_reducer: WindowEventReducer::default(),
         };
@@ -323,13 +335,7 @@ impl WindowHandle {
         {
             use winit::platform::web::WindowExtWeb;
 
-            let rect = self
-                .window
-                .as_ref()
-                .unwrap()
-                .canvas()
-                .unwrap()
-                .get_bounding_client_rect();
+            let rect = self.window.canvas().unwrap().get_bounding_client_rect();
             // let rect = canvas.get_bounding_client_rect();
             let size = LogicalSize::new(rect.width(), rect.height());
             self.size(Size::new(size.width, size.height));
@@ -343,9 +349,9 @@ impl WindowHandle {
         set_current_view(self.id);
 
         // Check event type for platform-specific context menu handling
-        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+        #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
         let is_pointer_down = matches!(&event, Event::Pointer(PointerEvent::Down { .. }));
-        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+        #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
         let is_pointer_up = matches!(&event, Event::Pointer(PointerEvent::Up { .. }));
 
         // Use the shared event dispatch logic
@@ -355,7 +361,7 @@ impl WindowHandle {
         cx.dispatch_event(self.id, self.main_view, event);
 
         // Platform-specific context menu handling
-        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+        #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
         {
             if is_pointer_down
                 && self.context_menu.with_untracked(|c| {
@@ -954,14 +960,9 @@ impl WindowHandle {
                         let (menu, registry) = menu.build();
                         cx.window_state.context_menu.clear();
                         cx.window_state.update_context_menu(registry);
-
-                        #[cfg(any(target_os = "windows", target_os = "macos"))]
-                        {
-                            self.show_context_menu(menu, pos);
-                        }
-                        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
                         self.show_context_menu(menu, pos);
                     }
+                    #[cfg(not(target_arch = "wasm32"))]
                     UpdateMessage::WindowMenu { menu } => {
                         self.window_menu_actions.clear();
                         let (menu, registry) = menu.build();
@@ -1166,7 +1167,7 @@ impl WindowHandle {
     }
 
     #[cfg(target_os = "macos")]
-    fn show_context_menu(&self, menu: muda::Menu, pos: Option<Point>) {
+    fn show_context_menu(&self, menu: MudaMenu, pos: Option<Point>) {
         use muda::{
             ContextMenu,
             dpi::{LogicalPosition, Position},
@@ -1190,7 +1191,7 @@ impl WindowHandle {
     }
 
     #[cfg(target_os = "windows")]
-    fn show_context_menu(&self, menu: muda::Menu, pos: Option<Point>) {
+    fn show_context_menu(&self, menu: MudaMenu, pos: Option<Point>) {
         use muda::{
             ContextMenu,
             dpi::{LogicalPosition, Position},
@@ -1214,7 +1215,7 @@ impl WindowHandle {
     }
 
     #[cfg(target_os = "windows")]
-    fn init_menu_for_windows(&self, menu: &muda::Menu) {
+    fn init_menu_for_windows(&self, menu: &MudaMenu) {
         use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
         if let RawWindowHandle::Win32(handle) = self.window.window_handle().unwrap().as_raw() {
@@ -1223,10 +1224,10 @@ impl WindowHandle {
                     self.window_state.theme_overriden,
                     self.window_state.light_dark_theme,
                 ) {
-                    (false, winit::window::Theme::Light) => muda::MenuTheme::Light,
-                    (false, winit::window::Theme::Dark) => muda::MenuTheme::Dark,
-                    (true, winit::window::Theme::Light) => muda::MenuTheme::Light,
-                    (true, winit::window::Theme::Dark) => muda::MenuTheme::Dark,
+                    (false, winit::window::Theme::Light) => MudaMenuTheme::Light,
+                    (false, winit::window::Theme::Dark) => MudaMenuTheme::Dark,
+                    (true, winit::window::Theme::Light) => MudaMenuTheme::Light,
+                    (true, winit::window::Theme::Dark) => MudaMenuTheme::Dark,
                 };
                 let _ = menu.init_for_hwnd_with_theme(isize::from(handle.hwnd), menu_theme);
                 let _ = menu.show_for_hwnd(isize::from(handle.hwnd));
@@ -1242,8 +1243,8 @@ impl WindowHandle {
             if let Some(menu) = &self.window_menu {
                 unsafe {
                     let menu_theme = match theme {
-                        winit::window::Theme::Light => muda::MenuTheme::Light,
-                        winit::window::Theme::Dark => muda::MenuTheme::Dark,
+                        winit::window::Theme::Light => MudaMenuTheme::Light,
+                        winit::window::Theme::Dark => MudaMenuTheme::Dark,
                     };
                     let _ = menu.set_theme_for_hwnd(handle.hwnd.into(), menu_theme);
                 }
@@ -1251,8 +1252,8 @@ impl WindowHandle {
         }
     }
 
-    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-    fn show_context_menu(&self, menu: muda::Menu, pos: Option<Point>) {
+    #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
+    fn show_context_menu(&self, menu: MudaMenu, pos: Option<Point>) {
         let pos = pos.unwrap_or(self.cursor_position);
         let pos = Point::new(
             pos.x / self.window_state.scale,
@@ -1261,6 +1262,16 @@ impl WindowHandle {
         self.context_menu.set(Some((menu, pos, false)));
     }
 
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn menu_action(&mut self, id: &MenuId) {
+        set_current_view(self.id);
+        if let Some(action) = self.window_state.context_menu.get(id) {
+            (*action)();
+            self.process_update();
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn menu_action(&mut self, id: &MenuId) {
         set_current_view(self.id);
         if let Some(action) = self.window_state.context_menu.get(id) {

@@ -24,3 +24,6 @@ ui-events = { workspace = true, features = ["std"] }
 winit.workspace = true
 dpi.workspace = true
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-time = "1.1"
+

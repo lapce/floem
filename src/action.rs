@@ -12,10 +12,7 @@ use floem_reactive::{SignalWith, UpdaterEffect};
 use peniko::kurbo::{Point, Size, Vec2};
 use winit::window::{ResizeDirection, Theme};
 
-#[cfg(not(target_arch = "wasm32"))]
-use std::time::{Duration, Instant};
-#[cfg(target_arch = "wasm32")]
-use web_time::{Duration, Instant};
+use crate::platform::{Duration, Instant};
 
 use crate::{
     app::{AppUpdateEvent, add_app_update_event},
@@ -28,6 +25,7 @@ use crate::{
     window::tracking::with_window,
 };
 
+#[cfg(not(target_arch = "wasm32"))]
 pub use crate::platform::file_action::*;
 
 /// Add an update message
@@ -235,6 +233,8 @@ pub fn show_context_menu(menu: Menu, pos: Option<Point>) {
 /// - Windows: Yes
 /// - macOS: Yes
 /// - Linux: No
+/// - wasm32: No
+#[cfg(not(target_arch = "wasm32"))]
 pub fn set_window_menu(menu: Menu) {
     add_update_message(UpdateMessage::WindowMenu { menu });
 }

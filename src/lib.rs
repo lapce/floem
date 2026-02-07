@@ -226,13 +226,16 @@ pub use floem_renderer::gpu_resources::GpuResources;
 pub use floem_renderer::text;
 pub use imbl;
 pub use layout::ScreenLayout;
+#[cfg(not(target_arch = "wasm32"))]
 pub use muda;
 pub use peniko;
 pub use peniko::kurbo;
-pub use platform::{
-    Clipboard, ClipboardError, FileDialogOptions, FileInfo, FileSpec, Menu, SubMenu,
-};
-pub use platform::{open_file, save_as};
+#[cfg(not(target_arch = "wasm32"))]
+pub use platform::open_file;
+#[cfg(not(target_arch = "wasm32"))]
+pub use platform::save_as;
+pub use platform::{Clipboard, ClipboardError, FileDialogOptions, FileInfo, FileSpec};
+pub use platform::{Menu, SubMenu};
 pub use taffy;
 pub use ui_events;
 pub use view::ViewId;

@@ -16,12 +16,9 @@ use crate::{
 use std::any::Any;
 use std::rc::Rc;
 
+use crate::platform::{Duration, Instant};
 use floem_reactive::{RwSignal, SignalGet, Trigger, UpdaterEffect};
 use smallvec::{SmallVec, smallvec};
-#[cfg(not(target_arch = "wasm32"))]
-use std::time::{Duration, Instant};
-#[cfg(target_arch = "wasm32")]
-use web_time::{Duration, Instant};
 
 /// Holds a resolved prop, along with the associated frame id and easing function
 #[derive(Clone, Debug)]

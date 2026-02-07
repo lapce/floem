@@ -12,6 +12,8 @@ use ui_events::keyboard::{Key, KeyboardEvent, NamedKey};
 use crate::event::{Event, EventListener};
 use crate::platform::menu::MudaMenu;
 use crate::style::CursorStyle;
+
+use crate::platform::menu_types;
 use crate::unit::UnitExt;
 use crate::view::{IntoView, View};
 use crate::views::{Container, Decorators, Label, Stack, svg};
@@ -32,26 +34,26 @@ fn format_menu(menu: &MudaMenu) -> Vec<MenuDisplay> {
         .iter()
         .enumerate()
         .map(|(s, item)| match item {
-            muda::MenuItemKind::MenuItem(menu_item) => MenuDisplay::Item {
+            menu_types::MenuItemKind::MenuItem(menu_item) => MenuDisplay::Item {
                 id: Some(menu_item.id().as_ref().to_string()),
                 enabled: menu_item.is_enabled(),
                 title: menu_item.text().to_string(),
                 children: None,
             },
-            muda::MenuItemKind::Submenu(submenu) => MenuDisplay::Item {
+            menu_types::MenuItemKind::Submenu(submenu) => MenuDisplay::Item {
                 id: None,
                 enabled: submenu.is_enabled(),
                 title: submenu.text().to_string(),
                 children: Some(format_submenu(submenu)),
             },
-            muda::MenuItemKind::Predefined(_) => MenuDisplay::Separator(s),
-            muda::MenuItemKind::Check(check_item) => MenuDisplay::Item {
+            menu_types::MenuItemKind::Predefined(_) => MenuDisplay::Separator(s),
+            menu_types::MenuItemKind::Check(check_item) => MenuDisplay::Item {
                 id: Some(check_item.id().as_ref().to_string()),
                 enabled: check_item.is_enabled(),
                 title: check_item.text().to_string(),
                 children: None,
             },
-            muda::MenuItemKind::Icon(icon_item) => MenuDisplay::Item {
+            menu_types::MenuItemKind::Icon(icon_item) => MenuDisplay::Item {
                 id: Some(icon_item.id().as_ref().to_string()),
                 enabled: icon_item.is_enabled(),
                 title: icon_item.text().to_string(),
@@ -61,32 +63,32 @@ fn format_menu(menu: &MudaMenu) -> Vec<MenuDisplay> {
         .collect()
 }
 
-fn format_submenu(submenu: &muda::Submenu) -> Vec<MenuDisplay> {
+fn format_submenu(submenu: &menu_types::Submenu) -> Vec<MenuDisplay> {
     submenu
         .items()
         .iter()
         .enumerate()
         .map(|(s, item)| match item {
-            muda::MenuItemKind::MenuItem(menu_item) => MenuDisplay::Item {
+            menu_types::MenuItemKind::MenuItem(menu_item) => MenuDisplay::Item {
                 id: Some(menu_item.id().as_ref().to_string()),
                 enabled: menu_item.is_enabled(),
                 title: menu_item.text().to_string(),
                 children: None,
             },
-            muda::MenuItemKind::Submenu(nested_submenu) => MenuDisplay::Item {
+            menu_types::MenuItemKind::Submenu(nested_submenu) => MenuDisplay::Item {
                 id: None,
                 enabled: nested_submenu.is_enabled(),
                 title: nested_submenu.text().to_string(),
                 children: Some(format_submenu(nested_submenu)),
             },
-            muda::MenuItemKind::Predefined(_) => MenuDisplay::Separator(s),
-            muda::MenuItemKind::Check(check_item) => MenuDisplay::Item {
+            menu_types::MenuItemKind::Predefined(_) => MenuDisplay::Separator(s),
+            menu_types::MenuItemKind::Check(check_item) => MenuDisplay::Item {
                 id: Some(check_item.id().as_ref().to_string()),
                 enabled: check_item.is_enabled(),
                 title: check_item.text().to_string(),
                 children: None,
             },
-            muda::MenuItemKind::Icon(icon_item) => MenuDisplay::Item {
+            menu_types::MenuItemKind::Icon(icon_item) => MenuDisplay::Item {
                 id: Some(icon_item.id().as_ref().to_string()),
                 enabled: icon_item.is_enabled(),
                 title: icon_item.text().to_string(),
@@ -98,7 +100,7 @@ fn format_submenu(submenu: &muda::Submenu) -> Vec<MenuDisplay> {
 
 pub(crate) fn context_menu_view(
     cx: Scope,
-    context_menu: RwSignal<Option<(muda::Menu, Point, bool)>>,
+    context_menu: RwSignal<Option<(menu_types::Menu, Point, bool)>>,
     window_size: RwSignal<Size>,
 ) -> impl IntoView {
     use crate::{

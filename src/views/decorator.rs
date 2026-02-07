@@ -11,7 +11,7 @@ use ui_events::keyboard::{Key, KeyState, KeyboardEvent, Modifiers};
 
 use crate::{
     ViewId,
-    action::{set_window_menu, set_window_scale, set_window_title},
+    action::{set_window_scale, set_window_title},
     animate::Animation,
     event::{Event, EventListener, EventPropagation},
     platform::menu::Menu,
@@ -532,14 +532,16 @@ pub trait Decorators: IntoView {
     /// - Windows: No
     /// - macOS: Yes (not currently implemented)
     /// - Linux: No
+    /// - wasm32: No
     ///
     /// # Reactivity
     /// The menu function is reactive and will rereun in response to any signal changes in the function.
+    #[cfg(not(target_arch = "wasm32"))]
     fn window_menu(self, menu_fn: impl Fn() -> Menu + 'static) -> Self::Intermediate {
         let intermediate = self.into_intermediate();
         Effect::new(move |_| {
             let menu = menu_fn();
-            set_window_menu(menu);
+            crate::action::set_window_menu(menu);
         });
         intermediate
     }

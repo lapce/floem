@@ -66,6 +66,7 @@ pub enum UpdateMessage {
         menu: Menu,
         pos: Option<Point>,
     },
+    #[cfg(not(target_arch = "wasm32"))]
     WindowMenu {
         menu: Menu,
     },
