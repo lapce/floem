@@ -12,10 +12,7 @@ use peniko::kurbo::{self, Point, Stroke};
 use std::rc::Rc;
 use taffy::prelude::{auto, fr};
 
-#[cfg(not(target_arch = "wasm32"))]
-use std::time::{Duration, Instant};
-#[cfg(target_arch = "wasm32")]
-use web_time::{Duration, Instant};
+use crate::platform::{Duration, Instant};
 
 use crate::animate::{Bezier, Easing, Linear, Spring};
 use crate::theme::StyleThemeExt;

@@ -2,20 +2,14 @@
 use std::collections::HashMap;
 use std::{cell::RefCell, mem, rc::Rc, sync::Arc};
 
-#[cfg(target_arch = "wasm32")]
-use crate::platform::wasm_stubs::{Menu as MudaMenu, MenuId};
+use crate::platform::menu_types::{Menu as MudaMenu, MenuId};
 #[cfg(target_os = "windows")]
 use muda::MenuTheme as MudaMenuTheme;
-#[cfg(not(target_arch = "wasm32"))]
-use muda::{Menu as MudaMenu, MenuId};
 
-#[cfg(not(target_arch = "wasm32"))]
-use std::time::{Duration, Instant};
+use crate::platform::{Duration, Instant};
 use ui_events::keyboard::{Key, KeyboardEvent, Modifiers, NamedKey};
 use ui_events::pointer::PointerEvent;
 use ui_events_winit::WindowEventReducer;
-#[cfg(target_arch = "wasm32")]
-use web_time::{Duration, Instant};
 
 use winit::window::{
     ImeCapabilities, ImeEnableRequest, ImeHint, ImePurpose, ImeRequest, ImeRequestData,

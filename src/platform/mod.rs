@@ -10,6 +10,8 @@ pub mod file;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod file_action;
 pub mod menu;
+pub(crate) mod menu_types;
+pub(crate) mod time;
 #[cfg(target_arch = "wasm32")]
 pub mod wasm_stubs;
 
@@ -18,3 +20,4 @@ pub use file::{FileDialogOptions, FileInfo, FileSpec};
 #[cfg(not(target_arch = "wasm32"))]
 pub use file_action::{open_file, save_as};
 pub use menu::{Menu, SubMenu};
+pub(crate) use time::{Duration, Instant};

@@ -1,9 +1,6 @@
 use std::collections::HashMap;
 
-#[cfg(target_arch = "wasm32")]
-use crate::platform::wasm_stubs::MenuId;
-#[cfg(not(target_arch = "wasm32"))]
-use muda::MenuId;
+use crate::platform::menu_types::MenuId;
 
 use peniko::kurbo::{Point, Size, Vec2};
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -13,10 +10,7 @@ use ui_events::pointer::PointerId;
 use winit::cursor::CursorIcon;
 use winit::window::Theme;
 
-#[cfg(not(target_arch = "wasm32"))]
-use std::time::Instant;
-#[cfg(target_arch = "wasm32")]
-use web_time::Instant;
+use crate::platform::Instant;
 
 use std::rc::Rc;
 

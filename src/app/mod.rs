@@ -4,12 +4,9 @@ pub(crate) mod handle;
 
 use std::{cell::RefCell, rc::Rc};
 
-#[cfg(target_arch = "wasm32")]
-use crate::platform::wasm_stubs::MenuId;
+use crate::platform::menu_types::MenuId;
 #[cfg(feature = "crossbeam")]
 use crossbeam::channel::{Receiver, Sender, unbounded as channel};
-#[cfg(not(target_arch = "wasm32"))]
-use muda::MenuId;
 #[cfg(not(feature = "crossbeam"))]
 use std::sync::mpsc::{Receiver, Sender, channel};
 

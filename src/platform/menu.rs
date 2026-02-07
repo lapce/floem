@@ -1,13 +1,4 @@
-#[cfg(not(target_arch = "wasm32"))]
-use muda::IsMenuItem;
-#[cfg(not(target_arch = "wasm32"))]
-use muda::{
-    CheckMenuItem, Icon, IconMenuItem, MenuId, MenuItem as MudaMenuItem, NativeIcon,
-    PredefinedMenuItem, accelerator::Accelerator,
-};
-
-#[cfg(target_arch = "wasm32")]
-use super::wasm_stubs::{
+use super::menu_types::{
     Accelerator, CheckMenuItem, Icon, IconMenuItem, IsMenuItem, MenuId, MenuItem as MudaMenuItem,
     NativeIcon, PredefinedMenuItem,
 };
@@ -15,13 +6,7 @@ use super::wasm_stubs::{
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-#[cfg(not(target_arch = "wasm32"))]
-pub use muda::Menu as MudaMenu;
-#[cfg(not(target_arch = "wasm32"))]
-pub use muda::Submenu as MudaSubmenu;
-
-#[cfg(target_arch = "wasm32")]
-pub use super::wasm_stubs::{Menu as MudaMenu, Submenu as MudaSubmenu};
+pub use super::menu_types::{Menu as MudaMenu, Submenu as MudaSubmenu};
 
 static COUNTER: AtomicU64 = AtomicU64::new(0);
 

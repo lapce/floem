@@ -12,10 +12,7 @@ use floem_reactive::{SignalWith, UpdaterEffect};
 use peniko::kurbo::{Point, Size, Vec2};
 use winit::window::{ResizeDirection, Theme};
 
-#[cfg(not(target_arch = "wasm32"))]
-use std::time::{Duration, Instant};
-#[cfg(target_arch = "wasm32")]
-use web_time::{Duration, Instant};
+use crate::platform::{Duration, Instant};
 
 use crate::{
     app::{AppUpdateEvent, add_app_update_event},

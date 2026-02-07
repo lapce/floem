@@ -27,10 +27,7 @@ use std::rc::Rc;
 use ui_events::keyboard::{self, KeyboardEvent, NamedKey};
 pub use view::capture;
 
-#[cfg(not(target_arch = "wasm32"))]
-use std::time::{Duration, Instant};
-#[cfg(target_arch = "wasm32")]
-use web_time::{Duration, Instant};
+use crate::platform::{Duration, Instant};
 
 use crate::inspector::data::CapturedDatas;
 use taffy::prelude::Layout;
