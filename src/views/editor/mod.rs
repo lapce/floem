@@ -506,8 +506,8 @@ impl Editor {
             self.ime_cursor_area.set(None);
 
             if self.editor_view_focused_value.get_untracked() {
-                set_ime_allowed(false);
-                set_ime_allowed(true);
+                set_ime_allowed(false, None);
+                set_ime_allowed(true, None);
             }
         });
     }

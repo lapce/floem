@@ -229,10 +229,10 @@ impl ApplicationHandle {
             .reduce(window_handle.scale, &event)
         {
             Some(WindowEventTranslation::Keyboard(ke)) => {
-                if let WindowEvent::KeyboardInput { is_synthetic, .. } = event {
-                    if !is_synthetic {
-                        window_handle.key_event(ke)
-                    }
+                if let WindowEvent::KeyboardInput { is_synthetic, .. } = event
+                    && !is_synthetic
+                {
+                    window_handle.key_event(ke)
                 }
             }
             Some(WindowEventTranslation::Pointer(pe)) => {
@@ -538,16 +538,16 @@ impl ApplicationHandle {
             return;
         };
         #[cfg(target_os = "macos")]
-        if let Some(mac) = &mac_os_config {
-            if let Some((x, y)) = mac.traffic_lights_offset {
-                use raw_window_handle::HasWindowHandle;
+        if let Some(mac) = &mac_os_config
+            && let Some((x, y)) = mac.traffic_lights_offset
+        {
+            use raw_window_handle::HasWindowHandle;
 
-                if let Ok(wh) = window.window_handle() {
-                    use raw_window_handle::RawWindowHandle;
+            if let Ok(wh) = window.window_handle() {
+                use raw_window_handle::RawWindowHandle;
 
-                    if let RawWindowHandle::AppKit(app_kit) = wh.as_raw() {
-                        let _ = setup_traffic_light_constraints_all_pixels(&app_kit, x, y, 6.);
-                    }
+                if let RawWindowHandle::AppKit(app_kit) = wh.as_raw() {
+                    let _ = setup_traffic_light_constraints_all_pixels(&app_kit, x, y, 6.);
                 }
             }
         }

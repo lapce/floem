@@ -218,10 +218,10 @@ impl View for ToggleButton {
                 key,
                 ..
             }) => {
-                if *key == Key::Named(NamedKey::Enter) {
-                    if let Some(ontoggle) = &self.ontoggle {
-                        ontoggle(!self.state);
-                    }
+                if *key == Key::Named(NamedKey::Enter)
+                    && let Some(ontoggle) = &self.ontoggle
+                {
+                    ontoggle(!self.state);
                 }
             }
             _ => {}

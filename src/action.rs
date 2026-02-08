@@ -10,7 +10,7 @@ use std::sync::atomic::AtomicU64;
 
 use floem_reactive::{SignalWith, UpdaterEffect};
 use peniko::kurbo::{Point, Size, Vec2};
-use winit::window::{ResizeDirection, Theme};
+use winit::window::{ImeSurroundingText, ResizeDirection, Theme};
 
 use crate::platform::{Duration, Instant};
 
@@ -255,13 +255,21 @@ pub fn clear_app_focus() {
 }
 
 /// Set whether ime input is shown.
-pub fn set_ime_allowed(allowed: bool) {
-    add_update_message(UpdateMessage::SetImeAllowed { allowed });
+pub fn set_ime_allowed(allowed: bool, surrounding_text: Option<ImeSurroundingText>) {
+    add_update_message(UpdateMessage::SetImeAllowed {
+        allowed,
+        surrounding_text,
+    });
 }
 
 /// Set the ime cursor area.
 pub fn set_ime_cursor_area(position: Point, size: Size) {
     add_update_message(UpdateMessage::SetImeCursorArea { position, size });
+}
+
+/// Set the ime surrounding text.
+pub fn set_ime_surrounding_text(surrounding: ImeSurroundingText) {
+    add_update_message(UpdateMessage::SetImeSurroundingText(surrounding));
 }
 
 /// Creates a new overlay on the current window.

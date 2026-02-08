@@ -74,10 +74,10 @@ impl<T: 'static> View for ValueContainer<T> {
     }
 
     fn update(&mut self, _cx: &mut UpdateCx, state: Box<dyn Any>) {
-        if let Ok(state) = state.downcast::<T>() {
-            if let Some(on_update) = self.on_update.as_ref() {
-                on_update(*state);
-            }
+        if let Ok(state) = state.downcast::<T>()
+            && let Some(on_update) = self.on_update.as_ref()
+        {
+            on_update(*state);
         }
     }
 }

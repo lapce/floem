@@ -66,16 +66,16 @@ impl<T: StylePropValue> TransitionState<T> {
             if let Some(transition) = &self.transition {
                 let time = now.saturating_duration_since(active.start);
                 let time_percent = time.as_secs_f64() / transition.duration.as_secs_f64();
-                if time < transition.duration || !transition.easing.finished(time_percent) {
-                    if let Some(i) = T::interpolate(
+                if (time < transition.duration || !transition.easing.finished(time_percent))
+                    && let Some(i) = T::interpolate(
                         &active.before,
                         &active.after,
                         transition.easing.eval(time_percent),
-                    ) {
-                        active.current = i;
-                        *request_transition = true;
-                        return true;
-                    }
+                    )
+                {
+                    active.current = i;
+                    *request_transition = true;
+                    return true;
                 }
             }
             // time has past duration, or the value is not interpolatable

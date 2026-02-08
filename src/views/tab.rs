@@ -291,14 +291,13 @@ impl<T> View for Tab<T> {
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        if let Some(active_tab) = self.active {
-            if let Some(Some((active, _))) = self
+        if let Some(active_tab) = self.active
+            && let Some(Some((active, _))) = self
                 .children
                 .get(active_tab)
                 .or_else(|| self.children.first())
-            {
-                cx.paint_view(*active);
-            }
+        {
+            cx.paint_view(*active);
         }
     }
 }
