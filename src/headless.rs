@@ -23,7 +23,7 @@
 
 use peniko::kurbo::{Point, Size};
 
-use crate::VisualId;
+use crate::ElementId;
 use crate::context::InteractionState;
 use crate::event::Event;
 use crate::event::path::hit_test;
@@ -245,27 +245,27 @@ impl HeadlessHarness {
     }
 
     /// Find the visual id at the given position (hit test).
-    pub fn visual_id_at(&self, x: f64, y: f64) -> Option<VisualId> {
+    pub fn element_id_at(&self, x: f64, y: f64) -> Option<ElementId> {
         hit_test(self.root_id(), Point::new(x, y)).map(|v| v.0)
     }
 
     /// Check if a view is currently in the "clicking" state (pointer down but not up).
-    pub fn is_clicking(&self, id: impl Into<VisualId>) -> bool {
+    pub fn is_clicking(&self, id: impl Into<ElementId>) -> bool {
         self.window_handle.window_state.is_clicking(id)
     }
 
     /// Check if a view is currently hovered.
-    pub fn is_hovered(&self, id: impl Into<VisualId>) -> bool {
+    pub fn is_hovered(&self, id: impl Into<ElementId>) -> bool {
         self.window_handle.window_state.is_hovered(id)
     }
 
     /// Check if a view is currently focused.
-    pub fn is_focused(&self, id: impl Into<VisualId>) -> bool {
+    pub fn is_focused(&self, id: impl Into<ElementId>) -> bool {
         self.window_handle.window_state.is_focused(id)
     }
 
     /// Check if a view has pointer capture.
-    pub fn has_capture(&self, id: impl Into<VisualId>) -> bool {
+    pub fn has_capture(&self, id: impl Into<ElementId>) -> bool {
         self.window_handle.window_state.has_capture(id)
     }
 
@@ -273,9 +273,9 @@ impl HeadlessHarness {
     ///
     /// This returns the same state used during style computation to determine
     /// which style selectors (hover, active, focused, etc.) apply to the view.
-    pub fn get_interaction_state(&self, id: impl Into<VisualId>) -> InteractionState {
-        let id: VisualId = id.into();
-        let view_id = id.view_id();
+    pub fn get_interaction_state(&self, id: impl Into<ElementId>) -> InteractionState {
+        let id: ElementId = id.into();
+        let view_id = id.owning_id();
         InteractionState {
             is_selected: view_id.is_selected(),
             is_hovered: self.window_handle.window_state.is_hovered(id),

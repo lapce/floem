@@ -998,11 +998,17 @@ pub trait View {
         EventPropagation::Continue
     }
 
-    /// `View`-specific implementation. Will be called in [`PaintCx::paint_view`](crate::context::PaintCx::paint_view).
-    /// Usually you'll call `paint_view` for every child view. But you might also draw text, adjust the offset, clip
-    /// or draw text.
+    /// `View`-specific implementation. Called during paint traversal for this view.
+    /// Children are painted automatically by Floem.
+    /// Views should only paint their own content (backgrounds, borders, custom drawing).
     fn paint(&mut self, cx: &mut PaintCx) {
-        cx.paint_children(self.id());
+        let _ = cx;
+        // Default implementation: no custom painting
+        // Children are painted automatically by traversal
+    }
+
+    fn post_paint(&mut self, cx: &mut PaintCx) {
+        let _ = cx;
     }
 
     /// Scrolls the view and all direct and indirect children to bring the `target` view to be
@@ -1050,6 +1056,10 @@ impl View for Box<dyn View> {
     }
 
     fn paint(&mut self, cx: &mut PaintCx) {
+        (**self).paint(cx)
+    }
+
+    fn post_paint(&mut self, cx: &mut PaintCx) {
         (**self).paint(cx)
     }
 

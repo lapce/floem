@@ -56,7 +56,7 @@ impl CapturedView {
         let view_state = view_state.borrow();
         let combined_style = view_state.combined_style.clone();
         let keyboard_navigable = view_state.combined_style.builtin().keyboard_navigable();
-        let focused = window_state.focus_state.current_path().last() == Some(&id.get_visual_id());
+        let focused = window_state.focus_state.current_path().last() == Some(&id.get_element_id());
         let clipped = layout.intersect(clip);
         let custom_name = &view_state.debug_name;
         let classes = view_state.classes.clone();

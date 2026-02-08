@@ -273,7 +273,7 @@ impl View for Slider {
                     self.id.dispatch_event(
                         Event::new_custom(SliderHover { state: hover_state }),
                         crate::event::DispatchKind::Directed {
-                            target: self.id.get_visual_id(),
+                            target: self.id.get_element_id(),
                             phases: crate::context::Phases::TARGET,
                         },
                     );
@@ -310,7 +310,7 @@ impl View for Slider {
             self.id.dispatch_event(
                 Event::new_custom(SliderChanged { state: self.state }),
                 crate::event::DispatchKind::Directed {
-                    target: self.id.get_visual_id(),
+                    target: self.id.get_element_id(),
                     phases: crate::context::Phases::TARGET,
                 },
             );
@@ -344,8 +344,7 @@ impl View for Slider {
                 .unwrap_or(palette::css::BLACK.into()),
             0.,
         );
-        cx.save();
-        // this clip doesn't currently work because clipping only clips to the bounds of a rectangle, not including border radius.
+        // Apply temporary clip for accent bar
         cx.clip(&self.base_bar);
         cx.fill(
             &self.accent_bar,
@@ -355,7 +354,7 @@ impl View for Slider {
                 .unwrap_or(palette::css::TRANSPARENT.into()),
             0.,
         );
-        cx.restore();
+        cx.clear_clip();
 
         if let Some(color) = self.style.foreground() {
             cx.fill(&self.handle, &color, 0.);

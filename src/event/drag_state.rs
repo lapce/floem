@@ -8,11 +8,11 @@ use ui_events::pointer::{
 };
 
 use crate::{
-    BoxTree, VisualId,
+    BoxTree, ElementId,
     action::{TimerToken, add_update_message},
     animate::easing::{Easing, Linear},
     event::{
-        DragCancelEvent, DragDropEvent, DragEnterEvent, DragLeaveEvent, DragMoveEvent,
+        DragCancelEvent, DragEndEvent, DragEnterEvent, DragLeaveEvent, DragMoveEvent,
         DragSourceEvent, DragStartEvent, DragTargetEvent,
     },
     message::UpdateMessage,
@@ -105,7 +105,7 @@ impl Default for DragConfig {
 
 #[derive(Clone, Debug)]
 pub(crate) struct DraggingPreview {
-    pub visual_id: VisualId,
+    pub element_id: ElementId,
     pub drag_point_pct: (Pct, Pct),
 }
 
@@ -174,14 +174,14 @@ pub(crate) struct DragTracker {
     pub active_drag: Option<ActiveDragState>,
 
     /// Hover state for tracking drag enter/leave events on drop targets.
-    pub hover_state: understory_event_state::hover::HoverState<VisualId>,
+    pub hover_state: understory_event_state::hover::HoverState<ElementId>,
 }
 
 /// State of a pending drag request (before threshold exceeded).
 #[derive(Clone, Debug)]
 pub(crate) struct PendingDragState {
     /// The element that requested drag
-    pub element_id: VisualId,
+    pub element_id: ElementId,
     /// Pointer ID
     pub pointer_id: PointerId,
     /// Pointer state when drag was requested
@@ -208,7 +208,7 @@ pub(crate) struct PendingDragState {
 #[derive(Clone, Debug)]
 pub(crate) struct ActiveDragState {
     /// The element being dragged
-    pub visual_id: VisualId,
+    pub element_id: ElementId,
     /// Current pointer state
     pub current_state: PointerState,
     /// Pointer state when drag started
@@ -383,8 +383,8 @@ impl ActiveDragState {
 
 /// Events that need to be dispatched, with target element IDs.
 pub(crate) enum DragEventDispatch {
-    Source(VisualId, DragSourceEvent),
-    Target(VisualId, DragTargetEvent),
+    Source(ElementId, DragSourceEvent),
+    Target(ElementId, DragTargetEvent),
 }
 
 impl DragTracker {
@@ -402,14 +402,14 @@ impl DragTracker {
     }
 
     /// Returns the ID of the element being dragged, if any.
-    pub fn dragging_element(&self) -> Option<VisualId> {
-        self.active_drag.as_ref().map(|d| d.visual_id)
+    pub fn dragging_element(&self) -> Option<ElementId> {
+        self.active_drag.as_ref().map(|d| d.element_id)
     }
 
     /// Request a drag for an element that has pointer capture.
     pub fn request_drag(
         &mut self,
-        element_id: VisualId,
+        element_id: ElementId,
         pointer_id: PointerId,
         pointer_state: PointerState,
         button: Option<PointerButton>,
@@ -483,7 +483,7 @@ impl DragTracker {
                 let pct_y = Pct((click_offset_y / local_bounds.height()) * 100.0);
 
                 Some(DraggingPreview {
-                    visual_id: pending.element_id,
+                    element_id: pending.element_id,
                     drag_point_pct: (pct_x, pct_y),
                 })
             } else {
@@ -491,7 +491,7 @@ impl DragTracker {
             };
 
             self.active_drag = Some(ActiveDragState {
-                visual_id: pending.element_id,
+                element_id: pending.element_id,
                 current_state: move_event.current.clone(),
                 start_state: pending.start_state.clone(),
                 pointer_id: pending.pointer_id,
@@ -527,7 +527,7 @@ impl DragTracker {
     pub fn on_pointer_move(
         &mut self,
         move_event: &PointerUpdate,
-        hover_path: &[VisualId],
+        hover_path: &[ElementId],
     ) -> Vec<DragEventDispatch> {
         let state = match self.active_drag.as_mut() {
             Some(s) => s,
@@ -544,7 +544,7 @@ impl DragTracker {
 
         // Emit Move event to the dragged element
         events.push(DragEventDispatch::Source(
-            state.visual_id,
+            state.element_id,
             DragSourceEvent::Move(DragMoveEvent {
                 other_element: None,
                 start_state: state.start_state.clone(),
@@ -555,7 +555,7 @@ impl DragTracker {
             }),
         ));
 
-        let dragged_id = state.visual_id;
+        let dragged_id = state.element_id;
         let track_targets = state.track_targets;
 
         // Only track drop targets if enabled
@@ -668,10 +668,10 @@ impl DragTracker {
             let hover_events = self.hover_state.clear();
             for hover_event in hover_events {
                 if let understory_event_state::hover::HoverEvent::Leave(target) = hover_event {
-                    if target != state.visual_id {
+                    if target != state.element_id {
                         // Send Leave to the dragged element
                         events.push(DragEventDispatch::Source(
-                            state.visual_id,
+                            state.element_id,
                             DragSourceEvent::Leave(DragLeaveEvent {
                                 other_element: target,
                                 start_state: state.start_state.clone(),
@@ -686,7 +686,7 @@ impl DragTracker {
                         events.push(DragEventDispatch::Target(
                             target,
                             DragTargetEvent::Leave(DragLeaveEvent {
-                                other_element: state.visual_id,
+                                other_element: state.element_id,
                                 start_state: state.start_state.clone(),
                                 current_state: button_event.state.clone(),
                                 button: state.button,
@@ -699,11 +699,11 @@ impl DragTracker {
             }
 
             if let Some(drop_target_id) = drop_target {
-                if drop_target_id != state.visual_id {
-                    // Send Drop to the dragged element (with the target in other_element)
+                if drop_target_id != state.element_id {
+                    // Send End to the dragged element (with the target in other_element)
                     events.push(DragEventDispatch::Source(
-                        state.visual_id,
-                        DragSourceEvent::Drop(DragDropEvent {
+                        state.element_id,
+                        DragSourceEvent::End(DragEndEvent {
                             other_element: Some(drop_target_id),
                             start_state: state.start_state.clone(),
                             current_state: button_event.state.clone(),
@@ -716,8 +716,8 @@ impl DragTracker {
                     // Send Drop to the drop target (with the dragged element in other_element)
                     events.push(DragEventDispatch::Target(
                         drop_target_id,
-                        DragTargetEvent::Drop(DragDropEvent {
-                            other_element: Some(state.visual_id),
+                        DragTargetEvent::Drop(DragEndEvent {
+                            other_element: Some(state.element_id),
                             start_state: state.start_state.clone(),
                             current_state: button_event.state.clone(),
                             button: state.button,
@@ -726,10 +726,10 @@ impl DragTracker {
                         }),
                     ));
                 } else {
-                    // Dropped on self - just send Drop to source with no target
+                    // Dropped on self - just send End to source with no target
                     events.push(DragEventDispatch::Source(
-                        state.visual_id,
-                        DragSourceEvent::Drop(DragDropEvent {
+                        state.element_id,
+                        DragSourceEvent::End(DragEndEvent {
                             other_element: None,
                             start_state: state.start_state.clone(),
                             current_state: button_event.state.clone(),
@@ -740,10 +740,10 @@ impl DragTracker {
                     ));
                 }
             } else {
-                // No drop target - send Drop (no target) to the dragged element
+                // No drop target - send End (no target) to the dragged element
                 events.push(DragEventDispatch::Source(
-                    state.visual_id,
-                    DragSourceEvent::Drop(DragDropEvent {
+                    state.element_id,
+                    DragSourceEvent::End(DragEndEvent {
                         other_element: None,
                         start_state: state.start_state.clone(),
                         current_state: button_event.state.clone(),
@@ -754,10 +754,10 @@ impl DragTracker {
                 ));
             }
         } else {
-            // track_targets is false - just send Drop to source
+            // track_targets is false - just send End to source
             events.push(DragEventDispatch::Source(
-                state.visual_id,
-                DragSourceEvent::Drop(DragDropEvent {
+                state.element_id,
+                DragSourceEvent::End(DragEndEvent {
                     other_element: None,
                     start_state: state.start_state.clone(),
                     current_state: button_event.state.clone(),
@@ -803,10 +803,10 @@ impl DragTracker {
             let hover_events = self.hover_state.clear();
             for hover_event in hover_events {
                 if let understory_event_state::hover::HoverEvent::Leave(drop_target) = hover_event {
-                    if drop_target != state.visual_id {
+                    if drop_target != state.element_id {
                         // Send Leave to the dragged element
                         events.push(DragEventDispatch::Source(
-                            state.visual_id,
+                            state.element_id,
                             DragSourceEvent::Leave(DragLeaveEvent {
                                 other_element: drop_target,
                                 start_state: state.start_state.clone(),
@@ -821,7 +821,7 @@ impl DragTracker {
                         events.push(DragEventDispatch::Target(
                             drop_target,
                             DragTargetEvent::Leave(DragLeaveEvent {
-                                other_element: state.visual_id,
+                                other_element: state.element_id,
                                 start_state: state.start_state.clone(),
                                 current_state: state.current_state.clone(),
                                 button: state.button,
@@ -836,7 +836,7 @@ impl DragTracker {
 
         // Cancel event to the dragged element
         events.push(DragEventDispatch::Source(
-            state.visual_id,
+            state.element_id,
             DragSourceEvent::Cancel(DragCancelEvent {
                 start_state: state.start_state.clone(),
                 current_state: state.current_state.clone(),

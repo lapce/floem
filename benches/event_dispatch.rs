@@ -235,7 +235,7 @@ fn bench_hit_testing(c: &mut Criterion) {
             let harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
             b.iter(|| {
-                harness.visual_id_at(black_box(50.0), black_box(50.0));
+                harness.element_id_at(black_box(50.0), black_box(50.0));
             });
         });
     }
@@ -246,7 +246,7 @@ fn bench_hit_testing(c: &mut Criterion) {
             let harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
             b.iter(|| {
-                harness.visual_id_at(black_box(50.0), black_box(50.0));
+                harness.element_id_at(black_box(50.0), black_box(50.0));
             });
         });
     }
@@ -257,7 +257,7 @@ fn bench_hit_testing(c: &mut Criterion) {
         let harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
         b.iter(|| {
-            harness.visual_id_at(black_box(150.0), black_box(150.0));
+            harness.element_id_at(black_box(150.0), black_box(150.0));
         });
     });
 
@@ -419,7 +419,7 @@ fn bench_cache_effectiveness(c: &mut Criterion) {
 
                 b.iter(|| {
                     for _ in 0..20 {
-                        black_box(harness.visual_id_at(black_box(50.0), black_box(50.0)));
+                        black_box(harness.element_id_at(black_box(50.0), black_box(50.0)));
                     }
                 });
             },

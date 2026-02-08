@@ -26,7 +26,7 @@ use crate::event::DispatchKind;
 use crate::event::listener::EventListenerKey;
 use crate::view::LayoutTree;
 use crate::window::handle::get_current_view;
-use crate::{BoxTree, VisualId};
+use crate::{BoxTree, ElementId};
 use crate::{
     ScreenLayout,
     action::add_update_message,
@@ -155,9 +155,6 @@ impl ViewId {
             // remove the reverse mapping for taffy nodes
             let taffy_node = s.state(*self).borrow().layout_id;
             s.taffy_to_view.remove(&taffy_node);
-            // remove the reverse mapping for visual ids
-            let visual_id = s.state(*self).borrow().visual_id;
-            s.visual_id_to_view.remove(&visual_id);
 
             // Remove the cached root, in the (unlikely) case that this view is
             // re-added to a different window
@@ -182,7 +179,7 @@ impl ViewId {
         });
         // Invalidate parent's stacking cache since its children changed
         if let Some(parent) = parent {
-            invalidate_stacking_cache(parent.get_visual_id());
+            invalidate_stacking_cache(parent.get_element_id());
         }
     }
 
@@ -276,15 +273,15 @@ impl ViewId {
     /// Add a child View to this Id's list of children
     pub fn add_child(&self, child: Box<dyn View>) {
         let child_id = child.id();
-        let child_visual_id = child_id.get_visual_id();
-        let this_visual_id = self.get_visual_id();
+        let child_element_id = child_id.get_element_id();
+        let this_element_id = self.get_element_id();
         VIEW_STORAGE.with_borrow_mut(|s| {
             s.children.entry(*self).unwrap().or_default().push(child_id);
             s.parent.insert(child_id, Some(*self));
             s.views.insert(child_id, Rc::new(RefCell::new(child)));
             s.box_tree(child_id)
                 .borrow_mut()
-                .reparent(child_visual_id.0, Some(this_visual_id.0));
+                .reparent(child_element_id.0, Some(this_element_id.0));
             let child_taffy_node = s.state(child_id).borrow().layout_id;
             let this_taffy_node = s.state(*self).borrow().layout_id;
             let _ = s
@@ -296,7 +293,7 @@ impl ViewId {
         // This ensures scope hierarchy matches view hierarchy for proper cleanup.
         reparent_scope_if_needed(child_id, *self);
         // Invalidate stacking cache since children changed
-        invalidate_stacking_cache(self.get_visual_id());
+        invalidate_stacking_cache(self.get_element_id());
     }
 
     /// Append multiple children to this Id's list of children.
@@ -309,11 +306,11 @@ impl ViewId {
     pub fn append_children(&self, children: Vec<Box<dyn View>>) {
         let child_ids: Vec<ViewId> = children.iter().map(|c| c.id()).collect();
         VIEW_STORAGE.with_borrow_mut(|s| {
-            let this_visual_id = s.state(*self).borrow().visual_id;
+            let this_element_id = s.state(*self).borrow().element_id;
             let this_taffy_node = s.state(*self).borrow().layout_id;
-            let child_visual_ids: Vec<_> = children
+            let child_element_ids: Vec<_> = children
                 .iter()
-                .map(|c| s.state(c.id()).borrow().visual_id)
+                .map(|c| s.state(c.id()).borrow().element_id)
                 .collect();
             let child_taffy_nodes: Vec<_> = children
                 .iter()
@@ -324,9 +321,9 @@ impl ViewId {
             let layout_tree = s.taffy.clone();
 
             let children_list = s.children.entry(*self).unwrap().or_default();
-            for ((child, child_visual_id), child_taffy_node) in children
+            for ((child, child_element_id), child_taffy_node) in children
                 .into_iter()
-                .zip(child_visual_ids)
+                .zip(child_element_ids)
                 .zip(child_taffy_nodes)
             {
                 let child_id = child.id();
@@ -335,7 +332,7 @@ impl ViewId {
                 s.views.insert(child_id, Rc::new(RefCell::new(child)));
                 box_tree
                     .borrow_mut()
-                    .reparent(child_visual_id.0, Some(this_visual_id.0));
+                    .reparent(child_element_id.0, Some(this_element_id.0));
                 let _ = layout_tree
                     .borrow_mut()
                     .add_child(this_taffy_node, child_taffy_node);
@@ -346,14 +343,14 @@ impl ViewId {
             reparent_scope_if_needed(child_id, *self);
         }
         // Invalidate stacking cache since children changed
-        invalidate_stacking_cache(self.get_visual_id());
+        invalidate_stacking_cache(self.get_element_id());
     }
 
     /// Set the children views of this Id
     /// See also [`Self::set_children_vec`]
     pub fn set_children<const N: usize, V: IntoView>(&self, children: [V; N]) {
         let children_ids: Vec<ViewId> = VIEW_STORAGE.with_borrow_mut(|s| {
-            let this_visual_id = s.state(*self).borrow().visual_id;
+            let this_element_id = s.state(*self).borrow().element_id;
             let mut children_ids = Vec::new();
             let mut children_nodes = Vec::with_capacity(children.len());
             let box_tree = s.box_tree(*self);
@@ -361,7 +358,7 @@ impl ViewId {
             for child in children {
                 let child_view = child.into_view();
                 let child_view_id = child_view.id();
-                let child_visual_id = s.state(child_view_id).borrow().visual_id;
+                let child_element_id = s.state(child_view_id).borrow().element_id;
                 let child_taffy_node = s.state(child_view_id).borrow().layout_id;
                 children_nodes.push(child_taffy_node);
                 children_ids.push(child_view_id);
@@ -371,7 +368,7 @@ impl ViewId {
 
                 box_tree
                     .borrow_mut()
-                    .reparent(child_visual_id.0, Some(this_visual_id.0));
+                    .reparent(child_element_id.0, Some(this_element_id.0));
             }
             s.children.insert(*self, children_ids.clone());
             let this_taffy_node = s.state(*self).borrow().layout_id;
@@ -385,7 +382,7 @@ impl ViewId {
             reparent_scope_if_needed(child_id, *self);
         }
         // Invalidate stacking cache since children changed
-        invalidate_stacking_cache(self.get_visual_id());
+        invalidate_stacking_cache(self.get_element_id());
     }
 
     /// Set the children views of this Id using a Vector
@@ -402,14 +399,14 @@ impl ViewId {
     /// See also [`Self::set_children`] and [`Self::set_children_vec`]
     pub fn set_children_iter(&self, children: impl Iterator<Item = Box<dyn View>>) {
         let children_ids: Vec<ViewId> = VIEW_STORAGE.with_borrow_mut(|s| {
-            let this_visual_id = s.state(*self).borrow().visual_id;
+            let this_element_id = s.state(*self).borrow().element_id;
             let mut children_ids = Vec::new();
             let mut children_nodes = Vec::new();
             let box_tree = s.box_tree(*self);
             let layout_tree = s.taffy.clone();
             for child_view in children {
                 let child_view_id = child_view.id();
-                let child_visual_id = s.state(child_view_id).borrow().visual_id;
+                let child_element_id = s.state(child_view_id).borrow().element_id;
                 let child_taffy_node = s.state(child_view_id).borrow().layout_id;
                 children_ids.push(child_view_id);
                 children_nodes.push(child_taffy_node);
@@ -418,7 +415,7 @@ impl ViewId {
                     .insert(child_view_id, Rc::new(RefCell::new(child_view)));
                 box_tree
                     .borrow_mut()
-                    .reparent(child_visual_id.0, Some(this_visual_id.0));
+                    .reparent(child_element_id.0, Some(this_element_id.0));
             }
             s.children.insert(*self, children_ids.clone());
             let this_taffy_node = s.state(*self).borrow().layout_id;
@@ -432,7 +429,7 @@ impl ViewId {
             reparent_scope_if_needed(child_id, *self);
         }
         // Invalidate stacking cache since children changed
-        invalidate_stacking_cache(self.get_visual_id());
+        invalidate_stacking_cache(self.get_element_id());
     }
 
     /// Set the view that should be associated with this Id
@@ -448,13 +445,13 @@ impl ViewId {
     pub fn set_parent(&self, parent: ViewId) {
         VIEW_STORAGE.with_borrow_mut(|s| {
             if s.view_ids.contains_key(*self) {
-                let this_visual_id = s.state(*self).borrow().visual_id;
-                let parent_visual_id = s.state(parent).borrow().visual_id;
+                let this_element_id = s.state(*self).borrow().element_id;
+                let parent_element_id = s.state(parent).borrow().element_id;
                 s.parent.insert(*self, Some(parent));
                 let box_tree = s.box_tree(*self);
                 box_tree
                     .borrow_mut()
-                    .reparent(this_visual_id.0, Some(parent_visual_id.0));
+                    .reparent(this_element_id.0, Some(parent_element_id.0));
             }
         });
     }
@@ -466,12 +463,12 @@ impl ViewId {
                 return;
             }
 
-            let this_visual_id = s.state(*self).borrow().visual_id;
+            let this_element_id = s.state(*self).borrow().element_id;
             let this_taffy_node = s.state(*self).borrow().layout_id;
 
-            let child_visual_ids: Vec<_> = children
+            let child_element_ids: Vec<_> = children
                 .iter()
-                .map(|&child_id| s.state(child_id).borrow().visual_id)
+                .map(|&child_id| s.state(child_id).borrow().element_id)
                 .collect();
             let taffy_children: Vec<_> = children
                 .iter()
@@ -480,11 +477,11 @@ impl ViewId {
 
             let box_tree = s.box_tree(*self);
             let layout_tree = s.taffy.clone();
-            for (&child_id, child_visual_id) in children.iter().zip(child_visual_ids) {
+            for (&child_id, child_element_id) in children.iter().zip(child_element_ids) {
                 s.parent.insert(child_id, Some(*self));
                 box_tree
                     .borrow_mut()
-                    .reparent(child_visual_id.0, Some(this_visual_id.0));
+                    .reparent(child_element_id.0, Some(this_element_id.0));
             }
 
             let _ = layout_tree
@@ -493,7 +490,7 @@ impl ViewId {
             s.children.insert(*self, children);
         });
         // Invalidate stacking cache since children changed
-        invalidate_stacking_cache(self.get_visual_id());
+        invalidate_stacking_cache(self.get_element_id());
     }
 
     /// Get the list of `ViewId`s that are associated with the children views of this `ViewId`
@@ -558,8 +555,8 @@ impl ViewId {
     /// Returns the [`Visualid`] associated with this view.
     ///
     /// This id can be used with the box tree.
-    pub fn get_visual_id(&self) -> VisualId {
-        self.state().borrow().visual_id
+    pub fn get_element_id(&self) -> ElementId {
+        self.state().borrow().element_id
     }
 
     /// Returns the complete local-to-window coordinate transform.
@@ -574,10 +571,10 @@ impl ViewId {
     ///
     /// This is the transform used by event dispatch to convert pointer coordinates.
     pub fn get_visual_transform(&self) -> peniko::kurbo::Affine {
-        let visual_id = self.get_visual_id();
+        let element_id = self.get_element_id();
         VIEW_STORAGE.with_borrow_mut(|s| {
             let box_tree = s.box_tree(*self);
-            match box_tree.borrow().world_transform(visual_id.0) {
+            match box_tree.borrow().world_transform(element_id.0) {
                 Ok(transform) => transform,
                 Err(transform) => transform.value().unwrap(),
             }
@@ -590,11 +587,11 @@ impl ViewId {
     /// It fully contains the transformed bounds but may not be tight, especially under rotation
     /// or rounded clips.
     pub fn get_visual_rect(&self) -> Rect {
-        let visual_id = self.get_visual_id();
+        let element_id = self.get_element_id();
         VIEW_STORAGE.with_borrow_mut(|s| {
             let box_tree = s.box_tree(*self);
 
-            match box_tree.borrow().world_bounds(visual_id.0) {
+            match box_tree.borrow().world_bounds(element_id.0) {
                 Ok(bounds) => bounds,
                 Err(bounds) => bounds.value().unwrap(),
             }
@@ -603,11 +600,11 @@ impl ViewId {
 
     /// Returns the view's visual position (after applying all clips clips and css transforms) in window coordinates.
     pub fn get_visual_origin(&self) -> peniko::kurbo::Point {
-        let visual_id = self.get_visual_id();
+        let element_id = self.get_element_id();
         VIEW_STORAGE
             .with_borrow_mut(|s| {
                 let box_tree = s.box_tree(*self);
-                match box_tree.borrow().world_bounds(visual_id.0) {
+                match box_tree.borrow().world_bounds(element_id.0) {
                     Ok(bounds) => bounds,
                     Err(bounds) => bounds.value().unwrap(),
                 }
@@ -740,10 +737,10 @@ impl ViewId {
 
     /// set the clip rectange in local coordinates in the box tree
     pub fn set_box_tree_clip(&self, clip: Option<RoundedRect>) {
-        let visual_id = self.get_visual_id();
+        let element_id = self.get_element_id();
         VIEW_STORAGE.with_borrow_mut(|s| {
             let box_tree = s.box_tree(*self);
-            box_tree.borrow_mut().set_local_clip(visual_id.0, clip)
+            box_tree.borrow_mut().set_local_clip(element_id.0, clip)
         })
     }
 
@@ -883,7 +880,7 @@ impl ViewId {
 
     /// Request that this view gain the window focus
     pub fn request_focus(&self) {
-        self.add_update_message(UpdateMessage::Focus(self.get_visual_id()));
+        self.add_update_message(UpdateMessage::Focus(self.get_element_id()));
     }
 
     /// Clear the focus from this window
@@ -1235,11 +1232,11 @@ impl ViewId {
 
     /// get the local clip
     pub fn get_local_clip(&self) -> Option<RoundedRect> {
-        let visual_id = self.get_visual_id();
+        let element_id = self.get_element_id();
         VIEW_STORAGE
             .with_borrow_mut(|s| {
                 let box_tree = s.box_tree(*self);
-                box_tree.borrow().local_clip(visual_id.0)
+                box_tree.borrow().local_clip(element_id.0)
             })
             .flatten()
     }
@@ -1247,18 +1244,18 @@ impl ViewId {
     /// Create a visual that is a child of the current view.
     ///
     /// This will make it so that the visual id can receive events through the `ViewID`
-    pub fn create_child_visual_id(&self) -> VisualId {
-        let parent_box_node = self.get_visual_id();
+    pub fn create_child_element_id(&self) -> ElementId {
+        let parent_box_node = self.get_element_id();
         VIEW_STORAGE.with_borrow_mut(|s| {
             let box_tree = s.box_tree(*self);
-            let child_visual_id = box_tree.borrow_mut().insert(
+            let child_element_id = box_tree.borrow_mut().insert(
                 Some(parent_box_node.0),
                 understory_box_tree::LocalNode::default(),
             );
-            let root = s.root.get(*self).expect("all view ids to have a root");
-            s.visual_id_to_view
-                .insert(VisualId(child_visual_id, *root), *self);
-            VisualId(child_visual_id, *root)
+            box_tree
+                .borrow_mut()
+                .set_meta(child_element_id, Some(*self));
+            ElementId(child_element_id, *self)
         })
     }
 
@@ -1301,7 +1298,7 @@ impl ViewId {
     /// view_id.dispatch_event(
     ///     Event::Interaction(InteractionEvent::Click),
     ///     DispatchKind::Directed {
-    ///         target: view_id.get_visual_id(),
+    ///         target: view_id.get_element_id(),
     ///         phases: Phases::TARGET
     ///     }
     /// );
@@ -1344,9 +1341,9 @@ impl ViewId {
     }
 }
 
-impl From<ViewId> for VisualId {
+impl From<ViewId> for ElementId {
     fn from(value: ViewId) -> Self {
-        value.get_visual_id()
+        value.get_element_id()
     }
 }
 

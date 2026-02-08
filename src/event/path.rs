@@ -8,7 +8,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use peniko::kurbo::Point;
 
-use crate::{VisualId, view::ViewId};
+use crate::{ElementId, view::ViewId};
 
 // ============================================================================
 // Hit Test Result Cache
@@ -26,12 +26,12 @@ use crate::{VisualId, view::ViewId};
 /// Cache entry for hit test results.
 #[derive(Clone)]
 struct HitTestCacheEntry {
-    /// The root visual ID for this hit test
-    root_id: crate::VisualId,
+    /// The root element ID for this hit test
+    root_id: crate::ElementId,
     /// The point that was tested (in window coordinates)
     point: Point,
     /// The result of the hit test: (target node, full path from root to target)
-    result: Option<(crate::VisualId, Rc<[crate::VisualId]>)>,
+    result: Option<(crate::ElementId, Rc<[crate::ElementId]>)>,
 }
 
 /// 2-entry hit test result cache.
@@ -55,9 +55,9 @@ impl HitTestCache {
     #[inline]
     fn lookup(
         &self,
-        root_id: crate::VisualId,
+        root_id: crate::ElementId,
         point: Point,
-    ) -> Option<Option<(crate::VisualId, Rc<[crate::VisualId]>)>> {
+    ) -> Option<Option<(crate::ElementId, Rc<[crate::ElementId]>)>> {
         for e in self.entries.iter().flatten() {
             // Use bitwise comparison for Point (exact match like Blink)
             if e.root_id == root_id
@@ -74,9 +74,9 @@ impl HitTestCache {
     #[inline]
     fn insert(
         &mut self,
-        root_id: crate::VisualId,
+        root_id: crate::ElementId,
         point: Point,
-        result: Option<(crate::VisualId, Rc<[crate::VisualId]>)>,
+        result: Option<(crate::ElementId, Rc<[crate::ElementId]>)>,
     ) {
         self.entries[self.next_slot] = Some(HitTestCacheEntry {
             root_id,
@@ -118,11 +118,11 @@ pub fn clear_hit_test_cache() {
 ///
 /// # Returns
 /// Optional tuple of (target VisualId, path from root to target as Rc<[VisualId]>)
-pub fn hit_test(root_id: ViewId, point: Point) -> Option<(VisualId, Rc<[VisualId]>)> {
-    let root_visual_id = root_id.get_visual_id();
+pub fn hit_test(root_id: ViewId, point: Point) -> Option<(ElementId, Rc<[ElementId]>)> {
+    let root_element_id = root_id.get_element_id();
     // Check cache first
     if let Some(cached_result) =
-        HIT_TEST_CACHE.with(|cache| cache.borrow().lookup(root_visual_id, point))
+        HIT_TEST_CACHE.with(|cache| cache.borrow().lookup(root_element_id, point))
     {
         return cached_result;
     }
@@ -134,9 +134,12 @@ pub fn hit_test(root_id: ViewId, point: Point) -> Option<(VisualId, Rc<[VisualId
     );
 
     let result = if let Some(&top_hit) = hit_ids.first() {
-        use crate::visual_id::CastIds;
-        let target = crate::VisualId(top_hit, root_id);
-        let path: Vec<_> = hit_ids.cast_ids(root_id);
+        let box_tree = box_tree.borrow();
+        let target = crate::ElementId(top_hit, box_tree.meta(top_hit).flatten().unwrap());
+        let path: Vec<_> = hit_ids
+            .iter()
+            .map(|id| crate::ElementId(*id, box_tree.meta(*id).flatten().unwrap()))
+            .collect();
         Some((target, path.into()))
     } else {
         None
@@ -146,7 +149,7 @@ pub fn hit_test(root_id: ViewId, point: Point) -> Option<(VisualId, Rc<[VisualId
     HIT_TEST_CACHE.with(|cache| {
         cache
             .borrow_mut()
-            .insert(root_visual_id, point, result.clone())
+            .insert(root_element_id, point, result.clone())
     });
     result
 }

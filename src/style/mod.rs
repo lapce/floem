@@ -158,7 +158,7 @@ use crate::layout::responsive::{ScreenSize, ScreenSizeBp};
 
 use crate::views::editor::SelectionColor;
 // Import macros from crate root (they are #[macro_export] in props.rs)
-use crate::{BoxTree, VisualId, prop, prop_extractor};
+use crate::{BoxTree, ElementId, prop, prop_extractor};
 
 mod cache;
 mod components;
@@ -1841,8 +1841,8 @@ impl BoxTreeProps {
         self.pointer_events() != Some(PointerEvents::None)
     }
 
-    pub fn set_box_tree(&self, visual_id: VisualId, box_tree: &mut BoxTree, force_hidden: bool) {
-        // box_tree.set_z_index(visual_id.0, self.z_index().unwrap_or(0));
+    pub fn set_box_tree(&self, element_id: ElementId, box_tree: &mut BoxTree, force_hidden: bool) {
+        // box_tree.set_z_index(element_id.0, self.z_index().unwrap_or(0));
         let mut flags = NodeFlags::empty();
         if self.pickable() {
             flags |= NodeFlags::PICKABLE;
@@ -1853,7 +1853,7 @@ impl BoxTreeProps {
         if self.display() != Display::None && !force_hidden {
             flags |= NodeFlags::VISIBLE;
         }
-        box_tree.set_flags(visual_id.0, flags);
+        box_tree.set_flags(element_id.0, flags);
     }
 
     pub fn clip_rect(&self, mut rect: kurbo::Rect) -> Option<RoundedRect> {

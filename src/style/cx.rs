@@ -456,10 +456,10 @@ impl<'a> StyleCx<'a> {
             {
                 let box_tree = view_id.box_tree();
                 let props = &vs.box_tree_props;
-                let visual_id = vs.visual_id;
+                let elment_id = vs.element_id;
                 let box_tree = &mut box_tree.borrow_mut();
-                let old_flags = box_tree.flags(visual_id.0);
-                box_tree.set_local_z_index(visual_id.0, vs.box_tree_props.z_index());
+                let old_flags = box_tree.flags(elment_id.0);
+                box_tree.set_local_z_index(elment_id.0, vs.box_tree_props.z_index());
                 let mut flags = NodeFlags::empty();
                 if props.pickable() {
                     flags |= NodeFlags::PICKABLE;
@@ -474,7 +474,7 @@ impl<'a> StyleCx<'a> {
                 if old_flags.is_none_or(|f| f != flags) {
                     self.window_state.needs_box_tree_commit = true;
                 }
-                box_tree.set_flags(visual_id.0, flags);
+                box_tree.set_flags(elment_id.0, flags);
             }
 
             let old_cursor = vs.style_cursor;
@@ -546,7 +546,7 @@ impl<'a> StyleCx<'a> {
             );
 
             if old_phase != phase {
-                invalidate_stacking_cache(view_id.get_visual_id());
+                invalidate_stacking_cache(view_id.get_element_id());
                 view_state.borrow_mut().visibility.phase = phase;
             }
         }
@@ -566,19 +566,19 @@ impl<'a> StyleCx<'a> {
         {
             let vs = view_state.borrow();
             let new_z_index = vs.combined_style.get(ZIndex).unwrap_or(0);
-            let visual_id = view_id.get_visual_id();
+            let element_id = view_id.get_element_id();
 
             // Get old z-index from box tree
             let box_tree = self.window_state.box_tree.borrow();
             let old_z_index = box_tree
-                .local_z_index(visual_id.0)
+                .local_z_index(element_id.0)
                 .and_then(|opt| opt)
                 .unwrap_or(0);
             drop(box_tree);
             drop(vs);
 
             if old_z_index != new_z_index {
-                invalidate_stacking_cache(visual_id);
+                invalidate_stacking_cache(element_id);
                 if view_id.is_overlay() {
                     invalidate_all_overlay_caches();
                 }
@@ -587,7 +587,7 @@ impl<'a> StyleCx<'a> {
                 self.window_state
                     .box_tree
                     .borrow_mut()
-                    .set_local_z_index(visual_id.0, Some(new_z_index));
+                    .set_local_z_index(element_id.0, Some(new_z_index));
                 self.window_state.needs_box_tree_commit = true;
             }
         }
@@ -745,9 +745,9 @@ impl<'a> StyleCx<'a> {
         }
     }
 
-    pub fn get_interact_state(&self, id: impl Into<crate::VisualId>) -> InteractionState {
-        let id: crate::VisualId = id.into();
-        let view_id = id.view_id();
+    pub fn get_interact_state(&self, id: impl Into<crate::ElementId>) -> InteractionState {
+        let id: crate::ElementId = id.into();
+        let view_id = id.owning_id();
         let icx = {
             let view_state = view_id.state();
             let view_state = view_state.borrow();

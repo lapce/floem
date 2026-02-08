@@ -9,7 +9,7 @@ use crate::{
     event::{DispatchKind, Event},
     platform::menu::Menu,
     view::{AnyView, View, ViewId},
-    visual_id::VisualId,
+    element_id::ElementId,
     window::state::WindowState,
 };
 
@@ -35,7 +35,7 @@ thread_local! {
 type DeferredUpdateMessages = HashMap<ViewId, Vec<(ViewId, Box<dyn Any>)>>;
 
 pub enum UpdateMessage {
-    Focus(VisualId),
+    Focus(ElementId),
     ClearFocus,
     /// Set pointer capture for a view (W3C Pointer Events API).
     SetPointerCapture {

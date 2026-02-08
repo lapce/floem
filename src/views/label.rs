@@ -244,7 +244,7 @@ impl TextLayoutData {
                         is_overflowing: overflows,
                     }),
                     crate::event::DispatchKind::Directed {
-                        target: id.get_visual_id(),
+                        target: id.get_element_id(),
                         phases: crate::context::Phases::TARGET,
                     },
                 );

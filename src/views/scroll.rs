@@ -13,7 +13,7 @@ use crate::event::listener::EventListenerTrait;
 use crate::event::{DispatchKind, PointerScrollEventExt};
 use crate::style::ScrollbarWidth;
 use crate::{
-    BoxTree, Renderer, VisualId,
+    BoxTree, ElementId, Renderer,
     context::{EventCx, PaintCx, StyleCx},
     event::{Event, EventPropagation, Phase},
     prop, prop_extractor,
@@ -71,7 +71,7 @@ impl Vec2Ext for Vec2 {
 
 #[derive(Debug, Clone)]
 struct ScrollHandle {
-    visual_id: VisualId,
+    element_id: ElementId,
     box_tree: Rc<RefCell<BoxTree>>,
     axis: Axis,
     /// The initial scroll offset when dragging started
@@ -84,10 +84,10 @@ struct ScrollHandle {
 impl ScrollHandle {
     fn new(parent_id: ViewId, axis: Axis) -> Self {
         let box_tree = parent_id.box_tree();
-        let visual_id = parent_id.create_child_visual_id();
+        let element_id = parent_id.create_child_element_id();
 
         Self {
-            visual_id,
+            element_id,
             box_tree,
             axis,
             drag_start_offset: None,
@@ -97,7 +97,7 @@ impl ScrollHandle {
     }
 
     fn style(&mut self, cx: &mut StyleCx) {
-        let interact_state = cx.get_interact_state(self.visual_id);
+        let interact_state = cx.get_interact_state(self.element_id);
         let resolved = cx.resolve_nested_maps_with_state(
             Style::new(),
             &[Handle::class_ref()],
@@ -118,7 +118,7 @@ impl ScrollHandle {
             Event::Pointer(PointerEvent::Down(e)) => {
                 if let Some(pointer_id) = e.pointer.pointer_id {
                     cx.window_state
-                        .set_pointer_capture(pointer_id, self.visual_id);
+                        .set_pointer_capture(pointer_id, self.element_id);
                 }
                 let pos = e.state.logical_point();
                 self.drag_start_point = Some(pos.get_coord(self.axis));
@@ -131,7 +131,7 @@ impl ScrollHandle {
                 self.drag_start_offset = None;
             }
             Event::Pointer(PointerEvent::Move(u)) => {
-                if cx.window_state.has_capture(self.visual_id) {
+                if cx.window_state.has_capture(self.element_id) {
                     if let (Some(start_point), Some(initial_offset)) =
                         (self.drag_start_point, self.drag_start_offset)
                     {
@@ -172,7 +172,7 @@ impl ScrollHandle {
                 cx.window_state.request_paint(parent_id);
             }
             Event::Pointer(PointerEvent::Leave(_)) => {
-                if !cx.window_state.has_capture(self.visual_id) {
+                if !cx.window_state.has_capture(self.element_id) {
                     *is_scrolling_or_interacting = false;
                     cx.window_state.request_paint(parent_id);
                 }
@@ -199,7 +199,7 @@ impl ScrollHandle {
             // Hide the handle
             self.box_tree
                 .borrow_mut()
-                .set_flags(self.visual_id.0, NodeFlags::empty());
+                .set_flags(self.element_id.0, NodeFlags::empty());
             return;
         }
 
@@ -239,21 +239,21 @@ impl ScrollHandle {
 
         self.box_tree
             .borrow_mut()
-            .set_local_bounds(self.visual_id.0, rect);
+            .set_local_bounds(self.element_id.0, rect);
         self.box_tree
             .borrow_mut()
-            .set_flags(self.visual_id.0, NodeFlags::VISIBLE | NodeFlags::PICKABLE);
-        self.box_tree.borrow_mut().set_z_index(self.visual_id.0, 2);
+            .set_flags(self.element_id.0, NodeFlags::VISIBLE | NodeFlags::PICKABLE);
+        self.box_tree.borrow_mut().set_z_index(self.element_id.0, 2);
     }
 
     fn paint(&self, cx: &mut PaintCx) {
         let box_tree = self.box_tree.borrow();
-        let bounds = match box_tree.world_bounds(self.visual_id.0) {
+        let bounds = match box_tree.world_bounds(self.element_id.0) {
             Ok(bounds) => bounds,
             Err(bounds) => bounds.value().unwrap(),
         };
 
-        let transform = match box_tree.world_transform(self.visual_id.0) {
+        let transform = match box_tree.world_transform(self.element_id.0) {
             Ok(transform) => transform,
             Err(transform) => transform.value().unwrap(),
         };
@@ -308,7 +308,7 @@ impl ScrollHandle {
 
 #[derive(Debug, Clone)]
 struct ScrollTrack {
-    visual_id: VisualId,
+    element_id: ElementId,
     box_tree: Rc<RefCell<BoxTree>>,
     axis: Axis,
     style: ScrollTrackStyle,
@@ -317,10 +317,10 @@ struct ScrollTrack {
 impl ScrollTrack {
     fn new(parent_id: ViewId, axis: Axis) -> Self {
         let box_tree = parent_id.box_tree();
-        let visual_id = parent_id.create_child_visual_id();
+        let element_id = parent_id.create_child_element_id();
 
         Self {
-            visual_id,
+            element_id,
             box_tree,
             axis,
             style: Default::default(),
@@ -328,7 +328,7 @@ impl ScrollTrack {
     }
 
     fn style(&mut self, cx: &mut StyleCx) {
-        let interact_state = cx.get_interact_state(self.visual_id);
+        let interact_state = cx.get_interact_state(self.element_id);
         let resolved =
             cx.resolve_nested_maps_with_state(Style::new(), &[Track::class_ref()], &interact_state);
         self.style.read_style(cx, &resolved);
@@ -408,7 +408,7 @@ impl ScrollTrack {
             // Hide the track
             self.box_tree
                 .borrow_mut()
-                .set_flags(self.visual_id.0, NodeFlags::empty());
+                .set_flags(self.element_id.0, NodeFlags::empty());
             return;
         }
 
@@ -431,21 +431,21 @@ impl ScrollTrack {
 
         self.box_tree
             .borrow_mut()
-            .set_local_bounds(self.visual_id.0, rect);
+            .set_local_bounds(self.element_id.0, rect);
         self.box_tree
             .borrow_mut()
-            .set_flags(self.visual_id.0, NodeFlags::VISIBLE | NodeFlags::PICKABLE);
-        self.box_tree.borrow_mut().set_z_index(self.visual_id.0, 1);
+            .set_flags(self.element_id.0, NodeFlags::VISIBLE | NodeFlags::PICKABLE);
+        self.box_tree.borrow_mut().set_z_index(self.element_id.0, 1);
     }
 
     fn paint(&self, cx: &mut PaintCx) {
         let box_tree = self.box_tree.borrow();
-        let bounds = match box_tree.world_bounds(self.visual_id.0) {
+        let bounds = match box_tree.world_bounds(self.element_id.0) {
             Ok(bounds) => bounds,
             Err(bounds) => bounds.value().unwrap(),
         };
 
-        let transform = match box_tree.world_transform(self.visual_id.0) {
+        let transform = match box_tree.world_transform(self.element_id.0) {
             Ok(transform) => transform,
             Err(transform) => transform.value().unwrap(),
         };
@@ -708,7 +708,7 @@ impl Scroll {
                     offset: self.scroll_offset,
                 }),
                 DispatchKind::Directed {
-                    target: self.id.get_visual_id(),
+                    target: self.id.get_element_id(),
                     phases: crate::context::Phases::TARGET,
                 },
             );
@@ -931,7 +931,7 @@ impl View for Scroll {
         }
         // Handle events targeted at our visual IDs (handles and tracks)
         if cx.phase == Phase::Target {
-            if cx.target == self.v_handle.visual_id {
+            if cx.target == self.v_handle.element_id {
                 self.v_handle.event(
                     cx,
                     &mut self.scroll_offset,
@@ -941,7 +941,7 @@ impl View for Scroll {
                 );
                 return EventPropagation::Stop;
             }
-            if cx.target == self.h_handle.visual_id {
+            if cx.target == self.h_handle.element_id {
                 self.h_handle.event(
                     cx,
                     &mut self.scroll_offset,
@@ -951,7 +951,7 @@ impl View for Scroll {
                 );
                 return EventPropagation::Stop;
             }
-            if cx.target == self.v_track.visual_id {
+            if cx.target == self.v_track.element_id {
                 self.v_track.event(
                     cx,
                     &mut self.scroll_offset,
@@ -961,7 +961,7 @@ impl View for Scroll {
                 );
                 return EventPropagation::Stop;
             }
-            if cx.target == self.h_track.visual_id {
+            if cx.target == self.h_track.element_id {
                 self.h_track.event(
                     cx,
                     &mut self.scroll_offset,
@@ -1010,21 +1010,37 @@ impl View for Scroll {
         // it is here in the case that the available delta changed, this will catch it and update it to a better size
         self.apply_scroll_delta(Vec2::ZERO);
 
-        let pre = cx.transform;
-        cx.paint_view(self.child);
-        let post = cx.transform;
-        assert_eq!(pre, post);
-
-        if !self.scroll_style.hide_bar() {
-            // Check if scrollbars should be shown based on the show_bars_when_idle property
-            if self.scroll_style.show_bars_when_idle() || self.is_scrolling_or_interacting {
-                // Paint tracks first (lower z-index)
-                self.v_track.paint(cx);
-                self.h_track.paint(cx);
-
-                // Paint handles (higher z-index)
+        // Check which visual node we're painting
+        // Scroll view creates multiple visual IDs for scrollbars/tracks
+        if cx.target_id == self.id.get_element_id() {
+            // Main scroll container - children painted automatically by traversal
+        } else if cx.target_id == self.v_handle.element_id {
+            // Painting vertical scrollbar handle
+            if !self.scroll_style.hide_bar()
+                && (self.scroll_style.show_bars_when_idle() || self.is_scrolling_or_interacting)
+            {
                 self.v_handle.paint(cx);
+            }
+        } else if cx.target_id == self.h_handle.element_id {
+            // Painting horizontal scrollbar handle
+            if !self.scroll_style.hide_bar()
+                && (self.scroll_style.show_bars_when_idle() || self.is_scrolling_or_interacting)
+            {
                 self.h_handle.paint(cx);
+            }
+        } else if cx.target_id == self.v_track.element_id {
+            // Painting vertical scrollbar track
+            if !self.scroll_style.hide_bar()
+                && (self.scroll_style.show_bars_when_idle() || self.is_scrolling_or_interacting)
+            {
+                self.v_track.paint(cx);
+            }
+        } else if cx.target_id == self.h_track.element_id {
+            // Painting horizontal scrollbar track
+            if !self.scroll_style.hide_bar()
+                && (self.scroll_style.show_bars_when_idle() || self.is_scrolling_or_interacting)
+            {
+                self.h_track.paint(cx);
             }
         }
     }

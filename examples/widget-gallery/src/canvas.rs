@@ -229,7 +229,6 @@ impl View for SatValuePicker {
         cx.fill(&rect_path, &saturation_gradient, 0.);
 
         cx.pop_layer();
-        cx.save();
         cx.clip(&rect_path);
 
         if size.width > 0.0 && size.height > 0.0 {
@@ -247,7 +246,7 @@ impl View for SatValuePicker {
             cx.stroke(&indicator_circle, css::WHITE, &Stroke::new(2.0));
             cx.stroke(&inner_indicator_circle, css::BLACK, &Stroke::new(2.0));
         }
-        cx.restore();
+        cx.clear_clip();
     }
 }
 
@@ -373,11 +372,10 @@ impl View for HuePicker {
                 size.height,
             );
 
-            cx.save();
             cx.clip(&rect_path);
             cx.stroke(&indicator_rect, css::WHITE, &Stroke::new(2.0));
             cx.fill(&indicator_rect, css::BLACK, 0.);
-            cx.restore();
+            cx.clear_clip();
         }
     }
 }
@@ -496,11 +494,10 @@ impl View for OpacityPicker {
                 size.height,
             );
 
-            cx.save();
             cx.clip(&rect_path);
             cx.stroke(&indicator_rect, css::WHITE, &Stroke::new(2.0));
             cx.fill(&indicator_rect, css::BLACK, 0.);
-            cx.restore();
+            cx.clear_clip();
         }
     }
 }

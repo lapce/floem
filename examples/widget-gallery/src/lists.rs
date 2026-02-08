@@ -3,9 +3,9 @@ use floem::{
     prelude::*,
     reactive::Effect,
     style::CursorStyle,
-    taffy::{prelude::*, Line},
+    taffy::{Line, prelude::*},
     text::Weight,
-    theme::{border_style, StyleThemeExt},
+    theme::{StyleThemeExt, border_style},
 };
 
 use crate::{
@@ -38,7 +38,7 @@ fn simple_list() -> impl IntoView {
         .list()
         .style(|s| s.width_full().class(LabelClass, |s| s.height(24)))
         .scroll()
-        .style(|s| s.size(100, 800).apply(border_style(true)))
+        .style(|s| s.size(100, 300).apply(border_style(true)))
 }
 
 fn enhanced_list() -> impl IntoView {
@@ -53,7 +53,7 @@ fn enhanced_list() -> impl IntoView {
 
     let x_mark = move |index| {
         svg(CROSS_SVG)
-            .on_click_stop(move |_| {
+            .action(move || {
                 print!("Item Removed");
                 long_list.update(|list| {
                     list.remove(index);
@@ -99,5 +99,5 @@ fn enhanced_list() -> impl IntoView {
     VirtualList::with_view(move || long_list.get().enumerate(), item_view)
         .style(move |s| s.flex_col().flex_grow(1.0))
         .scroll()
-        .style(move |s| s.width(list_width).height(200.0).apply(border_style(true)))
+        .style(move |s| s.width(list_width).height(300.0).apply(border_style(true)))
 }

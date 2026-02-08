@@ -10,7 +10,7 @@ use ui_events::{
 };
 
 use crate::event::{
-    DragCancelEvent, DragDropEvent, DragEnterEvent, DragLeaveEvent, DragMoveEvent, DragSourceEvent,
+    DragCancelEvent, DragEndEvent, DragEnterEvent, DragLeaveEvent, DragMoveEvent, DragSourceEvent,
     DragStartEvent, DragTargetEvent, Event, FileDragEvent, FocusEvent, ImeEvent, InteractionEvent,
     PointerCaptureEvent, WindowEvent,
 };
@@ -204,11 +204,11 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`DragSourceEvent::Drop`] - sent to the element being dragged when the pointer is released.
+    /// Receives [`DragSourceEvent::End`] - sent to the element being dragged when the pointer is released.
     /// `other_element` in the event data is the drop target if one accepted the drop, `None` otherwise.
-    pub DragSourceDrop: DragDropEvent,
+    pub DragEnd: DragEndEvent,
     |event| {
-        if let Event::DragSource(DragSourceEvent::Drop(dde)) = event {
+        if let Event::DragSource(DragSourceEvent::End(dde)) = event {
             return Some(dde as &dyn Any);
         }
         None
@@ -271,7 +271,7 @@ event_listener!(
     /// Receives [`DragTargetEvent::Drop`] - sent to a drop target when a dragged element is dropped on it.
     /// `other_element` in the event data is the element being dragged.
     /// Call `prevent_default()` to accept the drop.
-    pub DragTargetDrop: DragDropEvent,
+    pub DragTargetDrop: DragEndEvent,
     |event| {
         if let Event::DragTarget(DragTargetEvent::Drop(dde)) = event {
             return Some(dde as &dyn Any);

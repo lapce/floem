@@ -17,6 +17,7 @@ use crate::{
     BoxTree,
     action::{add_update_message, exec_after},
     context::FrameUpdate,
+    element_id::ElementId,
     event::{DragTracker, Event, WindowEvent, clear_hit_test_cache},
     inspector::CaptureState,
     layout::responsive::{GridBreakpoints, ScreenSizeBp},
@@ -26,7 +27,6 @@ use crate::{
         theme::default_theme,
     },
     view::{LayoutNodeCx, MeasureCx, VIEW_STORAGE, ViewId},
-    visual_id::VisualId,
 };
 
 /// A small set of ViewIds, optimized for small collections (< 8 items).
@@ -37,12 +37,12 @@ pub(crate) type ViewIdSmallSet = SmallVec<[ViewId; 8]>;
 /// A small set of ViewIds, optimized for small collections (< 8 items).
 /// Uses linear search which is faster than hashing for small N.
 /// Inspired by Chromium's approach for event listener collections.
-pub(crate) type VisualIdSmallSet = SmallVec<[VisualId; 8]>;
+pub(crate) type VisualIdSmallSet = SmallVec<[ElementId; 8]>;
 
 /// A small map from PointerId to ViewId, optimized for the common case of 1-2 pointers.
 /// Most applications only have a mouse pointer or a few touch points active at once.
 /// Uses linear search which is faster than HashMap for small N due to cache locality.
-pub(crate) type PointerCaptureMap = SmallVec<[(PointerId, VisualId); 2]>;
+pub(crate) type PointerCaptureMap = SmallVec<[(PointerId, ElementId); 2]>;
 
 /// Encapsulates and owns the global state of the application,
 pub struct WindowState {
@@ -74,12 +74,12 @@ pub struct WindowState {
     pub(crate) drag_tracker: DragTracker,
     pub(crate) screen_size_bp: ScreenSizeBp,
     pub(crate) grid_bps: GridBreakpoints,
-    pub(crate) click_state: ClickState<Rc<[VisualId]>>,
-    pub(crate) hover_state: HoverState<VisualId>,
-    pub(crate) focus_state: FocusState<VisualId>,
+    pub(crate) click_state: ClickState<Rc<[ElementId]>>,
+    pub(crate) hover_state: HoverState<ElementId>,
+    pub(crate) focus_state: FocusState<ElementId>,
     pub(crate) focusable: FxHashSet<ViewId>,
-    pub(crate) file_hover_state: HoverState<VisualId>,
-    pub(crate) visual_id_cursors: FxHashMap<VisualId, CursorStyle>,
+    pub(crate) file_hover_state: HoverState<ElementId>,
+    pub(crate) element_id_cursors: FxHashMap<ElementId, CursorStyle>,
     // whether the window is in light or dark mode
     pub(crate) light_dark_theme: winit::window::Theme,
     // if `true`, then the window will not follow the os theme changes
@@ -161,7 +161,7 @@ impl WindowState {
             click_state: ClickState::new(),
             hover_state: HoverState::new(),
             file_hover_state: HoverState::new(),
-            visual_id_cursors: FxHashMap::default(),
+            element_id_cursors: FxHashMap::default(),
             focusable: FxHashSet::default(),
             theme_overriden: false,
             light_dark_theme: os_theme.unwrap_or(Theme::Light),
@@ -271,30 +271,30 @@ impl WindowState {
 
         let box_tree = id.box_tree();
         // Remove from box tree first
-        let this_visual_id = id.get_visual_id();
-        box_tree.borrow_mut().reparent(this_visual_id.0, None);
+        let this_element_id = id.get_element_id();
+        box_tree.borrow_mut().reparent(this_element_id.0, None);
         id.remove();
         self.focusable.remove(&id);
         self.fixed_elements.remove(&id);
 
         // Clean up pointer capture state for removed view
         self.pointer_capture_target
-            .retain(|(_, v)| *v != this_visual_id);
+            .retain(|(_, v)| *v != this_element_id);
         self.pending_pointer_capture_target
-            .retain(|(_, v)| *v != this_visual_id);
+            .retain(|(_, v)| *v != this_element_id);
     }
 
-    pub fn is_hovered(&self, id: impl Into<VisualId>) -> bool {
+    pub fn is_hovered(&self, id: impl Into<ElementId>) -> bool {
         let id = id.into();
         self.hover_state.current_path().contains(&id)
     }
 
-    pub fn is_file_hover(&self, id: impl Into<VisualId>) -> bool {
+    pub fn is_file_hover(&self, id: impl Into<ElementId>) -> bool {
         let id = id.into();
         self.file_hover_state.current_path().contains(&id)
     }
 
-    pub fn is_focused(&self, id: impl Into<VisualId>) -> bool {
+    pub fn is_focused(&self, id: impl Into<ElementId>) -> bool {
         self.focus_state
             .current_path()
             .last()
@@ -302,13 +302,13 @@ impl WindowState {
             .unwrap_or(false)
     }
 
-    pub fn is_clicking(&self, id: impl Into<VisualId>) -> bool {
+    pub fn is_clicking(&self, id: impl Into<ElementId>) -> bool {
         let id = id.into();
         self.click_state.presses().any(|p| p.target.contains(&id))
     }
 
     /// Check if a view has pointer capture for any pointer.
-    pub fn has_capture(&self, id: impl Into<VisualId>) -> bool {
+    pub fn has_capture(&self, id: impl Into<ElementId>) -> bool {
         self.has_any_capture(id)
     }
 
@@ -401,7 +401,7 @@ impl WindowState {
     pub(crate) fn set_pointer_capture(
         &mut self,
         pointer_id: PointerId,
-        target: impl Into<VisualId>,
+        target: impl Into<ElementId>,
     ) -> bool {
         // Update existing entry or push new one
         if let Some(entry) = self
@@ -424,7 +424,7 @@ impl WindowState {
     pub(crate) fn release_pointer_capture(
         &mut self,
         pointer_id: PointerId,
-        target: impl Into<VisualId>,
+        target: impl Into<ElementId>,
     ) -> bool {
         if self.has_pointer_capture(pointer_id, target) {
             self.remove_pending_capture(pointer_id);
@@ -469,7 +469,7 @@ impl WindowState {
     pub(crate) fn set_active_capture(
         &mut self,
         pointer_id: PointerId,
-        target: impl Into<VisualId>,
+        target: impl Into<ElementId>,
     ) {
         if let Some(entry) = self
             .pointer_capture_target
@@ -491,7 +491,7 @@ impl WindowState {
     pub(crate) fn has_pointer_capture(
         &self,
         pointer_id: PointerId,
-        target: impl Into<VisualId>,
+        target: impl Into<ElementId>,
     ) -> bool {
         let target = target.into();
         self.pending_pointer_capture_target
@@ -501,7 +501,7 @@ impl WindowState {
 
     /// Get the pending capture target for a pointer.
     #[inline]
-    pub(crate) fn get_pending_capture_target(&self, pointer_id: PointerId) -> Option<VisualId> {
+    pub(crate) fn get_pending_capture_target(&self, pointer_id: PointerId) -> Option<ElementId> {
         self.pending_pointer_capture_target
             .iter()
             .find(|(id, _)| *id == pointer_id)
@@ -513,7 +513,7 @@ impl WindowState {
     /// If the pointer has an active capture, returns the capture target.
     /// Otherwise returns None, indicating normal hit-testing should be used.
     #[inline]
-    pub(crate) fn get_pointer_capture_target(&self, pointer_id: PointerId) -> Option<VisualId> {
+    pub(crate) fn get_pointer_capture_target(&self, pointer_id: PointerId) -> Option<ElementId> {
         self.pointer_capture_target
             .iter()
             .find(|(id, _)| *id == pointer_id)
@@ -523,7 +523,7 @@ impl WindowState {
     /// Check if any pointer has active capture to the given view.
     #[inline]
     #[allow(dead_code)]
-    pub(crate) fn has_any_capture(&self, target: impl Into<VisualId>) -> bool {
+    pub(crate) fn has_any_capture(&self, target: impl Into<ElementId>) -> bool {
         let target = target.into();
         self.pointer_capture_target
             .iter()
@@ -697,10 +697,10 @@ impl WindowState {
 
                     // Update box tree
                     let mut box_tree = self.box_tree.borrow_mut();
-                    box_tree.set_local_bounds(props.visual_id.0, props.local_rect);
-                    box_tree.set_local_clip(props.visual_id.0, props.clip);
-                    box_tree.set_local_transform(props.visual_id.0, props.local_transform);
-                    box_tree.set_local_z_index(props.visual_id.0, Some(props.z_index));
+                    box_tree.set_local_bounds(props.element_id.0, props.local_rect);
+                    box_tree.set_local_clip(props.element_id.0, props.clip);
+                    box_tree.set_local_transform(props.element_id.0, props.local_transform);
+                    box_tree.set_local_z_index(props.element_id.0, Some(props.z_index));
                 }
             }
         });
@@ -725,14 +725,14 @@ impl WindowState {
             let local_bounds = self
                 .box_tree
                 .borrow()
-                .local_bounds(dragging_preview.visual_id.0)
+                .local_bounds(dragging_preview.element_id.0)
                 .unwrap_or_default();
 
             // Get current world transform and update natural position (detects layout changes)
             let current_transform = self
                 .box_tree
                 .borrow()
-                .compute_world_transform(dragging_preview.visual_id.0)
+                .compute_world_transform(dragging_preview.element_id.0)
                 .unwrap_or(Affine::IDENTITY);
 
             let natural_position = dragging.update_and_get_natural_position(current_transform);
@@ -744,13 +744,12 @@ impl WindowState {
             );
 
             // Calculate and apply position
-            let new_point =
-                dragging.calculate_position(natural_position, drag_point_offset);
+            let new_point = dragging.calculate_position(natural_position, drag_point_offset);
             dragging.record_applied_translation(new_point);
 
             self.box_tree
                 .borrow_mut()
-                .set_world_translation(dragging_preview.visual_id.0, new_point);
+                .set_world_translation(dragging_preview.element_id.0, new_point);
 
             // Schedule next animation frame if needed
             if dragging.should_schedule_animation_frame() {
@@ -765,7 +764,7 @@ impl WindowState {
         if let Some(dragging) = &self.drag_tracker.active_drag {
             if dragging.released_at.is_some() && dragging.is_animation_complete() {
                 self.views_needing_box_tree_update
-                    .insert(dragging.visual_id.view_id());
+                    .insert(dragging.element_id.owning_id());
                 self.drag_tracker.active_drag = None;
             }
         }
@@ -775,8 +774,8 @@ impl WindowState {
         for damage_rect in &damage.dirty_rects {
             if damage_rect.contains(pointer.0) {
                 clear_hit_test_cache();
-                let root_visual_id = self.root_view_id.get_visual_id();
-                crate::event::GlobalEventCx::new(self, root_visual_id).update_hover_from_point(
+                let root_element_id = self.root_view_id.get_element_id();
+                crate::event::GlobalEventCx::new(self, root_element_id).update_hover_from_point(
                     pointer.0,
                     pointer.1,
                     &Event::Window(WindowEvent::ChangeUnderCursor),
@@ -840,22 +839,22 @@ impl WindowState {
     /// returns the previously set cursor if there was one
     pub fn set_cursor(
         &mut self,
-        id: impl Into<VisualId>,
+        id: impl Into<ElementId>,
         cursor: CursorStyle,
     ) -> Option<CursorStyle> {
         self.needs_cursor_resolution = true;
-        self.visual_id_cursors.insert(id.into(), cursor)
+        self.element_id_cursors.insert(id.into(), cursor)
     }
 
     /// returns the previously set cursor if there was one
-    pub fn clear_cursor(&mut self, id: impl Into<VisualId>) -> Option<CursorStyle> {
+    pub fn clear_cursor(&mut self, id: impl Into<ElementId>) -> Option<CursorStyle> {
         self.needs_cursor_resolution = true;
-        self.visual_id_cursors.remove(&id.into())
+        self.element_id_cursors.remove(&id.into())
     }
 }
 
 struct ViewBoxProperties {
-    visual_id: VisualId,
+    element_id: ElementId,
     local_rect: Rect,
     local_transform: Affine,
     scroll_offset: Vec2,
@@ -883,7 +882,7 @@ fn compute_view_box_properties(
         let view_local_transform = style_transform * state_borrow.transform;
         let scroll_offset = state_borrow.child_translation;
         let clip = state_borrow.box_tree_props.clip_rect(local_rect);
-        let visual_id = state_borrow.visual_id;
+        let element_id = state_borrow.element_id;
         let z_index = state_borrow.combined_style.get(ZIndex).unwrap_or(0);
 
         drop(state_borrow);
@@ -911,7 +910,7 @@ fn compute_view_box_properties(
         state_mut.layout_window_origin = layout_window_origin;
 
         ViewBoxProperties {
-            visual_id,
+            element_id,
             local_rect,
             local_transform,
             scroll_offset,
@@ -942,10 +941,10 @@ fn compute_absolute_transforms_and_boxes(
             // Update box tree
             {
                 let mut box_tree = box_tree.borrow_mut();
-                box_tree.set_local_bounds(props.visual_id.0, props.local_rect);
-                box_tree.set_local_clip(props.visual_id.0, props.clip);
-                box_tree.set_local_transform(props.visual_id.0, props.local_transform);
-                box_tree.set_local_z_index(props.visual_id.0, Some(props.z_index));
+                box_tree.set_local_bounds(props.element_id.0, props.local_rect);
+                box_tree.set_local_clip(props.element_id.0, props.clip);
+                box_tree.set_local_transform(props.element_id.0, props.local_transform);
+                box_tree.set_local_z_index(props.element_id.0, Some(props.z_index));
             }
 
             // Recurse with this view's scroll offset

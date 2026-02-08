@@ -292,13 +292,10 @@ impl<T> View for Tab<T> {
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         if let Some(active_tab) = self.active {
-            if let Some(Some((active, _))) = self
-                .children
-                .get(active_tab)
-                .or_else(|| self.children.first())
-            {
-                cx.paint_view(*active);
-            }
+            // Children are now painted automatically by traversal system
+            // Tab switching is handled by hiding inactive tabs, so traversal
+            // only paints the active tab
+            let _ = (active_tab, cx); // Silence unused warnings
         }
     }
 }

@@ -1,7 +1,5 @@
 #![deny(missing_docs)]
 
-use peniko::kurbo::Size;
-
 use crate::{
     view::ViewId,
     view::{IntoView, View},
@@ -48,25 +46,11 @@ impl View for Clip {
         "Clip".into()
     }
 
-    fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        cx.save();
-        let view_state = self.id.state();
-        let size = self
-            .id
-            .get_layout()
-            .map(|layout| Size::new(layout.size.width as f64, layout.size.height as f64))
-            .unwrap_or_default();
-
-        let radii = crate::view::border_to_radii(&view_state.borrow().combined_style, size);
-
-        if crate::view::radii_max(radii) > 0.0 {
-            let rect = size.to_rect().to_rounded_rect(radii);
-            cx.clip(&rect);
-        } else {
-            cx.clip(&size.to_rect());
-        }
-        cx.paint_children(self.id);
-        cx.restore();
+    fn paint(&mut self, _cx: &mut crate::context::PaintCx) {
+        // Clipping is now handled by the box tree and applied automatically
+        // during traversal. The clip view's main purpose is to set clip style
+        // which affects layout/box tree generation.
+        // No explicit painting needed - children are painted by traversal.
     }
 }
 

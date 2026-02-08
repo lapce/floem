@@ -1,7 +1,7 @@
 use std::{any::Any, cell::RefCell, rc::Rc};
 
 use crate::{
-    BoxTree, ViewId, VisualId,
+    BoxTree, ElementId, ViewId,
     context::{EventCx, LayoutChangedListener, PaintCx, UpdateCx},
     event::{Event, EventPropagation, InteractionEvent, Phase},
     prelude::*,
@@ -61,7 +61,7 @@ pub(crate) fn create_resizable(children: Vec<Box<dyn View>>) -> ResizableStack {
         let child_id = child_ids[i];
         let next_child_id = child_ids[i + 1];
         let handle = Handle::new(id, child_id, next_child_id);
-        handles.insert(handle.visual_id, handle);
+        handles.insert(handle.element_id, handle);
     }
 
     ResizableStack {
@@ -155,21 +155,21 @@ struct Handle {
     affected_child_id: ViewId,
     next_child_id: ViewId,
     down_point: Option<Point>,
-    visual_id: VisualId,
+    element_id: ElementId,
     box_tree: Rc<RefCell<BoxTree>>,
     handle_style: HandleStyle,
 }
 impl Handle {
     fn new(parent_id: ViewId, affected_child_id: ViewId, next_child_id: ViewId) -> Self {
         let box_tree = parent_id.box_tree();
-        let visual_id = parent_id.create_child_visual_id();
+        let element_id = parent_id.create_child_element_id();
 
         Self {
             parent_id,
             affected_child_id,
             next_child_id,
             down_point: None,
-            visual_id,
+            element_id,
             box_tree,
             handle_style: Default::default(),
         }
@@ -208,11 +208,11 @@ impl Handle {
 
         self.box_tree
             .borrow_mut()
-            .set_local_bounds(self.visual_id.0, new_rect);
+            .set_local_bounds(self.element_id.0, new_rect);
         self.box_tree
             .borrow_mut()
-            .set_flags(self.visual_id.0, NodeFlags::VISIBLE | NodeFlags::PICKABLE);
-        self.box_tree.borrow_mut().set_z_index(self.visual_id.0, 1);
+            .set_flags(self.element_id.0, NodeFlags::VISIBLE | NodeFlags::PICKABLE);
+        self.box_tree.borrow_mut().set_z_index(self.element_id.0, 1);
     }
 
     fn event(&mut self, cx: &mut EventCx, axis: Axis) {
@@ -226,12 +226,13 @@ impl Handle {
             }
             Event::Pointer(PointerEvent::Down(e)) => {
                 if let Some(pointer_id) = e.pointer.pointer_id {
-                    cx.window_state.set_pointer_capture(pointer_id, self.visual_id);
+                    cx.window_state
+                        .set_pointer_capture(pointer_id, self.element_id);
                 }
                 self.down_point = Some(e.state.logical_point());
             }
             Event::Pointer(PointerEvent::Leave(_)) => {
-                cx.window_state.clear_cursor(self.visual_id);
+                cx.window_state.clear_cursor(self.element_id);
                 self.style(&mut StyleCx::new(cx.window_state, self.parent_id), axis);
             }
             Event::Pointer(PointerEvent::Enter(_)) => {
@@ -243,9 +244,9 @@ impl Handle {
                     Axis::Vertical => CursorStyle::RowResize,
                 };
                 let cursor = self.handle_style.cursor().unwrap_or(cursor);
-                cx.window_state.set_cursor(self.visual_id, cursor);
+                cx.window_state.set_cursor(self.element_id, cursor);
 
-                if cx.window_state.has_capture(self.visual_id)
+                if cx.window_state.has_capture(self.element_id)
                     && let Some(start_point) = self.down_point
                     && u.current.logical_point().distance(start_point).abs() > 1.
                 {
@@ -311,7 +312,7 @@ impl Handle {
     }
 
     fn style(&mut self, cx: &mut crate::context::StyleCx<'_>, axis: Axis) {
-        let interact_state = cx.get_interact_state(self.visual_id);
+        let interact_state = cx.get_interact_state(self.element_id);
         let resolved = cx.resolve_nested_maps_with_state(
             Style::new(),
             &[ResizableHandleClass::class_ref()],
@@ -323,17 +324,17 @@ impl Handle {
                 Axis::Vertical => CursorStyle::RowResize,
             };
             let cursor = self.handle_style.cursor().unwrap_or(cursor);
-            cx.window_state.set_cursor(self.visual_id, cursor);
+            cx.window_state.set_cursor(self.element_id, cursor);
         }
     }
 
     fn paint(&self, cx: &mut PaintCx<'_>, axis: Axis) {
         let box_tree = self.box_tree.borrow();
-        let transform = match box_tree.world_transform(self.visual_id.0) {
+        let transform = match box_tree.world_transform(self.element_id.0) {
             Ok(transform) => transform,
             Err(transform) => transform.value().unwrap(),
         };
-        let rect = match box_tree.world_bounds(self.visual_id.0) {
+        let rect = match box_tree.world_bounds(self.element_id.0) {
             Ok(bounds) => bounds,
             Err(bounds) => bounds.value().unwrap(),
         };
@@ -372,7 +373,7 @@ impl Handle {
 pub struct ResizableStack {
     id: ViewId,
     re_style: ReStyle,
-    handles: FxHashMap<VisualId, Handle>,
+    handles: FxHashMap<ElementId, Handle>,
 }
 
 impl View for ResizableStack {
@@ -448,7 +449,7 @@ impl View for ResizableStack {
 
     fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
         // for this to work we had to set `id.has_layout_listener`.
-        if let Some(_) = LayoutChangedListener::extract(&cx.event) {
+        if LayoutChangedListener::extract(&cx.event).is_some() {
             self.post_layout();
         }
         if cx.phase == Phase::Target {
@@ -462,7 +463,7 @@ impl View for ResizableStack {
     }
 
     fn paint(&mut self, cx: &mut PaintCx) {
-        cx.paint_children(self.id());
+        // Children are now painted automatically by traversal system
 
         for handle in self.handles.values_mut() {
             handle.paint(cx, self.re_style.direction().axis())

@@ -7,6 +7,7 @@ use std::{cell::RefCell, rc::Rc};
 use crate::platform::menu_types::MenuId;
 #[cfg(feature = "crossbeam")]
 use crossbeam::channel::{Receiver, Sender, unbounded as channel};
+use peniko::kurbo::Point;
 #[cfg(not(feature = "crossbeam"))]
 use std::sync::mpsc::{Receiver, Sender, channel};
 
@@ -101,6 +102,15 @@ pub enum AppEvent {
     Reopen { has_visible_windows: bool },
 }
 
+pub(crate) struct MenuWrapper(pub(crate) muda::Menu);
+// SAFETY: these unsafe wappers are needed so that we can send the muda memu.
+// The muda menu internally uses RC on a String ID and it's Vec of children.
+// This unsafe wrapper is memory safe but the race condition could potentially (unlikely)
+// lead to bad reference counts and leaked memory.
+// I think this is fine for this case.
+unsafe impl Send for MenuWrapper {}
+unsafe impl Sync for MenuWrapper {}
+
 pub(crate) enum UserEvent {
     AppUpdate,
     Idle,
@@ -111,6 +121,11 @@ pub(crate) enum UserEvent {
     },
     GpuResourcesUpdate {
         window_id: WindowId,
+    },
+    ShowContextMenu {
+        window_id: WindowId,
+        menu: MenuWrapper,
+        pos: Option<Point>,
     },
 }
 

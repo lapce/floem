@@ -101,7 +101,7 @@ where
                     new_selection: new_sel,
                 }),
                 DispatchKind::Directed {
-                    target: list_id.get_visual_id(),
+                    target: list_id.get_element_id(),
                     phases: Phases::TARGET,
                 },
             );
@@ -230,7 +230,7 @@ impl View for List {
                     self.id.dispatch_event(
                         Event::new_custom(ListAccept { selection }),
                         DispatchKind::Directed {
-                            target: self.id.get_visual_id(),
+                            target: self.id.get_element_id(),
                             phases: Phases::TARGET,
                         },
                     );

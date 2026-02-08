@@ -29,6 +29,8 @@ use winit::{
 
 use super::state::WindowState;
 use super::tracking::{remove_window_id_mapping, store_window_id_mapping};
+use crate::app::MenuWrapper;
+use crate::paint;
 #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
 use crate::platform::context_menu::context_menu_view;
 #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
@@ -363,8 +365,8 @@ impl WindowHandle {
         #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
         let is_pointer_up = matches!(&event, Event::Pointer(PointerEvent::Up { .. }));
 
-        let root_visual_id = self.window_state.root_view_id.get_visual_id();
-        GlobalEventCx::new(&mut self.window_state, root_visual_id).route_window_event(event);
+        let root_element_id = self.window_state.root_view_id.get_element_id();
+        GlobalEventCx::new(&mut self.window_state, root_element_id).route_window_event(event);
 
         // Platform-specific context menu handling
         #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
@@ -579,20 +581,20 @@ impl WindowHandle {
                     new_content_box,
                     new_window_origin: window_origin,
                 };
-                let (old_layout, visual_id) = {
+                let (old_layout, element_id) = {
                     let state = id.state();
                     let mut state = state.borrow_mut();
                     let old: Option<LayoutChanged> = state.layout;
                     state.layout = Some(new_layout);
-                    let visual_id = state.visual_id;
-                    (old, visual_id)
+                    let element_id = state.element_id;
+                    (old, element_id)
                 };
                 if old_layout.is_none_or(|old| old != new_layout) {
                     use crate::context::Phases;
                     use crate::event::DispatchKind;
-                    GlobalEventCx::new(&mut self.window_state, visual_id).route(
+                    GlobalEventCx::new(&mut self.window_state, element_id).route(
                         DispatchKind::Directed {
-                            target: visual_id,
+                            target: element_id,
                             phases: Phases::TARGET,
                         },
                         &Event::new_custom(new_layout),
@@ -610,12 +612,12 @@ impl WindowHandle {
         for id in needs_moved {
             let transform = id.get_visual_transform();
             let visual_aabb = id.get_visual_rect();
-            let visual_id = id.get_visual_id();
+            let element_id = id.get_element_id();
             use crate::context::Phases;
             use crate::event::DispatchKind;
-            GlobalEventCx::new(&mut self.window_state, visual_id).route(
+            GlobalEventCx::new(&mut self.window_state, element_id).route(
                 DispatchKind::Directed {
-                    target: visual_id,
+                    target: element_id,
                     phases: Phases::TARGET,
                 },
                 &Event::new_custom(VisualChanged {
@@ -661,24 +663,20 @@ impl WindowHandle {
     }
 
     pub fn paint(&mut self, gpu_resources: Option<GpuResources>) -> Option<peniko::ImageBrush> {
-        let mut cx = PaintCx {
+        // Create GlobalPaintCx (global/shared state)
+        let mut cx = crate::paint::GlobalPaintCx {
             window_state: &mut self.window_state,
             paint_state: &mut self.paint_state,
-            transform: Affine::IDENTITY,
-            clip: None,
-            saved_transforms: Vec::new(),
-            saved_clips: Vec::new(),
             gpu_resources,
             window: self.window.clone(),
-            #[cfg(feature = "vello")]
-            saved_layer_counts: Vec::new(),
-            #[cfg(feature = "vello")]
-            layer_count: 0,
             record_paint_order: crate::paint::is_paint_order_tracking_enabled(),
         };
+
         cx.paint_state
             .renderer_mut()
             .begin(cx.window_state.capture.is_some());
+
+        // Background fill (unchanged)
         if !self.transparent {
             let scale = cx.window_state.scale;
             let color = self
@@ -686,8 +684,10 @@ impl WindowHandle {
                 .as_ref()
                 .and_then(|theme| theme.get(crate::style::Background))
                 .unwrap_or(peniko::Brush::Solid(palette::css::WHITE));
+
             // fill window with default white background if it's not transparent
-            cx.fill(
+            let renderer = cx.paint_state.renderer_mut();
+            renderer.fill(
                 &self
                     .size
                     .get_untracked()
@@ -698,15 +698,10 @@ impl WindowHandle {
                 0.0,
             );
         }
-        cx.paint_view(self.id);
-        // Paint registered overlays above all regular content
-        cx.paint_overlays(self.id);
-        // Paint drag overlay last to ensure it appears on top of all content
-        if let Some(dragging) = cx.window_state.drag_tracker.active_drag.as_ref() {
-            crate::paint::CURRENT_DRAG_PAINTING_ID.set(Some(dragging.visual_id));
-            cx.paint_view(dragging.visual_id.view_id());
-            crate::paint::CURRENT_DRAG_PAINTING_ID.take();
-        };
+
+        // Paint main tree with overlays using explicit traversal
+        cx.paint_with_traversal(self.id);
+
         if cx.window_state.capture.is_none() {
             self.window.pre_present_notify();
         }
@@ -922,8 +917,8 @@ impl WindowHandle {
                         GlobalEventCx::new(cx.window_state, id).update_focus(id, false);
                     }
                     UpdateMessage::ClearFocus => {
-                        let root_visual_id = cx.window_state.root_view_id.get_visual_id();
-                        GlobalEventCx::new(cx.window_state, root_visual_id)
+                        let root_element_id = cx.window_state.root_view_id.get_element_id();
+                        GlobalEventCx::new(cx.window_state, root_element_id)
                             .update_focus_from_path(&[], false);
                     }
                     UpdateMessage::SetPointerCapture {
@@ -983,9 +978,14 @@ impl WindowHandle {
                         let (menu, registry) = menu.build();
                         cx.window_state.context_menu.clear();
                         cx.window_state.update_context_menu(registry);
-                        self.show_context_menu(menu, pos);
+
+                        // Queue the context menu to show after this event completes
+                        Application::send_proxy_event(UserEvent::ShowContextMenu {
+                            window_id: self.window_id,
+                            menu: MenuWrapper(menu),
+                            pos,
+                        });
                     }
-                    #[cfg(not(target_arch = "wasm32"))]
                     UpdateMessage::WindowMenu { menu } => {
                         self.window_menu_actions.clear();
                         let (menu, registry) = menu.build();
@@ -1118,8 +1118,8 @@ impl WindowHandle {
                         dispatch_kind,
                         caused_by,
                     } => {
-                        let root_visual_id = self.window_state.root_view_id.get_visual_id();
-                        let mut cx = GlobalEventCx::new(&mut self.window_state, root_visual_id);
+                        let root_element_id = self.window_state.root_view_id.get_element_id();
+                        let mut cx = GlobalEventCx::new(&mut self.window_state, root_element_id);
                         if let Some(caused_by) = caused_by {
                             cx.set_caused_by(caused_by);
                         }
@@ -1182,7 +1182,7 @@ impl WindowHandle {
                     temp = Some(cursor);
                 }
                 // it is important that the node cursors override the widget cursor because non View nodes will have a widget that maps to the parent View that they are associated with
-                if let Some(cursor) = self.window_state.visual_id_cursors.get(hover) {
+                if let Some(cursor) = self.window_state.element_id_cursors.get(hover) {
                     temp = Some(*cursor);
                 }
             }
@@ -1230,7 +1230,7 @@ impl WindowHandle {
     }
 
     #[cfg(target_os = "macos")]
-    fn show_context_menu(&self, menu: MudaMenu, pos: Option<Point>) {
+    pub(crate) fn show_context_menu(&self, menu: MudaMenu, pos: Option<Point>) {
         use muda::{
             ContextMenu,
             dpi::{LogicalPosition, Position},
@@ -1254,7 +1254,7 @@ impl WindowHandle {
     }
 
     #[cfg(target_os = "windows")]
-    fn show_context_menu(&self, menu: MudaMenu, pos: Option<Point>) {
+    pub(crate) fn show_context_menu(&self, menu: MudaMenu, pos: Option<Point>) {
         use muda::{
             ContextMenu,
             dpi::{LogicalPosition, Position},
@@ -1316,7 +1316,7 @@ impl WindowHandle {
     }
 
     #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
-    fn show_context_menu(&self, menu: MudaMenu, pos: Option<Point>) {
+    pub(crate) fn show_context_menu(&self, menu: MudaMenu, pos: Option<Point>) {
         let pos = pos.unwrap_or(self.cursor_position);
         let pos = Point::new(
             pos.x / self.window_state.scale,

@@ -15,23 +15,20 @@ pub use renderer::Renderer;
 
 use floem_renderer::Renderer as FloemRenderer;
 use floem_renderer::gpu_resources::{GpuResourceError, GpuResources};
-use peniko::kurbo::{Affine, RoundedRect, Shape, Size, Vec2};
+use peniko::kurbo::{Affine, RoundedRect, Shape, Size};
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
+use understory_box_tree::NodeFlags;
 use winit::window::Window;
-
-use crate::platform::{Duration, Instant};
 
 #[cfg(feature = "crossbeam")]
 use crossbeam::channel::Receiver;
 #[cfg(not(feature = "crossbeam"))]
 use std::sync::mpsc::Receiver;
 
-use crate::VisualId;
-use crate::action::exec_after;
-use crate::animate::{Easing, Linear};
+use crate::ElementId;
+use crate::view::ViewId;
 use crate::view::stacking::{collect_overlays, collect_stacking_context_items};
-use crate::view::{VIEW_STORAGE, ViewId};
 use crate::view::{paint_bg, paint_border, paint_outline};
 use crate::window::state::WindowState;
 
@@ -42,16 +39,12 @@ std::thread_local! {
     /// and memory footprint of PaintCx or PaintState or ViewId with a field for it.
     /// This is ephemerally set before paint calls that are painting the view in a
     /// location other than its natural one for purposes of drag and drop.
-    pub(crate) static CURRENT_DRAG_PAINTING_ID : std::cell::Cell<Option<VisualId>> = const { std::cell::Cell::new(None) };
+    pub(crate) static CURRENT_DRAG_PAINTING_ID : std::cell::Cell<Option<ElementId>> = const { std::cell::Cell::new(None) };
 
     /// Paint order tracker for testing purposes.
     /// When enabled, records the ViewIds in the order they are painted.
     /// This is used by HeadlessHarness to verify paint order in tests.
     static PAINT_ORDER_TRACKER: std::cell::RefCell<PaintOrderTracker> = const { std::cell::RefCell::new(PaintOrderTracker::new()) };
-
-    /// Paint recursion depth tracker to detect cycles and prevent stack overflow.
-    /// Tracks the current recursion depth during painting.
-    static PAINT_RECURSION_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// Tracker for paint order, used in testing to verify views are painted in the correct order.
@@ -120,67 +113,242 @@ fn record_paint(id: ViewId) {
 /// Information needed to paint a dragged view overlay after the main tree painting.
 /// This ensures the drag overlay always appears on top of all other content.
 pub(crate) struct PendingDragPaint {
-    pub id: VisualId,
+    pub id: ElementId,
     pub base_transform: Affine,
 }
 
-pub struct PaintCx<'a> {
+/// Global paint context - holds shared state for entire paint pass
+/// Similar to GlobalEventCx in event dispatch
+pub struct GlobalPaintCx<'a> {
     pub window_state: &'a mut WindowState,
     pub(crate) paint_state: &'a mut PaintState,
-    pub(crate) transform: Affine,
-    pub(crate) clip: Option<RoundedRect>,
-    pub(crate) saved_transforms: Vec<Affine>,
-    pub(crate) saved_clips: Vec<Option<RoundedRect>>,
-    /// Pending drag paint info, to be painted after the main tree.
     pub gpu_resources: Option<GpuResources>,
     pub window: Arc<dyn Window>,
-    #[cfg(feature = "vello")]
-    pub layer_count: usize,
-    #[cfg(feature = "vello")]
-    pub saved_layer_counts: Vec<usize>,
     /// Whether to record paint order for testing. Cached from thread-local at creation.
     pub(crate) record_paint_order: bool,
 }
 
-impl PaintCx<'_> {
-    pub fn save(&mut self) {
-        self.saved_transforms.push(self.transform);
-        self.saved_clips.push(self.clip);
-        #[cfg(feature = "vello")]
-        self.saved_layer_counts.push(self.layer_count);
+/// Per-target paint context - created for each visual node
+/// Similar to EventCx in event dispatch
+pub struct PaintCx<'a> {
+    /// Reference to global paint state
+    pub window_state: &'a mut WindowState,
+    paint_state: &'a mut PaintState,
+    /// The target visual node being painted (CRITICAL for views with multiple visuals)
+    pub target_id: ElementId,
+    /// World transform for this visual node (from box tree)
+    pub world_transform: Affine,
+    /// Local layout bounds for this visual node (from box tree)
+    pub layout_rect_local: peniko::kurbo::Rect,
+    /// Optional clip for this visual node (from box tree)
+    pub clip: Option<RoundedRect>,
+}
+
+pub(crate) enum PaintOrPost {
+    Paint(ElementId),
+    Post(ElementId),
+}
+
+/// Recursively collect VisualIds in paint order (depth-first, z-index sorted)
+pub(crate) fn collect_visual_recursive(
+    element_id: ElementId,
+    box_tree: &crate::BoxTree,
+    paint_order: &mut Vec<PaintOrPost>,
+    is_drag_preview: bool,
+    skip_element_id: Option<ElementId>,
+) {
+    // CRITICAL: Query box tree directly, NOT element_id.view_id()!
+    // Multiple VisualIds can map to the same ViewId (e.g., scroll view scrollbars).
+
+    if !is_drag_preview && Some(element_id) == skip_element_id {
+        return;
     }
 
-    pub fn restore(&mut self) {
-        #[cfg(feature = "vello")]
-        {
-            let saved_count = self.saved_layer_counts.pop().unwrap_or_default();
-            while self.layer_count > saved_count {
-                self.pop_layer();
-                self.layer_count -= 1;
+    // We must check visibility and bounds from the box tree for THIS specific visual node.
+    // Skip invisible nodes (check NodeFlags from box tree)
+    if let Some(flags) = box_tree.flags(element_id.0) {
+        if !flags.contains(NodeFlags::VISIBLE) {
+            return;
+        }
+    }
+
+    // Skip zero-area nodes (optimization - check bounds from box tree)
+    if let Ok(bounds) = box_tree.world_bounds(element_id.0) {
+        if !is_drag_preview && bounds.area() == 0. {
+            return;
+        }
+    }
+
+    // Add this visual node to paint order
+    paint_order.push(PaintOrPost::Paint(element_id));
+
+    // Get children from box tree (sorted by z-index)
+    let items = collect_stacking_context_items(element_id, box_tree);
+
+    // Recursively collect children (painting uses VisualIds from box tree)
+    for item in items.iter() {
+        collect_visual_recursive(
+            item.element_id,
+            box_tree,
+            paint_order,
+            is_drag_preview,
+            skip_element_id,
+        );
+    }
+    paint_order.push(PaintOrPost::Post(element_id));
+}
+
+impl GlobalPaintCx<'_> {
+    /// Build explicit paint order for entire view tree including overlays.
+    ///
+    /// Returns a flat list of VisualIds in paint order (back-to-front, respecting z-index).
+    /// Filters out hidden views and views with zero-area bounds.
+    /// Includes overlays sorted by their z-index in the appropriate position.
+    ///
+    /// # Arguments
+    /// * `root` - The root VisualId to start traversal from
+    /// * `box_tree` - The box tree for querying spatial information
+    ///
+    /// # Returns
+    /// Vector of VisualIds in paint order (back-to-front)
+    fn build_paint_order_with_overlays(
+        &self,
+        root: ElementId,
+        box_tree: &crate::BoxTree,
+    ) -> Vec<PaintOrPost> {
+        let mut paint_order = Vec::new();
+
+        let dragging_element_id = self
+            .window_state
+            .drag_tracker
+            .active_drag
+            .as_ref()
+            .map(|drag| drag.element_id);
+
+        // Recursively collect main tree
+        collect_visual_recursive(root, box_tree, &mut paint_order, false, dragging_element_id);
+
+        // Collect overlays (they paint on top)
+        let overlays = collect_overlays(root, box_tree);
+        for overlay_id in overlays {
+            if !overlay_id.is_hidden() {
+                collect_visual_recursive(
+                    overlay_id.get_element_id(),
+                    box_tree,
+                    &mut paint_order,
+                    false,
+                    dragging_element_id,
+                );
             }
         }
 
-        self.transform = self.saved_transforms.pop().unwrap_or_default();
-        self.clip = self.saved_clips.pop().unwrap_or_default();
+        // Paint drag overlay separately (always on top)
+        if let Some(dragging) = self.window_state.drag_tracker.active_drag.as_ref() {
+            crate::paint::collect_visual_recursive(
+                dragging.element_id,
+                box_tree,
+                &mut paint_order,
+                true,
+                None,
+            );
+        }
+
+        paint_order
+    }
+    /// Paint entire tree using explicit traversal
+    pub(crate) fn paint_with_traversal(&mut self, root_id: ViewId) {
+        let root_element_id = root_id.get_element_id();
+        let box_tree = self.window_state.box_tree.borrow();
+        let paint_order = self.build_paint_order_with_overlays(root_element_id, &box_tree);
+        drop(box_tree);
+
+        for id_or_pop in paint_order {
+            match id_or_pop {
+                PaintOrPost::Paint(element_id) => {
+                    // Record for testing
+                    if self.record_paint_order {
+                        record_paint(element_id.owning_id());
+                    }
+
+                    // Create per-target PaintCx and paint this visual node
+                    self.paint_visual_node(element_id, false);
+                }
+                PaintOrPost::Post(element_id) => {
+                    self.paint_visual_node(element_id, true);
+                }
+            }
+        }
+    }
+
+    /// Paint a single visual node with its absolute transform
+    pub(crate) fn paint_visual_node(&mut self, element_id: ElementId, is_post: bool) {
+        // Get state from box tree for this visual node
+        let box_tree = self.window_state.box_tree.borrow();
+
+        let world_transform = match box_tree.world_transform(element_id.0) {
+            Ok(t) => t,
+            Err(e) => e.value().unwrap(),
+        };
+        let layout_rect_local = box_tree.local_bounds(element_id.0).unwrap_or_default();
+
+        let clip = box_tree.local_clip(element_id.0).flatten();
+
+        drop(box_tree);
+
+        // Set absolute transform on renderer
         self.paint_state
             .renderer_mut()
-            .set_transform(self.transform);
+            .set_transform(world_transform);
 
-        #[cfg(not(feature = "vello"))]
-        {
-            if let Some(rect) = self.clip {
-                self.paint_state.renderer_mut().clip(&rect);
-            } else {
-                self.paint_state.renderer_mut().clear_clip();
+        // Paint view content
+        let view_id = element_id.owning_id();
+        let view = view_id.view();
+        let view_state = view_id.state();
+        let view_style_props = view_state.borrow().view_style_props.clone();
+        let layout_props = view_state.borrow().layout_props.clone();
+
+        // Save layout_rect_local before creating PaintCx to avoid borrow issues
+        let layout_rect = layout_rect_local;
+
+        // Create per-target PaintCx
+        let mut cx = PaintCx {
+            window_state: self.window_state,
+            paint_state: self.paint_state,
+            target_id: element_id,
+            world_transform,
+            layout_rect_local,
+            clip,
+        };
+
+        if !is_post {
+            // Apply clip (stays active through children)
+            if let Some(clip_shape) = clip {
+                cx.clip(&clip_shape);
+            }
+
+            paint_bg(&mut cx, &view_style_props, layout_rect);
+            paint_border(&mut cx, &layout_props, &view_style_props, layout_rect);
+            view.borrow_mut().paint(&mut cx); // content
+        // children paint here (in between is_post calls)
+        } else {
+            // After children
+            view.borrow_mut().post_paint(&mut cx); // if you need this
+            paint_outline(&mut cx, &view_style_props, layout_rect);
+
+            // Clear clip after everything
+            if clip.is_some() {
+                cx.clear_clip();
             }
         }
     }
+}
 
+impl PaintCx<'_> {
     /// Allows a `View` to determine if it is being called in order to
     /// paint a *draggable* image of itself during a drag (likely
     /// `draggable()` was called on the `View` or `ViewId`) as opposed
     /// to a normal paint in order to alter the way it renders itself.
-    pub fn is_drag_paint(&self, id: impl Into<VisualId>) -> bool {
+    pub fn is_drag_paint(&self, id: impl Into<ElementId>) -> bool {
         let id = id.into();
         // This could be an associated function, but it is likely
         // a Good Thing to restrict access to cases when the caller actually
@@ -192,396 +360,118 @@ impl PaintCx<'_> {
         false
     }
 
-    /// Build explicit paint order for entire view tree including overlays.
-    ///
-    /// Returns a flat list of ViewIds in paint order (back-to-front, respecting z-index).
-    /// Filters out hidden views and views with zero-area bounds.
-    /// Includes overlays sorted by their z-index in the appropriate position.
-    ///
-    /// # Arguments
-    /// * `root` - The root ViewId to start traversal from
-    /// * `box_tree` - The box tree for querying spatial information
-    ///
-    /// # Returns
-    /// Vector of ViewIds in paint order (back-to-front)
-    pub fn build_paint_order_with_overlays(
-        root: ViewId,
-        box_tree: &crate::BoxTree,
-    ) -> Vec<ViewId> {
-        let mut paint_order = Vec::new();
-
-        // Helper to recursively collect views in paint order
-        fn collect_recursive(
-            view_id: ViewId,
-            box_tree: &crate::BoxTree,
-            paint_order: &mut Vec<ViewId>,
-        ) {
-            // Skip hidden views
-            if view_id.is_hidden() {
-                return;
-            }
-
-            // Skip views with zero area (optimization)
-            let visual_rect = view_id.get_visual_rect();
-            if visual_rect.width() == 0.0 || visual_rect.height() == 0.0 {
-                return;
-            }
-
-            // Add this view to paint order
-            paint_order.push(view_id);
-
-            // Get children sorted by z-index from stacking context cache
-            let visual_id = view_id.get_visual_id();
-            let items = collect_stacking_context_items(visual_id, box_tree);
-
-            // Recursively collect children
-            for item in items.iter() {
-                collect_recursive(item.visual_id.view_id(), box_tree, paint_order);
-            }
-        }
-
-        // Collect main view tree
-        collect_recursive(root, box_tree, &mut paint_order);
-
-        // Collect overlays and insert them sorted by z-index
-        let root_visual_id = root.get_visual_id();
-        let overlays = collect_overlays(root_visual_id, box_tree);
-
-        // Recursively collect overlay subtrees and add to paint order
-        for overlay_id in overlays {
-            collect_recursive(overlay_id, box_tree, &mut paint_order);
-        }
-
-        paint_order
-    }
-
-    /// Paint the children of this view using simplified stacking semantics.
-    ///
-    /// In the simplified stacking model:
-    /// - Every view is implicitly a stacking context
-    /// - z-index only competes with siblings
-    /// - Children are always bounded within their parent (no "escaping")
-    pub fn paint_children(&mut self, id: ViewId) {
-        // Collect direct children sorted by z-index
-        let visual_id = id.get_visual_id();
-        let box_tree = self.window_state.box_tree.borrow();
-        let items = collect_stacking_context_items(visual_id, &box_tree);
-        drop(box_tree);
-
-        for item in items.iter() {
-            if item.visual_id.view_id().is_hidden() {
-                continue;
-            }
-
-            // Paint the child view (which will recursively paint its own children)
-            self.paint_view(item.visual_id.view_id());
-        }
-    }
-
-    /// The entry point for painting a view. You shouldn't need to implement this yourself. Instead, implement [`View::paint`].
-    /// It handles the internal work before and after painting [`View::paint`] implementations.
-    /// It is responsible for
-    /// - managing hidden status
-    /// - clipping
-    /// - painting computed styles like background color, border, font-styles, and z-index and handling painting requirements of drag and drop
-    pub fn paint_view(&mut self, id: ViewId) {
-        // Check recursion depth to prevent stack overflow
-        const MAX_PAINT_DEPTH: usize = 100;
-        let depth = PAINT_RECURSION_DEPTH.get();
-        if depth >= MAX_PAINT_DEPTH {
-            eprintln!("ERROR: Maximum paint recursion depth ({}) exceeded at ViewId {:?}", MAX_PAINT_DEPTH, id);
-            eprintln!("This indicates a cycle in the view tree or box tree parent chain.");
-            return;
-        }
-        PAINT_RECURSION_DEPTH.set(depth + 1);
-
-        // Ensure we decrement on all exit paths
-        struct DepthGuard;
-        impl Drop for DepthGuard {
-            fn drop(&mut self) {
-                PAINT_RECURSION_DEPTH.set(PAINT_RECURSION_DEPTH.get().saturating_sub(1));
-            }
-        }
-        let _guard = DepthGuard;
-
-        if id.is_hidden() {
-            return;
-        }
-
-        // if id.get_visual_rect().is_zero_area() {
-        //     return;
-        // }
-
-        if CURRENT_DRAG_PAINTING_ID.get().is_none()
-            && let Some(dragging) = self.window_state.drag_tracker.dragging_element()
-            && dragging == id.get_visual_id()
-        {
-            return;
-        }
-
-        // Record paint order for testing (fast path: skip if not recording)
-        if self.record_paint_order {
-            record_paint(id);
-        }
-
-        let view = id.view();
-        let view_state = id.state();
-
-        self.save();
-        self.transform(id);
-        let layout_rect_local = id.get_layout_rect_local();
-        if let Some(clip) = id.get_local_clip() {
-            self.clip(&clip);
-        }
-        let view_style_props = view_state.borrow().view_style_props.clone();
-        let layout_props = view_state.borrow().layout_props.clone();
-
-        paint_bg(self, &view_style_props, layout_rect_local);
-
-        view.borrow_mut().paint(self);
-        paint_border(self, &layout_props, &view_style_props, layout_rect_local);
-        paint_outline(self, &view_style_props, layout_rect_local);
-        // Check if this view is being dragged and needs deferred painting
-
-        self.restore();
-    }
-
-    /// Paint the drag overlay after the main tree has been painted.
-    /// This ensures the dragged view always appears on top of all other content.
-    // pub fn paint_pending_drag(&mut self) {
-    //     let id = dragging.visual_id;
-    //     let base_transform = match VIEW_STORAGE
-    //         .with_borrow_mut(|s| s.box_tree(id.1).borrow().world_transform(id.0))
-    //     {
-    //         Ok(t) => t,
-    //         Err(e) => e.value().unwrap(),
-    //     };
-
-    //     let mut drag_set_to_none = false;
-    //     let transform = if let Some((released_at, release_location)) =
-    //         dragging.released_at.zip(dragging.release_location)
-    //     {
-    //         let easing = Linear;
-    //         const ANIMATION_DURATION_MS: f64 = 300.0;
-    //         let elapsed = released_at.elapsed().as_millis() as f64;
-    //         let progress = elapsed / ANIMATION_DURATION_MS;
-
-    //         if !easing.finished(progress) {
-    //             let offset_scale = 1.0 - easing.eval(progress);
-    //             let release_offset = release_location.to_vec2() - dragging.offset();
-
-    //             // Schedule next animation frame
-    //             exec_after(Duration::from_millis(8), move |_| {
-    //                 id.view_id().request_paint();
-    //             });
-
-    //             Some(base_transform * Affine::translate(release_offset * offset_scale))
-    //         } else {
-    //             drag_set_to_none = true;
-    //             None
-    //         }
-    //     } else {
-    //         // Handle active dragging - translate by current offset
-    //         Some(base_transform * Affine::translate(dragging.offset()))
-    //     };
-
-    //     if let Some(transform) = transform {
-    //         let view_id = id.view_id();
-    //         let view_state = view_id.state();
-
-    //         self.save();
-    //         self.transform = transform;
-    //         self.paint_state
-    //             .renderer_mut()
-    //             .set_transform(self.transform);
-    //         self.clear_clip();
-
-    //         // Get size from layout
-    //         let layout_rect_local = view_id.get_visual_rect();
-
-    //         // Apply styles
-    //         let style = view_state.borrow().combined_style.clone();
-    //         let mut view_style_props = view_state.borrow().view_style_props.clone();
-
-    //         if let Some(dragging_style) = view_state.borrow().dragging_style.clone() {
-    //             let style = style.apply(dragging_style);
-    //             let mut _new_frame = false;
-    //             view_style_props.read_explicit(&style, &style, &Instant::now(), &mut _new_frame);
-    //         }
-
-    //         // Paint with drag styling
-    //         let layout_props = view_state.borrow().layout_props.clone();
-
-    //         // Important: If any method early exit points are added in this
-    //         // code block, they MUST call CURRENT_DRAG_PAINTING_ID.take() before
-    //         // returning.
-    //         CURRENT_DRAG_PAINTING_ID.set(Some(id));
-    //         paint_bg(self, &view_style_props, layout_rect_local);
-    //         let view = view_id.view();
-    //         view.borrow_mut().paint(self);
-    //         paint_border(self, &layout_props, &view_style_props, layout_rect_local);
-    //         paint_outline(self, &view_style_props, layout_rect_local);
-    //         self.restore();
-    //         CURRENT_DRAG_PAINTING_ID.take();
-    //     }
-
-    //     // Clean up drag state if animation finished
-    //     if drag_set_to_none {
-    //         self.window_state.drag_tracker.reset();
-    //     }
-    // }
-
-    /// Paint all registered overlays for the given root view.
-    ///
-    /// Overlays are painted at the root level, above all regular content but below
-    /// drag overlays. They are sorted by z-index (lower z-index painted first).
-    ///
-    /// The overlay views are skipped during normal tree traversal (in `collect_stacking_context_items`)
-    /// and painted here at root level so they appear above all other content.
-    pub fn paint_overlays(&mut self, root_id: ViewId) {
-        let root_visual_id = root_id.get_visual_id();
-        let box_tree = self.window_state.box_tree.borrow();
-        let overlays = collect_overlays(root_visual_id, &box_tree);
-        drop(box_tree);
-
-        for overlay_id in overlays {
-            if overlay_id.is_hidden() {
-                continue;
-            }
-
-            // Check if the overlay itself is fixed, or if its first child is fixed.
-            // When using Overlay::new(content.style(|s| s.fixed()...)), the fixed style
-            // is on the child, not the overlay itself.
-            let overlay_is_fixed = overlay_id
-                .state()
-                .borrow()
-                .combined_style
-                .builtin()
-                .is_fixed();
-
-            let first_child_is_fixed = overlay_id
-                .children()
-                .first()
-                .is_some_and(|child| child.state().borrow().combined_style.builtin().is_fixed());
-
-            let is_fixed = overlay_is_fixed || first_child_is_fixed;
-
-            // Set up the transform for the overlay.
-            // This ensures the overlay is painted at the correct window position.
-            self.save();
-
-            // For fixed-positioned overlays, we reset to identity since they're
-            // positioned relative to the viewport, not their parent.
-            // For regular overlays, we use the parent's pre-computed visual_transform.
-            if is_fixed {
-                self.transform = Affine::IDENTITY;
-            } else if let Some(parent) = overlay_id.parent() {
-                // Use parent's pre-computed transform directly (O(1) instead of O(depth))
-                self.transform = parent.get_visual_transform();
-            }
-
-            self.paint_state
-                .renderer_mut()
-                .set_transform(self.transform);
-
-            // Paint the overlay view.
-            // If the first child is fixed (but not the overlay itself), we paint
-            // children directly to avoid adding the overlay's layout.location.
-            // The overlay wrapper doesn't render anything itself.
-            if first_child_is_fixed && !overlay_is_fixed {
-                for child in overlay_id.children() {
-                    self.paint_view(child);
-                }
-            } else {
-                self.paint_view(overlay_id);
-            }
-
-            self.restore();
-        }
-    }
-
-    /// Clip the drawing area to the given shape.
+    /// Clip the drawing area (delegates to helper methods)
     pub fn clip(&mut self, shape: &impl Shape) {
         #[cfg(feature = "vello")]
         {
             use peniko::Mix;
-
             self.push_layer(Mix::Normal, 1.0, Affine::IDENTITY, shape);
-            self.layer_count += 1;
-            self.clip = Some(shape.bounding_box().to_rounded_rect(0.0));
         }
-
         #[cfg(not(feature = "vello"))]
         {
-            let rect = if let Some(rect) = shape.as_rect() {
-                rect.to_rounded_rect(0.0)
-            } else if let Some(rect) = shape.as_rounded_rect() {
-                rect
-            } else {
-                let rect = shape.bounding_box();
-                rect.to_rounded_rect(0.0)
-            };
-
-            let rect = if let Some(existing) = self.clip {
-                let rect = existing.rect().intersect(rect.rect());
-                self.paint_state.renderer_mut().clip(&rect);
-                rect.to_rounded_rect(0.0)
-            } else {
-                self.paint_state.renderer_mut().clip(&shape);
-                rect
-            };
-
-            self.clip = Some(rect);
+            self.paint_state.renderer_mut().clip(shape);
         }
     }
 
-    /// Remove clipping so the entire window can be rendered to.
+    /// Clear clip
     pub fn clear_clip(&mut self) {
-        self.clip = None;
-        self.paint_state.renderer_mut().clear_clip();
-    }
-
-    pub fn offset(&mut self, offset: (f64, f64)) {
-        let mut new = self.transform.as_coeffs();
-        new[4] += offset.0;
-        new[5] += offset.1;
-        self.transform = Affine::new(new);
-        self.paint_state
-            .renderer_mut()
-            .set_transform(self.transform);
-        if let Some(rect) = self.clip.as_mut() {
-            let raidus = rect.radii();
-            *rect = rect
-                .rect()
-                .with_origin(rect.origin() - Vec2::new(offset.0, offset.1))
-                .to_rounded_rect(raidus);
+        #[cfg(feature = "vello")]
+        {
+            self.pop_layer();
+        }
+        #[cfg(not(feature = "vello"))]
+        {
+            self.paint_state.renderer_mut().clear_clip();
         }
     }
 
-    pub fn transform(&mut self, id: ViewId) {
-        if let Some(layout) = id.get_layout() {
-            let offset = layout.location;
-
-            // Use the pre-computed visual_transform directly instead of accumulating.
-            // This transform is computed during layout and includes all ancestor transforms.
-            self.transform = id.get_visual_transform();
-
-            self.paint_state
-                .renderer_mut()
-                .set_transform(self.transform);
-
-            // Adjust clip rect to local coordinates by subtracting the layout offset.
-            // This keeps clips in the current view's coordinate space for intersection tests.
-            if let Some(rect) = self.clip.as_mut() {
-                let raidus = rect.radii();
-                *rect = rect
-                    .rect()
-                    .with_origin(rect.origin() - Vec2::new(offset.x as f64, offset.y as f64))
-                    .to_rounded_rect(raidus);
-            }
-        }
-    }
+    // Note: get_transform/set_transform removed as Renderer doesn't expose transform()
+    // Views that previously used save/restore should use clip/clear_clip instead
 }
+
+// OLD CODE REMOVED - paint_pending_drag is no longer needed with explicit traversal
+// pub fn paint_pending_drag(&mut self) {
+//     let id = dragging.visual_id;
+//     let base_transform = match VIEW_STORAGE
+//         .with_borrow_mut(|s| s.box_tree(id.1).borrow().world_transform(id.0))
+//     {
+//         Ok(t) => t,
+//         Err(e) => e.value().unwrap(),
+//     };
+
+//     let mut drag_set_to_none = false;
+//     let transform = if let Some((released_at, release_location)) =
+//         dragging.released_at.zip(dragging.release_location)
+//     {
+//         let easing = Linear;
+//         const ANIMATION_DURATION_MS: f64 = 300.0;
+//         let elapsed = released_at.elapsed().as_millis() as f64;
+//         let progress = elapsed / ANIMATION_DURATION_MS;
+
+//         if !easing.finished(progress) {
+//             let offset_scale = 1.0 - easing.eval(progress);
+//             let release_offset = release_location.to_vec2() - dragging.offset();
+
+//             // Schedule next animation frame
+//             exec_after(Duration::from_millis(8), move |_| {
+//                 id.view_id().request_paint();
+//             });
+
+//             Some(base_transform * Affine::translate(release_offset * offset_scale))
+//         } else {
+//             drag_set_to_none = true;
+//             None
+//         }
+//     } else {
+//         // Handle active dragging - translate by current offset
+//         Some(base_transform * Affine::translate(dragging.offset()))
+//     };
+
+//     if let Some(transform) = transform {
+//         let view_id = id.view_id();
+//         let view_state = view_id.state();
+
+//         self.save();
+//         self.transform = transform;
+//         self.paint_state
+//             .renderer_mut()
+//             .set_transform(self.transform);
+//         self.clear_clip();
+
+//         // Get size from layout
+//         let layout_rect_local = view_id.get_visual_rect();
+
+//         // Apply styles
+//         let style = view_state.borrow().combined_style.clone();
+//         let mut view_style_props = view_state.borrow().view_style_props.clone();
+
+//         if let Some(dragging_style) = view_state.borrow().dragging_style.clone() {
+//             let style = style.apply(dragging_style);
+//             let mut _new_frame = false;
+//             view_style_props.read_explicit(&style, &style, &Instant::now(), &mut _new_frame);
+//         }
+
+//         // Paint with drag styling
+//         let layout_props = view_state.borrow().layout_props.clone();
+
+//         // Important: If any method early exit points are added in this
+//         // code block, they MUST call CURRENT_DRAG_PAINTING_ID.take() before
+//         // returning.
+//         CURRENT_DRAG_PAINTING_ID.set(Some(id));
+//         paint_bg(self, &view_style_props, layout_rect_local);
+//         let view = view_id.view();
+//         view.borrow_mut().paint(self);
+//         paint_border(self, &layout_props, &view_style_props, layout_rect_local);
+//         paint_outline(self, &view_style_props, layout_rect_local);
+//         self.restore();
+//         CURRENT_DRAG_PAINTING_ID.take();
+//     }
+
+//     // Clean up drag state if animation finished
+//     if drag_set_to_none {
+//         self.window_state.drag_tracker.reset();
+//     }
+// }
 
 // TODO: should this be private?
 pub enum PaintState {

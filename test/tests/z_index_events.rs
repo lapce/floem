@@ -123,7 +123,7 @@ fn test_hit_test_respects_z_index() {
     let harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
 
     // The view at (50, 50) should be the one with z-index 10
-    let hit = harness.visual_id_at(50.0, 50.0);
+    let hit = harness.element_id_at(50.0, 50.0);
     assert!(hit.is_some(), "Should hit a view at (50, 50)");
 }
 

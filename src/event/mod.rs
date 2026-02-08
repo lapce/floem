@@ -26,7 +26,7 @@ pub use path::clear_hit_test_cache;
 
 pub use dispatch::*;
 
-use crate::VisualId;
+use crate::ElementId;
 
 use std::any::Any;
 
@@ -451,7 +451,7 @@ pub struct DragMoveEvent {
     ///
     /// When sent to a drop target (via [`DragTargetEvent::Move`]):
     /// This is `Some(dragged_element)` - the element being dragged over this target.
-    pub other_element: Option<VisualId>,
+    pub other_element: Option<ElementId>,
     /// The starting state of the drag
     pub start_state: PointerState,
     /// The current state of the pointer
@@ -479,7 +479,7 @@ pub struct DragEnterEvent {
     ///
     /// When sent to a drop target (via [`DragTargetEvent::Enter`]):
     /// This is the dragged element that just entered.
-    pub other_element: VisualId,
+    pub other_element: ElementId,
     /// The pointer state from when the drag started
     pub start_state: PointerState,
     /// The current state of the pointer
@@ -507,7 +507,7 @@ pub struct DragLeaveEvent {
     ///
     /// When sent to a drop target (via [`DragTargetEvent::Leave`]):
     /// This is the dragged element that just left.
-    pub other_element: VisualId,
+    pub other_element: ElementId,
     /// The pointer state from when the drag started
     pub start_state: PointerState,
     /// Current pointer state
@@ -526,7 +526,7 @@ pub struct DragLeaveEvent {
 /// - [`DragSourceEvent::Drop`] - sent to the element being dragged
 /// - [`DragTargetEvent::Drop`] - sent to the drop target (which can call `prevent_default()` to accept)
 #[derive(Clone, Debug)]
-pub struct DragDropEvent {
+pub struct DragEndEvent {
     /// The "other" element involved in this drop event.
     ///
     /// When sent to the dragged element (via [`DragSourceEvent::Drop`]):
@@ -535,7 +535,7 @@ pub struct DragDropEvent {
     ///
     /// When sent to a drop target (via [`DragTargetEvent::Drop`]):
     /// This is always `Some` containing the dragged element that was dropped.
-    pub other_element: Option<VisualId>,
+    pub other_element: Option<ElementId>,
     /// The pointer state from when the drag started
     pub start_state: PointerState,
     /// Final pointer state
@@ -597,12 +597,12 @@ pub enum DragSourceEvent {
     /// `other_element` is the target that was left.
     Leave(DragLeaveEvent),
 
-    /// Drag was dropped - sent when the pointer is released.
+    /// Drag was ended - sent when the pointer is released.
     /// `other_element` is the drop target if one accepted the drop, `None` otherwise.
-    Drop(DragDropEvent),
+    End(DragEndEvent),
 
     /// Drag was cancelled - sent when the drag is aborted
-    /// (e.g., Escape key pressed, pointer left window, or no target accepted the drop).
+    /// (e.g., Escape key pressed).
     Cancel(DragCancelEvent),
 }
 
@@ -634,7 +634,7 @@ pub enum DragTargetEvent {
     ///
     /// Call `prevent_default()` to accept the drop. If no target accepts, the dragged
     /// element will receive a `Cancel` event instead.
-    Drop(DragDropEvent),
+    Drop(DragEndEvent),
 }
 
 impl DragSourceEvent {
@@ -645,7 +645,7 @@ impl DragSourceEvent {
             Self::Move(e) => &e.current_state,
             Self::Enter(e) => &e.current_state,
             Self::Leave(e) => &e.current_state,
-            Self::Drop(e) => &e.current_state,
+            Self::End(e) => &e.current_state,
             Self::Cancel(e) => &e.current_state,
         }
     }
@@ -657,7 +657,7 @@ impl DragSourceEvent {
             Self::Move(e) => &mut e.current_state,
             Self::Enter(e) => &mut e.current_state,
             Self::Leave(e) => &mut e.current_state,
-            Self::Drop(e) => &mut e.current_state,
+            Self::End(e) => &mut e.current_state,
             Self::Cancel(e) => &mut e.current_state,
         }
     }
@@ -669,7 +669,7 @@ impl DragSourceEvent {
             Self::Move(e) => &e.start_state,
             Self::Enter(e) => &e.start_state,
             Self::Leave(e) => &e.start_state,
-            Self::Drop(e) => &e.start_state,
+            Self::End(e) => &e.start_state,
             Self::Cancel(e) => &e.start_state,
         }
     }
@@ -681,7 +681,7 @@ impl DragSourceEvent {
             Self::Move(e) => e.button,
             Self::Enter(e) => e.button,
             Self::Leave(e) => e.button,
-            Self::Drop(e) => e.button,
+            Self::End(e) => e.button,
             Self::Cancel(e) => e.button,
         }
     }
@@ -693,7 +693,7 @@ impl DragSourceEvent {
             Self::Move(e) => &e.pointer,
             Self::Enter(e) => &e.pointer,
             Self::Leave(e) => &e.pointer,
-            Self::Drop(e) => &e.pointer,
+            Self::End(e) => &e.pointer,
             Self::Cancel(e) => &e.pointer,
         }
     }
@@ -705,7 +705,7 @@ impl DragSourceEvent {
             Self::Move(e) => &mut e.start_state,
             Self::Enter(e) => &mut e.start_state,
             Self::Leave(e) => &mut e.start_state,
-            Self::Drop(e) => &mut e.start_state,
+            Self::End(e) => &mut e.start_state,
             Self::Cancel(e) => &mut e.start_state,
         }
     }
@@ -763,7 +763,7 @@ impl DragTargetEvent {
     }
 
     /// Get the ID of the element being dragged (the source element).
-    pub fn dragged_element(&self) -> Option<VisualId> {
+    pub fn dragged_element(&self) -> Option<ElementId> {
         match self {
             Self::Enter(e) => Some(e.other_element),
             Self::Move(e) => e.other_element,
@@ -1098,7 +1098,7 @@ impl Event {
             Self::DragSource(DragSourceEvent::Move(..)) => DragMove::listener_key(),
             Self::DragSource(DragSourceEvent::Enter(..)) => DragSourceEnter::listener_key(),
             Self::DragSource(DragSourceEvent::Leave(..)) => DragSourceLeave::listener_key(),
-            Self::DragSource(DragSourceEvent::Drop(..)) => DragSourceDrop::listener_key(),
+            Self::DragSource(DragSourceEvent::End(..)) => DragEnd::listener_key(),
             Self::DragSource(DragSourceEvent::Cancel(..)) => DragCancel::listener_key(),
             Self::DragTarget(DragTargetEvent::Enter(..)) => DragTargetEnter::listener_key(),
             Self::DragTarget(DragTargetEvent::Move(..)) => DragTargetMove::listener_key(),

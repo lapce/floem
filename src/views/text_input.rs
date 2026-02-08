@@ -1147,10 +1147,8 @@ impl TextInput {
         let selection_rect = self
             .get_selection_rect(padding_left)
             .to_rounded_rect(border_radius);
-        cx.save();
-        cx.clip(&self.id.get_layout_rect_local());
+        // Clipping already handled by traversal
         cx.fill(&selection_rect, &cursor_color, 0.0);
-        cx.restore();
     }
 }
 
@@ -1462,7 +1460,7 @@ impl View for TextInput {
             .unwrap_or_default()
             .origin();
 
-        cx.save();
+        // Apply custom clip for text content area
         let mut clip_rect = self.id.get_layout_rect_local();
         let content_rect = self.id.get_content_rect_local();
         clip_rect.x0 = content_rect.x0;
@@ -1503,7 +1501,8 @@ impl View for TextInput {
                 });
         }
 
-        cx.restore();
+        // Clear the custom clip we applied
+        cx.clear_clip();
 
         // skip rendering selection / cursor if we don't have focus
         if !cx.window_state.is_focused(self.id) {

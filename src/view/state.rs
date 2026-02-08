@@ -196,11 +196,10 @@ impl Visibility {
     }
 }
 
-
 /// View state stores internal state associated with a view which is owned and managed by Floem.
 pub struct ViewState {
     pub(crate) layout_id: NodeId,
-    pub(crate) visual_id: crate::VisualId,
+    pub(crate) element_id: crate::ElementId,
     pub(crate) style: Stack<Style>,
     /// We store the stack offset to the view style to keep the api consistent but it should
     /// always be the first offset.
@@ -269,27 +268,23 @@ pub struct ViewState {
 }
 
 impl ViewState {
-    pub(crate) fn new(
-        id: ViewId,
-        root_id: ViewId,
-        taffy: &mut LayoutTree,
-        box_tree: &mut crate::BoxTree,
-    ) -> Self {
+    pub(crate) fn new(id: ViewId, taffy: &mut LayoutTree, box_tree: &mut crate::BoxTree) -> Self {
         let mut style = Stack::<Style>::default();
         let view_style_offset = style.next_offset();
         style.push(Style::new());
 
-        let visual_id = crate::VisualId(
+        let element_id = crate::ElementId(
             box_tree.insert(None, understory_box_tree::LocalNode::default()),
-            root_id,
+            id,
         );
+        box_tree.set_meta(element_id.0, Some(id));
 
         add_update_message(UpdateMessage::RequestStyle(id));
         add_update_message(UpdateMessage::RequestViewStyle(id));
 
         Self {
             layout_id: taffy.new_leaf(taffy::style::Style::DEFAULT).unwrap(),
-            visual_id,
+            element_id,
             style,
             view_style_offset,
             layout_props: Default::default(),

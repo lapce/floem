@@ -99,6 +99,17 @@ impl ApplicationHandle {
                     panic!("Sent a gpu resource update after it had already been initialized");
                 }
             }
+            UserEvent::ShowContextMenu {
+                window_id,
+                menu,
+                pos,
+            } => {
+                if let Some(handle) = self.window_handles.get_mut(&window_id) {
+                    // Now we're outside the original event handler
+                    // Safe to call blocking AppKit API
+                    handle.show_context_menu(menu.0, pos);
+                }
+            }
         }
     }
 

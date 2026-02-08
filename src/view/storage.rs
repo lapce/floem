@@ -4,7 +4,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use slotmap::{SecondaryMap, SlotMap};
 
 use super::{AnyView, state::ViewState};
-use crate::{BoxTree, IntoView, VisualId, view::ViewId, window::handle::set_current_view};
+use crate::{BoxTree, IntoView, view::ViewId, window::handle::set_current_view};
 
 thread_local! {
     pub(crate) static VIEW_STORAGE: RefCell<ViewStorage> = Default::default();
@@ -81,7 +81,6 @@ pub(crate) struct ViewStorage {
     /// Views registered as overlays - maps overlay ViewId to its window root ViewId
     pub(crate) overlays: SecondaryMap<ViewId, ViewId>,
     pub(crate) taffy_to_view: FxHashMap<taffy::NodeId, ViewId>,
-    pub(crate) visual_id_to_view: FxHashMap<VisualId, ViewId>,
 }
 
 impl Default for ViewStorage {
@@ -105,7 +104,7 @@ impl ViewStorage {
         let mut box_tree = BoxTree::with_backend(understory_index::backends::GridF64::new(100.));
         // let mut box_tree = BoxTree::new();
 
-        let state_view_state = ViewState::new(stale_id, stale_id, &mut taffy, &mut box_tree);
+        let state_view_state = ViewState::new(stale_id, &mut taffy, &mut box_tree);
 
         Self {
             taffy: Rc::new(RefCell::new(taffy)),
@@ -125,7 +124,6 @@ impl ViewStorage {
             )),
             overlays: Default::default(),
             taffy_to_view: FxHashMap::default(),
-            visual_id_to_view: FxHashMap::default(),
         }
     }
 
@@ -166,13 +164,11 @@ impl ViewStorage {
                     });
                     let state = Rc::new(RefCell::new(ViewState::new(
                         id,
-                        *root,
                         &mut taffy.borrow_mut(),
                         &mut box_tree.borrow_mut(),
                     )));
                     // Add to reverse mapping
                     self.taffy_to_view.insert(state.borrow().layout_id, id);
-                    self.visual_id_to_view.insert(state.borrow().visual_id, id);
                     state
                 })
                 .clone()

@@ -218,22 +218,22 @@ pub mod receiver_signal {
     pub use stream_signal::*;
 }
 
-mod visual_id {
+mod element_id {
     use crate::{ViewId, view::VIEW_STORAGE};
 
     /// A visual identifier that represents a rectangle in the box tree.
     ///
-    /// # ViewId vs VisualId Relationship
+    /// # ViewId vs ElementId Relationship
     ///
     /// **ViewId** represents a logical view in the view tree (1:1 with View instances).
-    /// **VisualId** represents a visual rectangle in the box tree (can be many per View).
+    /// **ElementId** represents a visual rectangle in the box tree (can be many per View).
     ///
     /// ## Key Relationships:
     /// - Each **View** has exactly one primary **ViewId** (1:1)
-    /// - Each **View** can create multiple **VisualIds** for sub-widget rectangles (1:many)
+    /// - Each **View** can create multiple **ElementIds** for sub-widget rectangles (1:many)
     ///   - Example: A scroll view creates VisualIds for content area, vertical scrollbar, horizontal scrollbar
     /// - Each **VisualId** maps back to exactly one **ViewId** for event routing (many:1)
-    ///   - Call `visual_id.view_id()` to get the owning ViewId
+    ///   - Call `element_id.view_id()` to get the owning ViewId
     ///
     /// ## Usage:
     /// - **Hit testing** operates on VisualIds (tests against individual rectangles in box tree)
@@ -249,20 +249,20 @@ mod visual_id {
     /// ```ignore
     /// // A scroll view might create these VisualIds:
     /// let scroll_view_id = ViewId::new();
-    /// let content_visual_id = VisualId(node_id_1, scroll_view_id);     // content area
-    /// let vscroll_visual_id = VisualId(node_id_2, scroll_view_id);     // vertical scrollbar
-    /// let hscroll_visual_id = VisualId(node_id_3, scroll_view_id);     // horizontal scrollbar
+    /// let content_element_id = VisualId(node_id_1, scroll_view_id);     // content area
+    /// let vscroll_element_id = VisualId(node_id_2, scroll_view_id);     // vertical scrollbar
+    /// let hscroll_element_id = VisualId(node_id_3, scroll_view_id);     // horizontal scrollbar
     ///
     /// // All three VisualIds route events to the same scroll_view_id:
-    /// assert_eq!(content_visual_id.view_id(), scroll_view_id);
-    /// assert_eq!(vscroll_visual_id.view_id(), scroll_view_id);
-    /// assert_eq!(hscroll_visual_id.view_id(), scroll_view_id);
+    /// assert_eq!(content_element_id.view_id(), scroll_view_id);
+    /// assert_eq!(vscroll_element_id.view_id(), scroll_view_id);
+    /// assert_eq!(hscroll_element_id.view_id(), scroll_view_id);
     ///
     /// // But hit testing can distinguish which specific rectangle was hit
     /// ```
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     // #[repr(transparent)]
-    pub struct VisualId(pub(crate) understory_box_tree::NodeId, pub(crate) ViewId);
+    pub struct ElementId(pub(crate) understory_box_tree::NodeId, pub(crate) ViewId);
     // impl From<understory_box_tree::NodeId> for VisualId {
     //     fn from(value: understory_box_tree::NodeId) -> Self {
     //         Self(value)
@@ -273,26 +273,18 @@ mod visual_id {
     //         Self(*value)
     //     }
     // }
-    impl VisualId {
-        pub fn view_id(&self) -> crate::ViewId {
-            VIEW_STORAGE.with_borrow(|s| {
-                s.visual_id_to_view
-                    .get(self)
-                    .copied()
-                    .expect("all visual ids are created with an associated ViewId")
-            })
+    impl ElementId {
+        pub fn owning_id(&self) -> crate::ViewId {
+            self.1
         }
 
         pub fn exact_view_id(&self) -> Option<crate::ViewId> {
             VIEW_STORAGE.with_borrow(|s| {
-                let view_id = s
-                    .visual_id_to_view
-                    .get(self)
-                    .copied()
-                    .expect("all visual ids are created with an associated ViewId");
-                let visual_id_of_view = s.states.get(view_id)?.borrow().visual_id;
-                if visual_id_of_view == *self {
-                    Some(view_id)
+                let owning_id = self.owning_id();
+
+                let element_id_of_view = s.states.get(owning_id)?.borrow().element_id;
+                if element_id_of_view == *self {
+                    Some(owning_id)
                 } else {
                     None
                 }
@@ -300,32 +292,32 @@ mod visual_id {
         }
     }
 
-    /// Extension trait for zero-cost casting between Vec<NodeId> and Vec<VisualId>
-    pub(crate) trait CastIds<T> {
-        /// Cast a Vec of IDs to another ID type with the same layout.
-        ///
-        /// # Safety
-        /// This is safe because VisualId is #[repr(transparent)] over NodeId,
-        /// guaranteeing identical memory layout. We use transmute to reinterpret
-        /// the Vec without any runtime overhead.
-        fn cast_ids(self, root_id: ViewId) -> Vec<T>;
-    }
+    // /// Extension trait for zero-cost casting between Vec<NodeId> and Vec<VisualId>
+    // pub(crate) trait CastIds<T> {
+    //     /// Cast a Vec of IDs to another ID type with the same layout.
+    //     ///
+    //     /// # Safety
+    //     /// This is safe because VisualId is #[repr(transparent)] over NodeId,
+    //     /// guaranteeing identical memory layout. We use transmute to reinterpret
+    //     /// the Vec without any runtime overhead.
+    //     fn cast_ids(self, root_id: ViewId) -> Vec<T>;
+    // }
 
-    impl CastIds<VisualId> for Vec<understory_box_tree::NodeId> {
-        fn cast_ids(self, root_id: ViewId) -> Vec<VisualId> {
-            self.iter().map(|id| VisualId(*id, root_id)).collect()
-        }
-    }
+    // impl CastIds<ElementId> for Vec<understory_box_tree::NodeId> {
+    //     fn cast_ids(self, root_id: ViewId) -> Vec<ElementId> {
+    //         self.iter().map(|id| ElementId(*id, root_id)).collect()
+    //     }
+    // }
 
-    impl CastIds<understory_box_tree::NodeId> for Vec<VisualId> {
-        fn cast_ids(self, _root_id: ViewId) -> Vec<understory_box_tree::NodeId> {
-            self.iter().map(|id| id.0).collect()
-        }
-    }
+    // impl CastIds<understory_box_tree::NodeId> for Vec<ElementId> {
+    //     fn cast_ids(self, _root_id: ViewId) -> Vec<understory_box_tree::NodeId> {
+    //         self.iter().map(|id| id.0).collect()
+    //     }
+    // }
 }
-pub use visual_id::VisualId;
+pub use element_id::ElementId;
 
-pub type BoxTree = understory_box_tree::Tree<understory_index::backends::GridF64>;
+pub type BoxTree = understory_box_tree::Tree<understory_index::backends::GridF64, ViewId>;
 // pub type BoxTree = understory_box_tree::Tree;
 
 pub use app::{AppConfig, AppEvent, Application, launch, quit_app, reopen};
