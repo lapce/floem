@@ -99,50 +99,89 @@ fn build_ancestor_chain(
     path
 }
 
-/// Builds a complete capture/target/bubble dispatch sequence from an ancestor chain.
+/// Iterator that yields FloemDispatch items for capture/target/bubble phases.
 ///
-/// Given an ancestor chain [target, parent1, parent2, ..., root], this creates:
+/// Given an ancestor chain [target, parent1, parent2, ..., root], yields:
 /// - Capture phase: root -> parent2 -> parent1 (excluding target)
 /// - Target phase: target
 /// - Bubble phase: parent1 -> parent2 (excluding target and root)
-///
-/// # Arguments
-/// * `ancestor_chain` - Vector of VisualIds from target to root
-///
-/// # Returns
-/// Complete dispatch sequence with capture, target, and bubble phases
-fn build_dispatch_sequence(ancestor_chain: &[VisualId]) -> Vec<FloemDispatch> {
-    if ancestor_chain.is_empty() {
-        return Vec::new();
-    }
-
-    let mut seq = Vec::new();
-    let target = ancestor_chain[0];
-
-    // Capture phase: root to parent (excluding target)
-    // ancestor_chain = [target, parent1, parent2, ..., root]
-    // We want: root, parent2, parent1
-    for &visual_id in ancestor_chain.iter().rev().skip(1) {
-        seq.push(FloemDispatch::capture(visual_id).with_widget(visual_id.view_id()));
-    }
-
-    // Target phase
-    seq.push(FloemDispatch::target(target).with_widget(target.view_id()));
-
-    // Bubble phase: parent1 to parent2 (excluding target and root)
-    // We want: parent1, parent2
-    if ancestor_chain.len() > 2 {
-        for &visual_id in ancestor_chain.iter().skip(1).take(ancestor_chain.len() - 2) {
-            seq.push(FloemDispatch::bubble(visual_id).with_widget(visual_id.view_id()));
-        }
-    }
-
-    seq
+struct DispatchSequenceIter {
+    ancestor_chain: Vec<VisualId>,
+    phase: DispatchPhase,
+    index: usize,
 }
 
-/// Builds a complete capture/target/bubble dispatch sequence for a target.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DispatchPhase {
+    Capture,
+    Target,
+    Bubble,
+    Done,
+}
+
+impl DispatchSequenceIter {
+    fn new(ancestor_chain: Vec<VisualId>) -> Self {
+        Self {
+            ancestor_chain,
+            phase: DispatchPhase::Capture,
+            index: 0,
+        }
+    }
+}
+
+impl Iterator for DispatchSequenceIter {
+    type Item = FloemDispatch;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.ancestor_chain.is_empty() {
+            return None;
+        }
+
+        match self.phase {
+            DispatchPhase::Capture => {
+                // Capture phase: root to parent (excluding target)
+                // ancestor_chain = [target, parent1, parent2, ..., root]
+                // We want: root, parent2, parent1
+                let capture_count = self.ancestor_chain.len().saturating_sub(1);
+                if self.index < capture_count {
+                    let idx = self.ancestor_chain.len() - 1 - self.index;
+                    let visual_id = self.ancestor_chain[idx];
+                    self.index += 1;
+                    Some(FloemDispatch::capture(visual_id).with_widget(visual_id.view_id()))
+                } else {
+                    // Move to target phase
+                    self.phase = DispatchPhase::Target;
+                    self.index = 0;
+                    self.next()
+                }
+            }
+            DispatchPhase::Target => {
+                // Target phase: just the target
+                self.phase = DispatchPhase::Bubble;
+                let target = self.ancestor_chain[0];
+                Some(FloemDispatch::target(target).with_widget(target.view_id()))
+            }
+            DispatchPhase::Bubble => {
+                // Bubble phase: parent1 to parent2 (excluding target and root)
+                let bubble_count = self.ancestor_chain.len().saturating_sub(2);
+                if self.index < bubble_count {
+                    let idx = self.index + 1; // Skip target at index 0
+                    let visual_id = self.ancestor_chain[idx];
+                    self.index += 1;
+                    Some(FloemDispatch::bubble(visual_id).with_widget(visual_id.view_id()))
+                } else {
+                    self.phase = DispatchPhase::Done;
+                    None
+                }
+            }
+            DispatchPhase::Done => None,
+        }
+    }
+}
+
+/// Builds a capture/target/bubble dispatch iterator for a target.
 ///
-/// Convenience function that combines building the ancestor chain and dispatch sequence.
+/// Returns an iterator that yields FloemDispatch items without intermediate allocations.
 ///
 /// # Arguments
 /// * `target` - The target VisualId
@@ -150,14 +189,14 @@ fn build_dispatch_sequence(ancestor_chain: &[VisualId]) -> Vec<FloemDispatch> {
 /// * `box_tree` - The box tree to traverse
 ///
 /// # Returns
-/// Complete dispatch sequence from target to root with all phases
+/// Iterator over dispatch sequence with all phases
 fn build_capture_bubble_path(
     target: VisualId,
     root_view_id: ViewId,
     box_tree: &BoxTree,
-) -> Vec<FloemDispatch> {
+) -> DispatchSequenceIter {
     let ancestor_chain = build_ancestor_chain(target, root_view_id, box_tree);
-    build_dispatch_sequence(&ancestor_chain)
+    DispatchSequenceIter::new(ancestor_chain)
 }
 
 // Keep these for now in case they're used elsewhere, but they're no longer needed for routing
@@ -668,21 +707,27 @@ impl<'a> GlobalEventCx<'a> {
         use crate::context::Phases;
 
         // Build dispatch sequence using custom path walking
-        let seq = if phases == Phases::TARGET {
+        if phases == Phases::TARGET {
             // Direct to target only
-            vec![FloemDispatch::target(target).with_widget(target.view_id())]
+            let seq = vec![FloemDispatch::target(target).with_widget(target.view_id())];
+            dispatcher::run(seq, self, |dispatch, event_cx| {
+                event_cx
+                    .event_cx(dispatch, event, default_prevented)
+                    .dispatch_one()
+            })
         } else {
             // Full capture/bubble path by walking up the box tree
             let box_tree = self.window_state.box_tree.borrow();
-            build_capture_bubble_path(target, self.window_state.root_view_id, &box_tree)
-        };
+            let iter = build_capture_bubble_path(target, self.window_state.root_view_id, &box_tree);
+            drop(box_tree);
 
-        // Dispatch events
-        dispatcher::run(seq, self, |dispatch, event_cx| {
-            event_cx
-                .event_cx(dispatch, event, default_prevented)
-                .dispatch_one()
-        })
+            // No filtering needed for directed events
+            dispatcher::run(iter, self, |dispatch, event_cx| {
+                event_cx
+                    .event_cx(dispatch, event, default_prevented)
+                    .dispatch_one()
+            })
+        }
     }
 
     fn route_spatial(
@@ -704,11 +749,11 @@ impl<'a> GlobalEventCx<'a> {
 
         // Build dispatch sequence by walking up the parent chain from target to root
         let box_tree = self.window_state.box_tree.borrow();
-        let mut seq = build_capture_bubble_path(target, self.window_state.root_view_id, &box_tree);
+        let iter = build_capture_bubble_path(target, self.window_state.root_view_id, &box_tree);
         drop(box_tree);
 
         // Filter out hidden views and views with pointer-events: none
-        seq.retain(|dispatch| {
+        let filtered = iter.filter(|dispatch| {
             if let Some(widget) = dispatch.widget {
                 !widget.is_hidden() && !widget.pointer_events_none()
             } else {
@@ -717,7 +762,7 @@ impl<'a> GlobalEventCx<'a> {
         });
 
         // Dispatch events
-        dispatcher::run(seq, self, |dispatch, event_cx| {
+        dispatcher::run(filtered, self, |dispatch, event_cx| {
             let event = event.clone();
             event_cx
                 .event_cx(dispatch, &event, default_prevented)
@@ -983,86 +1028,57 @@ impl<'a> GlobalEventCx<'a> {
 
     /// Handle default behaviors (focus, click, drag, etc.)
     fn handle_default_behaviors(&mut self, event: &Event) {
-        match event {
-            Event::Pointer(PointerEvent::Down(_)) => {
-                if let Some(hit) = self.hit_path.as_ref().and_then(|p| p.last().copied()) {
-                    self.update_focus(hit, false);
+        if let Event::Pointer(PointerEvent::Down(_)) = event {
+            if let Some(hit) = self.hit_path.as_ref().and_then(|p| p.last().copied()) {
+                self.update_focus(hit, false);
+            }
+        }
+
+        // Pointer move - check threshold and handle active drag
+        if let Event::Pointer(PointerEvent::Move(pu)) = event {
+            let box_tree = self.window_state.box_tree.clone();
+            // Check if pending drag exceeded threshold
+            if let Some(drag_dispatch) = self
+                .window_state
+                .drag_tracker
+                .check_threshold(pu, &box_tree.borrow())
+            {
+                self.window_state.needs_box_tree_commit = true;
+                match drag_dispatch {
+                    DragEventDispatch::Source(source_id, drag_source_event) => {
+                        self.event_cx(
+                            &FloemDispatch::target(source_id).with_widget(source_id.view_id()),
+                            &Event::DragSource(drag_source_event),
+                            &mut false,
+                        )
+                        .dispatch_one();
+                    }
+                    DragEventDispatch::Target(target_id, drag_target_event) => {
+                        self.event_cx(
+                            &FloemDispatch::target(target_id).with_widget(target_id.view_id()),
+                            &Event::DragTarget(drag_target_event),
+                            &mut false,
+                        )
+                        .dispatch_one();
+                    }
                 }
             }
-            // Pointer move - check threshold and handle active drag
-            Event::Pointer(PointerEvent::Move(pu)) => {
-                let box_tree = self.window_state.box_tree.clone();
-                // Check if pending drag exceeded threshold
-                if let Some(drag_dispatch) = self
+
+            // Handle move events for active drag
+            if let Some(active) = &self.window_state.drag_tracker.active_drag {
+                self.window_state.needs_box_tree_from_layout = true;
+                let hover_path = self
+                    .hit_path
+                    .as_ref()
+                    .map(|p| p.iter().as_slice())
+                    .unwrap_or(&[]);
+
+                // Split at the dragged element
+
+                let drag_events = self
                     .window_state
                     .drag_tracker
-                    .check_threshold(pu, &box_tree.borrow())
-                {
-                    self.window_state.needs_box_tree_commit = true;
-                    match drag_dispatch {
-                        DragEventDispatch::Source(source_id, drag_source_event) => {
-                            self.event_cx(
-                                &FloemDispatch::target(source_id).with_widget(source_id.view_id()),
-                                &Event::DragSource(drag_source_event),
-                                &mut false,
-                            )
-                            .dispatch_one();
-                        }
-                        DragEventDispatch::Target(target_id, drag_target_event) => {
-                            self.event_cx(
-                                &FloemDispatch::target(target_id).with_widget(target_id.view_id()),
-                                &Event::DragTarget(drag_target_event),
-                                &mut false,
-                            )
-                            .dispatch_one();
-                        }
-                    }
-                }
-
-                // Handle move events for active drag
-                if let Some(active) = &self.window_state.drag_tracker.active_drag {
-                    self.window_state.needs_box_tree_from_layout = true;
-                    let hover_path = self
-                        .hit_path
-                        .as_ref()
-                        .map(|p| p.iter().as_slice())
-                        .unwrap_or(&[]);
-
-                    // Split at the dragged element
-
-                    let drag_events = self
-                        .window_state
-                        .drag_tracker
-                        .on_pointer_move(pu, hover_path);
-                    for drag_event in drag_events {
-                        match drag_event {
-                            DragEventDispatch::Source(source_id, drag_source_event) => {
-                                self.event_cx(
-                                    &FloemDispatch::target(source_id)
-                                        .with_widget(source_id.view_id()),
-                                    &Event::DragSource(drag_source_event),
-                                    &mut false,
-                                )
-                                .dispatch_one();
-                            }
-                            DragEventDispatch::Target(target_id, drag_target_event) => {
-                                let view_id = target_id.view_id();
-                                self.event_cx(
-                                    &FloemDispatch::target(target_id).with_widget(view_id),
-                                    &Event::DragTarget(drag_target_event),
-                                    &mut false,
-                                )
-                                .dispatch_one();
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Pointer up - end drag and release capture
-            Event::Pointer(PointerEvent::Up(pe)) => {
-                let drag_events = self.window_state.drag_tracker.on_pointer_up(pe);
-
+                    .on_pointer_move(pu, hover_path);
                 for drag_event in drag_events {
                     match drag_event {
                         DragEventDispatch::Source(source_id, drag_source_event) => {
@@ -1074,8 +1090,9 @@ impl<'a> GlobalEventCx<'a> {
                             .dispatch_one();
                         }
                         DragEventDispatch::Target(target_id, drag_target_event) => {
+                            let view_id = target_id.view_id();
                             self.event_cx(
-                                &FloemDispatch::target(target_id).with_widget(target_id.view_id()),
+                                &FloemDispatch::target(target_id).with_widget(view_id),
                                 &Event::DragTarget(drag_target_event),
                                 &mut false,
                             )
@@ -1083,119 +1100,149 @@ impl<'a> GlobalEventCx<'a> {
                         }
                     }
                 }
-
-                // Auto-release pointer capture
-                if let Some(pointer_id) = pe.pointer.pointer_id {
-                    self.window_state
-                        .release_pointer_capture_unconditional(pointer_id);
-                }
             }
+        }
 
-            // Pointer cancel - abort drag
-            Event::Pointer(PointerEvent::Cancel(pi)) => {
-                let drag_events = self.window_state.drag_tracker.on_pointer_cancel(*pi);
+        // Pointer up - end drag and release capture
+        if let Event::Pointer(PointerEvent::Up(pe)) = event {
+            let drag_events = self.window_state.drag_tracker.on_pointer_up(pe);
 
-                for drag_event in drag_events {
-                    match drag_event {
-                        DragEventDispatch::Source(target_id, drag_event) => {
-                            self.event_cx(
-                                &FloemDispatch::target(target_id).with_widget(target_id.view_id()),
-                                &Event::DragSource(drag_event),
-                                &mut false,
-                            )
-                            .dispatch_one();
-                        }
-                        DragEventDispatch::Target(target_id, drag_event) => {
-                            self.event_cx(
-                                &FloemDispatch::target(target_id).with_widget(target_id.view_id()),
-                                &Event::DragTarget(drag_event),
-                                &mut false,
-                            )
-                            .dispatch_one();
-                        }
+            for drag_event in drag_events {
+                match drag_event {
+                    DragEventDispatch::Source(source_id, drag_source_event) => {
+                        self.event_cx(
+                            &FloemDispatch::target(source_id).with_widget(source_id.view_id()),
+                            &Event::DragSource(drag_source_event),
+                            &mut false,
+                        )
+                        .dispatch_one();
                     }
-                }
-
-                // Release capture on cancel
-                if let Some(pointer_id) = pi.pointer_id {
-                    self.window_state
-                        .release_pointer_capture_unconditional(pointer_id);
-                }
-            }
-
-            // Tab navigation
-            Event::Key(KeyboardEvent {
-                key: Key::Named(NamedKey::Tab),
-                modifiers,
-                state: KeyState::Down,
-                ..
-            }) => {
-                if modifiers.is_empty() || *modifiers == Modifiers::SHIFT {
-                    let backwards = modifiers.contains(Modifiers::SHIFT);
-                    self.view_tab_navigation(backwards);
-                }
-            }
-
-            // Arrow navigation
-            Event::Key(KeyboardEvent {
-                key:
-                    Key::Named(
-                        name @ (NamedKey::ArrowUp
-                        | NamedKey::ArrowDown
-                        | NamedKey::ArrowLeft
-                        | NamedKey::ArrowRight),
-                    ),
-                modifiers,
-                state: KeyState::Down,
-                ..
-            }) => {
-                if *modifiers == Modifiers::ALT {
-                    self.view_arrow_navigation(name);
-                }
-            }
-
-            // Window resized - mark responsive styles dirty
-            Event::Window(WindowEvent::Resized(_)) => {
-                VIEW_STORAGE.with_borrow(|storage| {
-                    for view_id in storage.view_ids.keys() {
-                        self.window_state.style_dirty.insert(view_id);
-                    }
-                });
-            }
-
-            // File drag hover tracking
-            Event::FileDrag(FileDragEvent::DragMoved(FileDragMoved { position, .. })) => {
-                if let Some(path) = &self.hit_path {
-                    let hover_events = self.window_state.file_hover_state.update_path(path);
-                    for hover_event in hover_events {
-                        match hover_event {
-                            HoverEvent::Enter(visual_id) | HoverEvent::Leave(visual_id) => {
-                                self.window_state.style_dirty.insert(visual_id.view_id());
-                            }
-                        }
+                    DragEventDispatch::Target(target_id, drag_target_event) => {
+                        self.event_cx(
+                            &FloemDispatch::target(target_id).with_widget(target_id.view_id()),
+                            &Event::DragTarget(drag_target_event),
+                            &mut false,
+                        )
+                        .dispatch_one();
                     }
                 }
             }
 
-            // Clear file hover on drag leave
-            Event::FileDrag(FileDragEvent::DragLeft(_) | FileDragEvent::DragDropped(_)) => {
-                let hover_events = self.window_state.file_hover_state.clear();
+            // Auto-release pointer capture
+            if let Some(pointer_id) = pe.pointer.pointer_id {
+                self.window_state
+                    .release_pointer_capture_unconditional(pointer_id);
+            }
+        }
+
+        // Pointer cancel - abort drag
+        if let Event::Pointer(PointerEvent::Cancel(pi)) = event {
+            let drag_events = self.window_state.drag_tracker.on_pointer_cancel(*pi);
+
+            for drag_event in drag_events {
+                match drag_event {
+                    DragEventDispatch::Source(target_id, drag_event) => {
+                        self.event_cx(
+                            &FloemDispatch::target(target_id).with_widget(target_id.view_id()),
+                            &Event::DragSource(drag_event),
+                            &mut false,
+                        )
+                        .dispatch_one();
+                    }
+                    DragEventDispatch::Target(target_id, drag_event) => {
+                        self.event_cx(
+                            &FloemDispatch::target(target_id).with_widget(target_id.view_id()),
+                            &Event::DragTarget(drag_event),
+                            &mut false,
+                        )
+                        .dispatch_one();
+                    }
+                }
+            }
+
+            // Release capture on cancel
+            if let Some(pointer_id) = pi.pointer_id {
+                self.window_state
+                    .release_pointer_capture_unconditional(pointer_id);
+            }
+        }
+
+        // Tab navigation
+        if let Event::Key(KeyboardEvent {
+            key: Key::Named(NamedKey::Tab),
+            modifiers,
+            state: KeyState::Down,
+            ..
+        }) = event
+        {
+            if modifiers.is_empty() || *modifiers == Modifiers::SHIFT {
+                let backwards = modifiers.contains(Modifiers::SHIFT);
+                self.view_tab_navigation(backwards);
+            }
+        }
+
+        // Arrow navigation
+        if let Event::Key(KeyboardEvent {
+            key:
+                Key::Named(
+                    name @ (NamedKey::ArrowUp
+                    | NamedKey::ArrowDown
+                    | NamedKey::ArrowLeft
+                    | NamedKey::ArrowRight),
+                ),
+            modifiers,
+            state: KeyState::Down,
+            ..
+        }) = event
+        {
+            if *modifiers == Modifiers::ALT {
+                self.view_arrow_navigation(name);
+            }
+        }
+
+        // Window resized - mark responsive styles dirty
+        if let Event::Window(WindowEvent::Resized(_)) = event {
+            VIEW_STORAGE.with_borrow(|storage| {
+                for view_id in storage.view_ids.keys() {
+                    self.window_state.style_dirty.insert(view_id);
+                }
+            });
+        }
+
+        // File drag hover tracking
+        if let Event::FileDrag(FileDragEvent::DragMoved(FileDragMoved { position, .. })) = event {
+            if let Some(path) = &self.hit_path {
+                let hover_events = self.window_state.file_hover_state.update_path(path);
                 for hover_event in hover_events {
-                    if let HoverEvent::Leave(visual_id) = hover_event {
-                        self.window_state.style_dirty.insert(visual_id.view_id());
+                    match hover_event {
+                        HoverEvent::Enter(visual_id) | HoverEvent::Leave(visual_id) => {
+                            self.window_state.style_dirty.insert(visual_id.view_id());
+                        }
                     }
                 }
             }
+        }
 
-            // Context/popout menus (platform-specific timing)
-            Event::Pointer(PointerEvent::Down(pbe)) if cfg!(target_os = "macos") => {
+        // Clear file hover on drag leave
+        if let Event::FileDrag(FileDragEvent::DragLeft(_) | FileDragEvent::DragDropped(_)) = event {
+            let hover_events = self.window_state.file_hover_state.clear();
+            for hover_event in hover_events {
+                if let HoverEvent::Leave(visual_id) = hover_event {
+                    self.window_state.style_dirty.insert(visual_id.view_id());
+                }
+            }
+        }
+
+        // Context/popout menus (platform-specific timing)
+        if cfg!(target_os = "macos") {
+            if let Event::Pointer(PointerEvent::Down(pbe)) = event {
                 self.handle_menu_events(pbe);
             }
-            Event::Pointer(PointerEvent::Up(pbe)) if !cfg!(target_os = "macos") => {
+        }
+        if !cfg!(target_os = "macos") {
+            if let Event::Pointer(PointerEvent::Up(pbe)) = event {
                 self.handle_menu_events(pbe);
             }
-
-            _ => {}
         }
     }
 

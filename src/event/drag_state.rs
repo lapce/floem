@@ -33,6 +33,9 @@ pub struct DragConfig {
     pub easing: Rc<dyn Easing>,
     /// Optional custom data to pass through drag events
     pub custom_data: Option<Rc<dyn Any>>,
+    /// If true, track drop targets and emit DragTargetEvents (Enter/Move/Leave/Drop).
+    /// If false, only emit DragSourceEvents (Start/Move/Drop/Cancel) - simpler state machine.
+    pub track_targets: bool,
 }
 
 impl DragConfig {
@@ -47,6 +50,7 @@ impl DragConfig {
             animation_duration,
             easing: Rc::new(easing),
             custom_data: None,
+            track_targets: true,
         }
     }
 
@@ -73,6 +77,18 @@ impl DragConfig {
         self.custom_data = Some(Rc::new(data));
         self
     }
+
+    /// Set whether to track drop targets.
+    ///
+    /// When `true` (default), emits DragTargetEvents (Enter/Move/Leave/Drop) to elements
+    /// under the dragged element, and DragSourceEvents (Enter/Leave) when hovering targets.
+    ///
+    /// When `false`, only emits DragSourceEvents (Start/Move/Drop/Cancel) - a simpler
+    /// state machine useful for pan/zoom, sliders, and custom drag interactions.
+    pub fn with_track_targets(mut self, track_targets: bool) -> Self {
+        self.track_targets = track_targets;
+        self
+    }
 }
 
 impl Default for DragConfig {
@@ -82,6 +98,7 @@ impl Default for DragConfig {
             animation_duration: Duration::from_millis(DEFAULT_ANIMATION_DURATION_MS as u64),
             easing: Rc::new(Linear),
             custom_data: None,
+            track_targets: true,
         }
     }
 }
@@ -183,6 +200,8 @@ pub(crate) struct PendingDragState {
     pub easing: Rc<dyn Easing>,
     /// Custom data to pass through drag events
     pub custom_data: Option<Rc<dyn Any>>,
+    /// Whether to track drop targets and emit target events
+    pub track_targets: bool,
 }
 
 /// State of an active drag (threshold exceeded).
@@ -218,6 +237,8 @@ pub(crate) struct ActiveDragState {
     pub dragging_preview: Option<DraggingPreview>,
     /// Custom data to pass through drag events
     pub custom_data: Option<Rc<dyn Any>>,
+    /// Whether to track drop targets and emit target events
+    pub track_targets: bool,
 }
 impl ActiveDragState {
     pub fn offset(&self) -> Vec2 {
@@ -417,6 +438,7 @@ impl DragTracker {
             animation_duration: config.animation_duration,
             easing: config.easing,
             custom_data: config.custom_data,
+            track_targets: config.track_targets,
         });
 
         true
@@ -484,6 +506,7 @@ impl DragTracker {
                 last_applied_translation: None,
                 dragging_preview,
                 custom_data: pending.custom_data,
+                track_targets: pending.track_targets,
             });
 
             Some(DragEventDispatch::Source(
@@ -523,6 +546,7 @@ impl DragTracker {
         events.push(DragEventDispatch::Source(
             state.visual_id,
             DragSourceEvent::Move(DragMoveEvent {
+                other_element: None,
                 start_state: state.start_state.clone(),
                 current_state: move_event.current.clone(),
                 button: state.button,
@@ -532,67 +556,88 @@ impl DragTracker {
         ));
 
         let dragged_id = state.visual_id;
+        let track_targets = state.track_targets;
 
-        // Update hover state and generate Enter/Leave events
-        let hover_events = self.hover_state.update_path(hover_path);
-        for hover_event in hover_events {
-            match hover_event {
-                understory_event_state::hover::HoverEvent::Enter(drop_target) => {
-                    if drop_target != dragged_id {
-                        // Send Enter to the dragged element (telling it which target was entered)
-                        events.push(DragEventDispatch::Source(
-                            dragged_id,
-                            DragSourceEvent::Enter(DragEnterEvent {
-                                other_element: drop_target,
-                                start_state: state.start_state.clone(),
-                                current_state: move_event.current.clone(),
-                                button: state.button,
-                                pointer: move_event.pointer,
-                                custom_data: state.custom_data.clone(),
-                            }),
-                        ));
-
-                        // Send Enter to the drop target (telling it which element entered)
-                        events.push(DragEventDispatch::Target(
-                            drop_target,
-                            DragTargetEvent::Enter(DragEnterEvent {
-                                other_element: dragged_id,
-                                start_state: state.start_state.clone(),
-                                current_state: move_event.current.clone(),
-                                button: state.button,
-                                pointer: move_event.pointer,
-                                custom_data: state.custom_data.clone(),
-                            }),
-                        ));
-                    }
+        // Only track drop targets if enabled
+        if track_targets {
+            // Emit Move event to the current drop target (if hovering over one)
+            if let Some(current_target) = hover_path.last().copied() {
+                if current_target != dragged_id {
+                    events.push(DragEventDispatch::Target(
+                        current_target,
+                        DragTargetEvent::Move(DragMoveEvent {
+                            other_element: Some(dragged_id),
+                            start_state: state.start_state.clone(),
+                            current_state: move_event.current.clone(),
+                            button: state.button,
+                            pointer: move_event.pointer,
+                            custom_data: state.custom_data.clone(),
+                        }),
+                    ));
                 }
-                understory_event_state::hover::HoverEvent::Leave(drop_target) => {
-                    if drop_target != dragged_id {
-                        // Send Leave to the dragged element (telling it which target was left)
-                        events.push(DragEventDispatch::Source(
-                            dragged_id,
-                            DragSourceEvent::Leave(DragLeaveEvent {
-                                other_element: drop_target,
-                                start_state: state.start_state.clone(),
-                                current_state: move_event.current.clone(),
-                                button: state.button,
-                                pointer: move_event.pointer,
-                                custom_data: state.custom_data.clone(),
-                            }),
-                        ));
+            }
 
-                        // Send Leave to the drop target (telling it which element left)
-                        events.push(DragEventDispatch::Target(
-                            drop_target,
-                            DragTargetEvent::Leave(DragLeaveEvent {
-                                other_element: dragged_id,
-                                start_state: state.start_state.clone(),
-                                current_state: move_event.current.clone(),
-                                button: state.button,
-                                pointer: move_event.pointer,
-                                custom_data: state.custom_data.clone(),
-                            }),
-                        ));
+            // Update hover state and generate Enter/Leave events
+            let hover_events = self.hover_state.update_path(hover_path);
+            for hover_event in hover_events {
+                match hover_event {
+                    understory_event_state::hover::HoverEvent::Enter(drop_target) => {
+                        if drop_target != dragged_id {
+                            // Send Enter to the dragged element (telling it which target was entered)
+                            events.push(DragEventDispatch::Source(
+                                dragged_id,
+                                DragSourceEvent::Enter(DragEnterEvent {
+                                    other_element: drop_target,
+                                    start_state: state.start_state.clone(),
+                                    current_state: move_event.current.clone(),
+                                    button: state.button,
+                                    pointer: move_event.pointer,
+                                    custom_data: state.custom_data.clone(),
+                                }),
+                            ));
+
+                            // Send Enter to the drop target (telling it which element entered)
+                            events.push(DragEventDispatch::Target(
+                                drop_target,
+                                DragTargetEvent::Enter(DragEnterEvent {
+                                    other_element: dragged_id,
+                                    start_state: state.start_state.clone(),
+                                    current_state: move_event.current.clone(),
+                                    button: state.button,
+                                    pointer: move_event.pointer,
+                                    custom_data: state.custom_data.clone(),
+                                }),
+                            ));
+                        }
+                    }
+                    understory_event_state::hover::HoverEvent::Leave(drop_target) => {
+                        if drop_target != dragged_id {
+                            // Send Leave to the dragged element (telling it which target was left)
+                            events.push(DragEventDispatch::Source(
+                                dragged_id,
+                                DragSourceEvent::Leave(DragLeaveEvent {
+                                    other_element: drop_target,
+                                    start_state: state.start_state.clone(),
+                                    current_state: move_event.current.clone(),
+                                    button: state.button,
+                                    pointer: move_event.pointer,
+                                    custom_data: state.custom_data.clone(),
+                                }),
+                            ));
+
+                            // Send Leave to the drop target (telling it which element left)
+                            events.push(DragEventDispatch::Target(
+                                drop_target,
+                                DragTargetEvent::Leave(DragLeaveEvent {
+                                    other_element: dragged_id,
+                                    start_state: state.start_state.clone(),
+                                    current_state: move_event.current.clone(),
+                                    button: state.button,
+                                    pointer: move_event.pointer,
+                                    custom_data: state.custom_data.clone(),
+                                }),
+                            ));
+                        }
                     }
                 }
             }
@@ -614,18 +659,52 @@ impl DragTracker {
         };
 
         let mut events = Vec::new();
-        let drop_target = self.hover_state.current_path().last().copied();
+        let track_targets = state.track_targets;
 
-        // Clear hover state and generate Leave events
-        let hover_events = self.hover_state.clear();
-        for hover_event in hover_events {
-            if let understory_event_state::hover::HoverEvent::Leave(target) = hover_event {
-                if target != state.visual_id {
-                    // Send Leave to the dragged element
+        if track_targets {
+            let drop_target = self.hover_state.current_path().last().copied();
+
+            // Clear hover state and generate Leave events
+            let hover_events = self.hover_state.clear();
+            for hover_event in hover_events {
+                if let understory_event_state::hover::HoverEvent::Leave(target) = hover_event {
+                    if target != state.visual_id {
+                        // Send Leave to the dragged element
+                        events.push(DragEventDispatch::Source(
+                            state.visual_id,
+                            DragSourceEvent::Leave(DragLeaveEvent {
+                                other_element: target,
+                                start_state: state.start_state.clone(),
+                                current_state: button_event.state.clone(),
+                                button: state.button,
+                                pointer: button_event.pointer,
+                                custom_data: state.custom_data.clone(),
+                            }),
+                        ));
+
+                        // Send Leave to the drop target
+                        events.push(DragEventDispatch::Target(
+                            target,
+                            DragTargetEvent::Leave(DragLeaveEvent {
+                                other_element: state.visual_id,
+                                start_state: state.start_state.clone(),
+                                current_state: button_event.state.clone(),
+                                button: state.button,
+                                pointer: button_event.pointer,
+                                custom_data: state.custom_data.clone(),
+                            }),
+                        ));
+                    }
+                }
+            }
+
+            if let Some(drop_target_id) = drop_target {
+                if drop_target_id != state.visual_id {
+                    // Send Drop to the dragged element (with the target in other_element)
                     events.push(DragEventDispatch::Source(
                         state.visual_id,
-                        DragSourceEvent::Leave(DragLeaveEvent {
-                            other_element: target,
+                        DragSourceEvent::Drop(DragDropEvent {
+                            other_element: Some(drop_target_id),
                             start_state: state.start_state.clone(),
                             current_state: button_event.state.clone(),
                             button: state.button,
@@ -634,11 +713,24 @@ impl DragTracker {
                         }),
                     ));
 
-                    // Send Leave to the drop target
+                    // Send Drop to the drop target (with the dragged element in other_element)
                     events.push(DragEventDispatch::Target(
-                        target,
-                        DragTargetEvent::Leave(DragLeaveEvent {
-                            other_element: state.visual_id,
+                        drop_target_id,
+                        DragTargetEvent::Drop(DragDropEvent {
+                            other_element: Some(state.visual_id),
+                            start_state: state.start_state.clone(),
+                            current_state: button_event.state.clone(),
+                            button: state.button,
+                            pointer: button_event.pointer,
+                            custom_data: state.custom_data.clone(),
+                        }),
+                    ));
+                } else {
+                    // Dropped on self - just send Drop to source with no target
+                    events.push(DragEventDispatch::Source(
+                        state.visual_id,
+                        DragSourceEvent::Drop(DragDropEvent {
+                            other_element: None,
                             start_state: state.start_state.clone(),
                             current_state: button_event.state.clone(),
                             button: state.button,
@@ -647,38 +739,8 @@ impl DragTracker {
                         }),
                     ));
                 }
-            }
-        }
-
-        if let Some(drop_target_id) = drop_target {
-            if drop_target_id != state.visual_id {
-                // Send Drop to the dragged element (with the target in other_element)
-                events.push(DragEventDispatch::Source(
-                    state.visual_id,
-                    DragSourceEvent::Drop(DragDropEvent {
-                        other_element: Some(drop_target_id),
-                        start_state: state.start_state.clone(),
-                        current_state: button_event.state.clone(),
-                        button: state.button,
-                        pointer: button_event.pointer,
-                        custom_data: state.custom_data.clone(),
-                    }),
-                ));
-
-                // Send Drop to the drop target (with the dragged element in other_element)
-                events.push(DragEventDispatch::Target(
-                    drop_target_id,
-                    DragTargetEvent::Drop(DragDropEvent {
-                        other_element: Some(state.visual_id),
-                        start_state: state.start_state.clone(),
-                        current_state: button_event.state.clone(),
-                        button: state.button,
-                        pointer: button_event.pointer,
-                        custom_data: state.custom_data.clone(),
-                    }),
-                ));
             } else {
-                // Dropped on self - just send Drop to source with no target
+                // No drop target - send Drop (no target) to the dragged element
                 events.push(DragEventDispatch::Source(
                     state.visual_id,
                     DragSourceEvent::Drop(DragDropEvent {
@@ -692,10 +754,11 @@ impl DragTracker {
                 ));
             }
         } else {
-            // No drop target - send Cancel to the dragged element
+            // track_targets is false - just send Drop to source
             events.push(DragEventDispatch::Source(
                 state.visual_id,
-                DragSourceEvent::Cancel(DragCancelEvent {
+                DragSourceEvent::Drop(DragDropEvent {
+                    other_element: None,
                     start_state: state.start_state.clone(),
                     current_state: button_event.state.clone(),
                     button: state.button,
@@ -732,37 +795,41 @@ impl DragTracker {
         };
 
         let mut events = Vec::new();
+        let track_targets = state.track_targets;
 
-        // Clear hover state and generate Leave events
-        let hover_events = self.hover_state.clear();
-        for hover_event in hover_events {
-            if let understory_event_state::hover::HoverEvent::Leave(drop_target) = hover_event {
-                if drop_target != state.visual_id {
-                    // Send Leave to the dragged element
-                    events.push(DragEventDispatch::Source(
-                        state.visual_id,
-                        DragSourceEvent::Leave(DragLeaveEvent {
-                            other_element: drop_target,
-                            start_state: state.start_state.clone(),
-                            current_state: state.current_state.clone(),
-                            button: state.button,
-                            pointer: info,
-                            custom_data: state.custom_data.clone(),
-                        }),
-                    ));
+        // Only track drop targets if enabled
+        if track_targets {
+            // Clear hover state and generate Leave events
+            let hover_events = self.hover_state.clear();
+            for hover_event in hover_events {
+                if let understory_event_state::hover::HoverEvent::Leave(drop_target) = hover_event {
+                    if drop_target != state.visual_id {
+                        // Send Leave to the dragged element
+                        events.push(DragEventDispatch::Source(
+                            state.visual_id,
+                            DragSourceEvent::Leave(DragLeaveEvent {
+                                other_element: drop_target,
+                                start_state: state.start_state.clone(),
+                                current_state: state.current_state.clone(),
+                                button: state.button,
+                                pointer: info,
+                                custom_data: state.custom_data.clone(),
+                            }),
+                        ));
 
-                    // Send Leave to the drop target
-                    events.push(DragEventDispatch::Target(
-                        drop_target,
-                        DragTargetEvent::Leave(DragLeaveEvent {
-                            other_element: state.visual_id,
-                            start_state: state.start_state.clone(),
-                            current_state: state.current_state.clone(),
-                            button: state.button,
-                            pointer: info,
-                            custom_data: state.custom_data.clone(),
-                        }),
-                    ));
+                        // Send Leave to the drop target
+                        events.push(DragEventDispatch::Target(
+                            drop_target,
+                            DragTargetEvent::Leave(DragLeaveEvent {
+                                other_element: state.visual_id,
+                                start_state: state.start_state.clone(),
+                                current_state: state.current_state.clone(),
+                                button: state.button,
+                                pointer: info,
+                                custom_data: state.custom_data.clone(),
+                            }),
+                        ));
+                    }
                 }
             }
         }

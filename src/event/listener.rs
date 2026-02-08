@@ -244,6 +244,18 @@ event_listener!(
 );
 
 event_listener!(
+    /// Receives [`DragTargetEvent::Move`] - sent to a drop target when the pointer moves while a dragged element is over it.
+    /// `other_element` in the event data is the element being dragged.
+    pub DragTargetMove: DragMoveEvent,
+    |event| {
+        if let Event::DragTarget(DragTargetEvent::Move(dme)) = event {
+            return Some(dme as &dyn Any);
+        }
+        None
+    }
+);
+
+event_listener!(
     /// Receives [`DragTargetEvent::Leave`] - sent to a drop target when a dragged element leaves it.
     /// `other_element` in the event data is the element being dragged.
     pub DragTargetLeave: DragLeaveEvent,

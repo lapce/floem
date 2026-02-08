@@ -192,6 +192,69 @@ impl PaintCx<'_> {
         false
     }
 
+    /// Build explicit paint order for entire view tree including overlays.
+    ///
+    /// Returns a flat list of ViewIds in paint order (back-to-front, respecting z-index).
+    /// Filters out hidden views and views with zero-area bounds.
+    /// Includes overlays sorted by their z-index in the appropriate position.
+    ///
+    /// # Arguments
+    /// * `root` - The root ViewId to start traversal from
+    /// * `box_tree` - The box tree for querying spatial information
+    ///
+    /// # Returns
+    /// Vector of ViewIds in paint order (back-to-front)
+    pub fn build_paint_order_with_overlays(
+        root: ViewId,
+        box_tree: &crate::BoxTree,
+    ) -> Vec<ViewId> {
+        let mut paint_order = Vec::new();
+
+        // Helper to recursively collect views in paint order
+        fn collect_recursive(
+            view_id: ViewId,
+            box_tree: &crate::BoxTree,
+            paint_order: &mut Vec<ViewId>,
+        ) {
+            // Skip hidden views
+            if view_id.is_hidden() {
+                return;
+            }
+
+            // Skip views with zero area (optimization)
+            let visual_rect = view_id.get_visual_rect();
+            if visual_rect.width() == 0.0 || visual_rect.height() == 0.0 {
+                return;
+            }
+
+            // Add this view to paint order
+            paint_order.push(view_id);
+
+            // Get children sorted by z-index from stacking context cache
+            let visual_id = view_id.get_visual_id();
+            let items = collect_stacking_context_items(visual_id, box_tree);
+
+            // Recursively collect children
+            for item in items.iter() {
+                collect_recursive(item.visual_id.view_id(), box_tree, paint_order);
+            }
+        }
+
+        // Collect main view tree
+        collect_recursive(root, box_tree, &mut paint_order);
+
+        // Collect overlays and insert them sorted by z-index
+        let root_visual_id = root.get_visual_id();
+        let overlays = collect_overlays(root_visual_id, box_tree);
+
+        // Recursively collect overlay subtrees and add to paint order
+        for overlay_id in overlays {
+            collect_recursive(overlay_id, box_tree, &mut paint_order);
+        }
+
+        paint_order
+    }
+
     /// Paint the children of this view using simplified stacking semantics.
     ///
     /// In the simplified stacking model:
