@@ -254,7 +254,6 @@ pub struct ViewState {
     pub(crate) disable_default_events: HashSet<EventListenerKey>,
     /// This transform is user settable and is a transfrom that is applied after the transfrom from the `view_transform_props` which is the transfrom applied by style properties.
     pub(crate) transform: Affine,
-    pub(crate) stacking_info: StackingInfo,
     pub(crate) debug_name: SmallVec<[String; 1]>,
     /// Scope for reactive children (used by `ParentView::derived_children`).
     /// When children are updated reactively, the old scope is disposed.
@@ -316,7 +315,6 @@ impl ViewState {
             disable_default_events: HashSet::new(),
             view_transform_props: Default::default(),
             transform: Affine::IDENTITY,
-            stacking_info: StackingInfo::default(),
             debug_name: Default::default(),
             style_cx_parent: None,
             style_cx: None,

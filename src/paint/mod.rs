@@ -48,6 +48,10 @@ std::thread_local! {
     /// When enabled, records the ViewIds in the order they are painted.
     /// This is used by HeadlessHarness to verify paint order in tests.
     static PAINT_ORDER_TRACKER: std::cell::RefCell<PaintOrderTracker> = const { std::cell::RefCell::new(PaintOrderTracker::new()) };
+
+    /// Paint recursion depth tracker to detect cycles and prevent stack overflow.
+    /// Tracks the current recursion depth during painting.
+    static PAINT_RECURSION_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// Tracker for paint order, used in testing to verify views are painted in the correct order.
@@ -218,6 +222,25 @@ impl PaintCx<'_> {
     /// - clipping
     /// - painting computed styles like background color, border, font-styles, and z-index and handling painting requirements of drag and drop
     pub fn paint_view(&mut self, id: ViewId) {
+        // Check recursion depth to prevent stack overflow
+        const MAX_PAINT_DEPTH: usize = 100;
+        let depth = PAINT_RECURSION_DEPTH.get();
+        if depth >= MAX_PAINT_DEPTH {
+            eprintln!("ERROR: Maximum paint recursion depth ({}) exceeded at ViewId {:?}", MAX_PAINT_DEPTH, id);
+            eprintln!("This indicates a cycle in the view tree or box tree parent chain.");
+            return;
+        }
+        PAINT_RECURSION_DEPTH.set(depth + 1);
+
+        // Ensure we decrement on all exit paths
+        struct DepthGuard;
+        impl Drop for DepthGuard {
+            fn drop(&mut self) {
+                PAINT_RECURSION_DEPTH.set(PAINT_RECURSION_DEPTH.get().saturating_sub(1));
+            }
+        }
+        let _guard = DepthGuard;
+
         if id.is_hidden() {
             return;
         }

@@ -22,7 +22,7 @@ use crate::{
     layout::responsive::{GridBreakpoints, ScreenSizeBp},
     message::UpdateMessage,
     style::{
-        CursorStyle, Style, StyleCache, StyleSelector, recalc::StyleRecalcChange,
+        CursorStyle, Style, StyleCache, StyleSelector, ZIndex, recalc::StyleRecalcChange,
         theme::default_theme,
     },
     view::{LayoutNodeCx, MeasureCx, VIEW_STORAGE, ViewId},
@@ -884,7 +884,7 @@ fn compute_view_box_properties(
         let scroll_offset = state_borrow.child_translation;
         let clip = state_borrow.box_tree_props.clip_rect(local_rect);
         let visual_id = state_borrow.visual_id;
-        let z_index = state_borrow.stacking_info.effective_z_index;
+        let z_index = state_borrow.combined_style.get(ZIndex).unwrap_or(0);
 
         drop(state_borrow);
 

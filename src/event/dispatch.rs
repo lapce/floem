@@ -60,42 +60,104 @@ use super::PointerCaptureEvent;
 
 pub(crate) type FloemDispatch = Dispatch<VisualId, ViewId, Option<()>>;
 
-/// Build capture/bubble dispatch path by walking up the box tree parent chain.
+/// Builds the ancestor chain from target to root by walking up the box tree.
 ///
-/// This walks the visual hierarchy (box tree), not the logical view hierarchy.
-/// Each VisualId in the path maps to its owning ViewId for event handling.
+/// Returns a vector of VisualIds ordered from target to root: [target, parent1, parent2, ..., root]
+///
+/// # Arguments
+/// * `target` - The starting VisualId (deepest node in the tree)
+/// * `root_view_id` - The root ViewId for constructing VisualIds from box tree NodeIds
+/// * `box_tree` - The box tree to traverse for parent relationships
+///
+/// # Returns
+/// Vector of VisualIds from target to root, or just [target] if no parents found
+fn build_ancestor_chain(
+    target: VisualId,
+    root_view_id: ViewId,
+    box_tree: &BoxTree,
+) -> Vec<VisualId> {
+    let mut path = Vec::new();
+    let mut current = target;
+    let mut visited = std::collections::HashSet::new();
+    const MAX_DEPTH: usize = 1000; // Prevent runaway loops
+
+    visited.insert(current.0);
+    path.push(current);
+
+    while let Some(parent_node) = box_tree.parent_of(current.0) {
+        current = VisualId(parent_node, root_view_id);
+
+        // Cycle detection
+        if !visited.insert(current.0) || path.len() >= MAX_DEPTH {
+            eprintln!("Warning: Detected cycle or excessive depth in box tree parent chain");
+            break;
+        }
+
+        path.push(current);
+    }
+
+    path
+}
+
+/// Builds a complete capture/target/bubble dispatch sequence from an ancestor chain.
+///
+/// Given an ancestor chain [target, parent1, parent2, ..., root], this creates:
+/// - Capture phase: root -> parent2 -> parent1 (excluding target)
+/// - Target phase: target
+/// - Bubble phase: parent1 -> parent2 (excluding target and root)
+///
+/// # Arguments
+/// * `ancestor_chain` - Vector of VisualIds from target to root
+///
+/// # Returns
+/// Complete dispatch sequence with capture, target, and bubble phases
+fn build_dispatch_sequence(ancestor_chain: &[VisualId]) -> Vec<FloemDispatch> {
+    if ancestor_chain.is_empty() {
+        return Vec::new();
+    }
+
+    let mut seq = Vec::new();
+    let target = ancestor_chain[0];
+
+    // Capture phase: root to parent (excluding target)
+    // ancestor_chain = [target, parent1, parent2, ..., root]
+    // We want: root, parent2, parent1
+    for &visual_id in ancestor_chain.iter().rev().skip(1) {
+        seq.push(FloemDispatch::capture(visual_id).with_widget(visual_id.view_id()));
+    }
+
+    // Target phase
+    seq.push(FloemDispatch::target(target).with_widget(target.view_id()));
+
+    // Bubble phase: parent1 to parent2 (excluding target and root)
+    // We want: parent1, parent2
+    if ancestor_chain.len() > 2 {
+        for &visual_id in ancestor_chain.iter().skip(1).take(ancestor_chain.len() - 2) {
+            seq.push(FloemDispatch::bubble(visual_id).with_widget(visual_id.view_id()));
+        }
+    }
+
+    seq
+}
+
+/// Builds a complete capture/target/bubble dispatch sequence for a target.
+///
+/// Convenience function that combines building the ancestor chain and dispatch sequence.
+///
+/// # Arguments
+/// * `target` - The target VisualId
+/// * `root_view_id` - The root ViewId
+/// * `box_tree` - The box tree to traverse
+///
+/// # Returns
+/// Complete dispatch sequence from target to root with all phases
 fn build_capture_bubble_path(
     target: VisualId,
     root_view_id: ViewId,
     box_tree: &BoxTree,
 ) -> Vec<FloemDispatch> {
-    // Walk up the box tree to build the path from target to root
-    let mut path = Vec::new();
-    let mut current = target;
-
-    while let Some(parent_node) = box_tree.parent_of(current.0) {
-        path.push(current);
-        current = VisualId(parent_node, root_view_id);
-    }
-    path.push(current); // Add root
-
-    // Build dispatch sequence with capture and bubble phases
-    let mut dispatch_seq = Vec::new();
-
-    // Capture phase (root to target)
-    for &visual_id in path.iter().rev() {
-        dispatch_seq.push(FloemDispatch::capture(visual_id).with_widget(visual_id.view_id()));
-    }
-
-    // Target phase
-    dispatch_seq.push(FloemDispatch::target(target).with_widget(target.view_id()));
-
-    // Bubble phase (target to root, excluding root)
-    for &visual_id in path.iter().take(path.len() - 1) {
-        dispatch_seq.push(FloemDispatch::bubble(visual_id).with_widget(visual_id.view_id()));
-    }
-
-    dispatch_seq
+    let ancestor_chain = build_ancestor_chain(target, root_view_id, box_tree);
+    build_dispatch_sequence(&ancestor_chain)
 }
 
 // Keep these for now in case they're used elsewhere, but they're no longer needed for routing
@@ -636,9 +698,11 @@ impl<'a> GlobalEventCx<'a> {
             return;
         };
 
+        // Hit path contains all elements at the point (including siblings).
+        // The last element is the top-most target.
         let target = *path.last().unwrap();
 
-        // Build dispatch sequence using custom path walking
+        // Build dispatch sequence by walking up the parent chain from target to root
         let box_tree = self.window_state.box_tree.borrow();
         let mut seq = build_capture_bubble_path(target, self.window_state.root_view_id, &box_tree);
         drop(box_tree);
@@ -698,8 +762,6 @@ impl<'a> GlobalEventCx<'a> {
         respect_propagation: bool,
         default_prevented: &mut bool,
     ) {
-        use crate::view::stacking::collect_stacking_context_items;
-
         // Dispatch to current node (each view is the target, no phases)
         let dispatch = FloemDispatch {
             node: view_id.get_visual_id(),
@@ -718,18 +780,10 @@ impl<'a> GlobalEventCx<'a> {
             return;
         }
 
-        // Visit children
-        let visual_id = view_id.get_visual_id();
-        let box_tree = self.window_state.box_tree.borrow();
-        let children = collect_stacking_context_items(visual_id, &box_tree);
-        drop(box_tree);
-        for item in children.iter() {
-            self.route_tree_recursive(
-                item.visual_id.view_id(),
-                event,
-                respect_propagation,
-                default_prevented,
-            );
+        // Visit child VIEWS (not visual rectangles) to avoid infinite recursion
+        // when a view has multiple visual rectangles
+        for child_id in view_id.children() {
+            self.route_tree_recursive(child_id, event, respect_propagation, default_prevented);
         }
     }
 }

@@ -152,8 +152,11 @@ pub(crate) fn collect_stacking_context_items(
 
             let child_visual_id = child_view_id.get_visual_id();
 
-            // In fallback mode (tests), read z-index from ViewState
-            let z_index = child_view_id.state().borrow().stacking_info.effective_z_index;
+            // In fallback mode (tests), z-index should be 0 (box tree not populated)
+            let z_index = box_tree
+                .local_z_index(child_visual_id.0)
+                .and_then(|opt| opt)
+                .unwrap_or(0);
 
             if z_index != 0 {
                 has_non_zero_z = true;
@@ -217,10 +220,10 @@ pub(crate) fn collect_overlays(root_visual_id: VisualId, box_tree: &crate::BoxTr
                 let state_borrow = state.borrow();
                 let visual_id = state_borrow.visual_id;
 
-                // Try to get z-index from box tree first, fall back to ViewState for tests
+                // Get z-index from box tree
                 let z_index = box_tree.local_z_index(visual_id.0)
                     .and_then(|opt| opt)
-                    .unwrap_or_else(|| state_borrow.stacking_info.effective_z_index);
+                    .unwrap_or(0);
 
                 Some((overlay_id, z_index))
             })
@@ -243,7 +246,6 @@ pub(crate) fn collect_overlays(root_visual_id: VisualId, box_tree: &crate::BoxTr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::view::StackingInfo;
     use crate::BoxTree;
 
     thread_local! {
@@ -253,15 +255,11 @@ mod tests {
         );
     }
 
-    /// Helper to create a ViewId and set its z-index (both in ViewState and box tree)
+    /// Helper to create a ViewId and set its z-index in the test box tree
     fn create_view_with_z_index(z_index: i32) -> ViewId {
         let id = ViewId::new();
-        let state = id.state();
-        state.borrow_mut().stacking_info = StackingInfo {
-            effective_z_index: z_index,
-        };
 
-        // Set z-index in test box tree (fallback path will use view children anyway)
+        // Set z-index in test box tree
         let visual_id = id.get_visual_id();
         TEST_BOX_TREE.with(|bt| {
             let mut bt = bt.borrow_mut();
@@ -565,20 +563,13 @@ mod tests {
 
         // Change a's z-index to be higher than b
         {
-            let state = a.state();
-            let old_info = state.borrow().stacking_info;
-            state.borrow_mut().stacking_info = StackingInfo {
-                effective_z_index: 10,
-            };
-            // Simulate what happens during style computation
-            if old_info.effective_z_index != 10 {
-                invalidate_stacking_cache(a.get_visual_id());
-            }
-
-            // Also update in box tree
+            // Update z-index in box tree
             TEST_BOX_TREE.with(|bt| {
                 bt.borrow_mut().set_local_z_index(a.get_visual_id().0, Some(10));
             });
+
+            // Simulate what happens during style computation - invalidate cache
+            invalidate_stacking_cache(a.get_visual_id());
         }
 
         let result2 = test_collect_items(root);
