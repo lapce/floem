@@ -1286,10 +1286,10 @@ fn editor_content(
                 #[cfg(target_os = "macos")]
                 mods.set(Modifiers::ALT, false);
 
-                if mods.is_empty() {
-                    if let Key::Character(c) = &key_event.key {
-                        editor.get_untracked().receive_char(c);
-                    }
+                if mods.is_empty()
+                    && let Key::Character(c) = &key_event.key
+                {
+                    editor.get_untracked().receive_char(c);
                 }
             })
             .style(|s| s.min_size_full())

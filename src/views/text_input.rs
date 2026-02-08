@@ -1105,10 +1105,10 @@ fn get_dbl_click_selection(glyph_idx: usize, buffer: &str) -> Range<usize> {
     }
 
     // left-over non-alphanumeric char sequence at the end of the buffer(after the last word)
-    if let Some(last) = selectable_ranges.last() {
-        if last.end != buffer.len() {
-            selectable_ranges.push(last.end..buffer.len());
-        }
+    if let Some(last) = selectable_ranges.last()
+        && last.end != buffer.len()
+    {
+        selectable_ranges.push(last.end..buffer.len());
     }
 
     for range in selectable_ranges {

@@ -145,11 +145,11 @@ impl View for Svg {
                 self.id.request_style();
             }
         }
-        if let Some(prop_reader) = &mut self.css_prop {
-            if prop_reader.read_custom(cx) {
-                self.id
-                    .update_state(SvgOrStyle::Style(prop_reader.css_string()));
-            }
+        if let Some(prop_reader) = &mut self.css_prop
+            && prop_reader.read_custom(cx)
+        {
+            self.id
+                .update_state(SvgOrStyle::Style(prop_reader.css_string()));
         }
     }
 

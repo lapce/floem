@@ -251,11 +251,11 @@ pub trait Decorators: IntoView {
                 modifiers,
                 ..
             }) = e
+                && *event_key == key
+                && cmp(*modifiers)
             {
-                if *event_key == key && cmp(*modifiers) {
-                    action(e);
-                    return EventPropagation::Stop;
-                }
+                action(e);
+                return EventPropagation::Stop;
             }
             EventPropagation::Continue
         })
@@ -277,11 +277,11 @@ pub trait Decorators: IntoView {
                 modifiers,
                 ..
             }) = e
+                && *event_key == key
+                && cmp(*modifiers)
             {
-                if *event_key == key && cmp(*modifiers) {
-                    action(e);
-                    return EventPropagation::Stop;
-                }
+                action(e);
+                return EventPropagation::Stop;
             }
             EventPropagation::Continue
         })

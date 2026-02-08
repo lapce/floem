@@ -712,10 +712,10 @@ impl Style {
                 self.apply_mut(map.apply_selectors(selectors));
             }
         }
-        if self.get(Selected) {
-            if let Some(map) = self.get_nested_map(StyleSelector::Selected.to_key()) {
-                self.apply_mut(map.apply_selectors(&[StyleSelector::Selected]));
-            }
+        if self.get(Selected)
+            && let Some(map) = self.get_nested_map(StyleSelector::Selected.to_key())
+        {
+            self.apply_mut(map.apply_selectors(&[StyleSelector::Selected]));
         }
         self
     }

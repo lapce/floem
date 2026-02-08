@@ -238,15 +238,15 @@ fn move_left(
     let rope_text = ed.rope_text();
     let mut new_offset = rope_text.move_left(offset, mode, count);
 
-    if let Some(soft_tab_width) = atomic_soft_tab_width_for_offset(ed, offset) {
-        if soft_tab_width > 1 {
-            new_offset = snap_to_soft_tab(
-                rope_text.text(),
-                new_offset,
-                SnapDirection::Left,
-                soft_tab_width,
-            );
-        }
+    if let Some(soft_tab_width) = atomic_soft_tab_width_for_offset(ed, offset)
+        && soft_tab_width > 1
+    {
+        new_offset = snap_to_soft_tab(
+            rope_text.text(),
+            new_offset,
+            SnapDirection::Left,
+            soft_tab_width,
+        );
     }
 
     *affinity = CursorAffinity::Forward;
@@ -266,15 +266,15 @@ fn move_right(
     let rope_text = view.rope_text();
     let mut new_offset = rope_text.move_right(offset, mode, count);
 
-    if let Some(soft_tab_width) = atomic_soft_tab_width_for_offset(view, offset) {
-        if soft_tab_width > 1 {
-            new_offset = snap_to_soft_tab(
-                rope_text.text(),
-                new_offset,
-                SnapDirection::Right,
-                soft_tab_width,
-            );
-        }
+    if let Some(soft_tab_width) = atomic_soft_tab_width_for_offset(view, offset)
+        && soft_tab_width > 1
+    {
+        new_offset = snap_to_soft_tab(
+            rope_text.text(),
+            new_offset,
+            SnapDirection::Right,
+            soft_tab_width,
+        );
     }
 
     *affinity = CursorAffinity::Backward;

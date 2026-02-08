@@ -603,10 +603,10 @@ impl Scroll {
             let rect = (bounds - scroll_offset).inset(-edge_width / 2.0);
             let rect = rect.to_rounded_rect(radius(style, rect, true));
             cx.fill(&rect, &style.color().unwrap_or(HANDLE_COLOR), 0.0);
-            if edge_width > 0.0 {
-                if let Some(color) = style.border_color().right {
-                    cx.stroke(&rect, &color, &Stroke::new(edge_width));
-                }
+            if edge_width > 0.0
+                && let Some(color) = style.border_color().right
+            {
+                cx.stroke(&rect, &color, &Stroke::new(edge_width));
             }
         }
 
@@ -630,10 +630,10 @@ impl Scroll {
             let rect = (bounds - scroll_offset).inset(-edge_width / 2.0);
             let rect = rect.to_rounded_rect(radius(style, rect, false));
             cx.fill(&rect, &style.color().unwrap_or(HANDLE_COLOR), 0.0);
-            if edge_width > 0.0 {
-                if let Some(color) = style.border_color().right {
-                    cx.stroke(&rect, &color, &Stroke::new(edge_width));
-                }
+            if edge_width > 0.0
+                && let Some(color) = style.border_color().right
+            {
+                cx.stroke(&rect, &color, &Stroke::new(edge_width));
             }
         }
     }
@@ -930,10 +930,10 @@ impl View for Scroll {
         let old_child_size = self.child_size;
         self.update_size();
         // Call callback if child size changed
-        if old_child_size != self.child_size {
-            if let Some(callback) = &self.on_child_size {
-                callback(self.child_size);
-            }
+        if old_child_size != self.child_size
+            && let Some(callback) = &self.on_child_size
+        {
+            callback(self.child_size);
         }
         self.clamp_child_viewport(cx.window_state, self.child_viewport);
         self.computed_child_viewport = self.child_viewport;
@@ -1066,14 +1066,13 @@ impl View for Scroll {
         event: &Event,
     ) -> EventPropagation {
         if let Event::Pointer(PointerEvent::Scroll(PointerScrollEvent { state, .. })) = &event {
-            if let Some(listener) = event.listener() {
-                if self
+            if let Some(listener) = event.listener()
+                && self
                     .id
                     .apply_event(&listener, event)
                     .is_some_and(|prop| prop.is_processed())
-                {
-                    return EventPropagation::Stop;
-                }
+            {
+                return EventPropagation::Stop;
             }
             if let Some(delta) = event.pixel_scroll_delta_vec2() {
                 let delta = -if self.scroll_style.vertical_scroll_as_horizontal()

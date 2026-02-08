@@ -485,12 +485,12 @@ pub fn dispatch_through_path(
         }
 
         // Call event listeners
-        if !node.has_disabled_defaults {
-            if let Some(listener) = local_event.listener() {
-                let result = node.view_id.apply_event(&listener, &local_event);
-                if result.is_some_and(|r| r.is_processed()) {
-                    return DispatchResult::Processed;
-                }
+        if !node.has_disabled_defaults
+            && let Some(listener) = local_event.listener()
+        {
+            let result = node.view_id.apply_event(&listener, &local_event);
+            if result.is_some_and(|r| r.is_processed()) {
+                return DispatchResult::Processed;
             }
         }
     }
@@ -650,12 +650,12 @@ fn handle_focus_on_processed(
     use super::Event;
     use ui_events::pointer::{PointerButtonEvent, PointerEvent};
 
-    if let Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. })) = event {
-        if node.is_focusable {
-            let rect = node.view_id.get_size().unwrap_or_default().to_rect();
-            if rect.contains(state.logical_point()) {
-                cx.window_state.update_focus(node.view_id, false);
-            }
+    if let Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. })) = event
+        && node.is_focusable
+    {
+        let rect = node.view_id.get_size().unwrap_or_default().to_rect();
+        if rect.contains(state.logical_point()) {
+            cx.window_state.update_focus(node.view_id, false);
         }
     }
 }
@@ -771,42 +771,41 @@ fn handle_builtin_behaviors(
                         cx.window_state.hovered.push(view_id);
                     }
                     let cursor = view_state.borrow().combined_style.builtin().cursor();
-                    if let Some(cursor) = cursor {
-                        if cx.window_state.cursor.is_none() {
-                            cx.window_state.cursor = Some(cursor);
-                        }
+                    if let Some(cursor) = cursor
+                        && cx.window_state.cursor.is_none()
+                    {
+                        cx.window_state.cursor = Some(cursor);
                     }
                 }
             }
 
             // Drag handling
-            if node.can_drag {
-                if let Some((drag_id, drag_start)) = cx.window_state.drag_start.as_ref() {
-                    if drag_id == &view_id {
-                        let drag_start = *drag_start;
-                        let offset = current.logical_point() - drag_start;
+            if node.can_drag
+                && let Some((drag_id, drag_start)) = cx.window_state.drag_start.as_ref()
+                && drag_id == &view_id
+            {
+                let drag_start = *drag_start;
+                let offset = current.logical_point() - drag_start;
 
-                        if let Some(dragging) = cx
-                            .window_state
-                            .dragging
-                            .as_mut()
-                            .filter(|d| d.id == view_id && d.released_at.is_none())
-                        {
-                            dragging.offset = drag_start.to_vec2();
-                            cx.window_state.request_paint(view_id);
-                        } else if offset.x.abs() + offset.y.abs() > 1.0 {
-                            cx.window_state.active = None;
-                            cx.window_state.dragging = Some(DragState {
-                                id: view_id,
-                                offset: drag_start.to_vec2(),
-                                released_at: None,
-                                release_location: None,
-                            });
-                            cx.update_active(view_id);
-                            cx.window_state.request_paint(view_id);
-                            view_id.apply_event(&super::EventListener::DragStart, local_event);
-                        }
-                    }
+                if let Some(dragging) = cx
+                    .window_state
+                    .dragging
+                    .as_mut()
+                    .filter(|d| d.id == view_id && d.released_at.is_none())
+                {
+                    dragging.offset = drag_start.to_vec2();
+                    cx.window_state.request_paint(view_id);
+                } else if offset.x.abs() + offset.y.abs() > 1.0 {
+                    cx.window_state.active = None;
+                    cx.window_state.dragging = Some(DragState {
+                        id: view_id,
+                        offset: drag_start.to_vec2(),
+                        released_at: None,
+                        release_location: None,
+                    });
+                    cx.update_active(view_id);
+                    cx.window_state.request_paint(view_id);
+                    view_id.apply_event(&super::EventListener::DragStart, local_event);
                 }
             }
         }
@@ -821,17 +820,15 @@ fn handle_builtin_behaviors(
                 let on_view = rect.contains(state.logical_point());
 
                 // Handle drop
-                if on_view {
-                    if let Some(dragging) = cx.window_state.dragging.as_mut() {
-                        let dragging_id = dragging.id;
-                        if view_id
-                            .apply_event(&super::EventListener::Drop, local_event)
-                            .is_some_and(|prop| prop.is_processed())
-                        {
-                            cx.window_state.dragging = None;
-                            cx.window_state.request_paint(view_id);
-                            dragging_id.apply_event(&super::EventListener::DragEnd, local_event);
-                        }
+                if on_view && let Some(dragging) = cx.window_state.dragging.as_mut() {
+                    let dragging_id = dragging.id;
+                    if view_id
+                        .apply_event(&super::EventListener::Drop, local_event)
+                        .is_some_and(|prop| prop.is_processed())
+                    {
+                        cx.window_state.dragging = None;
+                        cx.window_state.request_paint(view_id);
+                        dragging_id.apply_event(&super::EventListener::DragEnd, local_event);
                     }
                 }
 

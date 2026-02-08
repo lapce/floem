@@ -247,19 +247,18 @@ impl DocumentPhantom for TextDocument {
 
         if self.buffer.with_untracked(Buffer::is_empty)
             && self.preedit.preedit.with_untracked(|p| p.is_none())
+            && let Some(placeholder) = self.placeholder(edid)
         {
-            if let Some(placeholder) = self.placeholder(edid) {
-                text.push(PhantomText {
-                    kind: PhantomTextKind::Placeholder,
-                    col: 0,
-                    affinity: None,
-                    text: placeholder,
-                    font_size: None,
-                    fg: Some(styling.placeholder_color()),
-                    bg: None,
-                    under_line: None,
-                });
-            }
+            text.push(PhantomText {
+                kind: PhantomTextKind::Placeholder,
+                col: 0,
+                affinity: None,
+                text: placeholder,
+                font_size: None,
+                fg: Some(styling.placeholder_color()),
+                bg: None,
+                under_line: None,
+            });
         }
 
         if let Some(preedit) = self.preedit_phantom(Some(styling.preedit_underline_color()), line) {
