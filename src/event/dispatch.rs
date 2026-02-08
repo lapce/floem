@@ -389,15 +389,14 @@ impl EventCx<'_> {
         // IMPORTANT: This is set AFTER event dispatch, matching Chromium's timing.
         // This allows handlers during PointerDown to call releasePointerCapture()
         // to prevent implicit capture if desired.
-        if let Event::Pointer(PointerEvent::Down(PointerButtonEvent { pointer, .. })) = event {
-            if pointer.pointer_type == PointerType::Touch {
-                if let Some(pointer_id) = pointer.pointer_id {
-                    // Only set implicit capture if no explicit capture was set during dispatch
-                    // and no explicit release was requested
-                    if !self.window_state.has_pending_capture(pointer_id) {
-                        self.window_state.set_pointer_capture(pointer_id, target);
-                    }
-                }
+        if let Event::Pointer(PointerEvent::Down(PointerButtonEvent { pointer, .. })) = event
+            && pointer.pointer_type == PointerType::Touch
+            && let Some(pointer_id) = pointer.pointer_id
+        {
+            // Only set implicit capture if no explicit capture was set during dispatch
+            // and no explicit release was requested
+            if !self.window_state.has_pending_capture(pointer_id) {
+                self.window_state.set_pointer_capture(pointer_id, target);
             }
         }
 
@@ -535,12 +534,10 @@ impl EventCx<'_> {
             processed |= self.dispatch_to_view(id, event, true).is_processed();
         }
 
-        if !processed {
-            if let Some(listener) = event.listener() {
-                processed |= main_view_id
-                    .apply_event(&listener, event)
-                    .is_some_and(|prop| prop.is_processed());
-            }
+        if !processed && let Some(listener) = event.listener() {
+            processed |= main_view_id
+                .apply_event(&listener, event)
+                .is_some_and(|prop| prop.is_processed());
         }
 
         if !processed {
@@ -557,16 +554,15 @@ impl EventCx<'_> {
                 {
                     let backwards = modifiers.contains(Modifiers::SHIFT);
                     view_tab_navigation(root_id, self.window_state, backwards);
-                } else if *modifiers == Modifiers::ALT {
-                    if let Key::Named(
+                } else if *modifiers == Modifiers::ALT
+                    && let Key::Named(
                         name @ (NamedKey::ArrowUp
                         | NamedKey::ArrowDown
                         | NamedKey::ArrowLeft
                         | NamedKey::ArrowRight),
                     ) = key
-                    {
-                        view_arrow_navigation(*name, self.window_state, root_id);
-                    }
+                {
+                    view_arrow_navigation(*name, self.window_state, root_id);
                 }
             }
 
@@ -580,16 +576,14 @@ impl EventCx<'_> {
                         ..
                     })
                 );
-            if keyboard_trigger_end {
-                if let Some(id) = self.window_state.active {
-                    if self
-                        .window_state
-                        .has_style_for_sel(id, StyleSelector::Active)
-                    {
-                        id.request_style_for_selector_recursive(StyleSelector::Active);
-                    }
-                    self.window_state.active = None;
+            if keyboard_trigger_end && let Some(id) = self.window_state.active {
+                if self
+                    .window_state
+                    .has_style_for_sel(id, StyleSelector::Active)
+                {
+                    id.request_style_for_selector_recursive(StyleSelector::Active);
                 }
+                self.window_state.active = None;
             }
         }
     }
@@ -674,20 +668,19 @@ impl EventCx<'_> {
         view_state: &std::cell::RefCell<crate::view::ViewState>,
         event: &Event,
     ) {
-        if let Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. })) = event {
-            if view_state.borrow().computed_style.get(Focusable) {
-                let rect = view_id.get_size().unwrap_or_default().to_rect();
-                if rect.contains(state.logical_point()) {
-                    self.window_state.update_focus(view_id, false);
-                }
+        if let Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. })) = event
+            && view_state.borrow().computed_style.get(Focusable)
+        {
+            let rect = view_id.get_size().unwrap_or_default().to_rect();
+            if rect.contains(state.logical_point()) {
+                self.window_state.update_focus(view_id, false);
             }
         }
-        if let Event::Pointer(PointerEvent::Move(_)) = event {
-            if let Some(cursor) = view_state.borrow().combined_style.builtin().cursor() {
-                if self.window_state.cursor.is_none() {
-                    self.window_state.cursor = Some(cursor);
-                }
-            }
+        if let Event::Pointer(PointerEvent::Move(_)) = event
+            && let Some(cursor) = view_state.borrow().combined_style.builtin().cursor()
+            && self.window_state.cursor.is_none()
+        {
+            self.window_state.cursor = Some(cursor);
         }
     }
 
@@ -857,46 +850,45 @@ impl EventCx<'_> {
                     self.window_state.hovered.push(view_id);
                 }
                 let vs = view_state.borrow();
-                if let Some(cursor) = vs.combined_style.builtin().cursor() {
-                    if self.window_state.cursor.is_none() {
-                        self.window_state.cursor = Some(cursor);
-                    }
+                if let Some(cursor) = vs.combined_style.builtin().cursor()
+                    && self.window_state.cursor.is_none()
+                {
+                    self.window_state.cursor = Some(cursor);
                 }
             }
         }
 
         // Handle drag state updates
-        if view_id.can_drag() {
-            if let Some((_, drag_start)) = self
+        if view_id.can_drag()
+            && let Some((_, drag_start)) = self
                 .window_state
                 .drag_start
                 .as_ref()
                 .filter(|(drag_id, _)| drag_id == &view_id)
-            {
-                let offset = point - *drag_start;
+        {
+            let offset = point - *drag_start;
 
-                if let Some(dragging) = self
-                    .window_state
-                    .dragging
-                    .as_mut()
-                    .filter(|d| d.id == view_id && d.released_at.is_none())
-                {
-                    // Update position while dragging
-                    dragging.offset = drag_start.to_vec2();
-                    self.window_state.request_paint(view_id);
-                } else if offset.x.abs() + offset.y.abs() > 1.0 {
-                    // Start dragging when moved > 1px
-                    self.window_state.active = None;
-                    self.window_state.dragging = Some(DragState {
-                        id: view_id,
-                        offset: drag_start.to_vec2(),
-                        released_at: None,
-                        release_location: None,
-                    });
-                    self.update_active(view_id);
-                    self.window_state.request_paint(view_id);
-                    view_id.apply_event(&EventListener::DragStart, event);
-                }
+            if let Some(dragging) = self
+                .window_state
+                .dragging
+                .as_mut()
+                .filter(|d| d.id == view_id && d.released_at.is_none())
+            {
+                // Update position while dragging
+                dragging.offset = drag_start.to_vec2();
+                self.window_state.request_paint(view_id);
+            } else if offset.x.abs() + offset.y.abs() > 1.0 {
+                // Start dragging when moved > 1px
+                self.window_state.active = None;
+                self.window_state.dragging = Some(DragState {
+                    id: view_id,
+                    offset: drag_start.to_vec2(),
+                    released_at: None,
+                    release_location: None,
+                });
+                self.update_active(view_id);
+                self.window_state.request_paint(view_id);
+                view_id.apply_event(&EventListener::DragStart, event);
             }
         }
 
@@ -928,25 +920,21 @@ impl EventCx<'_> {
         if pointer.is_primary_pointer() && button.is_none_or(|b| b == PointerButton::Primary) {
             // Show popout menu on non-macOS (pointer up)
             #[cfg(not(target_os = "macos"))]
-            if on_view {
-                if let Some(result) = self.try_show_popout_menu(view_id) {
-                    return Some(result);
-                }
+            if on_view && let Some(result) = self.try_show_popout_menu(view_id) {
+                return Some(result);
             }
 
             // Handle drag drop
             if !directed {
-                if on_view {
-                    if let Some(dragging) = self.window_state.dragging.as_mut() {
-                        let dragging_id = dragging.id;
-                        if view_id
-                            .apply_event(&EventListener::Drop, event)
-                            .is_some_and(|prop| prop.is_processed())
-                        {
-                            self.window_state.dragging = None;
-                            self.window_state.request_paint(view_id);
-                            dragging_id.apply_event(&EventListener::DragEnd, event);
-                        }
+                if on_view && let Some(dragging) = self.window_state.dragging.as_mut() {
+                    let dragging_id = dragging.id;
+                    if view_id
+                        .apply_event(&EventListener::Drop, event)
+                        .is_some_and(|prop| prop.is_processed())
+                    {
+                        self.window_state.dragging = None;
+                        self.window_state.request_paint(view_id);
+                        dragging_id.apply_event(&EventListener::DragEnd, event);
                     }
                 }
             } else if let Some(dragging) = self
@@ -1008,10 +996,8 @@ impl EventCx<'_> {
                 return Some(result);
             }
 
-            if on_view {
-                if let Some(result) = self.try_show_context_menu(view_id, state) {
-                    return Some(result);
-                }
+            if on_view && let Some(result) = self.try_show_context_menu(view_id, state) {
+                return Some(result);
             }
         }
 

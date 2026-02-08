@@ -27,7 +27,7 @@ default-members = [
 license = "MIT"
 version = "0.2.0"
 edition = "2024"
-rust-version = "1.87"
+rust-version = "1.91"
 repository = "https://github.com/lapce/floem"
 
 [package]

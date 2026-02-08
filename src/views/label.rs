@@ -269,15 +269,15 @@ impl Label {
     fn handle_modifier_cmd(&mut self, command: &TextCommand) -> bool {
         match command {
             TextCommand::Copy => {
-                if let Some((start_c, end_c)) = &self.selection_range {
-                    if let Some(ref text_layout) = self.text_layout {
-                        let start_line_idx = text_layout.lines_range()[start_c.line].start;
-                        let end_line_idx = text_layout.lines_range()[end_c.line].start;
-                        let start_idx = start_line_idx + start_c.index;
-                        let end_idx = end_line_idx + end_c.index;
-                        let selection_txt = self.label[start_idx..end_idx].into();
-                        let _ = Clipboard::set_contents(selection_txt);
-                    }
+                if let Some((start_c, end_c)) = &self.selection_range
+                    && let Some(ref text_layout) = self.text_layout
+                {
+                    let start_line_idx = text_layout.lines_range()[start_c.line].start;
+                    let end_line_idx = text_layout.lines_range()[end_c.line].start;
+                    let start_idx = start_line_idx + start_c.index;
+                    let end_idx = end_line_idx + end_c.index;
+                    let selection_txt = self.label[start_idx..end_idx].into();
+                    let _ = Clipboard::set_contents(selection_txt);
                 }
                 true
             }
@@ -436,10 +436,10 @@ impl View for Label {
                 let width = size.width.ceil() as f32;
                 let mut height = size.height as f32;
 
-                if self.style.text_overflow() == TextOverflow::Wrap {
-                    if let Some(t) = self.available_text_layout.as_ref() {
-                        height = height.max(t.size().height as f32);
-                    }
+                if self.style.text_overflow() == TextOverflow::Wrap
+                    && let Some(t) = self.available_text_layout.as_ref()
+                {
+                    height = height.max(t.size().height as f32);
                 }
 
                 (width, height)

@@ -1239,15 +1239,15 @@ impl WindowHandle {
     pub(crate) fn set_menu_theme_for_windows(&self, theme: winit::window::Theme) {
         use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
-        if let RawWindowHandle::Win32(handle) = self.window.window_handle().unwrap().as_raw() {
-            if let Some(menu) = &self.window_menu {
-                unsafe {
-                    let menu_theme = match theme {
-                        winit::window::Theme::Light => MudaMenuTheme::Light,
-                        winit::window::Theme::Dark => MudaMenuTheme::Dark,
-                    };
-                    let _ = menu.set_theme_for_hwnd(handle.hwnd.into(), menu_theme);
-                }
+        if let RawWindowHandle::Win32(handle) = self.window.window_handle().unwrap().as_raw()
+            && let Some(menu) = &self.window_menu
+        {
+            unsafe {
+                let menu_theme = match theme {
+                    winit::window::Theme::Light => MudaMenuTheme::Light,
+                    winit::window::Theme::Dark => MudaMenuTheme::Dark,
+                };
+                let _ = menu.set_theme_for_hwnd(handle.hwnd.into(), menu_theme);
             }
         }
     }

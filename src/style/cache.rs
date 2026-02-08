@@ -263,11 +263,11 @@ impl StyleCache {
     ) -> Option<(Rc<Style>, bool)> {
         self.clock += 1;
 
-        if let Some(bucket) = self.cache.get_mut(key) {
-            if let Some(result) = bucket.find(parent_style, self.clock) {
-                self.stats.hits += 1;
-                return Some(result);
-            }
+        if let Some(bucket) = self.cache.get_mut(key)
+            && let Some(result) = bucket.find(parent_style, self.clock)
+        {
+            self.stats.hits += 1;
+            return Some(result);
         }
 
         self.stats.misses += 1;
@@ -364,21 +364,21 @@ impl StyleCache {
         let mut removed = 0;
 
         for (key, _, _) in all_entries.into_iter().take(to_remove) {
-            if let Some(bucket) = self.cache.get_mut(&key) {
-                if !bucket.is_empty() {
-                    // Remove oldest entry in this bucket
-                    let oldest_idx = bucket
-                        .entries
-                        .iter()
-                        .enumerate()
-                        .min_by_key(|(_, e)| e.last_access)
-                        .map(|(i, _)| i);
+            if let Some(bucket) = self.cache.get_mut(&key)
+                && !bucket.is_empty()
+            {
+                // Remove oldest entry in this bucket
+                let oldest_idx = bucket
+                    .entries
+                    .iter()
+                    .enumerate()
+                    .min_by_key(|(_, e)| e.last_access)
+                    .map(|(i, _)| i);
 
-                    if let Some(idx) = oldest_idx {
-                        bucket.entries.remove(idx);
-                        removed += 1;
-                        self.stats.evictions += 1;
-                    }
+                if let Some(idx) = oldest_idx {
+                    bucket.entries.remove(idx);
+                    removed += 1;
+                    self.stats.evictions += 1;
                 }
             }
         }
@@ -521,27 +521,28 @@ impl Style {
 
         // Compare only inherited properties
         for (key, value) in self.map.iter() {
-            if let StyleKeyInfo::Prop(prop_info) = key.info {
-                if prop_info.inherited {
-                    // Check if other has this property with equal value
-                    if let Some(other_value) = other.map.get(key) {
-                        if !(prop_info.eq_any)(value.as_ref(), other_value.as_ref()) {
-                            return false;
-                        }
-                    } else {
-                        // Other doesn't have this inherited property
+            if let StyleKeyInfo::Prop(prop_info) = key.info
+                && prop_info.inherited
+            {
+                // Check if other has this property with equal value
+                if let Some(other_value) = other.map.get(key) {
+                    if !(prop_info.eq_any)(value.as_ref(), other_value.as_ref()) {
                         return false;
                     }
+                } else {
+                    // Other doesn't have this inherited property
+                    return false;
                 }
             }
         }
 
         // Check if other has inherited properties we don't have
         for (key, _) in other.map.iter() {
-            if let StyleKeyInfo::Prop(prop_info) = key.info {
-                if prop_info.inherited && !self.map.contains_key(key) {
-                    return false;
-                }
+            if let StyleKeyInfo::Prop(prop_info) = key.info
+                && prop_info.inherited
+                && !self.map.contains_key(key)
+            {
+                return false;
             }
         }
 
