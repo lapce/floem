@@ -196,15 +196,18 @@ impl PaintCx<'_> {
     /// - Children are always bounded within their parent (no "escaping")
     pub fn paint_children(&mut self, id: ViewId) {
         // Collect direct children sorted by z-index
-        let items = collect_stacking_context_items(id);
+        let visual_id = id.get_visual_id();
+        let box_tree = self.window_state.box_tree.borrow();
+        let items = collect_stacking_context_items(visual_id, &box_tree);
+        drop(box_tree);
 
         for item in items.iter() {
-            if item.visual_id.is_hidden() {
+            if item.visual_id.view_id().is_hidden() {
                 continue;
             }
 
             // Paint the child view (which will recursively paint its own children)
-            self.paint_view(item.visual_id);
+            self.paint_view(item.visual_id.view_id());
         }
     }
 
@@ -350,7 +353,10 @@ impl PaintCx<'_> {
     /// The overlay views are skipped during normal tree traversal (in `collect_stacking_context_items`)
     /// and painted here at root level so they appear above all other content.
     pub fn paint_overlays(&mut self, root_id: ViewId) {
-        let overlays = collect_overlays(root_id);
+        let root_visual_id = root_id.get_visual_id();
+        let box_tree = self.window_state.box_tree.borrow();
+        let overlays = collect_overlays(root_visual_id, &box_tree);
+        drop(box_tree);
 
         for overlay_id in overlays {
             if overlay_id.is_hidden() {

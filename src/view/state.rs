@@ -196,18 +196,6 @@ impl Visibility {
     }
 }
 
-/// Information about a view's stacking context.
-/// Used to determine paint order and event dispatch order.
-///
-/// In the simplified stacking model:
-/// - Every view is implicitly a stacking context
-/// - z-index only competes with siblings
-/// - Children are always bounded within their parent (no "escaping")
-#[derive(Debug, Clone, Copy, Default)]
-pub struct StackingInfo {
-    /// The effective z-index for sorting (0 if no z-index specified).
-    pub effective_z_index: i32,
-}
 
 /// View state stores internal state associated with a view which is owned and managed by Floem.
 pub struct ViewState {

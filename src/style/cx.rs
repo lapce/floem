@@ -547,7 +547,7 @@ impl<'a> StyleCx<'a> {
             );
 
             if old_phase != phase {
-                invalidate_stacking_cache(view_id);
+                invalidate_stacking_cache(view_id.get_visual_id());
                 view_state.borrow_mut().visibility.phase = phase;
             }
         }
@@ -570,7 +570,8 @@ impl<'a> StyleCx<'a> {
             let old_z_index = vs.stacking_info.effective_z_index;
 
             if old_z_index != new_z_index {
-                invalidate_stacking_cache(view_id);
+                let visual_id = view_id.get_visual_id();
+                invalidate_stacking_cache(visual_id);
                 if view_id.is_overlay() {
                     invalidate_all_overlay_caches();
                 }

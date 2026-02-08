@@ -182,7 +182,7 @@ impl ViewId {
         });
         // Invalidate parent's stacking cache since its children changed
         if let Some(parent) = parent {
-            invalidate_stacking_cache(parent);
+            invalidate_stacking_cache(parent.get_visual_id());
         }
     }
 
@@ -296,7 +296,7 @@ impl ViewId {
         // This ensures scope hierarchy matches view hierarchy for proper cleanup.
         reparent_scope_if_needed(child_id, *self);
         // Invalidate stacking cache since children changed
-        invalidate_stacking_cache(*self);
+        invalidate_stacking_cache(self.get_visual_id());
     }
 
     /// Append multiple children to this Id's list of children.
@@ -346,7 +346,7 @@ impl ViewId {
             reparent_scope_if_needed(child_id, *self);
         }
         // Invalidate stacking cache since children changed
-        invalidate_stacking_cache(*self);
+        invalidate_stacking_cache(self.get_visual_id());
     }
 
     /// Set the children views of this Id
@@ -385,7 +385,7 @@ impl ViewId {
             reparent_scope_if_needed(child_id, *self);
         }
         // Invalidate stacking cache since children changed
-        invalidate_stacking_cache(*self);
+        invalidate_stacking_cache(self.get_visual_id());
     }
 
     /// Set the children views of this Id using a Vector
@@ -432,7 +432,7 @@ impl ViewId {
             reparent_scope_if_needed(child_id, *self);
         }
         // Invalidate stacking cache since children changed
-        invalidate_stacking_cache(*self);
+        invalidate_stacking_cache(self.get_visual_id());
     }
 
     /// Set the view that should be associated with this Id
@@ -493,7 +493,7 @@ impl ViewId {
             s.children.insert(*self, children);
         });
         // Invalidate stacking cache since children changed
-        invalidate_stacking_cache(*self);
+        invalidate_stacking_cache(self.get_visual_id());
     }
 
     /// Get the list of `ViewId`s that are associated with the children views of this `ViewId`

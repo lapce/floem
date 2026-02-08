@@ -700,6 +700,7 @@ impl WindowState {
                     box_tree.set_local_bounds(props.visual_id.0, props.local_rect);
                     box_tree.set_local_clip(props.visual_id.0, props.clip);
                     box_tree.set_local_transform(props.visual_id.0, props.local_transform);
+                    box_tree.set_local_z_index(props.visual_id.0, Some(props.z_index));
                 }
             }
         });
@@ -860,6 +861,7 @@ struct ViewBoxProperties {
     scroll_offset: Vec2,
     scroll_ctx: Vec2,
     clip: Option<RoundedRect>,
+    z_index: i32,
 }
 
 // New helper function to compute view's box tree properties
@@ -882,6 +884,7 @@ fn compute_view_box_properties(
         let scroll_offset = state_borrow.child_translation;
         let clip = state_borrow.box_tree_props.clip_rect(local_rect);
         let visual_id = state_borrow.visual_id;
+        let z_index = state_borrow.stacking_info.effective_z_index;
 
         drop(state_borrow);
 
@@ -914,6 +917,7 @@ fn compute_view_box_properties(
             scroll_offset,
             scroll_ctx,
             clip,
+            z_index,
         }
     })
 }
@@ -941,6 +945,7 @@ fn compute_absolute_transforms_and_boxes(
                 box_tree.set_local_bounds(props.visual_id.0, props.local_rect);
                 box_tree.set_local_clip(props.visual_id.0, props.clip);
                 box_tree.set_local_transform(props.visual_id.0, props.local_transform);
+                box_tree.set_local_z_index(props.visual_id.0, Some(props.z_index));
             }
 
             // Recurse with this view's scroll offset

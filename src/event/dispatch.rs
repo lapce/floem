@@ -60,6 +60,45 @@ use super::PointerCaptureEvent;
 
 pub(crate) type FloemDispatch = Dispatch<VisualId, ViewId, Option<()>>;
 
+/// Build capture/bubble dispatch path by walking up the box tree parent chain.
+///
+/// This walks the visual hierarchy (box tree), not the logical view hierarchy.
+/// Each VisualId in the path maps to its owning ViewId for event handling.
+fn build_capture_bubble_path(
+    target: VisualId,
+    root_view_id: ViewId,
+    box_tree: &BoxTree,
+) -> Vec<FloemDispatch> {
+    // Walk up the box tree to build the path from target to root
+    let mut path = Vec::new();
+    let mut current = target;
+
+    while let Some(parent_node) = box_tree.parent_of(current.0) {
+        path.push(current);
+        current = VisualId(parent_node, root_view_id);
+    }
+    path.push(current); // Add root
+
+    // Build dispatch sequence with capture and bubble phases
+    let mut dispatch_seq = Vec::new();
+
+    // Capture phase (root to target)
+    for &visual_id in path.iter().rev() {
+        dispatch_seq.push(FloemDispatch::capture(visual_id).with_widget(visual_id.view_id()));
+    }
+
+    // Target phase
+    dispatch_seq.push(FloemDispatch::target(target).with_widget(target.view_id()));
+
+    // Bubble phase (target to root, excluding root)
+    for &visual_id in path.iter().take(path.len() - 1) {
+        dispatch_seq.push(FloemDispatch::bubble(visual_id).with_widget(visual_id.view_id()));
+    }
+
+    dispatch_seq
+}
+
+// Keep these for now in case they're used elsewhere, but they're no longer needed for routing
 pub(crate) struct BoxNodeLookup;
 impl WidgetLookup<VisualId> for BoxNodeLookup {
     type WidgetId = ViewId;
@@ -566,23 +605,14 @@ impl<'a> GlobalEventCx<'a> {
     ) -> Option<FloemDispatch> {
         use crate::context::Phases;
 
-        // Create router
-        let router = Router::with_parent(
-            BoxNodeLookup,
-            BoxNodeParentLookup {
-                root_view_id: self.window_state.root_view_id,
-                box_tree: self.window_state.box_tree.clone(),
-            },
-        );
-        // TODO: router filter/ scope?
-
-        // Get dispatch sequence based on phases
+        // Build dispatch sequence using custom path walking
         let seq = if phases == Phases::TARGET {
             // Direct to target only
             vec![FloemDispatch::target(target).with_widget(target.view_id())]
         } else {
-            // Full capture/bubble - phase filtering happens at handler level
-            router.dispatch_for(target)
+            // Full capture/bubble path by walking up the box tree
+            let box_tree = self.window_state.box_tree.borrow();
+            build_capture_bubble_path(target, self.window_state.root_view_id, &box_tree)
         };
 
         // Dispatch events
@@ -600,39 +630,27 @@ impl<'a> GlobalEventCx<'a> {
         phases: crate::context::Phases,
         default_prevented: &mut bool,
     ) {
-        let mut router = Router::with_parent(
-            BoxNodeLookup,
-            BoxNodeParentLookup {
-                root_view_id: self.window_state.root_view_id,
-                box_tree: self.window_state.box_tree.clone(),
-            },
-        );
-        let root = self.window_state.root_view_id;
-
         let Some(path) = self.hit_path.clone() else {
             // No hit - clear hover state
             self.update_focus_from_path(&[], false);
             return;
         };
 
-        let target = path.last().unwrap();
+        let target = *path.last().unwrap();
 
-        router.set_scope(Some(Box::new(move |id| {
-            let view_id = id.view_id();
-            !view_id.is_hidden() && !view_id.pointer_events_none()
-        })));
+        // Build dispatch sequence using custom path walking
+        let box_tree = self.window_state.box_tree.borrow();
+        let mut seq = build_capture_bubble_path(target, self.window_state.root_view_id, &box_tree);
+        drop(box_tree);
 
-        let resolved = ResolvedHitCow {
-            node: *target,
-            path: Some((&*path).into()),
-            depth_key: DepthKey::Z(0),
-            localizer: Localizer::default(),
-            meta: None::<()>,
-        };
-
-        let mut resolved_hits = vec![resolved];
-
-        let seq = router.handle_with_hits(&resolved_hits);
+        // Filter out hidden views and views with pointer-events: none
+        seq.retain(|dispatch| {
+            if let Some(widget) = dispatch.widget {
+                !widget.is_hidden() && !widget.pointer_events_none()
+            } else {
+                true
+            }
+        });
 
         // Dispatch events
         dispatcher::run(seq, self, |dispatch, event_cx| {
@@ -701,10 +719,13 @@ impl<'a> GlobalEventCx<'a> {
         }
 
         // Visit children
-        let children = collect_stacking_context_items(view_id);
+        let visual_id = view_id.get_visual_id();
+        let box_tree = self.window_state.box_tree.borrow();
+        let children = collect_stacking_context_items(visual_id, &box_tree);
+        drop(box_tree);
         for item in children.iter() {
             self.route_tree_recursive(
-                item.visual_id,
+                item.visual_id.view_id(),
                 event,
                 respect_propagation,
                 default_prevented,

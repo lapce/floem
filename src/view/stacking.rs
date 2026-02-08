@@ -25,29 +25,31 @@ pub(crate) struct StackingContextItem {
 pub(crate) type StackingContextItems = SmallVec<[StackingContextItem; 8]>;
 
 // Thread-local cache for stacking context items.
-// Key: ViewId of the parent
+// Key: VisualId of the parent
 // Value: Sorted list of direct children by z-index
 thread_local! {
-    static STACKING_CONTEXT_CACHE: RefCell<FxHashMap<ViewId, Rc<StackingContextItems>>> =
+    static STACKING_CONTEXT_CACHE: RefCell<FxHashMap<VisualId, Rc<StackingContextItems>>> =
         RefCell::new(FxHashMap::default());
 
     // Thread-local cache for overlay order per root.
-    // Key: ViewId of the root
+    // Key: VisualId of the root
     // Value: Sorted list of overlay ViewIds by z-index
-    static OVERLAY_ORDER_CACHE: RefCell<FxHashMap<ViewId, SmallVec<[ViewId; 4]>>> =
+    static OVERLAY_ORDER_CACHE: RefCell<FxHashMap<VisualId, SmallVec<[ViewId; 4]>>> =
         RefCell::new(FxHashMap::default());
 }
 
 /// Invalidates the stacking context cache for a view and its parent.
 /// Call this when z-index or children change.
-pub(crate) fn invalidate_stacking_cache(view_id: ViewId) {
+pub(crate) fn invalidate_stacking_cache(visual_id: VisualId) {
     STACKING_CONTEXT_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
         // Invalidate this view's cache (its children order)
-        cache.remove(&view_id);
+        cache.remove(&visual_id);
         // Invalidate parent's cache (sibling order)
+        let view_id = visual_id.view_id();
         if let Some(parent) = view_id.parent() {
-            cache.remove(&parent);
+            let parent_visual_id = parent.get_visual_id();
+            cache.remove(&parent_visual_id);
         }
     });
 }
@@ -55,9 +57,9 @@ pub(crate) fn invalidate_stacking_cache(view_id: ViewId) {
 /// Invalidates the overlay order cache for a root.
 /// Call this when overlays are registered/unregistered or their z-index changes.
 #[allow(dead_code)] // Kept for targeted cache invalidation when root is known
-pub(crate) fn invalidate_overlay_cache(root_id: ViewId) {
+pub(crate) fn invalidate_overlay_cache(root_visual_id: VisualId) {
     OVERLAY_ORDER_CACHE.with(|cache| {
-        cache.borrow_mut().remove(&root_id);
+        cache.borrow_mut().remove(&root_visual_id);
     });
 }
 
@@ -80,46 +82,89 @@ pub(crate) fn clear_all_stacking_caches() {
     });
 }
 
-/// Collects direct children of a view, sorted by z-index.
+/// Collects direct child visual rectangles (VisualIds) from the box tree, sorted by z-index.
+///
+/// **Important**: This function iterates through all child VisualIds in the box tree,
+/// not just child ViewIds. A single view can have multiple visual rectangles
+/// (e.g., scroll view has content area, scrollbars), and all must be properly ordered.
 ///
 /// In the simplified stacking model:
 /// - Every view is implicitly a stacking context
-/// - z-index only competes with siblings
+/// - z-index only competes with siblings (sibling VisualIds in the box tree)
 /// - Children are always bounded within their parent (they cannot "escape")
-/// - DOM order serves as a tiebreaker for equal z-index values
+/// - DOM order (box tree child order) serves as a tiebreaker for equal z-index values
 ///
 /// Results are cached. Call `invalidate_stacking_cache` when z-index or children change.
-pub(crate) fn collect_stacking_context_items(parent_id: ViewId) -> Rc<StackingContextItems> {
+pub(crate) fn collect_stacking_context_items(
+    parent_visual_id: VisualId,
+    box_tree: &crate::BoxTree,
+) -> Rc<StackingContextItems> {
     // Check cache first
-    let cached = STACKING_CONTEXT_CACHE.with(|cache| cache.borrow().get(&parent_id).cloned());
+    let cached = STACKING_CONTEXT_CACHE.with(|cache| cache.borrow().get(&parent_visual_id).cloned());
 
     if let Some(items) = cached {
         return items;
     }
 
-    // TODO: Get the z-index from the box tree.
-    // TODO: In event dispatch, use our own code with this stacking context cache to reconstruct root path instead of using understory
-
-    // Cache miss - collect direct children
+    // Cache miss - collect direct children from box tree
     let mut items = StackingContextItems::new();
     let mut has_non_zero_z = false;
 
-    for (dom_order, child) in parent_id.children().into_iter().enumerate() {
-        // Skip overlays - they're painted at root level
-        if child.is_overlay() {
-            continue;
-        }
+    // Iterate through all child visual rectangles in the box tree
+    let box_tree_children = box_tree.children_of(parent_visual_id.0);
 
-        let z_index = child.state().borrow().stacking_info.effective_z_index;
-        if z_index != 0 {
-            has_non_zero_z = true;
-        }
+    // In normal usage, use box tree children (includes all visual rectangles)
+    // In tests, box tree may not be populated, so fall back to view children
+    if !box_tree_children.is_empty() {
+        for (dom_order, &child_box_id) in box_tree_children.iter().enumerate() {
+            // Construct VisualId from box tree node id
+            let child_visual_id = VisualId(child_box_id, parent_visual_id.1);
 
-        items.push(StackingContextItem {
-            visual_id: child,
-            z_index,
-            dom_order,
-        });
+            // Skip overlays - they're painted at root level
+            let child_view_id = child_visual_id.view_id();
+            if child_view_id.is_overlay() {
+                continue;
+            }
+
+            // Get z-index from box tree
+            let z_index = box_tree.local_z_index(child_box_id)
+                .and_then(|opt| opt)
+                .unwrap_or(0);
+
+            if z_index != 0 {
+                has_non_zero_z = true;
+            }
+
+            items.push(StackingContextItem {
+                visual_id: child_visual_id,
+                z_index,
+                dom_order,
+            });
+        }
+    } else {
+        // Fallback for tests: use view children when box tree is not populated
+        let parent_view_id = parent_visual_id.view_id();
+        for (dom_order, child_view_id) in parent_view_id.children().into_iter().enumerate() {
+            // Skip overlays - they're painted at root level
+            if child_view_id.is_overlay() {
+                continue;
+            }
+
+            let child_visual_id = child_view_id.get_visual_id();
+
+            // In fallback mode (tests), read z-index from ViewState
+            let z_index = child_view_id.state().borrow().stacking_info.effective_z_index;
+
+            if z_index != 0 {
+                has_non_zero_z = true;
+            }
+
+            items.push(StackingContextItem {
+                visual_id: child_visual_id,
+                z_index,
+                dom_order,
+            });
+        }
     }
 
     // Sort by z-index, then DOM order
@@ -134,7 +179,7 @@ pub(crate) fn collect_stacking_context_items(parent_id: ViewId) -> Rc<StackingCo
     // Cache and return
     let items = Rc::new(items);
     STACKING_CONTEXT_CACHE.with(|cache| {
-        cache.borrow_mut().insert(parent_id, Rc::clone(&items));
+        cache.borrow_mut().insert(parent_visual_id, Rc::clone(&items));
     });
 
     items
@@ -146,37 +191,41 @@ pub(crate) fn collect_stacking_context_items(parent_id: ViewId) -> Rc<StackingCo
 ///
 /// Results are cached. Call `invalidate_overlay_cache` when overlays are
 /// registered/unregistered or their z-index changes.
-pub(crate) fn collect_overlays(root_id: ViewId) -> SmallVec<[ViewId; 4]> {
+pub(crate) fn collect_overlays(root_visual_id: VisualId, box_tree: &crate::BoxTree) -> SmallVec<[ViewId; 4]> {
     use super::VIEW_STORAGE;
 
     // Check cache first
-    let cached = OVERLAY_ORDER_CACHE.with(|cache| cache.borrow().get(&root_id).cloned());
+    let cached = OVERLAY_ORDER_CACHE.with(|cache| cache.borrow().get(&root_visual_id).cloned());
 
     if let Some(overlays) = cached {
         return overlays;
     }
 
-    // Cache miss - collect overlay IDs that belong to root_id
-    // We compute the actual root dynamically since the root may not be known at registration time
-    let overlay_ids: SmallVec<[ViewId; 4]> = VIEW_STORAGE.with_borrow(|s| {
+    let root_id = root_visual_id.view_id();
+
+    // Cache miss - collect overlays with their z-indices using a single VIEW_STORAGE borrow
+    let mut overlays: SmallVec<[(ViewId, i32); 4]> = VIEW_STORAGE.with_borrow(|s| {
         s.overlays
-            .keys()
-            .filter(|&overlay_id| {
-                // Validate actual root
-                let actual_root = overlay_id.root();
-                actual_root == root_id
+            .iter()
+            .filter_map(|(overlay_id, &stored_root)| {
+                // Check if this overlay belongs to our root
+                if stored_root != root_id {
+                    return None;
+                }
+
+                let state = s.states.get(overlay_id)?;
+                let state_borrow = state.borrow();
+                let visual_id = state_borrow.visual_id;
+
+                // Try to get z-index from box tree first, fall back to ViewState for tests
+                let z_index = box_tree.local_z_index(visual_id.0)
+                    .and_then(|opt| opt)
+                    .unwrap_or_else(|| state_borrow.stacking_info.effective_z_index);
+
+                Some((overlay_id, z_index))
             })
             .collect()
     });
-
-    // Get z-indices outside VIEW_STORAGE borrow to avoid RefCell conflict
-    let mut overlays: SmallVec<[(ViewId, i32); 4]> = overlay_ids
-        .into_iter()
-        .map(|id| {
-            let z_index = id.state().borrow().stacking_info.effective_z_index;
-            (id, z_index)
-        })
-        .collect();
 
     // Sort by z-index, then DOM order for stability
     overlays.sort_by_key(|(_, z)| *z);
@@ -185,7 +234,7 @@ pub(crate) fn collect_overlays(root_id: ViewId) -> SmallVec<[ViewId; 4]> {
 
     // Cache and return
     OVERLAY_ORDER_CACHE.with(|cache| {
-        cache.borrow_mut().insert(root_id, result.clone());
+        cache.borrow_mut().insert(root_visual_id, result.clone());
     });
 
     result
@@ -195,14 +244,30 @@ pub(crate) fn collect_overlays(root_id: ViewId) -> SmallVec<[ViewId; 4]> {
 mod tests {
     use super::*;
     use crate::view::StackingInfo;
+    use crate::BoxTree;
 
-    /// Helper to create a ViewId and set its z-index
+    thread_local! {
+        /// Test box tree for unit tests
+        static TEST_BOX_TREE: std::cell::RefCell<BoxTree> = std::cell::RefCell::new(
+            BoxTree::with_backend(understory_index::backends::GridF64::new(100.))
+        );
+    }
+
+    /// Helper to create a ViewId and set its z-index (both in ViewState and box tree)
     fn create_view_with_z_index(z_index: i32) -> ViewId {
         let id = ViewId::new();
         let state = id.state();
         state.borrow_mut().stacking_info = StackingInfo {
             effective_z_index: z_index,
         };
+
+        // Set z-index in test box tree (fallback path will use view children anyway)
+        let visual_id = id.get_visual_id();
+        TEST_BOX_TREE.with(|bt| {
+            let mut bt = bt.borrow_mut();
+            bt.set_local_z_index(visual_id.0, Some(z_index));
+        });
+
         id
     }
 
@@ -223,7 +288,7 @@ mod tests {
 
     /// Helper to extract view IDs from stacking context items
     fn get_view_ids(items: &[StackingContextItem]) -> Vec<ViewId> {
-        items.iter().map(|item| item.visual_id).collect()
+        items.iter().map(|item| item.visual_id.view_id()).collect()
     }
 
     /// Helper to extract z-indices from stacking context items
@@ -231,10 +296,26 @@ mod tests {
         items.iter().map(|item| item.z_index).collect()
     }
 
+    /// Helper wrapper to call collect_stacking_context_items with test box tree
+    fn test_collect_items(parent: ViewId) -> Rc<StackingContextItems> {
+        let visual_id = parent.get_visual_id();
+        TEST_BOX_TREE.with(|bt| {
+            collect_stacking_context_items(visual_id, &bt.borrow())
+        })
+    }
+
+    /// Helper wrapper to call collect_overlays with test box tree
+    fn test_collect_overlays(root: ViewId) -> SmallVec<[ViewId; 4]> {
+        let visual_id = root.get_visual_id();
+        TEST_BOX_TREE.with(|bt| {
+            collect_overlays(visual_id, &bt.borrow())
+        })
+    }
+
     #[test]
     fn test_no_children() {
         let parent = ViewId::new();
-        let result = collect_stacking_context_items(parent);
+        let result = test_collect_items(parent);
         assert!(result.is_empty());
     }
 
@@ -243,9 +324,9 @@ mod tests {
         let child = create_view_with_z_index(5);
         let parent = setup_parent_with_children(vec![child]);
 
-        let result = collect_stacking_context_items(parent);
+        let result = test_collect_items(parent);
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0].visual_id, child);
+        assert_eq!(result[0].visual_id.view_id(), child);
     }
 
     #[test]
@@ -256,7 +337,7 @@ mod tests {
         let child3 = create_view_with_z_index(0);
         let parent = setup_parent_with_children(vec![child1, child2, child3]);
 
-        let result = collect_stacking_context_items(parent);
+        let result = test_collect_items(parent);
         assert_eq!(get_view_ids(&result), vec![child1, child2, child3]);
     }
 
@@ -269,7 +350,7 @@ mod tests {
         // DOM order: z10, z1, z5
         let parent = setup_parent_with_children(vec![child_z10, child_z1, child_z5]);
 
-        let result = collect_stacking_context_items(parent);
+        let result = test_collect_items(parent);
         // Paint order should be: z1, z5, z10 (ascending)
         assert_eq!(get_z_indices_from_items(&result), vec![1, 5, 10]);
         assert_eq!(get_view_ids(&result), vec![child_z1, child_z5, child_z10]);
@@ -284,7 +365,7 @@ mod tests {
         // DOM order: pos, neg, zero
         let parent = setup_parent_with_children(vec![child_pos, child_neg, child_zero]);
 
-        let result = collect_stacking_context_items(parent);
+        let result = test_collect_items(parent);
         // Paint order: -1, 0, 1
         assert_eq!(get_z_indices_from_items(&result), vec![-1, 0, 1]);
     }
@@ -297,7 +378,7 @@ mod tests {
         let child3 = create_view_with_z_index(5);
         let parent = setup_parent_with_children(vec![child1, child2, child3]);
 
-        let result = collect_stacking_context_items(parent);
+        let result = test_collect_items(parent);
         // Same z-index, so DOM order preserved
         assert_eq!(get_view_ids(&result), vec![child1, child2, child3]);
     }
@@ -310,7 +391,7 @@ mod tests {
         let child_zero = create_view_with_z_index(0);
         let parent = setup_parent_with_children(vec![child_max, child_min, child_zero]);
 
-        let result = collect_stacking_context_items(parent);
+        let result = test_collect_items(parent);
         assert_eq!(
             get_z_indices_from_items(&result),
             vec![i32::MIN, 0, i32::MAX]
@@ -325,7 +406,7 @@ mod tests {
         let child_z5 = create_view_with_z_index(5);
         let parent = setup_parent_with_children(vec![child_z1, child_z10, child_z5]);
 
-        let paint_order = collect_stacking_context_items(parent);
+        let paint_order = test_collect_items(parent);
         // Paint order: 1, 5, 10 (ascending)
         assert_eq!(get_z_indices_from_items(&paint_order), vec![1, 5, 10]);
 
@@ -342,7 +423,7 @@ mod tests {
             .collect();
         let parent = setup_parent_with_children(children.clone());
 
-        let result = collect_stacking_context_items(parent);
+        let result = test_collect_items(parent);
         // Should be sorted ascending: 0, 1, 2, ..., 9
         let z_indices = get_z_indices_from_items(&result);
         assert_eq!(z_indices, (0..10).collect::<Vec<_>>());
@@ -356,7 +437,7 @@ mod tests {
         let child3 = create_view_with_z_index(-5);
         let parent = setup_parent_with_children(vec![child1, child2, child3]);
 
-        let result = collect_stacking_context_items(parent);
+        let result = test_collect_items(parent);
         // All same z-index, DOM order preserved
         assert_eq!(get_view_ids(&result), vec![child1, child2, child3]);
         assert_eq!(get_z_indices_from_items(&result), vec![-5, -5, -5]);
@@ -388,7 +469,7 @@ mod tests {
 
         let root = setup_parent_with_children(vec![a, b]);
 
-        let result = collect_stacking_context_items(root);
+        let result = test_collect_items(root);
 
         // Only A and B should be in root's direct children list
         assert_eq!(result.len(), 2);
@@ -417,11 +498,11 @@ mod tests {
         let root = setup_parent_with_children(vec![a, b]);
 
         // Root's direct children
-        let root_result = collect_stacking_context_items(root);
+        let root_result = test_collect_items(root);
         assert_eq!(get_view_ids(&root_result), vec![a, b]);
 
         // A's direct children
-        let a_result = collect_stacking_context_items(a);
+        let a_result = test_collect_items(a);
         assert_eq!(get_view_ids(&a_result), vec![a1, a2]);
     }
 
@@ -447,7 +528,7 @@ mod tests {
         let _root = setup_parent_with_children(vec![parent]);
 
         // Parent level: only direct children sorted by z-index
-        let parent_result = collect_stacking_context_items(parent);
+        let parent_result = test_collect_items(parent);
         assert_eq!(get_z_indices_from_items(&parent_result), vec![5, 10, 15]);
         assert_eq!(get_view_ids(&parent_result), vec![child2, child1, child3]);
     }
@@ -461,8 +542,8 @@ mod tests {
         let b = create_view_with_z_index(2);
         let root = setup_parent_with_children(vec![a, b]);
 
-        let result1 = collect_stacking_context_items(root);
-        let result2 = collect_stacking_context_items(root);
+        let result1 = test_collect_items(root);
+        let result2 = test_collect_items(root);
 
         // Results should be identical
         assert_eq!(get_view_ids(&result1), get_view_ids(&result2));
@@ -479,7 +560,7 @@ mod tests {
         let b = create_view_with_z_index(2);
         let root = setup_parent_with_children(vec![a, b]);
 
-        let result1 = collect_stacking_context_items(root);
+        let result1 = test_collect_items(root);
         assert_eq!(get_view_ids(&result1), vec![a, b]);
 
         // Change a's z-index to be higher than b
@@ -491,11 +572,16 @@ mod tests {
             };
             // Simulate what happens during style computation
             if old_info.effective_z_index != 10 {
-                invalidate_stacking_cache(a);
+                invalidate_stacking_cache(a.get_visual_id());
             }
+
+            // Also update in box tree
+            TEST_BOX_TREE.with(|bt| {
+                bt.borrow_mut().set_local_z_index(a.get_visual_id().0, Some(10));
+            });
         }
 
-        let result2 = collect_stacking_context_items(root);
+        let result2 = test_collect_items(root);
         // Now a should come after b due to higher z-index
         assert_eq!(get_view_ids(&result2), vec![b, a]);
         assert_eq!(get_z_indices_from_items(&result2), vec![2, 10]);
@@ -507,14 +593,14 @@ mod tests {
         let a = create_view_with_z_index(1);
         let root = setup_parent_with_children(vec![a]);
 
-        let result1 = collect_stacking_context_items(root);
+        let result1 = test_collect_items(root);
         assert_eq!(get_view_ids(&result1), vec![a]);
 
         // Add a new child
         let b = create_view_with_z_index(2);
         root.set_children_ids(vec![a, b]); // This calls invalidate_stacking_cache
 
-        let result2 = collect_stacking_context_items(root);
+        let result2 = test_collect_items(root);
         assert_eq!(get_view_ids(&result2), vec![a, b]);
     }
 
@@ -529,17 +615,17 @@ mod tests {
         let b2 = create_view_with_z_index(20);
         let root_b = setup_parent_with_children(vec![b1, b2]);
 
-        let result_a = collect_stacking_context_items(root_a);
-        let result_b = collect_stacking_context_items(root_b);
+        let result_a = test_collect_items(root_a);
+        let result_b = test_collect_items(root_b);
 
         assert_eq!(get_view_ids(&result_a), vec![a1, a2]);
         assert_eq!(get_view_ids(&result_b), vec![b1, b2]);
 
         // Invalidate root_a's cache
-        invalidate_stacking_cache(a1);
+        invalidate_stacking_cache(a1.get_visual_id());
 
         // root_b's cache should still be valid (returns same result)
-        let result_b2 = collect_stacking_context_items(root_b);
+        let result_b2 = test_collect_items(root_b);
         assert_eq!(get_view_ids(&result_b2), vec![b1, b2]);
     }
 
@@ -551,13 +637,13 @@ mod tests {
         let c = create_view_with_z_index(3);
         let root = setup_parent_with_children(vec![a, b, c]);
 
-        let result1 = collect_stacking_context_items(root);
+        let result1 = test_collect_items(root);
         assert_eq!(get_view_ids(&result1), vec![a, b, c]);
 
         // Remove b from children
         root.set_children_ids(vec![a, c]); // This calls invalidate_stacking_cache
 
-        let result2 = collect_stacking_context_items(root);
+        let result2 = test_collect_items(root);
         assert_eq!(get_view_ids(&result2), vec![a, c]);
     }
 
@@ -571,7 +657,7 @@ mod tests {
         let c = create_view_with_z_index(0);
         let root = setup_parent_with_children(vec![a, b, c]);
 
-        let result = collect_stacking_context_items(root);
+        let result = test_collect_items(root);
 
         // All z-indices are 0, should be in DOM order
         assert_eq!(get_view_ids(&result), vec![a, b, c]);
@@ -586,7 +672,7 @@ mod tests {
         let c = create_view_with_z_index(0);
         let root = setup_parent_with_children(vec![a, b, c]);
 
-        let result = collect_stacking_context_items(root);
+        let result = test_collect_items(root);
 
         // b has z=1, so it should come after a and c (which have z=0)
         assert_eq!(get_view_ids(&result), vec![a, c, b]);
@@ -601,7 +687,7 @@ mod tests {
         let c = create_view_with_z_index(0);
         let root = setup_parent_with_children(vec![a, b, c]);
 
-        let result = collect_stacking_context_items(root);
+        let result = test_collect_items(root);
 
         // b has z=-1, so it should come before a and c (which have z=0)
         assert_eq!(get_view_ids(&result), vec![b, a, c]);
@@ -631,10 +717,10 @@ mod tests {
         });
 
         // First call should populate cache
-        let result1 = collect_overlays(root);
+        let result1 = test_collect_overlays(root);
 
         // Second call should return cached value
-        let result2 = collect_overlays(root);
+        let result2 = test_collect_overlays(root);
 
         assert_eq!(result1, result2);
         assert_eq!(result1.len(), 2);
@@ -661,7 +747,7 @@ mod tests {
             s.overlays.insert(overlay1, root);
         });
 
-        let result1 = collect_overlays(root);
+        let result1 = test_collect_overlays(root);
         assert_eq!(result1.len(), 1);
 
         // Invalidate cache
@@ -675,7 +761,7 @@ mod tests {
         });
 
         // Should get fresh result with both overlays
-        let result2 = collect_overlays(root);
+        let result2 = test_collect_overlays(root);
         assert_eq!(result2.len(), 2);
 
         // Clean up
@@ -710,7 +796,7 @@ mod tests {
         child1_id.set_parent(parent);
 
         // First call - should cache the result
-        let result1 = collect_stacking_context_items(parent);
+        let result1 = test_collect_items(parent);
         assert_eq!(get_view_ids(&result1), vec![child1_id]);
 
         // Now replace children using set_children (simulating Container::derived rebuild)
@@ -721,7 +807,7 @@ mod tests {
 
         // The stacking cache should have been invalidated by set_children
         // so this should return the NEW children, not the cached old ones
-        let result2 = collect_stacking_context_items(parent);
+        let result2 = test_collect_items(parent);
         assert_eq!(
             get_view_ids(&result2),
             vec![child2_id],
@@ -749,7 +835,7 @@ mod tests {
         child1_id.set_parent(parent);
 
         // First call - should cache the result
-        let result1 = collect_stacking_context_items(parent);
+        let result1 = test_collect_items(parent);
         assert_eq!(get_view_ids(&result1), vec![child1_id]);
 
         // Replace children using set_children_iter
@@ -759,7 +845,7 @@ mod tests {
         child2_id.set_parent(parent);
 
         // The stacking cache should have been invalidated
-        let result2 = collect_stacking_context_items(parent);
+        let result2 = test_collect_items(parent);
         assert_eq!(
             get_view_ids(&result2),
             vec![child2_id],
@@ -780,7 +866,7 @@ mod tests {
         let parent = setup_parent_with_children(vec![a, b, c]);
 
         // First call - caches the result
-        let result1 = collect_stacking_context_items(parent);
+        let result1 = test_collect_items(parent);
         assert_eq!(get_view_ids(&result1), vec![a, b, c]);
 
         // Remove 'b' using id.remove() (which is called by remove_view)
@@ -788,7 +874,7 @@ mod tests {
 
         // The parent's stacking cache should have been invalidated by remove()
         // so this should return the updated children list
-        let result2 = collect_stacking_context_items(parent);
+        let result2 = test_collect_items(parent);
         assert_eq!(
             get_view_ids(&result2),
             vec![a, c],
@@ -821,7 +907,7 @@ mod tests {
         old_child_id.set_parent(container_id);
 
         // Cache the stacking context
-        let result1 = collect_stacking_context_items(container_id);
+        let result1 = test_collect_items(container_id);
         assert_eq!(get_view_ids(&result1), vec![old_child_id]);
 
         // Step 2: Simulate Container::derived update
@@ -841,7 +927,7 @@ mod tests {
         }
 
         // Verify: stacking context should only contain new child
-        let result2 = collect_stacking_context_items(container_id);
+        let result2 = test_collect_items(container_id);
         assert_eq!(
             get_view_ids(&result2),
             vec![new_child_id],
