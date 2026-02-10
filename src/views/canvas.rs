@@ -41,7 +41,7 @@ pub struct Canvas {
 /// ```
 pub fn canvas(paint: impl Fn(&mut PaintCx, Size) + 'static) -> Canvas {
     let id = ViewId::new();
-    id.has_layout_listener();
+    id.register_listener(LayoutChangedListener::listener_key());
 
     Canvas {
         id,

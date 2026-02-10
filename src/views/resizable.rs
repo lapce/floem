@@ -34,7 +34,7 @@ style_class!(
 
 pub(crate) fn create_resizable(children: Vec<Box<dyn View>>) -> ResizableStack {
     let id = ViewId::new();
-    id.has_layout_listener();
+    id.register_listener(LayoutChangedListener::listener_key());
 
     let mut view_children = Vec::new();
     let mut child_ids = Vec::new();

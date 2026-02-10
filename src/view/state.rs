@@ -244,6 +244,8 @@ pub struct ViewState {
     pub(crate) user_cursor: Option<CursorStyle>,
     pub(crate) taffy_style: taffy::style::Style,
     pub(crate) event_listeners: FxHashMap<EventListenerKey, EventListenerVec>,
+    /// these are the listeners that are registered in the window state. This is used to efficiently clean up those listeners from the window state.
+    pub(crate) registered_listener_keys: SmallVec<[listener::EventListenerKey; 2]>,
     pub(crate) layout_window_origin: Point,
     pub(crate) layout: Option<LayoutChanged>,
     pub(crate) context_menu: Option<Rc<MenuCallback>>,
@@ -299,6 +301,7 @@ impl ViewState {
             taffy_style: taffy::style::Style::DEFAULT,
             dragging_style: None,
             event_listeners: FxHashMap::default(),
+            registered_listener_keys: SmallVec::new(),
             layout_window_origin: Point::ZERO,
             layout: None,
             context_menu: None,

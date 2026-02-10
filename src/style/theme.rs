@@ -683,6 +683,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
                 .padding(3)
                 .apply(focus_style())
                 .apply(border_style(true))
+                .selectable(false)
                 .class(SvgClass, |s| {
                     s.with_theme(|s, t| {
                         s.hover(|s| s.background(t.bg_elevated()))

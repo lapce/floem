@@ -30,18 +30,17 @@ use understory_box_tree::NodeFlags;
 
 use super::Decorators;
 
-custom_event! {
-    /// Event fired when a scroll view's scroll position changes
-    ///
-    /// This event is fired whenever the visible viewport of the scroll view changes,
-    /// either through user interaction (scrolling with mouse wheel, dragging scrollbars)
-    /// or programmatic changes to the scroll offset.
-    #[derive(Copy, PartialEq)]
-    pub struct ScrollChanged {
-        /// The scroll offset as a vector (how far scrolled from origin)
-        pub offset: Vec2,
-    }
+/// Event fired when a scroll view's scroll position changes
+///
+/// This event is fired whenever the visible viewport of the scroll view changes,
+/// either through user interaction (scrolling with mouse wheel, dragging scrollbars)
+/// or programmatic changes to the scroll offset.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ScrollChanged {
+    /// The scroll offset as a vector (how far scrolled from origin)
+    pub offset: Vec2,
 }
+custom_event!(ScrollChanged);
 
 enum ScrollState {
     EnsureVisible(Rect),
@@ -567,7 +566,7 @@ impl Scroll {
     /// ```
     pub fn new(child: impl IntoView) -> Self {
         let id = ViewId::new();
-        id.has_layout_listener();
+        id.register_listener(LayoutChangedListener::listener_key());
 
         let child = child.into_any();
         let child_id = child.id();

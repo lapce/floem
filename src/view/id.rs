@@ -22,8 +22,8 @@ thread_local! {
     static PENDING_SCOPE_REPARENTS: RefCell<HashSet<ViewId>> = RefCell::new(HashSet::new());
 }
 use crate::context::EventCallbackConfig;
-use crate::event::DispatchKind;
 use crate::event::listener::EventListenerKey;
+use crate::event::{DispatchKind, listener};
 use crate::view::LayoutTree;
 use crate::window::handle::get_current_view;
 use crate::{BoxTree, ElementId};
@@ -938,6 +938,7 @@ impl ViewId {
     ///     EventPropagation::Continue
     /// }
     /// ```
+    #[deprecated(note = "directly use `set_pointer_capture` on the `EventCx`")]
     pub fn set_pointer_capture(&self, pointer_id: PointerId) {
         self.add_update_message(UpdateMessage::SetPointerCapture {
             view_id: *self,
@@ -1009,6 +1010,9 @@ impl ViewId {
         action: Box<EventCallback>,
         config: EventCallbackConfig,
     ) {
+        add_update_message(crate::message::UpdateMessage::RegisterListener(
+            listener, *self,
+        ));
         let state = self.state();
         state
             .borrow_mut()
@@ -1264,14 +1268,18 @@ impl ViewId {
         })
     }
 
-    /// use this if your view wants to receive a [`LayoutChanged`](crate::context::LayoutChanged) event when the layout changes.
-    pub fn has_layout_listener(&self) {
-        self.add_update_message(UpdateMessage::HasLayoutListener(*self));
+    /// Register this view to receive a specific event type.
+    ///
+    /// Views must register for events they want to receive through the broadcast
+    /// dispatch system, such as [`LayoutChanged`](crate::context::LayoutChanged)
+    /// or [`VisualChanged`](crate::context::VisualChanged).
+    pub fn register_listener(&self, key: listener::EventListenerKey) {
+        self.add_update_message(UpdateMessage::RegisterListener(key, *self));
     }
 
-    /// use this if your view wants to receive a [`VisualChanged`](crate::context::VisualChanged) event when the visual position changes.
-    pub fn has_visual_change_listener(&self) {
-        self.add_update_message(UpdateMessage::HasVisualChangedListener(*self));
+    /// Unregister this view from receiving a specific event type.
+    pub fn remove_listener(&self, key: listener::EventListenerKey) {
+        self.add_update_message(UpdateMessage::RemoveListener(key, *self));
     }
 
     pub(crate) fn get_layout_window_origin(&self) -> Point {

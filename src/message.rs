@@ -7,7 +7,7 @@ use winit::window::{ResizeDirection, Theme};
 
 use crate::{
     element_id::ElementId,
-    event::{DispatchKind, Event},
+    event::{DispatchKind, Event, listener},
     platform::menu::Menu,
     view::{AnyView, View, ViewId},
     window::state::WindowState,
@@ -121,8 +121,8 @@ pub enum UpdateMessage {
     SetupReactiveChildren {
         setup: DeferredReactiveSetup,
     },
-    HasLayoutListener(ViewId),
-    HasVisualChangedListener(ViewId),
+    RegisterListener(listener::EventListenerKey, ViewId),
+    RemoveListener(listener::EventListenerKey, ViewId),
     DispatchEvent {
         id: ViewId,
         event: Event,

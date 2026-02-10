@@ -12,8 +12,8 @@ use crate::{
     ViewId,
     action::{add_update_message, set_window_scale, set_window_title},
     animate::Animation,
-    context::{EventCallbackConfig, LayoutChanged, VisualChanged},
-    event::{CustomEvent, EventCx, EventPropagation, listener},
+    context::EventCallbackConfig,
+    event::{EventCx, EventPropagation, listener},
     platform::menu::Menu,
     style::{Style, StyleClass},
     view::{HasViewId, IntoView},
@@ -267,11 +267,6 @@ pub trait Decorators: IntoView {
         let _ = listener;
         let intermediate = self.into_intermediate();
         let id = intermediate.view_id();
-        if L::listener_key() == LayoutChanged::listener_key() {
-            add_update_message(crate::message::UpdateMessage::HasLayoutListener(id));
-        } else if L::listener_key() == VisualChanged::listener_key() {
-            add_update_message(crate::message::UpdateMessage::HasVisualChangedListener(id));
-        }
         id.add_event_listener(
             L::listener_key(),
             Box::new(move |cx| {

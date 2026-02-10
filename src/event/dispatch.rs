@@ -306,7 +306,9 @@ pub(crate) struct GlobalEventCx<'a> {
 pub struct EventCx<'a> {
     pub window_state: &'a mut WindowState,
     pub untransformed_caused_by: Option<&'a Event>,
-    /// An event that has been transformed to the local coordinate space of the target node
+    /// An event that has been transformed to the local coordinate space of the target node.
+    ///
+    /// Do not use this inside of event listeners, the data has been extracted and the variant of this event will always be `Extracted`.
     pub event: Event,
     /// In the case that `event` is a synthetic event like `Click`, the caused by may contain information about the triggering event.
     pub caused_by: Option<Event>,
@@ -439,28 +441,27 @@ impl<'a> EventCx<'a> {
         }
 
         // Run registered event listeners
-        let handlers = self
-            .view_id
-            .state()
-            .borrow()
-            .event_listeners
-            .get(&self.event.listener_key())
-            .cloned();
-
-        if let Some(handlers) = handlers {
-            for (handler, config) in handlers {
-                if !config.phases.matches(&self.phase) {
-                    continue;
-                }
-
-                let result = (handler.borrow_mut())(self);
-                if result.is_stop() {
-                    stop_propagation = true;
-                }
-
-                // Break early if stopImmediatePropagation was called
-                if self.stop_immediate {
-                    return Outcome::Stop;
+        let listener_keys = self.event.listener_keys();
+        for key in &listener_keys {
+            let handlers = self
+                .view_id
+                .state()
+                .borrow()
+                .event_listeners
+                .get(key)
+                .cloned();
+            if let Some(handlers) = handlers {
+                for (handler, config) in handlers {
+                    if !config.phases.matches(&self.phase) {
+                        continue;
+                    }
+                    let result = (handler.borrow_mut())(self);
+                    if result.is_stop() {
+                        stop_propagation = true;
+                    }
+                    if self.stop_immediate {
+                        return Outcome::Stop;
+                    }
                 }
             }
         }
@@ -604,7 +605,12 @@ impl<'a> GlobalEventCx<'a> {
             Event::Key(_) | Event::Ime(_) => {
                 if let Some(focus) = self.window_state.focus_state.current_path().last() {
                     use crate::context::Phases;
-                    self.route_directed(*focus, event, Phases::all(), &mut default_prevented);
+                    if self
+                        .route_directed(*focus, event, Phases::all(), &mut default_prevented)
+                        .is_none()
+                    {
+                        self.route_global(event, false, &mut default_prevented);
+                    }
                 } else {
                     self.route_global(event, false, &mut default_prevented);
                 }
@@ -614,7 +620,22 @@ impl<'a> GlobalEventCx<'a> {
                 use crate::context::Phases;
                 self.route_spatial(event, point, Phases::all(), &mut default_prevented)
             }
-            Event::Window(_) => self.route_global(event, false, &mut default_prevented),
+            Event::Window(_) => {
+                let listener_keys = event.listener_keys();
+                let mut interested: SmallVec<[ViewId; 64]> = SmallVec::new();
+                for key in &listener_keys {
+                    if let Some(ids) = self.window_state.listeners.get(key) {
+                        for &id in ids {
+                            if !interested.contains(&id) {
+                                interested.push(id);
+                            }
+                        }
+                    }
+                }
+                for id in interested {
+                    self.route_directed(id.get_element_id(), event, Phases::TARGET, &mut false);
+                }
+            }
             Event::PointerCapture(_)
             | Event::Focus(_)
             | Event::Interaction(_)
@@ -622,7 +643,7 @@ impl<'a> GlobalEventCx<'a> {
             | Event::DragSource(_)
             | Event::Custom(_)
             | Event::Extracted => {
-                unreachable!("pointer capture is an internal event and doesn't have a route target")
+                panic!("received {:?}, which is not an external event.", &event);
             }
         }
 
@@ -632,6 +653,18 @@ impl<'a> GlobalEventCx<'a> {
             }
         }
 
+        if event.is_keyboard_trigger() {
+            if let Some(focus) = self.window_state.focus_state.current_path().last() {
+                // Keyboard trigger creates its own synthetic Click event
+                use crate::context::Phases;
+                self.route_directed(
+                    *focus,
+                    &Event::Interaction(InteractionEvent::Click),
+                    Phases::all(),
+                    &mut false,
+                );
+            }
+        }
         // Only handle default behaviors if preventDefault was not called
         if !default_prevented {
             self.handle_default_behaviors(event);
@@ -734,8 +767,6 @@ impl<'a> GlobalEventCx<'a> {
         default_prevented: &mut bool,
     ) {
         let Some(path) = self.hit_path.clone() else {
-            // No hit - clear hover state
-            self.update_focus_from_path(&[], false);
             return;
         };
 
@@ -868,8 +899,6 @@ impl<'a> GlobalEventCx<'a> {
             let path = hit_test(self.window_state.root_view_id, point).map(|v| v.1);
             self.hit_path = path;
             if self.hit_path.is_none() {
-                // No hit - clear hover state
-                self.update_focus_from_path(&[], false);
                 self.window_state.click_state.clear();
                 return;
             }
@@ -1037,19 +1066,6 @@ impl<'a> GlobalEventCx<'a> {
                         }
                     }
                 }
-            }
-        }
-
-        if is_keyboard_trigger {
-            if let Some(focus) = self.window_state.focus_state.current_path().last() {
-                // Keyboard trigger creates its own synthetic Click event
-                use crate::context::Phases;
-                self.route_directed(
-                    *focus,
-                    &Event::Interaction(InteractionEvent::Click),
-                    Phases::all(),
-                    &mut false,
-                );
             }
         }
 
@@ -1240,11 +1256,11 @@ impl<'a> GlobalEventCx<'a> {
 
         // Window resized - mark responsive styles dirty
         if let Event::Window(WindowEvent::Resized(_)) = event {
-            VIEW_STORAGE.with_borrow(|storage| {
-                for view_id in storage.view_ids.keys() {
-                    self.window_state.style_dirty.insert(view_id);
-                }
-            });
+            // VIEW_STORAGE.with_borrow(|storage| {
+            //     for view_id in storage.view_ids.keys() {
+            //         self.window_state.style_dirty.insert(view_id);
+            //     }
+            // });
         }
 
         // Context/popout menus (platform-specific timing)

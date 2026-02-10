@@ -2,6 +2,7 @@
 use std::collections::HashMap;
 use std::{cell::RefCell, mem, rc::Rc, sync::Arc};
 
+use crate::event::CustomEvent;
 use crate::platform::menu_types::{Menu as MudaMenu, MenuId};
 #[cfg(target_os = "windows")]
 use muda::MenuTheme as MudaMenuTheme;
@@ -19,7 +20,7 @@ use floem_reactive::{RwSignal, Scope, SignalGet, SignalUpdate};
 use floem_renderer::Renderer;
 use floem_renderer::gpu_resources::GpuResources;
 use peniko::color::palette;
-use peniko::kurbo::{self, Affine, Point, Size};
+use peniko::kurbo::{self, Point, Size};
 use winit::{
     cursor::CursorIcon,
     dpi::{LogicalPosition, LogicalSize},
@@ -30,7 +31,6 @@ use winit::{
 use super::state::WindowState;
 use super::tracking::{remove_window_id_mapping, store_window_id_mapping};
 use crate::app::MenuWrapper;
-use crate::paint;
 #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
 use crate::platform::context_menu::context_menu_view;
 #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
@@ -43,9 +43,7 @@ use crate::views::{Container, Decorators, Stack};
 use crate::{
     Application,
     app::UserEvent,
-    context::{
-        FrameUpdate, LayoutChanged, LayoutCx, PaintCx, PaintState, StyleCx, UpdateCx, VisualChanged,
-    },
+    context::{FrameUpdate, LayoutChanged, LayoutCx, PaintState, StyleCx, UpdateCx, VisualChanged},
     event::{
         Event, GlobalEventCx, ImeEvent, WindowEvent, clear_hit_test_cache,
         dropped_file::FileDragEvent,
@@ -55,7 +53,7 @@ use crate::{
         CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES, CURRENT_RUNNING_VIEW_HANDLE,
         DEFERRED_UPDATE_MESSAGES, UPDATE_MESSAGES, UpdateMessage,
     },
-    style::{CursorStyle, Style, StyleSelector},
+    style::{CursorStyle, Style},
     theme::default_theme,
     view::{IntoView, View, ViewId, stacking::clear_all_stacking_caches},
 };
@@ -544,7 +542,7 @@ impl WindowHandle {
             if let Some(window_menu) = &self.window_menu {
                 window_menu.init_for_nsapp();
             }
-            self.event(Event::Window(WindowEvent::FocusGot));
+            self.event(Event::Window(WindowEvent::FocusGained));
         } else {
             self.event(Event::Window(WindowEvent::FocusLost));
         }
@@ -601,10 +599,12 @@ impl WindowHandle {
         self.window_state.commit_box_tree();
         self.window_state.needs_box_tree_commit = false;
 
-        let has_layout_listener: Vec<_> = self
+        let has_layout_listener: smallvec::SmallVec<[ViewId; 64]> = self
             .window_state
-            .has_layout_listener
-            .iter()
+            .listeners
+            .get(&LayoutChanged::listener_key())
+            .into_iter()
+            .flatten()
             .copied()
             .collect();
         for id in has_layout_listener {
@@ -650,10 +650,12 @@ impl WindowHandle {
             }
         }
 
-        let needs_moved: Vec<_> = self
+        let needs_moved: smallvec::SmallVec<[ViewId; 64]> = self
             .window_state
-            .has_visual_changed_listener
-            .iter()
+            .listeners
+            .get(&VisualChanged::listener_key())
+            .into_iter()
+            .flatten()
             .copied()
             .collect();
         for id in needs_moved {
@@ -918,8 +920,10 @@ impl WindowHandle {
                         Vec::with_capacity(msgs.len()),
                     );
                     for (id, msg) in removed_central_msgs {
-                        let msgs = msgs.entry(id.root()).or_default();
-                        msgs.push((id, msg));
+                        if let Some(root) = id.try_root() {
+                            let msgs = msgs.entry(root).or_default();
+                            msgs.push((id, msg));
+                        }
                     }
                 });
             }
@@ -1111,11 +1115,17 @@ impl WindowHandle {
                         cx.window_state.remove_view(id);
                         self.id.request_all();
                     }
-                    UpdateMessage::HasLayoutListener(id) => {
-                        cx.window_state.has_layout_listener.insert(id);
+                    UpdateMessage::RegisterListener(key, id) => {
+                        cx.window_state.listeners.entry(key).or_default().push(id);
+                        id.state().borrow_mut().registered_listener_keys.push(key);
                     }
-                    UpdateMessage::HasVisualChangedListener(id) => {
-                        cx.window_state.has_visual_changed_listener.insert(id);
+                    UpdateMessage::RemoveListener(key, id) => {
+                        if let Some(ids) = cx.window_state.listeners.get_mut(&key) {
+                            ids.retain(|v| *v != id);
+                        }
+                        if let Ok(mut state) = id.state().try_borrow_mut() {
+                            state.registered_listener_keys.retain(|k| *k != key);
+                        }
                     }
                     UpdateMessage::WindowVisible(visible) => {
                         self.window.set_visible(visible);

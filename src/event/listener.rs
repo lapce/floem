@@ -11,8 +11,8 @@ use ui_events::{
 
 use crate::event::{
     DragCancelEvent, DragEndEvent, DragEnterEvent, DragLeaveEvent, DragMoveEvent, DragSourceEvent,
-    DragStartEvent, DragTargetEvent, Event, FileDragEvent, FocusEvent, ImeEvent, InteractionEvent,
-    PointerCaptureEvent, DragToken, WindowEvent,
+    DragStartEvent, DragTargetEvent, DragToken, Event, FileDragEvent, FocusEvent, ImeEvent,
+    InteractionEvent, PointerCaptureEvent, WindowEvent,
 };
 
 // EventListener using the same pattern as StyleClass
@@ -534,11 +534,11 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`Event::Window`] `FocusGot` variant
-    pub WindowGotFocus: WindowEvent,
+    /// Receives [`Event::Window`] `FocusGained` variant
+    pub WindowGainedFocus: (),
     |event| {
-        if let Event::Window(e @ WindowEvent::FocusGot) = event {
-            return Some(e as &dyn Any);
+        if let Event::Window(WindowEvent::FocusGained) = event {
+            return Some(&() as &dyn Any);
         }
         None
     }
@@ -638,6 +638,98 @@ event_listener!(
     |event| {
         if let Event::Extracted = event {
             return Some(&() as &dyn Any);
+        }
+        None
+    }
+);
+
+// ============================================================================
+// Broad Category Event Listeners
+// ============================================================================
+
+event_listener!(
+    /// Receives any `Event::Pointer` variant.
+    pub AnyPointer: PointerEvent,
+    |event| {
+        if let Event::Pointer(pe) = event {
+            return Some(pe as &dyn Any);
+        }
+        None
+    }
+);
+
+event_listener!(
+    /// Receives any `Event::Key` variant.
+    pub AnyKey: ui_events::keyboard::KeyboardEvent,
+    |event| {
+        if let Event::Key(ke) = event {
+            return Some(ke as &dyn Any);
+        }
+        None
+    }
+);
+
+event_listener!(
+    /// Receives any `Event::Window` variant.
+    pub AnyWindow: WindowEvent,
+    |event| {
+        if let Event::Window(we) = event {
+            return Some(we as &dyn Any);
+        }
+        None
+    }
+);
+
+event_listener!(
+    /// Receives any `Event::Focus` variant.
+    pub AnyFocus: FocusEvent,
+    |event| {
+        if let Event::Focus(fe) = event {
+            return Some(fe as &dyn Any);
+        }
+        None
+    }
+);
+
+event_listener!(
+    /// Receives any `Event::Ime` variant.
+    pub AnyIme: ImeEvent,
+    |event| {
+        if let Event::Ime(ie) = event {
+            return Some(ie as &dyn Any);
+        }
+        None
+    }
+);
+
+event_listener!(
+    /// Receives any `Event::DragSource` variant.
+    pub AnyDragSource: DragSourceEvent,
+    |event| {
+        if let Event::DragSource(dse) = event {
+            return Some(dse as &dyn Any);
+        }
+        None
+    }
+);
+
+event_listener!(
+    /// Receives any `Event::DragTarget` variant.
+    pub AnyDragTarget: DragTargetEvent,
+    |event| {
+        if let Event::DragTarget(dte) = event {
+            return Some(dte as &dyn Any);
+        }
+        None
+    }
+);
+
+event_listener!(
+    /// Receives any `Event::FileDrag` variant.
+    pub AnyFileDrag: FileDragEvent,
+    |event| {
+        if let Event::FileDrag(fde) = event {
+            return Some(fde as &dyn Any);
         }
         None
     }

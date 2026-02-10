@@ -14,25 +14,23 @@ use ui_events::keyboard::{Key, KeyboardEvent, NamedKey};
 style_class!(pub ListClass);
 style_class!(pub ListItemClass);
 
-custom_event! {
-    /// Event fired when a list's selection changes
-    #[derive(Copy, PartialEq)]
-    pub struct ListSelectionChanged {
-        /// The previous selection index
-        pub old_selection: Option<usize>,
-        /// The new selection index
-        pub new_selection: Option<usize>,
-    }
+/// Event fired when a list's selection changes
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ListSelectionChanged {
+    /// The previous selection index
+    pub old_selection: Option<usize>,
+    /// The new selection index
+    pub new_selection: Option<usize>,
 }
+custom_event!(ListSelectionChanged);
 
-custom_event! {
-    /// Event fired when a list item is accepted (Enter key or Space)
-    #[derive(Copy, PartialEq)]
-    pub struct ListAccept {
-        /// The accepted selection index
-        pub selection: Option<usize>,
-    }
+/// Event fired when a list item is accepted (Enter key or Space)
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ListAccept {
+    /// The accepted selection index
+    pub selection: Option<usize>,
 }
+custom_event!(ListAccept);
 
 enum ListUpdate {
     SelectionChanged(Option<usize>),

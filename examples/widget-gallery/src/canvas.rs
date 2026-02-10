@@ -1,7 +1,7 @@
 use floem::{
     ViewId,
     context::{EventCx, LayoutChanged, LayoutChangedListener, PaintCx},
-    event::{Event, EventPropagation},
+    event::{CustomEvent, Event, EventPropagation},
     kurbo::{Affine, Circle, Point, Rect, Shape, Size, Stroke},
     peniko::{
         Gradient, Mix,
@@ -130,7 +130,7 @@ pub struct SatValuePicker {
 impl SatValuePicker {
     pub fn new(color: impl Fn() -> Color + 'static) -> Self {
         let id = ViewId::new();
-        id.has_layout_listener();
+        id.register_listener(LayoutChanged::listener_key());
         let color = UpdaterEffect::new(color, move |c| id.update_state(c));
         Self {
             id,
@@ -261,7 +261,7 @@ pub struct HuePicker {
 impl HuePicker {
     pub fn new(color: impl Fn() -> Color + 'static) -> Self {
         let id = ViewId::new();
-        id.has_layout_listener();
+        id.register_listener(LayoutChanged::listener_key());
         let color = UpdaterEffect::new(color, move |c| id.update_state(c));
         Self {
             id,
@@ -391,7 +391,7 @@ pub struct OpacityPicker {
 impl OpacityPicker {
     pub fn new(color: impl Fn() -> Color + 'static) -> Self {
         let id = ViewId::new();
-        id.has_layout_listener();
+        id.register_listener(LayoutChanged::listener_key());
         let color = UpdaterEffect::new(color, move |c| id.update_state(c));
         Self {
             id,

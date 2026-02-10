@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, time::Duration};
 
-use crate::platform::menu_types::MenuId;
+use crate::{event::listener, platform::menu_types::MenuId, view::ViewStorage};
 
 use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Size, Vec2};
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -122,10 +122,8 @@ pub struct WindowState {
     /// Updated when default_theme changes (on theme switch).
     pub(crate) default_theme_inherited: Rc<Style>,
 
-    /// Tracking for views that have a layout listener
-    pub(crate) has_layout_listener: FxHashSet<ViewId>,
     /// Tracking for views that have a visual position listener
-    pub(crate) has_visual_changed_listener: FxHashSet<ViewId>,
+    pub(crate) listeners: FxHashMap<listener::EventListenerKey, Vec<ViewId>>,
     pub(crate) needs_layout: bool,
     pub(crate) needs_box_tree_from_layout: bool,
     pub(crate) needs_box_tree_commit: bool,
@@ -192,8 +190,7 @@ impl WindowState {
             needs_layout: true,
             needs_box_tree_from_layout: true,
             needs_box_tree_commit: true,
-            has_layout_listener: FxHashSet::default(),
-            has_visual_changed_listener: FxHashSet::default(),
+            listeners: FxHashMap::default(),
             views_needing_box_tree_update: FxHashSet::default(),
         }
     }
@@ -278,6 +275,13 @@ impl WindowState {
         id.remove();
         self.focusable.remove(&id);
         self.fixed_elements.remove(&id);
+        let keys = view_state.borrow().registered_listener_keys.clone();
+        for key in keys {
+            if let Some(ids) = self.listeners.get_mut(&key) {
+                ids.retain(|&v| v != id);
+            }
+        }
+        self.views_needing_box_tree_update.remove(&id);
 
         // Clean up pointer capture state for removed view
         self.pointer_capture_target
@@ -650,13 +654,16 @@ impl WindowState {
     pub fn update_box_tree_from_layout(&mut self) {
         let box_tree = self.box_tree.clone();
         let layout_tree = self.layout_tree.clone();
-        compute_absolute_transforms_and_boxes(
-            layout_tree,
-            box_tree,
-            self.root_layout_node,
-            Vec2::ZERO, // parent_scroll - root has no parent scroll
-            Vec2::ZERO, // parent_scroll_ctx - root has no accumulated scroll
-        );
+        VIEW_STORAGE.with_borrow(|s| {
+            compute_absolute_transforms_and_boxes(
+                s,
+                layout_tree,
+                box_tree,
+                self.root_layout_node,
+                Vec2::ZERO, // parent_scroll - root has no parent scroll
+                Vec2::ZERO, // parent_scroll_ctx - root has no accumulated scroll
+            );
+        });
         // Clear pending individual updates since the full tree walk handled everything
         self.views_needing_box_tree_update.clear();
         self.needs_box_tree_from_layout = false;
@@ -924,56 +931,56 @@ fn compute_view_box_properties(
 }
 
 fn compute_absolute_transforms_and_boxes(
+    s: &ViewStorage,
     layout_tree: Rc<RefCell<taffy::TaffyTree<LayoutNodeCx>>>,
     box_tree: Rc<RefCell<BoxTree>>,
     node: NodeId,
     parent_scroll: Vec2,
     parent_scroll_ctx: Vec2,
 ) {
-    VIEW_STORAGE.with_borrow(|s| {
-        let taffy = layout_tree.borrow();
-        let layout = *taffy.layout(node).unwrap();
-        let children = taffy.children(node).ok().map(|c| c.to_vec());
-        drop(taffy);
+    let taffy = layout_tree.borrow();
+    let layout = *taffy.layout(node).unwrap();
+    let children = taffy.children(node).ok().map(|c| c.to_vec());
+    drop(taffy);
 
-        if let Some(&view_id) = s.taffy_to_view.get(&node) {
-            let props =
-                compute_view_box_properties(view_id, layout, parent_scroll, parent_scroll_ctx);
+    if let Some(&view_id) = s.taffy_to_view.get(&node) {
+        let props = compute_view_box_properties(view_id, layout, parent_scroll, parent_scroll_ctx);
 
-            // Update box tree
-            {
-                let mut box_tree = box_tree.borrow_mut();
-                box_tree.set_local_bounds(props.element_id.0, props.local_rect);
-                box_tree.set_local_clip(props.element_id.0, props.clip);
-                box_tree.set_local_transform(props.element_id.0, props.local_transform);
-                box_tree.set_local_z_index(props.element_id.0, Some(props.z_index));
-            }
+        // Update box tree
+        {
+            let mut box_tree = box_tree.borrow_mut();
+            box_tree.set_local_bounds(props.element_id.0, props.local_rect);
+            box_tree.set_local_clip(props.element_id.0, props.clip);
+            box_tree.set_local_transform(props.element_id.0, props.local_transform);
+            box_tree.set_local_z_index(props.element_id.0, Some(props.z_index));
+        }
 
-            // Recurse with this view's scroll offset
-            if let Some(children) = children {
-                for &child in &children {
-                    compute_absolute_transforms_and_boxes(
-                        layout_tree.clone(),
-                        box_tree.clone(),
-                        child,
-                        props.scroll_offset,
-                        props.scroll_ctx,
-                    );
-                }
-            }
-        } else {
-            // No view for this layout node, just recurse with parent's values
-            if let Some(children) = children {
-                for &child in &children {
-                    compute_absolute_transforms_and_boxes(
-                        layout_tree.clone(),
-                        box_tree.clone(),
-                        child,
-                        parent_scroll,
-                        parent_scroll_ctx,
-                    );
-                }
+        // Recurse with this view's scroll offset
+        if let Some(children) = children {
+            for &child in &children {
+                compute_absolute_transforms_and_boxes(
+                    s,
+                    layout_tree.clone(),
+                    box_tree.clone(),
+                    child,
+                    props.scroll_offset,
+                    props.scroll_ctx,
+                );
             }
         }
-    })
+    } else {
+        // No view for this layout node, just recurse with parent's values
+        if let Some(children) = children {
+            for &child in &children {
+                compute_absolute_transforms_and_boxes(
+                    s,
+                    layout_tree.clone(),
+                    box_tree.clone(),
+                    child,
+                    parent_scroll,
+                    parent_scroll_ctx,
+                );
+            }
+        }
+    }
 }

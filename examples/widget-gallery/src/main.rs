@@ -305,6 +305,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         listener::KeyUp,
         move |_cx, KeyboardEvent { modifiers, key, .. }| {
             if *key == Key::Named(NamedKey::F11) {
+                dbg!("here");
                 floem::action::inspect();
             } else if *key == Key::Character("q".into()) && modifiers.contains(Modifiers::META) {
                 floem::quit_app();

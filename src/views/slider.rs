@@ -10,6 +10,7 @@ use ui_events::keyboard::{Key, KeyState, KeyboardEvent, NamedKey};
 use ui_events::pointer::{PointerButtonEvent, PointerEvent};
 
 use crate::custom_event;
+use crate::event::CustomEvent;
 use crate::{
     Renderer,
     context::{LayoutChanged, LayoutChangedListener},
@@ -126,27 +127,21 @@ impl SliderHover {
     }
 }
 
-custom_event! {
-    /// Event fired when a slider's value changes
-    #[derive(Copy, PartialEq)]
-    pub struct SliderChanged {
-        /// The new state of the slider
-        pub state: SliderState,
-    },
-    SliderState,
-    SliderChanged::extract_state
+/// Event fired when a slider's value changes
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SliderChanged {
+    /// The new state of the slider
+    pub state: SliderState,
 }
+custom_event!(SliderChanged, SliderState, SliderChanged::extract_state);
 
-custom_event! {
-    /// Event fired that has what the state would be at the current mouse position when hovering over a slider
-    #[derive(Copy, PartialEq)]
-    pub struct SliderHover {
-        /// The state of the slider
-        pub state: SliderState,
-    },
-    SliderState,
-    SliderHover::extract_state
+/// Event fired that has what the state would be at the current mouse position when hovering over a slider
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SliderHover {
+    /// The state of the slider
+    pub state: SliderState,
 }
+custom_event!(SliderHover, SliderState, SliderHover::extract_state);
 
 /// **A reactive slider.**
 ///
@@ -386,7 +381,7 @@ impl Slider {
     /// ```
     pub fn new<P: Into<Pct>>(percent: impl Fn() -> P + 'static) -> Self {
         let id = ViewId::new();
-        id.has_layout_listener();
+        id.register_listener(LayoutChanged::listener_key());
         let initial_percent = UpdaterEffect::new(
             move || {
                 let percent = percent().into();
@@ -476,7 +471,7 @@ impl Slider {
     /// ```
     pub fn new_ranged(value: impl Fn() -> f64 + 'static, range: RangeInclusive<f64>) -> Self {
         let id = ViewId::new();
-        id.has_layout_listener();
+        id.register_listener(LayoutChanged::listener_key());
 
         let cloned_range = range.clone();
 

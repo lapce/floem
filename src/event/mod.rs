@@ -1,4 +1,5 @@
 use peniko::kurbo::{Affine, Point, Size, Vec2};
+use smallvec::SmallVec;
 pub use ui_events::pointer::PointerId;
 use ui_events::{
     ScrollDelta,
@@ -31,7 +32,7 @@ use crate::ElementId;
 use std::any::Any;
 
 // Trait for custom events
-pub trait CustomEvent: Any + 'static + std::fmt::Debug {
+pub trait CustomEvent: Any + 'static {
     /// Get the unique key for this event type
     fn listener_key() -> listener::EventListenerKey
     where
@@ -50,36 +51,254 @@ pub trait CustomEvent: Any + 'static + std::fmt::Debug {
 
     /// Clone this event into a Box without requiring Clone on the trait
     fn clone_box(&self) -> Box<dyn CustomEvent>;
-
     /// Downcast helper
     fn as_any(&self) -> &dyn Any;
+
+    /// Format for Debug output. Default uses the type name.
+    fn debug_fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(std::any::type_name::<Self>())
+    }
 }
 
+/// Define a custom event type for use with Floem's event system.
+///
+/// This macro implements the [`CustomEvent`](crate::event::CustomEvent) trait and generates
+/// a corresponding listener struct, allowing your type to be dispatched through the event
+/// system and handled with [`on_event_stop`](crate::event::EventListener::on_event_stop)
+/// and related methods.
+///
+/// # Variants
+///
+/// ## Simple (non-generic)
+///
+/// ```rust,ignore
+/// #[derive(Clone)]
+/// pub struct MyEvent {
+///     pub message: String,
+/// }
+/// custom_event!(MyEvent);
+/// ```
+///
+/// Generates `MyEventListener` and implements `CustomEvent` for `MyEvent`.
+/// Handlers receive `&MyEvent` directly.
+///
+/// ## Simple (generic)
+///
+/// ```rust,ignore
+/// #[derive(Clone)]
+/// pub struct SelectionChanged<T: 'static> {
+///     pub value: T,
+/// }
+/// custom_event!(SelectionChanged<T>);
+/// ```
+///
+/// Generates `SelectionChangedListener<T>`. Each monomorphization (e.g.
+/// `SelectionChanged<String>` vs `SelectionChanged<i32>`) gets its own unique
+/// listener key, so events are dispatched to the correct typed handler.
+/// Generic types must implement `Clone + 'static`.
+///
+/// For generic events, views should provide a typed convenience method rather
+/// than requiring callers to use the listener directly:
+/// ```rust,ignore
+/// impl<T: Clone + 'static> MyDropdown<T> {
+///     pub fn on_accept(self, handler: impl Fn(T) + 'static) -> Self {
+///         self.on_event_stop(SelectionChanged::<T>::listener(), move |_cx, event| {
+///             handler(event.value.clone());
+///         })
+///     }
+/// }
+/// ```
+/// This ensures the type parameter is inferred correctly and gives callers
+/// a clean API without users accidentally using the wrong generic type which would not downcast correctly.
+///
+/// ## With custom extractor (non-generic only)
+///
+/// ```rust,ignore
+/// #[derive(Clone)]
+/// pub struct ScrollEvent {
+///     pub offset: f64,
+///     pub viewport_size: f64,
+/// }
+/// custom_event!(ScrollEvent, f64, |event: &ScrollEvent| -> Option<f64> {
+///     Some(&event.offset)
+/// });
+/// ```
+///
+/// Handlers receive `&f64` instead of `&ScrollEvent`. The extractor must return
+/// a reference into the event — it cannot return computed values.
+///
+/// Custom extractors are not supported for generic events, since the handler type
+/// would not be obvious from the listener name alone.
+///
+/// # Optional parameters
+///
+/// All variants accept optional trailing parameters in any combination:
+///
+/// - **`transform`** — Apply coordinate transforms to the event (e.g. for pointer-like
+///   custom events that carry position data):
+///   ```rust,ignore
+///   custom_event!(MyPointerEvent, transform = |event: &mut MyPointerEvent, affine: Affine| {
+///       event.pos = affine * event.pos;
+///   });
+///   ```
+///
+/// - **`allow_disabled`** — Allow this event to reach disabled views:
+///   ```rust,ignore
+///   custom_event!(MyEvent, allow_disabled = |_event: &MyEvent| true);
+///   ```
+///
+/// - **`debug_fmt`** — Override the [`Debug`] representation used when printing
+///   [`Event::Custom`](crate::event::Event::Custom). By default, the type name is used.
+///   Types that derive `Debug` can delegate to it:
+///   ```rust,ignore
+///   custom_event!(MyEvent, debug_fmt = |event, f| std::fmt::Debug::fmt(event, f));
+///   ```
+///
+/// # Usage
+///
+/// **Firing an event:**
+/// ```rust
+/// self.id.dispatch_event(
+///     Event::new_custom(DropdownAccept { value: *val }),
+///     DispatchKind::Directed {
+///         target: self.id.get_element_id(),
+///         phases: Phases::TARGET,
+///     },
+/// );
+/// ```
+///
+/// **Handling an event:**
+/// ```rust,ignore
+/// view.on_event_stop(MyEvent::listener(), |cx, event: &MyEvent| {
+///     println!("{}", event.message);
+/// })
+/// ```
+///
+/// # Requirements
+///
+/// - The event type must implement [`Clone`].
+/// - For generic events, all type parameters must be `Clone + 'static`.
+/// - For custom extractors, the extractor closure must return a reference into the event.
+/// - This macro depends on the [`paste`](https://docs.rs/paste) crate.
 #[macro_export]
 macro_rules! custom_event {
-    // Struct variant with custom extractor, EventData type, and trait methods
+    // Generic variant - EventData = Self, extract = identity
     (
-        $(#[$meta:meta])*
-        $v:vis struct $name:ident {
-            $($(#[$field_meta:meta])* $field_vis:vis $field:ident: $ty:ty),* $(,)?
-        },
+        $name:ident < $($generic:ident),* >
+        $(, transform = $transform:expr)?
+        $(, allow_disabled = $allow_disabled:expr)?
+        $(, debug_fmt = $debug_fmt:expr)?
+    ) => {
+        ::paste::paste! {
+            #[doc = "Listener for `" $name "` events"]
+            pub struct [<$name Listener>]<$($generic),*>(std::marker::PhantomData<$(fn() -> $generic),*>);
+
+            impl<$($generic),*> Default for [<$name Listener>]<$($generic),*> {
+                fn default() -> Self { Self(std::marker::PhantomData) }
+            }
+            impl<$($generic),*> Copy for [<$name Listener>]<$($generic),*> {}
+            impl<$($generic),*> Clone for [<$name Listener>]<$($generic),*> {
+                fn clone(&self) -> Self { *self }
+            }
+
+            impl<$($generic: Clone + 'static),*> [<$name Listener>]<$($generic),*> {
+                fn info() -> &'static $crate::event::listener::EventKeyInfo {
+                    trait HasInfo {
+                        fn get() -> &'static $crate::event::listener::EventKeyInfo;
+                    }
+
+                    struct InfoHolder<$($generic),*>(std::marker::PhantomData<$(fn() -> $generic),*>);
+
+                    impl<$($generic: Clone + 'static),*> HasInfo for InfoHolder<$($generic),*> {
+                        fn get() -> &'static $crate::event::listener::EventKeyInfo {
+                            static INFO: $crate::event::listener::EventKeyInfo = $crate::event::listener::EventKeyInfo {
+                                name: || stringify!($name),
+                                extract: |event| {
+                                    if let $crate::event::Event::Custom(custom) = event {
+                                        Some(custom.as_any() as &dyn std::any::Any)
+                                    } else {
+                                        None
+                                    }
+                                },
+                            };
+                            &INFO
+                        }
+                    }
+
+                    <InfoHolder<$($generic),*> as HasInfo>::get()
+                }
+            }
+
+            impl<$($generic: Clone + 'static),*> $crate::event::listener::EventListenerTrait for [<$name Listener>]<$($generic),*> {
+                type EventData = $name<$($generic),*>;
+
+                fn listener_key() -> $crate::event::listener::EventListenerKey {
+                    $crate::event::listener::EventListenerKey { info: Self::info() }
+                }
+
+                fn extract(event: &$crate::event::Event) -> Option<&Self::EventData> {
+                    if let $crate::event::Event::Custom(custom) = event {
+                        custom.as_any().downcast_ref::<$name<$($generic),*>>()
+                    } else {
+                        None
+                    }
+                }
+            }
+
+            impl<$($generic: Clone + 'static),*> $crate::event::CustomEvent for $name<$($generic),*> {
+                fn listener_key() -> $crate::event::listener::EventListenerKey {
+                    <[<$name Listener>]<$($generic),*> as $crate::event::listener::EventListenerTrait>::listener_key()
+                }
+
+                fn listener_key_dyn(&self) -> $crate::event::listener::EventListenerKey {
+                    Self::listener_key()
+                }
+
+                $(
+                    fn transform(&mut self, transform: $crate::kurbo::Affine) {
+                        ($transform)(self, transform)
+                    }
+                )?
+
+                $(
+                    fn allow_disabled(&self) -> bool {
+                        ($allow_disabled)(self)
+                    }
+                )?
+
+                fn as_any(&self) -> &dyn std::any::Any {
+                    self
+                }
+
+                fn clone_box(&self) -> Box<dyn $crate::event::CustomEvent> {
+                    Box::new(self.clone())
+                }
+
+                $crate::custom_event!(@debug_fmt self $($debug_fmt)?);
+            }
+
+            impl<$($generic: Clone + 'static),*> $name<$($generic),*> {
+                /// Get the event listener for this custom event
+                pub fn listener() -> [<$name Listener>]<$($generic),*> {
+                    [<$name Listener>](std::marker::PhantomData)
+                }
+            }
+        }
+    };
+
+    // Non-generic with custom extractor and EventData type
+    (
+        $name:ty,
         $event_data:ty,
         $extract:expr
         $(, transform = $transform:expr)?
         $(, allow_disabled = $allow_disabled:expr)?
+        $(, debug_fmt = $debug_fmt:expr)?
     ) => {
-        $(#[$meta])*
-        #[derive(Debug, Clone)]
-        $v struct $name {
-            $(
-                $(#[$field_meta])*
-                $field_vis $field: $ty,
-            )*
-        }
         ::paste::paste! {
             $crate::event_listener!(
                 #[doc = "Listener for `" $name "` events"]
-                $v [<$name Listener>]: $event_data,
+                pub [<$name Listener>]: $event_data,
                 |event| {
                     if let $crate::event::Event::Custom(custom) = event {
                         custom.as_any().downcast_ref::<$name>()
@@ -91,12 +310,14 @@ macro_rules! custom_event {
                 }
             );
         }
+
         impl $crate::event::CustomEvent for $name {
             fn listener_key() -> $crate::event::listener::EventListenerKey {
                 ::paste::paste! {
                     <[<$name Listener>] as $crate::event::listener::EventListenerTrait>::listener_key()
                 }
             }
+
             fn listener_key_dyn(&self) -> $crate::event::listener::EventListenerKey {
                 Self::listener_key()
             }
@@ -120,7 +341,10 @@ macro_rules! custom_event {
             fn clone_box(&self) -> Box<dyn $crate::event::CustomEvent> {
                 Box::new(self.clone())
             }
+
+            $crate::custom_event!(@debug_fmt self $($debug_fmt)?);
         }
+
         impl $name {
             /// Get the event listener for this custom event
             pub fn listener() -> ::paste::paste! { [<$name Listener>] } {
@@ -129,124 +353,30 @@ macro_rules! custom_event {
         }
     };
 
-    // Struct variant without custom extractor (default: EventData = Self, extract = identity)
+    // Non-generic simple variant - EventData = Self, extract = identity
     (
-        $(#[$meta:meta])*
-        $v:vis struct $name:ident {
-            $($(#[$field_meta:meta])* $field_vis:vis $field:ident: $ty:ty),* $(,)?
-        }
+        $name:ty
         $(, transform = $transform:expr)?
         $(, allow_disabled = $allow_disabled:expr)?
+        $(, debug_fmt = $debug_fmt:expr)?
     ) => {
         $crate::custom_event! {
-            $(#[$meta])*
-            $v struct $name {
-                $($(#[$field_meta])* $field_vis $field: $ty,)*
-            },
+            $name,
             $name,
             |data: &$name| -> Option<&$name> { Some(data) }
             $(, transform = $transform)?
             $(, allow_disabled = $allow_disabled)?
+            $(, debug_fmt = $debug_fmt)?
         }
     };
 
-    // Enum variants with similar extensions...
-    (
-        $(#[$meta:meta])*
-        $v:vis enum $name:ident {
-            $($(#[$variant_meta:meta])* $variant:ident $({ $($(#[$field_meta:meta])* $field_vis:vis $field:ident: $ty:ty),* $(,)? })?),* $(,)?
-        },
-        $event_data:ty,
-        $extract:expr
-        $(, transform = $transform:expr)?
-        $(, allow_disabled = $allow_disabled:expr)?
-    ) => {
-        $(#[$meta])*
-        #[derive(Debug, Clone)]
-        $v enum $name {
-            $(
-                $(#[$variant_meta])*
-                $variant $({
-                    $(
-                        $(#[$field_meta])*
-                        $field_vis $field: $ty,
-                    )*
-                })?
-            ),*
-        }
-        ::paste::paste! {
-            $crate::event_listener!(
-                #[doc = "Listener for `" $name "` events"]
-                $v [<$name Listener>]: $event_data,
-                |event| {
-                    if let $crate::event::Event::Custom(custom) = event {
-                        custom.as_any().downcast_ref::<$name>()
-                            .and_then($extract)
-                            .map(|e| e as &dyn std::any::Any)
-                    } else {
-                        None
-                    }
-                }
-            );
-        }
-        impl $crate::event::CustomEvent for $name {
-            fn listener_key() -> $crate::event::listener::EventListenerKey {
-                ::paste::paste! {
-                    <[<$name Listener>] as $crate::event::listener::EventListenerTrait>::listener_key()
-                }
-            }
-            fn listener_key_dyn(&self) -> $crate::event::listener::EventListenerKey {
-                Self::listener_key()
-            }
-
-            $(
-                fn transform(&mut self, transform: $crate::kurbo::Affine) {
-                    ($transform)(self, transform)
-                }
-            )?
-
-            $(
-                fn allow_disabled(&self) -> bool {
-                    ($allow_disabled)(self)
-                }
-            )?
-
-            fn as_any(&self) -> &dyn std::any::Any {
-                self
-            }
-
-            fn clone_box(&self) -> Box<dyn $crate::event::CustomEvent> {
-                Box::new(self.clone())
-            }
-        }
-        impl $name {
-            /// Get the event listener for this custom event
-            pub fn listener() -> ::paste::paste! { [<$name Listener>] } {
-                ::paste::paste! { [<$name Listener>] }
-            }
+    // Internal helper: emit debug_fmt override or nothing (uses trait default)
+    (@debug_fmt $self:ident $debug_fmt:expr) => {
+        fn debug_fmt(&$self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            ($debug_fmt)($self, f)
         }
     };
-
-    // Enum variant without custom extractor
-    (
-        $(#[$meta:meta])*
-        $v:vis enum $name:ident {
-            $($(#[$variant_meta:meta])* $variant:ident $({ $($(#[$field_meta:meta])* $field_vis:vis $field:ident: $ty:ty),* $(,)? })?),* $(,)?
-        }
-        $(, transform = $transform:expr)?
-        $(, allow_disabled = $allow_disabled:expr)?
-    ) => {
-        $crate::custom_event! {
-            $(#[$meta])*
-            $v enum $name {
-                $($(#[$variant_meta])* $variant $({ $($(#[$field_meta])* $field_vis $field: $ty,)* })?),*
-            },
-            $name,
-            |data: &$name| -> Option<&$name> { Some(data) }
-            $(, transform = $transform)?
-            $(, allow_disabled = $allow_disabled)?
-        }
-    };
+    (@debug_fmt $self:ident) => {};
 }
 
 /// Phases of event propagation.
@@ -405,16 +535,31 @@ pub enum InteractionEvent {
     SecondaryClick,
 }
 
+/// Events related to the application window state.
+///
+/// Unlike pointer and keyboard events which are dispatched via hit-testing,
+/// window events are sent only to views that have registered a listener
+/// for them (e.g., `.on_event(listener::WindowResized, ...)`). Views that
+/// do not register a listener will not receive window events.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum WindowEvent {
-    FocusGot,
+    /// The window gained input focus.
+    FocusGained,
+    /// The window lost input focus.
     FocusLost,
+    /// The window was closed.
     Closed,
+    /// The window was resized to the given dimensions.
     Resized(Size),
+    /// The window was moved to the given position.
     Moved(Point),
+    /// The window's maximized state changed. `true` if now maximized.
     MaximizeChanged(bool),
+    /// The window's scale factor changed (e.g., moved to a different DPI display).
     ScaleChanged(f64),
+    /// The system theme changed (e.g., light to dark mode).
     ThemeChanged(Theme),
+    /// The element under the cursor changed.
     ChangeUnderCursor,
 }
 
@@ -823,7 +968,6 @@ impl DragTargetEvent {
 }
 
 // Update Event enum
-#[derive(Debug)]
 pub enum Event {
     Pointer(PointerEvent),
     Key(ui_events::keyboard::KeyboardEvent),
@@ -849,6 +993,28 @@ pub enum Event {
     /// borrow conflicts. If you see this variant in your event handler, you're likely accessing
     /// cx.event directly - use the typed event data parameter passed to your handler instead.
     Extracted,
+}
+impl std::fmt::Debug for Event {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Event::Pointer(e) => f.debug_tuple("Pointer").field(e).finish(),
+            Event::Key(e) => f.debug_tuple("Key").field(e).finish(),
+            Event::FileDrag(e) => f.debug_tuple("FileDrag").field(e).finish(),
+            Event::PointerCapture(e) => f.debug_tuple("PointerCapture").field(e).finish(),
+            Event::Ime(e) => f.debug_tuple("Ime").field(e).finish(),
+            Event::Focus(e) => f.debug_tuple("Focus").field(e).finish(),
+            Event::Window(e) => f.debug_tuple("Window").field(e).finish(),
+            Event::Interaction(e) => f.debug_tuple("Interaction").field(e).finish(),
+            Event::DragTarget(e) => f.debug_tuple("DragTarget").field(e).finish(),
+            Event::DragSource(e) => f.debug_tuple("DragSource").field(e).finish(),
+            Event::Custom(e) => {
+                f.write_str("Custom(")?;
+                e.debug_fmt(f)?;
+                f.write_str(")")
+            }
+            Event::Extracted => f.write_str("Extracted"),
+        }
+    }
 }
 impl Clone for Event {
     fn clone(&self) -> Self {
@@ -1061,9 +1227,17 @@ impl Event {
         self
     }
 
-    pub fn listener_key(&self) -> listener::EventListenerKey {
+    /// Returns all listener keys that this event should trigger.
+    ///
+    /// Each event returns its specific listener key (e.g., `PointerDown`) plus any
+    /// broad category keys it belongs to (e.g., `AnyPointer`). This allows views
+    /// to listen for either specific events or entire event categories.
+    pub fn listener_keys(&self) -> SmallVec<[listener::EventListenerKey; 2]> {
         use listener::*;
-        match self {
+        let mut keys = SmallVec::new();
+
+        // Add the specific listener key
+        let specific = match self {
             Self::Pointer(PointerEvent::Down { .. }) => PointerDown::listener_key(),
             Self::Pointer(PointerEvent::Up { .. }) => PointerUp::listener_key(),
             Self::Pointer(PointerEvent::Move(_)) => PointerMove::listener_key(),
@@ -1098,7 +1272,7 @@ impl Event {
             Self::Window(WindowEvent::Moved(_)) => WindowMoved::listener_key(),
             Self::Window(WindowEvent::MaximizeChanged(_)) => WindowMaximizeChanged::listener_key(),
             Self::Window(WindowEvent::ScaleChanged(_)) => WindowScaleChanged::listener_key(),
-            Self::Window(WindowEvent::FocusGot) => WindowGotFocus::listener_key(),
+            Self::Window(WindowEvent::FocusGained) => WindowGainedFocus::listener_key(),
             Self::Window(WindowEvent::FocusLost) => WindowLostFocus::listener_key(),
             Self::Window(WindowEvent::ThemeChanged(_)) => ThemeChanged::listener_key(),
             Self::Window(WindowEvent::ChangeUnderCursor) => WindowChangeUnderCursor::listener_key(),
@@ -1121,7 +1295,23 @@ impl Event {
             Self::DragTarget(DragTargetEvent::Drop(..)) => DragTargetDrop::listener_key(),
             Self::Extracted => Extracted::listener_key(),
             Self::Custom(custom) => custom.listener_key_dyn(),
+        };
+        keys.push(specific);
+
+        // Add broad category listeners
+        match self {
+            Self::Pointer(_) => keys.push(AnyPointer::listener_key()),
+            Self::Key(_) => keys.push(AnyKey::listener_key()),
+            Self::Window(_) => keys.push(AnyWindow::listener_key()),
+            Self::Focus(_) => keys.push(AnyFocus::listener_key()),
+            Self::Ime(_) => keys.push(AnyIme::listener_key()),
+            Self::DragSource(_) => keys.push(AnyDragSource::listener_key()),
+            Self::DragTarget(_) => keys.push(AnyDragTarget::listener_key()),
+            Self::FileDrag(_) => keys.push(AnyFileDrag::listener_key()),
+            _ => {}
         }
+
+        keys
     }
 
     fn is_spatial(&self) -> bool {

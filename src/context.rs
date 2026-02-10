@@ -20,6 +20,18 @@ bitflags::bitflags! {
     }
 }
 impl Phases {
+    /// Target and Bubble phases
+    pub const TARGET_AND_BUBBLE: Phases =
+        Phases::from_bits_truncate(Phases::TARGET.bits() | Phases::BUBBLE.bits());
+
+    /// Capture and Target phases
+    pub const CAPTURE_AND_TARGET: Phases =
+        Phases::from_bits_truncate(Phases::CAPTURE.bits() | Phases::TARGET.bits());
+
+    /// Capture and Bubble phases
+    pub const CAPTURE_AND_BUBBLE: Phases =
+        Phases::from_bits_truncate(Phases::CAPTURE.bits() | Phases::BUBBLE.bits());
+
     /// Check if this phase set includes the given phase.
     pub fn matches(&self, phase: &Phase) -> bool {
         match phase {
@@ -30,8 +42,53 @@ impl Phases {
     }
 }
 
+/// Configuration for event callbacks that determines when they should be invoked during event propagation.
+///
+/// Event listeners in Floem are called during different phases of the event propagation pipeline,
+/// similar to the DOM event model. This config allows you to specify which phases your callback
+/// should respond to.
+///
+/// # Examples
+///
+/// Listen during the target and bubble phases (default):
+/// ```ignore
+/// view
+///     .on_event_with_config(
+///         EventListener::Click,
+///         EventCallbackConfig::default(),
+///         |cx, _| EventPropagation::Continue,
+///     )
+/// ```
+///
+/// Listen only during the capture phase (useful for intercepting before child handlers):
+/// ```ignore
+/// view
+///     .on_event_with_config(
+///         EventListener::KeyDown,
+///         EventCallbackConfig {
+///             phases: Phases::CAPTURE,
+///         },
+///         |cx, event| {
+///             // Handle key down during capture phase
+///             EventPropagation::Continue
+///         },
+///     )
+/// ```
+///
+/// Listen during all phases:
+/// ```ignore
+/// view
+///     .on_event_with_config(
+///         EventListener::Focus,
+///         EventCallbackConfig {
+///             phases: Phases::CAPTURE | Phases::TARGET | Phases::BUBBLE,
+///         },
+///         |cx, _| EventPropagation::Continue,
+///     )
+/// ```
 #[derive(Clone, Copy, PartialEq)]
 pub struct EventCallbackConfig {
+    /// Determines which event propagation phases should trigger this callback.
     pub phases: Phases,
 }
 impl Default for EventCallbackConfig {
@@ -47,49 +104,47 @@ impl Default for EventCallbackConfig {
 /// Inspired by Chromium's HeapVector<..., 1> pattern for event listener storage.
 pub type EventListenerVec = SmallVec<[(Rc<RefCell<EventCallback>>, EventCallbackConfig); 1]>;
 
-custom_event! {
-    /// Event fired when a view's layout changes
+/// Event fired when a view's layout changes
+///
+/// This is fired when the view's size or position in the layout changes.
+/// It does not fire for visual-only changes from transforms (translation, scale, rotation).
+///
+/// # Important: Layout vs Visual Coordinates
+///
+/// **WARNING**: The window coordinates provided by this event (`new_window_origin`, `box_window()`,
+/// `content_box_window()`) represent the position in the **box layout tree**, NOT the final visual
+/// position after transforms are applied. If transforms like translation, scale, or rotation are
+/// applied to this view or its ancestors, the actual rendered position will differ from these coordinates.
+///
+/// **Use `VisualChanged` instead if you need the actual rendered position in the window after all
+/// transforms have been applied.**
+///
+/// ## When to use LayoutChanged vs VisualChanged
+///
+/// - Use `LayoutChanged`: When you need layout box sizes or relative positioning within the layout tree
+/// - Use `VisualChanged`: When you need to know where the view actually appears on screen, or to
+///   position elements relative to the view's visual appearance
+///
+/// ## Coordinate Spaces in Floem
+///
+/// **Note**: All event handling and painting in Floem happen in the view's **local coordinate space**.
+/// Floem automatically handles transformations to and from local coordinates. You typically don't need
+/// window coordinates unless you're positioning elements relative to other views' visual positions or
+/// interacting with platform APIs that expect window coordinates.
+///
+/// Use `box_local()` and `content_box_local()` to get coordinates in the view's local space.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LayoutChanged {
+    /// The new layout box relative to the parent layout
+    pub new_box: Rect,
+    /// The new content box relative to the parent layout
+    pub new_content_box: Rect,
+    /// The position of the layout box's origin in window coordinates (box layout position, NOT visual position)
     ///
-    /// This is fired when the view's size or position in the layout changes.
-    /// It does not fire for visual-only changes from transforms (translation, scale, rotation).
-    ///
-    /// # Important: Layout vs Visual Coordinates
-    ///
-    /// **WARNING**: The window coordinates provided by this event (`new_window_origin`, `box_window()`,
-    /// `content_box_window()`) represent the position in the **box layout tree**, NOT the final visual
-    /// position after transforms are applied. If transforms like translation, scale, or rotation are
-    /// applied to this view or its ancestors, the actual rendered position will differ from these coordinates.
-    ///
-    /// **Use `VisualChanged` instead if you need the actual rendered position in the window after all
-    /// transforms have been applied.**
-    ///
-    /// ## When to use LayoutChanged vs VisualChanged
-    ///
-    /// - Use `LayoutChanged`: When you need layout box sizes or relative positioning within the layout tree
-    /// - Use `VisualChanged`: When you need to know where the view actually appears on screen, or to
-    ///   position elements relative to the view's visual appearance
-    ///
-    /// ## Coordinate Spaces in Floem
-    ///
-    /// **Note**: All event handling and painting in Floem happen in the view's **local coordinate space**.
-    /// Floem automatically handles transformations to and from local coordinates. You typically don't need
-    /// window coordinates unless you're positioning elements relative to other views' visual positions or
-    /// interacting with platform APIs that expect window coordinates.
-    ///
-    /// Use `box_local()` and `content_box_local()` to get coordinates in the view's local space.
-    #[derive(Copy, PartialEq)]
-    pub struct LayoutChanged {
-        /// The new layout box relative to the parent layout
-        pub new_box: Rect,
-        /// The new content box relative to the parent layout
-        pub new_content_box: Rect,
-        /// The position of the layout box's origin in window coordinates (box layout position, NOT visual position)
-        ///
-        /// **WARNING**: This does not include transforms. Use `VisualChanged` for actual rendered position.
-        pub new_window_origin: Point,
-    },
-    allow_disabled = |_event| true
+    /// **WARNING**: This does not include transforms. Use `VisualChanged` for actual rendered position.
+    pub new_window_origin: Point,
 }
+custom_event!(LayoutChanged, allow_disabled = |_event| true);
 
 impl LayoutChanged {
     /// Get the layout box in the view's local coordinate space (relative to its own origin which is `Point::ZERO`)
@@ -122,56 +177,54 @@ impl LayoutChanged {
     }
 }
 
-custom_event! {
-    /// Event fired when a view's visual representation in the window changes.
+/// Event fired when a view's visual representation in the window changes.
+///
+/// This is fired when the view's final rendered position or transform changes,
+/// including changes from CSS-like transforms (translation, scale, rotation).
+/// This represents the view's actual visual appearance in the window after all
+/// transforms have been applied.
+///
+/// # Important: Visual vs Layout Coordinates
+///
+/// **Use this event when you need to know where the view actually appears on screen.**
+/// The coordinates and transform provided here reflect the final rendered state after
+/// all transforms (translation, scale, rotation) from this view and all ancestors have
+/// been applied.
+///
+/// ## When to use VisualChanged vs LayoutChanged
+///
+/// - Use `VisualChanged`: When you need the actual rendered position on screen, or to position
+///   elements relative to where a view visually appears (e.g., tooltips, popovers, overlays)
+/// - Use `LayoutChanged`: When you only care about layout box sizes or relative positioning
+///   within the layout tree, ignoring transforms
+///
+/// ## Coordinate Spaces in Floem
+///
+/// **Note**: All event handling and painting in Floem happen in the view's **local coordinate space**.
+/// Floem automatically handles transformations to and from local coordinates. You typically only need
+/// visual window coordinates when positioning separate elements (like overlays or platform windows)
+/// relative to a view's visual appearance, or when interacting with platform APIs that expect
+/// window coordinates.
+///
+/// ## Use Cases for VisualChanged
+///
+/// - Positioning tooltips or popovers relative to a transformed view
+/// - Implementing drag-and-drop with visual feedback
+/// - Coordinating with platform overlays or native windows
+/// - Calculating whether two views visually overlap on screen
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct VisualChanged {
+    /// The new axis-aligned bounding box in window coordinates after all transforms
     ///
-    /// This is fired when the view's final rendered position or transform changes,
-    /// including changes from CSS-like transforms (translation, scale, rotation).
-    /// This represents the view's actual visual appearance in the window after all
-    /// transforms have been applied.
+    /// This is the smallest rectangle that contains the view after all transforms are applied.
+    /// For rotated views, this will be larger than the view's layout box.
+    pub new_visual_aabb: Rect,
+    /// The new world transform matrix combining all parent and local transforms
     ///
-    /// # Important: Visual vs Layout Coordinates
-    ///
-    /// **Use this event when you need to know where the view actually appears on screen.**
-    /// The coordinates and transform provided here reflect the final rendered state after
-    /// all transforms (translation, scale, rotation) from this view and all ancestors have
-    /// been applied.
-    ///
-    /// ## When to use VisualChanged vs LayoutChanged
-    ///
-    /// - Use `VisualChanged`: When you need the actual rendered position on screen, or to position
-    ///   elements relative to where a view visually appears (e.g., tooltips, popovers, overlays)
-    /// - Use `LayoutChanged`: When you only care about layout box sizes or relative positioning
-    ///   within the layout tree, ignoring transforms
-    ///
-    /// ## Coordinate Spaces in Floem
-    ///
-    /// **Note**: All event handling and painting in Floem happen in the view's **local coordinate space**.
-    /// Floem automatically handles transformations to and from local coordinates. You typically only need
-    /// visual window coordinates when positioning separate elements (like overlays or platform windows)
-    /// relative to a view's visual appearance, or when interacting with platform APIs that expect
-    /// window coordinates.
-    ///
-    /// ## Use Cases for VisualChanged
-    ///
-    /// - Positioning tooltips or popovers relative to a transformed view
-    /// - Implementing drag-and-drop with visual feedback
-    /// - Coordinating with platform overlays or native windows
-    /// - Calculating whether two views visually overlap on screen
-    #[derive(Copy, PartialEq)]
-    pub struct VisualChanged {
-        /// The new axis-aligned bounding box in window coordinates after all transforms
-        ///
-        /// This is the smallest rectangle that contains the view after all transforms are applied.
-        /// For rotated views, this will be larger than the view's layout box.
-        pub new_visual_aabb: Rect,
-        /// The new world transform matrix combining all parent and local transforms
-        ///
-        /// This transform maps from the view's local coordinate space to window coordinates.
-        pub new_world_transform: Affine,
-    },
-    allow_disabled = |_event| true
+    /// This transform maps from the view's local coordinate space to window coordinates.
+    pub new_world_transform: Affine,
 }
+custom_event!(VisualChanged, allow_disabled = |_event| true);
 
 impl VisualChanged {
     /// Get the visual origin of the view in window coordinates

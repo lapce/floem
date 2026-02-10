@@ -2,9 +2,9 @@ use std::{any::Any, cell::RefCell, fmt::Display, mem::swap, rc::Rc};
 
 use crate::{
     Clipboard, ViewId,
-    context::{EventCx, LayoutChangedListener, PaintCx, UpdateCx},
+    context::{EventCx, LayoutChangedListener, PaintCx, Phases, UpdateCx},
     custom_event,
-    event::{Event, EventPropagation, FocusEvent, listener},
+    event::{Event, EventPropagation, FocusEvent, Phase, listener},
     prelude::EventListenerTrait,
     prop_extractor,
     style::{
@@ -245,7 +245,7 @@ impl TextLayoutData {
                     }),
                     crate::event::DispatchKind::Directed {
                         target: id.get_element_id(),
-                        phases: crate::context::Phases::TARGET,
+                        phases: Phases::TARGET,
                     },
                 );
             }
@@ -334,43 +334,42 @@ style_class!(
     pub LabelClass
 );
 
-custom_event! {
-    /// Event fired when a text view's overflow state changes.
-    ///
-    /// This is fired when text transitions between fitting within its bounds and overflowing,
-    /// or vice versa. The overflow state depends on the `text_overflow` style property:
-    ///
-    /// - `TextOverflow::Clip`: Text is clipped at the boundary
-    /// - `TextOverflow::Ellipsis`: Text is truncated with "..." when it overflows
-    /// - `TextOverflow::Wrap`: Text wraps to multiple lines (changes line count, not overflow state)
-    ///
-    /// # Use Cases
-    ///
-    /// - Show/hide a "more" button when text is truncated
-    /// - Toggle between single-line and multi-line display modes
-    /// - Display tooltips with full text when content is clipped
-    /// - Update UI indicators when text fits or overflows
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// "Some long text that might overflow"
-    ///     .style(|s| s.text_overflow(TextOverflow::Ellipsis))
-    ///     .on_event(TextOverflowChanged::listener(), |cx, event| {
-    ///         if event.is_overflowing {
-    ///             println!("Text is now overflowing and truncated");
-    ///         } else {
-    ///             println!("Text fits completely");
-    ///         }
-    ///         EventPropagation::Continue
-    ///     })
-    /// ```
-    #[derive(Copy, PartialEq)]
-    pub struct TextOverflowChanged {
-        /// Whether the text is currently overflowing its bounds
-        pub is_overflowing: bool,
-    }
+/// Event fired when a text view's overflow state changes.
+///
+/// This is fired when text transitions between fitting within its bounds and overflowing,
+/// or vice versa. The overflow state depends on the `text_overflow` style property:
+///
+/// - `TextOverflow::Clip`: Text is clipped at the boundary
+/// - `TextOverflow::Ellipsis`: Text is truncated with "..." when it overflows
+/// - `TextOverflow::Wrap`: Text wraps to multiple lines (changes line count, not overflow state)
+///
+/// # Use Cases
+///
+/// - Show/hide a "more" button when text is truncated
+/// - Toggle between single-line and multi-line display modes
+/// - Display tooltips with full text when content is clipped
+/// - Update UI indicators when text fits or overflows
+///
+/// # Example
+///
+/// ```rust
+/// "Some long text that might overflow"
+///     .style(|s| s.text_overflow(TextOverflow::Ellipsis))
+///     .on_event(TextOverflowChanged::listener(), |cx, event| {
+///         if event.is_overflowing {
+///             println!("Text is now overflowing and truncated");
+///         } else {
+///             println!("Text fits completely");
+///         }
+///         EventPropagation::Continue
+///     })
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TextOverflowChanged {
+    /// Whether the text is currently overflowing its bounds
+    pub is_overflowing: bool,
 }
+custom_event!(TextOverflowChanged);
 
 #[derive(Debug, Clone, PartialEq)]
 enum SelectionState {
@@ -397,7 +396,7 @@ pub struct Label {
 
 impl Label {
     fn new_internal(id: ViewId, label: String) -> Self {
-        id.has_layout_listener();
+        id.register_listener(LayoutChangedListener::listener_key());
         let layout_data = Rc::new(RefCell::new(TextLayoutData::new(Some(id))));
         let mut label = Label {
             id,
@@ -733,6 +732,9 @@ impl View for Label {
                     ..
                 },
             ) => {
+                if cx.phase != Phase::Target || !cx.window_state.is_focused(self.id) {
+                    return EventPropagation::Continue;
+                }
                 if self.handle_key_down(ke) {
                     return EventPropagation::Stop;
                 }

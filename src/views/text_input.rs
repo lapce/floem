@@ -1332,7 +1332,12 @@ impl View for TextInput {
                     state: KeyState::Down,
                     ..
                 },
-            ) => self.handle_key_down(cx.window_state, ke),
+            ) => {
+                if !cx.window_state.is_focused(self.id) {
+                    return EventPropagation::Continue;
+                }
+                self.handle_key_down(cx.window_state, ke)
+            }
             Event::Ime(ImeEvent::Preedit { text, cursor }) => {
                 if self.is_focused && !text.is_empty() {
                     if let Some(selection) = self.selection.take() {
