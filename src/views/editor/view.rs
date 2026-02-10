@@ -1040,7 +1040,7 @@ pub fn editor_view(
         inner_node: None,
     }
     .style(|s| s.keyboard_navigable(true))
-    .on_event_cont(listener::FocusGained, move |_, _| {
+    .on_event_cont(listener::FocusGot, move |_, _| {
         focused.set(true);
         prev_ime_area.set(None);
 
@@ -1235,7 +1235,7 @@ fn editor_content(
         ed.editor_view_id.set(Some(id));
 
         editor_content_view
-            .on_event_cont(listener::FocusGained, move |_, _| {
+            .on_event_cont(listener::FocusGot, move |_, _| {
                 editor.with_untracked(|ed| ed.editor_view_focused.notify())
             })
             .on_event_cont(listener::FocusLost, move |_, _| {

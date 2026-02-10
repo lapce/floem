@@ -264,7 +264,7 @@ impl ViewId {
     pub(crate) fn view(&self) -> Rc<RefCell<Box<dyn View>>> {
         VIEW_STORAGE.with_borrow(|s| {
             s.views.get(*self).cloned().unwrap_or_else(|| {
-                eprintln!("stale");
+                // eprintln!("stale");
                 s.stale_view.clone()
             })
         })
@@ -510,11 +510,16 @@ impl ViewId {
 
     /// Get the root view of the window that the given view is in
     pub fn root(&self) -> ViewId {
-        VIEW_STORAGE.with_borrow_mut(|s| {
+        VIEW_STORAGE.with_borrow(|s| {
             *s.root.get(*self).expect(
                 "all view ids are entered into the root map and have a root id upon creation",
             )
         })
+    }
+
+    /// try to get the root. use this if it is possible that the view has been deleted
+    pub(crate) fn try_root(&self) -> Option<ViewId> {
+        VIEW_STORAGE.with_borrow(|s| s.root.get(*self).copied())
     }
 
     /// Get the size of this View

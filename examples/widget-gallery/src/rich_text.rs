@@ -1,10 +1,10 @@
 use std::ops::Range;
 
 use floem::{
+    IntoView,
     peniko::color::palette,
     text::{Attrs, AttrsList, Style},
-    views::{rich_text, Decorators, RichTextExt, Scroll, Stack},
-    IntoView,
+    views::{Decorators, RichTextExt, Scroll, Stack, rich_text},
 };
 
 pub fn rich_text_view() -> impl IntoView {

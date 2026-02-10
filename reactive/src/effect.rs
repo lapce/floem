@@ -13,7 +13,7 @@ pub(crate) enum EffectPriority {
     High,
 }
 
-pub(crate) trait EffectTrait: Any {
+pub trait EffectTrait: Any {
     fn id(&self) -> Id;
     fn run(&self) -> bool;
     fn add_observer(&self, id: Id);

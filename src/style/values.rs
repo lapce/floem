@@ -226,12 +226,7 @@ impl StylePropValue for ObjectFit {
             if matches!(object_fit, ObjectFit::Cover) {
                 // Draw the image rect (it will extend beyond container)
                 let img_rect = RoundedRect::from_rect(
-                    kurbo::Rect::new(
-                        img_x,
-                        img_y,
-                        img_x + img_width,
-                        img_y + img_height,
-                    ),
+                    kurbo::Rect::new(img_x, img_y, img_x + img_width, img_y + img_height),
                     2.0,
                 );
                 // Show it as semi-transparent to indicate it's clipped
@@ -240,12 +235,7 @@ impl StylePropValue for ObjectFit {
             } else {
                 // Draw the image rect normally
                 let img_rect = RoundedRect::from_rect(
-                    kurbo::Rect::new(
-                        img_x,
-                        img_y,
-                        img_x + img_width,
-                        img_y + img_height,
-                    ),
+                    kurbo::Rect::new(img_x, img_y, img_x + img_width, img_y + img_height),
                     2.0,
                 );
                 cx.fill(&img_rect, image_color.get(), 0.0);
@@ -275,10 +265,18 @@ impl StylePropValue for ObjectFit {
         let tooltip_view = move || {
             let description = match object_fit {
                 ObjectFit::Fill => "Stretches content to fill the box.\nMay distort aspect ratio.",
-                ObjectFit::Contain => "Scales content to fit inside the box.\nPreserves aspect ratio (letterboxed).",
-                ObjectFit::Cover => "Scales content to cover the box.\nPreserves aspect ratio (may clip).",
-                ObjectFit::ScaleDown => "Like 'contain' but won't scale up.\nNever larger than natural size.",
-                ObjectFit::None => "Content keeps its natural size.\nMay overflow or be smaller than box.",
+                ObjectFit::Contain => {
+                    "Scales content to fit inside the box.\nPreserves aspect ratio (letterboxed)."
+                }
+                ObjectFit::Cover => {
+                    "Scales content to cover the box.\nPreserves aspect ratio (may clip)."
+                }
+                ObjectFit::ScaleDown => {
+                    "Like 'contain' but won't scale up.\nNever larger than natural size."
+                }
+                ObjectFit::None => {
+                    "Content keeps its natural size.\nMay overflow or be smaller than box."
+                }
             };
 
             Stack::vertical((
@@ -292,7 +290,7 @@ impl StylePropValue for ObjectFit {
             preview
                 .tooltip(tooltip_view)
                 .style(|s| s.items_center())
-                .into_any()
+                .into_any(),
         )
     }
 }

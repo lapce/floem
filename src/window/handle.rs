@@ -544,7 +544,7 @@ impl WindowHandle {
             if let Some(window_menu) = &self.window_menu {
                 window_menu.init_for_nsapp();
             }
-            self.event(Event::Window(WindowEvent::FocusGained));
+            self.event(Event::Window(WindowEvent::FocusGot));
         } else {
             self.event(Event::Window(WindowEvent::FocusLost));
         }
@@ -900,8 +900,10 @@ impl WindowHandle {
                     let removed_central_msgs =
                         std::mem::replace(central_msgs, Vec::with_capacity(central_msgs.len()));
                     for (id, msg) in removed_central_msgs {
-                        let msgs = msgs.entry(id.root()).or_default();
-                        msgs.push(msg);
+                        if let Some(root) = id.try_root() {
+                            let msgs = msgs.entry(root).or_default();
+                            msgs.push(msg);
+                        }
                     }
                 });
             }

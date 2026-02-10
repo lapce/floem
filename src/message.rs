@@ -6,10 +6,10 @@ use ui_events::pointer::PointerId;
 use winit::window::{ResizeDirection, Theme};
 
 use crate::{
+    element_id::ElementId,
     event::{DispatchKind, Event},
     platform::menu::Menu,
     view::{AnyView, View, ViewId},
-    element_id::ElementId,
     window::state::WindowState,
 };
 

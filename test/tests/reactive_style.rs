@@ -20,6 +20,7 @@ use serial_test::serial;
 #[test]
 #[serial]
 fn test_reactive_style_updates_on_signal_change() {
+    let root = TestRoot::new();
     let counter = RwSignal::new(0);
 
     let view = Empty::new().style(move |s| {
@@ -31,7 +32,6 @@ fn test_reactive_style_updates_on_signal_change() {
     });
     let id = view.view_id();
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Initial state: counter is 0, background should be GRAY
@@ -64,12 +64,12 @@ fn test_reactive_style_updates_on_signal_change() {
 #[test]
 #[serial]
 fn test_set_disabled_sets_property() {
+    let root = TestRoot::new();
     let counter = RwSignal::new(0);
 
     let view = Empty::new().style(move |s| s.size(100.0, 100.0).set_disabled(counter.get() == 0));
     let id = view.view_id();
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Initial state: counter is 0, Disabled should be true
@@ -102,6 +102,7 @@ fn test_set_disabled_sets_property() {
 #[test]
 #[serial]
 fn test_disabled_selector_applied_on_first_pass() {
+    let root = TestRoot::new();
     let counter = RwSignal::new(0);
 
     let view = Empty::new().style(move |s| {
@@ -112,7 +113,6 @@ fn test_disabled_selector_applied_on_first_pass() {
     });
     let id = view.view_id();
 
-    let root = TestRoot::new();
     let harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Initial state: counter is 0, should be disabled with LIGHT_GRAY background
@@ -148,6 +148,7 @@ fn test_disabled_selector_applied_on_first_pass() {
 #[test]
 #[serial]
 fn test_disabled_to_enabled_transition() {
+    let root = TestRoot::new();
     let counter = RwSignal::new(0);
 
     let view = Empty::new().style(move |s| {
@@ -158,7 +159,6 @@ fn test_disabled_to_enabled_transition() {
     });
     let id = view.view_id();
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Initial state: disabled=true, Disabled property is set
@@ -211,6 +211,7 @@ fn test_disabled_to_enabled_transition() {
 #[test]
 #[serial]
 fn test_disabled_selector_after_style_request() {
+    let root = TestRoot::new();
     let counter = RwSignal::new(0);
 
     let view = Empty::new().style(move |s| {
@@ -221,7 +222,6 @@ fn test_disabled_selector_after_style_request() {
     });
     let id = view.view_id();
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // After first style pass, Disabled property should be true
@@ -254,6 +254,7 @@ fn test_disabled_selector_after_style_request() {
 #[test]
 #[serial]
 fn test_multiple_reactive_styles() {
+    let root = TestRoot::new();
     let signal = RwSignal::new(false);
 
     let view1 = Empty::new().style(move |s| {
@@ -276,7 +277,6 @@ fn test_multiple_reactive_styles() {
 
     let view = Stack::new((view1, view2)).style(|s| s.size(100.0, 50.0));
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 50.0);
 
     // Initial state: signal is false
@@ -327,6 +327,7 @@ fn test_multiple_reactive_styles() {
 #[test]
 #[serial]
 fn test_counter_example_repaint_scenario() {
+    let root = TestRoot::new();
     let counter = RwSignal::new(0);
 
     // Create views similar to the counter example
@@ -348,7 +349,6 @@ fn test_counter_example_repaint_scenario() {
 
     let view = Stack::new((increment_btn, reset_btn)).style(|s| s.size(200.0, 100.0));
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 100.0);
 
     // Initial state: counter is 0
@@ -390,12 +390,12 @@ fn test_counter_example_repaint_scenario() {
 #[test]
 #[serial]
 fn test_reactive_style_change_requests_repaint() {
+    let root = TestRoot::new();
     let color_signal = RwSignal::new(palette::css::RED);
 
     let view = Empty::new().style(move |s| s.size(100.0, 100.0).background(color_signal.get()));
     let id = view.view_id();
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Change the signal - this should trigger style recalculation and repaint
@@ -427,6 +427,7 @@ fn test_reactive_style_change_requests_repaint() {
 #[test]
 #[serial]
 fn test_click_triggered_style_change_requests_repaint() {
+    let root = TestRoot::new();
     let is_active = RwSignal::new(false);
 
     let button = Empty::new()
@@ -446,7 +447,6 @@ fn test_click_triggered_style_change_requests_repaint() {
 
     let view = Stack::new((button, indicator)).style(|s| s.size(100.0, 50.0));
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 50.0);
 
     // Initial state
@@ -489,10 +489,10 @@ fn test_click_triggered_style_change_requests_repaint() {
 #[test]
 #[serial]
 fn test_request_style_triggers_repaint() {
+    let root = TestRoot::new();
     let view = Empty::new().style(|s| s.size(100.0, 100.0).background(palette::css::GRAY));
     let id = view.view_id();
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Manually request style
@@ -512,6 +512,7 @@ fn test_request_style_triggers_repaint() {
 #[test]
 #[serial]
 fn test_style_change_in_event_handler_triggers_repaint() {
+    let root = TestRoot::new();
     let counter = RwSignal::new(0);
 
     let view = Empty::new()
@@ -527,7 +528,6 @@ fn test_style_change_in_event_handler_triggers_repaint() {
         });
     let id = view.view_id();
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Initial state
@@ -558,6 +558,7 @@ fn test_style_change_in_event_handler_triggers_repaint() {
 #[test]
 #[serial]
 fn test_style_change_triggers_recalculation() {
+    let root = TestRoot::new();
     let counter = RwSignal::new(0);
 
     let view = Empty::new().style(move |s| {
@@ -569,7 +570,6 @@ fn test_style_change_triggers_recalculation() {
     });
     let id = view.view_id();
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Initial background is GRAY
@@ -581,6 +581,7 @@ fn test_style_change_triggers_recalculation() {
     counter.set(1);
 
     // Check if style change was requested
+    harness.process_update_messages();
     let has_pending = harness.has_pending_style_change(id);
     assert!(
         has_pending,
@@ -617,12 +618,12 @@ fn test_style_change_triggers_recalculation() {
 #[test]
 #[serial]
 fn test_set_selected_sets_property() {
+    let root = TestRoot::new();
     let is_selected = RwSignal::new(false);
 
     let view = Empty::new().style(move |s| s.size(100.0, 100.0).set_selected(is_selected.get()));
     let id = view.view_id();
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Initial state: not selected
@@ -650,6 +651,7 @@ fn test_set_selected_sets_property() {
 #[test]
 #[serial]
 fn test_selected_selector_applied_on_first_pass() {
+    let root = TestRoot::new();
     let is_selected = RwSignal::new(true);
 
     let view = Empty::new().style(move |s| {
@@ -660,7 +662,6 @@ fn test_selected_selector_applied_on_first_pass() {
     });
     let id = view.view_id();
 
-    let root = TestRoot::new();
     let harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Initial state: selected=true, should have BLUE background
@@ -679,6 +680,7 @@ fn test_selected_selector_applied_on_first_pass() {
 #[test]
 #[serial]
 fn test_not_selected_to_selected_transition() {
+    let root = TestRoot::new();
     let is_selected = RwSignal::new(false);
 
     let view = Empty::new().style(move |s| {
@@ -689,7 +691,6 @@ fn test_not_selected_to_selected_transition() {
     });
     let id = view.view_id();
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Initial: not selected, background should be GRAY
@@ -720,6 +721,7 @@ fn test_not_selected_to_selected_transition() {
 #[test]
 #[serial]
 fn test_selected_to_not_selected_transition() {
+    let root = TestRoot::new();
     let is_selected = RwSignal::new(true);
 
     let view = Empty::new().style(move |s| {
@@ -730,7 +732,6 @@ fn test_selected_to_not_selected_transition() {
     });
     let id = view.view_id();
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Request style to ensure selector is applied
@@ -766,6 +767,7 @@ fn test_selected_to_not_selected_transition() {
 #[test]
 #[serial]
 fn test_disabled_and_selected_selectors_combined() {
+    let root = TestRoot::new();
     let is_disabled = RwSignal::new(false);
     let is_selected = RwSignal::new(false);
 
@@ -779,7 +781,6 @@ fn test_disabled_and_selected_selectors_combined() {
     });
     let id = view.view_id();
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Initial: neither disabled nor selected -> WHITE
@@ -820,6 +821,7 @@ fn test_disabled_and_selected_selectors_combined() {
 #[test]
 #[serial]
 fn test_rapid_state_changes() {
+    let root = TestRoot::new();
     let state = RwSignal::new(0);
 
     let view = Empty::new().style(move |s| {
@@ -833,7 +835,6 @@ fn test_rapid_state_changes() {
     });
     let id = view.view_id();
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // State 0: normal -> WHITE
@@ -880,6 +881,7 @@ fn test_rapid_state_changes() {
 #[test]
 #[serial]
 fn test_sibling_state_affects_other_sibling() {
+    let root = TestRoot::new();
     let active_index = RwSignal::new(0);
 
     // Button 0 is selected when active_index == 0
@@ -902,7 +904,6 @@ fn test_sibling_state_affects_other_sibling() {
 
     let view = Stack::new((btn0, btn1)).style(|s| s.size(100.0, 60.0));
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 60.0);
 
     // Request style for both to ensure selectors are applied
@@ -945,6 +946,7 @@ fn test_sibling_state_affects_other_sibling() {
 #[test]
 #[serial]
 fn test_nested_selector_with_reactive_state() {
+    let root = TestRoot::new();
     let is_active = RwSignal::new(false);
 
     // This pattern is common: a base style with a selected sub-style
@@ -959,7 +961,6 @@ fn test_nested_selector_with_reactive_state() {
     });
     let id = view.view_id();
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Initial: not active -> LIGHT_GRAY, no border
@@ -985,6 +986,7 @@ fn test_nested_selector_with_reactive_state() {
 #[test]
 #[serial]
 fn test_hover_and_selected_combination() {
+    let root = TestRoot::new();
     let is_selected = RwSignal::new(true);
 
     // Create view smaller than harness so we have space to move pointer outside
@@ -999,7 +1001,6 @@ fn test_hover_and_selected_combination() {
     let id = view.view_id();
 
     // Harness larger than view so pointer can be "outside"
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 120.0, 120.0);
 
     // Request style to apply selected
@@ -1049,6 +1050,7 @@ fn test_hover_and_selected_combination() {
 #[test]
 #[serial]
 fn test_click_changes_selection_style() {
+    let root = TestRoot::new();
     let selected_id = RwSignal::new(0usize);
 
     // Create buttons that show different colors when selected
@@ -1074,7 +1076,6 @@ fn test_click_changes_selection_style() {
 
     let view = Stack::new((btn0, btn1)).style(|s| s.size(100.0, 60.0));
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 60.0);
 
     // Request styles initially

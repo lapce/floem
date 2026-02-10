@@ -203,7 +203,7 @@ impl WindowState {
         let mut inherited_style = Style::new();
         if theme.any_inherited() {
             let inherited_props = theme.map.iter().filter(|(k, _)| k.inherited());
-            inherited_style.apply_iter(inherited_props);
+            inherited_style.apply_iter(inherited_props, None);
         }
         inherited_style
     }

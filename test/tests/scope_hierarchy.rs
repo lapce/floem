@@ -12,10 +12,10 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
+use floem::headless::TestRoot;
 use floem::prelude::*;
 use floem::reactive::{Context, Scope};
 use floem::views::{Decorators, Empty, Stem};
-use floem::headless::TestRoot;
 use floem_test::prelude::*;
 use serial_test::serial;
 

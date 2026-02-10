@@ -31,6 +31,8 @@ use crate::{
 pub trait Decorators: IntoView {
     /// Alter the style of the view.
     ///
+    /// Ensure that if you are using signals inside of the style that you track them at the top level
+    ///
     /// The Floem style system provides comprehensive styling capabilities including:
     ///
     /// ## Layout & Sizing
@@ -238,8 +240,8 @@ pub trait Decorators: IntoView {
                 cx.request_pointer_capture(pointer_id);
             }
         })
-        .on_event_stop(listener::GainedPointerCapture, move |cx, _id| {
-            cx.request_drag(config(), true);
+        .on_event_stop(listener::GotPointerCapture, move |cx, dt| {
+            cx.start_drag(*dt, config(), true);
         })
     }
 

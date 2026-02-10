@@ -37,7 +37,7 @@ fn test_translate_x_pixels() {
 
     let view = Stack::new((element,)).style(|s| s.size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(root, view,200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     // The transform should include a 20px x translation
@@ -69,7 +69,7 @@ fn test_translate_y_pixels() {
 
     let view = Stack::new((element,)).style(|s| s.size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(root, view,200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     let transform = element_id.get_visual_transform();
@@ -104,7 +104,7 @@ fn test_translate_x_percentage() {
 
     let view = Stack::new((element,)).style(|s| s.size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(root, view,200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     let transform = element_id.get_visual_transform();
@@ -136,7 +136,7 @@ fn test_translate_y_percentage() {
 
     let view = Stack::new((element,)).style(|s| s.size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(root, view,200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     let transform = element_id.get_visual_transform();
@@ -168,7 +168,7 @@ fn test_translate_negative_percentage() {
 
     let view = Stack::new((element,)).style(|s| s.size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(root, view,200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     let transform = element_id.get_visual_transform();
@@ -178,8 +178,8 @@ fn test_translate_negative_percentage() {
 
     // -50% of 100px width = -50px
     assert!(
-        (translate_x - (-50.0)).abs() < 0.1,
-        "translate_x(-50%) on 100px wide element should translate by -50px, got {}",
+        (translate_x - 50.0).abs() < 0.1,
+        "Element at x=100 with translate_x(-50%) should be at x=50, got {}",
         translate_x
     );
 }
@@ -206,14 +206,14 @@ fn test_center_with_translate() {
             .translate_x(Pct(-50.0)) // Move left by half width
             .translate_y(Pct(-50.0)) // Move up by half height
     });
-    let element_id = element.view_id();
+    let view_id = element.view_id();
 
     let view = Stack::new((element,)).style(|s| s.size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(root, view,200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
-    let transform = element_id.get_visual_transform();
+    let transform = view_id.get_visual_transform();
 
     let coeffs = transform.as_coeffs();
     let translate_x = coeffs[4];
@@ -222,13 +222,13 @@ fn test_center_with_translate() {
     // translate_x(-50%) on 100px wide = -50px
     // translate_y(-50%) on 60px tall = -30px
     assert!(
-        (translate_x - (-50.0)).abs() < 0.1,
-        "translate_x(-50%) on 100px element should be -50px, got {}",
+        (translate_x - 50.0).abs() < 0.1,
+        "Element should be at x=50 (100 from left:50% - 50 from translate), got {}",
         translate_x
     );
     assert!(
-        (translate_y - (-30.0)).abs() < 0.1,
-        "translate_y(-50%) on 60px element should be -30px, got {}",
+        (translate_y - 70.0).abs() < 0.1,
+        "Element should be at y=70 (100 from top:50% - 30 from translate), got {}",
         translate_y
     );
 }
@@ -264,7 +264,7 @@ fn test_translate_percentage_scales_with_element_size() {
 
     let view = Stack::new((large_element, small_element)).style(|s| s.size(300.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(root, view,300.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 300.0, 200.0);
     harness.rebuild();
 
     let large_transform = large_id.get_visual_transform();

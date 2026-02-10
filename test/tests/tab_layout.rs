@@ -9,9 +9,9 @@ use serial_test::serial;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use floem::headless::TestRoot;
 use floem::prelude::*;
 use floem::views::tab;
-use floem::headless::TestRoot;
 use floem_test::prelude::*;
 
 // =============================================================================

@@ -16,8 +16,8 @@
 use floem::kurbo::{Point, Size};
 use floem::prelude::*;
 use floem::unit::Pct;
-use floem_test::prelude::*;
 use floem_test::TestRoot;
+use floem_test::prelude::*;
 use serial_test::serial;
 
 // =============================================================================

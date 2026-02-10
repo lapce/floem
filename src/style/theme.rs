@@ -482,6 +482,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
         .transition(Background, Transition::linear(100.millis()))
         .focus(|s| s.with_theme(|s, t| s.hover(|s| s.background(t.bg_overlay()))))
         .border_radius(100.pct())
+        .flex_shrink(0.)
         .apply(border_style(false))
         .apply(focus_style());
 

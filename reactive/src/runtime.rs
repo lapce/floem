@@ -24,7 +24,7 @@ use crate::{
 pub(crate) type ScopeContexts = HashMap<TypeId, Box<dyn Any>>;
 
 thread_local! {
-pub(crate) static RUNTIME: Runtime = Runtime::new();
+pub static RUNTIME: Runtime = Runtime::new();
 }
 
 static UI_THREAD_ID: OnceLock<ThreadId> = OnceLock::new();
@@ -215,5 +215,13 @@ impl Runtime {
     /// The waker should nudge the UI event loop (e.g., by sending a proxy event).
     pub fn set_sync_effect_waker(waker: impl Fn() + Send + Sync + 'static) {
         SYNC_RUNTIME.set_waker(waker);
+    }
+
+    pub fn get_current_effect() -> Option<Rc<dyn EffectTrait>> {
+        RUNTIME.with(|rt| rt.current_effect.borrow().clone())
+    }
+
+    pub fn set_current_effect(effect: Option<Rc<dyn EffectTrait>>) {
+        RUNTIME.with(|rt| *rt.current_effect.borrow_mut() = effect);
     }
 }

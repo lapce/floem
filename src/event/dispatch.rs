@@ -43,7 +43,7 @@ use crate::{
     action::show_context_menu,
     context::*,
     event::{
-        Event, FocusEvent, ImeEvent, InteractionEvent, Phase, WindowEvent,
+        DragToken, Event, FocusEvent, ImeEvent, InteractionEvent, Phase, WindowEvent,
         drag_state::{DragEventDispatch, DraggingPreview},
         dropped_file::FileDragEvent,
         path::hit_test,
@@ -369,11 +369,12 @@ impl<'a> EventCx<'a> {
     ///
     /// When `use_default_preview` is true, floem will set the `dragging_preview` to this element which will make it apprear above all other content and under the cursor.
     ///
-    /// This should be called in response to `PointerCaptureEvent::Gained`.
+    /// This should be called in response to `PointerCaptureEvent::Got`.
     /// The element must have pointer capture before requesting drag.
     /// The drag won't actually start until the pointer moves beyond the threshold.
-    pub fn request_drag(
+    pub fn start_drag(
         &mut self,
+        drag_token: DragToken,
         config: crate::event::DragConfig,
         use_default_preview: bool,
     ) -> bool {
@@ -381,9 +382,7 @@ impl<'a> EventCx<'a> {
             return false;
         };
 
-        let Some(pointer_id) = pbe.pointer.pointer_id else {
-            return false;
-        };
+        let pointer_id = drag_token.pointer_id();
 
         let element_id = self.target;
 
@@ -876,9 +875,9 @@ impl<'a> GlobalEventCx<'a> {
             }
         }
         if let Event::Pointer(pe) = &event {
-            let hover_events = self.window_state.file_hover_state.clear();
-            for hover_event in hover_events {
-                if let HoverEvent::Leave(element_id) = hover_event {
+            let file_hover_events = self.window_state.file_hover_state.clear();
+            for file_hover_event in file_hover_events {
+                if let HoverEvent::Leave(element_id) = file_hover_event {
                     self.window_state.style_dirty.insert(element_id.owning_id());
                 }
             }
@@ -991,7 +990,7 @@ impl<'a> GlobalEventCx<'a> {
                     );
                     if let Some(element_ids) = exceeded_nodes {
                         for element_id in element_ids.iter() {
-                            self.window_state.style_dirty.insert(element_id.owning_id());
+                            element_id.owning_id().request_style();
                         }
                     }
                 }
@@ -1278,6 +1277,8 @@ impl<'a> GlobalEventCx<'a> {
             if let Some(menu) = context_menu {
                 let position = pbe.state.logical_point();
                 show_context_menu(menu(), Some(position));
+                // we need to clear the click state after menus because winit can lose the on up event while the menu is active
+                self.window_state.click_state.clear();
             }
         }
 
@@ -1294,6 +1295,8 @@ impl<'a> GlobalEventCx<'a> {
                     .unwrap_or_default();
                 let bottom_left = Point::new(bounds.x0, bounds.y1);
                 show_context_menu(menu(), Some(bottom_left));
+                // we need to clear the click state after menus because winit can lose the on up event while the menu is active
+                self.window_state.click_state.clear();
             }
         }
     }
@@ -1339,7 +1342,8 @@ impl<'a> GlobalEventCx<'a> {
             // Only set capture if the view is still connected
             if !new_target.owning_id().is_hidden() {
                 self.window_state.set_active_capture(pointer_id, new_target);
-                let event = Event::PointerCapture(PointerCaptureEvent::Gained(pointer_id));
+                let event =
+                    Event::PointerCapture(PointerCaptureEvent::Got(super::DragToken(pointer_id)));
                 self.event_cx(
                     &FloemDispatch::target(new_target).with_widget(new_target.owning_id()),
                     &event,
@@ -1439,7 +1443,7 @@ impl<'a> GlobalEventCx<'a> {
                         let mut focus_prevented = false;
                         self.event_cx(
                             &FloemDispatch::target(id).with_widget(id.owning_id()),
-                            &Event::Focus(FocusEvent::Gained),
+                            &Event::Focus(FocusEvent::Got),
                             &mut focus_prevented,
                         )
                         .dispatch_one();

@@ -414,13 +414,12 @@ fn test_path_includes_all_ancestors() {
         .into_view();
 
     let parent = Container::new(
-        Container::new(
-            Empty::new()
-                .style(|s| s.size(30.0, 30.0))
-                .on_event_cont(floem::event::listener::Click, move |_, _| {
-                    visit_order_c.borrow_mut().push("child".to_string());
-                }),
-        )
+        Container::new(Empty::new().style(|s| s.size(30.0, 30.0)).on_event_cont(
+            floem::event::listener::Click,
+            move |_, _| {
+                visit_order_c.borrow_mut().push("child".to_string());
+            },
+        ))
         .style(|s| s.size(60.0, 60.0))
         .on_event_cont(floem::event::listener::Click, move |_, _| {
             visit_order_p.borrow_mut().push("parent".to_string());

@@ -12,7 +12,7 @@ use ui_events::{
 use crate::event::{
     DragCancelEvent, DragEndEvent, DragEnterEvent, DragLeaveEvent, DragMoveEvent, DragSourceEvent,
     DragStartEvent, DragTargetEvent, Event, FileDragEvent, FocusEvent, ImeEvent, InteractionEvent,
-    PointerCaptureEvent, WindowEvent,
+    PointerCaptureEvent, DragToken, WindowEvent,
 };
 
 // EventListener using the same pattern as StyleClass
@@ -348,10 +348,10 @@ event_listener!(
 
 event_listener!(
     /// Fired when a view gains pointer capture
-    pub GainedPointerCapture: PointerId,
+    pub GotPointerCapture: DragToken,
     |event| {
-        if let Event::PointerCapture(PointerCaptureEvent::Gained(id)) = event {
-            return Some(id as &dyn Any);
+        if let Event::PointerCapture(PointerCaptureEvent::Got(token)) = event {
+            return Some(token as &dyn Any);
         }
         None
     }
@@ -446,10 +446,10 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`Event::Focus`] `Gained` variant
-    pub FocusGained: (),
+    /// Receives [`Event::Focus`] `Got` variant
+    pub FocusGot: (),
     |event| {
-        if let Event::Focus(FocusEvent::Gained) = event {
+        if let Event::Focus(FocusEvent::Got) = event {
             return Some(&() as &dyn Any);
         }
         None
@@ -534,10 +534,10 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`Event::Window`] `FocusGained` variant
-    pub WindowGainedFocus: WindowEvent,
+    /// Receives [`Event::Window`] `FocusGot` variant
+    pub WindowGotFocus: WindowEvent,
     |event| {
-        if let Event::Window(e @ WindowEvent::FocusGained) = event {
+        if let Event::Window(e @ WindowEvent::FocusGot) = event {
             return Some(e as &dyn Any);
         }
         None

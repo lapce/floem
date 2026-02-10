@@ -235,6 +235,8 @@ pub fn resolve_nested_maps(
 ) -> (Style, bool) {
     let mut classes_applied = false;
 
+    let effect_context = style.effect_context.clone();
+
     // Phase 1: Resolve class styles (with selectors, collecting context mappings)
     let (class_style, mut class_context_mappings) = resolve_classes_collecting_mappings(
         classes,
@@ -254,6 +256,12 @@ pub fn resolve_nested_maps(
     let mut i = 0;
     while i < class_context_mappings.len() {
         let mapping = class_context_mappings[i].clone();
+
+        let saved_effect = floem_reactive::Runtime::get_current_effect();
+        if let Some(effect) = &effect_context {
+            floem_reactive::Runtime::set_current_effect(Some(effect.clone()));
+        }
+
         let mapped = mapping(
             context_result.clone(),
             Box::new({
@@ -274,6 +282,9 @@ pub fn resolve_nested_maps(
                 }
             }),
         );
+
+        floem_reactive::Runtime::set_current_effect(saved_effect);
+
         let (resolved, new_mappings) =
             resolve_style_collecting_mappings(mapped, interact_state, screen_size_bp);
         context_result.apply_mut_no_mappings(resolved);
@@ -290,6 +301,12 @@ pub fn resolve_nested_maps(
     while i < view_context_mappings.len() {
         let mapping = view_context_mappings[i].clone();
         combined_context.apply_mut_no_mappings(result.clone());
+
+        let saved_effect = floem_reactive::Runtime::get_current_effect();
+        if let Some(effect) = &effect_context {
+            floem_reactive::Runtime::set_current_effect(Some(effect.clone()));
+        }
+
         let mapped = mapping(
             result.clone(),
             Box::new({
@@ -305,6 +322,9 @@ pub fn resolve_nested_maps(
                 }
             }),
         );
+
+        floem_reactive::Runtime::set_current_effect(saved_effect);
+
         let (resolved, new_mappings) =
             resolve_style_collecting_mappings(mapped, interact_state, screen_size_bp);
         result.apply_mut_no_mappings(resolved);
@@ -366,6 +386,8 @@ fn resolve_selectors_collecting_mappings(
     const MAX_DEPTH: u32 = 20;
     let mut depth = 0;
     let mut all_mappings = Vec::new();
+    // Capture the effect context from the input style
+    let effect_context = style.effect_context.clone();
 
     loop {
         if depth >= MAX_DEPTH {
@@ -379,11 +401,17 @@ fn resolve_selectors_collecting_mappings(
         let mut apply_nested = |style: &mut Style, key: StyleKey| -> bool {
             if let Some(mut map) = style.get_nested_map(key) {
                 // Extract mappings before applying
+                let saved_effect = floem_reactive::Runtime::get_current_effect();
+                if let Some(effect) = &effect_context {
+                    floem_reactive::Runtime::set_current_effect(Some(effect.clone()));
+                }
+
                 if let Some(mappings) = extract_context_mappings(&mut map) {
                     all_mappings.extend(mappings);
                 }
                 style.apply_mut_no_mappings(map);
                 style.remove_nested_map(key);
+                floem_reactive::Runtime::set_current_effect(saved_effect);
                 true
             } else {
                 false
@@ -473,7 +501,7 @@ fn extract_context_mappings(style: &mut Style) -> Option<Vec<ContextMapFn>> {
     })
 }
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct Style {
     pub(crate) map: ImHashMap<StyleKey, Rc<dyn Any>>,
     /// Cached flag indicating whether this style contains any class maps.
@@ -484,6 +512,21 @@ pub struct Style {
     /// This enables O(1) early-exit in `apply_only_inherited` for the common case
     /// where a view's style has no inherited properties.
     has_inherited: bool,
+    /// The effect context that was active when this style was created.
+    /// This is restored when evaluating context mappings and selectors to ensure
+    /// reactive dependencies are tracked correctly.
+    effect_context: Option<Rc<dyn floem_reactive::EffectTrait>>,
+}
+impl Default for Style {
+    fn default() -> Self {
+        let effect_context = floem_reactive::Runtime::get_current_effect();
+        Self {
+            map: ImHashMap::default(),
+            has_class_maps: false,
+            has_inherited: false,
+            effect_context,
+        }
+    }
 }
 
 impl Style {
@@ -502,7 +545,7 @@ impl Style {
             let mut new_style = (**to).clone();
             // Only apply properties marked as inherited, not all properties
             let inherited = from.map.iter().filter(|(p, _)| p.inherited());
-            new_style.apply_iter(inherited);
+            new_style.apply_iter(inherited, None);
             *to = Rc::new(new_style);
         }
     }
@@ -523,7 +566,7 @@ impl Style {
             // Apply inherited properties
             if has_inherited {
                 let inherited = from.map.iter().filter(|(p, _)| p.inherited());
-                new_style.apply_iter(inherited);
+                new_style.apply_iter(inherited, None);
             }
 
             // Apply class nested maps so they flow to descendants
@@ -532,7 +575,7 @@ impl Style {
                     .map
                     .iter()
                     .filter(|(k, _)| matches!(k.info, StyleKeyInfo::Class(..)));
-                new_style.apply_iter(class_maps);
+                new_style.apply_iter(class_maps, None);
             }
 
             *to = Rc::new(new_style);
@@ -553,7 +596,7 @@ impl Style {
             .map
             .iter()
             .filter(|(k, _)| matches!(k.info, StyleKeyInfo::Class(..)));
-        new_style.apply_iter(class_maps);
+        new_style.apply_iter(class_maps, None);
         *to = Rc::new(new_style);
     }
 
@@ -707,7 +750,7 @@ impl Style {
                 // Add a context mapping that re-applies the view's selector styles LAST
                 let restore_selectors: ContextMapFn = Rc::new(move |mut s: Style, _| {
                     for (k, v) in view_selectors.iter() {
-                        s.apply_iter(std::iter::once((k, v)));
+                        s.apply_iter(std::iter::once((k, v)), None);
                     }
                     s
                 });
@@ -874,7 +917,7 @@ impl Style {
         if self.any_inherited() {
             let inherited = self.map.iter().filter(|(p, _)| p.inherited());
 
-            new.apply_iter(inherited);
+            new.apply_iter(inherited, None);
         }
         new
     }
@@ -912,7 +955,11 @@ impl Style {
     pub(crate) fn apply_iter<'a>(
         &mut self,
         iter: impl Iterator<Item = (&'a StyleKey, &'a Rc<dyn Any>)>,
+        source_effect_context: Option<Rc<dyn floem_reactive::EffectTrait>>,
     ) {
+        if self.effect_context.is_none() && source_effect_context.is_some() {
+            self.effect_context = source_effect_context;
+        }
         for (k, v) in iter {
             match k.info {
                 StyleKeyInfo::Class(..) | StyleKeyInfo::Selector(..) => {
@@ -984,7 +1031,11 @@ impl Style {
     pub(crate) fn apply_iter_no_mappings<'a>(
         &mut self,
         iter: impl Iterator<Item = (&'a StyleKey, &'a Rc<dyn Any>)>,
+        source_effect_context: Option<Rc<dyn floem_reactive::EffectTrait>>,
     ) {
+        if self.effect_context.is_none() && source_effect_context.is_some() {
+            self.effect_context = source_effect_context;
+        }
         for (k, v) in iter {
             match k.info {
                 StyleKeyInfo::Class(..) | StyleKeyInfo::Selector(..) => {
@@ -1041,11 +1092,13 @@ impl Style {
     }
 
     pub(crate) fn apply_mut(&mut self, over: Style) {
-        self.apply_iter(over.map.iter());
+        let effect_context = over.effect_context.clone();
+        self.apply_iter(over.map.iter(), effect_context);
     }
 
     pub(crate) fn apply_mut_no_mappings(&mut self, over: Style) {
-        self.apply_iter_no_mappings(over.map.iter());
+        let effect_context = over.effect_context.clone();
+        self.apply_iter_no_mappings(over.map.iter(), effect_context);
     }
 
     /// Apply another `Style` to this style, returning a new `Style` with the overrides
@@ -1769,11 +1822,11 @@ impl TransformProps {
 
         let transform_x = match self.translate_x() {
             crate::unit::PxPct::Px(px) => px,
-            crate::unit::PxPct::Pct(pct) => pct / 100.,
+            crate::unit::PxPct::Pct(pct) => (pct / 100.) * size.width,
         };
         let transform_y = match self.translate_y() {
             crate::unit::PxPct::Px(px) => px,
-            crate::unit::PxPct::Pct(pct) => pct / 100.,
+            crate::unit::PxPct::Pct(pct) => (pct / 100.) * size.height,
         };
         transform *= Affine::translate(Vec2 {
             x: transform_x,

@@ -393,10 +393,10 @@ impl PointerCaptureTracker {
         let name_up = name.clone();
 
         view.into_view()
-            .on_event(listener::GainedPointerCapture, move |_cx, pointer_id| {
+            .on_event(listener::GotPointerCapture, move |_cx, drag_token| {
                 got_captures
                     .borrow_mut()
-                    .push((name_got.clone(), *pointer_id));
+                    .push((name_got.clone(), drag_token.pointer_id()));
                 floem::event::EventPropagation::Continue
             })
             .on_event(listener::LostPointerCapture, move |_cx, pointer_id| {

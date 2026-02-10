@@ -164,6 +164,13 @@ impl HeadlessHarness {
         self.process_update_no_paint();
     }
 
+    /// process update messages
+    ///
+    /// this can be used so that style requests can be integrated into the window state without restyling
+    pub fn process_update_messages(&mut self) {
+        self.window_handle.process_update_messages();
+    }
+
     /// Run pending reactive effects and process all updates.
     ///
     /// Returns `true` if a repaint would be scheduled (style or layout changed).

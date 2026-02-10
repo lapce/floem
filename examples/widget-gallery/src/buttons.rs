@@ -1,5 +1,6 @@
 use floem::{
-    peniko::{color::palette, Color},
+    IntoView,
+    peniko::{Color, color::palette},
     prelude::{
         palette::css::{DARK_GRAY, WHITE_SMOKE},
         *,
@@ -7,7 +8,6 @@ use floem::{
     style::CursorStyle,
     theme::StyleThemeExt,
     views::{Button, Decorators, ToggleButton, ToggleHandleBehavior},
-    IntoView,
 };
 
 use crate::form::{form, form_item};

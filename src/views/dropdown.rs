@@ -362,17 +362,21 @@ impl<T: Clone + std::cmp::PartialEq> Dropdown<T> {
                 let items_view = index_to_item_clone_.values().map(list_item_fn);
 
                 let list = list(items_view)
-                    .on_event_stop(crate::views::list::ListAccept::listener(), move |_, event| {
-                        if let Some(idx) = event.selection {
-                            let val = index_to_item_clone
-                                .get(&idx)
-                                .expect("Index should exist in the map")
-                                .clone();
+                    .on_event_stop(
+                        crate::views::list::ListAccept::listener(),
+                        move |_, event| {
+                            if let Some(idx) = event.selection {
+                                let val = index_to_item_clone
+                                    .get(&idx)
+                                    .expect("Index should exist in the map")
+                                    .clone();
 
-                            dropdown_id.update_state(Message::ActiveElement(Box::new(val.clone())));
-                            dropdown_id.update_state(Message::ListSelect(Box::new(val)));
-                        }
-                    })
+                                dropdown_id
+                                    .update_state(Message::ActiveElement(Box::new(val.clone())));
+                                dropdown_id.update_state(Message::ListSelect(Box::new(val)));
+                            }
+                        },
+                    )
                     .style(|s| s.width_full())
                     .on_event_stop(listener::FocusLost, move |_, _| {
                         dropdown_id.update_state(Message::ListFocusLost);

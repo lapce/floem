@@ -5,9 +5,9 @@
 
 use floem::prelude::*;
 use floem::unit::Pct;
+use floem_test::TestRoot;
 use floem_test::prelude::*;
 use serial_test::serial;
-use floem_test::TestRoot;
 
 // =============================================================================
 // Basic Sizing Tests

@@ -167,7 +167,7 @@ impl IntoView for TodoState {
                 AppCommand::SetActive(self).execute();
                 input_id.request_focus();
             })
-            .on_event_stop(listener::FocusGained, move |_, _| {
+            .on_event_stop(listener::FocusGot, move |_, _| {
                 AppCommand::SetActive(self).execute();
                 input_focused.notify();
             });

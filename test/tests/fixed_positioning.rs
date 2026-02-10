@@ -907,12 +907,13 @@ fn test_fixed_overlay_child_paint_at_viewport_origin() {
     let clicked_clone = clicked.clone();
 
     // The fixed style is on the child of Overlay, not the Overlay itself
-    let fixed_child = Stack::new((Empty::new()
-        .style(|s| s.absolute().inset(0.0))
-        .action(move || {
-            clicked_clone.set(true);
-        }),))
-    .style(|s| s.fixed().inset(0.0));
+    let fixed_child =
+        Stack::new((Empty::new()
+            .style(|s| s.absolute().inset(0.0))
+            .action(move || {
+                clicked_clone.set(true);
+            }),))
+        .style(|s| s.fixed().inset(0.0));
 
     let view = Stack::new((
         // Parent positioned at (100, 100)

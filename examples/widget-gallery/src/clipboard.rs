@@ -1,4 +1,4 @@
-use floem::{prelude::*, Clipboard};
+use floem::{Clipboard, prelude::*};
 
 use crate::form::{form, form_item};
 

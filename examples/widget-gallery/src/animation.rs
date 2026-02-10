@@ -1,10 +1,10 @@
 use floem::{
+    IntoView,
     animate::Animation,
     peniko::color::palette,
     reactive::{RwSignal, SignalGet, Trigger},
     unit::DurationUnitExt,
     views::{Decorators, Empty, Stack},
-    IntoView,
 };
 
 pub fn animation_view() -> impl IntoView {

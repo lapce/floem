@@ -259,7 +259,7 @@ impl TextLayoutData {
             move |known_dimensions, available_space, node_id, _style, measure_ctx| {
                 use taffy::*;
 
-                // Mark for finalization - don't mutate here
+                // Mark for finalization
                 measure_ctx.needs_finalization(node_id);
 
                 // Get text layout info
@@ -286,11 +286,11 @@ impl TextLayoutData {
                                 // Calculate min-content: width of longest unbreakable word
                                 // let mut layout_data = layout_data.borrow_mut();
                                 // let min_width = layout_data.compute_min_content_width();
-                                Some(0.)
+                                Some(5.)
                             }
                             TextOverflow::Ellipsis => {
                                 // TODO: similar to wrap
-                                Some(0.)
+                                Some(5.)
                             }
                             TextOverflow::Clip => None,
                         },
@@ -304,7 +304,7 @@ impl TextLayoutData {
                 };
 
                 Size {
-                    width: known_dimensions.width.unwrap_or(text_size.width as f32) + 0.5,
+                    width: known_dimensions.width.unwrap_or(text_size.width as f32) + 1.,
                     height: known_dimensions.height.unwrap_or(text_size.height as f32),
                 }
             },

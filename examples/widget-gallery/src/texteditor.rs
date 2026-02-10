@@ -1,20 +1,21 @@
 use floem::{
+    IntoView, View,
     action::inspect,
     reactive::{RwSignal, SignalGet, SignalUpdate},
     ui_events::keyboard::{Key, NamedKey},
     unit::UnitExt,
     views::{
+        Button, Decorators, Stack,
         editor::{
             command::{Command, CommandExecuted},
             core::{
                 command::EditCommand, cursor::CursorAffinity, editor::EditType,
                 selection::Selection,
             },
-            text::{default_dark_color, SimpleStyling},
+            text::{SimpleStyling, default_dark_color},
         },
-        text_editor, Button, Decorators, Stack,
+        text_editor,
     },
-    IntoView, View,
 };
 
 pub fn editor_view() -> impl IntoView {

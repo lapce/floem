@@ -1709,11 +1709,9 @@ fn test_dialog_click_on_nested_button() {
             Stack::new((
                 Empty::new().style(|s| s.size(50.0, 20.0)), // Header
                 // A button at the bottom of the dialog
-                Empty::new()
-                    .style(|s| s.size(40.0, 20.0))
-                    .action(move || {
-                        button_clicked.set(true);
-                    }),
+                Empty::new().style(|s| s.size(40.0, 20.0)).action(move || {
+                    button_clicked.set(true);
+                }),
             ))
             .style(|s| s.flex_col().gap(10.0))
         })
@@ -2677,19 +2675,15 @@ fn test_events_do_not_bubble_to_parents_sibling() {
 
     let view = Stack::new((
         // Sibling1 - should NOT receive click
-        Empty::new()
-            .style(|s| s.size(50.0, 100.0))
-            .action(move || {
-                sibling1_clicked.set(true);
-            }),
+        Empty::new().style(|s| s.size(50.0, 100.0)).action(move || {
+            sibling1_clicked.set(true);
+        }),
         // Sibling2 - container with nested child
         Container::new(
             // NestedChild - click target
-            Empty::new()
-                .style(|s| s.size(40.0, 40.0))
-                .action(move || {
-                    nested_child_clicked.set(true);
-                }),
+            Empty::new().style(|s| s.size(40.0, 40.0)).action(move || {
+                nested_child_clicked.set(true);
+            }),
         )
         .style(|s| s.size(50.0, 100.0))
         .on_click(move |_| {
@@ -2814,13 +2808,9 @@ fn test_deeply_nested_no_cross_branch_bubbling() {
             branch_a_clicked.set(true);
         }),
         // BranchB
-        Container::new(
-            Empty::new()
-                .style(|s| s.size(40.0, 80.0))
-                .action(move || {
-                    leaf_b_clicked.set(true);
-                }),
-        )
+        Container::new(Empty::new().style(|s| s.size(40.0, 80.0)).action(move || {
+            leaf_b_clicked.set(true);
+        }))
         .style(|s| s.size(50.0, 100.0))
         .on_click(move |_| {
             branch_b_clicked.set(true);
@@ -2863,11 +2853,9 @@ fn test_bubbling_through_handler_less_child() {
 
     let view = Stack::horizontal((
         // Sibling1
-        Empty::new()
-            .style(|s| s.size(50.0, 100.0))
-            .action(move || {
-                sibling1_clicked.set(true);
-            }),
+        Empty::new().style(|s| s.size(50.0, 100.0)).action(move || {
+            sibling1_clicked.set(true);
+        }),
         // Sibling2 with child that has no handler
         Container::new(
             Empty::new().style(|s| s.size(40.0, 80.0)), // Child - NO handler
@@ -2930,12 +2918,10 @@ fn test_fixed_overlay_child_receives_click() {
             // Content - centered with translate
             Stack::vertical((
                 // Clickable child (like a button)
-                Empty::new()
-                    .style(|s| s.size(60.0, 30.0))
-                    .action(move || {
-                        eprintln!("[child] clicked!");
-                        child_clicked.set(true);
-                    }),
+                Empty::new().style(|s| s.size(60.0, 30.0)).action(move || {
+                    eprintln!("[child] clicked!");
+                    child_clicked.set(true);
+                }),
             ))
             .style(|s| {
                 s.absolute()
@@ -3125,12 +3111,10 @@ fn test_fixed_overlay_deeply_nested_child() {
                 // Level 2 - Inner container
                 Container::new(
                     // Level 3 - Deepest clickable element
-                    Empty::new()
-                        .style(|s| s.size(40.0, 20.0))
-                        .action(move || {
-                            eprintln!("[level3] clicked!");
-                            level3_clicked.set(true);
-                        }),
+                    Empty::new().style(|s| s.size(40.0, 20.0)).action(move || {
+                        eprintln!("[level3] clicked!");
+                        level3_clicked.set(true);
+                    }),
                 )
                 .style(|s| s.size(50.0, 30.0).padding(5.0))
                 .action(move || {

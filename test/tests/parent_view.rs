@@ -5,9 +5,9 @@
 //! - derived_children() updates when signals change
 //! - Old children are properly cleaned up when new children are set
 
+use floem::headless::TestRoot;
 use floem::prelude::*;
 use floem::views::{Decorators, Empty, Label, Stem};
-use floem::headless::TestRoot;
 use floem_test::prelude::*;
 use serial_test::serial;
 

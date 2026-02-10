@@ -14,8 +14,8 @@
 //! The correct transformation should use just `visual_origin` (matching
 //! how `visual_transform` is computed during layout).
 
-use floem::prelude::*;
 use floem::event::EventPropagation;
+use floem::prelude::*;
 use floem::views::slider;
 use floem::views::slider::SliderChanged;
 use floem_test::prelude::*;

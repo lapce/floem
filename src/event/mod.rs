@@ -294,7 +294,7 @@ impl EventPropagation {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum FocusEvent {
     Lost,
-    Gained,
+    Got,
     EnteredSubtree,
     LeftSubtree,
 }
@@ -303,7 +303,7 @@ pub enum FocusEvent {
 pub enum PointerCaptureEvent {
     /// Fired when a view gains pointer capture.
     /// Contains the pointer ID that was captured.
-    Gained(PointerId),
+    Got(DragToken),
     /// Fired when a view loses pointer capture.
     /// Contains the pointer ID that was released.
     Lost(PointerId),
@@ -407,7 +407,7 @@ pub enum InteractionEvent {
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum WindowEvent {
-    FocusGained,
+    FocusGot,
     FocusLost,
     Closed,
     Resized(Size),
@@ -421,6 +421,13 @@ pub enum WindowEvent {
 // ============================================================================
 // Shared Event Data Structures
 // ============================================================================
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub struct DragToken(PointerId);
+impl DragToken {
+    pub fn pointer_id(&self) -> PointerId {
+        self.0
+    }
+}
 
 /// Event data for when a drag operation starts.
 ///
@@ -904,7 +911,7 @@ impl Event {
             // Pointer down, up, enter, cancel, scroll, gesture should not trigger on disabled views
             Event::Pointer(_) => false,
             // Gained capture should only happen on active views
-            Event::PointerCapture(PointerCaptureEvent::Gained(_)) => false,
+            Event::PointerCapture(PointerCaptureEvent::Got(_)) => false,
             // Focus events should not be delivered to disabled views
             Event::Focus(_) => false,
             // IME events should not be delivered to disabled views
@@ -1065,9 +1072,7 @@ impl Event {
             Self::Pointer(PointerEvent::Enter(_)) => PointerEnter::listener_key(),
             Self::Pointer(PointerEvent::Cancel(_)) => PointerCancel::listener_key(),
             Self::Pointer(PointerEvent::Gesture(_)) => PinchGesture::listener_key(),
-            Self::PointerCapture(PointerCaptureEvent::Gained(_)) => {
-                GainedPointerCapture::listener_key()
-            }
+            Self::PointerCapture(PointerCaptureEvent::Got(_)) => GotPointerCapture::listener_key(),
             Self::PointerCapture(PointerCaptureEvent::Lost(_)) => {
                 LostPointerCapture::listener_key()
             }
@@ -1085,7 +1090,7 @@ impl Event {
             Self::Ime(ImeEvent::Commit(_)) => ImeCommit::listener_key(),
             Self::Ime(ImeEvent::DeleteSurrounding { .. }) => ImeDeleteSurrounding::listener_key(),
             Self::Focus(FocusEvent::Lost) => FocusLost::listener_key(),
-            Self::Focus(FocusEvent::Gained) => FocusGained::listener_key(),
+            Self::Focus(FocusEvent::Got) => FocusGot::listener_key(),
             Self::Focus(FocusEvent::EnteredSubtree) => FocusEnteredSubtree::listener_key(),
             Self::Focus(FocusEvent::LeftSubtree) => FocusLeftSubtree::listener_key(),
             Self::Window(WindowEvent::Closed) => WindowClosed::listener_key(),
@@ -1093,7 +1098,7 @@ impl Event {
             Self::Window(WindowEvent::Moved(_)) => WindowMoved::listener_key(),
             Self::Window(WindowEvent::MaximizeChanged(_)) => WindowMaximizeChanged::listener_key(),
             Self::Window(WindowEvent::ScaleChanged(_)) => WindowScaleChanged::listener_key(),
-            Self::Window(WindowEvent::FocusGained) => WindowGainedFocus::listener_key(),
+            Self::Window(WindowEvent::FocusGot) => WindowGotFocus::listener_key(),
             Self::Window(WindowEvent::FocusLost) => WindowLostFocus::listener_key(),
             Self::Window(WindowEvent::ThemeChanged(_)) => ThemeChanged::listener_key(),
             Self::Window(WindowEvent::ChangeUnderCursor) => WindowChangeUnderCursor::listener_key(),

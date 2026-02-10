@@ -7,7 +7,10 @@
 //! - Automatic release on pointer up
 //! - Two-phase capture (pending → active) model
 
-use floem::event::{Event, PointerId, listener::{PointerDown, PointerMove, PointerUp}};
+use floem::event::{
+    Event, PointerId,
+    listener::{PointerDown, PointerMove, PointerUp},
+};
 use floem::ui_events::pointer::PointerEvent;
 use floem_test::prelude::*;
 use serial_test::serial;
