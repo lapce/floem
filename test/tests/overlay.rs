@@ -4,7 +4,7 @@
 //! including event dispatch order and paint order.
 
 use floem::HasViewId;
-use floem::headless::HeadlessHarness;
+use floem::headless::{HeadlessHarness, TestRoot};
 use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 use floem::view::ParentView;
 use floem::views::{Clip, Decorators, Empty, Label, Overlay, Stack};
@@ -15,6 +15,7 @@ use std::rc::Rc;
 #[test]
 #[serial]
 fn test_overlay_new() {
+    let root = TestRoot::new();
     // Test that an Overlay can be created with static content
     let view = Stack::new((
         Label::new("Main content"),
@@ -22,12 +23,13 @@ fn test_overlay_new() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let _harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let _harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 }
 
 #[test]
 #[serial]
 fn test_overlay_derived() {
+    let root = TestRoot::new();
     // Test that an Overlay can be created with derived content
     let view = Stack::new((
         Label::new("Main content"),
@@ -35,12 +37,13 @@ fn test_overlay_derived() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let _harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let _harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 }
 
 #[test]
 #[serial]
 fn test_overlay_with_visibility_control() {
+    let root = TestRoot::new();
     // Test that overlay visibility can be controlled via styles
     let visible = RwSignal::new(true);
 
@@ -53,7 +56,7 @@ fn test_overlay_with_visibility_control() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Toggle visibility
     visible.set(false);
@@ -66,6 +69,7 @@ fn test_overlay_with_visibility_control() {
 #[test]
 #[serial]
 fn test_overlay_content_factory_called() {
+    let root = TestRoot::new();
     // Test that the content factory is called when creating overlay
     let factory_called = Rc::new(Cell::new(false));
     let factory_called_clone = factory_called.clone();
@@ -79,7 +83,7 @@ fn test_overlay_content_factory_called() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     assert!(
         factory_called.get(),
@@ -92,6 +96,7 @@ fn test_overlay_content_factory_called() {
 #[test]
 #[serial]
 fn test_overlay_in_nested_structure() {
+    let root = TestRoot::new();
     // Test that Overlay works in nested view structures
     let view =
         Stack::new((Stack::new((
@@ -104,12 +109,13 @@ fn test_overlay_in_nested_structure() {
         .style(|s| s.size(80.0, 80.0)),))
         .style(|s| s.size(100.0, 100.0));
 
-    let _harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let _harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 }
 
 #[test]
 #[serial]
 fn test_multiple_overlays() {
+    let root = TestRoot::new();
     // Test that multiple overlays can coexist
     let view = Stack::new((
         Label::new("Main content"),
@@ -118,12 +124,13 @@ fn test_multiple_overlays() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let _harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let _harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 }
 
 #[test]
 #[serial]
 fn test_overlay_with_styled_content() {
+    let root = TestRoot::new();
     // Test that overlay content can be styled
     let view = Stack::new((
         Label::new("Main content"),
@@ -135,7 +142,7 @@ fn test_overlay_with_styled_content() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let _harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let _harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 }
 
 // ============================================================================
@@ -145,6 +152,7 @@ fn test_overlay_with_styled_content() {
 #[test]
 #[serial]
 fn test_overlay_receives_events_before_regular_views() {
+    let root = TestRoot::new();
     // Test that overlays receive events before regular views, even if
     // the regular view has a higher z-index.
     //
@@ -166,20 +174,20 @@ fn test_overlay_receives_events_before_regular_views() {
     let view = Stack::new((
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(100))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_regular_clone.set(true);
             }),
         Overlay::new().child(
             Empty::new()
                 .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
-                .on_click_stop(move |_| {
+                .action(move || {
                     clicked_overlay_clone.set(true);
                 }),
         ),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -196,6 +204,7 @@ fn test_overlay_receives_events_before_regular_views() {
 #[test]
 #[serial]
 fn test_multiple_overlays_respect_z_index() {
+    let root = TestRoot::new();
     // Test that multiple overlays respect z-index ordering among themselves.
     // The z-index must be on the Overlay view itself, not just its content.
     //
@@ -220,7 +229,7 @@ fn test_multiple_overlays_respect_z_index() {
             .child(
                 Empty::new()
                     .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
-                    .on_click_stop(move |_| {
+                    .action(move || {
                         clicked1_clone.set(true);
                     }),
             )
@@ -230,7 +239,7 @@ fn test_multiple_overlays_respect_z_index() {
             .child(
                 Empty::new()
                     .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
-                    .on_click_stop(move |_| {
+                    .action(move || {
                         clicked2_clone.set(true);
                     }),
             )
@@ -238,7 +247,7 @@ fn test_multiple_overlays_respect_z_index() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -255,6 +264,7 @@ fn test_multiple_overlays_respect_z_index() {
 #[test]
 #[serial]
 fn test_overlay_dom_order_tiebreaker() {
+    let root = TestRoot::new();
     // Test that when overlays have equal z-index, DOM order is used as tiebreaker.
     // The z-index must be on the Overlay view itself.
     //
@@ -276,7 +286,7 @@ fn test_overlay_dom_order_tiebreaker() {
             .child(
                 Empty::new()
                     .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
-                    .on_click_stop(move |_| {
+                    .action(move || {
                         clicked1_clone.set(true);
                     }),
             )
@@ -285,7 +295,7 @@ fn test_overlay_dom_order_tiebreaker() {
             .child(
                 Empty::new()
                     .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
-                    .on_click_stop(move |_| {
+                    .action(move || {
                         clicked2_clone.set(true);
                     }),
             )
@@ -293,7 +303,7 @@ fn test_overlay_dom_order_tiebreaker() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -307,6 +317,7 @@ fn test_overlay_dom_order_tiebreaker() {
 #[test]
 #[serial]
 fn test_nested_overlay_escapes_parent_z_index() {
+    let root = TestRoot::new();
     // Test that an overlay nested inside a low z-index parent still
     // receives events before a higher z-index sibling.
     //
@@ -330,7 +341,7 @@ fn test_nested_overlay_escapes_parent_z_index() {
         Stack::new((Overlay::new().child(
             Empty::new()
                 .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
-                .on_click_stop(move |_| {
+                .action(move || {
                     overlay_clone.set(true);
                 }),
         ),))
@@ -338,13 +349,13 @@ fn test_nested_overlay_escapes_parent_z_index() {
         // Sibling with high z-index
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(100))
-            .on_click_stop(move |_| {
+            .action(move || {
                 sibling_clone.set(true);
             }),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -361,6 +372,7 @@ fn test_nested_overlay_escapes_parent_z_index() {
 #[test]
 #[serial]
 fn test_hidden_overlay_does_not_block_events() {
+    let root = TestRoot::new();
     // Test that a hidden overlay does not block events to views below.
     //
     // Structure:
@@ -378,7 +390,7 @@ fn test_hidden_overlay_does_not_block_events() {
     let view = Stack::new((
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
-            .on_click_stop(move |_| {
+            .action(move || {
                 regular_clone.set(true);
             }),
         Overlay::new().child(
@@ -389,14 +401,14 @@ fn test_hidden_overlay_does_not_block_events() {
                         .size(100.0, 100.0)
                         .display(floem::taffy::Display::None)
                 })
-                .on_click_stop(move |_| {
+                .action(move || {
                     overlay_clone.set(true);
                 }),
         ),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -428,6 +440,7 @@ fn test_paint_order_overlays_after_regular_views() {
     // Paint order should be: regular_view, then overlay_content
     // (regardless of z-index values)
 
+    let root = TestRoot::new();
     let regular = Empty::new().style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(100));
     let regular_id = regular.view_id();
 
@@ -437,7 +450,7 @@ fn test_paint_order_overlays_after_regular_views() {
     let view = Stack::new((regular, Overlay::new().child(overlay_content)))
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     let paint_order = harness.paint_and_get_order();
 
@@ -470,6 +483,7 @@ fn test_paint_order_multiple_overlays_by_z_index() {
     //   └── Overlay (z-index: 1)   <-- painted first (lower z-index = painted earlier)
     //       └── overlay2_content
 
+    let root = TestRoot::new();
     let overlay1_content = Empty::new().style(|s| s.absolute().inset(0.0).size(100.0, 100.0));
     let overlay1_id = overlay1_content.view_id();
 
@@ -486,7 +500,7 @@ fn test_paint_order_multiple_overlays_by_z_index() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     // Ensure deferred children are processed before checking paint order
     harness.rebuild();
 
@@ -519,6 +533,7 @@ fn test_paint_order_regular_views_by_z_index() {
     //   ├── view2 (z-index: 1)   <-- painted first (lowest z-index)
     //   └── view3 (z-index: 10)  <-- painted third (highest z-index)
 
+    let root = TestRoot::new();
     let v1 = Empty::new().style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(5));
     let v1_id = v1.view_id();
 
@@ -530,7 +545,7 @@ fn test_paint_order_regular_views_by_z_index() {
 
     let view = Stack::new((v1, v2, v3)).style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     let paint_order = harness.paint_and_get_order();
 
@@ -565,6 +580,7 @@ fn test_paint_order_nested_overlay_escapes_parent() {
     //   │       └── overlay_content  <-- painted last (overlay always on top)
     //   └── sibling (z-index: 100)  <-- painted before overlay (regular view)
 
+    let root = TestRoot::new();
     let overlay_content = Empty::new().style(|s| s.absolute().inset(0.0).size(100.0, 100.0));
     let overlay_id = overlay_content.view_id();
 
@@ -578,7 +594,7 @@ fn test_paint_order_nested_overlay_escapes_parent() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     let paint_order = harness.paint_and_get_order();
 
@@ -617,6 +633,7 @@ fn test_overlay_escapes_parent_clip() {
     // Click at (75, 25) is outside the Clip bounds but inside
     // the overlay_content bounds. The overlay should receive this click.
 
+    let root = TestRoot::new();
     let clicked_overlay = Rc::new(Cell::new(false));
     let clicked_background = Rc::new(Cell::new(false));
 
@@ -628,7 +645,7 @@ fn test_overlay_escapes_parent_clip() {
         Clip::new(Stack::new((Overlay::new().child(
             Empty::new()
                 .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
-                .on_click_stop(move |_| {
+                .action(move || {
                     overlay_clone.set(true);
                 }),
         ),)))
@@ -636,13 +653,13 @@ fn test_overlay_escapes_parent_clip() {
         // Background that would receive click if overlay didn't escape clip
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(-1))
-            .on_click_stop(move |_| {
+            .action(move || {
                 bg_clone.set(true);
             }),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Click outside clip bounds (75, 25) but inside overlay bounds
     harness.click(75.0, 25.0);
@@ -672,6 +689,7 @@ fn test_overlay_painted_outside_parent_clip() {
     //
     // The overlay content should appear in the paint order.
 
+    let root = TestRoot::new();
     let overlay_content = Empty::new().style(|s| s.absolute().inset(0.0).size(100.0, 100.0));
     let overlay_id = overlay_content.view_id();
 
@@ -681,7 +699,7 @@ fn test_overlay_painted_outside_parent_clip() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     let paint_order = harness.paint_and_get_order();
 
@@ -709,6 +727,7 @@ fn test_overlay_escapes_nested_clips() {
     //
     // Click at (90, 45) is outside both clip bounds but inside overlay bounds.
 
+    let root = TestRoot::new();
     let clicked_overlay = Rc::new(Cell::new(false));
     let clicked_background = Rc::new(Cell::new(false));
 
@@ -722,7 +741,7 @@ fn test_overlay_escapes_nested_clips() {
             Clip::new(Stack::new((Overlay::new().child(
                 Empty::new()
                     .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
-                    .on_click_stop(move |_| {
+                    .action(move || {
                         overlay_clone.set(true);
                     }),
             ),)))
@@ -732,13 +751,13 @@ fn test_overlay_escapes_nested_clips() {
         // Background
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(-1))
-            .on_click_stop(move |_| {
+            .action(move || {
                 bg_clone.set(true);
             }),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Click outside both clip bounds (90, 45) but inside overlay
     harness.click(90.0, 45.0);
@@ -779,7 +798,8 @@ fn test_overlay_with_container_derived_rebuild() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Initial paint should work
     harness.rebuild();
@@ -840,7 +860,8 @@ fn test_overlay_with_nested_container_derived() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Initial state: dialog open
     harness.rebuild();
@@ -877,6 +898,7 @@ fn test_clip_only_affects_painting_not_events() {
     // Click at (75, 25) goes to regular_child even though it's outside clip bounds.
     // This is because Clip only affects rendering, not hit testing.
 
+    let root = TestRoot::new();
     let clicked_child = Rc::new(Cell::new(false));
     let clicked_background = Rc::new(Cell::new(false));
 
@@ -888,7 +910,7 @@ fn test_clip_only_affects_painting_not_events() {
         Clip::new(
             Empty::new()
                 .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
-                .on_click_stop(move |_| {
+                .action(move || {
                     child_clone.set(true);
                 }),
         )
@@ -896,13 +918,13 @@ fn test_clip_only_affects_painting_not_events() {
         // Background
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(-1))
-            .on_click_stop(move |_| {
+            .action(move || {
                 bg_clone.set(true);
             }),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Click outside clip bounds - child still receives it because Clip
     // only affects painting, not event dispatch

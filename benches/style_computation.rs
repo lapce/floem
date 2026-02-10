@@ -9,7 +9,7 @@
 use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use floem::headless::HeadlessHarness;
+use floem::headless::{HeadlessHarness, TestRoot};
 use floem::prelude::*;
 use floem::style::Background;
 use floem::views::{Container, Decorators, Empty, Stack};
@@ -98,8 +98,9 @@ fn bench_identical_styles(c: &mut Criterion) {
             size,
             |b, &size| {
                 b.iter(|| {
+                    let root = TestRoot::new();
                     let view = create_identical_styled_views(size);
-                    let harness = HeadlessHarness::new_with_size(view, 400.0, 400.0);
+                    let harness = HeadlessHarness::new_with_size(root, view, 400.0, 400.0);
                     black_box(harness.root_id());
                 });
             },
@@ -118,8 +119,9 @@ fn bench_different_styles(c: &mut Criterion) {
             size,
             |b, &size| {
                 b.iter(|| {
+                    let root = TestRoot::new();
                     let view = create_different_styled_views(size);
-                    let harness = HeadlessHarness::new_with_size(view, 400.0, 400.0);
+                    let harness = HeadlessHarness::new_with_size(root, view, 400.0, 400.0);
                     black_box(harness.root_id());
                 });
             },
@@ -138,8 +140,9 @@ fn bench_deep_nesting(c: &mut Criterion) {
             depth,
             |b, &depth| {
                 b.iter(|| {
+                    let root = TestRoot::new();
                     let view = create_deep_styled_tree(depth);
-                    let harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+                    let harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
                     black_box(harness.root_id());
                 });
             },
@@ -158,8 +161,9 @@ fn bench_complex_styles(c: &mut Criterion) {
             size,
             |b, &size| {
                 b.iter(|| {
+                    let root = TestRoot::new();
                     let view = create_complex_styled_views(size);
-                    let harness = HeadlessHarness::new_with_size(view, 500.0, 500.0);
+                    let harness = HeadlessHarness::new_with_size(root, view, 500.0, 500.0);
                     black_box(harness.root_id());
                 });
             },
@@ -185,7 +189,8 @@ fn bench_get_computed_style(c: &mut Criterion) {
 
     let ids: Vec<_> = views.iter().map(|v| v.view_id()).collect();
     let container = Stack::from_iter(views).style(|s| s.size(400.0, 400.0));
-    let harness = HeadlessHarness::new_with_size(container, 400.0, 400.0);
+    let root = TestRoot::new();
+    let harness = HeadlessHarness::new_with_size(root, container, 400.0, 400.0);
 
     group.bench_function("get_style_100_views", |b| {
         b.iter(|| {
@@ -224,7 +229,8 @@ fn bench_restyle_views(c: &mut Criterion) {
 
     let ids: Vec<_> = views.iter().map(|v| v.view_id()).collect();
     let container = Stack::from_iter(views).style(|s| s.size(400.0, 400.0));
-    let mut harness = HeadlessHarness::new_with_size(container, 400.0, 400.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, container, 400.0, 400.0);
 
     group.bench_function("request_and_recompute_50", |b| {
         b.iter(|| {
@@ -265,7 +271,8 @@ fn bench_restyle_with_selectors(c: &mut Criterion) {
 
     let ids: Vec<_> = views.iter().map(|v| v.view_id()).collect();
     let container = Stack::from_iter(views).style(|s| s.size(400.0, 400.0));
-    let mut harness = HeadlessHarness::new_with_size(container, 400.0, 400.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, container, 400.0, 400.0);
 
     group.bench_function("with_hover_active_50", |b| {
         b.iter(|| {
@@ -316,12 +323,13 @@ fn bench_inherited_prop_updates(c: &mut Criterion) {
                     }
                 }
 
-                let root = Container::new(create_deep_with_inherited(depth)).style(move |s| {
+                let view = Container::new(create_deep_with_inherited(depth)).style(move |s| {
                     s.size(200.0, 200.0)
                         .set(BenchInheritedColor, color_signal.get())
                 });
 
-                let mut harness = HeadlessHarness::new_with_size(root, 200.0, 200.0);
+                let root = TestRoot::new();
+                let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
 
                 b.iter(|| {
                     // Toggle the inherited prop
@@ -351,12 +359,13 @@ fn bench_inherited_prop_updates(c: &mut Criterion) {
                     .map(|_| Empty::new().style(|s| s.size(20.0, 20.0)))
                     .collect();
 
-                let root = Stack::from_iter(children).style(move |s| {
+                let view = Stack::from_iter(children).style(move |s| {
                     s.size(400.0, 400.0)
                         .set(BenchInheritedColor, color_signal.get())
                 });
 
-                let mut harness = HeadlessHarness::new_with_size(root, 400.0, 400.0);
+                let root = TestRoot::new();
+                let mut harness = HeadlessHarness::new_with_size(root, view, 400.0, 400.0);
 
                 b.iter(|| {
                     color_signal.update(|c| {
@@ -421,12 +430,13 @@ fn bench_inherited_with_selectors(c: &mut Criterion) {
                     })
                     .collect();
 
-                let root = Stack::from_iter(children).style(move |s| {
+                let view = Stack::from_iter(children).style(move |s| {
                     s.size(400.0, 400.0)
                         .set(BenchInheritedColor2, color_signal.get())
                 });
 
-                let mut harness = HeadlessHarness::new_with_size(root, 400.0, 400.0);
+                let test_root = TestRoot::new();
+                let mut harness = HeadlessHarness::new_with_size(test_root, view, 400.0, 400.0);
 
                 b.iter(|| {
                     color_signal.update(|c| {

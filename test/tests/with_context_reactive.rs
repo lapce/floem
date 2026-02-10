@@ -87,7 +87,8 @@ fn test_signal_outside_with_context_is_tracked() {
     });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let test_root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(test_root, view, 100.0, 100.0);
 
     // Initial state: not active
     let style = harness.get_computed_style(id);
@@ -160,7 +161,8 @@ fn test_signal_inside_with_context_is_tracked() {
     });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let test_root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(test_root, view, 100.0, 100.0);
 
     // Initial state: not active
     let style = harness.get_computed_style(id);
@@ -244,7 +246,8 @@ fn test_closure_signal_inside_with_context() {
     });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let test_root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(test_root, view, 100.0, 100.0);
 
     // Initial state: active_item is "none", so is_active() returns false
     let style = harness.get_computed_style(id);
@@ -300,7 +303,8 @@ fn test_multiple_views_with_signals_inside_with_context() {
 
     let container = Stack::new((view0, view1)).style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(container, 100.0, 100.0);
+    let test_root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(test_root, container, 100.0, 100.0);
 
     // Initial: view0 active (BOLD), view1 inactive (NORMAL)
     let style0 = harness.get_computed_style(id0);
@@ -356,14 +360,15 @@ fn test_click_changes_signal_inside_with_context() {
                 }
             })
         })
-        .on_click_stop(move |_| {
+        .action(move || {
             is_active.set(true);
         });
     let id = button.view_id();
 
     let container = Stack::new((button,)).style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(container, 100.0, 100.0);
+    let test_root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(test_root, container, 100.0, 100.0);
 
     // Initial: not active
     let style = harness.get_computed_style(id);
@@ -417,7 +422,8 @@ fn test_child_label_inherits_font_weight_from_parent() {
 
     let outer = Stack::new((container,)).style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(outer, 100.0, 100.0);
+    let test_root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(test_root, outer, 100.0, 100.0);
 
     // Initial: parent has NORMAL, label should inherit NORMAL
     let label_style = harness.get_computed_style(label_id);
@@ -467,10 +473,11 @@ fn test_hover_selector_with_parent_theme_colors() {
     let child_id = child.view_id();
 
     // Parent sets the custom theme
-    let root =
+    let root_view =
         Container::new(child).style(move |s| s.size(100.0, 100.0).set(TestThemeProp, custom_theme));
 
-    let mut harness = HeadlessHarness::new_with_size(root, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, root_view, 100.0, 100.0);
 
     // Initial: should use parent's secondary_bg (YELLOW), not default (GRAY)
     let style = harness.get_computed_style(child_id);
@@ -513,10 +520,11 @@ fn test_active_selector_with_parent_theme_colors() {
     });
     let child_id = child.view_id();
 
-    let root =
+    let root_view =
         Container::new(child).style(move |s| s.size(100.0, 100.0).set(TestThemeProp, custom_theme));
 
-    let mut harness = HeadlessHarness::new_with_size(root, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, root_view, 100.0, 100.0);
 
     // Initial: CYAN from parent theme
     let style = harness.get_computed_style(child_id);
@@ -560,10 +568,11 @@ fn test_multiple_selectors_with_parent_theme_colors() {
     });
     let child_id = child.view_id();
 
-    let root =
+    let root_view =
         Container::new(child).style(move |s| s.size(100.0, 100.0).set(TestThemeProp, custom_theme));
 
-    let mut harness = HeadlessHarness::new_with_size(root, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, root_view, 100.0, 100.0);
 
     // Initial: GREEN
     let style = harness.get_computed_style(child_id);
@@ -611,10 +620,11 @@ fn test_selector_updates_when_parent_theme_changes() {
     });
     let child_id = child.view_id();
 
-    let root = Container::new(child)
+    let root_view = Container::new(child)
         .style(move |s| s.size(100.0, 100.0).set(TestThemeProp, theme_signal.get()));
 
-    let mut harness = HeadlessHarness::new_with_size(root, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, root_view, 100.0, 100.0);
 
     // Hover to activate hover style
     harness.pointer_move(25.0, 25.0);
@@ -669,10 +679,11 @@ fn test_nested_selectors_with_parent_theme_colors() {
         });
     let child_id = child.view_id();
 
-    let root =
+    let root_view =
         Container::new(child).style(move |s| s.size(100.0, 100.0).set(TestThemeProp, custom_theme));
 
-    let mut harness = HeadlessHarness::new_with_size(root, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, root_view, 100.0, 100.0);
 
     // Initial: GREEN
     let style = harness.get_computed_style(child_id);
@@ -718,10 +729,11 @@ fn test_selector_with_conditional_theme_and_signal() {
     });
     let child_id = child.view_id();
 
-    let root =
+    let root_view =
         Container::new(child).style(move |s| s.size(100.0, 100.0).set(TestThemeProp, custom_theme));
 
-    let mut harness = HeadlessHarness::new_with_size(root, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, root_view, 100.0, 100.0);
 
     // Initial (inactive): GREEN
     let style = harness.get_computed_style(child_id);
@@ -788,10 +800,11 @@ fn test_deep_nesting_with_theme_selectors() {
     let level1 = Container::new(level2).style(|s| s.size(80.0, 80.0));
 
     // Theme is set at root, 4 levels above the leaf
-    let root = Container::new(level1)
+    let root_view = Container::new(level1)
         .style(move |s| s.size(100.0, 100.0).set(TestThemeProp, custom_theme));
 
-    let mut harness = HeadlessHarness::new_with_size(root, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, root_view, 100.0, 100.0);
 
     // Initial: GREEN from parent theme (inherited through 4 levels)
     let style = harness.get_computed_style(leaf_id);
@@ -844,7 +857,8 @@ fn test_siblings_with_theme_selectors() {
             .set(TestThemeProp, custom_theme)
     });
 
-    let mut harness = HeadlessHarness::new_with_size(container, 100.0, 100.0);
+    let test_root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(test_root, container, 100.0, 100.0);
 
     // Initial: child1=GREEN, child2=YELLOW
     let style1 = harness.get_computed_style(child1_id);

@@ -7,6 +7,7 @@
 
 use floem::prelude::*;
 use floem::views::{Decorators, Empty, Label, Stem};
+use floem::headless::TestRoot;
 use floem_test::prelude::*;
 use serial_test::serial;
 
@@ -14,10 +15,11 @@ use serial_test::serial;
 #[test]
 #[serial]
 fn test_stem_new_has_no_children() {
+    let root = TestRoot::new();
     let view = Stem::new().style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let _harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let _harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     let children = id.children();
     assert!(children.is_empty(), "New Stem should have no children");
@@ -32,7 +34,8 @@ fn test_parent_view_child() {
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.rebuild(); // Process deferred children
 
     let children = id.children();
@@ -52,7 +55,8 @@ fn test_parent_view_children() {
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.rebuild(); // Process deferred children
 
     let children = id.children();
@@ -74,7 +78,8 @@ fn test_parent_view_multiple_child_calls() {
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.rebuild(); // Process deferred children
 
     let children = id.children();
@@ -96,7 +101,8 @@ fn test_parent_view_mixed_child_children() {
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.rebuild(); // Process deferred children
 
     let children = id.children();
@@ -124,7 +130,8 @@ fn test_derived_children_initial() {
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.rebuild(); // Process deferred children
 
     let children = id.children();
@@ -152,7 +159,8 @@ fn test_derived_children_updates_on_signal_change() {
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.rebuild(); // Process deferred children
 
     // Initial: 3 children
@@ -198,7 +206,8 @@ fn test_derived_children_cleans_up_old_children() {
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Get initial children IDs
     let initial_children: Vec<ViewId> = id.children();
@@ -239,7 +248,8 @@ fn test_derived_children_empty_signal() {
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Initial: 0 children
     assert_eq!(id.children().len(), 0, "Initial should have 0 children");
@@ -288,7 +298,8 @@ fn test_derived_children_with_styled_children() {
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Initial: 3 children
     let children = id.children();
@@ -327,7 +338,8 @@ fn test_derived_children_triggers_repaint() {
         })
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Change the signal
     items.set(vec!["a", "b", "c"]);
@@ -360,7 +372,8 @@ fn test_stem_with_derived_children_works() {
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.rebuild(); // Process deferred children
 
     // Verify initial children
@@ -417,7 +430,8 @@ fn test_derived_children_with_click_interaction() {
         })
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.rebuild(); // Process deferred children
 
     // Click on the child
@@ -460,7 +474,8 @@ fn test_keyed_children_initial() {
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.rebuild(); // Process deferred children
 
     let children = id.children();
@@ -482,7 +497,8 @@ fn test_keyed_children_updates_on_signal_change() {
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.rebuild(); // Process deferred children
 
     // Initial: 3 children
@@ -522,7 +538,8 @@ fn test_keyed_children_reuses_unchanged_views() {
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.rebuild(); // Process deferred children
 
     // Get initial children IDs
@@ -567,7 +584,8 @@ fn test_keyed_children_empty_signal() {
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Initial: 0 children
     assert_eq!(id.children().len(), 0, "Initial should have 0 children");
@@ -604,7 +622,8 @@ fn test_keyed_children_reordering() {
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.rebuild(); // Process deferred children
 
     // Get initial children IDs
@@ -640,7 +659,8 @@ fn test_keyed_children_multiple_updates() {
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.rebuild(); // Process deferred children
 
     // Verify initial children
@@ -694,7 +714,8 @@ fn test_derived_child_initial() {
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let _harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let _harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     let children = id.children();
     assert_eq!(
@@ -718,7 +739,8 @@ fn test_derived_child_updates_on_signal_change() {
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Get initial child ID
     let initial_children: Vec<ViewId> = id.children();
@@ -766,7 +788,8 @@ fn test_derived_child_with_enum() {
         })
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.rebuild(); // Process deferred children
 
     // Click and verify the child is "small"
@@ -797,7 +820,8 @@ fn test_derived_child_cleans_up_old_children() {
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Collect initial child IDs
     let mut all_child_ids: Vec<ViewId> = id.children();
@@ -838,7 +862,8 @@ fn test_derived_child_with_into_any() {
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.rebuild(); // Process deferred children
 
     // Verify we have a child
@@ -874,7 +899,8 @@ fn test_stateful_child_initial() {
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let _harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let _harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     let children = id.children();
     assert_eq!(
@@ -898,7 +924,8 @@ fn test_stateful_child_updates_on_signal_change() {
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Get initial child ID
     let initial_children: Vec<ViewId> = id.children();
@@ -938,7 +965,8 @@ fn test_stateful_child_passes_state() {
         )
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.rebuild(); // Process deferred children
 
     // Click and verify the child name
@@ -966,7 +994,8 @@ fn test_stateful_child_cleans_up_old_children() {
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Collect initial child IDs
     let mut all_child_ids: Vec<ViewId> = id.children();
@@ -1013,7 +1042,8 @@ fn test_stateful_child_with_enum() {
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Initial: Empty view
     let initial_children = id.children();
@@ -1050,7 +1080,8 @@ fn test_stateful_child_with_static_children() {
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Both .children() and .stateful_child() are now deferred.
     // Messages are processed in order:
@@ -1149,7 +1180,8 @@ fn test_scope_context_with_child_limitation() {
         })
         .style(|s| s.size(100.0, 100.0));
 
-    let _harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let _harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Context is NOT accessible because the view was constructed
     // before child() was called
@@ -1199,7 +1231,8 @@ fn test_scope_context_with_children_limitation() {
         ])
         .style(|s| s.size(100.0, 100.0));
 
-    let _harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let _harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     let values = context_values.borrow();
     assert_eq!(values.len(), 2, "Should have 2 context captures");
@@ -1256,7 +1289,8 @@ fn test_scope_context_with_stateful_children() {
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.rebuild(); // Process deferred children
 
     // Initial: 3 children
@@ -1302,7 +1336,8 @@ fn test_scope_context_with_keyed_children() {
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.rebuild(); // Process deferred children
 
     // Initial: 2 children
@@ -1348,7 +1383,8 @@ fn test_scope_context_with_stateful_child() {
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.rebuild(); // Process deferred children
 
     assert_eq!(id.children().len(), 1);
@@ -1404,7 +1440,8 @@ fn test_scope_context_shadowing_with_stateful_child() {
         )
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.rebuild(); // Process deferred children
 
     assert_eq!(
@@ -1431,7 +1468,8 @@ fn test_no_scope_no_context() {
         .child(ContextCapturingView::new(context_value_clone))
         .style(|s| s.size(100.0, 100.0));
 
-    let _harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let _harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     assert_eq!(
         *context_value.borrow(),
@@ -1460,7 +1498,8 @@ fn test_derived_child_preserves_siblings() {
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.rebuild();
 
     // Should have 3 children: static + reactive + static
@@ -1497,7 +1536,8 @@ fn test_derived_child_replaces_only_managed() {
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.rebuild();
 
     let initial_children: Vec<ViewId> = id.children();
@@ -1542,7 +1582,8 @@ fn test_derived_child_maintains_position() {
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.rebuild();
 
     let initial_children: Vec<ViewId> = id.children();
@@ -1583,7 +1624,8 @@ fn test_multiple_derived_child_calls() {
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.rebuild();
 
     assert_eq!(id.children().len(), 2, "Should have 2 reactive children");
@@ -1636,7 +1678,8 @@ fn test_stateful_child_preserves_siblings() {
         .style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.rebuild();
 
     // Should have 3 children
@@ -1677,7 +1720,8 @@ fn test_stateful_child_passes_state_with_siblings() {
         .style(|s| s.size(100.0, 100.0).flex_col());
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.rebuild();
 
     assert_eq!(id.children().len(), 2);

@@ -33,7 +33,50 @@ use crate::paint::{
 use crate::style::{Style, StyleSelector};
 use crate::view::IntoView;
 use crate::view::ViewId;
-use crate::window::handle::WindowHandle;
+use crate::window::handle::{WindowHandle, set_current_view};
+
+/// A test root that owns a root ViewId and sets it as the current view.
+///
+/// This is used when creating views before creating a HeadlessHarness.
+/// By creating a TestRoot first, all subsequently created views will use
+/// the correct root ViewId and box tree.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use floem::headless::{TestRoot, HeadlessHarness};
+/// use floem::views::Empty;
+///
+/// let root = TestRoot::new();
+/// let view = Empty::new().style(|s| s.size(100.0, 100.0));
+/// let harness = HeadlessHarness::with_root(root, view, 100.0, 100.0);
+/// ```
+#[derive(Debug, Copy, Clone)]
+pub struct TestRoot {
+    root_id: ViewId,
+}
+
+impl TestRoot {
+    /// Create a new test root and set it as the current view.
+    ///
+    /// After calling this, all views created will use this root's box tree.
+    pub fn new() -> Self {
+        let root_id = ViewId::new_root();
+        set_current_view(root_id);
+        Self { root_id }
+    }
+
+    /// Get the root ViewId.
+    pub fn id(&self) -> ViewId {
+        self.root_id
+    }
+}
+
+impl Default for TestRoot {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 /// Result of an event dispatch operation.
 #[derive(Debug, Clone)]
@@ -60,14 +103,38 @@ impl HeadlessHarness {
     /// Create a new headless harness with the given root view.
     ///
     /// The view will be set up with default size (800x600) and scale (1.0).
-    pub fn new(view: impl IntoView) -> Self {
-        Self::new_with_size(view, 800.0, 600.0)
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use floem::headless::{TestRoot, HeadlessHarness};
+    /// use floem::views::Empty;
+    ///
+    /// let root = TestRoot::new();
+    /// let view = Empty::new().style(|s| s.size(100.0, 100.0));
+    /// let harness = HeadlessHarness::new(root, view);
+    /// ```
+    pub fn new(root: TestRoot, view: impl IntoView) -> Self {
+        Self::new_with_size(root, view, 800.0, 600.0)
     }
 
     /// Create a new headless harness with the given root view and window size.
-    pub fn new_with_size(view: impl IntoView, width: f64, height: f64) -> Self {
+    ///
+    /// Use this when you need to create views before creating the harness.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use floem::headless::{TestRoot, HeadlessHarness};
+    /// use floem::views::Empty;
+    ///
+    /// let root = TestRoot::new();
+    /// let view = Empty::new().style(|s| s.size(100.0, 100.0));
+    /// let harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
+    /// ```
+    pub fn new_with_size(root: TestRoot, view: impl IntoView, width: f64, height: f64) -> Self {
         let size = Size::new(width, height);
-        let window_handle = WindowHandle::new_headless(view, size, 1.0);
+        let window_handle = WindowHandle::new_headless(root.id(), view, size, 1.0);
 
         Self { window_handle }
     }

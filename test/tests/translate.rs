@@ -16,6 +16,7 @@ use floem::HasViewId;
 use floem::headless::HeadlessHarness;
 use floem::unit::Pct;
 use floem::views::{Decorators, Empty, Stack};
+use floem_test::TestRoot;
 
 // ============================================================================
 // Pixel-based translate tests (baseline)
@@ -23,6 +24,7 @@ use floem::views::{Decorators, Empty, Stack};
 
 #[test]
 fn test_translate_x_pixels() {
+    let root = TestRoot::new();
     // Test that translate_x with pixels moves the element by the exact pixel amount.
     let element = Empty::new().style(|s| {
         s.absolute()
@@ -35,7 +37,7 @@ fn test_translate_x_pixels() {
 
     let view = Stack::new((element,)).style(|s| s.size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view,200.0, 200.0);
     harness.rebuild();
 
     // The transform should include a 20px x translation
@@ -54,6 +56,7 @@ fn test_translate_x_pixels() {
 
 #[test]
 fn test_translate_y_pixels() {
+    let root = TestRoot::new();
     // Test that translate_y with pixels moves the element by the exact pixel amount.
     let element = Empty::new().style(|s| {
         s.absolute()
@@ -66,7 +69,7 @@ fn test_translate_y_pixels() {
 
     let view = Stack::new((element,)).style(|s| s.size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view,200.0, 200.0);
     harness.rebuild();
 
     let transform = element_id.get_visual_transform();
@@ -87,6 +90,7 @@ fn test_translate_y_pixels() {
 
 #[test]
 fn test_translate_x_percentage() {
+    let root = TestRoot::new();
     // Test that translate_x with percentage moves the element by that percentage of its own WIDTH.
     // For a 100px wide element, translate_x(50%) should move it 50px to the right.
     let element = Empty::new().style(|s| {
@@ -100,7 +104,7 @@ fn test_translate_x_percentage() {
 
     let view = Stack::new((element,)).style(|s| s.size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view,200.0, 200.0);
     harness.rebuild();
 
     let transform = element_id.get_visual_transform();
@@ -118,6 +122,7 @@ fn test_translate_x_percentage() {
 
 #[test]
 fn test_translate_y_percentage() {
+    let root = TestRoot::new();
     // Test that translate_y with percentage moves the element by that percentage of its own HEIGHT.
     // For a 80px tall element, translate_y(25%) should move it 20px down.
     let element = Empty::new().style(|s| {
@@ -131,7 +136,7 @@ fn test_translate_y_percentage() {
 
     let view = Stack::new((element,)).style(|s| s.size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view,200.0, 200.0);
     harness.rebuild();
 
     let transform = element_id.get_visual_transform();
@@ -149,6 +154,7 @@ fn test_translate_y_percentage() {
 
 #[test]
 fn test_translate_negative_percentage() {
+    let root = TestRoot::new();
     // Test that negative percentage translates in the opposite direction.
     // For a 100px wide element, translate_x(-50%) should move it 50px to the left.
     let element = Empty::new().style(|s| {
@@ -162,7 +168,7 @@ fn test_translate_negative_percentage() {
 
     let view = Stack::new((element,)).style(|s| s.size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view,200.0, 200.0);
     harness.rebuild();
 
     let transform = element_id.get_visual_transform();
@@ -184,6 +190,7 @@ fn test_translate_negative_percentage() {
 
 #[test]
 fn test_center_with_translate() {
+    let root = TestRoot::new();
     // Test the common CSS centering pattern:
     // position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
     //
@@ -203,7 +210,7 @@ fn test_center_with_translate() {
 
     let view = Stack::new((element,)).style(|s| s.size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view,200.0, 200.0);
     harness.rebuild();
 
     let transform = element_id.get_visual_transform();
@@ -232,6 +239,7 @@ fn test_center_with_translate() {
 
 #[test]
 fn test_translate_percentage_scales_with_element_size() {
+    let root = TestRoot::new();
     // Test that the same percentage translates by different amounts for different sized elements.
     // 50% on a 200px element = 100px
     // 50% on a 50px element = 25px
@@ -256,7 +264,7 @@ fn test_translate_percentage_scales_with_element_size() {
 
     let view = Stack::new((large_element, small_element)).style(|s| s.size(300.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 300.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view,300.0, 200.0);
     harness.rebuild();
 
     let large_transform = large_id.get_visual_transform();

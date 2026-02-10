@@ -13,6 +13,7 @@ use serial_test::serial;
 #[serial]
 fn test_pointer_down_move_away_no_click() {
     // Pointer down on view, move away, then pointer up should NOT fire click
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = Stack::new((
@@ -23,7 +24,7 @@ fn test_pointer_down_move_away_no_click() {
     ))
     .style(|s| s.size(100.0, 50.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 50.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 50.0);
 
     // Pointer down on target
     harness.pointer_down(25.0, 25.0);
@@ -45,6 +46,7 @@ fn test_pointer_down_move_away_no_click() {
 #[serial]
 fn test_pointer_down_move_away_move_back_clicks() {
     // Pointer down, move away, move back, then pointer up SHOULD fire click
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = Stack::new((
@@ -55,7 +57,7 @@ fn test_pointer_down_move_away_move_back_clicks() {
     ))
     .style(|s| s.size(100.0, 50.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 50.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 50.0);
 
     // Pointer down on target
     harness.pointer_down(25.0, 25.0);
@@ -80,6 +82,7 @@ fn test_pointer_down_move_away_move_back_clicks() {
 #[serial]
 fn test_pointer_down_on_a_up_on_b_neither_clicks() {
     // Pointer down on view A, pointer up on view B - neither should get click
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = Stack::new((
@@ -92,7 +95,7 @@ fn test_pointer_down_on_a_up_on_b_neither_clicks() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Pointer down on left view
     harness.pointer_down(25.0, 50.0);
@@ -111,13 +114,14 @@ fn test_pointer_down_on_a_up_on_b_neither_clicks() {
 #[serial]
 fn test_hidden_view_no_click() {
     // Hidden views should not receive clicks
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = tracker
         .track_named("hidden", Empty::new())
         .style(|s| s.size(100.0, 100.0).hide());
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -132,6 +136,7 @@ fn test_hidden_view_no_click() {
 #[serial]
 fn test_hidden_view_click_passes_through() {
     // Clicks should pass through hidden views to views behind them
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = layers((
@@ -140,7 +145,7 @@ fn test_hidden_view_click_passes_through() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -155,6 +160,7 @@ fn test_hidden_view_click_passes_through() {
 #[serial]
 fn test_double_click_fires_double_click_handler() {
     // Double click should fire double click handler, not single click handler
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = tracker
@@ -164,7 +170,7 @@ fn test_double_click_fires_double_click_handler() {
         )
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Perform a double click
     harness.double_click(50.0, 50.0);
@@ -180,13 +186,14 @@ fn test_double_click_fires_double_click_handler() {
 #[serial]
 fn test_single_click_does_not_fire_double_click() {
     // Single click should NOT fire double click handler
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = tracker
         .track_double_click("target", Empty::new().style(|s| s.size(100.0, 100.0)))
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Perform a single click
     harness.click(50.0, 50.0);
@@ -202,13 +209,14 @@ fn test_single_click_does_not_fire_double_click() {
 #[serial]
 fn test_secondary_click_fires_secondary_handler() {
     // Secondary (right) click should fire secondary click handler
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = tracker
         .track_secondary_click("target", Empty::new().style(|s| s.size(100.0, 100.0)))
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.secondary_click(50.0, 50.0);
 
@@ -223,13 +231,14 @@ fn test_secondary_click_fires_secondary_handler() {
 #[serial]
 fn test_primary_click_does_not_fire_secondary_handler() {
     // Primary (left) click should NOT fire secondary click handler
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = tracker
         .track_secondary_click("target", Empty::new().style(|s| s.size(100.0, 100.0)))
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -244,6 +253,7 @@ fn test_primary_click_does_not_fire_secondary_handler() {
 #[serial]
 fn test_pointer_events_none_passes_through() {
     // Views with pointer_events_none should not receive clicks
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = layers((
@@ -255,7 +265,7 @@ fn test_pointer_events_none_passes_through() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -270,6 +280,7 @@ fn test_pointer_events_none_passes_through() {
 #[serial]
 fn test_pointer_events_none_child_parent_still_receives() {
     // Parent should still receive clicks even if child has pointer_events_none
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = tracker
@@ -283,7 +294,7 @@ fn test_pointer_events_none_child_parent_still_receives() {
         )
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Click in the child area
     harness.click(25.0, 25.0);
@@ -299,10 +310,11 @@ fn test_pointer_events_none_child_parent_still_receives() {
 #[serial]
 fn test_clicking_state_during_pointer_down() {
     // View should be in "clicking" state between pointer down and pointer up
+    let root = TestRoot::new();
     let view = Empty::new().style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Before any interaction, not clicking
     assert!(
@@ -329,13 +341,14 @@ fn test_clicking_state_during_pointer_down() {
 #[serial]
 fn test_clicking_state_persists_during_move() {
     // Clicking state persists during pointer movement (cleared only on up/down)
+    let root = TestRoot::new();
     let target = Empty::new().style(|s| s.size(50.0, 100.0));
     let target_id = target.view_id();
 
     let view = Stack::new((target, Empty::new().style(|s| s.size(50.0, 100.0))))
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Pointer down on target
     harness.pointer_down(25.0, 50.0);
@@ -363,6 +376,7 @@ fn test_clicking_state_persists_during_move() {
 #[serial]
 fn test_click_stop_prevents_bubbling() {
     // When child uses on_click_stop, parent should NOT receive the click
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = tracker
@@ -375,7 +389,7 @@ fn test_click_stop_prevents_bubbling() {
         )
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Click on the child area
     harness.click(25.0, 25.0);
@@ -391,6 +405,7 @@ fn test_click_stop_prevents_bubbling() {
 #[serial]
 fn test_click_cont_allows_bubbling() {
     // When child uses on_click_cont, parent SHOULD also receive the click
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = tracker
@@ -403,7 +418,7 @@ fn test_click_cont_allows_bubbling() {
         )
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Click on the child area
     harness.click(25.0, 25.0);
@@ -420,6 +435,7 @@ fn test_click_cont_allows_bubbling() {
 #[serial]
 fn test_bubbling_order_child_then_parent() {
     // Verify that child receives the event before parent during bubbling
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = tracker
@@ -439,7 +455,7 @@ fn test_bubbling_order_child_then_parent() {
         )
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(15.0, 15.0);
 
@@ -455,6 +471,7 @@ fn test_bubbling_order_child_then_parent() {
 #[serial]
 fn test_stop_in_middle_prevents_further_bubbling() {
     // If middle view stops propagation, grandparent should NOT receive the click
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = tracker
@@ -474,7 +491,7 @@ fn test_stop_in_middle_prevents_further_bubbling() {
         )
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(15.0, 15.0);
 
@@ -490,6 +507,7 @@ fn test_stop_in_middle_prevents_further_bubbling() {
 #[serial]
 fn test_click_outside_child_only_hits_parent() {
     // Clicking in parent area but outside child should only trigger parent
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = tracker
@@ -502,7 +520,7 @@ fn test_click_outside_child_only_hits_parent() {
         )
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Click outside child (30x30) but inside parent (100x100)
     harness.click(80.0, 80.0);
@@ -518,6 +536,7 @@ fn test_click_outside_child_only_hits_parent() {
 #[serial]
 fn test_sibling_views_no_bubbling_between_siblings() {
     // Clicking one sibling should not affect the other sibling
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = Stack::new((
@@ -530,7 +549,7 @@ fn test_sibling_views_no_bubbling_between_siblings() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Click on left sibling
     harness.click(25.0, 50.0);
@@ -561,10 +580,11 @@ fn test_sibling_views_no_bubbling_between_siblings() {
 #[serial]
 fn test_clicking_state_cleared_immediately_after_pointer_up() {
     // Clicking state should be cleared immediately after pointer up event is processed
+    let root = TestRoot::new();
     let view = Empty::new().style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Pointer down - should be clicking
     harness.pointer_down(50.0, 50.0);
@@ -585,6 +605,7 @@ fn test_clicking_state_cleared_immediately_after_pointer_up() {
 #[serial]
 fn test_clicking_state_cleared_for_all_views_on_pointer_up() {
     // When multiple views are in clicking state, ALL should be cleared on pointer up
+    let root = TestRoot::new();
     let child1 = Empty::new().style(|s| s.size(50.0, 100.0));
     let child1_id = child1.view_id();
 
@@ -593,7 +614,7 @@ fn test_clicking_state_cleared_for_all_views_on_pointer_up() {
 
     let view = Stack::new((child1, child2)).style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Pointer down on child1
     harness.pointer_down(25.0, 50.0);
@@ -619,6 +640,7 @@ fn test_clicking_state_cleared_after_click_handler_runs() {
     use std::cell::Cell;
     use std::rc::Rc;
 
+    let root = TestRoot::new();
     let was_clicking_during_handler = Rc::new(Cell::new(false));
     let was_clicking_clone = was_clicking_during_handler.clone();
 
@@ -627,13 +649,13 @@ fn test_clicking_state_cleared_after_click_handler_runs() {
 
     // We can't easily check is_clicking inside the handler in this test setup,
     // but we can verify the state after the full click sequence
-    let view_with_handler = view.on_click_stop(move |_| {
+    let view_with_handler = view.action(move || {
         // Handler runs - clicking state should still be set at this point
         // (This is the expected behavior based on the window_handle.rs code)
         was_clicking_clone.set(true);
     });
 
-    let mut harness = HeadlessHarness::new_with_size(view_with_handler, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view_with_handler, 100.0, 100.0);
 
     // Perform a complete click
     harness.click(50.0, 50.0);
@@ -650,13 +672,14 @@ fn test_clicking_state_cleared_after_click_handler_runs() {
 fn test_nested_views_clicking_state_cleared() {
     // Parent and child both get clicking state on pointer down
     // Both should be cleared on pointer up
+    let root = TestRoot::new();
     let child = Empty::new().style(|s| s.size(50.0, 50.0));
     let child_id = child.view_id();
 
     let parent = Container::new(child).style(|s| s.size(100.0, 100.0));
     let parent_id = parent.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, parent, 100.0, 100.0);
 
     // Pointer down on child (which is inside parent)
     harness.pointer_down(25.0, 25.0);
@@ -684,10 +707,11 @@ fn test_nested_views_clicking_state_cleared() {
 #[serial]
 fn test_clicking_state_not_set_on_pointer_up_only() {
     // Pointer up without prior pointer down should not set clicking state
+    let root = TestRoot::new();
     let view = Empty::new().style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Just pointer up without down
     harness.pointer_up(50.0, 50.0);
@@ -702,10 +726,11 @@ fn test_clicking_state_not_set_on_pointer_up_only() {
 #[serial]
 fn test_rapid_click_sequence_clears_clicking_state() {
     // Rapid clicks should properly clear clicking state between each
+    let root = TestRoot::new();
     let view = Empty::new().style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // First click
     harness.pointer_down(50.0, 50.0);
@@ -748,12 +773,13 @@ fn test_rapid_click_sequence_clears_clicking_state() {
 #[serial]
 fn test_clicking_state_cleared_even_when_pointer_up_outside_view() {
     // If pointer down on view, then up outside, clicking should still be cleared
+    let root = TestRoot::new();
     let view = Empty::new().style(|s| s.size(50.0, 50.0));
     let id = view.view_id();
 
     let parent = Container::new(view).style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, parent, 100.0, 100.0);
 
     // Pointer down on the child view
     harness.pointer_down(25.0, 25.0);
@@ -774,10 +800,11 @@ fn test_clicking_state_cleared_even_when_pointer_up_outside_view() {
 #[serial]
 fn test_interaction_state_reflects_clicking() {
     // The interaction state should accurately reflect clicking state
+    let root = TestRoot::new();
     let view = Empty::new().style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Initial state - not clicking
     let state = harness.get_interaction_state(id);
@@ -806,10 +833,11 @@ fn test_interaction_state_after_style_recomputation() {
     // After recomputing styles, the interaction state should still be correct
     use floem::peniko::color::palette::css;
 
+    let root = TestRoot::new();
     let view = Empty::new().style(|s| s.size(100.0, 100.0).active(|s| s.background(css::RED)));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Pointer down
     harness.pointer_down(50.0, 50.0);
@@ -846,10 +874,11 @@ fn test_active_style_with_full_click_cycle() {
     use floem::peniko::color::palette::css;
     use floem::style::StyleSelector;
 
+    let root = TestRoot::new();
     let view = Empty::new().style(|s| s.size(100.0, 100.0).active(|s| s.background(css::RED)));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Check if the view has Active styles
     let has_active = harness.has_style_for_selector(id, StyleSelector::Active);
@@ -888,12 +917,13 @@ fn test_active_style_with_full_click_cycle() {
 fn test_clicking_state_persists_when_pointer_leaves_view() {
     // Clicking state should persist when pointer moves out of the view
     // (only cleared on pointer up, not on pointer leave)
+    let root = TestRoot::new();
     let view = Empty::new().style(|s| s.size(50.0, 50.0));
     let id = view.view_id();
 
     let parent = Container::new(view).style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, parent, 100.0, 100.0);
 
     // Pointer down on the child view
     harness.pointer_down(25.0, 25.0);
@@ -925,12 +955,13 @@ fn test_clicking_state_after_pointer_move_and_style_update() {
     // After pointer move out and style recalculation, clicking should still be set
     use floem::peniko::color::palette::css;
 
+    let root = TestRoot::new();
     let view = Empty::new().style(|s| s.size(50.0, 50.0).active(|s| s.background(css::RED)));
     let id = view.view_id();
 
     let parent = Container::new(view).style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, parent, 100.0, 100.0);
 
     // Pointer down on the child view
     harness.pointer_down(25.0, 25.0);
@@ -957,12 +988,13 @@ fn test_clicking_state_after_pointer_move_and_style_update() {
 #[serial]
 fn test_hover_state_cleared_on_pointer_leave() {
     // Hover state should be cleared when pointer leaves view
+    let root = TestRoot::new();
     let view = Empty::new().style(|s| s.size(50.0, 50.0));
     let id = view.view_id();
 
     let parent = Container::new(view).style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, parent, 100.0, 100.0);
 
     // Move pointer to the child view to hover it
     harness.pointer_move(25.0, 25.0);
@@ -997,6 +1029,7 @@ fn test_active_style_applied_during_click() {
     use floem::peniko::color::palette::css;
     use floem::style::{Background, StyleSelector};
 
+    let root = TestRoot::new();
     let view = Empty::new().style(|s| {
         s.size(100.0, 100.0)
             .background(css::BLUE)
@@ -1004,7 +1037,7 @@ fn test_active_style_applied_during_click() {
     });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Check initial background is BLUE
     let style = harness.get_computed_style(id);
@@ -1085,6 +1118,7 @@ fn test_nested_stack_click_no_z_index() {
     //       ├── Button1 (clickable)
     //       └── Button2 (clickable)
 
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = Stack::new((Stack::new((
@@ -1098,7 +1132,7 @@ fn test_nested_stack_click_no_z_index() {
     .style(|s| s.flex_row()),))
     .style(|s| s.size(100.0, 100.0).flex_col());
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Click on button1 (should be at x=25, y=25)
     harness.click(25.0, 25.0);
@@ -1137,6 +1171,7 @@ fn test_nested_stack_click_no_z_index() {
 fn test_overlapping_siblings_no_cross_propagation() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 
+    let root = TestRoot::new();
     let backdrop_clicked = RwSignal::new(false);
     let content_clicked = RwSignal::new(false);
 
@@ -1145,7 +1180,7 @@ fn test_overlapping_siblings_no_cross_propagation() {
         // Backdrop - covers entire area, lower z-index
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
-            .on_click_stop(move |_| backdrop_clicked.set(true)),
+            .action(move || backdrop_clicked.set(true)),
         // Content - smaller, higher z-index, overlaps backdrop
         Empty::new()
             .style(|s| {
@@ -1155,11 +1190,11 @@ fn test_overlapping_siblings_no_cross_propagation() {
                     .size(50.0, 50.0)
                     .z_index(10)
             })
-            .on_click_stop(move |_| content_clicked.set(true)),
+            .action(move || content_clicked.set(true)),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Click on the content area (which overlaps backdrop)
     harness.click(50.0, 50.0);
@@ -1180,13 +1215,14 @@ fn test_overlapping_siblings_click_outside_content() {
     use floem::HasViewId;
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 
+    let root = TestRoot::new();
     let backdrop_clicked = RwSignal::new(false);
     let content_clicked = RwSignal::new(false);
 
     // Use stack instead of layers and apply styles directly
     let backdrop = Empty::new()
         .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
-        .on_click_stop(move |_| backdrop_clicked.set(true));
+        .action(move || backdrop_clicked.set(true));
     let backdrop_id = backdrop.view_id();
 
     let content = Empty::new()
@@ -1197,12 +1233,12 @@ fn test_overlapping_siblings_click_outside_content() {
                 .size(50.0, 50.0)
                 .z_index(10)
         })
-        .on_click_stop(move |_| content_clicked.set(true));
+        .action(move || content_clicked.set(true));
     let content_id = content.view_id();
 
     let view = Stack::new((backdrop, content)).style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Debug: check actual layout positions
     let backdrop_layout = backdrop_id.get_layout().unwrap();
@@ -1248,6 +1284,7 @@ fn test_overlapping_siblings_click_outside_content() {
 fn test_dialog_structure_content_click_no_backdrop() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 
+    let root = TestRoot::new();
     let dialog_open = RwSignal::new(true);
     let content_clicked = RwSignal::new(false);
 
@@ -1256,7 +1293,7 @@ fn test_dialog_structure_content_click_no_backdrop() {
         // Backdrop - clicking it closes dialog
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
-            .on_click_stop(move |_| {
+            .action(move || {
                 dialog_open.set(false);
             }),
         // Content - clicking it should NOT close dialog
@@ -1268,13 +1305,13 @@ fn test_dialog_structure_content_click_no_backdrop() {
                     .size(50.0, 50.0)
                     .z_index(10)
             })
-            .on_click_stop(move |_| {
+            .action(move || {
                 content_clicked.set(true);
             }),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Click on the content
     harness.click(50.0, 50.0);
@@ -1295,13 +1332,14 @@ fn test_dialog_structure_content_click_no_backdrop() {
 fn test_dialog_structure_backdrop_click_closes() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 
+    let root = TestRoot::new();
     let dialog_open = RwSignal::new(true);
 
     // Use stack instead of layers for consistent behavior
     let view = Stack::new((
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
-            .on_click_stop(move |_| {
+            .action(move || {
                 dialog_open.set(false);
             }),
         Empty::new().style(|s| {
@@ -1314,7 +1352,7 @@ fn test_dialog_structure_backdrop_click_closes() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Click on the backdrop (outside content area)
     harness.click(10.0, 10.0);
@@ -1331,6 +1369,7 @@ fn test_dialog_structure_backdrop_click_closes() {
 fn test_multiple_overlapping_layers_topmost_wins() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 
+    let root = TestRoot::new();
     let layer1_clicked = RwSignal::new(false);
     let layer2_clicked = RwSignal::new(false);
     let layer3_clicked = RwSignal::new(false);
@@ -1339,26 +1378,26 @@ fn test_multiple_overlapping_layers_topmost_wins() {
     let view = Stack::new((
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
-            .on_click_stop({
+            .on_event_stop(floem::event::listener::Click, {
                 let clicked = layer1_clicked;
-                move |_| clicked.set(true)
+                move |_, _| clicked.set(true)
             }),
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(5))
-            .on_click_stop({
+            .on_event_stop(floem::event::listener::Click, {
                 let clicked = layer2_clicked;
-                move |_| clicked.set(true)
+                move |_, _| clicked.set(true)
             }),
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(10))
-            .on_click_stop({
+            .on_event_stop(floem::event::listener::Click, {
                 let clicked = layer3_clicked;
-                move |_| clicked.set(true)
+                move |_, _| clicked.set(true)
             }),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -1388,6 +1427,7 @@ fn test_click_cont_bubbles_to_parent_not_siblings() {
     use std::cell::RefCell;
     use std::rc::Rc;
 
+    let root = TestRoot::new();
     let click_order = Rc::new(RefCell::new(Vec::<String>::new()));
     let backdrop_clicked = RwSignal::new(false);
 
@@ -1398,11 +1438,11 @@ fn test_click_cont_bubbles_to_parent_not_siblings() {
     let view = Stack::new((
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
-            .on_click_stop({
+            .on_event_stop(floem::event::listener::Click, {
                 let clicked = backdrop_clicked;
-                move |_| clicked.set(true)
+                move |_, _| clicked.set(true)
             }),
-        // Content uses on_click_cont - should bubble to parent, NOT to backdrop
+        // Content uses on_event_cont - should bubble to parent, NOT to backdrop
         Empty::new()
             .style(|s| {
                 s.absolute()
@@ -1411,16 +1451,16 @@ fn test_click_cont_bubbles_to_parent_not_siblings() {
                     .size(50.0, 50.0)
                     .z_index(10)
             })
-            .on_click_cont(move |_| {
+            .on_event_cont(floem::event::listener::Click, move |_, _| {
                 order_clone.borrow_mut().push("content".to_string());
             }),
     ))
     .style(|s| s.size(100.0, 100.0))
-    .on_click_cont(move |_| {
+    .on_event_cont(floem::event::listener::Click, move |_, _| {
         order_clone2.borrow_mut().push("parent".to_string());
     });
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -1446,15 +1486,16 @@ fn test_click_cont_bubbles_to_parent_not_siblings() {
 fn test_no_handler_on_topmost_does_not_fall_through_to_sibling() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 
+    let root = TestRoot::new();
     let backdrop_clicked = RwSignal::new(false);
 
     let view = Stack::new((
         // Backdrop with handler
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
-            .on_click_stop({
+            .on_event_stop(floem::event::listener::Click, {
                 let clicked = backdrop_clicked;
-                move |_| clicked.set(true)
+                move |_, _| clicked.set(true)
             }),
         // Content with NO handler - just styled
         Empty::new().style(|s| {
@@ -1467,7 +1508,7 @@ fn test_no_handler_on_topmost_does_not_fall_through_to_sibling() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Click on content area - content has no handler, but event should NOT
     // fall through to backdrop sibling
@@ -1489,6 +1530,7 @@ fn test_no_handler_on_topmost_does_not_fall_through_to_sibling() {
 fn test_overlapping_siblings_no_z_index_dom_order() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 
+    let root = TestRoot::new();
     let backdrop_clicked = RwSignal::new(false);
     let content_clicked = RwSignal::new(false);
 
@@ -1497,9 +1539,9 @@ fn test_overlapping_siblings_no_z_index_dom_order() {
         // Backdrop - comes first, so it's BELOW content
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
-            .on_click_stop({
+            .on_event_stop(floem::event::listener::Click, {
                 let clicked = backdrop_clicked;
-                move |_| clicked.set(true)
+                move |_, _| clicked.set(true)
             }),
         // Content - comes second, so it's ON TOP of backdrop
         Empty::new()
@@ -1509,14 +1551,14 @@ fn test_overlapping_siblings_no_z_index_dom_order() {
                     .inset_top(25.0)
                     .size(50.0, 50.0)
             })
-            .on_click_stop({
+            .on_event_stop(floem::event::listener::Click, {
                 let clicked = content_clicked;
-                move |_| clicked.set(true)
+                move |_, _| clicked.set(true)
             }),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Click on content area - content should receive, not backdrop
     harness.click(50.0, 50.0);
@@ -1548,6 +1590,7 @@ fn test_dialog_with_overlay() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::views::Overlay;
 
+    let root = TestRoot::new();
     let dialog_open = RwSignal::new(true);
     let content_clicked = RwSignal::new(false);
 
@@ -1556,7 +1599,7 @@ fn test_dialog_with_overlay() {
             // Backdrop - clicking it closes dialog
             Empty::new()
                 .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
-                .on_click_stop(move |_| {
+                .action(move || {
                     dialog_open.set(false);
                 }),
             // Content - clicking it should NOT close dialog
@@ -1568,14 +1611,14 @@ fn test_dialog_with_overlay() {
                         .size(50.0, 50.0)
                         .z_index(10)
                 })
-                .on_click_stop(move |_| {
+                .action(move || {
                     content_clicked.set(true);
                 }),
         ))
         .style(|s| s.size(100.0, 100.0)),
     );
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Click on the content
     harness.click(50.0, 50.0);
@@ -1596,6 +1639,7 @@ fn test_dialog_with_overlay() {
 fn test_dialog_with_container_derived() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 
+    let root = TestRoot::new();
     let dialog_open = RwSignal::new(true);
     let content_clicked = RwSignal::new(false);
 
@@ -1603,7 +1647,7 @@ fn test_dialog_with_container_derived() {
         // Backdrop
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
-            .on_click_stop(move |_| {
+            .action(move || {
                 dialog_open.set(false);
             }),
         // Content using Container::derived like the real dialog
@@ -1622,13 +1666,13 @@ fn test_dialog_with_container_derived() {
                 .size(50.0, 50.0)
                 .z_index(10)
         })
-        .on_click_stop(move |_| {
+        .action(move || {
             content_clicked.set(true);
         }),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Click on the content
     harness.click(50.0, 50.0);
@@ -1649,6 +1693,7 @@ fn test_dialog_with_container_derived() {
 fn test_dialog_click_on_nested_button() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 
+    let root = TestRoot::new();
     let dialog_open = RwSignal::new(true);
     let button_clicked = RwSignal::new(false);
 
@@ -1656,7 +1701,7 @@ fn test_dialog_click_on_nested_button() {
         // Backdrop
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
-            .on_click_stop(move |_| {
+            .action(move || {
                 dialog_open.set(false);
             }),
         // Content with a clickable button inside
@@ -1666,7 +1711,7 @@ fn test_dialog_click_on_nested_button() {
                 // A button at the bottom of the dialog
                 Empty::new()
                     .style(|s| s.size(40.0, 20.0))
-                    .on_click_stop(move |_| {
+                    .action(move || {
                         button_clicked.set(true);
                     }),
             ))
@@ -1682,7 +1727,7 @@ fn test_dialog_click_on_nested_button() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Click on the button (within the content area)
     harness.click(45.0, 55.0); // Approximately where the button would be
@@ -1705,6 +1750,7 @@ fn test_exact_dialog_structure() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::views::Overlay;
 
+    let root = TestRoot::new();
     let dialog_open = RwSignal::new(true);
     let content_clicked = RwSignal::new(false);
 
@@ -1713,7 +1759,7 @@ fn test_exact_dialog_structure() {
             // Backdrop - exact same as dialog.rs
             Empty::new()
                 .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
-                .on_click_stop(move |_| {
+                .action(move || {
                     dialog_open.set(false);
                 }),
             // Content - Container::derived like dialog.rs
@@ -1742,14 +1788,14 @@ fn test_exact_dialog_structure() {
                     .size(50.0, 50.0)
                     .z_index(10)
             })
-            .on_click_stop(move |_| {
+            .action(move || {
                 content_clicked.set(true);
             }),
         ))
         .style(|s| s.size(100.0, 100.0)),
     );
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Click on the content
     harness.click(50.0, 50.0);
@@ -1774,6 +1820,7 @@ fn test_dialog_content_no_handler() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::views::Overlay;
 
+    let root = TestRoot::new();
     let dialog_open = RwSignal::new(true);
 
     let view = Overlay::new().child(
@@ -1781,7 +1828,7 @@ fn test_dialog_content_no_handler() {
             // Backdrop
             Empty::new()
                 .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
-                .on_click_stop(move |_| {
+                .action(move || {
                     dialog_open.set(false);
                 }),
             // Content - NO click handler!
@@ -1804,7 +1851,7 @@ fn test_dialog_content_no_handler() {
         .style(|s| s.size(100.0, 100.0)),
     );
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Click on the content (which has no handler)
     harness.click(50.0, 50.0);
@@ -1826,6 +1873,7 @@ fn test_dialog_with_translate_centering() {
     use floem::unit::Pct;
     use floem::views::Overlay;
 
+    let root = TestRoot::new();
     let dialog_open = RwSignal::new(true);
     let content_clicked = RwSignal::new(false);
 
@@ -1834,7 +1882,7 @@ fn test_dialog_with_translate_centering() {
             // Backdrop
             Empty::new()
                 .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
-                .on_click_stop(move |_| {
+                .action(move || {
                     dialog_open.set(false);
                 }),
             // Content - centered using translate (like actual dialog)
@@ -1847,14 +1895,14 @@ fn test_dialog_with_translate_centering() {
                         .translate_y(Pct(-50.0)) // translateY: -50%
                         .size(50.0, 50.0)
                 })
-                .on_click_stop(move |_| {
+                .action(move || {
                     content_clicked.set(true);
                 }),
         ))
         .style(|s| s.size(100.0, 100.0)),
     );
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Click on the center (where content should visually be)
     // Content is positioned at (50, 50) with translate (-25, -25)
@@ -1879,6 +1927,7 @@ fn test_dialog_with_translate_no_handler() {
     use floem::unit::Pct;
     use floem::views::Overlay;
 
+    let root = TestRoot::new();
     let dialog_open = RwSignal::new(true);
 
     let view = Overlay::new().child(
@@ -1886,7 +1935,7 @@ fn test_dialog_with_translate_no_handler() {
             // Backdrop
             Empty::new()
                 .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
-                .on_click_stop(move |_| {
+                .action(move || {
                     dialog_open.set(false);
                 }),
             // Content - NO click handler, uses translate centering
@@ -1902,7 +1951,7 @@ fn test_dialog_with_translate_no_handler() {
         .style(|s| s.size(100.0, 100.0)),
     );
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Click on the visual center of content
     harness.click(50.0, 50.0);
@@ -1926,6 +1975,7 @@ fn test_dialog_with_translate_no_handler() {
 #[test]
 #[serial]
 fn test_counter_example_structure() {
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     // Mimics the counter example tuple structure
@@ -1954,7 +2004,7 @@ fn test_counter_example_structure() {
                 .justify_center()
         });
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 100.0);
 
     // Click on the increment button
     harness.click(30.0, 55.0);
@@ -1985,6 +2035,7 @@ fn test_overlay_fixed_translate_click_offset_bug() {
     use floem::unit::Pct;
     use floem::views::Overlay;
 
+    let root = TestRoot::new();
     let backdrop_clicked = RwSignal::new(false);
     let content_clicked = RwSignal::new(false);
 
@@ -1994,7 +2045,7 @@ fn test_overlay_fixed_translate_click_offset_bug() {
             // Backdrop - fills entire viewport
             Empty::new()
                 .style(|s| s.absolute().inset(0.0).z_index(1))
-                .on_click_stop(move |_| {
+                .action(move || {
                     backdrop_clicked.set(true);
                 }),
             // Content - centered using translate (like DialogContent)
@@ -2011,7 +2062,7 @@ fn test_overlay_fixed_translate_click_offset_bug() {
                     .size(80.0, 80.0)
                     .z_index(10)
             })
-            .on_click_stop(move |_| {
+            .action(move || {
                 content_clicked.set(true);
             }),
         ))
@@ -2019,7 +2070,7 @@ fn test_overlay_fixed_translate_click_offset_bug() {
         .style(|s| s.fixed().inset(0.0).width_full().height_full()),
     );
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
 
     // Click in the center where content should be
     // Content is 80x80, centered at (100, 100) with translate -40, -40
@@ -2044,6 +2095,7 @@ fn test_overlay_fixed_no_translate() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::views::Overlay;
 
+    let root = TestRoot::new();
     let backdrop_clicked = RwSignal::new(false);
     let content_clicked = RwSignal::new(false);
 
@@ -2052,7 +2104,7 @@ fn test_overlay_fixed_no_translate() {
             // Backdrop
             Empty::new()
                 .style(|s| s.absolute().inset(0.0).z_index(1))
-                .on_click_stop(move |_| {
+                .action(move || {
                     backdrop_clicked.set(true);
                 }),
             // Content - positioned without translate
@@ -2064,14 +2116,14 @@ fn test_overlay_fixed_no_translate() {
                         .size(100.0, 100.0)
                         .z_index(10)
                 })
-                .on_click_stop(move |_| {
+                .action(move || {
                     content_clicked.set(true);
                 }),
         ))
         .style(|s| s.fixed().inset(0.0).width_full().height_full()),
     );
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
 
     // Click in the content area (50, 50) to (150, 150)
     harness.click(100.0, 100.0);
@@ -2087,6 +2139,7 @@ fn test_fixed_translate_no_overlay() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::unit::Pct;
 
+    let root = TestRoot::new();
     let backdrop_clicked = RwSignal::new(false);
     let content_clicked = RwSignal::new(false);
 
@@ -2095,7 +2148,7 @@ fn test_fixed_translate_no_overlay() {
         // Backdrop
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(200.0, 200.0).z_index(1))
-            .on_click_stop(move |_| {
+            .action(move || {
                 backdrop_clicked.set(true);
             }),
         // Content with translate centering
@@ -2109,13 +2162,13 @@ fn test_fixed_translate_no_overlay() {
                     .size(80.0, 80.0)
                     .z_index(10)
             })
-            .on_click_stop(move |_| {
+            .action(move || {
                 content_clicked.set(true);
             }),
     ))
     .style(|s| s.size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
 
     // Click in center
     harness.click(100.0, 100.0);
@@ -2138,6 +2191,8 @@ fn test_overlay_fixed_click_corners() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::views::Overlay;
 
+    let root = TestRoot::new();
+
     // Test each corner separately
     for (name, x, y) in [
         ("top-left", 55.0, 55.0),
@@ -2154,7 +2209,7 @@ fn test_overlay_fixed_click_corners() {
                 // Backdrop - fills entire area
                 Empty::new()
                     .style(|s| s.absolute().inset(0.0).z_index(1))
-                    .on_click_stop(move |_| {
+                    .action(move || {
                         eprintln!("[{}] Backdrop clicked!", name);
                         backdrop_clicked.set(true);
                     }),
@@ -2167,7 +2222,7 @@ fn test_overlay_fixed_click_corners() {
                             .size(100.0, 100.0)
                             .z_index(10)
                     })
-                    .on_click_stop(move |_| {
+                    .action(move || {
                         eprintln!("[{}] Content clicked!", name);
                         content_clicked.set(true);
                     }),
@@ -2175,7 +2230,7 @@ fn test_overlay_fixed_click_corners() {
             .style(|s| s.fixed().inset(0.0).width_full().height_full()),
         );
 
-        let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+        let mut harness = HeadlessHarness::new_with_size(root.clone(), view, 200.0, 200.0);
 
         eprintln!("Testing corner: {} at ({}, {})", name, x, y);
         harness.click(x, y);
@@ -2210,6 +2265,8 @@ fn test_overlay_fixed_translate_click_corners() {
     use floem::unit::Pct;
     use floem::views::Overlay;
 
+    let root = TestRoot::new();
+
     // Content visual bounds: (60, 60) to (140, 140)
     for (name, x, y) in [
         ("top-left", 65.0, 65.0),
@@ -2226,7 +2283,7 @@ fn test_overlay_fixed_translate_click_corners() {
                 // Backdrop
                 Empty::new()
                     .style(|s| s.absolute().inset(0.0).z_index(1))
-                    .on_click_stop(move |_| {
+                    .action(move || {
                         eprintln!("[translate-{}] Backdrop clicked!", name);
                         backdrop_clicked.set(true);
                     }),
@@ -2241,7 +2298,7 @@ fn test_overlay_fixed_translate_click_corners() {
                             .size(80.0, 80.0)
                             .z_index(10)
                     })
-                    .on_click_stop(move |_| {
+                    .action(move || {
                         eprintln!("[translate-{}] Content clicked!", name);
                         content_clicked.set(true);
                     }),
@@ -2249,7 +2306,7 @@ fn test_overlay_fixed_translate_click_corners() {
             .style(|s| s.fixed().inset(0.0).width_full().height_full()),
         );
 
-        let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+        let mut harness = HeadlessHarness::new_with_size(root.clone(), view, 200.0, 200.0);
 
         eprintln!("Testing translate corner: {} at ({}, {})", name, x, y);
         harness.click(x, y);
@@ -2278,6 +2335,8 @@ fn test_overlay_fixed_click_outside_content() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::views::Overlay;
 
+    let root = TestRoot::new();
+
     // Content is at (50, 50) to (150, 150)
     // These clicks should hit backdrop
     for (name, x, y) in [
@@ -2294,7 +2353,7 @@ fn test_overlay_fixed_click_outside_content() {
                 // Backdrop
                 Empty::new()
                     .style(|s| s.absolute().inset(0.0).z_index(1))
-                    .on_click_stop(move |_| backdrop_clicked.set(true)),
+                    .action(move || backdrop_clicked.set(true)),
                 // Content
                 Empty::new()
                     .style(|s| {
@@ -2304,12 +2363,12 @@ fn test_overlay_fixed_click_outside_content() {
                             .size(100.0, 100.0)
                             .z_index(10)
                     })
-                    .on_click_stop(move |_| content_clicked.set(true)),
+                    .action(move || content_clicked.set(true)),
             ))
             .style(|s| s.fixed().inset(0.0).width_full().height_full()),
         );
 
-        let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+        let mut harness = HeadlessHarness::new_with_size(root.clone(), view, 200.0, 200.0);
 
         eprintln!("Testing outside: {} at ({}, {})", name, x, y);
         harness.click(x, y);
@@ -2338,6 +2397,8 @@ fn test_no_overlay_fixed_translate_probe_boundary() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::unit::Pct;
 
+    let root = TestRoot::new();
+
     // Same structure but without Overlay wrapper
     let test_points = [
         (60.0, 100.0, "x=60 (left edge)"),
@@ -2357,7 +2418,7 @@ fn test_no_overlay_fixed_translate_probe_boundary() {
         let view = Stack::new((
             Empty::new()
                 .style(|s| s.absolute().inset(0.0).z_index(1))
-                .on_click_stop(move |_| backdrop_clicked.set(true)),
+                .action(move || backdrop_clicked.set(true)),
             Empty::new()
                 .style(|s| {
                     s.absolute()
@@ -2368,12 +2429,12 @@ fn test_no_overlay_fixed_translate_probe_boundary() {
                         .size(80.0, 80.0)
                         .z_index(10)
                 })
-                .on_click_stop(move |_| content_clicked.set(true)),
+                .action(move || content_clicked.set(true)),
         ))
         // Same fixed positioning
         .style(|s| s.fixed().inset(0.0).width_full().height_full());
 
-        let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+        let mut harness = HeadlessHarness::new_with_size(root.clone(), view, 200.0, 200.0);
         harness.click(x, y);
 
         let hit = if content_clicked.get() {
@@ -2395,6 +2456,8 @@ fn test_overlay_fixed_translate_probe_boundary() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::unit::Pct;
     use floem::views::Overlay;
+
+    let root = TestRoot::new();
 
     // Content visual bounds should be: (60, 60) to (140, 140)
     // Test clicks at various x positions along y=100 (horizontal center line)
@@ -2427,7 +2490,7 @@ fn test_overlay_fixed_translate_probe_boundary() {
             Stack::new((
                 Empty::new()
                     .style(|s| s.absolute().inset(0.0).z_index(1))
-                    .on_click_stop(move |_| backdrop_clicked.set(true)),
+                    .action(move || backdrop_clicked.set(true)),
                 Empty::new()
                     .style(|s| {
                         s.absolute()
@@ -2438,12 +2501,12 @@ fn test_overlay_fixed_translate_probe_boundary() {
                             .size(80.0, 80.0)
                             .z_index(10)
                     })
-                    .on_click_stop(move |_| content_clicked.set(true)),
+                    .action(move || content_clicked.set(true)),
             ))
             .style(|s| s.fixed().inset(0.0).width_full().height_full()),
         );
 
-        let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+        let mut harness = HeadlessHarness::new_with_size(root.clone(), view, 200.0, 200.0);
         harness.click(x, y);
 
         let hit = if content_clicked.get() {
@@ -2478,7 +2541,7 @@ fn test_overlay_fixed_translate_probe_boundary() {
             Stack::new((
                 Empty::new()
                     .style(|s| s.absolute().inset(0.0).z_index(1))
-                    .on_click_stop(move |_| backdrop_clicked.set(true)),
+                    .action(move || backdrop_clicked.set(true)),
                 Empty::new()
                     .style(|s| {
                         s.absolute()
@@ -2489,12 +2552,12 @@ fn test_overlay_fixed_translate_probe_boundary() {
                             .size(80.0, 80.0)
                             .z_index(10)
                     })
-                    .on_click_stop(move |_| content_clicked.set(true)),
+                    .action(move || content_clicked.set(true)),
             ))
             .style(|s| s.fixed().inset(0.0).width_full().height_full()),
         );
 
-        let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+        let mut harness = HeadlessHarness::new_with_size(root.clone(), view, 200.0, 200.0);
         harness.click(x, y);
 
         let hit = if content_clicked.get() {
@@ -2518,6 +2581,7 @@ fn test_overlay_fixed_translate_debug_layout() {
     use floem::unit::Pct;
     use floem::views::Overlay;
 
+    let root = TestRoot::new();
     let content_id = ViewId::new();
     let backdrop_clicked = RwSignal::new(false);
     let content_clicked = RwSignal::new(false);
@@ -2527,7 +2591,7 @@ fn test_overlay_fixed_translate_debug_layout() {
             // Backdrop
             Empty::new()
                 .style(|s| s.absolute().inset(0.0).z_index(1))
-                .on_click_stop(move |_| {
+                .action(move || {
                     backdrop_clicked.set(true);
                 }),
             // Content with known ID
@@ -2544,14 +2608,14 @@ fn test_overlay_fixed_translate_debug_layout() {
                     .size(80.0, 80.0)
                     .z_index(10)
             })
-            .on_click_stop(move |_| {
+            .action(move || {
                 content_clicked.set(true);
             }),
         ))
         .style(|s| s.fixed().inset(0.0).width_full().height_full()),
     );
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     // Print layout info for content
@@ -2567,7 +2631,7 @@ fn test_overlay_fixed_translate_debug_layout() {
     }
 
     let visual_rect = content_id.get_visual_rect();
-    eprintln!("Content layout_rect: {:?}", layout_rect);
+    eprintln!("Content visual_rect: {:?}", visual_rect);
 
     let transform = content_id.get_visual_transform();
     let coeffs = transform.as_coeffs();
@@ -2606,6 +2670,7 @@ fn test_overlay_fixed_translate_debug_layout() {
 fn test_events_do_not_bubble_to_parents_sibling() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 
+    let root = TestRoot::new();
     let sibling1_clicked = RwSignal::new(false);
     let sibling2_clicked = RwSignal::new(false);
     let nested_child_clicked = RwSignal::new(false);
@@ -2614,7 +2679,7 @@ fn test_events_do_not_bubble_to_parents_sibling() {
         // Sibling1 - should NOT receive click
         Empty::new()
             .style(|s| s.size(50.0, 100.0))
-            .on_click_stop(move |_| {
+            .action(move || {
                 sibling1_clicked.set(true);
             }),
         // Sibling2 - container with nested child
@@ -2622,7 +2687,7 @@ fn test_events_do_not_bubble_to_parents_sibling() {
             // NestedChild - click target
             Empty::new()
                 .style(|s| s.size(40.0, 40.0))
-                .on_click_stop(move |_| {
+                .action(move || {
                     nested_child_clicked.set(true);
                 }),
         )
@@ -2635,7 +2700,7 @@ fn test_events_do_not_bubble_to_parents_sibling() {
     ))
     .style(|s| s.size(100.0, 100.0).flex_row());
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Click on the nested child (right side of the view, within Sibling2)
     // Sibling2 starts at x=50, NestedChild is 40x40 starting at (0,0) within Sibling2
@@ -2671,6 +2736,7 @@ fn test_dialog_header_click_does_not_close() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::views::Overlay;
 
+    let root = TestRoot::new();
     let dialog_open = RwSignal::new(true);
     let header_clicked = RwSignal::new(false);
 
@@ -2679,7 +2745,7 @@ fn test_dialog_header_click_does_not_close() {
             // Backdrop
             Empty::new()
                 .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
-                .on_click_stop(move |_| {
+                .action(move || {
                     dialog_open.set(false);
                 }),
             // Content (like DialogContent)
@@ -2705,7 +2771,7 @@ fn test_dialog_header_click_does_not_close() {
         .style(|s| s.size(100.0, 100.0)),
     );
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Click on the header (top of content area)
     harness.click(50.0, 35.0);
@@ -2733,6 +2799,7 @@ fn test_dialog_header_click_does_not_close() {
 fn test_deeply_nested_no_cross_branch_bubbling() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 
+    let root = TestRoot::new();
     let branch_a_clicked = RwSignal::new(false);
     let branch_b_clicked = RwSignal::new(false);
     let leaf_b_clicked = RwSignal::new(false);
@@ -2743,14 +2810,14 @@ fn test_deeply_nested_no_cross_branch_bubbling() {
             Empty::new().style(|s| s.size(40.0, 80.0)), // LeafA
         )
         .style(|s| s.size(50.0, 100.0))
-        .on_click_stop(move |_| {
+        .action(move || {
             branch_a_clicked.set(true);
         }),
         // BranchB
         Container::new(
             Empty::new()
                 .style(|s| s.size(40.0, 80.0))
-                .on_click_stop(move |_| {
+                .action(move || {
                     leaf_b_clicked.set(true);
                 }),
         )
@@ -2762,7 +2829,7 @@ fn test_deeply_nested_no_cross_branch_bubbling() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Click on LeafB (right side)
     harness.click(75.0, 50.0);
@@ -2790,6 +2857,7 @@ fn test_deeply_nested_no_cross_branch_bubbling() {
 fn test_bubbling_through_handler_less_child() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 
+    let root = TestRoot::new();
     let sibling1_clicked = RwSignal::new(false);
     let sibling2_clicked = RwSignal::new(false);
 
@@ -2797,7 +2865,7 @@ fn test_bubbling_through_handler_less_child() {
         // Sibling1
         Empty::new()
             .style(|s| s.size(50.0, 100.0))
-            .on_click_stop(move |_| {
+            .action(move || {
                 sibling1_clicked.set(true);
             }),
         // Sibling2 with child that has no handler
@@ -2805,13 +2873,13 @@ fn test_bubbling_through_handler_less_child() {
             Empty::new().style(|s| s.size(40.0, 80.0)), // Child - NO handler
         )
         .style(|s| s.size(50.0, 100.0))
-        .on_click_stop(move |_| {
+        .action(move || {
             sibling2_clicked.set(true);
         }),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Click on the child inside Sibling2
     harness.click(75.0, 50.0);
@@ -2845,6 +2913,7 @@ fn test_fixed_overlay_child_receives_click() {
     use floem::unit::Pct;
     use floem::views::Overlay;
 
+    let root = TestRoot::new();
     let backdrop_clicked = RwSignal::new(false);
     let content_clicked = RwSignal::new(false);
     let child_clicked = RwSignal::new(false);
@@ -2854,7 +2923,7 @@ fn test_fixed_overlay_child_receives_click() {
             // Backdrop
             Empty::new()
                 .style(|s| s.absolute().inset(0.0))
-                .on_click_stop(move |_| {
+                .action(move || {
                     eprintln!("[backdrop] clicked!");
                     backdrop_clicked.set(true);
                 }),
@@ -2863,7 +2932,7 @@ fn test_fixed_overlay_child_receives_click() {
                 // Clickable child (like a button)
                 Empty::new()
                     .style(|s| s.size(60.0, 30.0))
-                    .on_click_stop(move |_| {
+                    .action(move || {
                         eprintln!("[child] clicked!");
                         child_clicked.set(true);
                     }),
@@ -2877,7 +2946,7 @@ fn test_fixed_overlay_child_receives_click() {
                     .size(80.0, 60.0)
                     .z_index(10)
             })
-            .on_click_stop(move |_| {
+            .action(move || {
                 eprintln!("[content] clicked!");
                 content_clicked.set(true);
             }),
@@ -2885,7 +2954,7 @@ fn test_fixed_overlay_child_receives_click() {
         .style(|s| s.fixed().inset(0.0).width_full().height_full()),
     );
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     eprintln!("=== Fixed Overlay Child Click Test ===");
@@ -2922,6 +2991,7 @@ fn test_fixed_overlay_child_click_bounds() {
     use floem::unit::Pct;
     use floem::views::Overlay;
 
+    let root = TestRoot::new();
     let child_id = ViewId::new();
     let content_id = ViewId::new();
 
@@ -2934,7 +3004,7 @@ fn test_fixed_overlay_child_click_bounds() {
             // Backdrop
             Empty::new()
                 .style(|s| s.absolute().inset(0.0))
-                .on_click_stop(move |_| {
+                .action(move || {
                     backdrop_clicks.update(|c| *c += 1);
                 }),
             // Content - centered with translate
@@ -2946,7 +3016,7 @@ fn test_fixed_overlay_child_click_bounds() {
                         child_id,
                         Empty::new().style(|s| s.size(60.0, 30.0)),
                     )
-                    .on_click_stop(move |_| {
+                    .action(move || {
                         child_clicks.update(|c| *c += 1);
                     }),
                 ))
@@ -2961,14 +3031,14 @@ fn test_fixed_overlay_child_click_bounds() {
                     .size(80.0, 60.0)
                     .z_index(10)
             })
-            .on_click_stop(move |_| {
+            .action(move || {
                 content_clicks.update(|c| *c += 1);
             }),
         ))
         .style(|s| s.fixed().inset(0.0).width_full().height_full()),
     );
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     eprintln!("=== Fixed Overlay Child Click Bounds Test ===");
@@ -3047,7 +3117,7 @@ fn test_fixed_overlay_deeply_nested_child() {
             // Backdrop
             Empty::new()
                 .style(|s| s.absolute().inset(0.0))
-                .on_click_stop(move |_| {
+                .action(move || {
                     backdrop_clicked.set(true);
                 }),
             // Level 1 - Content container
@@ -3057,13 +3127,13 @@ fn test_fixed_overlay_deeply_nested_child() {
                     // Level 3 - Deepest clickable element
                     Empty::new()
                         .style(|s| s.size(40.0, 20.0))
-                        .on_click_stop(move |_| {
+                        .action(move || {
                             eprintln!("[level3] clicked!");
                             level3_clicked.set(true);
                         }),
                 )
                 .style(|s| s.size(50.0, 30.0).padding(5.0))
-                .on_click_stop(move |_| {
+                .action(move || {
                     eprintln!("[level2] clicked!");
                     level2_clicked.set(true);
                 }),
@@ -3078,7 +3148,7 @@ fn test_fixed_overlay_deeply_nested_child() {
                     .padding(10.0)
                     .z_index(10)
             })
-            .on_click_stop(move |_| {
+            .action(move || {
                 eprintln!("[level1] clicked!");
                 level1_clicked.set(true);
             }),
@@ -3086,7 +3156,8 @@ fn test_fixed_overlay_deeply_nested_child() {
         .style(|s| s.fixed().inset(0.0).width_full().height_full()),
     );
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     eprintln!("=== Deeply Nested Child Click Test ===");
@@ -3129,14 +3200,14 @@ fn test_fixed_overlay_child_probe_bounds() {
         Stack::new((
             Empty::new()
                 .style(|s| s.absolute().inset(0.0))
-                .on_click_stop(move |_| {
+                .action(move || {
                     backdrop_clicks.update(|c| *c += 1);
                 }),
             Stack::vertical((floem::views::Container::with_id(
                 child_id,
                 Empty::new().style(|s| s.size(60.0, 30.0)),
             )
-            .on_click_stop(move |_| {
+            .action(move || {
                 child_clicks.update(|c| *c += 1);
             }),))
             .style(|s| {
@@ -3152,7 +3223,8 @@ fn test_fixed_overlay_child_probe_bounds() {
         .style(|s| s.fixed().inset(0.0).width_full().height_full()),
     );
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     eprintln!("=== Fixed Overlay Child Probe Bounds ===");
@@ -3222,17 +3294,18 @@ fn test_normal_flow_child_outside_parent_bounds_receives_click() {
     // Child extends 50px beyond parent in both directions
     let view = Container::new(
         Empty::new()
-            .on_click_stop(move |_| {
+            .action(move || {
                 child_clicks.update(|c| *c += 1);
             })
             .style(|s| s.size(100.0, 100.0)), // Child larger than parent
     )
-    .on_click_stop(move |_| {
+    .action(move || {
         parent_clicks.update(|c| *c += 1);
     })
     .style(|s| s.size(50.0, 50.0)); // Small parent
 
-    let mut harness = HeadlessHarness::new_with_size(view, 150.0, 150.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 150.0, 150.0);
 
     eprintln!("=== Normal Flow Child Outside Parent Bounds Test ===");
 
@@ -3280,14 +3353,15 @@ fn test_scroll_container_clips_children() {
     // Child should only receive clicks within the 100x100 viewport
     let view = Scroll::new(
         Empty::new()
-            .on_click_stop(move |_| {
+            .action(move || {
                 child_clicks.update(|c| *c += 1);
             })
             .style(|s| s.size(200.0, 200.0)),
     )
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
 
     eprintln!("=== Scroll Container Clips Children Test ===");
 
@@ -3331,14 +3405,14 @@ fn test_absolute_element_clips_children() {
     let view = Stack::new((
         // Background to catch clicks outside the absolute element
         Empty::new()
-            .on_click_stop(move |_| {
+            .action(move || {
                 outside_clicks.update(|c| *c += 1);
             })
             .style(|s| s.size(300.0, 300.0)),
         // Absolute positioned element with a clickable child
         Container::new(
             Empty::new()
-                .on_click_stop(move |_| {
+                .action(move || {
                     child_clicks.update(|c| *c += 1);
                 })
                 .style(|s| s.size(50.0, 50.0)),
@@ -3352,7 +3426,8 @@ fn test_absolute_element_clips_children() {
     ))
     .style(|s| s.size(300.0, 300.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 300.0, 300.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 300.0, 300.0);
 
     eprintln!("=== Absolute Element Clips Children Test ===");
 
@@ -3401,7 +3476,7 @@ fn test_nested_containers_clip_inheritance() {
         Container::new(
             Container::new(
                 Empty::new()
-                    .on_click_stop(move |_| {
+                    .action(move || {
                         deepest_clicks.update(|c| *c += 1);
                     })
                     .style(|s| s.size(100.0, 100.0)), // Extends beyond inner
@@ -3412,7 +3487,8 @@ fn test_nested_containers_clip_inheritance() {
     )
     .style(|s| s.size(200.0, 200.0)); // Outer
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
 
     eprintln!("=== Nested Containers Clip Inheritance Test ===");
 

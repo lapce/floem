@@ -27,7 +27,8 @@ fn test_class_if_adds_class_when_true() {
             .class(TestClass, |s| s.width(75.0).height(50.0))
     });
 
-    let mut harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, parent, 100.0, 100.0);
     harness.rebuild();
 
     // Should have the TestClass dimensions
@@ -62,7 +63,8 @@ fn test_class_if_does_not_add_class_when_false() {
             .class(TestClass, |s| s.width(50.0).height(50.0))
     });
 
-    let mut harness = HeadlessHarness::new_with_size(parent, 200.0, 200.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, parent, 200.0, 200.0);
     harness.rebuild();
 
     // Should keep original size, not TestClass size
@@ -98,7 +100,8 @@ fn test_class_if_toggles_class_reactively() {
             .class(TestClass, |s| s.width(50.0).height(50.0))
     });
 
-    let mut harness = HeadlessHarness::new_with_size(parent, 200.0, 200.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, parent, 200.0, 200.0);
     harness.rebuild();
 
     // Initially: class not applied, should have default 100x100
@@ -151,7 +154,8 @@ fn test_class_if_remove_does_not_recurse() {
     let parent =
         Container::new(child).style(|s| s.size(100.0, 100.0).class(TestClass, |s| s.width(60.0)));
 
-    let mut harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, parent, 100.0, 100.0);
     harness.rebuild();
 
     // Class is initially applied
@@ -201,7 +205,8 @@ fn test_multiple_class_if_conditions() {
             .class(ClassB, |s| s.height(50.0))
     });
 
-    let mut harness = HeadlessHarness::new_with_size(parent, 200.0, 200.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, parent, 200.0, 200.0);
     harness.rebuild();
 
     // Apply ClassA only
@@ -261,7 +266,7 @@ fn test_class_if_with_click_toggle() {
     let child = Empty::new()
         .class_if(move || is_active.get(), TestClass)
         .style(|s| s.size(80.0, 80.0))
-        .on_click_stop(move |_| {
+        .action(move || {
             is_active.update(|v| *v = !*v);
         });
 
@@ -269,7 +274,8 @@ fn test_class_if_with_click_toggle() {
         s.size(100.0, 100.0).class(TestClass, |s| s.border(5.0)) // Use border instead of size
     });
 
-    let mut harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, parent, 100.0, 100.0);
     harness.rebuild();
 
     // Click to toggle (add class)
@@ -305,7 +311,8 @@ fn test_class_if_shared_signal() {
             .class(TestClass, |s| s.width(60.0).height(60.0))
     });
 
-    let mut harness = HeadlessHarness::new_with_size(parent, 120.0, 120.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, parent, 120.0, 120.0);
 
     // Toggle shared state to add class to both
     shared_state.set(true);

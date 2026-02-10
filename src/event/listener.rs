@@ -578,30 +578,10 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives `Event::FileDrag` `DragDropped` variant
-    pub DroppedFiles: crate::event::dropped_file::FileDragDropped,
+    /// Receives `Event::FileDrag` `Dropped` variant
+    pub FileDragDrop: crate::event::dropped_file::FileDragDropped,
     |event| {
-        if let Event::FileDrag(FileDragEvent::DragDropped(data)) = event {
-            return Some(data as &dyn Any);
-        }
-        None
-    }
-);
-event_listener!(
-    /// Receives `Event::FileDrag` `DragEntered` variant
-    pub FileDragEnter: crate::event::dropped_file::FileDragEntered,
-    |event| {
-        if let Event::FileDrag(FileDragEvent::DragEntered(data)) = event {
-            return Some(data as &dyn Any);
-        }
-        None
-    }
-);
-event_listener!(
-    /// Receives `Event::FileDrag` `DragMoved` variant
-    pub FileDragMove: crate::event::dropped_file::FileDragMoved,
-    |event| {
-        if let Event::FileDrag(FileDragEvent::DragMoved(data)) = event {
+        if let Event::FileDrag(FileDragEvent::Dropped(data)) = event {
             return Some(data as &dyn Any);
         }
         None
@@ -609,10 +589,32 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`Event::FileDrag`] `DragLeft` variant
-    pub FileDragLeave: crate::event::dropped_file::FileDragLeft,
+    /// Receives `Event::FileDrag` `Enter` variant
+    pub FileDragEnter: crate::event::dropped_file::FileDragEnter,
     |event| {
-        if let Event::FileDrag(FileDragEvent::DragLeft(data)) = event {
+        if let Event::FileDrag(FileDragEvent::Enter(data)) = event {
+            return Some(data as &dyn Any);
+        }
+        None
+    }
+);
+
+event_listener!(
+    /// Receives `Event::FileDrag` `Move` variant
+    pub FileDragMove: crate::event::dropped_file::FileDragMove,
+    |event| {
+        if let Event::FileDrag(FileDragEvent::Move(data)) = event {
+            return Some(data as &dyn Any);
+        }
+        None
+    }
+);
+
+event_listener!(
+    /// Receives `Event::FileDrag` `Leave` variant
+    pub FileDragLeave: crate::event::dropped_file::FileDragLeave,
+    |event| {
+        if let Event::FileDrag(FileDragEvent::Leave(data)) = event {
             return Some(data as &dyn Any);
         }
         None

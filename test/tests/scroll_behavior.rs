@@ -9,6 +9,7 @@
 //! - Scroll to specific positions works
 
 use floem_test::prelude::*;
+use floem_test::TestRoot;
 use serial_test::serial;
 
 // =============================================================================
@@ -19,13 +20,14 @@ use serial_test::serial;
 #[test]
 #[serial]
 fn test_scroll_down_moves_offset() {
+    let root = TestRoot::new();
     let scroll_tracker = ScrollTracker::new();
 
     // Create content larger than viewport
     let content = Empty::new().style(|s| s.size(100.0, 400.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, scroll_view,100.0, 100.0);
 
     // Scroll down
     harness.scroll_down(50.0, 50.0, 50.0);
@@ -45,12 +47,13 @@ fn test_scroll_down_moves_offset() {
 #[test]
 #[serial]
 fn test_scroll_up_moves_offset() {
+    let root = TestRoot::new();
     let scroll_tracker = ScrollTracker::new();
 
     let content = Empty::new().style(|s| s.size(100.0, 400.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, scroll_view,100.0, 100.0);
 
     // Scroll down first
     harness.scroll_down(50.0, 50.0, 100.0);
@@ -76,13 +79,14 @@ fn test_scroll_up_moves_offset() {
 #[test]
 #[serial]
 fn test_scroll_horizontal() {
+    let root = TestRoot::new();
     let scroll_tracker = ScrollTracker::new();
 
     // Create content wider than viewport using min_size to prevent shrinking
     let content = Empty::new().style(|s| s.min_size(400.0, 100.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, scroll_view,100.0, 100.0);
 
     // Scroll right
     harness.scroll_right(50.0, 50.0, 50.0);
@@ -106,13 +110,14 @@ fn test_scroll_horizontal() {
 #[test]
 #[serial]
 fn test_scroll_diagonal() {
+    let root = TestRoot::new();
     let scroll_tracker = ScrollTracker::new();
 
     // Create content larger in both dimensions using min_size
     let content = Empty::new().style(|s| s.min_size(400.0, 400.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, scroll_view,100.0, 100.0);
 
     // Scroll diagonally (negative deltas = scroll down/right)
     harness.scroll(50.0, 50.0, -50.0, -50.0);
@@ -135,12 +140,13 @@ fn test_scroll_diagonal() {
 #[test]
 #[serial]
 fn test_scroll_clamped_at_top() {
+    let root = TestRoot::new();
     let scroll_tracker = ScrollTracker::new();
 
     let content = Empty::new().style(|s| s.size(100.0, 400.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, scroll_view,100.0, 100.0);
 
     // Try to scroll up from initial position (already at top)
     harness.scroll_up(50.0, 50.0, 100.0);
@@ -160,12 +166,13 @@ fn test_scroll_clamped_at_top() {
 #[test]
 #[serial]
 fn test_scroll_clamped_at_bottom() {
+    let root = TestRoot::new();
     let scroll_tracker = ScrollTracker::new();
 
     let content = Empty::new().style(|s| s.size(100.0, 400.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, scroll_view,100.0, 100.0);
 
     // Try to scroll way past the bottom
     harness.scroll_down(50.0, 50.0, 1000.0);
@@ -184,12 +191,13 @@ fn test_scroll_clamped_at_bottom() {
 #[test]
 #[serial]
 fn test_scroll_clamped_at_left() {
+    let root = TestRoot::new();
     let scroll_tracker = ScrollTracker::new();
 
     let content = Empty::new().style(|s| s.size(400.0, 100.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, scroll_view,100.0, 100.0);
 
     // Try to scroll left from initial position
     harness.scroll_left(50.0, 50.0, 100.0);
@@ -207,12 +215,13 @@ fn test_scroll_clamped_at_left() {
 #[test]
 #[serial]
 fn test_scroll_clamped_at_right() {
+    let root = TestRoot::new();
     let scroll_tracker = ScrollTracker::new();
 
     let content = Empty::new().style(|s| s.size(400.0, 100.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, scroll_view,100.0, 100.0);
 
     // Try to scroll way past the right
     harness.scroll_right(50.0, 50.0, 1000.0);
@@ -235,13 +244,14 @@ fn test_scroll_clamped_at_right() {
 #[test]
 #[serial]
 fn test_no_scroll_when_content_fits() {
+    let root = TestRoot::new();
     let scroll_tracker = ScrollTracker::new();
 
     // Content same size as offset
     let content = Empty::new().style(|s| s.size(100.0, 100.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, scroll_view,100.0, 100.0);
 
     // Try to scroll
     harness.scroll_down(50.0, 50.0, 50.0);
@@ -261,13 +271,14 @@ fn test_no_scroll_when_content_fits() {
 #[test]
 #[serial]
 fn test_no_scroll_when_content_smaller() {
+    let root = TestRoot::new();
     let scroll_tracker = ScrollTracker::new();
 
     // Content smaller than offset
     let content = Empty::new().style(|s| s.size(50.0, 50.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, scroll_view,100.0, 100.0);
 
     harness.scroll_down(50.0, 50.0, 50.0);
 
@@ -289,12 +300,13 @@ fn test_no_scroll_when_content_smaller() {
 #[test]
 #[serial]
 fn test_multiple_scroll_events_accumulate() {
+    let root = TestRoot::new();
     let scroll_tracker = ScrollTracker::new();
 
     let content = Empty::new().style(|s| s.size(100.0, 1000.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, scroll_view,100.0, 100.0);
 
     // Multiple small scrolls
     harness.scroll_down(50.0, 50.0, 20.0);
@@ -313,12 +325,13 @@ fn test_multiple_scroll_events_accumulate() {
 #[test]
 #[serial]
 fn test_scroll_up_down_cancels() {
+    let root = TestRoot::new();
     let scroll_tracker = ScrollTracker::new();
 
     let content = Empty::new().style(|s| s.size(100.0, 400.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, scroll_view,100.0, 100.0);
 
     // Scroll down then back up
     harness.scroll_down(50.0, 50.0, 100.0);
@@ -340,32 +353,23 @@ fn test_scroll_up_down_cancels() {
 #[test]
 #[serial]
 fn test_offset_size_matches_container() {
+    let root = TestRoot::new();
     let scroll_tracker = ScrollTracker::new();
 
     let content = Empty::new().style(|s| s.size(100.0, 400.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, scroll_view,100.0, 100.0);
 
     // Scroll to trigger a offset update
     harness.scroll_down(50.0, 50.0, 10.0);
 
     let offset = scroll_tracker.last_offset().expect("Should have offset");
 
-    // Offset size should approximately match container size
-    let width = offset.x1 - offset.x;
-    let height = offset.y1 - offset.y;
+    // Offset is a Vec2 representing scroll position, not a rect
+    // Just verify we scrolled (y should be > 0)
+    assert!(offset.y > 0.0, "Should have scrolled down, offset.y = {}", offset.y);
 
-    assert!(
-        (width - 100.0).abs() < 2.0,
-        "Offset width should be ~100, got {}",
-        width
-    );
-    assert!(
-        (height - 100.0).abs() < 2.0,
-        "Offset height should be ~100, got {}",
-        height
-    );
 }
 
 // =============================================================================
@@ -376,12 +380,13 @@ fn test_offset_size_matches_container() {
 #[test]
 #[serial]
 fn test_scroll_by_lines() {
+    let root = TestRoot::new();
     let scroll_tracker = ScrollTracker::new();
 
     let content = Empty::new().style(|s| s.size(100.0, 400.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, scroll_view,100.0, 100.0);
 
     // Scroll by 3 lines down (negative because scroll view negates)
     // LineDelta is converted: 20 pixels per line
@@ -405,6 +410,7 @@ fn test_scroll_by_lines() {
 #[test]
 #[serial]
 fn test_click_passes_through_scroll() {
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let content = tracker
@@ -413,7 +419,7 @@ fn test_click_passes_through_scroll() {
 
     let scroll_view = Scroll::new(content);
 
-    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, scroll_view,100.0, 100.0);
 
     // Click on the content
     harness.click(50.0, 50.0);
@@ -433,6 +439,7 @@ fn test_click_passes_through_scroll() {
 #[test]
 #[serial]
 fn test_click_after_scroll() {
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
     let scroll_tracker = ScrollTracker::new();
 
@@ -445,7 +452,7 @@ fn test_click_after_scroll() {
 
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, scroll_view,100.0, 100.0);
 
     // Initially, clicking at center hits the top_spacer (no handler)
     harness.click(50.0, 50.0);
@@ -482,6 +489,7 @@ fn test_click_after_scroll() {
 #[test]
 #[serial]
 fn test_scrollbar_click_doesnt_hit_content() {
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let content = tracker
@@ -490,7 +498,7 @@ fn test_scrollbar_click_doesnt_hit_content() {
 
     let scroll_view = Scroll::new(content);
 
-    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, scroll_view,100.0, 100.0);
 
     // Click on the right edge where scrollbar should be (typically last 10 pixels)
     harness.click(95.0, 50.0);
@@ -509,6 +517,7 @@ fn test_scrollbar_click_doesnt_hit_content() {
 #[test]
 #[serial]
 fn test_scroll_propagation_at_limit() {
+    let root = TestRoot::new();
     let outer_tracker = ScrollTracker::new();
     let inner_tracker = ScrollTracker::new();
 
@@ -525,7 +534,7 @@ fn test_scroll_propagation_at_limit() {
 
     let outer_scroll = outer_tracker.track(Scroll::new(outer_content));
 
-    let mut harness = HeadlessHarness::new_with_size(outer_scroll, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, outer_scroll, 100.0, 100.0);
 
     // Scroll while hovering over the inner scroll area
     // Since inner can't scroll, event should propagate to outer
@@ -546,13 +555,14 @@ fn test_scroll_propagation_at_limit() {
 #[test]
 #[serial]
 fn test_scroll_small_viewport() {
+    let root = TestRoot::new();
     let scroll_tracker = ScrollTracker::new();
 
     let content = Empty::new().style(|s| s.size(100.0, 400.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
     // Small but not zero
-    let mut harness = HeadlessHarness::new_with_size(scroll_view, 10.0, 10.0);
+    let mut harness = HeadlessHarness::new_with_size(root, scroll_view,10.0, 10.0);
 
     // Try to scroll - should not crash
     harness.scroll_down(5.0, 5.0, 50.0);
@@ -567,12 +577,13 @@ fn test_scroll_small_viewport() {
 #[test]
 #[serial]
 fn test_scroll_after_resize() {
+    let root = TestRoot::new();
     let scroll_tracker = ScrollTracker::new();
 
     let content = Empty::new().style(|s| s.size(100.0, 400.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, scroll_view,100.0, 100.0);
 
     // Scroll down
     harness.scroll_down(50.0, 50.0, 150.0);
@@ -599,26 +610,28 @@ fn test_scroll_after_resize() {
 #[test]
 #[serial]
 fn test_viewport_bounds_valid() {
+    let root = TestRoot::new();
     let scroll_tracker = ScrollTracker::new();
 
     let content = Empty::new().style(|s| s.size(400.0, 400.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, scroll_view,100.0, 100.0);
 
     // Scroll in various directions
     harness.scroll(50.0, 50.0, -50.0, -50.0);
 
-    for viewport in scroll_tracker.offsets() {
+    for offset in scroll_tracker.offsets() {
+        // Offset is a Vec2, just verify it's within reasonable bounds
         assert!(
-            viewport.x1 >= viewport.x,
-            "x1 should be >= x0: {:?}",
-            viewport
+            offset.x >= 0.0 && offset.x <= 300.0,
+            "offset.x should be in range [0, 300]: {:?}",
+            offset
         );
         assert!(
-            viewport.y1 >= viewport.y,
-            "y1 should be >= y0: {:?}",
-            viewport
+            offset.y >= 0.0 && offset.y <= 300.0,
+            "offset.y should be in range [0, 300]: {:?}",
+            offset
         );
     }
 }
@@ -631,12 +644,13 @@ fn test_viewport_bounds_valid() {
 #[test]
 #[serial]
 fn test_on_scroll_callback_values() {
+    let root = TestRoot::new();
     let scroll_tracker = ScrollTracker::new();
 
     let content = Empty::new().style(|s| s.size(100.0, 400.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, scroll_view,100.0, 100.0);
 
     // Scroll multiple times and verify incremental changes
     harness.scroll_down(50.0, 50.0, 30.0);
@@ -661,12 +675,13 @@ fn test_on_scroll_callback_values() {
 #[test]
 #[serial]
 fn test_scroll_position_helper() {
+    let root = TestRoot::new();
     let scroll_tracker = ScrollTracker::new();
 
     let content = Empty::new().style(|s| s.min_size(100.0, 400.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, scroll_view,100.0, 100.0);
 
     // Note: The scroll view may trigger an initial viewport callback during setup.
     // We reset the tracker to test scroll position from a known state.
@@ -698,12 +713,13 @@ fn test_scroll_position_helper() {
 #[test]
 #[serial]
 fn test_scroll_tracker_reset() {
+    let root = TestRoot::new();
     let scroll_tracker = ScrollTracker::new();
 
     let content = Empty::new().style(|s| s.size(100.0, 400.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, scroll_view,100.0, 100.0);
 
     harness.scroll_down(50.0, 50.0, 50.0);
     assert!(scroll_tracker.has_scrolled(), "Should have scrolled");
@@ -736,13 +752,14 @@ fn test_scroll_tracker_reset() {
 #[test]
 #[serial]
 fn test_scroll_left_right() {
+    let root = TestRoot::new();
     let scroll_tracker = ScrollTracker::new();
 
     // Use min_size to try to force content to be wider
     let content = Empty::new().style(|s| s.min_size(400.0, 100.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, scroll_view,100.0, 100.0);
 
     // Scroll right
     harness.scroll_right(50.0, 50.0, 100.0);
@@ -774,12 +791,13 @@ fn test_scroll_left_right() {
 #[test]
 #[serial]
 fn test_scroll_up_down() {
+    let root = TestRoot::new();
     let scroll_tracker = ScrollTracker::new();
 
     let content = Empty::new().style(|s| s.size(100.0, 400.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
-    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, scroll_view,100.0, 100.0);
 
     // Scroll down
     harness.scroll_down(50.0, 50.0, 100.0);
@@ -805,6 +823,7 @@ fn test_scroll_up_down() {
 #[test]
 #[serial]
 fn test_scroll_view_click_after_scroll() {
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     // Create content with a clickable button at y=150 (below initial viewport)
@@ -817,7 +836,7 @@ fn test_scroll_view_click_after_scroll() {
 
     let view = Stack::new((scroll_view,)).style(|s| s.size(200.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 100.0);
 
     // Button is at y=150 in content coordinates, but viewport is y=0 to y=100
     // So button is not visible yet. Let's scroll down to see it.
@@ -840,6 +859,7 @@ fn test_scroll_view_click_after_scroll() {
 #[test]
 #[serial]
 fn test_clip_aware_hit_testing_clipped_content() {
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     // Create a button at y=150 (below the scroll view's 100px height)
@@ -851,7 +871,7 @@ fn test_clip_aware_hit_testing_clipped_content() {
     let scroll_view = Scroll::new(content).style(|s| s.size(200.0, 100.0));
     let view = Stack::new((scroll_view,)).style(|s| s.size(200.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 100.0);
 
     // The button is at y=150 in content coordinates.
     // Without scrolling, the viewport shows y=0 to y=100.
@@ -871,6 +891,7 @@ fn test_clip_aware_hit_testing_clipped_content() {
 #[test]
 #[serial]
 fn test_clip_aware_hit_testing_visible_content() {
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     // Create a button at y=25 (inside the scroll view's 100px height)
@@ -882,7 +903,7 @@ fn test_clip_aware_hit_testing_visible_content() {
     let scroll_view = Scroll::new(content).style(|s| s.size(200.0, 100.0));
     let view = Stack::new((scroll_view,)).style(|s| s.size(200.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 100.0);
 
     // The button is at y=25 to y=75 in content coordinates.
     // The viewport shows y=0 to y=100, so the button IS visible.
@@ -900,6 +921,7 @@ fn test_clip_aware_hit_testing_visible_content() {
 #[test]
 #[serial]
 fn test_clip_aware_hit_testing_after_scroll_clipped() {
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     // Button1 at top (y=10), Button2 further down (y=150)
@@ -915,7 +937,7 @@ fn test_clip_aware_hit_testing_after_scroll_clipped() {
     let scroll_view = Scroll::new(content).style(|s| s.size(200.0, 100.0));
     let view = Stack::new((scroll_view,)).style(|s| s.size(200.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 100.0);
 
     // Initially, button1 is visible (y=10 to y=40), button2 is not (y=150 to y=180)
 
@@ -961,6 +983,7 @@ fn test_clip_aware_hit_testing_after_scroll_clipped() {
 #[test]
 #[serial]
 fn test_scroll_paints_partially_visible_bottom_item() {
+    let root = TestRoot::new();
     // Create content with an item that will be partially visible at the bottom
     // Content layout:
     //   - Empty spacer: 80px tall (fills most of viewport)
@@ -977,7 +1000,7 @@ fn test_scroll_paints_partially_visible_bottom_item() {
     let content = Stack::new((spacer, target)).style(|s| s.flex_col().size(100.0, 120.0));
     let scroll_view = Scroll::new(content).style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, scroll_view,100.0, 100.0);
 
     // Get paint order - the target should be in it even though it extends beyond viewport
     let paint_order = harness.paint_and_get_order();
@@ -997,6 +1020,7 @@ fn test_scroll_paints_partially_visible_bottom_item() {
 #[test]
 #[serial]
 fn test_scroll_handles_invisible_items() {
+    let root = TestRoot::new();
     // Create content with items:
     //   - visible_item: at y=0, 50px tall (fully visible)
     //   - invisible_item: at y=150, 50px tall (fully outside viewport)
@@ -1015,7 +1039,7 @@ fn test_scroll_handles_invisible_items() {
         .style(|s| s.flex_col().size(100.0, 200.0));
     let scroll_view = Scroll::new(content).style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, scroll_view,100.0, 100.0);
 
     let paint_order = harness.paint_and_get_order();
 
@@ -1032,6 +1056,7 @@ fn test_scroll_handles_invisible_items() {
 #[test]
 #[serial]
 fn test_scroll_paints_partially_visible_after_scroll() {
+    let root = TestRoot::new();
     // Create tall content with multiple items
     // After scrolling, an item at the new bottom edge should be painted even if partial
 
@@ -1048,7 +1073,7 @@ fn test_scroll_paints_partially_visible_after_scroll() {
         Stack::new((item1, item2, item3, item4, item5)).style(|s| s.flex_col().size(100.0, 250.0));
     let scroll_view = Scroll::new(content).style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(scroll_view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, scroll_view,100.0, 100.0);
 
     // Scroll down by 120px
     // Viewport now shows y=120 to y=220

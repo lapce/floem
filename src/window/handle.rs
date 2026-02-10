@@ -249,20 +249,27 @@ impl WindowHandle {
     /// suitable for testing the event handling and view update logic without a real window.
     ///
     /// # Arguments
+    /// * `root_id` - The root ViewId (from TestRoot)
     /// * `view` - The root view for this window
     /// * `size` - The virtual window size
     /// * `scale` - The window scale factor (default 1.0)
-    pub(crate) fn new_headless(view: impl IntoView, size_val: Size, scale: f64) -> Self {
+    pub(crate) fn new_headless(
+        root_id: ViewId,
+        view: impl IntoView,
+        size_val: Size,
+        scale: f64,
+    ) -> Self {
         use super::mock::MockWindow;
 
         let scope = Scope::new();
         let mock_window = MockWindow::with_size(size_val.width as u32, size_val.height as u32);
         let window_id = mock_window.id();
-        let id = ViewId::new_root();
+        let id = root_id;
         let size = scope.create_rw_signal(size_val);
         let os_theme = mock_window.theme();
         let is_maximized = mock_window.is_maximized();
 
+        // Root is already set by TestRoot, but set it again to be safe
         set_current_view(id);
 
         // Convert the view
@@ -464,8 +471,48 @@ impl WindowHandle {
         self.event(Event::Window(WindowEvent::Moved(point)));
     }
 
-    pub(crate) fn file_drag_event(&mut self, file_drag_event: FileDragEvent) {
+    pub(crate) fn file_drag_event(
+        &mut self,
+        paths: Vec<std::path::PathBuf>,
+        file_drag_event: FileDragEvent,
+    ) {
+        // Store paths in window state for tracking during drag
+        self.window_state.file_drag_paths = Some(paths.into());
         self.event(Event::FileDrag(file_drag_event));
+    }
+
+    pub(crate) fn file_drag_start(&mut self, paths: Vec<std::path::PathBuf>, position: Point) {
+        // Store paths and dispatch as a move event to trigger hit testing
+        let paths_rc: Rc<[std::path::PathBuf]> = paths.into();
+        self.window_state.file_drag_paths = Some(paths_rc.clone());
+        self.event(Event::FileDrag(FileDragEvent::Move(
+            crate::event::dropped_file::FileDragMove {
+                paths: paths_rc,
+                position,
+            },
+        )));
+    }
+
+    pub(crate) fn file_drag_move(&mut self, position: Point) {
+        if let Some(paths) = &self.window_state.file_drag_paths {
+            self.event(Event::FileDrag(FileDragEvent::Move(
+                crate::event::dropped_file::FileDragMove {
+                    paths: paths.clone(),
+                    position,
+                },
+            )));
+        }
+    }
+
+    pub(crate) fn file_drag_end(&mut self) {
+        // Clear paths and file hover state
+        self.window_state.file_drag_paths = None;
+        let hover_events = self.window_state.file_hover_state.clear();
+        for hover_event in hover_events {
+            if let understory_event_state::hover::HoverEvent::Leave(element_id) = hover_event {
+                self.window_state.style_dirty.insert(element_id.owning_id());
+            }
+        }
     }
 
     pub(crate) fn key_event(&mut self, key_event: KeyboardEvent) {
@@ -1452,8 +1499,10 @@ mod tests {
     /// Test that we can create a headless WindowHandle.
     #[test]
     fn test_headless_window_handle_creation() {
+        let root_id = ViewId::new_root();
+        set_current_view(root_id);
         let view = Empty::new().style(|s| s.size(100.0, 100.0));
-        let window_handle = WindowHandle::new_headless(view, Size::new(800.0, 600.0), 1.0);
+        let window_handle = WindowHandle::new_headless(root_id, view, Size::new(800.0, 600.0), 1.0);
 
         // Just verify creation doesn't panic
         assert!(window_handle.scale > 0.0);
@@ -1467,8 +1516,11 @@ mod tests {
             PointerButton, PointerButtonEvent, PointerEvent, PointerId, PointerInfo, PointerType,
         };
 
+        let root_id = ViewId::new_root();
+        set_current_view(root_id);
         let view = Empty::new().style(|s| s.size(100.0, 100.0));
-        let mut window_handle = WindowHandle::new_headless(view, Size::new(800.0, 600.0), 1.0);
+        let mut window_handle =
+            WindowHandle::new_headless(root_id, view, Size::new(800.0, 600.0), 1.0);
 
         // Create a pointer down event
         let event = Event::Pointer(PointerEvent::Down(PointerButtonEvent {
@@ -1497,8 +1549,11 @@ mod tests {
             PointerButton, PointerButtonEvent, PointerEvent, PointerId, PointerInfo, PointerType,
         };
 
+        let root_id = ViewId::new_root();
+        set_current_view(root_id);
         let view = Empty::new().style(|s| s.size(100.0, 100.0));
-        let mut window_handle = WindowHandle::new_headless(view, Size::new(800.0, 600.0), 1.0);
+        let mut window_handle =
+            WindowHandle::new_headless(root_id, view, Size::new(800.0, 600.0), 1.0);
 
         // Dispatch pointer down
         window_handle.event(Event::Pointer(PointerEvent::Down(PointerButtonEvent {

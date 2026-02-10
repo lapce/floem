@@ -10,7 +10,7 @@
 use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use floem::headless::HeadlessHarness;
+use floem::headless::{HeadlessHarness, TestRoot};
 use floem::prelude::*;
 use floem::views::{Container, Decorators, Empty, Stack};
 
@@ -101,8 +101,9 @@ fn bench_flat_tree_dispatch(c: &mut Criterion) {
 
     for size in [10, 50, 100, 500].iter() {
         group.bench_with_input(BenchmarkId::new("pointer_down", size), size, |b, &size| {
+            let root = TestRoot::new();
             let view = create_flat_tree(size);
-            let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+            let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
             b.iter(|| {
                 harness.pointer_down(black_box(50.0), black_box(50.0));
@@ -110,8 +111,9 @@ fn bench_flat_tree_dispatch(c: &mut Criterion) {
         });
 
         group.bench_with_input(BenchmarkId::new("pointer_move", size), size, |b, &size| {
+            let root = TestRoot::new();
             let view = create_flat_tree(size);
-            let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+            let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
             b.iter(|| {
                 harness.pointer_move(black_box(50.0), black_box(50.0));
@@ -119,8 +121,9 @@ fn bench_flat_tree_dispatch(c: &mut Criterion) {
         });
 
         group.bench_with_input(BenchmarkId::new("click", size), size, |b, &size| {
+            let root = TestRoot::new();
             let view = create_flat_tree(size);
-            let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+            let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
             b.iter(|| {
                 harness.click(black_box(50.0), black_box(50.0));
@@ -139,8 +142,9 @@ fn bench_deep_tree_dispatch(c: &mut Criterion) {
             BenchmarkId::new("pointer_down", depth),
             depth,
             |b, &depth| {
+                let root = TestRoot::new();
                 let view = create_deep_tree(depth);
-                let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+                let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
                 b.iter(|| {
                     harness.pointer_down(black_box(50.0), black_box(50.0));
@@ -152,8 +156,9 @@ fn bench_deep_tree_dispatch(c: &mut Criterion) {
             BenchmarkId::new("pointer_move", depth),
             depth,
             |b, &depth| {
+                let root = TestRoot::new();
                 let view = create_deep_tree(depth);
-                let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+                let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
                 b.iter(|| {
                     harness.pointer_move(black_box(50.0), black_box(50.0));
@@ -170,8 +175,9 @@ fn bench_mixed_stacking_dispatch(c: &mut Criterion) {
 
     for size in [10, 50, 100].iter() {
         group.bench_with_input(BenchmarkId::new("pointer_down", size), size, |b, &size| {
+            let root = TestRoot::new();
             let view = create_mixed_stacking_tree(size);
-            let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+            let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
             b.iter(|| {
                 harness.pointer_down(black_box(50.0), black_box(50.0));
@@ -194,8 +200,9 @@ fn bench_wide_tree_dispatch(c: &mut Criterion) {
             BenchmarkId::new("pointer_down", &label),
             width,
             |b, &width| {
+                let root = TestRoot::new();
                 let view = create_wide_tree_depth2(width);
-                let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+                let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
                 b.iter(|| {
                     harness.pointer_down(black_box(5.0), black_box(5.0));
@@ -213,8 +220,9 @@ fn bench_wide_tree_dispatch(c: &mut Criterion) {
             BenchmarkId::new("pointer_down", &label),
             width,
             |b, &width| {
+                let root = TestRoot::new();
                 let view = create_wide_tree_depth3(width);
-                let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+                let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
                 b.iter(|| {
                     harness.pointer_down(black_box(5.0), black_box(5.0));
@@ -231,8 +239,9 @@ fn bench_hit_testing(c: &mut Criterion) {
 
     for size in [10, 50, 100].iter() {
         group.bench_with_input(BenchmarkId::new("flat_tree", size), size, |b, &size| {
+            let root = TestRoot::new();
             let view = create_flat_tree(size);
-            let harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+            let harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
             b.iter(|| {
                 harness.element_id_at(black_box(50.0), black_box(50.0));
@@ -242,8 +251,9 @@ fn bench_hit_testing(c: &mut Criterion) {
 
     for depth in [5, 10, 20].iter() {
         group.bench_with_input(BenchmarkId::new("deep_tree", depth), depth, |b, &depth| {
+            let root = TestRoot::new();
             let view = create_deep_tree(depth);
-            let harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+            let harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
             b.iter(|| {
                 harness.element_id_at(black_box(50.0), black_box(50.0));
@@ -253,8 +263,9 @@ fn bench_hit_testing(c: &mut Criterion) {
 
     // Hit test with misses (point outside views)
     group.bench_function("miss", |b| {
+        let root = TestRoot::new();
         let view = create_flat_tree(50);
-        let harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+        let harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
         b.iter(|| {
             harness.element_id_at(black_box(150.0), black_box(150.0));
@@ -269,8 +280,9 @@ fn bench_scroll_events(c: &mut Criterion) {
 
     for size in [10, 50, 100].iter() {
         group.bench_with_input(BenchmarkId::new("flat_tree", size), size, |b, &size| {
+            let root = TestRoot::new();
             let view = create_flat_tree(size);
-            let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+            let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
             b.iter(|| {
                 harness.scroll(
@@ -295,8 +307,9 @@ fn bench_event_sequence(c: &mut Criterion) {
             BenchmarkId::new("move_click_sequence", size),
             size,
             |b, &size| {
+                let root = TestRoot::new();
                 let view = create_flat_tree(size);
-                let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+                let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
                 b.iter(|| {
                     harness.pointer_move(black_box(50.0), black_box(50.0));
@@ -309,8 +322,9 @@ fn bench_event_sequence(c: &mut Criterion) {
 
     // Benchmark drag-like movement (multiple pointer_move events)
     group.bench_function("drag_sequence_10_moves", |b| {
+        let root = TestRoot::new();
         let view = create_flat_tree(50);
-        let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+        let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
         b.iter(|| {
             harness.pointer_down(black_box(10.0), black_box(50.0));
@@ -336,8 +350,9 @@ fn bench_cache_effectiveness(c: &mut Criterion) {
             BenchmarkId::new("same_location_20_events", size),
             size,
             |b, &size| {
+                let root = TestRoot::new();
                 let view = create_flat_tree(size);
-                let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+                let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
                 b.iter(|| {
                     for _ in 0..20 {
@@ -355,8 +370,9 @@ fn bench_cache_effectiveness(c: &mut Criterion) {
             BenchmarkId::new("alternating_2_locations", size),
             size,
             |b, &size| {
+                let root = TestRoot::new();
                 let view = create_flat_tree(size);
-                let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+                let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
                 b.iter(|| {
                     for i in 0..20 {
@@ -375,8 +391,9 @@ fn bench_cache_effectiveness(c: &mut Criterion) {
             BenchmarkId::new("alternating_3_locations", size),
             size,
             |b, &size| {
+                let root = TestRoot::new();
                 let view = create_flat_tree(size);
-                let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+                let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
                 b.iter(|| {
                     for i in 0..20 {
@@ -395,8 +412,9 @@ fn bench_cache_effectiveness(c: &mut Criterion) {
     // Benchmark: Simulated mouse hover with small movements
     // Real mouse movement often stays in a small area
     group.bench_function("hover_jitter_small_area", |b| {
+        let root = TestRoot::new();
         let view = create_flat_tree(100);
-        let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+        let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
         b.iter(|| {
             // Simulate small jittery movements around a point
@@ -414,8 +432,9 @@ fn bench_cache_effectiveness(c: &mut Criterion) {
             BenchmarkId::new("hit_test_same_location_20x", size),
             size,
             |b, &size| {
+                let root = TestRoot::new();
                 let view = create_flat_tree(size);
-                let harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+                let harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
                 b.iter(|| {
                     for _ in 0..20 {
@@ -441,8 +460,9 @@ fn bench_no_listeners_path(c: &mut Criterion) {
             BenchmarkId::new("flat_no_listeners", size),
             size,
             |b, &size| {
+                let root = TestRoot::new();
                 let view = create_flat_tree(size);
-                let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+                let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
                 b.iter(|| {
                     harness.pointer_down(black_box(50.0), black_box(50.0));
@@ -458,8 +478,9 @@ fn bench_no_listeners_path(c: &mut Criterion) {
             BenchmarkId::new("deep_no_listeners", depth),
             depth,
             |b, &depth| {
+                let root = TestRoot::new();
                 let view = create_deep_tree(depth);
-                let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+                let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
                 b.iter(|| {
                     harness.pointer_down(black_box(50.0), black_box(50.0));
@@ -478,8 +499,9 @@ fn bench_no_listeners_path(c: &mut Criterion) {
             BenchmarkId::new("wide_no_listeners", &label),
             width,
             |b, &width| {
+                let root = TestRoot::new();
                 let view = create_wide_tree_depth3(width);
-                let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+                let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
                 b.iter(|| {
                     harness.pointer_down(black_box(5.0), black_box(5.0));
@@ -527,8 +549,9 @@ fn bench_active_view_dispatch(c: &mut Criterion) {
             BenchmarkId::new("slider_click", depth),
             depth,
             |b, &depth| {
+                let root = TestRoot::new();
                 let view = create_slider_tree(depth);
-                let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+                let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
 
                 // Calculate slider position based on nesting depth
                 // Each level adds 5px padding
@@ -548,8 +571,9 @@ fn bench_active_view_dispatch(c: &mut Criterion) {
             BenchmarkId::new("slider_drag", depth),
             depth,
             |b, &depth| {
+                let root = TestRoot::new();
                 let view = create_slider_tree(depth);
-                let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+                let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
 
                 let offset = depth as f64 * 5.0 + 10.0;
                 let y = offset + 10.0;
@@ -604,10 +628,11 @@ fn bench_cache_thrashing(c: &mut Criterion) {
     // Benchmark: Diagonal movement across grid (hits different target each time)
     // With 5x5 = 25 views, a 2-entry cache will thrash constantly
     group.bench_function("diagonal_across_grid_5x5_shared_ancestry", |b| {
+        let root = TestRoot::new();
         let size = 100;
         let view = create_grid_siblings(size);
         let mut harness =
-            HeadlessHarness::new_with_size(view, size as f64 * 25., size as f64 * 25.);
+            HeadlessHarness::new_with_size(root, view, size as f64 * 25., size as f64 * 25.);
 
         b.iter(|| {
             // Move diagonally across the grid, hitting a different view each time
@@ -623,8 +648,9 @@ fn bench_cache_thrashing(c: &mut Criterion) {
 
     // Benchmark: Random movement across grid
     group.bench_function("random_movement_grid_5x5_shared_ancestry", |b| {
+        let root = TestRoot::new();
         let view = create_grid_siblings(5);
-        let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+        let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
 
         // Pre-generate random positions to avoid measurement noise
         let positions: Vec<(f64, f64)> = vec![
@@ -703,8 +729,9 @@ fn bench_cache_thrashing(c: &mut Criterion) {
     // Benchmark: Moving between completely separate trees
     // This is the absolute worst case - no shared ancestry, complete cache misses
     group.bench_function("separate_trees_no_shared_ancestry", |b| {
+        let root = TestRoot::new();
         let view = create_separate_trees();
-        let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+        let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
 
         b.iter(|| {
             // Cycle through all 4 trees - each has completely different ancestry
@@ -741,8 +768,9 @@ fn bench_cache_thrashing(c: &mut Criterion) {
     }
 
     group.bench_function("rapid_alternation_10_siblings", |b| {
+        let root = TestRoot::new();
         let view = create_horizontal_strip(10);
-        let mut harness = HeadlessHarness::new_with_size(view, 400.0, 100.0);
+        let mut harness = HeadlessHarness::new_with_size(root, view, 400.0, 100.0);
 
         b.iter(|| {
             // Alternate rapidly between 10 different targets
@@ -756,10 +784,11 @@ fn bench_cache_thrashing(c: &mut Criterion) {
     // Benchmark: Simulated "fast mouse swipe" - continuous movement
     // Models real-world fast cursor movement where each position hits different view
     group.bench_function("fast_swipe_across_grid", |b| {
+        let root = TestRoot::new();
         let size = 50;
         let view = create_grid_siblings(size);
         let mut harness =
-            HeadlessHarness::new_with_size(view, size as f64 * 25., size as f64 * 25.);
+            HeadlessHarness::new_with_size(root, view, size as f64 * 25., size as f64 * 25.);
 
         b.iter(|| {
             // Simulate a fast diagonal swipe from top-left to bottom-right

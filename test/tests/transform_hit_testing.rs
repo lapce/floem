@@ -15,6 +15,7 @@ use floem::kurbo::Point;
 use floem::prelude::*;
 use floem::unit::Pct;
 use floem_test::prelude::*;
+use floem_test::TestRoot;
 use serial_test::serial;
 use std::cell::Cell;
 use std::rc::Rc;
@@ -26,6 +27,7 @@ use std::rc::Rc;
 #[test]
 #[serial]
 fn test_scaled_view_receives_click_at_center() {
+    let root = TestRoot::new();
     // A view with scale transform should still receive clicks at its center
     let tracker = ClickTracker::new();
 
@@ -38,7 +40,7 @@ fn test_scaled_view_receives_click_at_center() {
         )
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view,100.0, 100.0);
 
     // Click at the center of the original layout position
     harness.click(25.0, 25.0);
@@ -52,6 +54,7 @@ fn test_scaled_view_receives_click_at_center() {
 #[test]
 #[serial]
 fn test_scaled_view_miss_far_outside() {
+    let root = TestRoot::new();
     // Click very far from the scaled view should miss
     let tracker = ClickTracker::new();
 
@@ -63,7 +66,7 @@ fn test_scaled_view_miss_far_outside() {
         )
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view,100.0, 100.0);
 
     // Click at (90, 90) - far outside even the original 50x50 bounds
     harness.click(90.0, 90.0);
@@ -77,6 +80,7 @@ fn test_scaled_view_miss_far_outside() {
 #[test]
 #[serial]
 fn test_unscaled_view_receives_click() {
+    let root = TestRoot::new();
     // Baseline: unscaled view should work normally
     let tracker = ClickTracker::new();
 
@@ -84,7 +88,7 @@ fn test_unscaled_view_receives_click() {
         .track_named("normal", Empty::new().style(|s| s.size(50.0, 50.0)))
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view,100.0, 100.0);
 
     harness.click(25.0, 25.0);
 
@@ -97,6 +101,7 @@ fn test_unscaled_view_receives_click() {
 #[test]
 #[serial]
 fn test_scale_down_still_clickable_in_original_area() {
+    let root = TestRoot::new();
     // A scaled-down view should still be clickable in its layout area
     // because layout_rect is based on the original size
     let clicked = Rc::new(Cell::new(false));
@@ -105,11 +110,11 @@ fn test_scale_down_still_clickable_in_original_area() {
     // 100x100 view scaled to 50%
     let view = Empty::new()
         .style(|s| s.size(100.0, 100.0).scale(Pct(50.0)))
-        .on_click_stop(move |_| {
+        .action(move || {
             clicked_clone.set(true);
         });
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view,100.0, 100.0);
 
     // Click at the center
     harness.click(50.0, 50.0);
@@ -124,6 +129,7 @@ fn test_scale_down_still_clickable_in_original_area() {
 #[test]
 #[serial]
 fn test_rotated_view_receives_click_at_center() {
+    let root = TestRoot::new();
     // A rotated view should still receive clicks at its center
     let tracker = ClickTracker::new();
 
@@ -136,7 +142,7 @@ fn test_rotated_view_receives_click_at_center() {
         )
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view,100.0, 100.0);
 
     // Click at the center of the bar
     harness.click(50.0, 10.0);
@@ -150,6 +156,7 @@ fn test_rotated_view_receives_click_at_center() {
 #[test]
 #[serial]
 fn test_rotated_view_miss_far_outside() {
+    let root = TestRoot::new();
     // Click very far from rotated view should miss
     let tracker = ClickTracker::new();
 
@@ -161,7 +168,7 @@ fn test_rotated_view_miss_far_outside() {
         )
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view,100.0, 100.0);
 
     // Click far from the rotated view
     harness.click(90.0, 90.0);
@@ -179,6 +186,7 @@ fn test_rotated_view_miss_far_outside() {
 #[test]
 #[serial]
 fn test_translated_view_receives_click() {
+    let root = TestRoot::new();
     // View with translate should be clickable at translated position
     let tracker = ClickTracker::new();
 
@@ -189,7 +197,7 @@ fn test_translated_view_receives_click() {
         )
         .style(|s| s.size(150.0, 150.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 150.0, 150.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view,150.0, 150.0);
 
     // Original position is (0, 0), translated to (20, 20)
     // Click at the translated center (45, 45)
@@ -204,6 +212,7 @@ fn test_translated_view_receives_click() {
 #[test]
 #[serial]
 fn test_scaled_and_translated_view() {
+    let root = TestRoot::new();
     // View with both translate and scale
     let tracker = ClickTracker::new();
 
@@ -219,7 +228,7 @@ fn test_scaled_and_translated_view() {
         )
         .style(|s| s.size(150.0, 150.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 150.0, 150.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view,150.0, 150.0);
 
     // Click at the approximate center of the transformed view
     harness.click(45.0, 45.0);
@@ -237,6 +246,7 @@ fn test_scaled_and_translated_view() {
 #[test]
 #[serial]
 fn test_scaled_view_z_index_ordering() {
+    let root = TestRoot::new();
     // A scaled view should still respect z-index ordering
     let tracker = ClickTracker::new();
 
@@ -252,7 +262,7 @@ fn test_scaled_view_z_index_ordering() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view,100.0, 100.0);
 
     // Click at center - higher z-index should receive click
     harness.click(50.0, 50.0);
@@ -267,6 +277,7 @@ fn test_scaled_view_z_index_ordering() {
 #[test]
 #[serial]
 fn test_transform_with_z_index_stacking() {
+    let root = TestRoot::new();
     // Verify transforms don't break z-index stacking
     let tracker = ClickTracker::new();
 
@@ -283,7 +294,7 @@ fn test_transform_with_z_index_stacking() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view,100.0, 100.0);
 
     // Highest z-index should receive click
     harness.click(50.0, 50.0);
@@ -302,6 +313,7 @@ fn test_transform_with_z_index_stacking() {
 #[test]
 #[serial]
 fn test_scaled_view_receives_correct_local_coordinates() {
+    let root = TestRoot::new();
     // When clicking on a scaled view, the event coordinates should be in local space.
     // CSS scale is center-based, so the math is:
     //   visual_transform = translate(center) * scale(s) * translate(-center)
@@ -316,11 +328,11 @@ fn test_scaled_view_receives_correct_local_coordinates() {
 
     let view = Empty::new()
         .style(|s| s.size(100.0, 100.0).scale(Pct(200.0)))
-        .on_click_stop(move |e| {
-            received_point_clone.set(e.point());
+        .on_event_stop(floem::event::listener::Click, move |cx, _| {
+            received_point_clone.set(cx.event.point());
         });
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view,200.0, 200.0);
 
     // Click at the center of the view (50, 50 in window coords)
     // With center-based scaling, the center maps to itself
@@ -341,14 +353,15 @@ fn test_scaled_view_receives_correct_local_coordinates() {
 #[test]
 #[serial]
 fn test_nested_transformed_view_receives_correct_local_coordinates() {
+    let root = TestRoot::new();
     // Deeply nested view with transforms should receive correct local coordinates
     let received_point = Rc::new(Cell::new(Option::<Point>::None));
     let received_point_clone = received_point.clone();
 
     let inner = Empty::new()
         .style(|s| s.size(40.0, 40.0))
-        .on_click_stop(move |e| {
-            received_point_clone.set(e.point());
+        .on_event_stop(floem::event::listener::Click, move |cx, _| {
+            received_point_clone.set(cx.event.point());
         });
 
     // Nest with padding: outer padding 30, middle padding 20, inner padding 10
@@ -358,7 +371,7 @@ fn test_nested_transformed_view_receives_correct_local_coordinates() {
     )
     .style(|s| s.padding(30.0).size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view,200.0, 200.0);
 
     // Click at window position (80, 80) which is (20, 20) in inner's local space
     harness.click(80.0, 80.0);

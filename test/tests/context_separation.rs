@@ -46,6 +46,7 @@ floem::style_class!(pub TestClass);
 /// Test that adding class styling doesn't break inherited prop resolution.
 #[test]
 fn test_class_styling_doesnt_break_inherited_props() {
+    let root = TestRoot::new();
     // Parent sets both: inherited color AND class styling
     // Child uses inherited color (not class)
     // Child should get the inherited color, not be affected by class
@@ -63,7 +64,7 @@ fn test_class_styling_doesnt_break_inherited_props() {
             .class(TestClass, |s| s.background(palette::css::BLUE))
     });
 
-    let harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
+    let harness = HeadlessHarness::new_with_size(root, parent, 100.0, 100.0);
 
     // Child should have RED from inherited prop, not affected by class
     let style = harness.get_computed_style(child_id);
@@ -78,6 +79,7 @@ fn test_class_styling_doesnt_break_inherited_props() {
 /// Test that class styling on one child doesn't affect sibling's inherited props.
 #[test]
 fn test_class_on_sibling_doesnt_affect_inherited() {
+    let root = TestRoot::new();
     // Two siblings: one uses class, one uses inherited
     // They should be independent
 
@@ -96,7 +98,7 @@ fn test_class_on_sibling_doesnt_affect_inherited() {
             .class(TestClass, |s| s.background(palette::css::PURPLE))
     });
 
-    let harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
+    let harness = HeadlessHarness::new_with_size(root, parent, 100.0, 100.0);
 
     // Class child should be PURPLE from class
     let style = harness.get_computed_style(class_child_id);
@@ -124,6 +126,7 @@ fn test_class_on_sibling_doesnt_affect_inherited() {
 /// Test that changing inherited prop doesn't affect class-styled child.
 #[test]
 fn test_inherited_change_doesnt_affect_class_child() {
+    let root = TestRoot::new();
     let color_signal = RwSignal::new(palette::css::RED);
 
     // Child uses ONLY class styling, not inherited
@@ -136,7 +139,7 @@ fn test_inherited_change_doesnt_affect_class_child() {
             .class(TestClass, |s| s.background(palette::css::CYAN))
     });
 
-    let mut harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, parent, 100.0, 100.0);
 
     // Initial: class child should be CYAN
     let style = harness.get_computed_style(class_child_id);
@@ -168,6 +171,7 @@ fn test_inherited_change_doesnt_affect_class_child() {
 /// Test that both inherited and class can change together correctly.
 #[test]
 fn test_both_inherited_and_class_change_together() {
+    let root = TestRoot::new();
     let color_signal = RwSignal::new(palette::css::RED);
     let use_class = RwSignal::new(false);
 
@@ -193,7 +197,7 @@ fn test_both_inherited_and_class_change_together() {
         }
     });
 
-    let mut harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, parent, 100.0, 100.0);
 
     // Initial state
     let style = harness.get_computed_style(inherited_child_id);
@@ -228,6 +232,7 @@ fn test_both_inherited_and_class_change_together() {
 /// Test child with class but parent has no class styling.
 #[test]
 fn test_class_child_no_parent_class_styling() {
+    let root = TestRoot::new();
     let child = Empty::new()
         .class(TestClass)
         .style(|s| s.size(50.0, 50.0).background(palette::css::GRAY));
@@ -240,7 +245,7 @@ fn test_class_child_no_parent_class_styling() {
         // No .class(TestClass, ...) here
     });
 
-    let harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
+    let harness = HeadlessHarness::new_with_size(root, parent, 100.0, 100.0);
 
     // Child should have its own GRAY background (no class styling from parent)
     let style = harness.get_computed_style(child_id);
@@ -255,6 +260,7 @@ fn test_class_child_no_parent_class_styling() {
 /// Test inherited prop with no class styling anywhere.
 #[test]
 fn test_inherited_only_no_class() {
+    let root = TestRoot::new();
     let child = Empty::new().style(|s| {
         s.size(50.0, 50.0)
             .with_test_color(|s, color| s.background(*color))
@@ -267,7 +273,7 @@ fn test_inherited_only_no_class() {
         // No class styling
     });
 
-    let harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
+    let harness = HeadlessHarness::new_with_size(root, parent, 100.0, 100.0);
 
     let style = harness.get_computed_style(child_id);
     let bg = style.get(Background);
@@ -281,6 +287,7 @@ fn test_inherited_only_no_class() {
 /// Test class styling with no inherited props.
 #[test]
 fn test_class_only_no_inherited() {
+    let root = TestRoot::new();
     let child = Empty::new().class(TestClass).style(|s| s.size(50.0, 50.0));
     let child_id = child.view_id();
 
@@ -290,7 +297,7 @@ fn test_class_only_no_inherited() {
             .class(TestClass, |s| s.background(palette::css::TEAL))
     });
 
-    let harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
+    let harness = HeadlessHarness::new_with_size(root, parent, 100.0, 100.0);
 
     let style = harness.get_computed_style(child_id);
     let bg = style.get(Background);
@@ -304,6 +311,7 @@ fn test_class_only_no_inherited() {
 /// Test deeply nested with mixed inherited and class.
 #[test]
 fn test_deep_nesting_mixed_inherited_and_class() {
+    let root = TestRoot::new();
     // Structure:
     // Root (sets inherited + class)
     //   -> Level1 (no special style)
@@ -323,13 +331,13 @@ fn test_deep_nesting_mixed_inherited_and_class() {
     let level2 = Stack::new((inherited_leaf, class_leaf)).style(|s| s.size(50.0, 50.0));
     let level1 = Container::new(level2).style(|s| s.size(70.0, 70.0));
 
-    let root = Container::new(level1).style(|s| {
+    let view = Container::new(level1).style(|s| {
         s.size(100.0, 100.0)
             .set(TestInheritedColor, palette::css::CORAL)
             .class(TestClass, |s| s.background(palette::css::NAVY))
     });
 
-    let harness = HeadlessHarness::new_with_size(root, 100.0, 100.0);
+    let harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Both should receive their respective styles through nesting
     let style = harness.get_computed_style(inherited_leaf_id);
@@ -352,6 +360,7 @@ fn test_deep_nesting_mixed_inherited_and_class() {
 /// Test that view using BOTH inherited and class gets correct precedence.
 #[test]
 fn test_view_uses_both_inherited_and_class() {
+    let root = TestRoot::new();
     // Child uses inherited for one property, class provides another
     // They should not conflict
 
@@ -368,7 +377,7 @@ fn test_view_uses_both_inherited_and_class() {
             .class(TestClass, |s| s.background(palette::css::BLUE)) // For background
     });
 
-    let harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
+    let harness = HeadlessHarness::new_with_size(root, parent, 100.0, 100.0);
 
     let style = harness.get_computed_style(child_id);
 

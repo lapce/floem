@@ -10,7 +10,7 @@
 
 use floem::kurbo::Point;
 use floem::prelude::*;
-use floem::unit::Pct;
+use floem::unit::{AnchorAbout, Pct};
 use floem_test::prelude::*;
 use serial_test::serial;
 use std::cell::Cell;
@@ -24,16 +24,18 @@ use std::rc::Rc;
 #[serial]
 fn test_event_point_at_origin() {
     // View at origin should receive click coordinates directly
+    let root = TestRoot::new();
     let received_point = Rc::new(Cell::new(Option::<Point>::None));
     let received_point_clone = received_point.clone();
 
-    let view = Empty::new()
-        .style(|s| s.size(100.0, 100.0))
-        .on_click_stop(move |e| {
-            received_point_clone.set(e.point());
-        });
+    let view = Empty::new().style(|s| s.size(100.0, 100.0)).on_event_stop(
+        floem::event::listener::PointerDown,
+        move |_, pbe| {
+            received_point_clone.set(Some(pbe.state.logical_point()));
+        },
+    );
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(30.0, 40.0);
 
@@ -50,18 +52,20 @@ fn test_event_point_at_origin() {
 #[serial]
 fn test_event_point_with_padding() {
     // View inside padded container should receive offset coordinates
+    let root = TestRoot::new();
     let received_point = Rc::new(Cell::new(Option::<Point>::None));
     let received_point_clone = received_point.clone();
 
-    let inner = Empty::new()
-        .style(|s| s.size(50.0, 50.0))
-        .on_click_stop(move |e| {
-            received_point_clone.set(e.point());
-        });
+    let inner = Empty::new().style(|s| s.size(50.0, 50.0)).on_event_stop(
+        floem::event::listener::PointerDown,
+        move |_, pbe| {
+            received_point_clone.set(Some(pbe.state.logical_point()));
+        },
+    );
 
     let view = Container::new(inner).style(|s| s.padding(25.0).size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Click at window (40, 45) -> inner local (15, 20)
     harness.click(40.0, 45.0);
@@ -79,14 +83,16 @@ fn test_event_point_with_padding() {
 #[serial]
 fn test_event_point_nested_padding() {
     // Deeply nested view should accumulate all padding offsets
+    let root = TestRoot::new();
     let received_point = Rc::new(Cell::new(Option::<Point>::None));
     let received_point_clone = received_point.clone();
 
-    let inner = Empty::new()
-        .style(|s| s.size(40.0, 40.0))
-        .on_click_stop(move |e| {
-            received_point_clone.set(e.point());
-        });
+    let inner = Empty::new().style(|s| s.size(40.0, 40.0)).on_event_stop(
+        floem::event::listener::PointerDown,
+        move |_, pbe| {
+            received_point_clone.set(Some(pbe.state.logical_point()));
+        },
+    );
 
     // 10 + 20 + 30 = 60 total padding
     let view = Container::new(
@@ -94,7 +100,7 @@ fn test_event_point_nested_padding() {
     )
     .style(|s| s.padding(10.0).size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
 
     // Click at window (80, 85) -> inner local (20, 25)
     harness.click(80.0, 85.0);
@@ -116,16 +122,17 @@ fn test_event_point_nested_padding() {
 #[serial]
 fn test_event_point_with_translate() {
     // CSS translate should offset event coordinates
+    let root = TestRoot::new();
     let received_point = Rc::new(Cell::new(Option::<Point>::None));
     let received_point_clone = received_point.clone();
 
     let view = Empty::new()
         .style(|s| s.size(50.0, 50.0).translate_x(30.0).translate_y(20.0))
-        .on_click_stop(move |e| {
-            received_point_clone.set(e.point());
+        .on_event_stop(floem::event::listener::PointerDown, move |_, pbe| {
+            received_point_clone.set(Some(pbe.state.logical_point()));
         });
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // View is translated, so clicking at window (45, 35) hits the translated view
     // Local coordinate should be (15, 15)
@@ -148,16 +155,17 @@ fn test_event_point_with_translate() {
 #[serial]
 fn test_event_point_with_scale_at_center() {
     // CSS scale is center-based, so clicking at center returns center coords
+    let root = TestRoot::new();
     let received_point = Rc::new(Cell::new(Option::<Point>::None));
     let received_point_clone = received_point.clone();
 
     let view = Empty::new()
         .style(|s| s.size(100.0, 100.0).scale(Pct(200.0)))
-        .on_click_stop(move |e| {
-            received_point_clone.set(e.point());
+        .on_event_stop(floem::event::listener::PointerDown, move |_, pbe| {
+            received_point_clone.set(Some(pbe.state.logical_point()));
         });
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
 
     // Click at center (50, 50) - center stays at center with scale
     harness.click(50.0, 50.0);
@@ -175,6 +183,7 @@ fn test_event_point_with_scale_at_center() {
 #[serial]
 fn test_event_point_with_scale_offset() {
     // CSS scale transforms points differently based on distance from center
+    let root = TestRoot::new();
     let received_point = Rc::new(Cell::new(Option::<Point>::None));
     let received_point_clone = received_point.clone();
 
@@ -182,11 +191,11 @@ fn test_event_point_with_scale_offset() {
     // Center is (50, 50), which stays fixed during scale
     let view = Empty::new()
         .style(|s| s.size(100.0, 100.0).scale(Pct(200.0)))
-        .on_click_stop(move |e| {
-            received_point_clone.set(e.point());
+        .on_event_stop(floem::event::listener::PointerDown, move |_, pbe| {
+            received_point_clone.set(Some(pbe.state.logical_point()));
         });
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
 
     // Click at window (0, 0)
     // With 2x scale around center (50, 50):
@@ -207,17 +216,18 @@ fn test_event_point_with_scale_offset() {
 #[serial]
 fn test_event_point_with_scale_down() {
     // Scale down (50%) should also transform coordinates correctly
+    let root = TestRoot::new();
     let received_point = Rc::new(Cell::new(Option::<Point>::None));
     let received_point_clone = received_point.clone();
 
     // 100x100 view with 0.5x scale
     let view = Empty::new()
         .style(|s| s.size(100.0, 100.0).scale(Pct(50.0)))
-        .on_click_stop(move |e| {
-            received_point_clone.set(e.point());
+        .on_event_stop(floem::event::listener::PointerDown, move |_, pbe| {
+            received_point_clone.set(Some(pbe.state.logical_point()));
         });
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Click at center - should still map to local center
     harness.click(50.0, 50.0);
@@ -239,16 +249,17 @@ fn test_event_point_with_scale_down() {
 #[serial]
 fn test_event_point_with_rotate_at_center() {
     // Rotation is also center-based, so center stays at center
+    let root = TestRoot::new();
     let received_point = Rc::new(Cell::new(Option::<Point>::None));
     let received_point_clone = received_point.clone();
 
     let view = Empty::new()
         .style(|s| s.size(100.0, 100.0).rotate(45.0.deg()))
-        .on_click_stop(move |e| {
-            received_point_clone.set(e.point());
+        .on_event_stop(floem::event::listener::PointerDown, move |_, pbe| {
+            received_point_clone.set(Some(pbe.state.logical_point()));
         });
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Click at center
     harness.click(50.0, 50.0);
@@ -270,18 +281,19 @@ fn test_event_point_with_rotate_at_center() {
 #[serial]
 fn test_event_point_with_nested_transforms() {
     // Nested views with transforms should compound correctly
+    let root = TestRoot::new();
     let received_point = Rc::new(Cell::new(Option::<Point>::None));
     let received_point_clone = received_point.clone();
 
     let inner = Empty::new()
         .style(|s| s.size(40.0, 40.0).translate_x(5.0))
-        .on_click_stop(move |e| {
-            received_point_clone.set(e.point());
+        .on_event_stop(floem::event::listener::PointerDown, move |_, pbe| {
+            received_point_clone.set(Some(pbe.state.logical_point()));
         });
 
     let view = Container::new(inner).style(|s| s.padding(20.0).size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Inner is at x = 20 (padding) + 5 (translate) = 25
     // Click at window (35, 30) -> inner local (10, 10)
@@ -300,18 +312,23 @@ fn test_event_point_with_nested_transforms() {
 #[serial]
 fn test_event_point_padding_plus_scale() {
     // Padding + scale combination
+    let root = TestRoot::new();
     let received_point = Rc::new(Cell::new(Option::<Point>::None));
     let received_point_clone = received_point.clone();
 
     let inner = Empty::new()
-        .style(|s| s.size(40.0, 40.0).scale(Pct(200.0)))
-        .on_click_stop(move |e| {
-            received_point_clone.set(e.point());
+        .style(|s| {
+            s.size(40.0, 40.0)
+                .scale(Pct(200.0))
+                .scale_about(AnchorAbout::CENTER)
+        })
+        .on_event_stop(floem::event::listener::PointerDown, move |_, pbe| {
+            received_point_clone.set(Some(pbe.state.logical_point()));
         });
 
     let view = Container::new(inner).style(|s| s.padding(30.0).size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Inner starts at (30, 30) with center at (50, 50)
     // Click at the center of the inner view's position
@@ -335,19 +352,19 @@ fn test_event_point_padding_plus_scale() {
 #[serial]
 fn test_pointer_move_coordinates() {
     // Pointer move events should also have correct local coordinates
+    let root = TestRoot::new();
     let received_points = Rc::new(std::cell::RefCell::new(Vec::<Point>::new()));
     let received_points_clone = received_points.clone();
 
     let view = Empty::new().style(|s| s.size(100.0, 100.0)).on_event_cont(
-        floem::event::EventListener::PointerMove,
-        move |e| {
-            if let Some(pt) = e.point() {
-                received_points_clone.borrow_mut().push(pt);
-            }
+        floem::event::listener::PointerMove,
+        move |_cx, event| {
+            let pt = event.current.logical_point();
+            received_points_clone.borrow_mut().push(pt);
         },
     );
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.pointer_move(25.0, 30.0);
     harness.pointer_move(75.0, 80.0);

@@ -9,6 +9,7 @@ use floem::peniko::Brush;
 use floem::prelude::*;
 use floem::style::Background;
 use floem::views::list;
+use floem::headless::TestRoot;
 use floem_test::prelude::*;
 use serial_test::serial;
 
@@ -19,6 +20,7 @@ use serial_test::serial;
 #[test]
 #[serial]
 fn test_list_item_selected_style_on_click() {
+    let root = TestRoot::new();
     let items = vec!["Item 1", "Item 2", "Item 3"];
 
     // Track the view IDs of the labels inside list items
@@ -37,7 +39,7 @@ fn test_list_item_selected_style_on_click() {
     }))
     .style(|s| s.width(200.0).height(150.0));
 
-    let mut harness = HeadlessHarness::new_with_size(list_view, 200.0, 150.0);
+    let mut harness = HeadlessHarness::new_with_size(root, list_view, 200.0, 150.0);
 
     let ids = label_ids.borrow().clone();
     assert_eq!(ids.len(), 3, "Should have 3 label IDs");
@@ -90,6 +92,7 @@ fn test_list_item_selected_style_on_click() {
 #[test]
 #[serial]
 fn test_list_item_selection_change() {
+    let root = TestRoot::new();
     let items = vec!["A", "B", "C"];
 
     let label_ids: std::cell::RefCell<Vec<ViewId>> = std::cell::RefCell::new(Vec::new());
@@ -107,7 +110,7 @@ fn test_list_item_selection_change() {
     }))
     .style(|s| s.width(200.0).height(120.0));
 
-    let mut harness = HeadlessHarness::new_with_size(list_view, 200.0, 120.0);
+    let mut harness = HeadlessHarness::new_with_size(root, list_view, 200.0, 120.0);
 
     let ids = label_ids.borrow().clone();
 
@@ -152,6 +155,7 @@ fn test_list_item_selection_change() {
 #[test]
 #[serial]
 fn test_list_default_theme_selected_style() {
+    let root = TestRoot::new();
     let items = vec!["One", "Two", "Three"];
 
     // We'll track the list item wrapper IDs (not the labels inside)
@@ -159,7 +163,7 @@ fn test_list_default_theme_selected_style() {
     let list_view = list(items.into_iter().map(Label::new)).style(|s| s.width(200.0).height(120.0));
 
     let list_id = list_view.view_id();
-    let _harness = HeadlessHarness::new_with_size(list_view, 200.0, 120.0);
+    let _harness = HeadlessHarness::new_with_size(root, list_view, 200.0, 120.0);
 
     // Get the list item IDs (the Item wrappers created by the list)
     // The structure is: List -> Stack -> [Item, Item, Item]

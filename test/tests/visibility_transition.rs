@@ -73,7 +73,8 @@ fn test_display_none_style_triggers_hidden() {
     });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     // Initially visible
@@ -102,7 +103,8 @@ fn test_force_hidden_independent_of_style() {
     let view = Empty::new().style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     // Initially visible
@@ -155,7 +157,8 @@ fn test_run_on_remove_animation_delays_hidden() {
         });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     // Initially visible
@@ -197,7 +200,8 @@ fn test_cancel_exit_animation() {
         });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     // Start hide animation
@@ -236,7 +240,8 @@ fn test_set_hidden_overrides_style() {
     });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     // Style has display, but use set_hidden()
@@ -276,7 +281,8 @@ fn test_set_hidden_with_display_none_style() {
     });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
     harness.rebuild();
 
@@ -319,7 +325,8 @@ fn test_hidden_to_visible_transition() {
     });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
     harness.rebuild();
 

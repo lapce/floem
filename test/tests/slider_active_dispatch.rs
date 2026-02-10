@@ -15,7 +15,9 @@
 //! how `visual_transform` is computed during layout).
 
 use floem::prelude::*;
+use floem::event::EventPropagation;
 use floem::views::slider;
+use floem::views::slider::SliderChanged;
 use floem_test::prelude::*;
 use serial_test::serial;
 use std::cell::Cell;
@@ -29,14 +31,16 @@ use std::rc::Rc;
 #[test]
 #[serial]
 fn test_slider_single_nested_maintains_value() {
+    let root = TestRoot::new();
     let slider_percent = Rc::new(Cell::new(50.0));
     let slider_percent_read = slider_percent.clone();
     let slider_percent_write = slider_percent.clone();
 
     // Create a slider with an on_change callback to track value changes
     let slider_view = slider::Slider::new(move || slider_percent_read.get().pct())
-        .on_change_pct(move |pct| {
-            slider_percent_write.set(pct.0);
+        .on_event(SliderChanged::listener(), move |_cx, state| {
+            slider_percent_write.set(state.pct.0);
+            EventPropagation::Continue
         })
         .style(|s| s.width(200.0).height(20.0));
 
@@ -44,7 +48,7 @@ fn test_slider_single_nested_maintains_value() {
     // This happens to work because layout.location == (padding, padding) == window_origin offset
     let view = Container::new(slider_view).style(|s| s.padding(50.0).size(300.0, 120.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 300.0, 120.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 300.0, 120.0);
 
     // Click at 75% position within the slider
     // Slider is at x=50 (padding), width=200, so 75% = 50 + 150 = 200
@@ -93,13 +97,15 @@ fn test_slider_single_nested_maintains_value() {
 #[test]
 #[serial]
 fn test_slider_deeply_nested_maintains_value() {
+    let root = TestRoot::new();
     let slider_percent = Rc::new(Cell::new(50.0));
     let slider_percent_read = slider_percent.clone();
     let slider_percent_write = slider_percent.clone();
 
     let slider_view = slider::Slider::new(move || slider_percent_read.get().pct())
-        .on_change_pct(move |pct| {
-            slider_percent_write.set(pct.0);
+        .on_event(SliderChanged::listener(), move |_cx, state| {
+            slider_percent_write.set(state.pct.0);
+            EventPropagation::Continue
         })
         .style(|s| s.width(200.0).height(20.0));
 
@@ -110,7 +116,7 @@ fn test_slider_deeply_nested_maintains_value() {
     )
     .style(|s| s.padding(50.0).size(400.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 400.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 400.0, 200.0);
 
     // Slider is at x = 50 + 30 + 20 = 100, width = 200
     // Click at 50% position: 100 + 100 = 200
@@ -142,20 +148,22 @@ fn test_slider_deeply_nested_maintains_value() {
 #[test]
 #[serial]
 fn test_slider_drag_behavior() {
+    let root = TestRoot::new();
     let slider_percent = Rc::new(Cell::new(0.0));
     let slider_percent_read = slider_percent.clone();
     let slider_percent_write = slider_percent.clone();
 
     let slider_view = slider::Slider::new(move || slider_percent_read.get().pct())
-        .on_change_pct(move |pct| {
-            slider_percent_write.set(pct.0);
+        .on_event(SliderChanged::listener(), move |_cx, state| {
+            slider_percent_write.set(state.pct.0);
+            EventPropagation::Continue
         })
         .style(|s| s.width(200.0).height(20.0));
 
     // Offset the slider from origin
     let view = Container::new(slider_view).style(|s| s.padding(100.0).size(400.0, 220.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 400.0, 220.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 400.0, 220.0);
 
     // Slider is at x=100, width=200
     // Start at 25%: 100 + 50 = 150
@@ -211,20 +219,22 @@ fn test_slider_drag_behavior() {
 #[test]
 #[serial]
 fn test_slider_at_origin_works() {
+    let root = TestRoot::new();
     let slider_percent = Rc::new(Cell::new(50.0));
     let slider_percent_read = slider_percent.clone();
     let slider_percent_write = slider_percent.clone();
 
     let slider_view = slider::Slider::new(move || slider_percent_read.get().pct())
-        .on_change_pct(move |pct| {
-            slider_percent_write.set(pct.0);
+        .on_event(SliderChanged::listener(), move |_cx, state| {
+            slider_percent_write.set(state.pct.0);
+            EventPropagation::Continue
         })
         .style(|s| s.width(200.0).height(20.0));
 
     // No padding - slider is at origin
     let view = slider_view;
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 20.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 20.0);
 
     // Click at 75%: 150
     let click_x = 150.0;
@@ -256,6 +266,7 @@ fn test_slider_at_origin_works() {
 #[test]
 #[serial]
 fn test_slider_with_rw_signal() {
+    let root = TestRoot::new();
     // Use RwSignal like the widget-gallery example
     let slider_state = RwSignal::new(50.0.pct());
 
@@ -264,7 +275,7 @@ fn test_slider_with_rw_signal() {
     // Nest in container with padding
     let view = Container::new(slider_view).style(|s| s.padding(75.0).size(350.0, 170.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 350.0, 170.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 350.0, 170.0);
 
     // Slider is at x=75, width=200
     // Click at approximately 80%: 75 + 160 = 235

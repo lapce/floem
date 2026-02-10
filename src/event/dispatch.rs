@@ -42,10 +42,10 @@ use crate::{
     BoxTree, ElementId, ViewId,
     action::show_context_menu,
     context::*,
-    dropped_file::{FileDragEvent, FileDragMoved},
     event::{
         Event, FocusEvent, ImeEvent, InteractionEvent, Phase, WindowEvent,
         drag_state::{DragEventDispatch, DraggingPreview},
+        dropped_file::FileDragEvent,
         path::hit_test,
     },
     prelude::EventListenerTrait,
@@ -540,7 +540,8 @@ impl<'a> GlobalEventCx<'a> {
         {
             Ok(transform) => transform,
             Err(transform) => transform.value().unwrap(),
-        };
+        }
+        .inverse();
 
         EventCx {
             window_state: self.window_state,
@@ -610,12 +611,9 @@ impl<'a> GlobalEventCx<'a> {
                 }
             }
             Event::FileDrag(fde) => {
-                if let Some(point) = fde.logical_point() {
-                    use crate::context::Phases;
-                    self.route_spatial(event, point, Phases::all(), &mut default_prevented)
-                } else {
-                    self.route_global(event, false, &mut default_prevented)
-                }
+                let point = fde.logical_point();
+                use crate::context::Phases;
+                self.route_spatial(event, point, Phases::all(), &mut default_prevented)
             }
             Event::Window(_) => self.route_global(event, false, &mut default_prevented),
             Event::PointerCapture(_)
@@ -1001,6 +999,47 @@ impl<'a> GlobalEventCx<'a> {
                 _ => {}
             }
         }
+        // File drag hover tracking - emit Enter/Leave events to individual elements
+        if let Event::FileDrag(FileDragEvent::Move(file_drag_move)) = event {
+            if let Some(path) = &self.hit_path {
+                let hover_events = self.window_state.file_hover_state.update_path(path);
+                for hover_event in hover_events {
+                    match hover_event {
+                        HoverEvent::Enter(element_id) => {
+                            self.window_state.style_dirty.insert(element_id.owning_id());
+                            // Emit Enter event to the element
+                            let enter_event = Event::FileDrag(FileDragEvent::Enter(
+                                crate::event::dropped_file::FileDragEnter {
+                                    paths: file_drag_move.paths.clone(),
+                                    position: file_drag_move.position,
+                                },
+                            ));
+                            self.route_directed(
+                                element_id,
+                                &enter_event,
+                                Phases::all(),
+                                &mut false,
+                            );
+                        }
+                        HoverEvent::Leave(element_id) => {
+                            self.window_state.style_dirty.insert(element_id.owning_id());
+                            // Emit Leave event to the element
+                            let leave_event = Event::FileDrag(FileDragEvent::Leave(
+                                crate::event::dropped_file::FileDragLeave {
+                                    position: file_drag_move.position,
+                                },
+                            ));
+                            self.route_directed(
+                                element_id,
+                                &leave_event,
+                                Phases::all(),
+                                &mut false,
+                            );
+                        }
+                    }
+                }
+            }
+        }
 
         if is_keyboard_trigger {
             if let Some(focus) = self.window_state.focus_state.current_path().last() {
@@ -1207,30 +1246,6 @@ impl<'a> GlobalEventCx<'a> {
                     self.window_state.style_dirty.insert(view_id);
                 }
             });
-        }
-
-        // File drag hover tracking
-        if let Event::FileDrag(FileDragEvent::DragMoved(FileDragMoved { position, .. })) = event {
-            if let Some(path) = &self.hit_path {
-                let hover_events = self.window_state.file_hover_state.update_path(path);
-                for hover_event in hover_events {
-                    match hover_event {
-                        HoverEvent::Enter(element_id) | HoverEvent::Leave(element_id) => {
-                            self.window_state.style_dirty.insert(element_id.owning_id());
-                        }
-                    }
-                }
-            }
-        }
-
-        // Clear file hover on drag leave
-        if let Event::FileDrag(FileDragEvent::DragLeft(_) | FileDragEvent::DragDropped(_)) = event {
-            let hover_events = self.window_state.file_hover_state.clear();
-            for hover_event in hover_events {
-                if let HoverEvent::Leave(element_id) = hover_event {
-                    self.window_state.style_dirty.insert(element_id.owning_id());
-                }
-            }
         }
 
         // Context/popout menus (platform-specific timing)

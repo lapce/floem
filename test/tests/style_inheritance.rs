@@ -32,6 +32,7 @@ impl InheritedColorExt for Style {
 /// Test that inherited props flow from parent to child.
 #[test]
 fn test_inherited_prop_flows_to_child() {
+    let root = TestRoot::new();
     let child = Empty::new().style(|s| {
         s.size(50.0, 50.0)
             .with_inherited_color(|s, color| s.background(*color))
@@ -43,7 +44,7 @@ fn test_inherited_prop_flows_to_child() {
             .set(InheritedColorProp, palette::css::RED)
     });
 
-    let harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
+    let harness = HeadlessHarness::new_with_size(root, parent, 100.0, 100.0);
 
     // Child should have RED background from inherited prop
     let style = harness.get_computed_style(child_id);
@@ -58,6 +59,7 @@ fn test_inherited_prop_flows_to_child() {
 /// Test that child can override inherited prop.
 #[test]
 fn test_child_can_override_inherited_prop() {
+    let root = TestRoot::new();
     let child = Empty::new().style(|s| {
         s.size(50.0, 50.0)
             // Override the inherited prop
@@ -71,7 +73,7 @@ fn test_child_can_override_inherited_prop() {
             .set(InheritedColorProp, palette::css::RED)
     });
 
-    let harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
+    let harness = HeadlessHarness::new_with_size(root, parent, 100.0, 100.0);
 
     // Child should have BLUE background (overridden)
     let style = harness.get_computed_style(child_id);
@@ -86,6 +88,7 @@ fn test_child_can_override_inherited_prop() {
 /// Test deeply nested inheritance.
 #[test]
 fn test_deeply_nested_inheritance() {
+    let root = TestRoot::new();
     let grandchild = Empty::new().style(|s| {
         s.size(25.0, 25.0)
             .with_inherited_color(|s, color| s.background(*color))
@@ -99,7 +102,7 @@ fn test_deeply_nested_inheritance() {
             .set(InheritedColorProp, palette::css::GREEN)
     });
 
-    let harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
+    let harness = HeadlessHarness::new_with_size(root, parent, 100.0, 100.0);
 
     // Grandchild should inherit GREEN from grandparent
     let style = harness.get_computed_style(grandchild_id);
@@ -114,6 +117,7 @@ fn test_deeply_nested_inheritance() {
 /// Test that inherited prop updates propagate to children.
 #[test]
 fn test_inherited_prop_updates_propagate() {
+    let root = TestRoot::new();
     let color_signal = RwSignal::new(palette::css::RED);
 
     let child = Empty::new().style(|s| {
@@ -127,7 +131,7 @@ fn test_inherited_prop_updates_propagate() {
             .set(InheritedColorProp, color_signal.get())
     });
 
-    let mut harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, parent, 100.0, 100.0);
 
     // Initial: child should be RED
     let style = harness.get_computed_style(child_id);

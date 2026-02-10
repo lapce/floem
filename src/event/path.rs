@@ -133,7 +133,7 @@ pub fn hit_test(root_id: ViewId, point: Point) -> Option<(ElementId, Rc<[Element
         understory_box_tree::QueryFilter::new().visible().pickable(),
     );
 
-    let result = if let Some(&top_hit) = hit_ids.first() {
+    let result = if let Some(&top_hit) = hit_ids.last() {
         let box_tree = box_tree.borrow();
         let target = crate::ElementId(top_hit, box_tree.meta(top_hit).flatten().unwrap());
         let path: Vec<_> = hit_ids

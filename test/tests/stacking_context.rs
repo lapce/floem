@@ -9,7 +9,7 @@
 //! - Event bubbling follows DOM tree
 
 use floem::event::EventPropagation;
-use floem::headless::HeadlessHarness;
+use floem::headless::{HeadlessHarness, TestRoot};
 use floem::taffy;
 use floem::unit::UnitExt;
 use floem::views::{Decorators, Empty, Stack};
@@ -20,6 +20,7 @@ use std::rc::Rc;
 #[test]
 #[serial]
 fn test_z_index_click_ordering() {
+    let root = TestRoot::new();
     // Test that views with higher z-index receive clicks first
     let clicked_z1 = Rc::new(Cell::new(false));
     let clicked_z10 = Rc::new(Cell::new(false));
@@ -30,18 +31,18 @@ fn test_z_index_click_ordering() {
     let view = Stack::new((
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_z1_clone.set(true);
             }),
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(10))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_z10_clone.set(true);
             }),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Click in the center where both views overlap
     harness.click(50.0, 50.0);
@@ -60,6 +61,7 @@ fn test_z_index_click_ordering() {
 #[test]
 #[serial]
 fn test_stacking_context_children_bounded_within_parent() {
+    let root = TestRoot::new();
     // Test simplified stacking: children are always bounded within their parent.
     // A child's z-index only competes with siblings at the same level.
     //
@@ -82,20 +84,20 @@ fn test_stacking_context_children_bounded_within_parent() {
         // Wrapper (every view is a stacking context in the simplified model)
         Stack::new((Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(10))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_child_clone.set(true);
             }),))
         .style(|s| s.absolute().inset(0.0).size(100.0, 100.0)),
         // Sibling with z-index 5
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(5))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_sibling_clone.set(true);
             }),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -136,20 +138,21 @@ fn test_stacking_context_bounds_children() {
         // Parent with z-index 1 (creates stacking context)
         Stack::new((Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(100))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_child_clone.set(true);
             }),))
         .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1)),
         // Sibling with z-index 5
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(5))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_sibling_clone.set(true);
             }),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -196,12 +199,12 @@ fn test_stacking_model_siblings_compete_at_same_level() {
         Stack::new((
             Empty::new()
                 .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(3))
-                .on_click_stop(move |_| {
+                .action(move || {
                     clicked_a1_clone.set(true);
                 }),
             Empty::new()
                 .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(7))
-                .on_click_stop(move |_| {
+                .action(move || {
                     clicked_a2_clone.set(true);
                 }),
         ))
@@ -209,19 +212,20 @@ fn test_stacking_model_siblings_compete_at_same_level() {
         // B (z-index: 5)
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(5))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_b_clone.set(true);
             }),
         // C (z-index: 6)
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(6))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_c_clone.set(true);
             }),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -266,23 +270,24 @@ fn test_stacking_context_negative_z_index() {
     let view = Stack::new((
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(-1))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_a_clone.set(true);
             }),
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_b_clone.set(true);
             }),
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(-5))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_c_clone.set(true);
             }),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -318,7 +323,7 @@ fn test_stacking_context_transform_creates_context() {
         // Parent with non-identity transform (creates stacking context even without z-index)
         Stack::new((Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(100))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_child_clone.set(true);
             }),))
         .style(|s| {
@@ -327,13 +332,14 @@ fn test_stacking_context_transform_creates_context() {
         // Sibling with z-index 5
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(5))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_sibling_clone.set(true);
             }),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -378,7 +384,7 @@ fn test_stacking_model_deeply_nested_bounded() {
                 // Level3
                 Stack::new((Empty::new()
                     .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(10))
-                    .on_click_stop(move |_| {
+                    .action(move || {
                         clicked_deep_clone.set(true);
                     }),))
                 .style(|s| s.absolute().inset(0.0).size(100.0, 100.0)),
@@ -389,13 +395,14 @@ fn test_stacking_model_deeply_nested_bounded() {
         // Sibling
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(5))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_sibling_clone.set(true);
             }),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -433,23 +440,24 @@ fn test_stacking_context_dom_order_tiebreaker() {
     let view = Stack::new((
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(5))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_first_clone.set(true);
             }),
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(5))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_second_clone.set(true);
             }),
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(5))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_third_clone.set(true);
             }),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -489,27 +497,28 @@ fn test_stacking_model_all_views_are_stacking_contexts() {
         // Wrapper (z=0, bounds its children)
         Stack::new((Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(8))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_bounded_clone.set(true);
             }),))
         .style(|s| s.absolute().inset(0.0).size(100.0, 100.0)),
         // Parent (z=3, bounds its children)
         Stack::new((Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(100))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_bounded2_clone.set(true);
             }),))
         .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(3)),
         // TopLevel (z=6)
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(6))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_top_clone.set(true);
             }),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -541,6 +550,7 @@ fn test_stacking_context_partial_overlap() {
     // Click at (50, 50) should hit Left.
     // Click at (150, 50) should hit Right.
 
+    let root = TestRoot::new();
     let clicked_left = Rc::new(Cell::new(false));
     let clicked_right = Rc::new(Cell::new(false));
 
@@ -556,7 +566,7 @@ fn test_stacking_context_partial_overlap() {
                     .size(100.0, 100.0)
                     .z_index(5)
             })
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_left_clone.set(true);
             }),
         Empty::new()
@@ -567,13 +577,13 @@ fn test_stacking_context_partial_overlap() {
                     .size(100.0, 100.0)
                     .z_index(10)
             })
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_right_clone.set(true);
             }),
     ))
     .style(|s| s.size(200.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 100.0);
 
     // Click left side
     harness.click(50.0, 50.0);
@@ -626,18 +636,19 @@ fn test_stacking_context_pointer_events_none() {
                     .z_index(10)
                     .pointer_events_none()
             })
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_top_clone.set(true);
             }),
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(5))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_bottom_clone.set(true);
             }),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -676,18 +687,19 @@ fn test_stacking_context_hidden_view() {
                     .z_index(10)
                     .display(taffy::Display::None)
             })
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_hidden_clone.set(true);
             }),
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(5))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_visible_clone.set(true);
             }),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -721,7 +733,7 @@ fn test_stacking_context_hidden_parent_hides_children() {
     let view = Stack::new((
         Stack::new((Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(100))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_child_clone.set(true);
             }),))
         .style(|s| {
@@ -733,13 +745,14 @@ fn test_stacking_context_hidden_parent_hides_children() {
         }),
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(5))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_visible_clone.set(true);
             }),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -786,25 +799,26 @@ fn test_stacking_context_hidden_in_escaped_context() {
                         .z_index(10)
                         .display(taffy::Display::None)
                 })
-                .on_click_stop(move |_| {
+                .action(move || {
                     h_clone.set(true);
                 }),
             Empty::new()
                 .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(5))
-                .on_click_stop(move |_| {
+                .action(move || {
                     v_clone.set(true);
                 }),
         ))
         .style(|s| s.absolute().inset(0.0).size(100.0, 100.0)),
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(7))
-            .on_click_stop(move |_| {
+            .action(move || {
                 s_clone.set(true);
             }),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -849,7 +863,8 @@ fn test_stacking_context_hidden_does_not_bubble() {
         EventPropagation::Continue
     });
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -889,7 +904,7 @@ fn test_stacking_context_nested_contexts() {
             // Inner stacking context
             Stack::new((Empty::new()
                 .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(100))
-                .on_click_stop(move |_| {
+                .action(move || {
                     clicked_deep_clone.set(true);
                 }),))
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(3)),
@@ -898,13 +913,14 @@ fn test_stacking_context_nested_contexts() {
         // Sibling
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(6))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_sibling_clone.set(true);
             }),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -943,21 +959,22 @@ fn test_stacking_context_sibling_isolation() {
         // ContextA (z=5)
         Stack::new((Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(100))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_child_a_clone.set(true);
             }),))
         .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(5)),
         // ContextB (z=10)
         Stack::new((Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_child_b_clone.set(true);
             }),))
         .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(10)),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -1003,7 +1020,8 @@ fn test_stacking_context_event_bubbling() {
         EventPropagation::Continue
     });
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -1034,15 +1052,16 @@ fn test_stacking_context_bubbling_stops_on_stop() {
 
     let view = Stack::new((Empty::new()
         .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(5))
-        .on_click_stop(move |_| {
+        .action(move || {
             clicked_child_clone.set(true);
         }),))
     .style(|s| s.size(100.0, 100.0))
-    .on_click_stop(move |_| {
+    .action(move || {
         clicked_parent_clone.set(true);
     });
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -1091,7 +1110,8 @@ fn test_stacking_context_deep_bubbling() {
         EventPropagation::Continue
     });
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -1148,7 +1168,8 @@ fn test_stacking_context_bubbling_across_stacking_contexts() {
         EventPropagation::Continue
     });
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -1193,21 +1214,22 @@ fn test_stacking_context_multiple_escaped_children() {
     let view = Stack::new((Stack::new((
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(3))
-            .on_click_stop(move |_| c0.set(true)),
+            .action(move || c0.set(true)),
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(7))
-            .on_click_stop(move |_| c1.set(true)),
+            .action(move || c1.set(true)),
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(5))
-            .on_click_stop(move |_| c2.set(true)),
+            .action(move || c2.set(true)),
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(7))
-            .on_click_stop(move |_| c3.set(true)),
+            .action(move || c3.set(true)),
     ))
     .style(|s| s.absolute().inset(0.0).size(100.0, 100.0)),))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -1247,20 +1269,21 @@ fn test_stacking_context_explicit_z_index_zero() {
         // Parent with explicit z-index: 0
         Stack::new((Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(100))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_child_clone.set(true);
             }),))
         .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(0)),
         // Sibling
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_sibling_clone.set(true);
             }),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -1301,20 +1324,21 @@ fn test_opacity_creates_stacking_context() {
         // Parent with opacity < 1 (should create stacking context)
         Stack::new((Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(100))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_child_clone.set(true);
             }),))
         .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).opacity(0.5)),
         // Sibling with z-index 5
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(5))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_sibling_clone.set(true);
             }),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -1353,20 +1377,21 @@ fn test_stacking_model_opacity_does_not_affect_stacking() {
         // Parent with opacity = 1.0 (still bounds children in simplified stacking model)
         Stack::new((Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(10))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_child_clone.set(true);
             }),))
         .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).opacity(1.0)),
         // Sibling with z-index 5
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(5))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_sibling_clone.set(true);
             }),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -1401,19 +1426,20 @@ fn test_opacity_near_zero_creates_stacking_context() {
     let view = Stack::new((
         Stack::new((Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(100))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_child_clone.set(true);
             }),))
         .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).opacity(0.01)),
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(5))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_sibling_clone.set(true);
             }),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -1453,7 +1479,7 @@ fn test_opacity_with_z_index_combination() {
         // ParentA with z-index: 10 and opacity: 0.5
         Stack::new((Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(100))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_a_clone.set(true);
             }),))
         .style(|s| {
@@ -1466,14 +1492,15 @@ fn test_opacity_with_z_index_combination() {
         // ParentB with z-index: 5
         Stack::new((Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_b_clone.set(true);
             }),))
         .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(5)),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -1511,7 +1538,7 @@ fn test_opacity_deeply_nested() {
             // Level2 (opacity creates stacking context)
             Stack::new((Empty::new()
                 .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(100))
-                .on_click_stop(move |_| {
+                .action(move || {
                     clicked_deep_clone.set(true);
                 }),))
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).opacity(0.8)),
@@ -1520,13 +1547,14 @@ fn test_opacity_deeply_nested() {
         // Sibling
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(5))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_sibling_clone.set(true);
             }),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 

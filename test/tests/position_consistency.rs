@@ -17,6 +17,7 @@ use floem::kurbo::{Point, Size};
 use floem::prelude::*;
 use floem::unit::Pct;
 use floem_test::prelude::*;
+use floem_test::TestRoot;
 use serial_test::serial;
 
 // =============================================================================
@@ -26,13 +27,14 @@ use serial_test::serial;
 #[test]
 #[serial]
 fn test_visual_rect_origin_at_window_origin() {
+    let root = TestRoot::new();
     // For simple views, layout_rect origin should be at window_origin
     let inner = Empty::new().style(|s| s.size(40.0, 40.0));
     let inner_id = inner.view_id();
 
     let view = Container::new(inner).style(|s| s.padding(20.0).size(80.0, 80.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.rebuild();
 
     let window_origin = inner_id.get_visual_origin();
@@ -55,6 +57,7 @@ fn test_visual_rect_origin_at_window_origin() {
 #[test]
 #[serial]
 fn test_visual_rect_includes_children() {
+    let root = TestRoot::new();
     // Parent's layout_rect should include children's bounds
     let child = Empty::new().style(|s| s.size(100.0, 100.0));
     let child_id = child.view_id();
@@ -62,7 +65,7 @@ fn test_visual_rect_includes_children() {
     let parent = Container::new(child).style(|s| s.padding(10.0));
     let parent_id = parent.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(parent, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, parent, 200.0, 200.0);
     harness.rebuild();
 
     let parent_rect = parent_id.get_visual_rect();
@@ -90,11 +93,12 @@ fn test_visual_rect_includes_children() {
 #[test]
 #[serial]
 fn test_visual_rect_size_matches_view_size() {
+    let root = TestRoot::new();
     // For leaf views, layout_rect size should match the view's style size
     let view = Empty::new().style(|s| s.size(75.0, 50.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.rebuild();
 
     let visual_rect = id.get_visual_rect();
@@ -118,6 +122,7 @@ fn test_visual_rect_size_matches_view_size() {
 #[test]
 #[serial]
 fn test_deeply_nested_positions_accumulate() {
+    let root = TestRoot::new();
     // Positions should accumulate correctly through nesting
     let deep = Empty::new().style(|s| s.size(20.0, 20.0));
     let deep_id = deep.view_id();
@@ -128,7 +133,7 @@ fn test_deeply_nested_positions_accumulate() {
     )
     .style(|s| s.padding(10.0).size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     let window_origin = deep_id.get_visual_origin();
@@ -151,6 +156,7 @@ fn test_deeply_nested_positions_accumulate() {
 #[test]
 #[serial]
 fn test_sibling_positions_independent() {
+    let root = TestRoot::new();
     // Sibling views should have independent positions
     let child1 = Empty::new().style(|s| s.size(30.0, 30.0));
     let child1_id = child1.view_id();
@@ -161,7 +167,7 @@ fn test_sibling_positions_independent() {
     // Vertical stack: child1 on top, child2 below
     let view = Stack::vertical((child1, child2)).style(|s| s.gap(10.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.rebuild();
 
     let pos1 = child1_id.get_visual_origin();
@@ -189,12 +195,13 @@ fn test_sibling_positions_independent() {
 #[test]
 #[serial]
 fn test_transform_is_identity_without_css_transforms() {
+    let root = TestRoot::new();
     // Without CSS transforms, the visual position should be at 0, 0
     let size = Size::new(50., 50.);
     let view = Empty::new().style(move |s| s.size(size.width, size.height));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.rebuild();
 
     assert!(id.get_visual_rect() == floem::kurbo::Rect::from_origin_size(Point::ZERO, size));

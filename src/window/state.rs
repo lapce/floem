@@ -79,6 +79,7 @@ pub struct WindowState {
     pub(crate) focus_state: FocusState<ElementId>,
     pub(crate) focusable: FxHashSet<ViewId>,
     pub(crate) file_hover_state: HoverState<ElementId>,
+    pub(crate) file_drag_paths: Option<Rc<[std::path::PathBuf]>>,
     pub(crate) element_id_cursors: FxHashMap<ElementId, CursorStyle>,
     // whether the window is in light or dark mode
     pub(crate) light_dark_theme: winit::window::Theme,
@@ -161,6 +162,7 @@ impl WindowState {
             click_state: ClickState::new(),
             hover_state: HoverState::new(),
             file_hover_state: HoverState::new(),
+            file_drag_paths: None,
             element_id_cursors: FxHashMap::default(),
             focusable: FxHashSet::default(),
             theme_overriden: false,
@@ -896,9 +898,9 @@ fn compute_view_box_properties(
 
         // Compute local transform
         let parent_transform_for_children = Affine::translate(-parent_scroll);
-        let local_transform = view_local_transform
-            * parent_transform_for_children
-            * Affine::translate(local_pos.to_vec2());
+        let local_transform = parent_transform_for_children
+            * Affine::translate(local_pos.to_vec2())
+            * view_local_transform;
 
         // Compute layout window origin (position in window coordinates after scrolling)
         let layout_window_origin =

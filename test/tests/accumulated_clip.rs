@@ -8,7 +8,7 @@
 
 use floem::prelude::*;
 use floem::views::{Container, Empty, Scroll, Stack};
-use floem_test::{ClickTracker, HeadlessHarness, layers};
+use floem_test::{ClickTracker, HeadlessHarness, TestRoot, layers};
 use serial_test::serial;
 
 // =============================================================================
@@ -23,6 +23,7 @@ use serial_test::serial;
 #[test]
 #[serial]
 fn test_scroll_clips_content_beyond_viewport() {
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     // Button that's taller than the scroll container
@@ -37,7 +38,7 @@ fn test_scroll_clips_content_beyond_viewport() {
     // outside scroll are also outside window
     let view = Stack::new((scroll,)).style(|s| s.size(100.0, 50.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 50.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 50.0);
 
     // Click inside scroll viewport - should hit button
     harness.click(50.0, 25.0);
@@ -59,6 +60,7 @@ fn test_scroll_clips_content_beyond_viewport() {
 #[test]
 #[serial]
 fn test_scroll_clips_content_with_margin() {
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     // Button at y=100 (below scroll viewport of 50)
@@ -71,7 +73,7 @@ fn test_scroll_clips_content_with_margin() {
 
     let view = Stack::new((scroll,)).style(|s| s.size(100.0, 50.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 50.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view,100.0, 50.0);
 
     // The button is at y=100-150 in content coords, scroll shows y=0-50
     // So button is completely invisible
@@ -92,6 +94,7 @@ fn test_scroll_clips_content_with_margin() {
 #[test]
 #[serial]
 fn test_nested_scroll_simple() {
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     // Button fills inner scroll content
@@ -108,7 +111,7 @@ fn test_nested_scroll_simple() {
 
     let view = Stack::new((outer_scroll,)).style(|s| s.size(60.0, 60.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 60.0, 60.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view,60.0, 60.0);
 
     // Click at (20, 20) - inside both scrolls
     harness.click(20.0, 20.0);
@@ -130,6 +133,7 @@ fn test_nested_scroll_simple() {
 #[test]
 #[serial]
 fn test_nested_scroll_with_offset() {
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let button = tracker
@@ -145,7 +149,7 @@ fn test_nested_scroll_with_offset() {
 
     let view = Stack::new((outer_scroll,)).style(|s| s.size(80.0, 80.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 80.0, 80.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view,80.0, 80.0);
 
     // Inner scroll is at (20-60, 20-60)
     // Click at (10, 10) - before inner scroll
@@ -180,6 +184,7 @@ fn test_nested_scroll_with_offset() {
 #[test]
 #[serial]
 fn test_absolute_with_z_index_escapes_clip() {
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     // Dropdown that will be positioned outside the scroll viewport
@@ -205,7 +210,7 @@ fn test_absolute_with_z_index_escapes_clip() {
     // Window is taller to see the escaped dropdown
     let view = Stack::new((scroll,)).style(|s| s.size(100.0, 120.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 120.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view,100.0, 120.0);
 
     // Click at y=80 - outside scroll viewport but on the dropdown
     // The dropdown should receive this click because it has z-index and absolute positioning
@@ -221,6 +226,7 @@ fn test_absolute_with_z_index_escapes_clip() {
 #[test]
 #[serial]
 fn test_trigger_and_dropdown_click_dispatch() {
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     // Trigger button at the top (no z-index, just fills top 30px)
@@ -248,7 +254,7 @@ fn test_trigger_and_dropdown_click_dispatch() {
 
     let view = Stack::new((scroll,)).style(|s| s.size(100.0, 120.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 120.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view,100.0, 120.0);
 
     // Click at y=15 - on trigger (trigger is at y=0-30)
     // Dropdown is at y=30+ with z-index 100, but doesn't cover y=15
@@ -286,6 +292,7 @@ fn test_trigger_and_dropdown_click_dispatch() {
 #[test]
 #[serial]
 fn test_scroll_position_changes_clickable_area() {
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     // Two buttons vertically stacked
@@ -303,7 +310,7 @@ fn test_scroll_position_changes_clickable_area() {
 
     let view = Stack::new((scroll,)).style(|s| s.size(100.0, 50.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 50.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view,100.0, 50.0);
 
     // Initially: button1 at y=0-40 (visible), button2 at y=40-80 (partially visible)
 
@@ -348,6 +355,7 @@ fn test_scroll_position_changes_clickable_area() {
 #[test]
 #[serial]
 fn test_z_index_ordering_within_scroll() {
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let low_z = tracker
@@ -363,7 +371,7 @@ fn test_z_index_ordering_within_scroll() {
 
     let view = Stack::new((scroll,)).style(|s| s.size(60.0, 60.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 60.0, 60.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view,60.0, 60.0);
 
     // Inside scroll clip, high_z should win
     harness.click(30.0, 30.0);
@@ -382,6 +390,7 @@ fn test_z_index_ordering_within_scroll() {
 #[test]
 #[serial]
 fn test_hidden_view_no_clip_effect() {
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let visible_button = tracker
@@ -393,7 +402,7 @@ fn test_hidden_view_no_clip_effect() {
 
     let view = Stack::vertical((hidden_scroll, visible_button)).style(|s| s.size(100.0, 50.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 50.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view,100.0, 50.0);
 
     // The hidden scroll should not affect the visible button
     harness.click(50.0, 25.0);
@@ -404,6 +413,7 @@ fn test_hidden_view_no_clip_effect() {
 #[test]
 #[serial]
 fn test_pointer_events_none_with_scroll_clip() {
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let button = tracker
@@ -419,7 +429,7 @@ fn test_pointer_events_none_with_scroll_clip() {
 
     let view = Stack::new((scroll,)).style(|s| s.size(50.0, 50.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 50.0, 50.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view,50.0, 50.0);
 
     // Click should pass through overlay to button
     harness.click(25.0, 25.0);
@@ -433,6 +443,7 @@ fn test_pointer_events_none_with_scroll_clip() {
 #[test]
 #[serial]
 fn test_overlapping_scroll_containers() {
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let left_content = tracker
@@ -448,7 +459,7 @@ fn test_overlapping_scroll_containers() {
 
     let view = Stack::horizontal((left_scroll, right_scroll)).style(|s| s.size(80.0, 50.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 80.0, 50.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view,80.0, 50.0);
 
     // Click at x=15 - in left scroll only area
     harness.click(15.0, 25.0);
@@ -484,6 +495,7 @@ fn test_overlapping_scroll_containers() {
 #[test]
 #[serial]
 fn test_scroll_content_outside_viewport_not_clickable() {
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     // Large button that extends well beyond the scroll viewport
@@ -497,7 +509,7 @@ fn test_scroll_content_outside_viewport_not_clickable() {
     // Window is 300x300 to have space below the scroll
     let view = Stack::new((scroll,)).style(|s| s.size(100.0, 300.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 300.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view,100.0, 300.0);
 
     // Click at y=100 - inside scroll viewport (y=50-150)
     harness.click(50.0, 100.0);
@@ -522,6 +534,7 @@ fn test_scroll_content_outside_viewport_not_clickable() {
 #[test]
 #[serial]
 fn test_scrolled_out_content_top_not_clickable() {
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     // Two buttons stacked vertically
@@ -539,7 +552,7 @@ fn test_scrolled_out_content_top_not_clickable() {
 
     let view = Stack::new((scroll,)).style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view,100.0, 100.0);
 
     // Initially, button1 is at y=0-100, button2 is at y=100-200 (below viewport)
 

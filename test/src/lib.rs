@@ -62,9 +62,7 @@ pub use floem::ViewId;
 
 /// Prelude module for convenient imports in tests.
 pub mod prelude {
-    pub use super::{
-        ClickTracker, HeadlessHarnessExt, PointerCaptureTracker, ScrollTracker, layer, layers,
-    };
+    pub use super::{ClickTracker, PointerCaptureTracker, ScrollTracker, layer, layers};
     pub use floem::ViewId;
     pub use floem::event::PointerId;
     pub use floem::headless::*;
@@ -134,10 +132,11 @@ impl ClickTracker {
         let clicks = self.clicks.clone();
         let count = self.count.clone();
         let name = name.to_string();
-        view.into_view().action(move || {
-            clicks.borrow_mut().push(Some(name.clone()));
-            count.set(count.get() + 1);
-        })
+        view.into_view()
+            .on_event_cont(listener::Click, move |_, _| {
+                clicks.borrow_mut().push(Some(name.clone()));
+                count.set(count.get() + 1);
+            })
     }
 
     /// Returns true if any tracked view was clicked.
@@ -274,23 +273,6 @@ pub fn layers<VT: ViewTuple + 'static>(children: VT) -> impl IntoView {
     Stack::from_iter(children_iter).style(|s| s.size_full())
 }
 
-/// Extension trait for HeadlessHarness with convenient test methods.
-pub trait HeadlessHarnessExt {
-    /// Create a new headless harness with a specified size.
-    fn new_with_size(view: impl IntoView, width: f64, height: f64) -> HeadlessHarness;
-}
-
-impl HeadlessHarnessExt for HeadlessHarness {
-    /// Create a new headless harness with a specified size.
-    ///
-    /// This is a convenience method that combines `new()` and `set_size()`.
-    fn new_with_size(view: impl IntoView, width: f64, height: f64) -> HeadlessHarness {
-        let mut harness = HeadlessHarness::new(view);
-        harness.set_size(width, height);
-        harness
-    }
-}
-
 /// Tracks scroll events on Scroll views for testing.
 ///
 /// This helper records viewport changes from scroll events, making it easy
@@ -397,8 +379,6 @@ impl PointerCaptureTracker {
 
     /// Wrap a view to track pointer capture events with a name.
     pub fn track<V: IntoView>(&self, name: &str, view: V) -> impl IntoView + use<V> {
-        use floem::event::Event;
-
         let got_captures = self.got_captures.clone();
         let lost_captures = self.lost_captures.clone();
         let pointer_downs = self.pointer_downs.clone();

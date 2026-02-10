@@ -10,6 +10,7 @@ use floem::HasViewId;
 use floem::headless::HeadlessHarness;
 use floem::view::ParentView;
 use floem::views::{Clip, Decorators, Empty, Overlay, Stack};
+use floem_test::TestRoot;
 use serial_test::serial;
 use std::cell::Cell;
 use std::rc::Rc;
@@ -21,6 +22,7 @@ use std::rc::Rc;
 #[test]
 #[serial]
 fn test_fixed_element_fills_viewport() {
+    let root = TestRoot::new();
     // Test that a fixed element with inset(0) fills the entire viewport.
     //
     // Structure:
@@ -33,7 +35,7 @@ fn test_fixed_element_fills_viewport() {
 
     let view = Stack::new((Overlay::new().child(fixed_container),)).style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.rebuild();
 
     // Get the layout of the fixed element
@@ -52,6 +54,7 @@ fn test_fixed_element_fills_viewport() {
 #[test]
 #[serial]
 fn test_fixed_element_ignores_parent_position() {
+    let root = TestRoot::new();
     // Test that a fixed element is positioned at viewport origin,
     // regardless of where its parent is positioned.
     // We verify this by checking that the fixed element fills the viewport
@@ -68,7 +71,7 @@ fn test_fixed_element_ignores_parent_position() {
 
     let fixed_child = Empty::new()
         .style(|s| s.fixed().inset(0.0))
-        .on_click_stop(move |_| {
+        .action(move || {
             clicked_clone.set(true);
         });
     let fixed_id = fixed_child.view_id();
@@ -83,7 +86,7 @@ fn test_fixed_element_ignores_parent_position() {
     )
     .style(|s| s.size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     // Fixed element should fill the viewport
@@ -110,6 +113,7 @@ fn test_fixed_element_ignores_parent_position() {
 #[test]
 #[serial]
 fn test_fixed_element_children_use_viewport_percentages() {
+    let root = TestRoot::new();
     // Test that children of a fixed element use viewport-relative percentages.
     //
     // Structure:
@@ -133,7 +137,7 @@ fn test_fixed_element_children_use_viewport_percentages() {
     }),))
     .style(|s| s.size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     // The child should fill the fixed container which fills the viewport
@@ -154,6 +158,7 @@ fn test_fixed_element_children_use_viewport_percentages() {
 #[test]
 #[serial]
 fn test_fixed_element_receives_events_at_viewport_position() {
+    let root = TestRoot::new();
     // Test that a fixed element receives events at its viewport-relative position,
     // not at a position relative to its DOM parent.
     //
@@ -173,7 +178,7 @@ fn test_fixed_element_receives_events_at_viewport_position() {
     let view = Stack::new((Stack::new((Overlay::new().child(
         Empty::new()
             .style(|s| s.fixed().inset(0.0))
-            .on_click_stop(move |_| {
+            .action(move || {
                 clicked_clone.set(true);
             }),
     ),))
@@ -185,7 +190,7 @@ fn test_fixed_element_receives_events_at_viewport_position() {
     }),))
     .style(|s| s.size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
 
     // Click at (25, 25) - outside parent bounds but inside fixed element
     harness.click(25.0, 25.0);
@@ -199,6 +204,7 @@ fn test_fixed_element_receives_events_at_viewport_position() {
 #[test]
 #[serial]
 fn test_fixed_element_blocks_events_to_views_behind() {
+    let root = TestRoot::new();
     // Test that a fixed element blocks events to views behind it.
     //
     // Structure:
@@ -216,18 +222,19 @@ fn test_fixed_element_blocks_events_to_views_behind() {
     let view = Stack::new((
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
-            .on_click_stop(move |_| {
+            .action(move || {
                 bg_clone.set(true);
             }),
-        Overlay::new().child(Empty::new().style(|s| s.fixed().inset(0.0)).on_click_stop(
-            move |_| {
+        Overlay::new().child(Empty::new().style(|s| s.fixed().inset(0.0)).on_event_stop(
+            floem::event::listener::Click,
+            move |_, _| {
                 fixed_clone.set(true);
             },
         )),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -245,6 +252,7 @@ fn test_fixed_element_blocks_events_to_views_behind() {
 #[test]
 #[serial]
 fn test_fixed_element_escapes_parent_clip() {
+    let root = TestRoot::new();
     // Test that a fixed element inside a Clip parent still receives events
     // outside the clip bounds.
     //
@@ -268,20 +276,20 @@ fn test_fixed_element_escapes_parent_clip() {
         Clip::new(Stack::new((Overlay::new().child(
             Empty::new()
                 .style(|s| s.fixed().inset(0.0))
-                .on_click_stop(move |_| {
+                .action(move || {
                     fixed_clone.set(true);
                 }),
         ),)))
         .style(|s| s.absolute().inset_left(0.0).inset_top(0.0).size(50.0, 50.0)),
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(-1))
-            .on_click_stop(move |_| {
+            .action(move || {
                 bg_clone.set(true);
             }),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Click outside clip bounds
     harness.click(75.0, 25.0);
@@ -303,6 +311,7 @@ fn test_fixed_element_escapes_parent_clip() {
 #[test]
 #[serial]
 fn test_hidden_fixed_element_does_not_block_events() {
+    let root = TestRoot::new();
     // Test that a hidden fixed element does not block events to views below.
     //
     // Structure:
@@ -320,20 +329,20 @@ fn test_hidden_fixed_element_does_not_block_events() {
     let view = Stack::new((
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
-            .on_click_stop(move |_| {
+            .action(move || {
                 bg_clone.set(true);
             }),
         Overlay::new().child(
             Empty::new()
                 .style(|s| s.fixed().inset(0.0).display(floem::taffy::Display::None))
-                .on_click_stop(move |_| {
+                .action(move || {
                     fixed_clone.set(true);
                 }),
         ),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -357,6 +366,7 @@ fn test_hidden_fixed_element_does_not_block_events() {
 #[test]
 #[serial]
 fn test_fixed_element_in_paint_order() {
+    let root = TestRoot::new();
     // Test that a fixed element appears in the paint order.
 
     let fixed_element = Empty::new().style(|s| s.fixed().inset(0.0));
@@ -364,7 +374,7 @@ fn test_fixed_element_in_paint_order() {
 
     let view = Stack::new((Overlay::new().child(fixed_element),)).style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     let paint_order = harness.paint_and_get_order();
 
@@ -379,6 +389,7 @@ fn test_fixed_element_in_paint_order() {
 #[test]
 #[serial]
 fn test_fixed_element_painted_after_regular_views() {
+    let root = TestRoot::new();
     // Test that a fixed overlay element is painted after regular views.
     //
     // Structure:
@@ -396,7 +407,7 @@ fn test_fixed_element_painted_after_regular_views() {
     let view =
         Stack::new((regular, Overlay::new().child(fixed_element))).style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     let paint_order = harness.paint_and_get_order();
 
@@ -425,6 +436,7 @@ fn test_fixed_element_painted_after_regular_views() {
 #[test]
 #[serial]
 fn test_fixed_element_fills_large_viewport() {
+    let root = TestRoot::new();
     // Test that a fixed element correctly fills a large viewport.
     // This verifies the fixed sizing works with different initial viewport sizes.
 
@@ -434,7 +446,7 @@ fn test_fixed_element_fills_large_viewport() {
     let view = Stack::new((Overlay::new().child(fixed_element),)).style(|s| s.size(100.0, 100.0));
 
     // Use a larger viewport than the root stack
-    let mut harness = HeadlessHarness::new_with_size(view, 500.0, 400.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 500.0, 400.0);
     harness.rebuild();
 
     let layout = fixed_id
@@ -456,6 +468,7 @@ fn test_fixed_element_fills_large_viewport() {
 #[test]
 #[serial]
 fn test_fixed_container_child_percentage_positioning() {
+    let root = TestRoot::new();
     // Test the dialog centering pattern:
     // - Fixed container fills viewport
     // - Child uses absolute + left_1_2() + top_1_2() to center
@@ -497,7 +510,7 @@ fn test_fixed_container_child_percentage_positioning() {
     ))
     .style(|s| s.size(400.0, 300.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 400.0, 300.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 400.0, 300.0);
     harness.rebuild();
 
     // Fixed container should fill viewport
@@ -550,6 +563,7 @@ fn test_fixed_container_child_percentage_positioning() {
 #[test]
 #[serial]
 fn test_fixed_container_centered_child_receives_click() {
+    let root = TestRoot::new();
     // Test that a centered child inside a fixed container receives clicks
     // at the correct viewport-relative position.
     //
@@ -575,7 +589,7 @@ fn test_fixed_container_centered_child_receives_click() {
                 .inset_top(Pct(50.0))
                 .size(100.0, 80.0)
         })
-        .on_click_stop(move |_| {
+        .action(move || {
             clicked_clone.set(true);
         });
 
@@ -592,7 +606,7 @@ fn test_fixed_container_centered_child_receives_click() {
     ))
     .style(|s| s.size(400.0, 300.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 400.0, 300.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 400.0, 300.0);
 
     // Click at center of the centered child: (200 + 50, 150 + 40) = (250, 190)
     harness.click(250.0, 190.0);
@@ -606,6 +620,7 @@ fn test_fixed_container_centered_child_receives_click() {
 #[test]
 #[serial]
 fn test_fixed_container_with_translate_centering() {
+    let root = TestRoot::new();
     // Test the complete dialog centering pattern with translate:
     // position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
     //
@@ -637,7 +652,7 @@ fn test_fixed_container_with_translate_centering() {
     ))
     .style(|s| s.size(400.0, 300.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 400.0, 300.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 400.0, 300.0);
     harness.rebuild();
 
     let layout = centered_id.get_layout().expect("Should have layout");
@@ -691,6 +706,7 @@ fn test_fixed_container_with_translate_centering() {
 #[test]
 #[serial]
 fn test_fixed_element_window_origin() {
+    let root = TestRoot::new();
     // Test that a fixed element's window_origin is its Taffy layout position,
     // NOT offset by the parent's position.
     //
@@ -719,7 +735,7 @@ fn test_fixed_element_window_origin() {
     ))
     .style(|s| s.size(400.0, 300.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 400.0, 300.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 400.0, 300.0);
     harness.rebuild();
 
     // Get the window_origin - this is what determines paint position
@@ -760,6 +776,7 @@ fn test_fixed_element_window_origin() {
 #[test]
 #[serial]
 fn test_fixed_element_with_inset_zero_window_origin() {
+    let root = TestRoot::new();
     // Test that a fixed element with inset(0) and size_full() has window_origin at (0, 0)
     // and fills the viewport.
     //
@@ -780,7 +797,7 @@ fn test_fixed_element_with_inset_zero_window_origin() {
     ))
     .style(|s| s.size(400.0, 300.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 400.0, 300.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 400.0, 300.0);
     harness.rebuild();
 
     let window_origin = fixed_id.get_visual_origin();
@@ -823,6 +840,7 @@ fn test_fixed_element_with_inset_zero_window_origin() {
 #[test]
 #[serial]
 fn test_non_fixed_element_window_origin_includes_parent() {
+    let root = TestRoot::new();
     // Verify that NON-fixed elements DO include parent position in window_origin.
     // This is the expected behavior for regular elements.
 
@@ -840,7 +858,7 @@ fn test_non_fixed_element_window_origin_includes_parent() {
     ))
     .style(|s| s.size(400.0, 300.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 400.0, 300.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 400.0, 300.0);
     harness.rebuild();
 
     let window_origin = child_id.get_visual_origin();
@@ -875,6 +893,7 @@ fn test_non_fixed_element_window_origin_includes_parent() {
 #[test]
 #[serial]
 fn test_fixed_overlay_child_paint_at_viewport_origin() {
+    let root = TestRoot::new();
     // Test that when an Overlay's CHILD is fixed-positioned (not the Overlay itself),
     // it still paints at the viewport origin.
     //
@@ -890,7 +909,7 @@ fn test_fixed_overlay_child_paint_at_viewport_origin() {
     // The fixed style is on the child of Overlay, not the Overlay itself
     let fixed_child = Stack::new((Empty::new()
         .style(|s| s.absolute().inset(0.0))
-        .on_click_stop(move |_| {
+        .action(move || {
             clicked_clone.set(true);
         }),))
     .style(|s| s.fixed().inset(0.0));
@@ -906,7 +925,7 @@ fn test_fixed_overlay_child_paint_at_viewport_origin() {
     ))
     .style(|s| s.size(400.0, 300.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 400.0, 300.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 400.0, 300.0);
 
     // Click at (10, 10) - this is at the viewport origin, far from the parent at (100, 100)
     // If the paint transform is correctly reset, the fixed overlay will be painted
@@ -922,6 +941,7 @@ fn test_fixed_overlay_child_paint_at_viewport_origin() {
 #[test]
 #[serial]
 fn test_fixed_overlay_child_with_scroll_offset() {
+    let root = TestRoot::new();
     // Test that fixed positioning works correctly when inside a scrolled container.
     // This simulates the Dialog inside Scroll scenario from the showcase.
     //
@@ -946,7 +966,7 @@ fn test_fixed_overlay_child_with_scroll_offset() {
                 .inset_top(Pct(50.0))
                 .size(100.0, 80.0)
         })
-        .on_click_stop(move |_| {
+        .action(move || {
             clicked_clone.set(true);
         });
 
@@ -967,7 +987,7 @@ fn test_fixed_overlay_child_with_scroll_offset() {
     }),))
     .style(|s| s.size(400.0, 300.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 400.0, 300.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 400.0, 300.0);
 
     // Click at center of the clickable child: (200 + 50, 150 + 40) = (250, 190)
     // This should hit even though the scroll container is offset
@@ -982,6 +1002,7 @@ fn test_fixed_overlay_child_with_scroll_offset() {
 #[test]
 #[serial]
 fn test_single_fixed_overlay_receives_click() {
+    let root = TestRoot::new();
     // Simplified test: single fixed overlay inside an offset container.
     // The fixed element should receive clicks at its viewport position,
     // ignoring the parent container's offset.
@@ -992,7 +1013,7 @@ fn test_single_fixed_overlay_receives_click() {
     // Fixed element positioned at (10, 10) with size 50x50
     let fixed = Empty::new()
         .style(|s| s.fixed().inset_left(10.0).inset_top(10.0).size(50.0, 50.0))
-        .on_click_stop(move |_| {
+        .action(move || {
             clicked_clone.set(true);
         });
 
@@ -1008,7 +1029,7 @@ fn test_single_fixed_overlay_receives_click() {
     ))
     .style(|s| s.size(400.0, 300.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 400.0, 300.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 400.0, 300.0);
 
     // Click at viewport position (35, 35) = center of (10,10)-(60,60)
     harness.click(35.0, 35.0);
@@ -1021,6 +1042,7 @@ fn test_single_fixed_overlay_receives_click() {
 #[test]
 #[serial]
 fn test_two_fixed_overlays_click_second() {
+    let root = TestRoot::new();
     // Test that the second fixed overlay can receive clicks when there are two overlays.
     // This verifies that clicking on the second overlay works (simpler case).
 
@@ -1032,7 +1054,7 @@ fn test_two_fixed_overlays_click_second() {
     // First fixed element at (10, 10) with size 50x50
     let fixed1 = Empty::new()
         .style(|s| s.fixed().inset_left(10.0).inset_top(10.0).size(50.0, 50.0))
-        .on_click_stop(move |_| {
+        .action(move || {
             clicked1_clone.set(true);
         });
 
@@ -1044,7 +1066,7 @@ fn test_two_fixed_overlays_click_second() {
                 .inset_top(200.0)
                 .size(50.0, 50.0)
         })
-        .on_click_stop(move |_| {
+        .action(move || {
             clicked2_clone.set(true);
         });
 
@@ -1066,7 +1088,7 @@ fn test_two_fixed_overlays_click_second() {
     ))
     .style(|s| s.size(400.0, 300.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 400.0, 300.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 400.0, 300.0);
 
     // Click second fixed element at (325, 225) = center of (300,200)-(350,250)
     harness.click(325.0, 225.0);
@@ -1083,6 +1105,7 @@ fn test_two_fixed_overlays_click_second() {
 #[test]
 #[serial]
 fn test_fixed_overlay_with_non_fixed_sibling() {
+    let root = TestRoot::new();
     // Test that a fixed overlay works when there's a sibling overlay without fixed positioning.
     // This helps diagnose if the issue is with fixed positioning or overlay ordering.
 
@@ -1092,7 +1115,7 @@ fn test_fixed_overlay_with_non_fixed_sibling() {
     // Fixed element at (10, 10) with size 50x50
     let fixed1 = Empty::new()
         .style(|s| s.fixed().inset_left(10.0).inset_top(10.0).size(50.0, 50.0))
-        .on_click_stop(move |_| {
+        .action(move || {
             clicked1_clone.set(true);
         });
 
@@ -1117,7 +1140,7 @@ fn test_fixed_overlay_with_non_fixed_sibling() {
     ))
     .style(|s| s.size(400.0, 300.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 400.0, 300.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 400.0, 300.0);
 
     // Click at (35, 35) should hit the fixed element
     harness.click(35.0, 35.0);
@@ -1130,6 +1153,7 @@ fn test_fixed_overlay_with_non_fixed_sibling() {
 #[test]
 #[serial]
 fn test_two_fixed_overlays_non_overlapping() {
+    let root = TestRoot::new();
     // Test that multiple fixed overlays with non-overlapping regions both receive clicks
     // at their respective positions. Each overlay has a fixed child at a different
     // viewport-relative position.
@@ -1145,7 +1169,7 @@ fn test_two_fixed_overlays_non_overlapping() {
     // First fixed element at (10, 10) with size 50x50
     let fixed1 = Empty::new()
         .style(|s| s.fixed().inset_left(10.0).inset_top(10.0).size(50.0, 50.0))
-        .on_click_stop(move |_| {
+        .action(move || {
             clicked1_clone.set(true);
         });
 
@@ -1157,7 +1181,7 @@ fn test_two_fixed_overlays_non_overlapping() {
                 .inset_top(200.0)
                 .size(50.0, 50.0)
         })
-        .on_click_stop(move |_| {
+        .action(move || {
             clicked2_clone.set(true);
         });
 
@@ -1178,7 +1202,7 @@ fn test_two_fixed_overlays_non_overlapping() {
     ))
     .style(|s| s.size(400.0, 300.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 400.0, 300.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 400.0, 300.0);
 
     // Click the second fixed element at (325, 225) - center of (300,200)-(350,250)
     harness.click(325.0, 225.0);
@@ -1200,6 +1224,7 @@ fn test_two_fixed_overlays_non_overlapping() {
 #[test]
 #[serial]
 fn test_fixed_element_resizes_with_window() {
+    let root = TestRoot::new();
     // Test that a fixed element with inset(0) resizes when the window resizes.
     //
     // This is critical for dialogs and modals that should fill the viewport.
@@ -1210,7 +1235,7 @@ fn test_fixed_element_resizes_with_window() {
 
     let view = Stack::new((Overlay::new().child(fixed_child),)).style(|s| s.size(400.0, 300.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 400.0, 300.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 400.0, 300.0);
     harness.rebuild();
 
     // Initial size should be 400x300
@@ -1259,6 +1284,7 @@ fn test_fixed_element_resizes_with_window() {
 #[test]
 #[serial]
 fn test_fixed_element_with_size_full_resizes() {
+    let root = TestRoot::new();
     // Test that a fixed element with size_full() resizes when the window resizes.
     // This is the pattern used by Dialog: fixed().inset_0().size_full()
 
@@ -1267,7 +1293,7 @@ fn test_fixed_element_with_size_full_resizes() {
 
     let view = Stack::new((Overlay::new().child(fixed_child),)).style(|s| s.size(400.0, 300.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 400.0, 300.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 400.0, 300.0);
     harness.rebuild();
 
     // Initial size
@@ -1305,6 +1331,7 @@ fn test_fixed_element_with_size_full_resizes() {
 #[test]
 #[serial]
 fn test_fixed_element_percentage_children_resize() {
+    let root = TestRoot::new();
     // Test that children using percentage positioning within a fixed container
     // update their positions when the window resizes.
     //
@@ -1324,7 +1351,7 @@ fn test_fixed_element_percentage_children_resize() {
 
     let view = Stack::new((Overlay::new().child(fixed_container),)).style(|s| s.size(400.0, 300.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 400.0, 300.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 400.0, 300.0);
     harness.rebuild();
 
     // Initial position: 50% of 400 = 200, 50% of 300 = 150
@@ -1377,6 +1404,7 @@ fn test_fixed_element_percentage_children_resize() {
 #[test]
 #[serial]
 fn test_fixed_element_unregisters_when_style_changes() {
+    let root = TestRoot::new();
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 
     // Signal to control whether the element is fixed
@@ -1394,7 +1422,7 @@ fn test_fixed_element_unregisters_when_style_changes() {
 
     let view = Stack::new((Overlay::new().child(child),)).style(|s| s.size(400.0, 300.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 400.0, 300.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 400.0, 300.0);
     harness.rebuild();
 
     // Initially fixed: should fill viewport
@@ -1460,6 +1488,7 @@ fn test_fixed_element_unregisters_when_style_changes() {
 #[test]
 #[serial]
 fn test_element_registers_when_becoming_fixed() {
+    let root = TestRoot::new();
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 
     // Start as non-fixed
@@ -1476,7 +1505,7 @@ fn test_element_registers_when_becoming_fixed() {
 
     let view = Stack::new((Overlay::new().child(child),)).style(|s| s.size(400.0, 300.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 400.0, 300.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 400.0, 300.0);
     harness.rebuild();
 
     // Initially non-fixed: explicit size

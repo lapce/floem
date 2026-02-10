@@ -883,8 +883,8 @@ impl Event {
     pub(crate) fn is_keyboard_trigger(&self) -> bool {
         match self {
             Event::Key(key) => {
-                key.state == KeyState::Up
-                    && matches!(key.code, Code::NumpadEnter | Code::Enter | Code::Space)
+                matches!(key.code, Code::NumpadEnter | Code::Enter | Code::Space)
+                    && (key.state == KeyState::Up || (key.state == KeyState::Down && key.repeat))
             }
             _ => false,
         }
@@ -897,7 +897,7 @@ impl Event {
             // Window events should always be delivered regardless of disabled state
             Event::Window(_) => true,
             // File drops should be allowed on disabled views for accessibility
-            Event::FileDrag(FileDragEvent::DragDropped { .. }) => true,
+            Event::FileDrag(FileDragEvent::Dropped(_)) => true,
             // Lost capture events should be delivered so views can clean up capture state
             Event::PointerCapture(PointerCaptureEvent::Lost(_)) => true,
 
@@ -911,9 +911,7 @@ impl Event {
             Event::Ime(_) => false,
             // File drag preview events should not be delivered to disabled views
             Event::FileDrag(
-                FileDragEvent::DragEntered { .. }
-                | FileDragEvent::DragMoved { .. }
-                | FileDragEvent::DragLeft { .. },
+                FileDragEvent::Enter(_) | FileDragEvent::Move(_) | FileDragEvent::Leave(_),
             ) => false,
             // Keyboard events should not trigger on disabled views
             Event::Key(_) => false,
@@ -937,15 +935,47 @@ impl Event {
             | Event::Pointer(PointerEvent::Scroll(PointerScrollEvent { state, .. })) => {
                 Some(state.logical_point())
             }
-            Event::FileDrag(file_drag_event) => file_drag_event.logical_point(),
+            Event::FileDrag(file_drag_event) => Some(file_drag_event.logical_point()),
             _ => None,
         }
     }
 
-    pub fn offset(self, offset: (f64, f64)) -> Event {
-        self.transform(Affine::translate(offset))
-    }
-
+    /// Transform this event from one coordinate space to another.
+    ///
+    /// This method applies an affine transformation to all position-related data in the event,
+    /// including pointer positions, drag positions, and file drag positions.
+    ///
+    /// # Parameters
+    ///
+    /// * `transform` - An affine transform that maps from the **source coordinate space to the
+    ///   target coordinate space**. This transform is applied directly to event positions without
+    ///   inversion.
+    ///
+    /// # Coordinate Space Mapping
+    ///
+    /// If you want to transform an event from world/window coordinates to a view's local
+    /// coordinate space, you must pass the **inverse** of the view's world transform:
+    ///
+    /// ```ignore
+    /// let world_transform = box_tree.world_transform(node_id)?; // local → world
+    /// let local_transform = world_transform.inverse();           // world → local
+    /// let local_event = event.transform(local_transform);
+    /// ```
+    ///
+    /// Common use cases:
+    /// - **World to local**: Pass `world_transform.inverse()` to convert window coordinates to view-local coordinates
+    /// - **Local to world**: Pass `world_transform` to convert view-local coordinates to window coordinates
+    /// - **Between views**: Compose transforms as needed: `target_world.inverse() * source_world`
+    ///
+    /// # Event Types Transformed
+    ///
+    /// This method transforms position data for:
+    /// - `PointerEvent` variants (Down, Up, Move, Scroll, Gesture)
+    /// - `FileDragEvent` variants (Enter, Move, Leave, Dropped)
+    /// - `DragTarget` and `DragSource` events (both current and start positions)
+    /// - Custom events (via their `transform` method)
+    ///
+    /// Other event types (Key, Focus, Window, etc.) are returned unchanged.
     pub fn transform(mut self, transform: Affine) -> Event {
         match &mut self {
             Self::Pointer(
@@ -956,43 +986,25 @@ impl Event {
                 | PointerEvent::Scroll(PointerScrollEvent { state, .. }),
             ) => {
                 let point = state.logical_point();
-                let transformed_point = transform.inverse() * point;
+                let transformed_point = transform * point;
                 let phys_pos = LogicalPosition::new(transformed_point.x, transformed_point.y)
                     .to_physical(state.scale_factor);
                 state.position = phys_pos;
             }
             Self::FileDrag(
-                FileDragEvent::DragEntered(dropped_file::FileDragEntered {
-                    position,
-                    scale_factor,
-                    ..
-                })
-                | FileDragEvent::DragMoved(dropped_file::FileDragMoved {
-                    position,
-                    scale_factor,
-                })
-                | FileDragEvent::DragDropped(dropped_file::FileDragDropped {
-                    position,
-                    scale_factor,
-                    ..
-                })
-                | FileDragEvent::DragLeft(dropped_file::FileDragLeft {
-                    position: Some(position),
-                    scale_factor,
-                }),
+                FileDragEvent::Enter(dropped_file::FileDragEnter { position, .. })
+                | FileDragEvent::Move(dropped_file::FileDragMove { position, .. })
+                | FileDragEvent::Leave(dropped_file::FileDragLeave { position })
+                | FileDragEvent::Dropped(dropped_file::FileDragDropped { position, .. }),
             ) => {
-                let log_pos = position.to_logical(*scale_factor);
-                let point = Point::new(log_pos.x, log_pos.y);
-                let transformed_point = transform.inverse() * point;
-                let phys_pos = LogicalPosition::new(transformed_point.x, transformed_point.y)
-                    .to_physical(*scale_factor);
-                *position = phys_pos;
+                let transformed_point = transform * *position;
+                *position = transformed_point;
             }
             Self::DragTarget(de) => {
                 // Transform current state
                 let state = de.current_state_mut();
                 let point = state.logical_point();
-                let transformed_point = transform.inverse() * point;
+                let transformed_point = transform * point;
                 let phys_pos = LogicalPosition::new(transformed_point.x, transformed_point.y)
                     .to_physical(state.scale_factor);
                 state.position = phys_pos;
@@ -1000,7 +1012,7 @@ impl Event {
                 // Transform start state
                 let start_state = de.start_state_mut();
                 let start_point = start_state.logical_point();
-                let transformed_start_point = transform.inverse() * start_point;
+                let transformed_start_point = transform * start_point;
                 let phys_start_pos =
                     LogicalPosition::new(transformed_start_point.x, transformed_start_point.y)
                         .to_physical(start_state.scale_factor);
@@ -1010,7 +1022,7 @@ impl Event {
                 // Transform current state
                 let state = de.current_state_mut();
                 let point = state.logical_point();
-                let transformed_point = transform.inverse() * point;
+                let transformed_point = transform * point;
                 let phys_pos = LogicalPosition::new(transformed_point.x, transformed_point.y)
                     .to_physical(state.scale_factor);
                 state.position = phys_pos;
@@ -1018,7 +1030,7 @@ impl Event {
                 // Transform start state
                 let start_state = de.start_state_mut();
                 let start_point = start_state.logical_point();
-                let transformed_start_point = transform.inverse() * start_point;
+                let transformed_start_point = transform * start_point;
                 let phys_start_pos =
                     LogicalPosition::new(transformed_start_point.x, transformed_start_point.y)
                         .to_physical(start_state.scale_factor);
@@ -1027,10 +1039,6 @@ impl Event {
             Self::Pointer(
                 PointerEvent::Cancel(_) | PointerEvent::Leave(_) | PointerEvent::Enter(_),
             )
-            | Self::FileDrag(FileDragEvent::DragLeft(dropped_file::FileDragLeft {
-                position: None,
-                ..
-            }))
             | Self::Key(_)
             | Self::PointerCapture(_)
             | Self::Focus(_)
@@ -1039,7 +1047,9 @@ impl Event {
             | Self::Interaction(_)
             | Self::Extracted => {}
             // TODO: make dyn custom event impl clone then use transform method
-            Self::Custom(_custom) => {}
+            Self::Custom(custom) => {
+                custom.transform(transform);
+            }
         }
         self
     }
@@ -1090,10 +1100,10 @@ impl Event {
             Self::Interaction(InteractionEvent::Click) => Click::listener_key(),
             Self::Interaction(InteractionEvent::DoubleClick) => DoubleClick::listener_key(),
             Self::Interaction(InteractionEvent::SecondaryClick) => SecondaryClick::listener_key(),
-            Self::FileDrag(FileDragEvent::DragDropped { .. }) => DroppedFiles::listener_key(),
-            Self::FileDrag(FileDragEvent::DragEntered { .. }) => FileDragEnter::listener_key(),
-            Self::FileDrag(FileDragEvent::DragMoved { .. }) => FileDragMove::listener_key(),
-            Self::FileDrag(FileDragEvent::DragLeft { .. }) => FileDragLeave::listener_key(),
+            Self::FileDrag(FileDragEvent::Dropped(_)) => FileDragDrop::listener_key(),
+            Self::FileDrag(FileDragEvent::Enter(_)) => FileDragEnter::listener_key(),
+            Self::FileDrag(FileDragEvent::Move(_)) => FileDragMove::listener_key(),
+            Self::FileDrag(FileDragEvent::Leave(_)) => FileDragLeave::listener_key(),
             Self::DragSource(DragSourceEvent::Start(..)) => DragStart::listener_key(),
             Self::DragSource(DragSourceEvent::Move(..)) => DragMove::listener_key(),
             Self::DragSource(DragSourceEvent::Enter(..)) => DragSourceEnter::listener_key(),

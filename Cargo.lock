@@ -1432,6 +1432,7 @@ version = "0.2.0"
 dependencies = [
  "floem",
  "serial_test",
+ "ui-events",
 ]
 
 [[package]]

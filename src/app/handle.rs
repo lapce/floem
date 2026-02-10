@@ -270,39 +270,29 @@ impl ApplicationHandle {
                 self.close_window(window_id, event_loop);
             }
             WindowEvent::DragDropped { paths, position } => {
-                window_handle.file_drag_event(FileDragEvent::DragDropped(
-                    dropped_file::FileDragDropped {
-                        paths,
-                        position: PhysicalPosition::new(position.x, position.y),
-                        scale_factor: window_handle.scale,
-                    },
-                ));
+                let logical_pos = PhysicalPosition::new(position.x, position.y).to_logical(window_handle.scale);
+                let paths_rc: std::rc::Rc<[std::path::PathBuf]> = paths.clone().into();
+                window_handle.file_drag_event(
+                    paths,
+                    FileDragEvent::Dropped(dropped_file::FileDragDropped {
+                        paths: paths_rc,
+                        position: Point::new(logical_pos.x, logical_pos.y),
+                    }),
+                );
             }
             WindowEvent::DragEntered { paths, position } => {
-                window_handle.file_drag_event(FileDragEvent::DragEntered(
-                    dropped_file::FileDragEntered {
-                        paths,
-                        position: PhysicalPosition::new(position.x, position.y),
-                        scale_factor: window_handle.scale,
-                    },
-                ));
+                let logical_pos = PhysicalPosition::new(position.x, position.y).to_logical(window_handle.scale);
+                window_handle.file_drag_start(
+                    paths,
+                    Point::new(logical_pos.x, logical_pos.y),
+                );
             }
             WindowEvent::DragMoved { position } => {
-                window_handle.file_drag_event(FileDragEvent::DragMoved(
-                    dropped_file::FileDragMoved {
-                        position: PhysicalPosition::new(position.x, position.y),
-                        scale_factor: window_handle.scale,
-                    },
-                ));
+                let logical_pos = PhysicalPosition::new(position.x, position.y).to_logical(window_handle.scale);
+                window_handle.file_drag_move(Point::new(logical_pos.x, logical_pos.y));
             }
-            WindowEvent::DragLeft { position } => {
-                let pos = position.map(|p| PhysicalPosition::new(p.x, p.y));
-                window_handle.file_drag_event(FileDragEvent::DragLeft(
-                    dropped_file::FileDragLeft {
-                        position: pos,
-                        scale_factor: window_handle.scale,
-                    },
-                ));
+            WindowEvent::DragLeft { .. } => {
+                window_handle.file_drag_end();
             }
             WindowEvent::Focused(focused) => {
                 window_handle.focused(focused);

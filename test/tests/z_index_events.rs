@@ -10,6 +10,7 @@ use serial_test::serial;
 #[test]
 #[serial]
 fn test_higher_z_index_receives_click_first() {
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     // Create two overlapping views - higher z-index should receive click
@@ -19,7 +20,7 @@ fn test_higher_z_index_receives_click_first() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.click(50.0, 50.0);
 
     // z-index 10 should have been clicked, z-index 1 should not
@@ -33,6 +34,7 @@ fn test_higher_z_index_receives_click_first() {
 #[test]
 #[serial]
 fn test_negative_z_index_receives_click_last() {
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     // Views with negative z-index should be behind those with z-index 0
@@ -42,7 +44,7 @@ fn test_negative_z_index_receives_click_last() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.click(50.0, 50.0);
 
     assert_eq!(
@@ -55,6 +57,7 @@ fn test_negative_z_index_receives_click_last() {
 #[test]
 #[serial]
 fn test_dom_order_when_z_index_equal() {
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     // When z-index is equal, last child in DOM order receives events first
@@ -64,7 +67,7 @@ fn test_dom_order_when_z_index_equal() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.click(50.0, 50.0);
 
     // Last child in DOM order should receive the click
@@ -86,6 +89,7 @@ fn test_stacking_context_boundary() {
     //   │   └── grandchild (z-index: 1000) <- should NOT escape parent
     //   └── sibling (z-index: 2) <- should receive click
     //
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = layers((
@@ -98,7 +102,7 @@ fn test_stacking_context_boundary() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.click(50.0, 50.0);
 
     // The sibling with z-index 2 should receive the click,
@@ -114,13 +118,14 @@ fn test_stacking_context_boundary() {
 #[serial]
 fn test_hit_test_respects_z_index() {
     // Test the hit_test function directly
+    let root = TestRoot::new();
     let view = layers((
         Empty::new().style(|s| s.z_index(1)),
         Empty::new().style(|s| s.z_index(10)),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // The view at (50, 50) should be the one with z-index 10
     let hit = harness.element_id_at(50.0, 50.0);
@@ -130,11 +135,12 @@ fn test_hit_test_respects_z_index() {
 #[test]
 #[serial]
 fn test_click_tracker_reset() {
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = tracker.track(Empty::new().style(|s| s.size(100.0, 100.0)));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
     assert_eq!(tracker.click_count(), 1);
@@ -151,6 +157,7 @@ fn test_click_tracker_reset() {
 #[serial]
 fn test_multiple_z_index_layers() {
     // Test sorting with more than 2 elements including negative, zero, and positive
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = layers((
@@ -161,7 +168,7 @@ fn test_multiple_z_index_layers() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.click(50.0, 50.0);
 
     // Highest z-index (100) should receive the click
@@ -186,6 +193,7 @@ fn test_partial_overlap_click_non_overlapping_region() {
     //       |  right  |
     //       +---------+
     //
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = Stack::new((
@@ -208,7 +216,7 @@ fn test_partial_overlap_click_non_overlapping_region() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Click in left-only region (20, 20)
     harness.click(20.0, 20.0);
@@ -243,6 +251,7 @@ fn test_partial_overlap_click_non_overlapping_region() {
 #[serial]
 fn test_click_outside_all_views() {
     // Clicking outside all views should not trigger any handlers
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = Stack::new((tracker.track_named("small", Empty::new()).style(|s| {
@@ -253,7 +262,7 @@ fn test_click_outside_all_views() {
     }),))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Click outside the small view
     harness.click(80.0, 80.0);
@@ -269,6 +278,7 @@ fn test_click_outside_all_views() {
 #[serial]
 fn test_extreme_z_index_values() {
     // Test with very large z-index values
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = layers((
@@ -278,7 +288,7 @@ fn test_extreme_z_index_values() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.click(50.0, 50.0);
 
     assert_eq!(
@@ -298,6 +308,7 @@ fn test_select_like_structure_simple() {
     //   └── dropdown (z-index: 100, fills entire area)
     //       └── item (click handler, fills entire area)
 
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let item = tracker.track_named("item", Empty::new().style(|s| s.size(100.0, 100.0)));
@@ -308,7 +319,7 @@ fn test_select_like_structure_simple() {
 
     let view = layers((backdrop, dropdown)).style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -336,6 +347,7 @@ fn test_nested_items_in_z_index_container() {
     //           ├── item1 (30px tall) <- click here
     //           └── item2 (30px tall)
 
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let items_container = Stack::vertical((
@@ -350,7 +362,7 @@ fn test_nested_items_in_z_index_container() {
 
     let view = layers((backdrop, dropdown)).style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Click on item1 (y = 30 + 15 = 45, centered in second item)
     harness.click(50.0, 45.0);
@@ -384,6 +396,7 @@ fn test_absolute_positioned_items() {
     //   └── dropdown (z-index: 100, absolute, at y=40)
     //       └── item (100x30)
 
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let item = tracker.track_named("item", Empty::new().style(|s| s.size(100.0, 30.0)));
@@ -398,7 +411,7 @@ fn test_absolute_positioned_items() {
 
     let view = Stack::new((dropdown,)).style(|s| s.size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
 
     // Click on item (y = 40 + 15 = 55, centered in item)
     harness.click(50.0, 55.0);
@@ -421,6 +434,7 @@ fn test_absolute_with_backdrop() {
     //   └── dropdown (z-index: 100, absolute, at y=40)
     //       └── item (100x30)
 
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let item = tracker.track_named("item", Empty::new().style(|s| s.size(100.0, 30.0)));
@@ -444,7 +458,7 @@ fn test_absolute_with_backdrop() {
 
     let view = Stack::new((backdrop, dropdown)).style(|s| s.size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
 
     // Click on item (y = 40 + 15 = 55, centered in item)
     harness.click(50.0, 55.0);
@@ -467,6 +481,7 @@ fn test_absolute_with_negative_backdrop() {
     //   └── dropdown (z-index: 100, absolute, at y=40)
     //       └── item (100x30)
 
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let item = tracker.track_named("item", Empty::new().style(|s| s.size(100.0, 30.0)));
@@ -490,7 +505,7 @@ fn test_absolute_with_negative_backdrop() {
 
     let view = Stack::new((backdrop, dropdown)).style(|s| s.size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
 
     // Click on item (y = 40 + 15 = 55, centered in item)
     harness.click(50.0, 55.0);
@@ -514,6 +529,7 @@ fn test_with_trigger_sibling() {
     //   └── dropdown (z-index: 100, absolute, at y=40)
     //       └── item (100x30)
 
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let item = tracker.track_named("item", Empty::new().style(|s| s.size(100.0, 30.0)));
@@ -541,7 +557,7 @@ fn test_with_trigger_sibling() {
 
     let view = Stack::new((trigger, backdrop, dropdown)).style(|s| s.size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
 
     // Click on item (y = 40 + 15 = 55, centered in item)
     harness.click(50.0, 55.0);
@@ -566,6 +582,7 @@ fn test_with_container_wrapper() {
     //       └── dropdown (z-index: 100, absolute, at y=40)
     //           └── item (100x30)
 
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let item = tracker.track_named("item", Empty::new().style(|s| s.size(100.0, 30.0)));
@@ -594,7 +611,7 @@ fn test_with_container_wrapper() {
     let view = Container::new(Stack::new((trigger, backdrop, dropdown)))
         .style(|s| s.position(Position::Relative).width(200.0).height(200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
 
     // Click on item (y = 40 + 15 = 55, centered in item)
     harness.click(50.0, 55.0);
@@ -622,6 +639,7 @@ fn test_with_vstack_items() {
     //               ├── item1 (100x30)
     //               └── item2 (100x30)
 
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let items_container = Stack::vertical((
@@ -654,7 +672,7 @@ fn test_with_vstack_items() {
     let view = Container::new(Stack::new((trigger, backdrop, dropdown)))
         .style(|s| s.position(Position::Relative).width(200.0).height(200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
 
     // Click on item1 (y = 40 + 30 + 15 = 85, centered in second item)
     harness.click(50.0, 85.0);
@@ -682,6 +700,7 @@ fn test_inside_scroll_view() {
     //               └── v_stack (width_full)
     //                   └── items (width_full)
 
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let items_container = Stack::vertical((
@@ -718,7 +737,7 @@ fn test_inside_scroll_view() {
     // Wrap in Scroll like the showcase does
     let view = Scroll::new(content).style(|s| s.size(300.0, 400.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 300.0, 400.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 300.0, 400.0);
 
     // Click on item1 (y = 40 + 30 + 15 = 85, centered in second item)
     harness.click(60.0, 85.0);
@@ -760,6 +779,7 @@ fn test_inset_left_right_without_width() {
     //               ├── item1 (width_full, height: 30)
     //               └── item2 (width_full, height: 30)
 
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let items_container = Stack::vertical((
@@ -794,7 +814,7 @@ fn test_inset_left_right_without_width() {
     let view = Container::new(Stack::new((trigger, backdrop, dropdown)))
         .style(|s| s.position(Position::Relative).width(120.0).height(200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 250.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 250.0);
 
     // Click on item1 (y = 40 + 30 + 15 = 85, centered in second item)
     harness.click(60.0, 85.0);
@@ -837,6 +857,7 @@ fn test_with_width_full_items_fixed() {
     //               ├── item1 (width_full, height: 30)
     //               └── item2 (width_full, height: 30)
 
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let items_container = Stack::vertical((
@@ -870,7 +891,7 @@ fn test_with_width_full_items_fixed() {
     let view = Container::new(Stack::new((trigger, backdrop, dropdown)))
         .style(|s| s.position(Position::Relative).width(120.0).height(200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 250.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 250.0);
 
     // Click on item1 (y = 40 + 30 + 15 = 85, centered in second item)
     harness.click(60.0, 85.0);
@@ -898,6 +919,7 @@ fn test_with_vstack_width_full() {
     //               ├── item1 (100x30)
     //               └── item2 (100x30)
 
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let items_container = Stack::vertical((
@@ -931,7 +953,7 @@ fn test_with_vstack_width_full() {
     let view = Container::new(Stack::new((trigger, backdrop, dropdown)))
         .style(|s| s.position(Position::Relative).width(120.0).height(200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 250.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 250.0);
 
     // Click on item1 (y = 40 + 30 + 15 = 85, centered in second item)
     harness.click(50.0, 85.0);
@@ -963,6 +985,7 @@ fn test_select_like_no_explicit_container_width() {
     //               └── v_stack (width_full)
     //                   └── items (width_full)
 
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let items_container = Stack::vertical((
@@ -1004,7 +1027,7 @@ fn test_select_like_no_explicit_container_width() {
     let view =
         Stack::vertical((select_container,)).style(|s| s.width_full().height_full().padding(50.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 400.0, 400.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 400.0, 400.0);
 
     // Click on item1 (padding 50 + inset_top 40 + item0 30 + 15 = 135)
     harness.click(100.0, 135.0);
@@ -1032,6 +1055,7 @@ fn test_select_structure_with_inset_top_pct() {
     //               └── v_stack (width_full)
     //                   └── items (width_full, height: 30 each)
 
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let items_container = Stack::vertical((
@@ -1069,7 +1093,7 @@ fn test_select_structure_with_inset_top_pct() {
     let view =
         Stack::vertical((select_container,)).style(|s| s.width_full().height_full().padding(50.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 400.0, 400.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 400.0, 400.0);
 
     // With inset_top_pct(100.0), dropdown is at y = padding(50) + trigger_height(36) = 86
     // Click on item1: y = 86 + item0(30) + 15 = 131
@@ -1105,6 +1129,7 @@ fn test_display_none_to_visible_layout() {
 
     use floem::reactive::RwSignal;
 
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
     let is_open = RwSignal::new(false); // Start closed (display: None)
 
@@ -1154,7 +1179,7 @@ fn test_display_none_to_visible_layout() {
     let view = Container::new(Stack::new((trigger, backdrop, dropdown)))
         .style(|s| s.position(Position::Relative).width(200.0).height(200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
 
     // Toggle to open
     is_open.set(true);
@@ -1179,6 +1204,7 @@ fn test_display_toggle_multiple_times() {
 
     use floem::reactive::RwSignal;
 
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
     let is_open = RwSignal::new(true); // Start open
 
@@ -1227,7 +1253,7 @@ fn test_display_toggle_multiple_times() {
     let view = Container::new(Stack::new((trigger, backdrop, dropdown)))
         .style(|s| s.position(Position::Relative).width(200.0).height(200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
 
     // First click with dropdown open (initial state)
     harness.click(50.0, 55.0);
@@ -1289,6 +1315,7 @@ fn test_inside_scroll_view_with_display_toggle() {
     use floem::reactive::RwSignal;
     use floem::views::Scroll;
 
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
     let is_open = RwSignal::new(false); // Start closed like real Select
 
@@ -1344,7 +1371,7 @@ fn test_inside_scroll_view_with_display_toggle() {
 
     let view = Scroll::new(content).style(|s| s.width_full().height_full());
 
-    let mut harness = HeadlessHarness::new_with_size(view, 300.0, 300.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 300.0, 300.0);
 
     // Open the dropdown
     is_open.set(true);
@@ -1378,6 +1405,7 @@ fn test_inset_top_pct_positioning() {
 
     use floem::reactive::RwSignal;
 
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
     let is_open = RwSignal::new(false);
 
@@ -1432,7 +1460,7 @@ fn test_inset_top_pct_positioning() {
     let view =
         Container::new(select_container).style(|s| s.width_full().height_full().padding(50.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 300.0, 300.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 300.0, 300.0);
 
     // Open dropdown
     is_open.set(true);
@@ -1464,6 +1492,7 @@ fn test_explicit_z_index_zero_vs_auto_hit_testing() {
     // - z-index: auto paints before z-index: 0
     // - Hit testing is reverse of paint order
 
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = layers((
@@ -1472,7 +1501,7 @@ fn test_explicit_z_index_zero_vs_auto_hit_testing() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.click(50.0, 50.0);
 
     assert_eq!(
@@ -1497,6 +1526,7 @@ fn test_z_index_auto_vs_explicit_zero_dom_order() {
     //
     // Hit test order should be: zero2 (last explicit 0 in DOM)
 
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = layers((
@@ -1507,7 +1537,7 @@ fn test_z_index_auto_vs_explicit_zero_dom_order() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.click(50.0, 50.0);
 
     assert_eq!(
@@ -1528,6 +1558,7 @@ fn test_z_index_auto_vs_explicit_zero_with_positive() {
     //   ├── explicit_zero (z-index: 0)
     //   └── positive (z-index: 1) <- should receive click
 
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = layers((
@@ -1537,7 +1568,7 @@ fn test_z_index_auto_vs_explicit_zero_with_positive() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.click(50.0, 50.0);
 
     assert_eq!(
@@ -1558,6 +1589,7 @@ fn test_z_index_auto_vs_explicit_zero_with_negative() {
     //   ├── auto (z-index: auto)
     //   └── explicit_zero (z-index: 0) <- should receive click
 
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = layers((
@@ -1567,7 +1599,7 @@ fn test_z_index_auto_vs_explicit_zero_with_negative() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.click(50.0, 50.0);
 
     assert_eq!(
@@ -1593,6 +1625,7 @@ fn test_stacking_model_both_children_bounded() {
     // At root level: wrapper_a (z=0) vs wrapper_b (z=0) - DOM order: wrapper_b wins
     // bounded_child is inside wrapper_b, so it receives the click.
 
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = layers((
@@ -1611,7 +1644,7 @@ fn test_stacking_model_both_children_bounded() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.click(50.0, 50.0);
 
     // At root level, both wrappers have z=0, so DOM order wins.
@@ -1652,6 +1685,7 @@ fn test_dropdown_extends_beyond_scroll_area() {
     use floem::reactive::RwSignal;
     use floem::views::Scroll;
 
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
     let is_open = RwSignal::new(false);
 
@@ -1709,7 +1743,7 @@ fn test_dropdown_extends_beyond_scroll_area() {
     // Scroll container is smaller than content - this creates clipping
     let view = Scroll::new(content).style(|s| s.width(200.0).height(100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
 
     // Open dropdown
     is_open.set(true);

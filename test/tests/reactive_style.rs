@@ -31,7 +31,8 @@ fn test_reactive_style_updates_on_signal_change() {
     });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Initial state: counter is 0, background should be GRAY
     let style = harness.get_computed_style(id);
@@ -68,7 +69,8 @@ fn test_set_disabled_sets_property() {
     let view = Empty::new().style(move |s| s.size(100.0, 100.0).set_disabled(counter.get() == 0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Initial state: counter is 0, Disabled should be true
     let style = harness.get_computed_style(id);
@@ -110,7 +112,8 @@ fn test_disabled_selector_applied_on_first_pass() {
     });
     let id = view.view_id();
 
-    let harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Initial state: counter is 0, should be disabled with LIGHT_GRAY background
     // BUG: This currently shows LIGHT_BLUE because the disabled selector isn't applied
@@ -155,7 +158,8 @@ fn test_disabled_to_enabled_transition() {
     });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Initial state: disabled=true, Disabled property is set
     let style = harness.get_computed_style(id);
@@ -217,7 +221,8 @@ fn test_disabled_selector_after_style_request() {
     });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // After first style pass, Disabled property should be true
     let style = harness.get_computed_style(id);
@@ -271,7 +276,8 @@ fn test_multiple_reactive_styles() {
 
     let view = Stack::new((view1, view2)).style(|s| s.size(100.0, 50.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 50.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 50.0);
 
     // Initial state: signal is false
     let style1 = harness.get_computed_style(id1);
@@ -326,8 +332,8 @@ fn test_counter_example_repaint_scenario() {
     // Create views similar to the counter example
     let increment_btn = Empty::new()
         .style(|s| s.size(80.0, 30.0).background(palette::css::WHITE))
-        .on_click_stop({
-            move |_| {
+        .on_event_stop(floem::event::listener::Click, {
+            move |_, _| {
                 counter.update(|value| *value += 1);
             }
         });
@@ -342,7 +348,8 @@ fn test_counter_example_repaint_scenario() {
 
     let view = Stack::new((increment_btn, reset_btn)).style(|s| s.size(200.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 100.0);
 
     // Initial state: counter is 0
     // After first style pass, Disabled property should be true
@@ -388,7 +395,8 @@ fn test_reactive_style_change_requests_repaint() {
     let view = Empty::new().style(move |s| s.size(100.0, 100.0).background(color_signal.get()));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Change the signal - this should trigger style recalculation and repaint
     color_signal.set(palette::css::BLUE);
@@ -423,7 +431,7 @@ fn test_click_triggered_style_change_requests_repaint() {
 
     let button = Empty::new()
         .style(|s| s.size(50.0, 30.0).background(palette::css::WHITE))
-        .on_click_stop(move |_| {
+        .action(move || {
             is_active.set(true);
         });
 
@@ -438,7 +446,8 @@ fn test_click_triggered_style_change_requests_repaint() {
 
     let view = Stack::new((button, indicator)).style(|s| s.size(100.0, 50.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 50.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 50.0);
 
     // Initial state
     let style = harness.get_computed_style(indicator_id);
@@ -483,7 +492,8 @@ fn test_request_style_triggers_repaint() {
     let view = Empty::new().style(|s| s.size(100.0, 100.0).background(palette::css::GRAY));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Manually request style
     id.request_style();
@@ -512,12 +522,13 @@ fn test_style_change_in_event_handler_triggers_repaint() {
                 palette::css::BLUE
             })
         })
-        .on_click_stop(move |_| {
+        .action(move || {
             counter.update(|c| *c += 1);
         });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Initial state
     let style = harness.get_computed_style(id);
@@ -558,7 +569,8 @@ fn test_style_change_triggers_recalculation() {
     });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Initial background is GRAY
     let style = harness.get_computed_style(id);
@@ -610,7 +622,8 @@ fn test_set_selected_sets_property() {
     let view = Empty::new().style(move |s| s.size(100.0, 100.0).set_selected(is_selected.get()));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Initial state: not selected
     let style = harness.get_computed_style(id);
@@ -647,7 +660,8 @@ fn test_selected_selector_applied_on_first_pass() {
     });
     let id = view.view_id();
 
-    let harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Initial state: selected=true, should have BLUE background
     let style = harness.get_computed_style(id);
@@ -675,7 +689,8 @@ fn test_not_selected_to_selected_transition() {
     });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Initial: not selected, background should be GRAY
     let style = harness.get_computed_style(id);
@@ -715,7 +730,8 @@ fn test_selected_to_not_selected_transition() {
     });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Request style to ensure selector is applied
     id.request_style();
@@ -763,7 +779,8 @@ fn test_disabled_and_selected_selectors_combined() {
     });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Initial: neither disabled nor selected -> WHITE
     let style = harness.get_computed_style(id);
@@ -816,7 +833,8 @@ fn test_rapid_state_changes() {
     });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // State 0: normal -> WHITE
     let style = harness.get_computed_style(id);
@@ -884,7 +902,8 @@ fn test_sibling_state_affects_other_sibling() {
 
     let view = Stack::new((btn0, btn1)).style(|s| s.size(100.0, 60.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 60.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 60.0);
 
     // Request style for both to ensure selectors are applied
     btn0_id.request_style();
@@ -940,7 +959,8 @@ fn test_nested_selector_with_reactive_state() {
     });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Initial: not active -> LIGHT_GRAY, no border
     let style = harness.get_computed_style(id);
@@ -979,7 +999,8 @@ fn test_hover_and_selected_combination() {
     let id = view.view_id();
 
     // Harness larger than view so pointer can be "outside"
-    let mut harness = HeadlessHarness::new_with_size(view, 120.0, 120.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 120.0, 120.0);
 
     // Request style to apply selected
     id.request_style();
@@ -1038,7 +1059,7 @@ fn test_click_changes_selection_style() {
                 .set_selected(selected_id.get() == 0)
                 .selected(|s| s.background(palette::css::RED))
         })
-        .on_click_stop(move |_| selected_id.set(0));
+        .action(move || selected_id.set(0));
     let btn0_id = btn0.view_id();
 
     let btn1 = Empty::new()
@@ -1048,12 +1069,13 @@ fn test_click_changes_selection_style() {
                 .set_selected(selected_id.get() == 1)
                 .selected(|s| s.background(palette::css::GREEN))
         })
-        .on_click_stop(move |_| selected_id.set(1));
+        .action(move || selected_id.set(1));
     let btn1_id = btn1.view_id();
 
     let view = Stack::new((btn0, btn1)).style(|s| s.size(100.0, 60.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 60.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 60.0);
 
     // Request styles initially
     btn0_id.request_style();

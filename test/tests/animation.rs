@@ -27,6 +27,7 @@ use serial_test::serial;
 #[test]
 #[serial]
 fn test_animation_schedules_updates() {
+    let root = TestRoot::new();
     let view = Empty::new()
         .style(|s| s.size(100.0, 100.0).background(palette::css::RED))
         .animation(|_| {
@@ -36,7 +37,7 @@ fn test_animation_schedules_updates() {
                 .duration(Duration::from_millis(500))
         });
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     // An active animation should schedule updates for the next frame
@@ -51,6 +52,7 @@ fn test_animation_schedules_updates() {
 #[test]
 #[serial]
 fn test_repeating_animation_schedules_continuous_updates() {
+    let root = TestRoot::new();
     let view = Empty::new()
         .style(|s| s.size(100.0, 100.0).background(palette::css::RED))
         .animation(|_| {
@@ -61,7 +63,7 @@ fn test_repeating_animation_schedules_continuous_updates() {
                 .repeat(true)
         });
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
 
     // Rebuild multiple times - repeating animation should keep scheduling
     for i in 0..5 {
@@ -84,6 +86,7 @@ fn test_repeating_animation_schedules_continuous_updates() {
 #[test]
 #[serial]
 fn test_animation_applies_background_color() {
+    let root = TestRoot::new();
     let view = Empty::new()
         .style(|s| s.size(100.0, 100.0).background(palette::css::RED))
         .animation(|_| {
@@ -94,7 +97,7 @@ fn test_animation_applies_background_color() {
         });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     // Get the computed style - it should have a background
@@ -111,6 +114,7 @@ fn test_animation_applies_background_color() {
 #[test]
 #[serial]
 fn test_animation_affects_size() {
+    let root = TestRoot::new();
     // Start with a small size, animate to larger
     let view = Empty::new().style(|s| s.size(50.0, 50.0)).animation(|_| {
         Animation::new()
@@ -120,7 +124,7 @@ fn test_animation_affects_size() {
     });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 400.0, 400.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 400.0, 400.0);
     harness.rebuild();
 
     // Animation should be active and scheduling updates
@@ -142,6 +146,7 @@ fn test_animation_affects_size() {
 #[test]
 #[serial]
 fn test_animation_pause_stops_updates() {
+    let root = TestRoot::new();
     let pause = Trigger::new();
     let pause_clone = pause.clone();
 
@@ -155,7 +160,7 @@ fn test_animation_pause_stops_updates() {
                 .pause(move || pause_clone.track())
         });
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     // Animation should be running and scheduling updates
@@ -178,6 +183,7 @@ fn test_animation_pause_stops_updates() {
 #[test]
 #[serial]
 fn test_animation_resume_after_pause() {
+    let root = TestRoot::new();
     let pause = Trigger::new();
     let resume = Trigger::new();
     let pause_clone = pause.clone();
@@ -194,7 +200,7 @@ fn test_animation_resume_after_pause() {
                 .resume(move || resume_clone.track())
         });
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     // Pause the animation
@@ -220,6 +226,7 @@ fn test_animation_resume_after_pause() {
 #[test]
 #[serial]
 fn test_multiple_animations_schedule_updates() {
+    let root = TestRoot::new();
     let view = Empty::new()
         .style(|s| {
             s.size(100.0, 100.0)
@@ -239,7 +246,7 @@ fn test_multiple_animations_schedule_updates() {
                 .duration(Duration::from_millis(200))
         });
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     assert!(
@@ -257,6 +264,7 @@ fn test_multiple_animations_schedule_updates() {
 #[test]
 #[serial]
 fn test_widget_gallery_animation_pattern() {
+    let root = TestRoot::new();
     let animation = RwSignal::new(
         Animation::new()
             .duration(5.seconds())
@@ -277,7 +285,7 @@ fn test_widget_gallery_animation_pattern() {
         .style(|s| s.background(palette::css::RED).size(500, 100))
         .animation(move |_| animation.get().duration(10.seconds()));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 600.0, 400.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 600.0, 400.0);
     harness.rebuild();
 
     // The widget gallery animation should schedule updates
@@ -301,6 +309,7 @@ fn test_widget_gallery_animation_pattern() {
 #[test]
 #[serial]
 fn test_computed_style_keyframe() {
+    let root = TestRoot::new();
     let view = Empty::new()
         .style(|s| s.size(100.0, 100.0).background(palette::css::GREEN))
         .animation(|_| {
@@ -311,7 +320,7 @@ fn test_computed_style_keyframe() {
         });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     // Animation should be scheduling
@@ -337,6 +346,7 @@ fn test_computed_style_keyframe() {
 #[test]
 #[serial]
 fn test_animation_with_delay() {
+    let root = TestRoot::new();
     let view = Empty::new()
         .style(|s| s.size(100.0, 100.0).background(palette::css::RED))
         .animation(|_| {
@@ -347,7 +357,7 @@ fn test_animation_with_delay() {
                 .delay(Duration::from_secs(1)) // 1 second delay
         });
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     // Even with delay, animation should be active and scheduling
@@ -362,6 +372,7 @@ fn test_animation_with_delay() {
 #[test]
 #[serial]
 fn test_animation_progresses_over_frames() {
+    let root = TestRoot::new();
     let view = Empty::new()
         .style(|s| s.size(100.0, 100.0).background(palette::css::RED))
         .animation(|_| {
@@ -371,7 +382,7 @@ fn test_animation_progresses_over_frames() {
                 .duration(Duration::from_millis(100))
         });
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
 
     // First rebuild - animation should start
     harness.rebuild();
@@ -410,6 +421,7 @@ fn test_animation_progresses_over_frames() {
 #[test]
 #[serial]
 fn test_animation_in_dynamic_container() {
+    let root = TestRoot::new();
     use floem::views::dyn_container;
 
     let show_animation = RwSignal::new(false);
@@ -433,7 +445,7 @@ fn test_animation_in_dynamic_container() {
         },
     );
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     // Initially no animation shown
@@ -462,6 +474,7 @@ fn test_animation_in_dynamic_container() {
 #[test]
 #[serial]
 fn test_auto_reverse_animation() {
+    let root = TestRoot::new();
     let view = Empty::new()
         .style(|s| s.size(100.0, 100.0).background(palette::css::RED))
         .animation(|_| {
@@ -472,7 +485,7 @@ fn test_auto_reverse_animation() {
                 .auto_reverse(true)
         });
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
 
     // Rebuild multiple times - auto_reverse should keep animation going
     for i in 0..10 {
@@ -503,6 +516,7 @@ fn test_auto_reverse_animation() {
 #[test]
 #[serial]
 fn test_animated_size_affects_layout() {
+    let root = TestRoot::new();
     // Start at 50x50, animate to 150x150
     let view = Empty::new().style(|s| s.size(50.0, 50.0)).animation(|_| {
         Animation::new()
@@ -512,7 +526,7 @@ fn test_animated_size_affects_layout() {
     });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 400.0, 400.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 400.0, 400.0);
 
     // First rebuild - animation starts
     harness.rebuild();
@@ -553,6 +567,7 @@ fn test_animated_size_affects_layout() {
 #[test]
 #[serial]
 fn test_animated_background_in_computed_style() {
+    let root = TestRoot::new();
     // Animate from RED to BLUE
     let view = Empty::new()
         .style(|s| s.size(100.0, 100.0).background(palette::css::RED))
@@ -564,7 +579,7 @@ fn test_animated_background_in_computed_style() {
         });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
 
     // First rebuild
     harness.rebuild();
@@ -604,6 +619,7 @@ fn test_animated_background_in_computed_style() {
 #[test]
 #[serial]
 fn test_size_animation_reaches_target() {
+    let root = TestRoot::new();
     // Animate from 50 to 200
     let view = Empty::new().style(|s| s.size(50.0, 50.0)).animation(|_| {
         Animation::new()
@@ -613,7 +629,7 @@ fn test_size_animation_reaches_target() {
     });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 400.0, 400.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 400.0, 400.0);
     harness.rebuild();
 
     // Verify the view has a size (animation infrastructure is working)
@@ -643,6 +659,7 @@ fn test_size_animation_reaches_target() {
 #[test]
 #[serial]
 fn test_multiple_property_animation() {
+    let root = TestRoot::new();
     use floem::style::BorderRadiusProp;
 
     let view = Empty::new()
@@ -657,7 +674,7 @@ fn test_multiple_property_animation() {
         });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 400.0, 400.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 400.0, 400.0);
     harness.rebuild();
 
     // Verify view has a size
@@ -689,6 +706,7 @@ fn test_multiple_property_animation() {
 #[test]
 #[serial]
 fn test_paused_animation_maintains_values() {
+    let root = TestRoot::new();
     let pause = Trigger::new();
     let pause_clone = pause.clone();
 
@@ -703,7 +721,7 @@ fn test_paused_animation_maintains_values() {
         });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 400.0, 400.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 400.0, 400.0);
 
     // Let animation progress a bit
     harness.rebuild();
