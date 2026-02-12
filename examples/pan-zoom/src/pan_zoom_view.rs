@@ -2,16 +2,13 @@ use std::{collections::VecDeque, time::Duration};
 
 use floem::{
     IntoView, View,
-    action::exec_after,
+    action::exec_after_animation_frame,
     event::{Event, EventPropagation, PointerScrollEventExt},
     kurbo::{self, Vec2},
     ui_events::pointer::{PointerButtonEvent, PointerEvent, PointerUpdate},
 };
 
 const VELOCITY_HISTORY_SIZE: usize = 8;
-/// The interval at which the view should update animations.
-/// Set to roughly 60 FPS.
-const UPDATE_INTERVAL: Duration = Duration::from_millis(16);
 
 const ZOOM_ANIMATION_DURATION: Duration = Duration::from_millis(333);
 
@@ -181,7 +178,7 @@ impl PanZoomView {
 
     fn schedule_update(&mut self) {
         let id = self.id();
-        exec_after(UPDATE_INTERVAL, move |_| {
+        exec_after_animation_frame(move |_| {
             id.update_state(Box::new(()));
         });
     }

@@ -148,6 +148,10 @@ pub(crate) enum AppUpdateEvent {
     RequestTimer {
         timer: Timer,
     },
+    RequestAnimationTimer {
+        timer: Timer,
+        window_id: WindowId,
+    },
     CancelTimer {
         timer: TimerToken,
     },
@@ -157,6 +161,7 @@ pub(crate) enum AppUpdateEvent {
     ThemeChanged {
         theme: Theme,
     },
+    AnimationFrame(bool, WindowId),
 }
 
 pub(crate) fn add_app_update_event(event: AppUpdateEvent) {

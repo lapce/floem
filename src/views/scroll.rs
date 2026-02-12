@@ -96,12 +96,8 @@ impl ScrollHandle {
     }
 
     fn style(&mut self, cx: &mut StyleCx) {
-        let interact_state = cx.get_interact_state(self.element_id);
-        let resolved = cx.resolve_nested_maps_with_state(
-            Style::new(),
-            &[Handle::class_ref()],
-            &interact_state,
-        );
+        let resolved =
+            cx.resolve_nested_maps(Style::new(), &[Handle::class_ref()], self.element_id);
         self.style.read_style(cx, &resolved);
     }
 
@@ -327,9 +323,7 @@ impl ScrollTrack {
     }
 
     fn style(&mut self, cx: &mut StyleCx) {
-        let interact_state = cx.get_interact_state(self.element_id);
-        let resolved =
-            cx.resolve_nested_maps_with_state(Style::new(), &[Track::class_ref()], &interact_state);
+        let resolved = cx.resolve_nested_maps(Style::new(), &[Track::class_ref()], self.element_id);
         self.style.read_style(cx, &resolved);
     }
 

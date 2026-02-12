@@ -14,6 +14,7 @@ use std::time::Instant;
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
 
+use crate::ElementId;
 use crate::animate::{AnimStateKind, RepeatMode};
 use crate::inspector::CaptureState;
 use crate::style::{StyleClassRef, resolve_nested_maps};
@@ -41,6 +42,7 @@ pub struct InteractionState {
     pub is_disabled: bool,
     /// Whether this view has keyboard focus.
     pub is_focused: bool,
+    is_hidden: bool,
     /// Whether this view is being clicked (pointer down but not yet up).
     pub is_clicking: bool,
     /// Whether dark mode is enabled.
@@ -67,19 +69,36 @@ pub struct InheritedInteractionCx {
 
 pub struct StyleCx<'a> {
     pub window_state: &'a mut WindowState,
+
     pub(crate) current_view: ViewId,
-    /// Inherited properties context - carries inherited props (font-size, color, etc.)
-    /// from ancestors to descendants. Only contains properties marked as `inherited`.
+
+    /// Inherited properties context from ancestors.
+    /// Contains only properties marked as `inherited` (font-size, color, etc.).
+    ///
+    /// Built from parent's computed_style, this provides the inherited baseline that
+    /// will be merged with this view's combined_style to produce computed_style.
     pub(crate) inherited: Rc<Style>,
-    /// Class context - carries class nested maps (`.class(ListItemClass, ...)`) from
-    /// ancestors so descendants with matching classes can apply the styling.
-    /// Separate from inherited to allow independent propagation and caching.
+
+    /// Class definitions context from ancestors.
+    /// Contains `.class(SomeClass, ...)` nested maps from ancestor views.
+    ///
+    /// Built from parent's combined_style, this provides class definitions that
+    /// descendants can apply when computing their combined_style. Separate from
+    /// inherited to allow independent propagation and caching.
     pub(crate) class_context: Rc<Style>,
+
+    /// The resolved style for this view (will become combined_style).
+    /// Computed from base + selectors + classes during style resolution.
+    ///
+    /// This is an intermediate value set during style_view and represents only
+    /// what this view explicitly defines, without inherited properties.
     pub(crate) direct: Style,
+
     pub(crate) now: Instant,
-    disabled: bool,
-    hidden: bool,
-    selected: bool,
+
+    parent_disabled: bool,
+    parent_hidden: bool,
+    parent_selected: bool,
 }
 
 impl<'a> StyleCx<'a> {
@@ -92,7 +111,7 @@ impl<'a> StyleCx<'a> {
             .or_else(|| view_id.parent());
 
         // Initialize inherited and class contexts separately
-        let (inherited, class_context, disabled, selected, hidden) =
+        let (inherited, class_context, parent_disabled, parent_selected, parent_hidden) =
             if let Some(parent_id) = style_parent {
                 let parent_state = parent_id.state();
                 let parent_state = parent_state.borrow();
@@ -141,15 +160,15 @@ impl<'a> StyleCx<'a> {
             class_context,
             direct: Default::default(),
             now: Instant::now(),
-            disabled,
-            hidden,
-            selected,
+            parent_disabled,
+            parent_hidden,
+            parent_selected,
         }
     }
 
     /// Marks the current context as selected.
     pub fn selected(&mut self) {
-        self.selected = true;
+        self.parent_selected = true;
     }
 
     /// Compute styles for a view with graduated change propagation.
@@ -166,34 +185,31 @@ impl<'a> StyleCx<'a> {
         let view_state = view_id.state();
 
         // ─────────────────────────────────────────────────────────────────────
-        // Phase 1: Check if recalculation is needed and gather initial state
+        // Phase 1: Gather initial state
         // ─────────────────────────────────────────────────────────────────────
-        let (view_is_dirty, has_selectors) = {
-            let vs = view_state.borrow();
-            let dirty = self.window_state.style_dirty.contains(&view_id)
-                || self.window_state.view_style_dirty.contains(&view_id);
-            let selectors = !vs.has_style_selectors.is_empty();
-            (dirty, selectors)
-        };
+        // let has_selectors = {
+        //     let vs = view_state.borrow();
+        //     let selectors = !vs.has_style_selectors.is_empty();
+        //     selectors
+        // };
 
-        // Clear STYLE flag
-        self.window_state.style_dirty.remove(&view_id);
+        // if !change.should_recalc(true) {
+        //     return;
+        // }
 
-        if !change.should_recalc(view_is_dirty) {
-            return;
-        }
-
-        // Fast path: only propagate inherited properties, skip full resolution
-        if change.can_use_inherited_fast_path(has_selectors) && !view_is_dirty {
-            self.apply_inherited_only(view_id, change);
-            return;
-        }
+        // // Fast path: only propagate inherited properties, skip full resolution
+        // if change.can_use_inherited_fast_path(has_selectors) && !view_is_dirty {
+        //     self.apply_inherited_only(view_id, change);
+        //     return;
+        // }
 
         // ─────────────────────────────────────────────────────────────────────
         // Phase 2: Clear dirty flags, update view style, propagate to children
         // ─────────────────────────────────────────────────────────────────────
+        self.window_state.style_dirty.remove(&view_id);
+
         let view_class = view.borrow().view_class();
-        let (base_style, all_classes, selected_from_state) = {
+        let base_style = {
             let mut vs = view_state.borrow_mut();
 
             // Update view style if needed
@@ -217,92 +233,51 @@ impl<'a> StyleCx<'a> {
             }
 
             // Gather data needed for later phases
-            let base = vs.style();
-            let mut classes = vs.classes.clone();
-            if let Some(vc) = view_class {
-                classes.push(vc);
-            }
-            let selected = vs.parent_set_style_interaction.selected;
-
-            (base, classes, selected)
+            vs.style()
         };
 
         // ─────────────────────────────────────────────────────────────────────
         // Phase 3: Build interaction state for selector matching
         // ─────────────────────────────────────────────────────────────────────
-        let this_view_disabled = base_style.builtin().set_disabled();
-        let this_view_selected = base_style.builtin().set_selected();
-        let view_interact_state = InteractionState {
-            is_selected: self.selected || selected_from_state || this_view_selected,
-            is_hovered: self.window_state.is_hovered(view_id),
-            is_disabled: this_view_disabled || self.disabled,
-            is_focused: self.window_state.is_focused(view_id),
-            is_clicking: self.window_state.is_clicking(view_id),
-            is_dark_mode: self.window_state.is_dark_mode(),
-            is_file_hover: self.window_state.is_file_hover(view_id),
-            using_keyboard_navigation: self.window_state.keyboard_navigation,
-        };
-        self.disabled = view_interact_state.is_disabled;
-        self.selected = view_interact_state.is_selected;
+        let mut view_interact_state = self.get_interact_state(view_id);
+
+        // start updating the view interaction state with properties from the base style
+        let base_style_disabled = base_style.builtin().set_disabled();
+        let base_style_selected = base_style.builtin().set_selected();
+        let base_style_hidden = base_style.builtin().display() == taffy::Display::None;
+        view_interact_state.is_disabled |= base_style_disabled;
+        view_interact_state.is_selected |= base_style_selected;
+        view_interact_state.is_hidden |= base_style_hidden;
 
         // ─────────────────────────────────────────────────────────────────────
-        // Phase 4: Resolve combined style (with cache optimization)
+        // Phase 4: Resolve combined style
         // ─────────────────────────────────────────────────────────────────────
-        let cache_key = StyleCacheKey::new(
-            &base_style,
-            &view_interact_state,
-            self.window_state.screen_size_bp,
-            &all_classes,
-            &self.class_context,
-        );
 
-        // Try cache first if view is not dirty
-        let cached = if !view_is_dirty {
-            self.window_state
-                .style_cache
-                .get(&cache_key, &self.inherited)
-        } else {
-            None
-        };
-
-        let classes_applied = if let Some((cached_style, cached_classes_applied)) = cached {
-            // Cache hit
-            let mut vs = view_state.borrow_mut();
-            vs.combined_style = (*cached_style).clone();
-            vs.has_style_selectors = base_style.selectors();
-            cached_classes_applied
-        } else {
-            // Cache miss or dirty - compute style
-            let (combined, classes_applied) = view_state.borrow_mut().compute_combined(
-                view_interact_state,
+        // Cache miss or dirty - compute style
+        let (combined_style, classes_applied, has_active_animation) =
+            view_state.borrow_mut().compute_combined(
+                &mut view_interact_state,
                 self.window_state.screen_size_bp,
                 view_class,
                 &self.inherited,
                 &self.class_context,
             );
-            if super::cache::StyleCache::is_cacheable(&base_style) {
-                self.window_state.style_cache.insert(
-                    cache_key,
-                    combined,
-                    &self.inherited,
-                    classes_applied,
-                );
-            }
-            classes_applied
-        };
+        // Schedule next frame if any animation is in progress
+        if has_active_animation {
+            self.window_state.schedule_style(view_id);
+        }
 
         // ─────────────────────────────────────────────────────────────────────
         // Phase 5: Compute final style and propagate contexts to children
         // ─────────────────────────────────────────────────────────────────────
-        let combined_style = view_state.borrow().combined_style.clone();
         self.direct = combined_style;
 
         // Propagate inherited properties to children (separate from class context)
         Style::apply_only_inherited(&mut self.inherited, &self.direct);
 
         // Capture old class_context pointer before updating.
-        // Because save() was called earlier, class_context Rc is shared (ref count > 1).
-        // If apply_only_class_maps modifies it, Rc::make_mut will clone and create a new Rc.
+        // apply_only_class_maps either returns early (no class maps), or creates
+        // a new Rc via Rc::new(), so we can detect changes with O(1) pointer comparison.
         let old_class_context_ptr = Rc::as_ptr(&self.class_context);
 
         // Propagate class nested maps to class_context for children.
@@ -310,9 +285,7 @@ impl<'a> StyleCx<'a> {
         // descendant views with matching classes can apply the styling.
         Style::apply_only_class_maps(&mut self.class_context, &self.direct);
 
-        // Check if class_context changed using O(1) pointer comparison.
-        // This works because the Rc is shared (from save()), so any modification
-        // via Rc::make_mut will clone the inner data and change the pointer.
+        // Pointer changed means apply_only_class_maps created a new Rc (had class maps)
         let class_context_changed = Rc::as_ptr(&self.class_context) != old_class_context_ptr;
 
         // ─────────────────────────────────────────────────────────────────────
@@ -336,38 +309,8 @@ impl<'a> StyleCx<'a> {
         computed_style.apply_mut(self.direct.clone());
 
         // ─────────────────────────────────────────────────────────────────────
-        // Phase 5.5: Process animations
+        // Phase 7: Update window and view state.
         // ─────────────────────────────────────────────────────────────────────
-        // Animations modify the computed style by interpolating between keyframe values.
-        // We process animations here, after the base style is computed but before
-        // it's stored, so animated values override static style values.
-        let mut has_active_animation = false;
-        {
-            let mut vs = view_state.borrow_mut();
-            for animation in vs
-                .animations
-                .stack
-                .iter_mut()
-                .filter(|anim| anim.can_advance() || anim.should_apply_folded())
-            {
-                if animation.can_advance() {
-                    has_active_animation = true;
-                    animation.animate_into(&mut computed_style);
-                    animation.advance();
-                } else {
-                    animation.apply_folded(&mut computed_style);
-                }
-                debug_assert!(
-                    !animation.is_idle(),
-                    "Animation should not be idle after processing"
-                );
-            }
-        }
-
-        // Schedule next frame if any animation is in progress
-        if has_active_animation && !self.hidden {
-            self.window_state.schedule_style(view_id);
-        }
 
         CaptureState::capture_style(view_id, self, computed_style.clone());
 
@@ -383,27 +326,39 @@ impl<'a> StyleCx<'a> {
 
         // Track fixed elements for viewport-relative sizing
         let new_is_fixed = computed_style.builtin().is_fixed();
-        let view_is_disabled = computed_style.builtin().set_disabled();
-        let view_is_selected = computed_style.builtin().set_selected();
-        let view_is_display_none = computed_style.builtin().display() == taffy::Display::None;
+        let computed_style_has_disabled = computed_style.builtin().set_disabled();
+        let computed_style_has_selected = computed_style.builtin().set_selected();
+        let compute_style_has_hidden = computed_style.builtin().display() == taffy::Display::None;
+        view_interact_state.is_hidden |= compute_style_has_hidden;
+        view_interact_state.is_selected |= computed_style_has_selected;
+        view_interact_state.is_disabled |= computed_style_has_disabled;
+
+        let parent_set = {
+            let view_state = view_id.state();
+            let view_state = view_state.borrow();
+            view_state.parent_set_style_interaction
+        };
 
         // Update view state in a single borrow
-        let (old_is_fixed, old_taffy_style, force_hidden) = {
+        let (old_is_fixed, old_taffy_style) = {
             let mut vs = view_state.borrow_mut();
             let old_fixed = vs.computed_style.builtin().is_fixed();
             let old_taffy = vs.taffy_style.clone();
-            let force_hid = vs.visibility.force_hidden;
 
             vs.style_cx = Some((*self.inherited).clone());
             vs.class_cx = Some((*self.class_context).clone());
             vs.computed_style = computed_style;
             vs.style_interaction_cx = InheritedInteractionCx {
-                disabled: self.disabled || view_is_disabled,
-                selected: self.selected || view_is_selected,
-                hidden: self.hidden || view_is_display_none,
+                disabled: self.parent_disabled
+                    || computed_style_has_disabled
+                    || parent_set.disabled,
+                selected: self.parent_selected
+                    || computed_style_has_selected
+                    || parent_set.selected,
+                hidden: self.parent_hidden || compute_style_has_hidden || parent_set.hidden,
             };
 
-            (old_fixed, old_taffy, force_hid)
+            (old_fixed, old_taffy)
         };
 
         // Handle fixed element registration
@@ -416,17 +371,15 @@ impl<'a> StyleCx<'a> {
             view_id.request_layout();
         }
 
-        self.disabled |= view_is_disabled;
-        self.hidden |= view_is_display_none || force_hidden;
-        self.selected |= view_is_selected;
-        self.current_view = view_id;
-
         // ─────────────────────────────────────────────────────────────────────
-        // Phase 7: Extract layout and transform properties
+        // Phase 7.1: Extract layout and transform properties
         // ─────────────────────────────────────────────────────────────────────
         // We read from the computed_style (which includes animated values) rather than
         // from the raw styles, so that animations affect layout and visual properties.
         let mut transitioning = false;
+        let mut layout_transitioning = false;
+        let mut view_style_transitioning = false;
+        let mut box_tree_transitioning = false;
         {
             let mut vs = view_state.borrow_mut();
 
@@ -435,47 +388,47 @@ impl<'a> StyleCx<'a> {
             let computed = vs.computed_style.clone();
 
             // Layout properties (padding, margin, size, etc.)
-            vs.layout_props
-                .read_explicit(&computed, &computed, &self.now, &mut transitioning);
-
-            // View style properties (background, border, etc.)
-            vs.view_style_props
-                .read_explicit(&computed, &computed, &self.now, &mut transitioning);
-
-            // Transform properties (translate, scale, rotation)
-            vs.view_transform_props.read_explicit(
+            if vs.layout_props.read_explicit(
                 &computed,
                 &computed,
                 &self.now,
-                &mut transitioning,
+                &mut layout_transitioning,
+            ) {
+                // layout_transitioning = true;
+            }
+            transitioning |= layout_transitioning;
+
+            // View style properties (background, border, etc.)
+            if vs.view_style_props.read_explicit(
+                &computed,
+                &computed,
+                &self.now,
+                &mut view_style_transitioning,
+            ) {
+                // view_style_transitioning |= true;
+            }
+            transitioning |= view_style_transitioning;
+
+            // Transform properties (translate, scale, rotation)
+            let view_transform_changed = vs.view_transform_props.read_explicit(
+                &computed,
+                &computed,
+                &self.now,
+                &mut box_tree_transitioning,
             );
 
             // Transform properties (translate, scale, rotation)
-            vs.box_tree_props
-                .read_explicit(&computed, &computed, &self.now, &mut transitioning);
+            if vs.box_tree_props.read_explicit(
+                &computed,
+                &computed,
+                &self.now,
+                &mut box_tree_transitioning,
+            ) || box_tree_transitioning
+                || view_transform_changed
             {
-                let box_tree = view_id.box_tree();
-                let props = &vs.box_tree_props;
-                let elment_id = vs.element_id;
-                let box_tree = &mut box_tree.borrow_mut();
-                let old_flags = box_tree.flags(elment_id.0);
-                box_tree.set_local_z_index(elment_id.0, vs.box_tree_props.z_index());
-                let mut flags = NodeFlags::empty();
-                if props.pickable() {
-                    flags |= NodeFlags::PICKABLE;
-                }
-                if props.focusable() && props.display() != taffy::Display::None && !props.disabled()
-                {
-                    flags |= NodeFlags::FOCUSABLE;
-                }
-                if props.display() != taffy::Display::None && !self.hidden {
-                    flags |= NodeFlags::VISIBLE;
-                }
-                if old_flags.is_none_or(|f| f != flags) {
-                    self.window_state.needs_box_tree_commit = true;
-                }
-                box_tree.set_flags(elment_id.0, flags);
+                // box_tree_transitioning = true;
             }
+            transitioning |= box_tree_transitioning;
 
             let old_cursor = vs.style_cursor;
             if old_cursor != computed.builtin().cursor() {
@@ -484,39 +437,23 @@ impl<'a> StyleCx<'a> {
             }
         }
 
-        if transitioning && !self.hidden {
-            self.window_state.schedule_layout();
+        if transitioning {
             self.window_state.schedule_style(view_id);
         }
 
-        // ─────────────────────────────────────────────────────────────────────
-        // Phase 8: Update taffy style if layout properties changed
-        // ─────────────────────────────────────────────────────────────────────
-        let layout_style = view_state.borrow().layout_props.to_style();
-        let taffy_style = self.direct.clone().apply(layout_style).to_taffy_style();
+        // Handle visibility transition: None -> visible
+        // store was_hidden before updating interaction state with base style
+        let was_hidden = view_id.state().borrow().is_hidden;
 
-        if taffy_style != old_taffy_style {
-            let taffy_node = view_state.borrow_mut().layout_id;
-            view_state.borrow_mut().taffy_style = taffy_style.clone();
-            view_id
-                .taffy()
-                .borrow_mut()
-                .set_style(taffy_node, taffy_style.clone())
-                .unwrap();
-            if !self.hidden {
-                self.window_state.schedule_layout();
-            }
-
-            // Handle visibility transition: None -> visible
-            let was_hidden = old_taffy_style.display == taffy::Display::None;
-            let is_visible = taffy_style.display != taffy::Display::None;
-            if was_hidden && is_visible {
-                request_style_layout_recursive_for_children(view_id);
-            }
+        let is_visible = !compute_style_has_hidden && !self.parent_hidden && !parent_set.hidden;
+        if was_hidden && is_visible {
+            request_style_layout_recursive_for_children(view_id);
+            view_id.request_layout();
         }
+        view_id.state().borrow_mut().is_hidden = !is_visible;
 
         // ─────────────────────────────────────────────────────────────────────
-        // Phase 9: Call view's style_pass and handle animations
+        // Phase 8: Call view's style_pass
         // ─────────────────────────────────────────────────────────────────────
         self.window_state
             .pending_child_change
@@ -524,9 +461,18 @@ impl<'a> StyleCx<'a> {
 
         view.borrow_mut().style_pass(self);
 
+        // ─────────────────────────────────────────────────────────────────────
+        // Phase 9: visibility transitions and set taffy style
+        // ─────────────────────────────────────────────────────────────────────
+
         // Handle visibility transitions and animations
         // Skip transition if view has been explicitly hidden via set_hidden()
-        if !force_hidden {
+        let parent_set_hidden = {
+            let view_state = view_id.state();
+            let view_state = view_state.borrow();
+            view_state.parent_set_style_interaction.hidden
+        };
+        if !parent_set_hidden {
             let (old_phase, computed_display) = {
                 let vs = view_state.borrow();
                 (vs.visibility.phase, vs.combined_style.builtin().display())
@@ -549,14 +495,74 @@ impl<'a> StyleCx<'a> {
                 invalidate_stacking_cache(view_id.get_element_id());
                 view_state.borrow_mut().visibility.phase = phase;
             }
+            // Apply visibility phase to combined style
+            if let Some(display) = phase.get_display_override() {
+                let mut vs = view_state.borrow_mut();
+                vs.combined_style = vs.combined_style.clone().display(display);
+            }
+        } else {
+            // parent set hidden - no transition
+            let mut vs = view_state.borrow_mut();
+            vs.combined_style = vs.combined_style.clone().display(taffy::Display::None);
         }
 
-        // Apply visibility phase to combined style
         {
+            // ─────────────────────────────────────────────────────────────────────
+            // Phase 9.1: Update taffy style if layout properties changed (must happen after visibility phase override)
+            // ─────────────────────────────────────────────────────────────────────
             let mut vs = view_state.borrow_mut();
-            let phase = vs.visibility.phase;
-            if let Some(display) = phase.get_display() {
-                vs.combined_style = vs.combined_style.clone().display(display);
+            let is_hidden = parent_set_hidden
+                || self.parent_hidden
+                || view_interact_state.is_hidden
+                || (vs.is_hidden
+                    && vs
+                        .visibility
+                        .phase
+                        .get_display_override()
+                        .is_none_or(|d| d == taffy::Display::None));
+            let taffy_style = vs.combined_style.clone();
+            let transitioned_layout_props = vs.layout_props.to_style();
+            let taffy_style = taffy_style
+                .apply(transitioned_layout_props)
+                .to_taffy_style();
+
+            if taffy_style != old_taffy_style {
+                let taffy_node = vs.layout_id;
+                vs.taffy_style = taffy_style.clone();
+                view_id
+                    .taffy()
+                    .borrow_mut()
+                    .set_style(taffy_node, taffy_style.clone())
+                    .unwrap();
+                if !is_hidden {
+                    self.window_state.schedule_layout();
+                }
+            }
+            // ─────────────────────────────────────────────────────────────────────
+            // Phase 9.2: Update box tree visiblity dependent props  (must happen after visibility phase override)
+            // ─────────────────────────────────────────────────────────────────────
+            {
+                let box_tree = view_id.box_tree();
+                let props = &vs.box_tree_props;
+                let elment_id = vs.element_id;
+                let box_tree = &mut box_tree.borrow_mut();
+                let old_flags = box_tree.flags(elment_id.0);
+                box_tree.set_local_z_index(elment_id.0, vs.box_tree_props.z_index());
+                let mut flags = NodeFlags::empty();
+                if props.pickable() {
+                    flags |= NodeFlags::PICKABLE;
+                }
+                // need to update this after visibility.
+                if old_flags.is_none_or(|f| f != flags) && !is_hidden {
+                    self.window_state.needs_box_tree_commit = true;
+                }
+                if props.focusable() && !vs.visibility.is_hidden() && !props.disabled() {
+                    flags |= NodeFlags::FOCUSABLE;
+                }
+                if !vs.visibility.is_hidden() {
+                    flags |= NodeFlags::VISIBLE;
+                }
+                box_tree.set_flags(elment_id.0, flags);
             }
         }
 
@@ -565,7 +571,7 @@ impl<'a> StyleCx<'a> {
         // ─────────────────────────────────────────────────────────────────────
         {
             let vs = view_state.borrow();
-            let new_z_index = vs.combined_style.get(ZIndex).unwrap_or(0);
+            let new_z_index = vs.combined_style.builtin().z_index().unwrap_or(0);
             let element_id = view_id.get_element_id();
 
             // Get old z-index from box tree
@@ -627,7 +633,7 @@ impl<'a> StyleCx<'a> {
                 &self.now,
                 &mut transitioning,
             );
-            if transitioning && !self.hidden {
+            if transitioning && !self.parent_hidden {
                 self.window_state.schedule_layout();
             }
 
@@ -637,7 +643,7 @@ impl<'a> StyleCx<'a> {
                 &self.now,
                 &mut transitioning,
             );
-            if transitioning && !self.hidden {
+            if transitioning && !self.parent_hidden {
                 self.window_state.schedule_style(view_id);
             }
         }
@@ -654,30 +660,24 @@ impl<'a> StyleCx<'a> {
         view.borrow_mut().style_pass(self);
     }
 
-    /// The base style the base style for this view that will override any inherited properties
+    /// Resolve all nested maps in the base style for the given classes.
+    /// This will use the current style cx as context and get the interaction state for the given element
     pub fn resolve_nested_maps(
         &self,
         base_style: Style,
         classes: &[StyleClassRef],
-        is_focused: bool,
-        is_clicking: bool,
-        is_file_hover: bool,
+        element_id: impl Into<ElementId>,
     ) -> Style {
-        let this_disabled = base_style.get(Disabled);
-        let this_selected = base_style.builtin().set_selected();
-        let interact_state = InteractionState {
-            is_selected: self.selected || this_selected,
-            is_hovered: false,
-            is_disabled: this_disabled || self.disabled,
-            is_focused,
-            is_clicking,
-            is_dark_mode: self.window_state.is_dark_mode(),
-            is_file_hover,
-            using_keyboard_navigation: self.window_state.keyboard_navigation,
-        };
+        let base_style_disabled = base_style.builtin().set_disabled();
+        let base_style_selected = base_style.builtin().set_selected();
+        let base_style_hidden = base_style.builtin().display() == taffy::Display::None;
+        let mut view_interact_state = self.get_interact_state(element_id);
+        view_interact_state.is_disabled |= base_style_disabled;
+        view_interact_state.is_selected |= base_style_selected;
+        view_interact_state.is_hidden |= base_style_hidden;
         resolve_nested_maps(
             base_style,
-            &interact_state,
+            &mut view_interact_state,
             self.window_state.screen_size_bp,
             classes,
             &self.inherited,
@@ -691,11 +691,11 @@ impl<'a> StyleCx<'a> {
         &self,
         base_style: Style,
         classes: &[StyleClassRef],
-        interact_state: &InteractionState,
+        mut interact_state: InteractionState,
     ) -> Style {
         resolve_nested_maps(
             base_style,
-            interact_state,
+            &mut interact_state,
             self.window_state.screen_size_bp,
             classes,
             &self.inherited,
@@ -740,7 +740,7 @@ impl<'a> StyleCx<'a> {
 
     pub fn request_transition(&mut self) {
         let id = self.current_view;
-        if !self.hidden {
+        if !self.parent_hidden {
             self.window_state.schedule_style(id);
         }
     }
@@ -748,15 +748,15 @@ impl<'a> StyleCx<'a> {
     pub fn get_interact_state(&self, id: impl Into<crate::ElementId>) -> InteractionState {
         let id: crate::ElementId = id.into();
         let view_id = id.owning_id();
-        let icx = {
+        let parent_override = {
             let view_state = view_id.state();
             let view_state = view_state.borrow();
             view_state.parent_set_style_interaction
         };
         InteractionState {
-            is_selected: self.selected | icx.selected,
-            is_disabled: self.disabled | icx.disabled,
-            // is_hidden: self.hidden | icx.hidden,
+            is_selected: self.parent_selected | parent_override.selected,
+            is_disabled: self.parent_disabled | parent_override.disabled,
+            is_hidden: self.parent_hidden | parent_override.hidden,
             is_hovered: self.window_state.is_hovered(id),
             is_focused: self.window_state.is_focused(id),
             is_clicking: self.window_state.is_clicking(id),

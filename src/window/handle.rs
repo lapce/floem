@@ -6,6 +6,7 @@ use crate::event::CustomEvent;
 use crate::platform::menu_types::{Menu as MudaMenu, MenuId};
 #[cfg(target_os = "windows")]
 use muda::MenuTheme as MudaMenuTheme;
+use winit::monitor::Fullscreen;
 
 use crate::platform::{Duration, Instant};
 use ui_events::keyboard::{Key, KeyboardEvent, Modifiers, NamedKey};
@@ -30,7 +31,7 @@ use winit::{
 
 use super::state::WindowState;
 use super::tracking::{remove_window_id_mapping, store_window_id_mapping};
-use crate::app::MenuWrapper;
+use crate::app::{MenuWrapper, add_app_update_event};
 #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
 use crate::platform::context_menu::context_menu_view;
 #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
@@ -69,7 +70,6 @@ pub(crate) struct WindowHandle {
     window_id: WindowId,
     /// The root view ID for this window.
     pub(crate) id: ViewId,
-    main_view: ViewId,
     /// Reactive Scope for this `WindowHandle`
     scope: Scope,
     pub(crate) window_state: WindowState,
@@ -78,6 +78,7 @@ pub(crate) struct WindowHandle {
     default_theme: Option<Style>,
     pub(crate) profile: Option<Profile>,
     is_maximized: bool,
+    fullscreen: Option<Fullscreen>,
     transparent: bool,
     pub(crate) scale: f64,
     pub(crate) modifiers: Modifiers,
@@ -90,6 +91,7 @@ pub(crate) struct WindowHandle {
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) window_menu: Option<MudaMenu>,
     pub(crate) event_reducer: WindowEventReducer,
+    pub(crate) gpu_resources: Option<GpuResources>,
 }
 
 impl Drop for WindowHandle {
@@ -122,6 +124,7 @@ impl WindowHandle {
         let os_theme = window.theme();
         // let current_theme = apply_theme.unwrap_or(os_theme.unwrap_or(winit::window::Theme::Light));
         let is_maximized = window.is_maximized();
+        let is_fullscreen = window.fullscreen();
 
         set_current_view(id);
 
@@ -129,11 +132,7 @@ impl WindowHandle {
         let context_menu = scope.create_rw_signal(None);
 
         #[cfg(not(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32")))]
-        let view = scope.enter(move || {
-            let main_view = view_fn(window_id);
-            let main_view_id = main_view.id();
-            (main_view_id, main_view)
-        });
+        let view = scope.enter(move || view_fn(window_id));
 
         #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
         let view = scope.enter(move || {
@@ -150,8 +149,7 @@ impl WindowHandle {
             )
         });
 
-        let (main_view_id, widget) = view;
-        id.set_children([widget]);
+        id.set_children([view]);
 
         let view = WindowView { id };
         id.set_view(view.into_any());
@@ -198,7 +196,6 @@ impl WindowHandle {
             window,
             window_id,
             id,
-            main_view: main_view_id,
             scope,
             paint_state,
             size,
@@ -208,6 +205,7 @@ impl WindowHandle {
             },
             window_state,
             is_maximized,
+            fullscreen: is_fullscreen,
             transparent,
             profile: None,
             scale,
@@ -221,9 +219,10 @@ impl WindowHandle {
             #[cfg(not(target_arch = "wasm32"))]
             window_menu: None,
             event_reducer: WindowEventReducer::default(),
+            gpu_resources,
         };
         if paint_state_initialized {
-            window_handle.init_renderer(gpu_resources);
+            window_handle.init_renderer();
         }
         window_handle
             .window_state
@@ -272,7 +271,6 @@ impl WindowHandle {
 
         // Convert the view
         let main_view = view.into_view();
-        let main_view_id = main_view.id();
         let widget: Box<dyn View> = main_view.into_any();
 
         id.set_children([widget]);
@@ -301,13 +299,13 @@ impl WindowHandle {
             window,
             window_id,
             id,
-            main_view: main_view_id,
             scope,
             paint_state,
             size,
             default_theme: Some(default_theme(window_state.light_dark_theme)),
             window_state,
             is_maximized,
+            fullscreen: None,
             transparent: false,
             profile: None,
             scale,
@@ -321,6 +319,7 @@ impl WindowHandle {
             #[cfg(not(target_arch = "wasm32"))]
             window_menu: None,
             event_reducer: WindowEventReducer::default(),
+            gpu_resources: None,
         };
 
         window_handle
@@ -343,7 +342,7 @@ impl WindowHandle {
         window_handle
     }
 
-    pub(crate) fn init_renderer(&mut self, gpu_resources: Option<GpuResources>) {
+    pub(crate) fn init_renderer(&mut self) {
         // On the web, we need to get the canvas size once. The size will be updated automatically
         // when the canvas element is resized subsequently. This is the correct place to do so
         // because the renderer is not initialized until now.
@@ -357,7 +356,7 @@ impl WindowHandle {
             self.size(Size::new(size.width, size.height));
         }
         // Now that the renderer is initialized, draw the first frame
-        self.render_frame(gpu_resources);
+        self.render_frame();
         self.window.set_visible(true);
     }
 
@@ -404,6 +403,7 @@ impl WindowHandle {
         let scale = self.scale * self.window_state.scale;
         self.paint_state.set_scale(scale);
         self.event(Event::Window(WindowEvent::ScaleChanged(scale)));
+        self.window_state.request_paint = true;
         self.schedule_repaint();
     }
 
@@ -444,6 +444,7 @@ impl WindowHandle {
     }
 
     pub(crate) fn size(&mut self, size: Size) {
+        dbg!(size);
         self.size.set(size);
         self.window_state.update_screen_size_bp(size);
         self.event(Event::Window(WindowEvent::Resized(size)));
@@ -453,6 +454,7 @@ impl WindowHandle {
 
         let is_maximized = self.window.is_maximized();
         if is_maximized != self.is_maximized {
+            dbg!("maximize changed");
             self.is_maximized = is_maximized;
             self.event(Event::Window(WindowEvent::MaximizeChanged(is_maximized)));
         }
@@ -460,7 +462,8 @@ impl WindowHandle {
         self.style();
         self.layout();
         self.commit_box_tree();
-        self.process_update();
+        self.process_update_no_paint();
+        self.window_state.request_paint = true;
         self.schedule_repaint();
     }
 
@@ -698,25 +701,34 @@ impl WindowHandle {
         }
     }
 
-    pub(crate) fn render_frame(&mut self, gpu_resources: Option<GpuResources>) {
+    pub(crate) fn render_frame(&mut self) {
         // Processes updates scheduled on this frame.
         self.process_scheduled_updates();
 
-        self.process_update_no_paint();
-        self.paint(gpu_resources);
+        let needs_paint = self.process_update_no_paint();
+        if needs_paint {
+            self.paint();
+        }
 
         // Request a new frame if there's any scheduled updates.
+        let window_id = self.window.id();
         if !self.window_state.scheduled_updates.is_empty() {
-            self.schedule_repaint();
+            if needs_paint {
+                self.schedule_repaint();
+            } else {
+                add_app_update_event(crate::app::AppUpdateEvent::AnimationFrame(true, window_id));
+            }
+        } else if !needs_paint {
+            add_app_update_event(crate::app::AppUpdateEvent::AnimationFrame(false, window_id));
         }
     }
 
-    pub fn paint(&mut self, gpu_resources: Option<GpuResources>) -> Option<peniko::ImageBrush> {
+    pub fn paint(&mut self) -> Option<peniko::ImageBrush> {
         // Create GlobalPaintCx (global/shared state)
         let mut cx = crate::paint::GlobalPaintCx {
             window_state: &mut self.window_state,
             paint_state: &mut self.paint_state,
-            gpu_resources,
+            gpu_resources: self.gpu_resources.clone(),
             window: self.window.clone(),
             record_paint_order: crate::paint::is_paint_order_tracking_enabled(),
         };
@@ -757,7 +769,7 @@ impl WindowHandle {
         cx.paint_state.renderer_mut().finish()
     }
 
-    pub(crate) fn capture(&mut self, gpu_resources: Option<GpuResources>) -> Capture {
+    pub(crate) fn capture(&mut self) -> Capture {
         // Capture the view before we run `style` and `layout` to catch missing `request_style`` or
         // `request_layout` flags.
         let root_layout = self.id.get_layout_rect();
@@ -767,7 +779,7 @@ impl WindowHandle {
 
         // Trigger painting to create a Vger renderer which can capture the output.
         // This can be expensive so it could skew the paint time measurement.
-        self.paint(gpu_resources.clone());
+        self.paint();
 
         // Ensure we run layout and styling again for accurate timing. We also need to ensure
         // styles are recomputed to capture them.
@@ -801,7 +813,7 @@ impl WindowHandle {
         let taffy_duration = self.layout();
         let _box_tree_duration = self.commit_box_tree();
         let post_layout = Instant::now();
-        let window = self.paint(gpu_resources);
+        let window = self.paint();
         let end = Instant::now();
 
         let capture = Capture {
@@ -828,6 +840,7 @@ impl WindowHandle {
     pub(crate) fn process_update(&mut self) {
         let needs_paint = self.process_update_no_paint();
         if needs_paint {
+            self.window_state.request_paint = true;
             self.schedule_repaint();
         }
     }
@@ -856,7 +869,6 @@ impl WindowHandle {
                 }
 
                 if needs_style {
-                    paint = true;
                     self.style();
                 }
 
@@ -951,6 +963,9 @@ impl WindowHandle {
                     }
                     UpdateMessage::RequestLayout => {
                         self.window_state.needs_layout = true;
+                    }
+                    UpdateMessage::MarkViewLayoutDirty(id) => {
+                        let _ = id.mark_view_layout_dirty();
                     }
                     UpdateMessage::RequestBoxTreeUpdate => {
                         self.window_state.needs_box_tree_from_layout = true;

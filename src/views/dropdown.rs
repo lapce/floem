@@ -215,7 +215,7 @@ impl<T: 'static + Clone + PartialEq + core::fmt::Debug> View for Dropdown<T> {
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
-        "DropDown".into()
+        "Dropdown".into()
     }
 
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
@@ -273,7 +273,10 @@ impl<T: 'static + Clone + PartialEq + core::fmt::Debug> View for Dropdown<T> {
         }
 
         if cx.phase != Phase::Capture
-            && (cx.event.is_pointer_down() || cx.event.is_keyboard_trigger())
+            && matches!(
+                cx.event,
+                Event::Interaction(crate::event::InteractionEvent::Click)
+            )
         {
             self.swap_state();
             return EventPropagation::Stop;

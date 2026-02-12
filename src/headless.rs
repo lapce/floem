@@ -347,19 +347,11 @@ impl HeadlessHarness {
     ///
     /// This returns the same state used during style computation to determine
     /// which style selectors (hover, active, focused, etc.) apply to the view.
-    pub fn get_interaction_state(&self, id: impl Into<ElementId>) -> InteractionState {
+    pub fn get_interaction_state(&mut self, id: impl Into<ElementId>) -> InteractionState {
         let id: ElementId = id.into();
         let view_id = id.owning_id();
-        InteractionState {
-            is_selected: view_id.is_selected(),
-            is_hovered: self.window_handle.window_state.is_hovered(id),
-            is_disabled: view_id.is_disabled(),
-            is_focused: self.window_handle.window_state.is_focused(id),
-            is_clicking: self.window_handle.window_state.is_clicking(id),
-            is_dark_mode: self.window_handle.window_state.is_dark_mode(),
-            is_file_hover: self.window_handle.window_state.is_file_hover(id),
-            using_keyboard_navigation: self.window_handle.window_state.keyboard_navigation,
-        }
+        crate::style::StyleCx::new(&mut self.window_handle.window_state, view_id)
+            .get_interact_state(view_id)
     }
 
     /// Check if a view has styles defined for the given selector.
@@ -485,7 +477,7 @@ impl HeadlessHarness {
     /// ```
     pub fn paint_and_get_order(&mut self) -> Vec<ViewId> {
         enable_paint_order_tracking();
-        self.window_handle.paint(None);
+        self.window_handle.paint();
         let order = get_paint_order();
         disable_paint_order_tracking();
         order
@@ -523,7 +515,7 @@ impl HeadlessHarness {
     /// Use with `enable_paint_tracking()` and `get_paint_order()` to
     /// verify paint order.
     pub fn paint(&mut self) {
-        self.window_handle.paint(None);
+        self.window_handle.paint();
     }
 }
 

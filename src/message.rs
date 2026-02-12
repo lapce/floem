@@ -129,6 +129,7 @@ pub enum UpdateMessage {
         dispatch_kind: DispatchKind,
         caused_by: Option<Event>,
     },
+    MarkViewLayoutDirty(ViewId),
 }
 
 /// Context passed during the update phase of the view lifecycle.

@@ -11,7 +11,7 @@ use wgpu::web_sys;
 
 use floem_reactive::SignalUpdate;
 use peniko::kurbo::{Point, Size};
-use std::{collections::HashMap, rc::Rc};
+use std::{collections::HashMap, rc::Rc, time::Duration};
 use winit::{
     dpi::{LogicalPosition, LogicalSize},
     event::WindowEvent,
@@ -38,6 +38,7 @@ use crate::{
 pub(crate) struct ApplicationHandle {
     window_handles: HashMap<winit::window::WindowId, WindowHandle>,
     timers: HashMap<TimerToken, Timer>,
+    animating_windows: std::collections::HashSet<winit::window::WindowId>,
     pub(crate) event_listener: Option<Box<AppEventCallback>>,
     pub(crate) gpu_resources: Option<GpuResources>,
     pub(crate) config: AppConfig,
@@ -48,6 +49,7 @@ impl ApplicationHandle {
         Self {
             window_handles: HashMap::new(),
             timers: HashMap::new(),
+            animating_windows: std::collections::HashSet::new(),
             event_listener: None,
             gpu_resources: None,
             config,
@@ -94,7 +96,8 @@ impl ApplicationHandle {
                     );
                     self.gpu_resources = Some(gpu_resources);
                     handle.paint_state = PaintState::Initialized { renderer };
-                    handle.init_renderer(self.gpu_resources.clone());
+                    handle.gpu_resources = self.gpu_resources.clone();
+                    handle.init_renderer();
                 } else {
                     panic!("Sent a gpu resource update after it had already been initialized");
                 }
@@ -132,6 +135,21 @@ impl ApplicationHandle {
                 }
                 AppUpdateEvent::RequestTimer { timer } => {
                     self.request_timer(timer, event_loop);
+                }
+                AppUpdateEvent::RequestAnimationTimer {
+                    mut timer,
+                    window_id,
+                } => {
+                    timer.deadline = Instant::now() + self.frame_duration_for_window(&window_id);
+                    self.request_timer(timer, event_loop);
+                }
+                AppUpdateEvent::AnimationFrame(animate, window_id) => {
+                    if animate {
+                        self.animating_windows.insert(window_id);
+                    } else {
+                        self.animating_windows.remove(&window_id);
+                    }
+                    self.update_control_flow(event_loop);
                 }
                 AppUpdateEvent::CancelTimer { timer } => {
                     self.remove_timer(&timer, event_loop);
@@ -321,7 +339,7 @@ impl ApplicationHandle {
             }
             WindowEvent::Occluded(_) => {}
             WindowEvent::RedrawRequested => {
-                window_handle.render_frame(self.gpu_resources.clone());
+                window_handle.render_frame();
             }
             WindowEvent::PanGesture { .. } => {}
             WindowEvent::DoubleTapGesture { .. } => {}
@@ -586,7 +604,7 @@ impl ApplicationHandle {
     fn capture_window(&mut self, window_id: WindowId) -> Option<Capture> {
         self.window_handles
             .get_mut(&window_id)
-            .map(|handle| handle.capture(self.gpu_resources.clone()))
+            .map(|handle| handle.capture())
     }
 
     pub(crate) fn idle(&mut self) {
@@ -603,6 +621,45 @@ impl ApplicationHandle {
         for (window_id, handle) in self.window_handles.iter_mut() {
             handle.process_update();
             while process_window_updates(window_id) {}
+        }
+    }
+
+    fn frame_duration_for_window(&self, window_id: &winit::window::WindowId) -> Duration {
+        self.window_handles
+            .get(window_id)
+            .and_then(|h| h.window.current_monitor())
+            .and_then(|m| m.current_video_mode())
+            .and_then(|v| v.refresh_rate_millihertz())
+            .map(|mhz| Duration::from_nanos(1_000_000_000_000 / mhz.get() as u64))
+            .unwrap_or(Duration::from_millis(8))
+    }
+
+    fn update_control_flow(&self, event_loop: &dyn ActiveEventLoop) {
+        let timer_deadline = self.timers.values().map(|t| t.deadline).min();
+
+        let animation_deadline = if self.animating_windows.is_empty() {
+            None
+        } else {
+            let now = Instant::now();
+            self.animating_windows
+                .iter()
+                .map(|wid| now + self.frame_duration_for_window(wid))
+                .min()
+        };
+
+        match (timer_deadline, animation_deadline) {
+            (Some(t), Some(a)) => {
+                event_loop.set_control_flow(ControlFlow::WaitUntil(t.min(a)));
+            }
+            (Some(t), None) => {
+                event_loop.set_control_flow(ControlFlow::WaitUntil(t));
+            }
+            (None, Some(a)) => {
+                event_loop.set_control_flow(ControlFlow::WaitUntil(a));
+            }
+            (None, None) => {
+                event_loop.set_control_flow(ControlFlow::Wait);
+            }
         }
     }
 

@@ -179,6 +179,35 @@ pub fn exec_after(duration: Duration, action: impl FnOnce(TimerToken) + 'static)
     token
 }
 
+/// Execute a callback on the next animation frame, synchronized with the display's refresh rate.
+///
+/// Returns a [`TimerToken`] that can be used to cancel the callback before it fires.
+/// Returns [`TimerToken::INVALID`] if called outside of a window context.
+pub fn exec_after_animation_frame(action: impl FnOnce(TimerToken) + 'static) -> TimerToken {
+    let view = get_current_view();
+    let Some(window_id) = view.window_id() else {
+        return TimerToken::INVALID;
+    };
+
+    let action = move |token| {
+        let current_view = get_current_view();
+        set_current_view(view.root());
+        action(token);
+        set_current_view(current_view);
+    };
+
+    let token = TimerToken::next();
+    add_app_update_event(AppUpdateEvent::RequestAnimationTimer {
+        timer: Timer {
+            token,
+            action: Box::new(action),
+            deadline: Instant::now(), // overridden by handler using monitor refresh rate
+        },
+        window_id,
+    });
+    token
+}
+
 /// Debounce an action.
 ///
 /// This tracks a signal and checks if the inner value has changed by checking it's hash and will

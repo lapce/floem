@@ -40,11 +40,10 @@ fn app_view() -> impl IntoView {
     Stack::vertical((
         Button::new("Switch views").action(move || state.update(ViewSwitcher::toggle)),
         Stack::horizontal((
-            dyn_container(move || state.get(), move |which| which.view(state)),
+            // dyn_container(move || state.get(), move |which| which.view(state)),
             ().animation(move |a| {
-                a.scale_effect()
-                    .with_duration(|a, d| a.delay(d))
-                    .keyframe(0, |s| s.style(|s| s.size(0, 0)))
+                a.scale_effect().with_duration(|a, d| a.delay(d))
+                // .keyframe(0, |s| s.style(|s| s.size(0, 0)))
             })
             .style(move |s| {
                 s.size(100, 100)

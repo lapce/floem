@@ -99,6 +99,11 @@ impl View for Tooltip {
 
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         self.style.read(cx);
+        if self.overlay.borrow().is_some() && self.id.is_hidden() {
+            let id = self.overlay.take().unwrap();
+            self.hover_point = None;
+            remove_overlay(id);
+        }
     }
 
     fn event(&mut self, cx: &mut EventCx) -> EventPropagation {

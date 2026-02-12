@@ -1430,13 +1430,8 @@ impl View for TextInput {
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         let style = cx.style();
 
-        let placeholder_style = cx.resolve_nested_maps(
-            Style::new(),
-            &[PlaceholderTextClass::class_ref()],
-            false,
-            false,
-            false,
-        );
+        let placeholder_style =
+            cx.resolve_nested_maps(Style::new(), &[PlaceholderTextClass::class_ref()], self.id);
         self.placeholder_style.read_style(cx, &placeholder_style);
 
         if self.font.read(cx) {

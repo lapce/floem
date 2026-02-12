@@ -120,9 +120,10 @@ pub enum VisibilityPhase {
 }
 
 impl VisibilityPhase {
-    pub(crate) fn get_display(&self) -> Option<taffy::style::Display> {
+    pub(crate) fn get_display_override(&self) -> Option<taffy::style::Display> {
         match self {
             VisibilityPhase::Animating(dis) => Some(*dis),
+            VisibilityPhase::Hidden => Some(taffy::Display::None),
             _ => None,
         }
     }
@@ -183,16 +184,15 @@ impl VisibilityPhase {
 pub struct Visibility {
     /// The current visibility phase (for enter/exit animations).
     pub phase: VisibilityPhase,
-
-    /// When true, view is force-hidden via set_hidden() API.
-    /// This bypasses the normal transition logic.
-    pub force_hidden: bool,
+    // /// When true, view is force-hidden via set_hidden() API.
+    // /// This bypasses the normal transition logic.
+    // pub force_hidden: bool,
 }
 
 impl Visibility {
     /// Returns true if the view should be treated as hidden.
     pub fn is_hidden(&self) -> bool {
-        self.force_hidden || self.phase == VisibilityPhase::Hidden
+        self.phase == VisibilityPhase::Hidden
     }
 }
 
@@ -218,26 +218,50 @@ pub struct ViewState {
     pub(crate) animations: Stack<Animation>,
     pub(crate) classes: Vec<StyleClassRef>,
     pub(crate) dragging_style: Option<Style>,
-    /// Combine the stacked style into one style, and apply the interact state.
+    /// The resolved style for this view (base + selectors + classes).
+    /// Does NOT include inherited properties from ancestors.
+    ///
+    /// Use for style resolution logic (what did this view define?):
+    /// - Checking if a property is explicitly set on this view
+    /// - Computing class context propagation to children
+    /// - Building style cache keys
     pub(crate) combined_style: Style,
-    /// The final style including inherited style from parent.
+    /// The final computed style including inherited properties from ancestors.
+    /// This is combined_style merged with inherited context (font_size, color, etc.).
+    ///
+    /// Use for rendering and layout (what will the user see?):
+    /// - Layout calculations via prop extractors
+    /// - Visual properties (background, border, transform)
+    /// - Anything that affects what gets rendered
+    /// - Converting to taffy style for layout engine
     pub(crate) computed_style: Style,
     /// this can be used to make it so that a view will pull it's style context from a different parent.
     /// This is useful for overlays that are children of the window root but should pull their style cx from the creating view
     pub(crate) style_cx_parent: Option<ViewId>,
-    /// The style map that has the inherited properties that the children should use.
-    /// Contains only properties marked as `inherited` (font-size, color, etc.)
+    /// The inherited properties context for children.
+    /// Contains only properties marked as `inherited` (font-size, color, etc.).
+    ///
+    /// Derived from this view's computed_style (which includes inherited properties
+    /// from ancestors). Children will merge this with their combined_style to produce
+    /// their computed_style.
     pub(crate) style_cx: Option<Style>,
-    /// The class context that has class nested maps for children to apply.
-    /// Contains `.class(SomeClass, ...)` definitions that flow to descendants.
+    /// The class context containing class definitions for descendants.
+    /// Contains `.class(SomeClass, ...)` nested maps that flow down the tree.
+    ///
+    /// Derived from this view's combined_style (only explicitly set class definitions).
+    /// Children will use this to resolve their class references when computing their
+    /// combined_style.
     pub(crate) class_cx: Option<Style>,
     /// the style interaction cx that is saved after computing the final style.
     /// This will be used as the base interaction for all **children** of this view as these are the inherited interactions
     pub(crate) style_interaction_cx: InheritedInteractionCx,
     /// This interaction context can be set by a parent on this view. This will be used when building the StyleCx for **this** view.
     pub(crate) parent_set_style_interaction: InheritedInteractionCx,
-    /// Controls view visibility including phase transitions and force-hidden state.
+    /// Controls view visibility for phase transitions.
     pub(crate) visibility: Visibility,
+    /// stores the last known visibility state of the view. This is not based on the visibility transition and as such does **NOT** the final visibility of the view.
+    /// that is done by `visibility`.
+    pub(crate) is_hidden: bool,
     /// The cursor style set by the style pass on the view. There is also the [`Self::user_cursor`] that takes precedance over this cursor.
     pub(crate) style_cursor: Option<CursorStyle>,
     /// the cursor style that a user can set on a view through the `ViewId`. This takes precedance over style_cursor.
@@ -320,6 +344,7 @@ impl ViewState {
             style_interaction_cx: Default::default(),
             parent_set_style_interaction: Default::default(),
             visibility: Visibility::default(),
+            is_hidden: false,
             style_cursor: None,
             user_cursor: None,
             children_scope: None,
@@ -359,12 +384,12 @@ impl ViewState {
     ///   Used for class styling that flows from ancestors.
     pub(crate) fn compute_combined(
         &mut self,
-        interact_state: crate::style::InteractionState,
+        interact_state: &mut crate::style::InteractionState,
         screen_size_bp: crate::layout::responsive::ScreenSizeBp,
         view_class: Option<crate::style::StyleClassRef>,
         inherited_context: &std::rc::Rc<Style>,
         class_context: &std::rc::Rc<Style>,
-    ) -> (Style, bool) {
+    ) -> (Style, bool, bool) {
         // Start with the combined stacked styles
         let base_style = self.style();
 
@@ -383,30 +408,45 @@ impl ViewState {
         let inherited_ctx = (**inherited_context).clone();
 
         // Resolve all nested maps: selectors, responsive styles, and classes
-        let (combined, classes_applied) = crate::style::resolve_nested_maps(
+        let (mut combined, classes_applied) = crate::style::resolve_nested_maps(
             base_style,
-            &interact_state,
+            interact_state,
             screen_size_bp,
             &all_classes,
             &inherited_ctx,
             class_context,
         );
 
-        let visibility = self.visibility;
-        // For Animating, preserve the original display; for Hidden/force_hidden, force None
-        let display_override = if visibility.force_hidden {
-            Some(taffy::Display::None)
-        } else {
-            match visibility.phase {
-                VisibilityPhase::Animating(dis) => Some(dis),
-                VisibilityPhase::Hidden => Some(taffy::Display::None),
-                _ => None,
+        // ─────────────────────────────────────────────────────────────────────
+        // Phase 7: Process animations
+        // ─────────────────────────────────────────────────────────────────────
+        // Animations modify the computed style by interpolating between keyframe values.
+        // We process animations here, after the base style is computed but before
+        // it's stored, so animated values override static style values.
+        let mut has_active_animation = false;
+        {
+            for animation in self
+                .animations
+                .stack
+                .iter_mut()
+                .filter(|anim| anim.can_advance() || anim.should_apply_folded())
+            {
+                if animation.can_advance() {
+                    has_active_animation = true;
+                    animation.animate_into(&mut combined);
+                    animation.advance();
+                } else {
+                    animation.apply_folded(&mut combined);
+                }
+                debug_assert!(
+                    !animation.is_idle(),
+                    "Animation should not be idle after processing"
+                );
             }
-        };
-        let combined = combined.apply_opt(display_override, crate::style::Style::display);
+        }
 
         self.combined_style = combined.clone();
-        (combined, classes_applied)
+        (combined, classes_applied, has_active_animation)
     }
 
     pub(crate) fn add_event_listener(
@@ -580,18 +620,21 @@ mod tests {
     #[test]
     fn test_get_display_during_animating() {
         let phase = VisibilityPhase::Animating(Display::Flex);
-        assert_eq!(phase.get_display(), Some(Display::Flex));
+        assert_eq!(phase.get_display_override(), Some(Display::Flex));
 
         let phase = VisibilityPhase::Animating(Display::Block);
-        assert_eq!(phase.get_display(), Some(Display::Block));
+        assert_eq!(phase.get_display_override(), Some(Display::Block));
     }
 
     /// Test get_display() returns None for non-Animating phases.
     #[test]
     fn test_get_display_for_other_phases() {
-        assert_eq!(VisibilityPhase::Initial.get_display(), None);
-        assert_eq!(VisibilityPhase::Visible(Display::Flex).get_display(), None);
-        assert_eq!(VisibilityPhase::Hidden.get_display(), None);
+        assert_eq!(VisibilityPhase::Initial.get_display_override(), None);
+        assert_eq!(
+            VisibilityPhase::Visible(Display::Flex).get_display_override(),
+            None
+        );
+        assert_eq!(VisibilityPhase::Hidden.get_display_override(), None);
     }
 
     /// Test Visible stays Visible when display changes to different visible value.

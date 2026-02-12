@@ -598,8 +598,6 @@ impl<'a> GlobalEventCx<'a> {
                 } else if let Some(point) = pointer_event.logical_point() {
                     use crate::context::Phases;
                     self.route_spatial(event, point, Phases::all(), &mut default_prevented)
-                } else {
-                    self.route_global(event, false, &mut default_prevented)
                 }
             }
             Event::Key(_) | Event::Ime(_) => {
@@ -904,6 +902,7 @@ impl<'a> GlobalEventCx<'a> {
             }
         }
         if let Event::Pointer(pe) = &event {
+            /// TODO: send these file hover events
             let file_hover_events = self.window_state.file_hover_state.clear();
             for file_hover_event in file_hover_events {
                 if let HoverEvent::Leave(element_id) = file_hover_event {
@@ -1648,43 +1647,10 @@ impl<'a> GlobalEventCx<'a> {
         pointer: PointerInfo,
         event: &Event,
     ) {
-        let mut router = Router::with_parent(
-            BoxNodeLookup,
-            BoxNodeParentLookup {
-                root_view_id: self.window_state.root_view_id,
-                box_tree: self.window_state.box_tree.clone(),
-            },
-        );
-        let root = self.window_state.root_view_id;
-
-        let Some((target, path)) = hit_test(root, point) else {
-            // No hit - clear hover state
-            let hover_events = self.window_state.hover_state.clear();
-            for hover_event in hover_events {
-                if let HoverEvent::Leave(box_node) = hover_event {
-                    box_node.owning_id().request_style();
-                }
-            }
-            return;
-        };
-
-        router.set_scope(Some(Box::new(|id| {
-            let view_id = id.owning_id();
-            !view_id.is_hidden() && !view_id.pointer_events_none()
-        })));
-
-        let resolved = ResolvedHit {
-            node: target,
-            path: Some((&*path).into()),
-            depth_key: DepthKey::Z(0),
-            localizer: Localizer::default(),
-            meta: None::<()>,
-        };
-
-        let seq = router.handle_with_hits(&[resolved]);
-        // Build hover path using router
-        let hover_path = router::path_from_dispatch(&seq);
-        self.update_hover_from_path(&hover_path, point, pointer, event);
+        let path = hit_test(self.window_state.root_view_id, point).map(|v| v.1);
+        if let Some(path) = path {
+            self.update_hover_from_path(&path, point, pointer, event);
+        }
     }
 
     pub(crate) fn update_hover_from_path(
@@ -1699,6 +1665,11 @@ impl<'a> GlobalEventCx<'a> {
         };
         let events = self.window_state.hover_state.update_path(path);
         for hover_event in events {
+            let new = match hover_event {
+                HoverEvent::Enter(id) => HoverEvent::Enter(id.owning_id()),
+                HoverEvent::Leave(id) => HoverEvent::Leave(id.owning_id()),
+            };
+
             match hover_event {
                 HoverEvent::Enter(id) => {
                     let view_id = id.owning_id();

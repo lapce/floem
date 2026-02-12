@@ -233,10 +233,10 @@ impl Handle {
             }
             Event::Pointer(PointerEvent::Leave(_)) => {
                 cx.window_state.clear_cursor(self.element_id);
-                self.style(&mut StyleCx::new(cx.window_state, self.parent_id), axis);
+                // self.style(&mut StyleCx::new(cx.window_state, self.parent_id), axis);
             }
             Event::Pointer(PointerEvent::Enter(_)) => {
-                self.style(&mut StyleCx::new(cx.window_state, self.parent_id), axis);
+                // self.style(&mut StyleCx::new(cx.window_state, self.parent_id), axis);
             }
             Event::Pointer(PointerEvent::Move(u)) => {
                 let cursor = match axis {
@@ -312,11 +312,10 @@ impl Handle {
     }
 
     fn style(&mut self, cx: &mut crate::context::StyleCx<'_>, axis: Axis) {
-        let interact_state = cx.get_interact_state(self.element_id);
-        let resolved = cx.resolve_nested_maps_with_state(
+        let resolved = cx.resolve_nested_maps(
             Style::new(),
             &[ResizableHandleClass::class_ref()],
-            &interact_state,
+            self.element_id,
         );
         if self.handle_style.read_style(cx, &resolved) {
             let cursor = match axis {

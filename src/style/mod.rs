@@ -227,12 +227,13 @@ pub(crate) fn screen_size_bp_to_key(breakpoint: ScreenSizeBp) -> StyleKey {
 /// the bool in the return is a classes_applied flag. if a new class has been applied, we need to do a request_style_recursive
 pub fn resolve_nested_maps(
     style: Style,
-    interact_state: &InteractionState,
+    interact_state: &mut InteractionState,
     screen_size_bp: ScreenSizeBp,
     classes: &[StyleClassRef],
     inherited_context: &Style,
     class_context: &Style,
 ) -> (Style, bool) {
+    // TODO: update interact state as each map is resolved
     let mut classes_applied = false;
 
     let effect_context = style.effect_context.clone();
@@ -1539,6 +1540,9 @@ define_builtin_props!(
 
     /// Controls the stack order of positioned views.
     ///
+    /// This is not a global z-index and will only be used as an override to the sorted order of sibling elements.
+    /// If you want a view positioned above others, use an overlay.
+    ///
     /// Higher values appear in front of lower values.
     ZIndex z_index { nocb, tr }: Option<i32> {} = None,
 
@@ -1776,6 +1780,8 @@ prop_extractor! {
 
 prop_extractor! {
     pub(crate) LayoutProps {
+        // display is used here to just to properly trigger transitions on layout change. it is not transitioned here
+        pub display: DisplayProp,
         pub border: BorderProp,
         pub padding: PaddingProp,
         pub margin: MarginProp,
@@ -1883,7 +1889,6 @@ prop_extractor! {
         pub pointer_events: PointerEventsProp,
         pub focusable: Focusable,
         pub disabled: Disabled,
-        pub display: DisplayProp,
         pub overflow_x: OverflowX,
         pub overflow_y: OverflowY,
         pub border_radius: BorderRadiusProp,
@@ -1892,21 +1897,6 @@ prop_extractor! {
 impl BoxTreeProps {
     pub fn pickable(&self) -> bool {
         self.pointer_events() != Some(PointerEvents::None)
-    }
-
-    pub fn set_box_tree(&self, element_id: ElementId, box_tree: &mut BoxTree, force_hidden: bool) {
-        // box_tree.set_z_index(element_id.0, self.z_index().unwrap_or(0));
-        let mut flags = NodeFlags::empty();
-        if self.pickable() {
-            flags |= NodeFlags::PICKABLE;
-        }
-        if self.focusable() && self.display() != Display::None && !self.disabled() {
-            flags |= NodeFlags::FOCUSABLE;
-        }
-        if self.display() != Display::None && !force_hidden {
-            flags |= NodeFlags::VISIBLE;
-        }
-        box_tree.set_flags(element_id.0, flags);
     }
 
     pub fn clip_rect(&self, mut rect: kurbo::Rect) -> Option<RoundedRect> {

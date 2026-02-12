@@ -1,6 +1,9 @@
 use std::{cell::RefCell, collections::HashMap, time::Duration};
 
-use crate::{event::listener, platform::menu_types::MenuId, view::ViewStorage};
+use crate::{
+    action::exec_after_animation_frame, event::listener, platform::menu_types::MenuId,
+    view::ViewStorage,
+};
 
 use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Size, Vec2};
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -99,7 +102,8 @@ pub struct WindowState {
 
     /// Cache for style resolution results.
     /// Views with identical styles and interaction states can share resolved styles.
-    pub(crate) style_cache: StyleCache,
+    // no need for style cache
+    // pub(crate) style_cache: StyleCache,
 
     /// Pending child changes for graduated style propagation.
     /// Maps view IDs to the change that should be propagated to their children.
@@ -180,7 +184,6 @@ impl WindowState {
             grid_bps: GridBreakpoints::default(),
             context_menu: HashMap::new(),
             capture: None,
-            style_cache: StyleCache::new(),
             pending_child_change: FxHashMap::default(),
             pending_global_recalc: StyleRecalcChange::new(
                 crate::style::Propagate::RecalcDescendants,
@@ -698,6 +701,7 @@ impl WindowState {
                         };
 
                     let props = compute_view_box_properties(
+                        &s,
                         view_id,
                         layout,
                         parent_scroll,
@@ -762,7 +766,7 @@ impl WindowState {
 
             // Schedule next animation frame if needed
             if dragging.should_schedule_animation_frame() {
-                let timer = exec_after(Duration::from_millis(8), move |_| {
+                let timer = exec_after_animation_frame(move |_| {
                     add_update_message(UpdateMessage::RequestBoxTreeCommit);
                 });
                 dragging.animation_timer = Some(timer);
@@ -819,7 +823,7 @@ impl WindowState {
     }
 
     // `Id` is unused currently, but could be used to calculate damage regions.
-    pub fn request_paint(&mut self, _id: ViewId) {
+    pub fn request_paint(&mut self, id: ViewId) {
         self.request_paint = true;
     }
 
@@ -874,6 +878,7 @@ struct ViewBoxProperties {
 
 // New helper function to compute view's box tree properties
 fn compute_view_box_properties(
+    s: &ViewStorage,
     view_id: ViewId,
     layout: taffy::Layout,
     parent_scroll: Vec2,
@@ -883,51 +888,48 @@ fn compute_view_box_properties(
     let local_rect = Rect::from_origin_size(Point::ZERO, size);
     let local_pos = Point::new(layout.location.x as f64, layout.location.y as f64);
 
-    VIEW_STORAGE.with_borrow(|s| {
-        let state = s.states.get(view_id).unwrap();
-        let state_borrow = state.borrow();
+    let state = s.states.get(view_id).unwrap();
+    let state_borrow = state.borrow();
 
-        let style_transform = state_borrow.view_transform_props.affine(size);
-        let view_local_transform = style_transform * state_borrow.transform;
-        let scroll_offset = state_borrow.child_translation;
-        let clip = state_borrow.box_tree_props.clip_rect(local_rect);
-        let element_id = state_borrow.element_id;
-        let z_index = state_borrow.combined_style.get(ZIndex).unwrap_or(0);
+    let style_transform = state_borrow.view_transform_props.affine(size);
+    let view_local_transform = style_transform * state_borrow.transform;
+    let scroll_offset = state_borrow.child_translation;
+    let clip = state_borrow.box_tree_props.clip_rect(local_rect);
+    let element_id = state_borrow.element_id;
+    let z_index = state_borrow.combined_style.get(ZIndex).unwrap_or(0);
 
-        drop(state_borrow);
+    drop(state_borrow);
 
-        // Compute scroll context
-        let scroll_ctx = if parent_scroll != Vec2::ZERO {
-            parent_scroll_ctx + parent_scroll
-        } else {
-            parent_scroll_ctx
-        };
+    // Compute scroll context
+    let scroll_ctx = if parent_scroll != Vec2::ZERO {
+        parent_scroll_ctx + parent_scroll
+    } else {
+        parent_scroll_ctx
+    };
 
-        // Compute local transform
-        let parent_transform_for_children = Affine::translate(-parent_scroll);
-        let local_transform = parent_transform_for_children
-            * Affine::translate(local_pos.to_vec2())
-            * view_local_transform;
+    // Compute local transform
+    let parent_transform_for_children = Affine::translate(-parent_scroll);
+    let local_transform = parent_transform_for_children
+        * Affine::translate(local_pos.to_vec2())
+        * view_local_transform;
 
-        // Compute layout window origin (position in window coordinates after scrolling)
-        let layout_window_origin =
-            Point::new(local_pos.x - scroll_ctx.x, local_pos.y - scroll_ctx.y);
+    // Compute layout window origin (position in window coordinates after scrolling)
+    let layout_window_origin = Point::new(local_pos.x - scroll_ctx.x, local_pos.y - scroll_ctx.y);
 
-        // Update state
-        let mut state_mut = state.borrow_mut();
-        state_mut.scroll_ctx = scroll_ctx;
-        state_mut.layout_window_origin = layout_window_origin;
+    // Update state
+    let mut state_mut = state.borrow_mut();
+    state_mut.scroll_ctx = scroll_ctx;
+    state_mut.layout_window_origin = layout_window_origin;
 
-        ViewBoxProperties {
-            element_id,
-            local_rect,
-            local_transform,
-            scroll_offset,
-            scroll_ctx,
-            clip,
-            z_index,
-        }
-    })
+    ViewBoxProperties {
+        element_id,
+        local_rect,
+        local_transform,
+        scroll_offset,
+        scroll_ctx,
+        clip,
+        z_index,
+    }
 }
 
 fn compute_absolute_transforms_and_boxes(
@@ -944,7 +946,8 @@ fn compute_absolute_transforms_and_boxes(
     drop(taffy);
 
     if let Some(&view_id) = s.taffy_to_view.get(&node) {
-        let props = compute_view_box_properties(view_id, layout, parent_scroll, parent_scroll_ctx);
+        let props =
+            compute_view_box_properties(s, view_id, layout, parent_scroll, parent_scroll_ctx);
 
         // Update box tree
         {

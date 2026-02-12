@@ -751,7 +751,9 @@ impl ViewId {
 
     /// Returns true if this view is hidden.
     pub fn is_hidden(&self) -> bool {
-        self.state().borrow().visibility.is_hidden()
+        let state = self.state();
+        let state = state.borrow();
+        state.visibility.is_hidden()
     }
 
     /// if the view has pointer events none
@@ -801,6 +803,11 @@ impl ViewId {
     /// Request that this view have it's layout pass run
     pub fn request_layout(&self) {
         add_update_message(UpdateMessage::RequestLayout);
+    }
+
+    /// Request that this view have it's taffy node be marked dirty
+    pub fn request_mark_view_layout_dirty(&self) {
+        add_update_message(UpdateMessage::MarkViewLayoutDirty(*self));
     }
 
     /// Request that the box tree be updated from the layout tree (full walk) and committed.
@@ -1025,14 +1032,31 @@ impl ViewId {
         state.borrow_mut().add_cleanup_listener(action);
     }
 
-    /// Get the combined style that is associated with this View.
+    /// Get the resolved style for this view (base + selectors + classes).
     ///
-    /// This will have all of the style properties set in it that are relevant to this view, including all properties from relevant classes.
+    /// This contains all style properties explicitly set on this view, including
+    /// properties from applied classes and resolved selectors. It does NOT include
+    /// inherited properties from ancestor views (like font_size, color, etc.).
+    ///
+    /// ## When to use
+    /// Use `combined_style` when you need to know what this specific view defines:
+    /// - Checking if THIS view explicitly sets a property
+    /// - Computing what should propagate to children (class definitions)
+    /// - Building cache keys for style resolution
+    /// - Style resolution logic that shouldn't include inherited noise
+    ///
+    /// ## When NOT to use
+    /// Do not use for rendering or layout - use `computed_style` instead (accessed
+    /// via prop extractors in style_pass), which includes inherited properties and
+    /// represents what the user will actually see.
     ///
     /// ## Warning
-    /// The view styles do not store property transition states, only markers of which properties _should_ be transitioned over time on change.
+    /// The view styles do not store property transition states, only markers of which
+    /// properties _should_ be transitioned over time on change.
     ///
-    /// If you have a property that could be transitioned over time, make sure to use a [prop extractor](crate::prop_extractor) that is updated in a style method of the View to extract the property.
+    /// If you have a property that could be transitioned over time, make sure to use
+    /// a [prop extractor](crate::prop_extractor) that is updated in a style method
+    /// of the View to extract the property.
     pub fn get_combined_style(&self) -> Style {
         self.state().borrow().combined_style.clone()
     }
@@ -1512,15 +1536,17 @@ impl ViewId {
         }
     }
 
-    /// Hide this view from layout. Sets the visibility state directly.
+    /// Hide this view from layout. Sets the parent set visibility state directly.
     /// Skips the normal transition animation logic.
+    /// This should be used by parent views to set hidden state propagation to their children.
+    /// Only requests a style update if the state actually changes.
     pub fn set_hidden(&self) {
         use crate::view::state::VisibilityPhase;
         let changed = {
             let state = self.state();
             let mut state = state.borrow_mut();
-            if !state.visibility.force_hidden {
-                state.visibility.force_hidden = true;
+            if !state.parent_set_style_interaction.hidden {
+                state.parent_set_style_interaction.hidden = true;
                 state.visibility.phase = VisibilityPhase::Hidden;
                 true
             } else {
@@ -1532,14 +1558,16 @@ impl ViewId {
         }
     }
 
-    /// Show this view in layout. Clears the force-hidden state.
+    /// Show this view in layout. Clears the parent set hidden state.
+    /// This should be used by parent views to clear hidden state propagation to their children.
+    /// Only requests a style update if the state actually changes.
     pub fn set_visible(&self) {
         use crate::view::state::VisibilityPhase;
         let changed = {
             let state = self.state();
             let mut state = state.borrow_mut();
-            if state.visibility.force_hidden {
-                state.visibility.force_hidden = false;
+            if state.parent_set_style_interaction.hidden {
+                state.parent_set_style_interaction.hidden = false;
                 // Reset phase to Initial so the normal transition logic can run
                 state.visibility.phase = VisibilityPhase::Initial;
                 true
@@ -1548,9 +1576,9 @@ impl ViewId {
             }
         };
         if changed {
-            // Request both style (for transition) and layout (for size recalc)
+            // Request both style (for transition)
+            // No need to request layout. the style pass will determine if that is necessary and request layout.
             self.request_style();
-            self.request_layout();
         }
     }
 }
