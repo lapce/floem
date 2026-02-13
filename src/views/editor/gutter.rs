@@ -1,3 +1,5 @@
+use std::{cell::RefCell, rc::Rc};
+
 use crate::{
     Renderer,
     context::PaintCx,
@@ -43,7 +45,7 @@ impl GutterStyle {
 pub struct EditorGutterView {
     id: ViewId,
     editor: RwSignal<Editor>,
-    full_width: f64,
+    full_width: Rc<RefCell<f64>>,
     text_width: f64,
     gutter_style: GutterStyle,
     layout_node: Option<taffy::NodeId>,
@@ -57,7 +59,7 @@ pub fn editor_gutter_view(editor: RwSignal<Editor>) -> EditorGutterView {
     let mut gutter = EditorGutterView {
         id,
         editor,
-        full_width: 0.0,
+        full_width: Rc::new(RefCell::new(0.)),
         text_width: 0.0,
         gutter_style: Default::default(),
         layout_node: None,
@@ -131,7 +133,7 @@ impl View for EditorGutterView {
                                 // the extra 1px is for a small line that appears between
                                 let rect = Rect::from_origin_size(
                                     (viewport.x0, info.vline_y - viewport.y0),
-                                    (self.full_width + 1.1, f64::from(line_height)),
+                                    (*self.full_width.borrow() + 1.1, f64::from(line_height)),
                                 );
 
                                 cx.fill(&rect, current_line_color, 0.0);
@@ -170,7 +172,8 @@ impl View for EditorGutterView {
                 let height = size.height;
 
                 let pos = Point::new(
-                    (self.full_width - (size.width) - self.gutter_style.right_padding()).max(0.0),
+                    (*self.full_width.borrow() - (size.width) - self.gutter_style.right_padding())
+                        .max(0.0),
                     y + (line_height - height) / 2.0 - viewport.y0,
                 );
 
@@ -238,10 +241,9 @@ impl EditorGutterView {
             },
         );
 
+        let full_width = self.full_width.clone();
         let finalize_fn = Box::new(move |_node_id, layout: &taffy::Layout| {
-            // dbg!(_node_id, layout);
-            // Store the final width if needed
-            // self.full_width = layout.size.width as f64;
+            *full_width.borrow_mut() = layout.size.width as f64;
         });
 
         self.layout_node = Some(gutter_node);
