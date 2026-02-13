@@ -42,7 +42,7 @@ pub struct InteractionState {
     pub is_disabled: bool,
     /// Whether this view has keyboard focus.
     pub is_focused: bool,
-    is_hidden: bool,
+    pub is_hidden: bool,
     /// Whether this view is being clicked (pointer down but not yet up).
     pub is_clicking: bool,
     /// Whether dark mode is enabled.

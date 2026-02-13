@@ -17,6 +17,7 @@ bitflags::bitflags! {
         const CAPTURE = 0b1;
         const TARGET = 0b10;
         const BUBBLE = 0b100;
+        const BROADCAST = 0b1000;
     }
 }
 impl Phases {
@@ -32,12 +33,20 @@ impl Phases {
     pub const CAPTURE_AND_BUBBLE: Phases =
         Phases::from_bits_truncate(Phases::CAPTURE.bits() | Phases::BUBBLE.bits());
 
+    /// Broadcast phase only (for global keyboard shortcuts, etc.)
+    pub const BROADCAST_ONLY: Phases = Phases::BROADCAST;
+    /// All standard phases (capture/target/bubble) - common for pointer events
+    pub const STANDARD: Phases = Phases::from_bits_truncate(
+        Phases::CAPTURE.bits() | Phases::TARGET.bits() | Phases::BUBBLE.bits(),
+    );
+
     /// Check if this phase set includes the given phase.
     pub fn matches(&self, phase: &Phase) -> bool {
         match phase {
             Phase::Capture => self.contains(Phases::CAPTURE),
             Phase::Target => self.contains(Phases::TARGET),
             Phase::Bubble => self.contains(Phases::BUBBLE),
+            Phase::Broadcast => self.contains(Phases::BROADCAST), // <- Add this
         }
     }
 }

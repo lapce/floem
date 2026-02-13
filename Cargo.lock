@@ -1404,7 +1404,6 @@ dependencies = [
  "understory_event_state",
  "understory_focus",
  "understory_index",
- "understory_responder",
  "unic-langid",
  "unicode-segmentation",
  "wasm-bindgen-futures",
@@ -5847,10 +5846,6 @@ dependencies = [
  "hashbrown 0.16.1",
  "smallvec",
 ]
-
-[[package]]
-name = "understory_responder"
-version = "0.1.0"
 
 [[package]]
 name = "unic-langid"

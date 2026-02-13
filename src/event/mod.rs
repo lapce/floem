@@ -388,15 +388,9 @@ pub enum Phase {
     Target,
     /// Target-to-parent traversal.
     Bubble,
-}
-impl From<understory_responder::types::Phase> for Phase {
-    fn from(value: understory_responder::types::Phase) -> Self {
-        match value {
-            understory_responder::types::Phase::Capture => Self::Capture,
-            understory_responder::types::Phase::Target => Self::Target,
-            understory_responder::types::Phase::Bubble => Self::Bubble,
-        }
-    }
+    /// A phase for global and fallback events.
+    /// Currently this is used for keyboard and ime events that are broadcast after failing to be handled by the focus path.
+    Broadcast,
 }
 
 /// Control whether an event will continue propagating or whether it should stop.

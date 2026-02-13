@@ -108,7 +108,6 @@ unic-langid = { version = "0.9", optional = true }
 sys-locale = { version = "0.3.2", optional = true }
 understory_box_tree = {path = "../understory/understory_box_tree"}
 understory_event_state = {path = "../understory/understory_event_state"}
-understory_responder = {path = "../understory/understory_responder"}
 understory_index = {path = "../understory/understory_index"}
 understory_focus = {path = "../understory/understory_focus", features = ["box_tree_adapter"]}
 

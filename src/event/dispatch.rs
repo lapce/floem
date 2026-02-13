@@ -1,12 +1,7 @@
 //! Event dispatch logic for handling events through the view tree.
 
-#![allow(unused_imports)]
-#![allow(unused)]
 use std::{
-    cell::RefCell,
-    collections::{HashMap, HashSet},
     rc::Rc,
-    slice,
     sync::LazyLock,
     time::Instant,
 };
@@ -16,26 +11,14 @@ use smallvec::SmallVec;
 use ui_events::{
     keyboard::{Key, KeyState, KeyboardEvent, Modifiers, NamedKey},
     pointer::{
-        PointerButton, PointerButtonEvent, PointerEvent, PointerId, PointerInfo, PointerState,
-        PointerUpdate,
+        PointerButton, PointerButtonEvent, PointerEvent, PointerId, PointerInfo,
     },
 };
-use understory_box_tree::{NodeFlags, NodeId, QueryFilter};
+use understory_box_tree::NodeFlags;
 use understory_event_state::{
     click::ClickResult,
     focus::FocusEvent as UnderFocusEvent,
-    hover::{self, HoverEvent},
-};
-use understory_focus::{
-    FocusPolicy, FocusProps, FocusSpace, FocusSymbol, adapters::box_tree::FocusPropsLookup,
-};
-use understory_responder::{
-    dispatcher,
-    router::{self, Router, path_from_dispatch},
-    types::{
-        DepthKey, Dispatch, Localizer, Outcome, ParentLookup, Phase as UnderPhase, ResolvedHit,
-        ResolvedHitCow, ResolvedHitRef, WidgetLookup,
-    },
+    hover::HoverEvent,
 };
 
 use crate::{
@@ -43,21 +26,75 @@ use crate::{
     action::show_context_menu,
     context::*,
     event::{
-        DragToken, Event, FocusEvent, ImeEvent, InteractionEvent, Phase, WindowEvent,
-        drag_state::{DragEventDispatch, DraggingPreview},
+        DragToken, Event, FocusEvent, InteractionEvent, Phase, WindowEvent,
+        drag_state::DragEventDispatch,
         dropped_file::FileDragEvent,
         path::hit_test,
     },
-    prelude::EventListenerTrait,
-    style::{Focusable, PointerEvents, PointerEventsProp, StyleSelector},
-    unit::Pct,
+    style::StyleSelector,
     view::{VIEW_STORAGE, View},
-    window::{WindowState, tracking::is_known_root},
+    window::WindowState,
 };
 
 use super::PointerCaptureEvent;
 
-pub(crate) type FloemDispatch = Dispatch<ElementId, ViewId, Option<()>>;
+/// A single step in a capture/target/bubble dispatch sequence.
+#[derive(Clone, Copy, Debug)]
+pub struct Dispatch {
+    pub phase: Phase,
+    /// The element this step is addressed to.
+    pub target_element_id: ElementId,
+    /// The view that owns `target_element_id`.
+    pub owning_id: ViewId,
+}
+
+impl Dispatch {
+    #[inline]
+    fn capture(target: ElementId) -> Self {
+        Self { phase: Phase::Capture, target_element_id: target, owning_id: target.owning_id() }
+    }
+    #[inline]
+    fn target_phase(target: ElementId) -> Self {
+        Self { phase: Phase::Target, target_element_id: target, owning_id: target.owning_id() }
+    }
+    #[inline]
+    fn bubble(target: ElementId) -> Self {
+        Self { phase: Phase::Bubble, target_element_id: target, owning_id: target.owning_id() }
+    }
+    #[inline]
+    pub fn broadcast(target: ElementId) -> Self {
+        Self { phase: Phase::Broadcast, target_element_id: target, owning_id: target.owning_id() }
+    }
+}
+
+/// Propagation control returned by per-node handlers.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Outcome {
+    Continue,
+    Stop,
+}
+
+impl Outcome {
+    #[inline]
+    fn is_stop(self) -> bool {
+        matches!(self, Self::Stop)
+    }
+}
+
+/// Walk a dispatch sequence, calling `handler` for each step.
+/// Returns the first `Dispatch` where `handler` returned `Stop`, or `None` if all completed.
+#[inline]
+fn run_dispatch(
+    seq: impl IntoIterator<Item = Dispatch>,
+    mut handler: impl FnMut(Dispatch) -> Outcome,
+) -> Option<Dispatch> {
+    for d in seq {
+        if handler(d).is_stop() {
+            return Some(d);
+        }
+    }
+    None
+}
 
 /// Builds the ancestor chain from target to root by walking up the box tree.
 ///
@@ -70,11 +107,7 @@ pub(crate) type FloemDispatch = Dispatch<ElementId, ViewId, Option<()>>;
 ///
 /// # Returns
 /// Vector of VisualIds from target to root, or just [target] if no parents found
-fn build_ancestor_chain(
-    target: ElementId,
-    root_view_id: ViewId,
-    box_tree: &BoxTree,
-) -> Vec<ElementId> {
+fn build_ancestor_chain(target: ElementId, box_tree: &BoxTree) -> Vec<ElementId> {
     let mut path = Vec::new();
     let mut current = target;
     let mut visited = std::collections::HashSet::new();
@@ -98,7 +131,7 @@ fn build_ancestor_chain(
     path
 }
 
-/// Iterator that yields FloemDispatch items for capture/target/bubble phases.
+/// Iterator that yields `Dispatch` items for capture/target/bubble phases.
 ///
 /// Given an ancestor chain [target, parent1, parent2, ..., root], yields:
 /// - Capture phase: root -> parent2 -> parent1 (excluding target)
@@ -129,7 +162,7 @@ impl DispatchSequenceIter {
 }
 
 impl Iterator for DispatchSequenceIter {
-    type Item = FloemDispatch;
+    type Item = Dispatch;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.ancestor_chain.is_empty() {
@@ -138,36 +171,33 @@ impl Iterator for DispatchSequenceIter {
 
         match self.phase {
             DispatchPhase::Capture => {
-                // Capture phase: root to parent (excluding target)
                 // ancestor_chain = [target, parent1, parent2, ..., root]
-                // We want: root, parent2, parent1
+                // Capture emits: root, parent_{n-1}, ..., parent1 (excluding target)
                 let capture_count = self.ancestor_chain.len().saturating_sub(1);
                 if self.index < capture_count {
                     let idx = self.ancestor_chain.len() - 1 - self.index;
                     let element_id = self.ancestor_chain[idx];
                     self.index += 1;
-                    Some(FloemDispatch::capture(element_id).with_widget(element_id.owning_id()))
+                    Some(Dispatch::capture(element_id))
                 } else {
-                    // Move to target phase
                     self.phase = DispatchPhase::Target;
                     self.index = 0;
                     self.next()
                 }
             }
             DispatchPhase::Target => {
-                // Target phase: just the target
                 self.phase = DispatchPhase::Bubble;
                 let target = self.ancestor_chain[0];
-                Some(FloemDispatch::target(target).with_widget(target.owning_id()))
+                Some(Dispatch::target_phase(target))
             }
             DispatchPhase::Bubble => {
-                // Bubble phase: parent1 to parent2 (excluding target and root)
+                // Bubble: parent1 to root (excluding target and root)
                 let bubble_count = self.ancestor_chain.len().saturating_sub(2);
                 if self.index < bubble_count {
-                    let idx = self.index + 1; // Skip target at index 0
+                    let idx = self.index + 1; // skip target at index 0
                     let element_id = self.ancestor_chain[idx];
                     self.index += 1;
-                    Some(FloemDispatch::bubble(element_id).with_widget(element_id.owning_id()))
+                    Some(Dispatch::bubble(element_id))
                 } else {
                     self.phase = DispatchPhase::Done;
                     None
@@ -189,48 +219,32 @@ impl Iterator for DispatchSequenceIter {
 ///
 /// # Returns
 /// Iterator over dispatch sequence with all phases
-fn build_capture_bubble_path(
-    target: ElementId,
-    root_view_id: ViewId,
-    box_tree: &BoxTree,
-) -> DispatchSequenceIter {
-    let ancestor_chain = build_ancestor_chain(target, root_view_id, box_tree);
+fn build_capture_bubble_path(target: ElementId, box_tree: &BoxTree) -> DispatchSequenceIter {
+    let ancestor_chain = build_ancestor_chain(target, box_tree);
     DispatchSequenceIter::new(ancestor_chain)
 }
 
-// Keep these for now in case they're used elsewhere, but they're no longer needed for routing
-pub(crate) struct BoxNodeLookup;
-impl WidgetLookup<ElementId> for BoxNodeLookup {
-    type WidgetId = ViewId;
-    fn widget_of(&self, node: &ElementId) -> Option<Self::WidgetId> {
-        Some(node.owning_id())
-    }
-}
-
-pub(crate) struct BoxNodeParentLookup {
-    root_view_id: ViewId,
-    box_tree: Rc<RefCell<BoxTree>>,
-}
-impl ParentLookup<ElementId> for BoxNodeParentLookup {
-    fn parent_of(&self, node: &ElementId) -> Option<ElementId> {
-        let box_tree = self.box_tree.borrow();
+/// Walk up the box tree from `target`, yielding each ancestor filtered by `predicate`,
+/// then reverse so the result is root→target order.
+fn build_focus_path(target: ElementId, box_tree: &BoxTree) -> Vec<ElementId> {
+    let mut path: Vec<ElementId> = std::iter::successors(Some(target), |&cur| {
         box_tree
-            .parent_of(node.0)
-            .map(|node| ElementId(node, box_tree.meta(node).flatten().unwrap()))
-    }
+            .parent_of(cur.0)
+            .map(|p| ElementId(p, box_tree.meta(p).flatten().unwrap()))
+    })
+    .filter(|id| {
+        box_tree
+            .flags(id.0)
+            .map(|f| {
+                (f.contains(NodeFlags::FOCUSABLE | NodeFlags::VISIBLE) || *id == target)
+                    && !id.owning_id().is_disabled()
+            })
+            .unwrap_or(false)
+    })
+    .collect();
+    path.reverse();
+    path
 }
-
-// impl FocusPropsLookup<VisualId> for &mut WindowState {
-//     fn props(&self, id: &VisualId) -> FocusProps {
-//         FocusProps {
-//             enabled: true,
-//             order: None,
-//             group: None,
-//             autofocus: false,
-//             policy_hint: None,
-//         }
-//     }
-// }
 
 /// Defines the routing strategy for dispatching events through the view tree.
 ///
@@ -277,7 +291,7 @@ pub enum DispatchKind {
     /// If `respect_propagation` is true, propagation can be stopped by event handlers.
     /// If false, all views will receive the event regardless. Use for window-wide events
     /// that all views should receive.
-    Global { respect_propagation: bool },
+    Broadcast { respect_propagation: bool },
 }
 
 /// Event dispatch data containing routing strategy and event source.
@@ -296,7 +310,7 @@ pub struct DispatchData {
 
 pub(crate) struct GlobalEventCx<'a> {
     pub window_state: &'a mut WindowState,
-    dispatch: Option<Rc<[FloemDispatch]>>,
+    dispatch: Option<Rc<[Dispatch]>>,
     source_event: Option<Event>,
     hit_path: Option<Rc<[ElementId]>>,
     /// The visual ID that is the source of the current event being dispatched
@@ -320,7 +334,7 @@ pub struct EventCx<'a> {
     pub target: ElementId,
     /// The visual ID that is the source/origin of this event
     pub source: ElementId,
-    pub dispatch: Option<Rc<[FloemDispatch]>>,
+    pub dispatch: Option<Rc<[Dispatch]>>,
     pub view_id: ViewId,
     /// Whether preventDefault() was called (shared across all phases of this event)
     default_prevented: &'a mut bool,
@@ -523,40 +537,40 @@ impl<'a> GlobalEventCx<'a> {
         self.source_event = Some(event);
     }
 
-    pub fn event_cx<'b>(
-        &'b mut self,
-        dispatch: &FloemDispatch,
-        event: &'b Event,
-        default_prevented: &'b mut bool,
-    ) -> EventCx<'b> {
-        let view_id = dispatch
-            .widget
-            .expect("a widget must be associated with the dispatch or the event cannot be routed");
+    /// Create an `EventCx` for `dispatch`, run `dispatch_one`, and return the outcome.
+    pub fn dispatch_event_cx(
+        &mut self,
+        dispatch: &Dispatch,
+        event: &Event,
+        default_prevented: &mut bool,
+    ) -> Outcome {
+        let view_id = dispatch.owning_id;
         let transform = match self
             .window_state
             .box_tree
             .borrow()
-            .world_transform(dispatch.node.0)
+            .world_transform(dispatch.target_element_id.0)
         {
             Ok(transform) => transform,
             Err(transform) => transform.value().unwrap(),
         }
         .inverse();
 
-        EventCx {
+        let mut cx = EventCx {
             window_state: self.window_state,
             untransformed_caused_by: self.source_event.as_ref(),
             event: event.clone().transform(transform),
             caused_by: self.source_event.clone().map(|c| c.transform(transform)),
             hit_path: self.hit_path.clone(),
-            phase: dispatch.phase.into(),
-            target: dispatch.node,
+            phase: dispatch.phase,
+            target: dispatch.target_element_id,
             source: self.source,
             dispatch: self.dispatch.clone(),
             view_id,
             default_prevented,
             stop_immediate: false,
-        }
+        };
+        cx.dispatch_one()
     }
 }
 
@@ -669,7 +683,7 @@ impl<'a> GlobalEventCx<'a> {
         }
     }
 
-    pub fn route(&mut self, kind: DispatchKind, event: &Event) -> Option<FloemDispatch> {
+    pub fn route(&mut self, kind: DispatchKind, event: &Event) -> Option<Dispatch> {
         let mut default_prevented = false;
 
         match kind {
@@ -701,7 +715,7 @@ impl<'a> GlobalEventCx<'a> {
                 }
             }
 
-            DispatchKind::Global {
+            DispatchKind::Broadcast {
                 respect_propagation,
             } => {
                 self.route_global(event, respect_propagation, &mut default_prevented);
@@ -730,30 +744,19 @@ impl<'a> GlobalEventCx<'a> {
         event: &Event,
         phases: crate::context::Phases,
         default_prevented: &mut bool,
-    ) -> Option<FloemDispatch> {
+    ) -> Option<Dispatch> {
         use crate::context::Phases;
 
-        // Build dispatch sequence using custom path walking
         if phases == Phases::TARGET {
-            // Direct to target only
-            let seq = vec![FloemDispatch::target(target).with_widget(target.owning_id())];
-            dispatcher::run(seq, self, |dispatch, event_cx| {
-                event_cx
-                    .event_cx(dispatch, event, default_prevented)
-                    .dispatch_one()
-            })
+            let d = Dispatch::target_phase(target);
+            let outcome = self.dispatch_event_cx(&d, event, default_prevented);
+            if outcome.is_stop() { Some(d) } else { None }
         } else {
-            // Full capture/bubble path by walking up the box tree
             let box_tree = self.window_state.box_tree.borrow();
-            let iter = build_capture_bubble_path(target, self.window_state.root_view_id, &box_tree);
+            let iter = build_capture_bubble_path(target, &box_tree);
             drop(box_tree);
 
-            // No filtering needed for directed events
-            dispatcher::run(iter, self, |dispatch, event_cx| {
-                event_cx
-                    .event_cx(dispatch, event, default_prevented)
-                    .dispatch_one()
-            })
+            run_dispatch(iter, |d| self.dispatch_event_cx(&d, event, default_prevented))
         }
     }
 
@@ -768,30 +771,19 @@ impl<'a> GlobalEventCx<'a> {
             return;
         };
 
-        // Hit path contains all elements at the point (including siblings).
-        // The last element is the top-most target.
         let target = *path.last().unwrap();
 
-        // Build dispatch sequence by walking up the parent chain from target to root
         let box_tree = self.window_state.box_tree.borrow();
-        let iter = build_capture_bubble_path(target, self.window_state.root_view_id, &box_tree);
+        let iter = build_capture_bubble_path(target, &box_tree);
         drop(box_tree);
 
-        // Filter out hidden views and views with pointer-events: none
-        let filtered = iter.filter(|dispatch| {
-            if let Some(widget) = dispatch.widget {
-                !widget.is_hidden() && !widget.pointer_events_none()
-            } else {
-                true
-            }
+        // Filter hidden views and pointer-events: none, then dispatch
+        let filtered = iter.filter(|d| {
+            !d.owning_id.is_hidden() && !d.owning_id.pointer_events_none()
         });
 
-        // Dispatch events
-        dispatcher::run(filtered, self, |dispatch, event_cx| {
-            let event = event.clone();
-            event_cx
-                .event_cx(dispatch, &event, default_prevented)
-                .dispatch_one()
+        run_dispatch(filtered, |d| {
+            self.dispatch_event_cx(&d, event, default_prevented)
         });
     }
 
@@ -823,8 +815,8 @@ impl<'a> GlobalEventCx<'a> {
         self.route_tree_recursive(root, event, respect_propagation, default_prevented);
     }
 
-    /// Recursively walk the tree and dispatch events - zero allocations
-    /// Used by both route_subtree and route_global
+    /// Recursively walk the tree and dispatch events - zero allocations.
+    /// Used by both route_subtree and route_global.
     fn route_tree_recursive(
         &mut self,
         view_id: ViewId,
@@ -832,26 +824,13 @@ impl<'a> GlobalEventCx<'a> {
         respect_propagation: bool,
         default_prevented: &mut bool,
     ) {
-        // Dispatch to current node (each view is the target, no phases)
-        let dispatch = FloemDispatch {
-            node: view_id.get_element_id(),
-            widget: Some(view_id),
-            phase: UnderPhase::Target,
-            localizer: Localizer {},
-            meta: None,
-        };
+        let d = Dispatch::target_phase(view_id.get_element_id());
+        let outcome = self.dispatch_event_cx(&d, event, default_prevented);
 
-        let outcome = self
-            .event_cx(&dispatch, event, default_prevented)
-            .dispatch_one();
-
-        // If respecting propagation and event was stopped, don't continue to children
-        if respect_propagation && matches!(outcome, Outcome::Stop) {
+        if respect_propagation && outcome.is_stop() {
             return;
         }
 
-        // Visit child VIEWS (not visual rectangles) to avoid infinite recursion
-        // when a view has multiple visual rectangles
         for child_id in view_id.children() {
             self.route_tree_recursive(child_id, event, respect_propagation, default_prevented);
         }
@@ -1098,20 +1077,18 @@ impl<'a> GlobalEventCx<'a> {
                 self.window_state.needs_box_tree_commit = true;
                 match drag_dispatch {
                     DragEventDispatch::Source(source_id, drag_source_event) => {
-                        self.event_cx(
-                            &FloemDispatch::target(source_id).with_widget(source_id.owning_id()),
+                        self.dispatch_event_cx(
+                            &Dispatch::target_phase(source_id),
                             &Event::DragSource(drag_source_event),
                             &mut false,
-                        )
-                        .dispatch_one();
+                        );
                     }
                     DragEventDispatch::Target(target_id, drag_target_event) => {
-                        self.event_cx(
-                            &FloemDispatch::target(target_id).with_widget(target_id.owning_id()),
+                        self.dispatch_event_cx(
+                            &Dispatch::target_phase(target_id),
                             &Event::DragTarget(drag_target_event),
                             &mut false,
-                        )
-                        .dispatch_one();
+                        );
                     }
                 }
             }
@@ -1125,8 +1102,6 @@ impl<'a> GlobalEventCx<'a> {
                     .map(|p| p.iter().as_slice())
                     .unwrap_or(&[]);
 
-                // Split at the dragged element
-
                 let drag_events = self
                     .window_state
                     .drag_tracker
@@ -1134,22 +1109,18 @@ impl<'a> GlobalEventCx<'a> {
                 for drag_event in drag_events {
                     match drag_event {
                         DragEventDispatch::Source(source_id, drag_source_event) => {
-                            self.event_cx(
-                                &FloemDispatch::target(source_id)
-                                    .with_widget(source_id.owning_id()),
+                            self.dispatch_event_cx(
+                                &Dispatch::target_phase(source_id),
                                 &Event::DragSource(drag_source_event),
                                 &mut false,
-                            )
-                            .dispatch_one();
+                            );
                         }
                         DragEventDispatch::Target(target_id, drag_target_event) => {
-                            let view_id = target_id.owning_id();
-                            self.event_cx(
-                                &FloemDispatch::target(target_id).with_widget(view_id),
+                            self.dispatch_event_cx(
+                                &Dispatch::target_phase(target_id),
                                 &Event::DragTarget(drag_target_event),
                                 &mut false,
-                            )
-                            .dispatch_one();
+                            );
                         }
                     }
                 }
@@ -1163,20 +1134,18 @@ impl<'a> GlobalEventCx<'a> {
             for drag_event in drag_events {
                 match drag_event {
                     DragEventDispatch::Source(source_id, drag_source_event) => {
-                        self.event_cx(
-                            &FloemDispatch::target(source_id).with_widget(source_id.owning_id()),
+                        self.dispatch_event_cx(
+                            &Dispatch::target_phase(source_id),
                             &Event::DragSource(drag_source_event),
                             &mut false,
-                        )
-                        .dispatch_one();
+                        );
                     }
                     DragEventDispatch::Target(target_id, drag_target_event) => {
-                        self.event_cx(
-                            &FloemDispatch::target(target_id).with_widget(target_id.owning_id()),
+                        self.dispatch_event_cx(
+                            &Dispatch::target_phase(target_id),
                             &Event::DragTarget(drag_target_event),
                             &mut false,
-                        )
-                        .dispatch_one();
+                        );
                     }
                 }
             }
@@ -1195,20 +1164,18 @@ impl<'a> GlobalEventCx<'a> {
             for drag_event in drag_events {
                 match drag_event {
                     DragEventDispatch::Source(target_id, drag_event) => {
-                        self.event_cx(
-                            &FloemDispatch::target(target_id).with_widget(target_id.owning_id()),
+                        self.dispatch_event_cx(
+                            &Dispatch::target_phase(target_id),
                             &Event::DragSource(drag_event),
                             &mut false,
-                        )
-                        .dispatch_one();
+                        );
                     }
                     DragEventDispatch::Target(target_id, drag_event) => {
-                        self.event_cx(
-                            &FloemDispatch::target(target_id).with_widget(target_id.owning_id()),
+                        self.dispatch_event_cx(
+                            &Dispatch::target_phase(target_id),
                             &Event::DragTarget(drag_event),
                             &mut false,
-                        )
-                        .dispatch_one();
+                        );
                     }
                 }
             }
@@ -1344,38 +1311,26 @@ impl<'a> GlobalEventCx<'a> {
         if let Some(old_target) = current_target {
             self.window_state.remove_active_capture(pointer_id);
             let event = Event::PointerCapture(PointerCaptureEvent::Lost(pointer_id));
-            self.event_cx(
-                &FloemDispatch::target(old_target).with_widget(old_target.owning_id()),
-                &event,
-                &mut false,
-            )
-            .dispatch_one();
+            self.dispatch_event_cx(&Dispatch::target_phase(old_target), &event, &mut false);
         }
 
         // Fire GotPointerCapture to the new target
         if let Some(new_target) = pending_target {
-            // Only set capture if the view is still connected
             if !new_target.owning_id().is_hidden() {
                 self.window_state.set_active_capture(pointer_id, new_target);
                 let event =
                     Event::PointerCapture(PointerCaptureEvent::Got(super::DragToken(pointer_id)));
-                self.event_cx(
-                    &FloemDispatch::target(new_target).with_widget(new_target.owning_id()),
-                    &event,
-                    &mut false,
-                )
-                .dispatch_one();
+                self.dispatch_event_cx(&Dispatch::target_phase(new_target), &event, &mut false);
 
                 // If the view was removed during the event handler, clean up
                 if new_target.owning_id().is_hidden() {
                     self.window_state.remove_active_capture(pointer_id);
                     let event = Event::PointerCapture(PointerCaptureEvent::Lost(pointer_id));
-                    self.event_cx(
-                        &FloemDispatch::target(new_target).with_widget(new_target.owning_id()),
+                    self.dispatch_event_cx(
+                        &Dispatch::target_phase(new_target),
                         &event,
                         &mut false,
-                    )
-                    .dispatch_one();
+                    );
                 }
             }
         }
@@ -1395,29 +1350,9 @@ impl<'a> GlobalEventCx<'a> {
     /// Update focus to a new view, firing focus enter/leave events
     pub fn update_focus(&mut self, element_id: ElementId, keyboard_navigation: bool) {
         // Build path using router
-        let box_tree = self.window_state.box_tree.clone();
-        let mut router = Router::with_parent(
-            BoxNodeLookup,
-            BoxNodeParentLookup {
-                root_view_id: self.window_state.root_view_id,
-                box_tree: box_tree.clone(),
-            },
-        );
-        router.set_scope(Some(Box::new({
-            let box_tree = box_tree.clone();
-            move |id| {
-                box_tree
-                    .borrow()
-                    .flags(id.0)
-                    .map(|f| {
-                        (f.contains(NodeFlags::FOCUSABLE | NodeFlags::VISIBLE) || *id == element_id)
-                            && !id.owning_id().is_disabled()
-                    })
-                    .unwrap_or(false)
-            }
-        })));
-        let seq = router.dispatch_for::<()>(element_id);
-        let path = router::path_from_dispatch(&seq);
+        let box_tree = self.window_state.box_tree.borrow();
+        let path = build_focus_path(element_id, &box_tree);
+        drop(box_tree);
         self.update_focus_from_path(&path, keyboard_navigation);
     }
 
@@ -1453,25 +1388,16 @@ impl<'a> GlobalEventCx<'a> {
                                 .request_style_for_selector_recursive(StyleSelector::FocusVisible);
                         }
                     }
-                    if Some(id) == new_target {
-                        // This is the actual focus target
-                        let mut focus_prevented = false;
-                        self.event_cx(
-                            &FloemDispatch::target(id).with_widget(id.owning_id()),
-                            &Event::Focus(FocusEvent::Got),
-                            &mut focus_prevented,
-                        )
-                        .dispatch_one();
+                    let focus_event = if Some(id) == new_target {
+                        FocusEvent::Got
                     } else {
-                        // This is an ancestor - subtree notification
-                        let mut focus_prevented = false;
-                        self.event_cx(
-                            &FloemDispatch::target(id).with_widget(id.owning_id()),
-                            &Event::Focus(FocusEvent::EnteredSubtree),
-                            &mut focus_prevented,
-                        )
-                        .dispatch_one();
-                    }
+                        FocusEvent::EnteredSubtree
+                    };
+                    self.dispatch_event_cx(
+                        &Dispatch::target_phase(id),
+                        &Event::Focus(focus_event),
+                        &mut false,
+                    );
                 }
                 UnderFocusEvent::Leave(id) => {
                     if let Some(view_id) = id.exact_view_id() {
@@ -1489,25 +1415,16 @@ impl<'a> GlobalEventCx<'a> {
                                 .request_style_for_selector_recursive(StyleSelector::FocusVisible);
                         }
                     }
-                    if Some(id) == old_target {
-                        // This is the element losing focus
-                        let mut focus_prevented = false;
-                        self.event_cx(
-                            &FloemDispatch::target(id).with_widget(id.owning_id()),
-                            &Event::Focus(FocusEvent::Lost),
-                            &mut focus_prevented,
-                        )
-                        .dispatch_one();
+                    let focus_event = if Some(id) == old_target {
+                        FocusEvent::Lost
                     } else {
-                        // This is an ancestor - subtree notification
-                        let mut focus_prevented = false;
-                        self.event_cx(
-                            &FloemDispatch::target(id).with_widget(id.owning_id()),
-                            &Event::Focus(FocusEvent::LeftSubtree),
-                            &mut focus_prevented,
-                        )
-                        .dispatch_one();
-                    }
+                        FocusEvent::LeftSubtree
+                    };
+                    self.dispatch_event_cx(
+                        &Dispatch::target_phase(id),
+                        &Event::Focus(focus_event),
+                        &mut false,
+                    );
                 }
             }
         }
@@ -1556,78 +1473,13 @@ impl<'a> GlobalEventCx<'a> {
             // });
             .unwrap_or(scope_root);
 
-        // Build focus space
-        // TODO: retain this? if there are benefits to doing so
-        let mut focus_entries = Vec::new();
-        let box_tree = self.window_state.box_tree.clone();
-        let box_tree = box_tree.borrow();
-
-        let focus_space = understory_focus::adapters::box_tree::build_focus_space_for_scope(
-            &box_tree,
-            scope_root.0,
-            &(),
-            &mut focus_entries,
-        );
-
-        // Use the default policy for tab navigation
-        let policy = understory_focus::DefaultPolicy {
-            wrap: understory_focus::WrapMode::Scope,
-        };
-
-        let navigation = if backwards {
-            understory_focus::Navigation::Prev
-        } else {
-            understory_focus::Navigation::Next
-        };
-
-        if let Some(new_focus) = policy.next(current_focus.0, navigation, &focus_space) {
-            self.update_focus(
-                ElementId(new_focus, box_tree.meta(new_focus).flatten().unwrap()),
-                true,
-            );
-        }
+        // TODO: replace with non-build_focus_space traversal
+        let _ = (scope_root, current_focus, backwards);
     }
 
     pub(crate) fn view_arrow_navigation(&mut self, key: &NamedKey) {
-        let scope_root = self.window_state.root_view_id.get_element_id();
-        let current_focus = match self.window_state.focus_state.current_path().last().cloned() {
-            Some(id) => id,
-            None => {
-                // No current focus, do tab navigation instead
-                let backwards = matches!(key, NamedKey::ArrowUp | NamedKey::ArrowLeft);
-                self.view_tab_navigation(backwards);
-                return;
-            }
-        };
-
-        let mut focus_entries = Vec::new();
-        let box_tree = self.window_state.box_tree.clone();
-        let box_tree = box_tree.borrow();
-        let focus_space = understory_focus::adapters::box_tree::build_focus_space_for_scope(
-            &box_tree,
-            scope_root.0,
-            &(),
-            &mut focus_entries,
-        );
-
-        let policy = understory_focus::DefaultPolicy {
-            wrap: understory_focus::WrapMode::Never, // Don't wrap on arrow keys
-        };
-
-        let navigation = match key {
-            NamedKey::ArrowUp => understory_focus::Navigation::Up,
-            NamedKey::ArrowDown => understory_focus::Navigation::Down,
-            NamedKey::ArrowLeft => understory_focus::Navigation::Left,
-            NamedKey::ArrowRight => understory_focus::Navigation::Right,
-            _ => return,
-        };
-
-        if let Some(new_focus) = policy.next(current_focus.0, navigation, &focus_space) {
-            self.update_focus(
-                ElementId(new_focus, box_tree.meta(new_focus).flatten().unwrap()),
-                true,
-            );
-        }
+        // TODO: replace with non-build_focus_space traversal
+        let _ = key;
     }
 }
 
@@ -1665,35 +1517,24 @@ impl<'a> GlobalEventCx<'a> {
         };
         let events = self.window_state.hover_state.update_path(path);
         for hover_event in events {
-            let new = match hover_event {
-                HoverEvent::Enter(id) => HoverEvent::Enter(id.owning_id()),
-                HoverEvent::Leave(id) => HoverEvent::Leave(id.owning_id()),
-            };
-
             match hover_event {
                 HoverEvent::Enter(id) => {
-                    let view_id = id.owning_id();
                     request_hover(id, self.window_state);
-                    let (point, pointer) = self.window_state.last_pointer;
-                    let mut hover_prevented = false;
-                    self.event_cx(
-                        &FloemDispatch::target(id).with_widget(view_id),
+                    let (_, pointer) = self.window_state.last_pointer;
+                    self.dispatch_event_cx(
+                        &Dispatch::target_phase(id),
                         &Event::Pointer(PointerEvent::Enter(pointer)),
-                        &mut hover_prevented,
-                    )
-                    .dispatch_one();
+                        &mut false,
+                    );
                 }
                 HoverEvent::Leave(id) => {
-                    let view_id = id.owning_id();
                     request_hover(id, self.window_state);
-                    let (point, pointer) = self.window_state.last_pointer;
-                    let mut hover_prevented = false;
-                    self.event_cx(
-                        &FloemDispatch::target(id).with_widget(view_id),
+                    let (_, pointer) = self.window_state.last_pointer;
+                    self.dispatch_event_cx(
+                        &Dispatch::target_phase(id),
                         &Event::Pointer(PointerEvent::Leave(pointer)),
-                        &mut hover_prevented,
-                    )
-                    .dispatch_one();
+                        &mut false,
+                    );
                 }
             }
         }

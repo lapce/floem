@@ -22,35 +22,35 @@ fn test_is_hidden_checks_both_conditions() {
     // force_hidden = false, phase = Visible -> not hidden
     let vis = Visibility {
         phase: VisibilityPhase::Visible(Display::Flex),
-        force_hidden: false,
+        // force_hidden: false,
     };
     assert!(!vis.is_hidden());
 
     // force_hidden = true, phase = Visible -> hidden
     let vis = Visibility {
         phase: VisibilityPhase::Visible(Display::Flex),
-        force_hidden: true,
+        // force_hidden: true,
     };
     assert!(vis.is_hidden());
 
     // force_hidden = false, phase = Hidden -> hidden
     let vis = Visibility {
         phase: VisibilityPhase::Hidden,
-        force_hidden: false,
+        // force_hidden: false,
     };
     assert!(vis.is_hidden());
 
     // force_hidden = false, phase = Animating -> not hidden (still animating out)
     let vis = Visibility {
         phase: VisibilityPhase::Animating(Display::Flex),
-        force_hidden: false,
+        // force_hidden: false,
     };
     assert!(!vis.is_hidden());
 
     // force_hidden = false, phase = Initial -> not hidden
     let vis = Visibility {
         phase: VisibilityPhase::Initial,
-        force_hidden: false,
+        // force_hidden: false,
     };
     assert!(!vis.is_hidden());
 }
