@@ -321,24 +321,25 @@ impl GlobalPaintCx<'_> {
         };
 
         if !is_post {
-            // Apply clip (stays active through children)
+            paint_bg(&mut cx, &view_style_props, layout_rect);
+            paint_border(&mut cx, &layout_props, &view_style_props, layout_rect);
+
+            // Apply overflow clip (stays active through children)
             if let Some(clip_shape) = clip {
                 cx.clip(&clip_shape);
             }
 
-            paint_bg(&mut cx, &view_style_props, layout_rect);
-            paint_border(&mut cx, &layout_props, &view_style_props, layout_rect);
             view.borrow_mut().paint(&mut cx); // content
+
         // children paint here (in between is_post calls)
         } else {
-            // After children
-            view.borrow_mut().post_paint(&mut cx); // if you need this
-            paint_outline(&mut cx, &view_style_props, layout_rect);
-
-            // Clear clip after everything
             if clip.is_some() {
                 cx.clear_clip();
             }
+
+            // After children
+            view.borrow_mut().post_paint(&mut cx); // if you need this
+            paint_outline(&mut cx, &view_style_props, layout_rect);
         }
     }
 }
@@ -388,90 +389,6 @@ impl PaintCx<'_> {
     // Note: get_transform/set_transform removed as Renderer doesn't expose transform()
     // Views that previously used save/restore should use clip/clear_clip instead
 }
-
-// OLD CODE REMOVED - paint_pending_drag is no longer needed with explicit traversal
-// pub fn paint_pending_drag(&mut self) {
-//     let id = dragging.visual_id;
-//     let base_transform = match VIEW_STORAGE
-//         .with_borrow_mut(|s| s.box_tree(id.1).borrow().world_transform(id.0))
-//     {
-//         Ok(t) => t,
-//         Err(e) => e.value().unwrap(),
-//     };
-
-//     let mut drag_set_to_none = false;
-//     let transform = if let Some((released_at, release_location)) =
-//         dragging.released_at.zip(dragging.release_location)
-//     {
-//         let easing = Linear;
-//         const ANIMATION_DURATION_MS: f64 = 300.0;
-//         let elapsed = released_at.elapsed().as_millis() as f64;
-//         let progress = elapsed / ANIMATION_DURATION_MS;
-
-//         if !easing.finished(progress) {
-//             let offset_scale = 1.0 - easing.eval(progress);
-//             let release_offset = release_location.to_vec2() - dragging.offset();
-
-//             // Schedule next animation frame
-//             exec_after(Duration::from_millis(8), move |_| {
-//                 id.view_id().request_paint();
-//             });
-
-//             Some(base_transform * Affine::translate(release_offset * offset_scale))
-//         } else {
-//             drag_set_to_none = true;
-//             None
-//         }
-//     } else {
-//         // Handle active dragging - translate by current offset
-//         Some(base_transform * Affine::translate(dragging.offset()))
-//     };
-
-//     if let Some(transform) = transform {
-//         let view_id = id.view_id();
-//         let view_state = view_id.state();
-
-//         self.save();
-//         self.transform = transform;
-//         self.paint_state
-//             .renderer_mut()
-//             .set_transform(self.transform);
-//         self.clear_clip();
-
-//         // Get size from layout
-//         let layout_rect_local = view_id.get_visual_rect();
-
-//         // Apply styles
-//         let style = view_state.borrow().combined_style.clone();
-//         let mut view_style_props = view_state.borrow().view_style_props.clone();
-
-//         if let Some(dragging_style) = view_state.borrow().dragging_style.clone() {
-//             let style = style.apply(dragging_style);
-//             let mut _new_frame = false;
-//             view_style_props.read_explicit(&style, &style, &Instant::now(), &mut _new_frame);
-//         }
-
-//         // Paint with drag styling
-//         let layout_props = view_state.borrow().layout_props.clone();
-
-//         // Important: If any method early exit points are added in this
-//         // code block, they MUST call CURRENT_DRAG_PAINTING_ID.take() before
-//         // returning.
-//         CURRENT_DRAG_PAINTING_ID.set(Some(id));
-//         paint_bg(self, &view_style_props, layout_rect_local);
-//         let view = view_id.view();
-//         view.borrow_mut().paint(self);
-//         paint_border(self, &layout_props, &view_style_props, layout_rect_local);
-//         paint_outline(self, &view_style_props, layout_rect_local);
-//         self.restore();
-//         CURRENT_DRAG_PAINTING_ID.take();
-//     }
-
-//     // Clean up drag state if animation finished
-//     if drag_set_to_none {
-//         self.window_state.drag_tracker.reset();
-//     }
-// }
 
 // TODO: should this be private?
 pub enum PaintState {

@@ -603,6 +603,22 @@ impl ViewId {
         })
     }
 
+    /// Return the local bounds in world coordinate space
+    pub fn get_visual_rect_no_clip(&self) -> Rect {
+        let element_id = self.get_element_id();
+        let transform = self.get_visual_transform();
+        VIEW_STORAGE.with_borrow_mut(|s| {
+            let box_tree = s.box_tree(*self);
+
+            transform.transform_rect_bbox(
+                box_tree
+                    .borrow()
+                    .local_bounds(element_id.0)
+                    .unwrap_or_default(),
+            )
+        })
+    }
+
     /// Returns the view's visual position (after applying all clips clips and css transforms) in window coordinates.
     pub fn get_visual_origin(&self) -> peniko::kurbo::Point {
         let element_id = self.get_element_id();

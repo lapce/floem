@@ -314,16 +314,6 @@ impl<'a> StyleCx<'a> {
 
         CaptureState::capture_style(view_id, self, computed_style.clone());
 
-        // Update focusable set
-        let is_focusable = computed_style.builtin().keyboard_navigable()
-            && !computed_style.builtin().set_disabled()
-            && computed_style.builtin().display() != taffy::Display::None;
-        if is_focusable {
-            self.window_state.focusable.insert(view_id);
-        } else {
-            self.window_state.focusable.remove(&view_id);
-        }
-
         // Track fixed elements for viewport-relative sizing
         let new_is_fixed = computed_style.builtin().is_fixed();
         let computed_style_has_disabled = computed_style.builtin().set_disabled();
@@ -379,7 +369,7 @@ impl<'a> StyleCx<'a> {
         let mut transitioning = false;
         let mut layout_transitioning = false;
         let mut view_style_transitioning = false;
-        let mut box_tree_transitioning = false;
+        let mut view_style_changed = false;
         {
             let mut vs = view_state.borrow_mut();
 
@@ -405,28 +395,20 @@ impl<'a> StyleCx<'a> {
                 &self.now,
                 &mut view_style_transitioning,
             ) {
-                // view_style_transitioning |= true;
+                view_style_changed = true;
             }
             transitioning |= view_style_transitioning;
 
             // Transform properties (translate, scale, rotation)
-            let view_transform_changed = vs.view_transform_props.read_explicit(
-                &computed,
-                &computed,
-                &self.now,
-                &mut box_tree_transitioning,
-            );
-
-            // Transform properties (translate, scale, rotation)
-            if vs.box_tree_props.read_explicit(
+            let mut box_tree_transitioning = false;
+            if vs.view_transform_props.read_explicit(
                 &computed,
                 &computed,
                 &self.now,
                 &mut box_tree_transitioning,
             ) || box_tree_transitioning
-                || view_transform_changed
             {
-                // box_tree_transitioning = true;
+                self.window_state.needs_box_tree_commit = true;
             }
             transitioning |= box_tree_transitioning;
 
@@ -508,12 +490,12 @@ impl<'a> StyleCx<'a> {
 
         {
             // ─────────────────────────────────────────────────────────────────────
-            // Phase 9.1: Update taffy style if layout properties changed (must happen after visibility phase override)
+            // Phase 9.1: Get the final hidden state for view queries, layout, etc.
+            // Update taffy style if layout properties changed (must happen after visibility phase override)
             // ─────────────────────────────────────────────────────────────────────
             let mut vs = view_state.borrow_mut();
-            let is_hidden = parent_set_hidden
-                || self.parent_hidden
-                || view_interact_state.is_hidden
+            // TODO: fix this is hidden logic
+            let is_hidden = view_interact_state.is_hidden
                 || (vs.is_hidden
                     && vs
                         .visibility
@@ -543,26 +525,32 @@ impl<'a> StyleCx<'a> {
             // ─────────────────────────────────────────────────────────────────────
             {
                 let box_tree = view_id.box_tree();
-                let props = &vs.box_tree_props;
                 let elment_id = vs.element_id;
                 let box_tree = &mut box_tree.borrow_mut();
-                let old_flags = box_tree.flags(elment_id.0);
-                box_tree.set_local_z_index(elment_id.0, vs.box_tree_props.z_index());
                 let mut flags = NodeFlags::empty();
-                if props.pickable() {
+                if (vs.computed_style.builtin().pointer_events()
+                    != Some(crate::style::PointerEvents::None))
+                    && !is_hidden
+                {
                     flags |= NodeFlags::PICKABLE;
                 }
                 // need to update this after visibility.
-                if old_flags.is_none_or(|f| f != flags) && !is_hidden {
-                    self.window_state.needs_box_tree_commit = true;
-                }
-                if props.focusable() && !vs.visibility.is_hidden() && !props.disabled() {
+                if vs.computed_style.builtin().keyboard_navigable()
+                    && !is_hidden
+                    && !view_interact_state.is_disabled
+                {
                     flags |= NodeFlags::FOCUSABLE;
                 }
-                if !vs.visibility.is_hidden() {
+                if !is_hidden {
                     flags |= NodeFlags::VISIBLE;
                 }
                 box_tree.set_flags(elment_id.0, flags);
+            }
+            // ─────────────────────────────────────────────────────────────────────
+            // Phase 9.3: request paint for view style changes if not hidden
+            // ─────────────────────────────────────────────────────────────────────
+            if !is_hidden && (view_style_transitioning || view_style_changed) {
+                self.window_state.request_paint(view_id);
             }
         }
 
@@ -594,71 +582,70 @@ impl<'a> StyleCx<'a> {
                     .box_tree
                     .borrow_mut()
                     .set_local_z_index(element_id.0, Some(new_z_index));
-                self.window_state.needs_box_tree_commit = true;
             }
         }
     }
 
-    /// Fast path for inherited-only changes.
-    ///
-    /// When only inherited properties changed (e.g., font-size, color), we can skip
-    /// the full selector resolution and just propagate inherited values to children.
-    /// This is a significant optimization for deeply nested UIs.
-    fn apply_inherited_only(&mut self, view_id: ViewId, change: StyleRecalcChange) {
-        let view_state = view_id.state();
-        let view = view_id.view();
+    // /// Fast path for inherited-only changes.
+    // ///
+    // /// When only inherited properties changed (e.g., font-size, color), we can skip
+    // /// the full selector resolution and just propagate inherited values to children.
+    // /// This is a significant optimization for deeply nested UIs.
+    // fn apply_inherited_only(&mut self, view_id: ViewId, change: StyleRecalcChange) {
+    //     let view_state = view_id.state();
+    //     let view = view_id.view();
 
-        // Update inherited context from parent (class context unchanged in fast path)
-        Style::apply_only_inherited(&mut self.inherited, &self.direct);
+    //     // Update inherited context from parent (class context unchanged in fast path)
+    //     Style::apply_only_inherited(&mut self.inherited, &self.direct);
 
-        // Clone combined_style before mutable borrow to avoid borrow conflicts
-        let combined_style = view_state.borrow().combined_style.clone();
+    //     // Clone combined_style before mutable borrow to avoid borrow conflicts
+    //     let combined_style = view_state.borrow().combined_style.clone();
 
-        // Recompute computed_style with new inherited values
-        {
-            let mut vs = view_state.borrow_mut();
-            let mut computed_style = (*self.inherited).clone();
-            computed_style.apply_mut(combined_style.clone());
-            vs.computed_style = computed_style;
-            vs.style_cx = Some((*self.inherited).clone());
-        }
+    //     // Recompute computed_style with new inherited values
+    //     {
+    //         let mut vs = view_state.borrow_mut();
+    //         let mut computed_style = (*self.inherited).clone();
+    //         computed_style.apply_mut(combined_style.clone());
+    //         vs.computed_style = computed_style;
+    //         vs.style_cx = Some((*self.inherited).clone());
+    //     }
 
-        // Update prop extractors with potentially changed inherited values
-        let mut transitioning = false;
-        {
-            let mut vs = view_state.borrow_mut();
-            vs.layout_props.read_explicit(
-                &combined_style,
-                &self.inherited,
-                &self.now,
-                &mut transitioning,
-            );
-            if transitioning && !self.parent_hidden {
-                self.window_state.schedule_layout();
-            }
+    //     // Update prop extractors with potentially changed inherited values
+    //     let mut transitioning = false;
+    //     {
+    //         let mut vs = view_state.borrow_mut();
+    //         vs.layout_props.read_explicit(
+    //             &combined_style,
+    //             &self.inherited,
+    //             &self.now,
+    //             &mut transitioning,
+    //         );
+    //         if transitioning && !self.parent_hidden {
+    //             self.window_state.schedule_layout();
+    //         }
 
-            vs.view_style_props.read_explicit(
-                &combined_style,
-                &self.inherited,
-                &self.now,
-                &mut transitioning,
-            );
-            if transitioning && !self.parent_hidden {
-                self.window_state.schedule_style(view_id);
-            }
-        }
+    //         vs.view_style_props.read_explicit(
+    //             &combined_style,
+    //             &self.inherited,
+    //             &self.now,
+    //             &mut transitioning,
+    //         );
+    //         if transitioning && !self.parent_hidden {
+    //             self.window_state.schedule_style(view_id);
+    //         }
+    //     }
 
-        self.current_view = view_id;
+    //     self.current_view = view_id;
 
-        // Store child change for views that process children in style_pass
-        let child_change = change.for_children();
-        self.window_state
-            .pending_child_change
-            .insert(view_id, child_change);
+    //     // Store child change for views that process children in style_pass
+    //     let child_change = change.for_children();
+    //     self.window_state
+    //         .pending_child_change
+    //         .insert(view_id, child_change);
 
-        // Let the view do any custom style pass work
-        view.borrow_mut().style_pass(self);
-    }
+    //     // Let the view do any custom style pass work
+    //     view.borrow_mut().style_pass(self);
+    // }
 
     /// Resolve all nested maps in the base style for the given classes.
     /// This will use the current style cx as context and get the interaction state for the given element

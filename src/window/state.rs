@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, time::Duration};
+use std::{cell::RefCell, collections::HashMap};
 
 use crate::{
     action::exec_after_animation_frame, event::listener, platform::menu_types::MenuId,
@@ -18,17 +18,14 @@ use std::rc::Rc;
 
 use crate::{
     BoxTree,
-    action::{add_update_message, exec_after},
+    action::add_update_message,
     context::FrameUpdate,
     element_id::ElementId,
     event::{DragTracker, Event, WindowEvent, clear_hit_test_cache},
     inspector::CaptureState,
     layout::responsive::{GridBreakpoints, ScreenSizeBp},
     message::UpdateMessage,
-    style::{
-        CursorStyle, Style, StyleCache, StyleSelector, ZIndex, recalc::StyleRecalcChange,
-        theme::default_theme,
-    },
+    style::{CursorStyle, Style, StyleSelector, recalc::StyleRecalcChange, theme::default_theme},
     view::{LayoutNodeCx, MeasureCx, VIEW_STORAGE, ViewId},
 };
 
@@ -80,7 +77,6 @@ pub struct WindowState {
     pub(crate) click_state: ClickState<Rc<[ElementId]>>,
     pub(crate) hover_state: HoverState<ElementId>,
     pub(crate) focus_state: FocusState<ElementId>,
-    pub(crate) focusable: FxHashSet<ViewId>,
     pub(crate) file_hover_state: HoverState<ElementId>,
     pub(crate) file_drag_paths: Option<Rc<[std::path::PathBuf]>>,
     pub(crate) element_id_cursors: FxHashMap<ElementId, CursorStyle>,
@@ -166,7 +162,6 @@ impl WindowState {
             file_hover_state: HoverState::new(),
             file_drag_paths: None,
             element_id_cursors: FxHashMap::default(),
-            focusable: FxHashSet::default(),
             theme_overriden: false,
             light_dark_theme: os_theme.unwrap_or(Theme::Light),
             cursor: None,
@@ -276,7 +271,6 @@ impl WindowState {
         let this_element_id = id.get_element_id();
         box_tree.borrow_mut().reparent(this_element_id.0, None);
         id.remove();
-        self.focusable.remove(&id);
         self.fixed_elements.remove(&id);
         let keys = view_state.borrow().registered_listener_keys.clone();
         for key in keys {
@@ -701,7 +695,7 @@ impl WindowState {
                         };
 
                     let props = compute_view_box_properties(
-                        &s,
+                        s,
                         view_id,
                         layout,
                         parent_scroll,
@@ -713,7 +707,6 @@ impl WindowState {
                     box_tree.set_local_bounds(props.element_id.0, props.local_rect);
                     box_tree.set_local_clip(props.element_id.0, props.clip);
                     box_tree.set_local_transform(props.element_id.0, props.local_transform);
-                    box_tree.set_local_z_index(props.element_id.0, Some(props.z_index));
                 }
             }
         });
@@ -823,7 +816,7 @@ impl WindowState {
     }
 
     // `Id` is unused currently, but could be used to calculate damage regions.
-    pub fn request_paint(&mut self, id: ViewId) {
+    pub fn request_paint(&mut self, _id: ViewId) {
         self.request_paint = true;
     }
 
@@ -873,7 +866,6 @@ struct ViewBoxProperties {
     scroll_offset: Vec2,
     scroll_ctx: Vec2,
     clip: Option<RoundedRect>,
-    z_index: i32,
 }
 
 // New helper function to compute view's box tree properties
@@ -894,9 +886,8 @@ fn compute_view_box_properties(
     let style_transform = state_borrow.view_transform_props.affine(size);
     let view_local_transform = style_transform * state_borrow.transform;
     let scroll_offset = state_borrow.child_translation;
-    let clip = state_borrow.box_tree_props.clip_rect(local_rect);
+    let clip = state_borrow.view_transform_props.clip_rect(local_rect);
     let element_id = state_borrow.element_id;
-    let z_index = state_borrow.combined_style.get(ZIndex).unwrap_or(0);
 
     drop(state_borrow);
 
@@ -928,7 +919,6 @@ fn compute_view_box_properties(
         scroll_offset,
         scroll_ctx,
         clip,
-        z_index,
     }
 }
 
@@ -955,7 +945,6 @@ fn compute_absolute_transforms_and_boxes(
             box_tree.set_local_bounds(props.element_id.0, props.local_rect);
             box_tree.set_local_clip(props.element_id.0, props.clip);
             box_tree.set_local_transform(props.element_id.0, props.local_transform);
-            box_tree.set_local_z_index(props.element_id.0, Some(props.z_index));
         }
 
         // Recurse with this view's scroll offset

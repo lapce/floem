@@ -1810,6 +1810,7 @@ prop_extractor! {
 }
 
 prop_extractor! {
+    /// These are properties that when changed the box tree needs committed.
     pub TransformProps {
         pub scale_x: ScaleX,
         pub scale_y: ScaleY,
@@ -1820,6 +1821,10 @@ prop_extractor! {
         pub rotation: Rotation,
         pub rotate_about: RotateAbout,
         pub scale_about: ScaleAbout,
+
+        pub overflow_x: OverflowX,
+        pub overflow_y: OverflowY,
+        pub border_radius: BorderRadiusProp,
     }
 }
 impl TransformProps {
@@ -1880,23 +1885,6 @@ impl TransformProps {
         }
 
         transform
-    }
-}
-
-prop_extractor! {
-    pub BoxTreeProps {
-        pub z_index: ZIndex,
-        pub pointer_events: PointerEventsProp,
-        pub focusable: Focusable,
-        pub disabled: Disabled,
-        pub overflow_x: OverflowX,
-        pub overflow_y: OverflowY,
-        pub border_radius: BorderRadiusProp,
-    }
-}
-impl BoxTreeProps {
-    pub fn pickable(&self) -> bool {
-        self.pointer_events() != Some(PointerEvents::None)
     }
 
     pub fn clip_rect(&self, mut rect: kurbo::Rect) -> Option<RoundedRect> {

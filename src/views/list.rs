@@ -168,14 +168,6 @@ where
                 }
                 EventPropagation::Stop
             }
-            Key::Named(NamedKey::Enter) => {
-                list_id.update_state(ListUpdate::Accept);
-                EventPropagation::Stop
-            }
-            Key::Character(c) if c == " " => {
-                list_id.update_state(ListUpdate::Accept);
-                EventPropagation::Stop
-            }
             Key::Named(NamedKey::ArrowDown) => {
                 let current = selection.get_untracked();
                 match current {
@@ -195,6 +187,9 @@ where
             _ => EventPropagation::Continue,
         },
     )
+    .on_event_stop(listener::Click, move |_cx, _| {
+        list_id.update_state(ListUpdate::Accept);
+    })
     .class(ListClass)
 }
 

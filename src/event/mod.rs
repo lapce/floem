@@ -1051,6 +1051,24 @@ impl Event {
     pub fn is_pointer_up(&self) -> bool {
         matches!(self, Event::Pointer(PointerEvent::Up { .. }))
     }
+    pub fn is_key_up(&self) -> bool {
+        matches!(
+            self,
+            Event::Key(KeyboardEvent {
+                state: KeyState::Up,
+                ..
+            })
+        )
+    }
+    pub fn is_key_down(&self) -> bool {
+        matches!(
+            self,
+            Event::Key(KeyboardEvent {
+                state: KeyState::Down,
+                ..
+            })
+        )
+    }
 
     /// Enter, numpad enter and space cause a view to be activated with the keyboard
     pub(crate) fn is_keyboard_trigger(&self) -> bool {

@@ -444,7 +444,6 @@ impl WindowHandle {
     }
 
     pub(crate) fn size(&mut self, size: Size) {
-        dbg!(size);
         self.size.set(size);
         self.window_state.update_screen_size_bp(size);
         self.event(Event::Window(WindowEvent::Resized(size)));
@@ -665,18 +664,31 @@ impl WindowHandle {
             let transform = id.get_visual_transform();
             let visual_aabb = id.get_visual_rect();
             let element_id = id.get_element_id();
-            use crate::context::Phases;
-            use crate::event::DispatchKind;
-            GlobalEventCx::new(&mut self.window_state, element_id).route(
-                DispatchKind::Directed {
-                    target: element_id,
-                    phases: Phases::TARGET,
-                },
-                &Event::new_custom(VisualChanged {
-                    new_visual_aabb: visual_aabb,
-                    new_world_transform: transform,
-                }),
-            );
+
+            let new_visual = VisualChanged {
+                new_visual_aabb: visual_aabb,
+                new_world_transform: transform,
+            };
+
+            let old_visual = {
+                let state = id.state();
+                let mut state = state.borrow_mut();
+                let old = state.visual_change;
+                state.visual_change = Some(new_visual);
+                old
+            };
+
+            if old_visual.is_none_or(|old| old != new_visual) {
+                use crate::context::Phases;
+                use crate::event::DispatchKind;
+                GlobalEventCx::new(&mut self.window_state, element_id).route(
+                    DispatchKind::Directed {
+                        target: element_id,
+                        phases: Phases::TARGET,
+                    },
+                    &Event::new_custom(new_visual),
+                );
+            }
         }
 
         start.elapsed()

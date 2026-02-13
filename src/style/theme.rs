@@ -679,22 +679,25 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
         })
         .class(TooltipClass, |s| s.apply(overlay_style()))
         .class(dropdown::DropdownClass, move |s| {
-            s.min_width(75)
-                .padding(3)
+            s.padding(3)
                 .apply(focus_style())
                 .apply(border_style(true))
                 .selectable(false)
-                .class(SvgClass, |s| {
-                    s.with_theme(|s, t| {
-                        s.hover(|s| s.background(t.bg_elevated()))
-                            .padding(5.)
-                            .border_radius(t.border_radius())
-                            .color(t.text())
-                    })
-                    .size(18, 18)
+                .class(dropdown::DropdownPreviewClass, |s| {
+                    s.with_context_opt::<FontSize, _>(|s, fs| s.gap(fs * 0.75))
+                        .class(SvgClass, |s| {
+                            s.with_theme(|s, t| {
+                                s.hover(|s| s.background(t.bg_elevated()))
+                                    .padding(5.)
+                                    .border_radius(t.border_radius())
+                                    .color(t.text())
+                            })
+                            .with_context_opt::<FontSize, _>(|s, fs| s.size(fs, fs))
+                        })
                 })
                 .class(scroll::ScrollClass, move |s| {
                     s.width_full()
+                        .scrollbar_width(0)
                         .margin_top(3)
                         .padding_vert(3)
                         .apply(overlay_style())

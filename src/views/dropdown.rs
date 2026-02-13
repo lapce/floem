@@ -13,12 +13,12 @@ use peniko::kurbo::{Point, Size};
 use crate::{
     AnyView,
     action::{add_overlay, remove_overlay},
-    context::{Phases, VisualChanged, VisualChangedListener},
+    context::{Phases, VisualChangedListener},
     custom_event,
     event::{DispatchKind, Event, EventPropagation, Phase, listener},
     prelude::{EventListenerTrait, ViewTuple},
     prop, prop_extractor,
-    style::{CustomStylable, CustomStyle, Style},
+    style::{CustomStylable, CustomStyle, Style, StyleClass},
     style_class,
     view::{IntoView, View, ViewId},
     views::{ContainerExt, Decorators, Label, ScrollExt, svg},
@@ -27,11 +27,15 @@ use crate::{
 use super::list;
 
 type ChildFn<T> = dyn Fn(T) -> (AnyView, Scope);
-type ListViewFn<T> = Rc<dyn Fn(&dyn Fn(&T) -> AnyView, Option<usize>) -> AnyView>;
 
 style_class!(
     /// A Style class that is applied to all dropdowns.
     pub DropdownClass
+);
+
+style_class!(
+    /// A Style class that is applied to all dropdown previews.
+    pub DropdownPreviewClass
 );
 
 prop!(
@@ -251,6 +255,7 @@ impl<T: 'static + Clone + PartialEq + core::fmt::Debug> View for Dropdown<T> {
                         self.current_value = *val.clone();
                         let (main_view, main_view_scope) = (self.main_fn)(*val);
                         let main_view_id = main_view.id();
+                        main_view_id.add_class(DropdownPreviewClass::class_ref());
                         self.id.set_children([main_view]);
                         self.main_view = main_view_id;
                         self.main_view_scope = main_view_scope;
@@ -272,11 +277,8 @@ impl<T: 'static + Clone + PartialEq + core::fmt::Debug> View for Dropdown<T> {
             }
         }
 
-        if cx.phase != Phase::Capture
-            && matches!(
-                cx.event,
-                Event::Interaction(crate::event::InteractionEvent::Click)
-            )
+        if (cx.phase != Phase::Capture && cx.event.is_pointer_down())
+            || (cx.phase == Phase::Target && cx.event.is_keyboard_trigger())
         {
             self.swap_state();
             return EventPropagation::Stop;
@@ -378,6 +380,7 @@ impl<T: Clone + std::cmp::PartialEq + std::fmt::Debug> Dropdown<T> {
         let main_fn = Box::new(Scope::current().enter_child(main_view));
         let (child, main_view_scope) = main_fn(initial.clone());
         let main_view = child.id();
+        main_view.add_class(DropdownPreviewClass::class_ref());
 
         dropdown_id.set_children([child]);
 
@@ -520,12 +523,11 @@ impl<T: Clone + std::cmp::PartialEq + std::fmt::Debug> Dropdown<T> {
         self.on_event_stop(DropdownOpenChanged::listener(), move |_cx, t| on_open(*t))
     }
 
-    fn swap_state(&self) {
+    fn swap_state(&mut self) {
         if self.overlay_id.is_some() {
-            self.id.update_state(Message::OpenState(false));
+            self.close_dropdown();
         } else {
-            self.id.request_layout();
-            self.id.update_state(Message::OpenState(true));
+            self.open_dropdown();
         }
     }
 
@@ -579,6 +581,9 @@ impl<T: Clone + std::cmp::PartialEq + std::fmt::Debug> Dropdown<T> {
                 },
             )
             .style(|s| s.width_full())
+            .on_event_stop(listener::FocusLeftSubtree, move |_, _| {
+                dropdown_id.update_state(Message::ListFocusLost);
+            })
             .on_event_stop(listener::FocusLost, move |_, _| {
                 dropdown_id.update_state(Message::ListFocusLost);
             });
@@ -589,7 +594,7 @@ impl<T: Clone + std::cmp::PartialEq + std::fmt::Debug> Dropdown<T> {
 
     fn create_overlay(&mut self) {
         let anchor_rect = self.id.get_visual_rect();
-        let width = anchor_rect.width();
+        let width = self.width;
         let point = Point::new(anchor_rect.x0, anchor_rect.y1);
 
         let list = self.build_list_view();
@@ -598,30 +603,22 @@ impl<T: Clone + std::cmp::PartialEq + std::fmt::Debug> Dropdown<T> {
 
         let scroll = list.scroll().style(move |s| {
             s.flex_col()
-                .pointer_events_auto()
-                .flex_grow(0.0)
-                .flex_shrink(1.0)
                 // constrains the scroll width to match
                 // the dropdown trigger. Without this, the scroll would expand to
                 // fill the full overlay due to width_full() on ScrollClass.
-                .width(width)
+                .width_full()
+                .max_height_full()
         });
-        let scroll_id = scroll.id();
 
         let anchor_id = self.id;
         let inset = RwSignal::new(Size::new(point.x, point.y));
 
         self.overlay_id = Some(add_overlay(
             scroll
-                // Positioning container: fills the entire window and uses absolute
-                // inset to position the width-constrained list. Also listens to
-                // VisualChanged to recompute position when the anchor or overlay moves.
-                .container()
-                .on_event(VisualChanged::listener(), move |_cx, visual| {
-                    // the anchor is the main dropdown view
+                .on_event_stop(listener::WindowResized, move |cx, size| {
                     let anchor = anchor_id.get_visual_rect();
-                    let container_size = visual.new_visual_aabb.size();
-                    let list_size = scroll_id.get_visual_rect().size();
+                    let container_size = size;
+                    let list_size = cx.view_id.get_visual_rect_no_clip().size();
                     let padding = 5.0;
 
                     let ideal = Size::new(anchor.x0, anchor.y1);
@@ -639,16 +636,18 @@ impl<T: Clone + std::cmp::PartialEq + std::fmt::Debug> Dropdown<T> {
                     if inset != clamped {
                         inset.set(clamped);
                     }
-                    EventPropagation::Continue
                 })
+                .container()
+                // Positioning container: uses absolute
+                // inset to position the width-constrained list. Also listens to
+                // VisualChanged to recompute position when the anchor or overlay moves.
                 .style(move |s| {
                     let inset = inset.get();
                     s.absolute()
-                        .flex_col()
-                        .size_full()
                         .inset_left(inset.width)
                         .inset_top(inset.height)
-                        .pointer_events_none()
+                        .min_width(width.get())
+                        .flex_shrink(0.)
                 }),
         ));
         self.overlay_id.unwrap().set_style_parent(self.id);
