@@ -246,7 +246,7 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
     text_input.update_text_layout();
     text_input.set_taffy_layout();
     text_input
-        .on_event_stop(listener::FocusGot, move |_, _| {
+        .on_event_stop(listener::FocusGained, move |_, _| {
             is_focused.set(true);
             set_ime_allowed(true);
         })

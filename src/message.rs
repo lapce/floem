@@ -7,7 +7,7 @@ use winit::window::{ResizeDirection, Theme};
 
 use crate::{
     element_id::ElementId,
-    event::{DispatchKind, Event, listener},
+    event::{Event, RouteKind, listener},
     platform::menu::Menu,
     view::{AnyView, View, ViewId},
     window::state::WindowState,
@@ -123,11 +123,11 @@ pub enum UpdateMessage {
     },
     RegisterListener(listener::EventListenerKey, ViewId),
     RemoveListener(listener::EventListenerKey, ViewId),
-    DispatchEvent {
+    RouteEvent {
         id: ViewId,
         event: Event,
-        dispatch_kind: DispatchKind,
-        caused_by: Option<Event>,
+        route_kind: RouteKind,
+        triggered_by: Option<Event>,
     },
     MarkViewLayoutDirty(ViewId),
 }

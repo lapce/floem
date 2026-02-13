@@ -12,7 +12,7 @@ pub enum FileDragEvent {
     /// A file drag operation has left an element.
     Leave(FileDragLeave),
     /// The file drag operation has dropped file(s).
-    Dropped(FileDragDropped),
+    Drop(FileDragDropped),
 }
 
 /// A file drag operation has entered an element.
@@ -55,7 +55,7 @@ impl FileDragEvent {
             FileDragEvent::Enter(e) => e.position,
             FileDragEvent::Move(e) => e.position,
             FileDragEvent::Leave(e) => e.position,
-            FileDragEvent::Dropped(e) => e.position,
+            FileDragEvent::Drop(e) => e.position,
         }
     }
 
@@ -64,7 +64,7 @@ impl FileDragEvent {
             FileDragEvent::Enter(e) => Some(&e.paths),
             FileDragEvent::Move(e) => Some(&e.paths),
             FileDragEvent::Leave(_) => None,
-            FileDragEvent::Dropped(e) => Some(&e.paths),
+            FileDragEvent::Drop(e) => Some(&e.paths),
         }
     }
 }

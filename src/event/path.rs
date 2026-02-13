@@ -31,7 +31,7 @@ struct HitTestCacheEntry {
     /// The point that was tested (in window coordinates)
     point: Point,
     /// The result of the hit test: (target node, full path from root to target)
-    result: Option<(crate::ElementId, Rc<[crate::ElementId]>)>,
+    result: Option<Rc<[crate::ElementId]>>,
 }
 
 /// 2-entry hit test result cache.
@@ -57,7 +57,7 @@ impl HitTestCache {
         &self,
         root_id: crate::ElementId,
         point: Point,
-    ) -> Option<Option<(crate::ElementId, Rc<[crate::ElementId]>)>> {
+    ) -> Option<Option<Rc<[crate::ElementId]>>> {
         for e in self.entries.iter().flatten() {
             // Use bitwise comparison for Point (exact match like Blink)
             if e.root_id == root_id
@@ -76,7 +76,7 @@ impl HitTestCache {
         &mut self,
         root_id: crate::ElementId,
         point: Point,
-        result: Option<(crate::ElementId, Rc<[crate::ElementId]>)>,
+        result: Option<Rc<[crate::ElementId]>>,
     ) {
         self.entries[self.next_slot] = Some(HitTestCacheEntry {
             root_id,
@@ -117,8 +117,8 @@ pub fn clear_hit_test_cache() {
 /// * `point` - The point in absolute (window) coordinates
 ///
 /// # Returns
-/// Optional tuple of (target VisualId, path from root to target as Rc<[VisualId]>)
-pub fn hit_test(root_id: ViewId, point: Point) -> Option<(ElementId, Rc<[ElementId]>)> {
+/// Optional visual path from root to target as Rc<[VisualId]>)
+pub fn hit_test(root_id: ViewId, point: Point) -> Option<Rc<[ElementId]>> {
     let root_element_id = root_id.get_element_id();
     // Check cache first
     if let Some(cached_result) =
@@ -133,14 +133,14 @@ pub fn hit_test(root_id: ViewId, point: Point) -> Option<(ElementId, Rc<[Element
         understory_box_tree::QueryFilter::new().visible().pickable(),
     );
 
-    let result = if let Some(&top_hit) = hit_ids.last() {
+    let result = if !hit_ids.is_empty() {
         let box_tree = box_tree.borrow();
-        let target = crate::ElementId(top_hit, box_tree.meta(top_hit).flatten().unwrap());
+        // use vec instead of smallvec here for optimization of being turned into Rc<[]>.
         let path: Vec<_> = hit_ids
             .iter()
-            .map(|id| crate::ElementId(*id, box_tree.meta(*id).flatten().unwrap()))
+            .map(|id| box_tree.meta(*id).flatten().unwrap())
             .collect();
-        Some((target, path.into()))
+        Some(path.into())
     } else {
         None
     };

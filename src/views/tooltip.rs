@@ -4,20 +4,14 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use ui_events::pointer::PointerEvent;
 
-use crate::context::{VisualChanged, VisualChangedListener};
-use crate::event::CustomEvent;
-use crate::platform::Duration;
-
-use crate::prelude::EventListenerTrait;
-use crate::style::{Style, StyleClass};
-use crate::views::Decorators;
 use crate::{
     action::{TimerToken, add_overlay, exec_after, remove_overlay},
     context::{EventCx, UpdateCx},
     event::{Event, EventPropagation, Phase},
+    platform::Duration,
     prop, prop_extractor, style_class,
-    view::ViewId,
-    view::{IntoView, View},
+    view::{IntoView, View, ViewId},
+    views::Decorators,
 };
 
 style_class!(
@@ -83,9 +77,8 @@ impl View for Tooltip {
     fn update(&mut self, _cx: &mut UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(token) = state.downcast::<TimerToken>() {
             if self.hover_point.map(|(_, t)| t) == Some(*token) {
-                let point = self.id.get_visual_origin()
-                    + self.hover_point.unwrap().0.to_vec2()
-                    + (10., 10.);
+                let point =
+                    self.id.get_visual_origin() + self.hover_point.unwrap().0.to_vec2() + (0., 10.);
                 let overlay_id = add_overlay(
                     (self.tip)()
                         .class(TooltipClass)

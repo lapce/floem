@@ -291,13 +291,12 @@ impl ApplicationHandle {
                 let logical_pos =
                     PhysicalPosition::new(position.x, position.y).to_logical(window_handle.scale);
                 let paths_rc: std::rc::Rc<[std::path::PathBuf]> = paths.clone().into();
-                window_handle.file_drag_event(
-                    paths,
-                    FileDragEvent::Dropped(dropped_file::FileDragDropped {
+                window_handle.file_drag_dropped(FileDragEvent::Drop(
+                    dropped_file::FileDragDropped {
                         paths: paths_rc,
                         position: Point::new(logical_pos.x, logical_pos.y),
-                    }),
-                );
+                    },
+                ));
             }
             WindowEvent::DragEntered { paths, position } => {
                 let logical_pos =

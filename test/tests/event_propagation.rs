@@ -318,21 +318,21 @@ fn test_clicking_state_during_pointer_down() {
 
     // Before any interaction, not clicking
     assert!(
-        !harness.is_clicking(id),
+        !harness.is_active(id),
         "View should NOT be clicking before pointer down"
     );
 
     // Pointer down - should now be clicking
     harness.pointer_down(50.0, 50.0);
     assert!(
-        harness.is_clicking(id),
+        harness.is_active(id),
         "View SHOULD be clicking after pointer down"
     );
 
     // Pointer up - should no longer be clicking
     harness.pointer_up(50.0, 50.0);
     assert!(
-        !harness.is_clicking(id),
+        !harness.is_active(id),
         "View should NOT be clicking after pointer up"
     );
 }
@@ -353,21 +353,21 @@ fn test_clicking_state_persists_during_move() {
     // Pointer down on target
     harness.pointer_down(25.0, 50.0);
     assert!(
-        harness.is_clicking(target_id),
+        harness.is_active(target_id),
         "View SHOULD be clicking after pointer down"
     );
 
     // Move pointer away from target - clicking state PERSISTS
     harness.pointer_move(75.0, 50.0);
     assert!(
-        harness.is_clicking(target_id),
+        harness.is_active(target_id),
         "View SHOULD still be clicking during pointer move (state persists)"
     );
 
     // Pointer up clears clicking state
     harness.pointer_up(75.0, 50.0);
     assert!(
-        !harness.is_clicking(target_id),
+        !harness.is_active(target_id),
         "View should NOT be clicking after pointer up"
     );
 }
@@ -589,14 +589,14 @@ fn test_clicking_state_cleared_immediately_after_pointer_up() {
     // Pointer down - should be clicking
     harness.pointer_down(50.0, 50.0);
     assert!(
-        harness.is_clicking(id),
+        harness.is_active(id),
         "Should be clicking after pointer down"
     );
 
     // Pointer up - should NOT be clicking anymore
     harness.pointer_up(50.0, 50.0);
     assert!(
-        !harness.is_clicking(id),
+        !harness.is_active(id),
         "Clicking state should be cleared immediately after pointer up"
     );
 }
@@ -618,17 +618,17 @@ fn test_clicking_state_cleared_for_all_views_on_pointer_up() {
 
     // Pointer down on child1
     harness.pointer_down(25.0, 50.0);
-    assert!(harness.is_clicking(child1_id), "child1 should be clicking");
+    assert!(harness.is_active(child1_id), "child1 should be clicking");
 
     // Pointer up (even on different location)
     harness.pointer_up(75.0, 50.0);
 
     assert!(
-        !harness.is_clicking(child1_id),
+        !harness.is_active(child1_id),
         "child1 clicking state should be cleared after pointer up"
     );
     assert!(
-        !harness.is_clicking(child2_id),
+        !harness.is_active(child2_id),
         "child2 should not be clicking"
     );
 }
@@ -662,7 +662,7 @@ fn test_clicking_state_cleared_after_click_handler_runs() {
 
     // After the click completes, clicking state should be cleared
     assert!(
-        !harness.is_clicking(id),
+        !harness.is_active(id),
         "Clicking state should be cleared after click completes"
     );
 }
@@ -686,19 +686,19 @@ fn test_nested_views_clicking_state_cleared() {
 
     // Both should be clicking (event bubbles up)
     // Note: depending on implementation, only the leaf might be marked
-    let _child_clicking = harness.is_clicking(child_id);
-    let _parent_clicking = harness.is_clicking(parent_id);
+    let _child_clicking = harness.is_active(child_id);
+    let _parent_clicking = harness.is_active(parent_id);
 
     // Pointer up
     harness.pointer_up(25.0, 25.0);
 
     // After pointer up, neither should be clicking
     assert!(
-        !harness.is_clicking(child_id),
+        !harness.is_active(child_id),
         "Child clicking state should be cleared after pointer up"
     );
     assert!(
-        !harness.is_clicking(parent_id),
+        !harness.is_active(parent_id),
         "Parent clicking state should be cleared after pointer up"
     );
 }
@@ -717,7 +717,7 @@ fn test_clicking_state_not_set_on_pointer_up_only() {
     harness.pointer_up(50.0, 50.0);
 
     assert!(
-        !harness.is_clicking(id),
+        !harness.is_active(id),
         "Clicking state should not be set from pointer up alone"
     );
 }
@@ -734,37 +734,31 @@ fn test_rapid_click_sequence_clears_clicking_state() {
 
     // First click
     harness.pointer_down(50.0, 50.0);
-    assert!(
-        harness.is_clicking(id),
-        "Should be clicking after first down"
-    );
+    assert!(harness.is_active(id), "Should be clicking after first down");
     harness.pointer_up(50.0, 50.0);
     assert!(
-        !harness.is_clicking(id),
+        !harness.is_active(id),
         "Should not be clicking after first up"
     );
 
     // Second click
     harness.pointer_down(50.0, 50.0);
     assert!(
-        harness.is_clicking(id),
+        harness.is_active(id),
         "Should be clicking after second down"
     );
     harness.pointer_up(50.0, 50.0);
     assert!(
-        !harness.is_clicking(id),
+        !harness.is_active(id),
         "Should not be clicking after second up"
     );
 
     // Third click
     harness.pointer_down(50.0, 50.0);
-    assert!(
-        harness.is_clicking(id),
-        "Should be clicking after third down"
-    );
+    assert!(harness.is_active(id), "Should be clicking after third down");
     harness.pointer_up(50.0, 50.0);
     assert!(
-        !harness.is_clicking(id),
+        !harness.is_active(id),
         "Should not be clicking after third up"
     );
 }
@@ -784,14 +778,14 @@ fn test_clicking_state_cleared_even_when_pointer_up_outside_view() {
     // Pointer down on the child view
     harness.pointer_down(25.0, 25.0);
     assert!(
-        harness.is_clicking(id),
+        harness.is_active(id),
         "Should be clicking after pointer down on view"
     );
 
     // Pointer up outside the child view (but still in parent)
     harness.pointer_up(75.0, 75.0);
     assert!(
-        !harness.is_clicking(id),
+        !harness.is_active(id),
         "Clicking state should be cleared even when pointer up is outside the view"
     );
 }
@@ -808,13 +802,13 @@ fn test_interaction_state_reflects_clicking() {
 
     // Initial state - not clicking
     let state = harness.get_interaction_state(id);
-    assert!(!state.is_clicking, "Should not be clicking initially");
+    assert!(!state.is_active, "Should not be clicking initially");
 
     // Pointer down - should be clicking
     harness.pointer_down(50.0, 50.0);
     let state = harness.get_interaction_state(id);
     assert!(
-        state.is_clicking,
+        state.is_active,
         "Interaction state should show clicking after pointer down"
     );
 
@@ -822,7 +816,7 @@ fn test_interaction_state_reflects_clicking() {
     harness.pointer_up(50.0, 50.0);
     let state = harness.get_interaction_state(id);
     assert!(
-        !state.is_clicking,
+        !state.is_active,
         "Interaction state should show NOT clicking after pointer up"
     );
 }
@@ -842,7 +836,7 @@ fn test_interaction_state_after_style_recomputation() {
     // Pointer down
     harness.pointer_down(50.0, 50.0);
     assert!(
-        harness.is_clicking(id),
+        harness.is_active(id),
         "Should be clicking after pointer down"
     );
 
@@ -850,7 +844,7 @@ fn test_interaction_state_after_style_recomputation() {
     harness.recompute_styles();
     let state = harness.get_interaction_state(id);
     assert!(
-        state.is_clicking,
+        state.is_active,
         "Should still be clicking after style recomputation"
     );
 
@@ -862,7 +856,7 @@ fn test_interaction_state_after_style_recomputation() {
 
     let state = harness.get_interaction_state(id);
     assert!(
-        !state.is_clicking,
+        !state.is_active,
         "Should NOT be clicking after pointer up and style processing"
     );
 }
@@ -887,27 +881,27 @@ fn test_active_style_with_full_click_cycle() {
     // Pointer down - start clicking
     harness.pointer_down(50.0, 50.0);
     assert!(
-        harness.is_clicking(id),
+        harness.is_active(id),
         "Should be clicking after pointer down"
     );
 
     // Pointer up - stop clicking
     harness.pointer_up(50.0, 50.0);
     assert!(
-        !harness.is_clicking(id),
+        !harness.is_active(id),
         "Should NOT be clicking after pointer up"
     );
 
     // After process_pointer_up_styles, clicking should definitely be cleared
     harness.process_pointer_up_styles();
     assert!(
-        !harness.is_clicking(id),
+        !harness.is_active(id),
         "Should NOT be clicking after processing pointer up styles"
     );
 
     let state = harness.get_interaction_state(id);
     assert!(
-        !state.is_clicking,
+        !state.is_active,
         "Interaction state should show NOT clicking"
     );
 }
@@ -928,7 +922,7 @@ fn test_clicking_state_persists_when_pointer_leaves_view() {
     // Pointer down on the child view
     harness.pointer_down(25.0, 25.0);
     assert!(
-        harness.is_clicking(id),
+        harness.is_active(id),
         "Should be clicking after pointer down"
     );
 
@@ -937,14 +931,14 @@ fn test_clicking_state_persists_when_pointer_leaves_view() {
 
     // Clicking state should STILL be set (only cleared on up, not on move)
     assert!(
-        harness.is_clicking(id),
+        harness.is_active(id),
         "Clicking state should persist when pointer moves out of view"
     );
 
     // Now pointer up
     harness.pointer_up(75.0, 75.0);
     assert!(
-        !harness.is_clicking(id),
+        !harness.is_active(id),
         "Clicking state should be cleared after pointer up"
     );
 }
@@ -966,7 +960,7 @@ fn test_clicking_state_after_pointer_move_and_style_update() {
     // Pointer down on the child view
     harness.pointer_down(25.0, 25.0);
     assert!(
-        harness.is_clicking(id),
+        harness.is_active(id),
         "Should be clicking after pointer down"
     );
 
@@ -979,7 +973,7 @@ fn test_clicking_state_after_pointer_move_and_style_update() {
     // Clicking state should STILL be set
     let state = harness.get_interaction_state(id);
     assert!(
-        state.is_clicking,
+        state.is_active,
         "Clicking state should persist after pointer move and style recomputation"
     );
 }
@@ -1058,7 +1052,7 @@ fn test_active_style_applied_during_click() {
     harness.pointer_down(50.0, 50.0);
     eprintln!(
         "After pointer_down: is_clicking = {}",
-        harness.is_clicking(id)
+        harness.is_active(id)
     );
     harness.recompute_styles();
 
@@ -1085,7 +1079,7 @@ fn test_active_style_applied_during_click() {
     harness.pointer_up(50.0, 50.0);
 
     // Debug: check if clicking is actually cleared
-    let is_clicking = harness.is_clicking(id);
+    let is_clicking = harness.is_active(id);
     eprintln!("After pointer_up: is_clicking = {}", is_clicking);
 
     eprintln!("--- About to recompute_styles ---");

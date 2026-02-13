@@ -240,7 +240,7 @@ pub trait Decorators: IntoView {
                 cx.request_pointer_capture(pointer_id);
             }
         })
-        .on_event_stop(listener::GotPointerCapture, move |cx, dt| {
+        .on_event_stop(listener::GainedPointerCapture, move |cx, dt| {
             cx.start_drag(*dt, config(), true);
         })
     }
@@ -359,6 +359,7 @@ pub trait Decorators: IntoView {
     }
 
     /// Add a handler for pressing down a specific key.
+    #[deprecated(note = "Use `on_event(listener::KeyDown, ...)` instead.")]
     fn on_key_down(
         self,
         key: Key,
@@ -375,6 +376,7 @@ pub trait Decorators: IntoView {
     }
 
     /// Add a handler for a specific key being released.
+    #[deprecated(note = "Use `on_event(listener::KeyUp, ...)` instead.")]
     fn on_key_up(
         self,
         key: Key,

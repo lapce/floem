@@ -70,8 +70,7 @@ fn test_theme_list_class_selected_styling() {
     let _harness = HeadlessHarness::new_with_size(root, list_view, 200.0, 120.0);
 
     // Get the ListItemClass views
-    let stack_id = list_id.children()[0];
-    let item_ids: Vec<_> = stack_id.children();
+    let item_ids: Vec<_> = list_id.children();
 
     // The first item is selected by default
     // It should have theme's primary background from ListItemClass selected styling
@@ -115,8 +114,7 @@ fn test_theme_list_item_hover_styling() {
     let harness = HeadlessHarness::new_with_size(root, list_view, 200.0, 80.0);
 
     // Get the second item (not selected, so we can test hover without selected styling)
-    let stack_id = list_id.children()[0];
-    let item_ids: Vec<_> = stack_id.children();
+    let item_ids: Vec<_> = list_id.children();
     let second_item = item_ids[1].children()[0]; // The view with ListItemClass
 
     // Just verify the list structure is set up correctly

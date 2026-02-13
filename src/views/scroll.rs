@@ -10,7 +10,7 @@ use ui_events::pointer::PointerEvent;
 
 use crate::context::{LayoutChanged, LayoutChangedListener};
 use crate::event::listener::EventListenerTrait;
-use crate::event::{DispatchKind, PointerScrollEventExt};
+use crate::event::{PointerScrollEventExt, RouteKind};
 use crate::style::ScrollbarWidth;
 use crate::{
     BoxTree, ElementId, Renderer,
@@ -696,11 +696,11 @@ impl Scroll {
             .min_by_component(max_scroll);
         let change = self.id.set_child_translation(self.scroll_offset);
         if change {
-            self.id.dispatch_event(
+            self.id.route_event(
                 Event::new_custom(ScrollChanged {
                     offset: self.scroll_offset,
                 }),
-                DispatchKind::Directed {
+                RouteKind::Directed {
                     target: self.id.get_element_id(),
                     phases: crate::context::Phases::TARGET,
                 },

@@ -265,9 +265,9 @@ impl View for Slider {
                 } else {
                     // Dispatch hover event with state at current position
                     let hover_state = self.state_from_mouse_pos(pu.current.logical_point().x);
-                    self.id.dispatch_event(
+                    self.id.route_event(
                         Event::new_custom(SliderHover { state: hover_state }),
-                        crate::event::DispatchKind::Directed {
+                        crate::event::RouteKind::Directed {
                             target: self.id.get_element_id(),
                             phases: crate::context::Phases::TARGET,
                         },
@@ -302,9 +302,9 @@ impl View for Slider {
         self.clamp_percent();
 
         if pos_changed && self.state.pct.0 != self.prev_percent {
-            self.id.dispatch_event(
+            self.id.route_event(
                 Event::new_custom(SliderChanged { state: self.state }),
-                crate::event::DispatchKind::Directed {
+                crate::event::RouteKind::Directed {
                     target: self.id.get_element_id(),
                     phases: crate::context::Phases::TARGET,
                 },

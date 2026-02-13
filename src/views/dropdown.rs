@@ -15,7 +15,7 @@ use crate::{
     action::{add_overlay, remove_overlay},
     context::{Phases, VisualChangedListener},
     custom_event,
-    event::{DispatchKind, Event, EventPropagation, Phase, listener},
+    event::{Event, EventPropagation, Phase, RouteKind, listener},
     prelude::{EventListenerTrait, ViewTuple},
     prop, prop_extractor,
     style::{CustomStylable, CustomStyle, Style, StyleClass},
@@ -239,9 +239,9 @@ impl<T: 'static + Clone + PartialEq + core::fmt::Debug> View for Dropdown<T> {
                         if self.style.close_on_accept() {
                             self.close_dropdown();
                         }
-                        self.id.dispatch_event(
+                        self.id.route_event(
                             Event::new_custom(DropdownAccept { value: *val }),
-                            DispatchKind::Directed {
+                            RouteKind::Directed {
                                 target: self.id.get_element_id(),
                                 phases: Phases::TARGET,
                             },
@@ -532,9 +532,9 @@ impl<T: Clone + std::cmp::PartialEq + std::fmt::Debug> Dropdown<T> {
     }
 
     fn dispatch_open_changed(&self, is_open: bool) {
-        self.id.dispatch_event(
+        self.id.route_event(
             Event::new_custom(DropdownOpenChanged { is_open }),
-            DispatchKind::Directed {
+            RouteKind::Directed {
                 target: self.id.get_element_id(),
                 phases: Phases::TARGET,
             },
@@ -581,9 +581,6 @@ impl<T: Clone + std::cmp::PartialEq + std::fmt::Debug> Dropdown<T> {
                 },
             )
             .style(|s| s.width_full())
-            .on_event_stop(listener::FocusLeftSubtree, move |_, _| {
-                dropdown_id.update_state(Message::ListFocusLost);
-            })
             .on_event_stop(listener::FocusLost, move |_, _| {
                 dropdown_id.update_state(Message::ListFocusLost);
             });
@@ -618,7 +615,7 @@ impl<T: Clone + std::cmp::PartialEq + std::fmt::Debug> Dropdown<T> {
                 .on_event_stop(listener::WindowResized, move |cx, size| {
                     let anchor = anchor_id.get_visual_rect();
                     let container_size = size;
-                    let list_size = cx.view_id.get_visual_rect_no_clip().size();
+                    let list_size = cx.target.owning_id().get_visual_rect_no_clip().size();
                     let padding = 5.0;
 
                     let ideal = Size::new(anchor.x0, anchor.y1);

@@ -167,7 +167,7 @@ impl IntoView for TodoState {
                 AppCommand::SetActive(self).execute();
                 input_id.request_focus();
             })
-            .on_event_stop(listener::FocusGot, move |_, _| {
+            .on_event_stop(listener::FocusGained, move |_, _| {
                 AppCommand::SetActive(self).execute();
                 input_focused.notify();
             });
@@ -191,7 +191,7 @@ impl IntoView for TodoState {
             })
             .on_event_stop(listener::Click, move |cx, _| {
                 let Some(Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. }))) =
-                    &cx.caused_by
+                    &cx.triggered_by
                 else {
                     return;
                 };

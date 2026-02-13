@@ -119,8 +119,7 @@ pub(crate) fn collect_stacking_context_items(
     if !box_tree_children.is_empty() {
         for (dom_order, &child_box_id) in box_tree_children.iter().enumerate() {
             // Construct VisualId from box tree node id
-            let child_element_id =
-                ElementId(child_box_id, box_tree.meta(child_box_id).unwrap().unwrap());
+            let child_element_id = box_tree.meta(child_box_id).flatten().unwrap();
 
             // Skip overlays - they're painted at root level
             let child_view_id = child_element_id.owning_id();

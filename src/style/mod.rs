@@ -467,7 +467,7 @@ fn resolve_selectors_collecting_mappings(
                         changed = true;
                     }
 
-                    if interact_state.is_clicking
+                    if interact_state.is_active
                         && apply_nested(&mut style, StyleSelector::Active.to_key())
                     {
                         changed = true;
@@ -476,7 +476,7 @@ fn resolve_selectors_collecting_mappings(
             }
 
             // Active (mouse)
-            if interact_state.is_clicking
+            if interact_state.is_active
                 && !interact_state.using_keyboard_navigation
                 && apply_nested(&mut style, StyleSelector::Active.to_key())
             {
@@ -1675,40 +1675,82 @@ define_builtin_props!(
     /// Sets the horizontal scale transform.
     ///
     /// Values less than 100% shrink the view, greater than 100% enlarge it.
+    /// Scale is applied last in the transform sequence, after translation and rotation.
+    /// The scaling occurs around the anchor point specified by `scale_about`.
+    /// Transform order: translate → rotate → scale (matches CSS individual transform properties).
     ScaleX scale_x {tr}: Pct {} = Pct(100.),
 
     /// Sets the vertical scale transform.
     ///
     /// Values less than 100% shrink the view, greater than 100% enlarge it.
+    /// Scale is applied last in the transform sequence, after translation and rotation.
+    /// The scaling occurs around the anchor point specified by `scale_about`.
+    /// Transform order: translate → rotate → scale (matches CSS individual transform properties).
     ScaleY scale_y {tr}: Pct {} = Pct(100.),
 
     /// Sets the horizontal translation transform.
     ///
     /// Moves the view left (negative) or right (positive).
+    /// Translation is applied first in the transform sequence, in the element's local coordinate space.
+    /// This matches CSS individual transform properties behavior.
+    /// Transform order: translate → rotate → scale.
     TranslateX translate_x {tr}: PxPct {} = PxPct::Px(0.),
 
     /// Sets the vertical translation transform.
     ///
     /// Moves the view up (negative) or down (positive).
+    /// Translation is applied first in the transform sequence, in the element's local coordinate space.
+    /// This matches CSS individual transform properties behavior.
+    /// Transform order: translate → rotate → scale.
     TranslateY translate_y {tr}: PxPct {} = PxPct::Px(0.),
 
     /// Sets the rotation transform angle.
     ///
     /// Positive values rotate clockwise, negative values rotate counter-clockwise.
     /// Use `.deg()` or `.rad()` methods to specify the angle unit.
+    /// Rotation is applied after translation but before scaling, around the anchor point
+    /// specified by `rotate_about`.
+    /// Transform order: translate → rotate → scale (matches CSS individual transform properties).
     Rotation rotate {tr}: Angle {} = Angle::Rad(0.0),
 
     /// Sets the anchor point for rotation transformations.
     ///
     /// Determines the point around which the view rotates. Use predefined constants
     /// like `AnchorAbout::CENTER` or create custom anchor points with pixel or percentage values.
+    /// The anchor point is specified in the element's local coordinate space (before any transforms).
     RotateAbout rotate_about {}: AnchorAbout {} = AnchorAbout::CENTER,
 
     /// Sets the anchor point for scaling transformations.
     ///
     /// Determines the point around which the view scales. Use predefined constants
     /// like `AnchorAbout::CENTER` or create custom anchor points with pixel or percentage values.
+    /// The anchor point is specified in the element's local coordinate space (before any transforms).
+    /// Transform order: translate → rotate → scale (matches CSS individual transform properties).
     ScaleAbout scale_about {tr}: AnchorAbout {} = AnchorAbout::CENTER,
+
+    /// Sets a custom affine transformation matrix.
+    ///
+    /// This property allows you to specify an arbitrary 2D affine transformation that will be
+    /// applied in addition to the individual transform properties (translate_x, translate_y,
+    /// scale_x, scale_y, rotate).
+    ///
+    /// **Transform application order:**
+    /// 1. Individual `translate_x` and `translate_y` properties
+    /// 2. Individual `rotate` property
+    /// 3. Individual `scale_x` and `scale_y` properties
+    /// 4. **This `transform` property (applied last)**
+    ///
+    /// This matches CSS behavior where individual transform properties are applied before
+    /// the `transform` property. The `transform` matrix is applied in the final coordinate
+    /// space after all individual transforms.
+    ///
+    /// **Example:**
+    /// ```rust
+    /// s.translate_x(10.0)  // Applied first
+    ///  .scale(1.5)          // Applied second
+    ///  .transform(Affine::rotate(0.5))  // Applied last (rotates the already-translated, scaled element)
+    /// ```
+    Transform transform {}: Affine {} = Affine::IDENTITY,
 
     /// Sets the opacity of the view.
     ///
@@ -1822,6 +1864,8 @@ prop_extractor! {
         pub rotate_about: RotateAbout,
         pub scale_about: ScaleAbout,
 
+        pub transform: Transform,
+
         pub overflow_x: OverflowX,
         pub overflow_y: OverflowY,
         pub border_radius: BorderRadiusProp,
@@ -1829,8 +1873,11 @@ prop_extractor! {
 }
 impl TransformProps {
     pub fn affine(&self, size: kurbo::Size) -> Affine {
-        let mut transform = Affine::IDENTITY;
+        let mut result = Affine::IDENTITY;
+        // CANONICAL ORDER (matches CSS individual properties):
+        // 1. translate → 2. rotate → 3. scale → 4. transform property
 
+        // 1. Translate
         let transform_x = match self.translate_x() {
             crate::unit::PxPct::Px(px) => px,
             crate::unit::PxPct::Pct(pct) => (pct / 100.) * size.width,
@@ -1839,52 +1886,43 @@ impl TransformProps {
             crate::unit::PxPct::Px(px) => px,
             crate::unit::PxPct::Pct(pct) => (pct / 100.) * size.height,
         };
-        transform *= Affine::translate(Vec2 {
+        result *= Affine::translate(Vec2 {
             x: transform_x,
             y: transform_y,
         });
 
+        // 2. Rotate (around rotate_about anchor)
+        let rotation = self.rotation().to_radians();
+        if rotation != 0.0 {
+            let rotate_about = self.rotate_about();
+            let (rotate_x_frac, rotate_y_frac) = rotate_about.as_fractions();
+            let rotate_point = Vec2 {
+                x: rotate_x_frac * size.width,
+                y: rotate_y_frac * size.height,
+            };
+            result *= Affine::translate(rotate_point)
+                * Affine::rotate(rotation)
+                * Affine::translate(-rotate_point);
+        }
+
+        // 3. Scale (around scale_about anchor)
         let scale_x = self.scale_x().0 / 100.;
         let scale_y = self.scale_y().0 / 100.;
-        let rotation = self.rotation().to_radians();
-
-        // Get rotation and scale anchor points
-        let rotate_about = self.rotate_about();
-        let scale_about = self.scale_about();
-
-        // Convert anchor points to fractional positions
-        let (rotate_x_frac, rotate_y_frac) = rotate_about.as_fractions();
-        let (scale_x_frac, scale_y_frac) = scale_about.as_fractions();
-
-        let rotate_point = Vec2 {
-            x: rotate_x_frac * size.width,
-            y: rotate_y_frac * size.height,
-        };
-
-        let scale_point = Vec2 {
-            x: scale_x_frac * size.width,
-            y: scale_y_frac * size.height,
-        };
-
-        // Apply transformations using the specified anchor points
         if scale_x != 1.0 || scale_y != 1.0 {
-            // Manual non-uniform scaling about a point: translate -> scale -> translate back
-            let scale_center = scale_point;
-            transform = transform
-                .then_translate(-scale_center)
-                .then_scale_non_uniform(scale_x, scale_y)
-                .then_translate(scale_center);
-        }
-        if rotation != 0.0 {
-            // Manual rotation about a point: translate -> rotate -> translate back
-            let rotate_center = rotate_point;
-            transform = transform
-                .then_translate(-rotate_center)
-                .then_rotate(rotation)
-                .then_translate(rotate_center);
+            let scale_about = self.scale_about();
+            let (scale_x_frac, scale_y_frac) = scale_about.as_fractions();
+            let scale_point = Vec2 {
+                x: scale_x_frac * size.width,
+                y: scale_y_frac * size.height,
+            };
+            result *= Affine::translate(scale_point)
+                * Affine::scale_non_uniform(scale_x, scale_y)
+                * Affine::translate(-scale_point);
         }
 
-        transform
+        // 4. Apply custom transform property last
+        result *= self.transform();
+        result
     }
 
     pub fn clip_rect(&self, mut rect: kurbo::Rect) -> Option<RoundedRect> {

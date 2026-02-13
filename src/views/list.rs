@@ -1,7 +1,7 @@
 use super::Decorators;
 use crate::context::{Phases, StyleCx};
 use crate::event::listener;
-use crate::event::{DispatchKind, Event, EventPropagation};
+use crate::event::{Event, EventPropagation, RouteKind};
 use crate::style::Style;
 use crate::style_class;
 use crate::view::IntoView;
@@ -93,12 +93,12 @@ where
 
         if old_sel != new_sel {
             // Dispatch custom event when selection changes
-            list_id.dispatch_event(
+            list_id.route_event(
                 Event::new_custom(ListSelectionChanged {
                     old_selection: old_sel,
                     new_selection: new_sel,
                 }),
-                DispatchKind::Directed {
+                RouteKind::Directed {
                     target: list_id.get_element_id(),
                     phases: Phases::TARGET,
                 },
@@ -112,12 +112,12 @@ where
         .into_iter()
         .enumerate()
         .map(move |(index, v)| {
-            let id = ViewId::new();
+            let item_id = ViewId::new();
             let v = v.into_view().class(ListItemClass);
             let child = v.id();
-            id.set_children([v]);
+            item_id.set_children([v]);
             Item {
-                id,
+                id: item_id,
                 selection,
                 index,
                 child,
@@ -220,9 +220,9 @@ impl View for List {
                     let selection = self.selection.get_untracked();
 
                     // Dispatch custom event
-                    self.id.dispatch_event(
+                    self.id.route_event(
                         Event::new_custom(ListAccept { selection }),
-                        DispatchKind::Directed {
+                        RouteKind::Directed {
                             target: self.id.get_element_id(),
                             phases: Phases::TARGET,
                         },

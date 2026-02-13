@@ -115,6 +115,7 @@ fn test_stacking_context_children_bounded_within_parent() {
 #[test]
 #[serial]
 fn test_stacking_context_bounds_children() {
+    let root = TestRoot::new();
     // Test CSS stacking context bounding: a child with high z-index inside a
     // stacking-context parent should be BOUNDED and NOT receive clicks before
     // siblings with higher z-index than the parent.
@@ -151,7 +152,6 @@ fn test_stacking_context_bounds_children() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
@@ -170,6 +170,7 @@ fn test_stacking_context_bounds_children() {
 #[test]
 #[serial]
 fn test_stacking_model_siblings_compete_at_same_level() {
+    let root = TestRoot::new();
     // In the simplified stacking model, z-index only competes with siblings at the same level.
     // Children are bounded within their parent.
     //
@@ -224,7 +225,6 @@ fn test_stacking_model_siblings_compete_at_same_level() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
@@ -248,6 +248,7 @@ fn test_stacking_model_siblings_compete_at_same_level() {
 #[test]
 #[serial]
 fn test_stacking_context_negative_z_index() {
+    let root = TestRoot::new();
     // Test negative z-index: views with negative z-index are painted first
     // and receive events last.
     //
@@ -286,7 +287,6 @@ fn test_stacking_context_negative_z_index() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
@@ -302,6 +302,7 @@ fn test_stacking_context_negative_z_index() {
 #[test]
 #[serial]
 fn test_stacking_context_transform_creates_context() {
+    let root = TestRoot::new();
     // Test that transform creates a stacking context, bounding children.
     //
     // Structure:
@@ -338,7 +339,6 @@ fn test_stacking_context_transform_creates_context() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
@@ -357,6 +357,7 @@ fn test_stacking_context_transform_creates_context() {
 #[test]
 #[serial]
 fn test_stacking_model_deeply_nested_bounded() {
+    let root = TestRoot::new();
     // In the simplified stacking model, deeply nested children are bounded at each level.
     // They don't "escape" to compete with ancestors' siblings.
     //
@@ -401,7 +402,6 @@ fn test_stacking_model_deeply_nested_bounded() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
@@ -420,6 +420,7 @@ fn test_stacking_model_deeply_nested_bounded() {
 #[test]
 #[serial]
 fn test_stacking_context_dom_order_tiebreaker() {
+    let root = TestRoot::new();
     // Test DOM order as tiebreaker: when multiple views have the same z-index,
     // the later one in DOM order should receive events first (painted last).
     //
@@ -456,7 +457,6 @@ fn test_stacking_context_dom_order_tiebreaker() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
@@ -472,6 +472,7 @@ fn test_stacking_context_dom_order_tiebreaker() {
 #[test]
 #[serial]
 fn test_stacking_model_all_views_are_stacking_contexts() {
+    let root = TestRoot::new();
     // In the simplified stacking model, every view is a stacking context.
     // Children are always bounded within their parent.
     //
@@ -517,7 +518,6 @@ fn test_stacking_model_all_views_are_stacking_contexts() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
@@ -540,6 +540,7 @@ fn test_stacking_model_all_views_are_stacking_contexts() {
 #[test]
 #[serial]
 fn test_stacking_context_partial_overlap() {
+    let root = TestRoot::new();
     // Test partial overlap: click coordinates matter for hit testing.
     //
     // Structure:
@@ -550,7 +551,6 @@ fn test_stacking_context_partial_overlap() {
     // Click at (50, 50) should hit Left.
     // Click at (150, 50) should hit Right.
 
-    let root = TestRoot::new();
     let clicked_left = Rc::new(Cell::new(false));
     let clicked_right = Rc::new(Cell::new(false));
 
@@ -614,6 +614,7 @@ fn test_stacking_context_partial_overlap() {
 #[test]
 #[serial]
 fn test_stacking_context_pointer_events_none() {
+    let root = TestRoot::new();
     // Test that views with pointer_events_none are skipped in event dispatch.
     //
     // Structure:
@@ -647,7 +648,6 @@ fn test_stacking_context_pointer_events_none() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
@@ -665,6 +665,7 @@ fn test_stacking_context_pointer_events_none() {
 #[test]
 #[serial]
 fn test_stacking_context_hidden_view() {
+    let root = TestRoot::new();
     // Test that hidden views are skipped in event dispatch.
     //
     // Structure:
@@ -698,7 +699,6 @@ fn test_stacking_context_hidden_view() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
@@ -716,6 +716,7 @@ fn test_stacking_context_hidden_view() {
 #[test]
 #[serial]
 fn test_stacking_context_hidden_parent_hides_children() {
+    let root = TestRoot::new();
     // Test that children of hidden views don't receive events.
     //
     // Structure:
@@ -751,7 +752,6 @@ fn test_stacking_context_hidden_parent_hides_children() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
@@ -769,6 +769,7 @@ fn test_stacking_context_hidden_parent_hides_children() {
 #[test]
 #[serial]
 fn test_stacking_context_hidden_in_escaped_context() {
+    let root = TestRoot::new();
     // Test hidden view that would otherwise escape to parent stacking context.
     //
     // Structure:
@@ -817,7 +818,6 @@ fn test_stacking_context_hidden_in_escaped_context() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
@@ -836,6 +836,7 @@ fn test_stacking_context_hidden_in_escaped_context() {
 #[test]
 #[serial]
 fn test_stacking_context_hidden_does_not_bubble() {
+    let root = TestRoot::new();
     // Test that events don't bubble through hidden ancestors.
     //
     // Structure:
@@ -863,7 +864,6 @@ fn test_stacking_context_hidden_does_not_bubble() {
         EventPropagation::Continue
     });
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
@@ -881,6 +881,7 @@ fn test_stacking_context_hidden_does_not_bubble() {
 #[test]
 #[serial]
 fn test_stacking_context_nested_contexts() {
+    let root = TestRoot::new();
     // Test nested stacking contexts: a stacking context inside another stacking context.
     //
     // Structure:
@@ -919,7 +920,6 @@ fn test_stacking_context_nested_contexts() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
@@ -937,6 +937,7 @@ fn test_stacking_context_nested_contexts() {
 #[test]
 #[serial]
 fn test_stacking_context_sibling_isolation() {
+    let root = TestRoot::new();
     // Test that sibling stacking contexts are isolated from each other.
     //
     // Structure:
@@ -973,7 +974,6 @@ fn test_stacking_context_sibling_isolation() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
@@ -991,6 +991,7 @@ fn test_stacking_context_sibling_isolation() {
 #[test]
 #[serial]
 fn test_stacking_context_event_bubbling() {
+    let root = TestRoot::new();
     // Test event bubbling with stacking context: when a child with z-index
     // handles an event and returns Continue, the event should bubble up
     // to its DOM parent (even if the parent has lower z-index).
@@ -1020,7 +1021,6 @@ fn test_stacking_context_event_bubbling() {
         EventPropagation::Continue
     });
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
@@ -1035,6 +1035,7 @@ fn test_stacking_context_event_bubbling() {
 #[test]
 #[serial]
 fn test_stacking_context_bubbling_stops_on_stop() {
+    let root = TestRoot::new();
     // Test that bubbling stops when a handler returns Stop.
     //
     // Structure:
@@ -1060,7 +1061,6 @@ fn test_stacking_context_bubbling_stops_on_stop() {
         clicked_parent_clone.set(true);
     });
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
@@ -1075,6 +1075,7 @@ fn test_stacking_context_bubbling_stops_on_stop() {
 #[test]
 #[serial]
 fn test_stacking_context_deep_bubbling() {
+    let root = TestRoot::new();
     // Test event bubbling through multiple ancestor levels (no stacking contexts).
     //
     // Structure:
@@ -1110,7 +1111,6 @@ fn test_stacking_context_deep_bubbling() {
         EventPropagation::Continue
     });
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
@@ -1129,6 +1129,7 @@ fn test_stacking_context_deep_bubbling() {
 #[test]
 #[serial]
 fn test_stacking_context_bubbling_across_stacking_contexts() {
+    let root = TestRoot::new();
     // Test event bubbling through nested stacking contexts (like web browser).
     //
     // In web: events bubble through DOM ancestors regardless of stacking contexts.
@@ -1168,7 +1169,6 @@ fn test_stacking_context_bubbling_across_stacking_contexts() {
         EventPropagation::Continue
     });
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
@@ -1187,6 +1187,7 @@ fn test_stacking_context_bubbling_across_stacking_contexts() {
 #[test]
 #[serial]
 fn test_stacking_context_multiple_escaped_children() {
+    let root = TestRoot::new();
     // Test multiple escaped children competing: highest z-index wins.
     //
     // Structure:
@@ -1228,7 +1229,6 @@ fn test_stacking_context_multiple_escaped_children() {
     .style(|s| s.absolute().inset(0.0).size(100.0, 100.0)),))
     .style(|s| s.size(100.0, 100.0));
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
@@ -1248,6 +1248,7 @@ fn test_stacking_context_multiple_escaped_children() {
 #[test]
 #[serial]
 fn test_stacking_context_explicit_z_index_zero() {
+    let root = TestRoot::new();
     // Test explicit z-index: 0 creates stacking context (bounds children).
     //
     // Structure:
@@ -1282,7 +1283,6 @@ fn test_stacking_context_explicit_z_index_zero() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
@@ -1303,6 +1303,7 @@ fn test_stacking_context_explicit_z_index_zero() {
 #[test]
 #[serial]
 fn test_opacity_creates_stacking_context() {
+    let root = TestRoot::new();
     // Test that opacity < 1 creates a stacking context, bounding children.
     //
     // Structure:
@@ -1337,7 +1338,6 @@ fn test_opacity_creates_stacking_context() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
@@ -1356,6 +1356,7 @@ fn test_opacity_creates_stacking_context() {
 #[test]
 #[serial]
 fn test_stacking_model_opacity_does_not_affect_stacking() {
+    let root = TestRoot::new();
     // In the simplified stacking model, opacity does not affect stacking behavior.
     // Every view is already a stacking context, so children are bounded.
     //
@@ -1390,7 +1391,6 @@ fn test_stacking_model_opacity_does_not_affect_stacking() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
@@ -1409,6 +1409,7 @@ fn test_stacking_model_opacity_does_not_affect_stacking() {
 #[test]
 #[serial]
 fn test_opacity_near_zero_creates_stacking_context() {
+    let root = TestRoot::new();
     // Test that very low opacity (near 0) creates stacking context.
     //
     // Structure:
@@ -1438,7 +1439,6 @@ fn test_opacity_near_zero_creates_stacking_context() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
@@ -1456,6 +1456,7 @@ fn test_opacity_near_zero_creates_stacking_context() {
 #[test]
 #[serial]
 fn test_opacity_with_z_index_combination() {
+    let root = TestRoot::new();
     // Test that opacity combined with z-index works correctly.
     // The z-index determines the stacking order at the parent level.
     //
@@ -1499,7 +1500,6 @@ fn test_opacity_with_z_index_combination() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
@@ -1515,6 +1515,7 @@ fn test_opacity_with_z_index_combination() {
 #[test]
 #[serial]
 fn test_opacity_deeply_nested() {
+    let root = TestRoot::new();
     // Test opacity stacking context with deep nesting.
     //
     // Structure:
@@ -1553,7 +1554,6 @@ fn test_opacity_deeply_nested() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);

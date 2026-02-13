@@ -90,7 +90,7 @@ fn test_container_child_click_interaction() {
 
     // Container should be in clicking state
     assert!(
-        harness.is_clicking(container_id),
+        harness.is_active(container_id),
         "Container should be clicking when child is clicked"
     );
 

@@ -265,6 +265,7 @@ fn test_visual_transform_combined_transforms() {
         coeffs[0]
     );
 
+    // CSS canonical order: translate → rotate → scale
     // For a 40x40 element at position (20,20) with translate(10) and 1.5x scale:
     // - Layout position = 20 (padding)
     // - CSS translate = 10

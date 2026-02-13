@@ -452,7 +452,7 @@ impl InteractionState {
         if self.is_focused {
             bits |= 1 << 3;
         }
-        if self.is_clicking {
+        if self.is_active {
             bits |= 1 << 4;
         }
         if self.is_dark_mode {

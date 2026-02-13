@@ -2,7 +2,7 @@
 //!
 //! These tests verify the W3C Pointer Events-inspired capture API:
 //! - `set_pointer_capture` / `release_pointer_capture` API
-//! - `GotPointerCapture` / `LostPointerCapture` events
+//! - `GainedPointerCapture` / `LostPointerCapture` events
 //! - Capture routing (events go to captured view)
 //! - Automatic release on pointer up
 //! - Two-phase capture (pending → active) model
@@ -22,7 +22,7 @@ use serial_test::serial;
 #[test]
 #[serial]
 fn test_set_pointer_capture_fires_got_capture_event() {
-    // When a view calls set_pointer_capture, it should receive GotPointerCapture
+    // When a view calls set_pointer_capture, it should receive GainedPointerCapture
     let root = TestRoot::new();
     let tracker = PointerCaptureTracker::new();
 
@@ -50,9 +50,9 @@ fn test_set_pointer_capture_fires_got_capture_event() {
     harness.pointer_move(50.0, 50.0);
 
     assert_eq!(
-        tracker.got_capture_count(),
+        tracker.gained_capture_count(),
         1,
-        "View should receive GotPointerCapture event"
+        "View should receive GainedPointerCapture event"
     );
     assert_eq!(
         tracker.got_capture_names(),
@@ -132,9 +132,9 @@ fn test_pointer_capture_auto_released_on_pointer_up() {
 
     // Verify capture is active
     assert_eq!(
-        tracker.got_capture_count(),
+        tracker.gained_capture_count(),
         1,
-        "Should have received GotPointerCapture"
+        "Should have received GainedPointerCapture"
     );
 
     // Pointer up should release capture
@@ -191,7 +191,7 @@ fn test_release_pointer_capture_fires_lost_capture_event() {
 
     // First move activates capture
     harness.pointer_move(50.0, 50.0);
-    assert_eq!(tracker.got_capture_count(), 1);
+    assert_eq!(tracker.gained_capture_count(), 1);
 
     // Second move triggers release
     harness.pointer_move(50.0, 60.0);
@@ -217,7 +217,7 @@ fn test_capture_transfer_fires_lost_then_got() {
     let root = TestRoot::new();
     // When capture transfers from one view to another, the order should be:
     // 1. LostPointerCapture to old view
-    // 2. GotPointerCapture to new view
+    // 2. GainedPointerCapture to new view
     let tracker = PointerCaptureTracker::new();
 
     let base1 = Empty::new().style(|s| s.size(50.0, 100.0));
@@ -357,11 +357,11 @@ fn test_capture_on_hidden_view_not_activated() {
     // Trigger capture processing
     harness.pointer_move(50.0, 50.0);
 
-    // Hidden view should not receive GotPointerCapture
+    // Hidden view should not receive GainedPointerCapture
     assert_eq!(
-        tracker.got_capture_count(),
+        tracker.gained_capture_count(),
         0,
-        "Hidden view should not receive GotPointerCapture"
+        "Hidden view should not receive GainedPointerCapture"
     );
 }
 
@@ -407,9 +407,9 @@ fn test_multiple_pointer_down_up_cycles() {
     harness.pointer_move(50.0, 50.0); // Process release
 
     assert_eq!(
-        tracker.got_capture_count(),
+        tracker.gained_capture_count(),
         3,
-        "Should have received 3 GotPointerCapture events"
+        "Should have received 3 GainedPointerCapture events"
     );
     assert_eq!(
         tracker.lost_capture_count(),
@@ -445,9 +445,9 @@ fn test_touch_pointer_gets_implicit_capture() {
     // Move to trigger capture processing (implicit capture applied after dispatch)
     harness.touch_move(25.0, 50.0);
 
-    // Should have received GotPointerCapture from implicit touch capture
+    // Should have received GainedPointerCapture from implicit touch capture
     assert_eq!(
-        tracker.got_capture_count(),
+        tracker.gained_capture_count(),
         1,
         "Touch pointer should get implicit capture"
     );
@@ -490,9 +490,9 @@ fn test_mouse_pointer_does_not_get_implicit_capture() {
     // Move to process any pending captures
     harness.pointer_move(25.0, 50.0);
 
-    // Should NOT have received GotPointerCapture (no implicit capture for mouse)
+    // Should NOT have received GainedPointerCapture (no implicit capture for mouse)
     assert_eq!(
-        tracker.got_capture_count(),
+        tracker.gained_capture_count(),
         0,
         "Mouse pointer should NOT get implicit capture"
     );
@@ -542,9 +542,9 @@ fn test_explicit_capture_overrides_implicit_touch_capture() {
     // Move to trigger capture processing
     harness.touch_move(25.0, 50.0);
 
-    // Should have exactly 1 GotPointerCapture (explicit, not implicit)
+    // Should have exactly 1 GainedPointerCapture (explicit, not implicit)
     assert_eq!(
-        tracker.got_capture_count(),
+        tracker.gained_capture_count(),
         1,
         "Should have exactly one capture (explicit overrides implicit)"
     );
@@ -595,7 +595,7 @@ fn test_handler_sees_capture_during_pointer_up() {
 
     // Move to activate capture
     harness.pointer_move(50.0, 50.0);
-    assert_eq!(tracker.got_capture_count(), 1, "Should have capture");
+    assert_eq!(tracker.gained_capture_count(), 1, "Should have capture");
 
     // Pointer up at a different location - should still go to captured view
     harness.pointer_up(200.0, 200.0);

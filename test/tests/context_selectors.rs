@@ -321,14 +321,14 @@ fn test_clicking_state_set_for_with_context_active() {
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Initially not clicking
-    assert!(!harness.is_clicking(id), "Should not be clicking initially");
+    assert!(!harness.is_active(id), "Should not be clicking initially");
 
     // Pointer down
     harness.pointer_down(50.0, 50.0);
 
     // Should be clicking
     assert!(
-        harness.is_clicking(id),
+        harness.is_active(id),
         "Should be clicking after pointer down"
     );
 
@@ -337,7 +337,7 @@ fn test_clicking_state_set_for_with_context_active() {
 
     // No longer clicking
     assert!(
-        !harness.is_clicking(id),
+        !harness.is_active(id),
         "Should not be clicking after pointer up"
     );
 }
@@ -570,7 +570,7 @@ fn test_active_style_triggers_paint() {
 
     // Check clicking state
     assert!(
-        harness.is_clicking(id),
+        harness.is_active(id),
         "Should be clicking after pointer down"
     );
 
@@ -602,14 +602,14 @@ fn test_style_request_on_clicking() {
     );
 
     // Check clicking state before
-    assert!(!harness.is_clicking(id), "Should not be clicking initially");
+    assert!(!harness.is_active(id), "Should not be clicking initially");
 
     // Pointer down
     harness.pointer_down(50.0, 50.0);
 
     // Check clicking state after
     assert!(
-        harness.is_clicking(id),
+        harness.is_active(id),
         "Should be clicking after pointer down"
     );
 

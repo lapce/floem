@@ -23,7 +23,7 @@ thread_local! {
 }
 use crate::context::EventCallbackConfig;
 use crate::event::listener::EventListenerKey;
-use crate::event::{DispatchKind, listener};
+use crate::event::{RouteKind, listener};
 use crate::view::LayoutTree;
 use crate::window::handle::get_current_view;
 use crate::{BoxTree, ElementId};
@@ -944,7 +944,7 @@ impl ViewId {
     ///
     /// The capture will be applied on the next pointer event for this pointer ID.
     /// When capture is set:
-    /// - `GotPointerCapture` event is fired to this view
+    /// - `GainedPointerCapture` event is fired to this view
     /// - All subsequent pointer events for this pointer are routed here
     /// - When released, `LostPointerCapture` event is fired
     ///
@@ -1301,10 +1301,11 @@ impl ViewId {
                 Some(parent_box_node.0),
                 understory_box_tree::LocalNode::default(),
             );
+            let element_id = ElementId(child_element_id, *self, false);
             box_tree
                 .borrow_mut()
-                .set_meta(child_element_id, Some(*self));
-            ElementId(child_element_id, *self)
+                .set_meta(child_element_id, Some(element_id));
+            element_id
         })
     }
 
@@ -1365,8 +1366,8 @@ impl ViewId {
     ///     }
     /// );
     /// ```
-    pub fn dispatch_event(&self, event: crate::event::Event, dispatch_kind: DispatchKind) {
-        self.dispatch_event_with_caused_by(event, dispatch_kind, None);
+    pub fn route_event(&self, event: crate::event::Event, route_kind: RouteKind) {
+        self.route_event_with_caused_by(event, route_kind, None);
     }
 
     /// Dispatch an event with an optional causing event.
@@ -1379,17 +1380,17 @@ impl ViewId {
     /// * `event` - The event to dispatch
     /// * `dispatch_kind` - The routing strategy to use
     /// * `caused_by` - An optional event that caused this dispatch (e.g., a PointerDown that caused a Click)
-    pub fn dispatch_event_with_caused_by(
+    pub fn route_event_with_caused_by(
         &self,
         event: crate::event::Event,
-        dispatch_kind: DispatchKind,
+        route_kind: RouteKind,
         caused_by: Option<crate::event::Event>,
     ) {
-        self.add_update_message(UpdateMessage::DispatchEvent {
+        self.add_update_message(UpdateMessage::RouteEvent {
             id: *self,
             event,
-            dispatch_kind,
-            caused_by,
+            route_kind,
+            triggered_by: caused_by,
         });
     }
 }

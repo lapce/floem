@@ -75,9 +75,9 @@ pub struct WindowState {
     pub(crate) screen_size_bp: ScreenSizeBp,
     pub(crate) grid_bps: GridBreakpoints,
     pub(crate) click_state: ClickState<Rc<[ElementId]>>,
+    // TODO: Track hover state per pointer
     pub(crate) hover_state: HoverState<ElementId>,
     pub(crate) focus_state: FocusState<ElementId>,
-    pub(crate) file_hover_state: HoverState<ElementId>,
     pub(crate) file_drag_paths: Option<Rc<[std::path::PathBuf]>>,
     pub(crate) element_id_cursors: FxHashMap<ElementId, CursorStyle>,
     // whether the window is in light or dark mode
@@ -159,7 +159,6 @@ impl WindowState {
             focus_state: FocusState::new(),
             click_state: ClickState::new(),
             hover_state: HoverState::new(),
-            file_hover_state: HoverState::new(),
             file_drag_paths: None,
             element_id_cursors: FxHashMap::default(),
             theme_overriden: false,
@@ -289,12 +288,12 @@ impl WindowState {
 
     pub fn is_hovered(&self, id: impl Into<ElementId>) -> bool {
         let id = id.into();
-        self.hover_state.current_path().contains(&id)
+        self.file_drag_paths.is_none() && self.hover_state.current_path().contains(&id)
     }
 
     pub fn is_file_hover(&self, id: impl Into<ElementId>) -> bool {
         let id = id.into();
-        self.file_hover_state.current_path().contains(&id)
+        self.file_drag_paths.is_some() && self.hover_state.current_path().contains(&id)
     }
 
     pub fn is_focused(&self, id: impl Into<ElementId>) -> bool {
@@ -305,7 +304,12 @@ impl WindowState {
             .unwrap_or(false)
     }
 
+    #[deprecated(note = "use `ViewId::is_active` instead")]
     pub fn is_clicking(&self, id: impl Into<ElementId>) -> bool {
+        self.is_active(id)
+    }
+
+    pub fn is_active(&self, id: impl Into<ElementId>) -> bool {
         let id = id.into();
         self.click_state.presses().any(|p| p.target.contains(&id))
     }
@@ -781,11 +785,12 @@ impl WindowState {
             if damage_rect.contains(pointer.0) {
                 clear_hit_test_cache();
                 let root_element_id = self.root_view_id.get_element_id();
-                crate::event::GlobalEventCx::new(self, root_element_id).update_hover_from_point(
-                    pointer.0,
-                    pointer.1,
-                    &Event::Window(WindowEvent::ChangeUnderCursor),
-                );
+                crate::event::GlobalEventCx::new(
+                    self,
+                    root_element_id,
+                    Event::Window(WindowEvent::ChangeUnderCursor),
+                )
+                .update_hover_from_point(pointer.0);
             }
         }
         self.needs_box_tree_commit = false;

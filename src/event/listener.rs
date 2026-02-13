@@ -9,11 +9,7 @@ use ui_events::{
     },
 };
 
-use crate::event::{
-    DragCancelEvent, DragEndEvent, DragEnterEvent, DragLeaveEvent, DragMoveEvent, DragSourceEvent,
-    DragStartEvent, DragTargetEvent, DragToken, Event, FileDragEvent, FocusEvent, ImeEvent,
-    InteractionEvent, PointerCaptureEvent, WindowEvent,
-};
+use crate::event::*;
 
 // EventListener using the same pattern as StyleClass
 #[derive(Copy, Clone)]
@@ -159,9 +155,12 @@ pub SecondaryClick: (),
 
 event_listener!(
     /// Receives [`DragSourceEvent::Start`] - sent to the element being dragged when the drag operation begins.
+    ///
+    /// This is the first event in the drag lifecycle, fired after the pointer has moved beyond the drag threshold.
+    /// Use this event to set drag data via `event.set_data()` that will be available to drop targets.
     pub DragStart: DragStartEvent,
     |event| {
-        if let Event::DragSource(DragSourceEvent::Start(dse)) = event {
+        if let Event::Drag(DragEvent::Source(DragSourceEvent::Start(dse))) = event {
             return Some(dse as &dyn Any);
         }
         None
@@ -170,9 +169,11 @@ event_listener!(
 
 event_listener!(
     /// Receives [`DragSourceEvent::Move`] - sent to the element being dragged as the pointer moves during the drag.
+    ///
+    /// This event fires continuously as the user drags. Use it to update custom drag previews or track drag position.
     pub DragMove: DragMoveEvent,
     |event| {
-        if let Event::DragSource(DragSourceEvent::Move(dme)) = event {
+        if let Event::Drag(DragEvent::Source(DragSourceEvent::Move(dme))) = event {
             return Some(dme as &dyn Any);
         }
         None
@@ -181,10 +182,12 @@ event_listener!(
 
 event_listener!(
     /// Receives [`DragSourceEvent::Enter`] - sent to the element being dragged when it enters a potential drop target.
-    /// `other_element` in the event data is the drop target that was entered.
+    ///
+    /// `other_element` in the event data identifies the drop target that was entered.
+    /// Use this to update drag preview appearance when hovering over valid drop zones.
     pub DragSourceEnter: DragEnterEvent,
     |event| {
-        if let Event::DragSource(DragSourceEvent::Enter(dee)) = event {
+        if let Event::Drag(DragEvent::Source(DragSourceEvent::Enter(dee))) = event {
             return Some(dee as &dyn Any);
         }
         None
@@ -193,10 +196,12 @@ event_listener!(
 
 event_listener!(
     /// Receives [`DragSourceEvent::Leave`] - sent to the element being dragged when it leaves a potential drop target.
-    /// `other_element` in the event data is the drop target that was left.
+    ///
+    /// `other_element` in the event data identifies the drop target that was left.
+    /// Use this to restore default drag preview appearance when leaving drop zones.
     pub DragSourceLeave: DragLeaveEvent,
     |event| {
-        if let Event::DragSource(DragSourceEvent::Leave(dle)) = event {
+        if let Event::Drag(DragEvent::Source(DragSourceEvent::Leave(dle))) = event {
             return Some(dle as &dyn Any);
         }
         None
@@ -204,11 +209,14 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`DragSourceEvent::End`] - sent to the element being dragged when the pointer is released.
-    /// `other_element` in the event data is the drop target if one accepted the drop, `None` otherwise.
+    /// Receives [`DragSourceEvent::End`] - sent to the element being dragged when the drag completes successfully.
+    ///
+    /// `other_element` in the event data is the drop target that accepted the drop.
+    /// This event is only sent if a target accepted the drop via `prevent_default()`.
+    /// Use this to perform cleanup or update state after a successful drop.
     pub DragEnd: DragEndEvent,
     |event| {
-        if let Event::DragSource(DragSourceEvent::End(dde)) = event {
+        if let Event::Drag(DragEvent::Source(DragSourceEvent::End(dde))) = event {
             return Some(dde as &dyn Any);
         }
         None
@@ -216,11 +224,18 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`DragSourceEvent::Cancel`] - sent to the element being dragged when the drag is cancelled
-    /// (e.g., Escape key pressed, pointer left window, or no target accepted the drop).
+    /// Receives [`DragSourceEvent::Cancel`] - sent to the element being dragged when the drag is cancelled.
+    ///
+    /// Drag cancellation occurs when:
+    /// - User presses Escape key
+    /// - Pointer leaves the window
+    /// - No drop target accepted the drop
+    /// - Pointer capture is lost unexpectedly
+    ///
+    /// Use this to restore original state or undo any changes made during the drag.
     pub DragCancel: DragCancelEvent,
     |event| {
-        if let Event::DragSource(DragSourceEvent::Cancel(dce)) = event {
+        if let Event::Drag(DragEvent::Source(DragSourceEvent::Cancel(dce))) = event {
             return Some(dce as &dyn Any);
         }
         None
@@ -232,11 +247,13 @@ event_listener!(
 // ============================================================================
 
 event_listener!(
-    /// Receives [`DragTargetEvent::Enter`] - sent to a drop target when a dragged element enters it.
-    /// `other_element` in the event data is the element being dragged.
+    /// Receives [`DragTargetEvent::Enter`] - sent to a drop target when a dragged element enters its bounds.
+    ///
+    /// `other_element` in the event data identifies the element being dragged (the drag source).
+    /// Use this to show visual feedback that the element can accept drops (e.g., highlight border, show drop indicator).
     pub DragTargetEnter: DragEnterEvent,
     |event| {
-        if let Event::DragTarget(DragTargetEvent::Enter(dee)) = event {
+        if let Event::Drag(DragEvent::Target(DragTargetEvent::Enter(dee))) = event {
             return Some(dee as &dyn Any);
         }
         None
@@ -244,11 +261,13 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`DragTargetEvent::Move`] - sent to a drop target when the pointer moves while a dragged element is over it.
-    /// `other_element` in the event data is the element being dragged.
+    /// Receives [`DragTargetEvent::Move`] - sent to a drop target as the pointer moves while a dragged element is over it.
+    ///
+    /// `other_element` in the event data identifies the element being dragged.
+    /// Use this to update drop position indicators or highlight specific drop zones within the target.
     pub DragTargetMove: DragMoveEvent,
     |event| {
-        if let Event::DragTarget(DragTargetEvent::Move(dme)) = event {
+        if let Event::Drag(DragEvent::Target(DragTargetEvent::Move(dme))) = event {
             return Some(dme as &dyn Any);
         }
         None
@@ -256,11 +275,13 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`DragTargetEvent::Leave`] - sent to a drop target when a dragged element leaves it.
-    /// `other_element` in the event data is the element being dragged.
+    /// Receives [`DragTargetEvent::Leave`] - sent to a drop target when a dragged element leaves its bounds.
+    ///
+    /// `other_element` in the event data identifies the element being dragged.
+    /// Use this to remove visual feedback (e.g., remove highlight, hide drop indicator).
     pub DragTargetLeave: DragLeaveEvent,
     |event| {
-        if let Event::DragTarget(DragTargetEvent::Leave(dle)) = event {
+        if let Event::Drag(DragEvent::Target(DragTargetEvent::Leave(dle))) = event {
             return Some(dle as &dyn Any);
         }
         None
@@ -269,11 +290,15 @@ event_listener!(
 
 event_listener!(
     /// Receives [`DragTargetEvent::Drop`] - sent to a drop target when a dragged element is dropped on it.
-    /// `other_element` in the event data is the element being dragged.
-    /// Call `prevent_default()` to accept the drop.
+    ///
+    /// `other_element` in the event data identifies the element being dragged.
+    /// Access drag data via `event.data.downcast_ref::<YourType>()`.
+    ///
+    /// **Important**: Call `cx.prevent_default()` to accept the drop. If not called, the drag will be cancelled
+    /// and the source will receive `DragCancel` instead of `DragEnd`.
     pub DragTargetDrop: DragEndEvent,
     |event| {
-        if let Event::DragTarget(DragTargetEvent::Drop(dde)) = event {
+        if let Event::Drag(DragEvent::Target(DragTargetEvent::Drop(dde))) = event {
             return Some(dde as &dyn Any);
         }
         None
@@ -348,14 +373,20 @@ event_listener!(
 
 event_listener!(
     /// Fired when a view gains pointer capture
-    pub GotPointerCapture: DragToken,
+    pub GainedPointerCapture: DragToken,
     |event| {
-        if let Event::PointerCapture(PointerCaptureEvent::Got(token)) = event {
+        if let Event::PointerCapture(PointerCaptureEvent::Gained(token)) = event {
             return Some(token as &dyn Any);
         }
         None
     }
 );
+/// Web-standard name for pointer capture gained event.
+#[deprecated(
+    note = "Use `GainedPointerCapture` instead for consistency with other Floem event names. This alias matches the web's `gotpointercapture` event name."
+)]
+#[expect(non_upper_case_globals)]
+pub const GotPointerCapture: GainedPointerCapture = GainedPointerCapture;
 
 event_listener!(
     /// Fired when a view loses pointer capture
@@ -446,43 +477,98 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`Event::Focus`] `Got` variant
-    pub FocusGot: (),
+    /// Listens for when an element or its descendants gain focus.
+    ///
+    /// This event propagates through all three phases (capture, target, bubble), similar to
+    /// standard DOM events. **By default, event listeners using `on_event` only listen to
+    /// target and bubble phases.**
+    ///
+    /// # Filtering by Phase
+    ///
+    /// To only respond when this specific element gains focus (not descendants):
+    /// ```rust
+    /// view.on_event_stop(FocusGained, |cx, _| {
+    ///     if cx.phase.is_target() {
+    ///         // Only this element gained focus
+    ///     }
+    /// })
+    /// ```
+    ///
+    /// Or configure which phases to listen to:
+    /// ```rust
+    /// view.on_event_stop_with_config(
+    ///     FocusGained,
+    ///     EventCallbackConfig { phases: Phases::TARGET },
+    ///     |cx, _| {
+    ///         // Only fires when this element itself gains focus
+    ///     }
+    /// )
+    /// ```
+    ///
+    /// To listen during capture phase (fires before descendants):
+    /// ```rust
+    /// view.on_event_stop_with_config(
+    ///     FocusGained,
+    ///     EventCallbackConfig { phases: Phases::CAPTURE },
+    ///     |cx, _| {
+    ///         // Fires before any descendant receives the event
+    ///     }
+    /// )
+    /// ```
+    pub FocusGained: (),
     |event| {
-        if let Event::Focus(FocusEvent::Got) = event {
+        if let Event::Focus(FocusEvent::Gained) = event {
             return Some(&() as &dyn Any);
         }
         None
     }
 );
+#[deprecated(note = "Use `FocusGained` instead.")]
+#[expect(non_upper_case_globals)]
+pub const GotFocus: FocusGained = FocusGained;
 
 event_listener!(
-    /// Receives [`Event::Focus`] `Lost` variant
+    /// Listens for when an element or its descendants lose focus.
+    ///
+    /// This event propagates through all three phases (capture, target, bubble), similar to
+    /// standard DOM events. **By default, event listeners using `on_event` only listen to
+    /// target and bubble phases.**
+    ///
+    /// # Filtering by Phase
+    ///
+    /// To only respond when this specific element loses focus (not descendants):
+    /// ```rust
+    /// view.on_event_stop(FocusLost, |cx, _| {
+    ///     if cx.phase.is_target() {
+    ///         // Only this element lost focus
+    ///     }
+    /// })
+    /// ```
+    ///
+    /// Or configure which phases to listen to:
+    /// ```rust
+    /// view.on_event_stop_with_config(
+    ///     FocusLost,
+    ///     EventCallbackConfig { phases: Phases::TARGET },
+    ///     |cx, _| {
+    ///         // Only fires when this element itself loses focus
+    ///     }
+    /// )
+    /// ```
+    ///
+    /// To listen during capture phase (fires before descendants):
+    /// ```rust
+    /// view.on_event_stop_with_config(
+    ///     FocusLost,
+    ///     EventCallbackConfig { phases: Phases::CAPTURE },
+    ///     |cx, _| {
+    ///         // Fires before any descendant receives the event
+    ///     }
+    /// )
+    /// ```
     pub FocusLost: (),
     |event| {
         if let Event::Focus(FocusEvent::Lost) = event {
-            return Some(&() as &dyn Any);
-        }
-        None
-    }
-);
-
-event_listener!(
-    /// Receives [`Event::Focus`] `EnteredSubtree` variant
-    pub FocusEnteredSubtree: (),
-    |event| {
-        if let Event::Focus(FocusEvent::EnteredSubtree) = event {
-            return Some(&() as &dyn Any);
-        }
-        None
-    }
-);
-
-event_listener!(
-    /// Receives [`Event::Focus`] `LeftSubtree` variant
-    pub FocusLeftSubtree: (),
-    |event| {
-        if let Event::Focus(FocusEvent::LeftSubtree) = event {
             return Some(&() as &dyn Any);
         }
         None
@@ -578,10 +664,81 @@ event_listener!(
 );
 
 event_listener!(
+    /// Receives `Event::Window` `UpdatePhase(ProcessingMessages)` variant
+    pub UpdatePhaseProcessingMessages: (),
+    |event| {
+        if let Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::ProcessingMessages)) = event {
+            return Some(&() as &dyn Any);
+        }
+        None
+    }
+);
+event_listener!(
+    /// Receives `Event::Window` `UpdatePhase(Style)` variant
+    pub UpdatePhaseStyle: (),
+    |event| {
+        if let Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::Style)) = event {
+            return Some(&() as &dyn Any);
+        }
+        None
+    }
+);
+event_listener!(
+    /// Receives `Event::Window` `UpdatePhase(Layout)` variant
+    pub UpdatePhaseLayout: (),
+    |event| {
+        if let Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::Layout)) = event {
+            return Some(&() as &dyn Any);
+        }
+        None
+    }
+);
+event_listener!(
+    /// Receives `Event::Window` `UpdatePhase(BoxTreeUpdate)` variant
+    pub UpdatePhaseBoxTreeUpdate: (),
+    |event| {
+        if let Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::BoxTreeUpdate)) = event {
+            return Some(&() as &dyn Any);
+        }
+        None
+    }
+);
+event_listener!(
+    /// Receives `Event::Window` `UpdatePhase(BoxTreePendingUpdates)` variant
+    pub UpdatePhaseBoxTreePendingUpdates: (),
+    |event| {
+        if let Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::BoxTreePendingUpdates)) = event {
+            return Some(&() as &dyn Any);
+        }
+        None
+    }
+);
+event_listener!(
+    /// Receives `Event::Window` `UpdatePhase(BoxTreeCommit)` variant
+    pub UpdatePhaseBoxTreeCommit: (),
+    |event| {
+        if let Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::BoxTreeCommit)) = event {
+            return Some(&() as &dyn Any);
+        }
+        None
+    }
+);
+event_listener!(
+    /// Receives `Event::Window` `UpdatePhase(Complete)` variant
+    pub UpdatePhaseComplete: (),
+    |event| {
+        if let Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::Complete)) = event {
+            return Some(&() as &dyn Any);
+        }
+        None
+    }
+);
+
+event_listener!(
     /// Receives `Event::FileDrag` `Dropped` variant
     pub FileDragDrop: crate::event::dropped_file::FileDragDropped,
     |event| {
-        if let Event::FileDrag(FileDragEvent::Dropped(data)) = event {
+        if let Event::FileDrag(FileDragEvent::Drop(data)) = event {
             return Some(data as &dyn Any);
         }
         None
@@ -703,10 +860,25 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives any `Event::DragSource` variant.
+    /// Receives any `Event::Drag(DragEvent::Source(...))` variant.
+    ///
+    /// Use this when you want to handle all drag source events in one place rather than
+    /// registering separate listeners for each event type. Pattern match on the inner
+    /// `DragSourceEvent` to handle specific events:
+    ///
+    /// ```rust,ignore
+    /// view.on_event_stop(AnyDragSource, |cx, event: &DragSourceEvent| {
+    ///     match event {
+    ///         DragSourceEvent::Start(e) => { /* ... */ }
+    ///         DragSourceEvent::Move(e) => { /* ... */ }
+    ///         DragSourceEvent::End(e) => { /* ... */ }
+    ///         _ => {}
+    ///     }
+    /// })
+    /// ```
     pub AnyDragSource: DragSourceEvent,
     |event| {
-        if let Event::DragSource(dse) = event {
+        if let Event::Drag(DragEvent::Source(dse)) = event {
             return Some(dse as &dyn Any);
         }
         None
@@ -714,11 +886,50 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives any `Event::DragTarget` variant.
+    /// Receives any `Event::Drag(DragEvent::Target(...))` variant.
+    ///
+    /// Use this when you want to handle all drag target events in one place rather than
+    /// registering separate listeners for each event type. Pattern match on the inner
+    /// `DragTargetEvent` to handle specific events:
+    ///
+    /// ```rust,ignore
+    /// view.on_event_stop(AnyDragTarget, |cx, event: &DragTargetEvent| {
+    ///     match event {
+    ///         DragTargetEvent::Enter(e) => { /* ... */ }
+    ///         DragTargetEvent::Move(e) => { /* ... */ }
+    ///         DragTargetEvent::Drop(e) => { /* ... */ }
+    ///         _ => {}
+    ///     }
+    /// })
+    /// ```
     pub AnyDragTarget: DragTargetEvent,
     |event| {
-        if let Event::DragTarget(dte) = event {
+        if let Event::Drag(DragEvent::Target(dte)) = event {
             return Some(dte as &dyn Any);
+        }
+        None
+    }
+);
+
+event_listener!(
+    /// Receives any `Event::Drag(...)` variant (both source and target events).
+    ///
+    /// Use this when you want to handle all drag events regardless of whether they're
+    /// source or target events. Pattern match on the `DragEvent` to distinguish:
+    ///
+    /// ```rust,ignore
+    /// view.on_event_stop(AnyDrag, |cx, event: &DragEvent| {
+    ///     match event {
+    ///         DragEvent::Source(DragSourceEvent::Start(e)) => { /* ... */ }
+    ///         DragEvent::Target(DragTargetEvent::Drop(e)) => { /* ... */ }
+    ///         _ => {}
+    ///     }
+    /// })
+    /// ```
+    pub AnyDrag: DragEvent,
+    |event| {
+        if let Event::Drag(de) = event {
+            return Some(de as &dyn Any);
         }
         None
     }
@@ -730,6 +941,17 @@ event_listener!(
     |event| {
         if let Event::FileDrag(fde) = event {
             return Some(fde as &dyn Any);
+        }
+        None
+    }
+);
+
+event_listener!(
+    /// Receives any `Event::Window(WindowEvent::UpdatePhase)` variant.
+    pub AnyUpdatePhase: UpdatePhaseEvent,
+    |event| {
+        if let Event::Window(WindowEvent::UpdatePhase(phase)) = event {
+            return Some(phase as &dyn Any);
         }
         None
     }

@@ -219,7 +219,7 @@ pub mod receiver_signal {
 }
 
 mod element_id {
-    use crate::{ViewId, view::VIEW_STORAGE};
+    use crate::ViewId;
 
     /// A visual identifier that represents a rectangle in the box tree.
     ///
@@ -262,7 +262,11 @@ mod element_id {
     /// ```
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     // #[repr(transparent)]
-    pub struct ElementId(pub(crate) understory_box_tree::NodeId, pub(crate) ViewId);
+    pub struct ElementId(
+        pub(crate) understory_box_tree::NodeId,
+        pub(crate) ViewId,
+        pub(crate) bool,
+    );
     // impl From<understory_box_tree::NodeId> for VisualId {
     //     fn from(value: understory_box_tree::NodeId) -> Self {
     //         Self(value)
@@ -278,17 +282,9 @@ mod element_id {
             self.1
         }
 
-        pub fn exact_view_id(&self) -> Option<crate::ViewId> {
-            VIEW_STORAGE.with_borrow(|s| {
-                let owning_id = self.owning_id();
-
-                let element_id_of_view = s.states.get(owning_id)?.borrow().element_id;
-                if element_id_of_view == *self {
-                    Some(owning_id)
-                } else {
-                    None
-                }
-            })
+        /// returns true if the element id is the id for a view
+        pub fn is_view(&self) -> bool {
+            self.2
         }
     }
 
@@ -317,7 +313,7 @@ mod element_id {
 }
 pub use element_id::ElementId;
 
-pub type BoxTree = understory_box_tree::Tree<understory_index::backends::GridF64, ViewId>;
+pub type BoxTree = understory_box_tree::Tree<understory_index::backends::GridF64, ElementId>;
 // pub type BoxTree = understory_box_tree::Tree;
 
 pub use app::{AppConfig, AppEvent, Application, launch, quit_app, reopen};

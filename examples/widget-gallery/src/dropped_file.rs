@@ -1,7 +1,7 @@
 use crate::form::{form, form_item};
 use floem::{
     dropped_file::FileDragDropped,
-    prelude::*,
+    prelude::{palette::css, *},
     theme::HoverTargetClass,
     ui_events::keyboard::{Key, NamedKey},
 };
@@ -14,6 +14,7 @@ pub fn dropped_file_view() -> impl IntoView {
         .style(|s| {
             s.size(200.0, 50.0)
                 .flex_col()
+                .hover(|s| s.color(css::PINK))
                 .items_center()
                 .justify_center()
         })

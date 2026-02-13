@@ -320,12 +320,18 @@ impl HeadlessHarness {
 
     /// Find the visual id at the given position (hit test).
     pub fn element_id_at(&self, x: f64, y: f64) -> Option<ElementId> {
-        hit_test(self.root_id(), Point::new(x, y)).map(|v| v.0)
+        hit_test(self.root_id(), Point::new(x, y))
+            .map(|v| v.last().copied())
+            .flatten()
     }
 
-    /// Check if a view is currently in the "clicking" state (pointer down but not up).
-    pub fn is_clicking(&self, id: impl Into<ElementId>) -> bool {
-        self.window_handle.window_state.is_clicking(id)
+    /// Check if a view is currently in the "active" state
+    /// active: pointer down and not up with the pointer in the element either by
+    ///   1: remaining in or
+    ///   2: returning into the element
+    /// or keyboard trigger is down).
+    pub fn is_active(&self, id: impl Into<ElementId>) -> bool {
+        self.window_handle.window_state.is_active(id)
     }
 
     /// Check if a view is currently hovered.

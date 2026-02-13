@@ -302,8 +302,9 @@ impl ViewState {
         let element_id = crate::ElementId(
             box_tree.insert(None, understory_box_tree::LocalNode::default()),
             id,
+            true,
         );
-        box_tree.set_meta(element_id.0, Some(id));
+        box_tree.set_meta(element_id.0, Some(element_id));
 
         add_update_message(UpdateMessage::RequestStyle(id));
         add_update_message(UpdateMessage::RequestViewStyle(id));

@@ -179,7 +179,6 @@ pub trait CustomEvent: Any + 'static {
 /// - The event type must implement [`Clone`].
 /// - For generic events, all type parameters must be `Clone + 'static`.
 /// - For custom extractors, the extractor closure must return a reference into the event.
-/// - This macro depends on the [`paste`](https://docs.rs/paste) crate.
 #[macro_export]
 macro_rules! custom_event {
     // Generic variant - EventData = Self, extract = identity
@@ -392,6 +391,39 @@ pub enum Phase {
     /// Currently this is used for keyboard and ime events that are broadcast after failing to be handled by the focus path.
     Broadcast,
 }
+impl Phase {
+    /// Returns `true` if the phase is [`Capture`].
+    ///
+    /// [`Capture`]: Phase::Capture
+    #[must_use]
+    pub fn is_capture(&self) -> bool {
+        matches!(self, Self::Capture)
+    }
+
+    /// Returns `true` if the phase is [`Target`].
+    ///
+    /// [`Target`]: Phase::Target
+    #[must_use]
+    pub fn is_target(&self) -> bool {
+        matches!(self, Self::Target)
+    }
+
+    /// Returns `true` if the phase is [`Bubble`].
+    ///
+    /// [`Bubble`]: Phase::Bubble
+    #[must_use]
+    pub fn is_bubble(&self) -> bool {
+        matches!(self, Self::Bubble)
+    }
+
+    /// Returns `true` if the phase is [`Broadcast`].
+    ///
+    /// [`Broadcast`]: Phase::Broadcast
+    #[must_use]
+    pub fn is_broadcast(&self) -> bool {
+        matches!(self, Self::Broadcast)
+    }
+}
 
 /// Control whether an event will continue propagating or whether it should stop.
 pub enum EventPropagation {
@@ -415,19 +447,40 @@ impl EventPropagation {
     }
 }
 
+/// Focus-related events fired during focus transitions.
+///
+/// Focus events are fired when keyboard focus moves between elements in the UI.
+/// Both variants participate in all three phases (capture, target, and bubble)
+/// using `Phases::STANDARD`, similar to W3C's `focusin` and `focusout` events.
+///
+/// This allows parent elements to track focus changes within their subtree by
+/// listening during the capture or bubble phases.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum FocusEvent {
+    /// The element directly received focus.
+    ///
+    /// This event participates in all three phases: capture, target, and bubble
+    /// (using `Phases::STANDARD`), similar to W3C's `focusin` event.
+    ///
+    /// The event is targeted at the element that became focused, meaning listeners
+    /// on ancestor elements can observe it during the capture and bubble phases.
+    Gained,
+
+    /// The element directly lost focus.
+    ///
+    /// This event participates in all three phases: capture, target, and bubble
+    /// (using `Phases::STANDARD`), similar to W3C's `focusout` event.
+    ///
+    /// The event is targeted at the element that lost focus, meaning listeners
+    /// on ancestor elements can observe it during the capture and bubble phases.
     Lost,
-    Got,
-    EnteredSubtree,
-    LeftSubtree,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum PointerCaptureEvent {
     /// Fired when a view gains pointer capture.
     /// Contains the pointer ID that was captured.
-    Got(DragToken),
+    Gained(DragToken),
     /// Fired when a view loses pointer capture.
     /// Contains the pointer ID that was released.
     Lost(PointerId),
@@ -529,6 +582,44 @@ pub enum InteractionEvent {
     SecondaryClick,
 }
 
+/// Phases of the window update cycle.
+///
+/// These events are fired during `process_update()` to allow views to observe
+/// and react to different stages of the update pipeline. This is primarily useful
+/// for debugging, profiling, or coordinating effects that need to run at specific
+/// points in the update cycle.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub enum UpdatePhaseEvent {
+    /// Processing update messages from the queue.
+    /// This phase handles state changes and view updates queued by the application.
+    ProcessingMessages,
+
+    /// Computing styles for views that need style resolution.
+    /// This phase resolves CSS-like properties and inheritance.
+    Style,
+
+    /// Computing layout for views with changed sizes or positions.
+    /// This phase uses the Taffy layout engine to determine final rectangles.
+    Layout,
+
+    /// Updating the box tree from layout results.
+    /// This phase synchronizes the rendering box tree with computed layout.
+    BoxTreeUpdate,
+
+    /// Processing pending individual box tree updates.
+    /// This phase handles incremental box tree changes for specific views.
+    BoxTreePendingUpdates,
+
+    /// Committing the box tree changes.
+    /// This phase finalizes box tree modifications before painting.
+    BoxTreeCommit,
+
+    /// Update cycle complete.
+    /// This phase signals that all updates have been processed and the window
+    /// is ready for painting if needed.
+    Complete,
+}
+
 /// Events related to the application window state.
 ///
 /// Unlike pointer and keyboard events which are dispatched via hit-testing,
@@ -539,22 +630,44 @@ pub enum InteractionEvent {
 pub enum WindowEvent {
     /// The window gained input focus.
     FocusGained,
+
     /// The window lost input focus.
     FocusLost,
+
     /// The window was closed.
     Closed,
+
     /// The window was resized to the given dimensions.
     Resized(Size),
+
     /// The window was moved to the given position.
     Moved(Point),
+
     /// The window's maximized state changed. `true` if now maximized.
     MaximizeChanged(bool),
+
     /// The window's scale factor changed (e.g., moved to a different DPI display).
     ScaleChanged(f64),
+
     /// The system theme changed (e.g., light to dark mode).
     ThemeChanged(Theme),
+
     /// The element under the cursor changed.
     ChangeUnderCursor,
+
+    /// The window update cycle entered a new phase.
+    ///
+    /// These events are fired during the update processing loop to signal
+    /// transitions between different stages (style → layout → box tree → etc.).
+    /// Views that register listeners for this event can observe the update
+    /// pipeline's progress, which is useful for debugging, performance monitoring,
+    /// or triggering effects that must run at specific update stages.
+    ///
+    /// Not all phases will run for every cycle and in a single cycle a single phase might run multiple times.
+    ///
+    /// Like the other window events, these are only sent to views that
+    /// have explicitly registered a listener via `.on_event(listener::UpdatePhase, ...)`.
+    UpdatePhase(UpdatePhaseEvent),
 }
 
 // ============================================================================
@@ -961,31 +1074,444 @@ impl DragTargetEvent {
     }
 }
 
-// Update Event enum
+/// Drag and drop event discriminating between source and target events.
+#[derive(Clone, Debug)]
+pub enum DragEvent {
+    /// Events sent to the element being dragged.
+    Source(DragSourceEvent),
+    /// Events sent to potential drop targets.
+    Target(DragTargetEvent),
+}
+
+/// The Floem Events.
+///
+/// # Event System Overview
+///
+/// Floem's event system is inspired by the DOM event model, with events flowing through
+/// the view tree in multiple phases:
+///
+/// ## Event Phases
+///
+/// Most events support three phases of propagation:
+/// - **Capture**: Events travel from root to target, allowing ancestors to intercept early
+/// - **Target**: The event reaches the actual target element
+/// - **Bubble**: Events travel from target back to root, allowing ancestors to handle after target
+///
+/// There is also a broadcast phases where events propagate recursively depth first through the element tree.
+/// This is used internally only for keyboard events. This way your keyboard event listeners can run even without the view having focus.
+///
+/// Not all events propagate through all phases - see individual variants for details.
+///
+/// ## Event Routing
+///
+/// Events are routed through the view tree using different strategies:
+/// - **Directed**: Route to a specific target with customizable phases (keyboard events to focused view)
+/// - **Spatial**: Route based on hit-testing at a point to find the top hit and then route directed to the hit (pointer events)
+/// - **Broadcast**: Route to all views or a subtree (window resize events) that have registered a listener recursively depth first.
+///
+/// ## Propagation Control
+///
+/// Event handlers can control propagation using [`EventCx`]:
+/// - `cx.stop_immediate_propagation()`: Stop all further propagation, including other listeners on the same target
+/// - Returning `EventPropagation::Stop`: Stop propagation to next phase (bubble/capture), but allow other listeners on same target
+/// - `cx.prevent_default()`: Prevent default browser-like behaviors (tab navigation, clicks, etc.)
+///
+/// ## Event Lifecycle
+///
+/// 1. External events arrive from the window system (pointer, keyboard, window events)
+/// 2. Events are routed through the view tree based on their type
+/// 3. Synthetic events may be generated (e.g., Click from PointerDown+Up)
+/// 4. Default behaviors execute if not prevented (drag thresholds, tab navigation)
+/// 5. Pending events (synthetic or user-emitted) are processed
 pub enum Event {
+    /// Pointer events from mice, pens, and touch input.
+    ///
+    /// # Routing
+    /// - **Spatial routing**: Hit-tested at the pointer location
+    /// - **Phases**: Capture, Target, Bubble
+    /// - **Exception**: `PointerEnter` and `PointerLeave` use Target phase only (no bubbling)
+    ///
+    /// # Pointer Capture
+    /// While a pointer is down, an element can request pointer capture via
+    /// `cx.request_pointer_capture(pointer_id)`. While captured, all pointer events
+    /// for that pointer are routed directly to the capturing element, bypassing hit-testing.
+    ///
+    /// # Events
+    /// - `Down`: Button pressed (triggers focus update and click tracking)
+    /// - `Up`: Button released (may generate Click/DoubleClick events)
+    /// - `Move`: Pointer moved (updates hover state, may start drag if threshold exceeded)
+    /// - `Cancel`: Gesture cancelled (releases capture, cancels pending clicks)
+    /// - `Enter`: Pointer entered this element (Target phase only, fired when hover state changes)
+    /// - `Leave`: Pointer left this element (Target phase only, fired when hover state changes)
+    /// - `Scroll`: Scroll wheel/touchpad input
+    /// - `Gesture`: Touchpad gestures (pinch, rotate)
+    ///
+    /// # Example
+    /// ```rust
+    /// Event::Pointer(PointerEvent::Down(pe)) => {
+    ///     if let Some(pointer_id) = pe.pointer.pointer_id {
+    ///         cx.request_pointer_capture(pointer_id);
+    ///     }
+    /// }
+    /// ```
     Pointer(PointerEvent),
+
+    /// Keyboard events for key presses and releases.
+    ///
+    /// # Routing
+    /// - **Directed to focused element**: Sent to the currently focused view
+    /// - **Phases**: Capture, Target, Bubble
+    /// - **Fallback**: If no view has focus, events will be handled globally (Broadcast)
+    ///
+    /// # Default Behaviors
+    /// - `Tab`: Focus next view (Shift+Tab for previous)
+    /// - `Alt+Arrow`: Directional focus navigation
+    /// - `Space/Enter` on focused element: Generates Click event (keyboard trigger) see [Self::is_keyboard_trigger]
+    ///
+    /// # Example
+    /// ```rust
+    /// Event::Key(KeyboardEvent { key: Key::Character(c), state: KeyState::Down, .. }) => {
+    ///     if c == "s" && cx.modifiers().contains(Modifiers::CONTROL) {
+    ///         // Handle Ctrl+S
+    ///         cx.prevent_default(); // Prevent browser save dialog
+    ///     }
+    /// }
+    /// ```
     Key(ui_events::keyboard::KeyboardEvent),
+
+    /// File drag and drop events.
+    ///
+    /// # Routing
+    /// - **Spatial routing**: Hit-tested at the drag location
+    /// - **Phases**: Target phase only (no capture/bubble)
+    ///
+    /// # Hover State
+    /// FileDrag events maintain separate hover state from pointer events. When a file
+    /// drag enters the window, pointer hover state is cleared and file drag hover state
+    /// takes over. On drop or leave, it reverts to pointer hover state.
+    ///
+    /// # Events
+    /// - `Enter`: Files dragged over this view (hover enter)
+    /// - `Over`: Files moved while over this view
+    /// - `Leave`: Files dragged away from this view (hover leave)
+    /// - `Drop`: Files dropped on this view
+    ///
+    /// # Example
+    /// ```rust
+    /// Event::FileDrag(FileDragEvent::Drop(drop)) => {
+    ///     for path in drop.paths {
+    ///         println!("Dropped file: {:?}", path);
+    ///     }
+    /// }
+    /// ```
     FileDrag(dropped_file::FileDragEvent),
+
+    /// Pointer capture state changes.
+    ///
+    /// # Routing
+    /// - **Directed to capture target**: Sent only to the view gaining/losing capture
+    /// - **Phases**: Target phase only
+    ///
+    /// # Capture Lifecycle
+    /// 1. View calls `cx.request_pointer_capture(pointer_id)` (typically in PointerDown)
+    /// 2. After current event completes, `Gained` is sent to the target
+    /// 3. All pointer events for that pointer_id are now routed to this view
+    /// 4. Capture is released on PointerUp, PointerCancel, or explicit release
+    /// 5. `Lost` is sent to the view that had capture
+    ///
+    /// # Use Cases
+    /// - Implementing draggable elements
+    /// - Tracking gestures that extend beyond view boundaries
+    /// - Ensuring pointer up events are received even if pointer moves off element
+    ///
+    /// # Example
+    /// ```rust
+    /// Event::PointerCapture(PointerCaptureEvent::Gained(drag_token)) => {
+    ///     // Now we have capture, start tracking the drag
+    ///     cx.start_drag(drag_token, DragConfig::default(), true);
+    /// }
+    /// ```
     PointerCapture(PointerCaptureEvent),
+
+    /// Input Method Editor (IME) events for composing text in languages like Chinese, Japanese, Korean.
+    ///
+    /// # Routing
+    /// - **Directed to focused view**: Sent to the currently focused text input view
+    /// - **Phases**: Capture, Target, Bubble
+    ///
+    /// # IME Composition
+    /// IME allows users to compose complex characters through multiple keystrokes.
+    /// This is used for:
+    /// - Complex language input (Chinese, Japanese, Korean, etc.)
+    /// - Emoji pickers on some platforms
+    /// - Dead key combinations (accented characters)
+    ///
+    /// Composition lifecycle:
+    /// 1. `Enabled`: IME composition started
+    /// 2. `Preedit`: Composition text updated (user is still typing)
+    /// 3. `Commit`: Final text committed (composition complete)
+    /// 4. `Disabled`: IME composition ended
+    ///
+    /// # Example
+    /// ```rust
+    /// Event::Ime(ImeEvent::Commit(text)) => {
+    ///     // Insert the composed text into the text input
+    ///     self.insert_text(&text);
+    /// }
+    /// Event::Ime(ImeEvent::Preedit(text, cursor)) => {
+    ///     // Show preview of composition in progress
+    ///     self.show_preedit(&text, cursor);
+    /// }
+    /// ```
     Ime(ImeEvent),
+
+    /// Focus-related events fired when keyboard focus changes.
+    ///
+    /// # Routing
+    /// - **Directed through focus path**: Sent to views in the focus ancestry chain
+    /// - **Phases**: Capture, Target, Bubble
+    ///
+    /// # Focus Model
+    /// Focus follows an ancestry chain from the focused view up to the root.
+    /// When focus changes, the old and new paths are compared:
+    /// - Views that were in the old path but not the new path receive `FocusLost`
+    /// - Views that are in the new path but not the old path receive `FocusGained`
+    ///
+    /// # Focus Methods
+    /// Focus can be changed through:
+    /// - Pointer down (spatial focus)
+    /// - Tab/Shift+Tab (sequential navigation)
+    /// - Alt+Arrow (directional navigation)
+    /// - Programmatic: `view_id.request_focus()`
+    ///
+    /// # Keyboard Navigation
+    /// Only views with `keyboard_navigable()` set can receive focus via keyboard.
+    /// The `:focus` and `:focus-visible` style selectors update when focus changes.
+    ///
+    /// # Example
+    /// ```rust
+    /// Event::Focus(FocusEvent::Gained) => {
+    ///     // Start showing cursor, enable text input
+    ///     self.cursor_visible = true;
+    /// }
+    /// Event::Focus(FocusEvent::Lost) => {
+    ///     // Hide cursor, commit changes
+    ///     self.cursor_visible = false;
+    /// }
+    /// ```
     Focus(FocusEvent),
+
+    /// Window-level events like resize, close, theme changes, update phases.
+    ///
+    /// # Routing
+    /// - **Broadcast to registered listeners**: Only views that have registered window event
+    ///   listeners receive these events
+    /// - **Phases**: Target phase only
+    ///
+    /// # Registration
+    /// Views register interest in window events through the event listener system.
+    /// This avoids broadcasting to all views for events most don't care about.
+    ///
+    /// # Events
+    /// - `Resized`: Window size changed (triggers responsive style updates)
+    /// - `CloseRequested`: User requested window close
+    /// - `Destroyed`: Window is being destroyed
+    /// - `ThemeChanged`: System theme changed (light/dark mode)
+    /// - `RescaleRequested`: DPI scale factor changed
+    ///
+    /// # Example
+    /// ```rust
+    /// view.on_event(listener::WindowResized, |cx, event| {
+    ///     if let Event::Window(WindowEvent::Resized(size)) = event {
+    ///         println!("Window resized to {}x{}", size.width, size.height);
+    ///     }
+    ///     EventPropagation::Continue
+    /// })
+    /// ```
     Window(WindowEvent),
+
     /// High-level interaction events that abstract over pointer and keyboard input.
-    /// These events represent user intent (clicking, double-clicking, etc.)
-    /// regardless of the input method used.
-    /// These are emitted after the cooresponding events that cause them.
+    ///
+    /// # Routing
+    /// - **Directed to interaction target**: Sent to the view that was clicked/interacted with
+    /// - **Phases**: Capture, Target, Bubble
+    ///
+    /// # Event Generation
+    /// These events are synthetic - generated by Floem after analyzing lower-level
+    /// pointer and keyboard events:
+    ///
+    /// - `Click`: Generated when pointer down+up occur on the same view within threshold,
+    ///   OR when Space/Enter pressed on focused view
+    /// - `DoubleClick`: Generated when two clicks occur rapidly (count > 1)
+    /// - `SecondaryClick`: Generated from right-click (secondary button)
+    ///
+    /// # Click Detection
+    /// A click is detected when:
+    /// 1. Pointer down occurs on a view
+    /// 2. Pointer doesn't move beyond threshold distance
+    /// 3. Pointer up occurs within timeout
+    /// 4. Common ancestor between down and up targets receives the click
+    ///
+    /// # Triggered By
+    /// Interaction events have `cx.triggered_by` set to the original pointer/keyboard
+    /// event that caused them. Use this to access original event details like modifiers.
+    ///
+    /// # Example
+    /// ```rust
+    /// Event::Interaction(InteractionEvent::Click) => {
+    ///     // Handle click regardless of whether it came from mouse or keyboard
+    ///     if let Some(Event::Pointer(pe)) = cx.triggered_by {
+    ///         // Access pointer-specific details
+    ///     }
+    /// }
+    /// ```
     Interaction(InteractionEvent),
-    /// Drag target events - sent to potential drop targets when a dragged element
-    /// interacts with them (enters, leaves, or is dropped on them).
-    DragTarget(DragTargetEvent),
-    /// Drag source events - sent to the element being dragged throughout the
-    /// drag operation lifecycle (start, move, enter/leave targets, drop, cancel).
-    DragSource(DragSourceEvent),
+
+    /// Drag and drop events for implementing draggable elements and drop targets.
+    ///
+    /// # Routing
+    /// - **Source events**: Directed to the view being dragged (Target phase only)
+    /// - **Target events**: Spatial routing via hit-testing (Target phase only, except Move which uses STANDARD phases)
+    ///
+    /// # Drag Lifecycle
+    ///
+    /// ## Starting a Drag
+    /// Call `draggable` or `.draggable_with_config()` on a view to make it draggable:
+    /// ```rust,ignore
+    /// my_view.draggable_with_config(|| {
+    ///     DragConfig::default()
+    ///         .with_custom_data(my_item_id)
+    /// })
+    /// ```
+    ///
+    /// ## During Drag
+    /// As the dragged element moves:
+    /// - **Source receives**: `Move` events while dragging
+    /// - **Targets receive**: `Enter` when drag enters their bounds, `Move` while hovering, `Leave` when drag exits
+    /// - **Source receives**: `Enter`/`Leave` when entering/leaving valid drop targets
+    ///
+    /// ## Ending Drag
+    /// The drag ends with one of:
+    /// - **Target receives** `Drop` and **source receives** `End` (with `other_element` set): User released over a valid drop target that accepted the drop
+    /// - **Source receives** `End` (with `other_element` as `None`): User released but no target accepted the drop
+    /// - **Source receives** `Cancel`: Drag cancelled via Escape key or pointer cancel
+    ///
+    /// # Example: Sortable List
+    ///
+    /// ```rust,ignore
+    /// // Make a view draggable with custom data
+    /// my_view
+    ///     .on_event_stop(listener::DragTargetEnter, move |_, drag_enter| {
+    ///         if let Some(custom_data) = &drag_enter.custom_data
+    ///             && let Some(dragged_id) = custom_data.downcast_ref::<usize>()
+    ///         {
+    ///             // Reorder items based on drag position
+    ///             handle_reorder(*dragged_id, this_item_id);
+    ///         }
+    ///     })
+    ///     .draggable_with_config(move || {
+    ///         DragConfig::default()
+    ///             .with_custom_data(item_id)
+    ///     })
+    /// ```
+    Drag(DragEvent),
+
+    /// Custom user-defined events.
+    ///
+    /// # Routing
+    /// - **User-controlled**: Routing determined by how the event is dispatched
+    /// - **Phases**: Specified when dispatching the event
+    ///
+    /// # Defining Custom Events
+    ///
+    /// Use the `custom_event!` macro to define your event type:
+    ///
+    /// ```rust,ignore
+    /// #[derive(Clone)]
+    /// struct DataChanged {
+    ///     new_value: String,
+    /// }
+    /// custom_event!(DataChanged);
+    /// ```
+    ///
+    /// This generates a `DataChangedListener` and implements the `CustomEvent` trait.
+    ///
+    /// # Dispatching Custom Events
+    ///
+    /// ```rust,ignore
+    /// // Dispatch to a specific target
+    /// view_id.dispatch_event(
+    ///     Event::new_custom(DataChanged {
+    ///         new_value: "updated".to_string()
+    ///     }),
+    ///     RouteKind::Directed {
+    ///         target: view_id.get_element_id(),
+    ///         phases: Phases::TARGET,
+    ///     },
+    /// );
+    ///
+    /// // Or dispatch spatially (hit-test based)
+    /// view_id.dispatch_event(
+    ///     Event::new_custom(MyPointerEvent { pos: point }),
+    ///     RouteKind::Spatial {
+    ///         point: Some(point),
+    ///         phases: Phases::STANDARD,
+    ///     },
+    /// );
+    /// ```
+    ///
+    /// # Handling Custom Events
+    ///
+    /// ```rust,ignore
+    /// view.on_event_stop(DataChangedListener, |cx, event: &DataChanged| {
+    ///     println!("Data changed to: {}", event.new_value);
+    /// })
+    /// ```
+    ///
+    /// # Generic Custom Events
+    ///
+    /// For generic events, each monomorphization gets its own listener:
+    ///
+    /// ```rust,ignore
+    /// #[derive(Clone)]
+    /// struct SelectionChanged<T: 'static> {
+    ///     value: T,
+    /// }
+    /// custom_event!(SelectionChanged<T>);
+    ///
+    /// // String and i32 versions are separate event types
+    /// dropdown.on_event_stop(SelectionChangedListener::<String>, |cx, event| {
+    ///     // Receives SelectionChanged<String>
+    /// });
+    /// ```
     Custom(Box<dyn CustomEvent>),
-    /// Sentinel value used internally when temporarily moving an event out of EventCx.
-    /// This allows event handlers to receive both &mut EventCx and typed event data without
-    /// borrow conflicts. If you see this variant in your event handler, you're likely accessing
-    /// cx.event directly - use the typed event data parameter passed to your handler instead.
+
+    /// Sentinel value used internally when temporarily moving an event out of `EventCx`.
+    ///
+    /// # Internal Use Only
+    ///
+    /// This variant allows event handlers to receive both `&mut EventCx` and typed event
+    /// data without borrow conflicts and without cloning. The event is temporarily replaced with `Extracted`
+    /// while being passed to handlers.
+    ///
+    /// **If you see this variant in your event handler**, you're likely accessing `cx.event`
+    /// directly. Use the typed event data parameter passed to your handler instead:
+    ///
+    /// ```rust
+    /// // ❌ Don't do this:
+    /// view.on_event(EventListener::PointerDown, |cx, _| {
+    ///     if let Event::Pointer(pe) = &cx.event {  // Will be Event::Extracted!
+    ///         // ...
+    ///     }
+    /// });
+    ///
+    /// // ✅ Do this instead:
+    /// view.on_event(EventListener::PointerDown, |cx, event| {
+    ///     if let Event::Pointer(pe) = event {  // Correct - use the parameter
+    ///         // ...
+    ///     }
+    /// });
+    /// ```
     Extracted,
 }
 impl std::fmt::Debug for Event {
@@ -999,8 +1525,7 @@ impl std::fmt::Debug for Event {
             Event::Focus(e) => f.debug_tuple("Focus").field(e).finish(),
             Event::Window(e) => f.debug_tuple("Window").field(e).finish(),
             Event::Interaction(e) => f.debug_tuple("Interaction").field(e).finish(),
-            Event::DragTarget(e) => f.debug_tuple("DragTarget").field(e).finish(),
-            Event::DragSource(e) => f.debug_tuple("DragSource").field(e).finish(),
+            Event::Drag(e) => f.debug_tuple("Drag").field(e).finish(),
             Event::Custom(e) => {
                 f.write_str("Custom(")?;
                 e.debug_fmt(f)?;
@@ -1021,8 +1546,7 @@ impl Clone for Event {
             Self::Focus(arg0) => Self::Focus(*arg0),
             Self::Window(arg0) => Self::Window(*arg0),
             Self::Interaction(arg0) => Self::Interaction(*arg0),
-            Self::DragTarget(arg0) => Self::DragTarget(arg0.clone()),
-            Self::DragSource(arg0) => Self::DragSource(arg0.clone()),
+            Self::Drag(arg0) => Self::Drag(arg0.clone()),
             Self::Custom(arg0) => Self::Custom(arg0.clone_box()),
             Self::Extracted => Self::Extracted,
         }
@@ -1030,10 +1554,6 @@ impl Clone for Event {
 }
 
 impl Event {
-    pub fn needs_focus(&self) -> bool {
-        matches!(self, Event::Key(_))
-    }
-
     pub fn is_pointer(&self) -> bool {
         matches!(self, Event::Pointer(_))
     }
@@ -1065,7 +1585,7 @@ impl Event {
     }
 
     /// Enter, numpad enter and space cause a view to be activated with the keyboard
-    pub(crate) fn is_keyboard_trigger(&self) -> bool {
+    pub fn is_keyboard_trigger(&self) -> bool {
         match self {
             Event::Key(key) => {
                 matches!(key.code, Code::NumpadEnter | Code::Enter | Code::Space)
@@ -1075,39 +1595,91 @@ impl Event {
         }
     }
 
+    /// Returns whether this event should be delivered to disabled views.
+    ///
+    /// Disabled views (marked via `.disabled()`) generally don't receive interactive events,
+    /// but some events must still be delivered to maintain correct per-view internal state
+    /// or complete ongoing operations.
+    ///
+    /// Note: This only affects whether individual views receive events in their event handlers.
+    /// Global state tracking (hover paths, focus paths, etc.) is updated independently of
+    /// whether views are disabled.
+    ///
+    /// # Events Allowed on Disabled Views
+    ///
+    /// - **Hover state tracking**: `PointerLeave` allow disabled views to
+    ///   update their internal hover state
+    /// - **Capture cleanup**: `PointerCapture::Lost` allows views to clean up internal state
+    ///   when they lose capture (e.g., if disabled mid-drag)
+    /// - **Drag lifecycle completion**: `DragSource` Leave/End/Cancel events allow drags
+    ///   to complete properly if a view becomes disabled mid-drag. The drag was initiated when
+    ///   enabled, so the source view needs lifecycle events to clean up its internal drag state.
+    ///   Start and Move events are blocked since disabled views don't need to initiate or track drags.
+    /// - **Window events**: Window state changes (resize, theme change, etc.) may require
+    ///   internal updates even in disabled views
+    /// - **Accessibility drops**: `FileDrag::Drop` can be received by disabled views for
+    ///   accessibility reasons
+    ///
+    /// # Events Blocked on Disabled Views
+    ///
+    /// - **Interactive pointer events**: Down, Up, Move, Scroll, Gesture, Cancel
+    /// - **Capture initiation**: `PointerCapture::Gained` (views shouldn't gain new capture when disabled)
+    /// - **Focus changes**: Focus events don't fire for disabled views
+    /// - **Keyboard input**: Key and IME events
+    /// - **User interactions**: Click, DoubleClick, SecondaryClick
+    /// - **Drag targets**: Disabled views cannot receive dragged elements
+    /// - **Drag source updates**: Start and Move events (disabled views don't initiate or track drags)
+    /// - **File drag preview**: File drag hover events (Enter, Move, Leave)
+    ///
+    /// # Custom Events
+    ///
+    /// Custom events implement their own `allow_disabled()` logic via the `CustomEvent` trait.
     pub fn allow_disabled(&self) -> bool {
         match self {
-            // Pointer leave and move must be delivered to update hover state correctly
-            Event::Pointer(PointerEvent::Leave(_) | PointerEvent::Move(_)) => true,
-            // Window events should always be delivered regardless of disabled state
-            Event::Window(_) => true,
-            // File drops should be allowed on disabled views for accessibility
-            Event::FileDrag(FileDragEvent::Dropped(_)) => true,
-            // Lost capture events should be delivered so views can clean up capture state
+            // Hover state tracking - views need leave to update internal hover state if they had an enter
+            Event::Pointer(PointerEvent::Leave(_)) => true,
+
+            // Capture cleanup - views need to clean up internal capture state
             Event::PointerCapture(PointerCaptureEvent::Lost(_)) => true,
 
-            // Pointer down, up, enter, cancel, scroll, gesture should not trigger on disabled views
+            // Drag source lifecycle completion - allow cleanup events only
+            Event::Drag(DragEvent::Source(
+                DragSourceEvent::Leave(_) | DragSourceEvent::End(_) | DragSourceEvent::Cancel(_),
+            )) => true,
+
+            // Window-level events may require internal updates
+            Event::Window(_) => true,
+
+            // Accessibility - allow file drops on disabled views
+            Event::FileDrag(FileDragEvent::Drop(_)) => true,
+
+            // Block all other pointer events
             Event::Pointer(_) => false,
-            // Gained capture should only happen on active views
-            Event::PointerCapture(PointerCaptureEvent::Got(_)) => false,
-            // Focus events should not be delivered to disabled views
+
+            // Block new capture
+            Event::PointerCapture(_) => false,
+
+            // Block focus changes
             Event::Focus(_) => false,
-            // IME events should not be delivered to disabled views
-            Event::Ime(_) => false,
-            // File drag preview events should not be delivered to disabled views
-            Event::FileDrag(
-                FileDragEvent::Enter(_) | FileDragEvent::Move(_) | FileDragEvent::Leave(_),
-            ) => false,
-            // Keyboard events should not trigger on disabled views
-            Event::Key(_) => false,
-            // Interaction events (click, double click, etc.) should not trigger on disabled views
+
+            // Block keyboard input
+            Event::Key(_) | Event::Ime(_) => false,
+
+            // Block user interactions
             Event::Interaction(_) => false,
-            // Drag events should not be initiated or handled by disabled views
-            Event::DragTarget(_) | Event::DragSource(_) => false,
-            // allow custom events to decide
+
+            // Block all drag target events and drag source start/move
+            Event::Drag(_) => false,
+
+            // Block file drag preview events
+            Event::FileDrag(_) => false,
+
+            // Custom events decide their own disabled behavior
             Event::Custom(custom) => custom.allow_disabled(),
+
             Event::Extracted => {
-                unreachable!("this event should never be dispatched")
+                // this probably shouldn't happen
+                false
             }
         }
     }
@@ -1180,47 +1752,56 @@ impl Event {
                 FileDragEvent::Enter(dropped_file::FileDragEnter { position, .. })
                 | FileDragEvent::Move(dropped_file::FileDragMove { position, .. })
                 | FileDragEvent::Leave(dropped_file::FileDragLeave { position })
-                | FileDragEvent::Dropped(dropped_file::FileDragDropped { position, .. }),
+                | FileDragEvent::Drop(dropped_file::FileDragDropped { position, .. }),
             ) => {
                 let transformed_point = transform * *position;
                 *position = transformed_point;
             }
-            Self::DragTarget(de) => {
-                // Transform current state
-                let state = de.current_state_mut();
-                let point = state.logical_point();
-                let transformed_point = transform * point;
-                let phys_pos = LogicalPosition::new(transformed_point.x, transformed_point.y)
-                    .to_physical(state.scale_factor);
-                state.position = phys_pos;
-
-                // Transform start state
-                let start_state = de.start_state_mut();
-                let start_point = start_state.logical_point();
-                let transformed_start_point = transform * start_point;
-                let phys_start_pos =
-                    LogicalPosition::new(transformed_start_point.x, transformed_start_point.y)
+            Self::Drag(de) => {
+                match de {
+                    DragEvent::Target(dte) => {
+                        // Transform current state
+                        let state = dte.current_state_mut();
+                        let point = state.logical_point();
+                        let transformed_point = transform * point;
+                        let phys_pos =
+                            LogicalPosition::new(transformed_point.x, transformed_point.y)
+                                .to_physical(state.scale_factor);
+                        state.position = phys_pos;
+                        // Transform start state
+                        let start_state = dte.start_state_mut();
+                        let start_point = start_state.logical_point();
+                        let transformed_start_point = transform * start_point;
+                        let phys_start_pos = LogicalPosition::new(
+                            transformed_start_point.x,
+                            transformed_start_point.y,
+                        )
                         .to_physical(start_state.scale_factor);
-                start_state.position = phys_start_pos;
-            }
-            Self::DragSource(de) => {
-                // Transform current state
-                let state = de.current_state_mut();
-                let point = state.logical_point();
-                let transformed_point = transform * point;
-                let phys_pos = LogicalPosition::new(transformed_point.x, transformed_point.y)
-                    .to_physical(state.scale_factor);
-                state.position = phys_pos;
-
-                // Transform start state
-                let start_state = de.start_state_mut();
-                let start_point = start_state.logical_point();
-                let transformed_start_point = transform * start_point;
-                let phys_start_pos =
-                    LogicalPosition::new(transformed_start_point.x, transformed_start_point.y)
+                        start_state.position = phys_start_pos;
+                    }
+                    DragEvent::Source(dse) => {
+                        // Transform current state
+                        let state = dse.current_state_mut();
+                        let point = state.logical_point();
+                        let transformed_point = transform * point;
+                        let phys_pos =
+                            LogicalPosition::new(transformed_point.x, transformed_point.y)
+                                .to_physical(state.scale_factor);
+                        state.position = phys_pos;
+                        // Transform start state
+                        let start_state = dse.start_state_mut();
+                        let start_point = start_state.logical_point();
+                        let transformed_start_point = transform * start_point;
+                        let phys_start_pos = LogicalPosition::new(
+                            transformed_start_point.x,
+                            transformed_start_point.y,
+                        )
                         .to_physical(start_state.scale_factor);
-                start_state.position = phys_start_pos;
+                        start_state.position = phys_start_pos;
+                    }
+                }
             }
+
             Self::Pointer(
                 PointerEvent::Cancel(_) | PointerEvent::Leave(_) | PointerEvent::Enter(_),
             )
@@ -1231,7 +1812,6 @@ impl Event {
             | Self::Window(_)
             | Self::Interaction(_)
             | Self::Extracted => {}
-            // TODO: make dyn custom event impl clone then use transform method
             Self::Custom(custom) => {
                 custom.transform(transform);
             }
@@ -1244,7 +1824,7 @@ impl Event {
     /// Each event returns its specific listener key (e.g., `PointerDown`) plus any
     /// broad category keys it belongs to (e.g., `AnyPointer`). This allows views
     /// to listen for either specific events or entire event categories.
-    pub fn listener_keys(&self) -> SmallVec<[listener::EventListenerKey; 2]> {
+    pub fn listener_keys(&self) -> SmallVec<[listener::EventListenerKey; 4]> {
         use listener::*;
         let mut keys = SmallVec::new();
 
@@ -1258,7 +1838,9 @@ impl Event {
             Self::Pointer(PointerEvent::Enter(_)) => PointerEnter::listener_key(),
             Self::Pointer(PointerEvent::Cancel(_)) => PointerCancel::listener_key(),
             Self::Pointer(PointerEvent::Gesture(_)) => PinchGesture::listener_key(),
-            Self::PointerCapture(PointerCaptureEvent::Got(_)) => GotPointerCapture::listener_key(),
+            Self::PointerCapture(PointerCaptureEvent::Gained(_)) => {
+                GainedPointerCapture::listener_key()
+            }
             Self::PointerCapture(PointerCaptureEvent::Lost(_)) => {
                 LostPointerCapture::listener_key()
             }
@@ -1275,10 +1857,8 @@ impl Event {
             Self::Ime(ImeEvent::Preedit { .. }) => ImePreedit::listener_key(),
             Self::Ime(ImeEvent::Commit(_)) => ImeCommit::listener_key(),
             Self::Ime(ImeEvent::DeleteSurrounding { .. }) => ImeDeleteSurrounding::listener_key(),
+            Self::Focus(FocusEvent::Gained) => FocusGained::listener_key(),
             Self::Focus(FocusEvent::Lost) => FocusLost::listener_key(),
-            Self::Focus(FocusEvent::Got) => FocusGot::listener_key(),
-            Self::Focus(FocusEvent::EnteredSubtree) => FocusEnteredSubtree::listener_key(),
-            Self::Focus(FocusEvent::LeftSubtree) => FocusLeftSubtree::listener_key(),
             Self::Window(WindowEvent::Closed) => WindowClosed::listener_key(),
             Self::Window(WindowEvent::Resized(_)) => WindowResized::listener_key(),
             Self::Window(WindowEvent::Moved(_)) => WindowMoved::listener_key(),
@@ -1288,23 +1868,58 @@ impl Event {
             Self::Window(WindowEvent::FocusLost) => WindowLostFocus::listener_key(),
             Self::Window(WindowEvent::ThemeChanged(_)) => ThemeChanged::listener_key(),
             Self::Window(WindowEvent::ChangeUnderCursor) => WindowChangeUnderCursor::listener_key(),
+            Self::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::ProcessingMessages)) => {
+                UpdatePhaseProcessingMessages::listener_key()
+            }
+            Self::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::Style)) => {
+                UpdatePhaseStyle::listener_key()
+            }
+            Self::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::Layout)) => {
+                UpdatePhaseLayout::listener_key()
+            }
+            Self::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::BoxTreeUpdate)) => {
+                UpdatePhaseBoxTreeUpdate::listener_key()
+            }
+            Self::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::BoxTreePendingUpdates)) => {
+                UpdatePhaseBoxTreePendingUpdates::listener_key()
+            }
+            Self::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::BoxTreeCommit)) => {
+                UpdatePhaseBoxTreeCommit::listener_key()
+            }
+            Self::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::Complete)) => {
+                UpdatePhaseComplete::listener_key()
+            }
             Self::Interaction(InteractionEvent::Click) => Click::listener_key(),
             Self::Interaction(InteractionEvent::DoubleClick) => DoubleClick::listener_key(),
             Self::Interaction(InteractionEvent::SecondaryClick) => SecondaryClick::listener_key(),
-            Self::FileDrag(FileDragEvent::Dropped(_)) => FileDragDrop::listener_key(),
+            Self::FileDrag(FileDragEvent::Drop(_)) => FileDragDrop::listener_key(),
             Self::FileDrag(FileDragEvent::Enter(_)) => FileDragEnter::listener_key(),
             Self::FileDrag(FileDragEvent::Move(_)) => FileDragMove::listener_key(),
             Self::FileDrag(FileDragEvent::Leave(_)) => FileDragLeave::listener_key(),
-            Self::DragSource(DragSourceEvent::Start(..)) => DragStart::listener_key(),
-            Self::DragSource(DragSourceEvent::Move(..)) => DragMove::listener_key(),
-            Self::DragSource(DragSourceEvent::Enter(..)) => DragSourceEnter::listener_key(),
-            Self::DragSource(DragSourceEvent::Leave(..)) => DragSourceLeave::listener_key(),
-            Self::DragSource(DragSourceEvent::End(..)) => DragEnd::listener_key(),
-            Self::DragSource(DragSourceEvent::Cancel(..)) => DragCancel::listener_key(),
-            Self::DragTarget(DragTargetEvent::Enter(..)) => DragTargetEnter::listener_key(),
-            Self::DragTarget(DragTargetEvent::Move(..)) => DragTargetMove::listener_key(),
-            Self::DragTarget(DragTargetEvent::Leave(..)) => DragTargetLeave::listener_key(),
-            Self::DragTarget(DragTargetEvent::Drop(..)) => DragTargetDrop::listener_key(),
+            Self::Drag(DragEvent::Source(DragSourceEvent::Start(..))) => DragStart::listener_key(),
+            Self::Drag(DragEvent::Source(DragSourceEvent::Move(..))) => DragMove::listener_key(),
+            Self::Drag(DragEvent::Source(DragSourceEvent::Enter(..))) => {
+                DragSourceEnter::listener_key()
+            }
+            Self::Drag(DragEvent::Source(DragSourceEvent::Leave(..))) => {
+                DragSourceLeave::listener_key()
+            }
+            Self::Drag(DragEvent::Source(DragSourceEvent::End(..))) => DragEnd::listener_key(),
+            Self::Drag(DragEvent::Source(DragSourceEvent::Cancel(..))) => {
+                DragCancel::listener_key()
+            }
+            Self::Drag(DragEvent::Target(DragTargetEvent::Enter(..))) => {
+                DragTargetEnter::listener_key()
+            }
+            Self::Drag(DragEvent::Target(DragTargetEvent::Move(..))) => {
+                DragTargetMove::listener_key()
+            }
+            Self::Drag(DragEvent::Target(DragTargetEvent::Leave(..))) => {
+                DragTargetLeave::listener_key()
+            }
+            Self::Drag(DragEvent::Target(DragTargetEvent::Drop(..))) => {
+                DragTargetDrop::listener_key()
+            }
             Self::Extracted => Extracted::listener_key(),
             Self::Custom(custom) => custom.listener_key_dyn(),
         };
@@ -1314,11 +1929,21 @@ impl Event {
         match self {
             Self::Pointer(_) => keys.push(AnyPointer::listener_key()),
             Self::Key(_) => keys.push(AnyKey::listener_key()),
-            Self::Window(_) => keys.push(AnyWindow::listener_key()),
+            Self::Window(w) => {
+                keys.push(AnyWindow::listener_key());
+                if matches!(w, WindowEvent::UpdatePhase(_)) {
+                    keys.push(AnyUpdatePhase::listener_key());
+                }
+            }
             Self::Focus(_) => keys.push(AnyFocus::listener_key()),
             Self::Ime(_) => keys.push(AnyIme::listener_key()),
-            Self::DragSource(_) => keys.push(AnyDragSource::listener_key()),
-            Self::DragTarget(_) => keys.push(AnyDragTarget::listener_key()),
+            Self::Drag(de) => {
+                keys.push(AnyDragSource::listener_key());
+                match de {
+                    DragEvent::Source(_) => keys.push(AnyDragSource::listener_key()),
+                    DragEvent::Target(_) => keys.push(AnyDragTarget::listener_key()),
+                }
+            }
             Self::FileDrag(_) => keys.push(AnyFileDrag::listener_key()),
             _ => {}
         }
@@ -1326,16 +1951,16 @@ impl Event {
         keys
     }
 
-    fn is_spatial(&self) -> bool {
-        self.point().is_some()
-    }
-
-    fn is_move(&self) -> bool {
-        matches!(self, Event::Pointer(PointerEvent::Move(_)))
-    }
-
     pub fn new_custom(custom: impl CustomEvent) -> Self {
         Self::Custom(Box::new(custom))
+    }
+
+    /// Returns `true` if the event is [`FileDrag`].
+    ///
+    /// [`FileDrag`]: Event::FileDrag
+    #[must_use]
+    pub fn is_file_drag(&self) -> bool {
+        matches!(self, Self::FileDrag(..))
     }
 }
 

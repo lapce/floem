@@ -329,7 +329,9 @@ fn test_scaled_view_receives_correct_local_coordinates() {
     let view = Empty::new()
         .style(|s| s.size(100.0, 100.0).scale(Pct(200.0)))
         .on_event_stop(floem::event::listener::Click, move |cx, _| {
-            received_point_clone.set(cx.event.point());
+            let pointer_up = cx.triggered_by.unwrap();
+            let pointer_up_point = pointer_up.clone().transform(cx.world_transform).point();
+            received_point_clone.set(pointer_up_point);
         });
 
     let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
@@ -361,7 +363,9 @@ fn test_nested_transformed_view_receives_correct_local_coordinates() {
     let inner = Empty::new().style(|s| s.size(40.0, 40.0)).on_event_stop(
         floem::event::listener::Click,
         move |cx, _| {
-            received_point_clone.set(cx.event.point());
+            let pointer_up = cx.triggered_by.unwrap();
+            let pointer_up_point = pointer_up.clone().transform(cx.world_transform).point();
+            received_point_clone.set(pointer_up_point);
         },
     );
 

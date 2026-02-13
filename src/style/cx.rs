@@ -34,20 +34,25 @@ use super::{Disabled, Style, StyleProp, ZIndex};
 /// `:active`, `:focus`, etc.
 #[derive(Default, Debug, Clone, Copy)]
 pub struct InteractionState {
-    /// Whether the pointer is currently over this view.
+    /// Whether the pointer is currently over this element.
     pub is_hovered: bool,
-    /// Whether this view is in a selected state.
+    /// Whether this element is in a selected state.
     pub is_selected: bool,
-    /// Whether this view is disabled.
+    /// Whether this element is disabled.
     pub is_disabled: bool,
-    /// Whether this view has keyboard focus.
+    /// Whether this element has keyboard focus.
     pub is_focused: bool,
+    /// Whether the element has been hidden
     pub is_hidden: bool,
-    /// Whether this view is being clicked (pointer down but not yet up).
-    pub is_clicking: bool,
+    /// Whether an element is currently in the "active" state
+    /// active: pointer down and not up with the pointer in the element either by
+    ///   1: remaining in or
+    ///   2: returning into the element
+    /// or keyboard trigger is down.
+    pub is_active: bool,
     /// Whether dark mode is enabled.
     pub is_dark_mode: bool,
-    /// Whether a file is being dragged over this view.
+    /// Whether a file is being dragged over this element.
     pub is_file_hover: bool,
     /// Whether keyboard navigation is active.
     pub using_keyboard_navigation: bool,
@@ -539,7 +544,7 @@ impl<'a> StyleCx<'a> {
                     && !is_hidden
                     && !view_interact_state.is_disabled
                 {
-                    flags |= NodeFlags::FOCUSABLE;
+                    flags |= NodeFlags::KEYBOARD_NAVIGABLE;
                 }
                 if !is_hidden {
                     flags |= NodeFlags::VISIBLE;
@@ -746,7 +751,7 @@ impl<'a> StyleCx<'a> {
             is_hidden: self.parent_hidden | parent_override.hidden,
             is_hovered: self.window_state.is_hovered(id),
             is_focused: self.window_state.is_focused(id),
-            is_clicking: self.window_state.is_clicking(id),
+            is_active: self.window_state.is_active(id),
             is_dark_mode: self.window_state.is_dark_mode(),
             is_file_hover: self.window_state.is_file_hover(id),
             using_keyboard_navigation: self.window_state.keyboard_navigation,

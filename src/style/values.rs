@@ -4,7 +4,7 @@ use floem_reactive::{RwSignal, SignalGet, SignalUpdate as _};
 use floem_renderer::Renderer;
 use floem_renderer::text::{LineHeightValue, Weight};
 use peniko::color::{HueDirection, palette};
-use peniko::kurbo::{self, Point, Stroke};
+use peniko::kurbo::{self, Affine, Point, Stroke, Vec2};
 use peniko::{
     Brush, Color, ColorStop, ColorStops, Gradient, GradientKind, InterpolationAlphaSpace,
     LinearGradientPosition,
@@ -949,6 +949,311 @@ impl StylePropValue for super::AnchorAbout {
             x: self.x + (other.x - self.x) * value,
             y: self.y + (other.y - self.y) * value,
         })
+    }
+}
+
+impl StylePropValue for Affine {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        let affine = *self;
+        let coeffs = affine.as_coeffs();
+
+        // Decompose to show meaningful transform components
+        let (scale, rotation) = svd(affine);
+        let translation = affine.translation();
+
+        // Create a visual preview showing the transform effect
+        let preview = canvas(move |cx, size| {
+            let center = Point::new(size.width / 2., size.height / 2.);
+            let box_size = 20.0;
+
+            // Draw original position (dashed outline)
+            let original_rect =
+                kurbo::Rect::from_center_size(center, kurbo::Size::new(box_size, box_size));
+            cx.stroke(
+                &original_rect,
+                palette::css::GRAY.with_alpha(0.5),
+                &kurbo::Stroke::new(1.0).with_dashes(0., [3., 3.]),
+            );
+
+            // Draw transformed position
+            let transform_offset =
+                Affine::translate((center.x - box_size / 2., center.y - box_size / 2.));
+            let display_transform = transform_offset * affine * transform_offset.inverse();
+
+            let transformed_rect = kurbo::Rect::new(0., 0., box_size, box_size);
+            cx.fill(
+                &display_transform.transform_rect_bbox(transformed_rect),
+                palette::css::BLUE.with_alpha(0.7),
+                0.,
+            );
+            cx.stroke(
+                &(display_transform.transform_rect_bbox(transformed_rect)),
+                palette::css::BLUE,
+                &kurbo::Stroke::new(2.0),
+            );
+
+            // Draw origin point
+            let origin_marker = kurbo::Circle::new(display_transform * Point::ZERO, 3.0);
+            cx.fill(&origin_marker, palette::css::RED, 0.);
+        })
+        .style(|s| s.width(80.0).height(60.0))
+        .container()
+        .style(|s| {
+            s.padding(4.0)
+                .border(1.)
+                .border_radius(5.0)
+                .with_theme(|s, t| s.border_color(t.border()))
+        });
+
+        let tooltip_view = move || {
+            // Matrix coefficients in a grid
+            let matrix_label = Label::new("Matrix:").style(|s| s.font_bold().margin_bottom(8.0));
+
+            let matrix_grid = (
+                views((
+                    Label::new(format!("{:.3}", coeffs[0])),
+                    Label::new(format!("{:.3}", coeffs[2])),
+                    Label::new(format!("{:.3}", coeffs[4])),
+                )),
+                views((
+                    Label::new(format!("{:.3}", coeffs[1])),
+                    Label::new(format!("{:.3}", coeffs[3])),
+                    Label::new(format!("{:.3}", coeffs[5])),
+                )),
+                views((Label::new("0"), Label::new("0"), Label::new("1"))),
+            )
+                .v_stack()
+                .style(|s| {
+                    s.gap(4.0)
+                        .padding(8.0)
+                        .border(1.)
+                        .border_radius(4.0)
+                        .with_theme(|s, t| {
+                            s.background(t.primary().with_alpha(0.5))
+                                .border_color(t.border())
+                        })
+                });
+
+            // Decomposed components
+            let components_label = Label::new("Components:")
+                .style(|s| s.font_bold().margin_top(16.0).margin_bottom(8.0));
+
+            let translate_row = views((
+                "Translate:".style(|s| s.font_bold().min_width(100.0).justify_end()),
+                Label::derived(move || format!("({:.2}, {:.2})", translation.x, translation.y)),
+            ));
+
+            let rotate_row = views((
+                "Rotate:".style(|s| s.font_bold().min_width(100.0).justify_end()),
+                Label::derived(move || format!("{:.1}°", rotation.to_degrees())),
+            ));
+
+            let scale_row = views((
+                "Scale:".style(|s| s.font_bold().min_width(100.0).justify_end()),
+                Label::derived(move || format!("({:.2}, {:.2})", scale.x, scale.y)),
+            ));
+
+            // Check for special properties
+            let is_identity = affine == Affine::IDENTITY;
+            let determinant = coeffs[0] * coeffs[3] - coeffs[1] * coeffs[2];
+            let has_reflection = determinant < 0.0;
+
+            let properties = if is_identity {
+                Some(
+                    Label::new("Identity (no transform)")
+                        .style(|s| s.with_theme(|s, t| s.color(t.text_muted()))),
+                )
+            } else if has_reflection {
+                Some(
+                    Label::new("⚠ Contains reflection")
+                        .style(|s| s.with_theme(|s, t| s.color(t.warning()))),
+                )
+            } else {
+                None
+            };
+
+            let components_grid = (translate_row, rotate_row, scale_row).flatten().style(|s| {
+                s.grid()
+                    .grid_template_columns([auto(), fr(1.)])
+                    .justify_center()
+                    .items_center()
+                    .row_gap(8)
+                    .col_gap(10)
+            });
+
+            let mut content = vec![
+                matrix_label.into_any(),
+                matrix_grid.into_any(),
+                components_label.into_any(),
+                components_grid.into_any(),
+            ];
+
+            if let Some(props) = properties {
+                content.push(props.into_any());
+            }
+
+            Stack::vertical_from_iter(content).style(|s| s.padding(20))
+        };
+
+        Some(
+            preview
+                .tooltip(tooltip_view)
+                .style(|s| s.items_center())
+                .into_any(),
+        )
+    }
+
+    fn interpolate(&self, other: &Self, t: f64) -> Option<Self> {
+        Some(self.lerp(other, t))
+    }
+
+    fn content_hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = rustc_hash::FxHasher::default();
+
+        let coeffs = self.as_coeffs();
+        for coeff in coeffs {
+            coeff.to_bits().hash(&mut hasher);
+        }
+
+        hasher.finish()
+    }
+}
+
+pub trait AffineLerp {
+    /// Linearly interpolate between two affine transforms.
+    ///
+    /// This implements the CSS Transforms interpolation algorithm:
+    /// - Decompose both transforms into translation, rotation, and scale components
+    /// - Interpolate each component separately
+    /// - Recompose the result
+    ///
+    /// `t` should be in the range [0.0, 1.0] where:
+    /// - t = 0.0 returns `self`
+    /// - t = 1.0 returns `other`
+    /// - t = 0.5 returns the midpoint
+    fn lerp(&self, other: &Affine, t: f64) -> Affine;
+}
+
+impl AffineLerp for Affine {
+    fn lerp(&self, other: &Affine, t: f64) -> Affine {
+        // Extract translations
+        let trans_a = self.translation();
+        let trans_b = other.translation();
+
+        // Remove translations to get the linear parts
+        let linear_a = self.with_translation(Vec2::ZERO);
+        let linear_b = other.with_translation(Vec2::ZERO);
+
+        // Decompose into scale and rotation using SVD
+        let (scale_a, rotation_a) = svd(linear_a);
+        let (scale_b, rotation_b) = svd(linear_b);
+
+        // Interpolate translation
+        let trans = Vec2 {
+            x: trans_a.x + (trans_b.x - trans_a.x) * t,
+            y: trans_a.y + (trans_b.y - trans_a.y) * t,
+        };
+
+        // Interpolate scale
+        let scale = Vec2 {
+            x: scale_a.x + (scale_b.x - scale_a.x) * t,
+            y: scale_a.y + (scale_b.y - scale_a.y) * t,
+        };
+
+        // Interpolate rotation (taking the shorter path)
+        let mut angle_diff = rotation_b - rotation_a;
+        // Normalize to [-π, π] to take the shorter rotation path
+        while angle_diff > std::f64::consts::PI {
+            angle_diff -= 2.0 * std::f64::consts::PI;
+        }
+        while angle_diff < -std::f64::consts::PI {
+            angle_diff += 2.0 * std::f64::consts::PI;
+        }
+        let rotation = rotation_a + angle_diff * t;
+
+        // Recompose: rotate -> scale -> translate
+        Affine::rotate(rotation)
+            .then_scale_non_uniform(scale.x, scale.y)
+            .then_translate(trans)
+    }
+}
+
+/// Compute the singular value decomposition of the linear transformation.
+/// Returns (scale, rotation_angle).
+fn svd(affine: Affine) -> (Vec2, f64) {
+    let coeffs = affine.as_coeffs();
+    let [a, b, c, d, _, _] = coeffs;
+
+    let a2 = a * a;
+    let b2 = b * b;
+    let c2 = c * c;
+    let d2 = d * d;
+    let ab = a * b;
+    let cd = c * d;
+
+    let angle = 0.5 * (2.0 * (ab + cd)).atan2(a2 - b2 + c2 - d2);
+    let s1 = a2 + b2 + c2 + d2;
+    let s2 = ((a2 - b2 + c2 - d2).powi(2) + 4.0 * (ab + cd).powi(2)).sqrt();
+
+    (
+        Vec2 {
+            x: (0.5 * (s1 + s2)).sqrt(),
+            y: (0.5 * (s1 - s2)).sqrt(),
+        },
+        angle,
+    )
+}
+
+#[cfg(test)]
+mod affine_lerp_tests {
+    use super::*;
+
+    #[test]
+    fn test_lerp_identity() {
+        let a = Affine::IDENTITY;
+        let b = Affine::translate(Vec2::new(100.0, 50.0));
+
+        let result = a.lerp(&b, 0.0);
+        assert_eq!(result.as_coeffs(), a.as_coeffs());
+
+        let result = a.lerp(&b, 1.0);
+        assert_eq!(result.as_coeffs(), b.as_coeffs());
+    }
+
+    #[test]
+    fn test_lerp_translation() {
+        let a = Affine::translate(Vec2::new(0.0, 0.0));
+        let b = Affine::translate(Vec2::new(100.0, 50.0));
+
+        let result = a.lerp(&b, 0.5);
+        let trans = result.translation();
+        assert!((trans.x - 50.0).abs() < 1e-10);
+        assert!((trans.y - 25.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_lerp_rotation() {
+        let a = Affine::rotate(0.0);
+        let b = Affine::rotate(std::f64::consts::PI / 2.0);
+
+        let result = a.lerp(&b, 0.5);
+        // Should be rotated by π/4
+        let point = result * Point::new(1.0, 0.0);
+        let expected_angle = std::f64::consts::PI / 4.0;
+        assert!((point.x - expected_angle.cos()).abs() < 1e-10);
+        assert!((point.y - expected_angle.sin()).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_lerp_scale() {
+        let a = Affine::scale(1.0);
+        let b = Affine::scale(2.0);
+
+        let result = a.lerp(&b, 0.5);
+        let point = result * Point::new(1.0, 1.0);
+        assert!((point.x - 1.5).abs() < 1e-10);
+        assert!((point.y - 1.5).abs() < 1e-10);
     }
 }
 

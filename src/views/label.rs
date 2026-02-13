@@ -239,11 +239,11 @@ impl TextLayoutData {
 
         if overflow_changed {
             if let Some(id) = self.view_id {
-                id.dispatch_event(
+                id.route_event(
                     Event::new_custom(TextOverflowChanged {
                         is_overflowing: overflows,
                     }),
-                    crate::event::DispatchKind::Directed {
+                    crate::event::RouteKind::Directed {
                         target: id.get_element_id(),
                         phases: Phases::TARGET,
                     },

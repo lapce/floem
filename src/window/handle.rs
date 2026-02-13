@@ -2,6 +2,11 @@
 use std::collections::HashMap;
 use std::{cell::RefCell, mem, rc::Rc, sync::Arc};
 
+#[cfg(feature = "crossbeam")]
+use crossbeam::channel::bounded as sync_channel;
+#[cfg(not(feature = "crossbeam"))]
+use std::sync::mpsc::sync_channel;
+
 use crate::event::CustomEvent;
 use crate::platform::menu_types::{Menu as MudaMenu, MenuId};
 #[cfg(target_os = "windows")]
@@ -78,7 +83,6 @@ pub(crate) struct WindowHandle {
     default_theme: Option<Style>,
     pub(crate) profile: Option<Profile>,
     is_maximized: bool,
-    fullscreen: Option<Fullscreen>,
     transparent: bool,
     pub(crate) scale: f64,
     pub(crate) modifiers: Modifiers,
@@ -124,7 +128,6 @@ impl WindowHandle {
         let os_theme = window.theme();
         // let current_theme = apply_theme.unwrap_or(os_theme.unwrap_or(winit::window::Theme::Light));
         let is_maximized = window.is_maximized();
-        let is_fullscreen = window.fullscreen();
 
         set_current_view(id);
 
@@ -205,7 +208,6 @@ impl WindowHandle {
             },
             window_state,
             is_maximized,
-            fullscreen: is_fullscreen,
             transparent,
             profile: None,
             scale,
@@ -283,7 +285,7 @@ impl WindowHandle {
 
         // Create a paint state that will never initialize (for headless testing)
         // We use a channel that will never receive a value
-        let (tx, rx) = std::sync::mpsc::channel();
+        let (tx, rx) = sync_channel(1);
         drop(tx); // Drop sender so receiver will never receive
         let paint_state = PaintState::new_pending(
             window.clone(),
@@ -305,7 +307,6 @@ impl WindowHandle {
             default_theme: Some(default_theme(window_state.light_dark_theme)),
             window_state,
             is_maximized,
-            fullscreen: None,
             transparent: false,
             profile: None,
             scale,
@@ -370,7 +371,7 @@ impl WindowHandle {
         let is_pointer_up = matches!(&event, Event::Pointer(PointerEvent::Up { .. }));
 
         let root_element_id = self.window_state.root_view_id.get_element_id();
-        GlobalEventCx::new(&mut self.window_state, root_element_id).route_window_event(event);
+        GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
 
         // Platform-specific context menu handling
         #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
@@ -471,13 +472,9 @@ impl WindowHandle {
         self.event(Event::Window(WindowEvent::Moved(point)));
     }
 
-    pub(crate) fn file_drag_event(
-        &mut self,
-        paths: Vec<std::path::PathBuf>,
-        file_drag_event: FileDragEvent,
-    ) {
+    pub(crate) fn file_drag_dropped(&mut self, file_drag_event: FileDragEvent) {
         // Store paths in window state for tracking during drag
-        self.window_state.file_drag_paths = Some(paths.into());
+        self.window_state.file_drag_paths = None;
         self.event(Event::FileDrag(file_drag_event));
     }
 
@@ -507,12 +504,11 @@ impl WindowHandle {
     pub(crate) fn file_drag_end(&mut self) {
         // Clear paths and file hover state
         self.window_state.file_drag_paths = None;
-        let hover_events = self.window_state.file_hover_state.clear();
-        for hover_event in hover_events {
-            if let understory_event_state::hover::HoverEvent::Leave(element_id) = hover_event {
-                self.window_state.style_dirty.insert(element_id.owning_id());
-            }
-        }
+        set_current_view(self.id.root());
+        let root_element_id = self.window_state.root_view_id.get_element_id();
+        GlobalEventCx::new(&mut self.window_state, root_element_id, Event::Extracted)
+            .update_hover_from_path(&[]);
+        self.process_update();
     }
 
     pub(crate) fn key_event(&mut self, key_event: KeyboardEvent) {
@@ -640,13 +636,18 @@ impl WindowHandle {
                 };
                 if old_layout.is_none_or(|old| old != new_layout) {
                     use crate::context::Phases;
-                    use crate::event::DispatchKind;
-                    GlobalEventCx::new(&mut self.window_state, element_id).route(
-                        DispatchKind::Directed {
+                    use crate::event::RouteKind;
+                    GlobalEventCx::new(
+                        &mut self.window_state,
+                        element_id,
+                        Event::new_custom(new_layout),
+                    )
+                    .route_normal(
+                        RouteKind::Directed {
                             target: element_id,
                             phases: Phases::TARGET,
                         },
-                        &Event::new_custom(new_layout),
+                        None,
                     );
                 }
             }
@@ -680,13 +681,18 @@ impl WindowHandle {
 
             if old_visual.is_none_or(|old| old != new_visual) {
                 use crate::context::Phases;
-                use crate::event::DispatchKind;
-                GlobalEventCx::new(&mut self.window_state, element_id).route(
-                    DispatchKind::Directed {
+                use crate::event::RouteKind;
+                GlobalEventCx::new(
+                    &mut self.window_state,
+                    element_id,
+                    Event::new_custom(new_visual),
+                )
+                .route_normal(
+                    RouteKind::Directed {
                         target: element_id,
                         phases: Phases::TARGET,
                     },
-                    &Event::new_custom(new_visual),
+                    None,
                 );
             }
         }
@@ -994,12 +1000,32 @@ impl WindowHandle {
                         cx.window_state.request_paint = true;
                     }
                     UpdateMessage::Focus(id) => {
-                        GlobalEventCx::new(cx.window_state, id).update_focus(id, false);
+                        // because we do not call route, the processing messages event is not sent.
+                        // this is desirable because the process messages event will be sent explicitly another time.
+                        let keyboard_navigation = cx.window_state.keyboard_navigation;
+                        let root_element_id = cx.window_state.root_view_id.get_element_id();
+                        GlobalEventCx::new(
+                            cx.window_state,
+                            root_element_id,
+                            Event::Window(WindowEvent::UpdatePhase(
+                                crate::event::UpdatePhaseEvent::ProcessingMessages,
+                            )),
+                        )
+                        .update_focus(id, keyboard_navigation);
                     }
                     UpdateMessage::ClearFocus => {
+                        // because we do not call route, the processing messages event is not sent.
+                        // this is desirable because the process messages event will be sent explicitly another time.
+                        let keyboard_navigation = cx.window_state.keyboard_navigation;
                         let root_element_id = cx.window_state.root_view_id.get_element_id();
-                        GlobalEventCx::new(cx.window_state, root_element_id)
-                            .update_focus_from_path(&[], false);
+                        GlobalEventCx::new(
+                            cx.window_state,
+                            root_element_id,
+                            Event::Window(WindowEvent::UpdatePhase(
+                                crate::event::UpdatePhaseEvent::ProcessingMessages,
+                            )),
+                        )
+                        .update_focus_from_path(&[], keyboard_navigation);
                     }
                     UpdateMessage::SetPointerCapture {
                         view_id,
@@ -1198,18 +1224,16 @@ impl WindowHandle {
                     UpdateMessage::SetupReactiveChildren { mut setup } => {
                         setup.run();
                     }
-                    UpdateMessage::DispatchEvent {
+                    UpdateMessage::RouteEvent {
                         id: _,
                         event,
-                        dispatch_kind,
-                        caused_by,
+                        route_kind: dispatch_kind,
+                        triggered_by,
                     } => {
                         let root_element_id = self.window_state.root_view_id.get_element_id();
-                        let mut cx = GlobalEventCx::new(&mut self.window_state, root_element_id);
-                        if let Some(caused_by) = caused_by {
-                            cx.set_caused_by(caused_by);
-                        }
-                        cx.route(dispatch_kind, &event);
+                        let mut cx =
+                            GlobalEventCx::new(&mut self.window_state, root_element_id, event);
+                        cx.route_normal(dispatch_kind, triggered_by.as_ref());
                     }
                 }
             }
@@ -1261,11 +1285,10 @@ impl WindowHandle {
         if self.window_state.needs_cursor_resolution {
             let mut temp = None;
             for hover in self.window_state.hover_state.current_path() {
-                if let Some(cursor) = hover
-                    .exact_view_id()
-                    .and_then(|id| id.state().borrow().cursor())
-                {
-                    temp = Some(cursor);
+                if hover.is_view() {
+                    if let Some(cursor) = hover.owning_id().state().borrow().cursor() {
+                        temp = Some(cursor);
+                    }
                 }
                 // it is important that the node cursors override the widget cursor because non View nodes will have a widget that maps to the parent View that they are associated with
                 if let Some(cursor) = self.window_state.element_id_cursors.get(hover) {

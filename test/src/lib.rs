@@ -350,7 +350,7 @@ type PointerEventLog = Rc<RefCell<Vec<(String, Option<floem::event::PointerId>)>
 
 /// Tracks pointer capture events on views for testing.
 ///
-/// This helper makes it easy to verify which views received GotPointerCapture
+/// This helper makes it easy to verify which views received GainedPointerCapture
 /// and LostPointerCapture events.
 ///
 /// # Example
@@ -364,7 +364,7 @@ type PointerEventLog = Rc<RefCell<Vec<(String, Option<floem::event::PointerId>)>
 /// ```
 #[derive(Clone, Default)]
 pub struct PointerCaptureTracker {
-    got_captures: Rc<RefCell<Vec<(String, floem::event::PointerId)>>>,
+    gained_captures: Rc<RefCell<Vec<(String, floem::event::PointerId)>>>,
     lost_captures: Rc<RefCell<Vec<(String, floem::event::PointerId)>>>,
     pointer_downs: PointerEventLog,
     pointer_moves: PointerEventLog,
@@ -379,7 +379,7 @@ impl PointerCaptureTracker {
 
     /// Wrap a view to track pointer capture events with a name.
     pub fn track<V: IntoView>(&self, name: &str, view: V) -> impl IntoView + use<V> {
-        let got_captures = self.got_captures.clone();
+        let got_captures = self.gained_captures.clone();
         let lost_captures = self.lost_captures.clone();
         let pointer_downs = self.pointer_downs.clone();
         let pointer_moves = self.pointer_moves.clone();
@@ -393,7 +393,7 @@ impl PointerCaptureTracker {
         let name_up = name.clone();
 
         view.into_view()
-            .on_event(listener::GotPointerCapture, move |_cx, drag_token| {
+            .on_event(listener::GainedPointerCapture, move |_cx, drag_token| {
                 got_captures
                     .borrow_mut()
                     .push((name_got.clone(), drag_token.pointer_id()));
@@ -425,9 +425,9 @@ impl PointerCaptureTracker {
             })
     }
 
-    /// Returns the number of GotPointerCapture events recorded.
-    pub fn got_capture_count(&self) -> usize {
-        self.got_captures.borrow().len()
+    /// Returns the number of GainedPointerCapture events recorded.
+    pub fn gained_capture_count(&self) -> usize {
+        self.gained_captures.borrow().len()
     }
 
     /// Returns the number of LostPointerCapture events recorded.
@@ -437,7 +437,7 @@ impl PointerCaptureTracker {
 
     /// Returns the names of views that got pointer capture, in order.
     pub fn got_capture_names(&self) -> Vec<String> {
-        self.got_captures
+        self.gained_captures
             .borrow()
             .iter()
             .map(|(name, _)| name.clone())
@@ -482,7 +482,7 @@ impl PointerCaptureTracker {
 
     /// Reset the tracker, clearing all recorded events.
     pub fn reset(&self) {
-        self.got_captures.borrow_mut().clear();
+        self.gained_captures.borrow_mut().clear();
         self.lost_captures.borrow_mut().clear();
         self.pointer_downs.borrow_mut().clear();
         self.pointer_moves.borrow_mut().clear();
