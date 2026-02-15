@@ -608,11 +608,9 @@ impl WindowHandle {
         for id in has_layout_listener {
             if let Some(layout) = id.get_layout() {
                 let window_origin = id.get_layout_window_origin();
-                let new_box = kurbo::Rect::new(
-                    layout.location.x as f64,
-                    layout.location.y as f64,
-                    layout.size.width as f64,
-                    layout.size.height as f64,
+                let new_box = kurbo::Rect::from_origin_size(
+                    (layout.location.x as f64, layout.location.y as f64),
+                    (layout.size.width as f64, layout.size.height as f64),
                 );
                 let new_content_box = kurbo::Rect::from_origin_size(
                     (layout.content_box_x() as f64, layout.content_box_y() as f64),
