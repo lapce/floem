@@ -55,7 +55,7 @@ impl CapturedView {
         let view_state = id.state();
         let view_state = view_state.borrow();
         let combined_style = view_state.combined_style.clone();
-        let keyboard_navigable = view_state.combined_style.builtin().keyboard_navigable();
+        let focus = view_state.combined_style.builtin().set_focus();
         let focused = window_state.focus_state.current_path().last() == Some(&id.get_element_id());
         let clipped = layout.intersect(clip);
         let custom_name = &view_state.debug_name;
@@ -80,7 +80,7 @@ impl CapturedView {
             layout,
             taffy,
             direct_style: combined_style,
-            keyboard_navigable,
+            keyboard_navigable: focus.allows_keyboard_navigation(),
             focused,
             classes,
             children: id

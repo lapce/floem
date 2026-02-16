@@ -319,7 +319,7 @@ pub fn focus_style() -> Style {
     let focus_visible_applied_style = Style::new().outline(3.0);
 
     Style::new()
-        .keyboard_navigable(true)
+        .keyboard_navigable()
         .with_theme(|s, t| s.outline_color(t.primary().with_alpha(0.5)))
         .focus_visible(|_| focus_visible_applied_style.clone())
 }
@@ -453,7 +453,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
         })
         .cursor(CursorStyle::Pointer)
         .transition(Background, Transition::linear(100.millis()))
-        .class(CheckboxClass, |s| s.keyboard_navigable(false))
+        .class(CheckboxClass, |s| s.focus_none())
         .selectable(false)
         .focus(|s| {
             s.class(CheckboxClass, |s| {
@@ -512,7 +512,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
                 .disabled(|s| s.color(t.text_muted()).unset_cursor())
         })
         .cursor(CursorStyle::Pointer)
-        .class(RadioButtonClass, |s| s.keyboard_navigable(false))
+        .class(RadioButtonClass, |s| s.focus_none())
         .transition(Background, Transition::linear(100.millis()))
         .focus(|s| {
             s.with_theme(|s, t| s.hover(|s| s.background(t.primary().with_alpha(0.7))))
@@ -613,6 +613,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
             .with_context::<Selectable>(|s, selectable| {
                 s.apply_if(*selectable, |s| s.cursor(CursorStyle::Text))
             })
+            .focusable()
         })
         .class(ListClass, |s| {
             s.apply(focus_style()).class(ListItemClass, |s| {

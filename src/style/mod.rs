@@ -156,6 +156,7 @@ use taffy::{
 
 use crate::layout::responsive::{ScreenSize, ScreenSizeBp};
 
+use crate::style::components::Focus;
 use crate::views::editor::SelectionColor;
 // Import macros from crate root (they are #[macro_export] in props.rs)
 use crate::{BoxTree, ElementId, prop, prop_extractor};
@@ -1604,6 +1605,7 @@ define_builtin_props!(
     /// Controls whether the view's text can be selected.
     ///
     /// This property is inherited by child views.
+    // TODO: rename this TextSelectable
     Selectable selectable {}: bool { inherited } = true,
 
     /// Controls how overflowed text content is handled.
@@ -1769,7 +1771,7 @@ define_builtin_props!(
     Disabled set_disabled {}: bool { inherited } = false,
 
     /// Controls whether the view can receive focus during navigation such as tab or arrow navigation.
-    Focusable keyboard_navigable {}: bool { } = false,
+    Focusable set_focus {}: Focus { } = Focus::None,
 );
 
 impl BuiltinStyle<'_> {
@@ -2044,7 +2046,7 @@ impl Style {
         self.selector(StyleSelector::Focus, style)
     }
 
-    /// Similar to the `:focus-visible` css selector, this style only activates when tab navigation is used.
+    /// Similar to the `:focus-visible` css selector, this style only activates when the view was focused via tab or arrow navigation.
     pub fn focus_visible(self, style: impl FnOnce(Style) -> Style) -> Self {
         self.selector(StyleSelector::FocusVisible, style)
     }
@@ -2139,9 +2141,38 @@ impl Style {
         self.height(height.pct())
     }
 
-    #[deprecated(note = "use `Style::keyboard_navigable instead`")]
-    pub fn focusable(self, keyboard_focusable: bool) -> Self {
-        self.keyboard_navigable(keyboard_focusable)
+    /// Makes the view fully keyboard navigable.
+    ///
+    /// The view can receive focus via Tab/Shift+Tab navigation, arrow keys,
+    /// pointer clicks, and programmatic focus calls. This is the recommended
+    /// setting for interactive controls like buttons, inputs, and links.
+    ///
+    /// Equivalent to `focus(Focus::Keyboard)`.
+    pub fn keyboard_navigable(self) -> Self {
+        self.set(Focusable, Focus::Keyboard)
+    }
+
+    /// Makes the view focusable by pointer and programmatically, but excludes it
+    /// from keyboard navigation. For many elements (especially buttons) you should
+    /// probably use [Self::keyboard_navigable].
+    ///
+    /// The view can be clicked to receive focus or focused via `request_focus()`,
+    /// but will not be included in Tab order or arrow key navigation. Useful for
+    /// scroll containers, modal backdrops, or roving tabindex patterns.
+    ///
+    /// Equivalent to `focus(Focus::PointerAndProgrammatic)`.
+    pub fn focusable(self) -> Self {
+        self.set(Focusable, Focus::PointerAndProgrammatic)
+    }
+
+    /// Makes the view non-focusable through any means.
+    ///
+    /// The view cannot receive focus via keyboard, pointer, or programmatic calls.
+    /// Use this for decorative elements or containers that should never be interactive.
+    ///
+    /// Equivalent to `focus(Focus::None)`.
+    pub fn focus_none(self) -> Self {
+        self.set(Focusable, Focus::None)
     }
 
     /// Sets the gap between columns in grid or flex layouts.

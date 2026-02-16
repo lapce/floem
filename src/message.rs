@@ -35,16 +35,32 @@ thread_local! {
 type DeferredUpdateMessages = HashMap<ViewId, Vec<(ViewId, Box<dyn Any>)>>;
 
 pub enum UpdateMessage {
+    ///
+    /// This will build a focus path from the root to the target element,
+    /// including all focusable ancestors. The path respects the current
+    /// keyboard navigation mode:
+    /// - In keyboard navigation mode: only includes keyboard-navigable elements
+    /// - In non-keyboard mode: includes all focusable elements
+    ///
+    /// Elements that gain or lose focus will receive `FocusEvent::Gained` or
+    /// `FocusEvent::Lost` events respectively.
     Focus(ElementId),
+
+    /// Clear all focus state.
+    ///
+    /// This removes focus from all elements in the current focus path.
+    /// Each element in the path will receive a `FocusEvent::Lost` event
+    /// in order from deepest to shallowest.
     ClearFocus,
+
     /// Set pointer capture for a view (W3C Pointer Events API).
     SetPointerCapture {
-        view_id: ViewId,
+        element_id: ElementId,
         pointer_id: PointerId,
     },
-    /// Release pointer capture from a view.
+    /// Release pointer capture from an element.
     ReleasePointerCapture {
-        view_id: ViewId,
+        element_id: ElementId,
         pointer_id: PointerId,
     },
     WindowScale(f64),
@@ -98,6 +114,7 @@ pub enum UpdateMessage {
         position: Point,
         size: Size,
     },
+    CheckPointerHover,
     WindowVisible(bool),
     ViewTransitionAnimComplete(ViewId),
     SetTheme(Option<Theme>),
@@ -125,9 +142,9 @@ pub enum UpdateMessage {
     RemoveListener(listener::EventListenerKey, ViewId),
     RouteEvent {
         id: ViewId,
-        event: Event,
+        event: Box<Event>, // boxed because of large size
         route_kind: RouteKind,
-        triggered_by: Option<Event>,
+        triggered_by: Option<Box<Event>>,
     },
     MarkViewLayoutDirty(ViewId),
 }

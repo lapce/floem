@@ -237,11 +237,20 @@ fn build_focus_path(
             .map(|p| box_tree.meta(p).flatten().unwrap())
     })
     .filter(|id| {
-        (!keyboard_navigation && *id == target)
-            || box_tree
-                .flags(id.0)
-                .map(|f| f.contains(NodeFlags::KEYBOARD_NAVIGABLE | NodeFlags::VISIBLE))
-                .unwrap_or(false)
+        box_tree
+            .flags(id.0)
+            .map(|f| {
+                f.contains(NodeFlags::VISIBLE)
+                    && (if keyboard_navigation {
+                        // For keyboard navigation, node must be keyboard navigable
+                        // (which (at least in Floem) implies focusable)
+                        f.contains(NodeFlags::KEYBOARD_NAVIGABLE)
+                    } else {
+                        // For non-keyboard navigation, node must be focusable
+                        f.contains(NodeFlags::FOCUSABLE)
+                    })
+            })
+            .unwrap_or(false)
     })
     .collect();
     path.reverse();
@@ -624,6 +633,9 @@ impl<'a> GlobalEventCx<'a> {
                         phases: Phases::STANDARD,
                     };
                     self.route(route_kind, OverrideKind::Normal { triggered_by: None });
+                } else {
+                    // Pointer Enter / Leave / Cancel not routed without capture target but handled in default behaviors
+                    self.handle_default_behaviors();
                 }
             }
             Event::Key(_) => {
@@ -647,7 +659,10 @@ impl<'a> GlobalEventCx<'a> {
                 };
                 self.route(route_kind, OverrideKind::Normal { triggered_by: None });
             }
-            Event::Window(_) => {
+            Event::Window(we) => {
+                if matches!(we, WindowEvent::ChangeUnderCursor) {
+                    self.update_hover_from_point(self.window_state.last_pointer.0);
+                }
                 let listener_keys = self.event.listener_keys();
                 let mut interested: SmallVec<[ViewId; 64]> = SmallVec::new();
                 for key in &listener_keys {
@@ -694,7 +709,7 @@ impl<'a> GlobalEventCx<'a> {
         self.route(kind, OverrideKind::Normal { triggered_by });
     }
 
-    pub fn route(&mut self, kind: RouteKind, mut override_kind: OverrideKind) {
+    pub fn route(&mut self, kind: RouteKind, mut override_kind: OverrideKind) -> Option<Dispatch> {
         let triggered_by = match override_kind {
             OverrideKind::Normal { triggered_by } => triggered_by,
             OverrideKind::Synthetic { ref mut event } => {
@@ -702,7 +717,7 @@ impl<'a> GlobalEventCx<'a> {
                 Some(&*event)
             }
         };
-        match kind {
+        let remaining_dispatch = match kind {
             RouteKind::Directed { target, phases } => {
                 self.route_directed(target, triggered_by, phases)
             }
@@ -710,6 +725,7 @@ impl<'a> GlobalEventCx<'a> {
                 if let Some(focus) = self.window_state.focus_state.current_path().last() {
                     self.route_directed(*focus, triggered_by, phases)
                 } else {
+                    self.route_global(triggered_by, true);
                     None
                 }
             }
@@ -758,6 +774,8 @@ impl<'a> GlobalEventCx<'a> {
         if let OverrideKind::Synthetic { event } = override_kind {
             self.event = event;
         }
+
+        remaining_dispatch
     }
 }
 
@@ -783,6 +801,7 @@ impl<'a> GlobalEventCx<'a> {
         use crate::context::Phases;
         let default_prevented = &mut false;
 
+        // handle pointer defaults
         if self.event.is_keyboard_trigger() {
             if let Some(focus) = self.window_state.focus_state.current_path().last() {
                 // Keyboard trigger creates its own synthetic Click event
@@ -796,18 +815,27 @@ impl<'a> GlobalEventCx<'a> {
             }
         }
 
-        if phases == Phases::TARGET {
+        let extra_dispatch = if phases == Phases::TARGET {
             let d = Dispatch::target(target);
             let outcome = self.dispatch_event_cx(&d, triggered_by, default_prevented);
             if outcome.is_stop() { Some(d) } else { None }
         } else {
             let box_tree = self.window_state.box_tree.borrow();
-            let iter = build_capture_bubble_path(target, &box_tree);
+            let iter =
+                build_capture_bubble_path(target, &box_tree).filter(|d| phases.matches(&d.phase));
             drop(box_tree);
 
             run_dispatch(iter, |d| {
                 self.dispatch_event_cx(&d, triggered_by, default_prevented)
             })
+        };
+
+        // the keyboard event was not handled
+        if extra_dispatch.is_none() && phases.contains(Phases::BROADCAST) {
+            self.route_global(triggered_by, true);
+            None
+        } else {
+            extra_dispatch
         }
     }
 
@@ -843,9 +871,17 @@ impl<'a> GlobalEventCx<'a> {
         self.handle_pointer_state_updates();
 
         // now actually route spatial
-        let target = *path.last().unwrap();
-
-        self.route_directed(target, triggered_by, phases)
+        if let Some(target) = path.last() {
+            self.route(
+                RouteKind::Directed {
+                    target: *target,
+                    phases,
+                },
+                OverrideKind::Normal { triggered_by },
+            )
+        } else {
+            None
+        }
     }
 
     /// Route to a target and all its descendants (subtree)
@@ -1019,6 +1055,10 @@ impl<'a> GlobalEventCx<'a> {
                 self.window_state
                     .release_pointer_capture_unconditional(pointer_id);
             }
+        }
+
+        if let Event::Pointer(PointerEvent::Leave(_)) = &self.event {
+            self.update_hover_from_path(&[]);
         }
 
         // Pointer cancel - abort drag

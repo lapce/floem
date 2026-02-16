@@ -3,7 +3,7 @@ use std::{collections::HashMap, ops::RangeInclusive, rc::Rc};
 use crate::{
     Renderer,
     action::{set_ime_allowed, set_ime_cursor_area},
-    context::{LayoutChanged, LayoutChangedListener, LayoutCx, PaintCx, UpdateCx, VisualChanged},
+    context::{LayoutChanged, LayoutChangedListener, PaintCx, UpdateCx, VisualChanged},
     event::{CustomEvent, Event, EventPropagation, ImeEvent, PointerScrollEventExt, listener},
     kurbo::{BezPath, Line, Point, Rect, Size, Vec2},
     peniko::Color,
@@ -13,7 +13,7 @@ use crate::{
     style_class,
     taffy::tree::NodeId,
     text::{Attrs, AttrsList, TextLayout},
-    view::{FinalizeFn, IntoView, LayoutNodeCx, MeasureFn, View, ViewId},
+    view::{IntoView, View, ViewId},
     views::{Decorators, Scroll, Stack, editor::keypress::KeypressKey},
 };
 use floem_editor_core::{
@@ -24,8 +24,8 @@ use floem_editor_core::{
 use floem_reactive::{SignalGet, SignalTrack, SignalUpdate, SignalWith};
 use peniko::Brush;
 use ui_events::{
-    keyboard::{Key, KeyState, KeyboardEvent, Modifiers},
-    pointer::{PointerButton, PointerButtonEvent, PointerEvent},
+    keyboard::{Key, KeyboardEvent, Modifiers},
+    pointer::{PointerButton, PointerButtonEvent},
 };
 
 use crate::views::editor::{
@@ -1168,7 +1168,7 @@ pub fn editor_view(
         is_active,
         inner_node: None,
     }
-    .style(|s| s.keyboard_navigable(true))
+    .style(|s| s.keyboard_navigable())
     .on_event_cont(listener::FocusGained, move |_, _| {
         focused.set(true);
         prev_ime_area.set(None);

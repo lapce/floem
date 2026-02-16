@@ -533,18 +533,28 @@ impl<'a> StyleCx<'a> {
                 let elment_id = vs.element_id;
                 let box_tree = &mut box_tree.borrow_mut();
                 let mut flags = NodeFlags::empty();
+                // need to update this after visibility.
                 if (vs.computed_style.builtin().pointer_events()
                     != Some(crate::style::PointerEvents::None))
                     && !is_hidden
                 {
                     flags |= NodeFlags::PICKABLE;
                 }
-                // need to update this after visibility.
-                if vs.computed_style.builtin().keyboard_navigable()
+                if vs
+                    .computed_style
+                    .builtin()
+                    .set_focus()
+                    .allows_keyboard_navigation()
                     && !is_hidden
                     && !view_interact_state.is_disabled
                 {
                     flags |= NodeFlags::KEYBOARD_NAVIGABLE;
+                }
+                if vs.computed_style.builtin().set_focus().is_focusable()
+                    && !is_hidden
+                    && !view_interact_state.is_disabled
+                {
+                    flags |= NodeFlags::FOCUSABLE;
                 }
                 if !is_hidden {
                     flags |= NodeFlags::VISIBLE;

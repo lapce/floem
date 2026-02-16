@@ -11,7 +11,6 @@ use crate::event::CustomEvent;
 use crate::platform::menu_types::{Menu as MudaMenu, MenuId};
 #[cfg(target_os = "windows")]
 use muda::MenuTheme as MudaMenuTheme;
-use winit::monitor::Fullscreen;
 
 use crate::platform::{Duration, Instant};
 use ui_events::keyboard::{Key, KeyboardEvent, Modifiers, NamedKey};
@@ -86,7 +85,6 @@ pub(crate) struct WindowHandle {
     transparent: bool,
     pub(crate) scale: f64,
     pub(crate) modifiers: Modifiers,
-    pub(crate) cursor_position: Point,
     pub(crate) window_position: Point,
     #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
     pub(crate) context_menu: RwSignal<Option<(MudaMenu, Point, bool)>>,
@@ -212,7 +210,6 @@ impl WindowHandle {
             profile: None,
             scale,
             modifiers: Modifiers::default(),
-            cursor_position: Point::ZERO,
             window_position: Point::ZERO,
             #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
             context_menu,
@@ -311,7 +308,6 @@ impl WindowHandle {
             profile: None,
             scale,
             modifiers: Modifiers::default(),
-            cursor_position: Point::ZERO,
             window_position: Point::ZERO,
             #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
             context_menu: scope.create_rw_signal(None),
@@ -524,13 +520,6 @@ impl WindowHandle {
     }
 
     pub(crate) fn pointer_event(&mut self, pointer_event: PointerEvent) {
-        if let PointerEvent::Move(pointer_update) = &pointer_event {
-            let pos = pointer_update.current.logical_point();
-            if self.cursor_position != pos {
-                self.cursor_position = pos;
-            }
-        }
-
         self.event(Event::Pointer(pointer_event));
     }
 
@@ -1026,13 +1015,13 @@ impl WindowHandle {
                         .update_focus_from_path(&[], keyboard_navigation);
                     }
                     UpdateMessage::SetPointerCapture {
-                        view_id,
+                        element_id: view_id,
                         pointer_id,
                     } => {
                         cx.window_state.set_pointer_capture(pointer_id, view_id);
                     }
                     UpdateMessage::ReleasePointerCapture {
-                        view_id,
+                        element_id: view_id,
                         pointer_id,
                     } => {
                         cx.window_state.release_pointer_capture(pointer_id, view_id);
@@ -1178,6 +1167,9 @@ impl WindowHandle {
                             state.registered_listener_keys.retain(|k| *k != key);
                         }
                     }
+                    UpdateMessage::CheckPointerHover => {
+                        self.event(Event::Window(WindowEvent::ChangeUnderCursor));
+                    }
                     UpdateMessage::WindowVisible(visible) => {
                         self.window.set_visible(visible);
                     }
@@ -1230,8 +1222,8 @@ impl WindowHandle {
                     } => {
                         let root_element_id = self.window_state.root_view_id.get_element_id();
                         let mut cx =
-                            GlobalEventCx::new(&mut self.window_state, root_element_id, event);
-                        cx.route_normal(dispatch_kind, triggered_by.as_ref());
+                            GlobalEventCx::new(&mut self.window_state, root_element_id, *event);
+                        cx.route_normal(dispatch_kind, triggered_by.as_deref());
                     }
                 }
             }

@@ -18,7 +18,7 @@ fn test_focus_style_applied_when_focused() {
     let root = TestRoot::new();
     let view = Empty::new().style(|s| {
         s.size(100.0, 100.0)
-            .keyboard_navigable(true)
+            .focus(true)
             .background(palette::css::BLUE)
             .focus(|s| s.background(palette::css::YELLOW))
     });
@@ -51,7 +51,7 @@ fn test_focus_visible_selector_detected() {
     let root = TestRoot::new();
     let view = Empty::new().style(|s| {
         s.size(100.0, 100.0)
-            .keyboard_navigable(true)
+            .focus(true)
             .background(palette::css::BLUE)
             .focus_visible(|s| s.background(palette::css::ORANGE))
     });
@@ -155,10 +155,10 @@ fn test_active_style_removed_after_pointer_up() {
 #[test]
 fn test_only_one_view_focused_at_time() {
     let root = TestRoot::new();
-    let view1 = Empty::new().style(|s| s.size(50.0, 50.0).keyboard_navigable(true));
+    let view1 = Empty::new().style(|s| s.size(50.0, 50.0).focus(true));
     let id1 = view1.view_id();
 
-    let view2 = Empty::new().style(|s| s.size(50.0, 50.0).keyboard_navigable(true));
+    let view2 = Empty::new().style(|s| s.size(50.0, 50.0).focus(true));
     let id2 = view2.view_id();
 
     let view = Stack::new((view1, view2)).style(|s| s.size(100.0, 50.0));
@@ -187,7 +187,7 @@ fn test_repeated_enter_emits_click() {
 
     let view = tracker
         .track_named("button", Empty::new())
-        .style(|s| s.size(100.0, 100.0).keyboard_navigable(true));
+        .style(|s| s.size(100.0, 100.0).focus(true));
 
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
@@ -276,7 +276,7 @@ fn test_repeated_space_emits_click() {
 
     let view = tracker
         .track_named("button", Empty::new())
-        .style(|s| s.size(100.0, 100.0).keyboard_navigable(true));
+        .style(|s| s.size(100.0, 100.0).focus(true));
 
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 

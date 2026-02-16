@@ -669,17 +669,15 @@ fn test_nested_selectors_with_parent_theme_colors() {
         secondary_color: palette::css::YELLOW,
     };
 
-    let child = Empty::new()
-        .style(|s| s.keyboard_navigable(true))
-        .style(|s| {
-            s.size(50.0, 50.0).with_test_theme(|s, theme| {
-                s.background(theme.secondary_bg) // GREEN
-                    .hover(|s| {
-                        s.background(theme.primary_bg) // RED on hover
+    let child = Empty::new().style(|s| s.focus(true)).style(|s| {
+        s.size(50.0, 50.0).with_test_theme(|s, theme| {
+            s.background(theme.secondary_bg) // GREEN
+                .hover(|s| {
+                    s.background(theme.primary_bg) // RED on hover
                         .focus_visible(|s| s.background(theme.primary_color)) // BLUE when focused while hovering
-                    })
-            })
-        });
+                })
+        })
+    });
     let child_id = child.view_id();
 
     let root_view =

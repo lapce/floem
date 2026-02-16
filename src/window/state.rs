@@ -790,7 +790,7 @@ impl WindowState {
                     root_element_id,
                     Event::Window(WindowEvent::ChangeUnderCursor),
                 )
-                .update_hover_from_point(pointer.0);
+                .route_window_event();
             }
         }
         self.needs_box_tree_commit = false;

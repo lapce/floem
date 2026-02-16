@@ -10,7 +10,7 @@ use ui_events::keyboard::{Key, KeyboardEvent, Modifiers};
 
 use crate::{
     ViewId,
-    action::{add_update_message, set_window_scale, set_window_title},
+    action::{set_window_scale, set_window_title},
     animate::Animation,
     context::EventCallbackConfig,
     event::{EventCx, EventPropagation, listener},
@@ -183,7 +183,7 @@ pub trait Decorators: IntoView {
     /// Allows the element to be navigated to with the keyboard. Similar to setting tabindex="0" in html.
     #[deprecated(note = "Set this property using `Style::keyboard_navigable` instead")]
     fn keyboard_navigable(self) -> Self::Intermediate {
-        self.style(|s| s.keyboard_navigable(true))
+        self.style(|s| s.keyboard_navigable())
     }
 
     /// Dynamically controls whether the default view behavior for an event should be disabled.

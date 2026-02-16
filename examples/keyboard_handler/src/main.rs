@@ -14,7 +14,7 @@ fn app_view() -> impl IntoView {
                 .flex_col()
                 .items_center()
                 .justify_center()
-                .keyboard_navigable(true) // Focusable is needed for a view to be able to receive keyboard events
+                .keyboard_navigable()
         })
         .on_event_stop(
             listener::KeyDown,

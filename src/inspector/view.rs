@@ -171,7 +171,7 @@ fn capture_view(
             .height(image_height + 2.0)
             .margin_bottom(21.0)
             .margin_right(21.0)
-            .keyboard_navigable(true)
+            .keyboard_navigable()
     })
     .on_event_stop(listener::KeyUp, {
         move |_cx, KeyboardEvent { key, .. }| match key {
@@ -512,7 +512,7 @@ fn tree_node(
         .container()
         .style(move |s| {
             s.height(height)
-                .keyboard_navigable(true)
+                .keyboard_navigable()
                 //     .apply_if(highlighted.get() == Some(id), |s| {
                 //         s.background(Color::from_rgba8(228, 237, 216, 160))
                 //     })

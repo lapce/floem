@@ -43,7 +43,7 @@ fn checkbox_svg(
     svg(check_svg)
         .update_value(update_svg)
         .class(CheckboxClass)
-        .style(|s| s.keyboard_navigable(true))
+        .style(|s| s.keyboard_navigable())
 }
 
 /// # A customizable checkbox view for boolean selection.

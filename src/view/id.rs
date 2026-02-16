@@ -801,9 +801,13 @@ impl ViewId {
 
     /// Check if this id can be focused.
     ///
-    /// This is done by checking if the style for this view has `Focusable` set to true.
+    /// This is done by checking if the style for this view has `Focusable` set to `Focus::PointerAndProgramatic` or `Focus::KeyboardNavigable`.
     pub fn can_focus(&self) -> bool {
-        self.state().borrow().computed_style.get(Focusable)
+        self.state()
+            .borrow()
+            .computed_style
+            .get(Focusable)
+            .is_focusable()
     }
 
     /// Request that this the `id` view be styled, laid out and painted again.
@@ -964,7 +968,7 @@ impl ViewId {
     #[deprecated(note = "directly use `set_pointer_capture` on the `EventCx`")]
     pub fn set_pointer_capture(&self, pointer_id: PointerId) {
         self.add_update_message(UpdateMessage::SetPointerCapture {
-            view_id: *self,
+            element_id: self.get_element_id(),
             pointer_id,
         });
     }
@@ -979,7 +983,7 @@ impl ViewId {
     /// It's safe to call even if this view doesn't have capture.
     pub fn release_pointer_capture(&self, pointer_id: PointerId) {
         self.add_update_message(UpdateMessage::ReleasePointerCapture {
-            view_id: *self,
+            element_id: self.get_element_id(),
             pointer_id,
         });
     }
@@ -1388,9 +1392,9 @@ impl ViewId {
     ) {
         self.add_update_message(UpdateMessage::RouteEvent {
             id: *self,
-            event,
+            event: Box::new(event),
             route_kind,
-            triggered_by: caused_by,
+            triggered_by: caused_by.map(|e| Box::new(e)),
         });
     }
 }
