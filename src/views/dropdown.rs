@@ -12,7 +12,7 @@ use peniko::kurbo::{Point, Size};
 
 use crate::{
     AnyView,
-    action::{add_overlay, remove_overlay},
+    action::{add_overlay, exec_after_animation_frame, remove_overlay},
     context::{Phases, VisualChangedListener},
     custom_event,
     event::{Event, EventPropagation, Phase, RouteKind, listener},
@@ -232,7 +232,14 @@ impl<T: 'static + Clone + PartialEq + core::fmt::Debug> View for Dropdown<T> {
         if let Ok(state) = state.downcast::<Message>() {
             match *state {
                 Message::OpenState(true) => self.open_dropdown(),
-                Message::OpenState(false) => self.close_dropdown(),
+                Message::OpenState(false) => {
+                    if let Some(overlay_id) = self.overlay_id {
+                        if cx.window_state.is_focused(overlay_id) {
+                            self.id.request_focus();
+                        }
+                    }
+                    self.close_dropdown()
+                }
                 Message::ListFocusLost => self.close_dropdown(),
                 Message::ListSelect(val) => {
                     if let Ok(val) = val.downcast::<T>() {
@@ -580,10 +587,15 @@ impl<T: Clone + std::cmp::PartialEq + std::fmt::Debug> Dropdown<T> {
                     }
                 },
             )
-            .style(|s| s.width_full())
+            .style(|s| s.width_full().keyboard_navigable())
             .on_event_stop(listener::FocusLost, move |_, _| {
                 dropdown_id.update_state(Message::ListFocusLost);
-            });
+            })
+            .on_event_stop(listener::PointerDown, |cx, _e| {
+                // stop focus from chaging on pointer down
+                cx.prevent_default();
+            })
+            .debug_name("Dropdown List");
 
         list.selection().set(active);
         list
@@ -596,7 +608,10 @@ impl<T: Clone + std::cmp::PartialEq + std::fmt::Debug> Dropdown<T> {
 
         let list = self.build_list_view();
         let list_id = list.id();
-        list_id.request_focus();
+        exec_after_animation_frame(move |_| {
+            // we need to requet focus once the list has been styled and made visible or else it will not be considered focusable
+            list_id.request_focus();
+        });
 
         let scroll = list.scroll().style(move |s| {
             s.flex_col()

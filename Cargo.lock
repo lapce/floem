@@ -1363,6 +1363,7 @@ dependencies = [
  "copypasta",
  "criterion",
  "crossbeam",
+ "dispatch2",
  "dpi 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "educe",
  "floem-editor-core",

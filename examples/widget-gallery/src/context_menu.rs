@@ -1,6 +1,13 @@
+use std::time::Duration;
+
 use floem::{
     IntoView,
+    easing::Spring,
+    kurbo::Affine,
     menu::*,
+    prelude::{RwSignal, SignalGet, SignalUpdate},
+    style::Transition,
+    unit::{self, AnchorAbout, Angle},
     views::{ButtonClass, Decorators, Stack},
 };
 
@@ -39,9 +46,14 @@ pub fn menu_view() -> impl IntoView {
             })
     };
 
-    let transform_submenu = |m: SubMenu| {
-        m.item("Rotate 90°", |i| {
-            i.action(|| println!("Rotating 90 degrees..."))
+    let rotation = RwSignal::new(Angle::Deg(0.));
+
+    let transform_submenu = move |m: SubMenu| {
+        m.item("Rotate 90°", move |i| {
+            i.action(move || {
+                rotation.update(|r| *r = Angle::Deg(r.to_degrees() + 90.));
+                println!("Rotating 90 degrees...")
+            })
         })
         .item("Flip Horizontal", |i| {
             i.action(|| println!("Flipping horizontally..."))
@@ -82,7 +94,17 @@ pub fn menu_view() -> impl IntoView {
 
     let context_button = "Right click me (Context menu)"
         .class(ButtonClass)
-        .style(|s| s.padding(10.0).border(1.0))
+        .style(move |s| {
+            s.padding(10.0)
+                .border(1.0)
+                .rotate(rotation.get())
+                .rotate_about(AnchorAbout::CENTER)
+                .transition_rotate(Transition::new(
+                    Duration::from_millis(500),
+                    Spring::snappy(),
+                ))
+                .selectable(true)
+        })
         .context_menu(context_menu);
 
     Stack::vertical((popout_button, context_button)).style(|s| s.selectable(false))

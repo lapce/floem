@@ -77,7 +77,7 @@ pub struct WindowState {
     pub(crate) click_state: ClickState<Rc<[ElementId]>>,
     // TODO: Track hover state per pointer
     pub(crate) hover_state: HoverState<ElementId>,
-    pub(crate) focus_state: FocusState<ElementId>,
+    pub(crate) focus_state: Option<ElementId>,
     pub(crate) file_drag_paths: Option<Rc<[std::path::PathBuf]>>,
     pub(crate) element_id_cursors: FxHashMap<ElementId, CursorStyle>,
     // whether the window is in light or dark mode
@@ -156,7 +156,7 @@ impl WindowState {
             view_style_dirty: Default::default(),
             style_dirty: Default::default(),
             drag_tracker: DragTracker::new(),
-            focus_state: FocusState::new(),
+            focus_state: None,
             click_state: ClickState::new(),
             hover_state: HoverState::new(),
             file_drag_paths: None,
@@ -297,11 +297,7 @@ impl WindowState {
     }
 
     pub fn is_focused(&self, id: impl Into<ElementId>) -> bool {
-        self.focus_state
-            .current_path()
-            .last()
-            .map(|f| *f == id.into())
-            .unwrap_or(false)
+        self.focus_state.map(|f| f == id.into()).unwrap_or(false)
     }
 
     #[deprecated(note = "use `ViewId::is_active` instead")]

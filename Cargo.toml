@@ -133,6 +133,7 @@ objc2-app-kit = { version = "0.3", features = [
   "NSResponder",
   "NSView",
 ] }
+dispatch2 = {version = "0.3.0"}
 
 [features]
 default = ["editor", "default-image-formats", "vger", "serde"]

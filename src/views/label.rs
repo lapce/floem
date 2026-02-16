@@ -681,7 +681,7 @@ impl View for Label {
                 return EventPropagation::Continue;
             }
             Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, pointer, .. })) => {
-                if self.style.text_selectable() {
+                if self.style.text_selectable() && pointer.is_primary_pointer() {
                     self.selection_range = None;
                     self.selection_state = SelectionState::Ready(state.logical_point());
                     if let Some(pointer_id) = pointer.pointer_id {

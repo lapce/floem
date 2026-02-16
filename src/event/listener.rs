@@ -91,7 +91,21 @@ macro_rules! event_listener {
 
 // Built-in event listener unit structs
 event_listener!(
-    /// Receives [`Event::Key`] with `KeyState::Down`
+    /// Receives [`Event::Key`] with `KeyState::Down` — fired when a key is pressed.
+    ///
+    /// # Routing
+    /// Key events are classified as shortcut-like or typing keys:
+    /// - **Shortcut-like** (Ctrl/Cmd/Alt combos, F-keys, Escape, Tab, etc.): Dispatched to the
+    ///   focused element via Capture → Target → Bubble first. If unconsumed (or no view has
+    ///   focus), falls back to all views that registered a key listener via the listener registry.
+    /// - **Typing keys** (unmodified character input, etc.): Dispatched only to the focused
+    ///   element via Capture → Target → Bubble. Dropped if no view has focus.
+    ///
+    /// # Default Actions (preventable with `cx.prevent_default()`)
+    /// - `Tab` (no modifiers): Moves focus to the next focusable element. `Shift+Tab` moves backwards.
+    /// - `Alt+ArrowUp/Down/Left/Right`: Directional focus navigation.
+    /// - `Space`, `Enter`, `NumpadEnter` (on key-up or repeat): Generates [`InteractionEvent::Click`]
+    ///   on the focused element.
     pub KeyDown: ui_events::keyboard::KeyboardEvent,
     |event| {
         if let Event::Key(kb_event) = event {
@@ -104,7 +118,15 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`Event::Key`] with `KeyState::Up`
+    /// Receives [`Event::Key`] with `KeyState::Up` — fired when a key is released.
+    ///
+    /// # Routing
+    /// Same routing as [`KeyDown`]: shortcut-like keys try the focused path first, then fall
+    /// back to the listener registry; typing keys are dispatched only to the focused element.
+    ///
+    /// # Default Actions (preventable with `cx.prevent_default()`)
+    /// - `Space`, `Enter`, `NumpadEnter` (key-up): Generates [`InteractionEvent::Click`] on
+    ///   the focused element. (All other keys on key-up have no preventable default action.)
     pub KeyUp: ui_events::keyboard::KeyboardEvent,
     |event| {
         if let Event::Key(kb_event) = event {
@@ -117,7 +139,16 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`Event::Interaction`] `Click` variant
+    /// Receives [`Event::Interaction`] `Click` variant — a synthetic click generated from a
+    /// pointer Down+Up sequence or a keyboard trigger (`Space`/`Enter` on the focused element).
+    ///
+    /// # Routing
+    /// Dispatched via Capture → Target → Bubble to the common ancestor of the pointer down and
+    /// up targets, or to the focused element for keyboard-triggered clicks.
+    ///
+    /// # Default Actions
+    /// No preventable default action. This event is itself a default action of [`PointerUp`]
+    /// and [`KeyDown`]/[`KeyUp`] events.
     pub Click: (),
     |event| {
         if let Event::Interaction(InteractionEvent::Click) = event {
@@ -128,7 +159,14 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`Event::Interaction`] `DoubleClick` variant
+    /// Receives [`Event::Interaction`] `DoubleClick` variant — fired when two rapid pointer
+    /// clicks occur (pointer up count > 1). Dispatched immediately after the second [`Click`].
+    ///
+    /// # Routing
+    /// Dispatched via Capture → Target → Bubble to the common ancestor of the pointer targets.
+    ///
+    /// # Default Actions
+    /// No preventable default action.
     pub DoubleClick: (),
     |event| {
         if let Event::Interaction(InteractionEvent::DoubleClick) = event {
@@ -139,8 +177,16 @@ event_listener!(
 );
 
 event_listener!(
-/// Receives [`Event::Interaction`] `SecondaryClick` variant
-pub SecondaryClick: (),
+    /// Receives [`Event::Interaction`] `SecondaryClick` variant — fired when a secondary
+    /// (right) pointer button click is detected.
+    ///
+    /// # Routing
+    /// Dispatched via Capture → Target → Bubble to the common ancestor of the pointer targets.
+    ///
+    /// # Default Actions
+    /// No preventable default action. Note: context menus are handled separately via the
+    /// view's context menu configuration, not from this event.
+    pub SecondaryClick: (),
 |event| {
     if let Event::Interaction(InteractionEvent::SecondaryClick) = event {
         return Some(&() as &dyn Any);
@@ -154,10 +200,14 @@ pub SecondaryClick: (),
 // ============================================================================
 
 event_listener!(
-    /// Receives [`DragSourceEvent::Start`] - sent to the element being dragged when the drag operation begins.
+    /// Receives [`DragSourceEvent::Start`] — sent to the element being dragged when the drag
+    /// begins (pointer has moved beyond the drag threshold while a button is held down).
     ///
-    /// This is the first event in the drag lifecycle, fired after the pointer has moved beyond the drag threshold.
-    /// Use this event to set drag data via `event.set_data()` that will be available to drop targets.
+    /// # Routing
+    /// Dispatched to **Target phase only** on the dragged element.
+    ///
+    /// # Default Actions
+    /// No preventable default action.
     pub DragStart: DragStartEvent,
     |event| {
         if let Event::Drag(DragEvent::Source(DragSourceEvent::Start(dse))) = event {
@@ -168,9 +218,14 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`DragSourceEvent::Move`] - sent to the element being dragged as the pointer moves during the drag.
+    /// Receives [`DragSourceEvent::Move`] — sent to the element being dragged as the pointer
+    /// moves during the drag.
     ///
-    /// This event fires continuously as the user drags. Use it to update custom drag previews or track drag position.
+    /// # Routing
+    /// Dispatched to **Target phase only** on the dragged element.
+    ///
+    /// # Default Actions
+    /// No preventable default action.
     pub DragMove: DragMoveEvent,
     |event| {
         if let Event::Drag(DragEvent::Source(DragSourceEvent::Move(dme))) = event {
@@ -181,10 +236,14 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`DragSourceEvent::Enter`] - sent to the element being dragged when it enters a potential drop target.
+    /// Receives [`DragSourceEvent::Enter`] — sent to the element being dragged when it enters
+    /// a potential drop target. `other_element` identifies the drop target that was entered.
     ///
-    /// `other_element` in the event data identifies the drop target that was entered.
-    /// Use this to update drag preview appearance when hovering over valid drop zones.
+    /// # Routing
+    /// Dispatched to **Target phase only** on the dragged element.
+    ///
+    /// # Default Actions
+    /// No preventable default action.
     pub DragSourceEnter: DragEnterEvent,
     |event| {
         if let Event::Drag(DragEvent::Source(DragSourceEvent::Enter(dee))) = event {
@@ -195,10 +254,15 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`DragSourceEvent::Leave`] - sent to the element being dragged when it leaves a potential drop target.
+    /// Receives [`DragSourceEvent::Leave`] — sent to the element being dragged when it leaves
+    /// a potential drop target. `other_element` identifies the drop target that was left.
     ///
-    /// `other_element` in the event data identifies the drop target that was left.
-    /// Use this to restore default drag preview appearance when leaving drop zones.
+    /// # Routing
+    /// Dispatched to **Target phase only** on the dragged element.
+    ///
+    /// # Default Actions
+    /// No preventable default action. Note: disabled views can still receive this event to
+    /// clean up internal drag state if the view was disabled mid-drag.
     pub DragSourceLeave: DragLeaveEvent,
     |event| {
         if let Event::Drag(DragEvent::Source(DragSourceEvent::Leave(dle))) = event {
@@ -209,11 +273,16 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`DragSourceEvent::End`] - sent to the element being dragged when the drag completes successfully.
+    /// Receives [`DragSourceEvent::End`] — sent to the element being dragged when the pointer
+    /// is released. `other_element` is `Some(target_id)` if released over a drop target,
+    /// or `None` if released without a target under the pointer.
     ///
-    /// `other_element` in the event data is the drop target that accepted the drop.
-    /// This event is only sent if a target accepted the drop via `prevent_default()`.
-    /// Use this to perform cleanup or update state after a successful drop.
+    /// # Routing
+    /// Dispatched to **Target phase only** on the dragged element.
+    ///
+    /// # Default Actions
+    /// No preventable default action. Note: disabled views can still receive this event to
+    /// clean up internal drag state if the view was disabled mid-drag.
     pub DragEnd: DragEndEvent,
     |event| {
         if let Event::Drag(DragEvent::Source(DragSourceEvent::End(dde))) = event {
@@ -224,15 +293,18 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`DragSourceEvent::Cancel`] - sent to the element being dragged when the drag is cancelled.
+    /// Receives [`DragSourceEvent::Cancel`] — sent to the element being dragged when the drag
+    /// is cancelled. Cancellation occurs when:
+    /// - The pointer is released but no drop target called `cx.prevent_default()` to accept
+    /// - The pointer leaves the window
+    /// - `PointerCancel` fires (e.g., touch interrupted)
     ///
-    /// Drag cancellation occurs when:
-    /// - User presses Escape key
-    /// - Pointer leaves the window
-    /// - No drop target accepted the drop
-    /// - Pointer capture is lost unexpectedly
+    /// # Routing
+    /// Dispatched to **Target phase only** on the dragged element.
     ///
-    /// Use this to restore original state or undo any changes made during the drag.
+    /// # Default Actions
+    /// No preventable default action. Note: disabled views can still receive this event to
+    /// clean up internal drag state if the view was disabled mid-drag.
     pub DragCancel: DragCancelEvent,
     |event| {
         if let Event::Drag(DragEvent::Source(DragSourceEvent::Cancel(dce))) = event {
@@ -247,10 +319,14 @@ event_listener!(
 // ============================================================================
 
 event_listener!(
-    /// Receives [`DragTargetEvent::Enter`] - sent to a drop target when a dragged element enters its bounds.
+    /// Receives [`DragTargetEvent::Enter`] — sent to a drop target when a dragged element enters
+    /// its bounds. `other_element` identifies the element being dragged.
     ///
-    /// `other_element` in the event data identifies the element being dragged (the drag source).
-    /// Use this to show visual feedback that the element can accept drops (e.g., highlight border, show drop indicator).
+    /// # Routing
+    /// Dispatched to **Target phase only** on the drop target element.
+    ///
+    /// # Default Actions
+    /// No preventable default action.
     pub DragTargetEnter: DragEnterEvent,
     |event| {
         if let Event::Drag(DragEvent::Target(DragTargetEvent::Enter(dee))) = event {
@@ -261,10 +337,15 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`DragTargetEvent::Move`] - sent to a drop target as the pointer moves while a dragged element is over it.
+    /// Receives [`DragTargetEvent::Move`] — sent to a drop target as the pointer moves while
+    /// a dragged element is over it. `other_element` identifies the element being dragged.
     ///
-    /// `other_element` in the event data identifies the element being dragged.
-    /// Use this to update drop position indicators or highlight specific drop zones within the target.
+    /// # Routing
+    /// Dispatched via Capture → Target → Bubble on the drop target element (the only drag
+    /// target event that uses standard phases).
+    ///
+    /// # Default Actions
+    /// No preventable default action.
     pub DragTargetMove: DragMoveEvent,
     |event| {
         if let Event::Drag(DragEvent::Target(DragTargetEvent::Move(dme))) = event {
@@ -275,10 +356,14 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`DragTargetEvent::Leave`] - sent to a drop target when a dragged element leaves its bounds.
+    /// Receives [`DragTargetEvent::Leave`] — sent to a drop target when a dragged element
+    /// leaves its bounds. `other_element` identifies the element being dragged.
     ///
-    /// `other_element` in the event data identifies the element being dragged.
-    /// Use this to remove visual feedback (e.g., remove highlight, hide drop indicator).
+    /// # Routing
+    /// Dispatched to **Target phase only** on the drop target element.
+    ///
+    /// # Default Actions
+    /// No preventable default action.
     pub DragTargetLeave: DragLeaveEvent,
     |event| {
         if let Event::Drag(DragEvent::Target(DragTargetEvent::Leave(dle))) = event {
@@ -289,13 +374,19 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`DragTargetEvent::Drop`] - sent to a drop target when a dragged element is dropped on it.
+    /// Receives [`DragTargetEvent::Drop`] — sent to a drop target when a dragged element is
+    /// released over it. `other_element` identifies the element being dragged.
     ///
-    /// `other_element` in the event data identifies the element being dragged.
-    /// Access drag data via `event.data.downcast_ref::<YourType>()`.
+    /// # Routing
+    /// Dispatched to **Target phase only** on the drop target element.
     ///
-    /// **Important**: Call `cx.prevent_default()` to accept the drop. If not called, the drag will be cancelled
-    /// and the source will receive `DragCancel` instead of `DragEnd`.
+    /// The drag source simultaneously receives [`DragSourceEvent::End`] with `other_element`
+    /// set to this target's ID. The source only receives [`DragSourceEvent::Cancel`] if the
+    /// drag was aborted by a `PointerCancel` event (e.g., touch interrupted), not based on
+    /// whether this event is handled.
+    ///
+    /// # Default Actions
+    /// No preventable default action.
     pub DragTargetDrop: DragEndEvent,
     |event| {
         if let Event::Drag(DragEvent::Target(DragTargetEvent::Drop(dde))) = event {
@@ -306,7 +397,15 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`Event::Pointer`] `Down` variant
+    /// Receives [`Event::Pointer`] `Down` variant — fired when a pointer button is pressed.
+    ///
+    /// # Routing
+    /// Spatially hit-tested at the pointer location, then dispatched via Capture → Target →
+    /// Bubble. If the pointer is captured by an element, routed directly to that element instead.
+    ///
+    /// # Default Actions (preventable with `cx.prevent_default()`)
+    /// - Moves keyboard focus to the hit element (fires synthetic `FocusLost`/`FocusGained`).
+    /// - On macOS: shows context menu on secondary button press.
     pub PointerDown: PointerButtonEvent,
     |event| {
         if let Event::Pointer(PointerEvent::Down(pbe)) = event {
@@ -317,7 +416,16 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`Event::Pointer`] `Move` variant
+    /// Receives [`Event::Pointer`] `Move` variant — fired when the pointer moves.
+    ///
+    /// # Routing
+    /// Spatially hit-tested at the pointer location, then dispatched via Capture → Target →
+    /// Bubble. If the pointer is captured by an element, routed directly to that element instead.
+    ///
+    /// # Default Actions (preventable with `cx.prevent_default()`)
+    /// - If the pointer has moved beyond the drag threshold while a button is held, begins a
+    ///   drag operation (`DragSourceEvent::Start` fires).
+    /// - While a drag is active, fires drag source/target move and enter/leave events.
     pub PointerMove: PointerUpdate,
     |event| {
         if let Event::Pointer(PointerEvent::Move(pu)) = event {
@@ -328,7 +436,17 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`Event::Pointer`] `Up` variant
+    /// Receives [`Event::Pointer`] `Up` variant — fired when a pointer button is released.
+    ///
+    /// # Routing
+    /// Spatially hit-tested at the pointer location, then dispatched via Capture → Target →
+    /// Bubble. If the pointer is captured by an element, routed directly to that element instead.
+    ///
+    /// # Default Actions (preventable with `cx.prevent_default()`)
+    /// - Ends any active drag (fires `DragSourceEvent::End` or `DragSourceEvent::Cancel`
+    ///   depending on whether a target accepted).
+    /// - Releases pointer capture unconditionally.
+    /// - On non-macOS platforms: shows context menu on secondary button release.
     pub PointerUp: PointerButtonEvent,
     |event| {
         if let Event::Pointer(PointerEvent::Up(pbe)) = event {
@@ -339,7 +457,16 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`Event::Pointer`] `Enter` variant
+    /// Receives [`Event::Pointer`] `Enter` variant — fired when the pointer enters a view's bounds.
+    ///
+    /// # Routing
+    /// Dispatched to the **Target phase only** (no capture/bubble). Generated synthetically by
+    /// the hover state machine when a view enters the hover path. Ancestor views do not receive
+    /// this event — use [`AnyPointer`] or [`PointerMove`] and inspect the hit path if needed.
+    ///
+    /// # Default Actions
+    /// No preventable default action. This event is itself generated as a side effect of
+    /// [`PointerMove`] and pointer capture routing.
     pub PointerEnter: PointerInfo,
     |event| {
         if let Event::Pointer(PointerEvent::Enter(info)) = event {
@@ -350,7 +477,16 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`Event::Pointer`] `Leave` variant
+    /// Receives [`Event::Pointer`] `Leave` variant — fired when the pointer leaves a view's bounds.
+    ///
+    /// # Routing
+    /// Dispatched to the **Target phase only** (no capture/bubble). Generated synthetically by
+    /// the hover state machine when a view leaves the hover path.
+    ///
+    /// # Default Actions
+    /// No preventable default action. This event is itself generated as a side effect of
+    /// [`PointerMove`] and [`PointerLeave`] (window-level) default actions. Note: disabled
+    /// views can still receive this event to update their internal hover state.
     pub PointerLeave: PointerInfo,
     |event| {
         if let Event::Pointer(PointerEvent::Leave(info)) = event {
@@ -361,7 +497,16 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`Event::Pointer`] `Cancel` variant
+    /// Receives [`Event::Pointer`] `Cancel` variant — fired when a pointer gesture is cancelled
+    /// by the system (e.g., window loses focus, touch is interrupted).
+    ///
+    /// # Routing
+    /// Spatially hit-tested or directed to the capturing element. Dispatched via Capture →
+    /// Target → Bubble.
+    ///
+    /// # Default Actions (preventable with `cx.prevent_default()`)
+    /// - Aborts any active drag (`DragSourceEvent::Cancel` fires).
+    /// - Releases pointer capture unconditionally.
     pub PointerCancel: PointerInfo,
     |event| {
         if let Event::Pointer(PointerEvent::Cancel(info)) = event {
@@ -372,7 +517,16 @@ event_listener!(
 );
 
 event_listener!(
-    /// Fired when a view gains pointer capture
+    /// Receives [`PointerCaptureEvent::Gained`] — fired after a view successfully gains pointer
+    /// capture (following a `cx.request_pointer_capture()` call in a `PointerDown` handler).
+    ///
+    /// # Routing
+    /// Dispatched to the **Target phase only** on the capturing element. Fired after the current
+    /// event completes, not immediately when `request_pointer_capture` is called.
+    ///
+    /// # Default Actions
+    /// No preventable default action. Call `cx.start_drag(drag_token, config, use_preview)` in
+    /// this handler to initiate a drag operation.
     pub GainedPointerCapture: DragToken,
     |event| {
         if let Event::PointerCapture(PointerCaptureEvent::Gained(token)) = event {
@@ -389,7 +543,15 @@ event_listener!(
 pub const GotPointerCapture: GainedPointerCapture = GainedPointerCapture;
 
 event_listener!(
-    /// Fired when a view loses pointer capture
+    /// Receives [`PointerCaptureEvent::Lost`] — fired when a view loses pointer capture (on
+    /// `PointerUp`, `PointerCancel`, or explicit release).
+    ///
+    /// # Routing
+    /// Dispatched to the **Target phase only** on the element that had capture.
+    ///
+    /// # Default Actions
+    /// No preventable default action. Use this event to clean up internal state associated with
+    /// pointer capture. Note: disabled views can still receive this event to clean up state.
     pub LostPointerCapture: PointerId,
     |event| {
         if let Event::PointerCapture(PointerCaptureEvent::Lost(id)) = event {
@@ -400,7 +562,13 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`Event::Pointer`] `Gesture` variant with `PinchGesture`
+    /// Receives [`Event::Pointer`] `Gesture` variant — fired for touchpad pinch/zoom gestures.
+    ///
+    /// # Routing
+    /// Spatially hit-tested at the pointer location, then dispatched via Capture → Target → Bubble.
+    ///
+    /// # Default Actions
+    /// No preventable default action.
     pub PinchGesture: PointerGestureEvent,
     |event| {
         if let Event::Pointer(PointerEvent::Gesture(pge)) = event {
@@ -411,7 +579,13 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`Event::Ime`] `Enabled` variant
+    /// Receives [`Event::Ime`] `Enabled` variant — fired when IME composition is activated.
+    ///
+    /// # Routing
+    /// Dispatched to the focused element via Capture → Target → Bubble.
+    ///
+    /// # Default Actions
+    /// No preventable default action.
     pub ImeEnabled: (),
     |event| {
         if let Event::Ime(ImeEvent::Enabled) = event {
@@ -422,7 +596,13 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`Event::Ime`] `Disabled` variant
+    /// Receives [`Event::Ime`] `Disabled` variant — fired when IME composition ends.
+    ///
+    /// # Routing
+    /// Dispatched to the focused element via Capture → Target → Bubble.
+    ///
+    /// # Default Actions
+    /// No preventable default action.
     pub ImeDisabled: (),
     |event| {
         if let Event::Ime(ImeEvent::Disabled) = event {
@@ -433,7 +613,13 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`Event::Ime`] `Preedit` variant
+    /// Receives [`Event::Ime`] `Preedit` variant — fired when the IME composition text updates.
+    ///
+    /// # Routing
+    /// Dispatched to the focused element via Capture → Target → Bubble.
+    ///
+    /// # Default Actions
+    /// No preventable default action.
     pub ImePreedit: ImeEvent,
     |event| {
         if let Event::Ime(e@ ImeEvent::Preedit { .. }) = event {
@@ -444,7 +630,13 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`Event::Ime`] `Commit` variant
+    /// Receives [`Event::Ime`] `Commit` variant — fired when IME composition produces final text.
+    ///
+    /// # Routing
+    /// Dispatched to the focused element via Capture → Target → Bubble.
+    ///
+    /// # Default Actions
+    /// No preventable default action.
     pub ImeCommit: String,
     |event| {
         if let Event::Ime(ImeEvent::Commit(text)) = event {
@@ -455,7 +647,14 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`Event::Ime`] `DeleteSurrounding` variant
+    /// Receives [`Event::Ime`] `DeleteSurrounding` variant — fired when the IME requests that
+    /// text surrounding the cursor be deleted (before/after selection).
+    ///
+    /// # Routing
+    /// Dispatched to the focused element via Capture → Target → Bubble.
+    ///
+    /// # Default Actions
+    /// No preventable default action.
     pub ImeDeleteSurrounding: ImeEvent,
     |event| {
         if let Event::Ime(e@ ImeEvent::DeleteSurrounding { .. }) = event {
@@ -466,7 +665,14 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`Event::Pointer`] `Scroll` variant
+    /// Receives [`Event::Pointer`] `Scroll` variant — fired for scroll wheel or touchpad scroll.
+    ///
+    /// # Routing
+    /// Spatially hit-tested at the pointer location, then dispatched via Capture → Target → Bubble.
+    ///
+    /// # Default Actions
+    /// No preventable default action. Use [`PointerScrollEventExt::resolve_to_points`] to
+    /// convert scroll deltas to pixel values accounting for line and page sizes.
     pub PointerWheel: PointerScrollEvent,
     |event| {
         if let Event::Pointer(PointerEvent::Scroll(pse)) = event {
@@ -576,7 +782,15 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`Event::Window`] `ThemeChanged` variant
+    /// Receives [`Event::Window`] `ThemeChanged` variant — fired when the system theme changes
+    /// (e.g., light to dark mode).
+    ///
+    /// # Routing
+    /// Dispatched to **Target phase only** on all views that have registered this listener.
+    /// Views that do not register a listener do not receive window events.
+    ///
+    /// # Default Actions
+    /// No preventable default action.
     pub ThemeChanged: winit::window::Theme,
     |event| {
         if let Event::Window(WindowEvent::ThemeChanged(theme)) = event {
@@ -587,7 +801,13 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`Event::Window`] `Closed` variant
+    /// Receives [`Event::Window`] `Closed` variant — fired when the window is closed.
+    ///
+    /// # Routing
+    /// Dispatched to **Target phase only** on all views that have registered this listener.
+    ///
+    /// # Default Actions
+    /// No preventable default action.
     pub WindowClosed: (),
     |event| {
         if let Event::Window(WindowEvent::Closed) = event {
@@ -598,7 +818,13 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`Event::Window`] `Resized` variant
+    /// Receives [`Event::Window`] `Resized` variant — fired when the window size changes.
+    ///
+    /// # Routing
+    /// Dispatched to **Target phase only** on all views that have registered this listener.
+    ///
+    /// # Default Actions
+    /// No preventable default action.
     pub WindowResized: Size,
     |event| {
         if let Event::Window(WindowEvent::Resized(size)) = event {
@@ -609,7 +835,13 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`Event::Window`] `Moved` variant
+    /// Receives [`Event::Window`] `Moved` variant — fired when the window is moved.
+    ///
+    /// # Routing
+    /// Dispatched to **Target phase only** on all views that have registered this listener.
+    ///
+    /// # Default Actions
+    /// No preventable default action.
     pub WindowMoved: Point,
     |event| {
         if let Event::Window(WindowEvent::Moved(pos)) = event {
@@ -620,7 +852,14 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`Event::Window`] `FocusGained` variant
+    /// Receives [`Event::Window`] `FocusGained` variant — fired when the window gains OS-level
+    /// input focus (distinct from view-level focus tracked by [`FocusGained`]).
+    ///
+    /// # Routing
+    /// Dispatched to **Target phase only** on all views that have registered this listener.
+    ///
+    /// # Default Actions
+    /// No preventable default action.
     pub WindowGainedFocus: (),
     |event| {
         if let Event::Window(WindowEvent::FocusGained) = event {
@@ -631,7 +870,14 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`Event::Window`] `FocusLost` variant
+    /// Receives [`Event::Window`] `FocusLost` variant — fired when the window loses OS-level
+    /// input focus (distinct from view-level focus tracked by [`FocusLost`]).
+    ///
+    /// # Routing
+    /// Dispatched to **Target phase only** on all views that have registered this listener.
+    ///
+    /// # Default Actions
+    /// No preventable default action.
     pub WindowLostFocus: (),
     |event| {
         if let Event::Window(WindowEvent::FocusLost) = event {
@@ -642,7 +888,14 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`Event::Window`] `MaximizeChanged` variant
+    /// Receives [`Event::Window`] `MaximizeChanged` variant — fired when the window's maximized
+    /// state changes. The boolean is `true` if now maximized.
+    ///
+    /// # Routing
+    /// Dispatched to **Target phase only** on all views that have registered this listener.
+    ///
+    /// # Default Actions
+    /// No preventable default action.
     pub WindowMaximizeChanged: bool,
     |event| {
         if let Event::Window(WindowEvent::MaximizeChanged(maximized)) = event {
@@ -653,7 +906,14 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`Event::Window`] `ScaleChanged` variant
+    /// Receives [`Event::Window`] `ScaleChanged` variant — fired when the window's DPI scale
+    /// factor changes (e.g., when moved to a different display).
+    ///
+    /// # Routing
+    /// Dispatched to **Target phase only** on all views that have registered this listener.
+    ///
+    /// # Default Actions
+    /// No preventable default action.
     pub WindowScaleChanged: f64,
     |event| {
         if let Event::Window(WindowEvent::ScaleChanged(scale)) = event {
@@ -664,7 +924,15 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives `Event::Window` `UpdatePhase(ProcessingMessages)` variant
+    /// Receives `Event::Window(UpdatePhase(ProcessingMessages))` — fired at the start of the
+    /// update cycle's message processing phase.
+    ///
+    /// # Routing
+    /// Dispatched to **Target phase only** on all views that have registered this listener.
+    /// Not all phases run every cycle; a single phase may run multiple times per cycle.
+    ///
+    /// # Default Actions
+    /// No preventable default action.
     pub UpdatePhaseProcessingMessages: (),
     |event| {
         if let Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::ProcessingMessages)) = event {
@@ -674,7 +942,14 @@ event_listener!(
     }
 );
 event_listener!(
-    /// Receives `Event::Window` `UpdatePhase(Style)` variant
+    /// Receives `Event::Window(UpdatePhase(Style))` — fired during the style resolution phase.
+    ///
+    /// # Routing
+    /// Dispatched to **Target phase only** on all views that have registered this listener.
+    /// Not all phases run every cycle; a single phase may run multiple times per cycle.
+    ///
+    /// # Default Actions
+    /// No preventable default action.
     pub UpdatePhaseStyle: (),
     |event| {
         if let Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::Style)) = event {
@@ -684,7 +959,14 @@ event_listener!(
     }
 );
 event_listener!(
-    /// Receives `Event::Window` `UpdatePhase(Layout)` variant
+    /// Receives `Event::Window(UpdatePhase(Layout))` — fired during the layout computation phase.
+    ///
+    /// # Routing
+    /// Dispatched to **Target phase only** on all views that have registered this listener.
+    /// Not all phases run every cycle; a single phase may run multiple times per cycle.
+    ///
+    /// # Default Actions
+    /// No preventable default action.
     pub UpdatePhaseLayout: (),
     |event| {
         if let Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::Layout)) = event {
@@ -694,7 +976,15 @@ event_listener!(
     }
 );
 event_listener!(
-    /// Receives `Event::Window` `UpdatePhase(BoxTreeUpdate)` variant
+    /// Receives `Event::Window(UpdatePhase(BoxTreeUpdate))` — fired when the box tree is being
+    /// updated from layout results.
+    ///
+    /// # Routing
+    /// Dispatched to **Target phase only** on all views that have registered this listener.
+    /// Not all phases run every cycle; a single phase may run multiple times per cycle.
+    ///
+    /// # Default Actions
+    /// No preventable default action.
     pub UpdatePhaseBoxTreeUpdate: (),
     |event| {
         if let Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::BoxTreeUpdate)) = event {
@@ -704,7 +994,15 @@ event_listener!(
     }
 );
 event_listener!(
-    /// Receives `Event::Window` `UpdatePhase(BoxTreePendingUpdates)` variant
+    /// Receives `Event::Window(UpdatePhase(BoxTreePendingUpdates))` — fired when incremental
+    /// box tree changes for specific views are being processed.
+    ///
+    /// # Routing
+    /// Dispatched to **Target phase only** on all views that have registered this listener.
+    /// Not all phases run every cycle; a single phase may run multiple times per cycle.
+    ///
+    /// # Default Actions
+    /// No preventable default action.
     pub UpdatePhaseBoxTreePendingUpdates: (),
     |event| {
         if let Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::BoxTreePendingUpdates)) = event {
@@ -714,7 +1012,15 @@ event_listener!(
     }
 );
 event_listener!(
-    /// Receives `Event::Window` `UpdatePhase(BoxTreeCommit)` variant
+    /// Receives `Event::Window(UpdatePhase(BoxTreeCommit))` — fired when box tree changes are
+    /// being committed (finalized before painting).
+    ///
+    /// # Routing
+    /// Dispatched to **Target phase only** on all views that have registered this listener.
+    /// Not all phases run every cycle; a single phase may run multiple times per cycle.
+    ///
+    /// # Default Actions
+    /// No preventable default action.
     pub UpdatePhaseBoxTreeCommit: (),
     |event| {
         if let Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::BoxTreeCommit)) = event {
@@ -724,7 +1030,15 @@ event_listener!(
     }
 );
 event_listener!(
-    /// Receives `Event::Window` `UpdatePhase(Complete)` variant
+    /// Receives `Event::Window(UpdatePhase(Complete))` — fired when the entire update cycle
+    /// is complete and the window is ready for painting if needed.
+    ///
+    /// # Routing
+    /// Dispatched to **Target phase only** on all views that have registered this listener.
+    /// Not all phases run every cycle; a single phase may run multiple times per cycle.
+    ///
+    /// # Default Actions
+    /// No preventable default action.
     pub UpdatePhaseComplete: (),
     |event| {
         if let Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::Complete)) = event {
@@ -735,7 +1049,14 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives `Event::FileDrag` `Dropped` variant
+    /// Receives [`FileDragEvent::Drop`] — fired when files are dropped onto a view.
+    ///
+    /// # Routing
+    /// Spatially hit-tested at the drop location. Dispatched to **Target phase only**.
+    ///
+    /// # Default Actions
+    /// No preventable default action. The application must handle the dropped files. Note:
+    /// disabled views can still receive this event for accessibility reasons.
     pub FileDragDrop: crate::event::dropped_file::FileDragDropped,
     |event| {
         if let Event::FileDrag(FileDragEvent::Drop(data)) = event {
@@ -746,7 +1067,14 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives `Event::FileDrag` `Enter` variant
+    /// Receives [`FileDragEvent::Enter`] — fired when files being dragged enter a view's bounds.
+    ///
+    /// # Routing
+    /// Dispatched to **Target phase only**. Generated synthetically by the file-drag hover state
+    /// machine when files enter the view's bounds.
+    ///
+    /// # Default Actions
+    /// No preventable default action.
     pub FileDragEnter: crate::event::dropped_file::FileDragEnter,
     |event| {
         if let Event::FileDrag(FileDragEvent::Enter(data)) = event {
@@ -757,7 +1085,13 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives `Event::FileDrag` `Move` variant
+    /// Receives [`FileDragEvent::Move`] — fired as files are dragged over a view.
+    ///
+    /// # Routing
+    /// Spatially hit-tested at the drag location. Dispatched to **Target phase only**.
+    ///
+    /// # Default Actions
+    /// No preventable default action.
     pub FileDragMove: crate::event::dropped_file::FileDragMove,
     |event| {
         if let Event::FileDrag(FileDragEvent::Move(data)) = event {
@@ -768,7 +1102,14 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives `Event::FileDrag` `Leave` variant
+    /// Receives [`FileDragEvent::Leave`] — fired when files being dragged leave a view's bounds.
+    ///
+    /// # Routing
+    /// Dispatched to **Target phase only**. Generated synthetically by the file-drag hover state
+    /// machine when files leave the view's bounds.
+    ///
+    /// # Default Actions
+    /// No preventable default action.
     pub FileDragLeave: crate::event::dropped_file::FileDragLeave,
     |event| {
         if let Event::FileDrag(FileDragEvent::Leave(data)) = event {
@@ -779,7 +1120,16 @@ event_listener!(
 );
 
 event_listener!(
-    /// Receives [`Event::Window`] `ChangeUnderCursor` variant
+    /// Receives [`Event::Window`] `ChangeUnderCursor` variant — fired when the element under the
+    /// cursor changes (e.g., after a layout update or view tree change at the current pointer position).
+    ///
+    /// # Routing
+    /// Dispatched to **Target phase only** on all views that have registered this listener.
+    /// Also triggers a hover state update from the last known pointer position, which may
+    /// generate synthetic `PointerEnter`/`PointerLeave` events.
+    ///
+    /// # Default Actions
+    /// No preventable default action.
     pub WindowChangeUnderCursor: (),
     |event| {
         if let Event::Window(WindowEvent::ChangeUnderCursor) = event {

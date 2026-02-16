@@ -139,7 +139,6 @@ use std::collections::HashMap;
 use std::fmt::{self, Debug};
 use std::rc::Rc;
 use taffy::GridTemplateComponent;
-use understory_box_tree::NodeFlags;
 
 pub use taffy::style::{
     AlignContent, AlignItems, BoxSizing, Dimension, Display, FlexDirection, FlexWrap,
@@ -159,7 +158,7 @@ use crate::layout::responsive::{ScreenSize, ScreenSizeBp};
 use crate::style::components::Focus;
 use crate::views::editor::SelectionColor;
 // Import macros from crate root (they are #[macro_export] in props.rs)
-use crate::{BoxTree, ElementId, prop, prop_extractor};
+use crate::{prop, prop_extractor};
 
 mod cache;
 mod components;
@@ -1825,7 +1824,6 @@ prop_extractor! {
 prop_extractor! {
     pub(crate) LayoutProps {
         // display is used here to just to properly trigger transitions on layout change. it is not transitioned here
-        pub display: DisplayProp,
         pub border: BorderProp,
         pub padding: PaddingProp,
         pub margin: MarginProp,

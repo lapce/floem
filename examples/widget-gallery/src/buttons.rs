@@ -1,11 +1,14 @@
+use std::time::Duration;
+
 use floem::{
     IntoView,
+    easing::Spring,
     peniko::{Color, color::palette},
     prelude::{
         palette::css::{DARK_GRAY, WHITE_SMOKE},
         *,
     },
-    style::CursorStyle,
+    style::{CursorStyle, Transition},
     theme::StyleThemeExt,
     views::{Button, Decorators, ToggleButton, ToggleHandleBehavior},
 };
@@ -14,10 +17,18 @@ use crate::form::{form, form_item};
 
 pub fn button_view() -> impl IntoView {
     let state = RwSignal::new(false);
+    let transition = || Transition::new(Duration::from_millis(100), Spring::snappy());
+
     form((
         form_item(
             "Basic Button:",
-            Button::new("Click me").action(|| println!("Button clicked")),
+            Button::new("Click me")
+                .action(move || println!("Button clicked"))
+                .style(move |s| {
+                    s.active(|s| s.scale(90.pct()))
+                        .transition_scale_x(transition())
+                        .transition_scale_y(transition())
+                }),
         ),
         form_item(
             "Styled Button:",

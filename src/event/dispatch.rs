@@ -9,9 +9,8 @@ use ui_events::{
     pointer::{PointerButton, PointerButtonEvent, PointerEvent, PointerId, PointerInfo},
 };
 use understory_box_tree::NodeFlags;
-use understory_event_state::{
-    click::ClickResult, focus::FocusEvent as UnderFocusEvent, hover::HoverEvent,
-};
+use understory_event_state::{click::ClickResult, hover::HoverEvent};
+use winit::keyboard::KeyCode;
 
 use crate::{
     BoxTree, ElementId, ViewId,
@@ -99,19 +98,11 @@ fn run_dispatch(
 /// Builds the ancestor chain from target to root by walking up the box tree.
 ///
 /// Returns a vector of VisualIds ordered from target to root: [target, parent1, parent2, ..., root]
-///
-/// # Arguments
-/// * `target` - The starting VisualId (deepest node in the tree)
-/// * `root_view_id` - The root ViewId for constructing VisualIds from box tree NodeIds
-/// * `box_tree` - The box tree to traverse for parent relationships
-///
-/// # Returns
-/// Vector of VisualIds from target to root, or just [target] if no parents found
 fn build_ancestor_chain(target: ElementId, box_tree: &BoxTree) -> SmallVec<[ElementId; 64]> {
     let mut path = SmallVec::new();
     let mut current = target;
     let mut visited = std::collections::HashSet::new();
-    const MAX_DEPTH: usize = 1000; // Prevent runaway loops
+    const MAX_DEPTH: usize = 1000;
 
     visited.insert(current.0);
     path.push(current);
@@ -119,7 +110,6 @@ fn build_ancestor_chain(target: ElementId, box_tree: &BoxTree) -> SmallVec<[Elem
     while let Some(parent_node) = box_tree.parent_of(current.0) {
         current = box_tree.meta(parent_node).flatten().unwrap();
 
-        // Cycle detection
         if !visited.insert(current.0) || path.len() >= MAX_DEPTH {
             eprintln!("Warning: Detected cycle or excessive depth in box tree parent chain");
             break;
@@ -132,11 +122,6 @@ fn build_ancestor_chain(target: ElementId, box_tree: &BoxTree) -> SmallVec<[Elem
 }
 
 /// Iterator that yields `Dispatch` items for capture/target/bubble phases.
-///
-/// Given an ancestor chain [target, parent1, parent2, ..., root], yields:
-/// - Capture phase: root -> parent2 -> parent1 (excluding target)
-/// - Target phase: target
-/// - Bubble phase: parent1 -> parent2 (excluding target and root)
 struct DispatchSequenceIter {
     ancestor_chain: SmallVec<[ElementId; 64]>,
     phase: DispatchPhase,
@@ -171,8 +156,6 @@ impl Iterator for DispatchSequenceIter {
 
         match self.phase {
             DispatchPhase::Capture => {
-                // ancestor_chain = [target, parent1, parent2, ..., root]
-                // Capture emits: root, parent_{n-1}, ..., parent1 (excluding target)
                 let capture_count = self.ancestor_chain.len().saturating_sub(1);
                 if self.index < capture_count {
                     let idx = self.ancestor_chain.len() - 1 - self.index;
@@ -191,10 +174,9 @@ impl Iterator for DispatchSequenceIter {
                 Some(Dispatch::target(target))
             }
             DispatchPhase::Bubble => {
-                // Bubble: parent1 to root (excluding target and root)
                 let bubble_count = self.ancestor_chain.len().saturating_sub(2);
                 if self.index < bubble_count {
-                    let idx = self.index + 1; // skip target at index 0
+                    let idx = self.index + 1;
                     let element_id = self.ancestor_chain[idx];
                     self.index += 1;
                     Some(Dispatch::bubble(element_id))
@@ -208,59 +190,12 @@ impl Iterator for DispatchSequenceIter {
     }
 }
 
-/// Builds a capture/target/bubble dispatch iterator for a target.
-///
-/// Returns an iterator that yields FloemDispatch items without intermediate allocations.
-///
-/// # Arguments
-/// * `target` - The target VisualId
-/// * `root_view_id` - The root ViewId
-/// * `box_tree` - The box tree to traverse
-///
-/// # Returns
-/// Iterator over dispatch sequence with all phases
 fn build_capture_bubble_path(target: ElementId, box_tree: &BoxTree) -> DispatchSequenceIter {
     let ancestor_chain = build_ancestor_chain(target, box_tree);
     DispatchSequenceIter::new(ancestor_chain)
 }
 
-/// Walk up the box tree from `target`, yielding each ancestor filtered by `predicate`,
-/// then reverse so the result is root→target order.
-fn build_focus_path(
-    target: ElementId,
-    box_tree: &BoxTree,
-    keyboard_navigation: bool,
-) -> SmallVec<[ElementId; 64]> {
-    let mut path: SmallVec<[ElementId; 64]> = std::iter::successors(Some(target), |&cur| {
-        box_tree
-            .parent_of(cur.0)
-            .map(|p| box_tree.meta(p).flatten().unwrap())
-    })
-    .filter(|id| {
-        box_tree
-            .flags(id.0)
-            .map(|f| {
-                f.contains(NodeFlags::VISIBLE)
-                    && (if keyboard_navigation {
-                        // For keyboard navigation, node must be keyboard navigable
-                        // (which (at least in Floem) implies focusable)
-                        f.contains(NodeFlags::KEYBOARD_NAVIGABLE)
-                    } else {
-                        // For non-keyboard navigation, node must be focusable
-                        f.contains(NodeFlags::FOCUSABLE)
-                    })
-            })
-            .unwrap_or(false)
-    })
-    .collect();
-    path.reverse();
-    path
-}
-
 /// Defines the routing strategy for dispatching events through the view tree.
-///
-/// Different event types require different routing behaviors. This enum encapsulates
-/// the routing strategies used in Floem's event system.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RouteKind {
     /// Route to a specific target with customizable phases.
@@ -270,107 +205,613 @@ pub enum RouteKind {
     },
 
     /// Route to the currently focused view with specified phases.
-    /// If no view has focus, the event is not delivered.
-    /// This is a like the [Self::Directed] but is a convenience variant that automatically resolves to the focused target.
     Focused { phases: crate::context::Phases },
 
     /// Route based on spatial hit testing at a point (pointer events).
-    /// The target is determined by performing a hit test at the given point,
-    /// then the event is dispatched using the specified phases.
-    ///
-    /// If no point is supplied the event's point method will be invoked.
-    /// If the event also does not have a point the event will not dispatch to any view.
     Spatial {
         point: Option<Point>,
         phases: crate::context::Phases,
     },
 
     /// Route to a target and all its descendants.
-    /// The event is delivered to the target and every view in its subtree.
-    /// If `respect_propagation` is true, propagation can be stopped by event handlers.
-    /// If false, all views in the subtree will receive the event regardless.
     Subtree {
         target: ElementId,
         respect_propagation: bool,
     },
 
     /// Broadcast to all views in DOM order (global broadcast).
-    /// If `respect_propagation` is true, propagation can be stopped by event handlers.
-    /// If false, all views will receive the event regardless. Use for window-wide events
-    /// that all views should receive.
-    /// This is like subtree but automatically targets the window root
     Broadcast { respect_propagation: bool },
 }
 
 /// Event routing data containing routing strategy and event source.
-///
-/// This struct wraps a `RouteKind` along with the source `ElementId`,
-/// allowing the event system to track where events originate from.
 #[derive(Debug, Clone)]
 pub struct RouteData {
-    /// The routing strategy to use for this event
     pub kind: RouteKind,
-    /// The visual ID of the view that originated/sent this event.
-    /// For window events, this is typically the root view.
-    /// For user-emitted events, this is the view that called emit.
     pub source: ElementId,
 }
 
-pub(crate) struct GlobalEventCx<'a> {
-    pub window_state: &'a mut WindowState,
-    // TODO: dispatch is per event / synthetic so not global
-    dispatch: Option<Rc<[Dispatch]>>,
-    event: Event,
-    hit_path: Option<Rc<[ElementId]>>,
-    /// The visual ID that is the source of the current event being dispatched
-    source: ElementId,
-    pending_events: SmallVec<[(RouteKind, Event); 8]>,
+/// Controls whether an event overrides the current event (synthetic) or uses it (normal).
+#[expect(clippy::large_enum_variant)]
+pub(crate) enum OverrideKind {
+    /// Use the global event as-is. No triggered_by.
+    Normal,
+    /// Replace the event with a synthetic one. Carries the event that caused it.
+    Synthetic {
+        event: Event,
+        triggered_by: Option<Event>,
+    },
 }
 
-#[expect(clippy::large_enum_variant)]
-pub(crate) enum OverrideKind<'a> {
-    Normal { triggered_by: Option<&'a Event> },
-    Synthetic { event: Event },
+// ============================================================================
+// Tier 1: GlobalEventCx — window-event-level state
+// ============================================================================
+
+/// Window-event-level context. Holds state that is truly global for the duration
+/// of one OS event dispatch. Routing and per-event state lives in [`RouteCx`].
+pub(crate) struct GlobalEventCx<'a> {
+    pub window_state: &'a mut WindowState,
+    /// The original OS event being processed.
+    event: Event,
+    /// The source element for the original event (usually the window root).
+    source: ElementId,
+}
+
+impl<'a> GlobalEventCx<'a> {
+    pub fn new(window_state: &'a mut WindowState, source: ElementId, event: Event) -> Self {
+        Self {
+            window_state,
+            event,
+            source,
+        }
+    }
+
+    /// Route using the original OS event, with an optional causal event.
+    pub fn route_normal(&mut self, kind: RouteKind, _triggered_by: Option<&Event>) {
+        self.route(kind, OverrideKind::Normal);
+    }
+
+    /// Core routing entry point. Creates a [`RouteCx`] scope for this event,
+    /// dispatches it, then runs lifecycle hooks on drop.
+    pub fn route(&mut self, kind: RouteKind, override_kind: OverrideKind) -> Option<Dispatch> {
+        let mut rcx = RouteCx::new(self, &kind, override_kind);
+        rcx.dispatch(kind)
+        // RouteCx drops here → finish() → handle_default_behaviors,
+        // process_pending_pointer_capture, flush_pending_events
+    }
+
+    /// Route the original OS window event. This is the primary entry point
+    /// called once per OS event from the window handle.
+    pub fn route_window_event(&mut self) {
+        match &self.event {
+            Event::Pointer(pointer_event) => {
+                let pointer_id = pointer_event.pointer_info().pointer_id;
+                let capture_target =
+                    pointer_id.and_then(|id| self.window_state.get_pointer_capture_target(id));
+
+                if let Some(capture_target) = capture_target {
+                    self.route(
+                        RouteKind::Directed {
+                            target: capture_target,
+                            phases: Phases::STANDARD,
+                        },
+                        OverrideKind::Normal,
+                    );
+                } else if let Some(point) = pointer_event.logical_point() {
+                    self.route(
+                        RouteKind::Spatial {
+                            point: Some(point),
+                            phases: Phases::STANDARD,
+                        },
+                        OverrideKind::Normal,
+                    );
+                } else {
+                    // Pointer Enter / Leave / Cancel with no capture and no point:
+                    // not routed to any view, but lifecycle still runs (hover clearing, etc.)
+                    self.route_lifecycle_only();
+                }
+            }
+            Event::Key(ke) => {
+                if ke.is_shortcut_like() {
+                    // Try the focused path first with capture → bubble.
+                    let consumed = self.route(
+                        RouteKind::Focused {
+                            phases: Phases::STANDARD,
+                        },
+                        OverrideKind::Normal,
+                    );
+
+                    // If no focus or focus path didn't consume it, fall back to registry.
+                    if consumed.is_none() {
+                        let listener_keys = self.event.listener_keys();
+                        let mut interested: SmallVec<[ViewId; 16]> = SmallVec::new();
+                        for key in &listener_keys {
+                            if let Some(ids) = self.window_state.listeners.get(key) {
+                                for &id in ids {
+                                    if !interested.contains(&id) {
+                                        interested.push(id);
+                                    }
+                                }
+                            }
+                        }
+                        for id in interested {
+                            let result = self.route(
+                                RouteKind::Directed {
+                                    target: id.get_element_id(),
+                                    phases: Phases::TARGET,
+                                },
+                                OverrideKind::Normal,
+                            );
+                            if result.is_some() {
+                                break;
+                            }
+                        }
+                    }
+                } else {
+                    // Typing keys: capture → target → bubble on the focused element.
+                    self.route(
+                        RouteKind::Focused {
+                            phases: Phases::STANDARD,
+                        },
+                        OverrideKind::Normal,
+                    );
+                }
+            }
+            Event::Ime(_) => {
+                self.route(
+                    RouteKind::Focused {
+                        phases: Phases::STANDARD,
+                    },
+                    OverrideKind::Normal,
+                );
+            }
+            Event::FileDrag(fde) => {
+                let point = fde.logical_point();
+                self.route(
+                    RouteKind::Spatial {
+                        point: Some(point),
+                        phases: Phases::TARGET,
+                    },
+                    OverrideKind::Normal,
+                );
+            }
+            Event::Window(we) => {
+                if matches!(we, WindowEvent::ChangeUnderCursor) {
+                    let point = self.window_state.last_pointer.0;
+                    RouteCx::new_lifecycle(self).update_hover_from_point(point);
+                }
+                let listener_keys = self.event.listener_keys();
+                let mut interested: SmallVec<[ViewId; 64]> = SmallVec::new();
+                for key in &listener_keys {
+                    if let Some(ids) = self.window_state.listeners.get(key) {
+                        for &id in ids {
+                            if !interested.contains(&id) {
+                                interested.push(id);
+                            }
+                        }
+                    }
+                }
+
+                for id in interested {
+                    self.route(
+                        RouteKind::Directed {
+                            target: id.get_element_id(),
+                            phases: Phases::TARGET,
+                        },
+                        OverrideKind::Normal,
+                    );
+                }
+            }
+            Event::PointerCapture(_)
+            | Event::Focus(_)
+            | Event::Interaction(_)
+            | Event::Drag(_)
+            | Event::Custom(_)
+            | Event::Extracted => {
+                panic!(
+                    "received {:?}, which is not an external event.",
+                    &self.event
+                );
+            }
+        }
+    }
+
+    /// Create a lifecycle-only scope: no dispatch, but `handle_default_behaviors`
+    /// and pending event flushing will run when the scope drops.
+    fn route_lifecycle_only(&mut self) {
+        let _rcx = RouteCx::new_lifecycle(self);
+    }
+
+    /// Update hover from a path without dispatching any event to views.
+    /// Used by `file_drag_end` and similar external callers.
+    pub fn update_hover_from_path(&mut self, path: &[ElementId]) {
+        RouteCx::new_lifecycle(self).update_hover_from_path(path);
+    }
+
+    /// Update focus to a specific element without dispatching an event to views.
+    pub fn update_focus(&mut self, element_id: ElementId, keyboard_navigation: bool) {
+        RouteCx::new_lifecycle(self).update_focus(element_id, keyboard_navigation);
+    }
+
+    /// Update focus from an already-built path without dispatching an event to views.
+    pub fn clear_focus(&mut self) {
+        RouteCx::new_lifecycle(self).clear_focus();
+    }
+}
+
+// ============================================================================
+// Tier 2: RouteCx — per-event scope
+// ============================================================================
+
+/// Per-event context. One `RouteCx` exists for each event dispatched — whether
+/// the original OS event or a synthetic event generated during processing.
+///
+/// Internal routing strategies (spatial → directed) happen as plain method calls
+/// on the same `RouteCx`; they do not create a new scope. Lifecycle hooks
+/// (`handle_default_behaviors`, pointer capture, pending flush) run exactly once
+/// when this scope ends via [`Drop`].
+pub(crate) struct RouteCx<'r, 'w> {
+    pub gcx: &'r mut GlobalEventCx<'w>,
+    /// The active event for this route scope (may be a synthetic override).
+    pub event: Event,
+    /// Visual hit path for the active event's point, if any.
+    pub hit_path: Option<Rc<[ElementId]>>,
+    /// The full dispatch sequence for this event (capture/target/bubble steps).
+    /// Pre-built for directed routes; set after hit-test for spatial routes.
+    pub dispatch: Option<Rc<[Dispatch]>>,
+    pub source: ElementId,
+    /// The event that caused this one, if synthetic.
+    pub triggered_by: Option<Event>,
+    /// Events generated during dispatch that will each get their own `RouteCx`.
+    pending_events: SmallVec<[(RouteKind, Event); 8]>,
+    /// Events generated during dispatch that will each get their own `RouteCx` that are preventable with `prevent_default`.
+    pending_default_events: SmallVec<[(RouteKind, Event); 8]>,
+    /// Guard against double-finish (e.g. explicit call + drop).
+    finished: bool,
+    prevent_default: bool,
+}
+
+// ============================================================================
+// RouteCx — Construction
+// ============================================================================
+
+impl<'r, 'w> RouteCx<'r, 'w> {
+    /// Full constructor. Sets up event/triggered_by, computes hit path,
+    /// and pre-builds the dispatch sequence for directed routes.
+    fn new(gcx: &'r mut GlobalEventCx<'w>, kind: &RouteKind, override_kind: OverrideKind) -> Self {
+        let (event, triggered_by) = match override_kind {
+            OverrideKind::Normal => (gcx.event.clone(), None),
+            OverrideKind::Synthetic {
+                event,
+                triggered_by,
+            } => (event, triggered_by),
+        };
+
+        let source = gcx.source;
+
+        // Compute the hit path if the event has a spatial point.
+        let hit_path = event
+            .point()
+            .and_then(|point| hit_test(gcx.window_state.root_view_id, point));
+
+        // Pre-build the dispatch sequence for non-TARGET directed routes so
+        // EventCx handlers can inspect the full sequence.
+        let dispatch = match kind {
+            RouteKind::Directed { target, phases } if *phases != Phases::TARGET => {
+                let box_tree = gcx.window_state.box_tree.borrow();
+                let seq: Vec<Dispatch> = build_capture_bubble_path(*target, &box_tree)
+                    .filter(|d| phases.matches(&d.phase))
+                    .collect();
+                drop(box_tree);
+                if seq.is_empty() {
+                    None
+                } else {
+                    Some(Rc::from(seq))
+                }
+            }
+            _ => None,
+        };
+
+        Self {
+            gcx,
+            event,
+            hit_path,
+            dispatch,
+            source,
+            triggered_by,
+            pending_events: SmallVec::new(),
+            pending_default_events: SmallVec::new(),
+            finished: false,
+            prevent_default: false,
+        }
+    }
+
+    /// Lifecycle-only constructor. No dispatch sequence or hit path.
+    /// Used for hover/focus updates and for the "no dispatch target" path in
+    /// `route_window_event` — the scope still runs lifecycle hooks on drop.
+    fn new_lifecycle(gcx: &'r mut GlobalEventCx<'w>) -> Self {
+        let event = gcx.event.clone();
+        let source = gcx.source;
+        Self {
+            gcx,
+            event,
+            hit_path: None,
+            dispatch: None,
+            source,
+            triggered_by: None,
+            pending_events: SmallVec::new(),
+            pending_default_events: SmallVec::new(),
+            finished: false,
+            prevent_default: false,
+        }
+    }
+}
+
+// ============================================================================
+// RouteCx — Dispatch (internal routing, no lifecycle hooks)
+// ============================================================================
+
+impl RouteCx<'_, '_> {
+    /// Main dispatch entry point. Routes the event according to `kind`.
+    /// Does NOT run lifecycle hooks — those run in [`finish`] via [`Drop`].
+    pub(crate) fn dispatch(&mut self, kind: RouteKind) -> Option<Dispatch> {
+        match kind {
+            RouteKind::Directed { target, phases } => self.dispatch_directed(target, phases),
+            RouteKind::Focused { phases } => {
+                if let Some(focus) = &self.gcx.window_state.focus_state {
+                    self.dispatch_directed(*focus, phases)
+                } else if phases.contains(Phases::BROADCAST) {
+                    self.dispatch_global(true);
+                    None
+                } else {
+                    None
+                }
+            }
+            RouteKind::Spatial { point, phases } => {
+                let point = point.or_else(|| self.event.point());
+                if let Some(point) = point {
+                    self.dispatch_spatial(point, phases)
+                } else {
+                    None
+                }
+            }
+            RouteKind::Subtree {
+                target,
+                respect_propagation,
+            } => {
+                self.dispatch_subtree(target, respect_propagation);
+                None
+            }
+            RouteKind::Broadcast {
+                respect_propagation,
+            } => {
+                self.dispatch_global(respect_propagation);
+                None
+            }
+        }
+    }
+
+    /// Dispatch through the capture/target/bubble path to a specific target.
+    /// Called directly by `dispatch_spatial` — no new RouteCx is created.
+    pub(crate) fn dispatch_directed(
+        &mut self,
+        target: ElementId,
+        phases: crate::context::Phases,
+    ) -> Option<Dispatch> {
+        use crate::context::Phases;
+
+        if let Some(path) = self.hit_path.clone().as_deref() {
+            // Enter/Leave events are hover notifications — they are the *result* of hover
+            // tracking, not events that should trigger another round of hover recalculation.
+            // Calling update_hover_from_path for them causes infinite recursion:
+            // FileDragEvent::Enter → update_hover_from_path → push synthetic FileDragEvent::Enter
+            // → route_synthetic → dispatch_directed → update_hover_from_path → ...
+            let is_hover_notification = matches!(
+                &self.event,
+                Event::Pointer(PointerEvent::Enter(_) | PointerEvent::Leave(_))
+                    | Event::FileDrag(FileDragEvent::Enter(_) | FileDragEvent::Leave(_))
+            );
+            if (self.event.is_pointer() || self.event.is_file_drag()) && !is_hover_notification {
+                self.update_hover_from_path(path);
+            }
+            if self.event.is_pointer_down() {
+                if let Some(hit) = path.last().copied() {
+                    self.update_focus(hit, false);
+                }
+            }
+        }
+
+        // Keyboard trigger → queue a synthetic Click on the focused element.
+        if self.event.is_keyboard_trigger() {
+            if let Some(focus) = &self.gcx.window_state.focus_state {
+                self.pending_events.push((
+                    RouteKind::Directed {
+                        target: *focus,
+                        phases: Phases::STANDARD,
+                    },
+                    Event::Interaction(InteractionEvent::Click),
+                ));
+            }
+        }
+
+        let result = if phases == Phases::TARGET {
+            // Fast path: single target step, no need for the full ancestor chain.
+            let d = Dispatch::target(target);
+            let outcome = self.dispatch_event_cx(&d);
+            if outcome.is_stop() { Some(d) } else { None }
+        } else {
+            // Use dispatch pre-built in new(), or build it now (spatial routes).
+            if self.dispatch.is_none() {
+                let box_tree = self.gcx.window_state.box_tree.borrow();
+                let seq: Vec<Dispatch> = build_capture_bubble_path(target, &box_tree)
+                    .filter(|d| phases.matches(&d.phase))
+                    .collect();
+                drop(box_tree);
+                if !seq.is_empty() {
+                    self.dispatch = Some(Rc::from(seq.as_slice()));
+                }
+            }
+
+            if let Some(dispatch) = self.dispatch.clone() {
+                run_dispatch(dispatch.iter().copied(), |d| self.dispatch_event_cx(&d))
+            } else {
+                None
+            }
+        };
+
+        // Keyboard event not consumed by the focused view → fall back to global.
+        if result.is_none() && phases.contains(Phases::BROADCAST) {
+            self.dispatch_global(true);
+            None
+        } else {
+            result
+        }
+    }
+
+    /// Spatial hit-test routing. Updates hover/focus/pointer state, then
+    /// calls `dispatch_directed` on the same scope (no new RouteCx).
+    fn dispatch_spatial(
+        &mut self,
+        point: Point,
+        phases: crate::context::Phases,
+    ) -> Option<Dispatch> {
+        if self.event.is_pointer_down() {
+            self.gcx.window_state.keyboard_navigation = false;
+        }
+
+        // Override hit path with spatial point (may differ from event point).
+        let path = hit_test(self.gcx.window_state.root_view_id, point);
+        self.hit_path = path.clone();
+
+        let path = self.hit_path.clone().unwrap_or_default();
+
+        self.handle_pointer_state_updates();
+
+        if let Some(target) = path.last().copied() {
+            // Build and cache the dispatch sequence for this target.
+            if self.dispatch.is_none() {
+                let box_tree = self.gcx.window_state.box_tree.borrow();
+                let seq: Vec<Dispatch> = build_capture_bubble_path(target, &box_tree)
+                    .filter(|d| phases.matches(&d.phase))
+                    .collect();
+                drop(box_tree);
+                if !seq.is_empty() {
+                    self.dispatch = Some(Rc::from(seq.as_slice()));
+                }
+            }
+            // Direct call — same RouteCx, lifecycle runs once when outer scope drops.
+            self.dispatch_directed(target, phases)
+        } else {
+            None
+        }
+    }
+
+    /// Dispatch to a target and all its descendants.
+    fn dispatch_subtree(&mut self, target: ElementId, respect_propagation: bool) {
+        let target_view_id = target.owning_id();
+        self.dispatch_tree_recursive(target_view_id, respect_propagation);
+    }
+
+    /// Dispatch to all views in DOM order (global broadcast).
+    fn dispatch_global(&mut self, respect_propagation: bool) {
+        let root = self.gcx.window_state.root_view_id.get_element_id();
+        self.dispatch_subtree(root, respect_propagation);
+    }
+
+    /// Recursive tree walk for subtree/broadcast dispatch.
+    fn dispatch_tree_recursive(&mut self, view_id: ViewId, respect_propagation: bool) {
+        let d = Dispatch::target(view_id.get_element_id());
+        let outcome = self.dispatch_event_cx(&d);
+
+        if respect_propagation && outcome.is_stop() {
+            return;
+        }
+
+        for child_id in view_id.children() {
+            self.dispatch_tree_recursive(child_id, respect_propagation);
+        }
+    }
+}
+
+// ============================================================================
+// Tier 3: EventCx — per-node dispatch step (construction lives on RouteCx)
+// ============================================================================
+
+impl RouteCx<'_, '_> {
+    /// Create an `EventCx` for `dispatch_step` and call `dispatch_one`.
+    pub fn dispatch_event_cx(&mut self, dispatch_step: &Dispatch) -> Outcome {
+        if self.event.is_pointer()
+            && dispatch_step.target_element_id.is_view()
+            && dispatch_step
+                .target_element_id
+                .owning_id()
+                .pointer_events_none()
+        {
+            return Outcome::Continue;
+        }
+
+        let world_transform = match self
+            .gcx
+            .window_state
+            .box_tree
+            .borrow()
+            .world_transform(dispatch_step.target_element_id.0)
+        {
+            Ok(transform) => transform,
+            Err(transform) => transform.value().unwrap(),
+        }
+        .inverse();
+
+        let mut cx = EventCx {
+            window_state: self.gcx.window_state,
+            event: self.event.clone().transform(world_transform),
+            world_transform,
+            triggered_by: self.triggered_by.as_ref(),
+            hit_path: self.hit_path.clone(),
+            phase: dispatch_step.phase,
+            target: dispatch_step.target_element_id,
+            source: self.source,
+            dispatch: self.dispatch.clone(),
+            source_id: self.source,
+            default_prevented: &mut self.prevent_default,
+            stop_immediate: false,
+        };
+        cx.dispatch_one()
+    }
 }
 
 pub struct EventCx<'a> {
     pub window_state: &'a mut WindowState,
-    /// An event that has been transformed to the local coordinate space of the target node.
-    ///
-    /// Do not use this inside of event listeners, the data has been extracted and the variant of this event will always be `Extracted`.
+    /// An event transformed to the local coordinate space of the target node.
     pub event: Event,
-    /// The transform from window space to the local space of the target element that was used to transform the event.
+    /// The transform from window space to the local space of the target element.
     pub world_transform: Affine,
-    /// In the case that `event` is a synthetic event like `Click`, the caused by may contain information about the triggering event.
-    ///
-    /// This event is not transformed. If you want it in coordinates local to your element, use the `cx.world_transform`.
+    /// The event that caused this synthetic event, if any. Not transformed.
     pub triggered_by: Option<&'a Event>,
-    /// If the event is an event with a point (the [Event::point] method for the event returned `Some(point)`), this contains the full set of visual ids that were under the pointer.
+    /// All visual IDs under the pointer for pointer events.
     pub hit_path: Option<Rc<[ElementId]>>,
-    /// The event phase for this local event
+    /// The event phase for this local event.
     pub phase: Phase,
-    /// The target of this event
+    /// The target of this event.
     pub target: ElementId,
-    /// The visual ID that is the source/origin of this event
+    /// The visual ID that is the source/origin of this event.
     pub source: ElementId,
-    /// The full dispatch for this event. This contains the full set of targets and their respective phases for the event.
+    /// The full dispatch sequence for this event.
     pub dispatch: Option<Rc<[Dispatch]>>,
-    /// The element caused the event to be dispatched. Window events this will be the `ViewId` of the window handle.
+    /// The element that caused the event to be dispatched.
     pub source_id: ElementId,
-    /// Whether preventDefault() was called (shared across all phases of this event)
+    /// Whether preventDefault() was called (shared across all phases).
     default_prevented: &'a mut bool,
-    /// Whether stopImmediatePropagation() was called
+    /// Whether stopImmediatePropagation() was called.
     stop_immediate: bool,
 }
+
 impl<'a> EventCx<'a> {
     /// Stop propagation to other listeners on this target AND to other nodes in the path.
-    /// This is the web's stopImmediatePropagation().
     pub fn stop_immediate_propagation(&mut self) {
         self.stop_immediate = true;
     }
 
-    /// Prevent the default action for this event.
-    /// This is the web's preventDefault().
+    /// Prevent any default actions for this event.
     pub fn prevent_default(&mut self) {
         *self.default_prevented = true;
     }
@@ -381,22 +822,6 @@ impl<'a> EventCx<'a> {
     }
 
     /// Request pointer capture for this element.
-    ///
-    /// This should typically be called in response to a pointer down event.
-    /// Once capture is gained, the element will receive a `PointerCaptureEvent::Gained`,
-    /// at which point it can call `request_drag()` to begin tracking a potential drag.
-    ///
-    /// # Example
-    /// ```rust
-    /// Event::Pointer(PointerEvent::Down(pe)) => {
-    ///     if let Some(pointer_id) = pe.pointer.pointer_id {
-    ///         cx.request_pointer_capture(pointer_id);
-    ///     }
-    /// }
-    /// Event::PointerCapture(PointerCaptureEvent::Gained(_)) => {
-    ///     cx.request_drag(cx.view_id, 3.0);
-    /// }
-    /// ```
     pub fn request_pointer_capture(&mut self, pointer_id: PointerId) -> bool {
         self.window_state
             .set_pointer_capture(pointer_id, self.target)
@@ -404,11 +829,7 @@ impl<'a> EventCx<'a> {
 
     /// Request that this element start tracking a drag.
     ///
-    /// When `use_default_preview` is true, floem will set the `dragging_preview` to this element which will make it apprear above all other content and under the cursor.
-    ///
-    /// This should be called in response to `PointerCaptureEvent::Gained`.
-    /// The element must have pointer capture before requesting drag.
-    /// The drag won't actually start until the pointer moves beyond the threshold.
+    /// Should be called in response to `PointerCaptureEvent::Gained`.
     pub fn start_drag(
         &mut self,
         drag_token: DragToken,
@@ -420,7 +841,6 @@ impl<'a> EventCx<'a> {
         };
 
         let pointer_id = drag_token.pointer_id();
-
         let element_id = self.target;
 
         if self.window_state.get_pointer_capture_target(pointer_id) != Some(element_id) {
@@ -445,7 +865,6 @@ impl<'a> EventCx<'a> {
             return Outcome::Continue;
         }
 
-        // CRITICAL: No other borrows of view_storage, states, or views must be held here
         VIEW_STORAGE.with(|s| {
             assert!(
                 s.try_borrow_mut().is_ok(),
@@ -462,13 +881,10 @@ impl<'a> EventCx<'a> {
             "View is already borrowed when calling view.event()"
         );
 
-        // Track if propagation was stopped
         let mut stop_propagation = false;
 
-        // Call view's event handler
         let view_result = view.borrow_mut().event(self);
 
-        // Break early if stopImmediatePropagation was called
         if self.stop_immediate {
             return Outcome::Stop;
         }
@@ -477,7 +893,6 @@ impl<'a> EventCx<'a> {
             stop_propagation = true;
         }
 
-        // Run registered event listeners if the target is a view
         if self.target.is_view() {
             let listener_keys = self.event.listener_keys();
             for key in &listener_keys {
@@ -506,266 +921,38 @@ impl<'a> EventCx<'a> {
             }
         }
 
-        // After all listeners on this target have run, check if we should continue
         if stop_propagation {
             Outcome::Stop
         } else {
             Outcome::Continue
         }
     }
-
-    // /// Set a drag preview that will be rendered under the pointer.
-    // ///
-    // /// The preview will be rendered above all other content and will follow the pointer.
-    // ///
-    // /// # Parameters
-    // /// - `element_id`: The element to render as the drag preview (could be the dragged element itself,
-    // ///   or a custom preview visual)
-    // /// - `pointer_offset`: Where the pointer is relative to the preview, as percentages (0.0-100.0).
-    // ///   E.g., (50., 50.) means the pointer grabbed the center.
-    // ///
-    // /// # Example
-    // /// ```rust
-    // /// Event::DragSource(DragSourceEvent::Start(e)) => {
-    // ///     // Show a semi-transparent preview of this element following the cursor
-    // ///     cx.set_drag_preview(cx.view_id, (0.5, 0.5));
-    // /// }
-    // /// ```
-    // pub fn set_drag_preview(&mut self, visual_id: impl Into<VisualId>, pointer_offset: (Pct, Pct)) {
-    //     self.window_state.dragging_preview = Some(DraggingPreview {
-    //         element_id: element_id.into(),
-    //         pointer_offset,
-    //     });
-    // }
 }
 
 // ============================================================================
-// Construction & Context Creation
+// RouteCx — Lifecycle (RAII via Drop)
 // ============================================================================
 
-/// Construction and event context utilities.
-///
-/// Provides methods for creating a `GlobalEventCx` and converting dispatches
-/// into localized `EventCx` instances with proper coordinate transformations.
-impl<'a> GlobalEventCx<'a> {
-    pub fn new(window_state: &'a mut WindowState, source: ElementId, event: Event) -> Self {
-        Self {
-            window_state,
-            event,
-            hit_path: None,
-            dispatch: None,
-            pending_events: SmallVec::new(),
-            source,
+impl Drop for RouteCx<'_, '_> {
+    fn drop(&mut self) {
+        if !std::thread::panicking() {
+            self.finish();
         }
-    }
-
-    /// Create an `EventCx` for `dispatch`, run `dispatch_one`, and return the outcome.
-    pub fn dispatch_event_cx(
-        &mut self,
-        dispatch: &Dispatch,
-        triggered_by: Option<&Event>,
-        default_prevented: &mut bool,
-    ) -> Outcome {
-        if self.event.is_pointer()
-            && dispatch.target_element_id.is_view()
-            && dispatch.target_element_id.owning_id().pointer_events_none()
-        {
-            return Outcome::Continue;
-        }
-
-        let world_transform = match self
-            .window_state
-            .box_tree
-            .borrow()
-            .world_transform(dispatch.target_element_id.0)
-        {
-            Ok(transform) => transform,
-            Err(transform) => transform.value().unwrap(),
-        }
-        .inverse();
-
-        let mut cx = EventCx {
-            window_state: self.window_state,
-            event: self.event.clone().transform(world_transform),
-            world_transform,
-            triggered_by,
-            hit_path: self.hit_path.clone(),
-            phase: dispatch.phase,
-            target: dispatch.target_element_id,
-            source: self.source,
-            dispatch: self.dispatch.clone(),
-            source_id: self.source,
-            default_prevented,
-            stop_immediate: false,
-        };
-        cx.dispatch_one()
     }
 }
 
-// ============================================================================
-// Event Routing - Entry Points
-// ============================================================================
-
-/// Primary event routing entry points.
-///
-/// These methods serve as the main interfaces for routing events into the view tree.
-/// `route_window_event` handles external window events, while `route` provides
-/// a unified interface for different routing strategies.
-impl<'a> GlobalEventCx<'a> {
-    pub fn route_window_event(&mut self) {
-        // Handle pointer capture (explicit routing during drags/gestures)
-        match &self.event {
-            Event::Pointer(pointer_event) => {
-                // Check if this pointer has capture
-                let pointer_id = pointer_event.pointer_info().pointer_id;
-                let capture_target =
-                    pointer_id.and_then(|id| self.window_state.get_pointer_capture_target(id));
-
-                if let Some(capture_target) = capture_target {
-                    let route_kind = RouteKind::Directed {
-                        target: capture_target,
-                        phases: Phases::STANDARD,
-                    };
-                    self.route(route_kind, OverrideKind::Normal { triggered_by: None });
-                } else if let Some(point) = pointer_event.logical_point() {
-                    let route_kind = RouteKind::Spatial {
-                        point: Some(point),
-                        phases: Phases::STANDARD,
-                    };
-                    self.route(route_kind, OverrideKind::Normal { triggered_by: None });
-                } else {
-                    // Pointer Enter / Leave / Cancel not routed without capture target but handled in default behaviors
-                    self.handle_default_behaviors();
-                }
-            }
-            Event::Key(_) => {
-                let route_kind = RouteKind::Focused {
-                    phases: Phases::all(),
-                };
-                // TODO: clarify semantics here of when to fallback to global. need shared default_prevented?
-                self.route(route_kind, OverrideKind::Normal { triggered_by: None });
-            }
-            Event::Ime(_) => {
-                let route_kind = RouteKind::Focused {
-                    phases: Phases::STANDARD,
-                };
-                self.route(route_kind, OverrideKind::Normal { triggered_by: None });
-            }
-            Event::FileDrag(fde) => {
-                let point = fde.logical_point();
-                let route_kind = RouteKind::Spatial {
-                    point: Some(point),
-                    phases: Phases::TARGET,
-                };
-                self.route(route_kind, OverrideKind::Normal { triggered_by: None });
-            }
-            Event::Window(we) => {
-                if matches!(we, WindowEvent::ChangeUnderCursor) {
-                    self.update_hover_from_point(self.window_state.last_pointer.0);
-                }
-                let listener_keys = self.event.listener_keys();
-                let mut interested: SmallVec<[ViewId; 64]> = SmallVec::new();
-                for key in &listener_keys {
-                    if let Some(ids) = self.window_state.listeners.get(key) {
-                        for &id in ids {
-                            if !interested.contains(&id) {
-                                interested.push(id);
-                            }
-                        }
-                    }
-                }
-
-                for id in interested {
-                    let route_kind = RouteKind::Directed {
-                        target: id.get_element_id(),
-                        phases: Phases::TARGET,
-                    };
-                    self.route(route_kind, OverrideKind::Normal { triggered_by: None });
-                }
-            }
-            Event::PointerCapture(_)
-            | Event::Focus(_)
-            | Event::Interaction(_)
-            | Event::Drag(_)
-            | Event::Custom(_)
-            | Event::Extracted => {
-                panic!(
-                    "received {:?}, which is not an external event.",
-                    &self.event
-                );
-            }
+impl RouteCx<'_, '_> {
+    /// Run lifecycle hooks for this event scope. Called by `Drop`.
+    /// Guarded by `finished` so it only ever runs once.
+    fn finish(&mut self) {
+        if self.finished {
+            return;
         }
-    }
+        self.finished = true;
 
-    /// Route a synthetic event (one generated internally, not from the OS).
-    /// Synthetic events are routed with OverrideKind::Synthetic.
-    pub fn route_synthetic(&mut self, kind: RouteKind, event: Event) {
-        self.route(kind, OverrideKind::Synthetic { event });
-    }
-
-    /// Route a normal event (from the OS).
-    /// Normal events are routed with OverrideKind::Normal.
-    pub fn route_normal(&mut self, kind: RouteKind, triggered_by: Option<&Event>) {
-        self.route(kind, OverrideKind::Normal { triggered_by });
-    }
-
-    pub fn route(&mut self, kind: RouteKind, mut override_kind: OverrideKind) -> Option<Dispatch> {
-        // save state because route can be called recursively
-        let (triggered_by, saved_hit_path) = match override_kind {
-            OverrideKind::Normal { triggered_by } => (triggered_by, None),
-            OverrideKind::Synthetic { ref mut event } => {
-                std::mem::swap(&mut self.event, event);
-                (Some(&*event), self.hit_path.clone())
-            }
-        };
-
-        // set the visual hit path if the event has a point.
-        // this might be overriden by route spatial but that's fine because hit tests are cached RC.
-        if let Some(point) = self.event.point() {
-            let path = hit_test(self.window_state.root_view_id, point);
-            self.hit_path = path.clone();
+        if !self.prevent_default {
+            self.handle_default_behaviors();
         }
-
-        let remaining_dispatch = match kind {
-            RouteKind::Directed { target, phases } => {
-                self.route_directed(target, triggered_by, phases)
-            }
-            RouteKind::Focused { phases } => {
-                if let Some(focus) = self.window_state.focus_state.current_path().last() {
-                    self.route_directed(*focus, triggered_by, phases)
-                } else {
-                    self.route_global(triggered_by, true);
-                    None
-                }
-            }
-
-            RouteKind::Spatial { point, phases } => {
-                let point = point.or_else(|| self.event.point());
-                if let Some(point) = point {
-                    self.route_spatial(point, triggered_by, phases)
-                } else {
-                    None
-                }
-            }
-
-            RouteKind::Subtree {
-                target,
-                respect_propagation,
-            } => {
-                self.route_subtree(target, triggered_by, respect_propagation);
-                None
-            }
-
-            RouteKind::Broadcast {
-                respect_propagation,
-            } => {
-                self.route_global(triggered_by, respect_propagation);
-                None
-            }
-        };
-
-        // Only handle default behaviors if preventDefault was not called (not currently checked)
-        self.handle_default_behaviors();
 
         if let Event::Pointer(pe) = &self.event {
             if let Some(pointer_id) = pe.pointer_info().pointer_id {
@@ -773,359 +960,120 @@ impl<'a> GlobalEventCx<'a> {
             }
         }
 
-        self.send_pending_events();
-        assert!(
-            self.pending_events.is_empty(),
-            "all pending events should have been sent"
-        );
-
-        // Restore original event and hit_path if synthetic
-        if let OverrideKind::Synthetic { event } = override_kind {
-            self.event = event;
-            self.hit_path = saved_hit_path;
-        }
-
-        remaining_dispatch
-    }
-}
-
-// ============================================================================
-// Routing Strategies
-// ============================================================================
-
-/// Event routing strategy implementations.
-///
-/// Each method implements a different routing strategy for delivering events to views:
-/// - `route_directed`: Capture/bubble phases through ancestor chain to a specific target
-/// - `route_to_target`: Direct delivery to a single target without propagation
-/// - `route_spatial`: Hit-testing based routing for pointer events at a point
-/// - `route_dom`: Broadcast to all views in tree order (no propagation respected)
-impl<'a> GlobalEventCx<'a> {
-    /// Route directed events (keyboard to focused view)
-    pub(crate) fn route_directed(
-        &mut self,
-        target: ElementId,
-        triggered_by: Option<&Event>,
-        phases: crate::context::Phases,
-    ) -> Option<Dispatch> {
-        use crate::context::Phases;
-        let default_prevented = &mut false;
-
-        // handle pointer defaults
-        if self.event.is_keyboard_trigger() {
-            if let Some(focus) = self.window_state.focus_state.current_path().last() {
-                // Keyboard trigger creates its own synthetic Click event
-                self.pending_events.push((
-                    RouteKind::Directed {
-                        target: *focus,
-                        phases: Phases::STANDARD,
-                    },
-                    Event::Interaction(InteractionEvent::Click),
-                ));
-            }
-        }
-
-        let extra_dispatch = if phases == Phases::TARGET {
-            let d = Dispatch::target(target);
-            let outcome = self.dispatch_event_cx(&d, triggered_by, default_prevented);
-            if outcome.is_stop() { Some(d) } else { None }
-        } else {
-            let box_tree = self.window_state.box_tree.borrow();
-            let iter =
-                build_capture_bubble_path(target, &box_tree).filter(|d| phases.matches(&d.phase));
-            drop(box_tree);
-
-            run_dispatch(iter, |d| {
-                self.dispatch_event_cx(&d, triggered_by, default_prevented)
-            })
-        };
-
-        // the keyboard event was not handled
-        if extra_dispatch.is_none() && phases.contains(Phases::BROADCAST) {
-            self.route_global(triggered_by, true);
-            None
-        } else {
-            extra_dispatch
-        }
+        self.flush_pending_events();
     }
 
-    fn route_spatial(
-        &mut self,
-        point: Point,
-        triggered_by: Option<&Event>,
-        phases: crate::context::Phases,
-    ) -> Option<Dispatch> {
-        // clear keyboard navigation on pointer down
-        if self.event.is_pointer_down() {
-            self.window_state.keyboard_navigation = false;
-        }
-
-        // override the hit path because the spatial point might not be the event point
-        let path = hit_test(self.window_state.root_view_id, point);
-        self.hit_path = path.clone();
-
-        // if hit off the window, use default which is empty path.
-        let path = self.hit_path.clone().unwrap_or_default();
-        if self.event.is_pointer() || self.event.is_file_drag() {
-            // update hover with any path even empty
-            self.update_hover_from_path(&path);
-        }
-        // on any pointer down update focus if something was hit
-        if self.event.is_pointer_down() {
-            // update focus
-            if let Some(hit) = path.last().copied() {
-                self.update_focus(hit, false);
-            }
-        }
-
-        self.handle_pointer_state_updates();
-
-        // now actually route spatial
-        if let Some(target) = path.last() {
-            self.route(
-                RouteKind::Directed {
-                    target: *target,
-                    phases,
-                },
-                OverrideKind::Normal { triggered_by },
-            )
-        } else {
-            None
-        }
-    }
-
-    /// Route to a target and all its descendants (subtree)
-    fn route_subtree(
-        &mut self,
-        target: ElementId,
-        triggered_by: Option<&Event>,
-        respect_propagation: bool,
-    ) {
-        let default_prevented = &mut false;
-        let target_view_id = target.owning_id();
-        self.route_tree_recursive(
-            target_view_id,
-            triggered_by,
-            respect_propagation,
-            default_prevented,
-        );
-    }
-
-    /// Route events to all views in DOM order (global broadcast)
-    fn route_global(&mut self, triggered_by: Option<&Event>, respect_propagation: bool) {
-        let root = self.window_state.root_view_id.get_element_id();
-        self.route_subtree(root, triggered_by, respect_propagation);
-    }
-
-    /// Recursively walk the tree and dispatch events.
-    /// Used by both route_subtree and route_global.
-    fn route_tree_recursive(
-        &mut self,
-        view_id: ViewId,
-        triggered_by: Option<&Event>,
-        respect_propagation: bool,
-        default_prevented: &mut bool,
-    ) {
-        let d = Dispatch::target(view_id.get_element_id());
-        let outcome = self.dispatch_event_cx(&d, triggered_by, default_prevented);
-
-        if respect_propagation && outcome.is_stop() {
-            return;
-        }
-
-        for child_id in view_id.children() {
-            self.route_tree_recursive(
-                child_id,
+    /// Route a synthetic event, carrying the current event as `triggered_by`.
+    fn route_synthetic(&mut self, kind: RouteKind, event: Event) {
+        let triggered_by = Some(self.event.clone());
+        self.gcx.route(
+            kind,
+            OverrideKind::Synthetic {
+                event,
                 triggered_by,
-                respect_propagation,
-                default_prevented,
-            );
+            },
+        );
+    }
+
+    /// Flush all pending events. Each gets its own [`RouteCx`] scope (and thus
+    /// its own lifecycle), with the current event as `triggered_by`.
+    fn flush_pending_events(&mut self) {
+        let pending = std::mem::take(&mut self.pending_events);
+        for (kind, event) in pending {
+            self.route_synthetic(kind, event);
+        }
+        let pending = std::mem::take(&mut self.pending_default_events);
+        if !self.prevent_default {
+            for (kind, event) in pending {
+                self.route_synthetic(kind, event);
+            }
         }
     }
 }
 
 // ============================================================================
-// Event Processing Lifecycle
+// RouteCx — Default Behaviors
 // ============================================================================
 
-/// Event processing lifecycle hooks.
-///
-/// Methods that run before and after event routing to handle state updates,
-/// interaction tracking, and default browser-like behaviors (click detection,
-/// drag thresholds, context menus, etc.).
-impl<'a> GlobalEventCx<'a> {
-    /// Handle default behaviors (drag, tab navigation, etc.)
-    ///
-    /// (Preventable things)
+impl RouteCx<'_, '_> {
+    /// Handle browser-style default behaviors: drag threshold, drag events,
+    /// pointer-up capture release, tab/arrow navigation, context menus, etc.
     fn handle_default_behaviors(&mut self) {
-        // Pointer move - check threshold and handle active drag
+        // Pointer move — check drag threshold and dispatch active-drag events.
         let pointer_move = match &self.event {
             Event::Pointer(PointerEvent::Move(pu)) => Some(pu.clone()),
             _ => None,
         };
 
         if let Some(pu) = pointer_move {
-            let box_tree = self.window_state.box_tree.clone();
-            // Check if pending drag exceeded threshold
+            let box_tree = self.gcx.window_state.box_tree.clone();
             if let Some(drag_dispatch) = self
+                .gcx
                 .window_state
                 .drag_tracker
                 .check_threshold(&pu, &box_tree.borrow())
             {
-                self.window_state.needs_box_tree_commit = true;
-                match drag_dispatch {
-                    DragEventDispatch::Source(source_id, drag_source_event) => {
-                        self.route_synthetic(
-                            RouteKind::Directed {
-                                target: source_id,
-                                phases: Phases::TARGET,
-                            },
-                            Event::Drag(DragEvent::Source(drag_source_event)),
-                        );
-                    }
-                    DragEventDispatch::Target(target_id, drag_target_event) => {
-                        // Use STANDARD phases for Move to allow bubbling
-                        let phases = if drag_target_event.is_move() {
-                            Phases::STANDARD
-                        } else {
-                            Phases::TARGET
-                        };
-                        self.route_synthetic(
-                            RouteKind::Directed {
-                                target: target_id,
-                                phases,
-                            },
-                            Event::Drag(DragEvent::Target(drag_target_event)),
-                        );
-                    }
-                }
+                self.gcx.window_state.needs_box_tree_commit = true;
+                self.dispatch_drag_event(drag_dispatch);
             }
-            // Handle move events for active drag
-            if let Some(_active) = &self.window_state.drag_tracker.active_drag {
-                self.window_state.needs_box_tree_from_layout = true;
+            if let Some(_active) = &self.gcx.window_state.drag_tracker.active_drag {
+                self.gcx.window_state.needs_box_tree_from_layout = true;
                 let hover_path = self
                     .hit_path
                     .as_ref()
                     .map(|p| p.iter().as_slice())
                     .unwrap_or(&[]);
                 let drag_events = self
+                    .gcx
                     .window_state
                     .drag_tracker
                     .on_pointer_move(&pu, hover_path);
                 for drag_event in drag_events {
-                    match drag_event {
-                        DragEventDispatch::Source(source_id, drag_source_event) => {
-                            self.route_synthetic(
-                                RouteKind::Directed {
-                                    target: source_id,
-                                    phases: Phases::TARGET,
-                                },
-                                Event::Drag(DragEvent::Source(drag_source_event)),
-                            );
-                        }
-                        DragEventDispatch::Target(target_id, drag_target_event) => {
-                            // Use STANDARD phases for Move to allow bubbling
-                            let phases = if drag_target_event.is_move() {
-                                Phases::STANDARD
-                            } else {
-                                Phases::TARGET
-                            };
-                            self.route_synthetic(
-                                RouteKind::Directed {
-                                    target: target_id,
-                                    phases,
-                                },
-                                Event::Drag(DragEvent::Target(drag_target_event)),
-                            );
-                        }
-                    }
+                    self.dispatch_drag_event(drag_event);
                 }
             }
         }
 
-        // Pointer up - end drag and release capture
+        // Pointer up — end drag and release capture.
         let pe = match &self.event {
             Event::Pointer(PointerEvent::Up(pe)) => Some(pe.clone()),
             _ => None,
         };
         if let Some(pe) = pe {
-            let drag_events = self.window_state.drag_tracker.on_pointer_up(&pe);
+            let drag_events = self.gcx.window_state.drag_tracker.on_pointer_up(&pe);
             for drag_event in drag_events {
-                match drag_event {
-                    DragEventDispatch::Source(source_id, drag_source_event) => {
-                        self.route_synthetic(
-                            RouteKind::Directed {
-                                target: source_id,
-                                phases: Phases::TARGET,
-                            },
-                            Event::Drag(DragEvent::Source(drag_source_event)),
-                        );
-                    }
-                    DragEventDispatch::Target(target_id, drag_target_event) => {
-                        // Use STANDARD phases for Move to allow bubbling
-                        let phases = if drag_target_event.is_move() {
-                            Phases::STANDARD
-                        } else {
-                            Phases::TARGET
-                        };
-                        self.route_synthetic(
-                            RouteKind::Directed {
-                                target: target_id,
-                                phases,
-                            },
-                            Event::Drag(DragEvent::Target(drag_target_event)),
-                        );
-                    }
-                }
+                self.dispatch_drag_event(drag_event);
             }
-            // Auto-release pointer capture
             if let Some(pointer_id) = pe.pointer.pointer_id {
-                self.window_state
+                self.gcx
+                    .window_state
                     .release_pointer_capture_unconditional(pointer_id);
             }
         }
 
+        // Pointer leave — clear all hover state.
         if let Event::Pointer(PointerEvent::Leave(_)) = &self.event {
             self.update_hover_from_path(&[]);
         }
 
-        // Pointer cancel - abort drag
+        // Pointer cancel — abort drag and release capture.
         let pi = match &self.event {
             Event::Pointer(PointerEvent::Cancel(pi)) => Some(*pi),
             _ => None,
         };
         if let Some(pi) = pi {
-            let drag_events = self.window_state.drag_tracker.on_pointer_cancel(pi);
+            let drag_events = self.gcx.window_state.drag_tracker.on_pointer_cancel(pi);
             for drag_event in drag_events {
-                match drag_event {
-                    DragEventDispatch::Source(target_id, drag_event) => {
-                        self.route_synthetic(
-                            RouteKind::Directed {
-                                target: target_id,
-                                phases: Phases::TARGET,
-                            },
-                            Event::Drag(DragEvent::Source(drag_event)),
-                        );
-                    }
-                    DragEventDispatch::Target(target_id, drag_event) => {
-                        self.route_synthetic(
-                            RouteKind::Directed {
-                                target: target_id,
-                                phases: Phases::TARGET,
-                            },
-                            Event::Drag(DragEvent::Target(drag_event)),
-                        );
-                    }
-                }
+                self.dispatch_drag_event(drag_event);
             }
-            // Release capture on cancel
             if let Some(pointer_id) = pi.pointer_id {
-                self.window_state
+                self.gcx
+                    .window_state
                     .release_pointer_capture_unconditional(pointer_id);
             }
         }
 
-        // Tab navigation
+        // Tab navigation.
         if let Event::Key(KeyboardEvent {
             key: Key::Named(NamedKey::Tab),
             modifiers,
@@ -1139,7 +1087,7 @@ impl<'a> GlobalEventCx<'a> {
             }
         }
 
-        // Arrow navigation
+        // Arrow navigation.
         let arrow_key = match &self.event {
             Event::Key(KeyboardEvent {
                 key:
@@ -1159,16 +1107,12 @@ impl<'a> GlobalEventCx<'a> {
             self.view_arrow_navigation(&name);
         }
 
-        // Window resized - mark responsive styles dirty
+        // Window resized — mark responsive styles dirty.
         if let Event::Window(WindowEvent::Resized(_)) = &self.event {
-            // VIEW_STORAGE.with_borrow(|storage| {
-            //     for view_id in storage.view_ids.keys() {
-            //         self.window_state.style_dirty.insert(view_id);
-            //     }
-            // });
+            // TODO: mark responsive styles dirty when the style system supports it
         }
 
-        // Context/popout menus (platform-specific timing)
+        // Context / popout menus (platform-specific timing).
         let pbe = match &self.event {
             Event::Pointer(PointerEvent::Down(pbe)) if cfg!(target_os = "macos") => Some(pbe),
             Event::Pointer(PointerEvent::Up(pbe)) if !cfg!(target_os = "macos") => Some(pbe),
@@ -1176,6 +1120,36 @@ impl<'a> GlobalEventCx<'a> {
         };
         if let Some(pbe) = pbe {
             self.handle_menu_events(&pbe.clone());
+        }
+    }
+
+    /// Helper: dispatch a `DragEventDispatch` variant as a synthetic route.
+    fn dispatch_drag_event(&mut self, drag_dispatch: DragEventDispatch) {
+        use crate::context::Phases;
+        match drag_dispatch {
+            DragEventDispatch::Source(source_id, drag_source_event) => {
+                self.route_synthetic(
+                    RouteKind::Directed {
+                        target: source_id,
+                        phases: Phases::TARGET,
+                    },
+                    Event::Drag(DragEvent::Source(drag_source_event)),
+                );
+            }
+            DragEventDispatch::Target(target_id, drag_target_event) => {
+                let phases = if drag_target_event.is_move() {
+                    Phases::STANDARD
+                } else {
+                    Phases::TARGET
+                };
+                self.route_synthetic(
+                    RouteKind::Directed {
+                        target: target_id,
+                        phases,
+                    },
+                    Event::Drag(DragEvent::Target(drag_target_event)),
+                );
+            }
         }
     }
 
@@ -1192,22 +1166,20 @@ impl<'a> GlobalEventCx<'a> {
 
         let view_state = hit.owning_id().state();
 
-        // Context menu on secondary button
         if button == PointerButton::Secondary {
             let context_menu = view_state.borrow().context_menu.clone();
             if let Some(menu) = context_menu {
                 let position = pbe.state.logical_point();
                 show_context_menu(menu(), Some(position));
-                // we need to clear the click state after menus because winit can lose the on up event while the menu is active
-                self.window_state.click_state.clear();
+                self.gcx.window_state.click_state.clear();
             }
         }
 
-        // Popout menu on primary button
         if button == PointerButton::Primary {
             let popout_menu = view_state.borrow().popout_menu.clone();
             if let Some(menu) = popout_menu {
                 let bounds = self
+                    .gcx
                     .window_state
                     .box_tree
                     .borrow()
@@ -1216,39 +1188,31 @@ impl<'a> GlobalEventCx<'a> {
                     .unwrap_or_default();
                 let bottom_left = Point::new(bounds.x0, bounds.y1);
                 show_context_menu(menu(), Some(bottom_left));
-                // we need to clear the click state after menus because winit can lose the on up event while the menu is active
-                self.window_state.click_state.clear();
+                self.gcx.window_state.click_state.clear();
             }
         }
     }
 }
 
-/// =========================================================================
-/// Pointer Capture Processing (inspired by Chromium's ProcessPendingPointerCapture)
-/// =========================================================================
-impl<'a> GlobalEventCx<'a> {
-    /// Process pending pointer capture changes for a specific pointer.
-    ///
-    /// This implements Chromium's two-phase capture model:
-    /// 1. Compare pending vs current capture state for the pointer
-    /// 2. Fire `LostPointerCapture` to the old target (if any)
-    /// 3. Move pending to active capture map
-    /// 4. Fire `GainedPointerCapture` to the new target (if any)
-    ///
-    /// This ensures proper event ordering: lost fires before got.
-    #[inline]
-    pub(crate) fn process_pending_pointer_capture(&mut self, pointer_id: PointerId) {
-        let current_target = self.window_state.get_pointer_capture_target(pointer_id);
-        let pending_target = self.window_state.get_pending_capture_target(pointer_id);
+// ============================================================================
+// RouteCx — Pointer Capture Processing
+// ============================================================================
 
-        // No change in capture state
+impl RouteCx<'_, '_> {
+    /// Process pending pointer capture changes.
+    ///
+    /// Fires `LostPointerCapture` to the old target, then `GainedPointerCapture`
+    /// to the new target, matching Chromium's two-phase capture model.
+    pub(crate) fn process_pending_pointer_capture(&mut self, pointer_id: PointerId) {
+        let current_target = self.gcx.window_state.get_pointer_capture_target(pointer_id);
+        let pending_target = self.gcx.window_state.get_pending_capture_target(pointer_id);
+
         if current_target == pending_target {
             return;
         }
 
-        // Fire LostPointerCapture to the old target
         if let Some(old_target) = current_target {
-            self.window_state.remove_active_capture(pointer_id);
+            self.gcx.window_state.remove_active_capture(pointer_id);
             let event = Event::PointerCapture(PointerCaptureEvent::Lost(pointer_id));
             self.route_synthetic(
                 RouteKind::Directed {
@@ -1259,10 +1223,11 @@ impl<'a> GlobalEventCx<'a> {
             );
         }
 
-        // Fire GainedPointerCapture to the new target
         if let Some(new_target) = pending_target {
             if !new_target.owning_id().is_hidden() {
-                self.window_state.set_active_capture(pointer_id, new_target);
+                self.gcx
+                    .window_state
+                    .set_active_capture(pointer_id, new_target);
                 let event = Event::PointerCapture(PointerCaptureEvent::Gained(super::DragToken(
                     pointer_id,
                 )));
@@ -1274,9 +1239,8 @@ impl<'a> GlobalEventCx<'a> {
                     event,
                 );
 
-                // If the view was removed during the event handler, clean up
                 if new_target.owning_id().is_hidden() {
-                    self.window_state.remove_active_capture(pointer_id);
+                    self.gcx.window_state.remove_active_capture(pointer_id);
                     let event = Event::PointerCapture(PointerCaptureEvent::Lost(pointer_id));
                     self.route_synthetic(
                         RouteKind::Directed {
@@ -1292,98 +1256,100 @@ impl<'a> GlobalEventCx<'a> {
 }
 
 // ============================================================================
-// Focus Management
+// RouteCx — Focus Management
 // ============================================================================
 
-/// Focus state management and focus event dispatching.
-///
-/// Handles updating the focused element, building focus paths through the view tree,
-/// and dispatching FocusGained/FocusLost/EnteredSubtree/LeftSubtree events.
-/// Integrates with the style system to update :focus and :focus-visible selectors.
-impl<'a> GlobalEventCx<'a> {
-    /// Update focus to a new view, firing focus enter/leave events
+impl RouteCx<'_, '_> {
+    /// Update focus to a new element, firing FocusGained/FocusLost events.
     pub fn update_focus(&mut self, element_id: ElementId, keyboard_navigation: bool) {
-        // Build path using router
-        let path = {
-            let box_tree = self.window_state.box_tree.borrow();
-            build_focus_path(element_id, &box_tree, keyboard_navigation)
-        };
-        self.update_focus_from_path(&path, keyboard_navigation);
-    }
+        let new_focus = self.resolve_focus_target(element_id, keyboard_navigation);
 
-    /// call this using a dom order path, not a visual path from hit testing.
-    ///
-    /// build a dom order path using lookup after hit testing in order to build a path
-    pub fn update_focus_from_path(&mut self, path: &[ElementId], keyboard_navigation: bool) {
-        // Update focus state and get enter/leave events
-        let focus_events = self.window_state.focus_state.update_path(path);
+        let old_focus = self.gcx.window_state.focus_state;
 
-        // Fire focus events
-        for focus_event in focus_events {
-            match focus_event {
-                UnderFocusEvent::Enter(id) => {
-                    if id.is_view() {
-                        self.window_state.style_dirty.insert(id.owning_id());
-                    }
-                    self.pending_events.push((
-                        RouteKind::Directed {
-                            target: id,
-                            phases: Phases::STANDARD,
-                        },
-                        Event::Focus(FocusEvent::Gained),
-                    ));
-                }
-                UnderFocusEvent::Leave(id) => {
-                    if id.is_view() {
-                        self.window_state.style_dirty.insert(id.owning_id());
-                    }
-                    self.pending_events.push((
-                        RouteKind::Directed {
-                            target: id,
-                            phases: Phases::STANDARD,
-                        },
-                        Event::Focus(FocusEvent::Lost),
-                    ));
-                }
-            }
+        if old_focus == new_focus {
+            return;
+        }
+        self.gcx.window_state.focus_state = new_focus;
+
+        if let Some(old) = old_focus {
+            self.gcx.window_state.style_dirty.insert(old.owning_id());
+            self.pending_default_events.push((
+                RouteKind::Directed {
+                    target: old,
+                    phases: Phases::STANDARD,
+                },
+                Event::Focus(FocusEvent::Lost),
+            ));
         }
 
-        self.window_state.keyboard_navigation = keyboard_navigation;
+        if let Some(new_focus) = new_focus {
+            self.gcx
+                .window_state
+                .style_dirty
+                .insert(new_focus.owning_id());
+            self.pending_default_events.push((
+                RouteKind::Directed {
+                    target: new_focus,
+                    phases: Phases::STANDARD,
+                },
+                Event::Focus(FocusEvent::Gained),
+            ));
+        }
+
+        self.gcx.window_state.keyboard_navigation = keyboard_navigation;
+    }
+
+    pub fn clear_focus(&mut self) {
+        let old_focus = self.gcx.window_state.focus_state.take();
+
+        if let Some(old) = old_focus {
+            self.gcx.window_state.style_dirty.insert(old.owning_id());
+            self.pending_default_events.push((
+                RouteKind::Directed {
+                    target: old,
+                    phases: Phases::STANDARD,
+                },
+                Event::Focus(FocusEvent::Lost),
+            ));
+        }
+    }
+
+    /// Walk up from `target` to find the first ancestor (or self) that is
+    /// visible and focusable (or keyboard-navigable if using keyboard nav).
+    fn resolve_focus_target(
+        &self,
+        target: ElementId,
+        keyboard_navigation: bool,
+    ) -> Option<ElementId> {
+        let required = if keyboard_navigation {
+            NodeFlags::VISIBLE | NodeFlags::KEYBOARD_NAVIGABLE
+        } else {
+            NodeFlags::VISIBLE | NodeFlags::FOCUSABLE
+        };
+        let box_tree = self.gcx.window_state.box_tree.borrow();
+        std::iter::successors(Some(target), |&cur| {
+            box_tree
+                .parent_of(cur.0)
+                .map(|p| box_tree.meta(p).flatten().unwrap())
+        })
+        .find(|id| {
+            box_tree
+                .flags(id.0)
+                .map(|f| f.contains(required))
+                .unwrap_or(false)
+        })
     }
 }
 
 // ============================================================================
-// Keyboard Navigation
+// RouteCx — Keyboard Navigation
 // ============================================================================
 
-/// Keyboard-driven focus navigation.
-///
-/// Implements Tab and Arrow key navigation using the understory_focus system
-/// for spatial and sequential focus traversal. Handles both forward/backward
-/// tab navigation and directional arrow key navigation.
-impl<'a> GlobalEventCx<'a> {
-    /// Tab navigation using understory_focus for spatial awareness
+impl RouteCx<'_, '_> {
     pub(crate) fn view_tab_navigation(&mut self, backwards: bool) {
-        // Get the focus scope root (could be enhanced to find actual scope boundaries)
-        let scope_root = self.window_state.root_view_id.get_element_id();
+        let scope_root = self.gcx.window_state.root_view_id.get_element_id();
 
-        let current_focus = self
-            .window_state
-            .focus_state
-            .current_path()
-            .last()
-            .cloned()
-            // .unwrap_or_else(|| {
-            //     self.window_state
-            //         .box_tree
-            //         .borrow()
-            //         .hit_test_point(
-            //             self.window_state.last_pointer.0,
-            //             QueryFilter::new().visible(),
-            //         )
-            //         .map(|hit| dbg!(VisualId(hit.node, self.window_state.root_view_id)))
-            // });
-            .unwrap_or(scope_root);
+        let current_focus = self.gcx.window_state.focus_state.unwrap_or(scope_root);
 
         // TODO: replace with non-build_focus_space traversal
         let _ = (scope_root, current_focus, backwards);
@@ -1396,17 +1362,12 @@ impl<'a> GlobalEventCx<'a> {
 }
 
 // ============================================================================
-// Hover State Management
+// RouteCx — Hover State Management
 // ============================================================================
 
-/// Hover state tracking and pointer enter/leave event dispatching.
-///
-/// Manages which elements are currently under the pointer, dispatching
-/// PointerEnter/PointerLeave events as the pointer moves and updating
-/// the :hover style selector state.
-impl<'a> GlobalEventCx<'a> {
+impl RouteCx<'_, '_> {
     pub(crate) fn update_hover_from_point(&mut self, point: Point) {
-        let path = hit_test(self.window_state.root_view_id, point);
+        let path = hit_test(self.gcx.window_state.root_view_id, point);
         if let Some(path) = path {
             self.update_hover_from_path(&path);
         }
@@ -1414,51 +1375,50 @@ impl<'a> GlobalEventCx<'a> {
 
     pub(crate) fn update_hover_from_path(&mut self, path: &[ElementId]) {
         if matches!(&self.event, Event::FileDrag(FileDragEvent::Drop(..))) {
-            // Drop: clear hover state and dirty styles, but don't emit file-drag leave events
-            let leave_events = self.window_state.hover_state.update_path(&[]);
+            // Drop: clear hover, re-enter with pointer enters.
+            let leave_events = self.gcx.window_state.hover_state.update_path(&[]);
             for event in leave_events {
                 #[expect(irrefutable_let_patterns)]
                 if let HoverEvent::Leave(target) | HoverEvent::Enter(target) = &event {
                     if target.is_view() {
-                        self.window_state.style_dirty.insert(target.owning_id());
+                        self.gcx.window_state.style_dirty.insert(target.owning_id());
                     }
                 }
             }
-            // Re-enter with pointer enters
-            let enter_events = self.window_state.hover_state.update_path(path);
+            let enter_events = self.gcx.window_state.hover_state.update_path(path);
             Self::push_hover_events(
                 &mut self.pending_events,
                 enter_events,
                 false,
-                self.window_state,
+                self.gcx.window_state,
             );
         } else if matches!(&self.event, Event::FileDrag(FileDragEvent::Enter(..))) {
-            // Drag start: emit pointer leaves then file-drag enters
-            let leave_events = self.window_state.hover_state.update_path(&[]);
+            // Drag start: pointer leaves then file-drag enters.
+            let leave_events = self.gcx.window_state.hover_state.update_path(&[]);
             Self::push_hover_events(
                 &mut self.pending_events,
                 leave_events,
-                false, // pointer leaves
-                self.window_state,
+                false,
+                self.gcx.window_state,
             );
-            let enter_events = self.window_state.hover_state.update_path(path);
+            let enter_events = self.gcx.window_state.hover_state.update_path(path);
             Self::push_hover_events(
                 &mut self.pending_events,
                 enter_events,
-                true, // file-drag enters
-                self.window_state,
+                true,
+                self.gcx.window_state,
             );
         } else {
-            let events = self.window_state.hover_state.update_path(path);
-            let use_file_drag = self.window_state.file_drag_paths.is_some();
+            let events = self.gcx.window_state.hover_state.update_path(path);
+            let use_file_drag = self.gcx.window_state.file_drag_paths.is_some();
             Self::push_hover_events(
                 &mut self.pending_events,
                 events,
                 use_file_drag,
-                self.window_state,
+                self.gcx.window_state,
             );
         }
-        self.window_state.needs_cursor_resolution = true;
+        self.gcx.window_state.needs_cursor_resolution = true;
     }
 
     fn push_hover_events(
@@ -1525,9 +1485,7 @@ impl<'a> GlobalEventCx<'a> {
             return;
         };
 
-        // for all other pointer events it must have a point and a path
         let Some((point, path)) = pe.logical_point().zip(self.hit_path.clone()) else {
-            // cancel, enter or leave pointer events, no additional state to handle
             return;
         };
 
@@ -1535,17 +1493,14 @@ impl<'a> GlobalEventCx<'a> {
             PointerEvent::Down(PointerButtonEvent {
                 button, pointer, ..
             }) => {
-                // on pointer down, request style for the full hit path
-                // TODO: make this only request style if the view has active selector
                 for hit in path
                     .iter()
                     .filter(|id| id.is_view())
                     .map(|id| id.owning_id())
                 {
-                    self.window_state.style_dirty.insert(hit);
+                    self.gcx.window_state.style_dirty.insert(hit);
                 }
-                // TODO: click state should track count.
-                self.window_state.click_state.on_down(
+                self.gcx.window_state.click_state.on_down(
                     pointer.pointer_id.map(|p| p.get_inner()),
                     button.map(|b| b as u8),
                     path.clone(),
@@ -1564,18 +1519,19 @@ impl<'a> GlobalEventCx<'a> {
             }
             PointerEvent::Cancel(PointerInfo { pointer_id, .. }) => {
                 if let Some(canceled) = self
+                    .gcx
                     .window_state
                     .click_state
                     .cancel(pointer_id.map(|p| p.get_inner()))
                 {
                     for target in canceled.target.iter() {
-                        self.window_state.style_dirty.insert(target.owning_id());
+                        self.gcx.window_state.style_dirty.insert(target.owning_id());
                     }
                 }
             }
             PointerEvent::Move(pu) => {
-                self.window_state.last_pointer = (pu.current.logical_point(), pu.pointer);
-                let exceeded_nodes = self.window_state.click_state.on_move(
+                self.gcx.window_state.last_pointer = (pu.current.logical_point(), pu.pointer);
+                let exceeded_nodes = self.gcx.window_state.click_state.on_move(
                     pu.pointer.pointer_id.map(|p| p.get_inner()),
                     pu.current.logical_point(),
                 );
@@ -1585,34 +1541,35 @@ impl<'a> GlobalEventCx<'a> {
                         .filter(|id| id.is_view())
                         .map(|id| id.owning_id())
                     {
-                        self.window_state.style_dirty.insert(id);
+                        self.gcx.window_state.style_dirty.insert(id);
                     }
                 }
             }
-
             _ => {}
         }
     }
 
     fn handle_click_events(
         &mut self,
-        path: &Rc<[ElementId]>,
+        new_path: &Rc<[ElementId]>,
         point: Point,
         pointer_id: Option<PointerId>,
         button: Option<PointerButton>,
         count: u8,
     ) {
-        let hit_path_len = path.len();
-        let res = self.window_state.click_state.on_up(
+        let hit_path_len = new_path.len();
+        let res = self.gcx.window_state.click_state.on_up(
             pointer_id.map(|p| p.get_inner()),
             button.map(|b| b as u8),
-            path,
+            new_path,
             point,
             Instant::now().duration_since(*START_TIME).as_millis() as u64,
         );
 
-        for hit in path.iter() {
-            hit.owning_id().request_style();
+        for hit in new_path.iter() {
+            if hit.is_view() {
+                self.gcx.window_state.style_dirty.insert(hit.owning_id());
+            }
         }
 
         match res {
@@ -1626,19 +1583,26 @@ impl<'a> GlobalEventCx<'a> {
             ClickResult::Suppressed(Some(og_target)) => {
                 let common_ancestor_idx = og_target
                     .iter()
-                    .zip(path.iter())
+                    .zip(new_path.iter())
                     .position(|(a, b)| a != b)
                     .unwrap_or(og_target.len().min(hit_path_len));
                 if common_ancestor_idx > 0 {
-                    let common_path = &path[..common_ancestor_idx];
+                    let common_path = &new_path[..common_ancestor_idx];
                     self.push_interaction_events(
                         common_path.last().copied(),
                         count,
                         button == Some(PointerButton::Secondary),
                     );
+                    for target in &og_target.iter().as_slice()[common_ancestor_idx..] {
+                        if target.is_view() {
+                            self.gcx.window_state.style_dirty.insert(target.owning_id());
+                        }
+                    }
                 } else {
                     for target in og_target.iter() {
-                        self.window_state.style_dirty.insert(target.owning_id());
+                        if target.is_view() {
+                            self.gcx.window_state.style_dirty.insert(target.owning_id());
+                        }
                     }
                 }
             }
@@ -1649,7 +1613,7 @@ impl<'a> GlobalEventCx<'a> {
     fn push_interaction_events(&mut self, target: Option<ElementId>, count: u8, secondary: bool) {
         if let Some(id) = target {
             if id.is_view() {
-                self.window_state.style_dirty.insert(id.owning_id());
+                self.gcx.window_state.style_dirty.insert(id.owning_id());
             }
             let route_kind = RouteKind::Directed {
                 target: id,
@@ -1672,20 +1636,43 @@ impl<'a> GlobalEventCx<'a> {
             }
         }
     }
-
-    fn send_pending_events(&mut self) {
-        while !self.pending_events.is_empty() {
-            let pending = std::mem::take(&mut self.pending_events);
-
-            for (route, event) in pending {
-                self.route(route, OverrideKind::Synthetic { event });
-                // New pending events will be processed in next iteration
-            }
-        }
-    }
 }
-impl Drop for GlobalEventCx<'_> {
-    fn drop(&mut self) {
-        self.send_pending_events();
+
+pub trait KeyEventExt {
+    fn is_shortcut_like(&self) -> bool;
+}
+
+impl KeyEventExt for ui_events::keyboard::KeyboardEvent {
+    /// Returns `true` for key combos that look like shortcuts rather than text input.
+    ///
+    /// Shortcut-like means:
+    /// - Any Ctrl/Cmd/Alt modifier (Shift alone doesn't count — that's just uppercase)
+    /// - Bare function keys (F1–F24), Escape, Delete, PrintScreen, etc.
+    /// - Tab (even unmodified — it's navigation, not text)
+    fn is_shortcut_like(&self) -> bool {
+        let has_command_modifier = self
+            .modifiers
+            .intersects(Modifiers::CONTROL | Modifiers::META | Modifiers::ALT);
+        if has_command_modifier {
+            return true;
+        }
+        matches!(
+            self.code,
+            KeyCode::Escape
+                | KeyCode::Tab
+                | KeyCode::Delete
+                | KeyCode::F1
+                | KeyCode::F2
+                | KeyCode::F3
+                | KeyCode::F4
+                | KeyCode::F5
+                | KeyCode::F6
+                | KeyCode::F7
+                | KeyCode::F8
+                | KeyCode::F9
+                | KeyCode::F10
+                | KeyCode::F11
+                | KeyCode::F12
+        )
     }
 }

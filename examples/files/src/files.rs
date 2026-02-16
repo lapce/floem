@@ -10,7 +10,7 @@ use floem::{
 pub fn files_view() -> impl IntoView {
     let files = RwSignal::new(String::new());
     let view = Stack::horizontal((
-        Button::new("Select file").on_click_cont(move |_| {
+        Button::new("Select file").action(move || {
             open_file(
                 FileDialogOptions::new()
                     .force_starting_directory("/")
@@ -27,7 +27,7 @@ pub fn files_view() -> impl IntoView {
                 },
             );
         }),
-        Button::new("Select multiple files").on_click_cont(move |_| {
+        Button::new("Select multiple files").action(move || {
             open_file(
                 FileDialogOptions::new()
                     .multi_selection()
@@ -44,7 +44,7 @@ pub fn files_view() -> impl IntoView {
                 },
             );
         }),
-        Button::new("Select folder").on_click_cont(move |_| {
+        Button::new("Select folder").action(move || {
             open_file(
                 FileDialogOptions::new()
                     .select_directories()
@@ -57,7 +57,7 @@ pub fn files_view() -> impl IntoView {
                 },
             );
         }),
-        Button::new("Select multiple folder").on_click_cont(move |_| {
+        Button::new("Select multiple folder").action(move || {
             open_file(
                 FileDialogOptions::new()
                     .select_directories()
@@ -71,7 +71,7 @@ pub fn files_view() -> impl IntoView {
                 },
             );
         }),
-        Button::new("Save file").on_click_cont(move |_| {
+        Button::new("Save file").action(move || {
             save_as(
                 FileDialogOptions::new()
                     .default_name("floem.file")

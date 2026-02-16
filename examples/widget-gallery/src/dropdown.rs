@@ -1,13 +1,7 @@
 use dropdown::Dropdown;
 use strum::IntoEnumIterator;
 
-use floem::{
-    context::EventCallbackConfig,
-    prelude::*,
-    reactive::Effect,
-    theme::StyleThemeExt,
-    views::{dropdown::DropdownOpenChanged, scroll::ScrollClass},
-};
+use floem::{prelude::*, reactive::Effect, theme::StyleThemeExt, views::scroll::ScrollClass};
 
 use crate::form::{self, form_item};
 

@@ -7,7 +7,8 @@ use crossbeam::channel::bounded as sync_channel;
 #[cfg(not(feature = "crossbeam"))]
 use std::sync::mpsc::sync_channel;
 
-use crate::event::CustomEvent;
+use crate::action::add_update_message;
+use crate::event::{CustomEvent, UpdatePhaseEvent};
 use crate::platform::menu_types::{Menu as MudaMenu, MenuId};
 #[cfg(target_os = "windows")]
 use muda::MenuTheme as MudaMenuTheme;
@@ -566,6 +567,9 @@ impl WindowHandle {
 
         // Clear pending child changes after style pass completes
         self.window_state.pending_child_change.clear();
+        let root_element_id = self.window_state.root_view_id.get_element_id();
+        let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::Style));
+        GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
     }
 
     fn layout(&mut self) -> Duration {
@@ -578,7 +582,27 @@ impl WindowHandle {
         // Update box tree from layout after layout completes
         cx.window_state.update_box_tree_from_layout();
 
+        let root_element_id = self.window_state.root_view_id.get_element_id();
+        let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::Layout));
+        GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
+
         taffy_duration
+    }
+
+    fn update_box_tree_from_layout(&mut self) {
+        self.window_state.update_box_tree_from_layout();
+        let root_element_id = self.window_state.root_view_id.get_element_id();
+        let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::BoxTreeUpdate));
+        GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
+    }
+
+    fn process_pending_box_tree_updates(&mut self) {
+        self.window_state.process_pending_box_tree_updates();
+        let root_element_id = self.window_state.root_view_id.get_element_id();
+        let event = Event::Window(WindowEvent::UpdatePhase(
+            UpdatePhaseEvent::BoxTreePendingUpdates,
+        ));
+        GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
     }
 
     fn commit_box_tree(&mut self) -> Duration {
@@ -684,6 +708,10 @@ impl WindowHandle {
             }
         }
 
+        let root_element_id = self.window_state.root_view_id.get_element_id();
+        let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::BoxTreeCommit));
+        GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
+
         start.elapsed()
     }
 
@@ -771,7 +799,9 @@ impl WindowHandle {
         if cx.window_state.capture.is_none() {
             self.window.pre_present_notify();
         }
-        cx.paint_state.renderer_mut().finish()
+        let image = cx.paint_state.renderer_mut().finish();
+
+        image
     }
 
     pub(crate) fn capture(&mut self) -> Capture {
@@ -884,13 +914,13 @@ impl WindowHandle {
 
                 if self.needs_box_tree_update() {
                     paint = true;
-                    self.window_state.update_box_tree_from_layout();
+                    self.update_box_tree_from_layout();
                 }
 
                 // Process any pending individual box tree updates after layout
                 if !self.window_state.views_needing_box_tree_update.is_empty() {
                     paint = true;
-                    self.window_state.process_pending_box_tree_updates();
+                    self.process_pending_box_tree_updates();
                 }
 
                 if self.needs_box_tree_commit() {
@@ -905,6 +935,10 @@ impl WindowHandle {
         }
 
         self.set_cursor();
+
+        let root_element_id = self.window_state.root_view_id.get_element_id();
+        let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::Complete));
+        GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
 
         // TODO: This should only use `self.window_state.request_paint)`
         paint || mem::take(&mut self.window_state.request_paint)
@@ -995,7 +1029,7 @@ impl WindowHandle {
                             cx.window_state,
                             root_element_id,
                             Event::Window(WindowEvent::UpdatePhase(
-                                crate::event::UpdatePhaseEvent::ProcessingMessages,
+                                UpdatePhaseEvent::ProcessingMessages,
                             )),
                         )
                         .update_focus(id, keyboard_navigation);
@@ -1003,16 +1037,15 @@ impl WindowHandle {
                     UpdateMessage::ClearFocus => {
                         // because we do not call route, the processing messages event is not sent.
                         // this is desirable because the process messages event will be sent explicitly another time.
-                        let keyboard_navigation = cx.window_state.keyboard_navigation;
                         let root_element_id = cx.window_state.root_view_id.get_element_id();
                         GlobalEventCx::new(
                             cx.window_state,
                             root_element_id,
                             Event::Window(WindowEvent::UpdatePhase(
-                                crate::event::UpdatePhaseEvent::ProcessingMessages,
+                                UpdatePhaseEvent::ProcessingMessages,
                             )),
                         )
-                        .update_focus_from_path(&[], keyboard_navigation);
+                        .clear_focus();
                     }
                     UpdateMessage::SetPointerCapture {
                         element_id: view_id,
@@ -1231,6 +1264,11 @@ impl WindowHandle {
         // After all messages are processed, re-parent any scopes that couldn't find
         // a parent scope earlier (because the view tree wasn't fully assembled yet).
         crate::view::process_pending_scope_reparents();
+        let root_element_id = self.window_state.root_view_id.get_element_id();
+        let event = Event::Window(WindowEvent::UpdatePhase(
+            UpdatePhaseEvent::ProcessingMessages,
+        ));
+        GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
     }
 
     fn process_deferred_update_messages(&mut self) {

@@ -31,7 +31,7 @@ impl From<i32> for Pct {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Auto;
 
-/// An angle value that can be in degrees or radians
+/// An angle value that can be in degrees or radians.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Angle {
     /// Degrees (0-360)
@@ -41,7 +41,12 @@ pub enum Angle {
 }
 
 impl Angle {
-    /// Convert the angle to radians
+    pub const ZERO: Angle = Angle::Rad(0.0);
+    pub const QUARTER_TURN: Angle = Angle::Deg(90.0);
+    pub const HALF_TURN: Angle = Angle::Deg(180.0);
+    pub const FULL_TURN: Angle = Angle::Deg(360.0);
+
+    /// Convert the angle to radians.
     pub fn to_radians(self) -> f64 {
         match self {
             Angle::Deg(deg) => deg.to_radians(),
@@ -49,12 +54,153 @@ impl Angle {
         }
     }
 
-    /// Convert the angle to degrees
+    /// Convert the angle to degrees.
     pub fn to_degrees(self) -> f64 {
         match self {
             Angle::Deg(deg) => deg,
             Angle::Rad(rad) => rad.to_degrees(),
         }
+    }
+
+    /// Normalize to [0, 2π) in radians.
+    pub fn normalized(self) -> Angle {
+        let rad = self.to_radians().rem_euclid(std::f64::consts::TAU);
+        Angle::Rad(rad)
+    }
+
+    /// Sine of the angle.
+    pub fn sin(self) -> f64 {
+        self.to_radians().sin()
+    }
+
+    /// Cosine of the angle.
+    pub fn cos(self) -> f64 {
+        self.to_radians().cos()
+    }
+
+    /// Tangent of the angle.
+    pub fn tan(self) -> f64 {
+        self.to_radians().tan()
+    }
+
+    /// Returns (sin, cos) efficiently.
+    pub fn sin_cos(self) -> (f64, f64) {
+        self.to_radians().sin_cos()
+    }
+
+    /// Linear interpolation between two angles.
+    pub fn lerp(self, other: &Angle, t: f64) -> Angle {
+        Angle::Rad(self.to_radians() * (1.0 - t) + other.to_radians() * t)
+    }
+}
+
+impl Default for Angle {
+    fn default() -> Self {
+        Angle::ZERO
+    }
+}
+
+// --- Arithmetic ops (always produce Rad) ---
+
+impl std::ops::Add for Angle {
+    type Output = Angle;
+    fn add(self, rhs: Angle) -> Angle {
+        Angle::Rad(self.to_radians() + rhs.to_radians())
+    }
+}
+
+impl std::ops::AddAssign for Angle {
+    fn add_assign(&mut self, rhs: Angle) {
+        *self = *self + rhs;
+    }
+}
+
+impl std::ops::Sub for Angle {
+    type Output = Angle;
+    fn sub(self, rhs: Angle) -> Angle {
+        Angle::Rad(self.to_radians() - rhs.to_radians())
+    }
+}
+
+impl std::ops::SubAssign for Angle {
+    fn sub_assign(&mut self, rhs: Angle) {
+        *self = *self - rhs;
+    }
+}
+
+impl std::ops::Neg for Angle {
+    type Output = Angle;
+    fn neg(self) -> Angle {
+        Angle::Rad(-self.to_radians())
+    }
+}
+
+impl std::ops::Mul<f64> for Angle {
+    type Output = Angle;
+    fn mul(self, rhs: f64) -> Angle {
+        Angle::Rad(self.to_radians() * rhs)
+    }
+}
+
+impl std::ops::Mul<Angle> for f64 {
+    type Output = Angle;
+    fn mul(self, rhs: Angle) -> Angle {
+        Angle::Rad(self * rhs.to_radians())
+    }
+}
+
+impl std::ops::MulAssign<f64> for Angle {
+    fn mul_assign(&mut self, rhs: f64) {
+        *self = *self * rhs;
+    }
+}
+
+impl std::ops::Div<f64> for Angle {
+    type Output = Angle;
+    fn div(self, rhs: f64) -> Angle {
+        Angle::Rad(self.to_radians() / rhs)
+    }
+}
+
+impl std::ops::DivAssign<f64> for Angle {
+    fn div_assign(&mut self, rhs: f64) {
+        *self = *self / rhs;
+    }
+}
+
+/// Dividing two angles gives a dimensionless ratio.
+impl std::ops::Div<Angle> for Angle {
+    type Output = f64;
+    fn div(self, rhs: Angle) -> f64 {
+        self.to_radians() / rhs.to_radians()
+    }
+}
+
+// --- Comparisons (compare by radians value) ---
+
+impl PartialOrd for Angle {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.to_radians().partial_cmp(&other.to_radians())
+    }
+}
+
+// --- Display ---
+
+impl std::fmt::Display for Angle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Angle::Deg(deg) => write!(f, "{}°", deg),
+            Angle::Rad(rad) => write!(f, "{}rad", rad),
+        }
+    }
+}
+
+// --- From conversions ---
+
+impl From<f64> for Angle {
+    /// Converts from radians (same convention as std trig functions).
+    fn from(radians: f64) -> Self {
+        Angle::Rad(radians)
     }
 }
 

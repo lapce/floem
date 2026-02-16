@@ -935,11 +935,7 @@ impl StylePropValue for Duration {
 
 impl StylePropValue for super::Angle {
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
-        let self_rad = self.to_radians();
-        let other_rad = other.to_radians();
-        self_rad
-            .interpolate(&other_rad, value)
-            .map(super::Angle::Rad)
+        Some(self.lerp(other, value))
     }
 }
 

@@ -22,9 +22,8 @@ use crate::view::ViewId;
 use crate::view::stacking::{invalidate_all_overlay_caches, invalidate_stacking_cache};
 use crate::window::state::WindowState;
 
-use super::cache::StyleCacheKey;
 use super::recalc::StyleRecalcChange;
-use super::{Disabled, Style, StyleProp, ZIndex};
+use super::{Style, StyleProp};
 
 /// The interaction state of a view, used to determine which style selectors apply.
 ///
@@ -413,7 +412,7 @@ impl<'a> StyleCx<'a> {
                 &mut box_tree_transitioning,
             ) || box_tree_transitioning
             {
-                self.window_state.needs_box_tree_commit = true;
+                view_id.request_box_tree_update_for_view();
             }
             transitioning |= box_tree_transitioning;
 

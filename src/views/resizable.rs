@@ -1,14 +1,16 @@
-use std::{any::Any, cell::RefCell, rc::Rc};
+use std::{any::Any, cell::RefCell, rc::Rc, time::Duration};
 
 use crate::{
     BoxTree, ElementId, ViewId,
     context::{EventCx, LayoutChangedListener, PaintCx, UpdateCx},
-    event::{Event, EventPropagation, InteractionEvent, Phase},
+    easing::Linear,
+    event::{
+        DragEvent, DragSourceEvent, Event, EventPropagation, InteractionEvent, Phase,
+        listener::UpdatePhaseLayout,
+    },
     prelude::*,
     prop, prop_extractor,
-    style::{
-        CursorStyle, CustomStylable, CustomStyle, FlexDirectionProp, Style, StyleClass, StyleCx,
-    },
+    style::{CursorStyle, CustomStylable, CustomStyle, FlexDirectionProp, Style, StyleClass},
     style_class,
     unit::{Pct, Px},
 };
@@ -16,7 +18,7 @@ use floem_reactive::Effect;
 use peniko::{
     Brush,
     color::palette::css,
-    kurbo::{Axis, Point, Rect},
+    kurbo::{Axis, Rect},
 };
 use rustc_hash::FxHashMap;
 use taffy::{FlexDirection, Overflow};
@@ -34,7 +36,7 @@ style_class!(
 
 pub(crate) fn create_resizable(children: Vec<Box<dyn View>>) -> ResizableStack {
     let id = ViewId::new();
-    id.register_listener(LayoutChangedListener::listener_key());
+    id.register_listener(listener::UpdatePhaseLayout::listener_key());
 
     let mut view_children = Vec::new();
     let mut child_ids = Vec::new();
@@ -154,7 +156,6 @@ struct Handle {
     parent_id: ViewId,
     affected_child_id: ViewId,
     next_child_id: ViewId,
-    down_point: Option<Point>,
     element_id: ElementId,
     box_tree: Rc<RefCell<BoxTree>>,
     handle_style: HandleStyle,
@@ -168,7 +169,6 @@ impl Handle {
             parent_id,
             affected_child_id,
             next_child_id,
-            down_point: None,
             element_id,
             box_tree,
             handle_style: Default::default(),
@@ -216,7 +216,7 @@ impl Handle {
     }
 
     fn event(&mut self, cx: &mut EventCx, axis: Axis) {
-        match &cx.event.clone() {
+        match &cx.event {
             Event::Interaction(InteractionEvent::DoubleClick) => {
                 // Reset to equal sizes
                 self.affected_child_id
@@ -229,84 +229,82 @@ impl Handle {
                     cx.window_state
                         .set_pointer_capture(pointer_id, self.element_id);
                 }
-                self.down_point = Some(e.state.logical_point());
+            }
+            Event::PointerCapture(crate::event::PointerCaptureEvent::Gained(drag)) => {
+                cx.start_drag(
+                    *drag,
+                    crate::event::DragConfig {
+                        threshold: 1.,
+                        animation_duration: Duration::ZERO,
+                        easing: Rc::new(Linear),
+                        custom_data: None,
+                        track_targets: false,
+                    },
+                    false,
+                );
             }
             Event::Pointer(PointerEvent::Leave(_)) => {
                 cx.window_state.clear_cursor(self.element_id);
-                // self.style(&mut StyleCx::new(cx.window_state, self.parent_id), axis);
             }
-            Event::Pointer(PointerEvent::Enter(_)) => {
-                // self.style(&mut StyleCx::new(cx.window_state, self.parent_id), axis);
-            }
-            Event::Pointer(PointerEvent::Move(u)) => {
+            Event::Pointer(PointerEvent::Move(_)) => {
                 let cursor = match axis {
                     Axis::Horizontal => CursorStyle::ColResize,
                     Axis::Vertical => CursorStyle::RowResize,
                 };
                 let cursor = self.handle_style.cursor().unwrap_or(cursor);
                 cx.window_state.set_cursor(self.element_id, cursor);
+            }
+            Event::Drag(DragEvent::Source(DragSourceEvent::Move(dme))) => {
+                let point = dme.current_state.logical_point();
+                let affected_rect = self.affected_child_id.get_layout_rect();
+                let next_rect = self.next_child_id.get_layout_rect();
 
-                if cx.window_state.has_capture(self.element_id)
-                    && let Some(start_point) = self.down_point
-                    && u.current.logical_point().distance(start_point).abs() > 1.
-                {
-                    let point = u.current.logical_point();
-                    let affected_rect = self.affected_child_id.get_layout_rect();
-                    let next_rect = self.next_child_id.get_layout_rect();
+                // Calculate the gap between children
+                let (_, affected_x1) = affected_rect.get_coords(axis);
+                let (next_x0, _) = next_rect.get_coords(axis);
+                let gap_size = next_x0 - affected_x1;
 
-                    // Calculate the gap between children
-                    let (_, affected_x1) = affected_rect.get_coords(axis);
-                    let (next_x0, _) = next_rect.get_coords(axis);
-                    let gap_size = next_x0 - affected_x1;
+                // Use the CURRENT rendered sizes of just these two children
+                let pair_total =
+                    affected_rect.size().get_coord(axis) + next_rect.size().get_coord(axis);
 
-                    // Use the CURRENT rendered sizes of just these two children
-                    let pair_total =
-                        affected_rect.size().get_coord(axis) + next_rect.size().get_coord(axis);
+                if pair_total <= 0.0 {
+                    return;
+                }
 
-                    if pair_total <= 0.0 {
-                        return;
-                    }
+                // The mouse position relative to where the affected child starts
+                let mouse_offset = point.get_coord(axis) - affected_rect.origin().get_coord(axis);
 
-                    // The mouse position relative to where the affected child starts
-                    let mouse_offset =
-                        point.get_coord(axis) - affected_rect.origin().get_coord(axis);
+                // Subtract half the gap since the handle is centered in it
+                let affected_size = mouse_offset - (gap_size / 2.0);
 
-                    // Subtract half the gap since the handle is centered in it
-                    let affected_size = mouse_offset - (gap_size / 2.0);
+                // What fraction of the pair does the affected child want?
+                let affected_fraction = affected_size / pair_total;
 
-                    // What fraction of the pair does the affected child want?
-                    let affected_fraction = affected_size / pair_total;
+                // Apply min/max as fractions
+                let min_fraction = 0.1; // 10%
+                let max_fraction = 0.9; // 90%
+                let clamped_fraction = affected_fraction.clamp(min_fraction, max_fraction);
 
-                    // Apply min/max as fractions
-                    let min_fraction = 0.1; // 10%
-                    let max_fraction = 0.9; // 90%
-                    let clamped_fraction = affected_fraction.clamp(min_fraction, max_fraction);
+                // Calculate the new sizes
+                let new_affected_size = clamped_fraction * pair_total;
+                let new_next_size = (1.0 - clamped_fraction) * pair_total;
 
-                    // Calculate the new sizes
-                    let new_affected_size = clamped_fraction * pair_total;
-                    let new_next_size = (1.0 - clamped_fraction) * pair_total;
+                // Convert these pixel sizes to percentages of parent
+                let parent_content = self.parent_id.get_content_rect_local();
+                let parent_size = parent_content.size().get_coord(axis);
 
-                    // Convert these pixel sizes to percentages of parent
-                    let parent_content = self.parent_id.get_content_rect_local();
-                    let parent_size = parent_content.size().get_coord(axis);
+                if parent_size > 0.0 {
+                    let affected_percent = (new_affected_size / parent_size) * 100.0;
+                    let next_percent = (new_next_size / parent_size) * 100.0;
 
-                    if parent_size > 0.0 {
-                        let affected_percent = (new_affected_size / parent_size) * 100.0;
-                        let next_percent = (new_next_size / parent_size) * 100.0;
-
-                        self.affected_child_id
-                            .update_state(ResizeChildMessage::SetBasisPercent(Pct(
-                                affected_percent,
-                            )));
-                        self.next_child_id
-                            .update_state(ResizeChildMessage::SetBasisPercent(Pct(next_percent)));
-                    }
+                    self.affected_child_id
+                        .update_state(ResizeChildMessage::SetBasisPercent(Pct(affected_percent)));
+                    self.next_child_id
+                        .update_state(ResizeChildMessage::SetBasisPercent(Pct(next_percent)));
                 }
             }
 
-            Event::Pointer(PointerEvent::Up(_e)) => {
-                self.down_point = None;
-            }
             _ => {}
         }
     }
@@ -329,15 +327,7 @@ impl Handle {
 
     fn paint(&self, cx: &mut PaintCx<'_>, axis: Axis) {
         let box_tree = self.box_tree.borrow();
-        let transform = match box_tree.world_transform(self.element_id.0) {
-            Ok(transform) => transform,
-            Err(transform) => transform.value().unwrap(),
-        };
-        let rect = match box_tree.world_bounds(self.element_id.0) {
-            Ok(bounds) => bounds,
-            Err(bounds) => bounds.value().unwrap(),
-        };
-        let rect = transform.transform_rect_bbox(rect);
+        let rect = box_tree.local_bounds(self.element_id.0).unwrap_or_default();
         let thickness = self.handle_style.thickness().0;
 
         // Center the actual thickness within the hit-testable rect
@@ -448,7 +438,7 @@ impl View for ResizableStack {
 
     fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
         // for this to work we had to set `id.has_layout_listener`.
-        if LayoutChangedListener::extract(&cx.event).is_some() {
+        if UpdatePhaseLayout::extract(&cx.event).is_some() {
             self.post_layout();
         }
         if cx.phase == Phase::Target {
@@ -463,8 +453,7 @@ impl View for ResizableStack {
 
     fn paint(&mut self, cx: &mut PaintCx) {
         // Children are now painted automatically by traversal system
-
-        for handle in self.handles.values_mut() {
+        if let Some(handle) = self.handles.get(&cx.target_id) {
             handle.paint(cx, self.re_style.direction().axis())
         }
     }

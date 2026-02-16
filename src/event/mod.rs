@@ -476,13 +476,30 @@ pub enum FocusEvent {
     Lost,
 }
 
+/// Pointer capture state changes.
+///
+/// Dispatched to the **Target phase only** on the element gaining or losing capture.
+/// Fired after the current event completes, not immediately when `request_pointer_capture` is called.
+/// See [`Event::PointerCapture`] for full routing and lifecycle details.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum PointerCaptureEvent {
-    /// Fired when a view gains pointer capture.
-    /// Contains the pointer ID that was captured.
+    /// Fired after a view successfully gains pointer capture (following a
+    /// `cx.request_pointer_capture()` call). Contains the [`DragToken`] wrapping the pointer ID.
+    ///
+    /// All subsequent pointer events for this pointer ID are now routed directly to this element,
+    /// bypassing spatial hit-testing. Call `cx.start_drag(drag_token, config, use_preview)`
+    /// in this handler to initiate a drag operation.
+    ///
+    /// No preventable default action.
     Gained(DragToken),
-    /// Fired when a view loses pointer capture.
-    /// Contains the pointer ID that was released.
+    /// Fired when a view loses pointer capture (on `PointerUp`, `PointerCancel`, or explicit
+    /// release). Contains the [`PointerId`] that was released.
+    ///
+    /// Use this event to clean up any internal state associated with pointer capture
+    /// (e.g., reset drag visual state).
+    ///
+    /// No preventable default action. Note: disabled views can still receive this event
+    /// to clean up internal state.
     Lost(PointerId),
 }
 
@@ -572,13 +589,28 @@ pub enum ImeEvent {
 /// High-level interaction events that abstract over pointer and keyboard input.
 /// These events represent user intent (clicking, double-clicking, etc.)
 /// regardless of the input method used.
+///
+/// Dispatched via Capture → Target → Bubble to the common ancestor of the pointer down and up
+/// targets, or to the focused element for keyboard-triggered clicks. See [`Event::Interaction`]
+/// for full routing details.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum InteractionEvent {
-    /// Single click (pointer or keyboard activated)
+    /// A single click, generated from a pointer Down+Up sequence on the same view or a keyboard
+    /// trigger (`Space`/`Enter`/`NumpadEnter` on the focused element).
+    ///
+    /// No preventable default action. This event is itself a default action of
+    /// [`Event::Pointer`] and [`Event::Key`] events.
     Click,
-    /// Double click
+    /// A double click, generated when two rapid pointer clicks occur (pointer up count > 1).
+    /// Dispatched immediately after the second [`InteractionEvent::Click`].
+    ///
+    /// No preventable default action.
     DoubleClick,
-    /// Right click / context menu trigger
+    /// A secondary (right) click, generated from a secondary button Down+Up sequence.
+    ///
+    /// No preventable default action. Note: context menus are handled separately via the
+    /// view's context menu configuration, triggered on pointer down/up depending on the
+    /// platform, not from this event.
     SecondaryClick,
 }
 
@@ -856,12 +888,16 @@ pub enum DragSourceEvent {
     /// `other_element` is the target that was left.
     Leave(DragLeaveEvent),
 
-    /// Drag was ended - sent when the pointer is released.
-    /// `other_element` is the drop target if one accepted the drop, `None` otherwise.
+    /// Drag ended — sent when the pointer is released.
+    ///
+    /// `other_element` is `Some(target_id)` if the pointer was released over a drop target,
+    /// or `None` if released without a drop target under the pointer.
+    ///
+    /// Note: `DragTargetEvent::Drop` is dispatched simultaneously when `other_element` is `Some`.
     End(DragEndEvent),
 
-    /// Drag was cancelled - sent when the drag is aborted
-    /// (e.g., Escape key pressed).
+    /// Drag was cancelled — sent when the drag is aborted by a `PointerCancel` event
+    /// (e.g., touch interrupted, window lost focus during touch drag).
     Cancel(DragCancelEvent),
 }
 
@@ -869,7 +905,7 @@ pub enum DragSourceEvent {
 ///
 /// These events allow drop targets to:
 /// - Know when a dragged element is hovering over them (Enter/Leave/Move)
-/// - Accept or reject drops by calling `prevent_default()` on the Drop event
+/// - React to drops and perform the drop action (Drop)
 /// - Provide visual feedback during drag hover
 /// - Access information about the dragged element via `other_element`
 ///
@@ -888,11 +924,15 @@ pub enum DragTargetEvent {
     /// `other_element` is the element being dragged.
     Leave(DragLeaveEvent),
 
-    /// A dragged element was dropped on this target - sent when the pointer is released
+    /// A dragged element was dropped on this target — sent when the pointer is released
     /// while over this target. `other_element` is the element being dragged.
     ///
-    /// Call `prevent_default()` to accept the drop. If no target accepts, the dragged
-    /// element will receive a `Cancel` event instead.
+    /// The drag source always receives [`DragSourceEvent::End`] simultaneously (with
+    /// `other_element` set to this target's ID). The source only receives
+    /// [`DragSourceEvent::Cancel`] if the drag was aborted by a `PointerCancel` event,
+    /// not based on whether a drop target handles this event.
+    ///
+    /// No preventable default action.
     Drop(DragEndEvent),
 }
 
@@ -1146,6 +1186,24 @@ pub enum Event {
     /// - `Scroll`: Scroll wheel/touchpad input
     /// - `Gesture`: Touchpad gestures (pinch, rotate)
     ///
+    /// # Default Actions
+    /// Call `cx.prevent_default()` to suppress these behaviors.
+    ///
+    /// - [`PointerEvent::Down`]: Moves keyboard focus to the hit element (fires synthetic
+    ///   `FocusLost`/`FocusGained` events). On macOS, shows the context menu on secondary button press.
+    /// - [`PointerEvent::Move`]: If the pointer has moved beyond the drag threshold while a button
+    ///   is held, begins a drag operation (`DragSourceEvent::Start` fires). While a drag is active,
+    ///   fires drag source/target move and enter/leave events as the pointer moves.
+    /// - [`PointerEvent::Up`]: Ends any active drag (fires `DragSourceEvent::End` or
+    ///   `DragSourceEvent::Cancel` depending on whether a target accepted). Releases pointer capture
+    ///   unconditionally. On non-macOS platforms, shows the context menu on secondary button release.
+    /// - [`PointerEvent::Leave`]: Clears all hover state, firing synthetic `PointerLeave` events
+    ///   for all currently-hovered elements.
+    /// - [`PointerEvent::Cancel`]: Aborts any active drag (`DragSourceEvent::Cancel` fires).
+    ///   Releases pointer capture unconditionally.
+    /// - [`PointerEvent::Enter`], [`PointerEvent::Scroll`], [`PointerEvent::Gesture`]: No
+    ///   preventable default action.
+    ///
     /// # Example
     /// ```rust
     /// Event::Pointer(PointerEvent::Down(pe)) => {
@@ -1159,21 +1217,36 @@ pub enum Event {
     /// Keyboard events for key presses and releases.
     ///
     /// # Routing
-    /// - **Directed to focused element**: Sent to the currently focused view
-    /// - **Phases**: Capture, Target, Bubble
-    /// - **Fallback**: If no view has focus, events will be handled globally (Broadcast)
+    /// Key events are classified as either **shortcut-like** or **typing** keys,
+    /// which determines their routing strategy. See [`KeyEventExt::is_shortcut_like`].
     ///
-    /// # Default Behaviors
-    /// - `Tab`: Focus next view (Shift+Tab for previous)
-    /// - `Alt+Arrow`: Directional focus navigation
-    /// - `Space/Enter` on focused element: Generates Click event (keyboard trigger) see [Self::is_keyboard_trigger]
+    /// ## Typing keys (unmodified character input, arrows, etc.)
+    /// - **Directed to focused element**: Capture → Target → Bubble
+    /// - If no view has focus, the event is dropped
+    ///
+    /// ## Shortcut-like keys (Ctrl/Cmd/Alt combos, F-keys, Escape, Tab, etc.)
+    /// - **Directed to focused element first**: Capture → Target → Bubble
+    /// - **Fallback**: If unconsumed (or no view has focus), dispatched via the
+    ///   listener registry to all views that registered a key event listener.
+    ///   No ordering or propagation is respected in this fallback.
+    ///
+    /// # Default Actions
+    /// Call `cx.prevent_default()` to suppress these behaviors.
+    ///
+    /// - `Tab` (KeyDown, no modifiers): Moves focus to the next focusable element.
+    ///   `Shift+Tab` moves focus backwards.
+    /// - `Alt+ArrowUp/Down/Left/Right` (KeyDown): Directional focus navigation.
+    /// - `Space`, `Enter`, `NumpadEnter` (on key-up or repeat): Generates an
+    ///   [`InteractionEvent::Click`] on the currently focused element.
+    ///   See [`Event::is_keyboard_trigger`].
     ///
     /// # Example
     /// ```rust
     /// Event::Key(KeyboardEvent { key: Key::Character(c), state: KeyState::Down, .. }) => {
     ///     if c == "s" && cx.modifiers().contains(Modifiers::CONTROL) {
-    ///         // Handle Ctrl+S
-    ///         cx.prevent_default(); // Prevent browser save dialog
+    ///         // Handle Ctrl+S — this is shortcut-like, so if the focused view
+    ///         // doesn't consume it, any view with a key listener will receive it.
+    ///         cx.prevent_default();
     ///     }
     /// }
     /// ```
@@ -1195,6 +1268,9 @@ pub enum Event {
     /// - `Over`: Files moved while over this view
     /// - `Leave`: Files dragged away from this view (hover leave)
     /// - `Drop`: Files dropped on this view
+    ///
+    /// # Default Actions
+    /// No preventable default action for any `FileDrag` variant.
     ///
     /// # Example
     /// ```rust
@@ -1224,6 +1300,9 @@ pub enum Event {
     /// - Tracking gestures that extend beyond view boundaries
     /// - Ensuring pointer up events are received even if pointer moves off element
     ///
+    /// # Default Actions
+    /// No preventable default action for any `PointerCapture` variant.
+    ///
     /// # Example
     /// ```rust
     /// Event::PointerCapture(PointerCaptureEvent::Gained(drag_token)) => {
@@ -1251,6 +1330,9 @@ pub enum Event {
     /// 2. `Preedit`: Composition text updated (user is still typing)
     /// 3. `Commit`: Final text committed (composition complete)
     /// 4. `Disabled`: IME composition ended
+    ///
+    /// # Default Actions
+    /// No preventable default action for any `Ime` variant.
     ///
     /// # Example
     /// ```rust
@@ -1288,6 +1370,10 @@ pub enum Event {
     /// Only views with `keyboard_navigable()` set can receive focus via keyboard.
     /// The `:focus` and `:focus-visible` style selectors update when focus changes.
     ///
+    /// # Default Actions
+    /// No preventable default action. Style re-resolution (`:focus`, `:focus-visible`) is
+    /// triggered before these events are dispatched and cannot be suppressed.
+    ///
     /// # Example
     /// ```rust
     /// Event::Focus(FocusEvent::Gained) => {
@@ -1318,6 +1404,9 @@ pub enum Event {
     /// - `Destroyed`: Window is being destroyed
     /// - `ThemeChanged`: System theme changed (light/dark mode)
     /// - `RescaleRequested`: DPI scale factor changed
+    ///
+    /// # Default Actions
+    /// No preventable default action for any `Window` variant.
     ///
     /// # Example
     /// ```rust
@@ -1356,6 +1445,10 @@ pub enum Event {
     /// Interaction events have `cx.triggered_by` set to the original pointer/keyboard
     /// event that caused them. Use this to access original event details like modifiers.
     ///
+    /// # Default Actions
+    /// No preventable default action. These events are themselves generated as default
+    /// actions of lower-level pointer and keyboard events.
+    ///
     /// # Example
     /// ```rust
     /// Event::Interaction(InteractionEvent::Click) => {
@@ -1392,9 +1485,11 @@ pub enum Event {
     ///
     /// ## Ending Drag
     /// The drag ends with one of:
-    /// - **Target receives** `Drop` and **source receives** `End` (with `other_element` set): User released over a valid drop target that accepted the drop
-    /// - **Source receives** `End` (with `other_element` as `None`): User released but no target accepted the drop
-    /// - **Source receives** `Cancel`: Drag cancelled via Escape key or pointer cancel
+    /// - **Released over a target**: Target receives `Drop` and source receives `End` with
+    ///   `other_element: Some(target_id)` simultaneously.
+    /// - **Released without a target**: Source receives `End` with `other_element: None`.
+    /// - **System cancel**: Source receives `Cancel` when the drag is aborted by a
+    ///   `PointerCancel` event (e.g., touch interrupted).
     ///
     /// # Example: Sortable List
     ///
@@ -1414,6 +1509,9 @@ pub enum Event {
     ///             .with_custom_data(item_id)
     ///     })
     /// ```
+    ///
+    /// # Default Actions
+    /// No preventable default action for any `Drag` variant.
     Drag(DragEvent),
 
     /// Custom user-defined events.
@@ -1459,6 +1557,10 @@ pub enum Event {
     ///     },
     /// );
     /// ```
+    ///
+    /// # Default Actions
+    /// No preventable default action. Routing and any behaviors are fully determined by
+    /// the application when dispatching the event.
     ///
     /// # Handling Custom Events
     ///
