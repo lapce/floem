@@ -60,6 +60,7 @@ fn sortable_item(
         }),
     ))
     .on_event_stop(listener::DragTargetEnter, move |_, drag_enter| {
+        dbg!("here");
         if let Some(custom_data) = &drag_enter.custom_data
                 && let Some(dragged_id) = custom_data.downcast_ref::<usize>() // in a different app with more draggable items you would want to use a unique type for your custom data
                 && *dragged_id != item_id

@@ -710,13 +710,22 @@ impl<'a> GlobalEventCx<'a> {
     }
 
     pub fn route(&mut self, kind: RouteKind, mut override_kind: OverrideKind) -> Option<Dispatch> {
-        let triggered_by = match override_kind {
-            OverrideKind::Normal { triggered_by } => triggered_by,
+        // save state because route can be called recursively
+        let (triggered_by, saved_hit_path) = match override_kind {
+            OverrideKind::Normal { triggered_by } => (triggered_by, None),
             OverrideKind::Synthetic { ref mut event } => {
                 std::mem::swap(&mut self.event, event);
-                Some(&*event)
+                (Some(&*event), self.hit_path.clone())
             }
         };
+
+        // set the visual hit path if the event has a point.
+        // this might be overriden by route spatial but that's fine because hit tests are cached RC.
+        if let Some(point) = self.event.point() {
+            let path = hit_test(self.window_state.root_view_id, point);
+            self.hit_path = path.clone();
+        }
+
         let remaining_dispatch = match kind {
             RouteKind::Directed { target, phases } => {
                 self.route_directed(target, triggered_by, phases)
@@ -770,9 +779,10 @@ impl<'a> GlobalEventCx<'a> {
             "all pending events should have been sent"
         );
 
-        // Restore original event if synthetic
+        // Restore original event and hit_path if synthetic
         if let OverrideKind::Synthetic { event } = override_kind {
             self.event = event;
+            self.hit_path = saved_hit_path;
         }
 
         remaining_dispatch
@@ -850,7 +860,7 @@ impl<'a> GlobalEventCx<'a> {
             self.window_state.keyboard_navigation = false;
         }
 
-        // set the hit path.
+        // override the hit path because the spatial point might not be the event point
         let path = hit_test(self.window_state.root_view_id, point);
         self.hit_path = path.clone();
 
@@ -949,12 +959,12 @@ impl<'a> GlobalEventCx<'a> {
     /// (Preventable things)
     fn handle_default_behaviors(&mut self) {
         // Pointer move - check threshold and handle active drag
-        let pu = match &self.event {
+        let pointer_move = match &self.event {
             Event::Pointer(PointerEvent::Move(pu)) => Some(pu.clone()),
             _ => None,
         };
 
-        if let Some(pu) = pu {
+        if let Some(pu) = pointer_move {
             let box_tree = self.window_state.box_tree.clone();
             // Check if pending drag exceeded threshold
             if let Some(drag_dispatch) = self
@@ -974,10 +984,16 @@ impl<'a> GlobalEventCx<'a> {
                         );
                     }
                     DragEventDispatch::Target(target_id, drag_target_event) => {
+                        // Use STANDARD phases for Move to allow bubbling
+                        let phases = if drag_target_event.is_move() {
+                            Phases::STANDARD
+                        } else {
+                            Phases::TARGET
+                        };
                         self.route_synthetic(
                             RouteKind::Directed {
                                 target: target_id,
-                                phases: Phases::TARGET,
+                                phases,
                             },
                             Event::Drag(DragEvent::Target(drag_target_event)),
                         );
@@ -1008,10 +1024,16 @@ impl<'a> GlobalEventCx<'a> {
                             );
                         }
                         DragEventDispatch::Target(target_id, drag_target_event) => {
+                            // Use STANDARD phases for Move to allow bubbling
+                            let phases = if drag_target_event.is_move() {
+                                Phases::STANDARD
+                            } else {
+                                Phases::TARGET
+                            };
                             self.route_synthetic(
                                 RouteKind::Directed {
                                     target: target_id,
-                                    phases: Phases::TARGET,
+                                    phases,
                                 },
                                 Event::Drag(DragEvent::Target(drag_target_event)),
                             );
@@ -1040,10 +1062,16 @@ impl<'a> GlobalEventCx<'a> {
                         );
                     }
                     DragEventDispatch::Target(target_id, drag_target_event) => {
+                        // Use STANDARD phases for Move to allow bubbling
+                        let phases = if drag_target_event.is_move() {
+                            Phases::STANDARD
+                        } else {
+                            Phases::TARGET
+                        };
                         self.route_synthetic(
                             RouteKind::Directed {
                                 target: target_id,
-                                phases: Phases::TARGET,
+                                phases,
                             },
                             Event::Drag(DragEvent::Target(drag_target_event)),
                         );
