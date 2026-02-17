@@ -117,12 +117,13 @@ impl StylePropValue for GridPlacement {}
 /// How the content of a replaced element, such as an img, should be resized to fit its container.
 /// Corresponds to the CSS `object-fit` property.
 /// See <https://developer.mozilla.org/en-US/docs/Web/CSS/object-fit>.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum ObjectFit {
     /// The replaced content is sized to fill the element's content box.
     /// The entire object will completely fill the box.
     /// If the object's aspect ratio does not match the aspect ratio of its box,
     /// then the object will be stretched to fit.
+    #[default]
     Fill,
     /// The replaced content is scaled to maintain its aspect ratio while fitting
     /// within the element's content box. The entire object is made to fill the box,
@@ -138,12 +139,6 @@ pub enum ObjectFit {
     ScaleDown,
     /// The replaced content is not resized.
     None,
-}
-
-impl Default for ObjectFit {
-    fn default() -> Self {
-        ObjectFit::Fill
-    }
 }
 
 impl StylePropValue for ObjectFit {

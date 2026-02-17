@@ -756,6 +756,11 @@ impl ViewId {
         needs_box_tree_update
     }
 
+    /// Get the translation that affects children
+    pub fn get_child_translation(&self) -> peniko::kurbo::Vec2 {
+        self.state().borrow().child_translation
+    }
+
     /// set the clip rectange in local coordinates in the box tree
     pub fn set_box_tree_clip(&self, clip: Option<RoundedRect>) {
         let element_id = self.get_element_id();

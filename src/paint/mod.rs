@@ -284,15 +284,12 @@ impl GlobalPaintCx<'_> {
     pub(crate) fn paint_visual_node(&mut self, element_id: ElementId, is_post: bool) {
         // Get state from box tree for this visual node
         let box_tree = self.window_state.box_tree.borrow();
-
         let world_transform = match box_tree.world_transform(element_id.0) {
             Ok(t) => t,
             Err(e) => e.value().unwrap(),
         };
         let layout_rect_local = box_tree.local_bounds(element_id.0).unwrap_or_default();
-
         let clip = box_tree.local_clip(element_id.0).flatten();
-
         drop(box_tree);
 
         // Set absolute transform on renderer
@@ -300,15 +297,20 @@ impl GlobalPaintCx<'_> {
             .renderer_mut()
             .set_transform(world_transform);
 
-        // Paint view content
+        // Only access view state if this is a view element
+        let style_data = if element_id.is_view() {
+            let view_id = element_id.owning_id();
+            let view_state = view_id.state();
+            let view_style_props = view_state.borrow().view_style_props.clone();
+            let layout_props = view_state.borrow().layout_props.clone();
+            Some((view_style_props, layout_props))
+        } else {
+            None
+        };
+
+        let layout_rect = layout_rect_local;
         let view_id = element_id.owning_id();
         let view = view_id.view();
-        let view_state = view_id.state();
-        let view_style_props = view_state.borrow().view_style_props.clone();
-        let layout_props = view_state.borrow().layout_props.clone();
-
-        // Save layout_rect_local before creating PaintCx to avoid borrow issues
-        let layout_rect = layout_rect_local;
 
         // Create per-target PaintCx
         let mut cx = PaintCx {
@@ -321,25 +323,23 @@ impl GlobalPaintCx<'_> {
         };
 
         if !is_post {
-            paint_bg(&mut cx, &view_style_props, layout_rect);
-            paint_border(&mut cx, &layout_props, &view_style_props, layout_rect);
-
+            if let Some((view_style_props, layout_props)) = &style_data {
+                paint_bg(&mut cx, view_style_props, layout_rect);
+                paint_border(&mut cx, layout_props, view_style_props, layout_rect);
+            }
             // Apply overflow clip (stays active through children)
             if let Some(clip_shape) = clip {
                 cx.clip(&clip_shape);
             }
-
-            view.borrow_mut().paint(&mut cx); // content
-
-        // children paint here (in between is_post calls)
+            view.borrow_mut().paint(&mut cx);
         } else {
             if clip.is_some() {
                 cx.clear_clip();
             }
-
-            // After children
-            view.borrow_mut().post_paint(&mut cx); // if you need this
-            paint_outline(&mut cx, &view_style_props, layout_rect);
+            view.borrow_mut().post_paint(&mut cx);
+            if let Some((view_style_props, _)) = &style_data {
+                paint_outline(&mut cx, view_style_props, layout_rect);
+            }
         }
     }
 }

@@ -4,13 +4,16 @@
 use floem_reactive::Effect;
 use peniko::kurbo::{Axis, Point, Rect, RoundedRect, RoundedRectRadii, Stroke, Vec2};
 use peniko::{Brush, Color};
+use std::time::Duration;
 use std::{cell::RefCell, rc::Rc};
 use taffy::Overflow;
-use ui_events::pointer::PointerEvent;
+use ui_events::pointer::{PointerButton, PointerEvent, PointerId};
 
-use crate::context::{LayoutChanged, LayoutChangedListener};
-use crate::event::listener::EventListenerTrait;
-use crate::event::{PointerScrollEventExt, RouteKind};
+use crate::easing::Linear;
+use crate::event::listener::{EventListenerTrait, UpdatePhaseBoxTreeCommit, UpdatePhaseLayout};
+use crate::event::{
+    DragEvent, DragSourceEvent, PointerCaptureEvent, PointerScrollEventExt, RouteKind,
+};
 use crate::style::ScrollbarWidth;
 use crate::{
     BoxTree, ElementId, Renderer,
@@ -73,11 +76,9 @@ struct ScrollHandle {
     element_id: ElementId,
     box_tree: Rc<RefCell<BoxTree>>,
     axis: Axis,
-    /// The initial scroll offset when dragging started
-    drag_start_offset: Option<Vec2>,
     /// The initial pointer position when dragging started
-    drag_start_point: Option<f64>,
     style: ScrollTrackStyle,
+    initial_offset: Vec2,
 }
 
 impl ScrollHandle {
@@ -89,9 +90,8 @@ impl ScrollHandle {
             element_id,
             box_tree,
             axis,
-            drag_start_offset: None,
-            drag_start_point: None,
             style: Default::default(),
+            initial_offset: Vec2::ZERO,
         }
     }
 
@@ -108,60 +108,59 @@ impl ScrollHandle {
         is_scrolling_or_interacting: &mut bool,
         parent_id: ViewId,
         child_id: ViewId,
-    ) {
+    ) -> EventPropagation {
         match &cx.event {
             Event::Pointer(PointerEvent::Down(e)) => {
-                if let Some(pointer_id) = e.pointer.pointer_id {
+                if let Some(pointer_id) = e.pointer.pointer_id
+                    && e.state.buttons.contains(PointerButton::Primary)
+                {
                     cx.window_state
                         .set_pointer_capture(pointer_id, self.element_id);
                 }
-                let pos = e.state.logical_point();
-                self.drag_start_point = Some(pos.get_coord(self.axis));
-                self.drag_start_offset = Some(*scroll_offset);
                 *is_scrolling_or_interacting = true;
                 cx.window_state.request_paint(parent_id);
             }
-            Event::Pointer(PointerEvent::Up(_)) => {
-                self.drag_start_point = None;
-                self.drag_start_offset = None;
+            Event::PointerCapture(PointerCaptureEvent::Gained(drag)) => {
+                self.initial_offset = parent_id.get_child_translation();
+                cx.start_drag(
+                    *drag,
+                    crate::event::DragConfig::new(0., Duration::ZERO, Linear),
+                    false,
+                );
             }
-            Event::Pointer(PointerEvent::Move(u)) => {
-                if cx.window_state.has_capture(self.element_id) {
-                    if let (Some(start_point), Some(initial_offset)) =
-                        (self.drag_start_point, self.drag_start_offset)
-                    {
-                        let pos = u.current.logical_point();
+            Event::Drag(DragEvent::Source(DragSourceEvent::Move(dme))) => {
+                let pos = dme.current_state.logical_point();
 
-                        // Calculate scale (content_size / viewport_size)
-                        let viewport_size = parent_id
-                            .get_content_rect_local()
-                            .size()
-                            .get_coord(self.axis);
-                        let content_size =
-                            child_id.get_layout_rect_local().size().get_coord(self.axis);
-                        let scale = content_size / viewport_size;
+                // Calculate scale (content_size / viewport_size)
+                let viewport_size = parent_id
+                    .get_content_rect_local()
+                    .size()
+                    .get_coord(self.axis);
+                let content_size = child_id.get_layout_rect_local().size().get_coord(self.axis);
+                let scale = content_size / viewport_size;
 
-                        let scroll_delta = (pos.get_coord(self.axis) - start_point) * scale;
+                let scroll_delta = (pos.get_coord(self.axis)
+                    - dme.start_state.logical_point().get_coord(self.axis))
+                    * scale;
 
-                        let mut new_offset = initial_offset;
-                        new_offset.set_coord(
-                            self.axis,
-                            initial_offset.get_coord(self.axis) + scroll_delta,
-                        );
+                let mut new_offset: Vec2 = self.initial_offset;
+                new_offset.set_coord(
+                    self.axis,
+                    self.initial_offset.get_coord(self.axis) + scroll_delta,
+                );
 
-                        // Apply scroll
-                        let viewport_size_vec = parent_id.get_content_rect_local().size();
-                        let content_size_vec = child_id.get_layout_rect_local().size();
-                        let max_scroll = (content_size_vec.to_vec2() - viewport_size_vec.to_vec2())
-                            .max_by_component(Vec2::ZERO);
+                // Apply scroll
+                let viewport_size_vec = parent_id.get_content_rect_local().size();
+                let content_size_vec = child_id.get_layout_rect_local().size();
+                let max_scroll = (content_size_vec.to_vec2() - viewport_size_vec.to_vec2())
+                    .max_by_component(Vec2::ZERO);
 
-                        *scroll_offset = new_offset
-                            .max_by_component(Vec2::ZERO)
-                            .min_by_component(max_scroll);
-                        parent_id.set_child_translation(*scroll_offset);
-                    }
-                }
+                *scroll_offset = new_offset
+                    .max_by_component(Vec2::ZERO)
+                    .min_by_component(max_scroll);
+                parent_id.set_child_translation(*scroll_offset);
             }
+
             Event::Pointer(PointerEvent::Enter(_)) => {
                 *is_scrolling_or_interacting = true;
                 cx.window_state.request_paint(parent_id);
@@ -172,8 +171,11 @@ impl ScrollHandle {
                     cx.window_state.request_paint(parent_id);
                 }
             }
-            _ => {}
+            _ => {
+                return EventPropagation::Continue;
+            }
         }
+        EventPropagation::Stop
     }
 
     fn set_position(
@@ -238,22 +240,14 @@ impl ScrollHandle {
         self.box_tree
             .borrow_mut()
             .set_flags(self.element_id.0, NodeFlags::VISIBLE | NodeFlags::PICKABLE);
-        self.box_tree.borrow_mut().set_z_index(self.element_id.0, 2);
+        self.box_tree
+            .borrow_mut()
+            .set_local_z_index(self.element_id.0, Some(2));
     }
 
     fn paint(&self, cx: &mut PaintCx) {
         let box_tree = self.box_tree.borrow();
-        let bounds = match box_tree.world_bounds(self.element_id.0) {
-            Ok(bounds) => bounds,
-            Err(bounds) => bounds.value().unwrap(),
-        };
-
-        let transform = match box_tree.world_transform(self.element_id.0) {
-            Ok(transform) => transform,
-            Err(transform) => transform.value().unwrap(),
-        };
-        let rect = transform.transform_rect_bbox(bounds);
-        cx.set_transform(transform);
+        let rect = box_tree.local_bounds(self.element_id.0).unwrap_or_default();
 
         let radius = if self.style.rounded() {
             match self.axis {
@@ -304,18 +298,20 @@ impl ScrollHandle {
 #[derive(Debug, Clone)]
 struct ScrollTrack {
     element_id: ElementId,
+    handle_element_id: ElementId,
     box_tree: Rc<RefCell<BoxTree>>,
     axis: Axis,
     style: ScrollTrackStyle,
 }
 
 impl ScrollTrack {
-    fn new(parent_id: ViewId, axis: Axis) -> Self {
+    fn new(parent_id: ViewId, handle_element_id: ElementId, axis: Axis) -> Self {
         let box_tree = parent_id.box_tree();
         let element_id = parent_id.create_child_element_id();
 
         Self {
             element_id,
+            handle_element_id,
             box_tree,
             axis,
             style: Default::default(),
@@ -334,9 +330,13 @@ impl ScrollTrack {
         is_scrolling_or_interacting: &mut bool,
         parent_id: ViewId,
         child_id: ViewId,
-    ) {
+    ) -> EventPropagation {
         match &cx.event {
             Event::Pointer(PointerEvent::Down(e)) => {
+                if e.state.buttons.contains(PointerButton::Primary) {
+                    cx.window_state
+                        .set_pointer_capture(PointerId::PRIMARY, self.handle_element_id);
+                }
                 let pos = e.state.logical_point();
 
                 // Inline click_track logic
@@ -375,14 +375,19 @@ impl ScrollTrack {
             }
             Event::Pointer(PointerEvent::Enter(_)) => {
                 *is_scrolling_or_interacting = true;
-                cx.window_state.request_paint(parent_id);
+                // self.style(&mut StyleCx::new(cx.window_state, parent_id));
+                parent_id.request_paint();
             }
             Event::Pointer(PointerEvent::Leave(_)) => {
                 *is_scrolling_or_interacting = false;
-                cx.window_state.request_paint(parent_id);
+                // self.style(&mut StyleCx::new(cx.window_state, parent_id));
+                parent_id.request_paint();
             }
-            _ => {}
+            _ => {
+                return EventPropagation::Continue;
+            }
         }
+        EventPropagation::Stop
     }
 
     fn set_position(
@@ -428,21 +433,14 @@ impl ScrollTrack {
         self.box_tree
             .borrow_mut()
             .set_flags(self.element_id.0, NodeFlags::VISIBLE | NodeFlags::PICKABLE);
-        self.box_tree.borrow_mut().set_z_index(self.element_id.0, 1);
+        self.box_tree
+            .borrow_mut()
+            .set_local_z_index(self.element_id.0, Some(1));
     }
 
     fn paint(&self, cx: &mut PaintCx) {
         let box_tree = self.box_tree.borrow();
-        let bounds = match box_tree.world_bounds(self.element_id.0) {
-            Ok(bounds) => bounds,
-            Err(bounds) => bounds.value().unwrap(),
-        };
-
-        let transform = match box_tree.world_transform(self.element_id.0) {
-            Ok(transform) => transform,
-            Err(transform) => transform.value().unwrap(),
-        };
-        let rect = transform.transform_rect_bbox(bounds);
+        let rect = box_tree.local_bounds(self.element_id.0).unwrap_or_default();
 
         if let Some(color) = self.style.color() {
             cx.fill(&rect, &color, 0.0);
@@ -560,7 +558,7 @@ impl Scroll {
     /// ```
     pub fn new(child: impl IntoView) -> Self {
         let id = ViewId::new();
-        id.register_listener(LayoutChangedListener::listener_key());
+        id.register_listener(UpdatePhaseBoxTreeCommit::listener_key());
 
         let child = child.into_any();
         let child_id = child.id();
@@ -568,14 +566,17 @@ impl Scroll {
         // we need to first set the clip rect to zero so that virtual items don't set a large initial size
         id.set_box_tree_clip(Some(RoundedRect::from_rect(Rect::ZERO, 0.)));
 
+        let v_handle = ScrollHandle::new(id, Axis::Vertical);
+        let h_handle = ScrollHandle::new(id, Axis::Horizontal);
+
         Scroll {
             id,
             child: child_id,
             scroll_offset: Vec2::ZERO,
-            v_handle: ScrollHandle::new(id, Axis::Vertical),
-            h_handle: ScrollHandle::new(id, Axis::Horizontal),
-            v_track: ScrollTrack::new(id, Axis::Vertical),
-            h_track: ScrollTrack::new(id, Axis::Horizontal),
+            v_track: ScrollTrack::new(id, v_handle.element_id, Axis::Vertical),
+            h_track: ScrollTrack::new(id, h_handle.element_id, Axis::Horizontal),
+            v_handle,
+            h_handle,
             is_scrolling_or_interacting: false,
             scroll_style: Default::default(),
         }
@@ -806,9 +807,9 @@ impl Scroll {
         // self.do_ensure_visible(rect_in_child, lcx);
     }
 
-    fn post_layout(&mut self, layout: &LayoutChanged) {
-        let viewport = layout.content_box_local();
-        let full_rect = layout.box_local();
+    fn post_box_tree_commit(&mut self) {
+        let viewport = self.id.get_content_rect_local();
+        let full_rect = self.id.get_layout_rect_local();
         let content_size = self.child.get_layout_rect_local().size();
         let scrollbar_width = self.scroll_style.scrollbar_width().0;
         let v_bar_inset = self.scroll_style.vertical_bar_inset().0;
@@ -918,51 +919,47 @@ impl View for Scroll {
 
     fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
         // in order to use this we had to set `id.has_layout_listener`.
-        if let Some(new_layout) = LayoutChangedListener::extract(&cx.event) {
-            self.post_layout(new_layout);
+        if UpdatePhaseBoxTreeCommit::extract(&cx.event).is_some() {
+            self.post_box_tree_commit();
             return EventPropagation::Stop;
         }
         // Handle events targeted at our visual IDs (handles and tracks)
         if cx.phase == Phase::Target {
             if cx.target == self.v_handle.element_id {
-                self.v_handle.event(
+                return self.v_handle.event(
                     cx,
                     &mut self.scroll_offset,
                     &mut self.is_scrolling_or_interacting,
                     self.id,
                     self.child,
                 );
-                return EventPropagation::Stop;
             }
             if cx.target == self.h_handle.element_id {
-                self.h_handle.event(
+                return self.h_handle.event(
                     cx,
                     &mut self.scroll_offset,
                     &mut self.is_scrolling_or_interacting,
                     self.id,
                     self.child,
                 );
-                return EventPropagation::Stop;
             }
             if cx.target == self.v_track.element_id {
-                self.v_track.event(
+                return self.v_track.event(
                     cx,
                     &mut self.scroll_offset,
                     &mut self.is_scrolling_or_interacting,
                     self.id,
                     self.child,
                 );
-                return EventPropagation::Stop;
             }
             if cx.target == self.h_track.element_id {
-                self.h_track.event(
+                return self.h_track.event(
                     cx,
                     &mut self.scroll_offset,
                     &mut self.is_scrolling_or_interacting,
                     self.id,
                     self.child,
                 );
-                return EventPropagation::Stop;
             }
         }
 

@@ -651,10 +651,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
             .transition_background(Transition::ease_in_out(Duration::from_millis(300)))
         })
         .class(scroll::Track, |s| {
-            s.with_theme(|s, t| {
-                s.background(css::PINK)
-                    .hover(|s| s.background(t.border().with_alpha(0.3)))
-            })
+            s.with_theme(|s, t| s.hover(|s| s.background(t.border().with_alpha(0.3))))
         })
         .class(ToggleButtonClass, |_| toggle_button_style)
         .class(SliderClass, |s| {
