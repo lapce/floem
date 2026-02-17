@@ -210,7 +210,7 @@ pub struct ViewState {
     // the translation value that this view applies to children elements. Scroll view can use this to scroll.
     pub(crate) child_translation: Vec2,
     // total accumulated offset from all scroll ancestors. This is updated when updating the box tree
-    pub(crate) scroll_ctx: Vec2,
+    pub(crate) scroll_cx: Vec2,
     pub(crate) layout_props: LayoutProps,
     pub(crate) view_style_props: ViewStyleProps,
     pub(crate) view_transform_props: TransformProps,
@@ -332,7 +332,7 @@ impl ViewState {
             context_menu: None,
             popout_menu: None,
             child_translation: Vec2::ZERO,
-            scroll_ctx: Vec2::ZERO,
+            scroll_cx: Vec2::ZERO,
             cleanup_listeners: Default::default(),
             num_waiting_animations: 0,
             disable_default_events: HashSet::new(),
@@ -388,8 +388,8 @@ impl ViewState {
         interact_state: &mut crate::style::InteractionState,
         screen_size_bp: crate::layout::responsive::ScreenSizeBp,
         view_class: Option<crate::style::StyleClassRef>,
-        inherited_context: &std::rc::Rc<Style>,
-        class_context: &std::rc::Rc<Style>,
+        inherited_context: &Style,
+        class_context: &Style,
     ) -> (Style, bool, bool) {
         // Start with the combined stacked styles
         let base_style = self.style();
@@ -406,7 +406,7 @@ impl ViewState {
         }
 
         // Create mutable contexts - inherited for with_context evaluation
-        let inherited_ctx = (**inherited_context).clone();
+        let inherited_ctx = inherited_context.clone();
 
         // Resolve all nested maps: selectors, responsive styles, and classes
         let (mut combined, classes_applied) = crate::style::resolve_nested_maps(

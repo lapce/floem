@@ -13,7 +13,7 @@ use crate::{
     style_class,
     taffy::tree::NodeId,
     text::{Attrs, AttrsList, TextLayout},
-    view::{IntoView, View, ViewId},
+    view::{FinalizeFn, IntoView, LayoutNodeCx, MeasureFn, View, ViewId},
     views::{Decorators, Scroll, Stack, editor::keypress::KeypressKey},
 };
 use floem_editor_core::{
@@ -347,128 +347,128 @@ pub struct EditorView {
 }
 
 impl EditorView {
-    // /// Create a taffy layout function for editor content
-    // pub fn create_editor_layout_fn(editor: RwSignal<Editor>) -> Box<MeasureFn> {
-    //     Box::new(
-    //         move |known_dimensions, available_space, node_id, _style, measure_ctx| {
-    //             use taffy::*;
-    //             Effect::untrack(|| {
-    //                 // Mark for finalization if needed
-    //                 measure_ctx.needs_finalization(node_id);
+    /// Create a taffy layout function for editor content
+    pub fn create_editor_layout_fn(editor: RwSignal<Editor>) -> Box<MeasureFn> {
+        Box::new(
+            move |known_dimensions, available_space, node_id, _style, measure_ctx| {
+                use taffy::*;
+                Effect::untrack(|| {
+                    // Mark for finalization if needed
+                    measure_ctx.needs_finalization(node_id);
 
-    //                 let editor = editor.get_untracked();
-    //                 let parent_size = editor.parent_size.get_untracked();
-    //                 let screen_lines = editor.screen_lines.get_untracked();
+                    let editor = editor.get_untracked();
+                    let parent_size = editor.parent_size.get_untracked();
+                    let screen_lines = editor.screen_lines.get_untracked();
 
-    //                 // Determine the effective width for layout
-    //                 let width_constraint: Option<f32> =
-    //                     known_dimensions.width.or(match available_space.width {
-    //                         AvailableSpace::Definite(w) => Some(w),
-    //                         AvailableSpace::MinContent => {
-    //                             // Min content: minimal width needed (e.g., for scrollbar or gutter)
-    //                             Some(10.0)
-    //                         }
-    //                         AvailableSpace::MaxContent => {
-    //                             // Max content: as wide as content wants to be
-    //                             None
-    //                         }
-    //                     });
+                    // Determine the effective width for layout
+                    let width_constraint: Option<f32> =
+                        known_dimensions.width.or(match available_space.width {
+                            AvailableSpace::Definite(w) => Some(w),
+                            AvailableSpace::MinContent => {
+                                // Min content: minimal width needed (e.g., for scrollbar or gutter)
+                                Some(10.0)
+                            }
+                            AvailableSpace::MaxContent => {
+                                // Max content: as wide as content wants to be
+                                None
+                            }
+                        });
 
-    //                 // Update viewport width for text layout calculations
-    //                 editor.viewport.update(|v| {
-    //                     *v = v.with_size(peniko::kurbo::Size::new(100000., v.height()))
-    //                 });
+                    // Update viewport width for text layout calculations
+                    // editor.viewport.update(|v| {
+                    //     *v = v.with_size(peniko::kurbo::Size::new(100000., v.height()))
+                    // });
 
-    //                 // Fill in text layout cache
-    //                 for (line, _) in screen_lines.iter_lines_y() {
-    //                     editor.text_layout(line);
-    //                 }
+                    // Fill in text layout cache
+                    for (line, _) in screen_lines.iter_lines_y() {
+                        editor.text_layout(line);
+                    }
 
-    //                 // Calculate dimensions
-    //                 let line_height = f64::from(editor.line_height(0));
-    //                 let max_line_width = editor.max_line_width();
+                    // Calculate dimensions
+                    let line_height = f64::from(editor.line_height(0));
+                    let max_line_width = editor.max_line_width();
 
-    //                 let width = if let Some(constraint) = width_constraint {
-    //                     constraint as f64
-    //                 } else {
-    //                     // MaxContent: return actual content width
-    //                     max_line_width.max(parent_size.width())
-    //                 };
+                    let width = if let Some(constraint) = width_constraint {
+                        constraint as f64
+                    } else {
+                        // MaxContent: return actual content width
+                        max_line_width.max(parent_size.width())
+                    };
 
-    //                 let last_line_height = line_height * (editor.last_vline().get() + 1) as f64;
-    //                 let height = last_line_height;
+                    let last_line_height = line_height * (editor.last_vline().get() + 1) as f64;
+                    let height = last_line_height;
 
-    //                 let margin_bottom =
-    //                     if editor.es.with_untracked(|es| es.scroll_beyond_last_line()) {
-    //                         parent_size.height().min(last_line_height) - line_height
-    //                     } else {
-    //                         0.0
-    //                     };
+                    let margin_bottom =
+                        if editor.es.with_untracked(|es| es.scroll_beyond_last_line()) {
+                            parent_size.height().min(last_line_height) - line_height
+                        } else {
+                            0.0
+                        };
 
-    //                 Size {
-    //                     width: width as f32,
-    //                     height: known_dimensions
-    //                         .height
-    //                         .unwrap_or((height + margin_bottom) as f32),
-    //                 }
-    //             })
-    //         },
-    //     )
-    // }
+                    Size {
+                        width: width as f32,
+                        height: known_dimensions
+                            .height
+                            .unwrap_or((height + margin_bottom) as f32),
+                    }
+                })
+            },
+        )
+    }
 
-    // pub fn create_editor_finalize_fn(editor: RwSignal<Editor>, view_id: ViewId) -> Box<FinalizeFn> {
-    //     Box::new(move |_node_id, layout| {
-    //         let editor = editor.get_untracked();
-    //         let viewport = Rect::from_origin_size(
-    //             Point::new(layout.content_box_x() as f64, layout.content_box_y() as f64),
-    //             Size::new(
-    //                 dbg!(layout.content_box_width()) as f64,
-    //                 layout.content_box_height() as f64,
-    //             ),
-    //         );
+    pub fn create_editor_finalize_fn(editor: RwSignal<Editor>, view_id: ViewId) -> Box<FinalizeFn> {
+        Box::new(move |_node_id, layout| {
+            let editor = editor.get_untracked();
+            let viewport = Rect::from_origin_size(
+                Point::new(layout.content_box_x() as f64, layout.content_box_y() as f64),
+                Size::new(
+                    dbg!(layout.content_box_width()) as f64,
+                    layout.content_box_height() as f64,
+                ),
+            );
 
-    //         if editor.viewport.with_untracked(|v| v != &viewport) {
-    //             editor.viewport.set(viewport);
-    //         }
+            if editor.viewport.with_untracked(|v| v != &viewport) {
+                editor.viewport.set(viewport);
+            }
 
-    //         // Get parent size
-    //         if let Some(parent) = view_id.parent() {
-    //             let parent_size = parent.get_layout_rect();
-    //             if editor.parent_size.with_untracked(|ps| ps != &parent_size) {
-    //                 editor.parent_size.set(parent_size);
-    //             }
-    //         }
-    //     })
-    // }
+            // Get parent size
+            if let Some(parent) = view_id.parent() {
+                let parent_size = parent.get_layout_rect();
+                if editor.parent_size.with_untracked(|ps| ps != &parent_size) {
+                    editor.parent_size.set(parent_size);
+                }
+            }
+        })
+    }
 
-    // fn set_taffy_layout(&mut self) {
-    //     let taffy_node = self.id.taffy_node();
-    //     let taffy = self.id.taffy();
-    //     let mut taffy = taffy.borrow_mut();
+    fn set_taffy_layout(&mut self) {
+        let taffy_node = self.id.taffy_node();
+        let taffy = self.id.taffy();
+        let mut taffy = taffy.borrow_mut();
 
-    //     let editor_node = taffy
-    //         .new_leaf(taffy::Style {
-    //             ..taffy::Style::DEFAULT
-    //         })
-    //         .unwrap();
+        let editor_node = taffy
+            .new_leaf(taffy::Style {
+                ..taffy::Style::DEFAULT
+            })
+            .unwrap();
 
-    //     let layout_fn = Self::create_editor_layout_fn(self.editor);
-    //     let finalize_fn = Self::create_editor_finalize_fn(self.editor, self.id);
+        let layout_fn = Self::create_editor_layout_fn(self.editor);
+        let finalize_fn = Self::create_editor_finalize_fn(self.editor, self.id);
 
-    //     self.inner_node = Some(editor_node);
+        self.inner_node = Some(editor_node);
 
-    //     taffy
-    //         .set_node_context(
-    //             editor_node,
-    //             Some(LayoutNodeCx::Custom {
-    //                 measure: layout_fn,
-    //                 finalize: Some(finalize_fn),
-    //             }),
-    //         )
-    //         .unwrap();
+        taffy
+            .set_node_context(
+                editor_node,
+                Some(LayoutNodeCx::Custom {
+                    measure: layout_fn,
+                    finalize: Some(finalize_fn),
+                }),
+            )
+            .unwrap();
 
-    //     taffy.set_children(taffy_node, &[editor_node]).unwrap();
-    // }
+        taffy.set_children(taffy_node, &[editor_node]).unwrap();
+    }
 
     #[allow(clippy::too_many_arguments)]
     fn paint_normal_selection(
@@ -1162,69 +1162,73 @@ pub fn editor_view(
 
     id.register_listener(LayoutChanged::listener_key());
 
-    EditorView {
+    let mut ed_view = EditorView {
         id,
         editor,
         is_active,
         inner_node: None,
-    }
-    .style(|s| s.keyboard_navigable())
-    .on_event_cont(listener::FocusGained, move |_, _| {
-        focused.set(true);
-        prev_ime_area.set(None);
+    };
 
-        if allows_ime.get_untracked() {
-            set_ime_allowed(true);
-        }
-    })
-    .on_event_cont(listener::FocusLost, move |_, _| {
-        focused.set(false);
-        editor.with_untracked(|ed| ed.commit_preedit());
-        set_ime_allowed(false);
-    })
-    .on_event(listener::ImePreedit, move |cx, _| {
-        if !is_active.get_untracked() || !focused.get_untracked() {
-            return EventPropagation::Continue;
-        }
+    ed_view.set_taffy_layout();
 
-        if let Event::Ime(ImeEvent::Preedit { text, cursor }) = &cx.event {
+    ed_view
+        .style(|s| s.keyboard_navigable())
+        .on_event_cont(listener::FocusGained, move |_, _| {
+            focused.set(true);
+            prev_ime_area.set(None);
+
+            if allows_ime.get_untracked() {
+                set_ime_allowed(true);
+            }
+        })
+        .on_event_cont(listener::FocusLost, move |_, _| {
+            focused.set(false);
+            editor.with_untracked(|ed| ed.commit_preedit());
+            set_ime_allowed(false);
+        })
+        .on_event(listener::ImePreedit, move |cx, _| {
+            if !is_active.get_untracked() || !focused.get_untracked() {
+                return EventPropagation::Continue;
+            }
+
+            if let Event::Ime(ImeEvent::Preedit { text, cursor }) = &cx.event {
+                editor.with_untracked(|ed| {
+                    if text.is_empty() {
+                        ed.clear_preedit();
+                    } else {
+                        ed.doc.with_untracked(|doc| {
+                            doc.run_command(
+                                ed,
+                                &Command::Edit(EditCommand::DeleteSelection),
+                                Some(1),
+                                Modifiers::empty(),
+                            );
+                        });
+
+                        let offset = ed.cursor.with_untracked(|c| c.offset());
+
+                        // update affinity to display caret after preedit
+                        ed.cursor
+                            .update(|c| c.set_latest_affinity(CursorAffinity::Forward));
+
+                        ed.set_preedit(text.clone(), *cursor, offset);
+                    }
+                });
+            }
+            EventPropagation::Stop
+        })
+        .on_event(listener::ImeCommit, move |_cx, text| {
+            if !is_active.get_untracked() || !focused.get_untracked() {
+                return EventPropagation::Continue;
+            }
+
             editor.with_untracked(|ed| {
-                if text.is_empty() {
-                    ed.clear_preedit();
-                } else {
-                    ed.doc.with_untracked(|doc| {
-                        doc.run_command(
-                            ed,
-                            &Command::Edit(EditCommand::DeleteSelection),
-                            Some(1),
-                            Modifiers::empty(),
-                        );
-                    });
-
-                    let offset = ed.cursor.with_untracked(|c| c.offset());
-
-                    // update affinity to display caret after preedit
-                    ed.cursor
-                        .update(|c| c.set_latest_affinity(CursorAffinity::Forward));
-
-                    ed.set_preedit(text.clone(), *cursor, offset);
-                }
+                ed.clear_preedit();
+                ed.receive_char(text);
             });
-        }
-        EventPropagation::Stop
-    })
-    .on_event(listener::ImeCommit, move |_cx, text| {
-        if !is_active.get_untracked() || !focused.get_untracked() {
-            return EventPropagation::Continue;
-        }
-
-        editor.with_untracked(|ed| {
-            ed.clear_preedit();
-            ed.receive_char(text);
-        });
-        EventPropagation::Stop
-    })
-    .class(EditorViewClass)
+            EventPropagation::Stop
+        })
+        .class(EditorViewClass)
 }
 
 #[derive(Clone, Debug)]
@@ -1338,12 +1342,11 @@ pub fn editor_gutter(editor: RwSignal<Editor>) -> impl IntoView {
             },
         )
         .on_event_stop(listener::PointerWheel, move |_cx, pse| {
-            // TODO: Get the line and page size here
             let line_height = ed.line_height(0) as f64;
             let view_size = ed.viewport.get_untracked().size();
             let delta =
                 pse.resolve_to_points(Some(Size::new(line_height, line_height)), Some(view_size));
-            scroll_delta.set(delta);
+            scroll_delta.set(-delta);
         })
 }
 

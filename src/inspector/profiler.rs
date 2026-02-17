@@ -5,8 +5,10 @@ use crate::style::CustomStylable;
 use crate::theme::StyleThemeExt;
 use crate::unit::UnitExt;
 use crate::view::IntoView;
+use crate::views::resizable::ResizableStack;
 use crate::views::{
-    Button, Clip, Container, ContainerExt, Decorators, Label, Scroll, Stack, dyn_container,
+    Button, Clip, Container, ContainerExt, Decorators, Label, List, Scroll, Stack, dyn_container,
+    list,
 };
 use floem_reactive::{RwSignal, Scope, SignalGet, SignalUpdate};
 use std::fmt::Display;
@@ -94,40 +96,24 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
         })
         .collect();
     frames.sort_by(|a, b| b.sum.cmp(&a.sum));
+    let frames: Rc<[_]> = frames.into();
 
     let selected_frame = RwSignal::new(None);
 
     let zoom = RwSignal::new(1.0);
 
-    let frames: Vec<_> = frames
+    let frame_views: Vec<_> = frames
         .iter()
+        .cloned()
         .enumerate()
         .map(|(i, frame)| {
             let frame = frame.clone();
-            let frame_ = frame.clone();
             Stack::horizontal((
                 Label::new(format!("Frame #{i}")).style(|s| s.flex_grow(1.0)),
                 Label::new(format!("{:.4} ms", frame.sum.as_secs_f64() * 1000.0))
                     .style(|s| s.margin_right(16)),
             ))
-            .action(move || {
-                selected_frame.set(Some(frame.clone()));
-                zoom.set(1.0);
-            })
-            .style(move |s| {
-                let selected = selected_frame
-                    .get()
-                    .map(|selected| Rc::ptr_eq(&selected, &frame_))
-                    .unwrap_or(false);
-                s.with_theme(move |s, t| {
-                    s.hover(|s| s.background(t.bg_elevated()))
-                        .apply_if(selected, |s| {
-                            s.background(t.primary_muted())
-                                .hover(|s| s.background(t.primary_muted()))
-                        })
-                })
-                .padding(5.0)
-            })
+            .style(move |s| s.selectable(false).padding(5.0))
         })
         .collect();
 
@@ -155,10 +141,18 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
         },
     )
     .style(|s| s.width_full());
+    let frames_clone = frames.clone();
 
     let frames = Stack::vertical((
         header("Frames"),
-        Scroll::new(Stack::vertical_from_iter(frames).style(|s| s.width_full())).style(|s| {
+        Scroll::new(
+            list(frame_views)
+                .on_select(move |idx| {
+                    selected_frame.set(idx.and_then(|idx| frames_clone.get(idx)).cloned())
+                })
+                .style(|s| s.width_full()),
+        )
+        .style(|s| {
             s.flex_basis(0)
                 .min_height(0)
                 .flex_grow(1.0)
@@ -173,13 +167,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
         }),
         event_tooltip,
     ))
-    .style(|s| s.width(230.0));
-
-    let separator = ().style(move |s| {
-        s.height_full()
-            .min_width(1.0)
-            .with_theme(|s, t| s.background(t.border()))
-    });
+    .style(|s| s.min_width(230.0).flex_grow(1.));
 
     let timeline = dyn_container(
         move || selected_frame.get(),
@@ -201,6 +189,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
                         Label::new(format!("{} ({:.4} ms)", event.name, len * 1000.0)).style(|s| {
                             s.selectable(false)
                                 .padding(5.0)
+                                .text_clip()
                                 .align_self(AlignItems::Center)
                         }),
                     )
@@ -253,8 +242,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
     let timeline = Stack::vertical((header("Timeline"), timeline))
         .style(|s| s.min_width(0).flex_basis(0).flex_grow(1.0));
 
-    Stack::horizontal((frames, separator, timeline))
-        .style(|s| s.height_full().width_full().max_width_full())
+    ResizableStack::new((frames, timeline)).style(|s| s.height_full().width_full().max_width_full())
 }
 
 thread_local! {

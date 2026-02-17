@@ -545,8 +545,11 @@ impl WindowHandle {
         // (e.g., when inherited properties change)
         loop {
             // Build explicit traversal order
+            let og_num = self.window_state.style_dirty.len();
             let traversal = self.window_state.build_style_traversal(self.id);
-            dbg!(traversal.len());
+            if traversal.len() > 5 {
+                dbg!(traversal.len(), og_num);
+            }
             if traversal.is_empty() {
                 self.window_state.style_dirty.clear();
                 self.window_state.view_style_dirty.clear();

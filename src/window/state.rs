@@ -10,7 +10,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::SmallVec;
 use taffy::{AvailableSpace, NodeId};
 use ui_events::pointer::{PointerId, PointerInfo};
-use understory_event_state::{click::ClickState, focus::FocusState, hover::HoverState};
+use understory_event_state::{click::ClickState, hover::HoverState};
 use winit::cursor::CursorIcon;
 use winit::window::Theme;
 
@@ -115,12 +115,12 @@ pub struct WindowState {
     /// The default theme style containing class definitions for built-in components.
     /// This is used as the root style context for all views when no parent exists.
     /// Contains styling like `.class(ListClass, |s| { s.class(ListItemClass, ...) })`.
-    pub(crate) default_theme: Rc<Style>,
+    pub(crate) default_theme: Style,
 
     /// Cached inherited props from default_theme for root views.
     /// This avoids recomputing the inherited props from default_theme on every StyleCx::new().
     /// Updated when default_theme changes (on theme switch).
-    pub(crate) default_theme_inherited: Rc<Style>,
+    pub(crate) default_theme_inherited: Style,
 
     /// Tracking for views that have a visual position listener
     pub(crate) listeners: FxHashMap<listener::EventListenerKey, Vec<ViewId>>,
@@ -182,8 +182,8 @@ impl WindowState {
             pending_global_recalc: StyleRecalcChange::new(
                 crate::style::Propagate::RecalcDescendants,
             ),
-            default_theme: Rc::new(theme),
-            default_theme_inherited: Rc::new(inherited),
+            default_theme: theme,
+            default_theme_inherited: inherited,
             needs_layout: true,
             needs_box_tree_from_layout: true,
             needs_box_tree_commit: true,
@@ -206,8 +206,8 @@ impl WindowState {
     pub(crate) fn update_default_theme(&mut self, theme: Theme) {
         let new_theme = default_theme(theme);
         let inherited = Self::extract_inherited_props(&new_theme);
-        self.default_theme = Rc::new(new_theme);
-        self.default_theme_inherited = Rc::new(inherited);
+        self.default_theme = new_theme;
+        self.default_theme_inherited = inherited;
     }
 
     /// Mark that dark mode changed, requiring style recalc with appropriate flags.
@@ -687,7 +687,7 @@ impl WindowState {
                                 .get(parent_id)
                                 .map(|p| {
                                     let p = p.borrow();
-                                    (p.child_translation, p.scroll_ctx)
+                                    (p.child_translation, p.scroll_cx)
                                 })
                                 .unwrap_or((Vec2::ZERO, Vec2::ZERO))
                         } else {
@@ -910,7 +910,7 @@ fn compute_view_box_properties(
 
     // Update state
     let mut state_mut = state.borrow_mut();
-    state_mut.scroll_ctx = scroll_ctx;
+    state_mut.scroll_cx = scroll_ctx;
     state_mut.layout_window_origin = layout_window_origin;
 
     ViewBoxProperties {

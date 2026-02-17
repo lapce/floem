@@ -1,6 +1,13 @@
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    time::{Duration, Instant},
+};
+
 use floem::{
     ViewId,
     context::{EventCx, LayoutChanged, LayoutChangedListener, PaintCx},
+    easing::Spring,
     event::{CustomEvent, Event, EventPropagation},
     kurbo::{Affine, Circle, Point, Rect, Shape, Size, Stroke},
     peniko::{
@@ -8,7 +15,8 @@ use floem::{
         color::{AlphaColor, ColorSpaceTag::LinearSrgb, Hsl},
     },
     prelude::*,
-    reactive::UpdaterEffect,
+    reactive::{Effect, UpdaterEffect},
+    style::DirectTransition,
     ui_events::pointer::{PointerButtonEvent, PointerEvent},
 };
 use palette::css;
@@ -17,21 +25,41 @@ use crate::form::{form, form_item};
 
 pub fn canvas_view() -> impl IntoView {
     let rounded = RwSignal::new(true);
+    let color = RwSignal::new(css::AQUA);
+    let border_radius = Rc::new(RefCell::new(DirectTransition::new(
+        32.,
+        Some(floem::style::Transition::new(
+            500.millis(),
+            Spring::snappy(),
+        )),
+    )));
+    let border_radius_ = border_radius.clone();
+    Effect::new(move |_| {
+        let rounded = rounded.get();
+        border_radius_
+            .borrow_mut()
+            .transition_to(if rounded { 32. } else { 0. });
+    });
 
     form((
         form_item(
             "Simple Canvas:",
             Stack::horizontal((
                 canvas(move |cx, size| {
+                    rounded.track();
+                    let now = Instant::now();
+                    if border_radius.borrow_mut().step(&now) {
+                        cx.window_state.schedule_paint(cx.target_id.owning_id());
+                    }
                     cx.fill(
                         &Rect::ZERO
                             .with_size(size)
-                            .to_rounded_rect(if rounded.get() { 32. } else { 0. }),
-                        css::PURPLE,
+                            .to_rounded_rect(border_radius.borrow().get()),
+                        color.get(),
                         0.,
                     );
                 })
-                .style(|s| s.size(100, 300)),
+                .style(|s| s.size(300, 100)),
                 Button::new("toggle rounded corners")
                     .action(move || rounded.update(|s| *s = !*s))
                     .style(|s| s.height(30)),
@@ -40,14 +68,12 @@ pub fn canvas_view() -> impl IntoView {
         ),
         form_item(
             "Complex Canvas:",
-            color_picker().style(|s| s.size(500, 500)),
+            color_picker(color).style(|s| s.size(500, 500)),
         ),
     ))
 }
 
-fn color_picker() -> impl IntoView {
-    let color = RwSignal::new(css::AQUA);
-
+fn color_picker(color: RwSignal<Color>) -> impl IntoView {
     let hue_opocity = Stack::vertical((
         HuePicker::new(move || color.get())
             .on_change(move |c| color.set(c))
@@ -188,7 +214,7 @@ impl View for SatValuePicker {
                     on_change(self.current_color.convert());
                     self.track = true;
                     if let Some(pointer_id) = pointer.pointer_id {
-                        self.id.set_pointer_capture(pointer_id);
+                        cx.request_pointer_capture(pointer_id);
                     }
                 }
                 Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. })) => {

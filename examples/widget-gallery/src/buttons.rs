@@ -22,13 +22,7 @@ pub fn button_view() -> impl IntoView {
     form((
         form_item(
             "Basic Button:",
-            Button::new("Click me")
-                .action(move || println!("Button clicked"))
-                .style(move |s| {
-                    s.active(|s| s.scale(90.pct()))
-                        .transition_scale_x(transition())
-                        .transition_scale_y(transition())
-                }),
+            Button::new("Click me").action(move || println!("Button clicked")),
         ),
         form_item(
             "Styled Button:",
@@ -36,7 +30,7 @@ pub fn button_view() -> impl IntoView {
                 .action(|| println!("Button clicked"))
                 .style(|s| {
                     s.border(1.0)
-                        .border_radius(10.0)
+                        .border_radius(50.0)
                         .padding(10.0)
                         .background(palette::css::YELLOW_GREEN)
                         .color(palette::css::DARK_GREEN)
@@ -44,6 +38,11 @@ pub fn button_view() -> impl IntoView {
                         .active(|s| s.color(palette::css::WHITE).background(palette::css::RED))
                         .hover(|s| s.background(Color::from_rgb8(244, 67, 54)))
                         .focus_visible(|s| s.outline(2.).outline_color(palette::css::BLUE))
+                })
+                .style(move |s| {
+                    s.active(|s| s.scale(90.pct()))
+                        .transition_scale_x(transition())
+                        .transition_scale_y(transition())
                 }),
         ),
         form_item(

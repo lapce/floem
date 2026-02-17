@@ -284,9 +284,13 @@ impl<'a> GlobalEventCx<'a> {
     pub fn route_window_event(&mut self) {
         match &self.event {
             Event::Pointer(pointer_event) => {
+                // Pointer leave — clear all hover state.
                 let pointer_id = pointer_event.pointer_info().pointer_id;
                 let capture_target =
                     pointer_id.and_then(|id| self.window_state.get_pointer_capture_target(id));
+                if let Some(point) = pointer_event.logical_point() {
+                    self.window_state.last_pointer = (point, pointer_event.pointer_info())
+                }
 
                 if let Some(capture_target) = capture_target {
                     self.route(
@@ -412,6 +416,10 @@ impl<'a> GlobalEventCx<'a> {
                     &self.event
                 );
             }
+        }
+
+        if let Event::Pointer(PointerEvent::Leave(_)) = &self.event {
+            self.update_hover_from_path(&[]);
         }
     }
 
@@ -1051,11 +1059,6 @@ impl RouteCx<'_, '_> {
             }
         }
 
-        // Pointer leave — clear all hover state.
-        if let Event::Pointer(PointerEvent::Leave(_)) = &self.event {
-            self.update_hover_from_path(&[]);
-        }
-
         // Pointer cancel — abort drag and release capture.
         let pi = match &self.event {
             Event::Pointer(PointerEvent::Cancel(pi)) => Some(*pi),
@@ -1430,6 +1433,7 @@ impl RouteCx<'_, '_> {
         for event in events {
             match event {
                 HoverEvent::Enter(target) => {
+                    dbg!(target);
                     if target.is_view() {
                         window_state.style_dirty.insert(target.owning_id());
                     }
@@ -1531,19 +1535,19 @@ impl RouteCx<'_, '_> {
             }
             PointerEvent::Move(pu) => {
                 self.gcx.window_state.last_pointer = (pu.current.logical_point(), pu.pointer);
-                let exceeded_nodes = self.gcx.window_state.click_state.on_move(
+                let _exceeded_nodes = self.gcx.window_state.click_state.on_move(
                     pu.pointer.pointer_id.map(|p| p.get_inner()),
                     pu.current.logical_point(),
                 );
-                if let Some(element_ids) = exceeded_nodes {
-                    for id in element_ids
-                        .iter()
-                        .filter(|id| id.is_view())
-                        .map(|id| id.owning_id())
-                    {
-                        self.gcx.window_state.style_dirty.insert(id);
-                    }
-                }
+                // if let Some(element_ids) = exceeded_nodes {
+                //     for id in element_ids
+                //         .iter()
+                //         .filter(|id| id.is_view())
+                //         .map(|id| id.owning_id())
+                //     {
+                //         self.gcx.window_state.style_dirty.insert(id);
+                //     }
+                // }
             }
             _ => {}
         }

@@ -51,7 +51,7 @@ pub fn menu_view() -> impl IntoView {
     let transform_submenu = move |m: SubMenu| {
         m.item("Rotate 90°", move |i| {
             i.action(move || {
-                rotation.update(|r| *r = Angle::Deg(r.to_degrees() + 90.));
+                rotation.update(|r| *r = Angle::Deg(r.to_degrees() - 90.));
                 println!("Rotating 90 degrees...")
             })
         })
@@ -98,12 +98,10 @@ pub fn menu_view() -> impl IntoView {
             s.padding(10.0)
                 .border(1.0)
                 .rotate(rotation.get())
-                .rotate_about(AnchorAbout::CENTER)
                 .transition_rotate(Transition::new(
                     Duration::from_millis(500),
                     Spring::snappy(),
                 ))
-                .selectable(true)
         })
         .context_menu(context_menu);
 

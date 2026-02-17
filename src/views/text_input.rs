@@ -1,5 +1,5 @@
 #![deny(missing_docs)]
-use crate::action::{exec_after, set_ime_allowed, set_ime_cursor_area};
+use crate::action::{TimerToken, exec_after, set_ime_allowed, set_ime_cursor_area};
 use crate::event::{EventPropagation, ImeEvent, Phase, listener};
 use crate::reactive::{Effect, RwSignal};
 use crate::style::{FontFamily, FontProps, SelectionStyle, Style, StyleClass, TextAlignProp};
@@ -128,6 +128,7 @@ pub struct TextInput {
     last_ime_cursor_area: Option<(Point, Size)>,
     text_node: Option<taffy::NodeId>,
     layout_node: Option<taffy::NodeId>,
+    cursor_blink_timer: crate::action::TimerToken,
 }
 
 /// Type of cursor movement in navigation.
@@ -241,6 +242,7 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
         last_ime_cursor_area: None,
         text_node: None,
         layout_node: None,
+        cursor_blink_timer: TimerToken::INVALID,
     };
 
     text_input.update_text_layout();
@@ -1225,6 +1227,14 @@ impl View for TextInput {
     }
 
     fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) {
+        if state.is::<TimerToken>() {
+            if let Ok(token) = state.downcast::<TimerToken>() {
+                if *token == self.cursor_blink_timer {
+                    self.cursor_blink_timer = TimerToken::INVALID;
+                }
+            }
+            return;
+        }
         if let Ok(state) = state.downcast::<bool>() {
             let is_focused = *state;
 
@@ -1238,6 +1248,9 @@ impl View for TextInput {
                 if is_focused && !cx.window_state.has_capture(self.id) {
                     self.selection = None;
                     self.cursor_glyph_idx = self.buffer.with_untracked(|buf| buf.len());
+                } else {
+                    self.cursor_blink_timer.cancel();
+                    self.cursor_blink_timer = TimerToken::INVALID;
                 }
             }
 
@@ -1541,9 +1554,15 @@ impl View for TextInput {
 
         // request paint either way if we're attempting draw a cursor
         let id = self.id();
-        exec_after(Duration::from_millis(CURSOR_BLINK_INTERVAL_MS), move |_| {
-            id.request_paint();
-        });
+        if self.cursor_blink_timer == TimerToken::INVALID {
+            self.cursor_blink_timer =
+                exec_after(Duration::from_millis(CURSOR_BLINK_INTERVAL_MS), move |t| {
+                    // t is the token that just fired — it's now spent
+                    // signal that the timer slot is free and a repaint is needed
+                    id.update_state(t);
+                    id.request_paint();
+                });
+        }
     }
 }
 

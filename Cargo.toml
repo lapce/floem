@@ -201,6 +201,6 @@ harness = false
 
 [patch.crates-io]
 ui-events = {path = "../ui-events/ui-events"}
-taffy = {path = "../taffy/"}
+# taffy = {path = "../taffy/"}
 
 

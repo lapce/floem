@@ -223,8 +223,7 @@ impl GlobalPaintCx<'_> {
             .drag_tracker
             .active_drag
             .as_ref()
-            .map(|drag| drag.element_id);
-
+            .and_then(|ad| ad.dragging_preview.as_ref().map(|p| p.element_id));
         // Recursively collect main tree
         collect_visual_recursive(root, box_tree, &mut paint_order, false, dragging_element_id);
 
@@ -243,14 +242,14 @@ impl GlobalPaintCx<'_> {
         }
 
         // Paint drag overlay separately (always on top)
-        if let Some(dragging) = self.window_state.drag_tracker.active_drag.as_ref() {
-            crate::paint::collect_visual_recursive(
-                dragging.element_id,
-                box_tree,
-                &mut paint_order,
-                true,
-                None,
-            );
+        if let Some(preview) = self
+            .window_state
+            .drag_tracker
+            .active_drag
+            .as_ref()
+            .and_then(|ad| ad.dragging_preview.as_ref().map(|p| p.element_id))
+        {
+            crate::paint::collect_visual_recursive(preview, box_tree, &mut paint_order, true, None);
         }
 
         paint_order

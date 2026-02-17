@@ -579,6 +579,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
         .justify_center()
         .items_center()
         .text_clip()
+        .selectable(false)
         .apply(focus_style())
         .apply(hover_style());
 

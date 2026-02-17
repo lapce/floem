@@ -541,13 +541,10 @@ impl Style {
     /// Only properties marked as `inherited: true` in their `StylePropInfo` are applied.
     /// This is more efficient than `apply_mut` when we only need to propagate
     /// inherited properties like font-size, color, etc.
-    pub fn apply_only_inherited(to: &mut Rc<Style>, from: &Style) {
+    pub fn apply_only_inherited(to: &mut Style, from: &Style) {
         if from.any_inherited() {
-            let mut new_style = (**to).clone();
-            // Only apply properties marked as inherited, not all properties
             let inherited = from.map.iter().filter(|(p, _)| p.inherited());
-            new_style.apply_iter(inherited, None);
-            *to = Rc::new(new_style);
+            to.apply_iter(inherited, None);
         }
     }
 
@@ -587,18 +584,50 @@ impl Style {
     /// This is used during style propagation to pass class definitions to children.
     ///
     /// Only class nested maps (`.class(SomeClass, ...)`) are applied, not inherited props.
-    pub fn apply_only_class_maps(to: &mut Rc<Style>, from: &Style) {
-        // O(1) early exit for the common case where the style has no class maps
+    pub fn apply_only_class_maps(to: &mut Style, from: &Style) {
         if !from.has_class_maps {
             return;
         }
-        let mut new_style = (**to).clone();
         let class_maps = from
             .map
             .iter()
             .filter(|(k, _)| matches!(k.info, StyleKeyInfo::Class(..)));
-        new_style.apply_iter(class_maps, None);
-        *to = Rc::new(new_style);
+        to.apply_iter(class_maps, None);
+    }
+
+    pub fn class_maps_ptr_eq(&self, other: &Style) -> bool {
+        // Check that every class map entry in self has a pointer-equal counterpart in other
+        // and vice versa. If counts differ or any entry differs, they're not equal.
+        let self_classes: Vec<_> = self
+            .map
+            .iter()
+            .filter(|(k, _)| matches!(k.info, StyleKeyInfo::Class(..)))
+            .collect();
+
+        let other_classes: Vec<_> = other
+            .map
+            .iter()
+            .filter(|(k, _)| matches!(k.info, StyleKeyInfo::Class(..)))
+            .collect();
+
+        if self_classes.len() != other_classes.len() {
+            return false;
+        }
+
+        for (k, v) in &self_classes {
+            match other.map.get(k) {
+                Some(other_v) => {
+                    let v_style = v.downcast_ref::<Style>().unwrap();
+                    let other_v_style = other_v.downcast_ref::<Style>().unwrap();
+                    if !v_style.map.ptr_eq(&other_v_style.map) {
+                        return false;
+                    }
+                }
+                None => return false,
+            }
+        }
+
+        true
     }
 
     pub(crate) fn get_transition<P: StyleProp>(&self) -> Option<Transition> {

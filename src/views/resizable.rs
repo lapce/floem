@@ -467,6 +467,10 @@ pub enum ResizableMessage {
 }
 
 impl ResizableStack {
+    pub fn new<VT: ViewTuple + 'static>(children: VT) -> Self {
+        create_resizable(children.into_views())
+    }
+
     /// Convert pixel sizes to percentages for adjacent children
     fn pixels_to_percent_for_pair(&self, _idx: usize, pixel_size: f64, axis: Axis) -> (f64, f64) {
         // Get parent size instead of pair size

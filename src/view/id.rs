@@ -534,6 +534,11 @@ impl ViewId {
         parent_id.get_size()
     }
 
+    /// Get the total scroll offset for this view
+    pub fn get_scroll_cx(&self) -> peniko::kurbo::Vec2 {
+        self.state().borrow().scroll_cx
+    }
+
     /// This gets the Taffy Layout and adjusts it to be relative to the parent `View`.
     pub fn get_layout(&self) -> Option<Layout> {
         let widget_parent = self.parent().map(|id| id.state().borrow().layout_id);

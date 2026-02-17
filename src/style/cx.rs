@@ -6,7 +6,6 @@
 //! - [`StyleRecalcChange`] - Graduated change tracking for optimized style propagation
 
 use floem_reactive::Scope;
-use std::rc::Rc;
 use understory_box_tree::NodeFlags;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -81,7 +80,7 @@ pub struct StyleCx<'a> {
     ///
     /// Built from parent's computed_style, this provides the inherited baseline that
     /// will be merged with this view's combined_style to produce computed_style.
-    pub(crate) inherited: Rc<Style>,
+    pub(crate) inherited: Style,
 
     /// Class definitions context from ancestors.
     /// Contains `.class(SomeClass, ...)` nested maps from ancestor views.
@@ -89,7 +88,7 @@ pub struct StyleCx<'a> {
     /// Built from parent's combined_style, this provides class definitions that
     /// descendants can apply when computing their combined_style. Separate from
     /// inherited to allow independent propagation and caching.
-    pub(crate) class_context: Rc<Style>,
+    pub(crate) class_context: Style,
 
     /// The resolved style for this view (will become combined_style).
     /// Computed from base + selectors + classes during style resolution.
@@ -121,18 +120,10 @@ impl<'a> StyleCx<'a> {
                 let parent_state = parent_state.borrow();
 
                 // Inherited props come from parent's style_cx (contains only inherited props)
-                let inherited_style = parent_state
-                    .style_cx
-                    .clone()
-                    .map(Rc::new)
-                    .unwrap_or_default();
+                let inherited_style = parent_state.style_cx.clone().unwrap_or_default();
 
                 // Class context comes from parent's class_cx (contains class nested maps)
-                let class_ctx = parent_state
-                    .class_cx
-                    .clone()
-                    .map(Rc::new)
-                    .unwrap_or_default();
+                let class_ctx = parent_state.class_cx.clone().unwrap_or_default();
 
                 let parent_interaction = parent_state.style_interaction_cx;
                 (
@@ -276,21 +267,16 @@ impl<'a> StyleCx<'a> {
         // ─────────────────────────────────────────────────────────────────────
         self.direct = combined_style;
 
+        // Capture the inner map pointer before updating so we can detect whether
+        // inherited properties actually changed.
+        let old_inherited_map = self.inherited.map.clone(); // O(1) Rc clone
         // Propagate inherited properties to children (separate from class context)
         Style::apply_only_inherited(&mut self.inherited, &self.direct);
+        let inherited_changed = !self.inherited.map.ptr_eq(&old_inherited_map);
 
-        // Capture old class_context pointer before updating.
-        // apply_only_class_maps either returns early (no class maps), or creates
-        // a new Rc via Rc::new(), so we can detect changes with O(1) pointer comparison.
-        let old_class_context_ptr = Rc::as_ptr(&self.class_context);
-
-        // Propagate class nested maps to class_context for children.
-        // Class maps like `.class(ListItemClass, ...)` need to flow down so
-        // descendant views with matching classes can apply the styling.
+        let old_class_context = self.class_context.clone(); // cheap ImHashMap clone
         Style::apply_only_class_maps(&mut self.class_context, &self.direct);
-
-        // Pointer changed means apply_only_class_maps created a new Rc (had class maps)
-        let class_context_changed = Rc::as_ptr(&self.class_context) != old_class_context_ptr;
+        let class_context_changed = !self.class_context.class_maps_ptr_eq(&old_class_context);
 
         // ─────────────────────────────────────────────────────────────────────
         // Phase 6: Propagate changes to children if needed
@@ -298,8 +284,11 @@ impl<'a> StyleCx<'a> {
         // Mark children for restyling if:
         // 1. This view applied classes from class_context (affects inherited props)
         // 2. This view's class_context changed (new class definitions for children)
-        let child_change = if classes_applied || class_context_changed {
+        let child_change = if inherited_changed || class_context_changed {
             // Mark all children for style recalc and add to dirty set
+            if view_id.children().len() > 50 {
+                dbg!(inherited_changed, class_context_changed);
+            }
             for child in view_id.children() {
                 self.window_state.style_dirty.insert(child);
             }
@@ -309,7 +298,7 @@ impl<'a> StyleCx<'a> {
         };
 
         // Compute the final style by merging inherited context with direct style
-        let mut computed_style = (*self.inherited).clone();
+        let mut computed_style = self.inherited.clone();
         computed_style.apply_mut(self.direct.clone());
 
         // ─────────────────────────────────────────────────────────────────────
@@ -339,8 +328,8 @@ impl<'a> StyleCx<'a> {
             let old_fixed = vs.computed_style.builtin().is_fixed();
             let old_taffy = vs.taffy_style.clone();
 
-            vs.style_cx = Some((*self.inherited).clone());
-            vs.class_cx = Some((*self.class_context).clone());
+            vs.style_cx = Some(self.inherited.clone());
+            vs.class_cx = Some(self.class_context.clone());
             vs.computed_style = computed_style;
             vs.style_interaction_cx = InheritedInteractionCx {
                 disabled: self.parent_disabled
@@ -728,7 +717,7 @@ impl<'a> StyleCx<'a> {
     }
 
     pub fn style(&self) -> Style {
-        (*self.inherited).clone().apply(self.direct.clone())
+        self.inherited.clone().apply(self.direct.clone())
     }
 
     pub fn direct_style(&self) -> &Style {

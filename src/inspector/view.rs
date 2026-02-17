@@ -1,6 +1,7 @@
 use super::profiler::profiler;
 use crate::{
     IntoView, View, ViewId,
+    action::inspect,
     app::{AppUpdateEvent, add_app_update_event},
     event::{EventPropagation, listener},
     inspector::{
@@ -72,17 +73,20 @@ pub fn capture(window_id: WindowId) {
                         .with_theme(|s, t| s.background(t.border()))
                 });
 
-                let stack = Stack::vertical((tabs, separator, tab));
-                let id = stack.id();
-                stack
+                Stack::vertical((tabs, separator, tab))
                     .style(|s| s.width_full().height_full())
-                    .on_event(listener::KeyUp, move |_cx, e| {
-                        if e.key == keyboard::Key::Named(NamedKey::F11) && e.modifiers.shift() {
-                            id.inspect();
-                            return EventPropagation::Stop;
-                        }
-                        EventPropagation::Continue
-                    })
+                    .on_event(
+                        listener::KeyUp,
+                        move |_cx, KeyboardEvent { key, modifiers, .. }| {
+                            if *key == ui_events::keyboard::Key::Named(NamedKey::F11)
+                                && modifiers.shift()
+                            {
+                                inspect();
+                                return EventPropagation::Stop;
+                            }
+                            EventPropagation::Continue
+                        },
+                    )
                     .on_event(listener::WindowClosed, |_, _| {
                         RUNNING.set(false);
                         EventPropagation::Continue
@@ -513,17 +517,7 @@ fn tree_node(
         .style(move |s| {
             s.height(height)
                 .keyboard_navigable()
-                //     .apply_if(highlighted.get() == Some(id), |s| {
-                //         s.background(Color::from_rgba8(228, 237, 216, 160))
-                //     })
-                .apply_if(selected.get() == Some(id), |s| {
-                    s.set_selected(true)
-                    // if highlighted.get() == Some(id) {
-                    //     s.background(Color::from_rgb8(186, 180, 216))
-                    // } else {
-                    //     s.background(Color::from_rgb8(213, 208, 216))
-                    // }
-                })
+                .apply_if(selected.get() == Some(id), |s| s.set_selected(true))
         })
         .action(move || selected.set(Some(id)))
         .on_event_cont(listener::PointerEnter, move |_, _| {
