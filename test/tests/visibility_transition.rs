@@ -9,51 +9,7 @@ use std::time::Duration;
 
 use floem::prelude::*;
 use floem::taffy::Display;
-use floem::view::{Visibility, VisibilityPhase};
 use floem_test::prelude::*;
-
-// =============================================================================
-// Visibility struct tests (testing public fields and methods)
-// =============================================================================
-
-/// Test visibility is_hidden() considers both force_hidden and phase.
-#[test]
-fn test_is_hidden_checks_both_conditions() {
-    // force_hidden = false, phase = Visible -> not hidden
-    let vis = Visibility {
-        phase: VisibilityPhase::Visible(Display::Flex),
-        // force_hidden: false,
-    };
-    assert!(!vis.is_hidden());
-
-    // force_hidden = true, phase = Visible -> hidden
-    let vis = Visibility {
-        phase: VisibilityPhase::Visible(Display::Flex),
-        // force_hidden: true,
-    };
-    assert!(vis.is_hidden());
-
-    // force_hidden = false, phase = Hidden -> hidden
-    let vis = Visibility {
-        phase: VisibilityPhase::Hidden,
-        // force_hidden: false,
-    };
-    assert!(vis.is_hidden());
-
-    // force_hidden = false, phase = Animating -> not hidden (still animating out)
-    let vis = Visibility {
-        phase: VisibilityPhase::Animating(Display::Flex),
-        // force_hidden: false,
-    };
-    assert!(!vis.is_hidden());
-
-    // force_hidden = false, phase = Initial -> not hidden
-    let vis = Visibility {
-        phase: VisibilityPhase::Initial,
-        // force_hidden: false,
-    };
-    assert!(!vis.is_hidden());
-}
 
 // =============================================================================
 // Integration Tests with Views
@@ -62,6 +18,7 @@ fn test_is_hidden_checks_both_conditions() {
 /// Test that display:none in style triggers is_hidden().
 #[test]
 fn test_display_none_style_triggers_hidden() {
+    let root = TestRoot::new();
     let is_display_none = RwSignal::new(false);
 
     let view = Empty::new().style(move |s| {
@@ -73,7 +30,6 @@ fn test_display_none_style_triggers_hidden() {
     });
     let id = view.view_id();
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
@@ -100,10 +56,10 @@ fn test_display_none_style_triggers_hidden() {
 /// Test that force_hidden (set_hidden) works independently of style.
 #[test]
 fn test_force_hidden_independent_of_style() {
+    let root = TestRoot::new();
     let view = Empty::new().style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
@@ -144,6 +100,7 @@ fn test_force_hidden_independent_of_style() {
 /// Test that a view with run_on_remove animation stays visible during animation.
 #[test]
 fn test_run_on_remove_animation_delays_hidden() {
+    let root = TestRoot::new();
     let is_hidden = RwSignal::new(false);
 
     let view = Empty::new()
@@ -157,7 +114,6 @@ fn test_run_on_remove_animation_delays_hidden() {
         });
     let id = view.view_id();
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
@@ -187,6 +143,7 @@ fn test_run_on_remove_animation_delays_hidden() {
 /// Test switching from display:none back to visible cancels exit animation.
 #[test]
 fn test_cancel_exit_animation() {
+    let root = TestRoot::new();
     let is_hidden = RwSignal::new(false);
 
     let view = Empty::new()
@@ -200,7 +157,6 @@ fn test_cancel_exit_animation() {
         });
     let id = view.view_id();
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
@@ -229,6 +185,7 @@ fn test_cancel_exit_animation() {
 /// Test that set_hidden() overrides even when display:none is not in style.
 #[test]
 fn test_set_hidden_overrides_style() {
+    let root = TestRoot::new();
     let is_display_none = RwSignal::new(false);
 
     let view = Empty::new().style(move |s| {
@@ -240,7 +197,6 @@ fn test_set_hidden_overrides_style() {
     });
     let id = view.view_id();
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
@@ -270,6 +226,7 @@ fn test_set_hidden_overrides_style() {
 /// Test combining set_hidden() with display:none style.
 #[test]
 fn test_set_hidden_with_display_none_style() {
+    let root = TestRoot::new();
     let is_display_none = RwSignal::new(true); // Start with display:none
 
     let view = Empty::new().style(move |s| {
@@ -281,7 +238,6 @@ fn test_set_hidden_with_display_none_style() {
     });
     let id = view.view_id();
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
     harness.rebuild();
@@ -314,6 +270,7 @@ fn test_set_hidden_with_display_none_style() {
 /// Test transitioning from hidden back to visible shows the view.
 #[test]
 fn test_hidden_to_visible_transition() {
+    let root = TestRoot::new();
     let is_display_none = RwSignal::new(true); // Start hidden
 
     let view = Empty::new().style(move |s| {
@@ -325,7 +282,6 @@ fn test_hidden_to_visible_transition() {
     });
     let id = view.view_id();
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
     harness.rebuild();

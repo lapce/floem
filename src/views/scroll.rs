@@ -84,7 +84,7 @@ struct ScrollHandle {
 impl ScrollHandle {
     fn new(parent_id: ViewId, axis: Axis) -> Self {
         let box_tree = parent_id.box_tree();
-        let element_id = parent_id.create_child_element_id();
+        let element_id = parent_id.create_child_element_id(2);
 
         Self {
             element_id,
@@ -240,9 +240,6 @@ impl ScrollHandle {
         self.box_tree
             .borrow_mut()
             .set_flags(self.element_id.0, NodeFlags::VISIBLE | NodeFlags::PICKABLE);
-        self.box_tree
-            .borrow_mut()
-            .set_local_z_index(self.element_id.0, Some(2));
     }
 
     fn paint(&self, cx: &mut PaintCx) {
@@ -307,7 +304,7 @@ struct ScrollTrack {
 impl ScrollTrack {
     fn new(parent_id: ViewId, handle_element_id: ElementId, axis: Axis) -> Self {
         let box_tree = parent_id.box_tree();
-        let element_id = parent_id.create_child_element_id();
+        let element_id = parent_id.create_child_element_id(1);
 
         Self {
             element_id,
@@ -433,9 +430,6 @@ impl ScrollTrack {
         self.box_tree
             .borrow_mut()
             .set_flags(self.element_id.0, NodeFlags::VISIBLE | NodeFlags::PICKABLE);
-        self.box_tree
-            .borrow_mut()
-            .set_local_z_index(self.element_id.0, Some(1));
     }
 
     fn paint(&self, cx: &mut PaintCx) {

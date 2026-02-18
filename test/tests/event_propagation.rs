@@ -2426,7 +2426,7 @@ fn test_no_overlay_fixed_translate_probe_boundary() {
         // Same fixed positioning
         .style(|s| s.fixed().inset(0.0).width_full().height_full());
 
-        let mut harness = HeadlessHarness::new_with_size(root.clone(), view, 200.0, 200.0);
+        let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
         harness.click(x, y);
 
         let hit = if content_clicked.get() {
@@ -3083,6 +3083,7 @@ fn test_fixed_overlay_child_click_bounds() {
 #[test]
 #[serial]
 fn test_fixed_overlay_deeply_nested_child() {
+    let root = TestRoot::new();
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::unit::Pct;
     use floem::views::Overlay;
@@ -3134,7 +3135,6 @@ fn test_fixed_overlay_deeply_nested_child() {
         .style(|s| s.fixed().inset(0.0).width_full().height_full()),
     );
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
@@ -3162,6 +3162,7 @@ fn test_fixed_overlay_deeply_nested_child() {
 #[test]
 #[serial]
 fn test_fixed_overlay_child_probe_bounds() {
+    let root = TestRoot::new();
     use floem::ViewId;
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::unit::Pct;
@@ -3201,7 +3202,6 @@ fn test_fixed_overlay_child_probe_bounds() {
         .style(|s| s.fixed().inset(0.0).width_full().height_full()),
     );
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
@@ -3265,6 +3265,7 @@ fn test_fixed_overlay_child_probe_bounds() {
 #[test]
 #[serial]
 fn test_normal_flow_child_outside_parent_bounds_receives_click() {
+    let root = TestRoot::new();
     let parent_clicks = RwSignal::new(0);
     let child_clicks = RwSignal::new(0);
 
@@ -3282,7 +3283,6 @@ fn test_normal_flow_child_outside_parent_bounds_receives_click() {
     })
     .style(|s| s.size(50.0, 50.0)); // Small parent
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 150.0, 150.0);
 
     eprintln!("=== Normal Flow Child Outside Parent Bounds Test ===");
@@ -3325,6 +3325,7 @@ fn test_normal_flow_child_outside_parent_bounds_receives_click() {
 #[test]
 #[serial]
 fn test_scroll_container_clips_children() {
+    let root = TestRoot::new();
     let child_clicks = RwSignal::new(0);
 
     // Scroll container is 100x100, child is 200x200
@@ -3338,7 +3339,6 @@ fn test_scroll_container_clips_children() {
     )
     .style(|s| s.size(100.0, 100.0));
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
 
     eprintln!("=== Scroll Container Clips Children Test ===");
@@ -3375,6 +3375,7 @@ fn test_scroll_container_clips_children() {
 #[test]
 #[serial]
 fn test_absolute_element_clips_children() {
+    let root = TestRoot::new();
     let child_clicks = RwSignal::new(0);
     let outside_clicks = RwSignal::new(0);
 
@@ -3404,7 +3405,6 @@ fn test_absolute_element_clips_children() {
     ))
     .style(|s| s.size(300.0, 300.0));
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 300.0, 300.0);
 
     eprintln!("=== Absolute Element Clips Children Test ===");
@@ -3444,6 +3444,7 @@ fn test_absolute_element_clips_children() {
 #[test]
 #[serial]
 fn test_nested_containers_clip_inheritance() {
+    let root = TestRoot::new();
     let deepest_clicks = RwSignal::new(0);
 
     // Outer container: 200x200
@@ -3465,7 +3466,6 @@ fn test_nested_containers_clip_inheritance() {
     )
     .style(|s| s.size(200.0, 200.0)); // Outer
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
 
     eprintln!("=== Nested Containers Clip Inheritance Test ===");

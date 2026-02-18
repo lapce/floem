@@ -151,7 +151,7 @@ impl WindowHandle {
             )
         });
 
-        id.set_children([view]);
+        id.add_child(view);
 
         let view = WindowView { id };
         id.set_view(view.into_any());
@@ -802,9 +802,8 @@ impl WindowHandle {
         if cx.window_state.capture.is_none() {
             self.window.pre_present_notify();
         }
-        let image = cx.paint_state.renderer_mut().finish();
 
-        image
+        cx.paint_state.renderer_mut().finish()
     }
 
     pub(crate) fn capture(&mut self) -> Capture {

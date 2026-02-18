@@ -268,7 +268,8 @@ impl WindowState {
         let box_tree = id.box_tree();
         // Remove from box tree first
         let this_element_id = id.get_element_id();
-        box_tree.borrow_mut().reparent(this_element_id.0, None);
+        box_tree.borrow_mut().remove(this_element_id.0);
+        self.needs_box_tree_commit = true;
         id.remove();
         self.fixed_elements.remove(&id);
         let keys = view_state.borrow().registered_listener_keys.clone();
@@ -554,13 +555,74 @@ impl WindowState {
     /// Register a view as having fixed positioning.
     /// Called when a view's style sets IsFixed to true.
     pub fn register_fixed_element(&mut self, id: ViewId) {
-        self.fixed_elements.insert(id);
+        if self.fixed_elements.insert(id) {
+            self.needs_layout = true;
+        }
     }
 
     /// Unregister a view from fixed positioning.
     /// Called when a view's style sets IsFixed to false.
     pub fn unregister_fixed_element(&mut self, id: ViewId) {
-        self.fixed_elements.remove(&id);
+        if self.fixed_elements.remove(&id) {
+            self.needs_layout = true;
+        }
+    }
+
+    fn apply_fixed_element_styles(&self) {
+        let root_size = self.root_size / self.scale;
+        let fixed_views: SmallVec<[ViewId; 32]> = self.fixed_elements.iter().copied().collect();
+        VIEW_STORAGE.with_borrow(|s| {
+            for view_id in fixed_views {
+                if let Some(state) = s.states.get(view_id) {
+                    let state_borrow = state.borrow();
+                    if !state_borrow.combined_style.builtin().is_fixed() {
+                        continue;
+                    }
+                    let layout_node = state_borrow.layout_id;
+                    drop(state_borrow);
+                    let mut taffy = self.layout_tree.borrow_mut();
+                    if let Ok(existing) = taffy.style(layout_node) {
+                        let mut style = existing.clone();
+                        self.apply_fixed_sizing(&mut style, root_size);
+                        if style != *existing {
+                            let _ = taffy.set_style(layout_node, style);
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    fn apply_fixed_sizing(&self, style: &mut taffy::Style, root_size: Size) {
+        fn definite_length(val: &taffy::style::LengthPercentageAuto) -> Option<f32> {
+            let raw = val.into_raw();
+            if raw.tag() == taffy::CompactLength::LENGTH_TAG {
+                Some(raw.value())
+            } else {
+                None
+            }
+        }
+
+        let left = definite_length(&style.inset.left);
+        let right = definite_length(&style.inset.right);
+        let top = definite_length(&style.inset.top);
+        let bottom = definite_length(&style.inset.bottom);
+
+        // Width
+        if let (Some(l), Some(r)) = (left, right) {
+            let computed = (root_size.width as f32 - l - r).max(0.0);
+            style.size.width = taffy::style::Dimension::length(computed);
+        } else if style.size.width == taffy::style::Dimension::percent(1.0) {
+            style.size.width = taffy::style::Dimension::length(root_size.width as f32);
+        }
+
+        // Height
+        if let (Some(t), Some(b)) = (top, bottom) {
+            let computed = (root_size.height as f32 - t - b).max(0.0);
+            style.size.height = taffy::style::Dimension::length(computed);
+        } else if style.size.height == taffy::style::Dimension::percent(1.0) {
+            style.size.height = taffy::style::Dimension::length(root_size.height as f32);
+        }
     }
 
     pub fn compute_layout(&mut self) {
@@ -569,6 +631,8 @@ impl WindowState {
             self.root_layout_node,
             crate::style::Style::new().size_full().to_taffy_style(),
         );
+
+        self.apply_fixed_element_styles();
 
         let _ = self
             .root_view_id
@@ -775,6 +839,8 @@ impl WindowState {
             }
         }
 
+        self.apply_fixed_positioning_transforms();
+
         let damage = self.box_tree.borrow_mut().commit();
         let pointer = self.last_pointer;
         for damage_rect in &damage.dirty_rects {
@@ -790,6 +856,60 @@ impl WindowState {
             }
         }
         self.needs_box_tree_commit = false;
+    }
+
+    fn apply_fixed_positioning_transforms(&self) {
+        let root_size = self.root_size / self.scale;
+        let positions: SmallVec<[(ElementId, Point); 32]> = VIEW_STORAGE.with_borrow(|s| {
+            self.fixed_elements
+                .iter()
+                .filter_map(|&view_id| {
+                    let state = s.states.get(view_id)?;
+                    let state_borrow = state.borrow();
+                    let builtin = state_borrow.combined_style.builtin();
+                    if !builtin.is_fixed() {
+                        return None;
+                    }
+                    let element_id = state_borrow.element_id;
+                    let local_bounds = self
+                        .box_tree
+                        .borrow()
+                        .local_bounds(element_id.0)
+                        .unwrap_or_default();
+
+                    let mut pos = Point::new(0.0, 0.0);
+
+                    if let (Some(left), Some(_)) = (
+                        builtin.inset_left().resolve(root_size.width),
+                        builtin.inset_right().resolve(root_size.width),
+                    ) {
+                        pos.x = left;
+                    } else if let Some(left) = builtin.inset_left().resolve(root_size.width) {
+                        pos.x = left;
+                    } else if let Some(right) = builtin.inset_right().resolve(root_size.width) {
+                        pos.x = root_size.width - right - local_bounds.width();
+                    }
+
+                    if let (Some(top), Some(_)) = (
+                        builtin.inset_top().resolve(root_size.height),
+                        builtin.inset_bottom().resolve(root_size.height),
+                    ) {
+                        pos.y = top;
+                    } else if let Some(top) = builtin.inset_top().resolve(root_size.height) {
+                        pos.y = top;
+                    } else if let Some(bottom) = builtin.inset_bottom().resolve(root_size.height) {
+                        pos.y = root_size.height - bottom - local_bounds.height();
+                    }
+
+                    Some((element_id, pos))
+                })
+                .collect()
+        });
+
+        let mut tree = self.box_tree.borrow_mut();
+        for (element_id, pos) in positions {
+            tree.set_world_translation(element_id.0, pos);
+        }
     }
 
     /// Requests that the style pass will run for `id` on the next frame, and ensures new frame is

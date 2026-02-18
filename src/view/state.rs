@@ -300,7 +300,7 @@ impl ViewState {
         style.push(Style::new());
 
         let element_id = crate::ElementId(
-            box_tree.insert(None, understory_box_tree::LocalNode::default()),
+            box_tree.push_child(None, understory_box_tree::LocalNode::default()),
             id,
             true,
         );

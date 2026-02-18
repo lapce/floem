@@ -8,7 +8,7 @@ use ui_events::{
     keyboard::{Key, KeyState, KeyboardEvent, Modifiers, NamedKey},
     pointer::{PointerButton, PointerButtonEvent, PointerEvent, PointerId, PointerInfo},
 };
-use understory_box_tree::NodeFlags;
+use understory_box_tree::{NodeFlags, QueryError};
 use understory_event_state::{click::ClickResult, hover::HoverEvent};
 use winit::keyboard::KeyCode;
 
@@ -764,8 +764,11 @@ impl RouteCx<'_, '_> {
             .borrow()
             .world_transform(dispatch_step.target_element_id.0)
         {
-            Ok(transform) => transform,
-            Err(transform) => transform.value().unwrap(),
+            Ok(transform) | Err(QueryError::Dirty(transform)) => transform,
+            Err(QueryError::Stale) => {
+                // we are storing pending events so it's possible that a node because stale. if it did, don't panic, just continue
+                return Outcome::Continue;
+            }
         }
         .inverse();
 

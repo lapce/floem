@@ -250,6 +250,23 @@ pub enum PxPctAuto {
     Auto,
 }
 
+impl PxPctAuto {
+    pub fn as_px(&self) -> Option<f64> {
+        match self {
+            PxPctAuto::Px(v) => Some(*v),
+            _ => None,
+        }
+    }
+
+    pub fn resolve(&self, reference: f64) -> Option<f64> {
+        match self {
+            PxPctAuto::Px(v) => Some(*v),
+            PxPctAuto::Pct(v) => Some(reference * v / 100.0),
+            PxPctAuto::Auto => None,
+        }
+    }
+}
+
 impl From<Pct> for PxPctAuto {
     fn from(value: Pct) -> Self {
         PxPctAuto::Pct(value.0)

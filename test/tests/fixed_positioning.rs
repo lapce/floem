@@ -9,7 +9,7 @@
 use floem::HasViewId;
 use floem::headless::HeadlessHarness;
 use floem::view::ParentView;
-use floem::views::{Clip, Decorators, Empty, Overlay, Stack};
+use floem::views::{Clip, ContainerExt, Decorators, Empty, Overlay, OverlayExt, Stack};
 use floem_test::TestRoot;
 use serial_test::serial;
 use std::cell::Cell;
@@ -26,14 +26,16 @@ fn test_fixed_element_fills_viewport() {
     // Test that a fixed element with inset(0) fills the entire viewport.
     //
     // Structure:
-    //   stack (100x100)
+    //   Container (100x100)
     //   └── Overlay
     //       └── fixed_container (should fill 100x100 viewport)
 
     let fixed_container = Empty::new().style(|s| s.fixed().inset(0.0));
     let fixed_id = fixed_container.view_id();
 
-    let view = Stack::new((Overlay::new().child(fixed_container),)).style(|s| s.size(100.0, 100.0));
+    let view = Overlay::new(fixed_container)
+        .container()
+        .style(|s| s.size(100.0, 100.0));
 
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.rebuild();
@@ -61,7 +63,7 @@ fn test_fixed_element_ignores_parent_position() {
     // and receives clicks at viewport-relative positions.
     //
     // Structure:
-    //   stack (200x200)
+    //   container (200x200)
     //   └── parent_container (at 50,50, size 100x100)
     //       └── Overlay
     //           └── fixed_child (should be at 0,0, size 200x200)
@@ -76,15 +78,16 @@ fn test_fixed_element_ignores_parent_position() {
         });
     let fixed_id = fixed_child.view_id();
 
-    let view = Stack::new(
-        (Stack::new((Overlay::new().child(fixed_child),)).style(|s| {
+    let view = Overlay::new(fixed_child)
+        .container()
+        .style(|s| {
             s.absolute()
                 .inset_left(50.0)
                 .inset_top(50.0)
                 .size(100.0, 100.0)
-        }),),
-    )
-    .style(|s| s.size(200.0, 200.0));
+        })
+        .container()
+        .style(|s| s.size(200.0, 200.0));
 
     let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
@@ -117,7 +120,7 @@ fn test_fixed_element_children_use_viewport_percentages() {
     // Test that children of a fixed element use viewport-relative percentages.
     //
     // Structure:
-    //   stack (200x200)
+    //   container (200x200)
     //   └── parent (100x100 at 50,50)
     //       └── Overlay
     //           └── fixed_container (fills viewport 200x200)
@@ -126,16 +129,16 @@ fn test_fixed_element_children_use_viewport_percentages() {
     let child = Empty::new().style(|s| s.width_full().height_full());
     let child_id = child.view_id();
 
-    let view = Stack::new((Stack::new((
-        Overlay::new().child(Stack::new((child,)).style(|s| s.fixed().inset(0.0))),
-    ))
-    .style(|s| {
-        s.absolute()
-            .inset_left(50.0)
-            .inset_top(50.0)
-            .size(100.0, 100.0)
-    }),))
-    .style(|s| s.size(200.0, 200.0));
+    let view = Overlay::new(child.container().style(|s| s.fixed().inset(0.0)))
+        .container()
+        .style(|s| {
+            s.absolute()
+                .inset_left(50.0)
+                .inset_top(50.0)
+                .size(100.0, 100.0)
+        })
+        .container()
+        .style(|s| s.size(200.0, 200.0));
 
     let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
@@ -163,7 +166,7 @@ fn test_fixed_element_receives_events_at_viewport_position() {
     // not at a position relative to its DOM parent.
     //
     // Structure:
-    //   stack (200x200)
+    //   container (200x200)
     //   └── parent (100x100 at 50,50)
     //       └── Overlay
     //           └── fixed_container (fills viewport)
@@ -175,20 +178,21 @@ fn test_fixed_element_receives_events_at_viewport_position() {
     let clicked = Rc::new(Cell::new(false));
     let clicked_clone = clicked.clone();
 
-    let view = Stack::new((Stack::new((Overlay::new().child(
-        Empty::new()
-            .style(|s| s.fixed().inset(0.0))
-            .action(move || {
-                clicked_clone.set(true);
-            }),
-    ),))
-    .style(|s| {
-        s.absolute()
-            .inset_left(50.0)
-            .inset_top(50.0)
-            .size(100.0, 100.0)
-    }),))
-    .style(|s| s.size(200.0, 200.0));
+    let view = Empty::new()
+        .style(|s| s.fixed().inset(0.0))
+        .action(move || {
+            clicked_clone.set(true);
+        })
+        .overlay()
+        .container()
+        .style(|s| {
+            s.absolute()
+                .inset_left(50.0)
+                .inset_top(50.0)
+                .size(100.0, 100.0)
+        })
+        .container()
+        .style(|s| s.size(200.0, 200.0));
 
     let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
 
@@ -638,12 +642,13 @@ fn test_fixed_container_with_translate_centering() {
     });
     let centered_id = centered_child.view_id();
 
-    let fixed_container =
-        Stack::new((centered_child,)).style(|s| s.fixed().inset(0.0).width_full().height_full());
+    let fixed_container = centered_child
+        .container()
+        .style(|s| s.fixed().inset(0.0).width_full().height_full());
 
     let view = Stack::new((
         // Nested at offset position
-        Stack::new((Overlay::new().child(fixed_container),)).style(|s| {
+        fixed_container.container().style(|s| {
             s.absolute()
                 .inset_left(100.0)
                 .inset_top(100.0)
@@ -655,46 +660,57 @@ fn test_fixed_container_with_translate_centering() {
     let mut harness = HeadlessHarness::new_with_size(root, view, 400.0, 300.0);
     harness.rebuild();
 
-    let layout = centered_id.get_layout().expect("Should have layout");
+    let layout = centered_id.get_visual_rect();
     let transform = centered_id.get_visual_transform();
-    let coeffs = transform.as_coeffs();
+    let translation = transform.translation();
 
     eprintln!(
         "Centered with translate: pos=({}, {}), size={}x{}, transform=({}, {})",
-        layout.location.x,
-        layout.location.y,
-        layout.size.width,
-        layout.size.height,
-        coeffs[4],
-        coeffs[5]
+        layout.x0,
+        layout.y0,
+        layout.width(),
+        layout.height(),
+        translation.x,
+        translation.y
     );
 
-    // Position should be at 50% of viewport
+    // Visual rect already includes transform
     assert!(
-        (layout.location.x - 200.0).abs() < 0.1,
-        "x should be 200 (50% of 400), got {}",
-        layout.location.x
+        (layout.x0 - 150.0).abs() < 0.1,
+        "x should be 150 (center of 400 minus half of 100), got {}",
+        layout.x0
     );
     assert!(
-        (layout.location.y - 150.0).abs() < 0.1,
-        "y should be 150 (50% of 300), got {}",
-        layout.location.y
-    );
-
-    // Transform should offset by -50% of element size
-    assert!(
-        (coeffs[4] - (-50.0)).abs() < 0.1,
-        "translate_x should be -50 (-50% of 100), got {}",
-        coeffs[4]
-    );
-    assert!(
-        (coeffs[5] - (-40.0)).abs() < 0.1,
-        "translate_y should be -40 (-50% of 80), got {}",
-        coeffs[5]
+        (layout.y0 - 110.0).abs() < 0.1,
+        "y should be 110 (center of 300 minus half of 80), got {}",
+        layout.y0
     );
 
-    // Visual center should be at (200-50, 150-40) = (150, 110)
-    // which is the center of the viewport minus half the element size
+    // World transform is the full composed translation
+    assert!(
+        (translation.x - 150.0).abs() < 0.1,
+        "world translate_x should be 150, got {}",
+        translation.x
+    );
+    assert!(
+        (translation.y - 110.0).abs() < 0.1,
+        "world translate_y should be 110, got {}",
+        translation.y
+    );
+
+    // Visual center should be at the viewport center
+    let center_x = layout.x0 + layout.width() / 2.0;
+    let center_y = layout.y0 + layout.height() / 2.0;
+    assert!(
+        (center_x - 200.0).abs() < 0.1,
+        "visual center x should be 200, got {}",
+        center_x
+    );
+    assert!(
+        (center_y - 150.0).abs() < 0.1,
+        "visual center y should be 150, got {}",
+        center_y
+    );
 }
 
 // ============================================================================

@@ -680,6 +680,7 @@ fn test_flex_col_display_recovered_after_visible() {
 #[test]
 #[serial]
 fn test_tab_restores_display_on_switch() {
+    let root = TestRoot::new();
     let active_tab = RwSignal::new(Some(0usize));
     let tabs = vec![0, 1];
 
@@ -705,7 +706,6 @@ fn test_tab_restores_display_on_switch() {
         },
     );
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, tab_view, 200.0, 200.0);
     harness.rebuild();
 

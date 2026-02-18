@@ -70,7 +70,7 @@ impl Handle {
     fn new(parent_id: ViewId) -> Self {
         Self {
             parent_id,
-            element_id: parent_id.create_child_element_id(),
+            element_id: parent_id.create_child_element_id(1),
             box_tree: parent_id.box_tree(),
             position: 0.0,
             dragged: false,

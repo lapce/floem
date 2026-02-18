@@ -28,7 +28,7 @@ use std::sync::mpsc::Receiver;
 
 use crate::ElementId;
 use crate::view::ViewId;
-use crate::view::stacking::{collect_overlays, collect_stacking_context_items};
+use crate::view::stacking::collect_stacking_context_items;
 use crate::view::{paint_bg, paint_border, paint_outline};
 use crate::window::state::WindowState;
 
@@ -226,20 +226,6 @@ impl GlobalPaintCx<'_> {
             .and_then(|ad| ad.dragging_preview.as_ref().map(|p| p.element_id));
         // Recursively collect main tree
         collect_visual_recursive(root, box_tree, &mut paint_order, false, dragging_element_id);
-
-        // Collect overlays (they paint on top)
-        let overlays = collect_overlays(root, box_tree);
-        for overlay_id in overlays {
-            if !overlay_id.is_hidden() {
-                collect_visual_recursive(
-                    overlay_id.get_element_id(),
-                    box_tree,
-                    &mut paint_order,
-                    false,
-                    dragging_element_id,
-                );
-            }
-        }
 
         // Paint drag overlay separately (always on top)
         if let Some(preview) = self

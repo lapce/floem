@@ -13,7 +13,7 @@ use winit::window::WindowId;
 
 use ui_events::pointer::PointerId;
 
-use super::stacking::{invalidate_all_overlay_caches, invalidate_stacking_cache};
+use super::stacking::invalidate_stacking_cache;
 use super::{IntoView, StackOffset, VIEW_STORAGE, View, ViewState};
 
 thread_local! {
@@ -192,18 +192,14 @@ impl ViewId {
         VIEW_STORAGE.with_borrow_mut(|s| {
             s.overlays.insert(*self, root_id);
         });
-        // Invalidate overlay cache - use invalidate_all since root may not be finalized yet
-        invalidate_all_overlay_caches();
     }
 
     /// Unregister this view as an overlay.
-    #[allow(dead_code)] // Kept for API symmetry with register_overlay
+    #[expect(dead_code)] // Kept for API symmetry with register_overlay
     pub(crate) fn unregister_overlay(&self) {
         VIEW_STORAGE.with_borrow_mut(|s| {
             s.overlays.remove(*self);
         });
-        // Invalidate overlay cache
-        invalidate_all_overlay_caches();
     }
 
     /// Check if this view is registered as an overlay.
@@ -398,6 +394,7 @@ impl ViewId {
     ///
     /// See also [`Self::set_children`] and [`Self::set_children_vec`]
     pub fn set_children_iter(&self, children: impl Iterator<Item = Box<dyn View>>) {
+        let mut overlays = vec![];
         let children_ids: Vec<ViewId> = VIEW_STORAGE.with_borrow_mut(|s| {
             let this_element_id = s.state(*self).borrow().element_id;
             let mut children_ids = Vec::new();
@@ -406,6 +403,10 @@ impl ViewId {
             let layout_tree = s.taffy.clone();
             for child_view in children {
                 let child_view_id = child_view.id();
+                if let Some(id) = s.overlays.get(child_view_id) {
+                    overlays.push((child_view, *id));
+                    continue;
+                }
                 let child_element_id = s.state(child_view_id).borrow().element_id;
                 let child_taffy_node = s.state(child_view_id).borrow().layout_id;
                 children_ids.push(child_view_id);
@@ -424,6 +425,11 @@ impl ViewId {
                 .set_children(this_taffy_node, &children_nodes);
             children_ids
         });
+
+        for (overlay, root) in overlays {
+            root.add_child(overlay);
+        }
+
         // Re-parent child scopes under nearest ancestor's scope
         for child_id in children_ids {
             reparent_scope_if_needed(child_id, *self);
@@ -1307,11 +1313,11 @@ impl ViewId {
     /// Create a visual that is a child of the current view.
     ///
     /// This will make it so that the visual id can receive events through the `ViewID`
-    pub fn create_child_element_id(&self) -> ElementId {
+    pub fn create_child_element_id(&self, z_index: i32) -> ElementId {
         let parent_box_node = self.get_element_id();
         VIEW_STORAGE.with_borrow_mut(|s| {
             let box_tree = s.box_tree(*self);
-            let child_element_id = box_tree.borrow_mut().insert(
+            let child_element_id = box_tree.borrow_mut().push_child(
                 Some(parent_box_node.0),
                 understory_box_tree::LocalNode::default(),
             );
@@ -1319,6 +1325,7 @@ impl ViewId {
             box_tree
                 .borrow_mut()
                 .set_meta(child_element_id, Some(element_id));
+            box_tree.borrow_mut().set_z_index(child_element_id, z_index);
             element_id
         })
     }

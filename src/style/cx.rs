@@ -18,7 +18,7 @@ use crate::animate::{AnimStateKind, RepeatMode};
 use crate::inspector::CaptureState;
 use crate::style::{StyleClassRef, resolve_nested_maps};
 use crate::view::ViewId;
-use crate::view::stacking::{invalidate_all_overlay_caches, invalidate_stacking_cache};
+use crate::view::stacking::invalidate_stacking_cache;
 use crate::window::state::WindowState;
 
 use super::recalc::StyleRecalcChange;
@@ -249,7 +249,7 @@ impl<'a> StyleCx<'a> {
         // ─────────────────────────────────────────────────────────────────────
 
         // Cache miss or dirty - compute style
-        let (combined_style, classes_applied, has_active_animation) =
+        let (combined_style, _classes_applied, has_active_animation) =
             view_state.borrow_mut().compute_combined(
                 &mut view_interact_state,
                 self.window_state.screen_size_bp,
@@ -323,9 +323,8 @@ impl<'a> StyleCx<'a> {
         };
 
         // Update view state in a single borrow
-        let (old_is_fixed, old_taffy_style) = {
+        let old_taffy_style = {
             let mut vs = view_state.borrow_mut();
-            let old_fixed = vs.computed_style.builtin().is_fixed();
             let old_taffy = vs.taffy_style.clone();
 
             vs.style_cx = Some(self.inherited.clone());
@@ -341,7 +340,7 @@ impl<'a> StyleCx<'a> {
                 hidden: self.parent_hidden || compute_style_has_hidden || parent_set.hidden,
             };
 
-            (old_fixed, old_taffy)
+            old_taffy
         };
 
         // Handle fixed element registration
@@ -349,9 +348,6 @@ impl<'a> StyleCx<'a> {
             self.window_state.register_fixed_element(view_id);
         } else {
             self.window_state.unregister_fixed_element(view_id);
-        }
-        if new_is_fixed != old_is_fixed {
-            view_id.request_layout();
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -421,7 +417,7 @@ impl<'a> StyleCx<'a> {
         let was_hidden = view_id.state().borrow().is_hidden;
 
         let is_visible = !compute_style_has_hidden && !self.parent_hidden && !parent_set.hidden;
-        if was_hidden && is_visible {
+        if was_hidden == is_visible {
             request_style_layout_recursive_for_children(view_id);
             view_id.request_layout();
         }
@@ -567,24 +563,18 @@ impl<'a> StyleCx<'a> {
 
             // Get old z-index from box tree
             let box_tree = self.window_state.box_tree.borrow();
-            let old_z_index = box_tree
-                .local_z_index(element_id.0)
-                .and_then(|opt| opt)
-                .unwrap_or(0);
+            let old_z_index = box_tree.z_index(element_id.0).unwrap_or(0);
             drop(box_tree);
             drop(vs);
 
             if old_z_index != new_z_index {
                 invalidate_stacking_cache(element_id);
-                if view_id.is_overlay() {
-                    invalidate_all_overlay_caches();
-                }
 
                 // Update box tree immediately (don't wait for layout)
                 self.window_state
                     .box_tree
                     .borrow_mut()
-                    .set_local_z_index(element_id.0, Some(new_z_index));
+                    .set_z_index(element_id.0, new_z_index);
             }
         }
     }

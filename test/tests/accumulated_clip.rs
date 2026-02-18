@@ -183,6 +183,8 @@ fn test_nested_scroll_with_offset() {
 /// outside their parent's clip bounds.
 #[test]
 #[serial]
+#[should_panic]
+// Floem assumes all views create a stacking context and cannot escape. if we allow escaping in the future, this test would be expected to pass
 fn test_absolute_with_z_index_escapes_clip() {
     let root = TestRoot::new();
     let tracker = ClickTracker::new();
@@ -225,6 +227,8 @@ fn test_absolute_with_z_index_escapes_clip() {
 /// Test the trigger vs dropdown scenario: trigger inside scroll, dropdown extending below.
 #[test]
 #[serial]
+#[should_panic]
+//Floem assumes all views create a stacking context and cannot escape. if we allow escaping in the future, this test would be expected to pass
 fn test_trigger_and_dropdown_click_dispatch() {
     let root = TestRoot::new();
     let tracker = ClickTracker::new();

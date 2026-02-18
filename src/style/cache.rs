@@ -811,13 +811,12 @@ mod tests {
     #[test]
     fn test_apply_only_class_maps_changes_hash() {
         use crate::style_class;
-        use std::rc::Rc;
 
         // Define a test class
         style_class!(TestClass2);
 
         // Create initial class_context (empty)
-        let mut class_context = Rc::new(Style::new());
+        let mut class_context = Style::new();
         let initial_hash = class_context.content_hash();
 
         // Create a style with class maps (like parent's direct style would have)

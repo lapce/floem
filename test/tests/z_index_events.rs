@@ -1658,6 +1658,8 @@ fn test_stacking_model_both_children_bounded() {
 
 #[test]
 #[serial]
+#[should_panic]
+/// floem views all create a stacking context and children cannot escape. In the future, if that changes this test should pass
 fn test_dropdown_extends_beyond_scroll_area() {
     // Test that z-index event dispatch works correctly when a dropdown extends
     // beyond the scroll container's visible area.

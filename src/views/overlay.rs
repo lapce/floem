@@ -51,19 +51,39 @@ pub struct Overlay {
 }
 
 impl Overlay {
-    /// Creates a new empty overlay.
+    /// Creates a new overlay.
     ///
-    /// Use `.child()` or `.derived_child()` to add content.
     ///
     /// # Example
     /// ```rust
     /// use floem::prelude::*;
     /// use floem::views::{Overlay, Label};
     ///
-    /// Overlay::new().child(Label::new("Static overlay content"));
+    /// Overlay::new("Static overlay content");
     /// ```
-    pub fn new() -> Self {
-        Self::with_id(ViewId::new())
+    pub fn new(child: impl crate::IntoView + 'static) -> Self {
+        Self::with_id(ViewId::new()).child(child)
+    }
+
+    /// Creates a new overlay whose child will dynamically update in response to signal changes.
+    ///
+    /// # Example
+    /// ```rust
+    /// use floem::prelude::*;
+    /// use floem::views::Overlay;
+    ///
+    /// let message = RwSignal::new("Loading...".to_string());
+    ///
+    /// Overlay::new_dyn(move || {
+    ///         Label::new(message.get())
+    ///     })
+    /// ```
+    pub fn new_dyn<CF, V>(self, child_fn: CF) -> Self
+    where
+        CF: Fn() -> V + 'static,
+        V: crate::IntoView + 'static,
+    {
+        Self::with_id(ViewId::new()).derived_child(child_fn)
     }
 
     /// Creates a new empty overlay with a specific ViewId.
@@ -81,7 +101,7 @@ impl Overlay {
 
 impl Default for Overlay {
     fn default() -> Self {
-        Self::new()
+        Self::new(())
     }
 }
 
@@ -98,5 +118,17 @@ impl View for Overlay {
 impl ParentView for Overlay {
     fn scope(&self) -> Option<Scope> {
         Some(self.scope)
+    }
+}
+
+/// A trait that adds an `overlay` method to any type that implements `IntoView`.
+pub trait OverlayExt {
+    /// Wrap the view in an overlay.
+    fn overlay(self) -> Overlay;
+}
+
+impl<T: crate::IntoView + 'static> OverlayExt for T {
+    fn overlay(self) -> Overlay {
+        Overlay::new(self)
     }
 }

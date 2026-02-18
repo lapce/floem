@@ -2,7 +2,7 @@ use std::{any::Any, cell::RefCell, rc::Rc, time::Duration};
 
 use crate::{
     BoxTree, ElementId, ViewId,
-    context::{EventCx, LayoutChangedListener, PaintCx, UpdateCx},
+    context::{EventCx, PaintCx, UpdateCx},
     easing::Linear,
     event::{
         DragEvent, DragSourceEvent, Event, EventPropagation, InteractionEvent, Phase,
@@ -163,7 +163,7 @@ struct Handle {
 impl Handle {
     fn new(parent_id: ViewId, affected_child_id: ViewId, next_child_id: ViewId) -> Self {
         let box_tree = parent_id.box_tree();
-        let element_id = parent_id.create_child_element_id();
+        let element_id = parent_id.create_child_element_id(1);
 
         Self {
             parent_id,
@@ -212,7 +212,6 @@ impl Handle {
         self.box_tree
             .borrow_mut()
             .set_flags(self.element_id.0, NodeFlags::VISIBLE | NodeFlags::PICKABLE);
-        self.box_tree.borrow_mut().set_z_index(self.element_id.0, 1);
     }
 
     fn event(&mut self, cx: &mut EventCx, axis: Axis) {

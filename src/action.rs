@@ -12,6 +12,7 @@ use floem_reactive::{SignalWith, UpdaterEffect};
 use peniko::kurbo::{Point, Size, Vec2};
 use winit::window::{ResizeDirection, Theme};
 
+use crate::IntoView;
 use crate::platform::{Duration, Instant};
 
 use crate::{
@@ -295,12 +296,10 @@ pub fn set_ime_cursor_area(position: Point, size: Size) {
 
 /// Creates a new overlay on the current window.
 pub fn add_overlay<V: View + 'static>(view: V) -> ViewId {
+    let view = view.style(move |s| s.absolute()).into_any();
     let id = view.id();
-    let view = view.style(move |s| s.absolute());
 
-    add_update_message(UpdateMessage::AddOverlay {
-        view: Box::new(view),
-    });
+    add_update_message(UpdateMessage::AddOverlay { view });
     id
 }
 
