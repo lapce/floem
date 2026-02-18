@@ -115,15 +115,15 @@ impl SliderState {
 
 impl SliderChanged {
     // we need these functions instead of closures because we need rust to know that the lifetimes of the references are the same
-    fn extract_state(event: &SliderChanged) -> Option<&SliderState> {
-        Some(&event.state)
+    fn extract_state(event: &SliderChanged) -> &SliderState {
+        &event.state
     }
 }
 
 impl SliderHover {
     // we need these functions instead of closures because we need rust to know that the lifetimes of the references are the same
-    fn extract_state(event: &SliderHover) -> Option<&SliderState> {
-        Some(&event.state)
+    fn extract_state(event: &SliderHover) -> &SliderState {
+        &event.state
     }
 }
 

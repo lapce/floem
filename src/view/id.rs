@@ -1404,7 +1404,7 @@ impl ViewId {
             id: *self,
             event: Box::new(event),
             route_kind,
-            triggered_by: caused_by.map(|e| Box::new(e)),
+            triggered_by: caused_by.map(Box::new),
         });
     }
 }

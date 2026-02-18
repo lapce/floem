@@ -53,8 +53,8 @@ pub struct DropdownOpenChanged {
     pub is_open: bool,
 }
 impl DropdownOpenChanged {
-    fn extract(&self) -> Option<&bool> {
-        Some(&self.is_open)
+    fn extract(&self) -> &bool {
+        &self.is_open
     }
 }
 custom_event!(DropdownOpenChanged, bool, DropdownOpenChanged::extract);

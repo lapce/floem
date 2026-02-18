@@ -301,7 +301,7 @@ macro_rules! custom_event {
                 |event| {
                     if let $crate::event::Event::Custom(custom) = event {
                         custom.as_any().downcast_ref::<$name>()
-                            .and_then($extract)
+                            .map($extract)
                             .map(|e| e as &dyn std::any::Any)
                     } else {
                         None
@@ -362,7 +362,7 @@ macro_rules! custom_event {
         $crate::custom_event! {
             $name,
             $name,
-            |data: &$name| -> Option<&$name> { Some(data) }
+            |data: &$name| -> &$name { data }
             $(, transform = $transform)?
             $(, allow_disabled = $allow_disabled)?
             $(, debug_fmt = $debug_fmt)?

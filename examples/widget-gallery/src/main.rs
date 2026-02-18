@@ -20,7 +20,6 @@ pub mod texteditor;
 
 use floem::{
     action::{add_overlay, set_theme, set_window_menu, toggle_global_theme, toggle_window_theme},
-    event::Event,
     kurbo::Size,
     menu::*,
     muda::{AboutMetadataBuilder, PredefinedMenuItem},
@@ -28,7 +27,7 @@ use floem::{
     prelude::*,
     style::{Background, CursorStyle, CustomStylable, Transition},
     theme::StyleThemeExt,
-    ui_events::keyboard::{Key, KeyState, KeyboardEvent, Modifiers, NamedKey},
+    ui_events::keyboard::{Key, KeyboardEvent, Modifiers, NamedKey},
     window::{Theme, WindowConfig, WindowId},
 };
 

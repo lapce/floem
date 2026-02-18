@@ -562,6 +562,8 @@ impl RouteCx<'_, '_> {
     /// Main dispatch entry point. Routes the event according to `kind`.
     /// Does NOT run lifecycle hooks — those run in [`finish`] via [`Drop`].
     pub(crate) fn dispatch(&mut self, kind: RouteKind) -> Option<Dispatch> {
+        self.handle_pointer_state_updates();
+
         match kind {
             RouteKind::Directed { target, phases } => self.dispatch_directed(target, phases),
             RouteKind::Focused { phases } => {
@@ -691,8 +693,6 @@ impl RouteCx<'_, '_> {
         self.hit_path = path.clone();
 
         let path = self.hit_path.clone().unwrap_or_default();
-
-        self.handle_pointer_state_updates();
 
         if let Some(target) = path.last().copied() {
             // Build and cache the dispatch sequence for this target.
@@ -987,12 +987,12 @@ impl RouteCx<'_, '_> {
     /// its own lifecycle), with the current event as `triggered_by`.
     fn flush_pending_events(&mut self) {
         let pending = std::mem::take(&mut self.pending_events);
-        for (kind, event) in pending {
+        for (kind, event) in pending.into_iter().rev() {
             self.route_synthetic(kind, event);
         }
         let pending = std::mem::take(&mut self.pending_default_events);
         if !self.prevent_default {
-            for (kind, event) in pending {
+            for (kind, event) in pending.into_iter().rev() {
                 self.route_synthetic(kind, event);
             }
         }
@@ -1629,6 +1629,7 @@ impl RouteCx<'_, '_> {
                     Event::Interaction(InteractionEvent::SecondaryClick),
                 ));
             } else {
+                dbg!(id);
                 self.pending_events
                     .push((route_kind, Event::Interaction(InteractionEvent::Click)));
                 if count > 1 {

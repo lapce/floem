@@ -10,7 +10,7 @@ use floem::{
     },
     style::{CursorStyle, Transition},
     theme::StyleThemeExt,
-    views::{Button, Decorators, ToggleButton, ToggleHandleBehavior},
+    views::{Button, Decorators, ToggleButton},
 };
 
 use crate::form::{form, form_item};
@@ -58,20 +58,10 @@ pub fn button_view() -> impl IntoView {
             }),
         ),
         form_item(
-            "Toggle button - Snap:",
-            ToggleButton::new(|| true)
-                .on_toggle(|_| {
-                    println!("Button Toggled");
-                })
-                .toggle_style(|s| s.behavior(ToggleHandleBehavior::Snap)),
-        ),
-        form_item(
-            "Toggle button - Follow:",
-            ToggleButton::new(|| true)
-                .on_toggle(|_| {
-                    println!("Button Toggled");
-                })
-                .toggle_style(|s| s.behavior(ToggleHandleBehavior::Follow)),
+            "Toggle button:",
+            ToggleButton::new(|| true).on_event_stop(ToggleChanged::listener(), |_, _| {
+                println!("Button Toggled");
+            }),
         ),
         form_item(
             "Toggle button - toggle background:",
@@ -79,7 +69,6 @@ pub fn button_view() -> impl IntoView {
                 s.apply_if(state.get(), |s| {
                     s.accent_color(DARK_GRAY).handle_color(WHITE_SMOKE)
                 })
-                .behavior(ToggleHandleBehavior::Snap)
             }),
         ),
     ))
