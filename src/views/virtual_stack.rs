@@ -1,4 +1,5 @@
 use std::{
+    cell::RefCell,
     collections::HashSet,
     hash::{DefaultHasher, Hash, Hasher},
     marker::PhantomData,
@@ -8,17 +9,19 @@ use std::{
 
 use floem_reactive::{
     Effect, ReadSignal, RwSignal, Scope, SignalGet, SignalTrack, SignalUpdate, SignalWith,
-    WriteSignal,
 };
 use peniko::kurbo::Rect;
 use smallvec::SmallVec;
-use taffy::{FlexDirection, tree::NodeId};
+use taffy::{Dimension, FlexDirection, tree::NodeId};
+use understory_virtual_list::{
+    ExtentModel, FixedExtentModel, PrefixSumExtentModel, compute_visible_strip,
+};
 
 use crate::{
+    event::listener::{EventListenerTrait, UpdatePhaseBoxTreeCommit},
     prop_extractor,
-    style::{FlexDirectionProp, Style},
-    view::ViewId,
-    view::{IntoView, View},
+    style::FlexDirectionProp,
+    view::{FinalizeFn, IntoView, LayoutNodeCx, View, ViewId},
 };
 
 use super::{Diff, DiffOpAdd, FxIndexSet, HashRun, apply_diff, diff};
@@ -32,19 +35,26 @@ prop_extractor! {
 }
 
 enum VirtualItemSize<T> {
-    Fn(Rc<dyn Fn(&T) -> f64>),
     Fixed(Rc<dyn Fn() -> f64>),
-    /// This will try to calculate the size of the items using the computed layout.
+    Fn(Rc<dyn Fn(&T) -> f64>),
+    /// Measures the first rendered item and uses that size for all items.
     Assume(Option<f64>),
 }
+
 impl<T> Clone for VirtualItemSize<T> {
     fn clone(&self) -> Self {
         match self {
-            VirtualItemSize::Fn(rc) => VirtualItemSize::Fn(rc.clone()),
             VirtualItemSize::Fixed(rc) => VirtualItemSize::Fixed(rc.clone()),
+            VirtualItemSize::Fn(rc) => VirtualItemSize::Fn(rc.clone()),
             VirtualItemSize::Assume(x) => VirtualItemSize::Assume(*x),
         }
     }
+}
+
+/// Cached extent model — persisted across effect runs to avoid rebuilding.
+enum CachedExtentModel {
+    Fixed(FixedExtentModel<f64>),
+    PrefixSum(PrefixSumExtentModel<f64>),
 }
 
 /// A trait that can be implemented on a type so that the type can be used in a [`virtual_stack`] or [`virtual_list`](super::virtual_list()).
@@ -55,7 +65,7 @@ pub trait VirtualVector<T> {
         self.total_len() == 0
     }
 
-    fn slice(&mut self, range: Range<usize>) -> impl Iterator<Item = T>;
+    fn slice(&self, range: Range<usize>) -> impl Iterator<Item = T>;
 
     fn enumerate(self) -> Enumerate<Self, T>
     where
@@ -68,29 +78,36 @@ pub trait VirtualVector<T> {
     }
 }
 
+/// Shared layout data for the taffy measure function.
+#[derive(Clone)]
+struct ContentSize {
+    size: f64,
+    direction: FlexDirection,
+}
+
 /// A virtual stack that is like a [`dyn_stack`](super::dyn_stack()) but also lazily loads items for performance. See [`virtual_stack`].
 pub struct VirtualStack<T>
 where
     T: 'static,
 {
     id: ViewId,
-    first_content_id: Option<ViewId>,
     style: VirtualExtractor,
     pub(crate) direction: RwSignal<FlexDirection>,
     item_size: RwSignal<VirtualItemSize<T>>,
     children: Vec<Option<(ViewId, Scope)>>,
-    /// the index out of all of the items that is the first in the virtualized set. This is used to map an index to a [`ViewId`].
+    /// Index of the first visible child in the full dataset.
     first_child_idx: usize,
     selected_idx: HashSet<usize>,
-    viewport: Rect,
-    set_viewport: WriteSignal<Rect>,
     view_fn: VirtViewFn<T>,
     before_size: f64,
-    content_size: f64,
-    before_node: Option<NodeId>,
+    after_size: f64,
+    content_size: Rc<RefCell<ContentSize>>,
+    space_nodes: Option<(NodeId, NodeId)>,
+    scroll_offset: RwSignal<f64>,
+    viewport_size: RwSignal<f64>,
 }
-impl<T: std::clone::Clone> VirtualStack<T> {
-    // For types that implement all constraints
+
+impl<T: Clone> VirtualStack<T> {
     pub fn new<DF, I>(data_fn: DF) -> VirtualStack<T>
     where
         DF: Fn() -> I + 'static,
@@ -108,7 +125,6 @@ impl<T: std::clone::Clone> VirtualStack<T> {
         )
     }
 
-    // For types that are hashable but need custom view
     pub fn with_view<DF, I, V>(data_fn: DF, view_fn: impl Fn(T) -> V + 'static) -> VirtualStack<T>
     where
         DF: Fn() -> I + 'static,
@@ -127,7 +143,6 @@ impl<T: std::clone::Clone> VirtualStack<T> {
         )
     }
 
-    // For types that implement IntoView but need custom keys
     pub fn with_key<DF, I, K>(data_fn: DF, key_fn: impl Fn(&T) -> K + 'static) -> VirtualStack<T>
     where
         DF: Fn() -> I + 'static,
@@ -162,21 +177,75 @@ impl<T> VirtualStack<T> {
         self.item_size.set(VirtualItemSize::Fn(Rc::new(size)));
         self
     }
+
+    pub fn first_layout(self) -> Self {
+        self.item_size.set(VirtualItemSize::Assume(None));
+        self
+    }
+
+    fn ensure_space_nodes(&mut self) -> (NodeId, NodeId) {
+        if self.space_nodes.is_none() {
+            let before = self
+                .id
+                .taffy()
+                .borrow_mut()
+                .new_leaf(taffy::Style::DEFAULT)
+                .unwrap();
+            let after = self
+                .id
+                .taffy()
+                .borrow_mut()
+                .new_leaf(taffy::Style::DEFAULT)
+                .unwrap();
+            self.space_nodes = Some((before, after));
+        }
+        let (before_node, after_node) = self.space_nodes.unwrap();
+        let direction = self.content_size.borrow().direction;
+        let _ = self.id.taffy().borrow_mut().set_style(
+            before_node,
+            taffy::style::Style {
+                size: match direction {
+                    FlexDirection::Column | FlexDirection::ColumnReverse => taffy::prelude::Size {
+                        width: Dimension::auto(),
+                        height: Dimension::length(self.before_size as f32),
+                    },
+                    FlexDirection::Row | FlexDirection::RowReverse => taffy::prelude::Size {
+                        width: Dimension::length(self.before_size as f32),
+                        height: Dimension::auto(),
+                    },
+                },
+                ..Default::default()
+            },
+        );
+        let _ = self.id.taffy().borrow_mut().set_style(
+            after_node,
+            taffy::style::Style {
+                size: match direction {
+                    FlexDirection::Column | FlexDirection::ColumnReverse => taffy::prelude::Size {
+                        width: Dimension::auto(),
+                        height: Dimension::length(self.after_size as f32),
+                    },
+                    FlexDirection::Row | FlexDirection::RowReverse => taffy::prelude::Size {
+                        width: Dimension::length(self.after_size as f32),
+                        height: Dimension::auto(),
+                    },
+                },
+                ..Default::default()
+            },
+        );
+        (before_node, after_node)
+    }
 }
 
 pub(crate) struct VirtualStackState<T> {
     diff: Diff<T>,
     first_idx: usize,
     before_size: f64,
+    after_size: f64,
     content_size: f64,
 }
 
-/// A View that is like a [`dyn_stack`](super::dyn_stack()) but also lazily loads the items as they appear in a [scroll view](super::scroll())
-///
-/// This virtualization/lazy loading is done for performance and allows for lists of millions of items to be used with very high performance.
-///
-/// By default, this view tries to calculate and assume the size of the items in the list by calculating the size of the first item that is loaded.
-/// If all of your items are not of a consistent size in the relevant axis (ie a consistent width when flex_row or a consistent height when in flex_col) you will need to specify the size of the items using [`item_size_fixed`](VirtualStack::item_size_fixed) or [`item_size_fn`](VirtualStack::item_size_fn).
+/// A View that lazily loads items as they appear in a scroll view.
 ///
 /// ## Example
 /// ```
@@ -185,18 +254,11 @@ pub(crate) struct VirtualStackState<T> {
 /// VirtualStack::new(move || 1..=1000000)
 ///     .style(|s| {
 ///         s.flex_col().class(LabelClass, |s| {
-///             // give each of the numbers some vertical padding and make them take up the full width of the stack
 ///             s.padding_vert(2.5).width_full().justify_center()
 ///         })
 ///     })
 ///     .scroll()
 ///     .style(|s| s.size(200., 500.).border(1.0))
-///     .container()
-///     .style(|s| {
-///         s.size_full()
-///             .items_center()
-///             .justify_center()
-/// });
 /// ```
 pub fn virtual_stack<T, IF, I, KF, K, VF, V>(
     each_fn: IF,
@@ -213,122 +275,167 @@ where
     V: IntoView + 'static,
 {
     let id = ViewId::new();
+    id.register_listener(UpdatePhaseBoxTreeCommit::listener_key());
 
-    let (viewport, set_viewport) = RwSignal::new_split(Rect::ZERO);
+    let item_size: RwSignal<VirtualItemSize<T>> = RwSignal::new(VirtualItemSize::Assume(None));
+    let direction = RwSignal::new(FlexDirection::Column);
+    let scroll_offset = RwSignal::new(0.0_f64);
+    let viewport_size = RwSignal::new(0.0_f64);
 
-    let item_size = RwSignal::new(VirtualItemSize::Assume(None));
+    let content_size = Rc::new(RefCell::new(ContentSize {
+        size: 0.0,
+        direction: FlexDirection::Column,
+    }));
+    let content_size_for_measure = content_size.clone();
 
-    let direction = RwSignal::new(FlexDirection::Row);
-    Effect::new(move |_| {
+    // Set the taffy measure function so the node reports full content size
+    // before children are attached (initial frame).
+    let taffy_node = id.taffy_node();
+    id.taffy()
+        .borrow_mut()
+        .set_node_context(
+            taffy_node,
+            Some(LayoutNodeCx::Custom {
+                measure: Box::new(
+                    move |known_dimensions, _available_space, _node_id, _style, _cx| {
+                        let data = content_size_for_measure.borrow();
+                        let main = data.size as f32;
+                        match data.direction {
+                            FlexDirection::Column | FlexDirection::ColumnReverse => taffy::Size {
+                                width: known_dimensions.width.unwrap_or(0.0),
+                                height: known_dimensions.height.unwrap_or(main),
+                            },
+                            FlexDirection::Row | FlexDirection::RowReverse => taffy::Size {
+                                width: known_dimensions.width.unwrap_or(main),
+                                height: known_dimensions.height.unwrap_or(0.0),
+                            },
+                        }
+                    },
+                ),
+                finalize: None::<Box<FinalizeFn>>,
+            }),
+        )
+        .unwrap();
+
+    let cached_model: Rc<RefCell<Option<CachedExtentModel>>> = Rc::new(RefCell::new(None));
+
+    Effect::new(move |prev: Option<(f64, f64, HashRun<FxIndexSet<K>>)>| {
+        let items_vector = each_fn();
+        let total_len = items_vector.total_len();
+        let scroll = scroll_offset.get();
+        let viewport = viewport_size.get();
         direction.track();
-        id.request_style();
-    });
 
-    Effect::new(move |prev| {
-        let mut items_vector = each_fn();
-        let viewport = viewport.get();
-        let min = match direction.get() {
-            FlexDirection::Column | FlexDirection::ColumnReverse => viewport.y0,
-            FlexDirection::Row | FlexDirection::RowReverse => viewport.x0,
-        };
-        let max = match direction.get() {
-            FlexDirection::Column | FlexDirection::ColumnReverse => viewport.height() + viewport.y0,
-            FlexDirection::Row | FlexDirection::RowReverse => viewport.width() + viewport.x0,
-        };
         let mut items = Vec::new();
+        let mut before_size = 0.0_f64;
+        let mut after_size = 0.0_f64;
+        let mut content_sz = 0.0_f64;
+        let mut start = 0usize;
 
-        let mut before_size = 0.0;
-        let mut content_size = 0.0;
-        let mut start = 0;
+        let mut cached = cached_model.borrow_mut();
+
         item_size.with(|s| match s {
-            VirtualItemSize::Fixed(item_size) => {
-                let item_size = item_size();
-                let total_len = items_vector.total_len();
-                start = if item_size > 0.0 {
-                    (min / item_size).floor() as usize
-                } else {
-                    0
+            VirtualItemSize::Fixed(size_fn) => {
+                let extent = size_fn();
+                // Reuse or rebuild Fixed model.
+                let model = match cached.as_mut() {
+                    Some(CachedExtentModel::Fixed(m)) => {
+                        m.set_len(total_len);
+                        m.set_extent(extent);
+                        m
+                    }
+                    _ => {
+                        *cached = Some(CachedExtentModel::Fixed(FixedExtentModel::new(
+                            total_len, extent,
+                        )));
+                        match cached.as_mut().unwrap() {
+                            CachedExtentModel::Fixed(m) => m,
+                            _ => unreachable!(),
+                        }
+                    }
                 };
-                let end = if item_size > 0.0 {
-                    ((max / item_size).ceil() as usize).min(total_len)
-                } else {
-                    // TODO: Log an error
-                    (start + 1).min(total_len)
-                };
-                before_size = item_size * (start.min(total_len)) as f64;
-
-                for item in items_vector.slice(start..end) {
+                let strip = compute_visible_strip(model, scroll, viewport, 0.0, 0.0);
+                start = strip.start;
+                before_size = strip.before_extent;
+                after_size = strip.after_extent;
+                content_sz = strip.content_extent;
+                for item in items_vector.slice(strip.start..strip.end) {
                     items.push(item);
                 }
-
-                content_size = item_size * total_len as f64;
             }
             VirtualItemSize::Fn(size_fn) => {
-                let mut main_axis = 0.0;
-                let total_len = items_vector.total_len();
-                for (idx, item) in items_vector.slice(0..total_len).enumerate() {
-                    let item_size = size_fn(&item);
-                    content_size += item_size;
-                    if main_axis + item_size < min {
-                        main_axis += item_size;
-                        before_size += item_size;
-                        start = idx;
-                        continue;
+                // Reuse or rebuild PrefixSum model, only rebuilding when len changes.
+                let model = match cached.as_mut() {
+                    Some(CachedExtentModel::PrefixSum(m)) if m.len() == total_len => m,
+                    _ => {
+                        let mut m = PrefixSumExtentModel::<f64>::new();
+                        let all: Vec<T> = items_vector.slice(0..total_len).collect();
+                        m.rebuild(all, &|item: &T| size_fn(item));
+                        *cached = Some(CachedExtentModel::PrefixSum(m));
+                        match cached.as_mut().unwrap() {
+                            CachedExtentModel::PrefixSum(m) => m,
+                            _ => unreachable!(),
+                        }
                     }
-
-                    if main_axis <= max {
-                        main_axis += item_size;
+                };
+                let strip = compute_visible_strip(model, scroll, viewport, 0.0, 0.0);
+                start = strip.start;
+                before_size = strip.before_extent;
+                after_size = strip.after_extent;
+                content_sz = strip.content_extent;
+                for item in items_vector.slice(strip.start..strip.end) {
+                    items.push(item);
+                }
+            }
+            VirtualItemSize::Assume(assumed) => {
+                let extent = assumed.unwrap_or(10.0);
+                let model = match cached.as_mut() {
+                    Some(CachedExtentModel::Fixed(m)) => {
+                        m.set_len(total_len);
+                        m.set_extent(extent);
+                        m
+                    }
+                    _ => {
+                        *cached = Some(CachedExtentModel::Fixed(FixedExtentModel::new(
+                            total_len, extent,
+                        )));
+                        match cached.as_mut().unwrap() {
+                            CachedExtentModel::Fixed(m) => m,
+                            _ => unreachable!(),
+                        }
+                    }
+                };
+                let strip = compute_visible_strip(model, scroll, viewport, 0.0, 0.0);
+                start = strip.start;
+                before_size = strip.before_extent;
+                after_size = strip.after_extent;
+                content_sz = strip.content_extent;
+                if assumed.is_none() {
+                    if total_len > 0 {
+                        if let Some(item) = items_vector.slice(0..1).next() {
+                            items.push(item);
+                        }
+                    }
+                } else {
+                    for item in items_vector.slice(strip.start..strip.end) {
                         items.push(item);
                     }
                 }
             }
-            VirtualItemSize::Assume(None) => {
-                // For the initial run with Assume(None), we need to render at least one item
-                let total_len = items_vector.total_len();
-                if total_len > 0 {
-                    // Add just the first item so we can measure it
-                    items.push(items_vector.slice(0..1).next().unwrap());
-
-                    // Set minimal sizes for the first render
-                    before_size = 0.0;
-                    content_size = total_len as f64 * 10.0; // Temporary content size to ensure rendering
-                }
-            }
-            VirtualItemSize::Assume(Some(item_size)) => {
-                // Once we have the assumed size, behave like Fixed size
-                let total_len = items_vector.total_len();
-                start = if *item_size > 0.0 {
-                    (min / item_size).floor() as usize
-                } else {
-                    0
-                };
-                let end = if *item_size > 0.0 {
-                    ((max / item_size).ceil() as usize).min(total_len)
-                } else {
-                    // TODO: Log an error
-                    (start + 1).min(total_len)
-                };
-                before_size = item_size * (start.min(total_len)) as f64;
-
-                for item in items_vector.slice(start..end) {
-                    items.push(item);
-                }
-                content_size = item_size * total_len as f64;
-            }
         });
 
         let hashed_items = items.iter().map(&key_fn).collect::<FxIndexSet<_>>();
-        let (prev_before_size, prev_content_size, diff) =
-            if let Some((prev_before_size, prev_content_size, HashRun(prev_hash_run))) = prev {
-                let mut diff = diff(&prev_hash_run, &hashed_items);
+        let (prev_before, prev_content, diff) =
+            if let Some((prev_before, prev_content, HashRun(prev_hash))) = prev {
+                let mut diff = diff(&prev_hash, &hashed_items);
                 let mut items = items
                     .into_iter()
-                    .map(|i| Some(i))
+                    .map(Some)
                     .collect::<SmallVec<[Option<_>; 128]>>();
                 for added in &mut diff.added {
                     added.view = Some(items[added.at].take().unwrap());
                 }
-                (prev_before_size, prev_content_size, diff)
+                (prev_before, prev_content, diff)
             } else {
                 let mut diff = Diff::default();
                 for (i, item) in items.into_iter().enumerate() {
@@ -340,35 +447,35 @@ where
                 (0.0, 0.0, diff)
             };
 
-        if !diff.is_empty() || prev_before_size != before_size || prev_content_size != content_size
-        {
+        if !diff.is_empty() || prev_before != before_size || prev_content != content_sz {
             id.update_state(VirtualStackState {
                 diff,
                 first_idx: start,
                 before_size,
-                content_size,
+                after_size,
+                content_size: content_sz,
             });
         }
-        (before_size, content_size, HashRun(hashed_items))
+        (before_size, content_sz, HashRun(hashed_items))
     });
 
     let view_fn = Box::new(Scope::current().enter_child(move |e| view_fn(e).into_any()));
 
     VirtualStack {
         id,
-        first_content_id: None,
         style: Default::default(),
         direction,
         item_size,
         children: Vec::new(),
         selected_idx: HashSet::with_capacity(1),
         first_child_idx: 0,
-        viewport: Rect::ZERO,
-        set_viewport,
         view_fn,
         before_size: 0.0,
-        content_size: 0.0,
-        before_node: None,
+        after_size: 0.0,
+        content_size,
+        space_nodes: None,
+        scroll_offset,
+        viewport_size,
     }
 }
 
@@ -382,16 +489,17 @@ impl<T> View for VirtualStack<T> {
     }
 
     fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
-        if state.is::<VirtualStackState<T>>() {
-            if let Ok(state) = state.downcast::<VirtualStackState<T>>() {
+        match state.downcast::<VirtualStackState<T>>() {
+            Ok(state) => {
                 if self.before_size == state.before_size
-                    && self.content_size == state.content_size
+                    && self.content_size.borrow().size == state.content_size
                     && state.diff.is_empty()
                 {
                     return;
                 }
                 self.before_size = state.before_size;
-                self.content_size = state.content_size;
+                self.after_size = state.after_size;
+                self.content_size.borrow_mut().size = state.content_size;
                 self.first_child_idx = state.first_idx;
                 apply_diff(
                     self.id(),
@@ -400,14 +508,21 @@ impl<T> View for VirtualStack<T> {
                     &mut self.children,
                     &self.view_fn,
                 );
+                let (before, after) = self.ensure_space_nodes();
+                let taffy = self.id.taffy();
+                let mut taffy = taffy.borrow_mut();
+                let this_node = self.id.taffy_node();
+                taffy.insert_child_at_index(this_node, 0, before).unwrap();
+                taffy.add_child(this_node, after).unwrap();
                 self.id.request_all();
             }
-        } else if state.is::<usize>() {
-            if let Ok(idx) = state.downcast::<usize>() {
-                self.id.request_style_recursive();
-                self.scroll_to_idx(*idx);
-                self.selected_idx.clear();
-                self.selected_idx.insert(*idx);
+            Err(state) => {
+                if let Ok(idx) = state.downcast::<usize>() {
+                    self.id.request_style_recursive();
+                    self.scroll_to_idx(*idx);
+                    self.selected_idx.clear();
+                    self.selected_idx.insert(*idx);
+                }
             }
         }
     }
@@ -415,8 +530,9 @@ impl<T> View for VirtualStack<T> {
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         if self.style.read(cx) {
             cx.window_state.request_paint(self.id);
-            self.id.request_view_style();
-            self.direction.set(self.style.direction());
+            let dir = self.style.direction();
+            self.direction.set(dir);
+            self.content_size.borrow_mut().direction = dir;
         }
         for (child_id_index, child) in self.id.children().into_iter().enumerate() {
             if self
@@ -430,106 +546,59 @@ impl<T> View for VirtualStack<T> {
         }
     }
 
-    fn view_style(&self) -> Option<crate::style::Style> {
-        let style = match self.direction.get_untracked() {
-            // using min width and height because we strongly assume that these are respected
-            FlexDirection::Column | FlexDirection::ColumnReverse => {
-                Style::new().min_height(self.content_size)
+    fn event(&mut self, cx: &mut crate::context::EventCx) -> crate::event::EventPropagation {
+        if UpdatePhaseBoxTreeCommit::extract(&cx.event).is_some() {
+            // Read scroll offset and viewport size from parent scroll view.
+            let translation = self.id.get_scroll_cx();
+            let dir = self.direction.get_untracked();
+            let new_scroll = match dir {
+                FlexDirection::Row | FlexDirection::RowReverse => translation.x,
+                FlexDirection::Column | FlexDirection::ColumnReverse => translation.y,
             }
-            FlexDirection::Row | FlexDirection::RowReverse => {
-                Style::new().min_width(self.content_size)
+            .max(0.0);
+
+            let parent_rect = self
+                .id
+                .parent()
+                .map(|id| id.get_content_rect_local())
+                .unwrap_or_default();
+            let new_viewport = match dir {
+                FlexDirection::Row | FlexDirection::RowReverse => parent_rect.width(),
+                FlexDirection::Column | FlexDirection::ColumnReverse => parent_rect.height(),
+            };
+
+            if new_scroll != self.scroll_offset.get_untracked() {
+                self.scroll_offset.set(new_scroll);
             }
-        };
-        Some(style)
+            if new_viewport != self.viewport_size.get_untracked() {
+                self.viewport_size.set(new_viewport);
+            }
+
+            // For Assume(None): measure the first rendered child.
+            let is_unassumed = self
+                .item_size
+                .with_untracked(|s| matches!(s, VirtualItemSize::Assume(None)));
+            if is_unassumed {
+                if let Some(Some((first_child, _))) = self.children.first() {
+                    let dir = self.direction.get_untracked();
+                    let rect = first_child.get_layout_rect_local();
+                    let size = match dir {
+                        FlexDirection::Row | FlexDirection::RowReverse => rect.width(),
+                        FlexDirection::Column | FlexDirection::ColumnReverse => rect.height(),
+                    };
+                    if size > 0.0 {
+                        self.item_size.set(VirtualItemSize::Assume(Some(size)));
+                    }
+                }
+            }
+        }
+        crate::event::EventPropagation::Continue
     }
-
-    // fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::tree::NodeId {
-    //     cx.layout_node(self.id(), true, |cx| {
-    //         let mut content_nodes = self
-    //             .id
-    //             .children()
-    //             .into_iter()
-    //             .map(|id| id.view().borrow_mut().layout(cx))
-    //             .collect::<Vec<_>>();
-
-    //         if self.before_node.is_none() {
-    //             self.before_node = Some(
-    //                 self.id
-    //                     .taffy()
-    //                     .borrow_mut()
-    //                     .new_leaf(taffy::style::Style::DEFAULT)
-    //                     .unwrap(),
-    //             );
-    //         }
-    //         let before_node = self.before_node.unwrap();
-    //         let _ = self.id.taffy().borrow_mut().set_style(
-    //             before_node,
-    //             taffy::style::Style {
-    //                 size: match self.direction.get_untracked() {
-    //                     FlexDirection::Column | FlexDirection::ColumnReverse => {
-    //                         taffy::prelude::Size {
-    //                             width: Dimension::auto(),
-    //                             height: Dimension::length(self.before_size as f32),
-    //                         }
-    //                     }
-    //                     FlexDirection::Row | FlexDirection::RowReverse => taffy::prelude::Size {
-    //                         width: Dimension::length(self.before_size as f32),
-    //                         height: Dimension::auto(),
-    //                     },
-    //                 },
-    //                 ..Default::default()
-    //             },
-    //         );
-    //         self.first_content_id = self.id.children().first().copied();
-    //         let mut nodes = vec![before_node];
-    //         nodes.append(&mut content_nodes);
-    //         nodes
-    //     })
-    // }
-
-    // fn compute_layout(&mut self, cx: &mut ComputeLayoutCx<'_>) -> Option<Rect> {
-    //     let viewport = cx.current_viewport();
-    //     if self.viewport != viewport {
-    //         self.viewport = viewport;
-    //         self.set_viewport.set(viewport);
-    //     }
-
-    //     let layout = view::default_compute_layout(self.id, cx);
-
-    //     let new_size = self.item_size.with(|s| match s {
-    //         VirtualItemSize::Assume(None) => {
-    //             if let Some(first_content) = self.first_content_id {
-    //                 let taffy_layout = first_content.get_layout()?;
-    //                 let size = taffy_layout.size;
-    //                 if size.width == 0. || size.height == 0. {
-    //                     return None;
-    //                 }
-    //                 let rect = Size::new(size.width as f64, size.height as f64).to_rect();
-    //                 let relevant_size = match self.direction.get_untracked() {
-    //                     FlexDirection::Column | FlexDirection::ColumnReverse => rect.height(),
-    //                     FlexDirection::Row | FlexDirection::RowReverse => rect.width(),
-    //                 };
-    //                 Some(relevant_size)
-    //             } else {
-    //                 None
-    //             }
-    //         }
-    //         _ => None,
-    //     });
-    //     if let Some(new_size) = new_size {
-    //         self.item_size.set(VirtualItemSize::Assume(Some(new_size)));
-    //     }
-
-    //     layout
-    // }
 }
 
 impl<T> VirtualStack<T> {
-    /// Scrolls to bring the item at the given index into view
     pub fn scroll_to_idx(&self, index: usize) {
         let (offset, size) = self.calculate_offset(index);
-
-        // Create a rectangle at the calculated offset
         let rect = match self.direction.get_untracked() {
             FlexDirection::Column | FlexDirection::ColumnReverse => {
                 Rect::from_origin_size((0.0, offset), (0.0, size))
@@ -538,43 +607,31 @@ impl<T> VirtualStack<T> {
                 Rect::from_origin_size((offset, 0.0), (size, 0.0))
             }
         };
-
         self.id.scroll_to(Some(rect));
     }
 
-    /// Calculates the offset position for an item at the given index
     fn calculate_offset(&self, index: usize) -> (f64, f64) {
         self.item_size.with(|size| match size {
-            // For fixed size items, we can calculate the offset directly
-            VirtualItemSize::Fixed(item_size) => {
-                let size = item_size();
-                (size * index as f64, size)
+            VirtualItemSize::Fixed(size_fn) => {
+                let s = size_fn();
+                (s * index as f64, s)
             }
-
-            // For items with a size function, we would need to sum up sizes
-            VirtualItemSize::Fn(_size_fn) => {
-                // TODO? This method just doesn't work for variable item size.
-                // this will make it so that if arrow keys are used on a virtual list
-                // with item size fn, it won't scroll.
-                (0., 0.)
-            }
-
-            // For assumed size items, use the assumed size if available
-            VirtualItemSize::Assume(Some(size)) => (size * index as f64, *size),
-
-            // If we don't have size information yet, default to 0
-            VirtualItemSize::Assume(None) => (0.0, 0.),
+            VirtualItemSize::Fn(_) => (0.0, 0.0),
+            VirtualItemSize::Assume(Some(s)) => (s * index as f64, *s),
+            VirtualItemSize::Assume(None) => (0.0, 0.0),
         })
     }
 }
+
+// --- VirtualVector impls ---
 
 impl<T: Clone> VirtualVector<T> for imbl::Vector<T> {
     fn total_len(&self) -> usize {
         self.len()
     }
 
-    fn slice(&mut self, range: Range<usize>) -> impl Iterator<Item = T> {
-        self.slice(range).into_iter()
+    fn slice(&self, range: Range<usize>) -> impl Iterator<Item = T> {
+        imbl::Vector::slice(&mut self.clone(), range).into_iter()
     }
 }
 
@@ -582,37 +639,33 @@ impl<T> VirtualVector<T> for Range<T>
 where
     T: Copy + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + PartialOrd + From<usize>,
     usize: From<T>,
-    std::ops::Range<T>: Iterator<Item = T>,
+    Range<T>: Iterator<Item = T>,
 {
     fn total_len(&self) -> usize {
-        // Convert the difference between end and start to usize
         (self.end - self.start).into()
     }
 
-    fn slice(&mut self, range: Range<usize>) -> impl Iterator<Item = T> {
+    fn slice(&self, range: Range<usize>) -> impl Iterator<Item = T> {
         let start = self.start + T::from(range.start);
         let end = self.start + T::from(range.end);
-
-        // Create a new range for the slice
         start..end
     }
 }
+
 impl<T> VirtualVector<T> for RangeInclusive<T>
 where
     T: Copy + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + PartialOrd + From<usize>,
     usize: From<T>,
-    std::ops::Range<T>: Iterator<Item = T>,
+    Range<T>: Iterator<Item = T>,
 {
     fn total_len(&self) -> usize {
-        // For inclusive range, we need to add 1 to include the end value
         let diff = *self.end() - *self.start();
         Into::<usize>::into(diff) + 1
     }
 
-    fn slice(&mut self, range: Range<usize>) -> impl Iterator<Item = T> {
+    fn slice(&self, range: Range<usize>) -> impl Iterator<Item = T> {
         let start = *self.start() + T::from(range.start);
         let end = *self.start() + T::from(range.end);
-        // Create a new range for the slice (non-inclusive since that's what the Range parameter specifies)
         start..end
     }
 }
@@ -625,9 +678,8 @@ where
         self.with(|v| v.len())
     }
 
-    // false positive on the clippy
     #[allow(clippy::unnecessary_to_owned)]
-    fn slice(&mut self, range: Range<usize>) -> impl Iterator<Item = T> {
+    fn slice(&self, range: Range<usize>) -> impl Iterator<Item = T> {
         self.with(|v| v[range].to_vec().into_iter())
     }
 }
@@ -640,9 +692,8 @@ where
         self.with(|v| v.len())
     }
 
-    // false positive on the clippy
     #[allow(clippy::unnecessary_to_owned)]
-    fn slice(&mut self, range: Range<usize>) -> impl Iterator<Item = T> {
+    fn slice(&self, range: Range<usize>) -> impl Iterator<Item = T> {
         self.with(|v| v[range].to_vec().into_iter())
     }
 }
@@ -657,7 +708,7 @@ impl<V: VirtualVector<T>, T> VirtualVector<(usize, T)> for Enumerate<V, T> {
         self.inner.total_len()
     }
 
-    fn slice(&mut self, range: Range<usize>) -> impl Iterator<Item = (usize, T)> {
+    fn slice(&self, range: Range<usize>) -> impl Iterator<Item = (usize, T)> {
         let start = range.start;
         self.inner
             .slice(range)

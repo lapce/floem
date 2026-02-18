@@ -451,7 +451,6 @@ impl WindowHandle {
 
         let is_maximized = self.window.is_maximized();
         if is_maximized != self.is_maximized {
-            dbg!("maximize changed");
             self.is_maximized = is_maximized;
             self.event(Event::Window(WindowEvent::MaximizeChanged(is_maximized)));
         }
@@ -547,9 +546,9 @@ impl WindowHandle {
             // Build explicit traversal order
             let og_num = self.window_state.style_dirty.len();
             let traversal = self.window_state.build_style_traversal(self.id);
-            if traversal.len() > 5 {
-                dbg!(traversal.len(), og_num);
-            }
+            // if traversal.len() > 5 {
+            //     dbg!(traversal.len(), og_num);
+            // }
             if traversal.is_empty() {
                 self.window_state.style_dirty.clear();
                 self.window_state.view_style_dirty.clear();

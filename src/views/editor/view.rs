@@ -422,7 +422,7 @@ impl EditorView {
             let viewport = Rect::from_origin_size(
                 Point::new(layout.content_box_x() as f64, layout.content_box_y() as f64),
                 Size::new(
-                    dbg!(layout.content_box_width()) as f64,
+                    layout.content_box_width() as f64,
                     layout.content_box_height() as f64,
                 ),
             );

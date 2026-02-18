@@ -287,7 +287,7 @@ impl<'a> StyleCx<'a> {
         let child_change = if inherited_changed || class_context_changed {
             // Mark all children for style recalc and add to dirty set
             if view_id.children().len() > 50 {
-                dbg!(inherited_changed, class_context_changed);
+                // dbg!(inherited_changed, class_context_changed);
             }
             for child in view_id.children() {
                 self.window_state.style_dirty.insert(child);

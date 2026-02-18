@@ -686,7 +686,6 @@ impl View for Label {
                         .buttons
                         .contains(ui_events::pointer::PointerButton::Primary)
                 {
-                    dbg!("got primary");
                     self.selection_range = None;
                     self.selection_state = SelectionState::Ready(state.logical_point());
                     if let Some(pointer_id) = pointer.pointer_id {

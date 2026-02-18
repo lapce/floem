@@ -110,6 +110,7 @@ understory_box_tree = {path = "../understory/understory_box_tree"}
 understory_event_state = {path = "../understory/understory_event_state"}
 understory_index = {path = "../understory/understory_index"}
 understory_focus = {path = "../understory/understory_focus", features = ["box_tree_adapter"]}
+understory_virtual_list = {path = "../understory/understory_virtual_list"}
 
 [target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
 muda = { workspace = true }

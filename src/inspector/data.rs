@@ -185,7 +185,7 @@ impl VirtualVector<(usize, usize, CapturedData)> for CapturedDatas {
     }
 
     fn slice(
-        &mut self,
+        &self,
         range: std::ops::Range<usize>,
     ) -> impl Iterator<Item = (usize, usize, CapturedData)> {
         let min = range.start;

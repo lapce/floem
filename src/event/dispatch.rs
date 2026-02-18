@@ -1433,7 +1433,6 @@ impl RouteCx<'_, '_> {
         for event in events {
             match event {
                 HoverEvent::Enter(target) => {
-                    dbg!(target);
                     if target.is_view() {
                         window_state.style_dirty.insert(target.owning_id());
                     }
@@ -1629,7 +1628,6 @@ impl RouteCx<'_, '_> {
                     Event::Interaction(InteractionEvent::SecondaryClick),
                 ));
             } else {
-                dbg!(id);
                 self.pending_events
                     .push((route_kind, Event::Interaction(InteractionEvent::Click)));
                 if count > 1 {

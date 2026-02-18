@@ -175,8 +175,7 @@ where
                 }
             })
         },
-    )
-    .style(|s| s.size_full());
+    );
 
     let stack_id = stack.id();
 

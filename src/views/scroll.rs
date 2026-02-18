@@ -10,7 +10,7 @@ use taffy::Overflow;
 use ui_events::pointer::{PointerButton, PointerEvent, PointerId};
 
 use crate::easing::Linear;
-use crate::event::listener::{EventListenerTrait, UpdatePhaseBoxTreeCommit, UpdatePhaseLayout};
+use crate::event::listener::{EventListenerTrait, UpdatePhaseBoxTreeCommit};
 use crate::event::{
     DragEvent, DragSourceEvent, PointerCaptureEvent, PointerScrollEventExt, RouteKind,
 };
@@ -964,7 +964,7 @@ impl View for Scroll {
         }
 
         // Handle scroll wheel events in bubble phase
-        if cx.phase == Phase::Bubble {
+        if cx.phase != Phase::Capture {
             if let Event::Pointer(PointerEvent::Scroll(pse)) = &cx.event {
                 let size = self.id.get_layout_rect_local().size();
                 let delta = pse.resolve_to_points(None, Some(size));
