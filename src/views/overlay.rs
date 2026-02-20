@@ -18,32 +18,31 @@ use crate::view::{ParentView, View, ViewId};
 /// ## Example
 /// ```rust
 /// use floem::prelude::*;
-/// use floem::views::{Overlay, Label, Decorators};
+/// use floem::views::{Label, Overlay, Decorators};
 ///
 /// let show_dialog = RwSignal::new(false);
 ///
 /// Stack::vertical((
 ///     Button::new("Show Dialog").action(move || show_dialog.set(true)),
-///     Overlay::new()
-///         .derived_child(move || {
-///             let visible = show_dialog.get();
-///             Stack::vertical((
-///                 Label::derived(|| "This is a dialog!".to_string()),
-///                 Button::new("Close").action(move || show_dialog.set(false)),
-///             ))
-///             .style(move |s| {
-///                 s.apply_if(!visible, |s| s.hide())
-///                     .background(Color::WHITE)
-///                     .padding(20)
-///                     .border_radius(8)
-///             })
-///         }),
+///     Overlay::new_dyn(move || {
+///         let visible = show_dialog.get();
+///         Stack::vertical((
+///             Label::derived(|| "This is a dialog!".to_string()),
+///             Button::new("Close").action(move || show_dialog.set(false)),
+///         ))
+///         .style(move |s| {
+///             s.apply_if(!visible, |s| s.hide())
+///                 .background(Color::WHITE)
+///                 .padding(20)
+///                 .border_radius(8)
+///         })
+///     }),
 /// ));
 /// ```
 ///
 /// ## Notes
 /// - The overlay is positioned absolutely at the window level
-/// - You can style the overlay content using `.child()` or `.derived_child()`
+/// - You can style the overlay content using the view returned by `Overlay::new(...)`
 /// - The overlay is automatically removed when this view is cleaned up
 pub struct Overlay {
     id: ViewId,
@@ -62,7 +61,9 @@ impl Overlay {
     /// Overlay::new("Static overlay content");
     /// ```
     pub fn new(child: impl crate::IntoView + 'static) -> Self {
-        Self::with_id(ViewId::new()).child(child)
+        let id = ViewId::new();
+        id.add_child(child.into_any());
+        Self::with_id(id)
     }
 
     /// Creates a new overlay whose child will dynamically update in response to signal changes.
@@ -74,11 +75,9 @@ impl Overlay {
     ///
     /// let message = RwSignal::new("Loading...".to_string());
     ///
-    /// Overlay::new_dyn(move || {
-    ///         Label::new(message.get())
-    ///     })
+    /// Overlay::new_dyn(move || Label::new(message.get()))
     /// ```
-    pub fn new_dyn<CF, V>(self, child_fn: CF) -> Self
+    pub fn new_dyn<CF, V>(child_fn: CF) -> Self
     where
         CF: Fn() -> V + 'static,
         V: crate::IntoView + 'static,

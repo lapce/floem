@@ -45,6 +45,7 @@ fn test_view_scope_is_set() {
 #[test]
 #[serial]
 fn test_find_scope_walks_hierarchy() {
+    let root = TestRoot::new();
     let parent_scope = Scope::current().create_child();
 
     // Create parent with scope
@@ -57,7 +58,6 @@ fn test_find_scope_walks_hierarchy() {
     let _grandchild_id = grandchild.view_id();
 
     // Build the view tree
-    let root = TestRoot::new();
     let view = parent.child(Stem::new().child(grandchild).style(|s| s.size(50.0, 50.0)));
 
     let _harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
@@ -129,6 +129,7 @@ fn test_abcd_scope_reparenting() {
 #[test]
 #[serial]
 fn test_context_provider_eager_children_scope_reparenting() {
+    let root = TestRoot::new();
     // Create parent scope
     let parent_scope = Scope::new();
     parent_scope.provide_context(42i32);
@@ -149,7 +150,6 @@ fn test_context_provider_eager_children_scope_reparenting() {
     // Build view tree - this should trigger scope re-parenting
     let view = parent.child(child);
 
-    let root = TestRoot::new();
     let _harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Verify child's scope was re-parented under parent's scope
@@ -240,6 +240,7 @@ fn test_multiple_scope_levels() {
 #[test]
 #[serial]
 fn test_deferred_child_gets_parent_scope() {
+    let root = TestRoot::new();
     let context_value = Rc::new(Cell::new(None::<i32>));
     let context_value_clone = context_value.clone();
 
@@ -262,7 +263,6 @@ fn test_deferred_child_gets_parent_scope() {
             .style(|s| s.size(50.0, 50.0)),
     );
 
-    let root = TestRoot::new();
     let _harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // The child was built with access to parent's scope context
@@ -298,6 +298,7 @@ fn test_deferred_child_gets_parent_scope() {
 #[test]
 #[serial]
 fn test_all_eager_eeee() {
+    let root = TestRoot::new();
     let a_scope = Scope::new();
     let d_scope = Scope::new();
     let signal = d_scope.create_rw_signal(42);
@@ -316,7 +317,6 @@ fn test_all_eager_eeee() {
     // Build tree using tuples (eager) - children are already built
     let view = a.children((b.children((c.children((d,)),)),));
 
-    let root = TestRoot::new();
     let _harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // D's scope should be re-parented under A's scope
@@ -338,6 +338,7 @@ fn test_all_eager_eeee() {
 #[test]
 #[serial]
 fn test_all_lazy_llll() {
+    let root = TestRoot::new();
     let a_scope = Scope::new();
     let d_scope = Scope::new();
     let signal = d_scope.create_rw_signal(42);
@@ -357,7 +358,6 @@ fn test_all_lazy_llll() {
             .style(|s| s.size(50.0, 50.0)),
     );
 
-    let root = TestRoot::new();
     let _harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // D's scope should be re-parented under A's scope
@@ -376,6 +376,7 @@ fn test_all_lazy_llll() {
 #[test]
 #[serial]
 fn test_eager_then_lazy_elll() {
+    let root = TestRoot::new();
     let a_scope = Scope::new();
     let d_scope = Scope::new();
     let signal = d_scope.create_rw_signal(42);
@@ -396,7 +397,6 @@ fn test_eager_then_lazy_elll() {
     // A contains B eagerly (tuple)
     let view = a.children((b,));
 
-    let root = TestRoot::new();
     let _harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     let d_scope_after = d_id.scope().expect("D should have scope");
@@ -411,6 +411,7 @@ fn test_eager_then_lazy_elll() {
 #[test]
 #[serial]
 fn test_lazy_eager_lazy_lell() {
+    let root = TestRoot::new();
     let a_scope = Scope::new();
     let d_scope = Scope::new();
     let signal = d_scope.create_rw_signal(42);
@@ -432,7 +433,6 @@ fn test_lazy_eager_lazy_lell() {
     // A contains B lazily
     let view = a.child(b);
 
-    let root = TestRoot::new();
     let _harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     let d_scope_after = d_id.scope().expect("D should have scope");
@@ -447,6 +447,7 @@ fn test_lazy_eager_lazy_lell() {
 #[test]
 #[serial]
 fn test_eager_eager_lazy_eell() {
+    let root = TestRoot::new();
     let a_scope = Scope::new();
     let d_scope = Scope::new();
     let signal = d_scope.create_rw_signal(42);
@@ -468,7 +469,6 @@ fn test_eager_eager_lazy_eell() {
     // A contains B eagerly
     let view = a.children((b,));
 
-    let root = TestRoot::new();
     let _harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     let d_scope_after = d_id.scope().expect("D should have scope");
@@ -483,6 +483,7 @@ fn test_eager_eager_lazy_eell() {
 #[test]
 #[serial]
 fn test_lazy_lazy_eager_llee() {
+    let root = TestRoot::new();
     let a_scope = Scope::new();
     let d_scope = Scope::new();
     let signal = d_scope.create_rw_signal(42);
@@ -504,7 +505,6 @@ fn test_lazy_lazy_eager_llee() {
     // A contains B lazily
     let view = a.child(b);
 
-    let root = TestRoot::new();
     let _harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     let d_scope_after = d_id.scope().expect("D should have scope");
@@ -520,6 +520,7 @@ fn test_lazy_lazy_eager_llee() {
 #[test]
 #[serial]
 fn test_alternating_elel() {
+    let root = TestRoot::new();
     let a_scope = Scope::new();
     let d_scope = Scope::new();
     let signal = d_scope.create_rw_signal(42);
@@ -541,7 +542,6 @@ fn test_alternating_elel() {
     // A contains B eagerly
     let view = a.children((b,));
 
-    let root = TestRoot::new();
     let _harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     let d_scope_after = d_id.scope().expect("D should have scope");
@@ -557,6 +557,7 @@ fn test_alternating_elel() {
 #[test]
 #[serial]
 fn test_alternating_lele() {
+    let root = TestRoot::new();
     let a_scope = Scope::new();
     let d_scope = Scope::new();
     let signal = d_scope.create_rw_signal(42);
@@ -578,7 +579,6 @@ fn test_alternating_lele() {
     // A contains B lazily
     let view = a.child(b);
 
-    let root = TestRoot::new();
     let _harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     let d_scope_after = d_id.scope().expect("D should have scope");
@@ -598,6 +598,7 @@ fn test_alternating_lele() {
 #[test]
 #[serial]
 fn test_scopes_at_a_and_c() {
+    let root = TestRoot::new();
     let a_scope = Scope::new();
     let c_scope = Scope::new();
     let d_scope = Scope::new();
@@ -618,7 +619,6 @@ fn test_scopes_at_a_and_c() {
     // Build: A -> B -> C -> D (B has no scope)
     let view = a.child(Stem::new().child(c.child(d)).style(|s| s.size(50.0, 50.0)));
 
-    let root = TestRoot::new();
     let _harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // D's scope should be parented to C's scope (nearest ancestor with scope)
@@ -642,6 +642,7 @@ fn test_scopes_at_a_and_c() {
 #[test]
 #[serial]
 fn test_scopes_at_b_and_d() {
+    let root = TestRoot::new();
     let b_scope = Scope::new();
     let d_scope = Scope::new();
     let signal = d_scope.create_rw_signal(42);
@@ -659,7 +660,6 @@ fn test_scopes_at_b_and_d() {
         .child(b.child(Stem::new().child(d).style(|s| s.size(30.0, 30.0))))
         .style(|s| s.size(100.0, 100.0));
 
-    let root = TestRoot::new();
     let _harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // D's scope should be parented to B's scope
@@ -676,6 +676,7 @@ fn test_scopes_at_b_and_d() {
 #[test]
 #[serial]
 fn test_scopes_at_all_levels() {
+    let root = TestRoot::new();
     let a_scope = Scope::new();
     let b_scope = Scope::new();
     let c_scope = Scope::new();
@@ -704,7 +705,6 @@ fn test_scopes_at_all_levels() {
 
     let view = a.child(b.child(c.child(d)));
 
-    let root = TestRoot::new();
     let _harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Verify scope chain: D -> C -> B -> A
@@ -757,6 +757,7 @@ fn test_disposal_cascades_all_levels() {
 #[test]
 #[serial]
 fn test_same_scope_on_parent_and_child_no_cycle() {
+    let root = TestRoot::new();
     let scope = Scope::new();
     let signal = scope.create_rw_signal(42);
 
@@ -772,7 +773,6 @@ fn test_same_scope_on_parent_and_child_no_cycle() {
     // Build tree - this should NOT create a cycle
     let view = parent.child(child);
 
-    let root = TestRoot::new();
     let _harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Both views should have the same scope

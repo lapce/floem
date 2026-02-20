@@ -7,7 +7,7 @@
 use floem::headless::{HeadlessHarness, TestRoot};
 use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 use floem::view::ParentView;
-use floem::views::{Decorators, Empty, Overlay, Stack};
+use floem::views::{Decorators, Empty, OverlayExt, Stack};
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -29,14 +29,12 @@ fn test_overlay_wrapper_display_none() {
             .action(move || {
                 bg_clone.set(true);
             }),
-        Overlay::new()
-            .child(
-                Empty::new()
-                    .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
-                    .action(move || {
-                        overlay_clone.set(true);
-                    }),
-            )
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
+            .action(move || {
+                overlay_clone.set(true);
+            })
+            .overlay()
             .style(move |s| s.apply_if(!visible.get(), |s| s.display(floem::taffy::Display::None))),
     ))
     .style(|s| s.size(100.0, 100.0));
@@ -90,18 +88,17 @@ fn test_overlay_content_display_none() {
             .action(move || {
                 bg_clone.set(true);
             }),
-        Overlay::new().child(
-            Empty::new()
-                .style(move |s| {
-                    s.absolute()
-                        .inset(0.0)
-                        .size(100.0, 100.0)
-                        .apply_if(!visible.get(), |s| s.display(floem::taffy::Display::None))
-                })
-                .action(move || {
-                    overlay_clone.set(true);
-                }),
-        ),
+        Empty::new()
+            .style(move |s| {
+                s.absolute()
+                    .inset(0.0)
+                    .size(100.0, 100.0)
+                    .apply_if(!visible.get(), |s| s.display(floem::taffy::Display::None))
+            })
+            .action(move || {
+                overlay_clone.set(true);
+            })
+            .overlay(),
     ))
     .style(|s| s.size(100.0, 100.0));
 

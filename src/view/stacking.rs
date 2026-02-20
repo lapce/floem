@@ -10,7 +10,7 @@ use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 use std::{cell::RefCell, rc::Rc};
 
-use crate::ElementId;
+use crate::{ElementId, paint::PaintOrPost, view::ViewId};
 
 /// An item to be painted within a stacking context (direct child of parent).
 #[derive(Debug, Clone)]
@@ -31,6 +31,11 @@ thread_local! {
     static STACKING_CONTEXT_CACHE: RefCell<FxHashMap<ElementId, Rc<StackingContextItems>>> =
         RefCell::new(FxHashMap::default());
 
+    // Thread-local cache for overlay order per root.
+    // Key: VisualId of the root
+    // Value: Sorted list of overlay ViewIds by z-index
+    static OVERLAY_ORDER_CACHE: RefCell<FxHashMap<ElementId, SmallVec<[ViewId; 4]>>> =
+        RefCell::new(FxHashMap::default());
 }
 
 /// Invalidates the stacking context cache for a view and its parent.
@@ -49,10 +54,30 @@ pub(crate) fn invalidate_stacking_cache(element_id: ElementId) {
     });
 }
 
+/// Invalidates the overlay order cache for a root.
+/// Call this when overlays are registered/unregistered or their z-index changes.
+#[allow(dead_code)] // Kept for targeted cache invalidation when root is known
+pub(crate) fn invalidate_overlay_cache(root_element_id: ElementId) {
+    OVERLAY_ORDER_CACHE.with(|cache| {
+        cache.borrow_mut().remove(&root_element_id);
+    });
+}
+
+/// Invalidates all overlay caches.
+/// This is a fallback when the root is not known.
+pub(crate) fn invalidate_all_overlay_caches() {
+    OVERLAY_ORDER_CACHE.with(|cache| {
+        cache.borrow_mut().clear();
+    });
+}
+
 /// Clears all stacking context caches.
 /// Used during window cleanup to ensure test isolation.
 pub(crate) fn clear_all_stacking_caches() {
     STACKING_CONTEXT_CACHE.with(|cache| {
+        cache.borrow_mut().clear();
+    });
+    OVERLAY_ORDER_CACHE.with(|cache| {
         cache.borrow_mut().clear();
     });
 }
@@ -95,6 +120,12 @@ pub(crate) fn collect_stacking_context_items(
         for (dom_order, &child_box_id) in box_tree_children.iter().enumerate() {
             // Construct VisualId from box tree node id
             let child_element_id = box_tree.meta(child_box_id).flatten().unwrap();
+
+            // Skip overlays - they're painted at root level
+            let child_view_id = child_element_id.owning_id();
+            if child_view_id.is_overlay() {
+                continue;
+            }
 
             // Get z-index from box tree
             let z_index = box_tree.z_index(child_box_id).unwrap_or(0);
@@ -153,6 +184,61 @@ pub(crate) fn collect_stacking_context_items(
     });
 
     items
+}
+
+/// Collects all overlay ViewIds that belong to the given root.
+/// Overlays are painted at root level, above all other content.
+/// Returns overlays sorted by z-index (lower z-index painted first).
+///
+/// Results are cached. Call `invalidate_overlay_cache` when overlays are
+/// registered/unregistered or their z-index changes.
+pub(crate) fn collect_overlays(
+    root_element_id: ElementId,
+    box_tree: &crate::BoxTree,
+    paint_order: &mut Vec<PaintOrPost>,
+    skip_element_id: Option<ElementId>,
+) {
+    use super::VIEW_STORAGE;
+
+    let cached = OVERLAY_ORDER_CACHE.with(|cache| cache.borrow().get(&root_element_id).cloned());
+
+    let overlays = if let Some(overlays) = cached {
+        overlays
+    } else {
+        let root_id = root_element_id.owning_id();
+        let mut overlays: SmallVec<[(ViewId, i32); 4]> = VIEW_STORAGE.with_borrow(|s| {
+            s.overlays
+                .iter()
+                .filter_map(|(overlay_id, &stored_root)| {
+                    if stored_root != root_id {
+                        return None;
+                    }
+                    let state = s.states.get(overlay_id)?;
+                    let state_borrow = state.borrow();
+                    let element_id = state_borrow.element_id;
+                    let z_index = box_tree.z_index(element_id.0).unwrap_or(0);
+                    Some((overlay_id, z_index))
+                })
+                .collect()
+        });
+        overlays.sort_by_key(|(_, z)| *z);
+        let result: SmallVec<[ViewId; 4]> = overlays.into_iter().map(|(id, _)| id).collect();
+        OVERLAY_ORDER_CACHE.with(|cache| {
+            cache.borrow_mut().insert(root_element_id, result.clone());
+        });
+        result
+    };
+
+    for overlay_id in overlays {
+        let element_id = overlay_id.get_element_id();
+        crate::paint::collect_visual_recursive(
+            element_id,
+            box_tree,
+            paint_order,
+            false,
+            skip_element_id,
+        );
+    }
 }
 
 // #[cfg(test)]

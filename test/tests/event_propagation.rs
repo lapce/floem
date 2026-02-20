@@ -6,6 +6,7 @@
 
 use floem::event::EventPropagation;
 use floem::view::ParentView;
+use floem::views::OverlayExt;
 use floem_test::prelude::*;
 use serial_test::serial;
 
@@ -1582,35 +1583,33 @@ fn test_overlapping_siblings_no_z_index_dom_order() {
 #[serial]
 fn test_dialog_with_overlay() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
-    use floem::views::Overlay;
 
     let root = TestRoot::new();
     let dialog_open = RwSignal::new(true);
     let content_clicked = RwSignal::new(false);
 
-    let view = Overlay::new().child(
-        Stack::new((
-            // Backdrop - clicking it closes dialog
-            Empty::new()
-                .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
-                .action(move || {
-                    dialog_open.set(false);
-                }),
-            // Content - clicking it should NOT close dialog
-            Container::new(Empty::new().style(|s| s.size(50.0, 50.0)))
-                .style(|s| {
-                    s.absolute()
-                        .inset_left(25.0)
-                        .inset_top(25.0)
-                        .size(50.0, 50.0)
-                        .z_index(10)
-                })
-                .action(move || {
-                    content_clicked.set(true);
-                }),
-        ))
-        .style(|s| s.size(100.0, 100.0)),
-    );
+    let view = Stack::new((
+        // Backdrop - clicking it closes dialog
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
+            .action(move || {
+                dialog_open.set(false);
+            }),
+        // Content - clicking it should NOT close dialog
+        Container::new(Empty::new().style(|s| s.size(50.0, 50.0)))
+            .style(|s| {
+                s.absolute()
+                    .inset_left(25.0)
+                    .inset_top(25.0)
+                    .size(50.0, 50.0)
+                    .z_index(10)
+            })
+            .action(move || {
+                content_clicked.set(true);
+            }),
+    ))
+    .style(|s| s.size(100.0, 100.0))
+    .overlay();
 
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
@@ -1740,52 +1739,50 @@ fn test_dialog_click_on_nested_button() {
 #[serial]
 fn test_exact_dialog_structure() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
-    use floem::views::Overlay;
 
     let root = TestRoot::new();
     let dialog_open = RwSignal::new(true);
     let content_clicked = RwSignal::new(false);
 
-    let view = Overlay::new().child(
-        Stack::new((
-            // Backdrop - exact same as dialog.rs
-            Empty::new()
-                .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
-                .action(move || {
-                    dialog_open.set(false);
-                }),
-            // Content - Container::derived like dialog.rs
-            Container::derived(move || {
-                // Mimic DialogContent with DialogHeader and DialogFooter
-                Stack::new((
-                    // DialogHeader
-                    Stack::new((
-                        floem::views::Label::new("Title"),
-                        floem::views::Label::new("Description"),
-                    ))
-                    .style(|s| s.flex_col().gap(2.0)),
-                    // DialogFooter with buttons
-                    Stack::new((
-                        Empty::new().style(|s| s.size(30.0, 20.0)), // Cancel button
-                        Empty::new().style(|s| s.size(30.0, 20.0)), // Confirm button
-                    ))
-                    .style(|s| s.flex_row().gap(4.0)),
-                ))
-                .style(|s| s.flex_col().gap(16.0))
-            })
-            .style(|s| {
-                s.absolute()
-                    .inset_left(25.0)
-                    .inset_top(25.0)
-                    .size(50.0, 50.0)
-                    .z_index(10)
-            })
+    let view = Stack::new((
+        // Backdrop - exact same as dialog.rs
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
             .action(move || {
-                content_clicked.set(true);
+                dialog_open.set(false);
             }),
-        ))
-        .style(|s| s.size(100.0, 100.0)),
-    );
+        // Content - Container::derived like dialog.rs
+        Container::derived(move || {
+            // Mimic DialogContent with DialogHeader and DialogFooter
+            Stack::new((
+                // DialogHeader
+                Stack::new((
+                    floem::views::Label::new("Title"),
+                    floem::views::Label::new("Description"),
+                ))
+                .style(|s| s.flex_col().gap(2.0)),
+                // DialogFooter with buttons
+                Stack::new((
+                    Empty::new().style(|s| s.size(30.0, 20.0)), // Cancel button
+                    Empty::new().style(|s| s.size(30.0, 20.0)), // Confirm button
+                ))
+                .style(|s| s.flex_row().gap(4.0)),
+            ))
+            .style(|s| s.flex_col().gap(16.0))
+        })
+        .style(|s| {
+            s.absolute()
+                .inset_left(25.0)
+                .inset_top(25.0)
+                .size(50.0, 50.0)
+                .z_index(10)
+        })
+        .action(move || {
+            content_clicked.set(true);
+        }),
+    ))
+    .style(|s| s.size(100.0, 100.0))
+    .overlay();
 
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
@@ -1810,38 +1807,36 @@ fn test_exact_dialog_structure() {
 #[serial]
 fn test_dialog_content_no_handler() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
-    use floem::views::Overlay;
 
     let root = TestRoot::new();
     let dialog_open = RwSignal::new(true);
 
-    let view = Overlay::new().child(
-        Stack::new((
-            // Backdrop
-            Empty::new()
-                .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
-                .action(move || {
-                    dialog_open.set(false);
-                }),
-            // Content - NO click handler!
-            Container::derived(move || {
-                Stack::new((
-                    floem::views::Label::new("Title"),
-                    Empty::new().style(|s| s.size(30.0, 20.0)),
-                ))
-                .style(|s| s.flex_col().gap(8.0))
-            })
-            .style(|s| {
-                s.absolute()
-                    .inset_left(25.0)
-                    .inset_top(25.0)
-                    .size(50.0, 50.0)
-                    .z_index(10)
+    let view = Stack::new((
+        // Backdrop
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
+            .action(move || {
+                dialog_open.set(false);
             }),
-            // No on_click_stop here!
-        ))
-        .style(|s| s.size(100.0, 100.0)),
-    );
+        // Content - NO click handler!
+        Container::derived(move || {
+            Stack::new((
+                floem::views::Label::new("Title"),
+                Empty::new().style(|s| s.size(30.0, 20.0)),
+            ))
+            .style(|s| s.flex_col().gap(8.0))
+        })
+        .style(|s| {
+            s.absolute()
+                .inset_left(25.0)
+                .inset_top(25.0)
+                .size(50.0, 50.0)
+                .z_index(10)
+        }),
+        // No on_click_stop here!
+    ))
+    .style(|s| s.size(100.0, 100.0))
+    .overlay();
 
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
@@ -1863,36 +1858,34 @@ fn test_dialog_content_no_handler() {
 fn test_dialog_with_translate_centering() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::unit::Pct;
-    use floem::views::Overlay;
 
     let root = TestRoot::new();
     let dialog_open = RwSignal::new(true);
     let content_clicked = RwSignal::new(false);
 
-    let view = Overlay::new().child(
-        Stack::new((
-            // Backdrop
-            Empty::new()
-                .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
-                .action(move || {
-                    dialog_open.set(false);
-                }),
-            // Content - centered using translate (like actual dialog)
-            Container::derived(move || Empty::new().style(|s| s.size(30.0, 20.0)))
-                .style(|s| {
-                    s.absolute()
-                        .inset_left(Pct(50.0)) // left: 50%
-                        .inset_top(Pct(50.0)) // top: 50%
-                        .translate_x(Pct(-50.0)) // translateX: -50%
-                        .translate_y(Pct(-50.0)) // translateY: -50%
-                        .size(50.0, 50.0)
-                })
-                .action(move || {
-                    content_clicked.set(true);
-                }),
-        ))
-        .style(|s| s.size(100.0, 100.0)),
-    );
+    let view = Stack::new((
+        // Backdrop
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
+            .action(move || {
+                dialog_open.set(false);
+            }),
+        // Content - centered using translate (like actual dialog)
+        Container::derived(move || Empty::new().style(|s| s.size(30.0, 20.0)))
+            .style(|s| {
+                s.absolute()
+                    .inset_left(Pct(50.0)) // left: 50%
+                    .inset_top(Pct(50.0)) // top: 50%
+                    .translate_x(Pct(-50.0)) // translateX: -50%
+                    .translate_y(Pct(-50.0)) // translateY: -50%
+                    .size(50.0, 50.0)
+            })
+            .action(move || {
+                content_clicked.set(true);
+            }),
+    ))
+    .style(|s| s.size(100.0, 100.0))
+    .overlay();
 
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
@@ -1917,31 +1910,29 @@ fn test_dialog_with_translate_centering() {
 fn test_dialog_with_translate_no_handler() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::unit::Pct;
-    use floem::views::Overlay;
 
     let root = TestRoot::new();
     let dialog_open = RwSignal::new(true);
 
-    let view = Overlay::new().child(
-        Stack::new((
-            // Backdrop
-            Empty::new()
-                .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
-                .action(move || {
-                    dialog_open.set(false);
-                }),
-            // Content - NO click handler, uses translate centering
-            Container::derived(move || Empty::new().style(|s| s.size(30.0, 20.0))).style(|s| {
-                s.absolute()
-                    .inset_left(Pct(50.0))
-                    .inset_top(Pct(50.0))
-                    .translate_x(Pct(-50.0))
-                    .translate_y(Pct(-50.0))
-                    .size(50.0, 50.0)
+    let view = Stack::new((
+        // Backdrop
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
+            .action(move || {
+                dialog_open.set(false);
             }),
-        ))
-        .style(|s| s.size(100.0, 100.0)),
-    );
+        // Content - NO click handler, uses translate centering
+        Container::derived(move || Empty::new().style(|s| s.size(30.0, 20.0))).style(|s| {
+            s.absolute()
+                .inset_left(Pct(50.0))
+                .inset_top(Pct(50.0))
+                .translate_x(Pct(-50.0))
+                .translate_y(Pct(-50.0))
+                .size(50.0, 50.0)
+        }),
+    ))
+    .style(|s| s.size(100.0, 100.0))
+    .overlay();
 
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
@@ -2025,42 +2016,40 @@ fn test_counter_example_structure() {
 fn test_overlay_fixed_translate_click_offset_bug() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::unit::Pct;
-    use floem::views::Overlay;
 
     let root = TestRoot::new();
     let backdrop_clicked = RwSignal::new(false);
     let content_clicked = RwSignal::new(false);
 
     // This replicates DialogContent structure exactly
-    let view = Overlay::new().child(
-        Stack::new((
-            // Backdrop - fills entire viewport
-            Empty::new()
-                .style(|s| s.absolute().inset(0.0).z_index(1))
-                .action(move || {
-                    backdrop_clicked.set(true);
-                }),
-            // Content - centered using translate (like DialogContent)
-            Stack::vertical((
-                Empty::new().style(|s| s.size(60.0, 30.0)), // Header
-                Empty::new().style(|s| s.size(60.0, 30.0)), // Footer
-            ))
-            .style(|s| {
-                s.absolute()
-                    .inset_left(Pct(50.0))
-                    .inset_top(Pct(50.0))
-                    .translate_x(Pct(-50.0))
-                    .translate_y(Pct(-50.0))
-                    .size(80.0, 80.0)
-                    .z_index(10)
-            })
+    let view = Stack::new((
+        // Backdrop - fills entire viewport
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0).z_index(1))
             .action(move || {
-                content_clicked.set(true);
+                backdrop_clicked.set(true);
             }),
+        // Content - centered using translate (like DialogContent)
+        Stack::vertical((
+            Empty::new().style(|s| s.size(60.0, 30.0)), // Header
+            Empty::new().style(|s| s.size(60.0, 30.0)), // Footer
         ))
-        // This is the key: fixed positioning like DialogContent
-        .style(|s| s.fixed().inset(0.0).width_full().height_full()),
-    );
+        .style(|s| {
+            s.absolute()
+                .inset_left(Pct(50.0))
+                .inset_top(Pct(50.0))
+                .translate_x(Pct(-50.0))
+                .translate_y(Pct(-50.0))
+                .size(80.0, 80.0)
+                .z_index(10)
+        })
+        .action(move || {
+            content_clicked.set(true);
+        }),
+    ))
+    // This is the key: fixed positioning like DialogContent
+    .style(|s| s.fixed().inset(0.0).width_full().height_full())
+    .overlay();
 
     let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
 
@@ -2085,35 +2074,33 @@ fn test_overlay_fixed_translate_click_offset_bug() {
 #[serial]
 fn test_overlay_fixed_no_translate() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
-    use floem::views::Overlay;
 
     let root = TestRoot::new();
     let backdrop_clicked = RwSignal::new(false);
     let content_clicked = RwSignal::new(false);
 
-    let view = Overlay::new().child(
-        Stack::new((
-            // Backdrop
-            Empty::new()
-                .style(|s| s.absolute().inset(0.0).z_index(1))
-                .action(move || {
-                    backdrop_clicked.set(true);
-                }),
-            // Content - positioned without translate
-            Empty::new()
-                .style(|s| {
-                    s.absolute()
-                        .inset_left(50.0)
-                        .inset_top(50.0)
-                        .size(100.0, 100.0)
-                        .z_index(10)
-                })
-                .action(move || {
-                    content_clicked.set(true);
-                }),
-        ))
-        .style(|s| s.fixed().inset(0.0).width_full().height_full()),
-    );
+    let view = Stack::new((
+        // Backdrop
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0).z_index(1))
+            .action(move || {
+                backdrop_clicked.set(true);
+            }),
+        // Content - positioned without translate
+        Empty::new()
+            .style(|s| {
+                s.absolute()
+                    .inset_left(50.0)
+                    .inset_top(50.0)
+                    .size(100.0, 100.0)
+                    .z_index(10)
+            })
+            .action(move || {
+                content_clicked.set(true);
+            }),
+    ))
+    .style(|s| s.fixed().inset(0.0).width_full().height_full())
+    .overlay();
 
     let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
 
@@ -2181,7 +2168,6 @@ fn test_fixed_translate_no_overlay() {
 #[serial]
 fn test_overlay_fixed_click_corners() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
-    use floem::views::Overlay;
 
     let root = TestRoot::new();
 
@@ -2196,31 +2182,30 @@ fn test_overlay_fixed_click_corners() {
         let backdrop_clicked = RwSignal::new(false);
         let content_clicked = RwSignal::new(false);
 
-        let view = Overlay::new().child(
-            Stack::new((
-                // Backdrop - fills entire area
-                Empty::new()
-                    .style(|s| s.absolute().inset(0.0).z_index(1))
-                    .action(move || {
-                        eprintln!("[{}] Backdrop clicked!", name);
-                        backdrop_clicked.set(true);
-                    }),
-                // Content - positioned at (50, 50) with size (100, 100)
-                Empty::new()
-                    .style(|s| {
-                        s.absolute()
-                            .inset_left(50.0)
-                            .inset_top(50.0)
-                            .size(100.0, 100.0)
-                            .z_index(10)
-                    })
-                    .action(move || {
-                        eprintln!("[{}] Content clicked!", name);
-                        content_clicked.set(true);
-                    }),
-            ))
-            .style(|s| s.fixed().inset(0.0).width_full().height_full()),
-        );
+        let view = Stack::new((
+            // Backdrop - fills entire area
+            Empty::new()
+                .style(|s| s.absolute().inset(0.0).z_index(1))
+                .action(move || {
+                    eprintln!("[{}] Backdrop clicked!", name);
+                    backdrop_clicked.set(true);
+                }),
+            // Content - positioned at (50, 50) with size (100, 100)
+            Empty::new()
+                .style(|s| {
+                    s.absolute()
+                        .inset_left(50.0)
+                        .inset_top(50.0)
+                        .size(100.0, 100.0)
+                        .z_index(10)
+                })
+                .action(move || {
+                    eprintln!("[{}] Content clicked!", name);
+                    content_clicked.set(true);
+                }),
+        ))
+        .style(|s| s.fixed().inset(0.0).width_full().height_full())
+        .overlay();
 
         let mut harness = HeadlessHarness::new_with_size(root.clone(), view, 200.0, 200.0);
 
@@ -2255,7 +2240,6 @@ fn test_overlay_fixed_click_corners() {
 fn test_overlay_fixed_translate_click_corners() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::unit::Pct;
-    use floem::views::Overlay;
 
     let root = TestRoot::new();
 
@@ -2270,33 +2254,32 @@ fn test_overlay_fixed_translate_click_corners() {
         let backdrop_clicked = RwSignal::new(false);
         let content_clicked = RwSignal::new(false);
 
-        let view = Overlay::new().child(
-            Stack::new((
-                // Backdrop
-                Empty::new()
-                    .style(|s| s.absolute().inset(0.0).z_index(1))
-                    .action(move || {
-                        eprintln!("[translate-{}] Backdrop clicked!", name);
-                        backdrop_clicked.set(true);
-                    }),
-                // Content - centered using translate
-                Empty::new()
-                    .style(|s| {
-                        s.absolute()
-                            .inset_left(Pct(50.0))
-                            .inset_top(Pct(50.0))
-                            .translate_x(Pct(-50.0))
-                            .translate_y(Pct(-50.0))
-                            .size(80.0, 80.0)
-                            .z_index(10)
-                    })
-                    .action(move || {
-                        eprintln!("[translate-{}] Content clicked!", name);
-                        content_clicked.set(true);
-                    }),
-            ))
-            .style(|s| s.fixed().inset(0.0).width_full().height_full()),
-        );
+        let view = Stack::new((
+            // Backdrop
+            Empty::new()
+                .style(|s| s.absolute().inset(0.0).z_index(1))
+                .action(move || {
+                    eprintln!("[translate-{}] Backdrop clicked!", name);
+                    backdrop_clicked.set(true);
+                }),
+            // Content - centered using translate
+            Empty::new()
+                .style(|s| {
+                    s.absolute()
+                        .inset_left(Pct(50.0))
+                        .inset_top(Pct(50.0))
+                        .translate_x(Pct(-50.0))
+                        .translate_y(Pct(-50.0))
+                        .size(80.0, 80.0)
+                        .z_index(10)
+                })
+                .action(move || {
+                    eprintln!("[translate-{}] Content clicked!", name);
+                    content_clicked.set(true);
+                }),
+        ))
+        .style(|s| s.fixed().inset(0.0).width_full().height_full())
+        .overlay();
 
         let mut harness = HeadlessHarness::new_with_size(root.clone(), view, 200.0, 200.0);
 
@@ -2325,7 +2308,6 @@ fn test_overlay_fixed_translate_click_corners() {
 #[serial]
 fn test_overlay_fixed_click_outside_content() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
-    use floem::views::Overlay;
 
     let root = TestRoot::new();
 
@@ -2340,25 +2322,24 @@ fn test_overlay_fixed_click_outside_content() {
         let backdrop_clicked = RwSignal::new(false);
         let content_clicked = RwSignal::new(false);
 
-        let view = Overlay::new().child(
-            Stack::new((
-                // Backdrop
-                Empty::new()
-                    .style(|s| s.absolute().inset(0.0).z_index(1))
-                    .action(move || backdrop_clicked.set(true)),
-                // Content
-                Empty::new()
-                    .style(|s| {
-                        s.absolute()
-                            .inset_left(50.0)
-                            .inset_top(50.0)
-                            .size(100.0, 100.0)
-                            .z_index(10)
-                    })
-                    .action(move || content_clicked.set(true)),
-            ))
-            .style(|s| s.fixed().inset(0.0).width_full().height_full()),
-        );
+        let view = Stack::new((
+            // Backdrop
+            Empty::new()
+                .style(|s| s.absolute().inset(0.0).z_index(1))
+                .action(move || backdrop_clicked.set(true)),
+            // Content
+            Empty::new()
+                .style(|s| {
+                    s.absolute()
+                        .inset_left(50.0)
+                        .inset_top(50.0)
+                        .size(100.0, 100.0)
+                        .z_index(10)
+                })
+                .action(move || content_clicked.set(true)),
+        ))
+        .style(|s| s.fixed().inset(0.0).width_full().height_full())
+        .overlay();
 
         let mut harness = HeadlessHarness::new_with_size(root.clone(), view, 200.0, 200.0);
 
@@ -2447,7 +2428,6 @@ fn test_no_overlay_fixed_translate_probe_boundary() {
 fn test_overlay_fixed_translate_probe_boundary() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::unit::Pct;
-    use floem::views::Overlay;
 
     let root = TestRoot::new();
 
@@ -2478,25 +2458,24 @@ fn test_overlay_fixed_translate_probe_boundary() {
         let backdrop_clicked = RwSignal::new(false);
         let content_clicked = RwSignal::new(false);
 
-        let view = Overlay::new().child(
-            Stack::new((
-                Empty::new()
-                    .style(|s| s.absolute().inset(0.0).z_index(1))
-                    .action(move || backdrop_clicked.set(true)),
-                Empty::new()
-                    .style(|s| {
-                        s.absolute()
-                            .inset_left(Pct(50.0))
-                            .inset_top(Pct(50.0))
-                            .translate_x(Pct(-50.0))
-                            .translate_y(Pct(-50.0))
-                            .size(80.0, 80.0)
-                            .z_index(10)
-                    })
-                    .action(move || content_clicked.set(true)),
-            ))
-            .style(|s| s.fixed().inset(0.0).width_full().height_full()),
-        );
+        let view = Stack::new((
+            Empty::new()
+                .style(|s| s.absolute().inset(0.0).z_index(1))
+                .action(move || backdrop_clicked.set(true)),
+            Empty::new()
+                .style(|s| {
+                    s.absolute()
+                        .inset_left(Pct(50.0))
+                        .inset_top(Pct(50.0))
+                        .translate_x(Pct(-50.0))
+                        .translate_y(Pct(-50.0))
+                        .size(80.0, 80.0)
+                        .z_index(10)
+                })
+                .action(move || content_clicked.set(true)),
+        ))
+        .style(|s| s.fixed().inset(0.0).width_full().height_full())
+        .overlay();
 
         let mut harness = HeadlessHarness::new_with_size(root.clone(), view, 200.0, 200.0);
         harness.click(x, y);
@@ -2529,25 +2508,24 @@ fn test_overlay_fixed_translate_probe_boundary() {
         let backdrop_clicked = RwSignal::new(false);
         let content_clicked = RwSignal::new(false);
 
-        let view = Overlay::new().child(
-            Stack::new((
-                Empty::new()
-                    .style(|s| s.absolute().inset(0.0).z_index(1))
-                    .action(move || backdrop_clicked.set(true)),
-                Empty::new()
-                    .style(|s| {
-                        s.absolute()
-                            .inset_left(Pct(50.0))
-                            .inset_top(Pct(50.0))
-                            .translate_x(Pct(-50.0))
-                            .translate_y(Pct(-50.0))
-                            .size(80.0, 80.0)
-                            .z_index(10)
-                    })
-                    .action(move || content_clicked.set(true)),
-            ))
-            .style(|s| s.fixed().inset(0.0).width_full().height_full()),
-        );
+        let view = Stack::new((
+            Empty::new()
+                .style(|s| s.absolute().inset(0.0).z_index(1))
+                .action(move || backdrop_clicked.set(true)),
+            Empty::new()
+                .style(|s| {
+                    s.absolute()
+                        .inset_left(Pct(50.0))
+                        .inset_top(Pct(50.0))
+                        .translate_x(Pct(-50.0))
+                        .translate_y(Pct(-50.0))
+                        .size(80.0, 80.0)
+                        .z_index(10)
+                })
+                .action(move || content_clicked.set(true)),
+        ))
+        .style(|s| s.fixed().inset(0.0).width_full().height_full())
+        .overlay();
 
         let mut harness = HeadlessHarness::new_with_size(root.clone(), view, 200.0, 200.0);
         harness.click(x, y);
@@ -2571,26 +2549,21 @@ fn test_overlay_fixed_translate_debug_layout() {
     use floem::ViewId;
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::unit::Pct;
-    use floem::views::Overlay;
 
     let root = TestRoot::new();
     let content_id = ViewId::new();
     let backdrop_clicked = RwSignal::new(false);
     let content_clicked = RwSignal::new(false);
 
-    let view = Overlay::new().child(
-        Stack::new((
-            // Backdrop
-            Empty::new()
-                .style(|s| s.absolute().inset(0.0).z_index(1))
-                .action(move || {
-                    backdrop_clicked.set(true);
-                }),
-            // Content with known ID
-            floem::views::Container::with_id(
-                content_id,
-                Empty::new().style(|s| s.size(60.0, 40.0)),
-            )
+    let view = Stack::new((
+        // Backdrop
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0).z_index(1))
+            .action(move || {
+                backdrop_clicked.set(true);
+            }),
+        // Content with known ID
+        floem::views::Container::with_id(content_id, Empty::new().style(|s| s.size(60.0, 40.0)))
             .style(|s| {
                 s.absolute()
                     .inset_left(Pct(50.0))
@@ -2603,9 +2576,9 @@ fn test_overlay_fixed_translate_debug_layout() {
             .action(move || {
                 content_clicked.set(true);
             }),
-        ))
-        .style(|s| s.fixed().inset(0.0).width_full().height_full()),
-    );
+    ))
+    .style(|s| s.fixed().inset(0.0).width_full().height_full())
+    .overlay();
 
     let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
@@ -2722,42 +2695,40 @@ fn test_events_do_not_bubble_to_parents_sibling() {
 #[serial]
 fn test_dialog_header_click_does_not_close() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
-    use floem::views::Overlay;
 
     let root = TestRoot::new();
     let dialog_open = RwSignal::new(true);
     let header_clicked = RwSignal::new(false);
 
-    let view = Overlay::new().child(
-        Stack::new((
-            // Backdrop
-            Empty::new()
-                .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
-                .action(move || {
-                    dialog_open.set(false);
-                }),
-            // Content (like DialogContent)
-            Stack::vertical((
-                // Header - like DialogHeader (with click handler to track)
-                Empty::new()
-                    .style(|s| s.size(50.0, 20.0))
-                    .on_click(move |_| {
-                        header_clicked.set(true);
-                        EventPropagation::Continue
-                    }),
-                // Footer - like DialogFooter
-                Empty::new().style(|s| s.size(50.0, 20.0)),
-            ))
-            .style(|s| {
-                s.absolute()
-                    .inset_left(25.0)
-                    .inset_top(25.0)
-                    .size(50.0, 50.0)
-                    .z_index(10)
+    let view = Stack::new((
+        // Backdrop
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
+            .action(move || {
+                dialog_open.set(false);
             }),
+        // Content (like DialogContent)
+        Stack::vertical((
+            // Header - like DialogHeader (with click handler to track)
+            Empty::new()
+                .style(|s| s.size(50.0, 20.0))
+                .on_click(move |_| {
+                    header_clicked.set(true);
+                    EventPropagation::Continue
+                }),
+            // Footer - like DialogFooter
+            Empty::new().style(|s| s.size(50.0, 20.0)),
         ))
-        .style(|s| s.size(100.0, 100.0)),
-    );
+        .style(|s| {
+            s.absolute()
+                .inset_left(25.0)
+                .inset_top(25.0)
+                .size(50.0, 50.0)
+                .z_index(10)
+        }),
+    ))
+    .style(|s| s.size(100.0, 100.0))
+    .overlay();
 
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
@@ -2893,46 +2864,44 @@ fn test_bubbling_through_handler_less_child() {
 fn test_fixed_overlay_child_receives_click() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::unit::Pct;
-    use floem::views::Overlay;
 
     let root = TestRoot::new();
     let backdrop_clicked = RwSignal::new(false);
     let content_clicked = RwSignal::new(false);
     let child_clicked = RwSignal::new(false);
 
-    let view = Overlay::new().child(
-        Stack::new((
-            // Backdrop
-            Empty::new()
-                .style(|s| s.absolute().inset(0.0))
-                .action(move || {
-                    eprintln!("[backdrop] clicked!");
-                    backdrop_clicked.set(true);
-                }),
-            // Content - centered with translate
-            Stack::vertical((
-                // Clickable child (like a button)
-                Empty::new().style(|s| s.size(60.0, 30.0)).action(move || {
-                    eprintln!("[child] clicked!");
-                    child_clicked.set(true);
-                }),
-            ))
-            .style(|s| {
-                s.absolute()
-                    .inset_left(Pct(50.0))
-                    .inset_top(Pct(50.0))
-                    .translate_x(Pct(-50.0))
-                    .translate_y(Pct(-50.0))
-                    .size(80.0, 60.0)
-                    .z_index(10)
-            })
+    let view = Stack::new((
+        // Backdrop
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0))
             .action(move || {
-                eprintln!("[content] clicked!");
-                content_clicked.set(true);
+                eprintln!("[backdrop] clicked!");
+                backdrop_clicked.set(true);
+            }),
+        // Content - centered with translate
+        Stack::vertical((
+            // Clickable child (like a button)
+            Empty::new().style(|s| s.size(60.0, 30.0)).action(move || {
+                eprintln!("[child] clicked!");
+                child_clicked.set(true);
             }),
         ))
-        .style(|s| s.fixed().inset(0.0).width_full().height_full()),
-    );
+        .style(|s| {
+            s.absolute()
+                .inset_left(Pct(50.0))
+                .inset_top(Pct(50.0))
+                .translate_x(Pct(-50.0))
+                .translate_y(Pct(-50.0))
+                .size(80.0, 60.0)
+                .z_index(10)
+        })
+        .action(move || {
+            eprintln!("[content] clicked!");
+            content_clicked.set(true);
+        }),
+    ))
+    .style(|s| s.fixed().inset(0.0).width_full().height_full())
+    .overlay();
 
     let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
@@ -2969,7 +2938,6 @@ fn test_fixed_overlay_child_click_bounds() {
     use floem::ViewId;
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::unit::Pct;
-    use floem::views::Overlay;
 
     let root = TestRoot::new();
     let child_id = ViewId::new();
@@ -2979,44 +2947,43 @@ fn test_fixed_overlay_child_click_bounds() {
     let content_clicks = RwSignal::new(0);
     let child_clicks = RwSignal::new(0);
 
-    let view = Overlay::new().child(
-        Stack::new((
-            // Backdrop
-            Empty::new()
-                .style(|s| s.absolute().inset(0.0))
-                .action(move || {
-                    backdrop_clicks.update(|c| *c += 1);
-                }),
-            // Content - centered with translate
-            floem::views::Container::with_id(
-                content_id,
-                Stack::vertical((
-                    // Clickable child with known ID
-                    floem::views::Container::with_id(
-                        child_id,
-                        Empty::new().style(|s| s.size(60.0, 30.0)),
-                    )
-                    .action(move || {
-                        child_clicks.update(|c| *c += 1);
-                    }),
-                ))
-                .style(|s| s.gap(0.0)),
-            )
-            .style(|s| {
-                s.absolute()
-                    .inset_left(Pct(50.0))
-                    .inset_top(Pct(50.0))
-                    .translate_x(Pct(-50.0))
-                    .translate_y(Pct(-50.0))
-                    .size(80.0, 60.0)
-                    .z_index(10)
-            })
+    let view = Stack::new((
+        // Backdrop
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0))
             .action(move || {
-                content_clicks.update(|c| *c += 1);
+                backdrop_clicks.update(|c| *c += 1);
             }),
-        ))
-        .style(|s| s.fixed().inset(0.0).width_full().height_full()),
-    );
+        // Content - centered with translate
+        floem::views::Container::with_id(
+            content_id,
+            Stack::vertical((
+                // Clickable child with known ID
+                floem::views::Container::with_id(
+                    child_id,
+                    Empty::new().style(|s| s.size(60.0, 30.0)),
+                )
+                .action(move || {
+                    child_clicks.update(|c| *c += 1);
+                }),
+            ))
+            .style(|s| s.gap(0.0)),
+        )
+        .style(|s| {
+            s.absolute()
+                .inset_left(Pct(50.0))
+                .inset_top(Pct(50.0))
+                .translate_x(Pct(-50.0))
+                .translate_y(Pct(-50.0))
+                .size(80.0, 60.0)
+                .z_index(10)
+        })
+        .action(move || {
+            content_clicks.update(|c| *c += 1);
+        }),
+    ))
+    .style(|s| s.fixed().inset(0.0).width_full().height_full())
+    .overlay();
 
     let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
@@ -3086,54 +3053,52 @@ fn test_fixed_overlay_deeply_nested_child() {
     let root = TestRoot::new();
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::unit::Pct;
-    use floem::views::Overlay;
 
     let backdrop_clicked = RwSignal::new(false);
     let level1_clicked = RwSignal::new(false);
     let level2_clicked = RwSignal::new(false);
     let level3_clicked = RwSignal::new(false);
 
-    let view = Overlay::new().child(
-        Stack::new((
-            // Backdrop
-            Empty::new()
-                .style(|s| s.absolute().inset(0.0))
-                .action(move || {
-                    backdrop_clicked.set(true);
-                }),
-            // Level 1 - Content container
+    let view = Stack::new((
+        // Backdrop
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0))
+            .action(move || {
+                backdrop_clicked.set(true);
+            }),
+        // Level 1 - Content container
+        Container::new(
+            // Level 2 - Inner container
             Container::new(
-                // Level 2 - Inner container
-                Container::new(
-                    // Level 3 - Deepest clickable element
-                    Empty::new().style(|s| s.size(40.0, 20.0)).action(move || {
-                        eprintln!("[level3] clicked!");
-                        level3_clicked.set(true);
-                    }),
-                )
-                .style(|s| s.size(50.0, 30.0).padding(5.0))
-                .action(move || {
-                    eprintln!("[level2] clicked!");
-                    level2_clicked.set(true);
+                // Level 3 - Deepest clickable element
+                Empty::new().style(|s| s.size(40.0, 20.0)).action(move || {
+                    eprintln!("[level3] clicked!");
+                    level3_clicked.set(true);
                 }),
             )
-            .style(|s| {
-                s.absolute()
-                    .inset_left(Pct(50.0))
-                    .inset_top(Pct(50.0))
-                    .translate_x(Pct(-50.0))
-                    .translate_y(Pct(-50.0))
-                    .size(80.0, 60.0)
-                    .padding(10.0)
-                    .z_index(10)
-            })
+            .style(|s| s.size(50.0, 30.0).padding(5.0))
             .action(move || {
-                eprintln!("[level1] clicked!");
-                level1_clicked.set(true);
+                eprintln!("[level2] clicked!");
+                level2_clicked.set(true);
             }),
-        ))
-        .style(|s| s.fixed().inset(0.0).width_full().height_full()),
-    );
+        )
+        .style(|s| {
+            s.absolute()
+                .inset_left(Pct(50.0))
+                .inset_top(Pct(50.0))
+                .translate_x(Pct(-50.0))
+                .translate_y(Pct(-50.0))
+                .size(80.0, 60.0)
+                .padding(10.0)
+                .z_index(10)
+        })
+        .action(move || {
+            eprintln!("[level1] clicked!");
+            level1_clicked.set(true);
+        }),
+    ))
+    .style(|s| s.fixed().inset(0.0).width_full().height_full())
+    .overlay();
 
     let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
@@ -3166,7 +3131,6 @@ fn test_fixed_overlay_child_probe_bounds() {
     use floem::ViewId;
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::unit::Pct;
-    use floem::views::Overlay;
 
     let child_id = ViewId::new();
 
@@ -3175,32 +3139,31 @@ fn test_fixed_overlay_child_probe_bounds() {
 
     // Simple structure: backdrop + content with child
     // Content is 80x60 centered, child is 60x30 at top of content
-    let view = Overlay::new().child(
-        Stack::new((
-            Empty::new()
-                .style(|s| s.absolute().inset(0.0))
-                .action(move || {
-                    backdrop_clicks.update(|c| *c += 1);
-                }),
-            Stack::vertical((floem::views::Container::with_id(
-                child_id,
-                Empty::new().style(|s| s.size(60.0, 30.0)),
-            )
+    let view = Stack::new((
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0))
             .action(move || {
-                child_clicks.update(|c| *c += 1);
-            }),))
-            .style(|s| {
-                s.absolute()
-                    .inset_left(Pct(50.0))
-                    .inset_top(Pct(50.0))
-                    .translate_x(Pct(-50.0))
-                    .translate_y(Pct(-50.0))
-                    .size(80.0, 60.0)
-                    .z_index(10)
+                backdrop_clicks.update(|c| *c += 1);
             }),
-        ))
-        .style(|s| s.fixed().inset(0.0).width_full().height_full()),
-    );
+        Stack::vertical((floem::views::Container::with_id(
+            child_id,
+            Empty::new().style(|s| s.size(60.0, 30.0)),
+        )
+        .action(move || {
+            child_clicks.update(|c| *c += 1);
+        }),))
+        .style(|s| {
+            s.absolute()
+                .inset_left(Pct(50.0))
+                .inset_top(Pct(50.0))
+                .translate_x(Pct(-50.0))
+                .translate_y(Pct(-50.0))
+                .size(80.0, 60.0)
+                .z_index(10)
+        }),
+    ))
+    .style(|s| s.fixed().inset(0.0).width_full().height_full())
+    .overlay();
 
     let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();

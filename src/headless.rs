@@ -320,9 +320,7 @@ impl HeadlessHarness {
 
     /// Find the visual id at the given position (hit test).
     pub fn element_id_at(&self, x: f64, y: f64) -> Option<ElementId> {
-        hit_test(self.root_id(), Point::new(x, y))
-            .map(|v| v.last().copied())
-            .flatten()
+        hit_test(self.root_id(), Point::new(x, y)).and_then(|v| v.last().copied())
     }
 
     /// Check if a view is currently in the "active" state

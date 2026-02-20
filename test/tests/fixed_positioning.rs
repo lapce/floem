@@ -377,13 +377,10 @@ fn test_fixed_element_in_paint_order() {
     let root = TestRoot::new();
     // Test that a fixed element appears in the paint order.
 
-    let fixed_element = Empty::new().style(|s| s.fixed().inset(0.0));
+    let fixed_element = Empty::new().style(|s| s.fixed().inset(0.0).size_full());
     let fixed_id = fixed_element.view_id();
 
-    let view = fixed_element
-        .overlay()
-        .container()
-        .style(|s| s.size(100.0, 100.0));
+    let view = fixed_element.overlay().style(|s| s.size(100.0, 100.0));
 
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
@@ -409,10 +406,11 @@ fn test_fixed_element_painted_after_regular_views() {
     let regular = Empty::new().style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(100));
     let regular_id = regular.view_id();
 
-    let fixed_element = Empty::new().style(|s| s.fixed().inset(0.0));
+    let fixed_element = Empty::new().style(|s| s.fixed().inset(0.0).size_full());
     let fixed_id = fixed_element.view_id();
 
-    let view = Stack::new((regular, fixed_element.overlay())).style(|s| s.size(100.0, 100.0));
+    let view = Stack::new((regular, fixed_element.overlay().style(|s| s.size_full())))
+        .style(|s| s.size(100.0, 100.0));
 
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 

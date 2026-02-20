@@ -24,7 +24,7 @@ use floem::{
     menu::*,
     muda::{AboutMetadataBuilder, PredefinedMenuItem},
     new_window,
-    prelude::*,
+    prelude::{palette::css, *},
     style::{Background, CursorStyle, CustomStylable, Transition},
     theme::StyleThemeExt,
     ui_events::keyboard::{Key, KeyboardEvent, Modifiers, NamedKey},
@@ -138,9 +138,14 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         );
     });
 
-    let left_side_bar = Stack::vertical((side_tab_bar, new_window_button, inspector))
-        .debug_name("Left Side Bar")
-        .style(|s| s.height_full().row_gap(5.0));
+    let left_side_bar = Stack::vertical((
+        side_tab_bar,
+        new_window_button,
+        inspector,
+        Overlay::new("This is cool").style(|s| s.absolute().z_index(1).color(css::WHITE)),
+    ))
+    .debug_name("Left Side Bar")
+    .style(|s| s.height_full().row_gap(5.0));
 
     let tab = tab(
         move || Some(active_tab.get().unwrap_or(0)),
@@ -153,7 +158,18 @@ fn app_view(window_id: WindowId) -> impl IntoView {
 
     let tab = tab.scroll().style(|s| s.size_full());
 
-    let view = Stack::horizontal((left_side_bar, tab))
+    let floem_logo = svg(include_str!("../assets/floem.svg"))
+        .style(|s| s.unset_color().size_full().size(50, 50))
+        .overlay()
+        .style(|s| {
+            s.absolute()
+                .z_index(1)
+                .size(50, 50)
+                .inset_bottom(20.)
+                .inset_right(15.)
+        });
+
+    let view = Stack::horizontal((left_side_bar, tab, floem_logo))
         .style(|s| s.padding(5.0).width_full().height_full().col_gap(5.0))
         .window_title(|| "Widget Gallery".to_owned());
 
@@ -291,14 +307,6 @@ fn app_view(window_id: WindowId) -> impl IntoView {
                 ))
             }),
     );
-
-    add_overlay(svg(include_str!("../assets/floem.svg")).style(|s| {
-        s.unset_color()
-            .size(50, 50)
-            .absolute()
-            .inset_bottom(20.)
-            .inset_right(15.)
-    }));
 
     view.on_event_stop(
         listener::KeyUp,

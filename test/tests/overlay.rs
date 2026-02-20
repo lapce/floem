@@ -7,7 +7,7 @@ use floem::HasViewId;
 use floem::headless::{HeadlessHarness, TestRoot};
 use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 use floem::view::ParentView;
-use floem::views::{Clip, Decorators, Empty, Label, Overlay, Stack};
+use floem::views::{Clip, ContainerExt, Decorators, Empty, Label, Overlay, OverlayExt, Stack};
 use serial_test::serial;
 use std::cell::Cell;
 use std::rc::Rc;
@@ -17,10 +17,7 @@ use std::rc::Rc;
 fn test_overlay_new() {
     let root = TestRoot::new();
     // Test that an Overlay can be created with static content
-    let view = Stack::new((
-        Label::new("Main content"),
-        Overlay::new().child(Label::new("Overlay content")),
-    ))
+    let view = Stack::new((Label::new("Main content"), Label::new("Overlay content").overlay()))
     .style(|s| s.size(100.0, 100.0));
 
     let _harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
@@ -33,7 +30,7 @@ fn test_overlay_derived() {
     // Test that an Overlay can be created with derived content
     let view = Stack::new((
         Label::new("Main content"),
-        Overlay::new().derived_children(|| [Label::derived(|| "Overlay content".to_string())]),
+        Label::derived(|| "Overlay content".to_string()).overlay(),
     ))
     .style(|s| s.size(100.0, 100.0));
 
@@ -49,10 +46,9 @@ fn test_overlay_with_visibility_control() {
 
     let view = Stack::new((
         Label::new("Main content"),
-        Overlay::new().derived_children(move || {
-            [Label::derived(|| "Overlay content".to_string())
-                .style(move |s| s.apply_if(!visible.get(), |s| s.hide()))]
-        }),
+        Label::derived(|| "Overlay content".to_string())
+            .style(move |s| s.apply_if(!visible.get(), |s| s.hide()))
+            .overlay(),
     ))
     .style(|s| s.size(100.0, 100.0));
 
@@ -76,9 +72,9 @@ fn test_overlay_content_factory_called() {
 
     let view = Stack::new((
         Label::new("Main content"),
-        Overlay::new().derived_children(move || {
+        Overlay::new_dyn(move || {
             factory_called_clone.set(true);
-            [Label::new("Overlay content")]
+            Label::new("Overlay content")
         }),
     ))
     .style(|s| s.size(100.0, 100.0));
@@ -98,16 +94,16 @@ fn test_overlay_content_factory_called() {
 fn test_overlay_in_nested_structure() {
     let root = TestRoot::new();
     // Test that Overlay works in nested view structures
-    let view =
-        Stack::new((Stack::new((
+    let view = Stack::new((
+        Stack::new((
             Label::new("Nested label"),
-            Overlay::new().derived_children(|| {
-                [Stack::new((Label::new("Nested overlay"), Empty::new()))
-                    .style(|s| s.size(50.0, 50.0))]
-            }),
+            Stack::new((Label::new("Nested overlay"), Empty::new()))
+                .style(|s| s.size(50.0, 50.0))
+                .overlay(),
         ))
-        .style(|s| s.size(80.0, 80.0)),))
-        .style(|s| s.size(100.0, 100.0));
+        .style(|s| s.size(80.0, 80.0)),
+    ))
+    .style(|s| s.size(100.0, 100.0));
 
     let _harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 }
@@ -119,8 +115,8 @@ fn test_multiple_overlays() {
     // Test that multiple overlays can coexist
     let view = Stack::new((
         Label::new("Main content"),
-        Overlay::new().child(Label::new("Overlay 1")),
-        Overlay::new().child(Label::new("Overlay 2")),
+        Label::new("Overlay 1").overlay(),
+        Label::new("Overlay 2").overlay(),
     ))
     .style(|s| s.size(100.0, 100.0));
 
@@ -134,11 +130,13 @@ fn test_overlay_with_styled_content() {
     // Test that overlay content can be styled
     let view = Stack::new((
         Label::new("Main content"),
-        Overlay::new().child(Label::new("Styled overlay").style(|s| {
-            s.background(floem::peniko::Color::WHITE)
-                .padding(20.0)
-                .border_radius(8.0)
-        })),
+        Label::new("Styled overlay")
+            .style(|s| {
+                s.background(floem::peniko::Color::WHITE)
+                    .padding(20.0)
+                    .border_radius(8.0)
+            })
+            .overlay(),
     ))
     .style(|s| s.size(100.0, 100.0));
 
@@ -177,13 +175,12 @@ fn test_overlay_receives_events_before_regular_views() {
             .action(move || {
                 clicked_regular_clone.set(true);
             }),
-        Overlay::new().child(
-            Empty::new()
-                .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
-                .action(move || {
-                    clicked_overlay_clone.set(true);
-                }),
-        ),
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1))
+            .action(move || {
+                clicked_overlay_clone.set(true);
+            })
+            .overlay(),
     ))
     .style(|s| s.size(100.0, 100.0));
 
@@ -225,24 +222,20 @@ fn test_multiple_overlays_respect_z_index() {
 
     let view = Stack::new((
         // First overlay with higher z-index
-        Overlay::new()
-            .child(
-                Empty::new()
-                    .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
-                    .action(move || {
-                        clicked1_clone.set(true);
-                    }),
-            )
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
+            .action(move || {
+                clicked1_clone.set(true);
+            })
+            .overlay()
             .style(|s| s.z_index(10)),
         // Second overlay with lower z-index (later in DOM)
-        Overlay::new()
-            .child(
-                Empty::new()
-                    .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
-                    .action(move || {
-                        clicked2_clone.set(true);
-                    }),
-            )
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
+            .action(move || {
+                clicked2_clone.set(true);
+            })
+            .overlay()
             .style(|s| s.z_index(1)),
     ))
     .style(|s| s.size(100.0, 100.0));
@@ -282,23 +275,19 @@ fn test_overlay_dom_order_tiebreaker() {
     let clicked2_clone = clicked_overlay2.clone();
 
     let view = Stack::new((
-        Overlay::new()
-            .child(
-                Empty::new()
-                    .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
-                    .action(move || {
-                        clicked1_clone.set(true);
-                    }),
-            )
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
+            .action(move || {
+                clicked1_clone.set(true);
+            })
+            .overlay()
             .style(|s| s.z_index(5)),
-        Overlay::new()
-            .child(
-                Empty::new()
-                    .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
-                    .action(move || {
-                        clicked2_clone.set(true);
-                    }),
-            )
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
+            .action(move || {
+                clicked2_clone.set(true);
+            })
+            .overlay()
             .style(|s| s.z_index(5)),
     ))
     .style(|s| s.size(100.0, 100.0));
@@ -340,13 +329,13 @@ fn test_nested_overlay_escapes_parent_z_index() {
 
     let view = Stack::new((
         // Parent with low z-index containing an overlay
-        Stack::new((Overlay::new().child(
-            Empty::new()
-                .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
-                .action(move || {
-                    overlay_clone.set(true);
-                }),
-        ),))
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
+            .action(move || {
+                overlay_clone.set(true);
+            })
+            .overlay()
+            .container()
         .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1)),
         // Sibling with high z-index
         Empty::new()
@@ -395,18 +384,17 @@ fn test_hidden_overlay_does_not_block_events() {
             .action(move || {
                 regular_clone.set(true);
             }),
-        Overlay::new().child(
-            Empty::new()
-                .style(|s| {
-                    s.absolute()
-                        .inset(0.0)
-                        .size(100.0, 100.0)
-                        .display(floem::taffy::Display::None)
-                })
-                .action(move || {
-                    overlay_clone.set(true);
-                }),
-        ),
+        Empty::new()
+            .style(|s| {
+                s.absolute()
+                    .inset(0.0)
+                    .size(100.0, 100.0)
+                    .display(floem::taffy::Display::None)
+            })
+            .action(move || {
+                overlay_clone.set(true);
+            })
+            .overlay(),
     ))
     .style(|s| s.size(100.0, 100.0));
 
@@ -449,8 +437,7 @@ fn test_paint_order_overlays_after_regular_views() {
     let overlay_content = Empty::new().style(|s| s.absolute().inset(0.0).size(100.0, 100.0));
     let overlay_id = overlay_content.view_id();
 
-    let view = Stack::new((regular, Overlay::new().child(overlay_content)))
-        .style(|s| s.size(100.0, 100.0));
+    let view = Stack::new((regular, overlay_content.overlay())).style(|s| s.size(100.0, 100.0));
 
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
@@ -493,12 +480,8 @@ fn test_paint_order_multiple_overlays_by_z_index() {
     let overlay2_id = overlay2_content.view_id();
 
     let view = Stack::new((
-        Overlay::new()
-            .child(overlay1_content)
-            .style(|s| s.z_index(10)),
-        Overlay::new()
-            .child(overlay2_content)
-            .style(|s| s.z_index(1)),
+        overlay1_content.overlay().style(|s| s.z_index(10)),
+        overlay2_content.overlay().style(|s| s.z_index(1)),
     ))
     .style(|s| s.size(100.0, 100.0));
 
@@ -590,7 +573,9 @@ fn test_paint_order_nested_overlay_escapes_parent() {
     let sibling_id = sibling.view_id();
 
     let view = Stack::new((
-        Stack::new((Overlay::new().child(overlay_content),))
+        overlay_content
+            .overlay()
+            .container()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(1)),
         sibling,
     ))
@@ -644,13 +629,14 @@ fn test_overlay_escapes_parent_clip() {
 
     let view = Stack::new((
         // Clipping parent using Clip view
-        Clip::new(Stack::new((Overlay::new().child(
+        Clip::new(
             Empty::new()
                 .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
                 .action(move || {
                     overlay_clone.set(true);
-                }),
-        ),)))
+                })
+                .overlay(),
+        )
         .style(|s| s.absolute().inset_left(0.0).inset_top(0.0).size(50.0, 50.0)),
         // Background that would receive click if overlay didn't escape clip
         Empty::new()
@@ -698,7 +684,7 @@ fn test_overlay_painted_outside_parent_clip() {
     let overlay_id = overlay_content.view_id();
 
     let view = Stack::new((
-        Clip::new(Stack::new((Overlay::new().child(overlay_content),)))
+        Clip::new(overlay_content.overlay())
             .style(|s| s.absolute().inset(0.0).size(50.0, 50.0)),
     ))
     .style(|s| s.size(100.0, 100.0));
@@ -742,13 +728,14 @@ fn test_overlay_escapes_nested_clips() {
         // Outer clipping container
         Clip::new(
             // Inner clipping container
-            Clip::new(Stack::new((Overlay::new().child(
+            Clip::new(
                 Empty::new()
                     .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
                     .action(move || {
                         overlay_clone.set(true);
-                    }),
-            ),)))
+                    })
+                    .overlay(),
+            )
             .style(|s| s.absolute().inset(0.0).size(60.0, 60.0)),
         )
         .style(|s| s.absolute().inset(0.0).size(80.0, 80.0)),
@@ -792,13 +779,12 @@ fn test_overlay_with_container_derived_rebuild() {
 
     let view = Stack::new((
         Label::new("Main content"),
-        Overlay::new().child(
-            Container::derived(move || {
-                let count = counter.get();
-                Label::new(format!("Count: {}", count))
-            })
-            .style(|s| s.size(100.0, 50.0)),
-        ),
+        Container::derived(move || {
+            let count = counter.get();
+            Label::new(format!("Count: {}", count))
+        })
+        .style(|s| s.size(100.0, 50.0))
+        .overlay(),
     ))
     .style(|s| s.size(100.0, 100.0));
 
@@ -832,35 +818,34 @@ fn test_overlay_with_nested_container_derived() {
 
     let view = Stack::new((
         Label::new("Main content"),
-        Overlay::new().child(
-            Stack::new((
-                // Backdrop
-                Empty::new().style(move |s| {
-                    let is_open = open.get();
-                    s.absolute()
-                        .inset(0.0)
-                        .size(100.0, 100.0)
-                        .apply_if(!is_open, |s| s.display(floem::taffy::Display::None))
-                }),
-                // Centering container with derived content
-                Container::new(Container::derived(move || {
-                    let is_open = open.get();
-                    Stack::new((Label::new("Dialog Title"), Label::new("Dialog Description")))
-                        .style(move |s| {
-                            s.size(80.0, 60.0)
-                                .apply_if(!is_open, |s| s.display(floem::taffy::Display::None))
-                        })
-                }))
-                .style(move |s| {
-                    let is_open = open.get();
-                    s.absolute()
-                        .inset(0.0)
-                        .size(100.0, 100.0)
-                        .apply_if(!is_open, |s| s.display(floem::taffy::Display::None))
-                }),
-            ))
-            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0)),
-        ),
+        Stack::new((
+            // Backdrop
+            Empty::new().style(move |s| {
+                let is_open = open.get();
+                s.absolute()
+                    .inset(0.0)
+                    .size(100.0, 100.0)
+                    .apply_if(!is_open, |s| s.display(floem::taffy::Display::None))
+            }),
+            // Centering container with derived content
+            Container::new(Container::derived(move || {
+                let is_open = open.get();
+                Stack::new((Label::new("Dialog Title"), Label::new("Dialog Description")))
+                    .style(move |s| {
+                        s.size(80.0, 60.0)
+                            .apply_if(!is_open, |s| s.display(floem::taffy::Display::None))
+                    })
+            }))
+            .style(move |s| {
+                let is_open = open.get();
+                s.absolute()
+                    .inset(0.0)
+                    .size(100.0, 100.0)
+                    .apply_if(!is_open, |s| s.display(floem::taffy::Display::None))
+            }),
+        ))
+        .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
+        .overlay(),
     ))
     .style(|s| s.size(100.0, 100.0));
 
