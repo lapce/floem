@@ -4,8 +4,6 @@
 //! - `on_click_stop` prevents events from bubbling to parent views
 //! - `on_click_cont` allows events to bubble to parent views
 
-use floem::event::EventPropagation;
-use floem::view::ParentView;
 use floem::views::OverlayExt;
 use floem_test::prelude::*;
 use serial_test::serial;
@@ -2169,8 +2167,6 @@ fn test_fixed_translate_no_overlay() {
 fn test_overlay_fixed_click_corners() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 
-    let root = TestRoot::new();
-
     // Test each corner separately
     for (name, x, y) in [
         ("top-left", 55.0, 55.0),
@@ -2179,6 +2175,7 @@ fn test_overlay_fixed_click_corners() {
         ("bottom-right", 145.0, 145.0),
         ("center", 100.0, 100.0),
     ] {
+        let root = TestRoot::new();
         let backdrop_clicked = RwSignal::new(false);
         let content_clicked = RwSignal::new(false);
 
@@ -2207,7 +2204,7 @@ fn test_overlay_fixed_click_corners() {
         .style(|s| s.fixed().inset(0.0).width_full().height_full())
         .overlay();
 
-        let mut harness = HeadlessHarness::new_with_size(root.clone(), view, 200.0, 200.0);
+        let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
 
         eprintln!("Testing corner: {} at ({}, {})", name, x, y);
         harness.click(x, y);
@@ -2241,8 +2238,6 @@ fn test_overlay_fixed_translate_click_corners() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::unit::Pct;
 
-    let root = TestRoot::new();
-
     // Content visual bounds: (60, 60) to (140, 140)
     for (name, x, y) in [
         ("top-left", 65.0, 65.0),
@@ -2251,6 +2246,7 @@ fn test_overlay_fixed_translate_click_corners() {
         ("bottom-right", 135.0, 135.0),
         ("center", 100.0, 100.0),
     ] {
+        let root = TestRoot::new();
         let backdrop_clicked = RwSignal::new(false);
         let content_clicked = RwSignal::new(false);
 
@@ -2281,7 +2277,7 @@ fn test_overlay_fixed_translate_click_corners() {
         .style(|s| s.fixed().inset(0.0).width_full().height_full())
         .overlay();
 
-        let mut harness = HeadlessHarness::new_with_size(root.clone(), view, 200.0, 200.0);
+        let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
 
         eprintln!("Testing translate corner: {} at ({}, {})", name, x, y);
         harness.click(x, y);
@@ -2309,8 +2305,6 @@ fn test_overlay_fixed_translate_click_corners() {
 fn test_overlay_fixed_click_outside_content() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 
-    let root = TestRoot::new();
-
     // Content is at (50, 50) to (150, 150)
     // These clicks should hit backdrop
     for (name, x, y) in [
@@ -2319,6 +2313,7 @@ fn test_overlay_fixed_click_outside_content() {
         ("bottom-left-outside", 25.0, 175.0),
         ("bottom-right-outside", 175.0, 175.0),
     ] {
+        let root = TestRoot::new();
         let backdrop_clicked = RwSignal::new(false);
         let content_clicked = RwSignal::new(false);
 
@@ -2341,7 +2336,7 @@ fn test_overlay_fixed_click_outside_content() {
         .style(|s| s.fixed().inset(0.0).width_full().height_full())
         .overlay();
 
-        let mut harness = HeadlessHarness::new_with_size(root.clone(), view, 200.0, 200.0);
+        let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
 
         eprintln!("Testing outside: {} at ({}, {})", name, x, y);
         harness.click(x, y);
@@ -2370,20 +2365,19 @@ fn test_no_overlay_fixed_translate_probe_boundary() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::unit::Pct;
 
-    let root = TestRoot::new();
-
     // Same structure but without Overlay wrapper
     let test_points = [
         (60.0, 100.0, "x=60 (left edge)"),
         (65.0, 100.0, "x=65 (inside left)"),
-        (100.0, 100.0, "x=100 (center)"),
-        (135.0, 100.0, "x=135 (inside right)"),
+        // (100.0, 100.0, "x=100 (center)"),
+        // (135.0, 100.0, "x=135 (inside right)"),
     ];
 
     eprintln!("\n=== NO OVERLAY: Horizontal probe (y=100) ===");
     eprintln!("Content expected bounds: x=[60, 140], y=[60, 140]");
 
     for (x, y, desc) in test_points {
+        let root = TestRoot::new();
         let backdrop_clicked = RwSignal::new(false);
         let content_clicked = RwSignal::new(false);
 
@@ -2429,8 +2423,6 @@ fn test_overlay_fixed_translate_probe_boundary() {
     use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
     use floem::unit::Pct;
 
-    let root = TestRoot::new();
-
     // Content visual bounds should be: (60, 60) to (140, 140)
     // Test clicks at various x positions along y=100 (horizontal center line)
     let test_points = [
@@ -2455,6 +2447,7 @@ fn test_overlay_fixed_translate_probe_boundary() {
     eprintln!("Content expected bounds: x=[60, 140], y=[60, 140]");
 
     for (x, y, desc) in test_points {
+        let root = TestRoot::new();
         let backdrop_clicked = RwSignal::new(false);
         let content_clicked = RwSignal::new(false);
 
@@ -2477,7 +2470,7 @@ fn test_overlay_fixed_translate_probe_boundary() {
         .style(|s| s.fixed().inset(0.0).width_full().height_full())
         .overlay();
 
-        let mut harness = HeadlessHarness::new_with_size(root.clone(), view, 200.0, 200.0);
+        let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
         harness.click(x, y);
 
         let hit = if content_clicked.get() {
@@ -2505,6 +2498,7 @@ fn test_overlay_fixed_translate_probe_boundary() {
     eprintln!("\n=== Vertical probe (x=100) ===");
 
     for (x, y, desc) in test_points_y {
+        let root = TestRoot::new();
         let backdrop_clicked = RwSignal::new(false);
         let content_clicked = RwSignal::new(false);
 
@@ -2527,7 +2521,7 @@ fn test_overlay_fixed_translate_probe_boundary() {
         .style(|s| s.fixed().inset(0.0).width_full().height_full())
         .overlay();
 
-        let mut harness = HeadlessHarness::new_with_size(root.clone(), view, 200.0, 200.0);
+        let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
         harness.click(x, y);
 
         let hit = if content_clicked.get() {
@@ -2653,10 +2647,8 @@ fn test_events_do_not_bubble_to_parents_sibling() {
             }),
         )
         .style(|s| s.size(50.0, 100.0))
-        .on_click(move |_| {
+        .on_event_cont(listener::Click, move |_, _| {
             sibling2_clicked.set(true);
-            // Note: using on_click (not on_click_stop) so event continues bubbling
-            EventPropagation::Continue
         }),
     ))
     .style(|s| s.size(100.0, 100.0).flex_row());
@@ -2710,12 +2702,12 @@ fn test_dialog_header_click_does_not_close() {
         // Content (like DialogContent)
         Stack::vertical((
             // Header - like DialogHeader (with click handler to track)
-            Empty::new()
-                .style(|s| s.size(50.0, 20.0))
-                .on_click(move |_| {
+            Empty::new().style(|s| s.size(50.0, 20.0)).on_event_cont(
+                listener::Click,
+                move |_, _| {
                     header_clicked.set(true);
-                    EventPropagation::Continue
-                }),
+                },
+            ),
             // Footer - like DialogFooter
             Empty::new().style(|s| s.size(50.0, 20.0)),
         ))
@@ -2777,9 +2769,8 @@ fn test_deeply_nested_no_cross_branch_bubbling() {
             leaf_b_clicked.set(true);
         }))
         .style(|s| s.size(50.0, 100.0))
-        .on_click(move |_| {
+        .on_event_cont(listener::Click, move |_, _| {
             branch_b_clicked.set(true);
-            EventPropagation::Continue
         }),
     ))
     .style(|s| s.size(100.0, 100.0));

@@ -5,13 +5,17 @@
 
 use floem_reactive::Scope;
 
-use crate::view::{ParentView, View, ViewId};
+use crate::{
+    style::Style,
+    view::{ParentView, View, ViewId},
+};
 
 /// A declarative overlay that renders content above all other views.
 ///
 /// The overlay content remains in the view tree as a child of this view,
-/// maintaining proper parent-child lifetime semantics. During paint, overlays
-/// escape z-index constraints and are rendered at the root level.
+/// maintaining proper parent-child lifetime semantics. Floem reparents overlay
+/// nodes in the box tree to the window root so they participate in normal
+/// z-index ordering above regular content.
 ///
 /// Visibility can be controlled through styles on the content itself.
 ///
@@ -42,6 +46,7 @@ use crate::view::{ParentView, View, ViewId};
 ///
 /// ## Notes
 /// - The overlay is positioned absolutely at the window level
+/// - Overlay uses a default `z-index: 1` so it sorts above non-overlay content
 /// - You can style the overlay content using the view returned by `Overlay::new(...)`
 /// - The overlay is automatically removed when this view is cleaned up
 pub struct Overlay {
@@ -107,6 +112,10 @@ impl Default for Overlay {
 impl View for Overlay {
     fn id(&self) -> ViewId {
         self.id
+    }
+
+    fn view_style(&self) -> Option<Style> {
+        Some(Style::new().z_index(1))
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {

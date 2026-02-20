@@ -28,7 +28,7 @@ use std::sync::mpsc::Receiver;
 
 use crate::ElementId;
 use crate::view::ViewId;
-use crate::view::stacking::{collect_overlays, collect_stacking_context_items};
+use crate::view::stacking::collect_stacking_context_items;
 use crate::view::{paint_bg, paint_border, paint_outline};
 use crate::window::state::WindowState;
 
@@ -199,11 +199,10 @@ pub(crate) fn collect_visual_recursive(
 }
 
 impl GlobalPaintCx<'_> {
-    /// Build explicit paint order for entire view tree including overlays.
+    /// Build explicit paint order for entire view tree.
     ///
     /// Returns a flat list of VisualIds in paint order (back-to-front, respecting z-index).
     /// Filters out hidden views and views with zero-area bounds.
-    /// Includes overlays sorted by their z-index in the appropriate position.
     ///
     /// # Arguments
     /// * `root` - The root VisualId to start traversal from
@@ -211,11 +210,7 @@ impl GlobalPaintCx<'_> {
     ///
     /// # Returns
     /// Vector of VisualIds in paint order (back-to-front)
-    fn build_paint_order_with_overlays(
-        &self,
-        root: ElementId,
-        box_tree: &crate::BoxTree,
-    ) -> Vec<PaintOrPost> {
+    fn build_paint_order(&self, root: ElementId, box_tree: &crate::BoxTree) -> Vec<PaintOrPost> {
         let mut paint_order = Vec::new();
 
         let dragging_element_id = self
@@ -226,8 +221,6 @@ impl GlobalPaintCx<'_> {
             .and_then(|ad| ad.dragging_preview.as_ref().map(|p| p.element_id));
         // Recursively collect main tree
         collect_visual_recursive(root, box_tree, &mut paint_order, false, dragging_element_id);
-
-        collect_overlays(root, box_tree, &mut paint_order, dragging_element_id);
 
         // Paint drag overlay separately (always on top)
         if let Some(preview) = self
@@ -246,7 +239,7 @@ impl GlobalPaintCx<'_> {
     pub(crate) fn paint_with_traversal(&mut self, root_id: ViewId) {
         let root_element_id = root_id.get_element_id();
         let box_tree = self.window_state.box_tree.borrow();
-        let paint_order = self.build_paint_order_with_overlays(root_element_id, &box_tree);
+        let paint_order = self.build_paint_order(root_element_id, &box_tree);
         drop(box_tree);
 
         for id_or_pop in paint_order {

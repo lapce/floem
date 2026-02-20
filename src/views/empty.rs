@@ -50,4 +50,8 @@ impl View for Empty {
     fn id(&self) -> ViewId {
         self.id
     }
+
+    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
+        "Empty".into()
+    }
 }

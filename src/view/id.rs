@@ -14,7 +14,7 @@ use winit::window::WindowId;
 use ui_events::pointer::PointerId;
 
 use super::stacking::{invalidate_all_overlay_caches, invalidate_stacking_cache};
-use super::{IntoView, StackOffset, VIEW_STORAGE, View, ViewState};
+use super::{IntoView, StackOffset, VIEW_STORAGE, View, ViewState, ViewStorage};
 
 thread_local! {
     /// Views that have scopes but couldn't find a parent scope when added.
@@ -191,6 +191,14 @@ impl ViewId {
         let root_id = self.root();
         VIEW_STORAGE.with_borrow_mut(|s| {
             s.overlays.insert(*self, root_id);
+            if let Some(logical_parent_id) = s.parent.get(*self).and_then(|p| *p) {
+                let this_element_id = s.state(*self).borrow().element_id;
+                let parent_element_id =
+                    box_tree_parent_element_id_for_child(s, logical_parent_id, *self);
+                s.box_tree(*self)
+                    .borrow_mut()
+                    .reparent(this_element_id.0, Some(parent_element_id.0));
+            }
         });
         // Invalidate overlay cache - use invalidate_all since root may not be finalized yet
         invalidate_all_overlay_caches();
@@ -201,6 +209,13 @@ impl ViewId {
     pub(crate) fn unregister_overlay(&self) {
         VIEW_STORAGE.with_borrow_mut(|s| {
             s.overlays.remove(*self);
+            if let Some(logical_parent_id) = s.parent.get(*self).and_then(|p| *p) {
+                let this_element_id = s.state(*self).borrow().element_id;
+                let parent_element_id = s.state(logical_parent_id).borrow().element_id;
+                s.box_tree(*self)
+                    .borrow_mut()
+                    .reparent(this_element_id.0, Some(parent_element_id.0));
+            }
         });
         // Invalidate overlay cache
         invalidate_all_overlay_caches();
@@ -274,14 +289,14 @@ impl ViewId {
     pub fn add_child(&self, child: Box<dyn View>) {
         let child_id = child.id();
         let child_element_id = child_id.get_element_id();
-        let this_element_id = self.get_element_id();
         VIEW_STORAGE.with_borrow_mut(|s| {
             s.children.entry(*self).unwrap().or_default().push(child_id);
             s.parent.insert(child_id, Some(*self));
             s.views.insert(child_id, Rc::new(RefCell::new(child)));
+            let parent_element_id = box_tree_parent_element_id_for_child(s, *self, child_id);
             s.box_tree(child_id)
                 .borrow_mut()
-                .reparent(child_element_id.0, Some(this_element_id.0));
+                .reparent(child_element_id.0, Some(parent_element_id.0));
             let child_taffy_node = s.state(child_id).borrow().layout_id;
             let this_taffy_node = s.state(*self).borrow().layout_id;
             let _ = s
@@ -306,7 +321,6 @@ impl ViewId {
     pub fn append_children(&self, children: Vec<Box<dyn View>>) {
         let child_ids: Vec<ViewId> = children.iter().map(|c| c.id()).collect();
         VIEW_STORAGE.with_borrow_mut(|s| {
-            let this_element_id = s.state(*self).borrow().element_id;
             let this_taffy_node = s.state(*self).borrow().layout_id;
             let child_element_ids: Vec<_> = children
                 .iter()
@@ -320,19 +334,19 @@ impl ViewId {
             let box_tree = s.box_tree(*self);
             let layout_tree = s.taffy.clone();
 
-            let children_list = s.children.entry(*self).unwrap().or_default();
             for ((child, child_element_id), child_taffy_node) in children
                 .into_iter()
                 .zip(child_element_ids)
                 .zip(child_taffy_nodes)
             {
                 let child_id = child.id();
-                children_list.push(child_id);
+                s.children.entry(*self).unwrap().or_default().push(child_id);
                 s.parent.insert(child_id, Some(*self));
                 s.views.insert(child_id, Rc::new(RefCell::new(child)));
+                let parent_element_id = box_tree_parent_element_id_for_child(s, *self, child_id);
                 box_tree
                     .borrow_mut()
-                    .reparent(child_element_id.0, Some(this_element_id.0));
+                    .reparent(child_element_id.0, Some(parent_element_id.0));
                 let _ = layout_tree
                     .borrow_mut()
                     .add_child(this_taffy_node, child_taffy_node);
@@ -350,7 +364,6 @@ impl ViewId {
     /// See also [`Self::set_children_vec`]
     pub fn set_children<const N: usize, V: IntoView>(&self, children: [V; N]) {
         let children_ids: Vec<ViewId> = VIEW_STORAGE.with_borrow_mut(|s| {
-            let this_element_id = s.state(*self).borrow().element_id;
             let mut children_ids = Vec::new();
             let mut children_nodes = Vec::with_capacity(children.len());
             let box_tree = s.box_tree(*self);
@@ -365,10 +378,12 @@ impl ViewId {
                 s.parent.insert(child_view_id, Some(*self));
                 s.views
                     .insert(child_view_id, Rc::new(RefCell::new(child_view.into_any())));
+                let parent_element_id =
+                    box_tree_parent_element_id_for_child(s, *self, child_view_id);
 
                 box_tree
                     .borrow_mut()
-                    .reparent(child_element_id.0, Some(this_element_id.0));
+                    .reparent(child_element_id.0, Some(parent_element_id.0));
             }
             s.children.insert(*self, children_ids.clone());
             let this_taffy_node = s.state(*self).borrow().layout_id;
@@ -399,7 +414,6 @@ impl ViewId {
     /// See also [`Self::set_children`] and [`Self::set_children_vec`]
     pub fn set_children_iter(&self, children: impl Iterator<Item = Box<dyn View>>) {
         let children_ids: Vec<ViewId> = VIEW_STORAGE.with_borrow_mut(|s| {
-            let this_element_id = s.state(*self).borrow().element_id;
             let mut children_ids = Vec::new();
             let mut children_nodes = Vec::new();
             let box_tree = s.box_tree(*self);
@@ -413,9 +427,11 @@ impl ViewId {
                 s.parent.insert(child_view_id, Some(*self));
                 s.views
                     .insert(child_view_id, Rc::new(RefCell::new(child_view)));
+                let parent_element_id =
+                    box_tree_parent_element_id_for_child(s, *self, child_view_id);
                 box_tree
                     .borrow_mut()
-                    .reparent(child_element_id.0, Some(this_element_id.0));
+                    .reparent(child_element_id.0, Some(parent_element_id.0));
             }
             s.children.insert(*self, children_ids.clone());
             let this_taffy_node = s.state(*self).borrow().layout_id;
@@ -446,8 +462,8 @@ impl ViewId {
         VIEW_STORAGE.with_borrow_mut(|s| {
             if s.view_ids.contains_key(*self) {
                 let this_element_id = s.state(*self).borrow().element_id;
-                let parent_element_id = s.state(parent).borrow().element_id;
                 s.parent.insert(*self, Some(parent));
+                let parent_element_id = box_tree_parent_element_id_for_child(s, parent, *self);
                 let box_tree = s.box_tree(*self);
                 box_tree
                     .borrow_mut()
@@ -463,7 +479,6 @@ impl ViewId {
                 return;
             }
 
-            let this_element_id = s.state(*self).borrow().element_id;
             let this_taffy_node = s.state(*self).borrow().layout_id;
 
             let child_element_ids: Vec<_> = children
@@ -479,9 +494,10 @@ impl ViewId {
             let layout_tree = s.taffy.clone();
             for (&child_id, child_element_id) in children.iter().zip(child_element_ids) {
                 s.parent.insert(child_id, Some(*self));
+                let parent_element_id = box_tree_parent_element_id_for_child(s, *self, child_id);
                 box_tree
                     .borrow_mut()
-                    .reparent(child_element_id.0, Some(this_element_id.0));
+                    .reparent(child_element_id.0, Some(parent_element_id.0));
             }
 
             let _ = layout_tree
@@ -1489,6 +1505,22 @@ pub fn process_pending_scope_reparents() {
             }
         });
     });
+}
+
+fn box_tree_parent_element_id_for_child(
+    storage: &mut ViewStorage,
+    logical_parent_id: ViewId,
+    child_id: ViewId,
+) -> ElementId {
+    if storage.overlays.contains_key(child_id) {
+        let root_id = *storage
+            .root
+            .get(child_id)
+            .expect("all view ids are created with a root");
+        storage.state(root_id).borrow().element_id
+    } else {
+        storage.state(logical_parent_id).borrow().element_id
+    }
 }
 
 impl ViewId {

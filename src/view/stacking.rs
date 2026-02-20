@@ -4,13 +4,12 @@
 //! - Every view is implicitly a stacking context
 //! - z-index only competes with siblings (children never escape parent boundaries)
 //! - DOM order is used as a tiebreaker when z-index values are equal
-//! - Use overlays to escape z-index constraints when needed
 
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 use std::{cell::RefCell, rc::Rc};
 
-use crate::{ElementId, paint::PaintOrPost, view::ViewId};
+use crate::ElementId;
 
 /// An item to be painted within a stacking context (direct child of parent).
 #[derive(Debug, Clone)]
@@ -30,12 +29,6 @@ pub(crate) type StackingContextItems = SmallVec<[StackingContextItem; 8]>;
 thread_local! {
     static STACKING_CONTEXT_CACHE: RefCell<FxHashMap<ElementId, Rc<StackingContextItems>>> =
         RefCell::new(FxHashMap::default());
-
-    // Thread-local cache for overlay order per root.
-    // Key: VisualId of the root
-    // Value: Sorted list of overlay ViewIds by z-index
-    static OVERLAY_ORDER_CACHE: RefCell<FxHashMap<ElementId, SmallVec<[ViewId; 4]>>> =
-        RefCell::new(FxHashMap::default());
 }
 
 /// Invalidates the stacking context cache for a view and its parent.
@@ -54,30 +47,26 @@ pub(crate) fn invalidate_stacking_cache(element_id: ElementId) {
     });
 }
 
-/// Invalidates the overlay order cache for a root.
-/// Call this when overlays are registered/unregistered or their z-index changes.
+/// Invalidates stacking/hit-test caches for a specific root when overlay structure changes.
 #[allow(dead_code)] // Kept for targeted cache invalidation when root is known
 pub(crate) fn invalidate_overlay_cache(root_element_id: ElementId) {
-    OVERLAY_ORDER_CACHE.with(|cache| {
-        cache.borrow_mut().remove(&root_element_id);
-    });
+    crate::event::clear_hit_test_cache();
+    invalidate_stacking_cache(root_element_id);
 }
 
-/// Invalidates all overlay caches.
+/// Invalidates all caches affected by overlay structure.
 /// This is a fallback when the root is not known.
 pub(crate) fn invalidate_all_overlay_caches() {
-    OVERLAY_ORDER_CACHE.with(|cache| {
+    STACKING_CONTEXT_CACHE.with(|cache| {
         cache.borrow_mut().clear();
     });
+    crate::event::clear_hit_test_cache();
 }
 
 /// Clears all stacking context caches.
 /// Used during window cleanup to ensure test isolation.
 pub(crate) fn clear_all_stacking_caches() {
     STACKING_CONTEXT_CACHE.with(|cache| {
-        cache.borrow_mut().clear();
-    });
-    OVERLAY_ORDER_CACHE.with(|cache| {
         cache.borrow_mut().clear();
     });
 }
@@ -114,56 +103,23 @@ pub(crate) fn collect_stacking_context_items(
     // Iterate through all child visual rectangles in the box tree
     let box_tree_children = box_tree.children_of(parent_element_id.0);
 
-    // In normal usage, use box tree children (includes all visual rectangles)
-    // In tests, box tree may not be populated, so fall back to view children
-    if !box_tree_children.is_empty() {
-        for (dom_order, &child_box_id) in box_tree_children.iter().enumerate() {
-            // Construct VisualId from box tree node id
-            let child_element_id = box_tree.meta(child_box_id).flatten().unwrap();
+    // use box tree children (includes all visual rectangles)
+    for (dom_order, &child_box_id) in box_tree_children.iter().enumerate() {
+        // Construct VisualId from box tree node id
+        let child_element_id = box_tree.meta(child_box_id).flatten().unwrap();
 
-            // Skip overlays - they're painted at root level
-            let child_view_id = child_element_id.owning_id();
-            if child_view_id.is_overlay() {
-                continue;
-            }
+        // Get z-index from box tree
+        let z_index = box_tree.z_index(child_box_id).unwrap_or(0);
 
-            // Get z-index from box tree
-            let z_index = box_tree.z_index(child_box_id).unwrap_or(0);
-
-            if z_index != 0 {
-                has_non_zero_z = true;
-            }
-
-            items.push(StackingContextItem {
-                element_id: child_element_id,
-                z_index,
-                dom_order,
-            });
+        if z_index != 0 {
+            has_non_zero_z = true;
         }
-    } else {
-        // Fallback for tests: use view children when box tree is not populated
-        let parent_view_id = parent_element_id.owning_id();
-        for (dom_order, child_view_id) in parent_view_id.children().into_iter().enumerate() {
-            // Skip overlays - they're painted at root level
-            if child_view_id.is_overlay() {
-                continue;
-            }
 
-            let child_element_id = child_view_id.get_element_id();
-
-            // In fallback mode (tests), z-index should be 0 (box tree not populated)
-            let z_index = box_tree.z_index(child_element_id.0).unwrap_or(0);
-
-            if z_index != 0 {
-                has_non_zero_z = true;
-            }
-
-            items.push(StackingContextItem {
-                element_id: child_element_id,
-                z_index,
-                dom_order,
-            });
-        }
+        items.push(StackingContextItem {
+            element_id: child_element_id,
+            z_index,
+            dom_order,
+        });
     }
 
     // Sort by z-index, then DOM order
@@ -184,61 +140,6 @@ pub(crate) fn collect_stacking_context_items(
     });
 
     items
-}
-
-/// Collects all overlay ViewIds that belong to the given root.
-/// Overlays are painted at root level, above all other content.
-/// Returns overlays sorted by z-index (lower z-index painted first).
-///
-/// Results are cached. Call `invalidate_overlay_cache` when overlays are
-/// registered/unregistered or their z-index changes.
-pub(crate) fn collect_overlays(
-    root_element_id: ElementId,
-    box_tree: &crate::BoxTree,
-    paint_order: &mut Vec<PaintOrPost>,
-    skip_element_id: Option<ElementId>,
-) {
-    use super::VIEW_STORAGE;
-
-    let cached = OVERLAY_ORDER_CACHE.with(|cache| cache.borrow().get(&root_element_id).cloned());
-
-    let overlays = if let Some(overlays) = cached {
-        overlays
-    } else {
-        let root_id = root_element_id.owning_id();
-        let mut overlays: SmallVec<[(ViewId, i32); 4]> = VIEW_STORAGE.with_borrow(|s| {
-            s.overlays
-                .iter()
-                .filter_map(|(overlay_id, &stored_root)| {
-                    if stored_root != root_id {
-                        return None;
-                    }
-                    let state = s.states.get(overlay_id)?;
-                    let state_borrow = state.borrow();
-                    let element_id = state_borrow.element_id;
-                    let z_index = box_tree.z_index(element_id.0).unwrap_or(0);
-                    Some((overlay_id, z_index))
-                })
-                .collect()
-        });
-        overlays.sort_by_key(|(_, z)| *z);
-        let result: SmallVec<[ViewId; 4]> = overlays.into_iter().map(|(id, _)| id).collect();
-        OVERLAY_ORDER_CACHE.with(|cache| {
-            cache.borrow_mut().insert(root_element_id, result.clone());
-        });
-        result
-    };
-
-    for overlay_id in overlays {
-        let element_id = overlay_id.get_element_id();
-        crate::paint::collect_visual_recursive(
-            element_id,
-            box_tree,
-            paint_order,
-            false,
-            skip_element_id,
-        );
-    }
 }
 
 // #[cfg(test)]

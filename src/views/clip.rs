@@ -1,8 +1,10 @@
 #![deny(missing_docs)]
 
+use taffy::Overflow;
+
 use crate::{
-    view::ViewId,
-    view::{IntoView, View},
+    style::Style,
+    view::{IntoView, View, ViewId},
 };
 
 /// A wrapper around a child View that clips painting so the child does not show outside of the viewport.
@@ -42,15 +44,16 @@ impl View for Clip {
         self.id
     }
 
-    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
-        "Clip".into()
+    fn view_style(&self) -> Option<crate::style::Style> {
+        Some(
+            Style::new()
+                .overflow_x(Overflow::Clip)
+                .overflow_y(Overflow::Clip),
+        )
     }
 
-    fn paint(&mut self, _cx: &mut crate::context::PaintCx) {
-        // Clipping is now handled by the box tree and applied automatically
-        // during traversal. The clip view's main purpose is to set clip style
-        // which affects layout/box tree generation.
-        // No explicit painting needed - children are painted by traversal.
+    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
+        "Clip".into()
     }
 }
 
