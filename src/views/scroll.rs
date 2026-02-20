@@ -53,6 +53,11 @@ enum ScrollState {
     ScrollToView(ViewId),
 }
 
+struct ScrollEventResult {
+    propagation: EventPropagation,
+    new_offset: Option<Vec2>,
+}
+
 trait Vec2Ext {
     /// Returns a new Vec2 with the maximum x and y components from self and other
     fn max_by_component(self, other: Self) -> Self;
@@ -104,11 +109,10 @@ impl ScrollHandle {
     fn event(
         &mut self,
         cx: &mut EventCx,
-        scroll_offset: &mut Vec2,
         is_scrolling_or_interacting: &mut bool,
         parent_id: ViewId,
         child_id: ViewId,
-    ) -> EventPropagation {
+    ) -> ScrollEventResult {
         match &cx.event {
             Event::Pointer(PointerEvent::Down(e)) => {
                 if let Some(pointer_id) = e.pointer.pointer_id
@@ -155,10 +159,14 @@ impl ScrollHandle {
                 let max_scroll = (content_size_vec.to_vec2() - viewport_size_vec.to_vec2())
                     .max_by_component(Vec2::ZERO);
 
-                *scroll_offset = new_offset
+                let new_offset = new_offset
                     .max_by_component(Vec2::ZERO)
                     .min_by_component(max_scroll);
-                parent_id.set_child_translation(*scroll_offset);
+
+                return ScrollEventResult {
+                    propagation: EventPropagation::Stop,
+                    new_offset: Some(new_offset),
+                };
             }
 
             Event::Pointer(PointerEvent::Enter(_)) => {
@@ -172,10 +180,16 @@ impl ScrollHandle {
                 }
             }
             _ => {
-                return EventPropagation::Continue;
+                return ScrollEventResult {
+                    propagation: EventPropagation::Continue,
+                    new_offset: None,
+                };
             }
         }
-        EventPropagation::Stop
+        ScrollEventResult {
+            propagation: EventPropagation::Stop,
+            new_offset: None,
+        }
     }
 
     fn set_position(
@@ -323,11 +337,10 @@ impl ScrollTrack {
     fn event(
         &mut self,
         cx: &mut EventCx,
-        scroll_offset: &mut Vec2,
         is_scrolling_or_interacting: &mut bool,
         parent_id: ViewId,
         child_id: ViewId,
-    ) -> EventPropagation {
+    ) -> ScrollEventResult {
         match &cx.event {
             Event::Pointer(PointerEvent::Down(e)) => {
                 if e.state.buttons.contains(PointerButton::Primary) {
@@ -364,11 +377,15 @@ impl ScrollTrack {
 
                 let new_offset = (target_percent * max_scroll).clamp(0.0, max_scroll);
 
-                scroll_offset.set_coord(self.axis, new_offset);
-                parent_id.set_child_translation(*scroll_offset);
-
                 *is_scrolling_or_interacting = true;
                 cx.window_state.request_paint(parent_id);
+
+                let mut offset = parent_id.get_child_translation();
+                offset.set_coord(self.axis, new_offset);
+                return ScrollEventResult {
+                    propagation: EventPropagation::Stop,
+                    new_offset: Some(offset),
+                };
             }
             Event::Pointer(PointerEvent::Enter(_)) => {
                 *is_scrolling_or_interacting = true;
@@ -381,10 +398,16 @@ impl ScrollTrack {
                 parent_id.request_paint();
             }
             _ => {
-                return EventPropagation::Continue;
+                return ScrollEventResult {
+                    propagation: EventPropagation::Continue,
+                    new_offset: None,
+                };
             }
         }
-        EventPropagation::Stop
+        ScrollEventResult {
+            propagation: EventPropagation::Stop,
+            new_offset: None,
+        }
     }
 
     fn set_position(
@@ -670,10 +693,12 @@ impl Scroll {
         // Calculate max scroll based on overflow settings
         let mut max_scroll =
             (content_size.to_vec2() - viewport_size.to_vec2()).max_by_component(Vec2::ZERO);
+        dbg!(max_scroll, content_size, viewport_size);
 
         // Zero out scroll in axes that aren't scrollable
         let can_scroll_x = matches!(self.scroll_style.overflow_x(), taffy::Overflow::Scroll);
         let can_scroll_y = matches!(self.scroll_style.overflow_y(), taffy::Overflow::Scroll);
+        dbg!(can_scroll_x, can_scroll_y, self.scroll_offset);
 
         let mut new_scroll_offset = self.scroll_offset + delta;
         if !can_scroll_x {
@@ -920,40 +945,72 @@ impl View for Scroll {
         // Handle events targeted at our visual IDs (handles and tracks)
         if cx.phase == Phase::Target {
             if cx.target == self.v_handle.element_id {
-                return self.v_handle.event(
+                let result = self.v_handle.event(
                     cx,
-                    &mut self.scroll_offset,
                     &mut self.is_scrolling_or_interacting,
                     self.id,
                     self.child,
                 );
+                if let Some(new_offset) = result.new_offset {
+                    if self
+                        .apply_scroll_delta(new_offset - self.scroll_offset)
+                        .is_some()
+                    {
+                        cx.window_state.request_paint(self.id);
+                    }
+                }
+                return result.propagation;
             }
             if cx.target == self.h_handle.element_id {
-                return self.h_handle.event(
+                let result = self.h_handle.event(
                     cx,
-                    &mut self.scroll_offset,
                     &mut self.is_scrolling_or_interacting,
                     self.id,
                     self.child,
                 );
+                if let Some(new_offset) = result.new_offset {
+                    if self
+                        .apply_scroll_delta(new_offset - self.scroll_offset)
+                        .is_some()
+                    {
+                        cx.window_state.request_paint(self.id);
+                    }
+                }
+                return result.propagation;
             }
             if cx.target == self.v_track.element_id {
-                return self.v_track.event(
+                let result = self.v_track.event(
                     cx,
-                    &mut self.scroll_offset,
                     &mut self.is_scrolling_or_interacting,
                     self.id,
                     self.child,
                 );
+                if let Some(new_offset) = result.new_offset {
+                    if self
+                        .apply_scroll_delta(new_offset - self.scroll_offset)
+                        .is_some()
+                    {
+                        cx.window_state.request_paint(self.id);
+                    }
+                }
+                return result.propagation;
             }
             if cx.target == self.h_track.element_id {
-                return self.h_track.event(
+                let result = self.h_track.event(
                     cx,
-                    &mut self.scroll_offset,
                     &mut self.is_scrolling_or_interacting,
                     self.id,
                     self.child,
                 );
+                if let Some(new_offset) = result.new_offset {
+                    if self
+                        .apply_scroll_delta(new_offset - self.scroll_offset)
+                        .is_some()
+                    {
+                        cx.window_state.request_paint(self.id);
+                    }
+                }
+                return result.propagation;
             }
         }
 

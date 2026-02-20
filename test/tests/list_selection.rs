@@ -166,10 +166,9 @@ fn test_list_default_theme_selected_style() {
     let _harness = HeadlessHarness::new_with_size(root, list_view, 200.0, 120.0);
 
     // Get the list item IDs (the Item wrappers created by the list)
-    // The structure is: List -> Stack -> [Item, Item, Item]
+    // The structure is: List -> [Item, Item, Item]
     // Each Item has a child which is the user's view wrapped with ListItemClass
-    let stack_id = list_id.children()[0];
-    let item_ids: Vec<_> = stack_id.children();
+    let item_ids: Vec<_> = list_id.children();
     assert_eq!(item_ids.len(), 3, "Should have 3 list items");
 
     // List starts with index 0 selected by default.

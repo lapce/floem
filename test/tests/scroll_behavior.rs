@@ -218,7 +218,7 @@ fn test_scroll_clamped_at_right() {
     let root = TestRoot::new();
     let scroll_tracker = ScrollTracker::new();
 
-    let content = Empty::new().style(|s| s.size(400.0, 100.0));
+    let content = Empty::new().style(|s| s.min_size(400.0, 100.0));
     let scroll_view = scroll_tracker.track(Scroll::new(content));
 
     let mut harness = HeadlessHarness::new_with_size(root, scroll_view, 100.0, 100.0);
