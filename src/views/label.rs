@@ -775,13 +775,13 @@ impl View for Label {
             return;
         }
 
-        let (Some(parent_node), Some(text_node)) = (self.layout_node, self.text_node) else {
+        let (Some(this_node), Some(text_node)) = (self.layout_node, self.text_node) else {
             return;
         };
 
         let text_loc = self
             .id
-            .get_content_rect_relative(text_node, parent_node)
+            .get_content_rect_relative(text_node, this_node)
             .unwrap_or_default()
             .origin();
 

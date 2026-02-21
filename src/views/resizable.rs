@@ -74,6 +74,7 @@ pub(crate) fn create_resizable(children: Vec<Box<dyn View>>) -> ResizableStack {
 }
 
 /// Creates a [ResizableStack] from a group of `Views`.
+#[deprecated(note = "use ResizableStack::new")]
 pub fn resizable<VT: ViewTuple + 'static>(children: VT) -> ResizableStack {
     create_resizable(children.into_views())
 }

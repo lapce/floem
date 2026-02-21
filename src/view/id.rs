@@ -742,12 +742,16 @@ impl ViewId {
         }
 
         // Build the content rect relative to the parent
-        Some(Rect {
-            x0: f64::from(child_layout.content_box_x()),
-            y0: f64::from(child_layout.content_box_y()),
-            x1: f64::from(child_layout.content_box_x() + child_layout.content_box_width()),
-            y1: f64::from(child_layout.content_box_y() + child_layout.content_box_height()),
-        })
+        Some(Rect::from_origin_size(
+            (
+                f64::from(child_layout.content_box_x()),
+                f64::from(child_layout.content_box_y()),
+            ),
+            (
+                f64::from(child_layout.content_box_width()),
+                f64::from(child_layout.content_box_height()),
+            ),
+        ))
     }
 
     /// Set a translation that will affect children.

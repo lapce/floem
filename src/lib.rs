@@ -346,6 +346,7 @@ pub use style::{theme, unit};
 
 pub mod prelude {
     pub use crate::Renderer;
+    pub use crate::event::listener as el;
     pub use crate::event::listener;
     pub use crate::event::listener::EventListenerTrait;
     pub use crate::unit::{DurationUnitExt, UnitExt};

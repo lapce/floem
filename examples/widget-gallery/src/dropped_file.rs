@@ -1,5 +1,6 @@
 use crate::form::{form, form_item};
 use floem::{
+    action::inspect,
     dropped_file::FileDragDropped,
     prelude::{palette::css, *},
     theme::HoverTargetClass,
@@ -14,17 +15,18 @@ pub fn dropped_file_view() -> impl IntoView {
         .style(|s| {
             s.size(200.0, 50.0)
                 .flex_col()
+                .flex_shrink(1.)
                 .hover(|s| s.color(css::PINK))
                 .items_center()
                 .justify_center()
         })
-        .on_key_up(
-            Key::Named(NamedKey::F11),
-            |m| m.is_empty(),
-            move |_, _| floem::action::inspect(),
-        )
+        .on_event_stop(el::KeyUp, |_, KeyboardEvent { key, .. }| {
+            if *key == Key::Named(NamedKey::F11) {
+                inspect();
+            }
+        })
         .on_event_stop(
-            listener::FileDragDrop,
+            el::FileDragDrop,
             move |_cx, e @ FileDragDropped { paths, .. }| {
                 println!("DroppedFile {e:?}");
                 filename.set(format!(

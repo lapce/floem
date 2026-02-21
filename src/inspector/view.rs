@@ -16,7 +16,7 @@ use crate::{
     unit::PxPctAuto,
     views::{
         Button, CheckboxClass, ContainerExt, Decorators, Label, ListClass, ListItemClass, Scroll,
-        ScrollExt, Stack, TabSelectorClass, TooltipExt, resizable,
+        ScrollExt, Stack, TabSelectorClass, TooltipExt, resizable::ResizableStack,
     },
     window::WindowConfig,
 };
@@ -380,7 +380,7 @@ fn capture_view(
 
     let left = Stack::vertical((
         header("Captured Window"),
-        resizable::resizable((Scroll::new(image).style(|s| s.max_height_pct(60.0)), tabs))
+        ResizableStack::new((Scroll::new(image).style(|s| s.max_height_pct(60.0)), tabs))
             .custom_sizes(move || vec![(0, size.height.min(500.))])
             .style(|s| s.size_full().flex_col()),
     ));
@@ -454,7 +454,7 @@ fn capture_view(
 
     let tree = tree.style(|s| s.height_full().min_width(0).flex_basis(0).flex_grow(1.0));
 
-    resizable::resizable((left, tree))
+    ResizableStack::new((left, tree))
         .style(|s| s.size_full().max_width_full())
         .custom_sizes(move || vec![(0, size.width.min(800.))])
 }

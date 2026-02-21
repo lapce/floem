@@ -727,7 +727,6 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
                     .cursor(CursorStyle::Pointer)
                     .background(t.bg_elevated())
                     .outline(3)
-                    // TODO: implement file hover in event handling
                     .file_hover(|s| s.background(t.bg_overlay()).outline_color(t.primary()))
             })
             .transition(Background, Transition::linear(100.millis()))
