@@ -157,35 +157,29 @@ pub(crate) fn collect_visual_recursive(
     is_drag_preview: bool,
     skip_element_id: Option<ElementId>,
 ) {
-    // CRITICAL: Query box tree directly, NOT element_id.view_id()!
-    // Multiple VisualIds can map to the same ViewId (e.g., scroll view scrollbars).
+    // Local closure instead of nested fn
+    let should_paint = |element_id: ElementId| {
+        if is_drag_preview {
+            return true;
+        }
 
+        box_tree
+            .world_bounds(element_id.0)
+            .map_or(true, |bounds| bounds.area() != 0.0)
+    };
+
+    // Skip specific element when not drag preview
     if !is_drag_preview && Some(element_id) == skip_element_id {
         return;
     }
 
-    // We must check visibility and bounds from the box tree for THIS specific visual node.
-    // Skip invisible nodes (check NodeFlags from box tree)
-    if let Some(flags) = box_tree.flags(element_id.0) {
-        if !flags.contains(NodeFlags::VISIBLE) {
-            return;
-        }
+    if should_paint(element_id) {
+        paint_order.push(PaintOrPost::Paint(element_id));
     }
-
-    // Skip zero-area nodes (optimization - check bounds from box tree)
-    if let Ok(bounds) = box_tree.world_bounds(element_id.0) {
-        if !is_drag_preview && bounds.area() == 0. {
-            return;
-        }
-    }
-
-    // Add this visual node to paint order
-    paint_order.push(PaintOrPost::Paint(element_id));
 
     // Get children from box tree (sorted by z-index)
     let items = collect_stacking_context_items(element_id, box_tree);
 
-    // Recursively collect children (painting uses VisualIds from box tree)
     for item in items.iter() {
         collect_visual_recursive(
             item.element_id,
@@ -195,6 +189,7 @@ pub(crate) fn collect_visual_recursive(
             skip_element_id,
         );
     }
+
     paint_order.push(PaintOrPost::Post(element_id));
 }
 

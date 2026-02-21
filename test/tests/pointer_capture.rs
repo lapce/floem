@@ -8,10 +8,9 @@
 //! - Two-phase capture (pending → active) model
 
 use floem::event::{
-    Event, PointerId,
+    PointerId,
     listener::{PointerDown, PointerMove, PointerUp},
 };
-use floem::ui_events::pointer::PointerEvent;
 use floem_test::prelude::*;
 use serial_test::serial;
 
@@ -27,13 +26,12 @@ fn test_set_pointer_capture_fires_got_capture_event() {
     let tracker = PointerCaptureTracker::new();
 
     let base = Empty::new().style(|s| s.size(100.0, 100.0));
-    let target_id = base.view_id();
     let target = tracker.track("target", base);
 
     // Add a handler that sets capture on pointer down
-    let view = target.on_event(PointerDown, move |_cx, e| {
+    let view = target.on_event(PointerDown, move |cx, e| {
         if let Some(pointer_id) = e.pointer.pointer_id {
-            target_id.set_pointer_capture(pointer_id);
+            cx.request_pointer_capture(pointer_id);
         }
         floem::event::EventPropagation::Continue
     });
@@ -70,15 +68,14 @@ fn test_pointer_capture_routes_events_to_captured_view() {
     let tracker = PointerCaptureTracker::new();
 
     let left_base = Empty::new().style(|s| s.size(50.0, 100.0));
-    let left_id = left_base.view_id();
     let left = tracker.track("left", left_base);
 
     let right = tracker.track("right", Empty::new().style(|s| s.size(50.0, 100.0)));
 
     // Left view captures pointer on down
-    let left_with_capture = left.on_event(PointerDown, move |_cx, e| {
+    let left_with_capture = left.on_event(PointerDown, move |cx, e| {
         if let Some(pointer_id) = e.pointer.pointer_id {
-            left_id.set_pointer_capture(pointer_id);
+            cx.request_pointer_capture(pointer_id);
         }
         floem::event::EventPropagation::Continue
     });
@@ -111,12 +108,11 @@ fn test_pointer_capture_auto_released_on_pointer_up() {
     let tracker = PointerCaptureTracker::new();
 
     let base = Empty::new().style(|s| s.size(100.0, 100.0));
-    let target_id = base.view_id();
     let target = tracker.track("target", base);
 
-    let view = target.on_event(PointerDown, move |_cx, e| {
+    let view = target.on_event(PointerDown, move |cx, e| {
         if let Some(pointer_id) = e.pointer.pointer_id {
-            target_id.set_pointer_capture(pointer_id);
+            cx.request_pointer_capture(pointer_id);
         }
         floem::event::EventPropagation::Continue
     });
@@ -164,9 +160,9 @@ fn test_release_pointer_capture_fires_lost_capture_event() {
     // Set capture on pointer down, release on first move
     let captured = std::cell::Cell::new(false);
     let view = target
-        .on_event(PointerDown, move |_cx, e| {
+        .on_event(PointerDown, move |cx, e| {
             if let Some(pointer_id) = e.pointer.pointer_id {
-                target_id.set_pointer_capture(pointer_id);
+                cx.request_pointer_capture(pointer_id);
             }
             floem::event::EventPropagation::Continue
         })
@@ -221,25 +217,23 @@ fn test_capture_transfer_fires_lost_then_got() {
     let tracker = PointerCaptureTracker::new();
 
     let base1 = Empty::new().style(|s| s.size(50.0, 100.0));
-    let view1_id = base1.view_id();
     let view1 = tracker.track("view1", base1);
 
     let base2 = Empty::new().style(|s| s.size(50.0, 100.0));
-    let view2_id = base2.view_id();
     let view2 = tracker.track("view2", base2);
 
     // view1 captures on down
-    let view1_with_capture = view1.on_event(PointerDown, move |_cx, e| {
+    let view1_with_capture = view1.on_event(PointerDown, move |cx, e| {
         if let Some(pointer_id) = e.pointer.pointer_id {
-            view1_id.set_pointer_capture(pointer_id);
+            cx.request_pointer_capture(pointer_id);
         }
         floem::event::EventPropagation::Continue
     });
 
     // view2 steals capture on up
-    let view2_with_capture = view2.on_event(PointerUp, move |_cx, e| {
+    let view2_with_capture = view2.on_event(PointerUp, move |cx, e| {
         if let Some(pointer_id) = e.pointer.pointer_id {
-            view2_id.set_pointer_capture(pointer_id);
+            cx.request_pointer_capture(pointer_id);
         }
         floem::event::EventPropagation::Continue
     });
@@ -292,14 +286,13 @@ fn test_capture_prevents_sibling_from_receiving_events() {
     let tracker = PointerCaptureTracker::new();
 
     let left_base = Empty::new().style(|s| s.size(50.0, 100.0));
-    let left_id = left_base.view_id();
     let left = tracker.track("left", left_base);
 
     let right = tracker.track("right", Empty::new().style(|s| s.size(50.0, 100.0)));
 
-    let left_with_capture = left.on_event(PointerDown, move |_cx, e| {
+    let left_with_capture = left.on_event(PointerDown, move |cx, e| {
         if let Some(pointer_id) = e.pointer.pointer_id {
-            left_id.set_pointer_capture(pointer_id);
+            cx.request_pointer_capture(pointer_id);
         }
         floem::event::EventPropagation::Continue
     });
@@ -373,12 +366,11 @@ fn test_multiple_pointer_down_up_cycles() {
     let tracker = PointerCaptureTracker::new();
 
     let base = Empty::new().style(|s| s.size(100.0, 100.0));
-    let target_id = base.view_id();
     let target = tracker.track("target", base);
 
-    let view = target.on_event(PointerDown, move |_cx, e| {
+    let view = target.on_event(PointerDown, move |cx, e| {
         if let Some(pointer_id) = e.pointer.pointer_id {
-            target_id.set_pointer_capture(pointer_id);
+            cx.request_pointer_capture(pointer_id);
         }
         floem::event::EventPropagation::Continue
     });
@@ -517,16 +509,15 @@ fn test_explicit_capture_overrides_implicit_touch_capture() {
     let tracker = PointerCaptureTracker::new();
 
     let left_base = Empty::new().style(|s| s.size(50.0, 100.0));
-    let left_id = left_base.view_id();
     let left = tracker.track("left", left_base);
 
     let right = tracker.track("right", Empty::new().style(|s| s.size(50.0, 100.0)));
 
     // Left view sets explicit capture on touch down
-    let left_with_capture = left.on_event(PointerDown, move |_cx, e| {
+    let left_with_capture = left.on_event(PointerDown, move |cx, e| {
         if let Some(pointer_id) = e.pointer.pointer_id {
             // Explicit capture to left view
-            left_id.set_pointer_capture(pointer_id);
+            cx.request_pointer_capture(pointer_id);
         }
         floem::event::EventPropagation::Continue
     });
@@ -569,13 +560,12 @@ fn test_handler_sees_capture_during_pointer_up() {
     let saw_capture_during_up_clone = saw_capture_during_up.clone();
 
     let base = Empty::new().style(|s| s.size(100.0, 100.0));
-    let target_id = base.view_id();
     let target = tracker.track("target", base);
 
     let view = target
-        .on_event(PointerDown, move |_cx, e| {
+        .on_event(PointerDown, move |cx, e| {
             if let Some(pointer_id) = e.pointer.pointer_id {
-                target_id.set_pointer_capture(pointer_id);
+                cx.request_pointer_capture(pointer_id);
             }
             floem::event::EventPropagation::Continue
         })

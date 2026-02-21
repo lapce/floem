@@ -693,12 +693,10 @@ impl Scroll {
         // Calculate max scroll based on overflow settings
         let mut max_scroll =
             (content_size.to_vec2() - viewport_size.to_vec2()).max_by_component(Vec2::ZERO);
-        dbg!(max_scroll, content_size, viewport_size);
 
         // Zero out scroll in axes that aren't scrollable
         let can_scroll_x = matches!(self.scroll_style.overflow_x(), taffy::Overflow::Scroll);
         let can_scroll_y = matches!(self.scroll_style.overflow_y(), taffy::Overflow::Scroll);
-        dbg!(can_scroll_x, can_scroll_y, self.scroll_offset);
 
         let mut new_scroll_offset = self.scroll_offset + delta;
         if !can_scroll_x {

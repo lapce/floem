@@ -6,7 +6,7 @@ use peniko::kurbo::{Affine, Point};
 use smallvec::SmallVec;
 use ui_events::{
     keyboard::{Key, KeyState, KeyboardEvent, Modifiers, NamedKey},
-    pointer::{PointerButton, PointerButtonEvent, PointerEvent, PointerId, PointerInfo},
+    pointer::{PointerButton, PointerButtonEvent, PointerEvent, PointerId, PointerInfo, PointerType},
 };
 use understory_box_tree::{NodeFlags, QueryError};
 use understory_event_state::{click::ClickResult, hover::HoverEvent};
@@ -1513,6 +1513,17 @@ impl RouteCx<'_, '_> {
                     point,
                     Instant::now().duration_since(*START_TIME).as_millis() as u64,
                 );
+
+                // Touch pointers get implicit capture on pointer down.
+                // An explicit capture requested by handlers in the same dispatch can still
+                // override this pending target before capture is processed.
+                if pointer.pointer_type == PointerType::Touch {
+                    if let Some(pointer_id) = pointer.pointer_id {
+                        if let Some(target) = path.last().copied() {
+                            self.gcx.window_state.set_pointer_capture(pointer_id, target);
+                        }
+                    }
+                }
             }
             PointerEvent::Up(pbe @ PointerButtonEvent { button, state, .. }) => {
                 self.handle_click_events(

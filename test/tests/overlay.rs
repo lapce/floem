@@ -679,8 +679,6 @@ fn test_overlay_escapes_parent_clip() {
 
 #[test]
 #[serial]
-#[should_panic]
-// Floem assumes all views create a stacking context and cannot escape. if we allow escaping in the future, this test would be expected to pass
 fn test_overlay_painted_outside_parent_clip() {
     // Test that an overlay is painted even when it extends outside
     // its parent's clipping region.

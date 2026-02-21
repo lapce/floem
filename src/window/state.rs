@@ -682,36 +682,47 @@ impl WindowState {
     // Box Tree Update System
     // =========================================================================
     //
-    // The box tree update system has three separate operations:
+    // The box tree update system is intentionally split into two phases:
+    // 1) local-space sync (cheap to batch)
+    // 2) commit-time world-space resolution (global/cross-parent corrections)
     //
     // 1. update_box_tree_from_layout() - Full tree walk after layout
     //    - Called automatically after layout completes
-    //    - Updates all box tree nodes from layout tree and view state
+    //    - Writes local bounds/clip/local transforms for every view
+    //    - Uses logical layout parent semantics (taffy/view tree)
     //
     // 2. update_box_tree_for_view(view_id) - Single view update (non-recursive)
     //    - Used when a specific view changes (transform, scroll offset, etc.)
     //    - More efficient than full tree walk
-    //    - Children inherit changes through box tree's hierarchical system
+    //    - Also writes only local-space properties
     //
     // 3. commit_box_tree() - Commit and handle damage
-    //    - Called after any update operation
+    //    - Must run after any local update operation
+    //    - Applies commit-time corrections that require global context:
+    //      - overlay logical-parent world offset remap
+    //      - fixed-position viewport placement
     //    - Computes world transforms and damage regions
     //    - Updates hover state if pointer is in damaged area
     //
-    // The commit happens separately from updates so multiple updates can be
-    // batched before committing. The `needs_box_tree_commit` flag tracks
-    // whether a commit is needed.
+    // Keeping commit separate lets us coalesce many local updates into one global
+    // world-space resolve. The `needs_box_tree_commit` flag tracks whether commit
+    // is still required.
 
     /// Update the box tree from the layout tree by walking the entire tree.
     ///
-    /// This walks the layout tree recursively and updates all box tree nodes with:
-    /// - Local bounds from layout
-    /// - Local transforms from view state
-    /// - Scroll offsets
-    /// - Clip rectangles
+    /// This pass performs a full local-space sync from layout/view state into the box tree.
+    /// It recursively updates every view's:
+    /// - local bounds (from layout size)
+    /// - local clip (from style transform props)
+    /// - local transform (layout position + parent scroll + view/style transforms)
     ///
-    /// This should be called after layout completes to sync all box tree properties.
-    /// The commit will happen separately when `commit_box_tree()` is called.
+    /// Important: this does **not** finalize world-space behavior for features that
+    /// intentionally diverge from logical parentage (e.g. overlays reparented to root)
+    /// or viewport anchoring (fixed-position). Those are resolved in `commit_box_tree()`
+    /// via `apply_overlay_parent_transforms()` and `apply_fixed_positioning_transforms()`.
+    ///
+    /// Call this after layout completes; then run `commit_box_tree()` to finalize world
+    /// transforms, damage, and hit-testing consistency.
     pub fn update_box_tree_from_layout(&mut self) {
         let box_tree = self.box_tree.clone();
         let layout_tree = self.layout_tree.clone();
@@ -786,8 +797,28 @@ impl WindowState {
         }
     }
 
-    /// Commit the box tree changes and handle damage regions.
-    /// This should be called after updating the box tree (either from layout or for specific views).
+    /// Finalize box-tree state for this frame and produce damage.
+    ///
+    /// `commit_box_tree` is the world-space resolution boundary of the update pipeline.
+    /// After local-space updates (`update_box_tree_from_layout` and/or
+    /// `update_box_tree_for_view`), this method applies global adjustments and then
+    /// commits the underlying box tree so transforms, clipping, and spatial indexing are
+    /// consistent for paint + hit testing.
+    ///
+    /// Order of operations:
+    /// 1. Apply drag-preview world translation (if an active drag preview exists)
+    /// 2. Apply overlay parent-space remap (`apply_overlay_parent_transforms`)
+    /// 3. Apply fixed-position viewport placement (`apply_fixed_positioning_transforms`)
+    /// 4. Commit the box tree, producing dirty/damage regions
+    /// 5. If pointer lies in damaged region, clear hit-test cache and refresh under-cursor routing
+    ///
+    /// Why this happens at commit time:
+    /// - Overlay and fixed positioning depend on global/world context, not only local layout.
+    /// - Separating local updates from commit allows batching many updates into one world
+    ///   resolve + one damage computation.
+    ///
+    /// Call this after any box-tree local update before relying on paint order, hit-test
+    /// correctness, or damage-driven cursor/hover updates.
     pub fn commit_box_tree(&mut self) {
         if let Some(dragging) = &mut self.drag_tracker.active_drag
             && let Some(dragging_preview) = dragging.dragging_preview.clone()
@@ -839,6 +870,7 @@ impl WindowState {
             }
         }
 
+        self.apply_overlay_parent_transforms();
         self.apply_fixed_positioning_transforms();
 
         let damage = self.box_tree.borrow_mut().commit();
@@ -858,6 +890,93 @@ impl WindowState {
         self.needs_box_tree_commit = false;
     }
 
+    /// Reconcile overlay local transforms after box-tree reparenting.
+    ///
+    /// Overlays are kept in the logical view/layout tree under their declarative parent,
+    /// but in the box tree they are reparented under the window root so they can stack
+    /// above regular content. That creates a parent-space mismatch:
+    /// - layout computes overlay `local_transform` relative to the logical parent
+    /// - box tree interprets `local_transform` relative to the root
+    ///
+    /// This method remaps each overlay transform into root-child space at commit time:
+    /// 1. Build the overlay's base local transform from layout + style/scroll (logical-parent space)
+    /// 2. Compute the logical parent's world transform from the box tree
+    /// 3. Set overlay local transform to `parent_world * base_local_transform`
+    ///
+    /// Running this in `commit_box_tree` keeps behavior correct for both full-tree updates
+    /// (`update_box_tree_from_layout`) and targeted updates (`update_box_tree_for_view`).
+    fn apply_overlay_parent_transforms(&self) {
+        let overlay_data: SmallVec<[(ElementId, ElementId, Affine); 16]> = VIEW_STORAGE
+            .with_borrow(|s| {
+                s.overlays
+                    .iter()
+                    .filter_map(|(overlay_id, &overlay_root)| {
+                        if overlay_root != self.root_view_id {
+                            return None;
+                        }
+                        Some(overlay_id)
+                    })
+                    .filter_map(|overlay_id| {
+                        let overlay_state = s.states.get(overlay_id)?;
+                        let overlay_state_borrow = overlay_state.borrow();
+                        let overlay_element_id = overlay_state_borrow.element_id;
+                        let overlay_layout_id = overlay_state_borrow.layout_id;
+                        let overlay_transform = overlay_state_borrow.transform;
+                        let style_transform_props =
+                            overlay_state_borrow.view_transform_props.clone();
+                        drop(overlay_state_borrow);
+
+                        let logical_parent_id = s.parent.get(overlay_id).and_then(|p| *p)?;
+                        let parent_state = s.states.get(logical_parent_id)?;
+                        let parent_state_borrow = parent_state.borrow();
+                        let logical_parent_element_id = parent_state_borrow.element_id;
+                        let parent_scroll = parent_state_borrow.child_translation;
+                        drop(parent_state_borrow);
+
+                        let layout = self
+                            .layout_tree
+                            .borrow()
+                            .layout(overlay_layout_id)
+                            .ok()
+                            .copied()?;
+                        let size = Size::new(layout.size.width as f64, layout.size.height as f64);
+                        let local_pos =
+                            Point::new(layout.location.x as f64, layout.location.y as f64);
+
+                        let style_transform = style_transform_props.affine(size);
+                        let view_local_transform = style_transform * overlay_transform;
+                        let base_local_transform = Affine::translate(-parent_scroll)
+                            * Affine::translate(local_pos.to_vec2())
+                            * view_local_transform;
+
+                        Some((
+                            overlay_element_id,
+                            logical_parent_element_id,
+                            base_local_transform,
+                        ))
+                    })
+                    .collect()
+            });
+
+        let mut tree = self.box_tree.borrow_mut();
+        for (overlay_element_id, logical_parent_element_id, base_local_transform) in overlay_data {
+            let parent_world = tree
+                .compute_world_transform(logical_parent_element_id.0)
+                .unwrap_or(Affine::IDENTITY);
+            tree.set_local_transform(overlay_element_id.0, parent_world * base_local_transform);
+        }
+    }
+
+    /// Apply viewport-relative placement for fixed-position elements.
+    ///
+    /// Layout computes fixed elements in normal tree flow, but CSS-like `position: fixed`
+    /// semantics require final placement in window (viewport) coordinates, independent of
+    /// ancestor scrolling/transforms. We resolve that at commit time by computing each fixed
+    /// element's target viewport position from inset properties and writing it as a world
+    /// translation in the box tree.
+    ///
+    /// Running this after local-transform updates keeps the adjustment stable for both full
+    /// layout sync and incremental box-tree updates.
     fn apply_fixed_positioning_transforms(&self) {
         let root_size = self.root_size / self.scale;
         let positions: SmallVec<[(ElementId, Point); 32]> = VIEW_STORAGE.with_borrow(|s| {
@@ -867,9 +986,6 @@ impl WindowState {
                     let state = s.states.get(view_id)?;
                     let state_borrow = state.borrow();
                     let builtin = state_borrow.combined_style.builtin();
-                    if !builtin.is_fixed() {
-                        return None;
-                    }
                     let element_id = state_borrow.element_id;
                     let local_bounds = self
                         .box_tree

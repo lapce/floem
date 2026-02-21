@@ -1128,22 +1128,67 @@ fn test_two_fixed_overlays_click_second() {
 #[test]
 #[serial]
 fn test_fixed_overlay_with_non_fixed_sibling() {
+    //     Viewport (400x300)
+    // └─ Stack
+    //    ├─ Overlay #1 (at 100,100)
+    //    │  └─ FIXED (10,10, 50x50)
+    //    │     └─ clickable
+    //    │
+    //    └─ Overlay #2 (at 200,50)
+    //       └─ non-fixed (50x50)
+    //
+    //
+    // Viewport (0,0) → (400,300)
+    // +------------------------------------------------------------------+
+    // |                                                                  |
+    // |  +------------------+                                            |
+    // |  |  FIXED           |                                            |
+    // |  |  (10,10)-(60,60) |                                            |
+    // |  +------------------+                                            |
+    // |                                                                  |
+    // |                                                                  |
+    // |                                                                  |
+    // |                                                                  |
+    // |                          +----------------------+                |
+    // |                          | Overlay #1           |                |
+    // |                          | (100,100)-(150,150)  |                |
+    // |                          +----------------------+                |
+    // |                                                                  |
+    // |                                    +----------------------+      |
+    // |                                    | Overlay #2           |      |
+    // |                                    | (200,50)-(250,100)   |      |
+    // |                                    |  +------------------+ |     |
+    // |                                    |  | non-fixed        | |     |
+    // |                                    |  | (200,50)-(250,100)| |    |
+    // |                                    |  +------------------+ |     |
+    // |                                    +----------------------+      |
+    // |                                                                  |
+    // +------------------------------------------------------------------+
     let root = TestRoot::new();
     // Test that a fixed overlay works when there's a sibling overlay without fixed positioning.
     // This helps diagnose if the issue is with fixed positioning or overlay ordering.
 
     let clicked1 = Rc::new(Cell::new(false));
     let clicked1_clone = clicked1.clone();
+    use floem::prelude::palette::css::*;
 
     // Fixed element at (10, 10) with size 50x50
     let fixed1 = Empty::new()
-        .style(|s| s.fixed().inset_left(10.0).inset_top(10.0).size(50.0, 50.0))
+        .style(|s| {
+            s.fixed()
+                .background(RED)
+                .inset_left(10.0)
+                .inset_top(10.0)
+                .size(50.0, 50.0)
+        })
         .action(move || {
             clicked1_clone.set(true);
         });
 
     // Non-fixed element at (300, 200) - this should NOT block the fixed element
-    let non_fixed2 = Empty::new().style(|s| s.size(50.0, 50.0));
+    let non_fixed2 = Empty::new()
+        .style(|s| s.background(BLUE).size(50.0, 50.0))
+        .action(|| {});
 
     let view = Stack::new((
         // First overlay with fixed child

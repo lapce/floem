@@ -71,6 +71,21 @@ impl Overlay {
         Self::with_id(id)
     }
 
+    /// Creates a new overlay with no child.
+    ///
+    ///
+    /// # Example
+    /// ```rust
+    /// use floem::prelude::*;
+    /// use floem::views::Overlay;
+    ///
+    /// Overlay::base();
+    /// ```
+    pub fn base() -> Self {
+        let id = ViewId::new();
+        Self::with_id(id)
+    }
+
     /// Creates a new overlay whose child will dynamically update in response to signal changes.
     ///
     /// # Example
