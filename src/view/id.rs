@@ -221,11 +221,6 @@ impl ViewId {
         invalidate_all_overlay_caches();
     }
 
-    /// Check if this view is registered as an overlay.
-    pub(crate) fn is_overlay(&self) -> bool {
-        VIEW_STORAGE.with_borrow(|s| s.overlays.contains_key(*self))
-    }
-
     /// Get access to the layout tree tree
     /// TODO: rename layout tree
     pub fn taffy(&self) -> Rc<RefCell<LayoutTree>> {
@@ -1022,7 +1017,10 @@ impl ViewId {
     /// Scrolls the view and all direct and indirect children to bring the view to be
     /// visible. The optional rectangle can be used to add an additional offset and intersection.
     pub fn scroll_to(&self, rect: Option<Rect>) {
-        self.add_update_message(UpdateMessage::ScrollTo { id: *self, rect });
+        self.add_update_message(UpdateMessage::ScrollTo {
+            id: self.get_element_id(),
+            rect,
+        });
     }
 
     pub(crate) fn transition_anim_complete(&self) {

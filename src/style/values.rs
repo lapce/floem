@@ -949,7 +949,7 @@ impl StylePropValue for Affine {
         let coeffs = affine.as_coeffs();
 
         // Decompose to show meaningful transform components
-        let (scale, rotation) = svd(affine);
+        let (scale, rotation) = affine.svd();
         let translation = affine.translation();
 
         // Create a visual preview showing the transform effect
@@ -1112,6 +1112,8 @@ impl StylePropValue for Affine {
 }
 
 pub trait AffineLerp {
+    fn svd(self) -> (Vec2, f64);
+
     /// Linearly interpolate between two affine transforms.
     ///
     /// This implements the CSS Transforms interpolation algorithm:
@@ -1127,6 +1129,26 @@ pub trait AffineLerp {
 }
 
 impl AffineLerp for Affine {
+    fn svd(self) -> (Vec2, f64) {
+        let [a, b, c, d, _, _] = self.as_coeffs();
+        let a2 = a * a;
+        let b2 = b * b;
+        let c2 = c * c;
+        let d2 = d * d;
+        let ab = a * b;
+        let cd = c * d;
+        let angle = 0.5 * (2.0 * (ab + cd)).atan2(a2 - b2 + c2 - d2);
+        let s1 = a2 + b2 + c2 + d2;
+        let s2 = ((a2 - b2 + c2 - d2).powi(2) + 4.0 * (ab + cd).powi(2)).sqrt();
+        (
+            Vec2 {
+                x: (0.5 * (s1 + s2)).sqrt(),
+                y: (0.5 * (s1 - s2)).sqrt(),
+            },
+            angle,
+        )
+    }
+
     fn lerp(&self, other: &Affine, t: f64) -> Affine {
         // Extract translations
         let trans_a = self.translation();
@@ -1137,8 +1159,8 @@ impl AffineLerp for Affine {
         let linear_b = other.with_translation(Vec2::ZERO);
 
         // Decompose into scale and rotation using SVD
-        let (scale_a, rotation_a) = svd(linear_a);
-        let (scale_b, rotation_b) = svd(linear_b);
+        let (scale_a, rotation_a) = linear_a.svd();
+        let (scale_b, rotation_b) = linear_b.svd();
 
         // Interpolate translation
         let trans = Vec2 {
@@ -1163,37 +1185,13 @@ impl AffineLerp for Affine {
         }
         let rotation = rotation_a + angle_diff * t;
 
+        dbg!(rotation);
+
         // Recompose: rotate -> scale -> translate
         Affine::rotate(rotation)
             .then_scale_non_uniform(scale.x, scale.y)
             .then_translate(trans)
     }
-}
-
-/// Compute the singular value decomposition of the linear transformation.
-/// Returns (scale, rotation_angle).
-fn svd(affine: Affine) -> (Vec2, f64) {
-    let coeffs = affine.as_coeffs();
-    let [a, b, c, d, _, _] = coeffs;
-
-    let a2 = a * a;
-    let b2 = b * b;
-    let c2 = c * c;
-    let d2 = d * d;
-    let ab = a * b;
-    let cd = c * d;
-
-    let angle = 0.5 * (2.0 * (ab + cd)).atan2(a2 - b2 + c2 - d2);
-    let s1 = a2 + b2 + c2 + d2;
-    let s2 = ((a2 - b2 + c2 - d2).powi(2) + 4.0 * (ab + cd).powi(2)).sqrt();
-
-    (
-        Vec2 {
-            x: (0.5 * (s1 + s2)).sqrt(),
-            y: (0.5 * (s1 - s2)).sqrt(),
-        },
-        angle,
-    )
 }
 
 #[cfg(test)]

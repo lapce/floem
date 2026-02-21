@@ -103,7 +103,7 @@ pub enum UpdateMessage {
     },
     Inspect,
     ScrollTo {
-        id: ViewId,
+        id: ElementId,
         rect: Option<Rect>,
     },
     FocusWindow,

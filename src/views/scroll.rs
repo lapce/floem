@@ -2,7 +2,7 @@
 //! Scroll View
 
 use floem_reactive::Effect;
-use peniko::kurbo::{Axis, Point, Rect, RoundedRect, RoundedRectRadii, Stroke, Vec2};
+use peniko::kurbo::{Affine, Axis, Point, Rect, RoundedRect, RoundedRectRadii, Stroke, Vec2};
 use peniko::{Brush, Color};
 use std::time::Duration;
 use std::{cell::RefCell, rc::Rc};
@@ -12,7 +12,7 @@ use ui_events::pointer::{PointerButton, PointerEvent, PointerId};
 use crate::easing::Linear;
 use crate::event::listener::{EventListenerTrait, UpdatePhaseBoxTreeCommit};
 use crate::event::{
-    DragEvent, DragSourceEvent, PointerCaptureEvent, PointerScrollEventExt, RouteKind,
+    DragEvent, DragSourceEvent, PointerCaptureEvent, PointerScrollEventExt, RouteKind, ScrollTo,
 };
 use crate::style::ScrollbarWidth;
 use crate::{
@@ -28,7 +28,7 @@ use crate::{
     unit::{Px, PxPct},
     view::{IntoView, View},
 };
-use crate::{ViewId, WindowState, custom_event};
+use crate::{ViewId, custom_event};
 use understory_box_tree::NodeFlags;
 
 use super::Decorators;
@@ -50,7 +50,7 @@ enum ScrollState {
     ScrollDelta(Vec2),
     ScrollTo(Point),
     ScrollToPercent(f32),
-    ScrollToView(ViewId),
+    ScrollToElement(ElementId),
 }
 
 struct ScrollEventResult {
@@ -673,7 +673,7 @@ impl Scroll {
         let id = self.id();
         Effect::new(move |_| {
             if let Some(view) = view() {
-                id.update_state_deferred(ScrollState::ScrollToView(view));
+                id.update_state_deferred(ScrollState::ScrollToElement(view.get_element_id()));
             }
         });
 
@@ -791,37 +791,44 @@ impl Scroll {
         self.do_scroll_to(new_offset.to_point());
     }
 
-    // TODO: make this work
-    fn do_scroll_to_view(&mut self, _target: ViewId, _target_rect: Option<Rect>) {
-        // todo!()
-        // if target.layout().is_none() || target.is_hidden() {
-        //     return;
-        // }
+    fn do_scroll_to_element(&mut self, scroll_to: ScrollTo) -> EventPropagation {
+        let child_element_id = self.child.get_element_id();
+        let box_tree = self.id.box_tree();
+        let box_tree = box_tree.borrow();
 
-        // // Get target's rect relative to its parent
-        // let mut rect = target.layout_rect();
+        let Some(target_local_rect) = scroll_to.rect.or_else(|| box_tree.local_bounds(scroll_to.id.0))
+        else {
+            return EventPropagation::Continue;
+        };
 
-        // // If a specific sub-rect within the target is specified, adjust
-        // if let Some(target_rect) = target_rect {
-        //     rect = rect.with_origin(rect.origin() + target_rect.origin().to_vec2());
-        //     let new_size = target_rect
-        //         .size()
-        //         .to_rect()
-        //         .intersect(rect.size().to_rect())
-        //         .size();
-        //     rect = rect.with_size(new_size);
-        // }
+        let target_transform = box_tree
+            .compute_world_transform(scroll_to.id.0)
+            .unwrap_or(Affine::IDENTITY);
+        let child_transform = box_tree
+            .compute_world_transform(child_element_id.0)
+            .unwrap_or(Affine::IDENTITY);
 
-        // // Convert from window coordinates to child content coordinates
-        // // We need to find the position relative to the scrollable child
-        // let target_window_rect = rect;
-        // let child_window_origin = self.child.layout_rect().origin();
+        let target_world_rect = target_transform.transform_rect_bbox(target_local_rect);
+        let child_world_origin = child_transform * Point::ZERO;
 
-        // // Convert to child-relative coordinates
-        // let rect_in_child = target_window_rect
-        //     .with_origin(target_window_rect.origin() - child_window_origin.to_vec2());
+        let target_rect = Rect::new(
+            target_world_rect.x0 - child_world_origin.x,
+            target_world_rect.y0 - child_world_origin.y,
+            target_world_rect.x1 - child_world_origin.x,
+            target_world_rect.y1 - child_world_origin.y,
+        );
+        drop(box_tree);
 
-        // self.do_ensure_visible(rect_in_child, lcx);
+        self.do_ensure_visible(target_rect);
+
+        let viewport_size = self.id.get_content_rect_local().size();
+        let visible_rect = Rect::from_origin_size(self.scroll_offset.to_point(), viewport_size);
+
+        if visible_rect.contains_rect(target_rect) {
+            EventPropagation::Stop
+        } else {
+            EventPropagation::Continue
+        }
     }
 
     fn post_box_tree_commit(&mut self) {
@@ -909,20 +916,12 @@ impl View for Scroll {
 
                     self.do_scroll_to(target_offset.to_point());
                 }
-                ScrollState::ScrollToView(id) => {
-                    self.do_scroll_to_view(id, None);
+                ScrollState::ScrollToElement(id) => {
+                    self.do_scroll_to_element(ScrollTo { id, rect: None });
                 }
             }
             self.id.request_box_tree_update_for_view();
         }
-    }
-
-    fn scroll_to(&mut self, cx: &mut WindowState, target: ViewId, rect: Option<Rect>) -> bool {
-        let found = self.child.view().borrow_mut().scroll_to(cx, target, rect);
-        if found {
-            self.do_scroll_to_view(target, rect);
-        }
-        found
     }
 
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
@@ -939,6 +938,10 @@ impl View for Scroll {
         if UpdatePhaseBoxTreeCommit::extract(&cx.event).is_some() {
             self.post_box_tree_commit();
             return EventPropagation::Stop;
+        }
+
+        if let Some(scroll_to) = ScrollTo::extract(&cx.event) {
+            return self.do_scroll_to_element(*scroll_to);
         }
         // Handle events targeted at our visual IDs (handles and tracks)
         if cx.phase == Phase::Target {

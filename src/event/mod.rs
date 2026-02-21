@@ -349,6 +349,18 @@ macro_rules! custom_event {
             pub fn listener() -> ::paste::paste! { [<$name Listener>] } {
                 ::paste::paste! { [<$name Listener>] }
             }
+
+            /// Attempt to extract this event type from a generic [`Event`].
+            ///
+            /// Equivalent to:
+            /// `Self::listener_key().extract(event)`
+            pub fn extract(
+                event: &$crate::event::Event,
+            ) -> Option<&$event_data> {
+                <::paste::paste! { [<$name Listener>] }
+                    as $crate::event::listener::EventListenerTrait>::extract(event)
+            }
+
         }
     };
 
@@ -2065,6 +2077,46 @@ impl Event {
         matches!(self, Self::FileDrag(..))
     }
 }
+
+/// A custom event requesting that ancestor scroll containers adjust their
+/// viewport to reveal a target element or a specific region within it.
+///
+/// This event is intended to propagate upward through the element hierarchy
+/// so that scrollable ancestors can respond. It does not represent a broadcast,
+/// spatial, focused, or subtree operation.
+///
+/// # Routing Requirements
+///
+/// This event must be routed using `RouteKind::bubble_from`.
+///
+/// No other routing strategy is intended to be valid:
+///
+/// - Capture phases are not applicable.
+/// - Target phase invocation is not required.
+/// - Subtree and broadcast routing are semantically incorrect.
+/// - Spatial and focused routing do not apply.
+///
+/// The expected routing pattern is:
+///
+/// ```rust,ignore
+/// GlobalEventCx::new(...)
+///     .route_normal(RouteKind::bubble_from(id), None);
+/// ```
+///
+/// Routing this event with any other `RouteKind` results in undefined
+/// framework-level semantics.
+#[derive(Debug, Clone, Copy)]
+pub struct ScrollTo {
+    /// The element requesting to be scrolled into view.
+    pub id: ElementId,
+
+    /// The region within the element that should be made visible.
+    ///
+    /// If `None`, the entire element is considered the scroll target.
+    pub rect: Option<peniko::kurbo::Rect>,
+}
+
+custom_event!(ScrollTo);
 
 pub trait PointerScrollEventExt {
     /// Resolve scroll delta to points/pixels.

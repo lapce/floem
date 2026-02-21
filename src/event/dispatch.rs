@@ -6,7 +6,9 @@ use peniko::kurbo::{Affine, Point};
 use smallvec::SmallVec;
 use ui_events::{
     keyboard::{Key, KeyState, KeyboardEvent, Modifiers, NamedKey},
-    pointer::{PointerButton, PointerButtonEvent, PointerEvent, PointerId, PointerInfo, PointerType},
+    pointer::{
+        PointerButton, PointerButtonEvent, PointerEvent, PointerId, PointerInfo, PointerType,
+    },
 };
 use understory_box_tree::{NodeFlags, QueryError};
 use understory_event_state::{click::ClickResult, hover::HoverEvent};
@@ -15,7 +17,7 @@ use winit::keyboard::KeyCode;
 use crate::{
     BoxTree, ElementId, ViewId,
     action::show_context_menu,
-    context::*,
+    context::Phases,
     event::{
         DragEvent, DragToken, Event, FocusEvent, InteractionEvent, Phase, PointerCaptureEvent,
         WindowEvent, drag_state::DragEventDispatch, dropped_file::FileDragEvent, path::hit_test,
@@ -99,19 +101,29 @@ fn run_dispatch(
 ///
 /// Returns a vector of VisualIds ordered from target to root: [target, parent1, parent2, ..., root]
 fn build_ancestor_chain(target: ElementId, box_tree: &BoxTree) -> SmallVec<[ElementId; 64]> {
-    let mut path = SmallVec::new();
+    let mut path: SmallVec<[ElementId; 64]> = SmallVec::new();
+
     let mut current = target;
-    let mut visited = std::collections::HashSet::new();
+
     const MAX_DEPTH: usize = 1000;
 
-    visited.insert(current.0);
     path.push(current);
 
-    while let Some(parent_node) = box_tree.parent_of(current.0) {
-        current = box_tree.meta(parent_node).flatten().unwrap();
+    while path.len() < MAX_DEPTH {
+        let Some(parent_node) = box_tree.parent_of(current.0) else {
+            break;
+        };
 
-        if !visited.insert(current.0) || path.len() >= MAX_DEPTH {
-            eprintln!("Warning: Detected cycle or excessive depth in box tree parent chain");
+        let Some(next) = box_tree.meta(parent_node).flatten() else {
+            break;
+        };
+
+        current = next;
+
+        // Prevent trivial cycles via path scan instead of HashSet allocation.
+        // Path length is expected to be small (UI tree depth is usually small).
+        if path.contains(&current) {
+            eprintln!("Warning: Detected cycle in box tree parent chain");
             break;
         }
 
@@ -199,18 +211,15 @@ fn build_capture_bubble_path(target: ElementId, box_tree: &BoxTree) -> DispatchS
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RouteKind {
     /// Route to a specific target with customizable phases.
-    Directed {
-        target: ElementId,
-        phases: crate::context::Phases,
-    },
+    Directed { target: ElementId, phases: Phases },
 
     /// Route to the currently focused view with specified phases.
-    Focused { phases: crate::context::Phases },
+    Focused { phases: Phases },
 
     /// Route based on spatial hit testing at a point (pointer events).
     Spatial {
         point: Option<Point>,
-        phases: crate::context::Phases,
+        phases: Phases,
     },
 
     /// Route to a target and all its descendants.
@@ -222,6 +231,27 @@ pub enum RouteKind {
     /// Broadcast to all views in DOM order (global broadcast).
     Broadcast { respect_propagation: bool },
 }
+impl RouteKind {
+    /// Bubble upward starting at the parent of `target`.
+    ///
+    /// Traversal: parent(target) → root
+    pub fn bubble_from(target: ElementId) -> Self {
+        Self::Directed {
+            target,
+            phases: Phases::BUBBLE,
+        }
+    }
+
+    /// Invoke on the target, then bubble upward.
+    ///
+    /// Traversal: target → root
+    pub fn target_and_bubble_from(target: ElementId) -> Self {
+        Self::Directed {
+            target,
+            phases: Phases::TARGET | Phases::BUBBLE,
+        }
+    }
+}
 
 /// Event routing data containing routing strategy and event source.
 #[derive(Debug, Clone)]
@@ -232,13 +262,13 @@ pub struct RouteData {
 
 /// Controls whether an event overrides the current event (synthetic) or uses it (normal).
 #[expect(clippy::large_enum_variant)]
-pub(crate) enum OverrideKind {
+pub(crate) enum OverrideKind<'a> {
     /// Use the global event as-is. No triggered_by.
-    Normal,
+    Normal { triggered_by: Option<&'a Event> },
     /// Replace the event with a synthetic one. Carries the event that caused it.
     Synthetic {
         event: Event,
-        triggered_by: Option<Event>,
+        triggered_by: Option<&'a Event>,
     },
 }
 
@@ -266,8 +296,12 @@ impl<'a> GlobalEventCx<'a> {
     }
 
     /// Route using the original OS event, with an optional causal event.
-    pub fn route_normal(&mut self, kind: RouteKind, _triggered_by: Option<&Event>) {
-        self.route(kind, OverrideKind::Normal);
+    pub fn route_normal(
+        &mut self,
+        kind: RouteKind,
+        triggered_by: Option<&Event>,
+    ) -> Option<Dispatch> {
+        self.route(kind, OverrideKind::Normal { triggered_by })
     }
 
     /// Core routing entry point. Creates a [`RouteCx`] scope for this event,
@@ -293,20 +327,20 @@ impl<'a> GlobalEventCx<'a> {
                 }
 
                 if let Some(capture_target) = capture_target {
-                    self.route(
+                    self.route_normal(
                         RouteKind::Directed {
                             target: capture_target,
                             phases: Phases::STANDARD,
                         },
-                        OverrideKind::Normal,
+                        None,
                     );
                 } else if let Some(point) = pointer_event.logical_point() {
-                    self.route(
+                    self.route_normal(
                         RouteKind::Spatial {
                             point: Some(point),
                             phases: Phases::STANDARD,
                         },
-                        OverrideKind::Normal,
+                        None,
                     );
                 } else {
                     // Pointer Enter / Leave / Cancel with no capture and no point:
@@ -317,11 +351,11 @@ impl<'a> GlobalEventCx<'a> {
             Event::Key(ke) => {
                 if ke.is_shortcut_like() {
                     // Try the focused path first with capture → bubble.
-                    let consumed = self.route(
+                    let consumed = self.route_normal(
                         RouteKind::Focused {
                             phases: Phases::STANDARD,
                         },
-                        OverrideKind::Normal,
+                        None,
                     );
 
                     // If no focus or focus path didn't consume it, fall back to registry.
@@ -338,12 +372,12 @@ impl<'a> GlobalEventCx<'a> {
                             }
                         }
                         for id in interested {
-                            let result = self.route(
+                            let result = self.route_normal(
                                 RouteKind::Directed {
                                     target: id.get_element_id(),
                                     phases: Phases::TARGET,
                                 },
-                                OverrideKind::Normal,
+                                None,
                             );
                             if result.is_some() {
                                 break;
@@ -352,30 +386,30 @@ impl<'a> GlobalEventCx<'a> {
                     }
                 } else {
                     // Typing keys: capture → target → bubble on the focused element.
-                    self.route(
+                    self.route_normal(
                         RouteKind::Focused {
                             phases: Phases::STANDARD,
                         },
-                        OverrideKind::Normal,
+                        None,
                     );
                 }
             }
             Event::Ime(_) => {
-                self.route(
+                self.route_normal(
                     RouteKind::Focused {
                         phases: Phases::STANDARD,
                     },
-                    OverrideKind::Normal,
+                    None,
                 );
             }
             Event::FileDrag(fde) => {
                 let point = fde.logical_point();
-                self.route(
+                self.route_normal(
                     RouteKind::Spatial {
                         point: Some(point),
                         phases: Phases::TARGET,
                     },
-                    OverrideKind::Normal,
+                    None,
                 );
             }
             Event::Window(we) => {
@@ -396,12 +430,12 @@ impl<'a> GlobalEventCx<'a> {
                 }
 
                 for id in interested {
-                    self.route(
+                    self.route_normal(
                         RouteKind::Directed {
                             target: id.get_element_id(),
                             phases: Phases::TARGET,
                         },
-                        OverrideKind::Normal,
+                        None,
                     );
                 }
             }
@@ -468,7 +502,7 @@ pub(crate) struct RouteCx<'r, 'w> {
     pub dispatch: Option<Rc<[Dispatch]>>,
     pub source: ElementId,
     /// The event that caused this one, if synthetic.
-    pub triggered_by: Option<Event>,
+    pub triggered_by: Option<&'r Event>,
     /// Events generated during dispatch that will each get their own `RouteCx`.
     pending_events: SmallVec<[(RouteKind, Event); 8]>,
     /// Events generated during dispatch that will each get their own `RouteCx` that are preventable with `prevent_default`.
@@ -485,9 +519,13 @@ pub(crate) struct RouteCx<'r, 'w> {
 impl<'r, 'w> RouteCx<'r, 'w> {
     /// Full constructor. Sets up event/triggered_by, computes hit path,
     /// and pre-builds the dispatch sequence for directed routes.
-    fn new(gcx: &'r mut GlobalEventCx<'w>, kind: &RouteKind, override_kind: OverrideKind) -> Self {
+    fn new(
+        gcx: &'r mut GlobalEventCx<'w>,
+        kind: &RouteKind,
+        override_kind: OverrideKind<'r>,
+    ) -> Self {
         let (event, triggered_by) = match override_kind {
-            OverrideKind::Normal => (gcx.event.clone(), None),
+            OverrideKind::Normal { triggered_by } => (gcx.event.clone(), triggered_by),
             OverrideKind::Synthetic {
                 event,
                 triggered_by,
@@ -605,7 +643,7 @@ impl RouteCx<'_, '_> {
     pub(crate) fn dispatch_directed(
         &mut self,
         target: ElementId,
-        phases: crate::context::Phases,
+        phases: Phases,
     ) -> Option<Dispatch> {
         use crate::context::Phases;
 
@@ -679,11 +717,7 @@ impl RouteCx<'_, '_> {
 
     /// Spatial hit-test routing. Updates hover/focus/pointer state, then
     /// calls `dispatch_directed` on the same scope (no new RouteCx).
-    fn dispatch_spatial(
-        &mut self,
-        point: Point,
-        phases: crate::context::Phases,
-    ) -> Option<Dispatch> {
+    fn dispatch_spatial(&mut self, point: Point, phases: Phases) -> Option<Dispatch> {
         if self.event.is_pointer_down() {
             self.gcx.window_state.keyboard_navigation = false;
         }
@@ -776,7 +810,7 @@ impl RouteCx<'_, '_> {
             window_state: self.gcx.window_state,
             event: self.event.clone().transform(world_transform),
             world_transform,
-            triggered_by: self.triggered_by.as_ref(),
+            triggered_by: self.triggered_by,
             hit_path: self.hit_path.clone(),
             phase: dispatch_step.phase,
             target: dispatch_step.target_element_id,
@@ -976,7 +1010,7 @@ impl RouteCx<'_, '_> {
 
     /// Route a synthetic event, carrying the current event as `triggered_by`.
     fn route_synthetic(&mut self, kind: RouteKind, event: Event) {
-        let triggered_by = Some(self.event.clone());
+        let triggered_by = Some(&self.event);
         self.gcx.route(
             kind,
             OverrideKind::Synthetic {
@@ -1520,7 +1554,9 @@ impl RouteCx<'_, '_> {
                 if pointer.pointer_type == PointerType::Touch {
                     if let Some(pointer_id) = pointer.pointer_id {
                         if let Some(target) = path.last().copied() {
-                            self.gcx.window_state.set_pointer_capture(pointer_id, target);
+                            self.gcx
+                                .window_state
+                                .set_pointer_capture(pointer_id, target);
                         }
                     }
                 }

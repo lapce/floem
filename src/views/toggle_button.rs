@@ -50,12 +50,12 @@ style_class!(
 /// Event fired when the toggle state changes
 pub struct ToggleChanged(bool);
 impl ToggleChanged {
-    fn extract(&self) -> &bool {
+    fn extract_inner(&self) -> &bool {
         &self.0
     }
 }
 
-custom_event!(ToggleChanged, bool, ToggleChanged::extract);
+custom_event!(ToggleChanged, bool, ToggleChanged::extract_inner);
 
 struct Handle {
     element_id: ElementId,

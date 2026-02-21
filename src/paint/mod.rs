@@ -110,13 +110,6 @@ fn record_paint(id: ViewId) {
     });
 }
 
-/// Information needed to paint a dragged view overlay after the main tree painting.
-/// This ensures the drag overlay always appears on top of all other content.
-pub(crate) struct PendingDragPaint {
-    pub id: ElementId,
-    pub base_transform: Affine,
-}
-
 /// Global paint context - holds shared state for entire paint pass
 /// Similar to GlobalEventCx in event dispatch
 pub struct GlobalPaintCx<'a> {
@@ -168,8 +161,16 @@ pub(crate) fn collect_visual_recursive(
             .map_or(true, |bounds| bounds.area() != 0.0)
     };
 
-    // Skip specific element when not drag preview
+    // Skip specific element and subtree when not drag preview
     if !is_drag_preview && Some(element_id) == skip_element_id {
+        return;
+    }
+
+    // if is hidden skip this element and the subtree
+    if box_tree
+        .flags(element_id.0)
+        .is_none_or(|f| !f.contains(NodeFlags::VISIBLE))
+    {
         return;
     }
 

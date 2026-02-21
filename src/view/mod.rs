@@ -65,7 +65,7 @@ use std::hash::Hash;
 use std::rc::Rc;
 
 use crate::{
-    Renderer,
+    ElementId, Renderer,
     context::{EventCx, PaintCx, StyleCx, UpdateCx},
     event::EventPropagation,
     style::{LayoutProps, Style, StyleClassRef},
@@ -1010,20 +1010,6 @@ pub trait View {
     fn post_paint(&mut self, cx: &mut PaintCx) {
         let _ = cx;
     }
-
-    /// Scrolls the view and all direct and indirect children to bring the `target` view to be
-    /// visible. Returns true if this view contains or is the target.
-    fn scroll_to(&mut self, cx: &mut WindowState, target: ViewId, rect: Option<Rect>) -> bool {
-        if self.id() == target {
-            return true;
-        }
-        let mut found = false;
-
-        for child in self.id().children() {
-            found |= child.view().borrow_mut().scroll_to(cx, target, rect);
-        }
-        found
-    }
 }
 
 impl View for Box<dyn View> {
@@ -1061,10 +1047,6 @@ impl View for Box<dyn View> {
 
     fn post_paint(&mut self, cx: &mut PaintCx) {
         (**self).paint(cx)
-    }
-
-    fn scroll_to(&mut self, cx: &mut WindowState, target: ViewId, rect: Option<Rect>) -> bool {
-        (**self).scroll_to(cx, target, rect)
     }
 }
 

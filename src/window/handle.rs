@@ -7,8 +7,7 @@ use crossbeam::channel::bounded as sync_channel;
 #[cfg(not(feature = "crossbeam"))]
 use std::sync::mpsc::sync_channel;
 
-use crate::action::add_update_message;
-use crate::event::{CustomEvent, UpdatePhaseEvent};
+use crate::event::{CustomEvent, RouteKind, ScrollTo, UpdatePhaseEvent};
 use crate::platform::menu_types::{Menu as MudaMenu, MenuId};
 #[cfg(target_os = "windows")]
 use muda::MenuTheme as MudaMenuTheme;
@@ -984,6 +983,7 @@ impl WindowHandle {
     }
 
     pub(crate) fn process_update_messages(&mut self) {
+        set_current_view(self.id.root());
         loop {
             self.process_central_messages();
             let msgs =
@@ -1062,10 +1062,10 @@ impl WindowHandle {
                         cx.window_state.release_pointer_capture(pointer_id, view_id);
                     }
                     UpdateMessage::ScrollTo { id, rect } => {
-                        self.id
-                            .view()
-                            .borrow_mut()
-                            .scroll_to(cx.window_state, id, rect);
+                        let event = ScrollTo { id, rect };
+                        let event = Event::new_custom(event);
+                        GlobalEventCx::new(&mut self.window_state, self.id.get_element_id(), event)
+                            .route_normal(RouteKind::bubble_from(id), None);
                     }
                     UpdateMessage::State { id, state } => {
                         let view = id.view();

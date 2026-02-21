@@ -477,11 +477,12 @@ fn view_tree(
     .class(ListClass)
     .style(|s| {
         s.flex_col().flex_grow(1.).class(ListItemClass, |s| {
-            s.hover(|s| s.with_theme(|s, t| s.background(t.bg_elevated())))
+            s.width_full()
+                .hover(|s| s.with_theme(|s, t| s.background(t.bg_elevated())))
         })
     })
+    .style(|s| s.width_full())
     .scroll()
-    .style(|s| s.flex_grow(1.0))
     .custom_style(|s| s.shrink_to_fit())
     .on_event_cont(listener::PointerLeave, move |_, _| {
         capture_signal_clone.highlighted.set(None)
@@ -517,6 +518,7 @@ fn tree_node(
         .style(move |s| {
             s.height(height)
                 .keyboard_navigable()
+                .text_clip()
                 .apply_if(selected.get() == Some(id), |s| s.set_selected(true))
         })
         .action(move || selected.set(Some(id)))
@@ -552,7 +554,7 @@ fn tree_node(
 
 fn tree_node_name(view: &CapturedData, marge_left: f64) -> impl IntoView {
     let name = Label::new(view.view_conf.name.clone());
-    let id = Label::new(format!("{:?}", view.id)).style(|s| {
+    let id = Label::new(format!("ViewId {{{:?}}}", view.id.0)).style(|s| {
         s.margin_right(5.0)
             .background(palette::css::BLACK.with_alpha(0.02))
             .border(1.)

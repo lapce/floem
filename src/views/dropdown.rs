@@ -53,11 +53,15 @@ pub struct DropdownOpenChanged {
     pub is_open: bool,
 }
 impl DropdownOpenChanged {
-    fn extract(&self) -> &bool {
+    fn extract_inner(&self) -> &bool {
         &self.is_open
     }
 }
-custom_event!(DropdownOpenChanged, bool, DropdownOpenChanged::extract);
+custom_event!(
+    DropdownOpenChanged,
+    bool,
+    DropdownOpenChanged::extract_inner
+);
 
 /// Event fired when an item is accepted/selected from the dropdown.
 /// Contains the selected value.

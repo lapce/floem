@@ -1639,7 +1639,7 @@ define_builtin_props!(
     /// Controls how overflowed text content is handled.
     ///
     /// Determines whether text wraps or gets clipped.
-    TextOverflowProp text_overflow {}: TextOverflow {} = TextOverflow::Wrap,
+    TextOverflowProp text_overflow {}: TextOverflow { inherited } = TextOverflow::Clip,
 
     /// Sets text alignment within the view.
     ///
@@ -1696,10 +1696,10 @@ define_builtin_props!(
     /// **Default:** `8px`
     ScrollbarWidth scrollbar_width {tr}: Px {} = Px(8.),
 
-    /// How children overflowing their container in Y axis should affect layout
+    /// How children overflowing their container in X axis should affect layout
     OverflowX overflow_x {}: Overflow {} = Overflow::default(),
 
-    /// How children overflowing their container in X axis should affect layout
+    /// How children overflowing their container in Y axis should affect layout
     OverflowY overflow_y {}: Overflow {} = Overflow::default(),
 
     /// Sets the horizontal scale transform.
@@ -1780,7 +1780,7 @@ define_builtin_props!(
     ///  .scale(1.5)          // Applied second
     ///  .transform(Affine::rotate(0.5))  // Applied last (rotates the already-translated, scaled element)
     /// ```
-    Transform transform {}: Affine {} = Affine::IDENTITY,
+    Transform transform {tr}: Affine {} = Affine::IDENTITY,
 
     /// Sets the opacity of the view.
     ///
