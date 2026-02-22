@@ -3,7 +3,7 @@ use std::{any::Any, cell::RefCell, collections::HashMap};
 use floem_reactive::Scope;
 use peniko::kurbo::{Point, Rect, Size, Vec2};
 use ui_events::pointer::PointerId;
-use winit::window::{ResizeDirection, Theme};
+use winit::window::{ImeSurroundingText, ResizeDirection, Theme};
 
 use crate::{
     platform::menu::Menu,
@@ -87,11 +87,13 @@ pub enum UpdateMessage {
     FocusWindow,
     SetImeAllowed {
         allowed: bool,
+        surrounding_text: Option<ImeSurroundingText>,
     },
     SetImeCursorArea {
         position: Point,
         size: Size,
     },
+    SetImeSurroundingText(ImeSurroundingText),
     WindowVisible(bool),
     ViewTransitionAnimComplete(ViewId),
     SetTheme(Option<Theme>),
