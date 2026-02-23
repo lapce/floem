@@ -9,6 +9,8 @@ use std::sync::mpsc::sync_channel;
 
 use crate::event::{CustomEvent, RouteKind, ScrollTo, UpdatePhaseEvent};
 use crate::platform::menu_types::{Menu as MudaMenu, MenuId};
+use crate::style::StyleSelector;
+use crate::style::recalc::StyleReasonSet;
 #[cfg(target_os = "windows")]
 use muda::MenuTheme as MudaMenuTheme;
 
@@ -234,7 +236,9 @@ impl WindowHandle {
         window_handle.event(Event::Window(WindowEvent::ThemeChanged(
             window_handle.window_state.light_dark_theme,
         )));
-        window_handle.window_state.mark_dark_mode_changed();
+        window_handle
+            .window_state
+            .mark_style_dirty_selector(window_handle.id.get_element_id(), StyleSelector::DarkMode);
         window_handle.size(size.get_untracked());
         window_handle
     }
@@ -330,7 +334,9 @@ impl WindowHandle {
         window_handle.process_update_messages();
         // Mark root view as needing style so initial style pass runs compute_combined
         // and populates has_style_selectors for selector detection
-        window_handle.id.request_style_recursive();
+        window_handle
+            .id
+            .request_style(StyleReasonSet::full_recalc());
         window_handle.process_update_messages();
         window_handle.style();
         window_handle.layout();
@@ -409,7 +415,10 @@ impl WindowHandle {
             // if the window theme has been set manually then changes from the os shouldn't do anything
             return;
         }
-        self.window_state.mark_dark_mode_changed();
+        self.window_state.mark_style_dirty_selector(
+            self.window_state.root_view_id.get_element_id(),
+            StyleSelector::DarkMode,
+        );
         if let Some(theme) = theme {
             // Only override the theme with the default if the user did not provide one
             if self.default_theme.is_some() {
@@ -433,8 +442,7 @@ impl WindowHandle {
         if !change_from_os {
             self.window.set_theme(theme);
         }
-        self.id.request_style_recursive();
-        self.id.request_all();
+        self.id.request_style(StyleReasonSet::inherited());
         if let Some(theme) = theme {
             self.event(Event::Window(WindowEvent::ThemeChanged(theme)));
         }
@@ -535,9 +543,6 @@ impl WindowHandle {
     }
 
     fn style(&mut self) {
-        // Take any pending global recalc (dark mode, responsive changes)
-        let global_change = self.window_state.take_global_recalc();
-
         // Loop until no more views need styling
         // This handles the case where styling a parent marks children dirty
         // (e.g., when inherited properties change)
@@ -545,9 +550,9 @@ impl WindowHandle {
             // Build explicit traversal order
             let og_num = self.window_state.style_dirty.len();
             let traversal = self.window_state.build_style_traversal(self.id);
-            // if traversal.len() > 5 {
-            //     dbg!(traversal.len(), og_num);
-            // }
+            if traversal.len() > 5 {
+                dbg!(traversal.len(), og_num);
+            }
             if traversal.is_empty() {
                 self.window_state.style_dirty.clear();
                 self.window_state.view_style_dirty.clear();
@@ -558,7 +563,7 @@ impl WindowHandle {
             // dbg!(traversal.len());
             for view_id in traversal {
                 let cx = &mut StyleCx::new(&mut self.window_state, view_id);
-                cx.style_view(view_id, global_change);
+                cx.style_view(view_id);
             }
             if self.window_state.capture.is_some() {
                 // we need to break if capture because when capturing we style all views so no need to loop here.
@@ -568,7 +573,6 @@ impl WindowHandle {
         }
 
         // Clear pending child changes after style pass completes
-        self.window_state.pending_child_change.clear();
         let root_element_id = self.window_state.root_view_id.get_element_id();
         let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::Style));
         GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
@@ -728,8 +732,8 @@ impl WindowHandle {
                 FrameUpdate::BoxTreeCommit => {
                     self.window_state.needs_box_tree_commit = true;
                 }
-                FrameUpdate::Style(id) => {
-                    self.window_state.style_dirty.insert(id);
+                FrameUpdate::Style(id, reason) => {
+                    self.window_state.mark_style_dirty_with(id, reason);
                 }
                 FrameUpdate::Paint(id) => self.window_state.request_paint(id),
             }
@@ -996,8 +1000,8 @@ impl WindowHandle {
                     window_state: &mut self.window_state,
                 };
                 match msg {
-                    UpdateMessage::RequestStyle(id) => {
-                        self.window_state.style_dirty.insert(id);
+                    UpdateMessage::RequestStyle(id, reason) => {
+                        self.window_state.mark_style_dirty_with(id, reason);
                     }
                     UpdateMessage::RequestViewStyle(id) => {
                         self.window_state.view_style_dirty.insert(id);

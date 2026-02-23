@@ -2,9 +2,10 @@ use peniko::kurbo::{Affine, Point, Rect};
 use smallvec::SmallVec;
 use std::{cell::RefCell, rc::Rc};
 
-use crate::custom_event;
 use crate::event::Phase;
 use crate::platform::menu::Menu;
+use crate::style::recalc::StyleReasonSet;
+use crate::{ElementId, custom_event};
 use crate::{event::EventPropagation, view::ViewId};
 
 pub type EventCallback = dyn FnMut(&mut EventCx) -> EventPropagation;
@@ -265,7 +266,7 @@ impl VisualChanged {
 pub(crate) type CleanupListeners = Vec<Rc<dyn Fn()>>;
 
 pub(crate) enum FrameUpdate {
-    Style(ViewId),
+    Style(ElementId, StyleReasonSet),
     Layout,
     BoxTreeCommit,
     Paint(ViewId),

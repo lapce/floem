@@ -9,10 +9,12 @@ use std::{cell::RefCell, rc::Rc};
 use taffy::Overflow;
 use ui_events::pointer::{PointerButton, PointerEvent, PointerId};
 
+use crate::context::LayoutChanged;
 use crate::easing::Linear;
-use crate::event::listener::{EventListenerTrait, UpdatePhaseBoxTreeCommit};
+use crate::event::listener::UpdatePhaseBoxTreeCommit;
 use crate::event::{
-    DragEvent, DragSourceEvent, PointerCaptureEvent, PointerScrollEventExt, RouteKind, ScrollTo,
+    CustomEvent, DragEvent, DragSourceEvent, PointerCaptureEvent, PointerScrollEventExt, RouteKind,
+    ScrollTo,
 };
 use crate::style::ScrollbarWidth;
 use crate::{
@@ -45,6 +47,7 @@ pub struct ScrollChanged {
 }
 custom_event!(ScrollChanged);
 
+#[derive(Debug, Clone, Copy)]
 enum ScrollState {
     EnsureVisible(Rect),
     ScrollDelta(Vec2),
@@ -103,13 +106,14 @@ impl ScrollHandle {
     fn style(&mut self, cx: &mut StyleCx) {
         let resolved =
             cx.resolve_nested_maps(Style::new(), &[Handle::class_ref()], self.element_id);
-        self.style.read_style(cx, &resolved);
+        if self.style.read_style(cx, &resolved) {
+            self.element_id.owning_id().request_paint();
+        }
     }
 
     fn event(
         &mut self,
         cx: &mut EventCx,
-        is_scrolling_or_interacting: &mut bool,
         parent_id: ViewId,
         child_id: ViewId,
     ) -> ScrollEventResult {
@@ -121,7 +125,6 @@ impl ScrollHandle {
                     cx.window_state
                         .set_pointer_capture(pointer_id, self.element_id);
                 }
-                *is_scrolling_or_interacting = true;
                 cx.window_state.request_paint(parent_id);
             }
             Event::PointerCapture(PointerCaptureEvent::Gained(drag)) => {
@@ -169,16 +172,6 @@ impl ScrollHandle {
                 };
             }
 
-            Event::Pointer(PointerEvent::Enter(_)) => {
-                *is_scrolling_or_interacting = true;
-                cx.window_state.request_paint(parent_id);
-            }
-            Event::Pointer(PointerEvent::Leave(_)) => {
-                if !cx.window_state.has_capture(self.element_id) {
-                    *is_scrolling_or_interacting = false;
-                    cx.window_state.request_paint(parent_id);
-                }
-            }
             _ => {
                 return ScrollEventResult {
                     propagation: EventPropagation::Continue,
@@ -331,13 +324,14 @@ impl ScrollTrack {
 
     fn style(&mut self, cx: &mut StyleCx) {
         let resolved = cx.resolve_nested_maps(Style::new(), &[Track::class_ref()], self.element_id);
-        self.style.read_style(cx, &resolved);
+        if self.style.read_style(cx, &resolved) {
+            self.element_id.owning_id().request_paint();
+        }
     }
 
     fn event(
         &mut self,
         cx: &mut EventCx,
-        is_scrolling_or_interacting: &mut bool,
         parent_id: ViewId,
         child_id: ViewId,
     ) -> ScrollEventResult {
@@ -377,36 +371,19 @@ impl ScrollTrack {
 
                 let new_offset = (target_percent * max_scroll).clamp(0.0, max_scroll);
 
-                *is_scrolling_or_interacting = true;
                 cx.window_state.request_paint(parent_id);
 
                 let mut offset = parent_id.get_child_translation();
                 offset.set_coord(self.axis, new_offset);
-                return ScrollEventResult {
+                ScrollEventResult {
                     propagation: EventPropagation::Stop,
                     new_offset: Some(offset),
-                };
+                }
             }
-            Event::Pointer(PointerEvent::Enter(_)) => {
-                *is_scrolling_or_interacting = true;
-                // self.style(&mut StyleCx::new(cx.window_state, parent_id));
-                parent_id.request_paint();
-            }
-            Event::Pointer(PointerEvent::Leave(_)) => {
-                *is_scrolling_or_interacting = false;
-                // self.style(&mut StyleCx::new(cx.window_state, parent_id));
-                parent_id.request_paint();
-            }
-            _ => {
-                return ScrollEventResult {
-                    propagation: EventPropagation::Continue,
-                    new_offset: None,
-                };
-            }
-        }
-        ScrollEventResult {
-            propagation: EventPropagation::Stop,
-            new_offset: None,
+            _ => ScrollEventResult {
+                propagation: EventPropagation::Continue,
+                new_offset: None,
+            },
         }
     }
 
@@ -552,8 +529,6 @@ pub struct Scroll {
     h_handle: ScrollHandle,
     v_track: ScrollTrack,
     h_track: ScrollTrack,
-    /// Tracks whether user is currently interacting with scrollbars or recently scrolled
-    is_scrolling_or_interacting: bool,
     scroll_style: ScrollStyle,
 }
 
@@ -575,7 +550,7 @@ impl Scroll {
     /// ```
     pub fn new(child: impl IntoView) -> Self {
         let id = ViewId::new();
-        id.register_listener(UpdatePhaseBoxTreeCommit::listener_key());
+        id.register_listener(LayoutChanged::listener_key());
 
         let child = child.into_any();
         let child_id = child.id();
@@ -594,7 +569,6 @@ impl Scroll {
             h_track: ScrollTrack::new(id, h_handle.element_id, Axis::Horizontal),
             v_handle,
             h_handle,
-            is_scrolling_or_interacting: false,
             scroll_style: Default::default(),
         }
         .class(ScrollClass)
@@ -726,6 +700,7 @@ impl Scroll {
         }
 
         if change {
+            self.set_positions();
             Some(self.scroll_offset - old_scroll_offset)
         } else {
             None
@@ -796,7 +771,9 @@ impl Scroll {
         let box_tree = self.id.box_tree();
         let box_tree = box_tree.borrow();
 
-        let Some(target_local_rect) = scroll_to.rect.or_else(|| box_tree.local_bounds(scroll_to.id.0))
+        let Some(target_local_rect) = scroll_to
+            .rect
+            .or_else(|| box_tree.local_bounds(scroll_to.id.0))
         else {
             return EventPropagation::Continue;
         };
@@ -831,7 +808,7 @@ impl Scroll {
         }
     }
 
-    fn post_box_tree_commit(&mut self) {
+    fn set_positions(&mut self) {
         let viewport = self.id.get_content_rect_local();
         let full_rect = self.id.get_layout_rect_local();
         let content_size = self.child.get_layout_rect_local().size();
@@ -925,18 +902,27 @@ impl View for Scroll {
     }
 
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
+        // if !cx.is_targeted_only() {
         self.scroll_style.read(cx);
+        // }
 
-        self.v_handle.style(cx);
-        self.h_handle.style(cx);
-        self.v_track.style(cx);
-        self.h_track.style(cx);
+        for (element_id, _reason) in cx.targeted_elements.clone() {
+            if element_id == self.v_handle.element_id {
+                self.v_handle.style(cx);
+            } else if element_id == self.h_handle.element_id {
+                self.h_handle.style(cx);
+            } else if element_id == self.v_track.element_id {
+                self.v_track.style(cx);
+            } else if element_id == self.h_track.element_id {
+                self.h_track.style(cx);
+            }
+        }
     }
 
     fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
         // in order to use this we had to set `id.has_layout_listener`.
-        if UpdatePhaseBoxTreeCommit::extract(&cx.event).is_some() {
-            self.post_box_tree_commit();
+        if LayoutChanged::extract(&cx.event).is_some() {
+            self.set_positions();
             return EventPropagation::Stop;
         }
 
@@ -946,12 +932,7 @@ impl View for Scroll {
         // Handle events targeted at our visual IDs (handles and tracks)
         if cx.phase == Phase::Target {
             if cx.target == self.v_handle.element_id {
-                let result = self.v_handle.event(
-                    cx,
-                    &mut self.is_scrolling_or_interacting,
-                    self.id,
-                    self.child,
-                );
+                let result = self.v_handle.event(cx, self.id, self.child);
                 if let Some(new_offset) = result.new_offset {
                     if self
                         .apply_scroll_delta(new_offset - self.scroll_offset)
@@ -963,12 +944,7 @@ impl View for Scroll {
                 return result.propagation;
             }
             if cx.target == self.h_handle.element_id {
-                let result = self.h_handle.event(
-                    cx,
-                    &mut self.is_scrolling_or_interacting,
-                    self.id,
-                    self.child,
-                );
+                let result = self.h_handle.event(cx, self.id, self.child);
                 if let Some(new_offset) = result.new_offset {
                     if self
                         .apply_scroll_delta(new_offset - self.scroll_offset)
@@ -980,12 +956,7 @@ impl View for Scroll {
                 return result.propagation;
             }
             if cx.target == self.v_track.element_id {
-                let result = self.v_track.event(
-                    cx,
-                    &mut self.is_scrolling_or_interacting,
-                    self.id,
-                    self.child,
-                );
+                let result = self.v_track.event(cx, self.id, self.child);
                 if let Some(new_offset) = result.new_offset {
                     if self
                         .apply_scroll_delta(new_offset - self.scroll_offset)
@@ -997,12 +968,7 @@ impl View for Scroll {
                 return result.propagation;
             }
             if cx.target == self.h_track.element_id {
-                let result = self.h_track.event(
-                    cx,
-                    &mut self.is_scrolling_or_interacting,
-                    self.id,
-                    self.child,
-                );
+                let result = self.h_track.event(cx, self.id, self.child);
                 if let Some(new_offset) = result.new_offset {
                     if self
                         .apply_scroll_delta(new_offset - self.scroll_offset)
@@ -1032,7 +998,6 @@ impl View for Scroll {
                 let change = self.apply_scroll_delta(delta);
 
                 if change.is_some() {
-                    self.is_scrolling_or_interacting = true;
                     cx.window_state.request_paint(self.id);
                 }
 
@@ -1058,30 +1023,22 @@ impl View for Scroll {
             // Main scroll container - children painted automatically by traversal
         } else if cx.target_id == self.v_handle.element_id {
             // Painting vertical scrollbar handle
-            if !self.scroll_style.hide_bar()
-                && (self.scroll_style.show_bars_when_idle() || self.is_scrolling_or_interacting)
-            {
+            if !self.scroll_style.hide_bar() && (self.scroll_style.show_bars_when_idle()) {
                 self.v_handle.paint(cx);
             }
         } else if cx.target_id == self.h_handle.element_id {
             // Painting horizontal scrollbar handle
-            if !self.scroll_style.hide_bar()
-                && (self.scroll_style.show_bars_when_idle() || self.is_scrolling_or_interacting)
-            {
+            if !self.scroll_style.hide_bar() && (self.scroll_style.show_bars_when_idle()) {
                 self.h_handle.paint(cx);
             }
         } else if cx.target_id == self.v_track.element_id {
             // Painting vertical scrollbar track
-            if !self.scroll_style.hide_bar()
-                && (self.scroll_style.show_bars_when_idle() || self.is_scrolling_or_interacting)
-            {
+            if !self.scroll_style.hide_bar() && (self.scroll_style.show_bars_when_idle()) {
                 self.v_track.paint(cx);
             }
         } else if cx.target_id == self.h_track.element_id {
             // Painting horizontal scrollbar track
-            if !self.scroll_style.hide_bar()
-                && (self.scroll_style.show_bars_when_idle() || self.is_scrolling_or_interacting)
-            {
+            if !self.scroll_style.hide_bar() && (self.scroll_style.show_bars_when_idle()) {
                 self.h_track.paint(cx);
             }
         }

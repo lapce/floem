@@ -84,6 +84,13 @@ impl StyleSelectors {
         }
     }
 
+    /// Returns true if any selector in `other` is also present in `self`.
+    /// Used to skip cascade recomputation when a selector fires but this
+    /// view has no styles gated on that selector.
+    pub(crate) fn intersects(self, other: StyleSelectors) -> bool {
+        (self.selectors & other.selectors) != 0 || (self.responsive && other.responsive)
+    }
+
     pub(crate) const fn responsive(mut self) -> Self {
         self.responsive = true;
         self
@@ -111,6 +118,26 @@ impl StyleSelectors {
                 selector_str
             }
         }
+    }
+
+    /// Returns only the selectors that should propagate down to children.
+    /// Ambient state (disabled, dark mode, dragging, selected, responsive)
+    /// flows down the tree. Local interaction state (hover, focus, active, etc.)
+    /// is specific to the element it fired on and must not propagate.
+    pub(crate) fn propagating(self) -> StyleSelectors {
+        StyleSelectors {
+            selectors: self.selectors
+                & (StyleSelector::Disabled as u8
+                    | StyleSelector::DarkMode as u8
+                    | StyleSelector::Dragging as u8
+                    | StyleSelector::Selected as u8),
+            responsive: self.responsive,
+        }
+    }
+
+    /// Returns true if this selector set contains any propagating selectors.
+    pub(crate) fn has_propagating(self) -> bool {
+        !self.propagating().is_empty()
     }
 
     /// Returns a vector of individual selector names

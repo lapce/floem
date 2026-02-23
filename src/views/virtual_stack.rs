@@ -518,7 +518,8 @@ impl<T> View for VirtualStack<T> {
             }
             Err(state) => {
                 if let Ok(idx) = state.downcast::<usize>() {
-                    self.id.request_style_recursive();
+                    // I don't think this is necessary
+                    // self.id.request_style(StyleReasonSet::with_selector(StyleSelector::Selected));
                     self.scroll_to_idx(*idx);
                     self.selected_idx.clear();
                     self.selected_idx.insert(*idx);

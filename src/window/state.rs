@@ -1,7 +1,13 @@
 use std::{cell::RefCell, collections::HashMap};
 
 use crate::{
-    action::exec_after_animation_frame, event::listener, platform::menu_types::MenuId,
+    action::exec_after_animation_frame,
+    event::listener,
+    platform::menu_types::MenuId,
+    style::{
+        StyleSelectors,
+        recalc::{StyleReasonFlags, StyleReasonSet},
+    },
     view::ViewStorage,
 };
 
@@ -25,7 +31,7 @@ use crate::{
     inspector::CaptureState,
     layout::responsive::{GridBreakpoints, ScreenSizeBp},
     message::UpdateMessage,
-    style::{CursorStyle, Style, StyleSelector, recalc::StyleRecalcChange, theme::default_theme},
+    style::{CursorStyle, Style, StyleSelector, theme::default_theme},
     view::{LayoutNodeCx, MeasureCx, VIEW_STORAGE, ViewId},
 };
 
@@ -68,7 +74,7 @@ pub struct WindowState {
     pub(crate) fixed_elements: FxHashSet<ViewId>,
     pub(crate) scale: f64,
     pub(crate) scheduled_updates: Vec<FrameUpdate>,
-    pub(crate) style_dirty: FxHashSet<ViewId>,
+    pub(crate) style_dirty: FxHashMap<ViewId, StyleReasonSet>,
     pub(crate) view_style_dirty: FxHashSet<ViewId>,
     pub(crate) request_paint: bool,
     pub(crate) drag_tracker: DragTracker,
@@ -100,17 +106,6 @@ pub struct WindowState {
     /// Views with identical styles and interaction states can share resolved styles.
     // no need for style cache
     // pub(crate) style_cache: StyleCache,
-
-    /// Pending child changes for graduated style propagation.
-    /// Maps view IDs to the change that should be propagated to their children.
-    /// This is populated during style_view and read by views that manually
-    /// process children in their style_pass.
-    pub(crate) pending_child_change: FxHashMap<ViewId, StyleRecalcChange>,
-
-    /// Pending global style recalc change.
-    /// Set when global state changes (dark mode, screen size) that require
-    /// propagating changes through the entire tree.
-    pub(crate) pending_global_recalc: StyleRecalcChange,
 
     /// The default theme style containing class definitions for built-in components.
     /// This is used as the root style context for all views when no parent exists.
@@ -178,10 +173,6 @@ impl WindowState {
             grid_bps: GridBreakpoints::default(),
             context_menu: HashMap::new(),
             capture: None,
-            pending_child_change: FxHashMap::default(),
-            pending_global_recalc: StyleRecalcChange::new(
-                crate::style::Propagate::RecalcDescendants,
-            ),
             default_theme: theme,
             default_theme_inherited: inherited,
             needs_layout: true,
@@ -208,29 +199,6 @@ impl WindowState {
         let inherited = Self::extract_inherited_props(&new_theme);
         self.default_theme = new_theme;
         self.default_theme_inherited = inherited;
-    }
-
-    /// Mark that dark mode changed, requiring style recalc with appropriate flags.
-    pub(crate) fn mark_dark_mode_changed(&mut self) {
-        use crate::style::recalc::{Propagate, RecalcFlags};
-        self.pending_global_recalc = self.pending_global_recalc.combine(
-            &StyleRecalcChange::new(Propagate::RecalcDescendants)
-                .with_flags(RecalcFlags::DARK_MODE_CHANGED),
-        );
-    }
-
-    /// Mark that screen size breakpoint changed, requiring style recalc.
-    pub(crate) fn mark_responsive_changed(&mut self) {
-        use crate::style::recalc::{Propagate, RecalcFlags};
-        self.pending_global_recalc = self.pending_global_recalc.combine(
-            &StyleRecalcChange::new(Propagate::RecalcDescendants)
-                .with_flags(RecalcFlags::RESPONSIVE_CHANGED),
-        );
-    }
-
-    /// Take the pending global recalc change and reset it.
-    pub(crate) fn take_global_recalc(&mut self) -> StyleRecalcChange {
-        std::mem::take(&mut self.pending_global_recalc)
     }
 
     /// This removes a view from the app state.
@@ -316,61 +284,82 @@ impl WindowState {
         self.has_any_capture(id)
     }
 
-    pub(crate) fn build_style_traversal(&mut self, root: ViewId) -> Vec<ViewId> {
+    pub(crate) fn build_style_traversal(&mut self, root: ViewId) -> SmallVec<[ViewId; 16]> {
         let mut traversal =
-            Vec::with_capacity(self.style_dirty.len() + self.view_style_dirty.len());
-        // If capture is active, traverse all views
+            SmallVec::with_capacity(self.style_dirty.len() + self.view_style_dirty.len());
+
         if self.capture.is_some() {
-            // Clear dirty flags because we're traversing everything
+            // When capture is active we must visit every view so the capture system
+            // can record the full style state. Dirty flags are irrelevant here.
             let mut stack = vec![root];
             while let Some(view_id) = stack.pop() {
                 traversal.push(view_id);
                 let children = VIEW_STORAGE
                     .with_borrow(|s| s.children.get(view_id).cloned().unwrap_or_default());
-                // Push in reverse order for left-to-right DFS
+                // Push in reverse so we pop left-to-right (DFS pre-order).
                 for child in children.iter().rev() {
                     stack.push(*child);
                 }
             }
-            // Don't return yet, fall through to sorting
         } else {
-            // Collect all dirty views
-            let mut dirty_views = self.style_dirty.clone();
-            for view_id in &self.view_style_dirty {
-                dirty_views.insert(*view_id);
+            // Count how many distinct views actually need styling. Views that appear
+            // in both maps only need one style pass, so subtract the overlap to avoid
+            // running the DFS longer than necessary.
+            let mut remaining = self.style_dirty.len() + self.view_style_dirty.len();
+            for id in &self.view_style_dirty {
+                if self.style_dirty.contains_key(id) {
+                    remaining -= 1;
+                }
             }
-            if dirty_views.is_empty() {
-                return Vec::new();
+
+            if remaining == 0 {
+                return SmallVec::new();
             }
-            // Iterative DFS collecting only dirty nodes
+
+            // DFS from root, collecting dirty views in tree order (parent before child).
+            // Tree order is required so that inherited style context flows correctly
+            // from parent to child during the style pass.
+            //
+            // We check membership directly in the two dirty maps rather than copying
+            // keys into a temporary FxHashSet. This costs two hash lookups per dirty
+            // node instead of one, but avoids the allocation and population of the
+            // temporary set entirely, which is a better tradeoff for typical dirty
+            // counts (tens to low hundreds of views per frame).
             let mut stack = vec![root];
             while let Some(view_id) = stack.pop() {
-                if dirty_views.remove(&view_id) {
+                if self.style_dirty.contains_key(&view_id)
+                    || self.view_style_dirty.contains(&view_id)
+                {
                     traversal.push(view_id);
-                    // Early exit if we've found all dirty nodes
-                    if dirty_views.is_empty() {
+                    remaining -= 1;
+                    // Early exit once all dirty views are found. This avoids walking
+                    // the rest of the tree when dirty views are clustered near the top.
+                    if remaining == 0 {
                         break;
                     }
                 }
                 let children = VIEW_STORAGE
                     .with_borrow(|s| s.children.get(view_id).cloned().unwrap_or_default());
-                // Push in reverse order for left-to-right DFS
                 for child in children.iter().rev() {
                     stack.push(*child);
                 }
             }
         }
 
-        // Ensure views with custom style parents come after those parents
-        // Scan backwards and bubble views up to after their custom parent if needed
+        // Some views declare a custom style parent via `style_cx_parent`, meaning
+        // they inherit style context from an arbitrary ancestor rather than their
+        // structural parent. These views must be processed *after* their style parent
+        // so the inherited context is already resolved when they run.
+        //
+        // Scan backwards and move any such view to immediately after its style parent.
+        // Backwards scan ensures that if multiple views in a chain each have custom
+        // parents, we fix them up in the right order without invalidating earlier fixes.
         let mut i = traversal.len();
         while i > 0 {
             i -= 1;
-            let view_id = traversal[i];
+            let view_id: ViewId = traversal[i];
             if let Some(style_parent) = view_id.state().borrow().style_cx_parent {
-                // Find where the custom parent is
                 if let Some(parent_pos) = traversal[..i].iter().position(|&v| v == style_parent) {
-                    // Move this view to right after its parent
                     let view = traversal.remove(i);
                     traversal.insert(parent_pos + 1, view);
                 }
@@ -1030,8 +1019,9 @@ impl WindowState {
 
     /// Requests that the style pass will run for `id` on the next frame, and ensures new frame is
     /// scheduled to happen.
-    pub fn schedule_style(&mut self, id: ViewId) {
-        self.scheduled_updates.push(FrameUpdate::Style(id));
+    pub fn schedule_style(&mut self, id: ViewId, reason: StyleReasonSet) {
+        self.scheduled_updates
+            .push(FrameUpdate::Style(id.get_element_id(), reason));
     }
 
     /// Requests that the layout pass will run for `id` on the next frame, and ensures new frame is
@@ -1061,7 +1051,10 @@ impl WindowState {
         let bp = self.grid_bps.get_width_bp(size.width);
         if bp != self.screen_size_bp {
             self.screen_size_bp = bp;
-            self.mark_responsive_changed();
+            self.root_view_id
+                .request_style(StyleReasonSet::with_selectors(
+                    StyleSelectors::new().responsive(),
+                ));
         }
     }
 
@@ -1093,6 +1086,109 @@ impl WindowState {
     pub fn clear_cursor(&mut self, id: impl Into<ElementId>) -> Option<CursorStyle> {
         self.needs_cursor_resolution = true;
         self.element_id_cursors.remove(&id.into())
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Style dirty map
+// ─────────────────────────────────────────────────────────────────────
+impl WindowState {
+    /// Resolve an ElementId to the dirty map entry key (always a ViewId) and
+    /// wrap the reason in a TARGET if the element is a sub-element rather than
+    /// the view's primary element.
+    fn resolve_dirty_reason(
+        &mut self,
+        element_id: ElementId,
+        reason: StyleReasonSet,
+    ) -> (ViewId, StyleReasonSet) {
+        let view_id = element_id.owning_id();
+        if element_id.is_view() {
+            (view_id, reason)
+        } else {
+            (view_id, StyleReasonSet::with_target(element_id, reason))
+        }
+    }
+
+    pub fn mark_style_dirty_with(&mut self, element_id: ElementId, reason: StyleReasonSet) {
+        use std::collections::hash_map::Entry;
+        let (view_id, reason) = self.resolve_dirty_reason(element_id, reason);
+        match self.style_dirty.entry(view_id) {
+            Entry::Occupied(mut e) => e.get_mut().merge(reason),
+            Entry::Vacant(e) => {
+                e.insert(reason);
+            }
+        }
+    }
+
+    pub fn mark_style_dirty(&mut self, element_id: ElementId) {
+        self.mark_style_dirty_with(element_id, StyleReasonSet::full_recalc());
+    }
+
+    pub fn mark_style_dirty_animation(&mut self, element_id: ElementId) {
+        self.mark_style_dirty_with(element_id, StyleReasonSet::animation());
+    }
+
+    pub fn mark_style_dirty_transition(&mut self, element_id: ElementId) {
+        self.mark_style_dirty_with(element_id, StyleReasonSet::transition());
+    }
+
+    pub fn mark_style_dirty_selector(&mut self, element_id: ElementId, selector: StyleSelector) {
+        self.mark_style_dirty_with(
+            element_id,
+            StyleReasonSet::with_selectors(StyleSelectors::new().set(selector, true)),
+        );
+    }
+
+    pub(crate) fn mark_style_dirty_inherited_change(&mut self, element_id: ElementId) {
+        let mut reason = StyleReasonSet::empty();
+        reason.flags |= StyleReasonFlags::INHERITED_CHANGE;
+        self.mark_style_dirty_with(element_id, reason);
+    }
+
+    pub(crate) fn mark_style_dirty_class_context_change(&mut self, element_id: ElementId) {
+        let mut reason = StyleReasonSet::empty();
+        reason.flags |= StyleReasonFlags::CLASS_CONTEXT_CHANGE;
+        self.mark_style_dirty_with(element_id, reason);
+    }
+
+    /// Take the reason set for a view and remove it from the dirty map in one step.
+    /// Call this at the top of `style_view` instead of a separate `remove`.
+    pub(crate) fn take_style_reason(&mut self, view_id: ViewId) -> Option<StyleReasonSet> {
+        self.style_dirty.remove(&view_id)
+    }
+
+    /// Peek at the reason set without removing it. Useful for deciding whether
+    /// to even schedule a style pass before committing to one.
+    pub(crate) fn style_reason(&self, view_id: ViewId) -> Option<&StyleReasonSet> {
+        self.style_dirty.get(&view_id)
+    }
+
+    pub(crate) fn is_style_dirty(&self, view_id: ViewId) -> bool {
+        self.style_dirty.contains_key(&view_id)
+    }
+
+    /// Returns true if the view is dirty for *any* reason other than animation/transition.
+    /// When false, `style_view` can use the fast path that skips cascade recomputation.
+    pub(crate) fn needs_full_style_recalc(&self, view_id: ViewId) -> bool {
+        self.style_dirty
+            .get(&view_id)
+            .map(|r| r.needs_full_recalc())
+            .unwrap_or(false)
+    }
+
+    /// Remove a view from the dirty map entirely, e.g. when a view is destroyed
+    /// mid-frame before its style pass runs.
+    pub(crate) fn clear_style_dirty(&mut self, view_id: ViewId) {
+        self.style_dirty.remove(&view_id);
+    }
+
+    /// Drain all dirty views for iteration in the style pass. The caller owns
+    /// the reasons and the map is left empty, ready for the next frame's
+    /// accumulation.
+    pub(crate) fn drain_style_dirty(
+        &mut self,
+    ) -> impl Iterator<Item = (ViewId, StyleReasonSet)> + '_ {
+        self.style_dirty.drain()
     }
 }
 

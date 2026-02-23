@@ -2,7 +2,8 @@ use super::Decorators;
 use crate::context::{Phases, StyleCx};
 use crate::event::listener;
 use crate::event::{Event, EventPropagation, RouteKind};
-use crate::style::Style;
+use crate::style::recalc::StyleReasonSet;
+use crate::style::{Style, StyleSelector};
 use crate::style_class;
 use crate::view::IntoView;
 use crate::view::View;
@@ -208,11 +209,11 @@ impl View for List {
                 ListUpdate::SelectionChanged(old_idx) => {
                     if let Some(old_idx) = old_idx {
                         let child = self.id.children()[old_idx];
-                        child.request_style_recursive();
+                        child.request_style(StyleReasonSet::with_selector(StyleSelector::Selected));
                     }
                     if let Some(index) = self.selection.get_untracked() {
                         let child = self.id.children()[index];
-                        child.request_style_recursive();
+                        child.request_style(StyleReasonSet::with_selector(StyleSelector::Selected));
                         child.scroll_to(None);
                     }
                 }

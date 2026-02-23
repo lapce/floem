@@ -22,6 +22,7 @@ use crate::{
         DragEvent, DragToken, Event, FocusEvent, InteractionEvent, Phase, PointerCaptureEvent,
         WindowEvent, drag_state::DragEventDispatch, dropped_file::FileDragEvent, path::hit_test,
     },
+    style::StyleSelector,
     view::{VIEW_STORAGE, View},
     window::WindowState,
 };
@@ -1312,7 +1313,9 @@ impl RouteCx<'_, '_> {
         self.gcx.window_state.focus_state = new_focus;
 
         if let Some(old) = old_focus {
-            self.gcx.window_state.style_dirty.insert(old.owning_id());
+            self.gcx
+                .window_state
+                .mark_style_dirty_selector(old, StyleSelector::Focus);
             self.pending_default_events.push((
                 RouteKind::Directed {
                     target: old,
@@ -1325,8 +1328,7 @@ impl RouteCx<'_, '_> {
         if let Some(new_focus) = new_focus {
             self.gcx
                 .window_state
-                .style_dirty
-                .insert(new_focus.owning_id());
+                .mark_style_dirty_selector(new_focus, StyleSelector::Focus);
             self.pending_default_events.push((
                 RouteKind::Directed {
                     target: new_focus,
@@ -1343,7 +1345,9 @@ impl RouteCx<'_, '_> {
         let old_focus = self.gcx.window_state.focus_state.take();
 
         if let Some(old) = old_focus {
-            self.gcx.window_state.style_dirty.insert(old.owning_id());
+            self.gcx
+                .window_state
+                .mark_style_dirty_selector(old, StyleSelector::Focus);
             self.pending_default_events.push((
                 RouteKind::Directed {
                     target: old,
@@ -1420,9 +1424,9 @@ impl RouteCx<'_, '_> {
             for event in leave_events {
                 #[expect(irrefutable_let_patterns)]
                 if let HoverEvent::Leave(target) | HoverEvent::Enter(target) = &event {
-                    if target.is_view() {
-                        self.gcx.window_state.style_dirty.insert(target.owning_id());
-                    }
+                    self.gcx
+                        .window_state
+                        .mark_style_dirty_selector(*target, StyleSelector::FileHover);
                 }
             }
             let enter_events = self.gcx.window_state.hover_state.update_path(path);
@@ -1467,12 +1471,15 @@ impl RouteCx<'_, '_> {
         use_file_drag: bool,
         window_state: &mut WindowState,
     ) {
+        let selector = if use_file_drag {
+            StyleSelector::FileHover
+        } else {
+            StyleSelector::Hover
+        };
         for event in events {
             match event {
                 HoverEvent::Enter(target) => {
-                    if target.is_view() {
-                        window_state.style_dirty.insert(target.owning_id());
-                    }
+                    window_state.mark_style_dirty_selector(target, selector);
                     let event = if use_file_drag {
                         if let Some(paths) = &window_state.file_drag_paths {
                             Event::FileDrag(FileDragEvent::Enter(
@@ -1496,9 +1503,7 @@ impl RouteCx<'_, '_> {
                     ));
                 }
                 HoverEvent::Leave(target) => {
-                    if target.is_view() {
-                        window_state.style_dirty.insert(target.owning_id());
-                    }
+                    window_state.mark_style_dirty_selector(target, selector);
                     let event = if use_file_drag {
                         Event::FileDrag(FileDragEvent::Leave(crate::dropped_file::FileDragLeave {
                             position: window_state.last_pointer.0,
@@ -1533,12 +1538,10 @@ impl RouteCx<'_, '_> {
             PointerEvent::Down(PointerButtonEvent {
                 button, pointer, ..
             }) => {
-                for hit in path
-                    .iter()
-                    .filter(|id| id.is_view())
-                    .map(|id| id.owning_id())
-                {
-                    self.gcx.window_state.style_dirty.insert(hit);
+                for hit in path.iter() {
+                    self.gcx
+                        .window_state
+                        .mark_style_dirty_selector(*hit, StyleSelector::Active);
                 }
                 self.gcx.window_state.click_state.on_down(
                     pointer.pointer_id.map(|p| p.get_inner()),
@@ -1578,7 +1581,9 @@ impl RouteCx<'_, '_> {
                     .cancel(pointer_id.map(|p| p.get_inner()))
                 {
                     for target in canceled.target.iter() {
-                        self.gcx.window_state.style_dirty.insert(target.owning_id());
+                        self.gcx
+                            .window_state
+                            .mark_style_dirty_selector(*target, StyleSelector::Active);
                     }
                 }
             }
@@ -1620,9 +1625,9 @@ impl RouteCx<'_, '_> {
         );
 
         for hit in new_path.iter() {
-            if hit.is_view() {
-                self.gcx.window_state.style_dirty.insert(hit.owning_id());
-            }
+            self.gcx
+                .window_state
+                .mark_style_dirty_selector(*hit, StyleSelector::Active);
         }
 
         match res {
@@ -1647,15 +1652,15 @@ impl RouteCx<'_, '_> {
                         button == Some(PointerButton::Secondary),
                     );
                     for target in &og_target.iter().as_slice()[common_ancestor_idx..] {
-                        if target.is_view() {
-                            self.gcx.window_state.style_dirty.insert(target.owning_id());
-                        }
+                        self.gcx
+                            .window_state
+                            .mark_style_dirty_selector(*target, StyleSelector::Active);
                     }
                 } else {
                     for target in og_target.iter() {
-                        if target.is_view() {
-                            self.gcx.window_state.style_dirty.insert(target.owning_id());
-                        }
+                        self.gcx
+                            .window_state
+                            .mark_style_dirty_selector(*target, StyleSelector::Active);
                     }
                 }
             }
@@ -1665,9 +1670,9 @@ impl RouteCx<'_, '_> {
 
     fn push_interaction_events(&mut self, target: Option<ElementId>, count: u8, secondary: bool) {
         if let Some(id) = target {
-            if id.is_view() {
-                self.gcx.window_state.style_dirty.insert(id.owning_id());
-            }
+            // self.gcx
+            //     .window_state
+            //     .mark_style_dirty_selector(*target, StyleSelector::);
             let route_kind = RouteKind::Directed {
                 target: id,
                 phases: Phases::STANDARD,

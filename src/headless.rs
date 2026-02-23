@@ -423,7 +423,10 @@ impl HeadlessHarness {
 
     /// Check if a view has pending style changes.
     pub fn has_pending_style_change(&self, id: ViewId) -> bool {
-        self.window_handle.window_state.style_dirty.contains(&id)
+        self.window_handle
+            .window_state
+            .style_dirty
+            .contains_key(&id)
             || self
                 .window_handle
                 .window_state
@@ -443,7 +446,10 @@ impl HeadlessHarness {
     ///
     /// Views in this set will be processed during the next style pass.
     pub fn is_style_dirty(&self, id: ViewId) -> bool {
-        self.window_handle.window_state.style_dirty.contains(&id)
+        self.window_handle
+            .window_state
+            .style_dirty
+            .contains_key(&id)
     }
 
     /// Get the layout rectangle for a view.

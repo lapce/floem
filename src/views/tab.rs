@@ -6,9 +6,9 @@ use smallvec::SmallVec;
 
 use crate::{
     context::{StyleCx, UpdateCx},
+    style::recalc::StyleReasonSet,
     style_class,
-    view::ViewId,
-    view::{IntoView, View},
+    view::{IntoView, View, ViewId},
 };
 
 use super::{Diff, DiffOpAdd, FxIndexSet, HashRun, apply_diff, diff};
@@ -264,7 +264,7 @@ impl<T> View for Tab<T> {
                 }
                 TabState::Active(active) => {
                     self.active.replace(active);
-                    self.id.request_style();
+                    self.id.request_style(StyleReasonSet::inherited());
                 }
                 TabState::None => {
                     self.active.take();

@@ -24,6 +24,7 @@ thread_local! {
 use crate::context::EventCallbackConfig;
 use crate::event::listener::EventListenerKey;
 use crate::event::{RouteKind, listener};
+use crate::style::recalc::StyleReasonSet;
 use crate::view::LayoutTree;
 use crate::window::handle::get_current_view;
 use crate::{BoxTree, ElementId};
@@ -838,7 +839,10 @@ impl ViewId {
     /// Request that this the `id` view be styled, laid out and painted again.
     /// This will recursively request this for all parents.
     pub fn request_all(&self) {
-        add_update_message(UpdateMessage::RequestStyle(*self));
+        add_update_message(UpdateMessage::RequestStyle(
+            self.get_element_id(),
+            StyleReasonSet::full_recalc(),
+        ));
         add_update_message(UpdateMessage::RequestViewStyle(*self));
         self.request_layout();
         self.request_box_tree_commit();
@@ -885,54 +889,15 @@ impl ViewId {
     }
 
     /// request that this node be styled again
-    /// This will recursively request style for all parents.
-    pub fn request_style(&self) {
-        self.add_update_message(UpdateMessage::RequestStyle(*self));
+    pub fn request_style(&self, reason: StyleReasonSet) {
+        self.add_update_message(UpdateMessage::RequestStyle(self.get_element_id(), reason));
     }
 
     /// Use this when you want the `view_style` method from the `View` trait to be rerun.
+    ///
+    // TODO: Add this to style reason set
     pub fn request_view_style(&self) {
         self.add_update_message(UpdateMessage::RequestViewStyle(*self));
-    }
-
-    /// Requests style for this view and all direct and indirect children.
-    pub fn request_style_recursive(&self) {
-        let state = self.state();
-        state.borrow_mut().request_style_recursive = true;
-        self.request_style();
-    }
-
-    /// Requests style for this view and descendants that have the specified selector.
-    ///
-    /// This is more efficient than `request_style_recursive` when only views with
-    /// certain selectors (like `:focus`, `:active`) need to be updated.
-    /// Views without the selector in their `has_style_selectors` are skipped.
-    ///
-    /// # Arguments
-    /// * `selector` - The selector type to check for (e.g., `StyleSelector::Focus`)
-    pub fn request_style_for_selector_recursive(&self, selector: StyleSelector) {
-        // Always request style for self (the root of the recursive call)
-        self.request_style();
-
-        // Recursively check children
-        fn request_for_descendants(id: ViewId, selector: StyleSelector) {
-            for child in id.children() {
-                let needs_update = {
-                    let state = child.state();
-                    let state = state.borrow();
-                    state.has_style_selectors.has(selector)
-                };
-
-                if needs_update {
-                    child.request_style();
-                }
-
-                // Always recurse to find nested views with the selector
-                request_for_descendants(child, selector);
-            }
-        }
-
-        request_for_descendants(*self, selector);
     }
 
     /// Request that this view gain the window focus
@@ -1034,7 +999,7 @@ impl ViewId {
     pub(crate) fn update_animation(&self, offset: StackOffset<Animation>, animation: Animation) {
         let state = self.state();
         state.borrow_mut().animations.set(offset, animation);
-        self.request_style();
+        self.request_style(StyleReasonSet::animation());
     }
 
     pub(crate) fn update_animation_state(
@@ -1047,7 +1012,7 @@ impl ViewId {
             .borrow_mut()
             .animations
             .update(offset, move |anim| anim.transition(command));
-        self.request_style();
+        self.request_style(StyleReasonSet::animation());
     }
 
     /// Send a state update to the `update` method of the associated View
@@ -1113,26 +1078,21 @@ impl ViewId {
     pub fn add_class(&self, class: StyleClassRef) {
         let state = self.state();
         state.borrow_mut().classes.push(class);
-        self.request_style_recursive();
+        self.request_style(StyleReasonSet::class_cx());
     }
 
     /// Remove a class from the list of style classes that are associated with this `ViewId`
     pub fn remove_class(&self, class: StyleClassRef) {
         let state = self.state();
         state.borrow_mut().classes.retain_mut(|c| *c != class);
-        self.request_style_recursive();
+        self.request_style(StyleReasonSet::class_cx());
     }
 
     pub(crate) fn update_style(&self, offset: StackOffset<Style>, style: Style) {
         let state = VIEW_STORAGE.with_borrow(|s| s.states.get(*self).cloned());
         if let Some(state) = state {
-            let old_any_inherited = state.borrow().style().any_inherited();
             state.borrow_mut().style.set(offset, style);
-            if state.borrow().style().any_inherited() || old_any_inherited {
-                self.request_style_recursive();
-            } else {
-                self.request_style();
-            }
+            self.request_style(StyleReasonSet::full_recalc());
         }
     }
 
@@ -1541,7 +1501,7 @@ impl ViewId {
             }
         };
         if changed {
-            self.request_style();
+            self.request_style(StyleReasonSet::with_selector(StyleSelector::Selected));
         }
     }
 
@@ -1560,7 +1520,7 @@ impl ViewId {
             }
         };
         if changed {
-            self.request_style();
+            self.request_style(StyleReasonSet::with_selector(StyleSelector::Selected));
         }
     }
 
@@ -1579,7 +1539,7 @@ impl ViewId {
             }
         };
         if changed {
-            self.request_style();
+            self.request_style(StyleReasonSet::with_selector(StyleSelector::Disabled));
         }
     }
 
@@ -1598,7 +1558,7 @@ impl ViewId {
             }
         };
         if changed {
-            self.request_style();
+            self.request_style(StyleReasonSet::with_selector(StyleSelector::Disabled));
         }
     }
 
@@ -1620,7 +1580,7 @@ impl ViewId {
             }
         };
         if changed {
-            self.request_style();
+            self.request_style(StyleReasonSet::full_recalc());
         }
     }
 
@@ -1642,9 +1602,8 @@ impl ViewId {
             }
         };
         if changed {
-            // Request both style (for transition)
             // No need to request layout. the style pass will determine if that is necessary and request layout.
-            self.request_style();
+            self.request_style(StyleReasonSet::full_recalc());
         }
     }
 }

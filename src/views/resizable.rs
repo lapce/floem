@@ -385,7 +385,7 @@ impl View for ResizableStack {
         if let Ok(state) = state.downcast::<ResizableMessage>() {
             match *state {
                 ResizableMessage::SetSizesPercent(sizes) => {
-                    self.id.request_style();
+                    // self.id.request_style();
                     self.id.request_layout();
 
                     for (idx, percent) in sizes {
@@ -396,7 +396,7 @@ impl View for ResizableStack {
                     }
                 }
                 ResizableMessage::SetSizesPixels(sizes) => {
-                    self.id.request_style();
+                    // self.id.request_style();
                     self.id.request_layout();
 
                     let axis = self.re_style.direction().axis();

@@ -12,7 +12,7 @@ use crate::{
     style::{
         Background, BorderColorProp, BorderRadiusProp, BoxShadowProp, CursorStyle,
         InheritedInteractionCx, LayoutProps, Outline, OutlineColor, Style, StyleClassRef,
-        StyleSelectors, TransformProps,
+        StyleSelectors, TransformProps, recalc::StyleReasonSet,
     },
     view::LayoutTree,
 };
@@ -196,11 +196,110 @@ impl Visibility {
     }
 }
 
+/// Cached prefix-sum style stack with dirty tracking.
+pub struct StyleStack {
+    /// The raw per-decorator styles (same role as Stack<Style>).
+    pub stack: SmallVec<[Style; 1]>,
+    /// Prefix-sum cache: `cache[i]` = stack[0..=i] all applied together.
+    /// len() always equals stack.len() after a full recompute, but may be
+    /// shorter when the stack is dirty (new pushes haven't been cached yet).
+    cache: SmallVec<[Style; 1]>,
+    /// Index of the first entry that needs recomputation.
+    /// `dirty_from == stack.len()` means fully clean.
+    dirty_from: usize,
+}
+
+impl Default for StyleStack {
+    fn default() -> Self {
+        StyleStack {
+            stack: SmallVec::new(),
+            cache: SmallVec::new(),
+            dirty_from: 0,
+        }
+    }
+}
+
+impl StyleStack {
+    /// Reserve a slot and return its offset (mirrors Stack::next_offset).
+    pub fn next_offset(&mut self) -> StackOffset<Style> {
+        let offset = self.stack.len();
+        // Push a placeholder so the offset is stable.
+        self.stack.push(Style::new());
+        // Mark dirty from here if not already dirty earlier.
+        if offset < self.dirty_from || self.dirty_from == self.cache.len() {
+            self.dirty_from = self.dirty_from.min(offset);
+        }
+        // Trim cache to not include this slot yet.
+        self.cache.truncate(offset);
+        self.dirty_from = self.dirty_from.min(offset);
+        StackOffset {
+            offset,
+            phantom: PhantomData,
+        }
+    }
+
+    pub fn push(&mut self, style: Style) {
+        let idx = self.stack.len();
+        self.stack.push(style);
+        self.dirty_from = self.dirty_from.min(idx);
+        self.cache.truncate(idx);
+    }
+
+    pub fn set(&mut self, offset: StackOffset<Style>, value: Style) {
+        self.stack[offset.offset] = value;
+        self.mark_dirty(offset.offset);
+    }
+
+    pub fn update(&mut self, offset: StackOffset<Style>, f: impl Fn(&mut Style)) {
+        f(&mut self.stack[offset.offset]);
+        self.mark_dirty(offset.offset);
+    }
+
+    pub fn get(&self, offset: StackOffset<Style>) -> &Style {
+        &self.stack[offset.offset]
+    }
+
+    fn mark_dirty(&mut self, idx: usize) {
+        if idx < self.dirty_from {
+            self.dirty_from = idx;
+            self.cache.truncate(idx);
+        }
+    }
+
+    /// Recompute dirty entries and return the fully-combined style.
+    pub fn style(&mut self) -> Style {
+        let start = self.dirty_from;
+        let len = self.stack.len();
+
+        if len == 0 {
+            return Style::new();
+        }
+
+        // Rebuild cache from `start` onward.
+        // cache[i] = combined style of stack[0..=i].
+        self.cache.resize_with(len, Style::new);
+
+        for i in start..len {
+            let base = if i == 0 {
+                Style::new()
+            } else {
+                self.cache[i - 1].clone()
+            };
+            let mut combined = base;
+            combined.apply_mut(self.stack[i].clone());
+            self.cache[i] = combined;
+        }
+
+        self.dirty_from = len; // fully clean
+        self.cache[len - 1].clone()
+    }
+}
+
 /// View state stores internal state associated with a view which is owned and managed by Floem.
 pub struct ViewState {
     pub(crate) layout_id: NodeId,
     pub(crate) element_id: crate::ElementId,
-    pub(crate) style: Stack<Style>,
+    pub(crate) style: StyleStack,
     /// We store the stack offset to the view style to keep the api consistent but it should
     /// always be the first offset.
     pub(crate) view_style_offset: StackOffset<Style>,
@@ -295,7 +394,7 @@ pub struct ViewState {
 
 impl ViewState {
     pub(crate) fn new(id: ViewId, taffy: &mut LayoutTree, box_tree: &mut crate::BoxTree) -> Self {
-        let mut style = Stack::<Style>::default();
+        let mut style = StyleStack::default();
         let view_style_offset = style.next_offset();
         style.push(Style::new());
 
@@ -306,7 +405,10 @@ impl ViewState {
         );
         box_tree.set_meta(element_id.0, Some(element_id));
 
-        add_update_message(UpdateMessage::RequestStyle(id));
+        add_update_message(UpdateMessage::RequestStyle(
+            element_id,
+            StyleReasonSet::full_recalc(),
+        ));
         add_update_message(UpdateMessage::RequestViewStyle(id));
 
         Self {
@@ -363,12 +465,8 @@ impl ViewState {
         false
     }
 
-    pub(crate) fn style(&self) -> Style {
-        let mut result = Style::new();
-        for entry in self.style.stack.iter() {
-            result.apply_mut(entry.clone());
-        }
-        result
+    pub(crate) fn style(&mut self) -> Style {
+        self.style.style()
     }
 
     pub fn cursor(&self) -> Option<CursorStyle> {
