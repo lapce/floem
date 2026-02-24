@@ -5,7 +5,8 @@ use floem::{
     easing::Spring,
     kurbo::Affine,
     menu::*,
-    prelude::{RwSignal, SignalGet, SignalUpdate},
+    prelude::*,
+    prelude::{RwSignal, SignalGet, SignalUpdate, el},
     style::Transition,
     unit::Angle,
     views::{ButtonClass, Decorators, Stack},
@@ -119,6 +120,9 @@ pub fn menu_view() -> impl IntoView {
 
     let context_button = "Right click me (Context menu)"
         .class(ButtonClass)
+        .on_event_stop(el::DoubleClick, move |_, _| {
+            rotation.update(|r| *r = Angle::Deg(r.to_degrees() - 90.));
+        })
         .style(move |s| {
             s.padding(10.0)
                 .border(1.0)

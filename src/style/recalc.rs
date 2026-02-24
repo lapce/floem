@@ -47,6 +47,9 @@ bitflags! {
         /// the entire view.
         const TARGET = 1 << 3;
 
+        /// Request that the `style_pass` be run again
+        const STYLE_PASS = 1 << 6;
+
         /// Parent's inherited scalar properties changed (font size, color, etc.).
         /// Child must recompute computed_style but may skip resolve_nested_maps
         /// if it has no selectors and its own style stack is clean.
@@ -56,6 +59,7 @@ bitflags! {
         /// Child must re-run resolve_nested_maps to pick up new class rules,
         /// but inherited scalar props are unchanged so with_context values are stable.
         const CLASS_CONTEXT_CHANGE = 1 << 5;
+
     }
 }
 
@@ -107,7 +111,7 @@ impl StyleReasonSet {
 
     pub fn with_selector(selector: StyleSelector) -> Self {
         let mut s = Self::empty();
-        s.set_selectors(StyleSelectors::new().set(selector, true));
+        s.set_selectors(StyleSelectors::empty().set_selector(selector, true));
         s
     }
 
@@ -133,6 +137,10 @@ impl StyleReasonSet {
         self.flags |= StyleReasonFlags::TRANSITION;
     }
 
+    pub fn set_style_pass(&mut self) {
+        self.flags |= StyleReasonFlags::STYLE_PASS;
+    }
+
     pub fn set_selectors(&mut self, selectors: StyleSelectors) {
         self.flags |= StyleReasonFlags::SELECTOR;
         self.selectors = Some(selectors);
@@ -146,6 +154,12 @@ impl StyleReasonSet {
     pub fn animation() -> Self {
         let mut s = Self::empty();
         s.set_animation();
+        s
+    }
+
+    pub fn style_pass() -> Self {
+        let mut s = Self::empty();
+        s.set_style_pass();
         s
     }
 
@@ -172,13 +186,28 @@ impl StyleReasonSet {
     /// Returns true if this reason set requires a full cascade recomputation
     /// (i.e. `resolve_nested_maps` must run). False means only animation/transition
     /// stepping is needed and the cached `combined_style` can be reused.
-    pub fn needs_full_recalc(&self) -> bool {
+    pub fn needs_resolve_nested_maps(&self) -> bool {
         self.flags.intersects(
             StyleReasonFlags::SELECTOR
-                | StyleReasonFlags::TARGET
                 | StyleReasonFlags::CLASS_CONTEXT_CHANGE
                 | StyleReasonFlags::INHERITED_CHANGE,
         )
+    }
+
+    pub fn needs_animation(&self) -> bool {
+        self.needs_resolve_nested_maps() || self.flags.intersects(StyleReasonFlags::ANIMATION)
+    }
+
+    pub fn needs_style_pass(&self) -> bool {
+        self.needs_resolve_nested_maps()
+            || self.needs_animation()
+            || self.flags.intersects(StyleReasonFlags::STYLE_PASS)
+    }
+
+    pub fn needs_transition(&self) -> bool {
+        self.needs_resolve_nested_maps()
+            || self.needs_animation()
+            || self.flags.intersects(StyleReasonFlags::TRANSITION)
     }
 
     pub fn has_animation(&self) -> bool {
@@ -258,28 +287,6 @@ impl StyleReasonSet {
         if self.targets.is_empty() {
             self.flags.remove(StyleReasonFlags::TARGET);
         }
-    }
-
-    /// Returns a copy of this reason set appropriate for forwarding to children.
-    /// Strips local interaction selectors (hover, focus, active, etc.) since those
-    /// don't propagate. Retains ambient selectors (disabled, dark mode, dragging,
-    /// selected, responsive) since those flow down the tree.
-    pub fn for_children(&self) -> StyleReasonSet {
-        let mut out = self.clone();
-        out.targets.clear();
-        out.flags.remove(StyleReasonFlags::TARGET);
-
-        if let Some(selectors) = out.selectors {
-            let propagating = selectors.propagating();
-            if propagating.is_empty() {
-                out.selectors = None;
-                out.flags.remove(StyleReasonFlags::SELECTOR);
-            } else {
-                out.selectors = Some(propagating);
-            }
-        }
-
-        out
     }
 
     pub fn with_target(element_id: ElementId, reason: StyleReasonSet) -> Self {

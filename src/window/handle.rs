@@ -563,7 +563,7 @@ impl WindowHandle {
             // dbg!(traversal.len());
             for view_id in traversal {
                 let cx = &mut StyleCx::new(&mut self.window_state, view_id);
-                cx.style_view(view_id);
+                cx.style_view();
             }
             if self.window_state.capture.is_some() {
                 // we need to break if capture because when capturing we style all views so no need to loop here.

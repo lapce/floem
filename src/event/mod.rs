@@ -1709,6 +1709,17 @@ impl Event {
         }
     }
 
+    /// Enter, numpad enter and space cause a view to be activated with the keyboard
+    pub fn is_keyboard_trigger_start(&self) -> bool {
+        match self {
+            Event::Key(key) => {
+                matches!(key.code, Code::NumpadEnter | Code::Enter | Code::Space)
+                    && key.state == KeyState::Down
+            }
+            _ => false,
+        }
+    }
+
     /// Returns whether this event should be delivered to disabled views.
     ///
     /// Disabled views (marked via `.disabled()`) generally don't receive interactive events,

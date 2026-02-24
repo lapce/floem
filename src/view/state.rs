@@ -27,7 +27,7 @@ use taffy::tree::NodeId;
 /// A stack of view attributes. Each entry is associated with a view decorator call.
 #[derive(Debug)]
 pub struct Stack<T> {
-    pub stack: SmallVec<[T; 1]>,
+    pub stack: SmallVec<[T; 3]>,
 }
 
 impl<T> Default for Stack<T> {
@@ -38,6 +38,7 @@ impl<T> Default for Stack<T> {
     }
 }
 
+#[derive(Debug)]
 pub struct StackOffset<T> {
     offset: usize,
     phantom: PhantomData<T>,
@@ -199,11 +200,11 @@ impl Visibility {
 /// Cached prefix-sum style stack with dirty tracking.
 pub struct StyleStack {
     /// The raw per-decorator styles (same role as Stack<Style>).
-    pub stack: SmallVec<[Style; 1]>,
+    pub stack: Stack<Style>,
     /// Prefix-sum cache: `cache[i]` = stack[0..=i] all applied together.
     /// len() always equals stack.len() after a full recompute, but may be
     /// shorter when the stack is dirty (new pushes haven't been cached yet).
-    cache: SmallVec<[Style; 1]>,
+    cache: SmallVec<[Style; 3]>,
     /// Index of the first entry that needs recomputation.
     /// `dirty_from == stack.len()` means fully clean.
     dirty_from: usize,
@@ -212,7 +213,7 @@ pub struct StyleStack {
 impl Default for StyleStack {
     fn default() -> Self {
         StyleStack {
-            stack: SmallVec::new(),
+            stack: Stack::default(),
             cache: SmallVec::new(),
             dirty_from: 0,
         }
@@ -222,41 +223,18 @@ impl Default for StyleStack {
 impl StyleStack {
     /// Reserve a slot and return its offset (mirrors Stack::next_offset).
     pub fn next_offset(&mut self) -> StackOffset<Style> {
-        let offset = self.stack.len();
-        // Push a placeholder so the offset is stable.
-        self.stack.push(Style::new());
-        // Mark dirty from here if not already dirty earlier.
-        if offset < self.dirty_from || self.dirty_from == self.cache.len() {
-            self.dirty_from = self.dirty_from.min(offset);
-        }
-        // Trim cache to not include this slot yet.
-        self.cache.truncate(offset);
-        self.dirty_from = self.dirty_from.min(offset);
-        StackOffset {
-            offset,
-            phantom: PhantomData,
-        }
+        let offset = self.stack.next_offset();
+        self.mark_dirty(offset.offset);
+        offset
     }
 
     pub fn push(&mut self, style: Style) {
-        let idx = self.stack.len();
         self.stack.push(style);
-        self.dirty_from = self.dirty_from.min(idx);
-        self.cache.truncate(idx);
     }
 
     pub fn set(&mut self, offset: StackOffset<Style>, value: Style) {
-        self.stack[offset.offset] = value;
+        self.stack.set(offset, value);
         self.mark_dirty(offset.offset);
-    }
-
-    pub fn update(&mut self, offset: StackOffset<Style>, f: impl Fn(&mut Style)) {
-        f(&mut self.stack[offset.offset]);
-        self.mark_dirty(offset.offset);
-    }
-
-    pub fn get(&self, offset: StackOffset<Style>) -> &Style {
-        &self.stack[offset.offset]
     }
 
     fn mark_dirty(&mut self, idx: usize) {
@@ -268,29 +246,32 @@ impl StyleStack {
 
     /// Recompute dirty entries and return the fully-combined style.
     pub fn style(&mut self) -> Style {
-        let start = self.dirty_from;
-        let len = self.stack.len();
+        let len = self.stack.stack.len();
 
         if len == 0 {
+            self.cache.clear();
+            self.dirty_from = 0;
             return Style::new();
         }
 
-        // Rebuild cache from `start` onward.
-        // cache[i] = combined style of stack[0..=i].
+        if self.dirty_from >= len {
+            return self.cache[len - 1].clone();
+        }
+
+        let start = self.dirty_from;
         self.cache.resize_with(len, Style::new);
 
         for i in start..len {
-            let base = if i == 0 {
-                Style::new()
+            self.cache[i] = if i == 0 {
+                self.stack.stack[0].clone()
             } else {
-                self.cache[i - 1].clone()
+                let mut combined = self.cache[i - 1].clone();
+                combined.apply_mut(self.stack.stack[i].clone());
+                combined
             };
-            let mut combined = base;
-            combined.apply_mut(self.stack[i].clone());
-            self.cache[i] = combined;
         }
 
-        self.dirty_from = len; // fully clean
+        self.dirty_from = len;
         self.cache[len - 1].clone()
     }
 }
@@ -303,8 +284,6 @@ pub struct ViewState {
     /// We store the stack offset to the view style to keep the api consistent but it should
     /// always be the first offset.
     pub(crate) view_style_offset: StackOffset<Style>,
-    /// Layout is requested on all direct and indirect children.
-    pub(crate) request_style_recursive: bool,
     pub(crate) has_style_selectors: StyleSelectors,
     // the translation value that this view applies to children elements. Scroll view can use this to scroll.
     pub(crate) child_translation: Vec2,
@@ -316,6 +295,7 @@ pub struct ViewState {
     pub(crate) animations: Stack<Animation>,
     pub(crate) classes: Vec<StyleClassRef>,
     pub(crate) dragging_style: Option<Style>,
+    pub(crate) combined_pre_animation_style: Style,
     /// The resolved style for this view (base + selectors + classes).
     /// Does NOT include inherited properties from ancestors.
     ///
@@ -342,14 +322,14 @@ pub struct ViewState {
     /// Derived from this view's computed_style (which includes inherited properties
     /// from ancestors). Children will merge this with their combined_style to produce
     /// their computed_style.
-    pub(crate) style_cx: Option<Style>,
+    pub(crate) style_cx: Style,
     /// The class context containing class definitions for descendants.
     /// Contains `.class(SomeClass, ...)` nested maps that flow down the tree.
     ///
     /// Derived from this view's combined_style (only explicitly set class definitions).
     /// Children will use this to resolve their class references when computing their
     /// combined_style.
-    pub(crate) class_cx: Option<Style>,
+    pub(crate) class_cx: Style,
     /// the style interaction cx that is saved after computing the final style.
     /// This will be used as the base interaction for all **children** of this view as these are the inherited interactions
     pub(crate) style_interaction_cx: InheritedInteractionCx,
@@ -357,9 +337,6 @@ pub struct ViewState {
     pub(crate) parent_set_style_interaction: InheritedInteractionCx,
     /// Controls view visibility for phase transitions.
     pub(crate) visibility: Visibility,
-    /// stores the last known visibility state of the view. This is not based on the visibility transition and as such does **NOT** the final visibility of the view.
-    /// that is done by `visibility`.
-    pub(crate) is_hidden: bool,
     /// The cursor style set by the style pass on the view. There is also the [`Self::user_cursor`] that takes precedance over this cursor.
     pub(crate) style_cursor: Option<CursorStyle>,
     /// the cursor style that a user can set on a view through the `ViewId`. This takes precedance over style_cursor.
@@ -418,10 +395,10 @@ impl ViewState {
             view_style_offset,
             layout_props: Default::default(),
             view_style_props: Default::default(),
-            request_style_recursive: false,
             has_style_selectors: StyleSelectors::default(),
             animations: Default::default(),
             classes: Vec::new(),
+            combined_pre_animation_style: Style::new(),
             combined_style: Style::new(),
             computed_style: Style::new(),
             taffy_style: taffy::style::Style::DEFAULT,
@@ -442,27 +419,17 @@ impl ViewState {
             transform: Affine::IDENTITY,
             debug_name: Default::default(),
             style_cx_parent: None,
-            style_cx: None,
-            class_cx: None,
+            style_cx: Style::new(),
+            class_cx: Style::new(),
             style_interaction_cx: Default::default(),
             parent_set_style_interaction: Default::default(),
             visibility: Visibility::default(),
-            is_hidden: false,
             style_cursor: None,
             user_cursor: None,
             children_scope: None,
             keyed_children: None,
             scope: None,
         }
-    }
-
-    pub(crate) fn has_active_animation(&self) -> bool {
-        for animation in self.animations.stack.iter() {
-            if animation.is_in_progress() {
-                return true;
-            }
-        }
-        false
     }
 
     pub(crate) fn style(&mut self) -> Style {
@@ -488,14 +455,9 @@ impl ViewState {
         view_class: Option<crate::style::StyleClassRef>,
         inherited_context: &Style,
         class_context: &Style,
-    ) -> (Style, bool, bool) {
+    ) {
         // Start with the combined stacked styles
         let base_style = self.style();
-
-        // Extract and store selectors from the base style for selector detection.
-        // This enables has_style_for_selector() to work correctly, including for
-        // selectors defined inside with_context closures.
-        self.has_style_selectors = base_style.selectors();
 
         // Build the full class list: view's classes + view type class
         let mut all_classes = self.classes.clone();
@@ -507,7 +469,7 @@ impl ViewState {
         let inherited_ctx = inherited_context.clone();
 
         // Resolve all nested maps: selectors, responsive styles, and classes
-        let (mut combined, classes_applied) = crate::style::resolve_nested_maps(
+        let (combined, selectors) = crate::style::resolve_nested_maps(
             base_style,
             interact_state,
             screen_size_bp,
@@ -515,9 +477,14 @@ impl ViewState {
             &inherited_ctx,
             class_context,
         );
+        self.has_style_selectors = selectors;
+        self.combined_pre_animation_style = combined.clone();
+    }
 
+    pub fn apply_animations(&mut self) -> bool {
+        let mut combined = self.combined_pre_animation_style.clone();
         // ─────────────────────────────────────────────────────────────────────
-        // Phase 7: Process animations
+        // Process animations
         // ─────────────────────────────────────────────────────────────────────
         // Animations modify the computed style by interpolating between keyframe values.
         // We process animations here, after the base style is computed but before
@@ -545,7 +512,8 @@ impl ViewState {
         }
 
         self.combined_style = combined.clone();
-        (combined, classes_applied, has_active_animation)
+
+        has_active_animation
     }
 
     pub(crate) fn add_event_listener(

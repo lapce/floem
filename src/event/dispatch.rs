@@ -606,7 +606,14 @@ impl RouteCx<'_, '_> {
         match kind {
             RouteKind::Directed { target, phases } => self.dispatch_directed(target, phases),
             RouteKind::Focused { phases } => {
-                if let Some(focus) = &self.gcx.window_state.focus_state {
+                if let Some(focus) = &self
+                    .gcx
+                    .window_state
+                    .focus_state
+                    .current_path()
+                    .last()
+                    .copied()
+                {
                     self.dispatch_directed(*focus, phases)
                 } else if phases.contains(Phases::BROADCAST) {
                     self.dispatch_global(true);
@@ -671,7 +678,7 @@ impl RouteCx<'_, '_> {
 
         // Keyboard trigger → queue a synthetic Click on the focused element.
         if self.event.is_keyboard_trigger() {
-            if let Some(focus) = &self.gcx.window_state.focus_state {
+            if let Some(focus) = self.gcx.window_state.focus_state.current_path().last() {
                 self.pending_events.push((
                     RouteKind::Directed {
                         target: *focus,
@@ -1303,14 +1310,21 @@ impl RouteCx<'_, '_> {
 impl RouteCx<'_, '_> {
     /// Update focus to a new element, firing FocusGained/FocusLost events.
     pub fn update_focus(&mut self, element_id: ElementId, keyboard_navigation: bool) {
-        let new_focus = self.resolve_focus_target(element_id, keyboard_navigation);
+        let mut new_focus = self.resolve_focus_targets(element_id, keyboard_navigation);
+        new_focus.reverse();
 
-        let old_focus = self.gcx.window_state.focus_state;
+        let old_focus = self
+            .gcx
+            .window_state
+            .focus_state
+            .current_path()
+            .last()
+            .copied();
 
-        if old_focus == new_focus {
+        if old_focus == new_focus.last().copied() {
             return;
         }
-        self.gcx.window_state.focus_state = new_focus;
+        self.gcx.window_state.focus_state.update_path(&new_focus);
 
         if let Some(old) = old_focus {
             self.gcx
@@ -1325,7 +1339,7 @@ impl RouteCx<'_, '_> {
             ));
         }
 
-        if let Some(new_focus) = new_focus {
+        if let Some(new_focus) = new_focus.last().copied() {
             self.gcx
                 .window_state
                 .mark_style_dirty_selector(new_focus, StyleSelector::Focus);
@@ -1342,7 +1356,14 @@ impl RouteCx<'_, '_> {
     }
 
     pub fn clear_focus(&mut self) {
-        let old_focus = self.gcx.window_state.focus_state.take();
+        let old_focus = self
+            .gcx
+            .window_state
+            .focus_state
+            .current_path()
+            .last()
+            .copied();
+        self.gcx.window_state.focus_state.clear();
 
         if let Some(old) = old_focus {
             self.gcx
@@ -1360,28 +1381,42 @@ impl RouteCx<'_, '_> {
 
     /// Walk up from `target` to find the first ancestor (or self) that is
     /// visible and focusable (or keyboard-navigable if using keyboard nav).
-    fn resolve_focus_target(
+    fn resolve_focus_targets(
         &self,
         target: ElementId,
         keyboard_navigation: bool,
-    ) -> Option<ElementId> {
+    ) -> SmallVec<[ElementId; 16]> {
         let required = if keyboard_navigation {
             NodeFlags::VISIBLE | NodeFlags::KEYBOARD_NAVIGABLE
         } else {
             NodeFlags::VISIBLE | NodeFlags::FOCUSABLE
         };
         let box_tree = self.gcx.window_state.box_tree.borrow();
-        std::iter::successors(Some(target), |&cur| {
-            box_tree
-                .parent_of(cur.0)
-                .map(|p| box_tree.meta(p).flatten().unwrap())
-        })
-        .find(|id| {
+        let ancestors = || {
+            std::iter::successors(Some(target), |&cur| {
+                box_tree
+                    .parent_of(cur.0)
+                    .map(|p| box_tree.meta(p).flatten().unwrap())
+            })
+        };
+
+        let focus_target = ancestors().find(|id| {
             box_tree
                 .flags(id.0)
                 .map(|f| f.contains(required))
                 .unwrap_or(false)
+        });
+
+        let Some(focus_target) = focus_target else {
+            return SmallVec::new();
+        };
+
+        std::iter::successors(Some(focus_target), |&cur| {
+            box_tree
+                .parent_of(cur.0)
+                .map(|p| box_tree.meta(p).flatten().unwrap())
         })
+        .collect()
     }
 }
 
@@ -1393,7 +1428,14 @@ impl RouteCx<'_, '_> {
     pub(crate) fn view_tab_navigation(&mut self, backwards: bool) {
         let scope_root = self.gcx.window_state.root_view_id.get_element_id();
 
-        let current_focus = self.gcx.window_state.focus_state.unwrap_or(scope_root);
+        let current_focus = self
+            .gcx
+            .window_state
+            .focus_state
+            .current_path()
+            .last()
+            .copied()
+            .unwrap_or(scope_root);
 
         // TODO: replace with non-build_focus_space traversal
         let _ = (scope_root, current_focus, backwards);
@@ -1525,6 +1567,24 @@ impl RouteCx<'_, '_> {
 
     fn handle_pointer_state_updates(&mut self) {
         static START_TIME: LazyLock<Instant> = LazyLock::new(Instant::now);
+
+        let old_key_state = self.gcx.window_state.key_trigger_state;
+        let new = self.event.is_keyboard_trigger_start();
+        if old_key_state != new {
+            if let Some(element_id) = self
+                .gcx
+                .window_state
+                .focus_state
+                .current_path()
+                .last()
+                .copied()
+            {
+                self.gcx
+                    .window_state
+                    .mark_style_dirty_selector(element_id, StyleSelector::Active);
+            }
+            self.gcx.window_state.key_trigger_state = new;
+        }
 
         let Event::Pointer(pe) = &self.event else {
             return;

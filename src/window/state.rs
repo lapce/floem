@@ -2,12 +2,9 @@ use std::{cell::RefCell, collections::HashMap};
 
 use crate::{
     action::exec_after_animation_frame,
-    event::listener,
+    inspector::CaptureState,
     platform::menu_types::MenuId,
-    style::{
-        StyleSelectors,
-        recalc::{StyleReasonFlags, StyleReasonSet},
-    },
+    style::{StyleSelectors, recalc::StyleReasonSet},
     view::ViewStorage,
 };
 
@@ -16,7 +13,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::SmallVec;
 use taffy::{AvailableSpace, NodeId};
 use ui_events::pointer::{PointerId, PointerInfo};
-use understory_event_state::{click::ClickState, hover::HoverState};
+use understory_event_state::{click::ClickState, focus::FocusState, hover::HoverState};
 use winit::cursor::CursorIcon;
 use winit::window::Theme;
 
@@ -28,22 +25,11 @@ use crate::{
     context::FrameUpdate,
     element_id::ElementId,
     event::{DragTracker, Event, WindowEvent, clear_hit_test_cache},
-    inspector::CaptureState,
     layout::responsive::{GridBreakpoints, ScreenSizeBp},
     message::UpdateMessage,
     style::{CursorStyle, Style, StyleSelector, theme::default_theme},
     view::{LayoutNodeCx, MeasureCx, VIEW_STORAGE, ViewId},
 };
-
-/// A small set of ViewIds, optimized for small collections (< 8 items).
-/// Uses linear search which is faster than hashing for small N.
-/// Inspired by Chromium's approach for event listener collections.
-pub(crate) type ViewIdSmallSet = SmallVec<[ViewId; 8]>;
-
-/// A small set of ViewIds, optimized for small collections (< 8 items).
-/// Uses linear search which is faster than hashing for small N.
-/// Inspired by Chromium's approach for event listener collections.
-pub(crate) type VisualIdSmallSet = SmallVec<[ElementId; 8]>;
 
 /// A small map from PointerId to ViewId, optimized for the common case of 1-2 pointers.
 /// Most applications only have a mouse pointer or a few touch points active at once.
@@ -83,7 +69,8 @@ pub struct WindowState {
     pub(crate) click_state: ClickState<Rc<[ElementId]>>,
     // TODO: Track hover state per pointer
     pub(crate) hover_state: HoverState<ElementId>,
-    pub(crate) focus_state: Option<ElementId>,
+    pub(crate) key_trigger_state: bool,
+    pub(crate) focus_state: FocusState<ElementId>,
     pub(crate) file_drag_paths: Option<Rc<[std::path::PathBuf]>>,
     pub(crate) element_id_cursors: FxHashMap<ElementId, CursorStyle>,
     // whether the window is in light or dark mode
@@ -118,7 +105,7 @@ pub struct WindowState {
     pub(crate) default_theme_inherited: Style,
 
     /// Tracking for views that have a visual position listener
-    pub(crate) listeners: FxHashMap<listener::EventListenerKey, Vec<ViewId>>,
+    pub(crate) listeners: FxHashMap<crate::event::listener::EventListenerKey, Vec<ViewId>>,
     pub(crate) needs_layout: bool,
     pub(crate) needs_box_tree_from_layout: bool,
     pub(crate) needs_box_tree_commit: bool,
@@ -151,7 +138,8 @@ impl WindowState {
             view_style_dirty: Default::default(),
             style_dirty: Default::default(),
             drag_tracker: DragTracker::new(),
-            focus_state: None,
+            focus_state: FocusState::new(),
+            key_trigger_state: false,
             click_state: ClickState::new(),
             hover_state: HoverState::new(),
             file_drag_paths: None,
@@ -246,6 +234,8 @@ impl WindowState {
                 ids.retain(|&v| v != id);
             }
         }
+        self.style_dirty.remove(&id);
+        self.view_style_dirty.remove(&id);
         self.views_needing_box_tree_update.remove(&id);
 
         // Clean up pointer capture state for removed view
@@ -266,7 +256,7 @@ impl WindowState {
     }
 
     pub fn is_focused(&self, id: impl Into<ElementId>) -> bool {
-        self.focus_state.map(|f| f == id.into()).unwrap_or(false)
+        self.focus_state.current_path().contains(&id.into())
     }
 
     #[deprecated(note = "use `ViewId::is_active` instead")]
@@ -277,6 +267,7 @@ impl WindowState {
     pub fn is_active(&self, id: impl Into<ElementId>) -> bool {
         let id = id.into();
         self.click_state.presses().any(|p| p.target.contains(&id))
+            || (self.key_trigger_state && dbg!(self.focus_state.current_path().contains(&id)))
     }
 
     /// Check if a view has pointer capture for any pointer.
@@ -1053,7 +1044,7 @@ impl WindowState {
             self.screen_size_bp = bp;
             self.root_view_id
                 .request_style(StyleReasonSet::with_selectors(
-                    StyleSelectors::new().responsive(),
+                    StyleSelectors::empty().responsive(),
                 ));
         }
     }
@@ -1135,60 +1126,14 @@ impl WindowState {
     pub fn mark_style_dirty_selector(&mut self, element_id: ElementId, selector: StyleSelector) {
         self.mark_style_dirty_with(
             element_id,
-            StyleReasonSet::with_selectors(StyleSelectors::new().set(selector, true)),
+            StyleReasonSet::with_selectors(StyleSelectors::empty().set_selector(selector, true)),
         );
-    }
-
-    pub(crate) fn mark_style_dirty_inherited_change(&mut self, element_id: ElementId) {
-        let mut reason = StyleReasonSet::empty();
-        reason.flags |= StyleReasonFlags::INHERITED_CHANGE;
-        self.mark_style_dirty_with(element_id, reason);
-    }
-
-    pub(crate) fn mark_style_dirty_class_context_change(&mut self, element_id: ElementId) {
-        let mut reason = StyleReasonSet::empty();
-        reason.flags |= StyleReasonFlags::CLASS_CONTEXT_CHANGE;
-        self.mark_style_dirty_with(element_id, reason);
     }
 
     /// Take the reason set for a view and remove it from the dirty map in one step.
     /// Call this at the top of `style_view` instead of a separate `remove`.
     pub(crate) fn take_style_reason(&mut self, view_id: ViewId) -> Option<StyleReasonSet> {
         self.style_dirty.remove(&view_id)
-    }
-
-    /// Peek at the reason set without removing it. Useful for deciding whether
-    /// to even schedule a style pass before committing to one.
-    pub(crate) fn style_reason(&self, view_id: ViewId) -> Option<&StyleReasonSet> {
-        self.style_dirty.get(&view_id)
-    }
-
-    pub(crate) fn is_style_dirty(&self, view_id: ViewId) -> bool {
-        self.style_dirty.contains_key(&view_id)
-    }
-
-    /// Returns true if the view is dirty for *any* reason other than animation/transition.
-    /// When false, `style_view` can use the fast path that skips cascade recomputation.
-    pub(crate) fn needs_full_style_recalc(&self, view_id: ViewId) -> bool {
-        self.style_dirty
-            .get(&view_id)
-            .map(|r| r.needs_full_recalc())
-            .unwrap_or(false)
-    }
-
-    /// Remove a view from the dirty map entirely, e.g. when a view is destroyed
-    /// mid-frame before its style pass runs.
-    pub(crate) fn clear_style_dirty(&mut self, view_id: ViewId) {
-        self.style_dirty.remove(&view_id);
-    }
-
-    /// Drain all dirty views for iteration in the style pass. The caller owns
-    /// the reasons and the map is left empty, ready for the next frame's
-    /// accumulation.
-    pub(crate) fn drain_style_dirty(
-        &mut self,
-    ) -> impl Iterator<Item = (ViewId, StyleReasonSet)> + '_ {
-        self.style_dirty.drain()
     }
 }
 

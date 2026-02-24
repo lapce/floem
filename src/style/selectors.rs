@@ -3,6 +3,24 @@
 //! This module provides [`StyleSelector`] enum and [`StyleSelectors`] bitmask
 //! for tracking pseudo-class states like hover, focus, active, etc.
 
+use bitflags::bitflags;
+
+bitflags! {
+    #[derive(Copy, Clone, Eq, PartialEq, Hash, Default)]
+    pub struct StyleSelectors: u16 {
+        const HOVER         = 1 << 0;
+        const FOCUS         = 1 << 1;
+        const FOCUS_VISIBLE = 1 << 2;
+        const DISABLED      = 1 << 3;
+        const DARK_MODE     = 1 << 4;
+        const ACTIVE        = 1 << 5;
+        const DRAGGING      = 1 << 6;
+        const SELECTED      = 1 << 7;
+        const FILE_HOVER    = 1 << 8;
+        const RESPONSIVE    = 1 << 9;
+    }
+}
+
 /// Pseudo-class selectors for conditional styling
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum StyleSelector {
@@ -45,112 +63,79 @@ impl StyleSelector {
             StyleSelector::FileHover => "FileHover",
         }
     }
+
+    pub const fn flag(self) -> StyleSelectors {
+        match self {
+            StyleSelector::Hover => StyleSelectors::HOVER,
+            StyleSelector::Focus => StyleSelectors::FOCUS,
+            StyleSelector::FocusVisible => StyleSelectors::FOCUS_VISIBLE,
+            StyleSelector::Disabled => StyleSelectors::DISABLED,
+            StyleSelector::DarkMode => StyleSelectors::DARK_MODE,
+            StyleSelector::Active => StyleSelectors::ACTIVE,
+            StyleSelector::Dragging => StyleSelectors::DRAGGING,
+            StyleSelector::Selected => StyleSelectors::SELECTED,
+            StyleSelector::FileHover => StyleSelectors::FILE_HOVER,
+        }
+    }
 }
 
-/// Bitmask of active style selectors
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Default)]
-pub struct StyleSelectors {
-    selectors: u8,
-    responsive: bool,
-}
+const PROPAGATING_FLAGS: StyleSelectors = StyleSelectors::DISABLED
+    .union(StyleSelectors::DARK_MODE)
+    .union(StyleSelectors::DRAGGING)
+    .union(StyleSelectors::SELECTED)
+    .union(StyleSelectors::RESPONSIVE);
 
 impl StyleSelectors {
-    pub(crate) const fn new() -> Self {
-        StyleSelectors {
-            selectors: 0,
-            responsive: false,
-        }
-    }
-
-    pub(crate) const fn set(mut self, selector: StyleSelector, value: bool) -> Self {
-        let v = selector as u8;
+    pub const fn set_selector(self, selector: StyleSelector, value: bool) -> Self {
         if value {
-            self.selectors |= v;
+            self.union(selector.flag())
         } else {
-            self.selectors &= !v;
-        }
-        self
-    }
-
-    pub(crate) fn has(self, selector: StyleSelector) -> bool {
-        let v = selector as u8;
-        self.selectors & v == v
-    }
-
-    pub(crate) fn union(self, other: StyleSelectors) -> StyleSelectors {
-        StyleSelectors {
-            selectors: self.selectors | other.selectors,
-            responsive: self.responsive | other.responsive,
+            self.difference(selector.flag())
         }
     }
 
-    /// Returns true if any selector in `other` is also present in `self`.
-    /// Used to skip cascade recomputation when a selector fires but this
-    /// view has no styles gated on that selector.
-    pub(crate) fn intersects(self, other: StyleSelectors) -> bool {
-        (self.selectors & other.selectors) != 0 || (self.responsive && other.responsive)
+    pub fn has(self, selector: StyleSelector) -> bool {
+        self.contains(selector.flag())
     }
 
-    pub(crate) const fn responsive(mut self) -> Self {
-        self.responsive = true;
-        self
+    pub(crate) const fn responsive(self) -> Self {
+        self.union(StyleSelectors::RESPONSIVE)
     }
 
-    pub(crate) fn has_responsive(self) -> bool {
-        self.responsive
+    pub fn has_responsive(self) -> bool {
+        self.contains(StyleSelectors::RESPONSIVE)
     }
 
-    /// Returns a formatted string representation of the active selectors
-    pub fn debug_string(&self) -> String {
-        let parts = self.active_selectors();
-
-        if parts.is_empty() {
-            if self.responsive {
-                "Responsive".to_string()
-            } else {
-                "None".to_string()
-            }
-        } else {
-            let selector_str = parts.join(" + ");
-            if self.responsive {
-                format!("{} (Responsive)", selector_str)
-            } else {
-                selector_str
-            }
-        }
+    pub fn propagating(self) -> StyleSelectors {
+        self & PROPAGATING_FLAGS
     }
 
-    /// Returns only the selectors that should propagate down to children.
-    /// Ambient state (disabled, dark mode, dragging, selected, responsive)
-    /// flows down the tree. Local interaction state (hover, focus, active, etc.)
-    /// is specific to the element it fired on and must not propagate.
-    pub(crate) fn propagating(self) -> StyleSelectors {
-        StyleSelectors {
-            selectors: self.selectors
-                & (StyleSelector::Disabled as u8
-                    | StyleSelector::DarkMode as u8
-                    | StyleSelector::Dragging as u8
-                    | StyleSelector::Selected as u8),
-            responsive: self.responsive,
-        }
-    }
-
-    /// Returns true if this selector set contains any propagating selectors.
-    pub(crate) fn has_propagating(self) -> bool {
+    pub fn has_propagating(self) -> bool {
         !self.propagating().is_empty()
     }
 
-    /// Returns a vector of individual selector names
-    pub fn active_selectors(&self) -> Vec<&'static str> {
+    pub fn active_selectors(self) -> Vec<&'static str> {
         StyleSelector::all()
             .iter()
-            .filter(|&&selector| self.has(selector))
-            .map(|&selector| selector.name())
+            .filter(|&&s| self.has(s))
+            .map(|&s| s.name())
             .collect()
     }
 
-    /// Returns true if any selectors are active
-    pub fn is_empty(&self) -> bool {
-        self.selectors == 0 && !self.responsive
+    pub fn debug_string(self) -> String {
+        let parts = self.active_selectors();
+        let responsive = self.has_responsive();
+        match (parts.is_empty(), responsive) {
+            (true, false) => "None".to_string(),
+            (true, true) => "Responsive".to_string(),
+            (false, false) => parts.join(" + "),
+            (false, true) => format!("{} (Responsive)", parts.join(" + ")),
+        }
+    }
+}
+
+impl std::fmt::Debug for StyleSelectors {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "StyleSelectors({})", self.debug_string())
     }
 }

@@ -1,14 +1,12 @@
-use super::Decorators;
-use crate::context::{Phases, StyleCx};
-use crate::event::listener;
-use crate::event::{Event, EventPropagation, RouteKind};
-use crate::style::recalc::StyleReasonSet;
-use crate::style::{Style, StyleSelector};
-use crate::style_class;
-use crate::view::IntoView;
-use crate::view::View;
-use crate::view::ViewId;
-use crate::{AnyView, custom_event};
+use crate::{
+    AnyView, ViewId,
+    context::Phases,
+    custom_event,
+    event::{Event, EventPropagation, RouteKind},
+    prelude::*,
+    style::{Style, StyleCx, recalc::StyleReasonSet},
+    style_class,
+};
 use floem_reactive::{Effect, RwSignal, SignalGet, SignalUpdate};
 use ui_events::keyboard::{Key, KeyboardEvent, NamedKey};
 
@@ -34,7 +32,7 @@ pub struct ListAccept {
 custom_event!(ListAccept);
 
 enum ListUpdate {
-    SelectionChanged(Option<usize>),
+    SelectionChanged,
     Accept,
 }
 
@@ -104,7 +102,7 @@ where
                     phases: Phases::TARGET,
                 },
             );
-            list_id.update_state(ListUpdate::SelectionChanged(old_sel));
+            list_id.update_state(ListUpdate::SelectionChanged);
         }
 
         new_sel
@@ -206,14 +204,10 @@ impl View for List {
     fn update(&mut self, _cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(change) = state.downcast::<ListUpdate>() {
             match *change {
-                ListUpdate::SelectionChanged(old_idx) => {
-                    if let Some(old_idx) = old_idx {
-                        let child = self.id.children()[old_idx];
-                        child.request_style(StyleReasonSet::with_selector(StyleSelector::Selected));
-                    }
+                ListUpdate::SelectionChanged => {
+                    self.id.request_style(StyleReasonSet::style_pass());
                     if let Some(index) = self.selection.get_untracked() {
                         let child = self.id.children()[index];
-                        child.request_style(StyleReasonSet::with_selector(StyleSelector::Selected));
                         child.scroll_to(None);
                     }
                 }

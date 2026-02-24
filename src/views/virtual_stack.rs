@@ -20,7 +20,7 @@ use understory_virtual_list::{
 use crate::{
     event::listener::{EventListenerTrait, UpdatePhaseBoxTreeCommit},
     prop_extractor,
-    style::FlexDirectionProp,
+    style::{FlexDirectionProp, recalc::StyleReasonSet},
     view::{FinalizeFn, IntoView, LayoutNodeCx, View, ViewId},
 };
 
@@ -514,12 +514,12 @@ impl<T> View for VirtualStack<T> {
                 let this_node = self.id.taffy_node();
                 taffy.insert_child_at_index(this_node, 0, before).unwrap();
                 taffy.add_child(this_node, after).unwrap();
-                self.id.request_all();
+                self.id.request_style(StyleReasonSet::style_pass());
             }
             Err(state) => {
+                // check if we got a selection change
                 if let Ok(idx) = state.downcast::<usize>() {
-                    // I don't think this is necessary
-                    // self.id.request_style(StyleReasonSet::with_selector(StyleSelector::Selected));
+                    self.id.request_style(StyleReasonSet::style_pass());
                     self.scroll_to_idx(*idx);
                     self.selected_idx.clear();
                     self.selected_idx.insert(*idx);

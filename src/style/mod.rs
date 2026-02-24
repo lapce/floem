@@ -205,12 +205,12 @@ type ContextMapFn = Rc<dyn Fn(Style, Box<dyn Fn(StyleKey) -> Option<Rc<dyn Any>>
 #[derive(Clone)]
 pub(crate) struct ContextMappings(pub Rc<Vec<ContextMapFn>>);
 
-style_key_selector!(selector_xs, StyleSelectors::new().responsive());
-style_key_selector!(selector_sm, StyleSelectors::new().responsive());
-style_key_selector!(selector_md, StyleSelectors::new().responsive());
-style_key_selector!(selector_lg, StyleSelectors::new().responsive());
-style_key_selector!(selector_xl, StyleSelectors::new().responsive());
-style_key_selector!(selector_xxl, StyleSelectors::new().responsive());
+style_key_selector!(selector_xs, StyleSelectors::empty().responsive());
+style_key_selector!(selector_sm, StyleSelectors::empty().responsive());
+style_key_selector!(selector_md, StyleSelectors::empty().responsive());
+style_key_selector!(selector_lg, StyleSelectors::empty().responsive());
+style_key_selector!(selector_xl, StyleSelectors::empty().responsive());
+style_key_selector!(selector_xxl, StyleSelectors::empty().responsive());
 
 pub(crate) fn screen_size_bp_to_key(breakpoint: ScreenSizeBp) -> StyleKey {
     match breakpoint {
@@ -231,9 +231,10 @@ pub fn resolve_nested_maps(
     classes: &[StyleClassRef],
     inherited_context: &Style,
     class_context: &Style,
-) -> (Style, bool) {
+) -> (Style, StyleSelectors) {
     // TODO: update interact state as each map is resolved
-    let mut classes_applied = false;
+
+    let mut selectors = StyleSelectors::empty();
 
     let effect_context = style.effect_context.clone();
 
@@ -243,12 +244,12 @@ pub fn resolve_nested_maps(
         interact_state,
         screen_size_bp,
         class_context,
-        &mut classes_applied,
+        &mut selectors,
     );
 
     // Phase 2: Resolve view's inline style (with selectors, collecting context mappings)
     let (view_style, mut view_context_mappings) =
-        resolve_style_collecting_mappings(style, interact_state, screen_size_bp);
+        resolve_style_collecting_mappings(style, interact_state, screen_size_bp, &mut selectors);
 
     // Phase 3: Apply class context mappings (with recursive resolution)
     // Use class_style as the base, context includes class_style + view_style
@@ -285,8 +286,12 @@ pub fn resolve_nested_maps(
 
         floem_reactive::Runtime::set_current_effect(saved_effect);
 
-        let (resolved, new_mappings) =
-            resolve_style_collecting_mappings(mapped, interact_state, screen_size_bp);
+        let (resolved, new_mappings) = resolve_style_collecting_mappings(
+            mapped,
+            interact_state,
+            screen_size_bp,
+            &mut selectors,
+        );
         context_result.apply_mut_no_mappings(resolved);
         class_context_mappings.splice(i + 1..i + 1, new_mappings);
         i += 1;
@@ -325,14 +330,18 @@ pub fn resolve_nested_maps(
 
         floem_reactive::Runtime::set_current_effect(saved_effect);
 
-        let (resolved, new_mappings) =
-            resolve_style_collecting_mappings(mapped, interact_state, screen_size_bp);
+        let (resolved, new_mappings) = resolve_style_collecting_mappings(
+            mapped,
+            interact_state,
+            screen_size_bp,
+            &mut selectors,
+        );
         result.apply_mut_no_mappings(resolved);
         view_context_mappings.splice(i + 1..i + 1, new_mappings);
         i += 1;
     }
 
-    (result, classes_applied)
+    (result, selectors)
 }
 
 fn resolve_classes_collecting_mappings(
@@ -340,16 +349,19 @@ fn resolve_classes_collecting_mappings(
     interact_state: &InteractionState,
     screen_size_bp: ScreenSizeBp,
     class_context: &Style,
-    classes_applied: &mut bool,
+    selectors: &mut StyleSelectors,
 ) -> (Style, Vec<ContextMapFn>) {
     let mut result = Style::new();
     let mut mappings = Vec::new();
 
     for class in classes {
         if let Some(map) = class_context.get_nested_map(class.key) {
-            *classes_applied = true;
-            let (resolved, class_mappings) =
-                resolve_style_collecting_mappings(map.clone(), interact_state, screen_size_bp);
+            let (resolved, class_mappings) = resolve_style_collecting_mappings(
+                map.clone(),
+                interact_state,
+                screen_size_bp,
+                selectors,
+            );
             result.apply_mut_no_mappings(resolved);
             mappings.extend(class_mappings);
         }
@@ -362,6 +374,7 @@ fn resolve_style_collecting_mappings(
     mut style: Style,
     interact_state: &InteractionState,
     screen_size_bp: ScreenSizeBp,
+    selectors: &mut StyleSelectors,
 ) -> (Style, Vec<ContextMapFn>) {
     let mut mappings = Vec::new();
 
@@ -372,7 +385,7 @@ fn resolve_style_collecting_mappings(
 
     // Resolve all selectors (and collect any new mappings found)
     let (resolved, selector_mappings) =
-        resolve_selectors_collecting_mappings(style, interact_state, screen_size_bp);
+        resolve_selectors_collecting_mappings(style, interact_state, screen_size_bp, selectors);
     mappings.extend(selector_mappings);
 
     (resolved, mappings)
@@ -382,12 +395,13 @@ fn resolve_selectors_collecting_mappings(
     mut style: Style,
     interact_state: &InteractionState,
     screen_size_bp: ScreenSizeBp,
+    selectors: &mut StyleSelectors,
 ) -> (Style, Vec<ContextMapFn>) {
+    *selectors |= style.selectors();
+
     const MAX_DEPTH: u32 = 20;
     let mut depth = 0;
     let mut all_mappings = Vec::new();
-    // Capture the effect context from the input style
-    let effect_context = style.effect_context.clone();
 
     loop {
         if depth >= MAX_DEPTH {
@@ -401,17 +415,12 @@ fn resolve_selectors_collecting_mappings(
         let mut apply_nested = |style: &mut Style, key: StyleKey| -> bool {
             if let Some(mut map) = style.get_nested_map(key) {
                 // Extract mappings before applying
-                let saved_effect = floem_reactive::Runtime::get_current_effect();
-                if let Some(effect) = &effect_context {
-                    floem_reactive::Runtime::set_current_effect(Some(effect.clone()));
-                }
 
                 if let Some(mappings) = extract_context_mappings(&mut map) {
                     all_mappings.extend(mappings);
                 }
                 style.apply_mut_no_mappings(map);
                 style.remove_nested_map(key);
-                floem_reactive::Runtime::set_current_effect(saved_effect);
                 true
             } else {
                 false
@@ -595,38 +604,52 @@ impl Style {
     }
 
     pub fn class_maps_ptr_eq(&self, other: &Style) -> bool {
-        // Check that every class map entry in self has a pointer-equal counterpart in other
-        // and vice versa. If counts differ or any entry differs, they're not equal.
-        let self_classes: Vec<_> = self
-            .map
-            .iter()
-            .filter(|(k, _)| matches!(k.info, StyleKeyInfo::Class(..)))
-            .collect();
+        let mut equal = true;
 
-        let other_classes: Vec<_> = other
-            .map
-            .iter()
-            .filter(|(k, _)| matches!(k.info, StyleKeyInfo::Class(..)))
-            .collect();
+        // Pass 1: every Class entry in self must exist in other
+        for (k, v) in &self.map {
+            let class_info = match &k.info {
+                StyleKeyInfo::Class(info) => info,
+                _ => continue,
+            };
 
-        if self_classes.len() != other_classes.len() {
-            return false;
-        }
+            let class_name = (class_info.name)();
 
-        for (k, v) in &self_classes {
             match other.map.get(k) {
                 Some(other_v) => {
                     let v_style = v.downcast_ref::<Style>().unwrap();
                     let other_v_style = other_v.downcast_ref::<Style>().unwrap();
+
                     if !v_style.map.ptr_eq(&other_v_style.map) {
-                        return false;
+                        println!("Pointer mismatch for class: {}", class_name);
+                        equal = false;
+                    } else {
+                        println!("Pointer match for class: {}", class_name);
                     }
                 }
-                None => return false,
+                None => {
+                    println!("Missing class in other: {}", class_name);
+                    equal = false;
+                }
             }
         }
 
-        true
+        // Pass 2: ensure other does not contain extra Class entries
+        for k in other.map.keys() {
+            let class_info = match &k.info {
+                StyleKeyInfo::Class(info) => info,
+                _ => continue,
+            };
+
+            let class_name = (class_info.name)();
+
+            if !self.map.contains_key(k) {
+                println!("Extra class in other (not in self): {}", class_name);
+                equal = false;
+            }
+        }
+
+        equal
     }
 
     pub(crate) fn get_transition<P: StyleProp>(&self) -> Option<Transition> {
@@ -669,16 +692,26 @@ impl Style {
     }
 
     pub(crate) fn selectors(&self) -> StyleSelectors {
-        let mut result = StyleSelectors::new();
+        let mut result = StyleSelectors::empty();
 
-        // Check for direct selectors
         for (k, v) in &self.map {
-            if let StyleKeyInfo::Selector(selector) = k.info {
-                result = result
-                    .union(*selector)
-                    .union(v.downcast_ref::<Style>().unwrap().selectors());
+            match k.info {
+                StyleKeyInfo::Selector(selector) => {
+                    result = result
+                        .union(*selector)
+                        .union(v.downcast_ref::<Style>().unwrap().selectors());
+                }
+                StyleKeyInfo::ContextMappings => {
+                    let mappings = v.downcast_ref::<ContextMappings>().unwrap();
+                    for mapper in mappings.0.iter() {
+                        let produced = mapper(Style::new(), Box::new(|_| None));
+                        result = result.union(produced.selectors());
+                    }
+                }
+                _ => {}
             }
         }
+
         result
     }
 
@@ -998,20 +1031,26 @@ impl Style {
                     }
                     match self.map.entry(*k) {
                         Entry::Occupied(mut e) => {
-                            // We need to merge the new map with the existing map.
+                            let existing_rc = Rc::clone(e.get());
 
-                            let v = v.downcast_ref::<Style>().unwrap();
+                            // Skip only this key
+                            if Rc::ptr_eq(&existing_rc, v) {
+                                continue;
+                            }
+
+                            let new_style = v.downcast_ref::<Style>().unwrap();
+
                             match Rc::get_mut(e.get_mut()) {
-                                Some(current) => {
-                                    current
+                                Some(current_any) => {
+                                    current_any
                                         .downcast_mut::<Style>()
                                         .unwrap()
-                                        .apply_mut(v.clone());
+                                        .apply_mut(new_style.clone());
                                 }
                                 None => {
                                     let mut current =
-                                        e.get_mut().downcast_ref::<Style>().unwrap().clone();
-                                    current.apply_mut(v.clone());
+                                        existing_rc.downcast_ref::<Style>().unwrap().clone();
+                                    current.apply_mut(new_style.clone());
                                     *e.get_mut() = Rc::new(current);
                                 }
                             }
@@ -1121,11 +1160,19 @@ impl Style {
     }
 
     pub(crate) fn apply_mut(&mut self, over: Style) {
+        // FAST PATH: identical map allocation
+        if self.map.ptr_eq(&over.map) {
+            return;
+        }
         let effect_context = over.effect_context.clone();
         self.apply_iter(over.map.iter(), effect_context);
     }
 
     pub(crate) fn apply_mut_no_mappings(&mut self, over: Style) {
+        // FAST PATH: identical map allocation
+        if self.map.ptr_eq(&over.map) {
+            return;
+        }
         let effect_context = over.effect_context.clone();
         self.apply_iter_no_mappings(over.map.iter(), effect_context);
     }
@@ -1200,35 +1247,41 @@ impl Debug for Style {
     }
 }
 
-style_key_selector!(hover, StyleSelectors::new().set(StyleSelector::Hover, true));
+style_key_selector!(
+    hover,
+    StyleSelectors::empty().set_selector(StyleSelector::Hover, true)
+);
 style_key_selector!(
     file_hover,
-    StyleSelectors::new().set(StyleSelector::FileHover, true)
+    StyleSelectors::empty().set_selector(StyleSelector::FileHover, true)
 );
-style_key_selector!(focus, StyleSelectors::new().set(StyleSelector::Focus, true));
+style_key_selector!(
+    focus,
+    StyleSelectors::empty().set_selector(StyleSelector::Focus, true)
+);
 style_key_selector!(
     focus_visible,
-    StyleSelectors::new().set(StyleSelector::FocusVisible, true)
+    StyleSelectors::empty().set_selector(StyleSelector::FocusVisible, true)
 );
 style_key_selector!(
     disabled,
-    StyleSelectors::new().set(StyleSelector::Disabled, true)
+    StyleSelectors::empty().set_selector(StyleSelector::Disabled, true)
 );
 style_key_selector!(
     active,
-    StyleSelectors::new().set(StyleSelector::Active, true)
+    StyleSelectors::empty().set_selector(StyleSelector::Active, true)
 );
 style_key_selector!(
     dragging,
-    StyleSelectors::new().set(StyleSelector::Dragging, true)
+    StyleSelectors::empty().set_selector(StyleSelector::Dragging, true)
 );
 style_key_selector!(
     selected,
-    StyleSelectors::new().set(StyleSelector::Selected, true)
+    StyleSelectors::empty().set_selector(StyleSelector::Selected, true)
 );
 style_key_selector!(
     darkmode,
-    StyleSelectors::new().set(StyleSelector::DarkMode, true)
+    StyleSelectors::empty().set_selector(StyleSelector::DarkMode, true)
 );
 
 impl StyleSelector {
