@@ -18,15 +18,27 @@ thread_local! {
 }
 
 pub struct HitPosition {
+    /// Text line the cursor is on.
     pub line: usize,
+    /// Point of the cursor.
     pub point: Point,
+    /// ascent of glyph.
     pub glyph_ascent: f64,
+    /// descent of glyph.
     pub glyph_descent: f64,
 }
 
 pub struct HitPoint {
+    /// Text line the cursor is on.
     pub line: usize,
+    /// First-byte-index of glyph at cursor (will insert behind this glyph).
     pub index: usize,
+    /// Whether or not the point was inside the bounds of the layout object.
+    ///
+    /// A click outside the layout object will still resolve to a position in the
+    /// text; for instance a click to the right edge of a line will resolve to the
+    /// end of that line, and a click below the last line will resolve to a
+    /// position in that line.
     pub is_inside: bool,
     pub affinity: Affinity,
 }
@@ -112,8 +124,7 @@ impl TextLayout {
         self.lines_range.push(start..len);
 
         // Store default line height from attrs
-        let defaults = attrs_list.defaults();
-        self.default_line_height = defaults.effective_line_height();
+        self.default_line_height = attrs_list.defaults().effective_line_height();
 
         // Build Parley layout (font context only needed during shaping)
         {
@@ -181,7 +192,7 @@ impl TextLayout {
     }
 
     pub fn set_tab_width(&mut self, _tab_width: usize) {
-        // Parley doesn't have a direct tab width setting
+        // TODO!: Parley doesn't have a direct tab width setting
     }
 
     pub fn set_size(&mut self, width: f32, height: f32) {
@@ -211,17 +222,17 @@ impl TextLayout {
         &self.lines_range
     }
 
-    /// Full text content
+    /// Full text content.
     pub fn text(&self) -> &str {
         &self.text
     }
 
-    /// Direct access to the Parley layout for renderers and consumers
+    /// Direct access to the Parley layout for renderers and consumers.
     pub fn parley_layout(&self) -> &Layout<TextBrush> {
         &self.layout
     }
 
-    /// Count of visual lines in the layout
+    /// Count of visual lines in the layout.
     pub fn visual_line_count(&self) -> usize {
         self.layout.len()
     }
@@ -317,7 +328,7 @@ impl TextLayout {
         }
     }
 
-    /// Convert a floem Cursor (paragraph_line, index_within_line) to a flat byte index
+    /// Convert a floem Cursor (paragraph_line, index_within_line) to a flat byte index.
     pub fn cursor_to_byte_index(&self, cursor: &crate::text::Cursor) -> usize {
         self.lines_range
             .get(cursor.line)
@@ -349,17 +360,17 @@ impl TextLayout {
         });
     }
 
-    /// Get the baseline y position of the nth visual line
+    /// Get the baseline y position of the nth visual line.
     pub fn visual_line_y(&self, nth: usize) -> Option<f32> {
         self.layout.get(nth).map(|l| l.metrics().baseline)
     }
 
-    /// Get the text byte range of the nth visual line
+    /// Get the text byte range of the nth visual line.
     pub fn visual_line_text_range(&self, nth: usize) -> Option<Range<usize>> {
         self.layout.get(nth).map(|l| l.text_range())
     }
 
-    /// Check if the nth visual line is empty (has no items)
+    /// Check if the nth visual line is empty (has no items).
     pub fn visual_line_is_empty(&self, nth: usize) -> bool {
         self.layout.get(nth).is_none_or(|l| l.is_empty())
     }
