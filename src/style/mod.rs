@@ -371,17 +371,22 @@ fn resolve_classes_collecting_mappings(
 }
 
 fn resolve_style_collecting_mappings(
-    mut style: Style,
+    input_style: Style,
     interact_state: &InteractionState,
     screen_size_bp: ScreenSizeBp,
     selectors: &mut StyleSelectors,
 ) -> (Style, Vec<ContextMapFn>) {
+    // Always resolve against a detached working copy so source/context styles are never
+    // mutated when we strip nested maps or context mappings during resolution.
+    let mut style = input_style.clone();
+
     let mut mappings = Vec::new();
 
     // Extract context mappings from style before resolving
-    if let Some(style_mappings) = extract_context_mappings(&mut style) {
+    if let Some(style_mappings) = extract_context_mappings(&style) {
         mappings.extend(style_mappings);
     }
+    style = clone_without_context_mappings(&style);
 
     // Resolve all selectors (and collect any new mappings found)
     let (resolved, selector_mappings) =
@@ -413,14 +418,17 @@ fn resolve_selectors_collecting_mappings(
 
         // Helper to apply a nested map and collect any context mappings from it
         let mut apply_nested = |style: &mut Style, key: StyleKey| -> bool {
-            if let Some(mut map) = style.get_nested_map(key) {
+            if let Some(source_map) = style.get_nested_map(key) {
+                // Resolve from a detached copy so original nested context maps remain intact.
+                let map = source_map.clone();
+
                 // Extract mappings before applying
 
-                if let Some(mappings) = extract_context_mappings(&mut map) {
+                if let Some(mappings) = extract_context_mappings(&map) {
                     all_mappings.extend(mappings);
                 }
-                style.apply_mut_no_mappings(map);
-                style.remove_nested_map(key);
+                apply_without_context_mappings(style, &map);
+                // style.remove_nested_map(key);
                 true
             } else {
                 false
@@ -500,14 +508,38 @@ fn resolve_selectors_collecting_mappings(
     (style, all_mappings)
 }
 
-fn extract_context_mappings(style: &mut Style) -> Option<Vec<ContextMapFn>> {
-    let key = StyleKey {
+fn context_mappings_key() -> StyleKey {
+    StyleKey {
         info: &CONTEXT_MAPPINGS_INFO,
-    };
-    style.map.remove(&key).map(|rc| {
+    }
+}
+
+fn extract_context_mappings(style: &Style) -> Option<Vec<ContextMapFn>> {
+    style.map.get(&context_mappings_key()).map(|rc| {
         let mappings = rc.downcast_ref::<ContextMappings>().unwrap();
         mappings.0.iter().cloned().collect()
     })
+}
+
+fn clone_without_context_mappings(style: &Style) -> Style {
+    let mut out = Style::new();
+    out.apply_iter_no_mappings(
+        style
+            .map
+            .iter()
+            .filter(|(k, _)| !matches!(k.info, StyleKeyInfo::ContextMappings)),
+        style.effect_context.clone(),
+    );
+    out
+}
+
+fn apply_without_context_mappings(dst: &mut Style, src: &Style) {
+    dst.apply_iter_no_mappings(
+        src.map
+            .iter()
+            .filter(|(k, _)| !matches!(k.info, StyleKeyInfo::ContextMappings)),
+        src.effect_context.clone(),
+    );
 }
 
 #[derive(Clone)]
