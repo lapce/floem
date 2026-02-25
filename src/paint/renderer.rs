@@ -53,7 +53,6 @@ use crate::kurbo::Point;
 use floem_renderer::Img;
 use floem_renderer::gpu_resources::GpuResources;
 use floem_renderer::text::TextLayout;
-#[cfg(feature = "tiny-skia")]
 use floem_tiny_skia_renderer::TinySkiaRenderer;
 #[cfg(feature = "vello")]
 use floem_vello_renderer::VelloRenderer;
@@ -69,7 +68,6 @@ pub enum Renderer {
     Vello(VelloRenderer),
     #[cfg(not(feature = "vello"))]
     Vger(VgerRenderer),
-    #[cfg(feature = "tiny-skia")]
     TinySkia(TinySkiaRenderer<Arc<dyn Window>>),
     /// Uninitialized renderer, used to allow the renderer to be created lazily
     /// All operations on this renderer are no-ops
@@ -127,7 +125,6 @@ impl Renderer {
             None
         };
 
-        #[cfg(feature = "tiny-skia")]
         let tiny_skia_err = match TinySkiaRenderer::new(
             window,
             size.width as u32,
@@ -139,7 +136,6 @@ impl Renderer {
             Err(err) => err,
         };
 
-        #[cfg(feature = "tiny-skia")]
         if !force_tiny_skia {
             panic!(
                 "Failed to create VgerRenderer: {}\nFailed to create TinySkiaRenderer: {tiny_skia_err}",
@@ -147,13 +143,6 @@ impl Renderer {
             );
         } else {
             panic!("Failed to create TinySkiaRenderer: {tiny_skia_err}");
-        }
-
-        #[cfg(not(feature = "tiny-skia"))]
-        if !force_tiny_skia {
-            panic!("Failed to create VgerRenderer: {}", vger_err.unwrap());
-        } else {
-            panic!("TinySkia renderer requested but the `tiny-skia` feature is not enabled");
         }
     }
 
@@ -164,7 +153,6 @@ impl Renderer {
             Renderer::Vello(r) => r.resize(size.width as u32, size.height as u32, scale),
             #[cfg(not(feature = "vello"))]
             Renderer::Vger(r) => r.resize(size.width as u32, size.height as u32, scale),
-            #[cfg(feature = "tiny-skia")]
             Renderer::TinySkia(r) => r.resize(size.width as u32, size.height as u32, scale),
             Renderer::Uninitialized { .. } => {}
         }
@@ -176,7 +164,6 @@ impl Renderer {
             Renderer::Vello(r) => r.set_scale(scale),
             #[cfg(not(feature = "vello"))]
             Renderer::Vger(r) => r.set_scale(scale),
-            #[cfg(feature = "tiny-skia")]
             Renderer::TinySkia(r) => r.set_scale(scale),
             Renderer::Uninitialized {
                 scale: old_scale, ..
@@ -192,7 +179,6 @@ impl Renderer {
             Renderer::Vello(r) => r.scale(),
             #[cfg(not(feature = "vello"))]
             Renderer::Vger(r) => r.scale(),
-            #[cfg(feature = "tiny-skia")]
             Renderer::TinySkia(r) => r.scale(),
             Renderer::Uninitialized { scale, .. } => *scale,
         }
@@ -204,7 +190,6 @@ impl Renderer {
             Renderer::Vello(r) => r.size(),
             #[cfg(not(feature = "vello"))]
             Renderer::Vger(r) => r.size(),
-            #[cfg(feature = "tiny-skia")]
             Renderer::TinySkia(r) => r.size(),
             Renderer::Uninitialized { size, .. } => *size,
         }
@@ -218,7 +203,6 @@ impl Renderer {
             Self::Vello(r) => r.debug_info(),
             #[cfg(not(feature = "vello"))]
             Self::Vger(r) => r.debug_info(),
-            #[cfg(feature = "tiny-skia")]
             Self::TinySkia(r) => r.debug_info(),
             Self::Uninitialized { .. } => "Uninitialized".to_string(),
         }
@@ -236,7 +220,6 @@ impl floem_renderer::Renderer for Renderer {
             Renderer::Vger(r) => {
                 r.begin(capture);
             }
-            #[cfg(feature = "tiny-skia")]
             Renderer::TinySkia(r) => {
                 r.begin(capture);
             }
@@ -254,7 +237,6 @@ impl floem_renderer::Renderer for Renderer {
             Renderer::Vger(v) => {
                 v.clip(shape);
             }
-            #[cfg(feature = "tiny-skia")]
             Renderer::TinySkia(v) => {
                 v.clip(shape);
             }
@@ -272,7 +254,6 @@ impl floem_renderer::Renderer for Renderer {
             Renderer::Vger(v) => {
                 v.clear_clip();
             }
-            #[cfg(feature = "tiny-skia")]
             Renderer::TinySkia(v) => {
                 v.clear_clip();
             }
@@ -295,7 +276,6 @@ impl floem_renderer::Renderer for Renderer {
             Renderer::Vger(v) => {
                 v.stroke(shape, brush, stroke);
             }
-            #[cfg(feature = "tiny-skia")]
             Renderer::TinySkia(v) => {
                 v.stroke(shape, brush, stroke);
             }
@@ -318,7 +298,6 @@ impl floem_renderer::Renderer for Renderer {
             Renderer::Vger(v) => {
                 v.fill(path, brush, blur_radius);
             }
-            #[cfg(feature = "tiny-skia")]
             Renderer::TinySkia(v) => {
                 v.fill(path, brush, blur_radius);
             }
@@ -342,7 +321,6 @@ impl floem_renderer::Renderer for Renderer {
             Renderer::Vger(v) => {
                 v.push_layer(blend, alpha, transform, clip);
             }
-            #[cfg(feature = "tiny-skia")]
             Renderer::TinySkia(v) => v.push_layer(blend, alpha, transform, clip),
             Renderer::Uninitialized { .. } => {}
         }
@@ -358,7 +336,6 @@ impl floem_renderer::Renderer for Renderer {
             Renderer::Vger(v) => {
                 v.pop_layer();
             }
-            #[cfg(feature = "tiny-skia")]
             Renderer::TinySkia(v) => v.pop_layer(),
             Renderer::Uninitialized { .. } => {}
         }
@@ -374,7 +351,6 @@ impl floem_renderer::Renderer for Renderer {
             Renderer::Vger(v) => {
                 v.draw_text(layout, pos);
             }
-            #[cfg(feature = "tiny-skia")]
             Renderer::TinySkia(v) => {
                 v.draw_text(layout, pos);
             }
@@ -392,7 +368,6 @@ impl floem_renderer::Renderer for Renderer {
             Renderer::Vger(v) => {
                 v.draw_img(img, rect);
             }
-            #[cfg(feature = "tiny-skia")]
             Renderer::TinySkia(v) => {
                 v.draw_img(img, rect);
             }
@@ -415,7 +390,6 @@ impl floem_renderer::Renderer for Renderer {
             Renderer::Vger(v) => {
                 v.draw_svg(svg, rect, brush);
             }
-            #[cfg(feature = "tiny-skia")]
             Renderer::TinySkia(v) => {
                 v.draw_svg(svg, rect, brush);
             }
@@ -433,7 +407,6 @@ impl floem_renderer::Renderer for Renderer {
             Renderer::Vger(v) => {
                 v.set_transform(transform);
             }
-            #[cfg(feature = "tiny-skia")]
             Renderer::TinySkia(v) => {
                 v.set_transform(transform);
             }
@@ -451,7 +424,6 @@ impl floem_renderer::Renderer for Renderer {
             Renderer::Vger(v) => {
                 v.set_z_index(z_index);
             }
-            #[cfg(feature = "tiny-skia")]
             Renderer::TinySkia(v) => {
                 v.set_z_index(z_index);
             }
@@ -465,7 +437,6 @@ impl floem_renderer::Renderer for Renderer {
             Renderer::Vello(r) => r.finish(),
             #[cfg(not(feature = "vello"))]
             Renderer::Vger(r) => r.finish(),
-            #[cfg(feature = "tiny-skia")]
             Renderer::TinySkia(r) => r.finish(),
             Renderer::Uninitialized { .. } => None,
         }
