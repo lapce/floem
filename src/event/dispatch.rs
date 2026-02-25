@@ -751,6 +751,8 @@ impl RouteCx<'_, '_> {
             // Direct call — same RouteCx, lifecycle runs once when outer scope drops.
             self.dispatch_directed(target, phases)
         } else {
+            // no hit, update hover
+            self.update_hover_from_path(&[]);
             None
         }
     }

@@ -138,6 +138,7 @@ use std::any::Any;
 use std::collections::HashMap;
 use std::fmt::{self, Debug};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use taffy::GridTemplateComponent;
 
 pub use taffy::style::{
@@ -193,6 +194,17 @@ pub use values::{CombineResult, ObjectFit, StrokeWrap, StyleMapValue, StylePropV
 pub use cache::{StyleCache, StyleCacheKey};
 
 pub(crate) use props::{CONTEXT_MAPPINGS_INFO, ImHashMap, style_key_selector};
+
+static NEXT_STYLE_MERGE_ID: AtomicU64 = AtomicU64::new(1);
+const MERGE_MIX_CONST: u64 = 0x9E3779B97F4A7C15;
+
+fn next_style_merge_id() -> u64 {
+    NEXT_STYLE_MERGE_ID.fetch_add(1, Ordering::Relaxed)
+}
+
+fn combine_merge_ids(a: u64, b: u64) -> u64 {
+    a.rotate_left(13) ^ b.wrapping_mul(MERGE_MIX_CONST)
+}
 
 /// A closure that maps context values to style properties.
 type ContextMapFn = Rc<dyn Fn(Style, Box<dyn Fn(StyleKey) -> Option<Rc<dyn Any>>>) -> Style>;
@@ -371,22 +383,17 @@ fn resolve_classes_collecting_mappings(
 }
 
 fn resolve_style_collecting_mappings(
-    input_style: Style,
+    mut style: Style,
     interact_state: &InteractionState,
     screen_size_bp: ScreenSizeBp,
     selectors: &mut StyleSelectors,
 ) -> (Style, Vec<ContextMapFn>) {
-    // Always resolve against a detached working copy so source/context styles are never
-    // mutated when we strip nested maps or context mappings during resolution.
-    let mut style = input_style.clone();
-
     let mut mappings = Vec::new();
 
     // Extract context mappings from style before resolving
-    if let Some(style_mappings) = extract_context_mappings(&style) {
+    if let Some(style_mappings) = extract_context_mappings(&mut style) {
         mappings.extend(style_mappings);
     }
-    style = clone_without_context_mappings(&style);
 
     // Resolve all selectors (and collect any new mappings found)
     let (resolved, selector_mappings) =
@@ -418,17 +425,14 @@ fn resolve_selectors_collecting_mappings(
 
         // Helper to apply a nested map and collect any context mappings from it
         let mut apply_nested = |style: &mut Style, key: StyleKey| -> bool {
-            if let Some(source_map) = style.get_nested_map(key) {
-                // Resolve from a detached copy so original nested context maps remain intact.
-                let map = source_map.clone();
-
+            if let Some(mut map) = style.get_nested_map(key) {
                 // Extract mappings before applying
 
-                if let Some(mappings) = extract_context_mappings(&map) {
+                if let Some(mappings) = extract_context_mappings(&mut map) {
                     all_mappings.extend(mappings);
                 }
-                apply_without_context_mappings(style, &map);
-                // style.remove_nested_map(key);
+                style.apply_mut_no_mappings(map);
+                style.remove_nested_map(key);
                 true
             } else {
                 false
@@ -508,43 +512,21 @@ fn resolve_selectors_collecting_mappings(
     (style, all_mappings)
 }
 
-fn context_mappings_key() -> StyleKey {
-    StyleKey {
+fn extract_context_mappings(style: &mut Style) -> Option<Vec<ContextMapFn>> {
+    let key = StyleKey {
         info: &CONTEXT_MAPPINGS_INFO,
-    }
-}
-
-fn extract_context_mappings(style: &Style) -> Option<Vec<ContextMapFn>> {
-    style.map.get(&context_mappings_key()).map(|rc| {
+    };
+    style.map.remove(&key).map(|rc| {
         let mappings = rc.downcast_ref::<ContextMappings>().unwrap();
         mappings.0.iter().cloned().collect()
     })
 }
 
-fn clone_without_context_mappings(style: &Style) -> Style {
-    let mut out = Style::new();
-    out.apply_iter_no_mappings(
-        style
-            .map
-            .iter()
-            .filter(|(k, _)| !matches!(k.info, StyleKeyInfo::ContextMappings)),
-        style.effect_context.clone(),
-    );
-    out
-}
-
-fn apply_without_context_mappings(dst: &mut Style, src: &Style) {
-    dst.apply_iter_no_mappings(
-        src.map
-            .iter()
-            .filter(|(k, _)| !matches!(k.info, StyleKeyInfo::ContextMappings)),
-        src.effect_context.clone(),
-    );
-}
-
 #[derive(Clone)]
 pub struct Style {
     pub(crate) map: ImHashMap<StyleKey, Rc<dyn Any>>,
+    /// Deterministic identity for style merges.
+    merge_id: u64,
     /// Cached flag indicating whether this style contains any class maps.
     /// This enables O(1) early-exit in `apply_only_class_maps` for the common case
     /// where a view's style has no class definitions.
@@ -561,8 +543,10 @@ pub struct Style {
 impl Default for Style {
     fn default() -> Self {
         let effect_context = floem_reactive::Runtime::get_current_effect();
+        let map = ImHashMap::default();
         Self {
-            map: ImHashMap::default(),
+            merge_id: next_style_merge_id(),
+            map,
             has_class_maps: false,
             has_inherited: false,
             effect_context,
@@ -585,6 +569,7 @@ impl Style {
         if from.any_inherited() {
             let inherited = from.map.iter().filter(|(p, _)| p.inherited());
             to.apply_iter(inherited, None);
+            to.merge_id = combine_merge_ids(to.merge_id, from.merge_id);
         }
     }
 
@@ -605,6 +590,7 @@ impl Style {
             if has_inherited {
                 let inherited = from.map.iter().filter(|(p, _)| p.inherited());
                 new_style.apply_iter(inherited, None);
+                new_style.merge_id = combine_merge_ids(new_style.merge_id, from.merge_id);
             }
 
             // Apply class nested maps so they flow to descendants
@@ -614,6 +600,7 @@ impl Style {
                     .iter()
                     .filter(|(k, _)| matches!(k.info, StyleKeyInfo::Class(..)));
                 new_style.apply_iter(class_maps, None);
+                new_style.merge_id = combine_merge_ids(new_style.merge_id, from.merge_id);
             }
 
             *to = Rc::new(new_style);
@@ -633,55 +620,49 @@ impl Style {
             .iter()
             .filter(|(k, _)| matches!(k.info, StyleKeyInfo::Class(..)));
         to.apply_iter(class_maps, None);
+        to.merge_id = combine_merge_ids(to.merge_id, from.merge_id);
+    }
+
+    pub(crate) fn merge_id(&self) -> u64 {
+        self.merge_id
     }
 
     pub fn class_maps_ptr_eq(&self, other: &Style) -> bool {
-        let mut equal = true;
-
         // Pass 1: every Class entry in self must exist in other
         for (k, v) in &self.map {
-            let class_info = match &k.info {
-                StyleKeyInfo::Class(info) => info,
-                _ => continue,
-            };
-
-            let class_name = (class_info.name)();
+            if !matches!(k.info, StyleKeyInfo::Class(..)) {
+                continue;
+            }
 
             match other.map.get(k) {
                 Some(other_v) => {
                     let v_style = v.downcast_ref::<Style>().unwrap();
                     let other_v_style = other_v.downcast_ref::<Style>().unwrap();
 
-                    if !v_style.map.ptr_eq(&other_v_style.map) {
-                        println!("Pointer mismatch for class: {}", class_name);
-                        equal = false;
-                    } else {
-                        println!("Pointer match for class: {}", class_name);
+                    if v_style.merge_id != other_v_style.merge_id
+                        && !v_style.map.ptr_eq(&other_v_style.map)
+                    {
+                        return false;
                     }
                 }
                 None => {
-                    println!("Missing class in other: {}", class_name);
-                    equal = false;
+                    return false;
                 }
             }
         }
 
         // Pass 2: ensure other does not contain extra Class entries
         for k in other.map.keys() {
-            let class_info = match &k.info {
-                StyleKeyInfo::Class(info) => info,
-                _ => continue,
-            };
-
-            let class_name = (class_info.name)();
+            if !matches!(k.info, StyleKeyInfo::Class(..)) {
+                continue;
+            }
 
             if !self.map.contains_key(k) {
-                println!("Extra class in other (not in self): {}", class_name);
-                equal = false;
+                return false;
             }
         }
 
-        equal
+        true
     }
 
     pub(crate) fn get_transition<P: StyleProp>(&self) -> Option<Transition> {
@@ -745,127 +726,6 @@ impl Style {
         }
 
         result
-    }
-
-    /// Applies class styling from the context (inherited from ancestors) to this style.
-    ///
-    /// The view's own explicit styles take precedence over context class styles.
-    /// This is achieved by applying context class styles first, then applying
-    /// the view's own styles on top.
-    ///
-    /// Context mappings (from `with_context`/`with_theme`) from class styles are
-    /// merged with the view's own context mappings. Class mappings run first (as
-    /// defaults), then view's own mappings run (allowing overrides). This ensures
-    /// that theme class styles can use `with_context` for context-aware styling
-    /// (like toggle button height based on font size) while still allowing views
-    /// to override via their own `with_context` closures.
-    ///
-    /// The returned boolean is true if a nested map was applied.
-    pub fn apply_classes_from_context(
-        self,
-        classes: &[StyleClassRef],
-        class_context: &std::rc::Rc<Style>,
-    ) -> (Style, bool) {
-        // Fast path: if no classes or no class maps in context, return unchanged
-        if classes.is_empty() || !class_context.has_class_maps {
-            return (self, false);
-        }
-
-        // Check if any of the classes actually have definitions in the context
-        let has_matching_classes = classes
-            .iter()
-            .any(|class| class_context.get_nested_map(class.key).is_some());
-        if !has_matching_classes {
-            return (self, false);
-        }
-
-        let mut changed = false;
-
-        let context_mappings_key = StyleKey {
-            info: &CONTEXT_MAPPINGS_INFO,
-        };
-
-        // CSS-like specificity: inline styles (the view's own styles) have higher
-        // specificity than class styles from ancestors. We achieve this by:
-        // 1. Building up class styles as a base
-        // 2. Applying the view's own styles on top
-        //
-        // Context mappings (from `with_context`/`with_theme`) from class styles are
-        // merged with the view's own context mappings. Class mappings run first (as
-        // defaults), then view's own mappings run (allowing overrides).
-
-        // Save the view's own styles and context mappings
-        let view_style = self;
-        let view_ctx_mappings = view_style.map.get(&context_mappings_key).cloned();
-
-        // Start with an empty style and build up from class styles
-        let mut result = Style::new();
-        let mut all_class_mappings: Vec<ContextMapFn> = Vec::new();
-
-        for class in classes {
-            if let Some(map) = class_context.get_nested_map(class.key) {
-                let mut class_style = map.clone();
-                // Extract class style's context mappings before applying other props
-                if let Some(class_mappings_rc) = class_style.map.remove(&context_mappings_key) {
-                    let class_mappings =
-                        class_mappings_rc.downcast_ref::<ContextMappings>().unwrap();
-                    all_class_mappings.extend(class_mappings.0.iter().cloned());
-                }
-                // Apply class style to result (later classes override earlier ones)
-                result.apply_mut(class_style);
-                changed = true;
-            }
-        }
-
-        // Now apply view's own styles ON TOP of class styles (inline styles win)
-        // We move the view_style into result to avoid cloning when possible
-        result.apply_mut(view_style.clone());
-
-        // Merge context mappings: class mappings FIRST (defaults), view's SECOND (overrides)
-        // Only do selector extraction if there are class context mappings that could override them
-        if !all_class_mappings.is_empty() {
-            // CSS-like specificity fix: The view's inline selector styles (like .selected())
-            // should override class styles, but class context mappings (like with_theme) run
-            // AFTER this and might override them. To fix this, we wrap the view's selector
-            // nested maps in a context mapping that runs LAST, after all class context mappings.
-            let view_selector_keys: Vec<_> = view_style
-                .map
-                .keys()
-                .filter(|k| matches!(k.info, StyleKeyInfo::Selector(..)))
-                .cloned()
-                .collect();
-
-            if !view_selector_keys.is_empty() {
-                let view_selectors: HashMap<StyleKey, Rc<dyn Any>> = view_selector_keys
-                    .iter()
-                    .filter_map(|k| view_style.map.get(k).map(|v| (*k, v.clone())))
-                    .collect();
-
-                // Add a context mapping that re-applies the view's selector styles LAST
-                let restore_selectors: ContextMapFn = Rc::new(move |mut s: Style, _| {
-                    for (k, v) in view_selectors.iter() {
-                        s.apply_iter(std::iter::once((k, v)), None);
-                    }
-                    s
-                });
-                all_class_mappings.push(restore_selectors);
-            }
-
-            // Add view's own context mappings AFTER class mappings (so view's override)
-            if let Some(view_mappings_rc) = view_ctx_mappings {
-                let view_mappings = view_mappings_rc.downcast_ref::<ContextMappings>().unwrap();
-                all_class_mappings.extend(view_mappings.0.iter().cloned());
-            }
-            result.map.insert(
-                context_mappings_key,
-                Rc::new(ContextMappings(Rc::new(all_class_mappings))),
-            );
-        } else if let Some(view_mappings_rc) = view_ctx_mappings {
-            // No class mappings, just preserve view's own context mappings
-            result.map.insert(context_mappings_key, view_mappings_rc);
-        }
-
-        (result, changed)
     }
 
     pub fn apply_class<C: StyleClass>(mut self, _class: C) -> Style {
@@ -937,6 +797,7 @@ impl Style {
         final_result
             .map
             .insert(key, Rc::new(ContextMappings(Rc::new(mappings_vec))));
+        final_result.merge_id = next_style_merge_id();
         final_result
     }
 
@@ -984,6 +845,7 @@ impl Style {
         final_result
             .map
             .insert(key, Rc::new(ContextMappings(Rc::new(mappings_vec))));
+        final_result.merge_id = next_style_merge_id();
         final_result
     }
 
@@ -994,9 +856,14 @@ impl Style {
     }
 
     pub(crate) fn remove_nested_map(&mut self, key: StyleKey) -> Option<Style> {
-        self.map
+        let removed = self
+            .map
             .remove(&key)
-            .map(|map| map.downcast_ref::<Style>().unwrap().clone())
+            .map(|map| map.downcast_ref::<Style>().unwrap().clone());
+        if removed.is_some() {
+            self.merge_id = next_style_merge_id();
+        }
+        removed
     }
 
     /// Check if this style has any inherited properties.
@@ -1012,6 +879,7 @@ impl Style {
             let inherited = self.map.iter().filter(|(p, _)| p.inherited());
 
             new.apply_iter(inherited, None);
+            new.merge_id = combine_merge_ids(new.merge_id, self.merge_id);
         }
         new
     }
@@ -1031,6 +899,7 @@ impl Style {
                 e.insert(Rc::new(map));
             }
         }
+        self.merge_id = next_style_merge_id();
     }
 
     fn set_breakpoint(&mut self, breakpoint: ScreenSizeBp, map: Style) {
@@ -1153,12 +1022,12 @@ impl Style {
                                     current
                                         .downcast_mut::<Style>()
                                         .unwrap()
-                                        .apply_mut(v.clone());
+                                        .apply_mut_no_mappings(v.clone());
                                 }
                                 None => {
                                     let mut current =
                                         e.get_mut().downcast_ref::<Style>().unwrap().clone();
-                                    current.apply_mut(v.clone());
+                                    current.apply_mut_no_mappings(v.clone());
                                     *e.get_mut() = Rc::new(current);
                                 }
                             }
@@ -1192,21 +1061,25 @@ impl Style {
     }
 
     pub(crate) fn apply_mut(&mut self, over: Style) {
-        // FAST PATH: identical map allocation
-        if self.map.ptr_eq(&over.map) {
+        // FAST PATH: identical semantic payload identity
+        if self.merge_id == over.merge_id || self.map.ptr_eq(&over.map) {
             return;
         }
+        let over_merge_id = over.merge_id;
         let effect_context = over.effect_context.clone();
         self.apply_iter(over.map.iter(), effect_context);
+        self.merge_id = combine_merge_ids(self.merge_id, over_merge_id);
     }
 
     pub(crate) fn apply_mut_no_mappings(&mut self, over: Style) {
-        // FAST PATH: identical map allocation
-        if self.map.ptr_eq(&over.map) {
+        // FAST PATH: identical semantic payload identity
+        if self.merge_id == over.merge_id || self.map.ptr_eq(&over.map) {
             return;
         }
+        let over_merge_id = over.merge_id;
         let effect_context = over.effect_context.clone();
         self.apply_iter_no_mappings(over.map.iter(), effect_context);
+        self.merge_id = combine_merge_ids(self.merge_id, over_merge_id);
     }
 
     /// Apply another `Style` to this style, returning a new `Style` with the overrides
@@ -1229,39 +1102,6 @@ impl Style {
     pub fn apply_overriding_styles(self, overrides: impl Iterator<Item = Style>) -> Style {
         overrides.fold(self, |acc, x| acc.apply(x))
     }
-
-    // /// Apply context mappings with the given context (inherited props from ancestors).
-    // /// Returns the style with context values applied and a flag indicating if changes were made.
-    // ///
-    // /// Uses iterative approach instead of recursion for better performance.
-    // pub(crate) fn apply_context_mappings(mut self, context: &Style) -> (Self, bool) {
-    //     let key = StyleKey {
-    //         info: &CONTEXT_MAPPINGS_INFO,
-    //     };
-    //     let mut changed = false;
-
-    //     // Iterative approach: keep processing until no more context mappings
-    //     loop {
-    //         // Single lookup: use remove directly instead of get + remove
-    //         let ctx_mappings = self
-    //             .map
-    //             .remove(&key)
-    //             .and_then(|v| v.downcast_ref::<ContextMappings>().cloned());
-
-    //         match ctx_mappings {
-    //             Some(mappings) => {
-    //                 changed = true;
-    //                 // Iterate over Rc<Vec> - no allocation needed
-    //                 for mapping in mappings.0.iter() {
-    //                     self = mapping(self, context);
-    //                 }
-    //             }
-    //             None => break,
-    //         }
-    //     }
-
-    //     (self, changed)
-    // }
 }
 
 impl Debug for Style {
@@ -2122,7 +1962,9 @@ impl Style {
             StyleValue::Animated(value) => StyleMapValue::Animated(value),
             StyleValue::Unset => StyleMapValue::Unset,
             StyleValue::Base => {
-                self.map.remove(&P::key());
+                if self.map.remove(&P::key()).is_some() {
+                    self.merge_id = next_style_merge_id();
+                }
                 return self;
             }
         };
@@ -2131,6 +1973,7 @@ impl Style {
             self.has_inherited = true;
         }
         self.map.insert(P::key(), Rc::new(insert));
+        self.merge_id = next_style_merge_id();
         self
     }
 
@@ -2138,6 +1981,7 @@ impl Style {
     pub fn transition<P: StyleProp>(mut self, _prop: P, transition: Transition) -> Self {
         self.map
             .insert(P::prop_ref().info().transition_key, Rc::new(transition));
+        self.merge_id = next_style_merge_id();
         self
     }
 

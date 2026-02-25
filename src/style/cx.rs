@@ -19,7 +19,7 @@ use crate::{
     animate::{AnimStateKind, RepeatMode},
     inspector::CaptureState,
     style::{
-        StyleClassRef,
+        StyleClassRef, StyleSelector,
         recalc::{StyleReasonFlags, StyleReasonSet},
         resolve_nested_maps,
     },
@@ -151,6 +151,15 @@ impl<'a> StyleCx<'a> {
 
         let reason = window_state.take_style_reason(view_id);
 
+        // if let Some(reason) = &reason {
+        //     let reason = reason.for_children();
+        //     if !reason.is_empty() {
+        //         for child in view_id.children() {
+        //             window_state.mark_style_dirty_with(child.get_element_id(), reason.clone());
+        //         }
+        //     }
+        // }
+
         let targeted_elements = reason
             .as_ref()
             .map(|r| r.targets.iter().map(|(id, r)| (*id, *r.clone())).collect())
@@ -214,9 +223,10 @@ impl<'a> StyleCx<'a> {
             let vs = view_state.borrow();
             vs.has_style_selectors
         };
+
         if let Some(reason) = &self.reason {
             if let Some(selectors) = reason.selectors {
-                if !active_selectors.intersects(selectors)
+                if !active_selectors.is_some_and(|s| s.intersects(selectors))
                     && reason.flags == StyleReasonFlags::SELECTOR
                 {
                     return;
@@ -265,7 +275,7 @@ impl<'a> StyleCx<'a> {
         let old_inherited_map = view_state.borrow().style_cx.clone();
         // Propagate inherited properties to children (separate from class context)
         Style::apply_only_inherited(&mut self.inherited, &self.direct);
-        let inherited_changed = !self.inherited.map.ptr_eq(&old_inherited_map.map);
+        let inherited_changed = self.inherited.merge_id() != old_inherited_map.merge_id();
 
         let old_class_context = view_state.borrow().class_cx.clone();
         Style::apply_only_class_maps(&mut self.class_context, &self.direct);
@@ -278,10 +288,6 @@ impl<'a> StyleCx<'a> {
         // 1. This view applied classes from class_context (affects inherited props)
         // 2. This view's class_context changed (new class definitions for children)
         if inherited_changed || class_context_changed {
-            println!(
-                "view_id: {:?}, inherited_changed: {}, class_context_changed: {}",
-                view_id, inherited_changed, class_context_changed
-            );
             for child in view_id.children() {
                 let element_id = child.get_element_id();
                 if inherited_changed {
@@ -414,20 +420,16 @@ impl<'a> StyleCx<'a> {
             }
             view_id.request_layout();
         }
-        if old_interact_state.selected == self.view_interact_state.is_selected {
+        if old_interact_state.selected != self.view_interact_state.is_selected {
             for child in view_id.children() {
-                self.window_state.mark_style_dirty_selector(
-                    child.get_element_id(),
-                    crate::style::StyleSelector::Selected,
-                );
+                self.window_state
+                    .mark_style_dirty_selector(child.get_element_id(), StyleSelector::Selected);
             }
         }
-        if old_interact_state.disabled == self.view_interact_state.is_disabled {
+        if old_interact_state.disabled != self.view_interact_state.is_disabled {
             for child in view_id.children() {
-                self.window_state.mark_style_dirty_selector(
-                    child.get_element_id(),
-                    crate::style::StyleSelector::Disabled,
-                );
+                self.window_state
+                    .mark_style_dirty_selector(child.get_element_id(), StyleSelector::Disabled);
             }
         }
 

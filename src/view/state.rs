@@ -124,7 +124,6 @@ impl VisibilityPhase {
     pub(crate) fn get_display_override(&self) -> Option<taffy::style::Display> {
         match self {
             VisibilityPhase::Animating(dis) => Some(*dis),
-            VisibilityPhase::Hidden => Some(taffy::Display::None),
             _ => None,
         }
     }
@@ -284,7 +283,7 @@ pub struct ViewState {
     /// We store the stack offset to the view style to keep the api consistent but it should
     /// always be the first offset.
     pub(crate) view_style_offset: StackOffset<Style>,
-    pub(crate) has_style_selectors: StyleSelectors,
+    pub(crate) has_style_selectors: Option<StyleSelectors>,
     // the translation value that this view applies to children elements. Scroll view can use this to scroll.
     pub(crate) child_translation: Vec2,
     // total accumulated offset from all scroll ancestors. This is updated when updating the box tree
@@ -395,7 +394,7 @@ impl ViewState {
             view_style_offset,
             layout_props: Default::default(),
             view_style_props: Default::default(),
-            has_style_selectors: StyleSelectors::default(),
+            has_style_selectors: None,
             animations: Default::default(),
             classes: Vec::new(),
             combined_pre_animation_style: Style::new(),
@@ -477,7 +476,7 @@ impl ViewState {
             &inherited_ctx,
             class_context,
         );
-        self.has_style_selectors = selectors;
+        self.has_style_selectors = Some(selectors);
         self.combined_pre_animation_style = combined.clone();
     }
 

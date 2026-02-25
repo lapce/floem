@@ -48,17 +48,20 @@ bitflags! {
         const TARGET = 1 << 3;
 
         /// Request that the `style_pass` be run again
-        const STYLE_PASS = 1 << 6;
+        const STYLE_PASS = 1 << 4;
+
+        /// Request that the `style_pass` be run again
+        const VISIBILITY = 1 << 5;
 
         /// Parent's inherited scalar properties changed (font size, color, etc.).
         /// Child must recompute computed_style but may skip resolve_nested_maps
         /// if it has no selectors and its own style stack is clean.
-        const INHERITED_CHANGE = 1 << 4;
+        const INHERITED_CHANGE = 1 << 6;
 
         /// Parent's class context map changed (new class definitions visible to children).
         /// Child must re-run resolve_nested_maps to pick up new class rules,
         /// but inherited scalar props are unchanged so with_context values are stable.
-        const CLASS_CONTEXT_CHANGE = 1 << 5;
+        const CLASS_CONTEXT_CHANGE = 1 << 7;
 
     }
 }
@@ -141,6 +144,10 @@ impl StyleReasonSet {
         self.flags |= StyleReasonFlags::STYLE_PASS;
     }
 
+    pub fn set_visibility(&mut self) {
+        self.flags |= StyleReasonFlags::VISIBILITY;
+    }
+
     pub fn set_selectors(&mut self, selectors: StyleSelectors) {
         self.flags |= StyleReasonFlags::SELECTOR;
         self.selectors = Some(selectors);
@@ -160,6 +167,12 @@ impl StyleReasonSet {
     pub fn style_pass() -> Self {
         let mut s = Self::empty();
         s.set_style_pass();
+        s
+    }
+
+    pub fn visibility() -> Self {
+        let mut s = Self::empty();
+        s.set_visibility();
         s
     }
 
@@ -287,6 +300,28 @@ impl StyleReasonSet {
         if self.targets.is_empty() {
             self.flags.remove(StyleReasonFlags::TARGET);
         }
+    }
+
+    /// Returns a copy of this reason set appropriate for forwarding to children.
+    /// Strips local interaction selectors (hover, focus, active, etc.) since those
+    /// don't propagate. Retains ambient selectors (disabled, dark mode, dragging,
+    /// selected, responsive) since those flow down the tree.
+    pub fn for_children(&self) -> StyleReasonSet {
+        let mut out = self.clone();
+        out.targets.clear();
+        out.flags.remove(StyleReasonFlags::TARGET);
+
+        if let Some(selectors) = out.selectors {
+            let propagating = selectors.propagating();
+            if propagating.is_empty() {
+                out.selectors = None;
+                out.flags.remove(StyleReasonFlags::SELECTOR);
+            } else {
+                out.selectors = Some(propagating);
+            }
+        }
+
+        out
     }
 
     pub fn with_target(element_id: ElementId, reason: StyleReasonSet) -> Self {

@@ -230,6 +230,11 @@ impl HeadlessHarness {
         self.dispatch_event(create_pointer_move(x, y))
     }
 
+    /// Simulate a pointer leave window event to the given position.
+    pub fn pointer_leave(&mut self) -> EventResult {
+        self.dispatch_event(create_pointer_leave())
+    }
+
     /// Simulate a click (pointer down + pointer up) at the given position.
     pub fn click(&mut self, x: f64, y: f64) -> EventResult {
         self.pointer_down(x, y);
@@ -649,6 +654,17 @@ fn create_pointer_move(x: f64, y: f64) -> Event {
         },
         coalesced: Vec::new(),
         predicted: Vec::new(),
+    }))
+}
+
+/// Create a pointer move event to the given position.
+fn create_pointer_leave() -> Event {
+    use ui_events::pointer::{PointerEvent, PointerId, PointerInfo, PointerType};
+
+    Event::Pointer(PointerEvent::Leave(PointerInfo {
+        pointer_id: Some(PointerId::PRIMARY),
+        persistent_device_id: None,
+        pointer_type: PointerType::Mouse,
     }))
 }
 

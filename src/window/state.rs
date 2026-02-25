@@ -1053,7 +1053,9 @@ impl WindowState {
         let view_state = id.state();
         let view_state = view_state.borrow();
 
-        view_state.has_style_selectors.has(selector_kind)
+        view_state
+            .has_style_selectors
+            .is_some_and(|s| s.has(selector_kind))
     }
 
     pub(crate) fn update_context_menu(

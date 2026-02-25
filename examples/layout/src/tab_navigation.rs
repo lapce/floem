@@ -1,9 +1,9 @@
 use floem::{
-    event::Event,
     imbl,
     prelude::*,
     style::{CursorStyle, Position},
     text::Weight,
+    LazyView,
 };
 
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
@@ -20,6 +20,15 @@ impl std::fmt::Display for Tab {
             Tab::Settings => write!(f, "Settings"),
             Tab::Feedback => write!(f, "Feedback"),
         }
+    }
+}
+impl IntoView for Tab {
+    type V = Label;
+
+    type Intermediate = LazyView<String>;
+
+    fn into_intermediate(self) -> Self::Intermediate {
+        LazyView::new(self.to_string())
     }
 }
 
@@ -40,7 +49,9 @@ fn tab_button(
             });
         })
         .style(move |s| {
-            s.width(70)
+            s.padding(10)
+                .items_center()
+                .justify_center()
                 .hover(|s| s.font_weight(Weight::BOLD).cursor(CursorStyle::Pointer))
                 .apply_if(
                     active_tab.get()
@@ -72,31 +83,23 @@ pub fn tab_navigation_view() -> impl IntoView {
     .style(|s| {
         s.flex_row()
             .width_full()
-            .height(TABBAR_HEIGHT)
             .col_gap(5)
             .padding(CONTENT_PADDING)
             .border_bottom(1)
             .border_color(Color::from_rgb8(205, 205, 205))
     });
 
-    let main_content = Container::new(
-        Scroll::new(
-            tab(
-                move || Some(active_tab.get()),
-                move || tabs.get(),
-                |it| *it,
-                |it| Container::new(Label::derived(move || format!("{it}"))),
-            )
-            .style(|s| s.padding(CONTENT_PADDING).padding_bottom(10.0)),
-        )
-        .style(|s| s.flex_col().flex_basis(0).min_width(0).flex_grow(1.0)),
+    let main_content = tab(
+        move || Some(active_tab.get()),
+        move || tabs.get(),
+        |it| *it,
+        |it| it,
     )
-    .style(|s| {
-        s.position(Position::Absolute)
-            .inset_top(TABBAR_HEIGHT)
-            .inset_bottom(0.0)
-            .width_full()
-    });
+    .style(|s| s.padding(CONTENT_PADDING).padding_bottom(10.0))
+    .scroll()
+    .style(|s| s.flex_col().flex_basis(0).min_width(0).flex_grow(1.0))
+    .container()
+    .style(|s| s.size_full());
 
     Stack::vertical((tabs_bar, main_content))
         .style(|s| s.width_full().height_full())

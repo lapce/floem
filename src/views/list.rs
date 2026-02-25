@@ -32,7 +32,7 @@ pub struct ListAccept {
 custom_event!(ListAccept);
 
 enum ListUpdate {
-    SelectionChanged,
+    SelectionChanged(Option<usize>),
     Accept,
 }
 
@@ -102,7 +102,7 @@ where
                     phases: Phases::TARGET,
                 },
             );
-            list_id.update_state(ListUpdate::SelectionChanged);
+            list_id.update_state(ListUpdate::SelectionChanged(old_sel));
         }
 
         new_sel
@@ -204,11 +204,17 @@ impl View for List {
     fn update(&mut self, _cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(change) = state.downcast::<ListUpdate>() {
             match *change {
-                ListUpdate::SelectionChanged => {
-                    self.id.request_style(StyleReasonSet::style_pass());
+                ListUpdate::SelectionChanged(old_selection) => {
                     if let Some(index) = self.selection.get_untracked() {
-                        let child = self.id.children()[index];
-                        child.scroll_to(None);
+                        if let Some(child) = self.id.children().get(index) {
+                            child.request_style(StyleReasonSet::style_pass());
+                            child.scroll_to(None);
+                        }
+                    }
+                    if let Some(index) = old_selection {
+                        if let Some(child) = self.id.children().get(index) {
+                            child.request_style(StyleReasonSet::style_pass());
+                        }
                     }
                 }
                 ListUpdate::Accept => {

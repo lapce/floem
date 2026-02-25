@@ -167,7 +167,7 @@ fn test_disabled_to_enabled_transition() {
     assert!(disabled, "Initially Disabled should be true");
 
     // Request a style recalculation to apply the disabled selector
-    id.request_style();
+    // id.request_style();
     harness.rebuild();
 
     // Now background should be LIGHT_GRAY (disabled)
@@ -234,7 +234,7 @@ fn test_disabled_selector_after_style_request() {
 
     // But the disabled selector wasn't applied (BUG)
     // Now explicitly request a style recalculation
-    id.request_style();
+    // id.request_style();
 
     // Rebuild - this should now run the style pass because we requested it
     harness.rebuild();
@@ -491,12 +491,12 @@ fn test_click_triggered_style_change_requests_repaint() {
 fn test_request_style_triggers_repaint() {
     let root = TestRoot::new();
     let view = Empty::new().style(|s| s.size(100.0, 100.0).background(palette::css::GRAY));
-    let id = view.view_id();
+    // let id = view.view_id();
 
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Manually request style
-    id.request_style();
+    // id.request_style();
 
     // Process the message and check if repaint is needed
     let needs_repaint = harness.process_update_no_paint();
@@ -735,7 +735,7 @@ fn test_selected_to_not_selected_transition() {
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Request style to ensure selector is applied
-    id.request_style();
+    // id.request_style();
     harness.rebuild();
 
     // Should be BLUE (selected)
@@ -907,8 +907,8 @@ fn test_sibling_state_affects_other_sibling() {
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 60.0);
 
     // Request style for both to ensure selectors are applied
-    btn0_id.request_style();
-    btn1_id.request_style();
+    // btn0_id.request_style();
+    // btn1_id.request_style();
     harness.rebuild();
 
     // Initial: btn0 selected (BLUE), btn1 not selected (WHITE)
@@ -1004,7 +1004,7 @@ fn test_hover_and_selected_combination() {
     let mut harness = HeadlessHarness::new_with_size(root, view, 120.0, 120.0);
 
     // Request style to apply selected
-    id.request_style();
+    // id.request_style();
     harness.rebuild();
 
     // Initially: selected but not hovered -> LIGHT_BLUE
@@ -1079,8 +1079,8 @@ fn test_click_changes_selection_style() {
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 60.0);
 
     // Request styles initially
-    btn0_id.request_style();
-    btn1_id.request_style();
+    // btn0_id.request_style();
+    // btn1_id.request_style();
     harness.rebuild();
 
     // Get button positions

@@ -1185,8 +1185,6 @@ impl AffineLerp for Affine {
         }
         let rotation = rotation_a + angle_diff * t;
 
-        dbg!(rotation);
-
         // Recompose: rotate -> scale -> translate
         Affine::rotate(rotation)
             .then_scale_non_uniform(scale.x, scale.y)

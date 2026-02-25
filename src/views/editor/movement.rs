@@ -809,10 +809,13 @@ mod tests {
     use lapce_xi_rope::Rope;
     use peniko::kurbo::{Rect, Size};
 
-    use crate::views::editor::{
-        movement::{correct_crlf, end_of_line, move_down, move_up},
-        text::SimpleStyling,
-        text_document::TextDocument,
+    use crate::{
+        headless::TestRoot,
+        views::editor::{
+            movement::{correct_crlf, end_of_line, move_down, move_up},
+            text::SimpleStyling,
+            text_document::TextDocument,
+        },
     };
 
     use super::Editor;
@@ -852,6 +855,7 @@ mod tests {
 
     #[test]
     fn test_end_of_line() {
+        let _root = TestRoot::new();
         let ed = make_ed("abc\ndef\nghi");
         let mut aff = CursorAffinity::Backward;
         assert_eq!(end_of_line(&ed, &mut aff, 0, Mode::Insert).0, 3);
@@ -887,6 +891,7 @@ mod tests {
 
     #[test]
     fn test_move_down() {
+        let _root = TestRoot::new();
         let ed = make_ed("abc\n\n\ndef\n\nghi");
 
         let mut aff = CursorAffinity::Forward;
@@ -907,6 +912,7 @@ mod tests {
 
     #[test]
     fn test_move_up() {
+        let _root = TestRoot::new();
         let ed = make_ed("abc\n\n\ndef\n\nghi");
 
         let mut aff = CursorAffinity::Forward;

@@ -902,9 +902,20 @@ impl View for Scroll {
     }
 
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
-        // if !cx.is_targeted_only() {
         self.scroll_style.read(cx);
-        // }
+
+        // If the reason implies nested style maps must be resolved, restyle everything.
+        if cx
+            .reason
+            .as_ref()
+            .is_some_and(|r| r.needs_resolve_nested_maps())
+        {
+            self.v_handle.style(cx);
+            self.h_handle.style(cx);
+            self.v_track.style(cx);
+            self.h_track.style(cx);
+            return;
+        }
 
         for (element_id, _reason) in cx.targeted_elements.clone() {
             if element_id == self.v_handle.element_id {

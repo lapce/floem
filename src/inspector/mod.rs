@@ -9,7 +9,7 @@ use crate::{
     prelude::ViewTuple,
     style::{
         self, FontSize, OverflowX, OverflowY, Style, StyleClassRef, StyleKeyInfo, StylePropRef,
-        Transition,
+        Transition, resolve_nested_maps,
     },
     theme::StyleThemeExt as _,
     view::{IntoView, View, ViewId},
@@ -517,8 +517,10 @@ fn selected_view(
                 Stack::vertical_from_iter(view.classes.clone().into_iter().enumerate().map(
                     |(idx, class_ref)| {
                         let class_style = capture.state.styles.get(&view.id).map(|style| {
-                            let style_rc = std::rc::Rc::new(style.clone());
-                            Style::new().apply_classes_from_context(&[class_ref], &style_rc)
+                            // let style_rc = std::rc::Rc::new(style.clone());
+                            style.get_nested_map(class_ref.key).unwrap_or_default()
+
+                            // Style::new().apply_classes_from_context(&[class_ref], &style_rc)
                         });
 
                         let class_name = format!("{:?}", class_ref.key);
@@ -526,7 +528,7 @@ fn selected_view(
                         let class_header = Label::new(&class_name)
                             .style(|s| s.font_bold().with_theme(|s, t| s.color(t.text())));
 
-                        if let Some((class_style, _changed)) = class_style {
+                        if let Some(class_style) = class_style {
                             let mut props: Vec<_> = class_style
                                 .map
                                 .clone()

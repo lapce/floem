@@ -224,7 +224,7 @@ fn test_hover_style_applied_from_with_context() {
     );
 
     // Move pointer outside - should go back to BLUE
-    harness.pointer_move(150.0, 150.0);
+    harness.pointer_leave();
 
     let style = harness.get_computed_style(id);
     let bg = style.get(Background);
@@ -482,7 +482,7 @@ fn test_disabled_style_applied_from_with_context() {
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Request style recalc to apply disabled selector
-    id.request_style();
+    // id.request_style();
     harness.rebuild();
 
     // Background should be GRAY (disabled)
