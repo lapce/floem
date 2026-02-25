@@ -258,6 +258,7 @@ pub fn resolve_nested_maps(
         class_context,
         &mut selectors,
     );
+    selectors |= class_style.selectors();
 
     // Phase 2: Resolve view's inline style (with selectors, collecting context mappings)
     let (view_style, mut view_context_mappings) =
@@ -539,6 +540,8 @@ pub struct Style {
     /// This is restored when evaluating context mappings and selectors to ensure
     /// reactive dependencies are tracked correctly.
     effect_context: Option<Rc<dyn floem_reactive::EffectTrait>>,
+
+    context_selectors: StyleSelectors,
 }
 impl Default for Style {
     fn default() -> Self {
@@ -550,6 +553,7 @@ impl Default for Style {
             has_class_maps: false,
             has_inherited: false,
             effect_context,
+            context_selectors: StyleSelectors::empty(),
         }
     }
 }
@@ -570,6 +574,7 @@ impl Style {
             let inherited = from.map.iter().filter(|(p, _)| p.inherited());
             to.apply_iter(inherited, None);
             to.merge_id = combine_merge_ids(to.merge_id, from.merge_id);
+            to.context_selectors |= from.context_selectors;
         }
     }
 
@@ -591,6 +596,7 @@ impl Style {
                 let inherited = from.map.iter().filter(|(p, _)| p.inherited());
                 new_style.apply_iter(inherited, None);
                 new_style.merge_id = combine_merge_ids(new_style.merge_id, from.merge_id);
+                new_style.context_selectors |= from.context_selectors;
             }
 
             // Apply class nested maps so they flow to descendants
@@ -601,6 +607,7 @@ impl Style {
                     .filter(|(k, _)| matches!(k.info, StyleKeyInfo::Class(..)));
                 new_style.apply_iter(class_maps, None);
                 new_style.merge_id = combine_merge_ids(new_style.merge_id, from.merge_id);
+                new_style.context_selectors |= from.context_selectors;
             }
 
             *to = Rc::new(new_style);
@@ -621,18 +628,20 @@ impl Style {
             .filter(|(k, _)| matches!(k.info, StyleKeyInfo::Class(..)));
         to.apply_iter(class_maps, None);
         to.merge_id = combine_merge_ids(to.merge_id, from.merge_id);
+        to.context_selectors |= from.context_selectors;
     }
 
     pub(crate) fn merge_id(&self) -> u64 {
         self.merge_id
     }
 
-    pub fn class_maps_ptr_eq(&self, other: &Style) -> bool {
+    pub fn class_maps_ptr_eq(&self, other: &Style) -> SmallVec<[StyleClassRef; 4]> {
         // Pass 1: every Class entry in self must exist in other
+        let mut changed = SmallVec::new();
         for (k, v) in &self.map {
-            if !matches!(k.info, StyleKeyInfo::Class(..)) {
+            let StyleKeyInfo::Class(_) = k.info else {
                 continue;
-            }
+            };
 
             match other.map.get(k) {
                 Some(other_v) => {
@@ -642,11 +651,11 @@ impl Style {
                     if v_style.merge_id != other_v_style.merge_id
                         && !v_style.map.ptr_eq(&other_v_style.map)
                     {
-                        return false;
+                        changed.push(StyleClassRef { key: *k });
                     }
                 }
                 None => {
-                    return false;
+                    changed.push(StyleClassRef { key: *k });
                 }
             }
         }
@@ -658,11 +667,11 @@ impl Style {
             }
 
             if !self.map.contains_key(k) {
-                return false;
+                changed.push(StyleClassRef { key: *k });
             }
         }
 
-        true
+        changed
     }
 
     pub(crate) fn get_transition<P: StyleProp>(&self) -> Option<Transition> {
@@ -705,23 +714,13 @@ impl Style {
     }
 
     pub(crate) fn selectors(&self) -> StyleSelectors {
-        let mut result = StyleSelectors::empty();
+        let mut result = self.context_selectors;
 
         for (k, v) in &self.map {
-            match k.info {
-                StyleKeyInfo::Selector(selector) => {
-                    result = result
-                        .union(*selector)
-                        .union(v.downcast_ref::<Style>().unwrap().selectors());
-                }
-                StyleKeyInfo::ContextMappings => {
-                    let mappings = v.downcast_ref::<ContextMappings>().unwrap();
-                    for mapper in mappings.0.iter() {
-                        let produced = mapper(Style::new(), Box::new(|_| None));
-                        result = result.union(produced.selectors());
-                    }
-                }
-                _ => {}
+            if let StyleKeyInfo::Selector(selector) = k.info {
+                result = result
+                    .union(*selector)
+                    .union(v.downcast_ref::<Style>().unwrap().selectors());
             }
         }
 
@@ -757,6 +756,11 @@ impl Style {
     ///
     /// Signal reactivity works because the outer style closure re-runs when signals change.
     pub fn with_context<P: StyleProp>(self, f: impl Fn(Self, &P::Type) -> Self + 'static) -> Self {
+        let default_value = P::default_value();
+        let result = f(self.clone(), &default_value);
+        let result_selectors = result.selectors();
+        dbg!(result_selectors);
+
         // Create a closure for context-aware re-evaluation during style resolution.
         // Cache default_value inside closure to avoid repeated allocations.
         let mapper: ContextMapFn = Rc::new(
@@ -798,6 +802,7 @@ impl Style {
             .map
             .insert(key, Rc::new(ContextMappings(Rc::new(mappings_vec))));
         final_result.merge_id = next_style_merge_id();
+        final_result.context_selectors |= result_selectors;
         final_result
     }
 
@@ -809,6 +814,8 @@ impl Style {
         self,
         f: impl Fn(Self, T) -> Self + 'static,
     ) -> Self {
+        let result = f(self.clone(), T::default());
+        let result_selectors = result.selectors();
         // Create a closure for context-aware re-evaluation
         let mapper: ContextMapFn = Rc::new(
             move |style: Style, context: Box<dyn Fn(StyleKey) -> Option<Rc<dyn Any>>>| {
@@ -846,6 +853,7 @@ impl Style {
             .map
             .insert(key, Rc::new(ContextMappings(Rc::new(mappings_vec))));
         final_result.merge_id = next_style_merge_id();
+        final_result.context_selectors |= result_selectors;
         final_result
     }
 
@@ -880,6 +888,7 @@ impl Style {
 
             new.apply_iter(inherited, None);
             new.merge_id = combine_merge_ids(new.merge_id, self.merge_id);
+            new.context_selectors |= self.context_selectors;
         }
         new
     }
@@ -1069,6 +1078,7 @@ impl Style {
         let effect_context = over.effect_context.clone();
         self.apply_iter(over.map.iter(), effect_context);
         self.merge_id = combine_merge_ids(self.merge_id, over_merge_id);
+        self.context_selectors |= over.context_selectors;
     }
 
     pub(crate) fn apply_mut_no_mappings(&mut self, over: Style) {
@@ -1080,6 +1090,7 @@ impl Style {
         let effect_context = over.effect_context.clone();
         self.apply_iter_no_mappings(over.map.iter(), effect_context);
         self.merge_id = combine_merge_ids(self.merge_id, over_merge_id);
+        self.context_selectors |= over.context_selectors;
     }
 
     /// Apply another `Style` to this style, returning a new `Style` with the overrides

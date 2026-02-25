@@ -14,7 +14,7 @@
 
 use crate::{
     ElementId,
-    style::{StyleSelector, StyleSelectors},
+    style::{StyleClassRef, StyleSelector, StyleSelectors},
 };
 
 use bitflags::bitflags;
@@ -85,6 +85,8 @@ pub struct StyleReasonSet {
     /// none of the now-hovered selectors match any style rules on this view).
     pub selectors: Option<StyleSelectors>,
 
+    pub classes_changed: Option<SmallVec<[StyleClassRef; 4]>>,
+
     /// Sub-element rectangles owned by this view that need targeted restyling.
     /// Each entry is `(element_id, reason)` where `element_id` identifies a specific
     /// box-tree rectangle (e.g. the vertical scrollbar of a scroll view) and `reason`
@@ -102,6 +104,7 @@ impl StyleReasonSet {
         Self {
             flags: StyleReasonFlags::empty(),
             selectors: None,
+            classes_changed: None,
             targets: SmallVec::new(),
         }
     }
@@ -188,9 +191,10 @@ impl StyleReasonSet {
         s
     }
 
-    pub fn class_cx() -> Self {
+    pub fn class_cx(classes: SmallVec<[StyleClassRef; 4]>) -> Self {
         let mut s = Self::empty();
         s.set_class_cx();
+        s.classes_changed = Some(classes);
         s
     }
 
@@ -208,19 +212,27 @@ impl StyleReasonSet {
     }
 
     pub fn needs_animation(&self) -> bool {
-        self.needs_resolve_nested_maps() || self.flags.intersects(StyleReasonFlags::ANIMATION)
+        self.flags.intersects(StyleReasonFlags::ANIMATION)
+    }
+
+    pub fn needs_property_extraction(&self) -> bool {
+        self.needs_resolve_nested_maps()
+            || self.needs_animation()
+            || self.flags.intersects(StyleReasonFlags::TRANSITION)
+            || self.flags.intersects(StyleReasonFlags::INHERITED_CHANGE)
+            || self
+                .flags
+                .intersects(StyleReasonFlags::CLASS_CONTEXT_CHANGE)
+            || self.flags.intersects(StyleReasonFlags::TRANSITION)
     }
 
     pub fn needs_style_pass(&self) -> bool {
         self.needs_resolve_nested_maps()
             || self.needs_animation()
+            || self.needs_property_extraction()
+            || self.has_target()
+            || self.flags.intersects(StyleReasonFlags::VISIBILITY)
             || self.flags.intersects(StyleReasonFlags::STYLE_PASS)
-    }
-
-    pub fn needs_transition(&self) -> bool {
-        self.needs_resolve_nested_maps()
-            || self.needs_animation()
-            || self.flags.intersects(StyleReasonFlags::TRANSITION)
     }
 
     pub fn has_animation(&self) -> bool {
@@ -290,6 +302,9 @@ impl StyleReasonSet {
         if flag.contains(StyleReasonFlags::SELECTOR) {
             self.selectors = None;
         }
+        if flag.contains(StyleReasonFlags::CLASS_CONTEXT_CHANGE) {
+            self.classes_changed = None;
+        }
         if flag.contains(StyleReasonFlags::TARGET) {
             self.targets.clear();
         }
@@ -300,28 +315,6 @@ impl StyleReasonSet {
         if self.targets.is_empty() {
             self.flags.remove(StyleReasonFlags::TARGET);
         }
-    }
-
-    /// Returns a copy of this reason set appropriate for forwarding to children.
-    /// Strips local interaction selectors (hover, focus, active, etc.) since those
-    /// don't propagate. Retains ambient selectors (disabled, dark mode, dragging,
-    /// selected, responsive) since those flow down the tree.
-    pub fn for_children(&self) -> StyleReasonSet {
-        let mut out = self.clone();
-        out.targets.clear();
-        out.flags.remove(StyleReasonFlags::TARGET);
-
-        if let Some(selectors) = out.selectors {
-            let propagating = selectors.propagating();
-            if propagating.is_empty() {
-                out.selectors = None;
-                out.flags.remove(StyleReasonFlags::SELECTOR);
-            } else {
-                out.selectors = Some(propagating);
-            }
-        }
-
-        out
     }
 
     pub fn with_target(element_id: ElementId, reason: StyleReasonSet) -> Self {
@@ -342,6 +335,7 @@ impl StyleReasonSet {
             flags: StyleReasonFlags::all(),
             selectors: None,
             targets: SmallVec::new(),
+            classes_changed: None,
         }
     }
 }

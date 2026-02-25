@@ -8,6 +8,7 @@ use std::{any::Any, cell::RefCell, collections::HashSet, rc::Rc};
 
 use floem_reactive::Scope;
 use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Size};
+use smallvec::smallvec;
 use taffy::{Layout, NodeId};
 use winit::window::WindowId;
 
@@ -1078,14 +1079,14 @@ impl ViewId {
     pub fn add_class(&self, class: StyleClassRef) {
         let state = self.state();
         state.borrow_mut().classes.push(class);
-        self.request_style(StyleReasonSet::class_cx());
+        self.request_style(StyleReasonSet::class_cx(smallvec![class]));
     }
 
     /// Remove a class from the list of style classes that are associated with this `ViewId`
     pub fn remove_class(&self, class: StyleClassRef) {
         let state = self.state();
         state.borrow_mut().classes.retain_mut(|c| *c != class);
-        self.request_style(StyleReasonSet::class_cx());
+        self.request_style(StyleReasonSet::class_cx(smallvec![class]));
     }
 
     pub(crate) fn update_style(&self, offset: StackOffset<Style>, style: Style) {
@@ -1580,7 +1581,7 @@ impl ViewId {
             }
         };
         if changed {
-            self.request_style(StyleReasonSet::full_recalc());
+            self.request_style(StyleReasonSet::visibility());
         }
     }
 
@@ -1603,7 +1604,7 @@ impl ViewId {
         };
         if changed {
             // No need to request layout. the style pass will determine if that is necessary and request layout.
-            self.request_style(StyleReasonSet::full_recalc());
+            self.request_style(StyleReasonSet::visibility());
         }
     }
 }

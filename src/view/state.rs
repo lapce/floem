@@ -292,7 +292,7 @@ pub struct ViewState {
     pub(crate) view_style_props: ViewStyleProps,
     pub(crate) view_transform_props: TransformProps,
     pub(crate) animations: Stack<Animation>,
-    pub(crate) classes: Vec<StyleClassRef>,
+    pub(crate) classes: SmallVec<[StyleClassRef; 4]>,
     pub(crate) dragging_style: Option<Style>,
     pub(crate) combined_pre_animation_style: Style,
     /// The resolved style for this view (base + selectors + classes).
@@ -396,7 +396,7 @@ impl ViewState {
             view_style_props: Default::default(),
             has_style_selectors: None,
             animations: Default::default(),
-            classes: Vec::new(),
+            classes: SmallVec::new(),
             combined_pre_animation_style: Style::new(),
             combined_style: Style::new(),
             computed_style: Style::new(),
@@ -457,6 +457,7 @@ impl ViewState {
     ) {
         // Start with the combined stacked styles
         let base_style = self.style();
+        let base_selectors = base_style.selectors() | class_context.selectors();
 
         // Build the full class list: view's classes + view type class
         let mut all_classes = self.classes.clone();
@@ -476,7 +477,7 @@ impl ViewState {
             &inherited_ctx,
             class_context,
         );
-        self.has_style_selectors = Some(selectors);
+        self.has_style_selectors = Some(selectors | base_selectors);
         self.combined_pre_animation_style = combined.clone();
     }
 

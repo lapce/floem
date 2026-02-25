@@ -9,7 +9,7 @@ use crate::{
     prelude::ViewTuple,
     style::{
         self, FontSize, OverflowX, OverflowY, Style, StyleClassRef, StyleKeyInfo, StylePropRef,
-        Transition, resolve_nested_maps,
+        Transition,
     },
     theme::StyleThemeExt as _,
     view::{IntoView, View, ViewId},
@@ -82,7 +82,7 @@ impl CapturedView {
             direct_style: combined_style,
             keyboard_navigable: focus.allows_keyboard_navigation(),
             focused,
-            classes,
+            classes: classes.to_vec(),
             children: id
                 .children()
                 .into_iter()
