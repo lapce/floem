@@ -1,210 +1,57 @@
-use std::{ops::Range, sync::LazyLock};
+use std::{cell::RefCell, ops::Range, sync::LazyLock};
 
-use crate::text::AttrsList;
-use cosmic_text::{
-    Affinity, Align, Buffer, BufferLine, Cursor, FontSystem, LayoutCursor, LayoutGlyph, LineEnding,
-    LineIter, Metrics, Scroll, Shaping, Wrap,
-};
+use crate::text::{Affinity, Align, AttrsList, TextBrush, Wrap};
 use parking_lot::Mutex;
+use parley::{
+    layout::{AlignmentOptions, Layout},
+    style::StyleProperty,
+    FontContext, LayoutContext,
+};
 use peniko::kurbo::{Point, Size};
-use unicode_segmentation::UnicodeSegmentation;
 
-pub static FONT_SYSTEM: LazyLock<Mutex<FontSystem>> = LazyLock::new(|| {
-    let mut font_system = FontSystem::new();
-    #[cfg(target_os = "macos")]
-    font_system.db_mut().set_sans_serif_family("Helvetica Neue");
-    #[cfg(target_os = "windows")]
-    font_system.db_mut().set_sans_serif_family("Segoe UI");
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    font_system.db_mut().set_sans_serif_family("Noto Sans");
-    Mutex::new(font_system)
-});
+pub static FONT_CONTEXT: LazyLock<Mutex<FontContext>> =
+    LazyLock::new(|| Mutex::new(FontContext::new()));
 
-/// A line of visible text for rendering
-#[derive(Debug)]
-pub struct LayoutRun<'a> {
-    /// The index of the original text line
-    pub line_i: usize,
-    /// The original text line
-    pub text: &'a str,
-    /// True if the original paragraph direction is RTL
-    pub rtl: bool,
-    /// The array of layout glyphs to draw
-    pub glyphs: &'a [LayoutGlyph],
-    /// Maximum ascent of the glyphs in line
-    pub max_ascent: f32,
-    /// Maximum descent of the glyphs in line
-    pub max_descent: f32,
-    /// Y offset to baseline of line
-    pub line_y: f32,
-    /// Y offset to top of line
-    pub line_top: f32,
-    /// Y offset to next line
-    pub line_height: f32,
-    /// Width of line
-    pub line_w: f32,
-}
-
-impl LayoutRun<'_> {
-    /// Return the pixel span `Some((x_left, x_width))` of the highlighted area between `cursor_start`
-    /// and `cursor_end` within this run, or None if the cursor range does not intersect this run.
-    /// This may return widths of zero if `cursor_start == cursor_end`, if the run is empty, or if the
-    /// region's left start boundary is the same as the cursor's end boundary or vice versa.
-    pub fn highlight(&self, cursor_start: Cursor, cursor_end: Cursor) -> Option<(f32, f32)> {
-        let mut x_start = None;
-        let mut x_end = None;
-        let rtl_factor = if self.rtl { 1. } else { 0. };
-        let ltr_factor = 1. - rtl_factor;
-        for glyph in self.glyphs.iter() {
-            let cursor = self.cursor_from_glyph_left(glyph);
-            if cursor >= cursor_start && cursor <= cursor_end {
-                if x_start.is_none() {
-                    x_start = Some(glyph.x + glyph.w * rtl_factor);
-                }
-                x_end = Some(glyph.x + glyph.w * rtl_factor);
-            }
-            let cursor = self.cursor_from_glyph_right(glyph);
-            if cursor >= cursor_start && cursor <= cursor_end {
-                if x_start.is_none() {
-                    x_start = Some(glyph.x + glyph.w * ltr_factor);
-                }
-                x_end = Some(glyph.x + glyph.w * ltr_factor);
-            }
-        }
-        if let Some(x_start) = x_start {
-            let x_end = x_end.expect("end of cursor not found");
-            let (x_start, x_end) = if x_start < x_end {
-                (x_start, x_end)
-            } else {
-                (x_end, x_start)
-            };
-            Some((x_start, x_end - x_start))
-        } else {
-            None
-        }
-    }
-
-    fn cursor_from_glyph_left(&self, glyph: &LayoutGlyph) -> Cursor {
-        if self.rtl {
-            Cursor::new_with_affinity(self.line_i, glyph.end, Affinity::Before)
-        } else {
-            Cursor::new_with_affinity(self.line_i, glyph.start, Affinity::After)
-        }
-    }
-
-    pub fn cursor_from_glyph_right(&self, glyph: &LayoutGlyph) -> Cursor {
-        if self.rtl {
-            Cursor::new_with_affinity(self.line_i, glyph.start, Affinity::After)
-        } else {
-            Cursor::new_with_affinity(self.line_i, glyph.end, Affinity::Before)
-        }
-    }
-}
-
-/// An iterator of visible text lines, see [`LayoutRun`]
-#[derive(Debug)]
-pub struct LayoutRunIter<'b> {
-    text_layout: &'b TextLayout,
-    line_i: usize,
-    layout_i: usize,
-    total_height: f32,
-    line_top: f32,
-}
-
-impl<'b> LayoutRunIter<'b> {
-    pub fn new(text_layout: &'b TextLayout) -> Self {
-        Self {
-            text_layout,
-            line_i: text_layout.buffer.scroll().line,
-            layout_i: 0,
-            total_height: 0.0,
-            line_top: 0.0,
-        }
-    }
-}
-
-impl<'b> Iterator for LayoutRunIter<'b> {
-    type Item = LayoutRun<'b>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        while let Some(line) = self.text_layout.buffer.lines.get(self.line_i) {
-            let shape = line.shape_opt()?;
-            let layout = line.layout_opt()?;
-            while let Some(layout_line) = layout.get(self.layout_i) {
-                self.layout_i += 1;
-
-                let line_height = layout_line
-                    .line_height_opt
-                    .unwrap_or(self.text_layout.buffer.metrics().line_height);
-                self.total_height += line_height;
-
-                let line_top = self.line_top - self.text_layout.buffer.scroll().vertical;
-                let glyph_height = layout_line.max_ascent + layout_line.max_descent;
-                let centering_offset = (line_height - glyph_height) / 2.0;
-                let line_y = line_top + centering_offset + layout_line.max_ascent;
-                if let Some(height) = self.text_layout.height_opt {
-                    if line_y > height {
-                        return None;
-                    }
-                }
-                self.line_top += line_height;
-                if line_y < 0.0 {
-                    continue;
-                }
-
-                return Some(LayoutRun {
-                    line_i: self.line_i,
-                    text: line.text(),
-                    rtl: shape.rtl,
-                    glyphs: &layout_line.glyphs,
-                    max_ascent: layout_line.max_ascent,
-                    max_descent: layout_line.max_descent,
-                    line_y,
-                    line_top,
-                    line_height,
-                    line_w: layout_line.w,
-                });
-            }
-            self.line_i += 1;
-            self.layout_i = 0;
-        }
-
-        None
-    }
+thread_local! {
+    static LAYOUT_CONTEXT: RefCell<LayoutContext<TextBrush>> =
+        RefCell::new(LayoutContext::new());
 }
 
 pub struct HitPosition {
-    /// Text line the cursor is on
     pub line: usize,
-    /// Point of the cursor
     pub point: Point,
-    /// ascent of glyph
     pub glyph_ascent: f64,
-    /// descent of glyph
     pub glyph_descent: f64,
 }
 
 pub struct HitPoint {
-    /// Text line the cursor is on
     pub line: usize,
-    /// First-byte-index of glyph at cursor (will insert behind this glyph)
     pub index: usize,
-    /// Whether or not the point was inside the bounds of the layout object.
-    ///
-    /// A click outside the layout object will still resolve to a position in the
-    /// text; for instance a click to the right edge of a line will resolve to the
-    /// end of that line, and a click below the last line will resolve to a
-    /// position in that line.
     pub is_inside: bool,
     pub affinity: Affinity,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct TextLayout {
-    buffer: Buffer,
+    layout: Layout<TextBrush>,
+    text: String,
     lines_range: Vec<Range<usize>>,
+    alignment: Option<Align>,
+    wrap: Wrap,
     width_opt: Option<f32>,
     height_opt: Option<f32>,
+    default_line_height: f32,
+}
+
+impl std::fmt::Debug for TextLayout {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TextLayout")
+            .field("text", &self.text)
+            .field("lines_range", &self.lines_range)
+            .field("width_opt", &self.width_opt)
+            .field("height_opt", &self.height_opt)
+            .finish()
+    }
 }
 
 impl Default for TextLayout {
@@ -216,10 +63,14 @@ impl Default for TextLayout {
 impl TextLayout {
     pub fn new() -> Self {
         TextLayout {
-            buffer: Buffer::new_empty(Metrics::new(16.0, 16.0)),
+            layout: Layout::new(),
+            text: String::new(),
             lines_range: Vec::new(),
+            alignment: None,
+            wrap: Wrap::Word,
             width_opt: None,
             height_opt: None,
+            default_line_height: 16.0,
         }
     }
 
@@ -230,99 +81,178 @@ impl TextLayout {
     }
 
     pub fn set_text(&mut self, text: &str, attrs_list: AttrsList, align: Option<Align>) {
-        self.buffer.lines.clear();
+        self.text = text.to_string();
+        self.alignment = align;
         self.lines_range.clear();
-        let mut attrs_list = attrs_list.0;
-        for (range, ending) in LineIter::new(text) {
-            self.lines_range.push(range.clone());
-            let line_text = &text[range];
-            let new_attrs = attrs_list
-                .clone()
-                .split_off(line_text.len() + ending.as_str().len());
-            let mut line =
-                BufferLine::new(line_text, ending, attrs_list.clone(), Shaping::Advanced);
-            line.set_align(align);
-            self.buffer.lines.push(line);
-            attrs_list = new_attrs;
-        }
-        if self.buffer.lines.is_empty() {
-            let mut line =
-                BufferLine::new("", LineEnding::default(), attrs_list, Shaping::Advanced);
-            line.set_align(align);
-            self.buffer.lines.push(line);
-            self.lines_range.push(0..0)
-        }
-        self.buffer.set_scroll(Scroll::default());
 
-        let mut font_system = FONT_SYSTEM.lock();
+        // Compute per-paragraph byte ranges
+        let mut start = 0;
+        let bytes = text.as_bytes();
+        let len = bytes.len();
+        let mut i = 0;
+        while i < len {
+            if bytes[i] == b'\r' {
+                if i + 1 < len && bytes[i + 1] == b'\n' {
+                    self.lines_range.push(start..i);
+                    i += 2;
+                    start = i;
+                } else {
+                    self.lines_range.push(start..i);
+                    i += 1;
+                    start = i;
+                }
+            } else if bytes[i] == b'\n' {
+                self.lines_range.push(start..i);
+                i += 1;
+                start = i;
+            } else {
+                i += 1;
+            }
+        }
+        self.lines_range.push(start..len);
 
-        // two-pass layout for alignment to work properly
+        // Store default line height from attrs
+        let defaults = attrs_list.defaults();
+        self.default_line_height = defaults.effective_line_height();
+
+        // Build Parley layout (font context only needed during shaping)
+        {
+            let mut font_cx = FONT_CONTEXT.lock();
+            LAYOUT_CONTEXT.with(|lc| {
+                let mut layout_cx = lc.borrow_mut();
+                let mut builder = layout_cx.ranged_builder(&mut font_cx, text, 1.0, true);
+
+                // Apply attributes
+                attrs_list.apply_to_builder(&mut builder);
+
+                // Apply wrap mode
+                match self.wrap {
+                    Wrap::None => {
+                        builder.push_default(StyleProperty::TextWrapMode(
+                            parley::style::TextWrapMode::NoWrap,
+                        ));
+                    }
+                    Wrap::Glyph => {
+                        builder.push_default(StyleProperty::OverflowWrap(
+                            parley::style::OverflowWrap::BreakWord,
+                        ));
+                    }
+                    Wrap::Word => {}
+                    Wrap::WordOrGlyph => {
+                        builder.push_default(StyleProperty::OverflowWrap(
+                            parley::style::OverflowWrap::BreakWord,
+                        ));
+                    }
+                }
+
+                builder.build_into(&mut self.layout, text);
+            });
+        }
+
+        // Line breaking (no font context needed)
+        let max_advance = if self.wrap == Wrap::None {
+            None
+        } else {
+            self.width_opt
+        };
+        self.layout.break_all_lines(max_advance);
+
+        // Two-pass alignment for non-left alignment without width constraint
         let needs_two_pass =
             align.is_some() && align != Some(Align::Left) && self.width_opt.is_none();
+
         if needs_two_pass {
-            // first pass: shape and layout without width constraint to measure natural width
-            self.buffer.shape_until_scroll(&mut font_system, false);
-
-            // measure the actual width
-            let measured_width = self
-                .buffer
-                .layout_runs()
-                .fold(0.0f32, |width, run| width.max(run.line_w));
-
-            // second pass: set the measured width and layout again
+            let measured_width = self.layout.full_width();
             if measured_width > 0.0 {
-                self.buffer
-                    .set_size(&mut font_system, Some(measured_width), self.height_opt);
-                // shape again after size change
-                self.buffer.shape_until_scroll(&mut font_system, false);
+                self.layout.align(
+                    Some(measured_width),
+                    align.unwrap().into(),
+                    AlignmentOptions::default(),
+                );
             }
-        } else {
-            // For left-aligned text, single pass is sufficient
-            self.buffer.shape_until_scroll(&mut font_system, false);
+        } else if let Some(align) = align {
+            self.layout
+                .align(self.width_opt, align.into(), AlignmentOptions::default());
         }
     }
 
     pub fn set_wrap(&mut self, wrap: Wrap) {
-        let mut font_system = FONT_SYSTEM.lock();
-        self.buffer.set_wrap(&mut font_system, wrap);
+        self.wrap = wrap;
     }
 
-    pub fn set_tab_width(&mut self, tab_width: usize) {
-        let mut font_system = FONT_SYSTEM.lock();
-        self.buffer
-            .set_tab_width(&mut font_system, tab_width as u16);
+    pub fn set_tab_width(&mut self, _tab_width: usize) {
+        // Parley doesn't have a direct tab width setting
     }
 
     pub fn set_size(&mut self, width: f32, height: f32) {
-        let mut font_system = FONT_SYSTEM.lock();
+        let old_width = self.width_opt;
         self.width_opt = Some(width);
         self.height_opt = Some(height);
-        self.buffer
-            .set_size(&mut font_system, Some(width), Some(height));
-    }
 
-    pub fn metrics(&self) -> Metrics {
-        self.buffer.metrics()
-    }
+        // Skip reflow if width hasn't changed (height doesn't affect line breaking)
+        if old_width == Some(width) {
+            return;
+        }
 
-    pub fn lines(&self) -> &[BufferLine] {
-        &self.buffer.lines
+        let max_advance = if self.wrap == Wrap::None {
+            None
+        } else {
+            Some(width)
+        };
+        self.layout.break_all_lines(max_advance);
+
+        if let Some(align) = self.alignment {
+            self.layout
+                .align(Some(width), align.into(), AlignmentOptions::default());
+        }
     }
 
     pub fn lines_range(&self) -> &[Range<usize>] {
         &self.lines_range
     }
 
-    pub fn layout_runs(&self) -> LayoutRunIter<'_> {
-        LayoutRunIter::new(self)
+    /// Full text content
+    pub fn text(&self) -> &str {
+        &self.text
     }
 
-    pub fn layout_cursor(&mut self, cursor: Cursor) -> LayoutCursor {
-        let line = cursor.line;
-        let mut font_system = FONT_SYSTEM.lock();
-        self.buffer
-            .layout_cursor(&mut font_system, cursor)
-            .unwrap_or_else(|| LayoutCursor::new(line, 0, 0))
+    /// Direct access to the Parley layout for renderers and consumers
+    pub fn parley_layout(&self) -> &Layout<TextBrush> {
+        &self.layout
+    }
+
+    /// Count of visual lines in the layout
+    pub fn visual_line_count(&self) -> usize {
+        self.layout.len()
+    }
+
+    pub fn size(&self) -> Size {
+        let width = self.layout.full_width() as f64;
+        let height = self.layout.height() as f64;
+        Size::new(width, height)
+    }
+
+    /// Convert x, y position to Cursor (hit detection)
+    pub fn hit(&self, x: f32, y: f32) -> Option<crate::text::Cursor> {
+        if self.text.is_empty() {
+            return Some(crate::text::Cursor::new(0, 0));
+        }
+
+        let pcursor = parley::editing::Cursor::from_point(&self.layout, x, y);
+        let flat_idx = pcursor.index();
+        let affinity: Affinity = pcursor.affinity().into();
+
+        // Convert flat byte index to (line, index_within_line)
+        for (line_i, range) in self.lines_range.iter().enumerate() {
+            if flat_idx <= range.end || line_i == self.lines_range.len() - 1 {
+                let local_idx = flat_idx.saturating_sub(range.start);
+                return Some(crate::text::Cursor::new_with_affinity(
+                    line_i, local_idx, affinity,
+                ));
+            }
+        }
+
+        Some(crate::text::Cursor::new(0, 0))
     }
 
     pub fn hit_position(&self, idx: usize) -> HitPosition {
@@ -330,112 +260,40 @@ impl TextLayout {
     }
 
     pub fn hit_position_aff(&self, idx: usize, affinity: Affinity) -> HitPosition {
-        let mut last_line = 0;
-        let mut last_end: usize = 0;
-        let mut offset = 0;
-        let mut glyph_tail_found = false;
-        let mut last_glyph: Option<&LayoutGlyph> = None;
-        let mut last_position = HitPosition {
-            line: 0,
-            point: Point::ZERO,
-            glyph_ascent: 0.0,
-            glyph_descent: 0.0,
-        };
-        for (line, run) in self.layout_runs().enumerate() {
-            if run.line_i > last_line {
-                last_line = run.line_i;
-                offset = last_end + 1;
-            }
-
-            // Handles wrapped lines, like:
-            // ```rust
-            // let config_path = |
-            // dirs::config_dir();
-            // ```
-            // The glyphs won't contain the space at the end of the first part, and the position right
-            // after the space is the same column as at `|dirs`, which is what before is letting us
-            // distinguish.
-            // So essentially, if the next run has a glyph that is at the same idx as the end of the
-            // previous run, *and* it is at `idx` itself, then we know to position it on the previous.
-            if let Some(last_glyph) = last_glyph {
-                if let Some(first_glyph) = run.glyphs.first() {
-                    let in_wrapped_tail = match affinity {
-                        // we resolve to the line before the next glyph
-                        Affinity::Before => first_glyph.start + offset == idx,
-                        // found the tail and it resolves within whitespace from the previous line
-                        Affinity::After => first_glyph.start + offset != idx && glyph_tail_found,
-                    };
-
-                    if in_wrapped_tail {
-                        last_position.point.x += last_glyph.w as f64;
-
-                        if last_end != idx {
-                            // if the last index doesn't match the start index,
-                            // it's due to whitespace
-                            last_position.point.x += last_glyph.w as f64;
-                        }
-
-                        last_position.point.y = 0.0;
-                        return last_position;
-                    }
-                }
-            }
-
-            for glyph in run.glyphs {
-                let glyph_start = glyph.start + offset;
-                let glyph_end = glyph.end + offset;
-
-                last_end = glyph_end;
-                last_glyph = Some(glyph);
-                last_position = HitPosition {
-                    line,
-                    point: Point::new(glyph.x as f64, run.line_y as f64),
-                    glyph_ascent: run.max_ascent as f64,
-                    glyph_descent: run.max_descent as f64,
-                };
-
-                glyph_tail_found = idx == glyph_end;
-
-                if (glyph_start..glyph_end).contains(&idx)
-                    || (affinity == Affinity::Before && glyph_tail_found)
-                {
-                    // possibly inside ligature, need to resolve glyph internal offset
-
-                    let glyph_str = &run.text[glyph.start..glyph.end];
-                    let relative_idx = idx - glyph_start;
-                    let mut total_graphemes = 0;
-                    let mut grapheme_i = 0;
-
-                    for (i, _) in glyph_str.grapheme_indices(true) {
-                        if relative_idx > i {
-                            grapheme_i += 1;
-                        }
-
-                        total_graphemes += 1;
-                    }
-
-                    if glyph.level.is_rtl() {
-                        grapheme_i = total_graphemes - grapheme_i;
-                    }
-
-                    last_position.point.x +=
-                        (grapheme_i as f64 / total_graphemes as f64) * glyph.w as f64;
-
-                    return last_position;
-                }
-            }
+        if self.text.is_empty() || self.layout.is_empty() {
+            return HitPosition {
+                line: 0,
+                point: Point::ZERO,
+                glyph_ascent: 0.0,
+                glyph_descent: 0.0,
+            };
         }
 
-        if let Some(last_glyph) = last_glyph {
-            last_position.point.x += last_glyph.w as f64;
-            return last_position;
+        let pcursor = parley::editing::Cursor::from_byte_index(&self.layout, idx, affinity.into());
+        let bbox = pcursor.geometry(&self.layout, 0.0);
+
+        // Find which visual line this cursor is on
+        let mut visual_line = 0;
+        for (i, line) in self.layout.lines().enumerate() {
+            let range = line.text_range();
+            if idx <= range.end {
+                visual_line = i;
+                break;
+            }
+            visual_line = i;
         }
+
+        let metrics = self
+            .layout
+            .get(visual_line)
+            .map(|l| *l.metrics())
+            .unwrap_or_default();
 
         HitPosition {
-            line: 0,
-            point: Point::ZERO,
-            glyph_ascent: 0.0,
-            glyph_descent: 0.0,
+            line: visual_line,
+            point: Point::new(bbox.x0, metrics.baseline as f64),
+            glyph_ascent: metrics.ascent as f64,
+            glyph_descent: metrics.descent as f64,
         }
     }
 
@@ -459,85 +317,50 @@ impl TextLayout {
         }
     }
 
-    /// Convert x, y position to Cursor (hit detection)
-    pub fn hit(&self, x: f32, y: f32) -> Option<Cursor> {
-        self.buffer.hit(x, y)
+    /// Convert a floem Cursor (paragraph_line, index_within_line) to a flat byte index
+    pub fn cursor_to_byte_index(&self, cursor: &crate::text::Cursor) -> usize {
+        self.lines_range
+            .get(cursor.line)
+            .map(|r| r.start + cursor.index)
+            .unwrap_or(0)
     }
 
-    pub fn line_col_position(&self, line: usize, col: usize) -> HitPosition {
-        let mut last_glyph: Option<&LayoutGlyph> = None;
-        let mut last_line = 0;
-        let mut last_line_y = 0.0;
-        let mut last_glyph_ascent = 0.0;
-        let mut last_glyph_descent = 0.0;
-        for (current_line, run) in self.layout_runs().enumerate() {
-            for glyph in run.glyphs {
-                match run.line_i.cmp(&line) {
-                    std::cmp::Ordering::Equal => {
-                        if glyph.start > col {
-                            return HitPosition {
-                                line: last_line,
-                                point: Point::new(
-                                    last_glyph.map(|g| (g.x + g.w) as f64).unwrap_or(0.0),
-                                    last_line_y as f64,
-                                ),
-                                glyph_ascent: last_glyph_ascent as f64,
-                                glyph_descent: last_glyph_descent as f64,
-                            };
-                        }
-                        if (glyph.start..glyph.end).contains(&col) {
-                            return HitPosition {
-                                line: current_line,
-                                point: Point::new(glyph.x as f64, run.line_y as f64),
-                                glyph_ascent: run.max_ascent as f64,
-                                glyph_descent: run.max_descent as f64,
-                            };
-                        }
-                    }
-                    std::cmp::Ordering::Greater => {
-                        return HitPosition {
-                            line: last_line,
-                            point: Point::new(
-                                last_glyph.map(|g| (g.x + g.w) as f64).unwrap_or(0.0),
-                                last_line_y as f64,
-                            ),
-                            glyph_ascent: last_glyph_ascent as f64,
-                            glyph_descent: last_glyph_descent as f64,
-                        };
-                    }
-                    std::cmp::Ordering::Less => {}
-                };
-                last_glyph = Some(glyph);
-            }
-            last_line = current_line;
-            last_line_y = run.line_y;
-            last_glyph_ascent = run.max_ascent;
-            last_glyph_descent = run.max_descent;
-        }
-
-        HitPosition {
-            line: last_line,
-            point: Point::new(
-                last_glyph.map(|g| (g.x + g.w) as f64).unwrap_or(0.0),
-                last_line_y as f64,
-            ),
-            glyph_ascent: last_glyph_ascent as f64,
-            glyph_descent: last_glyph_descent as f64,
-        }
+    /// Compute selection highlight rectangles between two byte indices.
+    /// Calls `f` with (x0, y0, x1, y1) for each visual line's selection rectangle.
+    pub fn selection_geometry_with(
+        &self,
+        start_byte: usize,
+        end_byte: usize,
+        mut f: impl FnMut(f64, f64, f64, f64),
+    ) {
+        let anchor = parley::editing::Cursor::from_byte_index(
+            &self.layout,
+            start_byte,
+            parley::layout::Affinity::Downstream,
+        );
+        let focus = parley::editing::Cursor::from_byte_index(
+            &self.layout,
+            end_byte,
+            parley::layout::Affinity::Upstream,
+        );
+        let selection = parley::editing::Selection::new(anchor, focus);
+        selection.geometry_with(&self.layout, |bbox, _line_idx| {
+            f(bbox.x0, bbox.y0, bbox.x1, bbox.y1);
+        });
     }
 
-    pub fn size(&self) -> Size {
-        self.buffer
-            .layout_runs()
-            .fold(Size::new(0.0, 0.0), |mut size, run| {
-                let new_width = run.line_w as f64;
-                if new_width > size.width {
-                    size.width = new_width;
-                }
+    /// Get the baseline y position of the nth visual line
+    pub fn visual_line_y(&self, nth: usize) -> Option<f32> {
+        self.layout.get(nth).map(|l| l.metrics().baseline)
+    }
 
-                size.height += run.line_height as f64;
+    /// Get the text byte range of the nth visual line
+    pub fn visual_line_text_range(&self, nth: usize) -> Option<Range<usize>> {
+        self.layout.get(nth).map(|l| l.text_range())
+    }
 
-                size
-            })
+    /// Check if the nth visual line is empty (has no items)
+    pub fn visual_line_is_empty(&self, nth: usize) -> bool {
+        self.layout.get(nth).is_none_or(|l| l.is_empty())
     }
 }

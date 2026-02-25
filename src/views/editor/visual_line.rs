@@ -2183,20 +2183,21 @@ mod tests {
 
         for line in 0..rope_text.num_lines() {
             if let Some(text_layout) = layouts.get(font_size, line) {
-                for line in text_layout.text.lines() {
-                    let layouts = line.layout_opt().unwrap();
-                    for layout in layouts {
-                        // Spacing
-                        if layout.glyphs.is_empty() {
+                let full_text = text_layout.text.text();
+                let count = text_layout.text.visual_line_count();
+                for i in 0..count {
+                    if text_layout.text.visual_line_is_empty(i) {
+                        continue;
+                    }
+                    if let Some(text_range) = text_layout.text.visual_line_text_range(i) {
+                        let raw = &full_text[text_range];
+                        // Skip lines that are entirely whitespace (matches old behavior
+                        // where trailing whitespace was stripped from glyph lists)
+                        if !raw.chars().any(|c| !c.is_whitespace()) {
                             continue;
                         }
-                        let start_idx = layout.glyphs[0].start;
-                        let end_idx = layout.glyphs.last().unwrap().end;
-                        // Hacky solution to include the ending space/newline since those get trimmed off
-                        let line_content = line
-                            .text()
-                            .get(start_idx..=end_idx)
-                            .unwrap_or(&line.text()[start_idx..end_idx]);
+                        // Strip trailing newlines to match old glyph-based behavior
+                        let line_content = raw.trim_end_matches(|c: char| c == '\n' || c == '\r');
                         result.push(Cow::Owned(line_content.to_string()));
                     }
                 }

@@ -1,9 +1,12 @@
 use std::ops::Range;
 
-use crate::text::{fontdb, Family, Stretch, Style, Weight};
+use crate::text::TextBrush;
+use crate::text::{Stretch, Style, Weight};
+use fontique::GenericFamily;
+use parley::style::{FontFamily, FontStack, StyleProperty};
 use peniko::Color;
 
-/// An owned version of [`Family`]
+/// An owned version of font family
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum FamilyOwned {
     Name(String),
@@ -15,33 +18,42 @@ pub enum FamilyOwned {
 }
 
 impl FamilyOwned {
-    pub fn new(family: Family) -> Self {
-        match family {
-            Family::Name(name) => FamilyOwned::Name(name.to_string()),
-            Family::Serif => FamilyOwned::Serif,
-            Family::SansSerif => FamilyOwned::SansSerif,
-            Family::Cursive => FamilyOwned::Cursive,
-            Family::Fantasy => FamilyOwned::Fantasy,
-            Family::Monospace => FamilyOwned::Monospace,
-        }
-    }
-
-    pub fn as_family(&self) -> Family<'_> {
-        match self {
-            FamilyOwned::Name(name) => Family::Name(name),
-            FamilyOwned::Serif => Family::Serif,
-            FamilyOwned::SansSerif => Family::SansSerif,
-            FamilyOwned::Cursive => Family::Cursive,
-            FamilyOwned::Fantasy => Family::Fantasy,
-            FamilyOwned::Monospace => Family::Monospace,
-        }
-    }
-
     pub fn parse_list(s: &str) -> impl Iterator<Item = FamilyOwned> + '_ + Clone {
         ParseList {
             source: s.as_bytes(),
             len: s.len(),
             pos: 0,
+        }
+    }
+
+    fn to_font_family(&self) -> FontFamily<'_> {
+        match self {
+            FamilyOwned::Name(name) => FontFamily::Named(std::borrow::Cow::Borrowed(name.as_str())),
+            FamilyOwned::Serif => FontFamily::Generic(GenericFamily::Serif),
+            FamilyOwned::SansSerif => FontFamily::Generic(GenericFamily::SansSerif),
+            FamilyOwned::Cursive => FontFamily::Generic(GenericFamily::Cursive),
+            FamilyOwned::Fantasy => FontFamily::Generic(GenericFamily::Fantasy),
+            FamilyOwned::Monospace => FontFamily::Generic(GenericFamily::Monospace),
+        }
+    }
+
+    pub fn to_font_stack(families: &[FamilyOwned]) -> FontStack<'_> {
+        if families.len() == 1 {
+            match &families[0] {
+                FamilyOwned::Name(name) => {
+                    FontStack::Source(std::borrow::Cow::Borrowed(name.as_str()))
+                }
+                other => FontStack::Single(other.to_font_family()),
+            }
+        } else if let Some(first) = families.first() {
+            match first {
+                FamilyOwned::Name(name) => {
+                    FontStack::Source(std::borrow::Cow::Borrowed(name.as_str()))
+                }
+                other => FontStack::Single(other.to_font_family()),
+            }
+        } else {
+            FontStack::Single(FontFamily::Generic(GenericFamily::SansSerif))
         }
     }
 }
@@ -54,35 +66,15 @@ pub enum LineHeightValue {
 
 /// Text attributes
 #[derive(Clone, Debug)]
-pub struct AttrsOwned {
-    attrs: cosmic_text::AttrsOwned,
-    pub font_size: f32,
-    line_height: LineHeightValue,
-}
-impl AttrsOwned {
-    pub fn new(attrs: Attrs) -> Self {
-        Self {
-            attrs: cosmic_text::AttrsOwned::new(&attrs.attrs),
-            font_size: attrs.font_size,
-            line_height: attrs.line_height,
-        }
-    }
-
-    pub fn as_attrs(&self) -> Attrs<'_> {
-        Attrs {
-            attrs: self.attrs.as_attrs(),
-            font_size: self.font_size,
-            line_height: self.line_height,
-        }
-    }
-}
-
-/// Text attributes
-#[derive(Clone, Debug)]
 pub struct Attrs<'a> {
-    attrs: cosmic_text::Attrs<'a>,
     pub font_size: f32,
     line_height: LineHeightValue,
+    color: Option<Color>,
+    family: Option<&'a [FamilyOwned]>,
+    weight: Option<Weight>,
+    style: Option<Style>,
+    stretch: Option<Stretch>,
+    metadata: Option<usize>,
 }
 
 impl Default for Attrs<'_> {
@@ -92,144 +84,286 @@ impl Default for Attrs<'_> {
 }
 
 impl<'a> Attrs<'a> {
-    /// Create a new set of attributes with sane defaults
-    ///
-    /// This defaults to a regular Sans-Serif font.
     pub fn new() -> Self {
         Self {
-            attrs: cosmic_text::Attrs::new(),
             font_size: 16.0,
             line_height: LineHeightValue::Normal(1.0),
+            color: None,
+            family: None,
+            weight: None,
+            style: None,
+            stretch: None,
+            metadata: None,
         }
     }
 
-    /// Set [Color]
     pub fn color(mut self, color: Color) -> Self {
-        let c = color.to_rgba8();
-        self.attrs = self
-            .attrs
-            .color(cosmic_text::Color::rgba(c.r, c.g, c.b, c.a));
+        self.color = Some(color);
         self
     }
 
-    /// Set [Family]
     pub fn family(mut self, family: &'a [FamilyOwned]) -> Self {
-        if let Some(family) = family.first() {
-            self.attrs = self.attrs.family(family.as_family());
-        }
+        self.family = Some(family);
         self
     }
 
-    /// Set [Stretch]
     pub fn stretch(mut self, stretch: Stretch) -> Self {
-        self.attrs = self.attrs.stretch(stretch);
+        self.stretch = Some(stretch);
         self
     }
 
-    /// Set [Style]
     pub fn style(mut self, style: Style) -> Self {
-        self.attrs = self.attrs.style(style);
+        self.style = Some(style);
         self
     }
 
-    /// Set [Weight]
     pub fn weight(mut self, weight: Weight) -> Self {
-        self.attrs = self.attrs.weight(weight);
+        self.weight = Some(weight);
         self
     }
 
-    /// Set Weight from u16 value
     pub fn raw_weight(mut self, weight: u16) -> Self {
-        self.attrs = self.attrs.weight(Weight(weight));
+        self.weight = Some(Weight(weight));
         self
     }
 
-    fn get_metrics(&self) -> cosmic_text::Metrics {
-        let line_height = match self.line_height {
-            LineHeightValue::Normal(n) => self.font_size * n,
-            LineHeightValue::Px(n) => n,
-        };
-        cosmic_text::Metrics::new(self.font_size, line_height)
-    }
-
-    /// Set font size
     pub fn font_size(mut self, font_size: f32) -> Self {
         self.font_size = font_size;
-        let metrics = self.get_metrics();
-        self.attrs = self.attrs.metrics(metrics);
         self
     }
 
-    /// Set line height
     pub fn line_height(mut self, line_height: LineHeightValue) -> Self {
         self.line_height = line_height;
-        let metrics = self.get_metrics();
-        self.attrs = self.attrs.metrics(metrics);
         self
     }
 
-    /// Set metadata
     pub fn metadata(mut self, metadata: usize) -> Self {
-        self.attrs = self.attrs.metadata(metadata);
+        self.metadata = Some(metadata);
         self
     }
 
-    /// Check if font matches
-    pub fn matches(&self, face: &fontdb::FaceInfo) -> bool {
-        self.attrs.matches(face)
+    pub fn get_color(&self) -> Option<Color> {
+        self.color
     }
 
-    /// Check if this set of attributes can be shaped with another
-    pub fn compatible(&self, other: &Self) -> bool {
-        self.attrs.compatible(&other.attrs)
+    pub fn get_line_height(&self) -> LineHeightValue {
+        self.line_height
+    }
+
+    pub fn get_family(&self) -> Option<&'a [FamilyOwned]> {
+        self.family
+    }
+
+    pub fn get_weight(&self) -> Option<Weight> {
+        self.weight
+    }
+
+    pub fn get_style(&self) -> Option<Style> {
+        self.style
+    }
+
+    pub fn get_stretch(&self) -> Option<Stretch> {
+        self.stretch
+    }
+
+    pub fn get_metadata(&self) -> Option<usize> {
+        self.metadata
+    }
+
+    /// Compute the effective line height in pixels
+    pub fn effective_line_height(&self) -> f32 {
+        match self.line_height {
+            LineHeightValue::Normal(n) => self.font_size * n,
+            LineHeightValue::Px(n) => n,
+        }
+    }
+
+    /// Push default style properties onto a Parley RangedBuilder
+    pub fn apply_defaults(&self, builder: &mut parley::RangedBuilder<'_, TextBrush>) {
+        builder.push_default(StyleProperty::FontSize(self.font_size));
+        let lh = self.effective_line_height();
+        builder.push_default(StyleProperty::LineHeight(
+            parley::style::LineHeight::Absolute(lh),
+        ));
+        if let Some(color) = self.color {
+            builder.push_default(StyleProperty::Brush(TextBrush(color)));
+        }
+        if let Some(family) = self.family {
+            let stack = FamilyOwned::to_font_stack(family);
+            builder.push_default(StyleProperty::FontStack(stack));
+        }
+        if let Some(weight) = self.weight {
+            builder.push_default(StyleProperty::FontWeight(weight.into()));
+        }
+        if let Some(style) = self.style {
+            builder.push_default(StyleProperty::FontStyle(style.into()));
+        }
+        if let Some(stretch) = self.stretch {
+            builder.push_default(StyleProperty::FontWidth(stretch.into()));
+        }
+    }
+
+    /// Push style properties for a specific range onto a Parley RangedBuilder.
+    /// Only pushes properties that differ from the given defaults to reduce redundant work.
+    pub fn apply_range(
+        &self,
+        builder: &mut parley::RangedBuilder<'_, TextBrush>,
+        range: Range<usize>,
+        defaults: &Attrs<'_>,
+    ) {
+        if self.font_size != defaults.font_size {
+            builder.push(StyleProperty::FontSize(self.font_size), range.clone());
+        }
+        if self.effective_line_height() != defaults.effective_line_height() {
+            let lh = self.effective_line_height();
+            builder.push(
+                StyleProperty::LineHeight(parley::style::LineHeight::Absolute(lh)),
+                range.clone(),
+            );
+        }
+        if let Some(color) = self.color {
+            builder.push(StyleProperty::Brush(TextBrush(color)), range.clone());
+        }
+        if let Some(family) = self.family {
+            let stack = FamilyOwned::to_font_stack(family);
+            builder.push(StyleProperty::FontStack(stack), range.clone());
+        }
+        if let Some(weight) = self.weight {
+            builder.push(StyleProperty::FontWeight(weight.into()), range.clone());
+        }
+        if let Some(style) = self.style {
+            builder.push(StyleProperty::FontStyle(style.into()), range.clone());
+        }
+        if let Some(stretch) = self.stretch {
+            builder.push(StyleProperty::FontWidth(stretch.into()), range);
+        }
     }
 }
 
-#[derive(PartialEq, Clone)]
-pub struct AttrsList(pub cosmic_text::AttrsList);
+/// Owned text attributes
+#[derive(Clone, Debug)]
+pub struct AttrsOwned {
+    pub font_size: f32,
+    line_height: LineHeightValue,
+    color: Option<Color>,
+    family: Option<Vec<FamilyOwned>>,
+    weight: Option<Weight>,
+    style: Option<Style>,
+    stretch: Option<Stretch>,
+    metadata: Option<usize>,
+}
+
+impl AttrsOwned {
+    pub fn new(attrs: Attrs) -> Self {
+        Self {
+            font_size: attrs.font_size,
+            line_height: attrs.line_height,
+            color: attrs.color,
+            family: attrs.family.map(|f| f.to_vec()),
+            weight: attrs.weight,
+            style: attrs.style,
+            stretch: attrs.stretch,
+            metadata: attrs.metadata,
+        }
+    }
+
+    pub fn as_attrs(&self) -> Attrs<'_> {
+        Attrs {
+            font_size: self.font_size,
+            line_height: self.line_height,
+            color: self.color,
+            family: self.family.as_deref(),
+            weight: self.weight,
+            style: self.style,
+            stretch: self.stretch,
+            metadata: self.metadata,
+        }
+    }
+}
+
+/// Attribute spans list
+#[derive(Clone, Debug)]
+pub struct AttrsList {
+    defaults: AttrsOwned,
+    spans: Vec<(Range<usize>, AttrsOwned)>,
+}
+
+impl PartialEq for AttrsList {
+    fn eq(&self, _other: &Self) -> bool {
+        // AttrsList comparison is expensive; use identity comparison or always false
+        false
+    }
+}
 
 impl AttrsList {
-    /// Create a new attributes list with a set of default [Attrs]
     pub fn new(defaults: Attrs) -> Self {
-        Self(cosmic_text::AttrsList::new(&defaults.attrs))
-    }
-
-    /// Get the default [Attrs]
-    pub fn defaults(&self) -> Attrs<'_> {
-        self.0.defaults().into()
-    }
-
-    /// Clear the current attribute spans
-    pub fn clear_spans(&mut self) {
-        self.0.clear_spans();
-    }
-
-    /// Add an attribute span, removes any previous matching parts of spans
-    pub fn add_span(&mut self, range: Range<usize>, attrs: Attrs) {
-        self.0.add_span(range, &attrs.attrs);
-    }
-
-    /// Get the attribute span for an index
-    ///
-    /// This returns a span that contains the index
-    pub fn get_span(&self, index: usize) -> Attrs<'_> {
-        self.0.get_span(index).into()
-    }
-
-    /// Split attributes list at an offset
-    pub fn split_off(&mut self, index: usize) -> Self {
-        let new = self.0.split_off(index);
-        Self(new)
-    }
-}
-
-impl<'a> From<cosmic_text::Attrs<'a>> for Attrs<'a> {
-    fn from(attrs: cosmic_text::Attrs<'a>) -> Self {
         Self {
-            attrs,
-            font_size: 1.0,
-            line_height: LineHeightValue::Normal(1.0),
+            defaults: AttrsOwned::new(defaults),
+            spans: Vec::new(),
         }
+    }
+
+    pub fn defaults(&self) -> Attrs<'_> {
+        self.defaults.as_attrs()
+    }
+
+    pub fn clear_spans(&mut self) {
+        self.spans.clear();
+    }
+
+    pub fn add_span(&mut self, range: Range<usize>, attrs: Attrs) {
+        // Remove any previous spans that overlap with this range
+        self.spans
+            .retain(|(r, _)| r.end <= range.start || r.start >= range.end);
+        self.spans.push((range, AttrsOwned::new(attrs)));
+    }
+
+    pub fn get_span(&self, index: usize) -> Attrs<'_> {
+        for (range, attrs) in &self.spans {
+            if range.contains(&index) {
+                return attrs.as_attrs();
+            }
+        }
+        self.defaults.as_attrs()
+    }
+
+    pub fn split_off(&mut self, index: usize) -> Self {
+        let mut new_spans = Vec::new();
+        let mut remaining = Vec::new();
+
+        for (range, attrs) in self.spans.drain(..) {
+            if range.start >= index {
+                new_spans.push((range.start - index..range.end - index, attrs));
+            } else if range.end > index {
+                remaining.push((range.start..index, attrs.clone()));
+                new_spans.push((0..range.end - index, attrs));
+            } else {
+                remaining.push((range, attrs));
+            }
+        }
+
+        self.spans = remaining;
+
+        AttrsList {
+            defaults: self.defaults.clone(),
+            spans: new_spans,
+        }
+    }
+
+    /// Apply all defaults and spans to a Parley RangedBuilder
+    pub fn apply_to_builder(&self, builder: &mut parley::RangedBuilder<'_, TextBrush>) {
+        let defaults = self.defaults.as_attrs();
+        defaults.apply_defaults(builder);
+        for (range, attrs) in &self.spans {
+            attrs
+                .as_attrs()
+                .apply_range(builder, range.clone(), &defaults);
+        }
+    }
+
+    /// Get the inner spans for iteration
+    pub fn spans(&self) -> &[(Range<usize>, AttrsOwned)] {
+        &self.spans
     }
 }
 

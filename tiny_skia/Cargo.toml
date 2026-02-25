@@ -10,6 +10,8 @@ license.workspace = true
 peniko = { workspace = true }
 resvg = { workspace = true }
 raw-window-handle = { workspace = true }
+parley = { workspace = true }
+swash = { workspace = true }
 
 anyhow = "1.0.69"
 floem_renderer = { path = "../renderer", version = "0.2.0" }

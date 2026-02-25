@@ -1,0 +1,41 @@
+name: Rust
+
+on: [push, pull_request]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    # Note that we can't run the tests because GitHub CI doesn't have GPUs.
+    steps:
+    - uses: actions/checkout@v3
+    - name: Build
+      run: cargo build --all-targets --verbose
+    - name: Check formatting
+      run: cargo fmt -- --check
+      
+  build-wasm:
+
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    # Note that we can't run the tests because GitHub CI doesn't have GPUs.
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Install Rust WASM target
+      run: rustup target add wasm32-unknown-unknown
+        
+    - name: Build
+      run: cargo build --release --target wasm32-unknown-unknown

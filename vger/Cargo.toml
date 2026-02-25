@@ -7,9 +7,7 @@ description = "A native Rust UI library with fine-grained reactivity"
 license.workspace = true
 
 [dependencies.floem-vger-rs]
-git = "https://github.com/lapce/vger-rs.git"
-rev = "643be0713321054a4cb07ae4ad7b440b63b72d72"
-version = "0.3.1"
+path = "../deps/vger-rs"
 package = "floem-vger"
 
 [dependencies]
@@ -17,6 +15,8 @@ image = { workspace = true }
 resvg = { workspace = true }
 peniko = { workspace = true }
 wgpu = { workspace = true }
+parley = { workspace = true }
+swash = { workspace = true }
 
 anyhow = "1.0"
 floem_renderer = { path = "../renderer", version = "0.2.0" }

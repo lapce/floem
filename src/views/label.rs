@@ -308,17 +308,17 @@ impl Label {
             let ss = &self.selection_style;
             let selection_color = ss.selection_color();
 
-            for run in text_layout.layout_runs() {
-                if let Some((mut start_x, width)) = run.highlight(*start_c, *end_c) {
-                    start_x += location.x;
-                    let end_x = width + start_x;
-                    let start_y = location.y as f64 + run.line_top as f64;
-                    let end_y = start_y + run.line_height as f64;
-                    let rect = Rect::new(start_x.into(), start_y, end_x.into(), end_y)
-                        .to_rounded_rect(ss.corner_radius());
-                    paint_cx.fill(&rect, &selection_color, 0.0);
-                }
-            }
+            let start_byte = text_layout.cursor_to_byte_index(start_c);
+            let end_byte = text_layout.cursor_to_byte_index(end_c);
+            text_layout.selection_geometry_with(start_byte, end_byte, |x0, y0, x1, y1| {
+                let start_x = x0 + location.x as f64;
+                let end_x = x1 + location.x as f64;
+                let start_y = y0 + location.y as f64;
+                let end_y = y1 + location.y as f64;
+                let rect =
+                    Rect::new(start_x, start_y, end_x, end_y).to_rounded_rect(ss.corner_radius());
+                paint_cx.fill(&rect, &selection_color, 0.0);
+            });
         }
     }
 

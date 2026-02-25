@@ -10,9 +10,8 @@ license.workspace = true
 parking_lot = { workspace = true }
 peniko = { workspace = true }
 resvg = { workspace = true }
-swash = { workspace = true }
-cosmic-text = { version = "0.14.2", features = ["shape-run-cache"] }
-unicode-segmentation = { workspace = true }
+parley = { workspace = true }
+fontique = { workspace = true }
 winit = { workspace = true }
 wgpu = { workspace = true }
 crossbeam = { version = "0.8", optional = true }

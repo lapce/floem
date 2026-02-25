@@ -1164,12 +1164,17 @@ impl Editor {
         match *horiz {
             ColPosition::Col(x) => {
                 let text_layout = self.text_layout(line);
+                let line_count = text_layout.text.visual_line_count();
                 let y_pos = text_layout
                     .text
-                    .layout_runs()
-                    .nth(line_index)
-                    .map(|run| run.line_y)
-                    .or_else(|| text_layout.text.layout_runs().last().map(|run| run.line_y))
+                    .visual_line_y(line_index)
+                    .or_else(|| {
+                        if line_count > 0 {
+                            text_layout.text.visual_line_y(line_count - 1)
+                        } else {
+                            None
+                        }
+                    })
                     .unwrap_or(0.0);
                 let hit_point = text_layout.text.hit_point(Point::new(x, y_pos as f64));
                 let n = hit_point.index;

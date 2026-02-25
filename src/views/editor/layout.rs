@@ -1,7 +1,6 @@
-use crate::{
-    peniko::Color,
-    text::{LayoutLine, TextLayout},
-};
+use std::ops::Range;
+
+use crate::{peniko::Color, text::TextLayout};
 use floem_editor_core::buffer::rope_text::RopeText;
 
 use super::{phantom_text::PhantomTextLine, visual_line::TextLayoutProvider};
@@ -28,24 +27,33 @@ pub struct TextLayoutLine {
     pub phantom_text: PhantomTextLine,
 }
 
+/// Check if a text range within `full_text` contains non-whitespace characters.
+/// Returns false for out-of-bounds or empty ranges.
+fn has_visible_content(full_text: &str, range: &Range<usize>) -> bool {
+    if range.end > full_text.len() || range.start >= range.end {
+        return false;
+    }
+    full_text[range.clone()].chars().any(|c| !c.is_whitespace())
+}
+
 impl TextLayoutLine {
     /// The number of line breaks in the text layout. Always at least `1`.
+    /// Only counts non-empty visual lines (matching old relevant_layouts behavior).
     pub fn line_count(&self) -> usize {
-        self.relevant_layouts().count().max(1)
+        self.relevant_layout_count().max(1)
     }
 
-    /// Iterate over all the layouts that are nonempty.
-    /// Note that this may be empty if the line is completely empty, like the last line
-    pub fn relevant_layouts(&self) -> impl Iterator<Item = &'_ LayoutLine> + '_ {
-        // Even though we only have one hard line (and thus only one `lines` entry) typically, for
-        // normal buffer lines, we can have more than one due to multiline phantom text. So we have
-        // to sum over all of the entries line counts.
-        self.text
-            .lines()
-            .iter()
-            .flat_map(|l| l.layout_opt())
-            .flat_map(|ls| ls.iter())
-            .filter(|l| !l.glyphs.is_empty())
+    /// Count of visual lines that contain non-whitespace content.
+    /// Matches old behavior where trailing whitespace was stripped from glyph lists.
+    pub fn relevant_layout_count(&self) -> usize {
+        let full_text = self.text.text();
+        (0..self.text.visual_line_count())
+            .filter(|&i| {
+                self.text
+                    .visual_line_text_range(i)
+                    .is_some_and(|r| has_visible_content(full_text, &r))
+            })
+            .count()
     }
 
     /// Iterator over the (start, end) columns of the relevant layouts.
@@ -54,58 +62,72 @@ impl TextLayoutLine {
         text_prov: impl TextLayoutProvider + 'a,
         line: usize,
     ) -> impl Iterator<Item = (usize, usize)> + 'a {
+        let visual_line_count = self.text.visual_line_count();
+        let full_text = self.text.text();
+
+        // Check if there's a single paragraph with all whitespace-only visual lines
         let mut prefix = None;
-        // Include an entry if there is nothing
-        if self.text.lines().len() == 1 {
+        if self.text.lines_range().len() == 1 && visual_line_count > 0 {
             let line_start = self.text.lines_range()[0].start;
-            if let Some(layouts) = self.text.lines()[0].layout_opt() {
-                // Do we need to require !layouts.is_empty()?
-                if !layouts.is_empty() && layouts.iter().all(|l| l.glyphs.is_empty()) {
-                    // We assume the implicit glyph start is zero
-                    prefix = Some((line_start, line_start));
-                }
+            let all_whitespace = (0..visual_line_count).all(|i| {
+                self.text
+                    .visual_line_text_range(i)
+                    .is_none_or(|r| !has_visible_content(full_text, &r))
+            });
+            if all_whitespace {
+                prefix = Some((line_start, line_start));
             }
         }
 
         let line_v = line;
-        let iter = self
-            .text
-            .lines()
-            .iter()
-            .zip(self.text.lines_range().iter())
-            .filter_map(|(line, line_range)| line.layout_opt().map(|ls| (line, line_range, ls)))
-            .flat_map(|(line, line_range, ls)| ls.iter().map(move |l| (line, line_range, l)))
-            .filter(|(_, _, l)| !l.glyphs.is_empty())
-            .map(move |(tl_line, line_range, l)| {
-                let line_start = line_range.start;
-                tl_line.align();
 
-                let start = line_start + l.glyphs[0].start;
-                let end = line_start + l.glyphs.last().unwrap().end;
+        // Collect visual line text ranges that have non-whitespace content
+        let visual_ranges: Vec<_> = (0..visual_line_count)
+            .filter_map(|i| {
+                let range = self.text.visual_line_text_range(i)?;
+                if has_visible_content(full_text, &range) {
+                    Some(range)
+                } else {
+                    None
+                }
+            })
+            .collect();
 
-                let text = text_prov.rope_text();
-                // We can't just use the original end, because the *true* last glyph on the line
-                // may be a space, but it isn't included in the layout! Though this only happens
-                // for single spaces, for some reason.
-                let pre_end = text_prov.before_phantom_col(line_v, end);
-                let line_offset = text.offset_of_line(line);
+        let iter = visual_ranges.into_iter().map(move |text_range| {
+            let start_idx = text_range.start;
+            let mut end_idx = text_range.end.min(full_text.len());
 
-                // TODO(minor): We don't really need the entire line, just the two characters after
-                let line_end = text.line_end_col(line, true);
+            // Strip trailing whitespace from byte range (matching old behavior)
+            while end_idx > start_idx {
+                let ch = full_text.as_bytes().get(end_idx - 1).copied().unwrap_or(0);
+                if ch == b' ' || ch == b'\t' || ch == b'\n' || ch == b'\r' {
+                    end_idx -= 1;
+                } else {
+                    break;
+                }
+            }
 
-                let end = if pre_end <= line_end {
-                    let after = text.slice_to_cow(line_offset + pre_end..line_offset + line_end);
-                    if after.starts_with(' ') && !after.starts_with("  ") {
-                        end + 1
-                    } else {
-                        end
-                    }
+            let start = start_idx;
+            let end = end_idx;
+
+            let text = text_prov.rope_text();
+            let pre_end = text_prov.before_phantom_col(line_v, end);
+            let line_offset = text.offset_of_line(line);
+            let line_end = text.line_end_col(line, true);
+
+            let end = if pre_end <= line_end {
+                let after = text.slice_to_cow(line_offset + pre_end..line_offset + line_end);
+                if after.starts_with(' ') && !after.starts_with("  ") {
+                    end + 1
                 } else {
                     end
-                };
+                }
+            } else {
+                end
+            };
 
-                (start, end)
-            });
+            (start, end)
+        });
 
         prefix.into_iter().chain(iter)
     }
@@ -119,18 +141,33 @@ impl TextLayoutLine {
         self.layout_cols(text_prov, line).map(|(start, _)| start)
     }
 
-    /// Get the top y position of the given line index
+    /// Get the baseline y position of the given visual line index
     pub fn get_layout_y(&self, nth: usize) -> Option<f32> {
-        self.text.layout_runs().nth(nth).map(|run| run.line_y)
+        self.text.visual_line_y(nth)
     }
 
-    /// Get the (start x, end x) positions of the given line index
+    /// Get the (start x, end x) positions of the given visual line index
     pub fn get_layout_x(&self, nth: usize) -> Option<(f32, f32)> {
-        self.text.layout_runs().nth(nth).map(|run| {
-            (
-                run.glyphs.first().map(|g| g.x).unwrap_or(0.0),
-                run.glyphs.last().map(|g| g.x + g.w).unwrap_or(0.0),
-            )
-        })
+        let text_range = self.text.visual_line_text_range(nth)?;
+        let full_text = self.text.text();
+
+        if text_range.is_empty() || text_range.end > full_text.len() {
+            return Some((0.0, 0.0));
+        }
+
+        let start_hit = self.text.hit_position(text_range.start);
+        // For end, find last non-whitespace char
+        let mut end_byte = text_range.end;
+        while end_byte > text_range.start {
+            let ch = full_text.as_bytes().get(end_byte - 1).copied().unwrap_or(0);
+            if ch == b' ' || ch == b'\t' || ch == b'\n' || ch == b'\r' {
+                end_byte -= 1;
+            } else {
+                break;
+            }
+        }
+        let end_hit = self.text.hit_position(end_byte);
+
+        Some((start_hit.point.x as f32, end_hit.point.x as f32))
     }
 }

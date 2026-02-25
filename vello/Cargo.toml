@@ -8,9 +8,10 @@ license.workspace = true
 
 [dependencies]
 peniko = { workspace = true }
+parley = { workspace = true }
 wgpu = { workspace = true }
 
 anyhow = "1.0"
-vello = "0.6.0"
-vello_svg = "0.8.0"
+vello = "0.7.0"
+vello_svg = "0.9.0"
 floem_renderer = { path = "../renderer", version = "0.2.0" }

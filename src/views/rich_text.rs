@@ -57,9 +57,9 @@ impl View for RichText {
         format!(
             "RichText: {:?}",
             self.text_layout
-                .lines()
+                .lines_range()
                 .iter()
-                .map(|text| text.text())
+                .map(|r| &self.text_layout.text()[r.clone()])
                 .collect::<String>()
         )
         .into()

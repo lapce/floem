@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::mem;
 use std::num::NonZero;
 use std::sync::mpsc::sync_channel;
@@ -6,9 +5,9 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use floem_renderer::gpu_resources::GpuResources;
-use floem_renderer::text::fontdb::ID;
-use floem_renderer::text::{LayoutGlyph, LayoutRun, FONT_SYSTEM};
+use floem_renderer::text::TextLayout;
 use floem_renderer::{Img, Renderer};
+use parley::layout::PositionedLayoutItem;
 use peniko::kurbo::Size;
 use peniko::{
     color::palette,
@@ -34,7 +33,6 @@ pub struct VelloRenderer {
     window_scale: f64,
     transform: Affine,
     capture: bool,
-    font_cache: HashMap<ID, vello::peniko::FontData>,
     adapter: Adapter,
 }
 
@@ -140,7 +138,6 @@ impl VelloRenderer {
             window_scale: scale,
             transform: Affine::IDENTITY,
             capture: false,
-            font_cache: HashMap::new(),
             adapter,
         })
     }
@@ -274,6 +271,7 @@ impl Renderer for VelloRenderer {
         clip: &impl Shape,
     ) {
         self.scene.push_layer(
+            Fill::NonZero,
             blend,
             alpha,
             self.transform.then_scale(self.window_scale) * transform,
@@ -285,59 +283,48 @@ impl Renderer for VelloRenderer {
         self.scene.pop_layer();
     }
 
-    fn draw_text_with_layout<'b>(
-        &mut self,
-        layout: impl Iterator<Item = LayoutRun<'b>>,
-        pos: impl Into<Point>,
-    ) {
+    fn draw_text(&mut self, text_layout: &TextLayout, pos: impl Into<Point>) {
         let pos: Point = pos.into();
         let transform = self
             .transform
             .pre_translate((pos.x, pos.y).into())
             .then_scale(self.window_scale);
 
-        for line in layout {
-            let mut current_run: Option<GlyphRun> = None;
+        let layout = text_layout.parley_layout();
 
-            for glyph in line.glyphs {
-                let color = glyph.color_opt.map_or(palette::css::BLACK, |c| {
-                    Color::from_rgba8(c.r(), c.g(), c.b(), c.a())
-                });
-                let font_size = glyph.font_size;
-                let font_id = glyph.font_id;
-                let metadata = glyph.metadata;
+        for line in layout.lines() {
+            for item in line.items() {
+                let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
+                    continue;
+                };
 
-                if current_run.as_ref().is_none_or(|run| {
-                    run.color != color
-                        || run.font_size != font_size
-                        || run.font_id != font_id
-                        || run.metadata != metadata
-                }) {
-                    if let Some(run) = current_run.take() {
-                        self.draw_glyph_run(
-                            run,
-                            transform.pre_translate((0., line.line_y.into()).into()),
-                        );
-                    }
-                    current_run = Some(GlyphRun {
-                        color,
-                        font_size,
-                        font_id,
-                        metadata,
-                        glyphs: Vec::new(),
-                    });
-                }
+                let style = glyph_run.style();
+                let run = glyph_run.run();
+                let font = run.font();
+                let font_size = run.font_size();
+                let synthesis = run.synthesis();
+                let glyph_xform = synthesis
+                    .skew()
+                    .map(|angle| Affine::skew(angle.to_radians() as f64, 0.0));
+                let coords = run.normalized_coords();
+                let color: Color = style.brush.0;
 
-                if let Some(run) = &mut current_run {
-                    run.glyphs.push(glyph);
-                }
-            }
-
-            if let Some(run) = current_run.take() {
-                self.draw_glyph_run(
-                    run,
-                    transform.pre_translate((0., line.line_y.into()).into()),
-                );
+                self.scene
+                    .draw_glyphs(font)
+                    .brush(color)
+                    .hint(false)
+                    .transform(transform)
+                    .glyph_transform(glyph_xform)
+                    .font_size(font_size)
+                    .normalized_coords(coords)
+                    .draw(
+                        Fill::NonZero,
+                        glyph_run.positioned_glyphs().map(|glyph| vello::Glyph {
+                            id: glyph.id,
+                            x: glyph.x,
+                            y: glyph.y,
+                        }),
+                    );
             }
         }
     }
@@ -562,7 +549,7 @@ impl VelloRenderer {
         );
         let command_buffer = encoder.finish();
         self.queue.submit(Some(command_buffer));
-        self.device.poll(wgpu::PollType::Wait).ok()?;
+        self.device.poll(wgpu::PollType::wait_indefinitely()).ok()?;
 
         let slice = buffer.slice(..);
         let (tx, rx) = sync_channel(1);
@@ -573,7 +560,7 @@ impl VelloRenderer {
                 break r.ok()?;
             }
             if matches!(
-                self.device.poll(wgpu::PollType::Wait).ok()?,
+                self.device.poll(wgpu::PollType::wait_indefinitely()).ok()?,
                 wgpu::PollStatus::WaitSucceeded
             ) {
                 rx.recv().ok()?.ok()?;
@@ -609,6 +596,7 @@ fn common_alpha_mask_scene(
 ) -> Scene {
     let mut scene = Scene::new();
     scene.push_layer(
+        Fill::NonZero,
         Mix::Normal,
         1.0,
         Affine::IDENTITY,
@@ -618,6 +606,7 @@ fn common_alpha_mask_scene(
     alpha_mask(&mut scene);
 
     scene.push_layer(
+        Fill::NonZero,
         vello::peniko::BlendMode {
             mix: Mix::Normal,
             compose: compose_mode,
@@ -648,47 +637,4 @@ fn invert_alpha_mask_scene(
     item: impl FnOnce(&mut Scene),
 ) -> Scene {
     common_alpha_mask_scene(size, alpha_mask, item, Compose::SrcOut)
-}
-
-struct GlyphRun<'a> {
-    color: Color,
-    font_size: f32,
-    font_id: ID,
-    metadata: usize,
-    glyphs: Vec<&'a LayoutGlyph>,
-}
-
-impl VelloRenderer {
-    fn get_font(&mut self, font_id: ID) -> vello::peniko::FontData {
-        self.font_cache.get(&font_id).cloned().unwrap_or_else(|| {
-            let mut font_system = FONT_SYSTEM.lock();
-            let font = font_system.get_font(font_id).unwrap();
-            let face = font_system.db().face(font_id).unwrap();
-            let font_data = font.data();
-            let font_index = face.index;
-            drop(font_system);
-            let font =
-                vello::peniko::FontData::new(Blob::new(Arc::new(font_data.to_vec())), font_index);
-            self.font_cache.insert(font_id, font.clone());
-            font
-        })
-    }
-
-    fn draw_glyph_run(&mut self, run: GlyphRun, transform: Affine) {
-        let font = self.get_font(run.font_id);
-        self.scene
-            .draw_glyphs(&font)
-            .font_size(run.font_size)
-            .brush(run.color)
-            .hint(false)
-            .transform(transform)
-            .draw(
-                Fill::NonZero,
-                run.glyphs.into_iter().map(|glyph| vello::Glyph {
-                    id: glyph.glyph_id.into(),
-                    x: glyph.x,
-                    y: glyph.y,
-                }),
-            );
-    }
 }

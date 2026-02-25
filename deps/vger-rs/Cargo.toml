@@ -1,0 +1,24 @@
+[package]
+name = "floem-vger"
+description = "Unofficial vger fork for Floem"
+version = "0.3.1"
+license = "MIT"
+readme = "README.md"
+authors = ["Taylor Holliday <taylor@audulus.com>"]
+repository = "https://github.com/audulus/vger-rs"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+wgpu = "27"
+euclid = "0.22.11"
+fontdue = "0.9.3"
+rect_packer = "0.2.1"
+
+[dev-dependencies]
+png = "0.17.16"
+futures = "0.3"
+futures-intrusive = "0.5"
+svg = "0.13.1"
+rand = "0.8.5"
