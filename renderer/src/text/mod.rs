@@ -3,10 +3,12 @@ mod layout;
 
 pub use attrs::{Attrs, AttrsList, AttrsOwned, FamilyOwned, LineHeightValue};
 pub use layout::{HitPoint, HitPosition, TextLayout, FONT_CONTEXT};
+pub use fontique::{FontStyle, FontWidth};
+pub use parley::Alignment;
 
 // --- Font Properties ---
 
-/// Font weight (wraps u16 for cosmic-text compat, converts to fontique::FontWeight)
+/// Font weight (wraps u16 for cosmic-text compat, converts to fontique::FontWeight).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Weight(pub u16);
 impl Weight {
@@ -33,81 +35,81 @@ impl From<fontique::FontWeight> for Weight {
     }
 }
 
-/// Font style
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
-pub enum Style {
-    #[default]
-    Normal,
-    Italic,
-    Oblique,
-}
+// /// Font style
+// #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+// pub enum Style {
+//     #[default]
+//     Normal,
+//     Italic,
+//     Oblique,
+// }
 
-impl From<Style> for fontique::FontStyle {
-    fn from(s: Style) -> Self {
-        match s {
-            Style::Normal => fontique::FontStyle::Normal,
-            Style::Italic => fontique::FontStyle::Italic,
-            Style::Oblique => fontique::FontStyle::Oblique(None),
-        }
-    }
-}
+// impl From<Style> for fontique::FontStyle {
+//     fn from(s: Style) -> Self {
+//         match s {
+//             Style::Normal => fontique::FontStyle::Normal,
+//             Style::Italic => fontique::FontStyle::Italic,
+//             Style::Oblique => fontique::FontStyle::Oblique(None),
+//         }
+//     }
+// }
 
-/// Font stretch/width
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
-pub enum Stretch {
-    UltraCondensed,
-    ExtraCondensed,
-    Condensed,
-    SemiCondensed,
-    #[default]
-    Normal,
-    SemiExpanded,
-    Expanded,
-    ExtraExpanded,
-    UltraExpanded,
-}
+// /// Font stretch/width
+// #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+// pub enum Stretch {
+//     UltraCondensed,
+//     ExtraCondensed,
+//     Condensed,
+//     SemiCondensed,
+//     #[default]
+//     Normal,
+//     SemiExpanded,
+//     Expanded,
+//     ExtraExpanded,
+//     UltraExpanded,
+// }
 
-impl From<Stretch> for fontique::FontWidth {
-    fn from(s: Stretch) -> Self {
-        match s {
-            Stretch::UltraCondensed => fontique::FontWidth::ULTRA_CONDENSED,
-            Stretch::ExtraCondensed => fontique::FontWidth::EXTRA_CONDENSED,
-            Stretch::Condensed => fontique::FontWidth::CONDENSED,
-            Stretch::SemiCondensed => fontique::FontWidth::SEMI_CONDENSED,
-            Stretch::Normal => fontique::FontWidth::NORMAL,
-            Stretch::SemiExpanded => fontique::FontWidth::SEMI_EXPANDED,
-            Stretch::Expanded => fontique::FontWidth::EXPANDED,
-            Stretch::ExtraExpanded => fontique::FontWidth::EXTRA_EXPANDED,
-            Stretch::UltraExpanded => fontique::FontWidth::ULTRA_EXPANDED,
-        }
-    }
-}
+// impl From<Stretch> for fontique::FontWidth {
+//     fn from(s: Stretch) -> Self {
+//         match s {
+//             Stretch::UltraCondensed => fontique::FontWidth::ULTRA_CONDENSED,
+//             Stretch::ExtraCondensed => fontique::FontWidth::EXTRA_CONDENSED,
+//             Stretch::Condensed => fontique::FontWidth::CONDENSED,
+//             Stretch::SemiCondensed => fontique::FontWidth::SEMI_CONDENSED,
+//             Stretch::Normal => fontique::FontWidth::NORMAL,
+//             Stretch::SemiExpanded => fontique::FontWidth::SEMI_EXPANDED,
+//             Stretch::Expanded => fontique::FontWidth::EXPANDED,
+//             Stretch::ExtraExpanded => fontique::FontWidth::EXTRA_EXPANDED,
+//             Stretch::UltraExpanded => fontique::FontWidth::ULTRA_EXPANDED,
+//         }
+//     }
+// }
 
 // --- Text Layout Properties ---
 
-/// Text alignment
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Align {
-    Left,
-    Right,
-    Center,
-    Justified,
-    End,
-}
+// /// Text alignment
+// #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+// pub enum Align {
+//     Left,
+//     Right,
+//     Center,
+//     Justified,
+//     End,
+// }
 
-impl From<Align> for parley::layout::Alignment {
-    fn from(a: Align) -> Self {
-        match a {
-            Align::Left => parley::layout::Alignment::Left,
-            Align::Right => parley::layout::Alignment::Right,
-            Align::Center => parley::layout::Alignment::Center,
-            Align::Justified => parley::layout::Alignment::Justify,
-            Align::End => parley::layout::Alignment::End,
-        }
-    }
-}
+// impl From<Align> for parley::layout::Alignment {
+//     fn from(a: Align) -> Self {
+//         match a {
+//             Align::Left => parley::layout::Alignment::Left,
+//             Align::Right => parley::layout::Alignment::Right,
+//             Align::Center => parley::layout::Alignment::Center,
+//             Align::Justified => parley::layout::Alignment::Justify,
+//             Align::End => parley::layout::Alignment::End,
+//         }
+//     }
+// }
 
-/// Text wrap mode
+/// Text wrap mode.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub enum Wrap {
     None,
@@ -117,7 +119,7 @@ pub enum Wrap {
     WordOrGlyph,
 }
 
-/// Line ending type
+/// Line ending type.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub enum LineEnding {
     #[default]
@@ -129,7 +131,7 @@ pub enum LineEnding {
 
 // --- Cursor/Hit Testing ---
 
-/// Cursor affinity
+/// Cursor affinity.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub enum Affinity {
     #[default]
@@ -196,7 +198,7 @@ impl Ord for Affinity {
 
 // --- Brush type for Parley ---
 
-/// A brush type that wraps peniko::Color and implements Default (required by parley::Brush)
+/// A brush type that wraps peniko::Color and implements Default (required by parley::Brush).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TextBrush(pub peniko::Color);
 

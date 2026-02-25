@@ -47,7 +47,7 @@ pub fn text_input_view() -> impl IntoView {
                     })
                     .class(PlaceholderTextClass, |s| {
                         s.with_theme(|s, t| s.color(t.primary_muted()))
-                            .font_style(floem::text::Style::Italic)
+                            .font_style(floem::text::FontStyle::Italic)
                             .font_weight(Weight::BOLD)
                     })
                     .font_family("monospace".to_owned())

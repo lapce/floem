@@ -668,9 +668,9 @@ impl TextInput {
         attrs = attrs.font_size(self.font_size());
 
         if let Some(font_style) = self.placeholder_style.font_style() {
-            attrs = attrs.style(font_style);
+            attrs = attrs.font_style(font_style);
         } else if let Some(font_style) = self.font.style() {
-            attrs = attrs.style(font_style);
+            attrs = attrs.font_style(font_style);
         }
 
         if let Some(font_weight) = self.placeholder_style.font_weight() {
@@ -710,7 +710,7 @@ impl TextInput {
         attrs = attrs.font_size(self.font_size());
 
         if let Some(font_style) = self.font.style() {
-            attrs = attrs.style(font_style);
+            attrs = attrs.font_style(font_style);
         }
         let font_family = self.font.family().as_ref().map(|font_family| {
             let family: Vec<FamilyOwned> = FamilyOwned::parse_list(font_family).collect();

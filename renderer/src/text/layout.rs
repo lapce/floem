@@ -1,6 +1,6 @@
 use std::{cell::RefCell, ops::Range, sync::LazyLock};
 
-use crate::text::{Affinity, Align, AttrsList, TextBrush, Wrap};
+use crate::text::{Affinity, Alignment, AttrsList, TextBrush, Wrap};
 use parking_lot::Mutex;
 use parley::{
     layout::{AlignmentOptions, Layout},
@@ -48,7 +48,7 @@ pub struct TextLayout {
     layout: Layout<TextBrush>,
     text: String,
     lines_range: Vec<Range<usize>>,
-    alignment: Option<Align>,
+    alignment: Option<Alignment>,
     wrap: Wrap,
     width_opt: Option<f32>,
     height_opt: Option<f32>,
@@ -86,13 +86,13 @@ impl TextLayout {
         }
     }
 
-    pub fn new_with_text(text: &str, attrs_list: AttrsList, align: Option<Align>) -> Self {
+    pub fn new_with_text(text: &str, attrs_list: AttrsList, align: Option<Alignment>) -> Self {
         let mut layout = Self::new();
         layout.set_text(text, attrs_list, align);
         layout
     }
 
-    pub fn set_text(&mut self, text: &str, attrs_list: AttrsList, align: Option<Align>) {
+    pub fn set_text(&mut self, text: &str, attrs_list: AttrsList, align: Option<Alignment>) {
         self.text = text.to_string();
         self.alignment = align;
         self.lines_range.clear();
@@ -170,7 +170,7 @@ impl TextLayout {
 
         // Two-pass alignment for non-left alignment without width constraint
         let needs_two_pass =
-            align.is_some() && align != Some(Align::Left) && self.width_opt.is_none();
+            align.is_some() && align != Some(Alignment::Left) && self.width_opt.is_none();
 
         if needs_two_pass {
             let measured_width = self.layout.full_width();

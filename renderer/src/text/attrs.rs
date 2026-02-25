@@ -1,7 +1,7 @@
 use std::ops::Range;
 
 use crate::text::TextBrush;
-use crate::text::{Stretch, Style, Weight};
+use crate::text::{FontWidth, FontStyle, Weight};
 use fontique::GenericFamily;
 use parley::style::{FontFamily, FontStack, StyleProperty};
 use peniko::Color;
@@ -72,8 +72,8 @@ pub struct Attrs<'a> {
     color: Option<Color>,
     family: Option<&'a [FamilyOwned]>,
     weight: Option<Weight>,
-    style: Option<Style>,
-    stretch: Option<Stretch>,
+    style: Option<FontStyle>,
+    font_width: Option<FontWidth>,
     metadata: Option<usize>,
 }
 
@@ -92,7 +92,7 @@ impl<'a> Attrs<'a> {
             family: None,
             weight: None,
             style: None,
-            stretch: None,
+            font_width: None,
             metadata: None,
         }
     }
@@ -107,13 +107,13 @@ impl<'a> Attrs<'a> {
         self
     }
 
-    pub fn stretch(mut self, stretch: Stretch) -> Self {
-        self.stretch = Some(stretch);
+    pub fn font_width(mut self, stretch: FontWidth) -> Self {
+        self.font_width = Some(stretch);
         self
     }
 
-    pub fn style(mut self, style: Style) -> Self {
-        self.style = Some(style);
+    pub fn font_style(mut self, font_style: FontStyle) -> Self {
+        self.style = Some(font_style);
         self
     }
 
@@ -158,12 +158,12 @@ impl<'a> Attrs<'a> {
         self.weight
     }
 
-    pub fn get_style(&self) -> Option<Style> {
+    pub fn get_font_style(&self) -> Option<FontStyle> {
         self.style
     }
 
-    pub fn get_stretch(&self) -> Option<Stretch> {
-        self.stretch
+    pub fn get_stretch(&self) -> Option<FontWidth> {
+        self.font_width
     }
 
     pub fn get_metadata(&self) -> Option<usize> {
@@ -198,8 +198,8 @@ impl<'a> Attrs<'a> {
         if let Some(style) = self.style {
             builder.push_default(StyleProperty::FontStyle(style.into()));
         }
-        if let Some(stretch) = self.stretch {
-            builder.push_default(StyleProperty::FontWidth(stretch.into()));
+        if let Some(width) = self.font_width {
+            builder.push_default(StyleProperty::FontWidth(width.into()));
         }
     }
 
@@ -234,8 +234,8 @@ impl<'a> Attrs<'a> {
         if let Some(style) = self.style {
             builder.push(StyleProperty::FontStyle(style.into()), range.clone());
         }
-        if let Some(stretch) = self.stretch {
-            builder.push(StyleProperty::FontWidth(stretch.into()), range);
+        if let Some(width) = self.font_width {
+            builder.push(StyleProperty::FontWidth(width.into()), range);
         }
     }
 }
@@ -248,8 +248,8 @@ pub struct AttrsOwned {
     color: Option<Color>,
     family: Option<Vec<FamilyOwned>>,
     weight: Option<Weight>,
-    style: Option<Style>,
-    stretch: Option<Stretch>,
+    style: Option<FontStyle>,
+    font_width: Option<FontWidth>,
     metadata: Option<usize>,
 }
 
@@ -262,7 +262,7 @@ impl AttrsOwned {
             family: attrs.family.map(|f| f.to_vec()),
             weight: attrs.weight,
             style: attrs.style,
-            stretch: attrs.stretch,
+            font_width: attrs.font_width,
             metadata: attrs.metadata,
         }
     }
@@ -275,7 +275,7 @@ impl AttrsOwned {
             family: self.family.as_deref(),
             weight: self.weight,
             style: self.style,
-            stretch: self.stretch,
+            font_width: self.font_width,
             metadata: self.metadata,
         }
     }

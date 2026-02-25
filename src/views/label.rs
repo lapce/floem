@@ -196,7 +196,7 @@ impl Label {
             attrs = attrs.font_size(font_size);
         }
         if let Some(font_style) = self.font.style() {
-            attrs = attrs.style(font_style);
+            attrs = attrs.font_style(font_style);
         }
         let font_family = self.font.family().as_ref().map(|font_family| {
             let family: Vec<FamilyOwned> = FamilyOwned::parse_list(font_family).collect();

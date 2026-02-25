@@ -256,7 +256,7 @@ fn user_display(user_resource: Resource<Option<UserResult>>) -> impl IntoView {
                 .style(|s| s.color(css::RED))
                 .into_any(),
             None => "Enter a GitHub username to search"
-                .style(|s| s.color(css::GRAY).font_style(floem::text::Style::Italic))
+                .style(|s| s.color(css::GRAY).font_style(floem::text::FontStyle::Italic))
                 .into_any(),
         },
     )
@@ -408,7 +408,7 @@ fn app_view() -> impl IntoView {
         s.font_size(12.0)
             .color(css::GRAY)
             .margin_top(20.0)
-            .font_style(floem::text::Style::Italic)
+            .font_style(floem::text::FontStyle::Italic)
     });
 
     Stack::vertical((

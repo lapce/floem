@@ -186,13 +186,13 @@ impl<'a> RichSpan<'a> {
         self
     }
 
-    pub fn stretch(mut self, stretch: floem_renderer::text::Stretch) -> RichSpan<'a> {
-        self.attrs = self.attrs.stretch(stretch);
+    pub fn font_width(mut self, stretch: floem_renderer::text::FontWidth) -> RichSpan<'a> {
+        self.attrs = self.attrs.font_width(stretch);
         self
     }
 
-    pub fn text_style(mut self, style: floem_renderer::text::Style) -> RichSpan<'a> {
-        self.attrs = self.attrs.style(style);
+    pub fn text_style(mut self, style: floem_renderer::text::FontStyle) -> RichSpan<'a> {
+        self.attrs = self.attrs.font_style(style);
         self
     }
 
@@ -429,19 +429,19 @@ where
         let span: RichSpan = self.into();
         span.family(family)
     }
-    fn stretch(self, stretch: crate::text::Stretch) -> RichSpan<'a> {
+    fn stretch(self, stretch: crate::text::FontWidth) -> RichSpan<'a> {
         let span: RichSpan = self.into();
-        span.stretch(stretch)
+        span.font_width(stretch)
     }
-    fn text_style(self, style: crate::text::Style) -> RichSpan<'a> {
+    fn text_style(self, style: crate::text::FontStyle) -> RichSpan<'a> {
         let span: RichSpan = self.into();
         span.text_style(style)
     }
     fn italic(self) -> RichSpan<'a> {
-        self.text_style(crate::text::Style::Italic)
+        self.text_style(crate::text::FontStyle::Italic)
     }
     fn oblique(self) -> RichSpan<'a> {
-        self.text_style(crate::text::Style::Oblique)
+        self.text_style(crate::text::FontStyle::Oblique(None))
     }
 
     fn weight(self, weight: crate::text::Weight) -> RichSpan<'a> {

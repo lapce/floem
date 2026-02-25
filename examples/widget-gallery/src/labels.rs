@@ -1,6 +1,6 @@
 use floem::{
     prelude::*,
-    text::{Style as FontStyle, Weight},
+    text::{FontStyle, Weight},
 };
 
 use crate::form::{form, form_item};

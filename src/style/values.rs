@@ -143,7 +143,7 @@ where
                 .padding_horiz(6.0)
                 .items_center()
                 .justify_center()
-                .text_align(floem_renderer::text::Align::Center)
+                .text_align(floem_renderer::text::Alignment::Center)
                 .border(1.)
                 .border_radius(5.0)
                 .margin_left(6.0)
@@ -207,7 +207,7 @@ impl StylePropValue for Weight {
         self.0.interpolate(&other.0, value).map(Weight)
     }
 }
-impl StylePropValue for crate::text::Style {
+impl StylePropValue for crate::text::FontStyle {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         let clone = *self;
         Some(
@@ -217,7 +217,7 @@ impl StylePropValue for crate::text::Style {
         )
     }
 }
-impl StylePropValue for crate::text::Align {}
+impl StylePropValue for crate::text::Alignment {}
 impl StylePropValue for LineHeightValue {
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         match (self, other) {
