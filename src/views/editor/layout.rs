@@ -33,7 +33,9 @@ fn has_visible_content(full_text: &str, range: &Range<usize>) -> bool {
     if range.end > full_text.len() || range.start >= range.end {
         return false;
     }
-    full_text[range.clone()].chars().any(|c| !c.is_whitespace())
+    full_text.as_bytes()[range.start..range.end]
+        .iter()
+        .any(|&b| !b.is_ascii_whitespace())
 }
 
 impl TextLayoutLine {
@@ -44,16 +46,19 @@ impl TextLayoutLine {
     }
 
     /// Count of visual lines that contain non-whitespace content.
-    /// Matches old behavior where trailing whitespace was stripped from glyph lists.
+    /// Parley's whitespace-only lines are always trailing, so we scan
+    /// backwards to find the last visible line rather than filtering all lines.
     pub fn relevant_layout_count(&self) -> usize {
+        let count = self.text.visual_line_count();
         let full_text = self.text.text();
-        (0..self.text.visual_line_count())
-            .filter(|&i| {
+        (0..count)
+            .rev()
+            .find(|&i| {
                 self.text
                     .visual_line_text_range(i)
                     .is_some_and(|r| has_visible_content(full_text, &r))
             })
-            .count()
+            .map_or(0, |last| last + 1)
     }
 
     /// Iterator over the (start, end) columns of the relevant layouts.
