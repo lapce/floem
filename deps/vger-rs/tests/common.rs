@@ -166,7 +166,7 @@ pub fn render_test(
             resolve_target: None,
             ops: wgpu::Operations {
                 load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                store: StoreOp::Discard,
+                store: StoreOp::Store,
             },
             depth_slice: None,
         })],
