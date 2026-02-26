@@ -85,24 +85,23 @@ impl FamilyOwned {
     /// For a single named family, this produces a [`FontStack::Source`] so that
     /// Parley can parse comma-separated fallbacks within the name string.
     /// For a single generic family, it produces [`FontStack::Single`].
+    /// For multiple families, it produces [`FontStack::List`] preserving the
+    /// full fallback chain.
     /// An empty slice defaults to sans-serif.
     pub fn to_font_stack(families: &[FamilyOwned]) -> FontStack<'_> {
-        if families.len() == 1 {
-            match &families[0] {
+        match families {
+            [] => FontStack::Single(FontFamily::Generic(GenericFamily::SansSerif)),
+            [single] => match single {
                 FamilyOwned::Name(name) => {
                     FontStack::Source(std::borrow::Cow::Borrowed(name.as_str()))
                 }
                 other => FontStack::Single(other.to_font_family()),
+            },
+            multiple => {
+                let list: Vec<FontFamily<'_>> =
+                    multiple.iter().map(|f| f.to_font_family()).collect();
+                FontStack::List(std::borrow::Cow::Owned(list))
             }
-        } else if let Some(first) = families.first() {
-            match first {
-                FamilyOwned::Name(name) => {
-                    FontStack::Source(std::borrow::Cow::Borrowed(name.as_str()))
-                }
-                other => FontStack::Single(other.to_font_family()),
-            }
-        } else {
-            FontStack::Single(FontFamily::Generic(GenericFamily::SansSerif))
         }
     }
 }
@@ -750,6 +749,44 @@ mod tests {
         let families = vec![FamilyOwned::Monospace];
         let stack = FamilyOwned::to_font_stack(&families);
         assert!(matches!(stack, FontStack::Single(_)));
+    }
+
+    #[test]
+    fn to_font_stack_multi_family_uses_list() {
+        let families = vec![
+            FamilyOwned::Name("Inter".to_string()),
+            FamilyOwned::Monospace,
+            FamilyOwned::SansSerif,
+        ];
+        let stack = FamilyOwned::to_font_stack(&families);
+        match stack {
+            FontStack::List(list) => {
+                assert_eq!(list.len(), 3, "all families should be preserved");
+                assert!(matches!(list[0], FontFamily::Named(_)));
+                assert!(matches!(
+                    list[1],
+                    FontFamily::Generic(GenericFamily::Monospace)
+                ));
+                assert!(matches!(
+                    list[2],
+                    FontFamily::Generic(GenericFamily::SansSerif)
+                ));
+            }
+            other => panic!("expected FontStack::List, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn to_font_stack_two_named_families() {
+        let families = vec![
+            FamilyOwned::Name("Fira Code".to_string()),
+            FamilyOwned::Name("Cascadia Code".to_string()),
+        ];
+        let stack = FamilyOwned::to_font_stack(&families);
+        assert!(
+            matches!(stack, FontStack::List(_)),
+            "two families should produce List"
+        );
     }
 
     #[test]

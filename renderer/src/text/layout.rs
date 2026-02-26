@@ -64,10 +64,16 @@ impl TabInfo {
 /// Replaces every `\t` in `text` with the right number of spaces to reach the
 /// next tab stop, returning the expanded text and a per-tab record.
 ///
-/// Tab stops are aligned to multiples of `tab_width` characters. The column
-/// counter resets at every `\n` or `\r` so that each paragraph line has
-/// independent tab-stop positions.
-fn expand_tabs(text: &str, tab_width: usize) -> TabInfo {
+/// Returns `None` when the text contains no tab characters, avoiding an
+/// unnecessary allocation. Tab stops are aligned to multiples of `tab_width`
+/// characters. The column counter resets at every `\n` or `\r` so that each
+/// paragraph line has independent tab-stop positions.
+fn expand_tabs(text: &str, tab_width: usize) -> Option<TabInfo> {
+    // Fast path: skip allocation when there are no tabs.
+    if !text.as_bytes().contains(&b'\t') {
+        return None;
+    }
+
     let mut display = String::with_capacity(text.len());
     let mut tabs = Vec::new();
     let mut col = 0usize;
@@ -84,10 +90,10 @@ fn expand_tabs(text: &str, tab_width: usize) -> TabInfo {
         }
     }
 
-    TabInfo {
+    Some(TabInfo {
         display_text: display,
         tabs,
-    }
+    })
 }
 
 /// Global shared font context used for font discovery and shaping.
@@ -282,8 +288,7 @@ impl TextLayout {
         // Expand tabs to spaces if configured
         self.tab_info = self
             .tab_width
-            .filter(|_| text.contains('\t'))
-            .map(|w| expand_tabs(text, w.get() as usize));
+            .and_then(|w| expand_tabs(text, w.get() as usize));
 
         // Text that Parley will shape: expanded if tabs were substituted, original otherwise.
         let layout_text = self
@@ -462,17 +467,15 @@ impl TextLayout {
         };
         let affinity: Affinity = pcursor.affinity().into();
 
-        // Convert flat byte index to (line, index_within_line)
-        for (line_i, range) in self.lines_range.iter().enumerate() {
-            if flat_idx <= range.end || line_i == self.lines_range.len() - 1 {
-                let local_idx = flat_idx.saturating_sub(range.start);
-                return Some(crate::text::Cursor::new_with_affinity(
-                    line_i, local_idx, affinity,
-                ));
-            }
-        }
-
-        Some(crate::text::Cursor::new(0, 0))
+        // Convert flat byte index to (line, index_within_line) via binary search.
+        let line_i = self
+            .lines_range
+            .partition_point(|r| r.end < flat_idx)
+            .min(self.lines_range.len() - 1);
+        let local_idx = flat_idx.saturating_sub(self.lines_range[line_i].start);
+        Some(crate::text::Cursor::new_with_affinity(
+            line_i, local_idx, affinity,
+        ))
     }
 
     /// Returns the geometric position of the cursor at the given flat byte index.
@@ -507,19 +510,31 @@ impl TextLayout {
             parley::editing::Cursor::from_byte_index(&self.layout, display_idx, affinity.into());
         let bbox = pcursor.geometry(&self.layout, 0.0);
 
-        // Find which visual line this cursor is on using the geometry's y
-        // coordinate. This correctly accounts for affinity at wrapped-line
+        // Find which visual line this cursor is on using binary search on
+        // line y-coordinates. This correctly accounts for affinity at wrapped-line
         // boundaries (where the byte index belongs to both lines).
         let cursor_y = bbox.y0 as f32;
-        let mut visual_line = 0;
-        for (i, line) in self.layout.lines().enumerate() {
-            let m = line.metrics();
-            if cursor_y >= m.min_coord && cursor_y < m.max_coord {
-                visual_line = i;
-                break;
+        let line_count = self.layout.len();
+        let visual_line = if line_count <= 1 {
+            0
+        } else {
+            // Binary search: find the first line whose max_coord > cursor_y.
+            let mut lo = 0usize;
+            let mut hi = line_count;
+            while lo < hi {
+                let mid = lo + (hi - lo) / 2;
+                let exceeds = self
+                    .layout
+                    .get(mid)
+                    .map_or(true, |l| l.metrics().max_coord <= cursor_y);
+                if exceeds {
+                    lo = mid + 1;
+                } else {
+                    hi = mid;
+                }
             }
-            visual_line = i;
-        }
+            lo.min(line_count - 1)
+        };
 
         let metrics = self
             .layout
@@ -1130,15 +1145,13 @@ mod tests {
 
     #[test]
     fn expand_tabs_no_tabs() {
-        let info = expand_tabs("hello", 4);
-        assert_eq!(info.display_text, "hello");
-        assert!(info.tabs.is_empty());
+        assert!(expand_tabs("hello", 4).is_none(), "no tabs → None");
     }
 
     #[test]
     fn expand_tabs_single_tab() {
         // "a\tb" with tab_width=4: 'a' at col 0, tab at col 1 → 3 spaces → "a   b".
-        let info = expand_tabs("a\tb", 4);
+        let info = expand_tabs("a\tb", 4).unwrap();
         assert_eq!(info.display_text, "a   b");
         assert_eq!(info.tabs, vec![(1, 3)]);
     }
@@ -1146,7 +1159,7 @@ mod tests {
     #[test]
     fn expand_tabs_multiple_tabs() {
         // "\t\t" with tab_width=4: first tab at col 0 → 4 spaces, second tab at col 4 → 4 spaces.
-        let info = expand_tabs("\t\t", 4);
+        let info = expand_tabs("\t\t", 4).unwrap();
         assert_eq!(info.display_text, "        ");
         assert_eq!(info.tabs, vec![(0, 4), (1, 4)]);
     }
@@ -1154,7 +1167,7 @@ mod tests {
     #[test]
     fn expand_tabs_tab_at_boundary() {
         // "abcd\te" with tab_width=4: tab at col 4 → 4 spaces (next stop at 8).
-        let info = expand_tabs("abcd\te", 4);
+        let info = expand_tabs("abcd\te", 4).unwrap();
         assert_eq!(info.display_text, "abcd    e");
         assert_eq!(info.tabs, vec![(4, 4)]);
     }
@@ -1164,7 +1177,7 @@ mod tests {
         // "ab\t\ncd\te": column resets after \n.
         // Line 1: 'a'=0, 'b'=1, tab at col 2 → 2 spaces, '\n' resets.
         // Line 2: 'c'=0, 'd'=1, tab at col 2 → 2 spaces.
-        let info = expand_tabs("ab\t\ncd\te", 4);
+        let info = expand_tabs("ab\t\ncd\te", 4).unwrap();
         assert_eq!(info.display_text, "ab  \ncd  e");
         assert_eq!(info.tabs, vec![(2, 2), (6, 2)]);
     }
@@ -1172,7 +1185,7 @@ mod tests {
     #[test]
     fn expand_tabs_width_1() {
         // tab_width=1: every tab becomes exactly 1 space (always at a stop).
-        let info = expand_tabs("a\tb\tc", 1);
+        let info = expand_tabs("a\tb\tc", 1).unwrap();
         assert_eq!(info.display_text, "a b c");
         assert_eq!(info.tabs, vec![(1, 1), (3, 1)]);
     }
@@ -1180,7 +1193,7 @@ mod tests {
     #[test]
     fn expand_tabs_width_2() {
         // "a\tb" with tab_width=2: 'a' at col 0, tab at col 1 → 1 space.
-        let info = expand_tabs("a\tb", 2);
+        let info = expand_tabs("a\tb", 2).unwrap();
         assert_eq!(info.display_text, "a b");
         assert_eq!(info.tabs, vec![(1, 1)]);
     }
@@ -1188,18 +1201,10 @@ mod tests {
     // ========================== Offset mapping unit tests ==========================
 
     #[test]
-    fn orig_to_display_no_tabs() {
-        let info = expand_tabs("hello", 4);
-        assert_eq!(info.orig_to_display(0), 0);
-        assert_eq!(info.orig_to_display(3), 3);
-        assert_eq!(info.orig_to_display(5), 5);
-    }
-
-    #[test]
     fn orig_to_display_with_tabs() {
         // "a\tb\tc" tab_width=4 → "a   b   c"
         // tabs: [(1, 3), (3, 3)]
-        let info = expand_tabs("a\tb\tc", 4);
+        let info = expand_tabs("a\tb\tc", 4).unwrap();
         assert_eq!(info.orig_to_display(0), 0); // 'a'
         assert_eq!(info.orig_to_display(1), 1); // '\t' → start of expansion
         assert_eq!(info.orig_to_display(2), 4); // 'b' (shift = 3-1 = 2)
@@ -1208,16 +1213,9 @@ mod tests {
     }
 
     #[test]
-    fn display_to_orig_no_tabs() {
-        let info = expand_tabs("hello", 4);
-        assert_eq!(info.display_to_orig(0), 0);
-        assert_eq!(info.display_to_orig(3), 3);
-    }
-
-    #[test]
     fn display_to_orig_with_tabs() {
         // "a\tb\tc" tab_width=4 → "a   b   c"
-        let info = expand_tabs("a\tb\tc", 4);
+        let info = expand_tabs("a\tb\tc", 4).unwrap();
         assert_eq!(info.display_to_orig(0), 0); // 'a'
         assert_eq!(info.display_to_orig(1), 1); // first space of tab 1
         assert_eq!(info.display_to_orig(2), 1); // inside tab expansion
@@ -1232,7 +1230,7 @@ mod tests {
     #[test]
     fn display_to_orig_inside_expansion() {
         // Positions inside a tab expansion map to the tab's original byte.
-        let info = expand_tabs("\thello", 4);
+        let info = expand_tabs("\thello", 4).unwrap();
         // Tab at col 0 → 4 spaces. "    hello"
         assert_eq!(info.display_to_orig(0), 0); // first space → tab at byte 0
         assert_eq!(info.display_to_orig(1), 0);
@@ -1243,7 +1241,7 @@ mod tests {
 
     #[test]
     fn roundtrip_orig_display_orig() {
-        let info = expand_tabs("a\tb\tc", 4);
+        let info = expand_tabs("a\tb\tc", 4).unwrap();
         // For non-tab original positions, roundtrip should be identity.
         for orig_pos in [0, 2, 4] {
             let display_pos = info.orig_to_display(orig_pos);
