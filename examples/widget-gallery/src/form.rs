@@ -1,7 +1,7 @@
 use floem::{
     prelude::*,
     taffy::prelude::{auto, fr},
-    text::Weight,
+    text::FontWeight,
     view_tuple::ViewTupleFlat,
 };
 
@@ -24,7 +24,7 @@ pub fn form_item<V: IntoView + 'static>(
     item_label: impl IntoView + 'static,
     view: V,
 ) -> Vec<Box<dyn View>> {
-    let label_view = item_label.style(|s| s.font_weight(Weight::BOLD));
+    let label_view = item_label.style(|s| s.font_weight(FontWeight::BOLD));
 
     (label_view, view).into_views()
 }

@@ -194,7 +194,7 @@ where
     }
 }
 impl StylePropValue for String {}
-impl StylePropValue for Weight {
+impl StylePropValue for FontWeight {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         let clone = *self;
         Some(
@@ -204,7 +204,7 @@ impl StylePropValue for Weight {
         )
     }
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
-        self.0.interpolate(&other.0, value).map(Weight)
+        self.value().interpolate(&other.value(), value).map(FontWeight::new)
     }
 }
 impl StylePropValue for crate::text::FontStyle {

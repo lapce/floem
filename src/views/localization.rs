@@ -69,7 +69,7 @@ impl StylePropValue for LocaleMap {
         let view = Stack::new((
             format!("Languages ({count})").style(|s| {
                 s.font_size(12.0)
-                    .font_weight(floem_renderer::text::FontWeight::SEMIBOLD)
+                    .font_weight(floem_renderer::text::FontWeight::SEMI_BOLD)
             }),
             Stack::vertical_from_iter(languages.into_iter().map(|lang| {
                 lang.style(|s| {

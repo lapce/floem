@@ -228,7 +228,7 @@ impl StylePropValue for Border {
                     .filter_map(|(l, v)| v.map(|v| (l, v)))
                     .map(|(label, value)| {
                         Stack::horizontal((
-                            label.style(|s| s.font_weight(Weight::BOLD).width(80.0)),
+                            label.style(|s| s.font_weight(FontWeight::BOLD).width(80.0)),
                             value.debug_view().unwrap(),
                         ))
                         .style(|s| s.items_center().gap(4.0))
@@ -341,7 +341,7 @@ impl StylePropValue for BorderColor {
                     .filter_map(|(l, v)| v.map(|v| (l, v)))
                     .map(|(label, color)| {
                         Stack::horizontal((
-                            label.style(|s| s.font_weight(Weight::BOLD).width(80.0)),
+                            label.style(|s| s.font_weight(FontWeight::BOLD).width(80.0)),
                             color.debug_view().unwrap(),
                         ))
                         .style(|s| s.items_center().gap(4.0))
@@ -485,7 +485,7 @@ impl StylePropValue for BorderRadius {
                     .filter_map(|(l, v)| v.map(|v| (l, v)))
                     .map(|(label, radius)| {
                         Stack::horizontal((
-                            label.style(|s| s.font_weight(Weight::BOLD).width(80.0)),
+                            label.style(|s| s.font_weight(FontWeight::BOLD).width(80.0)),
                             radius.debug_view().unwrap(),
                         ))
                         .style(|s| s.items_center().gap(4.0))
@@ -597,7 +597,7 @@ impl StylePropValue for Padding {
                     .filter_map(|(l, v)| v.map(|v| (l, v)))
                     .map(|(label, padding)| {
                         Stack::horizontal((
-                            label.style(|s| s.font_weight(Weight::BOLD).width(80.0)),
+                            label.style(|s| s.font_weight(FontWeight::BOLD).width(80.0)),
                             padding.debug_view().unwrap(),
                         ))
                         .style(|s| s.items_center().gap(4.0))
@@ -709,7 +709,7 @@ impl StylePropValue for Margin {
                     .filter_map(|(l, v)| v.map(|v| (l, v)))
                     .map(|(label, margin)| {
                         Stack::horizontal((
-                            label.style(|s| s.font_weight(Weight::BOLD).width(80.0)),
+                            label.style(|s| s.font_weight(FontWeight::BOLD).width(80.0)),
                             margin.debug_view().unwrap(),
                         ))
                         .style(|s| s.items_center().gap(4.0))
@@ -774,22 +774,22 @@ impl StylePropValue for BoxShadow {
         let details_view = move || {
             Stack::vertical((
                 Stack::horizontal((
-                    "Color:".style(|s| s.font_weight(Weight::BOLD).width(80.0)),
+                    "Color:".style(|s| s.font_weight(FontWeight::BOLD).width(80.0)),
                     shadow.color.debug_view().unwrap(),
                 ))
                 .style(|s| s.items_center().gap(4.0)),
                 Stack::horizontal((
-                    "Blur:".style(|s| s.font_weight(Weight::BOLD).width(80.0)),
+                    "Blur:".style(|s| s.font_weight(FontWeight::BOLD).width(80.0)),
                     format!("{:?}", shadow.blur_radius),
                 ))
                 .style(|s| s.items_center().gap(4.0)),
                 Stack::horizontal((
-                    "Spread:".style(|s| s.font_weight(Weight::BOLD).width(80.0)),
+                    "Spread:".style(|s| s.font_weight(FontWeight::BOLD).width(80.0)),
                     format!("{:?}", shadow.spread),
                 ))
                 .style(|s| s.items_center().gap(4.0)),
                 Stack::horizontal((
-                    "Offset:".style(|s| s.font_weight(Weight::BOLD).width(80.0)),
+                    "Offset:".style(|s| s.font_weight(FontWeight::BOLD).width(80.0)),
                     format!(
                         "L: {:?}, R: {:?}, T: {:?}, B: {:?}",
                         shadow.left_offset,

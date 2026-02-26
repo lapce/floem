@@ -6,18 +6,60 @@ use fontique::GenericFamily;
 use parley::style::{FontFamily, FontStack, StyleProperty};
 use peniko::Color;
 
-/// An owned version of font family.
+/// An owned font family identifier.
+///
+/// This is an owned equivalent of Parley's [`FontFamily`] that can be stored
+/// and cloned independently of any layout context. It supports both named fonts
+/// and the standard CSS generic families.
+///
+/// # Example
+///
+/// ```
+/// use floem_renderer::text::FamilyOwned;
+///
+/// let families: Vec<FamilyOwned> = FamilyOwned::parse_list("'Fira Code', monospace").collect();
+/// assert_eq!(families, vec![
+///     FamilyOwned::Name("Fira Code".to_string()),
+///     FamilyOwned::Monospace,
+/// ]);
+/// ```
+///
+/// [`FontFamily`]: parley::style::FontFamily
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum FamilyOwned {
+    /// A named font family (e.g. `"Helvetica"`, `"Fira Code"`).
     Name(String),
+    /// The generic serif family.
     Serif,
+    /// The generic sans-serif family.
     SansSerif,
+    /// The generic cursive family.
     Cursive,
+    /// The generic fantasy family.
     Fantasy,
+    /// The generic monospace family.
     Monospace,
 }
 
 impl FamilyOwned {
+    /// Parses a CSS-style comma-separated font family list into an iterator of [`FamilyOwned`] values.
+    ///
+    /// Quoted names (single or double quotes) are treated as named families.
+    /// Unquoted generic keywords (`serif`, `sans-serif`, `monospace`, `cursive`, `fantasy`)
+    /// are mapped to their corresponding variants. All other unquoted names become
+    /// [`FamilyOwned::Name`].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use floem_renderer::text::FamilyOwned;
+    ///
+    /// let families: Vec<_> = FamilyOwned::parse_list("Arial, sans-serif").collect();
+    /// assert_eq!(families, vec![
+    ///     FamilyOwned::Name("Arial".to_string()),
+    ///     FamilyOwned::SansSerif,
+    /// ]);
+    /// ```
     pub fn parse_list(s: &str) -> impl Iterator<Item = FamilyOwned> + '_ + Clone {
         ParseList {
             source: s.as_bytes(),
@@ -26,6 +68,7 @@ impl FamilyOwned {
         }
     }
 
+    /// Converts this owned family to a borrowed Parley [`FontFamily`] reference.
     fn to_font_family(&self) -> FontFamily<'_> {
         match self {
             FamilyOwned::Name(name) => FontFamily::Named(std::borrow::Cow::Borrowed(name.as_str())),
@@ -37,6 +80,12 @@ impl FamilyOwned {
         }
     }
 
+    /// Converts a slice of owned families into a Parley [`FontStack`].
+    ///
+    /// For a single named family, this produces a [`FontStack::Source`] so that
+    /// Parley can parse comma-separated fallbacks within the name string.
+    /// For a single generic family, it produces [`FontStack::Single`].
+    /// An empty slice defaults to sans-serif.
     pub fn to_font_stack(families: &[FamilyOwned]) -> FontStack<'_> {
         if families.len() == 1 {
             match &families[0] {
@@ -58,22 +107,77 @@ impl FamilyOwned {
     }
 }
 
+/// Specifies how line height is computed for text layout.
+///
+/// # Example
+///
+/// ```
+/// use floem_renderer::text::{Attrs, LineHeightValue};
+///
+/// // 1.5x the font size (e.g. 24px for a 16px font).
+/// let attrs = Attrs::new().line_height(LineHeightValue::Normal(1.5));
+///
+/// // Fixed 20-pixel line height regardless of font size.
+/// let attrs = Attrs::new().line_height(LineHeightValue::Px(20.0));
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LineHeightValue {
+    /// A multiplier of the font size (e.g. `1.0` means line height equals font size).
     Normal(f32),
+    /// An absolute line height in pixels.
     Px(f32),
 }
 
-/// Text attributes.
+/// Text styling attributes used to configure font properties, color, and layout.
+///
+/// `Attrs` uses a builder pattern where each setter consumes and returns `self`,
+/// making it easy to chain calls. Unset fields (`None`) inherit from the layout
+/// defaults when applied to a Parley builder.
+///
+/// # Defaults
+///
+/// | Property    | Default                           |
+/// |-------------|-----------------------------------|
+/// | font_size   | `16.0`                            |
+/// | line_height | `LineHeightValue::Normal(1.0)`    |
+/// | color       | `None` (inherits from context)    |
+/// | family      | `None` (system default)           |
+/// | weight      | `None` (normal)                   |
+/// | style       | `None` (normal)                   |
+/// | font_width  | `None` (normal)                   |
+/// | metadata    | `None`                            |
+///
+/// # Example
+///
+/// ```
+/// use floem_renderer::text::{Attrs, FamilyOwned, FontWeight, LineHeightValue};
+/// use peniko::Color;
+///
+/// let families = [FamilyOwned::Name("Inter".to_string()), FamilyOwned::SansSerif];
+/// let attrs = Attrs::new()
+///     .family(&families)
+///     .font_size(14.0)
+///     .weight(FontWeight::BOLD)
+///     .color(Color::WHITE)
+///     .line_height(LineHeightValue::Normal(1.4));
+/// ```
 #[derive(Clone, Debug)]
 pub struct Attrs<'a> {
+    /// Font size in pixels.
     pub font_size: f32,
+    /// Line height mode — either a multiplier of `font_size` or an absolute pixel value.
     line_height: LineHeightValue,
+    /// Text color, or `None` to inherit from the rendering context.
     color: Option<Color>,
+    /// Ordered list of font families to try, or `None` to use the system default.
     family: Option<&'a [FamilyOwned]>,
+    /// Font weight (e.g. normal, bold), or `None` for the default weight.
     weight: Option<FontWeight>,
+    /// Font style (normal, italic, oblique), or `None` for normal.
     style: Option<FontStyle>,
+    /// Font width / stretch (e.g. condensed, expanded), or `None` for normal.
     font_width: Option<FontWidth>,
+    /// Application-defined metadata carried through layout without interpretation.
     metadata: Option<usize>,
 }
 
@@ -84,6 +188,7 @@ impl Default for Attrs<'_> {
 }
 
 impl<'a> Attrs<'a> {
+    /// Creates a new `Attrs` with default values (16px font, 1.0 line height multiplier).
     pub fn new() -> Self {
         Self {
             font_size: 16.0,
@@ -97,80 +202,102 @@ impl<'a> Attrs<'a> {
         }
     }
 
+    /// Sets the text color.
     pub fn color(mut self, color: Color) -> Self {
         self.color = Some(color);
         self
     }
 
+    /// Sets the font family list. Families are tried in order as fallbacks.
     pub fn family(mut self, family: &'a [FamilyOwned]) -> Self {
         self.family = Some(family);
         self
     }
 
+    /// Sets the font width (stretch), e.g. condensed or expanded.
     pub fn font_width(mut self, stretch: FontWidth) -> Self {
         self.font_width = Some(stretch);
         self
     }
 
+    /// Sets the font style (normal, italic, or oblique).
     pub fn font_style(mut self, font_style: FontStyle) -> Self {
         self.style = Some(font_style);
         self
     }
 
+    /// Sets the font weight (e.g. [`FontWeight::BOLD`]).
     pub fn weight(mut self, weight: FontWeight) -> Self {
         self.weight = Some(weight);
         self
     }
 
+    /// Sets the font weight from a raw numeric value (typically 100–900).
     pub fn raw_weight(mut self, weight: u16) -> Self {
         self.weight = Some(FontWeight::new(weight as f32));
         self
     }
 
+    /// Sets the font size in pixels.
     pub fn font_size(mut self, font_size: f32) -> Self {
         self.font_size = font_size;
         self
     }
 
+    /// Sets the line height. See [`LineHeightValue`] for the available modes.
     pub fn line_height(mut self, line_height: LineHeightValue) -> Self {
         self.line_height = line_height;
         self
     }
 
+    /// Sets an opaque metadata value that is carried through layout.
+    ///
+    /// This can be used to associate application-specific data (e.g. a span
+    /// identifier) with a range of text.
     pub fn metadata(mut self, metadata: usize) -> Self {
         self.metadata = Some(metadata);
         self
     }
 
+    /// Returns the text color, or `None` if unset.
     pub fn get_color(&self) -> Option<Color> {
         self.color
     }
 
+    /// Returns the line height setting.
     pub fn get_line_height(&self) -> LineHeightValue {
         self.line_height
     }
 
+    /// Returns the font family list, or `None` if unset.
     pub fn get_family(&self) -> Option<&'a [FamilyOwned]> {
         self.family
     }
 
+    /// Returns the font weight, or `None` if unset.
     pub fn get_weight(&self) -> Option<FontWeight> {
         self.weight
     }
 
+    /// Returns the font style, or `None` if unset.
     pub fn get_font_style(&self) -> Option<FontStyle> {
         self.style
     }
 
+    /// Returns the font width (stretch), or `None` if unset.
     pub fn get_stretch(&self) -> Option<FontWidth> {
         self.font_width
     }
 
+    /// Returns the metadata value, or `None` if unset.
     pub fn get_metadata(&self) -> Option<usize> {
         self.metadata
     }
 
-    /// Compute the effective line height in pixels
+    /// Computes the effective line height in pixels.
+    ///
+    /// For [`LineHeightValue::Normal`], this multiplies the font size by the factor.
+    /// For [`LineHeightValue::Px`], the pixel value is returned directly.
     pub fn effective_line_height(&self) -> f32 {
         match self.line_height {
             LineHeightValue::Normal(n) => self.font_size * n,
@@ -178,7 +305,12 @@ impl<'a> Attrs<'a> {
         }
     }
 
-    /// Push default style properties onto a Parley RangedBuilder
+    /// Pushes all set properties as defaults onto a Parley [`RangedBuilder`].
+    ///
+    /// Font size and line height are always pushed. Optional properties (color,
+    /// family, weight, style, width) are only pushed when set.
+    ///
+    /// [`RangedBuilder`]: parley::RangedBuilder
     pub fn apply_defaults(&self, builder: &mut parley::RangedBuilder<'_, TextBrush>) {
         builder.push_default(StyleProperty::FontSize(self.font_size));
         let lh = self.effective_line_height();
@@ -203,8 +335,12 @@ impl<'a> Attrs<'a> {
         }
     }
 
-    /// Push style properties for a specific range onto a Parley RangedBuilder.
-    /// Only pushes properties that differ from the given defaults to reduce redundant work.
+    /// Pushes style properties for a specific byte range onto a Parley [`RangedBuilder`].
+    ///
+    /// Only properties that differ from `defaults` are pushed, avoiding redundant
+    /// work when a span shares most attributes with the base style.
+    ///
+    /// [`RangedBuilder`]: parley::RangedBuilder
     pub fn apply_range(
         &self,
         builder: &mut parley::RangedBuilder<'_, TextBrush>,
@@ -240,20 +376,45 @@ impl<'a> Attrs<'a> {
     }
 }
 
-/// Owned text attributes.
+/// An owned version of [`Attrs`] that does not borrow the font family slice.
+///
+/// This is used internally by [`AttrsList`] to store attribute spans, since spans
+/// need to own their data independently of the caller's lifetime.
+///
+/// # Example
+///
+/// ```
+/// use floem_renderer::text::{Attrs, AttrsOwned, FamilyOwned, FontWeight};
+///
+/// let families = [FamilyOwned::Monospace];
+/// let attrs = Attrs::new().family(&families).weight(FontWeight::BOLD);
+/// let owned = AttrsOwned::new(attrs);
+///
+/// // Convert back to a borrowed Attrs for use with builders.
+/// let borrowed = owned.as_attrs();
+/// ```
 #[derive(Clone, Debug)]
 pub struct AttrsOwned {
+    /// Font size in pixels.
     pub font_size: f32,
+    /// Line height mode — either a multiplier of `font_size` or an absolute pixel value.
     line_height: LineHeightValue,
+    /// Text color, or `None` to inherit from the rendering context.
     color: Option<Color>,
+    /// Owned list of font families to try, or `None` to use the system default.
     family: Option<Vec<FamilyOwned>>,
+    /// Font weight (e.g. normal, bold), or `None` for the default weight.
     weight: Option<FontWeight>,
+    /// Font style (normal, italic, oblique), or `None` for normal.
     style: Option<FontStyle>,
+    /// Font width / stretch (e.g. condensed, expanded), or `None` for normal.
     font_width: Option<FontWidth>,
+    /// Application-defined metadata carried through layout without interpretation.
     metadata: Option<usize>,
 }
 
 impl AttrsOwned {
+    /// Creates an owned copy of the given [`Attrs`], cloning the font family slice if present.
     pub fn new(attrs: Attrs) -> Self {
         Self {
             font_size: attrs.font_size,
@@ -267,6 +428,7 @@ impl AttrsOwned {
         }
     }
 
+    /// Returns a borrowed [`Attrs`] referencing this owned data.
     pub fn as_attrs(&self) -> Attrs<'_> {
         Attrs {
             font_size: self.font_size,
@@ -281,7 +443,30 @@ impl AttrsOwned {
     }
 }
 
-/// Attribute spans list.
+/// A list of text attributes with default styling and per-range overrides.
+///
+/// `AttrsList` pairs a set of default [`Attrs`] with zero or more byte-range spans
+/// that override specific properties. When applied to a Parley builder via
+/// [`apply_to_builder`](Self::apply_to_builder), the defaults are pushed first,
+/// then each span is layered on top for its range.
+///
+/// # Example
+///
+/// ```
+/// use floem_renderer::text::{Attrs, AttrsList, FontWeight};
+/// use peniko::Color;
+///
+/// let mut attrs_list = AttrsList::new(Attrs::new().font_size(14.0));
+///
+/// // Make bytes 0..5 bold and red.
+/// attrs_list.add_span(
+///     0..5,
+///     Attrs::new()
+///         .font_size(14.0)
+///         .weight(FontWeight::BOLD)
+///         .color(Color::WHITE),
+/// );
+/// ```
 #[derive(Clone, Debug)]
 pub struct AttrsList {
     defaults: AttrsOwned,
@@ -296,6 +481,7 @@ impl PartialEq for AttrsList {
 }
 
 impl AttrsList {
+    /// Creates a new attribute list with the given default attributes and no spans.
     pub fn new(defaults: Attrs) -> Self {
         Self {
             defaults: AttrsOwned::new(defaults),
@@ -303,14 +489,20 @@ impl AttrsList {
         }
     }
 
+    /// Returns the default attributes.
     pub fn defaults(&self) -> Attrs<'_> {
         self.defaults.as_attrs()
     }
 
+    /// Removes all attribute spans, keeping only the defaults.
     pub fn clear_spans(&mut self) {
         self.spans.clear();
     }
 
+    /// Adds an attribute span for the given byte range.
+    ///
+    /// Any existing spans that overlap with `range` are removed before the new
+    /// span is inserted.
     pub fn add_span(&mut self, range: Range<usize>, attrs: Attrs) {
         // Remove any previous spans that overlap with this range
         self.spans
@@ -318,6 +510,10 @@ impl AttrsList {
         self.spans.push((range, AttrsOwned::new(attrs)));
     }
 
+    /// Returns the attributes at the given byte index.
+    ///
+    /// If a span covers `index`, its attributes are returned. Otherwise the
+    /// defaults are returned.
     pub fn get_span(&self, index: usize) -> Attrs<'_> {
         for (range, attrs) in &self.spans {
             if range.contains(&index) {
@@ -327,6 +523,12 @@ impl AttrsList {
         self.defaults.as_attrs()
     }
 
+    /// Splits this attribute list at the given byte index.
+    ///
+    /// Returns a new `AttrsList` covering `[index..)` with span ranges shifted
+    /// to start from zero. Spans that cross the split point are duplicated into
+    /// both halves with their ranges adjusted accordingly. `self` is left
+    /// containing only the `[..index)` portion.
     pub fn split_off(&mut self, index: usize) -> Self {
         let mut new_spans = Vec::new();
         let mut remaining = Vec::new();
@@ -350,7 +552,13 @@ impl AttrsList {
         }
     }
 
-    /// Apply all defaults and spans to a Parley RangedBuilder.
+    /// Applies all defaults and spans to a Parley [`RangedBuilder`].
+    ///
+    /// This first pushes the default attributes, then layers each span on top
+    /// for its byte range. Span properties that match the defaults are skipped
+    /// to avoid redundant work.
+    ///
+    /// [`RangedBuilder`]: parley::RangedBuilder
     pub fn apply_to_builder(&self, builder: &mut parley::RangedBuilder<'_, TextBrush>) {
         let defaults = self.defaults.as_attrs();
         defaults.apply_defaults(builder);
@@ -361,22 +569,40 @@ impl AttrsList {
         }
     }
 
-    /// Get the inner spans for iteration.
+    /// Returns the inner spans as a slice of `(byte_range, attributes)` pairs.
     pub fn spans(&self) -> &[(Range<usize>, AttrsOwned)] {
         &self.spans
     }
 }
 
+/// A streaming parser for CSS-style comma-separated font family lists.
+///
+/// Created by [`FamilyOwned::parse_list`]. Walks the input bytes left-to-right,
+/// yielding one [`FamilyOwned`] per entry. The parser handles:
+///
+/// - **Quoted names** (single `'` or double `"` quotes) — the content between
+///   the quotes is trimmed and returned as [`FamilyOwned::Name`].
+/// - **Unquoted generic keywords** (`serif`, `sans-serif`, `monospace`,
+///   `cursive`, `fantasy`) — matched case-insensitively and mapped to the
+///   corresponding enum variant.
+/// - **Unquoted custom names** — everything up to the next comma, trimmed.
+///
+/// Leading/trailing whitespace and commas between entries are skipped.
 #[derive(Clone)]
 struct ParseList<'a> {
+    /// The raw input bytes (must be valid UTF-8).
     source: &'a [u8],
+    /// Cached `source.len()`.
     len: usize,
+    /// Current read position in `source`.
     pos: usize,
 }
 
 impl Iterator for ParseList<'_> {
     type Item = FamilyOwned;
 
+    /// Advances the parser and returns the next [`FamilyOwned`], or `None`
+    /// when the input is exhausted.
     fn next(&mut self) -> Option<Self::Item> {
         let mut quote = None;
         let mut pos = self.pos;

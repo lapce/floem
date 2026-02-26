@@ -9,49 +9,102 @@ use parley::{
 };
 use peniko::kurbo::{Point, Size};
 
+/// Global shared font context used for font discovery and shaping.
+///
+/// Parley requires a [`FontContext`] during layout building. This static provides
+/// a single shared instance behind a [`Mutex`].
+/// The lock is only held for the duration of a [`TextLayout::set_text`] call.
 pub static FONT_CONTEXT: LazyLock<Mutex<FontContext>> =
     LazyLock::new(|| Mutex::new(FontContext::new()));
 
 thread_local! {
+    /// Thread-local layout context that caches shaping data between layouts.
+    ///
+    /// [`LayoutContext`] is not `Send`, so each thread keeps its own instance.
+    /// It is borrowed mutably for the duration of a [`TextLayout::set_text`] call.
     static LAYOUT_CONTEXT: RefCell<LayoutContext<TextBrush>> =
         RefCell::new(LayoutContext::new());
 }
 
+/// The geometric position of a cursor at a given byte index in a [`TextLayout`].
+///
+/// Returned by [`TextLayout::hit_position`] and [`TextLayout::hit_position_aff`].
+/// Contains the cursor's (x, baseline-y) coordinates plus the ascent and descent
+/// of the glyph at that position, which together define the cursor's visible height.
 pub struct HitPosition {
-    /// Text line the cursor is on.
+    /// Visual line index the cursor is on.
     pub line: usize,
-    /// Point of the cursor.
+    /// Cursor position where `x` is the horizontal offset and `y` is the baseline.
     pub point: Point,
-    /// ascent of glyph.
+    /// Ascent of the glyph at the cursor (distance above the baseline).
     pub glyph_ascent: f64,
-    /// descent of glyph.
+    /// Descent of the glyph at the cursor (distance below the baseline).
     pub glyph_descent: f64,
 }
 
+/// Result of hit-testing a point against a [`TextLayout`].
+///
+/// Returned by [`TextLayout::hit_point`]. Maps a pixel coordinate to the
+/// nearest text position, indicating which paragraph line and byte offset
+/// the point maps to and whether it fell within the layout bounds.
 pub struct HitPoint {
-    /// Text line the cursor is on.
+    /// Paragraph line index the resolved position is on.
     pub line: usize,
-    /// First-byte-index of glyph at cursor (will insert behind this glyph).
+    /// Byte offset within the paragraph line (insert position).
     pub index: usize,
-    /// Whether or not the point was inside the bounds of the layout object.
+    /// Whether the queried point was inside the layout bounds.
     ///
-    /// A click outside the layout object will still resolve to a position in the
-    /// text; for instance a click to the right edge of a line will resolve to the
-    /// end of that line, and a click below the last line will resolve to a
-    /// position in that line.
+    /// A click outside the layout still resolves to a text position:
+    /// - click to the right of a line resolves to the end of that line
+    /// - click below the last line resolves to a position in that line
     pub is_inside: bool,
+    /// Cursor affinity at the resolved position.
     pub affinity: Affinity,
 }
 
+/// Shaped and positioned text ready for rendering.
+///
+/// `TextLayout` wraps a Parley [`Layout`] and adds paragraph-aware cursor
+/// mapping, hit-testing, selection geometry, and line-breaking control.
+///
+/// # Lifecycle
+///
+/// 1. Create with [`TextLayout::new`] (empty) or [`TextLayout::new_with_text`].
+/// 2. Optionally call [`set_wrap`](Self::set_wrap) before setting text.
+/// 3. Set or update text and attributes via [`set_text`](Self::set_text).
+/// 4. Constrain dimensions with [`set_size`](Self::set_size) to trigger reflow.
+/// 5. Query the result: [`size`](Self::size), [`hit`](Self::hit),
+///    [`hit_position`](Self::hit_position), [`selection_geometry_with`](Self::selection_geometry_with), etc.
+///
+/// # Example
+///
+/// ```no_run
+/// use floem_renderer::text::{Attrs, AttrsList, TextLayout, Wrap};
+///
+/// let mut layout = TextLayout::new();
+/// layout.set_wrap(Wrap::Word);
+/// layout.set_text("Hello, world!", AttrsList::new(Attrs::new()), None);
+/// layout.set_size(200.0, f32::MAX);
+///
+/// let size = layout.size();
+/// ```
 #[derive(Clone)]
 pub struct TextLayout {
+    /// The underlying Parley layout containing shaped glyph runs.
     layout: Layout<TextBrush>,
+    /// The full text content.
     text: String,
+    /// Byte ranges for each paragraph line (split on `\n`, `\r\n`, or `\r`).
     lines_range: Vec<Range<usize>>,
+    /// Text alignment (left, center, right, justified), or `None` for the default (left).
     alignment: Option<Alignment>,
+    /// Word/glyph wrapping strategy.
     wrap: Wrap,
+    /// Maximum width constraint in pixels, or `None` if unconstrained.
     width_opt: Option<f32>,
+    /// Maximum height constraint in pixels, or `None` if unconstrained.
     height_opt: Option<f32>,
+    /// Default line height computed from the attrs at [`set_text`](Self::set_text) time.
     default_line_height: f32,
 }
 
@@ -73,6 +126,9 @@ impl Default for TextLayout {
 }
 
 impl TextLayout {
+    /// Creates an empty `TextLayout` with word wrapping and no text.
+    ///
+    /// Call [`set_text`](Self::set_text) afterwards to populate it.
     pub fn new() -> Self {
         TextLayout {
             layout: Layout::new(),
@@ -86,12 +142,22 @@ impl TextLayout {
         }
     }
 
+    /// Creates a `TextLayout` pre-populated with the given text, attributes, and alignment.
+    ///
+    /// This is a convenience for `TextLayout::new()` followed by
+    /// [`set_text`](Self::set_text).
     pub fn new_with_text(text: &str, attrs_list: AttrsList, align: Option<Alignment>) -> Self {
         let mut layout = Self::new();
         layout.set_text(text, attrs_list, align);
         layout
     }
 
+    /// Sets or replaces the text content, attributes, and alignment.
+    ///
+    /// This performs the full layout pipeline: paragraph splitting, Parley
+    /// shaping (under [`FONT_CONTEXT`] lock), line breaking, and alignment.
+    /// If a width constraint was previously set via [`set_size`](Self::set_size),
+    /// it is applied during line breaking.
     pub fn set_text(&mut self, text: &str, attrs_list: AttrsList, align: Option<Alignment>) {
         self.text = text.to_string();
         self.alignment = align;
@@ -187,14 +253,26 @@ impl TextLayout {
         }
     }
 
+    /// Sets the text wrapping strategy.
+    ///
+    /// Must be called **before** [`set_text`](Self::set_text) for the wrap mode
+    /// to take effect during shaping.
     pub fn set_wrap(&mut self, wrap: Wrap) {
         self.wrap = wrap;
     }
 
+    /// Sets the tab width in number of spaces (currently a no-op).
+    ///
+    /// Parley does not yet expose a direct tab-width setting.
     pub fn set_tab_width(&mut self, _tab_width: usize) {
-        // TODO!: Parley doesn't have a direct tab width setting
+        // TODO!
     }
 
+    /// Sets the layout width and height constraints in pixels.
+    ///
+    /// If the width changes (and wrapping is enabled), the layout is reflowed:
+    /// lines are re-broken and alignment is re-applied. Height changes alone
+    /// do not trigger reflow since height does not affect line breaking.
     pub fn set_size(&mut self, width: f32, height: f32) {
         let old_width = self.width_opt;
         self.width_opt = Some(width);
@@ -218,32 +296,43 @@ impl TextLayout {
         }
     }
 
+    /// Returns the byte ranges of each paragraph line.
+    ///
+    /// Paragraph lines are split on `\n`, `\r\n`, or `\r`. Each range covers
+    /// the text content without the line ending.
     pub fn lines_range(&self) -> &[Range<usize>] {
         &self.lines_range
     }
 
-    /// Full text content.
+    /// Returns the full text content.
     pub fn text(&self) -> &str {
         &self.text
     }
 
-    /// Direct access to the Parley layout for renderers and consumers.
+    /// Returns direct access to the underlying Parley [`Layout`].
+    ///
+    /// This is intended for renderers that need to iterate glyph runs.
+    /// Application code should prefer the higher-level methods on `TextLayout`.
     pub fn parley_layout(&self) -> &Layout<TextBrush> {
         &self.layout
     }
 
-    /// Count of visual lines in the layout.
+    /// Returns the number of visual lines (after wrapping) in the layout.
     pub fn visual_line_count(&self) -> usize {
         self.layout.len()
     }
 
+    /// Returns the total size of the laid-out text as a `(width, height)` pair.
     pub fn size(&self) -> Size {
         let width = self.layout.full_width() as f64;
         let height = self.layout.height() as f64;
         Size::new(width, height)
     }
 
-    /// Convert x, y position to Cursor (hit detection)
+    /// Converts pixel coordinates to a [`Cursor`](crate::text::Cursor) (hit detection).
+    ///
+    /// Returns `Some(Cursor)` with the paragraph line and byte offset nearest
+    /// to `(x, y)`. Returns a zero cursor for empty text.
     pub fn hit(&self, x: f32, y: f32) -> Option<crate::text::Cursor> {
         if self.text.is_empty() {
             return Some(crate::text::Cursor::new(0, 0));
@@ -266,10 +355,19 @@ impl TextLayout {
         Some(crate::text::Cursor::new(0, 0))
     }
 
+    /// Returns the geometric position of the cursor at the given flat byte index.
+    ///
+    /// Uses [`Affinity::Before`] by default. See [`hit_position_aff`](Self::hit_position_aff)
+    /// for explicit affinity control.
     pub fn hit_position(&self, idx: usize) -> HitPosition {
         self.hit_position_aff(idx, Affinity::Before)
     }
 
+    /// Returns the geometric position of the cursor at the given flat byte index
+    /// with explicit affinity.
+    ///
+    /// The returned [`HitPosition`] contains the cursor's pixel coordinates and
+    /// the ascent/descent of the glyph at that position.
     pub fn hit_position_aff(&self, idx: usize, affinity: Affinity) -> HitPosition {
         if self.text.is_empty() || self.layout.is_empty() {
             return HitPosition {
@@ -308,6 +406,10 @@ impl TextLayout {
         }
     }
 
+    /// Hit-tests a point and returns a [`HitPoint`] with the nearest text position.
+    ///
+    /// Unlike [`hit`](Self::hit), this also reports whether the point was inside
+    /// the layout bounds via [`HitPoint::is_inside`].
     pub fn hit_point(&self, point: Point) -> HitPoint {
         if let Some(cursor) = self.hit(point.x as f32, point.y as f32) {
             let size = self.size();
@@ -328,7 +430,8 @@ impl TextLayout {
         }
     }
 
-    /// Convert a floem Cursor (paragraph_line, index_within_line) to a flat byte index.
+    /// Converts a [`Cursor`](crate::text::Cursor) (paragraph line + offset) to a flat byte index
+    /// into the full text.
     pub fn cursor_to_byte_index(&self, cursor: &crate::text::Cursor) -> usize {
         self.lines_range
             .get(cursor.line)
@@ -336,8 +439,10 @@ impl TextLayout {
             .unwrap_or(0)
     }
 
-    /// Compute selection highlight rectangles between two byte indices.
-    /// Calls `f` with (x0, y0, x1, y1) for each visual line's selection rectangle.
+    /// Computes selection highlight rectangles between two flat byte indices.
+    ///
+    /// Calls `f(x0, y0, x1, y1)` once for each visual line that the selection
+    /// spans. This avoids allocating a `Vec` of rectangles.
     pub fn selection_geometry_with(
         &self,
         start_byte: usize,
@@ -360,17 +465,19 @@ impl TextLayout {
         });
     }
 
-    /// Get the baseline y position of the nth visual line.
+    /// Returns the baseline y-position (in pixels) of the `nth` visual line,
+    /// or `None` if `nth` is out of bounds.
     pub fn visual_line_y(&self, nth: usize) -> Option<f32> {
         self.layout.get(nth).map(|l| l.metrics().baseline)
     }
 
-    /// Get the text byte range of the nth visual line.
+    /// Returns the text byte range covered by the `nth` visual line,
+    /// or `None` if `nth` is out of bounds.
     pub fn visual_line_text_range(&self, nth: usize) -> Option<Range<usize>> {
         self.layout.get(nth).map(|l| l.text_range())
     }
 
-    /// Check if the nth visual line is empty (has no items).
+    /// Returns `true` if the `nth` visual line has no glyph items (or does not exist).
     pub fn visual_line_is_empty(&self, nth: usize) -> bool {
         self.layout.get(nth).is_none_or(|l| l.is_empty())
     }

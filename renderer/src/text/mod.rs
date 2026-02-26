@@ -9,11 +9,11 @@
 //! # Quick start
 //!
 //! ```no_run
-//! use floem_renderer::text::{Attrs, AttrsList, TextLayout, Weight};
+//! use floem_renderer::text::{Attrs, AttrsList, FontWeight, TextLayout};
 //!
 //! let attrs = Attrs::new()
 //!     .font_size(18.0)
-//!     .weight(Weight::BOLD);
+//!     .weight(FontWeight::BOLD);
 //! let attrs_list = AttrsList::new(attrs);
 //!
 //! let layout = TextLayout::new_with_text("Hello, Floem!", attrs_list, None);

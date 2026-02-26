@@ -7,7 +7,7 @@ use crate::style::{FontStyle, FontWeight, TextColor};
 use crate::unit::{PxPct, PxPctAuto};
 use crate::view::ViewId;
 use crate::views::editor::text::Preedit;
-use crate::{Clipboard, prop_extractor, style_class, text::FontWeight};
+use crate::{Clipboard, prop_extractor, style_class};
 use floem_reactive::{SignalGet, SignalUpdate, SignalWith};
 use taffy::prelude::{Layout, NodeId};
 
@@ -144,7 +144,7 @@ pub enum TextDirection {
 /// ```rust
 /// # use floem::prelude::*;
 /// # use floem::prelude::palette::css;
-/// # use floem::text::Weight;
+/// # use floem::text::FontWeight;
 /// # use floem::style::SelectionCornerRadius;
 /// // Create empty `String` as a text buffer in the read-write signal
 /// let text = RwSignal::new(String::new());
@@ -181,8 +181,8 @@ pub enum TextDirection {
 ///         // Apply class and override some of its styles.
 ///         .class(PlaceholderTextClass, |s| s
 ///             .color(css::SKY_BLUE)
-///             .font_style(floem::text::Style::Italic)
-///             .font_weight(Weight::BOLD)
+///             .font_style(floem::text::FontStyle::Italic)
+///             .font_weight(FontWeight::BOLD)
 ///         )
 ///         .font_family("monospace".to_owned())
 ///         .focusable(true)

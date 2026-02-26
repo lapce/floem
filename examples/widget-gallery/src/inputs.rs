@@ -4,7 +4,7 @@ use floem::{
     kurbo::Stroke,
     prelude::*,
     style::{SelectionCornerRadius, Transition},
-    text::Weight,
+    text::FontWeight,
     theme::StyleThemeExt,
 };
 
@@ -48,7 +48,7 @@ pub fn text_input_view() -> impl IntoView {
                     .class(PlaceholderTextClass, |s| {
                         s.with_theme(|s, t| s.color(t.primary_muted()))
                             .font_style(floem::text::FontStyle::Italic)
-                            .font_weight(Weight::BOLD)
+                            .font_weight(FontWeight::BOLD)
                     })
                     .font_family("monospace".to_owned())
             }),

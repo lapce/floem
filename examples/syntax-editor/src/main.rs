@@ -1,6 +1,6 @@
 use floem::{
     prelude::*,
-    text::{Attrs, AttrsList, FamilyOwned, FontWidth, Weight},
+    text::{Attrs, AttrsList, FamilyOwned, FontWidth, FontWeight},
     views::editor::{
         core::{
             buffer::rope_text::RopeText, cursor::CursorAffinity, editor::EditType,
@@ -69,7 +69,7 @@ impl Styling for SyntaxHighlightingStyle<'_> {
         self.style.font_family(edid, line)
     }
 
-    fn weight(&self, edid: EditorId, line: usize) -> Weight {
+    fn weight(&self, edid: EditorId, line: usize) -> FontWeight {
         self.style.weight(edid, line)
     }
 
@@ -129,7 +129,7 @@ impl Styling for SyntaxHighlightingStyle<'_> {
                                 attr = attr.font_style(floem::text::FontStyle::Italic);
                             }
                             if style.font_style.contains(FontStyle::BOLD) {
-                                attr = attr.weight(Weight::BOLD);
+                                attr = attr.weight(FontWeight::BOLD);
                             }
                             attr = attr.color(Color::from_rgba8(
                                 style.foreground.r,

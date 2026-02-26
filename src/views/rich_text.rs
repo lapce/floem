@@ -461,7 +461,7 @@ where
         self.weight(crate::text::FontWeight::MEDIUM)
     }
     fn semibold(self) -> RichSpan<'a> {
-        self.weight(crate::text::FontWeight::SEMIBOLD)
+        self.weight(crate::text::FontWeight::SEMI_BOLD)
     }
     fn bold(self) -> RichSpan<'a> {
         self.weight(crate::text::FontWeight::BOLD)

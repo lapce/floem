@@ -3,7 +3,7 @@ use floem::{
     peniko::{color::palette, Brush, Color},
     reactive::{RwSignal, SignalGet, SignalUpdate},
     style::{ScaleX, ScaleY, Style, Transition},
-    text::Weight,
+    text::FontWeight,
     unit::{DurationUnitExt, UnitExt},
     views::{dyn_container, slider, svg, ButtonClass, Container, Decorators, Stack, SvgClass},
     AnyView, IntoView,
@@ -39,7 +39,7 @@ impl IntoView for SongInfo {
 
     fn into_intermediate(self) -> Self::Intermediate {
         let song_artist = Stack::vertical((
-            self.title.style(|s| s.font_weight(Weight::MEDIUM)),
+            self.title.style(|s| s.font_weight(FontWeight::MEDIUM)),
             self.artist
                 .style(|s| s.font_size(FONT_SIZE * 0.8).color(palette::css::GRAY)),
         ))
@@ -79,7 +79,7 @@ pub fn music_player() -> impl IntoView {
 
     let now_playing = Stack::horizontal((
         svg(svg::MUSIC).style(|s| s.color(MUSIC_ICON)),
-        "Now Playing".style(|s| s.font_weight(Weight::MEDIUM)),
+        "Now Playing".style(|s| s.font_weight(FontWeight::MEDIUM)),
     ))
     .style(|s| s.gap(5).items_center());
 

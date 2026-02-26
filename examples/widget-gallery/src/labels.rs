@@ -1,6 +1,6 @@
 use floem::{
     prelude::*,
-    text::{FontStyle, Weight},
+    text::{FontStyle, FontWeight},
 };
 
 use crate::form::{form, form_item};
@@ -18,7 +18,7 @@ pub fn label_view() -> impl IntoView {
                 s.background(palette::css::YELLOW)
                     .padding(10.0)
                     .color(palette::css::GREEN)
-                    .font_weight(Weight::BOLD)
+                    .font_weight(FontWeight::BOLD)
                     .font_style(FontStyle::Italic)
                     .font_size(24.0)
             }),

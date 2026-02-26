@@ -18,7 +18,7 @@ use std::sync::Once;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use floem_renderer::text::{
-    Attrs, AttrsList, FONT_CONTEXT, FamilyOwned, FontStyle, TextLayout, Weight,
+    Attrs, AttrsList, FONT_CONTEXT, FamilyOwned, FontStyle, TextLayout, FontWeight,
 };
 use peniko::Color;
 
@@ -94,7 +94,7 @@ fn styled_attrs(text_len: usize, span_count: usize) -> AttrsList {
             0 => Attrs::new()
                 .font_size(16.0)
                 .family(&family)
-                .weight(Weight::BOLD),
+                .weight(FontWeight::BOLD),
             1 => Attrs::new()
                 .font_size(16.0)
                 .family(&family)

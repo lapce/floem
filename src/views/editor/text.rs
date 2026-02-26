@@ -313,8 +313,8 @@ pub trait Styling {
         Cow::Borrowed(&[FamilyOwned::SansSerif])
     }
 
-    fn weight(&self, _edid: EditorId, _line: usize) -> Weight {
-        Weight::NORMAL
+    fn weight(&self, _edid: EditorId, _line: usize) -> FontWeight {
+        FontWeight::NORMAL
     }
 
     // TODO(minor): better name?
@@ -585,7 +585,7 @@ pub struct SimpleStyling {
     /// If less than 5.0, line height will be a multiple of the font size
     line_height: f32,
     font_family: Vec<FamilyOwned>,
-    weight: Weight,
+    weight: FontWeight,
     italic_style: crate::text::FontStyle,
     font_width: FontWidth,
     tab_width: usize,
@@ -620,7 +620,7 @@ impl SimpleStyling {
         self.increment_id();
     }
 
-    pub fn set_weight(&mut self, weight: Weight) {
+    pub fn set_weight(&mut self, weight: FontWeight) {
         self.weight = weight;
         self.increment_id();
     }
@@ -652,7 +652,7 @@ impl Default for SimpleStyling {
             font_size: 16,
             line_height: 1.5,
             font_family: vec![FamilyOwned::SansSerif],
-            weight: Weight::NORMAL,
+            weight: FontWeight::NORMAL,
             italic_style: crate::text::FontStyle::Normal,
             font_width: FontWidth::NORMAL,
             tab_width: 4,
@@ -684,7 +684,7 @@ impl Styling for SimpleStyling {
         Cow::Borrowed(&self.font_family)
     }
 
-    fn weight(&self, _edid: EditorId, _line: usize) -> Weight {
+    fn weight(&self, _edid: EditorId, _line: usize) -> FontWeight {
         self.weight
     }
 
@@ -729,7 +729,7 @@ pub struct SimpleStylingBuilder {
     font_size: Option<usize>,
     line_height: Option<f32>,
     font_family: Option<Vec<FamilyOwned>>,
-    weight: Option<Weight>,
+    weight: Option<FontWeight>,
     italic_style: Option<crate::text::FontStyle>,
     font_width: Option<FontWidth>,
     indent_style: Option<IndentStyle>,
@@ -761,7 +761,7 @@ impl SimpleStylingBuilder {
 
     /// Set the font weight (such as boldness or thinness)
     /// Default: `Weight::NORMAL`
-    pub fn weight(&mut self, weight: Weight) -> &mut Self {
+    pub fn weight(&mut self, weight: FontWeight) -> &mut Self {
         self.weight = Some(weight);
         self
     }

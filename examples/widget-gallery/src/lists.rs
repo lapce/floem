@@ -4,7 +4,7 @@ use floem::{
     reactive::Effect,
     style::CursorStyle,
     taffy::{prelude::*, Line},
-    text::Weight,
+    text::FontWeight,
     theme::{border_style, StyleThemeExt},
 };
 
@@ -60,7 +60,7 @@ fn enhanced_list() -> impl IntoView {
             })
             .style(|s| {
                 s.size(18.0, 18.)
-                    .font_weight(Weight::BOLD)
+                    .font_weight(FontWeight::BOLD)
                     .cursor(CursorStyle::Pointer)
                     .border(1.0)
                     .border_radius(16.0)
