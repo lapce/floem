@@ -131,7 +131,7 @@ objc2-app-kit = { version = "0.3", features = [
 ] }
 
 [features]
-default = ["editor", "default-image-formats", "vello"]
+default = ["editor", "default-image-formats", "vger"]
 vello = ["dep:floem_vello_renderer"]
 vger = ["dep:floem_vger_renderer"]
 # tiny-skia = ["dep:floem_tiny_skia_renderer"]

@@ -7,7 +7,7 @@ description = "A native Rust UI library with fine-grained reactivity"
 license.workspace = true
 
 [dependencies.floem-vger-rs]
-path = "../deps/vger-rs"
+path = "../../vger-rs"
 package = "floem-vger"
 
 [dependencies]
