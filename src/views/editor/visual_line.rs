@@ -3419,6 +3419,77 @@ mod tests {
         );
     }
 
+    /// Verify that `start_layout_cols` (standalone) returns the same start
+    /// values as `layout_cols` for every case.
+    #[test]
+    fn start_layout_cols_matches_layout_cols() {
+        // Simple single-line, no wrapping.
+        let text = Rope::from("aaaa\nbb bb cc\ndd");
+        let mut tl = TextLayout::new();
+        tl.set_text("aaaa", AttrsList::new(Attrs::new()), None);
+        let layout = TextLayoutLine {
+            extra_style: Vec::new(),
+            text: tl,
+            whitespaces: None,
+            indent: 0.,
+            phantom_text: PhantomTextLine::default(),
+        };
+        let (text_prov, _) = make_lines(&text, 10000., false);
+        let from_full: Vec<usize> = layout
+            .layout_cols(&text_prov, 0)
+            .map(|(s, _)| s)
+            .collect();
+        let from_standalone: Vec<usize> = layout.start_layout_cols().collect();
+        assert_eq!(from_full, from_standalone, "single-line no wrap");
+
+        // Wrapped multi-line text (the case from iter_lines test).
+        let text: Rope = "aaaa\nbb bb cc\ncc dddd eeee ff\nff gggg".into();
+        let (text_prov, lines) = make_lines(&text, 2., true);
+        let v = lines.get_init_text_layout(0, ConfigId::new(0, 0), &text_prov, 2, true);
+
+        let from_full: Vec<usize> = v.layout_cols(&text_prov, 2).map(|(s, _)| s).collect();
+        let from_standalone: Vec<usize> = v.start_layout_cols().collect();
+        assert_eq!(from_full, from_standalone, "wrapped multi-line");
+
+        // CRLF line endings.
+        let text = Rope::from("aaaa\r\nbb bb cc\r\ndd");
+        let mut tl = TextLayout::new();
+        tl.set_text("aaaa", AttrsList::new(Attrs::new()), None);
+        let layout = TextLayoutLine {
+            extra_style: Vec::new(),
+            text: tl,
+            whitespaces: None,
+            indent: 0.,
+            phantom_text: PhantomTextLine::default(),
+        };
+        let (text_prov, _) = make_lines(&text, 10000., true);
+        let from_full: Vec<usize> = layout
+            .layout_cols(&text_prov, 0)
+            .map(|(s, _)| s)
+            .collect();
+        let from_standalone: Vec<usize> = layout.start_layout_cols().collect();
+        assert_eq!(from_full, from_standalone, "CRLF");
+    }
+
+    /// Test that `start_layout_cols` handles whitespace-only content
+    /// (the prefix fallback path).
+    #[test]
+    fn start_layout_cols_whitespace_only() {
+        let mut tl = TextLayout::new();
+        tl.set_text("    ", AttrsList::new(Attrs::new()), None);
+        let layout = TextLayoutLine {
+            extra_style: Vec::new(),
+            text: tl,
+            whitespaces: None,
+            indent: 0.,
+            phantom_text: PhantomTextLine::default(),
+        };
+        let starts: Vec<usize> = layout.start_layout_cols().collect();
+        // Should produce exactly one entry (the prefix fallback).
+        assert_eq!(starts.len(), 1, "whitespace-only should have prefix");
+        assert_eq!(starts[0], 0, "prefix start should be 0");
+    }
+
     #[test]
     fn test_end_of_rvline() {
         fn eor(lines: &Lines, text_prov: &impl TextLayoutProvider, rvline: RVLine) -> usize {
