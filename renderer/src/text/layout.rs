@@ -381,11 +381,14 @@ impl TextLayout {
         let pcursor = parley::editing::Cursor::from_byte_index(&self.layout, idx, affinity.into());
         let bbox = pcursor.geometry(&self.layout, 0.0);
 
-        // Find which visual line this cursor is on
+        // Find which visual line this cursor is on using the geometry's y
+        // coordinate. This correctly accounts for affinity at wrapped-line
+        // boundaries (where the byte index belongs to both lines).
+        let cursor_y = bbox.y0 as f32;
         let mut visual_line = 0;
         for (i, line) in self.layout.lines().enumerate() {
-            let range = line.text_range();
-            if idx <= range.end {
+            let m = line.metrics();
+            if cursor_y >= m.min_coord && cursor_y < m.max_coord {
                 visual_line = i;
                 break;
             }
