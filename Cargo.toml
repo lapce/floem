@@ -47,11 +47,11 @@ parley = { version = "0.7.0" }
 fontique = { version = "0.7.0" }
 serde = { version = "1.0" }
 lapce-xi-rope = "0.4.0"
-strum = { version = "0.27", features = ["derive"] }
-strum_macros = { version = "0.27" }
+strum = { version = "0.28", features = ["derive"] }
+strum_macros = { version = "0.28" }
 # Image format features are defined via new features
 image = { version = "0.25", default-features = false }
-imbl = "6.1.0"
+imbl = "7.0"
 resvg = { version = "0.46" }
 raw-window-handle = "0.6.0"
 unicode-segmentation = "1.10"

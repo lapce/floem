@@ -24,6 +24,9 @@ use wgpu::{
 };
 
 thread_local! {
+    /// Swash [`ScaleContext`] used for CPU glyph rasterization on vger cache misses.
+    /// Thread-local so the `FnOnce` closure passed to `Vger::render_glyph` can
+    /// borrow it without conflicting with the `&mut self` borrow on [`VgerRenderer`].
     static SCALE_CONTEXT: RefCell<ScaleContext> = RefCell::new(ScaleContext::new());
 }
 
@@ -573,8 +576,7 @@ impl Renderer for VgerRenderer {
                         (x_bin, y_bin),
                         || {
                             // Rasterize glyph via swash on cache miss
-                            let image = SCALE_CONTEXT.with(|ctx| {
-                                let mut ctx = ctx.borrow_mut();
+                            let image = SCALE_CONTEXT.with_borrow_mut(|ctx| {
                                 let mut scaler = ctx
                                     .builder(font_ref)
                                     .size(scaled_size)
