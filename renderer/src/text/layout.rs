@@ -1,4 +1,4 @@
-use std::{cell::RefCell, ops::Range, sync::LazyLock};
+use std::{cell::RefCell, num::NonZeroU8, ops::Range, sync::LazyLock};
 
 use crate::text::{Affinity, Alignment, AttrsList, TextBrush, Wrap};
 use parking_lot::Mutex;
@@ -8,6 +8,87 @@ use parley::{
     FontContext, LayoutContext,
 };
 use peniko::kurbo::{Point, Size};
+
+
+/// Byte-offset mapping between original text (with `\t`) and display text (tabs expanded to spaces).
+///
+/// Created by [`expand_tabs`] when a [`TextLayout`] has a nonzero tab width and the
+/// text contains tab characters. The mapping is used by [`TextLayout`] methods to
+/// translate between original byte indices (used by callers) and display byte
+/// indices (used by Parley internally).
+#[derive(Clone, Debug)]
+struct TabInfo {
+    /// The text with every `\t` replaced by the appropriate number of spaces.
+    display_text: String,
+    /// For each tab in order: `(original_byte_position, number_of_spaces)`.
+    tabs: Vec<(usize, usize)>,
+}
+
+impl TabInfo {
+    /// Converts an original byte index to the corresponding display byte index.
+    ///
+    /// Positions before all tabs return unchanged. Positions after one or more
+    /// tabs are shifted forward by the cumulative extra bytes those tabs added.
+    fn orig_to_display(&self, pos: usize) -> usize {
+        let mut shift = 0usize;
+        for &(tab_orig, tab_len) in &self.tabs {
+            if tab_orig >= pos {
+                break;
+            }
+            shift += tab_len - 1;
+        }
+        pos + shift
+    }
+
+    /// Converts a display byte index back to the corresponding original byte index.
+    ///
+    /// Display positions that fall inside a tab expansion (i.e. on one of the
+    /// inserted spaces) map to the original `\t` byte position.
+    fn display_to_orig(&self, pos: usize) -> usize {
+        let mut shift = 0usize;
+        for &(tab_orig, tab_len) in &self.tabs {
+            let tab_display = tab_orig + shift;
+            if tab_display >= pos {
+                break;
+            }
+            if pos < tab_display + tab_len {
+                // Inside a tab expansion — map to the tab's original position.
+                return tab_orig;
+            }
+            shift += tab_len - 1;
+        }
+        pos - shift
+    }
+}
+
+/// Replaces every `\t` in `text` with the right number of spaces to reach the
+/// next tab stop, returning the expanded text and a per-tab record.
+///
+/// Tab stops are aligned to multiples of `tab_width` characters. The column
+/// counter resets at every `\n` or `\r` so that each paragraph line has
+/// independent tab-stop positions.
+fn expand_tabs(text: &str, tab_width: usize) -> TabInfo {
+    let mut display = String::with_capacity(text.len());
+    let mut tabs = Vec::new();
+    let mut col = 0usize;
+
+    for (i, c) in text.char_indices() {
+        if c == '\t' {
+            let spaces = tab_width - (col % tab_width);
+            tabs.push((i, spaces));
+            display.extend(std::iter::repeat_n(' ', spaces));
+            col += spaces;
+        } else {
+            display.push(c);
+            col = if c == '\n' || c == '\r' { 0 } else { col + 1 };
+        }
+    }
+
+    TabInfo {
+        display_text: display,
+        tabs,
+    }
+}
 
 /// Global shared font context used for font discovery and shaping.
 ///
@@ -106,6 +187,10 @@ pub struct TextLayout {
     height_opt: Option<f32>,
     /// Default line height computed from the attrs at [`set_text`](Self::set_text) time.
     default_line_height: f32,
+    /// Tab width in spaces, or `None` to leave `\t` as-is (Parley default: near-zero width).
+    tab_width: Option<NonZeroU8>,
+    /// Tab expansion mapping, present when `tab_width` is set and text contains `\t`.
+    tab_info: Option<TabInfo>,
 }
 
 impl std::fmt::Debug for TextLayout {
@@ -139,6 +224,8 @@ impl TextLayout {
             width_opt: None,
             height_opt: None,
             default_line_height: 16.0,
+            tab_width: None,
+            tab_info: None,
         }
     }
 
@@ -192,15 +279,40 @@ impl TextLayout {
         // Store default line height from attrs
         self.default_line_height = attrs_list.defaults().effective_line_height();
 
+        // Expand tabs to spaces if configured
+        self.tab_info = self
+            .tab_width
+            .filter(|_| text.contains('\t'))
+            .map(|w| expand_tabs(text, w.get() as usize));
+
+        // Text that Parley will shape: expanded if tabs were substituted, original otherwise.
+        let layout_text = self
+            .tab_info
+            .as_ref()
+            .map_or(text, |ti| ti.display_text.as_str());
+
         // Build Parley layout (font context only needed during shaping)
         {
             let mut font_cx = FONT_CONTEXT.lock();
             LAYOUT_CONTEXT.with(|lc| {
                 let mut layout_cx = lc.borrow_mut();
-                let mut builder = layout_cx.ranged_builder(&mut font_cx, text, 1.0, true);
+                let mut builder =
+                    layout_cx.ranged_builder(&mut font_cx, layout_text, 1.0, true);
 
-                // Apply attributes
-                attrs_list.apply_to_builder(&mut builder);
+                // Apply attributes — remap span ranges when tabs are expanded
+                if let Some(ref ti) = self.tab_info {
+                    let defaults = attrs_list.defaults();
+                    defaults.apply_defaults(&mut builder);
+                    for (range, attrs_owned) in attrs_list.spans() {
+                        let display_range =
+                            ti.orig_to_display(range.start)..ti.orig_to_display(range.end);
+                        attrs_owned
+                            .as_attrs()
+                            .apply_range(&mut builder, display_range, &defaults);
+                    }
+                } else {
+                    attrs_list.apply_to_builder(&mut builder);
+                }
 
                 // Apply wrap mode
                 match self.wrap {
@@ -222,7 +334,7 @@ impl TextLayout {
                     }
                 }
 
-                builder.build_into(&mut self.layout, text);
+                builder.build_into(&mut self.layout, layout_text);
             });
         }
 
@@ -261,11 +373,15 @@ impl TextLayout {
         self.wrap = wrap;
     }
 
-    /// Sets the tab width in number of spaces (currently a no-op).
+    /// Sets the tab width in number of spaces.
     ///
-    /// Parley does not yet expose a direct tab-width setting.
-    pub fn set_tab_width(&mut self, _tab_width: usize) {
-        // TODO!
+    /// When nonzero, every `\t` in the text passed to [`set_text`](Self::set_text)
+    /// is expanded to spaces aligned to the next tab stop (a multiple of
+    /// `tab_width` columns). A value of `0` disables expansion.
+    ///
+    /// Must be called **before** [`set_text`](Self::set_text).
+    pub fn set_tab_width(&mut self, tab_width: usize) {
+        self.tab_width = NonZeroU8::new(tab_width as u8);
     }
 
     /// Sets the layout width and height constraints in pixels.
@@ -339,7 +455,11 @@ impl TextLayout {
         }
 
         let pcursor = parley::editing::Cursor::from_point(&self.layout, x, y);
-        let flat_idx = pcursor.index();
+        // Parley operates in display space — map back to original byte indices.
+        let flat_idx = match self.tab_info {
+            Some(ref ti) => ti.display_to_orig(pcursor.index()),
+            None => pcursor.index(),
+        };
         let affinity: Affinity = pcursor.affinity().into();
 
         // Convert flat byte index to (line, index_within_line)
@@ -378,7 +498,13 @@ impl TextLayout {
             };
         }
 
-        let pcursor = parley::editing::Cursor::from_byte_index(&self.layout, idx, affinity.into());
+        // Map original byte index to display space for Parley.
+        let display_idx = match self.tab_info {
+            Some(ref ti) => ti.orig_to_display(idx),
+            None => idx,
+        };
+        let pcursor =
+            parley::editing::Cursor::from_byte_index(&self.layout, display_idx, affinity.into());
         let bbox = pcursor.geometry(&self.layout, 0.0);
 
         // Find which visual line this cursor is on using the geometry's y
@@ -452,14 +578,19 @@ impl TextLayout {
         end_byte: usize,
         mut f: impl FnMut(f64, f64, f64, f64),
     ) {
+        // Map original byte indices to display space for Parley.
+        let (display_start, display_end) = match self.tab_info {
+            Some(ref ti) => (ti.orig_to_display(start_byte), ti.orig_to_display(end_byte)),
+            None => (start_byte, end_byte),
+        };
         let anchor = parley::editing::Cursor::from_byte_index(
             &self.layout,
-            start_byte,
+            display_start,
             parley::layout::Affinity::Downstream,
         );
         let focus = parley::editing::Cursor::from_byte_index(
             &self.layout,
-            end_byte,
+            display_end,
             parley::layout::Affinity::Upstream,
         );
         let selection = parley::editing::Selection::new(anchor, focus);
@@ -476,8 +607,17 @@ impl TextLayout {
 
     /// Returns the text byte range covered by the `nth` visual line,
     /// or `None` if `nth` is out of bounds.
+    ///
+    /// When tab expansion is active the returned range is in **original**
+    /// byte space (with `\t` characters), not the display-expanded space.
     pub fn visual_line_text_range(&self, nth: usize) -> Option<Range<usize>> {
-        self.layout.get(nth).map(|l| l.text_range())
+        self.layout.get(nth).map(|l| {
+            let r = l.text_range();
+            match self.tab_info {
+                Some(ref ti) => ti.display_to_orig(r.start)..ti.display_to_orig(r.end),
+                None => r,
+            }
+        })
     }
 
     /// Returns `true` if the `nth` visual line has no glyph items (or does not exist).
@@ -965,5 +1105,373 @@ mod tests {
     fn debug_does_not_panic() {
         let layout = make("hello");
         let _s = format!("{layout:?}");
+    }
+
+    // ========================== Tab helpers ==========================
+
+    fn make_tab(text: &str, tab_width: usize) -> TextLayout {
+        ensure_font();
+        let mut layout = TextLayout::new();
+        layout.set_tab_width(tab_width);
+        layout.set_text(text, default_attrs(), None);
+        layout
+    }
+
+    fn make_tab_wrapped(text: &str, tab_width: usize, width: f32) -> TextLayout {
+        ensure_font();
+        let mut layout = TextLayout::new();
+        layout.set_tab_width(tab_width);
+        layout.set_text(text, default_attrs(), None);
+        layout.set_size(width, f32::MAX);
+        layout
+    }
+
+    // ========================== expand_tabs unit tests ==========================
+
+    #[test]
+    fn expand_tabs_no_tabs() {
+        let info = expand_tabs("hello", 4);
+        assert_eq!(info.display_text, "hello");
+        assert!(info.tabs.is_empty());
+    }
+
+    #[test]
+    fn expand_tabs_single_tab() {
+        // "a\tb" with tab_width=4: 'a' at col 0, tab at col 1 → 3 spaces → "a   b".
+        let info = expand_tabs("a\tb", 4);
+        assert_eq!(info.display_text, "a   b");
+        assert_eq!(info.tabs, vec![(1, 3)]);
+    }
+
+    #[test]
+    fn expand_tabs_multiple_tabs() {
+        // "\t\t" with tab_width=4: first tab at col 0 → 4 spaces, second tab at col 4 → 4 spaces.
+        let info = expand_tabs("\t\t", 4);
+        assert_eq!(info.display_text, "        ");
+        assert_eq!(info.tabs, vec![(0, 4), (1, 4)]);
+    }
+
+    #[test]
+    fn expand_tabs_tab_at_boundary() {
+        // "abcd\te" with tab_width=4: tab at col 4 → 4 spaces (next stop at 8).
+        let info = expand_tabs("abcd\te", 4);
+        assert_eq!(info.display_text, "abcd    e");
+        assert_eq!(info.tabs, vec![(4, 4)]);
+    }
+
+    #[test]
+    fn expand_tabs_after_newline() {
+        // "ab\t\ncd\te": column resets after \n.
+        // Line 1: 'a'=0, 'b'=1, tab at col 2 → 2 spaces, '\n' resets.
+        // Line 2: 'c'=0, 'd'=1, tab at col 2 → 2 spaces.
+        let info = expand_tabs("ab\t\ncd\te", 4);
+        assert_eq!(info.display_text, "ab  \ncd  e");
+        assert_eq!(info.tabs, vec![(2, 2), (6, 2)]);
+    }
+
+    #[test]
+    fn expand_tabs_width_1() {
+        // tab_width=1: every tab becomes exactly 1 space (always at a stop).
+        let info = expand_tabs("a\tb\tc", 1);
+        assert_eq!(info.display_text, "a b c");
+        assert_eq!(info.tabs, vec![(1, 1), (3, 1)]);
+    }
+
+    #[test]
+    fn expand_tabs_width_2() {
+        // "a\tb" with tab_width=2: 'a' at col 0, tab at col 1 → 1 space.
+        let info = expand_tabs("a\tb", 2);
+        assert_eq!(info.display_text, "a b");
+        assert_eq!(info.tabs, vec![(1, 1)]);
+    }
+
+    // ========================== Offset mapping unit tests ==========================
+
+    #[test]
+    fn orig_to_display_no_tabs() {
+        let info = expand_tabs("hello", 4);
+        assert_eq!(info.orig_to_display(0), 0);
+        assert_eq!(info.orig_to_display(3), 3);
+        assert_eq!(info.orig_to_display(5), 5);
+    }
+
+    #[test]
+    fn orig_to_display_with_tabs() {
+        // "a\tb\tc" tab_width=4 → "a   b   c"
+        // tabs: [(1, 3), (3, 3)]
+        let info = expand_tabs("a\tb\tc", 4);
+        assert_eq!(info.orig_to_display(0), 0); // 'a'
+        assert_eq!(info.orig_to_display(1), 1); // '\t' → start of expansion
+        assert_eq!(info.orig_to_display(2), 4); // 'b' (shift = 3-1 = 2)
+        assert_eq!(info.orig_to_display(3), 5); // second '\t'
+        assert_eq!(info.orig_to_display(4), 8); // 'c' (shift = 2+2 = 4)
+    }
+
+    #[test]
+    fn display_to_orig_no_tabs() {
+        let info = expand_tabs("hello", 4);
+        assert_eq!(info.display_to_orig(0), 0);
+        assert_eq!(info.display_to_orig(3), 3);
+    }
+
+    #[test]
+    fn display_to_orig_with_tabs() {
+        // "a\tb\tc" tab_width=4 → "a   b   c"
+        let info = expand_tabs("a\tb\tc", 4);
+        assert_eq!(info.display_to_orig(0), 0); // 'a'
+        assert_eq!(info.display_to_orig(1), 1); // first space of tab 1
+        assert_eq!(info.display_to_orig(2), 1); // inside tab expansion
+        assert_eq!(info.display_to_orig(3), 1); // inside tab expansion
+        assert_eq!(info.display_to_orig(4), 2); // 'b'
+        assert_eq!(info.display_to_orig(5), 3); // first space of tab 2
+        assert_eq!(info.display_to_orig(6), 3); // inside tab expansion
+        assert_eq!(info.display_to_orig(7), 3); // inside tab expansion
+        assert_eq!(info.display_to_orig(8), 4); // 'c'
+    }
+
+    #[test]
+    fn display_to_orig_inside_expansion() {
+        // Positions inside a tab expansion map to the tab's original byte.
+        let info = expand_tabs("\thello", 4);
+        // Tab at col 0 → 4 spaces. "    hello"
+        assert_eq!(info.display_to_orig(0), 0); // first space → tab at byte 0
+        assert_eq!(info.display_to_orig(1), 0);
+        assert_eq!(info.display_to_orig(2), 0);
+        assert_eq!(info.display_to_orig(3), 0);
+        assert_eq!(info.display_to_orig(4), 1); // 'h'
+    }
+
+    #[test]
+    fn roundtrip_orig_display_orig() {
+        let info = expand_tabs("a\tb\tc", 4);
+        // For non-tab original positions, roundtrip should be identity.
+        for orig_pos in [0, 2, 4] {
+            let display_pos = info.orig_to_display(orig_pos);
+            let back = info.display_to_orig(display_pos);
+            assert_eq!(back, orig_pos, "roundtrip failed for orig_pos={orig_pos}");
+        }
+    }
+
+    // ========================== TextLayout tab integration tests ==========================
+
+    #[test]
+    fn tab_text_has_positive_width() {
+        let with_tab = make_tab("a\tb", 4);
+        let without = make("ab");
+        assert!(
+            with_tab.size().width > without.size().width,
+            "tab layout ({}) should be wider than plain ({})",
+            with_tab.size().width,
+            without.size().width
+        );
+    }
+
+    #[test]
+    fn tab_text_returns_original() {
+        let layout = make_tab("a\tb", 4);
+        assert_eq!(layout.text(), "a\tb", "text() should return original with \\t");
+    }
+
+    #[test]
+    fn hit_position_after_tab() {
+        let layout = make_tab("a\tb", 4);
+        // Byte 2 in original = 'b'. It should be well to the right.
+        let pos = layout.hit_position(2);
+        let pos_a = layout.hit_position(0);
+        assert!(
+            pos.point.x > pos_a.point.x + 10.0,
+            "b should be far right of a: b.x={}, a.x={}",
+            pos.point.x,
+            pos_a.point.x
+        );
+    }
+
+    #[test]
+    fn hit_position_at_tab() {
+        let layout = make_tab("a\tb", 4);
+        // Byte 1 = the tab character. Position should be right after 'a'.
+        let pos_tab = layout.hit_position(1);
+        let pos_a = layout.hit_position(0);
+        assert!(
+            pos_tab.point.x > pos_a.point.x,
+            "tab position should be right of a"
+        );
+    }
+
+    #[test]
+    fn hit_roundtrip_with_tabs() {
+        let layout = make_tab("a\tb", 4);
+        // Hit at the position of 'b' (byte 2 in original) and check roundtrip.
+        let b_pos = layout.hit_position(2);
+        let cursor = layout
+            .hit(b_pos.point.x as f32 + 1.0, b_pos.point.y as f32)
+            .unwrap();
+        let byte_idx = layout.cursor_to_byte_index(&cursor);
+        assert_eq!(byte_idx, 2, "roundtrip should land on 'b' at byte 2");
+    }
+
+    #[test]
+    fn hit_far_right_tabs() {
+        let layout = make_tab("a\tb", 4);
+        let cursor = layout.hit(9999.0, 0.0).unwrap();
+        // Should be at or near the end (byte 3 in original "a\tb").
+        assert!(
+            cursor.index >= 2,
+            "far right should be near end, got {}",
+            cursor.index
+        );
+    }
+
+    #[test]
+    fn selection_geometry_spanning_tab() {
+        let with_tab = make_tab("a\tb", 4);
+        let without = make("ab");
+
+        let mut tab_rects = Vec::new();
+        with_tab.selection_geometry_with(0, 3, |x0, y0, x1, y1| {
+            tab_rects.push((x0, y0, x1, y1));
+        });
+
+        let mut plain_rects = Vec::new();
+        without.selection_geometry_with(0, 2, |x0, y0, x1, y1| {
+            plain_rects.push((x0, y0, x1, y1));
+        });
+
+        assert!(!tab_rects.is_empty());
+        assert!(!plain_rects.is_empty());
+        let tab_width = tab_rects[0].2 - tab_rects[0].0;
+        let plain_width = plain_rects[0].2 - plain_rects[0].0;
+        assert!(
+            tab_width > plain_width,
+            "tab selection ({tab_width}) should be wider than plain ({plain_width})"
+        );
+    }
+
+    #[test]
+    fn visual_line_text_range_with_tabs() {
+        let layout = make_tab("\ta", 4);
+        let range = layout.visual_line_text_range(0).unwrap();
+        // Should be in original space: 0..2 (tab + 'a'), not 0..5 (spaces + 'a').
+        assert_eq!(range.start, 0);
+        assert!(
+            range.end <= 2,
+            "range should be in original space, got {range:?}"
+        );
+    }
+
+    #[test]
+    fn lines_range_unaffected_by_tabs() {
+        let layout = make_tab("a\tb\nc\td", 4);
+        assert_eq!(layout.lines_range(), &[0..3, 4..7]);
+    }
+
+    #[test]
+    fn attrs_span_remapped_across_tab() {
+        ensure_font();
+        let family = vec![FamilyOwned::Name("DejaVu Serif".into())];
+        let mut attrs_list =
+            AttrsList::new(Attrs::new().font_size(16.0).family(&family));
+        // Span covering bytes 2..4 in "a\tbcd" = "bc".
+        attrs_list.add_span(
+            2..4,
+            Attrs::new()
+                .font_size(32.0)
+                .family(&family),
+        );
+
+        let mut layout = TextLayout::new();
+        layout.set_tab_width(4);
+        layout.set_text("a\tbcd", attrs_list, None);
+
+        // If attrs were not remapped, the span would apply to the wrong bytes
+        // in display space. The layout should not panic and should have positive size.
+        assert!(layout.size().width > 0.0);
+        assert!(layout.size().height > 0.0);
+    }
+
+    #[test]
+    fn no_tab_expansion_when_width_zero() {
+        let layout = make_tab("a\tb", 0);
+        // tab_width=0 → no expansion. text() still original.
+        assert_eq!(layout.text(), "a\tb");
+        // Layout should still work (Parley gives tabs near-zero width).
+        assert!(layout.size().width >= 0.0);
+    }
+
+    #[test]
+    fn wrapped_tabs() {
+        // Wide tab content should wrap when constrained.
+        let layout = make_tab_wrapped("\t\t\t\thello world", 4, 100.0);
+        assert!(
+            layout.visual_line_count() >= 1,
+            "wrapped tab content should produce visual lines"
+        );
+    }
+
+    // ========================== Tab edge cases ==========================
+
+    #[test]
+    fn empty_text_with_tab_width() {
+        let layout = make_tab("", 4);
+        assert_eq!(layout.text(), "");
+        assert!(layout.size().width >= 0.0);
+    }
+
+    #[test]
+    fn only_tabs() {
+        let layout = make_tab("\t\t\t", 4);
+        assert_eq!(layout.text(), "\t\t\t");
+        assert!(layout.size().width > 0.0, "three tabs should have width");
+        // hit_position at each original byte should not panic.
+        for i in 0..=3 {
+            let _ = layout.hit_position(i);
+        }
+    }
+
+    #[test]
+    fn tab_at_end() {
+        let layout = make_tab("abc\t", 4);
+        assert_eq!(layout.text(), "abc\t");
+        // Cursor at end of text (byte 4) should work.
+        let pos = layout.hit_position(4);
+        assert!(pos.point.x > 0.0);
+    }
+
+    #[test]
+    fn tab_with_multibyte_chars() {
+        // UTF-8 multi-byte chars: 'é' = 2 bytes, 'à' = 2 bytes.
+        let layout = make_tab("é\tà", 4);
+        assert_eq!(layout.text(), "é\tà");
+        // 'é' takes 1 column, tab at col 1 → 3 spaces, 'à' at col 4.
+        assert!(layout.size().width > 0.0);
+        // 'à' starts at original byte 4 (2 bytes for é + 1 for \t + 0 offset = 3, wait...)
+        // Actually: 'é' = bytes 0..2, '\t' = byte 2, 'à' = bytes 3..5.
+        let pos_a_grave = layout.hit_position(3);
+        let pos_e_acute = layout.hit_position(0);
+        assert!(
+            pos_a_grave.point.x > pos_e_acute.point.x,
+            "à should be right of é"
+        );
+    }
+
+    #[test]
+    fn set_size_reflow_with_tabs() {
+        ensure_font();
+        let mut layout = TextLayout::new();
+        layout.set_tab_width(4);
+        layout.set_text(
+            "\t\thello world this is a long line with tabs",
+            default_attrs(),
+            None,
+        );
+        layout.set_size(1000.0, f32::MAX);
+        let wide = layout.visual_line_count();
+
+        layout.set_size(100.0, f32::MAX);
+        let narrow = layout.visual_line_count();
+        assert!(
+            narrow >= wide,
+            "narrower width should produce >= lines: wide={wide}, narrow={narrow}"
+        );
     }
 }
