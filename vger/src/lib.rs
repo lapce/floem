@@ -1,24 +1,24 @@
 use std::cell::RefCell;
 use std::mem;
-use std::sync::mpsc::sync_channel;
 use std::sync::Arc;
+use std::sync::mpsc::sync_channel;
 
 use anyhow::Result;
 use floem_renderer::gpu_resources::GpuResources;
 use floem_renderer::text::TextLayout;
-use floem_renderer::{tiny_skia, Img, Renderer};
+use floem_renderer::{Img, Renderer, tiny_skia};
 use floem_vger_rs::{GlyphImage, Image, PaintIndex, PixelFormat, Vger};
 use image::EncodableLayout;
 use parley::layout::PositionedLayoutItem;
 use peniko::kurbo::{Size, Stroke};
-use peniko::{
-    kurbo::{Affine, Point, Rect, Shape},
-    BrushRef, Color, GradientKind,
-};
 use peniko::{Blob, ImageData, LinearGradientPosition};
+use peniko::{
+    BrushRef, Color, GradientKind,
+    kurbo::{Affine, Point, Rect, Shape},
+};
+use swash::FontRef;
 use swash::scale::{Render, ScaleContext, Source, StrikeWith};
 use swash::zeno::Format;
-use swash::FontRef;
 use wgpu::{
     Adapter, Device, DeviceType, Queue, StoreOp, Surface, SurfaceConfiguration, TextureFormat,
 };
@@ -548,10 +548,10 @@ impl Renderer for VgerRenderer {
                     let glyph_x = pos.x as f32 + glyph.x * scale as f32;
                     let glyph_y = pos.y as f32 + glyph.y * scale as f32;
 
-                    if let Some(rect) = clip {
-                        if (glyph_x as f64) > rect.x1 {
-                            break;
-                        }
+                    if let Some(rect) = clip
+                        && (glyph_x as f64) > rect.x1
+                    {
+                        break;
                     }
 
                     let scaled_font_size = (font_size * scale as f32).round() as u32;
