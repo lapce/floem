@@ -9,7 +9,7 @@ use crate::{
     element_id::ElementId,
     event::{Event, RouteKind, listener},
     platform::menu::Menu,
-    style::recalc::StyleReasonSet,
+    style::recalc::StyleReason,
     view::{AnyView, View, ViewId},
     window::state::WindowState,
 };
@@ -77,8 +77,7 @@ pub enum UpdateMessage {
         id: ViewId,
         state: Box<dyn Any>,
     },
-    RequestStyle(ElementId, StyleReasonSet),
-    RequestViewStyle(ViewId),
+    RequestStyle(ElementId, StyleReason),
     ToggleWindowMaximized,
     SetWindowMaximized(bool),
     MinimizeWindow,

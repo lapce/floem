@@ -1603,22 +1603,53 @@ impl RouteCx<'_, '_> {
     fn handle_pointer_state_updates(&mut self) {
         static START_TIME: LazyLock<Instant> = LazyLock::new(Instant::now);
 
-        let old_key_state = self.gcx.window_state.key_trigger_state;
-        let new = self.event.is_keyboard_trigger_start();
-        if old_key_state != new {
-            if let Some(element_id) = self
-                .gcx
-                .window_state
-                .focus_state
-                .current_path()
-                .last()
-                .copied()
-            {
-                self.gcx
-                    .window_state
-                    .mark_style_dirty_selector(element_id, StyleSelector::Active);
+        // Handle keyboard "active" trigger behavior for focused elements.
+        // This implements a *toggle-on-repeat* model:
+        //
+        //  • First key press  → toggles active state
+        //  • Each auto-repeat → toggles again
+        //  • Key release      → always clears active state
+        //
+        // This is used to drive the :active style selector for keyboard interaction.
+        if let Event::Key(key) = &self.event {
+            // Only specific keys are considered "activation" keys.
+            // These match typical UI semantics (button activation via keyboard).
+            if matches!(
+                key.code,
+                KeyCode::NumpadEnter | KeyCode::Enter | KeyCode::Space
+            ) {
+                match key.state {
+                    // Initial key press (non-repeat):
+                    // Toggle the active state.
+                    KeyState::Down if !key.repeat => {
+                        self.gcx.window_state.key_trigger_state ^= true;
+                    }
+
+                    // Auto-repeat while key is held:
+                    // Continue toggling so styles can animate/pulse.
+                    KeyState::Down if key.repeat => {
+                        self.gcx.window_state.key_trigger_state ^= true;
+                    }
+
+                    // Key release:
+                    // Always clear the active state to avoid stuck :active styles.
+                    KeyState::Up => {
+                        self.gcx.window_state.key_trigger_state = false;
+                    }
+
+                    _ => {}
+                }
+
+                // Mark the entire focused path as needing :active selector recomputation.
+                // This ensures:
+                //  • The focused element updates immediately
+                //  • Any ancestor selectors depending on :active also refresh
+                for element_id in self.gcx.window_state.focus_state.clone().current_path() {
+                    self.gcx
+                        .window_state
+                        .mark_style_dirty_selector(*element_id, StyleSelector::Active);
+                }
             }
-            self.gcx.window_state.key_trigger_state = new;
         }
 
         let Event::Pointer(pe) = &self.event else {
@@ -1765,9 +1796,9 @@ impl RouteCx<'_, '_> {
 
     fn push_interaction_events(&mut self, target: Option<ElementId>, count: u8, secondary: bool) {
         if let Some(id) = target {
-            // self.gcx
-            //     .window_state
-            //     .mark_style_dirty_selector(*target, StyleSelector::);
+            self.gcx
+                .window_state
+                .mark_style_dirty_selector(id, StyleSelector::Active);
             let route_kind = RouteKind::Directed {
                 target: id,
                 phases: Phases::STANDARD,

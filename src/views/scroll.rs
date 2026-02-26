@@ -105,7 +105,7 @@ impl ScrollHandle {
     fn style(&mut self, cx: &mut StyleCx) {
         let resolved =
             cx.resolve_nested_maps(Style::new(), &[Handle::class_ref()], self.element_id);
-        if self.style.read_style(cx, &resolved) {
+        if self.style.read_style_for(cx, &resolved, self.element_id) {
             self.element_id.owning_id().request_paint();
         }
     }
@@ -323,7 +323,7 @@ impl ScrollTrack {
 
     fn style(&mut self, cx: &mut StyleCx) {
         let resolved = cx.resolve_nested_maps(Style::new(), &[Track::class_ref()], self.element_id);
-        if self.style.read_style(cx, &resolved) {
+        if self.style.read_style_for(cx, &resolved, self.element_id) {
             self.element_id.owning_id().request_paint();
         }
     }
@@ -913,7 +913,6 @@ impl View for Scroll {
         }
 
         for (element_id, reason) in cx.targeted_elements.clone() {
-            dbg!(element_id, reason);
             if element_id == self.v_handle.element_id {
                 self.v_handle.style(cx);
             } else if element_id == self.h_handle.element_id {

@@ -4,7 +4,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use crate::event::Phase;
 use crate::platform::menu::Menu;
-use crate::style::recalc::StyleReasonSet;
+use crate::style::recalc::StyleReason;
 use crate::{ElementId, custom_event};
 use crate::{event::EventPropagation, view::ViewId};
 
@@ -266,7 +266,7 @@ impl VisualChanged {
 pub(crate) type CleanupListeners = Vec<Rc<dyn Fn()>>;
 
 pub(crate) enum FrameUpdate {
-    Style(ElementId, StyleReasonSet),
+    Style(ElementId, StyleReason),
     Layout,
     BoxTreeCommit,
     Paint(ViewId),

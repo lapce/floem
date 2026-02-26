@@ -10,7 +10,10 @@ use crate::{
     },
     prelude::*,
     prop, prop_extractor,
-    style::{CursorStyle, CustomStylable, CustomStyle, FlexDirectionProp, Style, StyleClass},
+    style::{
+        CursorStyle, CustomStylable, CustomStyle, FlexDirectionProp, Style, StyleClass,
+        recalc::StyleReason,
+    },
     style_class,
     unit::{Pct, Px},
 };
@@ -139,7 +142,7 @@ impl View for ResizeChild {
 
     fn update(&mut self, _cx: &mut UpdateCx, state: Box<dyn Any>) {
         if let Ok(msg) = state.downcast::<ResizeChildMessage>() {
-            self.id.request_view_style();
+            self.id.request_style(StyleReason::view_style());
             self.id.request_layout();
             match *msg {
                 ResizeChildMessage::SetBasisPercent(percent) => {
@@ -315,7 +318,7 @@ impl Handle {
             &[ResizableHandleClass::class_ref()],
             self.element_id,
         );
-        if self.handle_style.read_style(cx, &resolved) {
+        if self.handle_style.read_style_for(cx, &resolved, self.element_id) {
             let cursor = match axis {
                 Axis::Horizontal => CursorStyle::ColResize,
                 Axis::Vertical => CursorStyle::RowResize,

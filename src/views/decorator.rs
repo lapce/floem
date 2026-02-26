@@ -142,7 +142,7 @@ pub trait Decorators: IntoView {
                 let state = view_id.state();
                 state.borrow_mut().dragging_style = Some(style);
             }
-            view_id.request_style(crate::style::recalc::StyleReasonSet::full_recalc());
+            view_id.request_style(crate::style::recalc::StyleReason::full_recalc());
         });
         intermediate
     }

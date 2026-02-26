@@ -20,7 +20,7 @@ use crate::{
     inspector::CaptureState,
     style::{
         StyleClassRef,
-        recalc::{StyleReasonFlags, StyleReasonSet},
+        recalc::{StyleReason, StyleReasonFlags},
         resolve_nested_maps,
     },
     view::{ViewId, stacking::invalidate_stacking_cache},
@@ -117,7 +117,7 @@ pub struct StyleCx<'a> {
     /// The reason this view was marked dirty. Available to `style_pass`
     /// implementations so views can make informed decisions about how much
     /// work to do.
-    pub(crate) reason: StyleReasonSet,
+    pub(crate) reason: StyleReason,
 
     /// Targeted sub-element invalidations. Populated when one or more specific
     /// `ElementId`s owned by this view need updating without a full view restyle.
@@ -126,11 +126,11 @@ pub struct StyleCx<'a> {
     /// `style_pass` implementations should walk this list and update only the
     /// affected elements when non-empty, skipping the full cascade for untouched
     /// sub-elements.
-    pub(crate) targeted_elements: SmallVec<[(ElementId, StyleReasonSet); 2]>,
+    pub(crate) targeted_elements: SmallVec<[(ElementId, StyleReason); 2]>,
 }
 
 impl<'a> StyleCx<'a> {
-    pub fn new(window_state: &'a mut WindowState, view_id: ViewId) -> Self {
+    pub fn new(window_state: &'a mut WindowState, view_id: ViewId, reason: StyleReason) -> Self {
         // Get the style parent: either custom style_cx_parent or DOM parent
         let style_parent = view_id
             .state()
@@ -157,10 +157,6 @@ impl<'a> StyleCx<'a> {
         let view = view_id.view();
         let view_state = view_id.state();
 
-        let reason = window_state
-            .take_style_reason(view_id)
-            .expect("has reason if dirty");
-
         let reason_for_children = reason.for_children();
         if !reason_for_children.is_empty() {
             for child in view_id.children() {
@@ -180,11 +176,9 @@ impl<'a> StyleCx<'a> {
         // ─────────────────────────────────────────────────────────────────────
 
         {
-            let mut vs = view_state.borrow_mut();
-
-            if window_state.view_style_dirty.contains(&view_id) {
-                window_state.view_style_dirty.remove(&view_id);
+            if reason.flags.contains(StyleReasonFlags::VIEW_STYLE) {
                 if let Some(view_style) = view.borrow().view_style() {
+                    let mut vs = view_state.borrow_mut();
                     let offset = vs.view_style_offset;
                     vs.style.set(offset, view_style);
                 }
@@ -194,7 +188,7 @@ impl<'a> StyleCx<'a> {
         // ─────────────────────────────────────────────────────────────────────
         // Phase 2: Build interaction state for selector matching
         // ─────────────────────────────────────────────────────────────────────
-        let view_interact_state = Self::get_interact_state_inner(window_state, view_id);
+        let view_interact_state = Self::get_interact_state(window_state, view_id);
 
         Self {
             window_state,
@@ -239,7 +233,7 @@ impl<'a> StyleCx<'a> {
         if let Some(selectors) = self.reason.selectors {
             let intersection = active_selectors.map(|s| s.intersection(selectors));
 
-            if intersection.is_none_or(|i| i.is_empty()) {
+            if intersection.is_some_and(|i| i.is_empty()) {
                 self.reason.clear_flag(StyleReasonFlags::SELECTOR);
             }
         }
@@ -271,7 +265,7 @@ impl<'a> StyleCx<'a> {
                 .apply_animations(&mut self.view_interact_state);
             if has_active_animation {
                 self.window_state
-                    .schedule_style(view_id, StyleReasonSet::animation());
+                    .schedule_style(view_id, StyleReason::animation());
             }
         }
 
@@ -311,12 +305,12 @@ impl<'a> StyleCx<'a> {
                 let element_id = child.get_element_id();
                 if inherited_changed {
                     self.window_state
-                        .mark_style_dirty_with(element_id, StyleReasonSet::inherited());
+                        .mark_style_dirty_with(element_id, StyleReason::inherited());
                 }
                 if class_context_changed {
                     self.window_state.mark_style_dirty_with(
                         element_id,
-                        StyleReasonSet::class_cx(changed_classes.clone()),
+                        StyleReason::class_cx(changed_classes.clone()),
                     );
                 }
             }
@@ -413,14 +407,14 @@ impl<'a> StyleCx<'a> {
 
             if transitioning {
                 self.window_state
-                    .schedule_style(view_id, StyleReasonSet::transition());
+                    .schedule_style(view_id, StyleReason::transition());
             }
         }
 
         if old_interact_state.hidden != self.view_interact_state.is_hidden {
             for child in view_id.children() {
                 self.window_state
-                    .mark_style_dirty_with(child.get_element_id(), StyleReasonSet::visibility());
+                    .mark_style_dirty_with(child.get_element_id(), StyleReason::visibility());
             }
             view_id.request_layout();
         }
@@ -566,7 +560,7 @@ impl<'a> StyleCx<'a> {
         let base_style_disabled = base_style.builtin().set_disabled();
         let base_style_selected = base_style.builtin().set_selected();
         let base_style_hidden = base_style.builtin().display() == taffy::Display::None;
-        let mut view_interact_state = self.get_interact_state(element_id);
+        let mut view_interact_state = Self::get_interact_state(&self.window_state, element_id);
         view_interact_state.is_disabled |= base_style_disabled;
         view_interact_state.is_selected |= base_style_selected;
         view_interact_state.is_hidden |= base_style_hidden;
@@ -603,6 +597,10 @@ impl<'a> StyleCx<'a> {
         self.now
     }
 
+    pub fn current_view(&self) -> ViewId {
+        self.current_view
+    }
+
     pub fn get_prop<P: StyleProp>(&self, _prop: P) -> Option<P::Type> {
         self.direct
             .get_prop::<P>()
@@ -622,40 +620,63 @@ impl<'a> StyleCx<'a> {
     }
 
     pub fn request_transition(&mut self) {
-        let id = self.current_view;
+        self.request_transition_for(self.current_view.get_element_id());
+    }
+
+    /// Request a transition-driven style update for a specific style target.
+    ///
+    /// This allows transition requests to target sub-elements instead of always
+    /// assuming the owning view element.
+    pub fn request_transition_for(&mut self, target: impl Into<ElementId>) {
         if !self.view_interact_state.is_hidden {
             self.window_state
-                .schedule_style(id, StyleReasonSet::transition());
+                .schedule_style_with_target(target.into(), StyleReason::transition());
         }
     }
 
-    pub fn get_interact_state(&self, id: impl Into<crate::ElementId>) -> InteractionState {
-        let id: crate::ElementId = id.into();
-        Self::get_interact_state_inner(self.window_state, id)
-    }
-
-    fn get_interact_state_inner(
+    pub fn get_interact_state(
         window_state: &WindowState,
         id: impl Into<crate::ElementId>,
     ) -> InteractionState {
         let id: crate::ElementId = id.into();
         let view_id = id.owning_id();
+        let style_parent = view_id
+            .state()
+            .borrow()
+            .style_cx_parent
+            .or_else(|| view_id.parent());
         let parent_override = {
             let view_state = view_id.state();
             let view_state = view_state.borrow();
             view_state.parent_set_style_interaction
         };
-        let parent_cx = view_id
-            .parent()
+        let parent_cx = style_parent
             .map(|p| p.state().borrow().style_interaction_cx)
             .unwrap_or_default();
         // TODO: use box tree child order instead
-        let (child_index, sibling_count) = if let Some(parent) = view_id.parent() {
+        let (child_index, sibling_count) = if let Some(parent) = style_parent {
+            // When using a custom style parent, the styled view may not be a direct
+            // child of that parent (e.g. list item wrappers). Use the nearest
+            // ancestor that is directly under the style parent for structural index.
+            let indexed_child = parent.with_children(|siblings| {
+                if siblings.contains(&view_id) {
+                    Some(view_id)
+                } else {
+                    let mut cursor = view_id.parent();
+                    while let Some(ancestor) = cursor {
+                        if ancestor.parent() == Some(parent) {
+                            return Some(ancestor);
+                        }
+                        cursor = ancestor.parent();
+                    }
+                    None
+                }
+            });
+
             parent.with_children(|siblings| {
                 (
-                    siblings
-                        .iter()
-                        .position(|child| *child == view_id)
+                    indexed_child
+                        .and_then(|id| siblings.iter().position(|child| *child == id))
                         .map(|i| i + 1),
                     siblings.len(),
                 )
@@ -707,7 +728,7 @@ fn animations_on_remove(id: ViewId, scope: Scope) -> u16 {
     }
     drop(state);
     if request_style {
-        id.request_style(StyleReasonSet::animation());
+        id.request_style(StyleReason::animation());
     }
 
     id.children()
@@ -731,7 +752,7 @@ fn stop_reset_remove_animations(id: ViewId) {
     }
     drop(state);
     if request_style {
-        id.request_style(StyleReasonSet::animation());
+        id.request_style(StyleReason::animation());
     }
 
     id.children()
@@ -753,7 +774,7 @@ fn animations_on_create(id: ViewId) {
     }
     drop(state);
     if request_style {
-        id.request_style(StyleReasonSet::animation());
+        id.request_style(StyleReason::animation());
     }
 
     id.children().into_iter().for_each(animations_on_create);

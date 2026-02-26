@@ -359,8 +359,7 @@ impl HeadlessHarness {
     pub fn get_interaction_state(&mut self, id: impl Into<ElementId>) -> InteractionState {
         let id: ElementId = id.into();
         let view_id = id.owning_id();
-        crate::style::StyleCx::new(&mut self.window_handle.window_state, view_id)
-            .get_interact_state(view_id)
+        crate::style::StyleCx::get_interact_state(&self.window_handle.window_state, view_id)
     }
 
     /// Check if a view has styles defined for the given selector.
@@ -432,11 +431,6 @@ impl HeadlessHarness {
             .window_state
             .style_dirty
             .contains_key(&id)
-            || self
-                .window_handle
-                .window_state
-                .view_style_dirty
-                .contains(&id)
     }
 
     /// Check if there are scheduled updates for the next frame.

@@ -1714,7 +1714,7 @@ impl Event {
         match self {
             Event::Key(key) => {
                 matches!(key.code, Code::NumpadEnter | Code::Enter | Code::Space)
-                    && key.state == KeyState::Down
+                    && (key.state == KeyState::Down || key.repeat)
             }
             _ => false,
         }

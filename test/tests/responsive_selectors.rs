@@ -56,3 +56,33 @@ fn test_window_width_range_selector() {
         matches!(style_sm.get(Background), Some(Brush::Solid(c)) if c == palette::css::ORANGE)
     );
 }
+
+#[test]
+fn test_max_window_width_symmetric_grow_shrink() {
+    let root = TestRoot::new();
+    let view = Empty::new().style(|s| {
+        s.size(100.0, 100.0)
+            .background(palette::css::GRAY)
+            .max_window_width(700.0, |s| s.background(palette::css::RED))
+    });
+    let id = view.view_id();
+
+    let mut harness = HeadlessHarness::new_with_size(root, view, 650.0, 100.0);
+
+    let style_small = harness.get_computed_style(id);
+    assert!(
+        matches!(style_small.get(Background), Some(Brush::Solid(c)) if c == palette::css::RED)
+    );
+
+    harness.set_size(750.0, 100.0);
+    let style_large = harness.get_computed_style(id);
+    assert!(
+        matches!(style_large.get(Background), Some(Brush::Solid(c)) if c == palette::css::GRAY)
+    );
+
+    harness.set_size(650.0, 100.0);
+    let style_small_again = harness.get_computed_style(id);
+    assert!(
+        matches!(style_small_again.get(Background), Some(Brush::Solid(c)) if c == palette::css::RED)
+    );
+}

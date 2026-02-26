@@ -17,8 +17,7 @@ fn app_view() -> impl IntoView {
             Label::derived(|| "Resize the window to see the magic").style(|s| {
                 s.border(1.0)
                     .border_radius(10.0)
-                    .padding(10.0)
-                    .margin_horiz(10.0)
+                    .padding(10)
                     .responsive(ScreenSize::XS, |s| s.background(palette::css::CYAN))
                     .responsive(ScreenSize::SM, |s| s.background(palette::css::PURPLE))
                     .responsive(ScreenSize::MD, |s| s.background(palette::css::ORANGE))
@@ -45,10 +44,9 @@ fn app_view() -> impl IntoView {
             )
             .style(move |s| {
                 s.background(palette::css::DIM_GRAY)
-                    .padding(10.0)
                     .color(palette::css::WHITE_SMOKE)
-                    .margin_top(30.)
                     .width_pct(70.0)
+                    .padding(10)
                     .font_size(20.0)
                     .max_width(800.)
                     .text_overflow(TextOverflow::Ellipsis)
@@ -66,15 +64,18 @@ fn app_view() -> impl IntoView {
                     })
                     .font_bold()
                 }),
-            )),
+            ))
+            .style(|s| s.padding(10)),
         )
     })
     .style(|s| {
         s.size(100.pct(), 100.pct())
-            .flex_col()
+            .flex_row()
+            .gap(10)
             .justify_center()
             .items_center()
-            .max_window_width(800., |s| s.background(css::PINK))
+            .padding(20)
+            .max_window_width(1000., |s| s.flex_col())
     })
 }
 

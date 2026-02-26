@@ -6,7 +6,7 @@ use crate::{
     IntoView, ViewId,
     animate::RepeatMode,
     context::UpdateCx,
-    style::recalc::StyleReasonSet,
+    style::recalc::StyleReason,
     view::{AnyView, View},
 };
 
@@ -214,7 +214,7 @@ fn animations_recursive_on_remove(id: ViewId, child_id: ViewId, child_scope: Sco
     }
     drop(state);
     if request_style {
-        child_id.request_style(StyleReasonSet::animation());
+        child_id.request_style(StyleReason::animation());
     }
 
     child_id
@@ -237,7 +237,7 @@ fn animations_recursive_on_create(child_id: ViewId) {
     }
     drop(state);
     if request_style {
-        child_id.request_style(StyleReasonSet::animation());
+        child_id.request_style(StyleReason::animation());
     }
 
     child_id

@@ -4,7 +4,7 @@ use crate::{
     custom_event,
     event::{Event, EventPropagation, RouteKind},
     prelude::*,
-    style::{Style, StyleCx, recalc::StyleReasonSet},
+    style::{Style, StyleCx, recalc::StyleReason},
     style_class,
 };
 use floem_reactive::{Effect, RwSignal, SignalGet, SignalUpdate};
@@ -115,6 +115,10 @@ where
             let v = v.into_view().class(ListItemClass);
             let child = v.id();
             item_id.set_children([v]);
+            // Let row styles resolve against the list container so structural
+            // selectors like `.even()`/`.odd()` index across list rows instead
+            // of the internal per-row Item wrapper.
+            child.set_style_parent(list_id);
             Item {
                 id: item_id,
                 selection,
@@ -207,13 +211,13 @@ impl View for List {
                 ListUpdate::SelectionChanged(old_selection) => {
                     if let Some(index) = self.selection.get_untracked() {
                         if let Some(child) = self.id.children().get(index) {
-                            child.request_style(StyleReasonSet::style_pass());
+                            child.request_style(StyleReason::style_pass());
                             child.scroll_to(None);
                         }
                     }
                     if let Some(index) = old_selection {
                         if let Some(child) = self.id.children().get(index) {
-                            child.request_style(StyleReasonSet::style_pass());
+                            child.request_style(StyleReason::style_pass());
                         }
                     }
                 }

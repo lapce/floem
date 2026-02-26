@@ -47,21 +47,24 @@ bitflags! {
         /// the entire view.
         const TARGET = 1 << 3;
 
-        /// Request that the `style_pass` be run again
+        /// Request that the `style_pass` be run again.
         const STYLE_PASS = 1 << 4;
 
+        /// Request that the `view_style` method from the `View` trait be run again.
+        const VIEW_STYLE = 1 << 5;
+
         /// Request that the `style_pass` be run again
-        const VISIBILITY = 1 << 5;
+        const VISIBILITY = 1 << 6;
 
         /// Parent's inherited scalar properties changed (font size, color, etc.).
         /// Child must recompute computed_style but may skip resolve_nested_maps
         /// if it has no selectors and its own style stack is clean.
-        const INHERITED_CHANGE = 1 << 6;
+        const INHERITED_CHANGE = 1 << 7;
 
         /// Parent's class context map changed (new class definitions visible to children).
         /// Child must re-run resolve_nested_maps to pick up new class rules,
         /// but inherited scalar props are unchanged so with_context values are stable.
-        const CLASS_CONTEXT_CHANGE = 1 << 7;
+        const CLASS_CONTEXT_CHANGE = 1 << 8;
 
     }
 }
@@ -76,7 +79,7 @@ bitflags! {
 /// - `selectors.is_some()` iff `flags.contains(SELECTOR)`
 /// - `targets.is_empty()` iff `!flags.contains(TARGET)`
 #[derive(Clone, Debug)]
-pub struct StyleReasonSet {
+pub struct StyleReason {
     pub flags: StyleReasonFlags,
 
     /// The selector set that caused this view to be dirty. Present when `SELECTOR` is set.
@@ -96,10 +99,10 @@ pub struct StyleReasonSet {
     /// Present when `TARGET` is set. `SmallVec<2>` because most views with sub-elements
     /// have only a small fixed number of them (e.g. scroll view has 3 total, rarely more
     /// than 2 dirty simultaneously).
-    pub targets: Vec<(crate::ElementId, StyleReasonSet)>,
+    pub targets: Vec<(crate::ElementId, StyleReason)>,
 }
 
-impl StyleReasonSet {
+impl StyleReason {
     pub fn empty() -> Self {
         Self {
             flags: StyleReasonFlags::empty(),
@@ -147,6 +150,10 @@ impl StyleReasonSet {
         self.flags |= StyleReasonFlags::STYLE_PASS;
     }
 
+    pub fn set_view_style(&mut self) {
+        self.flags |= StyleReasonFlags::VIEW_STYLE;
+    }
+
     pub fn set_visibility(&mut self) {
         self.flags |= StyleReasonFlags::VISIBILITY;
     }
@@ -156,7 +163,7 @@ impl StyleReasonSet {
         self.selectors = Some(selectors);
     }
 
-    pub fn add_target(&mut self, id: crate::ElementId, reason: StyleReasonSet) {
+    pub fn add_target(&mut self, id: crate::ElementId, reason: StyleReason) {
         self.flags |= StyleReasonFlags::TARGET;
         self.targets.push((id, reason));
     }
@@ -170,6 +177,12 @@ impl StyleReasonSet {
     pub fn style_pass() -> Self {
         let mut s = Self::empty();
         s.set_style_pass();
+        s
+    }
+
+    pub fn view_style() -> Self {
+        let mut s = Self::empty();
+        s.set_view_style();
         s
     }
 
@@ -206,6 +219,7 @@ impl StyleReasonSet {
     pub fn needs_resolve_nested_maps(&self) -> bool {
         self.flags.intersects(
             StyleReasonFlags::SELECTOR
+                | StyleReasonFlags::VIEW_STYLE
                 | StyleReasonFlags::CLASS_CONTEXT_CHANGE
                 | StyleReasonFlags::INHERITED_CHANGE,
         )
@@ -223,17 +237,6 @@ impl StyleReasonSet {
             || self
                 .flags
                 .intersects(StyleReasonFlags::CLASS_CONTEXT_CHANGE)
-            || self.flags.intersects(StyleReasonFlags::TRANSITION)
-            || self.flags.intersects(StyleReasonFlags::VISIBILITY)
-    }
-
-    pub fn needs_style_pass(&self) -> bool {
-        self.needs_resolve_nested_maps()
-            || self.needs_animation()
-            || self.needs_property_extraction()
-            || self.has_target()
-            || self.flags.intersects(StyleReasonFlags::VISIBILITY)
-            || self.flags.intersects(StyleReasonFlags::STYLE_PASS)
     }
 
     pub fn has_animation(&self) -> bool {
@@ -260,7 +263,7 @@ impl StyleReasonSet {
         self.targets.iter().any(|(tid, _)| *tid == id)
     }
 
-    pub fn target_reason(&self, id: crate::ElementId) -> Option<&StyleReasonSet> {
+    pub fn target_reason(&self, id: crate::ElementId) -> Option<&StyleReason> {
         self.targets
             .iter()
             .find(|(tid, _)| *tid == id)
@@ -270,7 +273,7 @@ impl StyleReasonSet {
     // --- Merging ---
 
     /// Merge another set into self, unioning all reasons.
-    pub fn merge(&mut self, other: StyleReasonSet) {
+    pub fn merge(&mut self, other: StyleReason) {
         self.flags |= other.flags;
 
         // Merge selectors (union, not replace)
@@ -306,8 +309,8 @@ impl StyleReasonSet {
     }
 
     /// Returns a new set containing only the reasons that match the given flags.
-    pub fn filter(&self, flags: StyleReasonFlags) -> StyleReasonSet {
-        let mut out = StyleReasonSet::empty();
+    pub fn filter(&self, flags: StyleReasonFlags) -> StyleReason {
+        let mut out = StyleReason::empty();
         let masked = self.flags & flags;
         out.flags = masked;
 
@@ -341,7 +344,7 @@ impl StyleReasonSet {
         }
     }
 
-    pub fn for_children(&self) -> StyleReasonSet {
+    pub fn for_children(&self) -> StyleReason {
         let mut out = self.clone();
         out.targets.clear();
         out.flags.remove(StyleReasonFlags::TARGET);
@@ -363,14 +366,14 @@ impl StyleReasonSet {
         out
     }
 
-    pub fn with_target(element_id: ElementId, reason: StyleReasonSet) -> Self {
+    pub fn with_target(element_id: ElementId, reason: StyleReason) -> Self {
         let mut s = Self::empty();
         s.add_target(element_id, reason);
         s
     }
 
     pub fn with_selectors_and_target(element_id: ElementId, selectors: StyleSelectors) -> Self {
-        let inner = StyleReasonSet::with_selectors(selectors);
+        let inner = StyleReason::with_selectors(selectors);
         Self::with_target(element_id, inner)
     }
 

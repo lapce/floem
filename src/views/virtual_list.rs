@@ -4,7 +4,7 @@ use ui_events::keyboard::{Key, NamedKey};
 
 use crate::event::{EventPropagation, listener};
 use crate::style::StyleSelector;
-use crate::style::recalc::StyleReasonSet;
+use crate::style::recalc::StyleReason;
 use crate::{ViewId, prelude::*};
 
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -173,7 +173,7 @@ where
                         return;
                     };
                     parent.update_state(index);
-                    parent.request_style(StyleReasonSet::with_selector(StyleSelector::Selected));
+                    parent.request_style(StyleReason::with_selector(StyleSelector::Selected));
                 }
             })
         },

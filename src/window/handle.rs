@@ -9,8 +9,8 @@ use std::sync::mpsc::sync_channel;
 
 use crate::event::{CustomEvent, RouteKind, ScrollTo, UpdatePhaseEvent};
 use crate::platform::menu_types::{Menu as MudaMenu, MenuId};
-use crate::style::StyleSelector;
-use crate::style::recalc::StyleReasonSet;
+use crate::style::recalc::StyleReason;
+use crate::style::{StyleSelector, StyleSelectors};
 #[cfg(target_os = "windows")]
 use muda::MenuTheme as MudaMenuTheme;
 
@@ -228,7 +228,9 @@ impl WindowHandle {
         window_handle
             .window_state
             .set_root_size(size.get_untracked());
-        window_handle.window_state.update_screen_size_bp(size.get_untracked());
+        window_handle
+            .window_state
+            .update_screen_size_bp(size.get_untracked());
         window_handle.process_update_no_paint();
 
         window_handle.window_state.light_dark_theme =
@@ -335,9 +337,7 @@ impl WindowHandle {
         window_handle.process_update_messages();
         // Mark root view as needing style so initial style pass runs compute_combined
         // and populates has_style_selectors for selector detection
-        window_handle
-            .id
-            .request_style(StyleReasonSet::full_recalc());
+        window_handle.id.request_style(StyleReason::full_recalc());
         window_handle.process_update_messages();
         window_handle.style();
         window_handle.layout();
@@ -443,19 +443,30 @@ impl WindowHandle {
         if !change_from_os {
             self.window.set_theme(theme);
         }
-        self.id.request_style(StyleReasonSet::inherited());
+        self.id.request_style(StyleReason::inherited());
         if let Some(theme) = theme {
             self.event(Event::Window(WindowEvent::ThemeChanged(theme)));
         }
     }
 
     pub(crate) fn size(&mut self, size: Size) {
+        let width_changed = (self.window_state.root_size.width - size.width).abs() > f64::EPSILON;
         self.size.set(size);
+
+        // Update root size first so any style work triggered by resize observes
+        // the new width instead of the previous frame's value.
+        self.window_state.set_root_size(size);
+        if width_changed {
+            self.window_state.mark_style_dirty_with(
+                self.window_state.root_view_id.get_element_id(),
+                StyleReason::with_selectors(StyleSelectors::empty().responsive()),
+            );
+        }
+
         self.window_state.update_screen_size_bp(size);
         self.event(Event::Window(WindowEvent::Resized(size)));
         let scale = self.scale * self.window_state.scale;
         self.paint_state.resize(scale, size * self.scale);
-        self.window_state.set_root_size(size);
 
         let is_maximized = self.window.is_maximized();
         if is_maximized != self.is_maximized {
@@ -549,21 +560,14 @@ impl WindowHandle {
         // (e.g., when inherited properties change)
         loop {
             // Build explicit traversal order
-            let og_num = self.window_state.style_dirty.len();
             let traversal = self.window_state.build_style_traversal(self.id);
-            if traversal.len() > 5 {
-                dbg!(traversal.len(), og_num);
-            }
             if traversal.is_empty() {
-                self.window_state.style_dirty.clear();
-                self.window_state.view_style_dirty.clear();
                 break;
             }
 
             // Style each view in order, passing the global change for first iteration
-            // dbg!(traversal.len());
-            for view_id in traversal {
-                let cx = &mut StyleCx::new(&mut self.window_state, view_id);
+            for (view_id, traversal_reason) in traversal {
+                let cx = &mut StyleCx::new(&mut self.window_state, view_id, traversal_reason);
                 cx.style_view();
             }
             if self.window_state.capture.is_some() {
@@ -1004,9 +1008,6 @@ impl WindowHandle {
                     UpdateMessage::RequestStyle(id, reason) => {
                         self.window_state.mark_style_dirty_with(id, reason);
                     }
-                    UpdateMessage::RequestViewStyle(id) => {
-                        self.window_state.view_style_dirty.insert(id);
-                    }
                     UpdateMessage::RequestLayout => {
                         self.window_state.needs_layout = true;
                     }
@@ -1304,7 +1305,7 @@ impl WindowHandle {
     }
 
     fn needs_style(&mut self) -> bool {
-        !self.window_state.style_dirty.is_empty() || !self.window_state.view_style_dirty.is_empty()
+        !self.window_state.style_dirty.is_empty()
     }
 
     fn has_deferred_update_messages(&self) -> bool {

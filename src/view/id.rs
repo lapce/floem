@@ -25,7 +25,7 @@ thread_local! {
 use crate::context::EventCallbackConfig;
 use crate::event::listener::EventListenerKey;
 use crate::event::{RouteKind, listener};
-use crate::style::recalc::StyleReasonSet;
+use crate::style::recalc::StyleReason;
 use crate::view::LayoutTree;
 use crate::window::handle::get_current_view;
 use crate::{BoxTree, ElementId};
@@ -86,7 +86,7 @@ unsafe impl slotmap::Key for ViewId {
 
 fn request_structural_selector_restyle(children: &[ViewId]) {
     for child in children {
-        child.request_style(StyleReasonSet::full_recalc());
+        child.request_style(StyleReason::full_recalc());
     }
 }
 
@@ -853,9 +853,8 @@ impl ViewId {
     pub fn request_all(&self) {
         add_update_message(UpdateMessage::RequestStyle(
             self.get_element_id(),
-            StyleReasonSet::full_recalc(),
+            StyleReason::full_recalc(),
         ));
-        add_update_message(UpdateMessage::RequestViewStyle(*self));
         self.request_layout();
         self.request_box_tree_commit();
         self.add_update_message(UpdateMessage::RequestPaint);
@@ -901,15 +900,16 @@ impl ViewId {
     }
 
     /// request that this node be styled again
-    pub fn request_style(&self, reason: StyleReasonSet) {
+    pub fn request_style(&self, reason: StyleReason) {
         self.add_update_message(UpdateMessage::RequestStyle(self.get_element_id(), reason));
     }
 
     /// Use this when you want the `view_style` method from the `View` trait to be rerun.
     ///
     // TODO: Add this to style reason set
+    #[deprecated(note = "use `id.request_style(StyleReasonSet::view_style())` directly instead")]
     pub fn request_view_style(&self) {
-        self.add_update_message(UpdateMessage::RequestViewStyle(*self));
+        self.request_style(StyleReason::view_style());
     }
 
     /// Request that this view gain the window focus
@@ -1011,7 +1011,7 @@ impl ViewId {
     pub(crate) fn update_animation(&self, offset: StackOffset<Animation>, animation: Animation) {
         let state = self.state();
         state.borrow_mut().animations.set(offset, animation);
-        self.request_style(StyleReasonSet::animation());
+        self.request_style(StyleReason::animation());
     }
 
     pub(crate) fn update_animation_state(
@@ -1024,7 +1024,7 @@ impl ViewId {
             .borrow_mut()
             .animations
             .update(offset, move |anim| anim.transition(command));
-        self.request_style(StyleReasonSet::animation());
+        self.request_style(StyleReason::animation());
     }
 
     /// Send a state update to the `update` method of the associated View
@@ -1090,21 +1090,21 @@ impl ViewId {
     pub fn add_class(&self, class: StyleClassRef) {
         let state = self.state();
         state.borrow_mut().classes.push(class);
-        self.request_style(StyleReasonSet::class_cx(smallvec![class]));
+        self.request_style(StyleReason::class_cx(smallvec![class]));
     }
 
     /// Remove a class from the list of style classes that are associated with this `ViewId`
     pub fn remove_class(&self, class: StyleClassRef) {
         let state = self.state();
         state.borrow_mut().classes.retain_mut(|c| *c != class);
-        self.request_style(StyleReasonSet::class_cx(smallvec![class]));
+        self.request_style(StyleReason::class_cx(smallvec![class]));
     }
 
     pub(crate) fn update_style(&self, offset: StackOffset<Style>, style: Style) {
         let state = VIEW_STORAGE.with_borrow(|s| s.states.get(*self).cloned());
         if let Some(state) = state {
             state.borrow_mut().style.set(offset, style);
-            self.request_style(StyleReasonSet::full_recalc());
+            self.request_style(StyleReason::full_recalc());
         }
     }
 
@@ -1513,7 +1513,7 @@ impl ViewId {
             }
         };
         if changed {
-            self.request_style(StyleReasonSet::with_selector(StyleSelector::Selected));
+            self.request_style(StyleReason::with_selector(StyleSelector::Selected));
         }
     }
 
@@ -1532,7 +1532,7 @@ impl ViewId {
             }
         };
         if changed {
-            self.request_style(StyleReasonSet::with_selector(StyleSelector::Selected));
+            self.request_style(StyleReason::with_selector(StyleSelector::Selected));
         }
     }
 
@@ -1551,7 +1551,7 @@ impl ViewId {
             }
         };
         if changed {
-            self.request_style(StyleReasonSet::with_selector(StyleSelector::Disabled));
+            self.request_style(StyleReason::with_selector(StyleSelector::Disabled));
         }
     }
 
@@ -1570,7 +1570,7 @@ impl ViewId {
             }
         };
         if changed {
-            self.request_style(StyleReasonSet::with_selector(StyleSelector::Disabled));
+            self.request_style(StyleReason::with_selector(StyleSelector::Disabled));
         }
     }
 
@@ -1592,7 +1592,7 @@ impl ViewId {
             }
         };
         if changed {
-            self.request_style(StyleReasonSet::visibility());
+            self.request_style(StyleReason::visibility());
         }
     }
 
@@ -1614,7 +1614,7 @@ impl ViewId {
             }
         };
         if changed {
-            self.request_style(StyleReasonSet::visibility());
+            self.request_style(StyleReason::visibility());
         }
     }
 }

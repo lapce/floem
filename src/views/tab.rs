@@ -6,7 +6,7 @@ use smallvec::SmallVec;
 
 use crate::{
     context::{StyleCx, UpdateCx},
-    style::recalc::StyleReasonSet,
+    style::recalc::StyleReason,
     style_class,
     view::{IntoView, View, ViewId},
 };
@@ -269,7 +269,7 @@ impl<T> View for Tab<T> {
                     self.active.take();
                 }
             }
-            self.id.request_style(StyleReasonSet::style_pass());
+            self.id.request_style(StyleReason::style_pass());
         }
     }
 

@@ -12,7 +12,7 @@ use crate::{
     style::{
         Background, BorderColorProp, BorderRadiusProp, BoxShadowProp, CursorStyle,
         InheritedInteractionCx, LayoutProps, Outline, OutlineColor, Style, StyleClassRef,
-        StyleSelectors, TransformProps, recalc::StyleReasonSet,
+        StyleSelectors, TransformProps, recalc::StyleReason,
     },
     view::LayoutTree,
 };
@@ -383,9 +383,8 @@ impl ViewState {
 
         add_update_message(UpdateMessage::RequestStyle(
             element_id,
-            StyleReasonSet::full_recalc(),
+            StyleReason::full_recalc(),
         ));
-        add_update_message(UpdateMessage::RequestViewStyle(id));
 
         Self {
             layout_id: taffy.new_leaf(taffy::style::Style::DEFAULT).unwrap(),
