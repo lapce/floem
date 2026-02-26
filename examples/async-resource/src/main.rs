@@ -5,7 +5,8 @@ use floem::{
     prelude::{palette::css, *},
     reactive::Trigger,
     receiver_signal::Resource,
-    style::{Background, CursorStyle, Transition}, text::FontWeight,
+    style::{Background, CursorStyle, Transition},
+    text::FontWeight,
 };
 use serde::Deserialize;
 use tokio::runtime::Runtime;
@@ -255,7 +256,10 @@ fn user_display(user_resource: Resource<Option<UserResult>>) -> impl IntoView {
                 .style(|s| s.color(css::RED))
                 .into_any(),
             None => "Enter a GitHub username to search"
-                .style(|s| s.color(css::GRAY).font_style(floem::text::FontStyle::Italic))
+                .style(|s| {
+                    s.color(css::GRAY)
+                        .font_style(floem::text::FontStyle::Italic)
+                })
                 .into_any(),
         },
     )

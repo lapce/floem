@@ -1,7 +1,7 @@
 use std::ops::Range;
 
 use crate::text::TextBrush;
-use crate::text::{FontWidth, FontStyle, FontWeight};
+use crate::text::{FontStyle, FontWeight, FontWidth};
 use fontique::GenericFamily;
 use parley::style::{FontFamily, FontStack, StyleProperty};
 use peniko::Color;
@@ -325,13 +325,13 @@ impl<'a> Attrs<'a> {
             builder.push_default(StyleProperty::FontStack(stack));
         }
         if let Some(weight) = self.weight {
-            builder.push_default(StyleProperty::FontWeight(weight.into()));
+            builder.push_default(StyleProperty::FontWeight(weight));
         }
         if let Some(style) = self.style {
-            builder.push_default(StyleProperty::FontStyle(style.into()));
+            builder.push_default(StyleProperty::FontStyle(style));
         }
         if let Some(width) = self.font_width {
-            builder.push_default(StyleProperty::FontWidth(width.into()));
+            builder.push_default(StyleProperty::FontWidth(width));
         }
     }
 
@@ -365,13 +365,13 @@ impl<'a> Attrs<'a> {
             builder.push(StyleProperty::FontStack(stack), range.clone());
         }
         if let Some(weight) = self.weight {
-            builder.push(StyleProperty::FontWeight(weight.into()), range.clone());
+            builder.push(StyleProperty::FontWeight(weight), range.clone());
         }
         if let Some(style) = self.style {
-            builder.push(StyleProperty::FontStyle(style.into()), range.clone());
+            builder.push(StyleProperty::FontStyle(style), range.clone());
         }
         if let Some(width) = self.font_width {
-            builder.push(StyleProperty::FontWidth(width.into()), range);
+            builder.push(StyleProperty::FontWidth(width), range);
         }
     }
 }
@@ -671,7 +671,6 @@ impl Iterator for ParseList<'_> {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -756,7 +755,10 @@ mod tests {
     fn to_font_stack_empty_defaults_to_sans_serif() {
         let families: Vec<FamilyOwned> = vec![];
         let stack = FamilyOwned::to_font_stack(&families);
-        assert!(matches!(stack, FontStack::Single(FontFamily::Generic(GenericFamily::SansSerif))));
+        assert!(matches!(
+            stack,
+            FontStack::Single(FontFamily::Generic(GenericFamily::SansSerif))
+        ));
     }
 
     // ========================== Attrs ==========================
@@ -805,13 +807,17 @@ mod tests {
 
     #[test]
     fn effective_line_height_normal_multiplier() {
-        let a = Attrs::new().font_size(20.0).line_height(LineHeightValue::Normal(1.5));
+        let a = Attrs::new()
+            .font_size(20.0)
+            .line_height(LineHeightValue::Normal(1.5));
         assert!((a.effective_line_height() - 30.0).abs() < f32::EPSILON);
     }
 
     #[test]
     fn effective_line_height_px_absolute() {
-        let a = Attrs::new().font_size(20.0).line_height(LineHeightValue::Px(24.0));
+        let a = Attrs::new()
+            .font_size(20.0)
+            .line_height(LineHeightValue::Px(24.0));
         assert!((a.effective_line_height() - 24.0).abs() < f32::EPSILON);
     }
 
@@ -826,7 +832,10 @@ mod tests {
 
     #[test]
     fn attrs_owned_roundtrip() {
-        let families = [FamilyOwned::Name("Inter".to_string()), FamilyOwned::SansSerif];
+        let families = [
+            FamilyOwned::Name("Inter".to_string()),
+            FamilyOwned::SansSerif,
+        ];
         let a = Attrs::new()
             .font_size(18.0)
             .family(&families)

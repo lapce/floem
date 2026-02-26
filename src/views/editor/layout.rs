@@ -143,10 +143,7 @@ impl TextLayoutLine {
             .collect();
 
         // Fallback for all-whitespace single paragraph.
-        if starts.is_empty()
-            && self.text.lines_range().len() == 1
-            && visual_line_count > 0
-        {
+        if starts.is_empty() && self.text.lines_range().len() == 1 && visual_line_count > 0 {
             starts.push(self.text.lines_range()[0].start);
         }
 

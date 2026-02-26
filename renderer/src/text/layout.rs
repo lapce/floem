@@ -243,13 +243,13 @@ impl TextLayout {
             if measured_width > 0.0 {
                 self.layout.align(
                     Some(measured_width),
-                    align.unwrap().into(),
+                    align.unwrap_or_default(),
                     AlignmentOptions::default(),
                 );
             }
         } else if let Some(align) = align {
             self.layout
-                .align(self.width_opt, align.into(), AlignmentOptions::default());
+                .align(self.width_opt, align, AlignmentOptions::default());
         }
     }
 
@@ -292,7 +292,7 @@ impl TextLayout {
 
         if let Some(align) = self.alignment {
             self.layout
-                .align(Some(width), align.into(), AlignmentOptions::default());
+                .align(Some(width), align, AlignmentOptions::default());
         }
     }
 
@@ -486,15 +486,13 @@ impl TextLayout {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::text::{Attrs, AttrsList, Cursor, FamilyOwned};
     use std::sync::Once;
 
-    const DEJAVU_SERIF: &[u8] =
-        include_bytes!("../../../examples/webgpu/fonts/DejaVuSerif.ttf");
+    const DEJAVU_SERIF: &[u8] = include_bytes!("../../../examples/webgpu/fonts/DejaVuSerif.ttf");
 
     static FONT_INIT: Once = Once::new();
 
@@ -745,7 +743,11 @@ mod tests {
         let layout = make("hello");
         let pos = layout.hit_position(0);
         assert_eq!(pos.line, 0);
-        assert!(pos.point.x < 5.0, "x at start should be near 0, got {}", pos.point.x);
+        assert!(
+            pos.point.x < 5.0,
+            "x at start should be near 0, got {}",
+            pos.point.x
+        );
     }
 
     #[test]
@@ -849,7 +851,10 @@ mod tests {
         layout.selection_geometry_with(2, 8, |x0, y0, x1, y1| {
             rects.push((x0, y0, x1, y1));
         });
-        assert!(!rects.is_empty(), "should produce at least one selection rect");
+        assert!(
+            !rects.is_empty(),
+            "should produce at least one selection rect"
+        );
         let (x0, _y0, x1, _y1) = rects[0];
         assert!(x1 > x0, "selection rect should have positive width");
     }

@@ -30,8 +30,8 @@ mod attrs;
 mod layout;
 
 pub use attrs::{Attrs, AttrsList, AttrsOwned, FamilyOwned, LineHeightValue};
+pub use fontique::{FontStyle, FontWeight, FontWidth};
 pub use layout::{HitPoint, HitPosition, TextLayout, FONT_CONTEXT};
-pub use fontique::{FontStyle, FontWidth, FontWeight};
 pub use parley::Alignment;
 
 // --- Font Properties ---
@@ -209,7 +209,6 @@ impl From<TextBrush> for peniko::Color {
         b.0
     }
 }
-
 
 #[cfg(test)]
 mod tests {

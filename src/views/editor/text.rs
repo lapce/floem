@@ -4,7 +4,7 @@ use crate::{
     peniko::Color,
     peniko::color::palette,
     reactive::{RwSignal, Scope},
-    text::{Attrs, AttrsList, FamilyOwned, FontWidth, FontWeight},
+    text::{Attrs, AttrsList, FamilyOwned, FontWeight, FontWidth},
     views::EditorCustomStyle,
 };
 use floem_editor_core::{

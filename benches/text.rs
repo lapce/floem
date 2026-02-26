@@ -18,7 +18,7 @@ use std::sync::Once;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use floem_renderer::text::{
-    Attrs, AttrsList, FONT_CONTEXT, FamilyOwned, FontStyle, TextLayout, FontWeight,
+    Attrs, AttrsList, FONT_CONTEXT, FamilyOwned, FontStyle, FontWeight, TextLayout,
 };
 use peniko::Color;
 

@@ -862,10 +862,7 @@ impl Lines {
 
             let line_index = line_index.min(text_layout.line_count() - 1);
 
-            let col = text_layout
-                .start_layout_cols()
-                .nth(line_index)
-                .unwrap_or(0);
+            let col = text_layout.start_layout_cols().nth(line_index).unwrap_or(0);
             let col = text_prov.before_phantom_col(line, col);
 
             rope_text.offset_of_line_col(line, col)
@@ -1114,10 +1111,7 @@ fn find_start_line_index(
     col: usize,
     affinity: CursorAffinity,
 ) -> Option<usize> {
-    let mut starts = text_layout
-        .start_layout_cols()
-        .enumerate()
-        .peekable();
+    let mut starts = text_layout.start_layout_cols().enumerate().peekable();
 
     while let Some((i, layout_start)) = starts.next() {
         if affinity == CursorAffinity::Backward {
@@ -1315,10 +1309,7 @@ fn find_vline_init_info_forward(
                 // We can now find the offset of the visual line within the line.
                 let line_index = vline.get() - cur_vline;
                 // TODO: is it fine to unwrap here?
-                let col = text_layout
-                    .start_layout_cols()
-                    .nth(line_index)
-                    .unwrap_or(0);
+                let col = text_layout.start_layout_cols().nth(line_index).unwrap_or(0);
                 let col = text_prov.before_phantom_col(cur_line, col);
 
                 let offset = rope_text.offset_of_line_col(cur_line, col);
@@ -1947,10 +1938,7 @@ fn prev_rvline(
         let prev_line_index = line_index - 1;
         let font_size = font_sizes.font_size(line);
         if let Some(layout_line) = layouts.get(font_size, line) {
-            if let Some(line_col) = layout_line
-                .start_layout_cols()
-                .nth(prev_line_index)
-            {
+            if let Some(line_col) = layout_line.start_layout_cols().nth(prev_line_index) {
                 let line_col = text_prov.before_phantom_col(line, line_col);
                 let offset = rope_text.offset_of_line_col(line, line_col);
 
@@ -3435,10 +3423,7 @@ mod tests {
             phantom_text: PhantomTextLine::default(),
         };
         let (text_prov, _) = make_lines(&text, 10000., false);
-        let from_full: Vec<usize> = layout
-            .layout_cols(&text_prov, 0)
-            .map(|(s, _)| s)
-            .collect();
+        let from_full: Vec<usize> = layout.layout_cols(&text_prov, 0).map(|(s, _)| s).collect();
         let from_standalone: Vec<usize> = layout.start_layout_cols().collect();
         assert_eq!(from_full, from_standalone, "single-line no wrap");
 
@@ -3463,10 +3448,7 @@ mod tests {
             phantom_text: PhantomTextLine::default(),
         };
         let (text_prov, _) = make_lines(&text, 10000., true);
-        let from_full: Vec<usize> = layout
-            .layout_cols(&text_prov, 0)
-            .map(|(s, _)| s)
-            .collect();
+        let from_full: Vec<usize> = layout.layout_cols(&text_prov, 0).map(|(s, _)| s).collect();
         let from_standalone: Vec<usize> = layout.start_layout_cols().collect();
         assert_eq!(from_full, from_standalone, "CRLF");
     }

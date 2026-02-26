@@ -15,9 +15,7 @@ use floem::views::editor::{
     visual_line::{ResolvedWrap, TextLayoutProvider},
 };
 use floem_editor_core::buffer::rope_text::RopeTextVal;
-use floem_renderer::text::{
-    Attrs, AttrsList, FONT_CONTEXT, FamilyOwned, TextLayout, Wrap,
-};
+use floem_renderer::text::{Attrs, AttrsList, FONT_CONTEXT, FamilyOwned, TextLayout, Wrap};
 use lapce_xi_rope::Rope;
 
 // ============================================================================
@@ -152,10 +150,7 @@ fn bench_layout_cols(c: &mut Criterion) {
         });
     });
 
-    println!(
-        "Visual line count for benchmark text: {}",
-        vline_count
-    );
+    println!("Visual line count for benchmark text: {}", vline_count);
 
     group.finish();
 }
@@ -195,10 +190,7 @@ fn bench_layout_cols_long(c: &mut Criterion) {
         });
     });
 
-    println!(
-        "Visual line count for long benchmark text: {}",
-        vline_count
-    );
+    println!("Visual line count for long benchmark text: {}", vline_count);
 
     group.finish();
 }

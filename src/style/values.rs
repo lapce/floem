@@ -2,7 +2,7 @@
 
 use floem_reactive::{RwSignal, SignalGet, SignalUpdate as _};
 use floem_renderer::Renderer;
-use floem_renderer::text::{LineHeightValue, FontWeight};
+use floem_renderer::text::{FontWeight, LineHeightValue};
 use peniko::color::{HueDirection, palette};
 use peniko::kurbo::{self, Point, Stroke};
 use peniko::{
@@ -204,7 +204,9 @@ impl StylePropValue for FontWeight {
         )
     }
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
-        self.value().interpolate(&other.value(), value).map(FontWeight::new)
+        self.value()
+            .interpolate(&other.value(), value)
+            .map(FontWeight::new)
     }
 }
 impl StylePropValue for crate::text::FontStyle {

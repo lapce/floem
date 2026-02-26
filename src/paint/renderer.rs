@@ -71,7 +71,10 @@ pub enum Renderer {
     TinySkia(TinySkiaRenderer<Arc<dyn Window>>),
     /// Uninitialized renderer, used to allow the renderer to be created lazily
     /// All operations on this renderer are no-ops
-    Uninitialized { scale: f64, size: Size },
+    Uninitialized {
+        scale: f64,
+        size: Size,
+    },
 }
 
 impl Renderer {

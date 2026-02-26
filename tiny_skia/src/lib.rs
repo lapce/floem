@@ -40,6 +40,7 @@ struct GlyphCacheKey {
 }
 
 impl GlyphCacheKey {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         font_blob_id: u64,
         font_index: u32,
@@ -86,6 +87,7 @@ thread_local! {
     static SCALE_CONTEXT: RefCell<ScaleContext> = RefCell::new(ScaleContext::new());
 }
 
+#[allow(clippy::too_many_arguments)]
 fn cache_glyph(
     cache_color: CacheColor,
     cache_key: GlyphCacheKey,

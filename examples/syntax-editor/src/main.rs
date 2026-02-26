@@ -1,6 +1,6 @@
 use floem::{
     prelude::*,
-    text::{Attrs, AttrsList, FamilyOwned, FontWidth, FontWeight},
+    text::{Attrs, AttrsList, FamilyOwned, FontWeight, FontWidth},
     views::editor::{
         core::{
             buffer::rope_text::RopeText, cursor::CursorAffinity, editor::EditType,

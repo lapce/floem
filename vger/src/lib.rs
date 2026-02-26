@@ -525,7 +525,7 @@ impl Renderer for VgerRenderer {
                 let font = run.font();
                 let font_size = run.font_size();
                 let synthesis = run.synthesis();
-                let coords: Vec<i16> = run.normalized_coords().iter().copied().collect();
+                let coords: Vec<i16> = run.normalized_coords().to_vec();
                 let color: Color = glyph_run.style().brush.0;
 
                 let Some(font_ref) = FontRef::from_index(font.data.data(), font.index as usize)
