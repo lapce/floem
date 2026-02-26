@@ -69,40 +69,31 @@ impl TextLayoutLine {
     ) -> impl Iterator<Item = (usize, usize)> + 'a {
         let visual_line_count = self.text.visual_line_count();
         let full_text = self.text.text();
-
-        // Check if there's a single paragraph with all whitespace-only visual lines
-        let mut prefix = None;
-        if self.text.lines_range().len() == 1 && visual_line_count > 0 {
-            let line_start = self.text.lines_range()[0].start;
-            let all_whitespace = (0..visual_line_count).all(|i| {
-                self.text
-                    .visual_line_text_range(i)
-                    .is_none_or(|r| !has_visible_content(full_text, &r))
-            });
-            if all_whitespace {
-                prefix = Some((line_start, line_start));
-            }
-        }
-
         let line_v = line;
 
-        // Collect visual line text ranges that have non-whitespace content
+        // Single pass: collect visible ranges and determine prefix.
         let visual_ranges: Vec<_> = (0..visual_line_count)
             .filter_map(|i| {
                 let range = self.text.visual_line_text_range(i)?;
-                if has_visible_content(full_text, &range) {
-                    Some(range)
-                } else {
-                    None
-                }
+                has_visible_content(full_text, &range).then_some(range)
             })
             .collect();
+
+        let prefix = if visual_ranges.is_empty()
+            && self.text.lines_range().len() == 1
+            && visual_line_count > 0
+        {
+            let s = self.text.lines_range()[0].start;
+            Some((s, s))
+        } else {
+            None
+        };
 
         let iter = visual_ranges.into_iter().map(move |text_range| {
             let start_idx = text_range.start;
             let mut end_idx = text_range.end.min(full_text.len());
 
-            // Strip trailing whitespace from byte range (matching old behavior)
+            // Strip trailing whitespace from byte range (matching old behavior).
             while end_idx > start_idx {
                 let ch = full_text.as_bytes().get(end_idx - 1).copied().unwrap_or(0);
                 if ch == b' ' || ch == b'\t' || ch == b'\n' || ch == b'\r' {
@@ -137,13 +128,29 @@ impl TextLayoutLine {
         prefix.into_iter().chain(iter)
     }
 
-    /// Iterator over the start columns of the relevant layouts
-    pub fn start_layout_cols<'a>(
-        &'a self,
-        text_prov: impl TextLayoutProvider + 'a,
-        line: usize,
-    ) -> impl Iterator<Item = usize> + 'a {
-        self.layout_cols(text_prov, line).map(|(start, _)| start)
+    /// Iterator over only the start columns of the relevant layouts.
+    /// Cheaper than `layout_cols` — skips the end-column adjustment that
+    /// involves phantom-text resolution, rope lookups and slice comparisons.
+    pub fn start_layout_cols(&self) -> impl Iterator<Item = usize> + '_ {
+        let visual_line_count = self.text.visual_line_count();
+        let full_text = self.text.text();
+
+        let mut starts: Vec<usize> = (0..visual_line_count)
+            .filter_map(|i| {
+                let range = self.text.visual_line_text_range(i)?;
+                has_visible_content(full_text, &range).then_some(range.start)
+            })
+            .collect();
+
+        // Fallback for all-whitespace single paragraph.
+        if starts.is_empty()
+            && self.text.lines_range().len() == 1
+            && visual_line_count > 0
+        {
+            starts.push(self.text.lines_range()[0].start);
+        }
+
+        starts.into_iter()
     }
 
     /// Get the baseline y position of the given visual line index

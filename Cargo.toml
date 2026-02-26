@@ -200,3 +200,7 @@ harness = false
 [[bench]]
 name = "text"
 harness = false
+
+[[bench]]
+name = "editor_layout_cols"
+harness = false

@@ -863,7 +863,7 @@ impl Lines {
             let line_index = line_index.min(text_layout.line_count() - 1);
 
             let col = text_layout
-                .start_layout_cols(text_prov, line)
+                .start_layout_cols()
                 .nth(line_index)
                 .unwrap_or(0);
             let col = text_prov.before_phantom_col(line, col);
@@ -1115,11 +1115,11 @@ fn find_start_line_index(
     affinity: CursorAffinity,
 ) -> Option<usize> {
     let mut starts = text_layout
-        .layout_cols(text_prov, line)
+        .start_layout_cols()
         .enumerate()
         .peekable();
 
-    while let Some((i, (layout_start, _))) = starts.next() {
+    while let Some((i, layout_start)) = starts.next() {
         if affinity == CursorAffinity::Backward {
             // TODO: we should just apply after_col to col to do this transformation once
             let layout_start = text_prov.before_phantom_col(line, layout_start);
@@ -1130,7 +1130,7 @@ fn find_start_line_index(
 
         let next_start = starts
             .peek()
-            .map(|(_, (next_start, _))| text_prov.before_phantom_col(line, *next_start));
+            .map(|(_, next_start)| text_prov.before_phantom_col(line, *next_start));
 
         if let Some(next_start) = next_start {
             if next_start > col {
@@ -1316,7 +1316,7 @@ fn find_vline_init_info_forward(
                 let line_index = vline.get() - cur_vline;
                 // TODO: is it fine to unwrap here?
                 let col = text_layout
-                    .start_layout_cols(text_prov, cur_line)
+                    .start_layout_cols()
                     .nth(line_index)
                     .unwrap_or(0);
                 let col = text_prov.before_phantom_col(cur_line, col);
@@ -1476,7 +1476,7 @@ fn vline_init_info_b(
 ) -> Option<(usize, RVLine)> {
     let rope_text = text_prov.rope_text();
     let col = text_layout
-        .start_layout_cols(text_prov, rv.line)
+        .start_layout_cols()
         .nth(rv.line_index)
         .unwrap_or(0);
     let col = text_prov.before_phantom_col(rv.line, col);
@@ -1887,7 +1887,7 @@ fn next_rvline(
 ) -> (RVLine, usize) {
     let rope_text = text_prov.rope_text();
     if let Some(layout_line) = layouts.get(font_size, line) {
-        if let Some((line_col, _)) = layout_line.layout_cols(text_prov, line).nth(line_index + 1) {
+        if let Some(line_col) = layout_line.start_layout_cols().nth(line_index + 1) {
             let line_col = text_prov.before_phantom_col(line, line_col);
             let offset = rope_text.offset_of_line_col(line, line_col);
 
@@ -1928,7 +1928,7 @@ fn prev_rvline(
         let font_size = font_sizes.font_size(prev_line);
         if let Some(layout_line) = layouts.get(font_size, prev_line) {
             let (i, line_col) = layout_line
-                .start_layout_cols(text_prov, prev_line)
+                .start_layout_cols()
                 .enumerate()
                 .last()
                 .unwrap_or((0, 0));
@@ -1947,8 +1947,8 @@ fn prev_rvline(
         let prev_line_index = line_index - 1;
         let font_size = font_sizes.font_size(line);
         if let Some(layout_line) = layouts.get(font_size, line) {
-            if let Some((line_col, _)) = layout_line
-                .layout_cols(text_prov, line)
+            if let Some(line_col) = layout_line
+                .start_layout_cols()
                 .nth(prev_line_index)
             {
                 let line_col = text_prov.before_phantom_col(line, line_col);
