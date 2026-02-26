@@ -6,7 +6,7 @@ use fontique::GenericFamily;
 use parley::style::{FontFamily, FontStack, StyleProperty};
 use peniko::Color;
 
-/// An owned version of font family
+/// An owned version of font family.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum FamilyOwned {
     Name(String),
@@ -64,7 +64,7 @@ pub enum LineHeightValue {
     Px(f32),
 }
 
-/// Text attributes
+/// Text attributes.
 #[derive(Clone, Debug)]
 pub struct Attrs<'a> {
     pub font_size: f32,
@@ -240,7 +240,7 @@ impl<'a> Attrs<'a> {
     }
 }
 
-/// Owned text attributes
+/// Owned text attributes.
 #[derive(Clone, Debug)]
 pub struct AttrsOwned {
     pub font_size: f32,
@@ -281,7 +281,7 @@ impl AttrsOwned {
     }
 }
 
-/// Attribute spans list
+/// Attribute spans list.
 #[derive(Clone, Debug)]
 pub struct AttrsList {
     defaults: AttrsOwned,
@@ -350,7 +350,7 @@ impl AttrsList {
         }
     }
 
-    /// Apply all defaults and spans to a Parley RangedBuilder
+    /// Apply all defaults and spans to a Parley RangedBuilder.
     pub fn apply_to_builder(&self, builder: &mut parley::RangedBuilder<'_, TextBrush>) {
         let defaults = self.defaults.as_attrs();
         defaults.apply_defaults(builder);
@@ -361,7 +361,7 @@ impl AttrsList {
         }
     }
 
-    /// Get the inner spans for iteration
+    /// Get the inner spans for iteration.
     pub fn spans(&self) -> &[(Range<usize>, AttrsOwned)] {
         &self.spans
     }
