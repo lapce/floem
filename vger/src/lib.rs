@@ -8,7 +8,6 @@ use floem_renderer::gpu_resources::GpuResources;
 use floem_renderer::text::TextLayout;
 use floem_renderer::{Img, Renderer, tiny_skia};
 use floem_vger_rs::{GlyphImage, Image, PaintIndex, PixelFormat, Vger};
-use image::EncodableLayout;
 use parley::layout::PositionedLayoutItem;
 use peniko::kurbo::{Size, Stroke};
 use peniko::{Blob, ImageData, LinearGradientPosition};
@@ -596,14 +595,14 @@ impl Renderer for VgerRenderer {
                             match image {
                                 Some(img) => GlyphImage {
                                     colored: img.content != swash::scale::image::Content::Mask,
-                                    data: img.data,
+                                    data: img.data.into(),
                                     width: img.placement.width,
                                     height: img.placement.height,
                                     left: img.placement.left,
                                     top: img.placement.top,
                                 },
                                 None => GlyphImage {
-                                    data: vec![],
+                                    data: Blob::new(Arc::new([])),
                                     width: 0,
                                     height: 0,
                                     left: 0,
@@ -638,9 +637,7 @@ impl Renderer for VgerRenderer {
         let height = (rect.height() * scale_y).round().max(1.0) as u32;
 
         self.vger.render_image(x, y, img.hash, width, height, || {
-            let rgba = img.img.image.data.data();
-            let data = rgba.as_bytes().to_vec();
-
+            let data = img.img.image.data;
             let (width, height) = (img.img.image.width, img.img.image.height);
 
             Image {
