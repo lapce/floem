@@ -34,6 +34,9 @@ pub struct VelloRenderer {
     transform: Affine,
     capture: bool,
     adapter: Adapter,
+    // TODO: Apply once vello's DrawGlyphs gains embolden support.
+    #[allow(dead_code)]
+    font_embolden: f32,
 }
 
 impl VelloRenderer {
@@ -43,7 +46,7 @@ impl VelloRenderer {
         width: u32,
         height: u32,
         scale: f64,
-        _font_embolden: f32,
+        font_embolden: f32,
     ) -> Result<Self> {
         let GpuResources {
             adapter,
@@ -139,6 +142,7 @@ impl VelloRenderer {
             transform: Affine::IDENTITY,
             capture: false,
             adapter,
+            font_embolden,
         })
     }
 
@@ -303,9 +307,15 @@ impl Renderer for VelloRenderer {
                 let font = run.font();
                 let font_size = run.font_size();
                 let synthesis = run.synthesis();
+                // TODO: Vello 0.7's DrawGlyphs API has no embolden support.
+                // `synthesis.embolden()` and `self.font_embolden` are not applied.
+                // See https://github.com/linebender/vello/issues for upstream tracking.
+
+                // `Affine::skew` takes tangent values, not radians.
+                // `synthesis.skew()` returns degrees (typically 14° for faux italic).
                 let glyph_xform = synthesis
                     .skew()
-                    .map(|angle| Affine::skew(angle.to_radians() as f64, 0.0));
+                    .map(|angle| Affine::skew((angle as f64).to_radians().tan(), 0.0));
                 let coords = run.normalized_coords();
                 let color: Color = style.brush.0;
 

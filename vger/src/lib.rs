@@ -536,11 +536,17 @@ impl Renderer for VgerRenderer {
                 };
                 let font_blob_id = font.data.id();
 
-                let embolden = if synthesis.embolden() {
-                    font_embolden.max(0.02)
-                } else {
-                    font_embolden
-                };
+                // Extra embolden strength when Parley requests synthetic bold
+                // (font lacks a native bold variant). Additive so it's always
+                // distinguishable from the base `font_embolden` weight.
+                const SYNTHESIS_EMBOLDEN_STRENGTH: f32 = 0.02;
+                let embolden = font_embolden
+                    + if synthesis.embolden() {
+                        SYNTHESIS_EMBOLDEN_STRENGTH
+                    } else {
+                        0.0
+                    };
+                let skew = synthesis.skew();
 
                 let Some(paint) = self.brush_to_paint(color) else {
                     continue;
@@ -566,6 +572,12 @@ impl Renderer for VgerRenderer {
                     let scaled_size = font_size * scale as f32;
                     let coords_clone = coords.clone();
 
+                    // Encode synthesis state into a cache discriminator so that
+                    // the same glyph rendered with/without faux bold or italic
+                    // gets separate cache entries in vger-rs.
+                    let synthesis_bits = (synthesis.embolden() as u32)
+                        | (skew.unwrap_or(0.0).to_bits() & 0xFFFF_FFFE);
+
                     self.vger.render_glyph(
                         glyph_x.floor(),
                         glyph_y.floor(),
@@ -573,6 +585,7 @@ impl Renderer for VgerRenderer {
                         glyph_id,
                         scaled_font_size,
                         (x_bin, y_bin),
+                        synthesis_bits,
                         || {
                             // Rasterize glyph via swash on cache miss
                             let image = SCALE_CONTEXT.with_borrow_mut(|ctx| {
@@ -582,15 +595,22 @@ impl Renderer for VgerRenderer {
                                     .hint(true)
                                     .normalized_coords(&coords_clone)
                                     .build();
-                                Render::new(&[
+                                let mut render = Render::new(&[
                                     Source::ColorOutline(0),
                                     Source::ColorBitmap(StrikeWith::BestFit),
                                     Source::Outline,
-                                ])
-                                .format(Format::Alpha)
-                                .offset(swash::zeno::Vector::new(glyph_x.fract(), glyph_y.fract()))
-                                .embolden(embolden)
-                                .render(&mut scaler, glyph_id)
+                                ]);
+                                render
+                                    .format(Format::Alpha)
+                                    .offset(swash::zeno::Vector::new(glyph_x.fract(), glyph_y.fract()))
+                                    .embolden(embolden);
+                                if let Some(angle) = skew {
+                                    render.transform(Some(swash::zeno::Transform::skew(
+                                        swash::zeno::Angle::from_degrees(angle),
+                                        swash::zeno::Angle::ZERO,
+                                    )));
+                                }
+                                render.render(&mut scaler, glyph_id)
                             });
                             match image {
                                 Some(img) => GlyphImage {

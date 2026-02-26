@@ -96,6 +96,7 @@ fn cache_glyph(
     font_size: f32,
     normalized_coords: &[i16],
     embolden_strength: f32,
+    skew: Option<f32>,
     offset_x: f32,
     offset_y: f32,
 ) -> Option<Rc<Glyph>> {
@@ -120,15 +121,22 @@ fn cache_glyph(
             .normalized_coords(normalized_coords)
             .build();
 
-        Render::new(&[
+        let mut render = Render::new(&[
             Source::ColorOutline(0),
             Source::ColorBitmap(StrikeWith::BestFit),
             Source::Outline,
-        ])
-        .format(Format::Alpha)
-        .offset(swash::zeno::Vector::new(offset_x.fract(), offset_y.fract()))
-        .embolden(embolden_strength)
-        .render(&mut scaler, cache_key.glyph_id)
+        ]);
+        render
+            .format(Format::Alpha)
+            .offset(swash::zeno::Vector::new(offset_x.fract(), offset_y.fract()))
+            .embolden(embolden_strength);
+        if let Some(angle) = skew {
+            render.transform(Some(swash::zeno::Transform::skew(
+                swash::zeno::Angle::from_degrees(angle),
+                swash::zeno::Angle::ZERO,
+            )));
+        }
+        render.render(&mut scaler, cache_key.glyph_id)
     })?;
 
     let result = if image.placement.width == 0 || image.placement.height == 0 {
@@ -469,11 +477,16 @@ impl Layer {
                 };
 
                 let font_blob_id = font.data.id();
-                let embolden_strength = if synthesis.embolden() {
-                    font_embolden.max(0.02)
-                } else {
-                    font_embolden
-                };
+                // Extra embolden strength when Parley requests synthetic bold
+                // (font lacks a native bold variant). Additive so it's always
+                // distinguishable from the base `font_embolden` weight.
+                const SYNTHESIS_EMBOLDEN_STRENGTH: f32 = 0.02;
+                let embolden_strength = font_embolden
+                    + if synthesis.embolden() {
+                        SYNTHESIS_EMBOLDEN_STRENGTH
+                    } else {
+                        0.0
+                    };
                 let skew = synthesis.skew();
 
                 for glyph in glyph_run.positioned_glyphs() {
@@ -509,6 +522,7 @@ impl Layer {
                         scaled_font_size,
                         normalized_coords,
                         embolden_strength,
+                        skew,
                         new_x,
                         new_y,
                     );
