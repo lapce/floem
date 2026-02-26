@@ -264,16 +264,12 @@ impl<T> View for Tab<T> {
                 }
                 TabState::Active(active) => {
                     self.active.replace(active);
-                    self.id.request_style(StyleReasonSet::inherited());
                 }
                 TabState::None => {
                     self.active.take();
                 }
             }
-            self.id.request_all();
-            for (child, _) in self.children.iter().flatten() {
-                child.request_all();
-            }
+            self.id.request_style(StyleReasonSet::style_pass());
         }
     }
 
@@ -287,15 +283,6 @@ impl<T> View for Tab<T> {
                     child.set_hidden();
                 }
             }
-        }
-    }
-
-    fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        if let Some(active_tab) = self.active {
-            // Children are now painted automatically by traversal system
-            // Tab switching is handled by hiding inactive tabs, so traversal
-            // only paints the active tab
-            let _ = (active_tab, cx); // Silence unused warnings
         }
     }
 }

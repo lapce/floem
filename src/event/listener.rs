@@ -1,4 +1,3 @@
-#[allow(deprecated)]
 pub use inner::{
     AnyDrag,
     AnyDragSource,
@@ -47,8 +46,6 @@ pub use inner::{
     FocusLost,
 
     GainedPointerCapture,
-    GotFocus,
-    GotPointerCapture,
     ImeCommit,
     ImeDeleteSurrounding,
 
@@ -629,6 +626,7 @@ mod inner {
         /// # Default Actions
         /// No preventable default action. Call `cx.start_drag(drag_token, config, use_preview)` in
         /// this handler to initiate a drag operation.
+        #[doc(alias = "GotPointerCapture")]
         pub GainedPointerCapture: DragToken,
         |event| {
             if let Event::PointerCapture(PointerCaptureEvent::Gained(token)) = event {
@@ -637,12 +635,6 @@ mod inner {
             None
         }
     );
-    /// Web-standard name for pointer capture gained event.
-    #[deprecated(
-        note = "Use `GainedPointerCapture` instead for consistency with other Floem event names. This alias matches the web's `gotpointercapture` event name."
-    )]
-    #[expect(non_upper_case_globals)]
-    pub const GotPointerCapture: GainedPointerCapture = GainedPointerCapture;
 
     event_listener!(
         /// Receives [`PointerCaptureEvent::Lost`] — fired when a view loses pointer capture (on
@@ -823,6 +815,7 @@ mod inner {
         ///     }
         /// )
         /// ```
+        #[doc(alias = "GotFocus")]
         pub FocusGained: (),
         |event| {
             if let Event::Focus(FocusEvent::Gained) = event {
@@ -831,9 +824,6 @@ mod inner {
             None
         }
     );
-    #[deprecated(note = "Use `FocusGained` instead.")]
-    #[expect(non_upper_case_globals)]
-    pub const GotFocus: FocusGained = FocusGained;
 
     event_listener!(
         /// Listens for when an element or its descendants lose focus.

@@ -1315,6 +1315,14 @@ impl RouteCx<'_, '_> {
         let mut new_focus = self.resolve_focus_targets(element_id, keyboard_navigation);
         new_focus.reverse();
 
+        let old_focus_path: SmallVec<[ElementId; 16]> = self
+            .gcx
+            .window_state
+            .focus_state
+            .current_path()
+            .iter()
+            .copied()
+            .collect();
         let old_focus = self
             .gcx
             .window_state
@@ -1327,6 +1335,17 @@ impl RouteCx<'_, '_> {
             return;
         }
         self.gcx.window_state.focus_state.update_path(&new_focus);
+
+        for old in old_focus_path {
+            self.gcx
+                .window_state
+                .mark_style_dirty_selector(old, StyleSelector::FocusWithin);
+        }
+        for new in &new_focus {
+            self.gcx
+                .window_state
+                .mark_style_dirty_selector(*new, StyleSelector::FocusWithin);
+        }
 
         if let Some(old) = old_focus {
             self.gcx
@@ -1358,6 +1377,14 @@ impl RouteCx<'_, '_> {
     }
 
     pub fn clear_focus(&mut self) {
+        let old_focus_path: SmallVec<[ElementId; 16]> = self
+            .gcx
+            .window_state
+            .focus_state
+            .current_path()
+            .iter()
+            .copied()
+            .collect();
         let old_focus = self
             .gcx
             .window_state
@@ -1366,6 +1393,12 @@ impl RouteCx<'_, '_> {
             .last()
             .copied();
         self.gcx.window_state.focus_state.clear();
+
+        for old in old_focus_path {
+            self.gcx
+                .window_state
+                .mark_style_dirty_selector(old, StyleSelector::FocusWithin);
+        }
 
         if let Some(old) = old_focus {
             self.gcx

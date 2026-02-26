@@ -96,7 +96,7 @@ pub struct StyleReasonSet {
     /// Present when `TARGET` is set. `SmallVec<2>` because most views with sub-elements
     /// have only a small fixed number of them (e.g. scroll view has 3 total, rarely more
     /// than 2 dirty simultaneously).
-    pub targets: SmallVec<[(crate::ElementId, Box<StyleReasonSet>); 2]>,
+    pub targets: Vec<(crate::ElementId, StyleReasonSet)>,
 }
 
 impl StyleReasonSet {
@@ -105,7 +105,7 @@ impl StyleReasonSet {
             flags: StyleReasonFlags::empty(),
             selectors: None,
             classes_changed: None,
-            targets: SmallVec::new(),
+            targets: Vec::new(),
         }
     }
 
@@ -158,7 +158,7 @@ impl StyleReasonSet {
 
     pub fn add_target(&mut self, id: crate::ElementId, reason: StyleReasonSet) {
         self.flags |= StyleReasonFlags::TARGET;
-        self.targets.push((id, Box::new(reason)));
+        self.targets.push((id, reason));
     }
 
     pub fn animation() -> Self {
@@ -224,6 +224,7 @@ impl StyleReasonSet {
                 .flags
                 .intersects(StyleReasonFlags::CLASS_CONTEXT_CHANGE)
             || self.flags.intersects(StyleReasonFlags::TRANSITION)
+            || self.flags.intersects(StyleReasonFlags::VISIBILITY)
     }
 
     pub fn needs_style_pass(&self) -> bool {
@@ -237,6 +238,10 @@ impl StyleReasonSet {
 
     pub fn has_animation(&self) -> bool {
         self.flags.contains(StyleReasonFlags::ANIMATION)
+    }
+
+    pub fn has_visiblity(&self) -> bool {
+        self.flags.contains(StyleReasonFlags::VISIBILITY)
     }
 
     pub fn has_transition(&self) -> bool {
@@ -259,7 +264,7 @@ impl StyleReasonSet {
         self.targets
             .iter()
             .find(|(tid, _)| *tid == id)
-            .map(|(_, r)| r.as_ref())
+            .map(|(_, r)| r)
     }
 
     // --- Merging ---
@@ -268,13 +273,32 @@ impl StyleReasonSet {
     pub fn merge(&mut self, other: StyleReasonSet) {
         self.flags |= other.flags;
 
-        if let Some(selectors) = other.selectors {
-            self.selectors = Some(selectors);
+        // Merge selectors (union, not replace)
+        match (self.selectors, other.selectors) {
+            (Some(a), Some(b)) => self.selectors = Some(a | b),
+            (None, Some(b)) => self.selectors = Some(b),
+            _ => {}
         }
 
+        // Merge classes if present
+        match (&mut self.classes_changed, other.classes_changed) {
+            (Some(a), Some(b)) => {
+                for class in b {
+                    if !a.contains(&class) {
+                        a.push(class);
+                    }
+                }
+            }
+            (None, Some(b)) => {
+                self.classes_changed = Some(b);
+            }
+            _ => {}
+        }
+
+        // Merge per-target reasons
         for (id, reason) in other.targets {
             if let Some((_, existing)) = self.targets.iter_mut().find(|(tid, _)| *tid == id) {
-                existing.merge(*reason);
+                existing.merge(reason);
             } else {
                 self.targets.push((id, reason));
             }
@@ -317,6 +341,28 @@ impl StyleReasonSet {
         }
     }
 
+    pub fn for_children(&self) -> StyleReasonSet {
+        let mut out = self.clone();
+        out.targets.clear();
+        out.flags.remove(StyleReasonFlags::TARGET);
+        out.flags.remove(StyleReasonFlags::ANIMATION);
+        out.flags.remove(StyleReasonFlags::STYLE_PASS);
+        // visibility is handled later
+        out.flags.remove(StyleReasonFlags::VISIBILITY);
+
+        if let Some(selectors) = out.selectors {
+            let propagating = selectors.propagating();
+            if propagating.is_empty() {
+                out.selectors = None;
+                out.flags.remove(StyleReasonFlags::SELECTOR);
+            } else {
+                out.selectors = Some(propagating);
+            }
+        }
+
+        out
+    }
+
     pub fn with_target(element_id: ElementId, reason: StyleReasonSet) -> Self {
         let mut s = Self::empty();
         s.add_target(element_id, reason);
@@ -334,7 +380,7 @@ impl StyleReasonSet {
         Self {
             flags: StyleReasonFlags::all(),
             selectors: None,
-            targets: SmallVec::new(),
+            targets: Vec::new(),
             classes_changed: None,
         }
     }

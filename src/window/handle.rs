@@ -228,6 +228,7 @@ impl WindowHandle {
         window_handle
             .window_state
             .set_root_size(size.get_untracked());
+        window_handle.window_state.update_screen_size_bp(size.get_untracked());
         window_handle.process_update_no_paint();
 
         window_handle.window_state.light_dark_theme =

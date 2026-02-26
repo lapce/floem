@@ -457,6 +457,9 @@ impl ViewState {
     ) {
         // Start with the combined stacked styles
         let base_style = self.style();
+        interact_state.is_disabled |= base_style.builtin().set_disabled();
+        interact_state.is_selected |= base_style.builtin().set_selected();
+        interact_state.is_hidden |= base_style.builtin().display() == taffy::Display::None;
         let base_selectors = base_style.selectors() | class_context.selectors();
 
         // Build the full class list: view's classes + view type class
@@ -477,11 +480,20 @@ impl ViewState {
             &inherited_ctx,
             class_context,
         );
+
+        interact_state.is_hidden |= combined.builtin().display() == taffy::Display::None;
+        interact_state.is_selected |= combined.builtin().set_selected();
+        interact_state.is_disabled |= combined.builtin().set_disabled();
+
         self.has_style_selectors = Some(selectors | base_selectors);
         self.combined_pre_animation_style = combined.clone();
+        self.combined_style = combined.clone();
     }
 
-    pub fn apply_animations(&mut self) -> bool {
+    pub fn apply_animations(
+        &mut self,
+        interact_state: &mut crate::style::InteractionState,
+    ) -> bool {
         let mut combined = self.combined_pre_animation_style.clone();
         // ─────────────────────────────────────────────────────────────────────
         // Process animations
@@ -511,7 +523,11 @@ impl ViewState {
             }
         }
 
-        self.combined_style = combined.clone();
+        interact_state.is_hidden |= combined.builtin().display() == taffy::Display::None;
+        interact_state.is_selected |= combined.builtin().set_selected();
+        interact_state.is_disabled |= combined.builtin().set_disabled();
+
+        self.combined_style = combined;
 
         has_active_animation
     }

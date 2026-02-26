@@ -154,7 +154,7 @@ use taffy::{
     },
 };
 
-use crate::layout::responsive::{ScreenSize, ScreenSizeBp};
+use crate::layout::responsive::{GridBreakpoints, ScreenSize, ScreenSizeBp};
 
 use crate::style::components::Focus;
 use crate::views::editor::SelectionColor;
@@ -185,7 +185,7 @@ pub use props::{
     ExtractorField, StyleClass, StyleClassInfo, StyleClassRef, StyleKey, StyleKeyInfo, StyleProp,
     StylePropInfo, StylePropReader, StylePropRef,
 };
-pub use selectors::{StyleSelector, StyleSelectors};
+pub use selectors::{NthChild, StructuralSelector, StyleSelector, StyleSelectors};
 pub use theme::{DesignSystem, StyleThemeExt};
 pub use transition::{DirectTransition, Transition, TransitionState};
 pub use unit::{AnchorAbout, Angle, Auto, DurationUnitExt, Pct, Px, PxPct, PxPctAuto, UnitExt};
@@ -193,7 +193,10 @@ pub use values::{CombineResult, ObjectFit, StrokeWrap, StyleMapValue, StylePropV
 
 pub use cache::{StyleCache, StyleCacheKey};
 
-pub(crate) use props::{CONTEXT_MAPPINGS_INFO, ImHashMap, style_key_selector};
+pub(crate) use props::{
+    CONTEXT_MAPPINGS_INFO, ImHashMap, RESPONSIVE_SELECTORS_INFO, STRUCTURAL_SELECTORS_INFO,
+    style_key_selector,
+};
 
 static NEXT_STYLE_MERGE_ID: AtomicU64 = AtomicU64::new(1);
 const MERGE_MIX_CONST: u64 = 0x9E3779B97F4A7C15;
@@ -208,6 +211,36 @@ fn combine_merge_ids(a: u64, b: u64) -> u64 {
 
 /// A closure that maps context values to style properties.
 type ContextMapFn = Rc<dyn Fn(Style, Box<dyn Fn(StyleKey) -> Option<Rc<dyn Any>>>) -> Style>;
+type StructuralSelectorRules = SmallVec<[(StructuralSelector, Rc<Style>); 2]>;
+type ResponsiveSelectorRules = SmallVec<[(ResponsiveSelector, Rc<Style>); 2]>;
+
+#[derive(Clone)]
+struct StructuralSelectors(StructuralSelectorRules);
+
+#[derive(Clone)]
+struct ResponsiveSelectors(ResponsiveSelectorRules);
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum ResponsiveSelector {
+    ScreenSize(ScreenSize),
+    MinWidth(Px),
+    MaxWidth(Px),
+    WidthRange { min: Px, max: Px },
+}
+
+impl ResponsiveSelector {
+    fn matches(&self, width: f64) -> bool {
+        match self {
+            ResponsiveSelector::ScreenSize(size) => {
+                let bp = GridBreakpoints::default().get_width_bp(width);
+                size.breakpoints().contains(&bp)
+            }
+            ResponsiveSelector::MinWidth(min) => width >= min.0,
+            ResponsiveSelector::MaxWidth(max) => width <= max.0,
+            ResponsiveSelector::WidthRange { min, max } => width >= min.0 && width <= max.0,
+        }
+    }
+}
 
 /// Simple storage for context mapping closures.
 /// Unlike the old ContextMappings, this only stores the closures themselves -
@@ -232,6 +265,24 @@ pub(crate) fn screen_size_bp_to_key(breakpoint: ScreenSizeBp) -> StyleKey {
         ScreenSizeBp::Lg => selector_lg(),
         ScreenSizeBp::Xl => selector_xl(),
         ScreenSizeBp::Xxl => selector_xxl(),
+    }
+}
+
+fn context_mappings_key() -> StyleKey {
+    StyleKey {
+        info: &CONTEXT_MAPPINGS_INFO,
+    }
+}
+
+fn structural_selectors_key() -> StyleKey {
+    StyleKey {
+        info: &STRUCTURAL_SELECTORS_INFO,
+    }
+}
+
+fn responsive_selectors_key() -> StyleKey {
+    StyleKey {
+        info: &RESPONSIVE_SELECTORS_INFO,
     }
 }
 
@@ -424,6 +475,36 @@ fn resolve_selectors_collecting_mappings(
 
         let mut changed = false;
 
+        // Apply structural selectors (:first-child, :last-child, :nth-child(...))
+        // before state selectors so nested :hover/:focus inside structural maps can
+        // be discovered and applied in the same resolution loop.
+        if let Some(structural_rules) = extract_structural_selectors(&mut style) {
+            for (selector, map) in structural_rules {
+                if selector.matches(interact_state.child_index, interact_state.sibling_count) {
+                    let mut map = map.as_ref().clone();
+                    if let Some(mappings) = extract_context_mappings(&mut map) {
+                        all_mappings.extend(mappings);
+                    }
+                    style.apply_mut_no_mappings(map);
+                    changed = true;
+                }
+            }
+        }
+
+        // Apply responsive selectors (parameterized)
+        if let Some(responsive_rules) = extract_responsive_selectors(&mut style) {
+            for (selector, map) in responsive_rules {
+                if selector.matches(interact_state.window_width) {
+                    let mut map = map.as_ref().clone();
+                    if let Some(mappings) = extract_context_mappings(&mut map) {
+                        all_mappings.extend(mappings);
+                    }
+                    style.apply_mut_no_mappings(map);
+                    changed = true;
+                }
+            }
+        }
+
         // Helper to apply a nested map and collect any context mappings from it
         let mut apply_nested = |style: &mut Style, key: StyleKey| -> bool {
             if let Some(mut map) = style.get_nested_map(key) {
@@ -478,21 +559,26 @@ fn resolve_selectors_collecting_mappings(
             }
 
             // Focus states
-            if interact_state.is_focused {
-                if apply_nested(&mut style, StyleSelector::Focus.to_key()) {
+            if interact_state.is_focused && apply_nested(&mut style, StyleSelector::Focus.to_key())
+            {
+                changed = true;
+            }
+
+            if interact_state.is_focus_within
+                && apply_nested(&mut style, StyleSelector::FocusWithin.to_key())
+            {
+                changed = true;
+            }
+
+            if interact_state.is_focused && interact_state.using_keyboard_navigation {
+                if apply_nested(&mut style, StyleSelector::FocusVisible.to_key()) {
                     changed = true;
                 }
 
-                if interact_state.using_keyboard_navigation {
-                    if apply_nested(&mut style, StyleSelector::FocusVisible.to_key()) {
-                        changed = true;
-                    }
-
-                    if interact_state.is_active
-                        && apply_nested(&mut style, StyleSelector::Active.to_key())
-                    {
-                        changed = true;
-                    }
+                if interact_state.is_active
+                    && apply_nested(&mut style, StyleSelector::Active.to_key())
+                {
+                    changed = true;
                 }
             }
 
@@ -514,13 +600,27 @@ fn resolve_selectors_collecting_mappings(
 }
 
 fn extract_context_mappings(style: &mut Style) -> Option<Vec<ContextMapFn>> {
-    let key = StyleKey {
-        info: &CONTEXT_MAPPINGS_INFO,
-    };
+    let key = context_mappings_key();
     style.map.remove(&key).map(|rc| {
         let mappings = rc.downcast_ref::<ContextMappings>().unwrap();
         mappings.0.iter().cloned().collect()
     })
+}
+
+fn extract_structural_selectors(style: &mut Style) -> Option<StructuralSelectorRules> {
+    let key = structural_selectors_key();
+    style
+        .map
+        .remove(&key)
+        .map(|rc| rc.downcast_ref::<StructuralSelectors>().unwrap().0.clone())
+}
+
+fn extract_responsive_selectors(style: &mut Style) -> Option<ResponsiveSelectorRules> {
+    let key = responsive_selectors_key();
+    style
+        .map
+        .remove(&key)
+        .map(|rc| rc.downcast_ref::<ResponsiveSelectors>().unwrap().0.clone())
 }
 
 #[derive(Clone)]
@@ -635,7 +735,7 @@ impl Style {
         self.merge_id
     }
 
-    pub fn class_maps_ptr_eq(&self, other: &Style) -> SmallVec<[StyleClassRef; 4]> {
+    pub fn class_maps_eq(&self, other: &Style) -> SmallVec<[StyleClassRef; 4]> {
         // Pass 1: every Class entry in self must exist in other
         let mut changed = SmallVec::new();
         for (k, v) in &self.map {
@@ -717,10 +817,25 @@ impl Style {
         let mut result = self.context_selectors;
 
         for (k, v) in &self.map {
-            if let StyleKeyInfo::Selector(selector) = k.info {
-                result = result
-                    .union(*selector)
-                    .union(v.downcast_ref::<Style>().unwrap().selectors());
+            match k.info {
+                StyleKeyInfo::Selector(selector) => {
+                    result = result
+                        .union(*selector)
+                        .union(v.downcast_ref::<Style>().unwrap().selectors());
+                }
+                StyleKeyInfo::StructuralSelectors => {
+                    let rules = &v.downcast_ref::<StructuralSelectors>().unwrap().0;
+                    for (_, nested_style) in rules {
+                        result = result.union(nested_style.as_ref().selectors());
+                    }
+                }
+                StyleKeyInfo::ResponsiveSelectors => {
+                    let rules = &v.downcast_ref::<ResponsiveSelectors>().unwrap().0;
+                    for (_, nested_style) in rules {
+                        result = result.union(nested_style.as_ref().selectors());
+                    }
+                }
+                _ => {}
             }
         }
 
@@ -759,7 +874,6 @@ impl Style {
         let default_value = P::default_value();
         let result = f(self.clone(), &default_value);
         let result_selectors = result.selectors();
-        dbg!(result_selectors);
 
         // Create a closure for context-aware re-evaluation during style resolution.
         // Cache default_value inside closure to avoid repeated allocations.
@@ -782,9 +896,7 @@ impl Style {
         );
 
         // Store the closure for later context resolution
-        let key = StyleKey {
-            info: &CONTEXT_MAPPINGS_INFO,
-        };
+        let key = context_mappings_key();
 
         // Build new mappings vec - use Rc::make_mut for efficient copy-on-write
         let mut mappings_vec = self
@@ -835,9 +947,7 @@ impl Style {
         );
 
         // Store the closure
-        let key = StyleKey {
-            info: &CONTEXT_MAPPINGS_INFO,
-        };
+        let key = context_mappings_key();
 
         // Build new mappings vec efficiently
         let mut mappings_vec = self
@@ -897,6 +1007,51 @@ impl Style {
         self.set_map_selector(selector.to_key(), map)
     }
 
+    fn set_structural_selector(&mut self, selector: StructuralSelector, map: Style) {
+        let key = structural_selectors_key();
+        match self.map.entry(key) {
+            Entry::Occupied(mut e) => {
+                let mut rules = e
+                    .get()
+                    .downcast_ref::<StructuralSelectors>()
+                    .unwrap()
+                    .0
+                    .clone();
+                rules.push((selector, Rc::new(map)));
+                *e.get_mut() = Rc::new(StructuralSelectors(rules));
+            }
+            Entry::Vacant(e) => {
+                let mut rules = SmallVec::new();
+                rules.push((selector, Rc::new(map)));
+                e.insert(Rc::new(StructuralSelectors(rules)));
+            }
+        }
+        self.merge_id = next_style_merge_id();
+    }
+
+    fn set_responsive_selector(&mut self, selector: ResponsiveSelector, map: Style) {
+        let key = responsive_selectors_key();
+        match self.map.entry(key) {
+            Entry::Occupied(mut e) => {
+                let mut rules = e
+                    .get()
+                    .downcast_ref::<ResponsiveSelectors>()
+                    .unwrap()
+                    .0
+                    .clone();
+                rules.push((selector, Rc::new(map)));
+                *e.get_mut() = Rc::new(ResponsiveSelectors(rules));
+            }
+            Entry::Vacant(e) => {
+                let mut rules = SmallVec::new();
+                rules.push((selector, Rc::new(map)));
+                e.insert(Rc::new(ResponsiveSelectors(rules)));
+            }
+        }
+        self.context_selectors |= StyleSelectors::empty().responsive();
+        self.merge_id = next_style_merge_id();
+    }
+
     fn set_map_selector(&mut self, key: StyleKey, map: Style) {
         match self.map.entry(key) {
             Entry::Occupied(mut e) => {
@@ -909,10 +1064,6 @@ impl Style {
             }
         }
         self.merge_id = next_style_merge_id();
-    }
-
-    fn set_breakpoint(&mut self, breakpoint: ScreenSizeBp, map: Style) {
-        self.set_map_selector(screen_size_bp_to_key(breakpoint), map)
     }
 
     fn set_class(&mut self, class: StyleClassRef, map: Style) {
@@ -984,6 +1135,30 @@ impl Style {
                         e.insert(v.clone());
                     }
                 },
+                StyleKeyInfo::StructuralSelectors => match self.map.entry(*k) {
+                    Entry::Occupied(mut e) => {
+                        let new_rules = &v.downcast_ref::<StructuralSelectors>().unwrap().0;
+                        let current = &e.get().downcast_ref::<StructuralSelectors>().unwrap().0;
+                        let mut merged: StructuralSelectorRules = current.clone();
+                        merged.extend(new_rules.iter().cloned());
+                        *e.get_mut() = Rc::new(StructuralSelectors(merged));
+                    }
+                    Entry::Vacant(e) => {
+                        e.insert(v.clone());
+                    }
+                },
+                StyleKeyInfo::ResponsiveSelectors => match self.map.entry(*k) {
+                    Entry::Occupied(mut e) => {
+                        let new_rules = &v.downcast_ref::<ResponsiveSelectors>().unwrap().0;
+                        let current = &e.get().downcast_ref::<ResponsiveSelectors>().unwrap().0;
+                        let mut merged: ResponsiveSelectorRules = current.clone();
+                        merged.extend(new_rules.iter().cloned());
+                        *e.get_mut() = Rc::new(ResponsiveSelectors(merged));
+                    }
+                    Entry::Vacant(e) => {
+                        e.insert(v.clone());
+                    }
+                },
                 StyleKeyInfo::Transition => {
                     self.map.insert(*k, v.clone());
                 }
@@ -1049,6 +1224,30 @@ impl Style {
                 StyleKeyInfo::Transition => {
                     self.map.insert(*k, v.clone());
                 }
+                StyleKeyInfo::StructuralSelectors => match self.map.entry(*k) {
+                    Entry::Occupied(mut e) => {
+                        let new_rules = &v.downcast_ref::<StructuralSelectors>().unwrap().0;
+                        let current = &e.get().downcast_ref::<StructuralSelectors>().unwrap().0;
+                        let mut merged: StructuralSelectorRules = current.clone();
+                        merged.extend(new_rules.iter().cloned());
+                        *e.get_mut() = Rc::new(StructuralSelectors(merged));
+                    }
+                    Entry::Vacant(e) => {
+                        e.insert(v.clone());
+                    }
+                },
+                StyleKeyInfo::ResponsiveSelectors => match self.map.entry(*k) {
+                    Entry::Occupied(mut e) => {
+                        let new_rules = &v.downcast_ref::<ResponsiveSelectors>().unwrap().0;
+                        let current = &e.get().downcast_ref::<ResponsiveSelectors>().unwrap().0;
+                        let mut merged: ResponsiveSelectorRules = current.clone();
+                        merged.extend(new_rules.iter().cloned());
+                        *e.get_mut() = Rc::new(ResponsiveSelectors(merged));
+                    }
+                    Entry::Vacant(e) => {
+                        e.insert(v.clone());
+                    }
+                },
                 StyleKeyInfo::Prop(info) => {
                     // Track inherited props for O(1) early-exit in apply_only_inherited
                     if info.inherited {
@@ -1071,7 +1270,7 @@ impl Style {
 
     pub(crate) fn apply_mut(&mut self, over: Style) {
         // FAST PATH: identical semantic payload identity
-        if self.merge_id == over.merge_id || self.map.ptr_eq(&over.map) {
+        if self.merge_id == over.merge_id {
             return;
         }
         let over_merge_id = over.merge_id;
@@ -1083,7 +1282,7 @@ impl Style {
 
     pub(crate) fn apply_mut_no_mappings(&mut self, over: Style) {
         // FAST PATH: identical semantic payload identity
-        if self.merge_id == over.merge_id || self.map.ptr_eq(&over.map) {
+        if self.merge_id == over.merge_id {
             return;
         }
         let over_merge_id = over.merge_id;
@@ -1147,6 +1346,10 @@ style_key_selector!(
     StyleSelectors::empty().set_selector(StyleSelector::FocusVisible, true)
 );
 style_key_selector!(
+    focus_within,
+    StyleSelectors::empty().set_selector(StyleSelector::FocusWithin, true)
+);
+style_key_selector!(
     disabled,
     StyleSelectors::empty().set_selector(StyleSelector::Disabled, true)
 );
@@ -1173,6 +1376,7 @@ impl StyleSelector {
             StyleSelector::Hover => hover(),
             StyleSelector::Focus => focus(),
             StyleSelector::FocusVisible => focus_visible(),
+            StyleSelector::FocusWithin => focus_within(),
             StyleSelector::Disabled => disabled(),
             StyleSelector::Active => active(),
             StyleSelector::Dragging => dragging(),
@@ -2002,6 +2206,16 @@ impl Style {
         self
     }
 
+    pub(crate) fn structural_selector(
+        mut self,
+        selector: StructuralSelector,
+        style: impl FnOnce(Style) -> Style,
+    ) -> Self {
+        let over = style(Style::default());
+        self.set_structural_selector(selector, over);
+        self
+    }
+
     /// The visual style to apply when the mouse hovers over the view
     pub fn hover(self, style: impl FnOnce(Style) -> Style) -> Self {
         self.selector(StyleSelector::Hover, style)
@@ -2015,6 +2229,37 @@ impl Style {
     /// Similar to the `:focus-visible` css selector, this style only activates when the view was focused via tab or arrow navigation.
     pub fn focus_visible(self, style: impl FnOnce(Style) -> Style) -> Self {
         self.selector(StyleSelector::FocusVisible, style)
+    }
+
+    /// Similar to the `:focus-within` css selector, this style activates when this
+    /// view or any descendant is in the focus path.
+    pub fn focus_within(self, style: impl FnOnce(Style) -> Style) -> Self {
+        self.selector(StyleSelector::FocusWithin, style)
+    }
+
+    /// Similar to the `:first-child` css selector.
+    pub fn first_child(self, style: impl FnOnce(Style) -> Style) -> Self {
+        self.structural_selector(StructuralSelector::FirstChild, style)
+    }
+
+    /// Similar to the `:last-child` css selector.
+    pub fn last_child(self, style: impl FnOnce(Style) -> Style) -> Self {
+        self.structural_selector(StructuralSelector::LastChild, style)
+    }
+
+    /// Similar to the `:nth-child(...)` css selector.
+    pub fn nth_child(self, nth: NthChild, style: impl FnOnce(Style) -> Style) -> Self {
+        self.structural_selector(StructuralSelector::NthChild(nth), style)
+    }
+
+    /// Convenience for `:nth-child(odd)`.
+    pub fn odd(self, style: impl FnOnce(Style) -> Style) -> Self {
+        self.nth_child(NthChild::odd(), style)
+    }
+
+    /// Convenience for `:nth-child(even)`.
+    pub fn even(self, style: impl FnOnce(Style) -> Style) -> Self {
+        self.nth_child(NthChild::even(), style)
     }
 
     /// The visual style to apply when the view is in a selected state.
@@ -2050,9 +2295,47 @@ impl Style {
     /// Applies styles that activate at specific screen sizes (responsive design).
     pub fn responsive(mut self, size: ScreenSize, style: impl FnOnce(Style) -> Style) -> Self {
         let over = style(Style::default());
-        for breakpoint in size.breakpoints() {
-            self.set_breakpoint(breakpoint, over.clone());
-        }
+        self.set_responsive_selector(ResponsiveSelector::ScreenSize(size), over);
+        self
+    }
+
+    /// Applies styles when window width is at least `min`.
+    pub fn min_window_width(
+        mut self,
+        min: impl Into<Px>,
+        style: impl FnOnce(Style) -> Style,
+    ) -> Self {
+        let over = style(Style::default());
+        self.set_responsive_selector(ResponsiveSelector::MinWidth(min.into()), over);
+        self
+    }
+
+    /// Applies styles when window width is at most `max`.
+    pub fn max_window_width(
+        mut self,
+        max: impl Into<Px>,
+        style: impl FnOnce(Style) -> Style,
+    ) -> Self {
+        let over = style(Style::default());
+        self.set_responsive_selector(ResponsiveSelector::MaxWidth(max.into()), over);
+        self
+    }
+
+    /// Applies styles when window width is within `[min, max]` (inclusive).
+    pub fn window_width_range(
+        mut self,
+        min: impl Into<Px>,
+        max: impl Into<Px>,
+        style: impl FnOnce(Style) -> Style,
+    ) -> Self {
+        let over = style(Style::default());
+        self.set_responsive_selector(
+            ResponsiveSelector::WidthRange {
+                min: min.into(),
+                max: max.into(),
+            },
+            over,
+        );
         self
     }
 

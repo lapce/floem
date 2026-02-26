@@ -13,7 +13,7 @@ use floem_reactive::UpdaterEffect;
 use crate::layout::responsive::ScreenSize;
 use crate::view::{IntoView, View};
 
-use super::{Style, StyleClass, StyleProp, StyleSelector, Transition};
+use super::{NthChild, StructuralSelector, Style, StyleClass, StyleProp, StyleSelector, Transition};
 
 /// A trait for custom styling of specific view types.
 ///
@@ -99,6 +99,42 @@ pub trait CustomStyle: Default + Clone + Into<Style> + From<Style> {
     fn focus_visible(self, style: impl FnOnce(Self) -> Self) -> Self {
         let self_style: Style = self.into();
         let new = self_style.selector(StyleSelector::FocusVisible, |_| {
+            style(Self::default()).into()
+        });
+        new.into()
+    }
+
+    /// Similar to the `:focus-within` css selector, this style activates when this
+    /// view or any descendant is in the focus path.
+    fn focus_within(self, style: impl FnOnce(Self) -> Self) -> Self {
+        let self_style: Style = self.into();
+        let new =
+            self_style.selector(StyleSelector::FocusWithin, |_| style(Self::default()).into());
+        new.into()
+    }
+
+    /// Similar to the `:first-child` css selector.
+    fn first_child(self, style: impl FnOnce(Self) -> Self) -> Self {
+        let self_style: Style = self.into();
+        let new = self_style.structural_selector(StructuralSelector::FirstChild, |_| {
+            style(Self::default()).into()
+        });
+        new.into()
+    }
+
+    /// Similar to the `:last-child` css selector.
+    fn last_child(self, style: impl FnOnce(Self) -> Self) -> Self {
+        let self_style: Style = self.into();
+        let new = self_style.structural_selector(StructuralSelector::LastChild, |_| {
+            style(Self::default()).into()
+        });
+        new.into()
+    }
+
+    /// Similar to the `:nth-child(...)` css selector.
+    fn nth_child(self, nth: NthChild, style: impl FnOnce(Self) -> Self) -> Self {
+        let self_style: Style = self.into();
+        let new = self_style.structural_selector(StructuralSelector::NthChild(nth), |_| {
             style(Self::default()).into()
         });
         new.into()
@@ -203,10 +239,45 @@ pub trait CustomStyle: Default + Clone + Into<Style> + From<Style> {
         let over = style(Self::default());
         let over_style: Style = over.into();
         let mut self_style: Style = self.into();
-        for breakpoint in size.breakpoints() {
-            self_style.set_breakpoint(breakpoint, over_style.clone());
-        }
+        self_style = self_style.responsive(size, |_| over_style);
         self_style.into()
+    }
+
+    /// Applies custom styling when window width is at least `min`.
+    fn min_window_width(
+        self,
+        min: impl Into<super::Px>,
+        style: impl FnOnce(Self) -> Self,
+    ) -> Self {
+        let over = style(Self::default());
+        let over_style: Style = over.into();
+        let self_style: Style = self.into();
+        self_style.min_window_width(min, |_| over_style).into()
+    }
+
+    /// Applies custom styling when window width is at most `max`.
+    fn max_window_width(
+        self,
+        max: impl Into<super::Px>,
+        style: impl FnOnce(Self) -> Self,
+    ) -> Self {
+        let over = style(Self::default());
+        let over_style: Style = over.into();
+        let self_style: Style = self.into();
+        self_style.max_window_width(max, |_| over_style).into()
+    }
+
+    /// Applies custom styling when window width is within `[min, max]` (inclusive).
+    fn window_width_range(
+        self,
+        min: impl Into<super::Px>,
+        max: impl Into<super::Px>,
+        style: impl FnOnce(Self) -> Self,
+    ) -> Self {
+        let over = style(Self::default());
+        let over_style: Style = over.into();
+        let self_style: Style = self.into();
+        self_style.window_width_range(min, max, |_| over_style).into()
     }
 
     /// Conditionally applies custom styling based on a boolean condition.

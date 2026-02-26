@@ -84,6 +84,12 @@ unsafe impl slotmap::Key for ViewId {
     }
 }
 
+fn request_structural_selector_restyle(children: &[ViewId]) {
+    for child in children {
+        child.request_style(StyleReasonSet::full_recalc());
+    }
+}
+
 impl ViewId {
     /// Create a new unique `Viewid`.
     pub fn new() -> ViewId {
@@ -306,6 +312,7 @@ impl ViewId {
         reparent_scope_if_needed(child_id, *self);
         // Invalidate stacking cache since children changed
         invalidate_stacking_cache(self.get_element_id());
+        request_structural_selector_restyle(&self.children());
     }
 
     /// Append multiple children to this Id's list of children.
@@ -355,6 +362,7 @@ impl ViewId {
         }
         // Invalidate stacking cache since children changed
         invalidate_stacking_cache(self.get_element_id());
+        request_structural_selector_restyle(&self.children());
     }
 
     /// Set the children views of this Id
@@ -395,6 +403,7 @@ impl ViewId {
         }
         // Invalidate stacking cache since children changed
         invalidate_stacking_cache(self.get_element_id());
+        request_structural_selector_restyle(&self.children());
     }
 
     /// Set the children views of this Id using a Vector
@@ -443,6 +452,7 @@ impl ViewId {
         }
         // Invalidate stacking cache since children changed
         invalidate_stacking_cache(self.get_element_id());
+        request_structural_selector_restyle(&self.children());
     }
 
     /// Set the view that should be associated with this Id
@@ -504,6 +514,7 @@ impl ViewId {
         });
         // Invalidate stacking cache since children changed
         invalidate_stacking_cache(self.get_element_id());
+        request_structural_selector_restyle(&self.children());
     }
 
     /// Get the list of `ViewId`s that are associated with the children views of this `ViewId`
@@ -1603,7 +1614,6 @@ impl ViewId {
             }
         };
         if changed {
-            // No need to request layout. the style pass will determine if that is necessary and request layout.
             self.request_style(StyleReasonSet::visibility());
         }
     }

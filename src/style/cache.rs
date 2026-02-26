@@ -500,7 +500,10 @@ impl Style {
                         nested_style.content_hash().hash(&mut hasher);
                     }
                 }
-                StyleKeyInfo::ContextMappings | StyleKeyInfo::Transition => {
+                StyleKeyInfo::ContextMappings
+                | StyleKeyInfo::StructuralSelectors
+                | StyleKeyInfo::ResponsiveSelectors
+                | StyleKeyInfo::Transition => {
                     // Context mappings and transitions use pointer hash for identity
                     // since closures can't be meaningfully hashed
                     std::ptr::hash(std::rc::Rc::as_ptr(value), &mut hasher);

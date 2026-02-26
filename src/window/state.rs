@@ -256,6 +256,10 @@ impl WindowState {
     }
 
     pub fn is_focused(&self, id: impl Into<ElementId>) -> bool {
+        self.focus_state.current_path().last() == Some(&id.into())
+    }
+
+    pub fn is_focus_within(&self, id: impl Into<ElementId>) -> bool {
         self.focus_state.current_path().contains(&id.into())
     }
 

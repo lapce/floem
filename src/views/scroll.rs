@@ -11,7 +11,6 @@ use ui_events::pointer::{PointerButton, PointerEvent, PointerId};
 
 use crate::context::LayoutChanged;
 use crate::easing::Linear;
-use crate::event::listener::UpdatePhaseBoxTreeCommit;
 use crate::event::{
     CustomEvent, DragEvent, DragSourceEvent, PointerCaptureEvent, PointerScrollEventExt, RouteKind,
     ScrollTo,
@@ -905,11 +904,7 @@ impl View for Scroll {
         self.scroll_style.read(cx);
 
         // If the reason implies nested style maps must be resolved, restyle everything.
-        if cx
-            .reason
-            .as_ref()
-            .is_some_and(|r| r.needs_resolve_nested_maps())
-        {
+        if cx.reason.needs_resolve_nested_maps() {
             self.v_handle.style(cx);
             self.h_handle.style(cx);
             self.v_track.style(cx);
@@ -917,7 +912,8 @@ impl View for Scroll {
             return;
         }
 
-        for (element_id, _reason) in cx.targeted_elements.clone() {
+        for (element_id, reason) in cx.targeted_elements.clone() {
+            dbg!(element_id, reason);
             if element_id == self.v_handle.element_id {
                 self.v_handle.style(cx);
             } else if element_id == self.h_handle.element_id {

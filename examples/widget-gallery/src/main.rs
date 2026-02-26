@@ -104,7 +104,12 @@ fn app_view(window_id: WindowId) -> impl IntoView {
             })
         })
         .list()
-        .style(|s| s.flex_col().width(140.0).flex_grow(1.));
+        .style(|s| {
+            s.flex_col()
+                .width(140.0)
+                .flex_grow(1.)
+                .even(|s| s.background(css::PINK))
+        });
 
     let active_tab = side_bar_list.selection();
 

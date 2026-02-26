@@ -558,9 +558,15 @@ pub enum StyleKeyInfo {
     Class(StyleClassInfo),
     /// Storage for context mapping closures.
     ContextMappings,
+    /// Storage for parameterized structural selectors (`:first-child`, `:nth-child(...)`, etc.).
+    StructuralSelectors,
+    /// Storage for parameterized responsive selectors (`min/max/range` window width).
+    ResponsiveSelectors,
 }
 
 pub(crate) static CONTEXT_MAPPINGS_INFO: StyleKeyInfo = StyleKeyInfo::ContextMappings;
+pub(crate) static STRUCTURAL_SELECTORS_INFO: StyleKeyInfo = StyleKeyInfo::StructuralSelectors;
+pub(crate) static RESPONSIVE_SELECTORS_INFO: StyleKeyInfo = StyleKeyInfo::ResponsiveSelectors;
 
 #[derive(Copy, Clone)]
 pub struct StyleKey {
@@ -571,7 +577,10 @@ impl StyleKey {
     pub(crate) fn debug_any(&self, value: &dyn Any) -> String {
         match self.info {
             StyleKeyInfo::Selector(selectors) => selectors.debug_string(),
-            StyleKeyInfo::Transition | StyleKeyInfo::ContextMappings => String::new(),
+            StyleKeyInfo::Transition
+            | StyleKeyInfo::ContextMappings
+            | StyleKeyInfo::StructuralSelectors
+            | StyleKeyInfo::ResponsiveSelectors => String::new(),
             StyleKeyInfo::Class(info) => (info.name)().to_string(),
             StyleKeyInfo::Prop(v) => (v.debug_any)(value),
         }
@@ -580,7 +589,9 @@ impl StyleKey {
         match self.info {
             StyleKeyInfo::Selector(..)
             | StyleKeyInfo::Transition
-            | StyleKeyInfo::ContextMappings => false,
+            | StyleKeyInfo::ContextMappings
+            | StyleKeyInfo::StructuralSelectors
+            | StyleKeyInfo::ResponsiveSelectors => false,
             StyleKeyInfo::Class(..) => true,
             StyleKeyInfo::Prop(v) => v.inherited,
         }
@@ -609,6 +620,8 @@ impl Debug for StyleKey {
             }
             StyleKeyInfo::Transition => write!(f, "transition"),
             StyleKeyInfo::ContextMappings => write!(f, "ContextMappings"),
+            StyleKeyInfo::StructuralSelectors => write!(f, "StructuralSelectors"),
+            StyleKeyInfo::ResponsiveSelectors => write!(f, "ResponsiveSelectors"),
             StyleKeyInfo::Class(v) => write!(f, "{}", (v.name)()),
             StyleKeyInfo::Prop(v) => write!(f, "{}", (v.name)()),
         }

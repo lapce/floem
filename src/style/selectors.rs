@@ -11,13 +11,14 @@ bitflags! {
         const HOVER         = 1 << 0;
         const FOCUS         = 1 << 1;
         const FOCUS_VISIBLE = 1 << 2;
-        const DISABLED      = 1 << 3;
-        const DARK_MODE     = 1 << 4;
-        const ACTIVE        = 1 << 5;
-        const DRAGGING      = 1 << 6;
-        const SELECTED      = 1 << 7;
-        const FILE_HOVER    = 1 << 8;
-        const RESPONSIVE    = 1 << 9;
+        const FOCUS_WITHIN  = 1 << 3;
+        const DISABLED      = 1 << 4;
+        const DARK_MODE     = 1 << 5;
+        const ACTIVE        = 1 << 6;
+        const DRAGGING      = 1 << 7;
+        const SELECTED      = 1 << 8;
+        const FILE_HOVER    = 1 << 9;
+        const RESPONSIVE    = 1 << 10;
     }
 }
 
@@ -27,6 +28,7 @@ pub enum StyleSelector {
     Hover,
     Focus,
     FocusVisible,
+    FocusWithin,
     Disabled,
     DarkMode,
     Active,
@@ -35,12 +37,81 @@ pub enum StyleSelector {
     FileHover,
 }
 
+/// `an + b` expression used by `:nth-child(...)`.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct NthChild {
+    pub a: isize,
+    pub b: isize,
+}
+
+impl NthChild {
+    /// Match odd indices: `2n + 1`
+    pub const fn odd() -> Self {
+        Self { a: 2, b: 1 }
+    }
+
+    /// Match even indices: `2n`
+    pub const fn even() -> Self {
+        Self { a: 2, b: 0 }
+    }
+
+    /// Match exactly one index.
+    pub const fn exact(index: usize) -> Self {
+        Self {
+            a: 0,
+            b: index as isize,
+        }
+    }
+
+    /// Match CSS-style `an + b`.
+    pub const fn an_plus_b(a: isize, b: isize) -> Self {
+        Self { a, b }
+    }
+
+    pub fn matches(self, index: usize) -> bool {
+        if index == 0 {
+            return false;
+        }
+        let index = index as isize;
+        if self.a == 0 {
+            return index == self.b;
+        }
+        let diff = index - self.b;
+        if diff % self.a != 0 {
+            return false;
+        }
+        diff / self.a >= 0
+    }
+}
+
+/// Parameterized structural selectors that depend on sibling position.
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub enum StructuralSelector {
+    FirstChild,
+    LastChild,
+    NthChild(NthChild),
+}
+
+impl StructuralSelector {
+    pub fn matches(&self, child_index: Option<usize>, sibling_count: usize) -> bool {
+        let Some(index) = child_index else {
+            return false;
+        };
+        match self {
+            StructuralSelector::FirstChild => index == 1,
+            StructuralSelector::LastChild => sibling_count > 0 && index == sibling_count,
+            StructuralSelector::NthChild(expr) => expr.matches(index),
+        }
+    }
+}
+
 impl StyleSelector {
     pub const fn all() -> &'static [StyleSelector] {
         &[
             StyleSelector::Hover,
             StyleSelector::Focus,
             StyleSelector::FocusVisible,
+            StyleSelector::FocusWithin,
             StyleSelector::Disabled,
             StyleSelector::Active,
             StyleSelector::Dragging,
@@ -55,6 +126,7 @@ impl StyleSelector {
             StyleSelector::Hover => "Hover",
             StyleSelector::Focus => "Focus",
             StyleSelector::FocusVisible => "FocusVisible",
+            StyleSelector::FocusWithin => "FocusWithin",
             StyleSelector::Disabled => "Disabled",
             StyleSelector::Active => "Active",
             StyleSelector::Dragging => "Dragging",
@@ -69,6 +141,7 @@ impl StyleSelector {
             StyleSelector::Hover => StyleSelectors::HOVER,
             StyleSelector::Focus => StyleSelectors::FOCUS,
             StyleSelector::FocusVisible => StyleSelectors::FOCUS_VISIBLE,
+            StyleSelector::FocusWithin => StyleSelectors::FOCUS_WITHIN,
             StyleSelector::Disabled => StyleSelectors::DISABLED,
             StyleSelector::DarkMode => StyleSelectors::DARK_MODE,
             StyleSelector::Active => StyleSelectors::ACTIVE,
@@ -83,6 +156,7 @@ const PROPAGATING_FLAGS: StyleSelectors = StyleSelectors::DISABLED
     .union(StyleSelectors::DARK_MODE)
     .union(StyleSelectors::DRAGGING)
     .union(StyleSelectors::SELECTED)
+    .union(StyleSelectors::DISABLED)
     .union(StyleSelectors::RESPONSIVE);
 
 impl StyleSelectors {

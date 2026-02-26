@@ -414,6 +414,30 @@ fn test_focus_visible_selector_detected_inside_with_context() {
     );
 }
 
+/// Test that focus_within selector inside with_context is detected.
+#[test]
+#[serial]
+fn test_focus_within_selector_detected_inside_with_context() {
+    let root = TestRoot::new();
+    let theme = TestTheme::default();
+    let view = Empty::new().style(move |s| {
+        s.size(100.0, 100.0)
+            .set(TestThemeProp, theme)
+            .with_test_theme(|s, _t| {
+                s.background(palette::css::BLUE)
+                    .focus_within(|s| s.background(palette::css::GREEN))
+            })
+    });
+    let id = view.view_id();
+
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
+
+    assert!(
+        harness.has_style_for_selector(id, StyleSelector::FocusWithin),
+        "FocusWithin selector should be detected inside with_context"
+    );
+}
+
 /// Test that dragging selector inside with_context is detected.
 #[test]
 #[serial]

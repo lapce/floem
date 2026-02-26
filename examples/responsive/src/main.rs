@@ -1,5 +1,6 @@
 use floem::{
     peniko::color::palette,
+    prelude::palette::css,
     reactive::{RwSignal, SignalGet, SignalUpdate},
     responsive::{range, ScreenSize},
     style::TextOverflow,
@@ -73,6 +74,7 @@ fn app_view() -> impl IntoView {
             .flex_col()
             .justify_center()
             .items_center()
+            .max_window_width(800., |s| s.background(css::PINK))
     })
 }
 
