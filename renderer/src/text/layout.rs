@@ -482,3 +482,480 @@ impl TextLayout {
         self.layout.get(nth).is_none_or(|l| l.is_empty())
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::text::{Attrs, AttrsList, Cursor, FamilyOwned};
+    use std::sync::Once;
+
+    const DEJAVU_SERIF: &[u8] =
+        include_bytes!("../../../examples/webgpu/fonts/DejaVuSerif.ttf");
+
+    static FONT_INIT: Once = Once::new();
+
+    fn ensure_font() {
+        FONT_INIT.call_once(|| {
+            let mut font_cx = FONT_CONTEXT.lock();
+            font_cx
+                .collection
+                .register_fonts(DEJAVU_SERIF.to_vec().into(), None);
+        });
+    }
+
+    fn default_attrs() -> AttrsList {
+        let family = vec![FamilyOwned::Name("DejaVu Serif".into())];
+        AttrsList::new(Attrs::new().font_size(16.0).family(&family))
+    }
+
+    fn make(text: &str) -> TextLayout {
+        ensure_font();
+        TextLayout::new_with_text(text, default_attrs(), None)
+    }
+
+    fn make_wrapped(text: &str, width: f32) -> TextLayout {
+        ensure_font();
+        let mut layout = TextLayout::new();
+        layout.set_text(text, default_attrs(), None);
+        layout.set_size(width, f32::MAX);
+        layout
+    }
+
+    // ========================== Construction ==========================
+
+    #[test]
+    fn new_layout_is_empty() {
+        let layout = TextLayout::new();
+        assert!(layout.text().is_empty());
+        assert_eq!(layout.visual_line_count(), 0);
+        assert!(layout.lines_range().is_empty());
+    }
+
+    #[test]
+    fn new_with_text_populates() {
+        let layout = make("hello");
+        assert_eq!(layout.text(), "hello");
+        assert!(layout.visual_line_count() >= 1);
+    }
+
+    #[test]
+    fn set_text_replaces_content() {
+        ensure_font();
+        let mut layout = TextLayout::new();
+        layout.set_text("first", default_attrs(), None);
+        assert_eq!(layout.text(), "first");
+
+        layout.set_text("second", default_attrs(), None);
+        assert_eq!(layout.text(), "second");
+    }
+
+    // ========================== Paragraph lines ==========================
+
+    #[test]
+    fn lines_range_single_line() {
+        let layout = make("hello world");
+        assert_eq!(layout.lines_range(), &[0..11]);
+    }
+
+    #[test]
+    fn lines_range_lf() {
+        let layout = make("aaa\nbbb\nccc");
+        assert_eq!(layout.lines_range(), &[0..3, 4..7, 8..11]);
+    }
+
+    #[test]
+    fn lines_range_crlf() {
+        let layout = make("aaa\r\nbbb\r\nccc");
+        assert_eq!(layout.lines_range(), &[0..3, 5..8, 10..13]);
+    }
+
+    #[test]
+    fn lines_range_cr() {
+        let layout = make("aaa\rbbb");
+        assert_eq!(layout.lines_range(), &[0..3, 4..7]);
+    }
+
+    #[test]
+    fn lines_range_trailing_newline() {
+        let layout = make("aaa\n");
+        assert_eq!(layout.lines_range(), &[0..3, 4..4]);
+    }
+
+    #[test]
+    fn lines_range_empty_text() {
+        let layout = make("");
+        // Even empty text produces one (empty) paragraph.
+        assert_eq!(layout.lines_range(), &[0..0]);
+    }
+
+    #[test]
+    fn lines_range_multiple_empty_lines() {
+        let layout = make("\n\n");
+        assert_eq!(layout.lines_range(), &[0..0, 1..1, 2..2]);
+    }
+
+    // ========================== Measurement ==========================
+
+    #[test]
+    fn size_nonempty_has_positive_dimensions() {
+        let layout = make("Hello, world!");
+        let size = layout.size();
+        assert!(size.width > 0.0, "width should be positive");
+        assert!(size.height > 0.0, "height should be positive");
+    }
+
+    #[test]
+    fn size_empty_text() {
+        let layout = make("");
+        let size = layout.size();
+        // Parley may report a small width for the empty paragraph's line metrics.
+        // Height may be zero or one line-height depending on implementation.
+        // Main invariant: non-negative.
+        assert!(size.width >= 0.0);
+        assert!(size.height >= 0.0);
+    }
+
+    #[test]
+    fn size_grows_with_text_length() {
+        let short = make("Hi");
+        let long = make("Hello, world! This is a longer sentence.");
+        assert!(long.size().width > short.size().width);
+    }
+
+    // ========================== Visual lines ==========================
+
+    #[test]
+    fn visual_line_count_single_line() {
+        let layout = make("short");
+        assert_eq!(layout.visual_line_count(), 1);
+    }
+
+    #[test]
+    fn visual_line_count_with_wrapping() {
+        let layout = make_wrapped(
+            "The quick brown fox jumps over the lazy dog and keeps running around",
+            100.0,
+        );
+        assert!(
+            layout.visual_line_count() > 1,
+            "wrapped text should produce multiple visual lines, got {}",
+            layout.visual_line_count()
+        );
+    }
+
+    #[test]
+    fn visual_line_count_multiline() {
+        let layout = make("line1\nline2\nline3");
+        // At least 3 visual lines (one per paragraph), possibly more with trailing empty.
+        assert!(layout.visual_line_count() >= 3);
+    }
+
+    #[test]
+    fn visual_line_y_first_is_some() {
+        let layout = make("hello");
+        assert!(layout.visual_line_y(0).is_some());
+    }
+
+    #[test]
+    fn visual_line_y_out_of_bounds() {
+        let layout = make("hello");
+        assert!(layout.visual_line_y(999).is_none());
+    }
+
+    #[test]
+    fn visual_line_y_increases() {
+        let layout = make("line1\nline2\nline3");
+        let y0 = layout.visual_line_y(0).unwrap();
+        let y1 = layout.visual_line_y(1).unwrap();
+        let y2 = layout.visual_line_y(2).unwrap();
+        assert!(y1 > y0, "y should increase: y0={y0}, y1={y1}");
+        assert!(y2 > y1, "y should increase: y1={y1}, y2={y2}");
+    }
+
+    #[test]
+    fn visual_line_text_range_covers_text() {
+        let layout = make("abcdef");
+        let range = layout.visual_line_text_range(0).unwrap();
+        // Range should cover at least some of the text.
+        assert!(range.start == 0);
+        assert!(range.end >= 6);
+    }
+
+    #[test]
+    fn visual_line_text_range_out_of_bounds() {
+        let layout = make("hello");
+        assert!(layout.visual_line_text_range(999).is_none());
+    }
+
+    #[test]
+    fn visual_line_is_empty_on_text() {
+        let layout = make("hello");
+        assert!(!layout.visual_line_is_empty(0));
+    }
+
+    #[test]
+    fn visual_line_is_empty_out_of_bounds() {
+        let layout = make("hello");
+        assert!(layout.visual_line_is_empty(999));
+    }
+
+    // ========================== Hit testing ==========================
+
+    #[test]
+    fn hit_empty_text() {
+        let layout = make("");
+        let cursor = layout.hit(0.0, 0.0).unwrap();
+        assert_eq!(cursor.line, 0);
+        assert_eq!(cursor.index, 0);
+    }
+
+    #[test]
+    fn hit_origin_returns_start() {
+        let layout = make("hello");
+        let cursor = layout.hit(0.0, 0.0).unwrap();
+        assert_eq!(cursor.line, 0);
+        assert_eq!(cursor.index, 0);
+    }
+
+    #[test]
+    fn hit_far_right_returns_line_end() {
+        let layout = make("hello");
+        let cursor = layout.hit(9999.0, 0.0).unwrap();
+        assert_eq!(cursor.line, 0);
+        // Index should be at or near the end of the text.
+        assert!(cursor.index >= 4, "expected near end, got {}", cursor.index);
+    }
+
+    #[test]
+    fn hit_second_paragraph() {
+        let layout = make("aaa\nbbb");
+        let y = layout.visual_line_y(1).unwrap_or(20.0);
+        let cursor = layout.hit(0.0, y).unwrap();
+        assert_eq!(cursor.line, 1, "should resolve to second paragraph line");
+    }
+
+    // ========================== Hit position ==========================
+
+    #[test]
+    fn hit_position_start() {
+        let layout = make("hello");
+        let pos = layout.hit_position(0);
+        assert_eq!(pos.line, 0);
+        assert!(pos.point.x < 5.0, "x at start should be near 0, got {}", pos.point.x);
+    }
+
+    #[test]
+    fn hit_position_end() {
+        let layout = make("hello");
+        let pos = layout.hit_position(5);
+        assert!(
+            pos.point.x > 10.0,
+            "x at end should be well past 0, got {}",
+            pos.point.x
+        );
+    }
+
+    #[test]
+    fn hit_position_has_glyph_metrics() {
+        let layout = make("hello");
+        let pos = layout.hit_position(0);
+        assert!(pos.glyph_ascent > 0.0, "ascent should be positive");
+        // Descent is typically positive (distance below baseline).
+        assert!(pos.glyph_descent > 0.0, "descent should be positive");
+    }
+
+    #[test]
+    fn hit_position_empty() {
+        let layout = make("");
+        let pos = layout.hit_position(0);
+        assert_eq!(pos.line, 0);
+        assert_eq!(pos.point, Point::ZERO);
+    }
+
+    #[test]
+    fn hit_position_aff_before_and_after() {
+        let layout = make("hello");
+        let before = layout.hit_position_aff(3, Affinity::Before);
+        let after = layout.hit_position_aff(3, Affinity::After);
+        // On a single non-wrapping line, both affinities should give similar positions.
+        assert!(
+            (before.point.x - after.point.x).abs() < 2.0,
+            "single-line affinities should be close: before={}, after={}",
+            before.point.x,
+            after.point.x
+        );
+    }
+
+    // ========================== Hit point ==========================
+
+    #[test]
+    fn hit_point_inside() {
+        let layout = make("hello world");
+        let size = layout.size();
+        let hp = layout.hit_point(Point::new(size.width / 2.0, size.height / 2.0));
+        assert!(hp.is_inside);
+        assert_eq!(hp.line, 0);
+    }
+
+    #[test]
+    fn hit_point_outside() {
+        let layout = make("hello");
+        let hp = layout.hit_point(Point::new(9999.0, 9999.0));
+        assert!(!hp.is_inside);
+    }
+
+    // ========================== Cursor conversion ==========================
+
+    #[test]
+    fn cursor_to_byte_index_first_line() {
+        let layout = make("hello\nworld");
+        let idx = layout.cursor_to_byte_index(&Cursor::new(0, 3));
+        assert_eq!(idx, 3);
+    }
+
+    #[test]
+    fn cursor_to_byte_index_second_line() {
+        let layout = make("hello\nworld");
+        let idx = layout.cursor_to_byte_index(&Cursor::new(1, 2));
+        // "hello\n" = 6 bytes, then index 2 within "world" = 8.
+        assert_eq!(idx, 8);
+    }
+
+    #[test]
+    fn cursor_to_byte_index_out_of_bounds_line() {
+        let layout = make("hello");
+        let idx = layout.cursor_to_byte_index(&Cursor::new(99, 0));
+        assert_eq!(idx, 0, "out-of-bounds line should return 0");
+    }
+
+    #[test]
+    fn hit_then_cursor_to_byte_roundtrip() {
+        let layout = make("hello\nworld");
+        let cursor = layout.hit(0.0, 0.0).unwrap();
+        let idx = layout.cursor_to_byte_index(&cursor);
+        assert_eq!(idx, 0);
+    }
+
+    // ========================== Selection geometry ==========================
+
+    #[test]
+    fn selection_geometry_single_line() {
+        let layout = make("hello world");
+        let mut rects = Vec::new();
+        layout.selection_geometry_with(2, 8, |x0, y0, x1, y1| {
+            rects.push((x0, y0, x1, y1));
+        });
+        assert!(!rects.is_empty(), "should produce at least one selection rect");
+        let (x0, _y0, x1, _y1) = rects[0];
+        assert!(x1 > x0, "selection rect should have positive width");
+    }
+
+    #[test]
+    fn selection_geometry_multi_line() {
+        let layout = make("aaa\nbbb\nccc");
+        let mut rects = Vec::new();
+        // Select from middle of first line to middle of last.
+        layout.selection_geometry_with(1, 10, |x0, y0, x1, y1| {
+            rects.push((x0, y0, x1, y1));
+        });
+        assert!(
+            rects.len() >= 2,
+            "multi-line selection should span multiple rects, got {}",
+            rects.len()
+        );
+    }
+
+    #[test]
+    fn selection_geometry_empty_range() {
+        let layout = make("hello");
+        let mut count = 0;
+        layout.selection_geometry_with(3, 3, |_, _, _, _| count += 1);
+        // Empty range may or may not produce a zero-width rect — just ensure no panic.
+    }
+
+    #[test]
+    fn selection_geometry_full_text() {
+        let layout = make("hello");
+        let mut rects = Vec::new();
+        layout.selection_geometry_with(0, 5, |x0, y0, x1, y1| {
+            rects.push((x0, y0, x1, y1));
+        });
+        assert!(!rects.is_empty());
+    }
+
+    // ========================== Wrapping ==========================
+
+    #[test]
+    fn set_wrap_none_no_breaking() {
+        ensure_font();
+        let mut layout = TextLayout::new();
+        layout.set_wrap(Wrap::None);
+        layout.set_text(
+            "a very long line that should not wrap at all even with a narrow width constraint",
+            default_attrs(),
+            None,
+        );
+        layout.set_size(50.0, f32::MAX);
+        assert_eq!(layout.visual_line_count(), 1);
+    }
+
+    #[test]
+    fn set_wrap_word_breaks_at_words() {
+        let layout = make_wrapped("one two three four five six seven eight", 80.0);
+        assert!(layout.visual_line_count() > 1);
+    }
+
+    // ========================== set_size reflow ==========================
+
+    #[test]
+    fn set_size_reflow_changes_lines() {
+        ensure_font();
+        let mut layout = TextLayout::new();
+        layout.set_text(
+            "The quick brown fox jumps over the lazy dog",
+            default_attrs(),
+            None,
+        );
+        layout.set_size(1000.0, f32::MAX);
+        let wide = layout.visual_line_count();
+
+        layout.set_size(80.0, f32::MAX);
+        let narrow = layout.visual_line_count();
+        assert!(narrow > wide, "narrower width should produce more lines");
+    }
+
+    #[test]
+    fn set_size_same_width_is_noop() {
+        let mut layout = make_wrapped("hello world", 200.0);
+        let count_before = layout.visual_line_count();
+        // Calling set_size with the same width should not change anything.
+        layout.set_size(200.0, f32::MAX);
+        assert_eq!(layout.visual_line_count(), count_before);
+    }
+
+    // ========================== Parley access ==========================
+
+    #[test]
+    fn parley_layout_accessible() {
+        let layout = make("hello");
+        let parley = layout.parley_layout();
+        assert_eq!(parley.len(), layout.visual_line_count());
+    }
+
+    // ========================== Default / Debug ==========================
+
+    #[test]
+    fn default_matches_new() {
+        let a = TextLayout::default();
+        let b = TextLayout::new();
+        assert_eq!(a.text(), b.text());
+        assert_eq!(a.visual_line_count(), b.visual_line_count());
+    }
+
+    #[test]
+    fn debug_does_not_panic() {
+        let layout = make("hello");
+        let _s = format!("{layout:?}");
+    }
+}

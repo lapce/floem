@@ -670,3 +670,284 @@ impl Iterator for ParseList<'_> {
         })
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ========================== FamilyOwned ==========================
+
+    #[test]
+    fn parse_list_named_and_generic() {
+        let families: Vec<_> = FamilyOwned::parse_list("Arial, sans-serif").collect();
+        assert_eq!(
+            families,
+            vec![
+                FamilyOwned::Name("Arial".to_string()),
+                FamilyOwned::SansSerif,
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_list_quoted_names() {
+        let families: Vec<_> =
+            FamilyOwned::parse_list("'Fira Code', \"Noto Sans\", monospace").collect();
+        assert_eq!(
+            families,
+            vec![
+                FamilyOwned::Name("Fira Code".to_string()),
+                FamilyOwned::Name("Noto Sans".to_string()),
+                FamilyOwned::Monospace,
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_list_all_generics() {
+        let families: Vec<_> =
+            FamilyOwned::parse_list("serif, sans-serif, monospace, cursive, fantasy").collect();
+        assert_eq!(
+            families,
+            vec![
+                FamilyOwned::Serif,
+                FamilyOwned::SansSerif,
+                FamilyOwned::Monospace,
+                FamilyOwned::Cursive,
+                FamilyOwned::Fantasy,
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_list_case_insensitive() {
+        let families: Vec<_> = FamilyOwned::parse_list("SERIF, Sans-Serif").collect();
+        assert_eq!(families, vec![FamilyOwned::Serif, FamilyOwned::SansSerif]);
+    }
+
+    #[test]
+    fn parse_list_empty() {
+        let families: Vec<_> = FamilyOwned::parse_list("").collect();
+        assert!(families.is_empty());
+    }
+
+    #[test]
+    fn parse_list_whitespace_only() {
+        let families: Vec<_> = FamilyOwned::parse_list("  , , ").collect();
+        assert!(families.is_empty());
+    }
+
+    #[test]
+    fn to_font_stack_single_named() {
+        let families = vec![FamilyOwned::Name("Inter".to_string())];
+        let stack = FamilyOwned::to_font_stack(&families);
+        assert!(matches!(stack, FontStack::Source(_)));
+    }
+
+    #[test]
+    fn to_font_stack_single_generic() {
+        let families = vec![FamilyOwned::Monospace];
+        let stack = FamilyOwned::to_font_stack(&families);
+        assert!(matches!(stack, FontStack::Single(_)));
+    }
+
+    #[test]
+    fn to_font_stack_empty_defaults_to_sans_serif() {
+        let families: Vec<FamilyOwned> = vec![];
+        let stack = FamilyOwned::to_font_stack(&families);
+        assert!(matches!(stack, FontStack::Single(FontFamily::Generic(GenericFamily::SansSerif))));
+    }
+
+    // ========================== Attrs ==========================
+
+    #[test]
+    fn attrs_defaults() {
+        let a = Attrs::new();
+        assert_eq!(a.font_size, 16.0);
+        assert_eq!(a.get_line_height(), LineHeightValue::Normal(1.0));
+        assert_eq!(a.get_color(), None);
+        assert_eq!(a.get_family(), None);
+        assert_eq!(a.get_weight(), None);
+        assert_eq!(a.get_font_style(), None);
+        assert_eq!(a.get_stretch(), None);
+        assert_eq!(a.get_metadata(), None);
+    }
+
+    #[test]
+    fn attrs_builder_chain() {
+        let families = [FamilyOwned::Monospace];
+        let a = Attrs::new()
+            .font_size(20.0)
+            .color(Color::WHITE)
+            .family(&families)
+            .weight(FontWeight::BOLD)
+            .font_style(FontStyle::Italic)
+            .font_width(FontWidth::CONDENSED)
+            .line_height(LineHeightValue::Px(24.0))
+            .metadata(42);
+
+        assert_eq!(a.font_size, 20.0);
+        assert_eq!(a.get_color(), Some(Color::WHITE));
+        assert_eq!(a.get_family(), Some(families.as_slice()));
+        assert_eq!(a.get_weight(), Some(FontWeight::BOLD));
+        assert_eq!(a.get_font_style(), Some(FontStyle::Italic));
+        assert_eq!(a.get_stretch(), Some(FontWidth::CONDENSED));
+        assert_eq!(a.get_line_height(), LineHeightValue::Px(24.0));
+        assert_eq!(a.get_metadata(), Some(42));
+    }
+
+    #[test]
+    fn attrs_raw_weight() {
+        let a = Attrs::new().raw_weight(700);
+        assert_eq!(a.get_weight(), Some(FontWeight::new(700.0)));
+    }
+
+    #[test]
+    fn effective_line_height_normal_multiplier() {
+        let a = Attrs::new().font_size(20.0).line_height(LineHeightValue::Normal(1.5));
+        assert!((a.effective_line_height() - 30.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn effective_line_height_px_absolute() {
+        let a = Attrs::new().font_size(20.0).line_height(LineHeightValue::Px(24.0));
+        assert!((a.effective_line_height() - 24.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn effective_line_height_default() {
+        // Default: Normal(1.0), font_size 16.0 → 16.0.
+        let a = Attrs::new();
+        assert!((a.effective_line_height() - 16.0).abs() < f32::EPSILON);
+    }
+
+    // ========================== AttrsOwned ==========================
+
+    #[test]
+    fn attrs_owned_roundtrip() {
+        let families = [FamilyOwned::Name("Inter".to_string()), FamilyOwned::SansSerif];
+        let a = Attrs::new()
+            .font_size(18.0)
+            .family(&families)
+            .weight(FontWeight::BOLD)
+            .color(Color::WHITE)
+            .metadata(7);
+
+        let owned = AttrsOwned::new(a);
+        let back = owned.as_attrs();
+
+        assert_eq!(back.font_size, 18.0);
+        assert_eq!(back.get_weight(), Some(FontWeight::BOLD));
+        assert_eq!(back.get_color(), Some(Color::WHITE));
+        assert_eq!(back.get_metadata(), Some(7));
+        // Family should be preserved.
+        let fam = back.get_family().unwrap();
+        assert_eq!(fam.len(), 2);
+        assert_eq!(fam[0], FamilyOwned::Name("Inter".to_string()));
+        assert_eq!(fam[1], FamilyOwned::SansSerif);
+    }
+
+    #[test]
+    fn attrs_owned_no_family() {
+        let a = Attrs::new();
+        let owned = AttrsOwned::new(a);
+        assert_eq!(owned.as_attrs().get_family(), None);
+    }
+
+    // ========================== AttrsList ==========================
+
+    #[test]
+    fn attrs_list_new_has_no_spans() {
+        let list = AttrsList::new(Attrs::new().font_size(14.0));
+        assert_eq!(list.defaults().font_size, 14.0);
+        assert!(list.spans().is_empty());
+    }
+
+    #[test]
+    fn attrs_list_add_span_and_get() {
+        let mut list = AttrsList::new(Attrs::new().font_size(14.0));
+        list.add_span(5..10, Attrs::new().font_size(20.0).weight(FontWeight::BOLD));
+
+        // Inside span.
+        let at7 = list.get_span(7);
+        assert_eq!(at7.font_size, 20.0);
+        assert_eq!(at7.get_weight(), Some(FontWeight::BOLD));
+
+        // Outside span — returns defaults.
+        let at0 = list.get_span(0);
+        assert_eq!(at0.font_size, 14.0);
+        assert_eq!(at0.get_weight(), None);
+
+        // At span boundary (end is exclusive).
+        let at10 = list.get_span(10);
+        assert_eq!(at10.font_size, 14.0);
+    }
+
+    #[test]
+    fn attrs_list_overlapping_span_replaces() {
+        let mut list = AttrsList::new(Attrs::new());
+        list.add_span(0..10, Attrs::new().font_size(20.0));
+        list.add_span(5..15, Attrs::new().font_size(30.0));
+
+        // Original span 0..10 should be removed since it overlaps 5..15.
+        assert_eq!(list.spans().len(), 1);
+        assert_eq!(list.spans()[0].0, 5..15);
+    }
+
+    #[test]
+    fn attrs_list_clear_spans() {
+        let mut list = AttrsList::new(Attrs::new());
+        list.add_span(0..5, Attrs::new().font_size(20.0));
+        list.add_span(5..10, Attrs::new().font_size(30.0));
+        assert_eq!(list.spans().len(), 2);
+
+        list.clear_spans();
+        assert!(list.spans().is_empty());
+        // Defaults preserved.
+        assert_eq!(list.defaults().font_size, 16.0);
+    }
+
+    #[test]
+    fn attrs_list_split_off_basic() {
+        let mut list = AttrsList::new(Attrs::new().font_size(14.0));
+        list.add_span(2..4, Attrs::new().font_size(20.0));
+        list.add_span(6..8, Attrs::new().font_size(30.0));
+
+        let right = list.split_off(5);
+
+        // Left: only 2..4 remains (entirely before split point).
+        assert_eq!(list.spans().len(), 1);
+        assert_eq!(list.spans()[0].0, 2..4);
+
+        // Right: 6..8 shifted to 1..3.
+        assert_eq!(right.spans().len(), 1);
+        assert_eq!(right.spans()[0].0, 1..3);
+    }
+
+    #[test]
+    fn attrs_list_split_off_crossing_span() {
+        let mut list = AttrsList::new(Attrs::new());
+        list.add_span(3..7, Attrs::new().font_size(20.0));
+
+        let right = list.split_off(5);
+
+        // Left: 3..5 (truncated at split).
+        assert_eq!(list.spans().len(), 1);
+        assert_eq!(list.spans()[0].0, 3..5);
+
+        // Right: 0..2 (crossing span starts at 0 in new list).
+        assert_eq!(right.spans().len(), 1);
+        assert_eq!(right.spans()[0].0, 0..2);
+        assert_eq!(right.spans()[0].1.font_size, 20.0);
+    }
+
+    #[test]
+    fn attrs_list_split_off_empty() {
+        let mut list = AttrsList::new(Attrs::new().font_size(14.0));
+        let right = list.split_off(0);
+        assert!(list.spans().is_empty());
+        assert!(right.spans().is_empty());
+        assert_eq!(right.defaults().font_size, 14.0);
+    }
+}

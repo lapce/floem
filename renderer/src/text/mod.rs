@@ -209,3 +209,94 @@ impl From<TextBrush> for peniko::Color {
         b.0
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -- Wrap --
+
+    #[test]
+    fn wrap_default_is_word() {
+        assert_eq!(Wrap::default(), Wrap::Word);
+    }
+
+    // -- LineEnding --
+
+    #[test]
+    fn line_ending_default_is_lf() {
+        assert_eq!(LineEnding::default(), LineEnding::Lf);
+    }
+
+    // -- Affinity --
+
+    #[test]
+    fn affinity_default_is_before() {
+        assert_eq!(Affinity::default(), Affinity::Before);
+    }
+
+    #[test]
+    fn affinity_ordering() {
+        assert!(Affinity::Before < Affinity::After);
+        assert!(Affinity::Before <= Affinity::Before);
+    }
+
+    #[test]
+    fn affinity_parley_roundtrip() {
+        let before: parley::layout::Affinity = Affinity::Before.into();
+        let after: parley::layout::Affinity = Affinity::After.into();
+        assert_eq!(Affinity::from(before), Affinity::Before);
+        assert_eq!(Affinity::from(after), Affinity::After);
+    }
+
+    // -- Cursor --
+
+    #[test]
+    fn cursor_new_has_before_affinity() {
+        let c = Cursor::new(2, 10);
+        assert_eq!(c.line, 2);
+        assert_eq!(c.index, 10);
+        assert_eq!(c.affinity, Affinity::Before);
+    }
+
+    #[test]
+    fn cursor_new_with_affinity() {
+        let c = Cursor::new_with_affinity(1, 5, Affinity::After);
+        assert_eq!(c.line, 1);
+        assert_eq!(c.index, 5);
+        assert_eq!(c.affinity, Affinity::After);
+    }
+
+    #[test]
+    fn cursor_ordering() {
+        // Cursor derives Ord: line first, then index, then affinity.
+        let a = Cursor::new(0, 5);
+        let b = Cursor::new(1, 0);
+        assert!(a < b, "different lines");
+
+        let c = Cursor::new(0, 3);
+        assert!(c < a, "same line, different index");
+
+        let d = Cursor::new_with_affinity(0, 5, Affinity::After);
+        assert!(a < d, "same line+index, different affinity");
+    }
+
+    // -- TextBrush --
+
+    #[test]
+    fn text_brush_default_is_opaque_black() {
+        let b = TextBrush::default();
+        let c: peniko::Color = b.into();
+        assert_eq!(c, peniko::Color::from_rgba8(0, 0, 0, 255));
+    }
+
+    #[test]
+    fn text_brush_color_roundtrip() {
+        let red = peniko::Color::from_rgba8(255, 0, 0, 128);
+        let brush = TextBrush::from(red);
+        assert_eq!(brush.0, red);
+        let back: peniko::Color = brush.into();
+        assert_eq!(back, red);
+    }
+}
