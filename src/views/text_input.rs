@@ -7,7 +7,7 @@ use crate::style::{FontStyle, FontWeight, TextColor};
 use crate::unit::{PxPct, PxPctAuto};
 use crate::view::ViewId;
 use crate::views::editor::text::Preedit;
-use crate::{Clipboard, prop_extractor, style_class};
+use crate::{Clipboard, prop_extractor, style_class, text::FontWeight};
 use floem_reactive::{SignalGet, SignalUpdate, SignalWith};
 use taffy::prelude::{Layout, NodeId};
 

@@ -1,7 +1,7 @@
 use std::ops::Range;
 
 use crate::text::TextBrush;
-use crate::text::{FontWidth, FontStyle, Weight};
+use crate::text::{FontWidth, FontStyle, FontWeight};
 use fontique::GenericFamily;
 use parley::style::{FontFamily, FontStack, StyleProperty};
 use peniko::Color;
@@ -71,7 +71,7 @@ pub struct Attrs<'a> {
     line_height: LineHeightValue,
     color: Option<Color>,
     family: Option<&'a [FamilyOwned]>,
-    weight: Option<Weight>,
+    weight: Option<FontWeight>,
     style: Option<FontStyle>,
     font_width: Option<FontWidth>,
     metadata: Option<usize>,
@@ -117,13 +117,13 @@ impl<'a> Attrs<'a> {
         self
     }
 
-    pub fn weight(mut self, weight: Weight) -> Self {
+    pub fn weight(mut self, weight: FontWeight) -> Self {
         self.weight = Some(weight);
         self
     }
 
     pub fn raw_weight(mut self, weight: u16) -> Self {
-        self.weight = Some(Weight(weight));
+        self.weight = Some(FontWeight::new(weight as f32));
         self
     }
 
@@ -154,7 +154,7 @@ impl<'a> Attrs<'a> {
         self.family
     }
 
-    pub fn get_weight(&self) -> Option<Weight> {
+    pub fn get_weight(&self) -> Option<FontWeight> {
         self.weight
     }
 
@@ -247,7 +247,7 @@ pub struct AttrsOwned {
     line_height: LineHeightValue,
     color: Option<Color>,
     family: Option<Vec<FamilyOwned>>,
-    weight: Option<Weight>,
+    weight: Option<FontWeight>,
     style: Option<FontStyle>,
     font_width: Option<FontWidth>,
     metadata: Option<usize>,

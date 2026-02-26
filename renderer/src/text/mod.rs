@@ -1,141 +1,101 @@
+//! Text layout, shaping, and font management for Floem.
+//!
+//! This module provides the text rendering infrastructure built on
+//! [Parley](https://docs.rs/parley). The central type is [`TextLayout`], which shapes
+//! and positions text for display. Attributes such as font family, weight, and color
+//! are described with [`Attrs`] and collected into an [`AttrsList`] that maps byte ranges
+//! to styling.
+//!
+//! # Quick start
+//!
+//! ```no_run
+//! use floem_renderer::text::{Attrs, AttrsList, TextLayout, Weight};
+//!
+//! let attrs = Attrs::new()
+//!     .font_size(18.0)
+//!     .weight(Weight::BOLD);
+//! let attrs_list = AttrsList::new(attrs);
+//!
+//! let layout = TextLayout::new_with_text("Hello, Floem!", attrs_list, None);
+//! let size = layout.size();
+//! ```
+//!
+//! # Re-exports
+//!
+//! [`FontStyle`] and [`FontWidth`] come from [`fontique`](https://docs.rs/fontique), and
+//! [`Alignment`] from [`parley`](https://docs.rs/parley). They are re-exported here so
+//! that downstream crates do not need to depend on those libraries directly.
+
 mod attrs;
 mod layout;
 
 pub use attrs::{Attrs, AttrsList, AttrsOwned, FamilyOwned, LineHeightValue};
 pub use layout::{HitPoint, HitPosition, TextLayout, FONT_CONTEXT};
-pub use fontique::{FontStyle, FontWidth};
+pub use fontique::{FontStyle, FontWidth, FontWeight};
 pub use parley::Alignment;
 
 // --- Font Properties ---
 
-/// Font weight (wraps u16 for cosmic-text compat, converts to fontique::FontWeight).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct Weight(pub u16);
-impl Weight {
-    pub const THIN: Self = Weight(100);
-    pub const EXTRA_LIGHT: Self = Weight(200);
-    pub const LIGHT: Self = Weight(300);
-    pub const NORMAL: Self = Weight(400);
-    pub const MEDIUM: Self = Weight(500);
-    pub const SEMIBOLD: Self = Weight(600);
-    pub const BOLD: Self = Weight(700);
-    pub const EXTRA_BOLD: Self = Weight(800);
-    pub const BLACK: Self = Weight(900);
-}
-
-impl From<Weight> for fontique::FontWeight {
-    fn from(w: Weight) -> Self {
-        fontique::FontWeight::new(w.0 as f32)
-    }
-}
-
-impl From<fontique::FontWeight> for Weight {
-    fn from(w: fontique::FontWeight) -> Self {
-        Weight(w.value() as u16)
-    }
-}
-
-// /// Font style
-// #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
-// pub enum Style {
-//     #[default]
-//     Normal,
-//     Italic,
-//     Oblique,
-// }
-
-// impl From<Style> for fontique::FontStyle {
-//     fn from(s: Style) -> Self {
-//         match s {
-//             Style::Normal => fontique::FontStyle::Normal,
-//             Style::Italic => fontique::FontStyle::Italic,
-//             Style::Oblique => fontique::FontStyle::Oblique(None),
-//         }
-//     }
-// }
-
-// /// Font stretch/width
-// #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
-// pub enum Stretch {
-//     UltraCondensed,
-//     ExtraCondensed,
-//     Condensed,
-//     SemiCondensed,
-//     #[default]
-//     Normal,
-//     SemiExpanded,
-//     Expanded,
-//     ExtraExpanded,
-//     UltraExpanded,
-// }
-
-// impl From<Stretch> for fontique::FontWidth {
-//     fn from(s: Stretch) -> Self {
-//         match s {
-//             Stretch::UltraCondensed => fontique::FontWidth::ULTRA_CONDENSED,
-//             Stretch::ExtraCondensed => fontique::FontWidth::EXTRA_CONDENSED,
-//             Stretch::Condensed => fontique::FontWidth::CONDENSED,
-//             Stretch::SemiCondensed => fontique::FontWidth::SEMI_CONDENSED,
-//             Stretch::Normal => fontique::FontWidth::NORMAL,
-//             Stretch::SemiExpanded => fontique::FontWidth::SEMI_EXPANDED,
-//             Stretch::Expanded => fontique::FontWidth::EXPANDED,
-//             Stretch::ExtraExpanded => fontique::FontWidth::EXTRA_EXPANDED,
-//             Stretch::UltraExpanded => fontique::FontWidth::ULTRA_EXPANDED,
-//         }
-//     }
-// }
-
-// --- Text Layout Properties ---
-
-// /// Text alignment
-// #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-// pub enum Align {
-//     Left,
-//     Right,
-//     Center,
-//     Justified,
-//     End,
-// }
-
-// impl From<Align> for parley::layout::Alignment {
-//     fn from(a: Align) -> Self {
-//         match a {
-//             Align::Left => parley::layout::Alignment::Left,
-//             Align::Right => parley::layout::Alignment::Right,
-//             Align::Center => parley::layout::Alignment::Center,
-//             Align::Justified => parley::layout::Alignment::Justify,
-//             Align::End => parley::layout::Alignment::End,
-//         }
-//     }
-// }
-
-/// Text wrap mode.
+/// Text wrapping strategy.
+///
+/// Controls how [`TextLayout`] breaks long lines when a maximum width is set
+/// via [`TextLayout::set_size`].
+///
+/// # Example
+///
+/// ```no_run
+/// use floem_renderer::text::{Attrs, AttrsList, TextLayout, Wrap};
+///
+/// let mut layout = TextLayout::new();
+/// layout.set_wrap(Wrap::WordOrGlyph);
+/// layout.set_text("A long paragraph…", AttrsList::new(Attrs::new()), None);
+/// layout.set_size(200.0, f32::MAX);
+/// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub enum Wrap {
+    /// No wrapping — text extends beyond the layout width.
     None,
+    /// Break at any glyph boundary.
     Glyph,
+    /// Break at word boundaries (default).
     #[default]
     Word,
+    /// Break at word boundaries, but fall back to glyph boundaries when a
+    /// single word is wider than the available width.
     WordOrGlyph,
 }
 
-/// Line ending type.
+/// Line ending style.
+///
+/// Represents the newline convention of a text document.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub enum LineEnding {
+    /// Unix-style line feed (`\n`).
     #[default]
     Lf,
+    /// Windows-style carriage return + line feed (`\r\n`).
     CrLf,
+    /// Classic Mac-style carriage return (`\r`).
     Cr,
+    /// No line ending.
     None,
 }
 
 // --- Cursor/Hit Testing ---
 
-/// Cursor affinity.
+/// Cursor affinity — which side of a character boundary the cursor is on.
+///
+/// When a byte index falls at a line break, affinity determines whether the
+/// cursor is drawn at the end of the previous visual line ([`Before`](Affinity::Before))
+/// or the start of the next ([`After`](Affinity::After)).
+///
+/// Converts to and from [`parley::layout::Affinity`] (`Upstream` / `Downstream`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub enum Affinity {
+    /// The cursor sits before (upstream of) the character at this index.
     #[default]
     Before,
+    /// The cursor sits after (downstream of) the character at this index.
     After,
 }
 
@@ -157,15 +117,40 @@ impl From<parley::layout::Affinity> for Affinity {
     }
 }
 
-/// Text cursor position
+/// A text cursor position expressed as a paragraph line and a byte offset within
+/// that line.
+///
+/// Produced by [`TextLayout::hit`] when converting an (x, y) point to a text
+/// position, and consumed by [`TextLayout::hit_point`] and
+/// [`TextLayout::cursor_to_byte_index`].
+///
+/// # Example
+///
+/// ```
+/// use floem_renderer::text::{Affinity, Cursor};
+///
+/// // Cursor at the start of the second paragraph line.
+/// let cursor = Cursor::new(1, 0);
+/// assert_eq!(cursor.line, 1);
+/// assert_eq!(cursor.index, 0);
+/// assert_eq!(cursor.affinity, Affinity::Before);
+///
+/// // With explicit affinity.
+/// let cursor = Cursor::new_with_affinity(0, 5, Affinity::After);
+/// assert_eq!(cursor.affinity, Affinity::After);
+/// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Cursor {
+    /// Paragraph line index (zero-based).
     pub line: usize,
+    /// Byte offset within the paragraph line.
     pub index: usize,
+    /// Which side of the character boundary this cursor is on.
     pub affinity: Affinity,
 }
 
 impl Cursor {
+    /// Create a cursor with [`Affinity::Before`] (the default).
     pub fn new(line: usize, index: usize) -> Self {
         Self {
             line,
@@ -174,6 +159,7 @@ impl Cursor {
         }
     }
 
+    /// Create a cursor with an explicit affinity.
     pub fn new_with_affinity(line: usize, index: usize, affinity: Affinity) -> Self {
         Self {
             line,
@@ -183,7 +169,6 @@ impl Cursor {
     }
 }
 
-// Implement Ord-compatible Hash for Affinity used in Cursor's Ord
 impl PartialOrd for Affinity {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
@@ -198,7 +183,12 @@ impl Ord for Affinity {
 
 // --- Brush type for Parley ---
 
-/// A brush type that wraps peniko::Color and implements Default (required by parley::Brush).
+/// A brush wrapper that satisfies Parley's `Brush` trait bound.
+///
+/// Parley requires its brush type to implement `Default + Clone`. This newtype
+/// wraps [`peniko::Color`] and provides a `Default` of opaque black.
+/// It is used internally to parameterise [`parley::layout::Layout<TextBrush>`]
+/// and is not typically constructed by application code.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TextBrush(pub peniko::Color);
 

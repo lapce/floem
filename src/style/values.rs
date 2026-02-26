@@ -2,7 +2,7 @@
 
 use floem_reactive::{RwSignal, SignalGet, SignalUpdate as _};
 use floem_renderer::Renderer;
-use floem_renderer::text::{LineHeightValue, Weight};
+use floem_renderer::text::{LineHeightValue, FontWeight};
 use peniko::color::{HueDirection, palette};
 use peniko::kurbo::{self, Point, Stroke};
 use peniko::{

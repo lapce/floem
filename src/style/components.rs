@@ -3,7 +3,7 @@
 //! This module provides composite style types that represent multi-value
 //! CSS properties like borders and padding.
 
-use floem_renderer::text::Weight;
+use floem_renderer::text::FontWeight;
 use peniko::color::palette;
 use peniko::{Brush, Color};
 
