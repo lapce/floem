@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::mem;
 use std::num::NonZero;
 use std::sync::mpsc::sync_channel;
@@ -37,6 +38,11 @@ pub struct VelloRenderer {
     // TODO: Apply once vello's DrawGlyphs gains embolden support.
     #[allow(dead_code)]
     font_embolden: f32,
+    /// Cached vello scenes keyed by SVG content hash.
+    /// The bool tracks the current generation for eviction.
+    svg_cache: HashMap<Vec<u8>, (bool, Scene)>,
+    /// Current cache generation; toggled each frame so stale entries are evicted.
+    cache_generation: bool,
 }
 
 impl VelloRenderer {
@@ -143,6 +149,8 @@ impl VelloRenderer {
             capture: false,
             adapter,
             font_embolden,
+            svg_cache: HashMap::new(),
+            cache_generation: false,
         })
     }
 
@@ -206,6 +214,11 @@ impl Renderer for VelloRenderer {
             mem::swap(&mut self.scene, self.alt_scene.as_mut().unwrap());
         }
         self.transform = Affine::IDENTITY;
+
+        // Evict SVG scenes not used in the previous frame, then flip generation.
+        let gen = self.cache_generation;
+        self.svg_cache.retain(|_, (g, _)| *g == gen);
+        self.cache_generation = !gen;
     }
 
     fn stroke<'b, 's>(
@@ -375,35 +388,42 @@ impl Renderer for VelloRenderer {
         let translate_x = rect.min_x();
         let translate_y = rect.min_y();
 
-        let new = brush.map_or_else(
-            || vello_svg::render_tree(svg.tree),
-            |brush| {
+        // Look up (or create) the cached base scene for this SVG.
+        let gen = self.cache_generation;
+        let base = self
+            .svg_cache
+            .entry(svg.hash.to_owned())
+            .and_modify(|(g, _)| *g = gen)
+            .or_insert_with(|| (gen, vello_svg::render_tree(svg.tree)));
+
+        let transform = self
+            .transform
+            .pre_scale_non_uniform(scale_x, scale_y)
+            .pre_translate((translate_x, translate_y).into())
+            .then_scale(self.window_scale);
+
+        // When a brush is applied (tinted icons), composite through an alpha mask.
+        // The base scene is cached; only the masking composite is rebuilt per frame.
+        let composited;
+        let scene_to_append = match brush {
+            Some(brush) => {
                 let brush = brush.into();
                 let size = Size::new(svg_size.width() as _, svg_size.height() as _);
                 let fill_rect = Rect::from_origin_size(Point::ZERO, size);
-
-                alpha_mask_scene(
+                let base_scene = &base.1;
+                composited = alpha_mask_scene(
                     size,
-                    |scene| {
-                        scene.append(&vello_svg::render_tree(svg.tree), None);
-                    },
+                    |scene| scene.append(base_scene, None),
                     move |scene| {
                         scene.fill(Fill::NonZero, Affine::IDENTITY, brush, None, &fill_rect);
                     },
-                )
-            },
-        );
+                );
+                &composited
+            }
+            None => &base.1,
+        };
 
-        // Apply transformations to fit the SVG within the provided rectangle
-        self.scene.append(
-            &new,
-            Some(
-                self.transform
-                    .pre_scale_non_uniform(scale_x, scale_y)
-                    .pre_translate((translate_x, translate_y).into())
-                    .then_scale(self.window_scale),
-            ),
-        );
+        self.scene.append(scene_to_append, Some(transform));
     }
 
     fn set_transform(&mut self, transform: Affine) {
@@ -565,24 +585,14 @@ impl VelloRenderer {
         let (tx, rx) = sync_channel(1);
         slice.map_async(wgpu::MapMode::Read, move |r| tx.send(r).unwrap());
 
-        loop {
-            if let Ok(r) = rx.try_recv() {
-                break r.ok()?;
-            }
-            if matches!(
-                self.device.poll(wgpu::PollType::wait_indefinitely()).ok()?,
-                wgpu::PollStatus::WaitSucceeded
-            ) {
-                rx.recv().ok()?.ok()?;
-                break;
-            }
-        }
+        self.device.poll(wgpu::PollType::wait_indefinitely()).ok()?;
+        rx.recv().ok()?.ok()?;
 
-        let mut cropped_buffer = Vec::new();
         let buffer: Vec<u8> = slice.get_mapped_range().to_owned();
 
-        let mut cursor = 0;
         let row_size = self.surface.config.width as usize * bytes_per_pixel as usize;
+        let mut cropped_buffer = Vec::with_capacity(row_size * height as usize);
+        let mut cursor = 0;
         for _ in 0..height {
             cropped_buffer.extend_from_slice(&buffer[cursor..(cursor + row_size)]);
             cursor += bytes_per_row as usize;
