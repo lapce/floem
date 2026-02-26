@@ -670,7 +670,6 @@ impl Iterator for ParseList<'_> {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

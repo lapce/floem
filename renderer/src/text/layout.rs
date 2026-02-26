@@ -9,7 +9,6 @@ use parley::{
 };
 use peniko::kurbo::{Point, Size};
 
-
 /// Byte-offset mapping between original text (with `\t`) and display text (tabs expanded to spaces).
 ///
 /// Created by [`expand_tabs`] when a [`TextLayout`] has a nonzero tab width and the
@@ -301,8 +300,7 @@ impl TextLayout {
             let mut font_cx = FONT_CONTEXT.lock();
             LAYOUT_CONTEXT.with(|lc| {
                 let mut layout_cx = lc.borrow_mut();
-                let mut builder =
-                    layout_cx.ranged_builder(&mut font_cx, layout_text, 1.0, true);
+                let mut builder = layout_cx.ranged_builder(&mut font_cx, layout_text, 1.0, true);
 
                 // Apply attributes — remap span ranges when tabs are expanded
                 if let Some(ref ti) = self.tab_info {
@@ -526,7 +524,7 @@ impl TextLayout {
                 let exceeds = self
                     .layout
                     .get(mid)
-                    .map_or(true, |l| l.metrics().max_coord <= cursor_y);
+                    .is_none_or(|l| l.metrics().max_coord <= cursor_y);
                 if exceeds {
                     lo = mid + 1;
                 } else {
@@ -1267,7 +1265,11 @@ mod tests {
     #[test]
     fn tab_text_returns_original() {
         let layout = make_tab("a\tb", 4);
-        assert_eq!(layout.text(), "a\tb", "text() should return original with \\t");
+        assert_eq!(
+            layout.text(),
+            "a\tb",
+            "text() should return original with \\t"
+        );
     }
 
     #[test]
@@ -1367,15 +1369,9 @@ mod tests {
     fn attrs_span_remapped_across_tab() {
         ensure_font();
         let family = vec![FamilyOwned::Name("DejaVu Serif".into())];
-        let mut attrs_list =
-            AttrsList::new(Attrs::new().font_size(16.0).family(&family));
+        let mut attrs_list = AttrsList::new(Attrs::new().font_size(16.0).family(&family));
         // Span covering bytes 2..4 in "a\tbcd" = "bc".
-        attrs_list.add_span(
-            2..4,
-            Attrs::new()
-                .font_size(32.0)
-                .family(&family),
-        );
+        attrs_list.add_span(2..4, Attrs::new().font_size(32.0).family(&family));
 
         let mut layout = TextLayout::new();
         layout.set_tab_width(4);

@@ -602,7 +602,10 @@ impl Renderer for VgerRenderer {
                                 ]);
                                 render
                                     .format(Format::Alpha)
-                                    .offset(swash::zeno::Vector::new(glyph_x.fract(), glyph_y.fract()))
+                                    .offset(swash::zeno::Vector::new(
+                                        glyph_x.fract(),
+                                        glyph_y.fract(),
+                                    ))
                                     .embolden(embolden);
                                 if let Some(angle) = skew {
                                     render.transform(Some(swash::zeno::Transform::skew(
