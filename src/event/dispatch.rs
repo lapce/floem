@@ -957,7 +957,6 @@ impl<'a> EventCx<'a> {
                     .disable_default_events
                     .contains(key)
                 {
-                    dbg!("contineu");
                     continue;
                 }
                 let handlers = self

@@ -804,9 +804,7 @@ impl WindowHandle {
         // Paint main tree with overlays using explicit traversal
         cx.paint_with_traversal(self.id);
 
-        if cx.window_state.capture.is_none() {
-            self.window.pre_present_notify();
-        }
+        self.window.pre_present_notify();
 
         cx.paint_state.renderer_mut().finish()
     }

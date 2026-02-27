@@ -267,16 +267,6 @@ mod element_id {
         pub(crate) ViewId,
         pub(crate) bool,
     );
-    // impl From<understory_box_tree::NodeId> for VisualId {
-    //     fn from(value: understory_box_tree::NodeId) -> Self {
-    //         Self(value)
-    //     }
-    // }
-    // impl From<&understory_box_tree::NodeId> for VisualId {
-    //     fn from(value: &understory_box_tree::NodeId) -> Self {
-    //         Self(*value)
-    //     }
-    // }
     impl ElementId {
         pub fn owning_id(&self) -> crate::ViewId {
             self.1
@@ -287,29 +277,6 @@ mod element_id {
             self.2
         }
     }
-
-    // /// Extension trait for zero-cost casting between Vec<NodeId> and Vec<VisualId>
-    // pub(crate) trait CastIds<T> {
-    //     /// Cast a Vec of IDs to another ID type with the same layout.
-    //     ///
-    //     /// # Safety
-    //     /// This is safe because VisualId is #[repr(transparent)] over NodeId,
-    //     /// guaranteeing identical memory layout. We use transmute to reinterpret
-    //     /// the Vec without any runtime overhead.
-    //     fn cast_ids(self, root_id: ViewId) -> Vec<T>;
-    // }
-
-    // impl CastIds<ElementId> for Vec<understory_box_tree::NodeId> {
-    //     fn cast_ids(self, root_id: ViewId) -> Vec<ElementId> {
-    //         self.iter().map(|id| ElementId(*id, root_id)).collect()
-    //     }
-    // }
-
-    // impl CastIds<understory_box_tree::NodeId> for Vec<ElementId> {
-    //     fn cast_ids(self, _root_id: ViewId) -> Vec<understory_box_tree::NodeId> {
-    //         self.iter().map(|id| id.0).collect()
-    //     }
-    // }
 }
 pub use element_id::ElementId;
 
