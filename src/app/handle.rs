@@ -9,7 +9,7 @@ use web_time::Instant;
 #[cfg(target_arch = "wasm32")]
 use wgpu::web_sys;
 
-use floem_reactive::SignalUpdate;
+use floem_reactive::{Runtime, SignalUpdate};
 use peniko::kurbo::{Point, Size};
 use std::{collections::HashMap, rc::Rc, time::Duration};
 use winit::{
@@ -21,6 +21,7 @@ use winit::{
 
 use super::{APP_UPDATE_EVENTS, AppConfig, AppEventCallback, AppUpdateEvent, UserEvent};
 use crate::{
+    Application,
     AppEvent,
     action::{Timer, TimerToken},
     context::PaintState,
@@ -45,6 +46,8 @@ pub(crate) struct ApplicationHandle {
 }
 
 impl ApplicationHandle {
+    const UPDATE_BUDGET: Duration = Duration::from_millis(4);
+
     pub(crate) fn new(config: AppConfig) -> Self {
         Self {
             window_handles: HashMap::new(),
@@ -117,6 +120,8 @@ impl ApplicationHandle {
     }
 
     pub(crate) fn handle_update_event(&mut self, event_loop: &dyn ActiveEventLoop) {
+        Application::clear_update_posted();
+
         let events = APP_UPDATE_EVENTS.with(|events| {
             let mut events = events.borrow_mut();
             std::mem::take(&mut *events)
@@ -202,6 +207,23 @@ impl ApplicationHandle {
                 }
             }
         }
+
+        let start = Instant::now();
+        let mut any_work_remaining = self.handle_updates_for_all_windows_budgeted(
+            start,
+            Self::UPDATE_BUDGET,
+        );
+
+        if start.elapsed() < Self::UPDATE_BUDGET && Runtime::has_pending_work() {
+            Runtime::drain_pending_work();
+            if Runtime::has_pending_work() {
+                any_work_remaining = true;
+            }
+        }
+
+        if any_work_remaining {
+            self.request_update();
+        }
     }
 
     pub(crate) fn handle_window_event(
@@ -210,6 +232,7 @@ impl ApplicationHandle {
         event: WindowEvent,
         event_loop: &dyn ActiveEventLoop,
     ) {
+        let is_redraw = matches!(event, WindowEvent::RedrawRequested);
         let window_handle = match self.window_handles.get_mut(&window_id) {
             Some(window_handle) => window_handle,
             None => return,
@@ -373,7 +396,9 @@ impl ApplicationHandle {
                 }
             }
         }
-        self.handle_updates_for_all_windows();
+        if !is_redraw {
+            self.request_update();
+        }
     }
 
     pub(crate) fn new_window(
@@ -612,15 +637,54 @@ impl ApplicationHandle {
         for trigger in ext_events {
             trigger.notify();
         }
-
-        self.handle_updates_for_all_windows();
+        self.request_update();
     }
 
-    pub(crate) fn handle_updates_for_all_windows(&mut self) {
+    pub(crate) fn request_update(&self) {
+        Application::request_update();
+    }
+
+    fn handle_updates_for_all_windows_budgeted(&mut self, start: Instant, budget: Duration) -> bool {
+        let mut any_work_remaining = false;
+
         for (window_id, handle) in self.window_handles.iter_mut() {
-            handle.process_update();
-            while process_window_updates(window_id) {}
+            handle.process_scheduled_updates();
+            let done = handle.process_update_budgeted(start, budget);
+            if !done {
+                any_work_remaining = true;
+            }
+
+            if handle.window_state.request_paint {
+                handle.window.request_redraw();
+                let frame_interval = handle
+                    .window
+                    .current_monitor()
+                    .and_then(|m| m.current_video_mode())
+                    .and_then(|v| v.refresh_rate_millihertz())
+                    .map(|mhz| Duration::from_nanos(1_000_000_000_000 / mhz.get() as u64))
+                    .unwrap_or(Duration::from_millis(8));
+                handle.render_frame_if_due(frame_interval);
+            }
+
+            if !done || start.elapsed() >= budget {
+                any_work_remaining = true;
+                break;
+            }
+
+            // Keep window updates in the same update phase but bound by the same budget.
+            while process_window_updates(window_id) {
+                if start.elapsed() >= budget {
+                    any_work_remaining = true;
+                    break;
+                }
+            }
+            if start.elapsed() >= budget {
+                any_work_remaining = true;
+                break;
+            }
         }
+
+        any_work_remaining
     }
 
     fn frame_duration_for_window(&self, window_id: &winit::window::WindowId) -> Duration {
@@ -705,7 +769,7 @@ impl ApplicationHandle {
                     (timer.action)(token);
                 }
             }
-            self.handle_updates_for_all_windows();
+            self.request_update();
         }
         self.fire_timer(event_loop);
     }

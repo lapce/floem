@@ -2,7 +2,11 @@
 pub(crate) mod delegate;
 pub(crate) mod handle;
 
-use std::{cell::RefCell, rc::Rc};
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use crate::platform::menu_types::MenuId;
 #[cfg(feature = "crossbeam")]
@@ -33,6 +37,7 @@ use handle::ApplicationHandle;
 pub(crate) type AppEventCallback = dyn Fn(AppEvent);
 
 static EVENT_LOOP_PROXY: Mutex<Option<(EventLoopProxy, Sender<UserEvent>)>> = Mutex::new(None);
+static APP_UPDATE_POSTED: AtomicBool = AtomicBool::new(false);
 
 thread_local! {
     pub(crate) static APP_UPDATE_EVENTS: RefCell<Vec<AppUpdateEvent>> = Default::default();
@@ -168,7 +173,7 @@ pub(crate) fn add_app_update_event(event: AppUpdateEvent) {
     APP_UPDATE_EVENTS.with(|events| {
         events.borrow_mut().push(event);
     });
-    Application::send_proxy_event(UserEvent::AppUpdate);
+    Application::request_update();
 }
 
 /// Floem top level application
@@ -207,9 +212,6 @@ impl ApplicationHandler for Application {
         self.handle.handle_timer(event_loop);
         self.handle
             .handle_window_event(window_id, event, event_loop);
-        if Runtime::has_pending_work() {
-            Runtime::drain_pending_work();
-        }
     }
 
     fn proxy_wake_up(&mut self, event_loop: &dyn ActiveEventLoop) {
@@ -217,9 +219,8 @@ impl ApplicationHandler for Application {
         for event in self.receiver.try_iter() {
             self.handle.handle_user_event(event_loop, event);
         }
-        self.handle.handle_updates_for_all_windows();
         if Runtime::has_pending_work() {
-            Runtime::drain_pending_work();
+            self.handle.request_update();
         }
     }
 
@@ -232,7 +233,7 @@ impl ApplicationHandler for Application {
     fn about_to_wait(&mut self, event_loop: &dyn ActiveEventLoop) {
         self.handle.handle_timer(event_loop);
         if Runtime::has_pending_work() {
-            Runtime::drain_pending_work();
+            self.handle.request_update();
         }
     }
 }
@@ -309,6 +310,16 @@ impl Application {
             let _ = sender.send(event);
             proxy.wake_up();
         }
+    }
+
+    pub(crate) fn request_update() {
+        if !APP_UPDATE_POSTED.swap(true, Ordering::AcqRel) {
+            Self::send_proxy_event(UserEvent::AppUpdate);
+        }
+    }
+
+    pub(crate) fn clear_update_posted() {
+        APP_UPDATE_POSTED.store(false, Ordering::Release);
     }
 }
 

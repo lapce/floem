@@ -103,5 +103,5 @@ fn enhanced_list() -> impl IntoView {
     VirtualList::with_view(move || long_list.get().enumerate(), item_view)
         .style(move |s| s.flex_col().flex_grow(1.0))
         .scroll()
-        .style(move |s| s.width(list_width).height(300.0).apply(border_style(true)))
+        .style(move |s| s.width(list_width).height(800.0).apply(border_style(true)))
 }

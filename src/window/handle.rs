@@ -96,6 +96,7 @@ pub(crate) struct WindowHandle {
     pub(crate) window_menu: Option<MudaMenu>,
     pub(crate) event_reducer: WindowEventReducer,
     pub(crate) gpu_resources: Option<GpuResources>,
+    last_presented_at: Instant,
 }
 
 impl Drop for WindowHandle {
@@ -221,6 +222,7 @@ impl WindowHandle {
             window_menu: None,
             event_reducer: WindowEventReducer::default(),
             gpu_resources,
+            last_presented_at: Instant::now(),
         };
         if paint_state_initialized {
             window_handle.init_renderer();
@@ -324,6 +326,7 @@ impl WindowHandle {
             window_menu: None,
             event_reducer: WindowEventReducer::default(),
             gpu_resources: None,
+            last_presented_at: Instant::now(),
         };
 
         window_handle
@@ -398,8 +401,6 @@ impl WindowHandle {
                 self.context_menu.set(None);
             }
         }
-
-        self.process_update();
     }
 
     pub(crate) fn scale(&mut self, scale: f64) {
@@ -745,23 +746,17 @@ impl WindowHandle {
     }
 
     pub(crate) fn render_frame(&mut self) {
-        // Processes updates scheduled on this frame.
-        self.process_scheduled_updates();
-
-        let needs_paint = self.process_update_no_paint();
-        if needs_paint {
+        if self.window_state.request_paint {
+            self.window_state.request_paint = false;
             self.paint();
+            self.last_presented_at = Instant::now();
         }
 
-        // Request a new frame if there's any scheduled updates.
+        // Keep animation control flow in sync with scheduled updates.
         let window_id = self.window.id();
         if !self.window_state.scheduled_updates.is_empty() {
-            if needs_paint {
-                self.schedule_repaint();
-            } else {
-                add_app_update_event(crate::app::AppUpdateEvent::AnimationFrame(true, window_id));
-            }
-        } else if !needs_paint {
+            add_app_update_event(crate::app::AppUpdateEvent::AnimationFrame(true, window_id));
+        } else {
             add_app_update_event(crate::app::AppUpdateEvent::AnimationFrame(false, window_id));
         }
     }
@@ -884,8 +879,101 @@ impl WindowHandle {
         let needs_paint = self.process_update_no_paint();
         if needs_paint {
             self.window_state.request_paint = true;
-            self.schedule_repaint();
         }
+    }
+
+    pub(crate) fn render_frame_if_due(&mut self, min_frame_interval: Duration) -> bool {
+        if !self.window_state.request_paint {
+            return false;
+        }
+        if self.last_presented_at.elapsed() < min_frame_interval {
+            return false;
+        }
+        self.render_frame();
+        true
+    }
+
+    /// Processes updates up to a shared budget and returns whether this window is quiescent.
+    pub(crate) fn process_update_budgeted(&mut self, start: Instant, budget: Duration) -> bool {
+        let mut paint = false;
+        let mut iterations = 0usize;
+        const MAX_ITERS: usize = 32;
+
+        loop {
+            loop {
+                self.process_update_messages();
+                let needs_style = self.needs_style();
+                let needs_layout = self.needs_layout();
+                let needs_box_update = self.needs_box_tree_update();
+                let needs_box = self.needs_box_tree_commit();
+                let has_pending_box_updates =
+                    !self.window_state.views_needing_box_tree_update.is_empty();
+                if !needs_layout
+                    && !needs_style
+                    && !needs_box
+                    && !has_pending_box_updates
+                    && !needs_box_update
+                {
+                    break;
+                }
+
+                if needs_style {
+                    self.style();
+                }
+
+                if self.needs_layout() {
+                    paint = true;
+                    self.layout();
+                }
+
+                if self.needs_box_tree_update() {
+                    paint = true;
+                    self.update_box_tree_from_layout();
+                }
+
+                if !self.window_state.views_needing_box_tree_update.is_empty() {
+                    paint = true;
+                    self.process_pending_box_tree_updates();
+                }
+
+                if self.needs_box_tree_commit() {
+                    paint = true;
+                    self.commit_box_tree();
+                }
+
+                iterations += 1;
+                if iterations >= MAX_ITERS || start.elapsed() >= budget {
+                    if paint {
+                        self.window_state.request_paint = true;
+                    }
+                    return false;
+                }
+            }
+
+            if !self.has_deferred_update_messages() {
+                break;
+            }
+            self.process_deferred_update_messages();
+
+            iterations += 1;
+            if iterations >= MAX_ITERS || start.elapsed() >= budget {
+                if paint {
+                    self.window_state.request_paint = true;
+                }
+                return false;
+            }
+        }
+
+        self.set_cursor();
+
+        let root_element_id = self.window_state.root_view_id.get_element_id();
+        let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::Complete));
+        GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
+
+        if paint {
+            self.window_state.request_paint = true;
+        }
+        true
     }
 
     /// Processes updates and runs style and layout if needed.
