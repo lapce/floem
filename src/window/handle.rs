@@ -97,6 +97,7 @@ pub(crate) struct WindowHandle {
     pub(crate) event_reducer: WindowEventReducer,
     pub(crate) gpu_resources: Option<GpuResources>,
     last_presented_at: Instant,
+    is_occluded: bool,
 }
 
 impl Drop for WindowHandle {
@@ -223,6 +224,7 @@ impl WindowHandle {
             event_reducer: WindowEventReducer::default(),
             gpu_resources,
             last_presented_at: Instant::now(),
+            is_occluded: false,
         };
         if paint_state_initialized {
             window_handle.init_renderer();
@@ -327,6 +329,7 @@ impl WindowHandle {
             event_reducer: WindowEventReducer::default(),
             gpu_resources: None,
             last_presented_at: Instant::now(),
+            is_occluded: false,
         };
 
         window_handle
@@ -891,6 +894,14 @@ impl WindowHandle {
         }
         self.render_frame();
         true
+    }
+
+    pub(crate) fn set_occluded(&mut self, is_occluded: bool) {
+        self.is_occluded = is_occluded;
+    }
+
+    pub(crate) fn can_render_now(&self) -> bool {
+        !self.is_occluded && self.window.is_visible().unwrap_or(true)
     }
 
     /// Processes updates up to a shared budget and returns whether this window is quiescent.

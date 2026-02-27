@@ -21,8 +21,7 @@ use winit::{
 
 use super::{APP_UPDATE_EVENTS, AppConfig, AppEventCallback, AppUpdateEvent, UserEvent};
 use crate::{
-    Application,
-    AppEvent,
+    AppEvent, Application,
     action::{Timer, TimerToken},
     context::PaintState,
     dropped_file,
@@ -145,11 +144,14 @@ impl ApplicationHandle {
                     mut timer,
                     window_id,
                 } => {
+                    if !self.window_can_render(&window_id) {
+                        continue;
+                    }
                     timer.deadline = Instant::now() + self.frame_duration_for_window(&window_id);
                     self.request_timer(timer, event_loop);
                 }
                 AppUpdateEvent::AnimationFrame(animate, window_id) => {
-                    if animate {
+                    if animate && self.window_can_render(&window_id) {
                         self.animating_windows.insert(window_id);
                     } else {
                         self.animating_windows.remove(&window_id);
@@ -209,10 +211,8 @@ impl ApplicationHandle {
         }
 
         let start = Instant::now();
-        let mut any_work_remaining = self.handle_updates_for_all_windows_budgeted(
-            start,
-            Self::UPDATE_BUDGET,
-        );
+        let mut any_work_remaining =
+            self.handle_updates_for_all_windows_budgeted(start, Self::UPDATE_BUDGET);
 
         if start.elapsed() < Self::UPDATE_BUDGET && Runtime::has_pending_work() {
             Runtime::drain_pending_work();
@@ -359,7 +359,12 @@ impl ApplicationHandle {
             WindowEvent::ThemeChanged(theme) => {
                 window_handle.set_theme(Some(theme), true);
             }
-            WindowEvent::Occluded(_) => {}
+            WindowEvent::Occluded(occluded) => {
+                window_handle.set_occluded(occluded);
+                if occluded {
+                    self.animating_windows.remove(&window_id);
+                }
+            }
             WindowEvent::RedrawRequested => {
                 window_handle.render_frame();
             }
@@ -644,7 +649,11 @@ impl ApplicationHandle {
         Application::request_update();
     }
 
-    fn handle_updates_for_all_windows_budgeted(&mut self, start: Instant, budget: Duration) -> bool {
+    fn handle_updates_for_all_windows_budgeted(
+        &mut self,
+        start: Instant,
+        budget: Duration,
+    ) -> bool {
         let mut any_work_remaining = false;
 
         for (window_id, handle) in self.window_handles.iter_mut() {
@@ -654,7 +663,7 @@ impl ApplicationHandle {
                 any_work_remaining = true;
             }
 
-            if handle.window_state.request_paint {
+            if handle.window_state.request_paint && handle.can_render_now() {
                 handle.window.request_redraw();
                 let frame_interval = handle
                     .window
@@ -697,6 +706,13 @@ impl ApplicationHandle {
             .unwrap_or(Duration::from_millis(8))
     }
 
+    fn window_can_render(&self, window_id: &winit::window::WindowId) -> bool {
+        self.window_handles
+            .get(window_id)
+            .map(|h| h.can_render_now())
+            .unwrap_or(false)
+    }
+
     fn update_control_flow(&self, event_loop: &dyn ActiveEventLoop) {
         let timer_deadline = self.timers.values().map(|t| t.deadline).min();
 
@@ -706,6 +722,7 @@ impl ApplicationHandle {
             let now = Instant::now();
             self.animating_windows
                 .iter()
+                .filter(|wid| self.window_can_render(wid))
                 .map(|wid| now + self.frame_duration_for_window(wid))
                 .min()
         };
@@ -765,7 +782,17 @@ impl ApplicationHandle {
             .collect();
         if !tokens.is_empty() {
             for token in tokens {
-                if let Some(timer) = self.timers.remove(&token) {
+                if let Some(mut timer) = self.timers.remove(&token) {
+                    if timer.is_animation
+                        && timer
+                            .window_id
+                            .is_some_and(|window_id| !self.window_can_render(&window_id))
+                    {
+                        // Keep animation timers dormant while hidden/occluded.
+                        timer.deadline = now + Duration::from_millis(100);
+                        self.timers.insert(token, timer);
+                        continue;
+                    }
                     (timer.action)(token);
                 }
             }

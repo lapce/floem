@@ -11,6 +11,7 @@ use std::sync::atomic::AtomicU64;
 use floem_reactive::{SignalWith, UpdaterEffect};
 use peniko::kurbo::{Point, Size, Vec2};
 use winit::window::{ResizeDirection, Theme};
+use winit::window::WindowId;
 
 use crate::IntoView;
 use crate::platform::{Duration, Instant};
@@ -125,6 +126,8 @@ pub(crate) struct Timer {
     pub(crate) token: TimerToken,
     pub(crate) action: Box<dyn FnOnce(TimerToken)>,
     pub(crate) deadline: Instant,
+    pub(crate) is_animation: bool,
+    pub(crate) window_id: Option<WindowId>,
 }
 
 /// A token associated with a timer.
@@ -175,6 +178,8 @@ pub fn exec_after(duration: Duration, action: impl FnOnce(TimerToken) + 'static)
             token,
             action: Box::new(action),
             deadline,
+            is_animation: false,
+            window_id: None,
         },
     });
     token
@@ -203,6 +208,8 @@ pub fn exec_after_animation_frame(action: impl FnOnce(TimerToken) + 'static) -> 
             token,
             action: Box::new(action),
             deadline: Instant::now(), // overridden by handler using monitor refresh rate
+            is_animation: true,
+            window_id: Some(window_id),
         },
         window_id,
     });
