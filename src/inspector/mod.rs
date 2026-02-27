@@ -17,8 +17,8 @@ use crate::{
     window::state::WindowState,
 };
 use floem_reactive::{Effect, RwSignal, Scope, SignalGet, SignalUpdate};
-use peniko::color::palette;
 use peniko::kurbo::{Point, Rect, Size};
+use peniko::{color::palette, kurbo::Affine};
 use slotmap::Key;
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
@@ -38,8 +38,8 @@ pub struct CapturedView {
     id: ViewId,
     name: String,
     id_data_str: String,
-    custom_name: String,
-    layout: Rect,
+    local_to_window_xf: Affine,
+    world_bounds: Rect,
     taffy: Layout,
     children: Vec<Rc<CapturedView>>,
     direct_style: Style,
@@ -49,15 +49,16 @@ pub struct CapturedView {
 }
 
 impl CapturedView {
-    pub fn capture(id: ViewId, window_state: &mut WindowState, clip: Rect) -> Self {
-        let layout = id.get_layout_rect();
+    pub fn capture(id: ViewId, window_state: &mut WindowState) -> Self {
+        let local_to_window_xf = id.get_visual_transform();
+        let world_bounds = id.get_visual_rect_no_clip();
         let taffy = id.get_layout().unwrap_or_default();
         let view_state = id.state();
         let view_state = view_state.borrow();
         let combined_style = view_state.combined_style.clone();
         let focus = view_state.combined_style.builtin().set_focus();
         let focused = window_state.focus_state.current_path().last() == Some(&id.get_element_id());
-        let clipped = layout.intersect(clip);
+        let clipped = id.get_visual_rect();
         let custom_name = &view_state.debug_name;
         let classes = view_state.classes.clone();
         let view = id.view();
@@ -71,13 +72,12 @@ impl CapturedView {
             .cloned()
             .collect::<Vec<_>>()
             .join(" - ");
-        let custom_name = custom_name.iter().cloned().collect::<Vec<_>>().join(" - ");
         Self {
             id,
             name,
             id_data_str: id.data().as_ffi().to_string(),
-            custom_name,
-            layout,
+            local_to_window_xf,
+            world_bounds,
             taffy,
             direct_style: combined_style,
             keyboard_navigable: focus.allows_keyboard_navigation(),
@@ -86,7 +86,7 @@ impl CapturedView {
             children: id
                 .children()
                 .into_iter()
-                .map(|view| Rc::new(CapturedView::capture(view, window_state, clipped)))
+                .map(|view| Rc::new(CapturedView::capture(view, window_state)))
                 .collect(),
         }
     }
@@ -118,7 +118,7 @@ impl CapturedView {
                 init.append(&mut item);
                 init
             });
-        if match_ids.is_empty() && self.layout.contains(pos) {
+        if match_ids.is_empty() && self.world_bounds.contains(pos) {
             match_ids.push(self.id);
         }
         match_ids
@@ -147,13 +147,13 @@ pub struct Capture {
 
 #[derive(Default)]
 pub struct CaptureState {
-    styles: HashMap<ViewId, Style>,
+    computed_styles: HashMap<ViewId, Style>,
 }
 
 impl CaptureState {
     pub(crate) fn capture_style(id: ViewId, cx: &mut StyleCx, computed_style: Style) {
         if let Some(capture) = cx.window_state.capture.as_mut() {
-            capture.styles.insert(id, computed_style);
+            capture.computed_styles.insert(id, computed_style);
         }
     }
 }
@@ -312,32 +312,32 @@ fn selected_view(
                 "X",
                 format!(
                     "{}{}",
-                    view.layout.x0,
-                    beyond(view.layout.x0, capture.window_size.width)
+                    view.world_bounds.x0,
+                    beyond(view.world_bounds.x0, capture.window_size.width)
                 ),
             );
             let y = info(
                 "Y",
                 format!(
                     "{}{}",
-                    view.layout.y0,
-                    beyond(view.layout.y0, capture.window_size.height)
+                    view.world_bounds.y0,
+                    beyond(view.world_bounds.y0, capture.window_size.height)
                 ),
             );
             let w = info(
                 "Width",
                 format!(
                     "{}{}",
-                    view.layout.width(),
-                    beyond(view.layout.x1, capture.window_size.width)
+                    view.world_bounds.width(),
+                    beyond(view.world_bounds.x1, capture.window_size.width)
                 ),
             );
             let h = info(
                 "Height",
                 format!(
                     "{}{}",
-                    view.layout.height(),
-                    beyond(view.layout.y1, capture.window_size.height)
+                    view.world_bounds.height(),
+                    beyond(view.world_bounds.y1, capture.window_size.height)
                 ),
             );
             let tx = info(
@@ -392,7 +392,7 @@ fn selected_view(
 
             let style = capture
                 .state
-                .styles
+                .computed_styles
                 .get(&view.id)
                 .cloned()
                 .unwrap_or_default();
@@ -516,12 +516,13 @@ fn selected_view(
             let class_list_view =
                 Stack::vertical_from_iter(view.classes.clone().into_iter().enumerate().map(
                     |(idx, class_ref)| {
-                        let class_style = capture.state.styles.get(&view.id).map(|style| {
-                            // let style_rc = std::rc::Rc::new(style.clone());
-                            style.get_nested_map(class_ref.key).unwrap_or_default()
+                        let class_style =
+                            capture.state.computed_styles.get(&view.id).map(|style| {
+                                // let style_rc = std::rc::Rc::new(style.clone());
+                                style.get_nested_map(class_ref.key).unwrap_or_default()
 
-                            // Style::new().apply_classes_from_context(&[class_ref], &style_rc)
-                        });
+                                // Style::new().apply_classes_from_context(&[class_ref], &style_rc)
+                            });
 
                         let class_name = format!("{:?}", class_ref.key);
 

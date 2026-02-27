@@ -571,6 +571,7 @@ impl WindowHandle {
                 cx.style_view();
             }
             if self.window_state.capture.is_some() {
+                self.window_state.style_dirty.clear();
                 // we need to break if capture because when capturing we style all views so no need to loop here.
                 // we style all views so that the capture can accurately report how long a full style takes
                 break;
@@ -815,8 +816,7 @@ impl WindowHandle {
     pub(crate) fn capture(&mut self) -> Capture {
         // Capture the view before we run `style` and `layout` to catch missing `request_style`` or
         // `request_layout` flags.
-        let root_layout = self.id.get_layout_rect();
-        let root = CapturedView::capture(self.id, &mut self.window_state, root_layout);
+        let root = CapturedView::capture(self.id, &mut self.window_state);
 
         self.window_state.capture = Some(CaptureState::default());
 

@@ -1,11 +1,11 @@
 use floem::{
-    peniko::color::palette,
-    reactive::{RwSignal, SignalGet, SignalUpdate},
+    action::inspect,
+    prelude::*,
+    reactive::{SignalGet, SignalUpdate},
     responsive::{range, ScreenSize},
     style::TextOverflow,
     unit::UnitExt,
-    views::{Decorators, Label, Stack, TextOverflowChanged},
-    IntoView,
+    views::TextOverflowChanged,
 };
 
 fn app_view() -> impl IntoView {
@@ -75,6 +75,11 @@ fn app_view() -> impl IntoView {
             .items_center()
             .padding(20)
             .max_window_width(1000., |s| s.flex_col())
+    })
+    .on_event_stop(el::KeyUp, move |_cx, KeyboardEvent { key, .. }| {
+        if *key == Key::Named(NamedKey::F11) {
+            inspect();
+        }
     })
 }
 

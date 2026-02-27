@@ -269,10 +269,10 @@ fn capture_view(
         {
             s.absolute()
                 // the plus ones here might be because of the border 1... I'm not sure though
-                .margin_left(5.0 + view.layout.x0 + 1.)
-                .margin_top(5.0 + view.layout.y0 + 1.)
-                .width(view.layout.width())
-                .height(view.layout.height())
+                .margin_left(5.0 + view.world_bounds.x0 + 1.)
+                .margin_top(5.0 + view.world_bounds.y0 + 1.)
+                .width(view.world_bounds.width())
+                .height(view.world_bounds.height())
                 .with_theme(|s, t| {
                     s.background(t.info().with_alpha(0.5))
                         .border_color(t.info().with_alpha(0.7))
@@ -292,10 +292,10 @@ fn capture_view(
             .and_then(|id| capture_.root.find(id))
         {
             s.absolute()
-                .margin_left(5.0 + view.layout.x0 + 1.)
-                .margin_top(5.0 + view.layout.y0 + 1.)
-                .width(view.layout.width())
-                .height(view.layout.height())
+                .margin_left(5.0 + view.world_bounds.x0 + 1.)
+                .margin_top(5.0 + view.world_bounds.y0 + 1.)
+                .width(view.world_bounds.width())
+                .height(view.world_bounds.height())
                 .with_theme(|s, t| {
                     s.background(t.primary_muted().with_alpha(0.5))
                         .border_color(t.primary_muted().with_alpha(0.7))
@@ -527,7 +527,7 @@ fn tree_node(
         });
     let row = add_event(
         row,
-        view.view_conf.custom_name.clone(),
+        view.view_conf.name.clone(),
         id,
         capture_signal,
         capture.clone(),

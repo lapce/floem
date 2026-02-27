@@ -10,7 +10,7 @@ use crate::{
 
 use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Size, Vec2};
 use rustc_hash::{FxHashMap, FxHashSet};
-use smallvec::SmallVec;
+use smallvec::{SmallVec, smallvec};
 use taffy::{AvailableSpace, NodeId};
 use ui_events::pointer::{PointerId, PointerInfo};
 use understory_event_state::{click::ClickState, focus::FocusState, hover::HoverState};
@@ -288,7 +288,8 @@ impl WindowState {
             self.style_dirty.clear();
 
             // Full traversal when capture active
-            let mut stack = vec![root];
+            let mut stack: SmallVec<[ViewId; 8]> = smallvec![root];
+            // stack.push(root);
             while let Some(view_id) = stack.pop() {
                 traversal.push((view_id, StyleReason::full_recalc()));
 
@@ -308,7 +309,7 @@ impl WindowState {
             }
 
             // DFS collecting dirty views in tree order
-            let mut stack = vec![root];
+            let mut stack: SmallVec<[ViewId; 8]> = smallvec![root];
 
             while let Some(view_id) = stack.pop() {
                 if let Some(reason) = self.style_dirty.remove(&view_id) {
