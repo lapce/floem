@@ -1468,6 +1468,7 @@ impl WindowHandle {
 
     #[cfg(target_os = "macos")]
     pub(crate) fn show_context_menu(&self, menu: MudaMenu, pos: Option<Point>) {
+        use dispatch2::DispatchQueue;
         use muda::{
             ContextMenu,
             dpi::{LogicalPosition, Position},
@@ -1476,17 +1477,31 @@ impl WindowHandle {
         use raw_window_handle::RawWindowHandle;
 
         if let RawWindowHandle::AppKit(handle) = self.window.window_handle().unwrap().as_raw() {
-            unsafe {
-                menu.show_context_menu_for_nsview(
-                    handle.ns_view.as_ptr() as _,
-                    pos.map(|pos| {
-                        Position::Logical(LogicalPosition::new(
-                            pos.x * self.window_state.scale,
-                            (self.size.get_untracked().height - pos.y) * self.window_state.scale,
-                        ))
-                    }),
-                )
-            };
+            let ns_view = handle.ns_view.as_ptr() as usize;
+            let scale = self.window_state.scale;
+            let height = self.size.get_untracked().height;
+            let logical_pos = pos.map(|pos| (pos.x * scale, (height - pos.y) * scale));
+
+            struct SendMenu(MudaMenu);
+            unsafe impl Send for SendMenu {}
+            impl SendMenu {
+                unsafe fn show(self, ns_view: usize, logical_pos: Option<(f64, f64)>) {
+                    unsafe {
+                        self.0.show_context_menu_for_nsview(
+                            ns_view as _,
+                            logical_pos
+                                .map(|(x, y)| Position::Logical(LogicalPosition::new(x, y))),
+                        );
+                    }
+                }
+            }
+
+            let menu = SendMenu(menu);
+            DispatchQueue::main().exec_async(move || {
+                unsafe {
+                    menu.show(ns_view, logical_pos);
+                };
+            });
         }
     }
 

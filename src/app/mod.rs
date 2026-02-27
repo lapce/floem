@@ -231,6 +231,7 @@ impl ApplicationHandler for Application {
     }
 
     fn about_to_wait(&mut self, event_loop: &dyn ActiveEventLoop) {
+        self.handle.flush_deferred_context_menus();
         self.handle.handle_timer(event_loop);
         if Runtime::has_pending_work() {
             self.handle.request_update();

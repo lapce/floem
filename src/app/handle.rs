@@ -35,10 +35,17 @@ use crate::{
     window::{WindowConfig, handle::WindowHandle, id::process_window_updates},
 };
 
+struct PendingContextMenu {
+    window_id: WindowId,
+    menu: super::MenuWrapper,
+    pos: Option<Point>,
+}
+
 pub(crate) struct ApplicationHandle {
     window_handles: HashMap<winit::window::WindowId, WindowHandle>,
     timers: HashMap<TimerToken, Timer>,
     animating_windows: std::collections::HashSet<winit::window::WindowId>,
+    pending_context_menus: Vec<PendingContextMenu>,
     pub(crate) event_listener: Option<Box<AppEventCallback>>,
     pub(crate) gpu_resources: Option<GpuResources>,
     pub(crate) config: AppConfig,
@@ -52,6 +59,7 @@ impl ApplicationHandle {
             window_handles: HashMap::new(),
             timers: HashMap::new(),
             animating_windows: std::collections::HashSet::new(),
+            pending_context_menus: Vec::new(),
             event_listener: None,
             gpu_resources: None,
             config,
@@ -109,11 +117,11 @@ impl ApplicationHandle {
                 menu,
                 pos,
             } => {
-                if let Some(handle) = self.window_handles.get_mut(&window_id) {
-                    // Now we're outside the original event handler
-                    // Safe to call
-                    handle.show_context_menu(menu.0, pos);
-                }
+                self.pending_context_menus.push(PendingContextMenu {
+                    window_id,
+                    menu,
+                    pos,
+                });
             }
         }
     }
@@ -799,6 +807,15 @@ impl ApplicationHandle {
             self.request_update();
         }
         self.fire_timer(event_loop);
+    }
+
+    pub(crate) fn flush_deferred_context_menus(&mut self) {
+        let pending = std::mem::take(&mut self.pending_context_menus);
+        for item in pending {
+            if let Some(handle) = self.window_handles.get_mut(&item.window_id) {
+                handle.show_context_menu(item.menu.0, item.pos);
+            }
+        }
     }
 }
 
