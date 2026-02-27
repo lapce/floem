@@ -356,7 +356,7 @@ impl Renderer for VelloRenderer {
             &img.img,
             self.transform
                 .pre_scale_non_uniform(scale_x, scale_y)
-                .then_translate((translate_x, translate_y).into())
+                .pre_translate((translate_x, translate_y).into())
                 .then_scale(self.window_scale),
         );
     }
