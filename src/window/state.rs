@@ -338,9 +338,8 @@ impl WindowState {
             let view_id = traversal[i].0;
 
             if let Some(style_parent) = view_id.state().borrow().style_cx_parent {
-                if let Some(parent_pos) = traversal[..i]
-                    .iter()
-                    .position(|(v, _)| *v == style_parent)
+                if let Some(parent_pos) =
+                    traversal[..i].iter().position(|(v, _)| *v == style_parent)
                 {
                     let view = traversal.remove(i);
                     traversal.insert(parent_pos + 1, view);
@@ -497,7 +496,6 @@ impl WindowState {
 
     /// Check if any pointer has active capture to the given view.
     #[inline]
-    #[allow(dead_code)]
     pub(crate) fn has_any_capture(&self, target: impl Into<ElementId>) -> bool {
         let target = target.into();
         self.pointer_capture_target
@@ -507,6 +505,7 @@ impl WindowState {
 
     /// Check if the pending capture map contains an entry for the given pointer.
     #[inline]
+    #[expect(dead_code)]
     pub(crate) fn has_pending_capture(&self, pointer_id: PointerId) -> bool {
         self.pending_pointer_capture_target
             .iter()
@@ -1129,7 +1128,6 @@ impl WindowState {
             StyleReason::with_selectors(StyleSelectors::empty().set_selector(selector, true)),
         );
     }
-
 }
 
 #[derive(Debug, Clone)]

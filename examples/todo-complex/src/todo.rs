@@ -3,11 +3,11 @@ use std::{hash::Hasher, sync::atomic::AtomicU64, time::Instant};
 use floem::{
     action::{debounce_action, exec_after},
     easing::Spring,
-    event::Event,
+    event::{Event, EventPropagation},
     kurbo::Stroke,
     menu::Menu,
     muda::{self, NativeIcon},
-    prelude::*,
+    prelude::{el::DoubleClick, *},
     reactive::{Effect, Memo, Trigger},
     style::{BoxShadowProp, CursorStyle, MinHeight, Transition},
     taffy::AlignItems,
@@ -127,14 +127,15 @@ impl IntoView for TodoState {
                     )
                     .class(SvgClass, |s| s.size_pct(50., 50.))
             })
-            .on_key_down(Key::Named(NamedKey::Enter), |_| true, |_, _| {});
+            // TODO: is this necessary anymore? I think it was here because of mistakes in the old event dispatch
+            .on_event_stop(el::KeyDown, |_, _| {});
 
         let input = text_input(self.description)
             .placeholder("New To-Do")
             .into_view();
         let input_id = input.id();
         let input = input
-            .disable_default_event(move || (listener::PointerDown, !is_active))
+            .disable_default_event(move || (el::PointerDown, !is_active))
             .style(move |s| {
                 s.width_full()
                     .apply_if(!is_active.get(), |s| s.cursor(CursorStyle::Default))
@@ -153,21 +154,22 @@ impl IntoView for TodoState {
                     })
                     .class(PlaceholderTextClass, |s| s.color(palette::css::GRAY))
             })
-            .on_key_down(
-                Key::Named(NamedKey::Enter),
-                |m| m.is_empty(),
-                move |_, _| {
+            .on_event(el::KeyDown, move |_, KeyboardEvent { key, .. }| {
+                if *key == Key::Named(NamedKey::Enter) {
                     AppCommand::Escape.execute();
-                },
-            )
-            .on_event_stop(listener::PointerDown, move |_, _| {
+                    EventPropagation::Stop
+                } else {
+                    EventPropagation::Continue
+                }
+            })
+            .on_event_stop(el::PointerDown, move |_, _| {
                 AppCommand::SetSelected(self).execute();
             })
-            .on_event_stop(listener::DoubleClick, move |_, _| {
+            .on_event_stop(DoubleClick, move |_, _| {
                 AppCommand::SetActive(self).execute();
                 input_id.request_focus();
             })
-            .on_event_stop(listener::FocusGained, move |_, _| {
+            .on_event_stop(el::FocusGained, move |_, _| {
                 AppCommand::SetActive(self).execute();
                 input_focused.notify();
             });

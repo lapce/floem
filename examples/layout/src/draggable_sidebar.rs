@@ -1,6 +1,7 @@
 use floem::{
     prelude::*,
     style::{CustomStylable, CustomStyle},
+    views::resizable::Resizable,
 };
 
 pub fn draggable_sidebar_view() -> impl IntoView {
@@ -48,13 +49,13 @@ pub fn draggable_sidebar_view() -> impl IntoView {
     let dragger_color = Color::from_rgb8(205, 205, 205);
     let active_dragger_color = Color::from_rgb8(41, 98, 218);
 
-    resizable::resizable((side_bar, main_window))
+    Resizable::new((side_bar, main_window))
         .style(|s| s.width_full().height_full())
         .custom_style(move |s| {
             s.handle_color(dragger_color)
                 .active(|s| s.handle_color(active_dragger_color))
         })
-        .on_event_stop(listener::KeyUp, move |_cx, KeyboardEvent { key, .. }| {
+        .on_event_stop(el::KeyUp, move |_cx, KeyboardEvent { key, .. }| {
             if let Key::Named(NamedKey::F11) = key {
                 floem::action::inspect();
             }

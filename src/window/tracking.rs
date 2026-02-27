@@ -98,10 +98,6 @@ pub fn with_window_id_and_window<F: FnOnce(&WindowId, &Arc<dyn Window>) -> T, T>
     with_window_map(|m| m.with_window_id_and_window(view.root(), f))
 }
 
-pub fn is_known_root(id: &ViewId) -> bool {
-    with_window_map(|map| map.window_id_for_root_view_id.contains_key(id))
-}
-
 fn with_window_map_mut<F: FnOnce(&mut WindowMapping) -> T, T>(f: F) -> T {
     WINDOW_FOR_WINDOW_AND_ROOT_IDS.with(|map| f(&mut map.borrow_mut()))
 }

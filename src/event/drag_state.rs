@@ -1,10 +1,12 @@
-use std::any::Any;
-use std::rc::Rc;
-use std::time::{Duration, Instant};
+use std::{
+    any::Any,
+    rc::Rc,
+    time::{Duration, Instant},
+};
 
-use peniko::kurbo::{Point, Vec2};
+use peniko::kurbo::Point;
 use ui_events::pointer::{
-    PointerButton, PointerButtonEvent, PointerId, PointerInfo, PointerState, PointerUpdate,
+    PointerButton, PointerButtonEvent, PointerInfo, PointerState, PointerUpdate,
 };
 
 use crate::{
@@ -182,14 +184,10 @@ pub(crate) struct DragTracker {
 pub(crate) struct PendingDragState {
     /// The element that requested drag
     pub element_id: ElementId,
-    /// Pointer ID
-    pub pointer_id: PointerId,
     /// Pointer state when drag was requested
     pub start_state: PointerState,
     /// Which button initiated the drag
     pub button: Option<PointerButton>,
-    /// Pointer info
-    pub pointer: PointerInfo,
     /// Minimum distance (in logical pixels) pointer must move before drag starts.
     pub threshold: f64,
     /// When true, the view will be moved to be under the cursor automatically by floem.
@@ -213,12 +211,8 @@ pub(crate) struct ActiveDragState {
     pub current_state: PointerState,
     /// Pointer state when drag started
     pub start_state: PointerState,
-    /// Pointer ID
-    pub pointer_id: PointerId,
     /// Which button is being held
     pub button: Option<PointerButton>,
-    /// Pointer info
-    pub pointer: PointerInfo,
     /// When drag was released (for animation)
     pub released_at: Option<Instant>,
     /// Where drag was released (for animation)
@@ -241,39 +235,6 @@ pub(crate) struct ActiveDragState {
     pub track_targets: bool,
 }
 impl ActiveDragState {
-    pub fn offset(&self) -> Vec2 {
-        self.current_state.logical_point() - self.start_state.logical_point()
-    }
-
-    /// Returns the animated offset during the return animation.
-    ///
-    /// Returns `Some(offset)` with the interpolated offset from release location back to start,
-    /// or `None` if animation is complete or not started.
-    pub fn animated_offset(&self) -> Option<Vec2> {
-        let released_at = self.released_at?;
-        let release_location = self.release_location?;
-
-        let elapsed = released_at.elapsed().as_secs_f64();
-        let duration_secs = self.animation_duration.as_secs_f64();
-        let time = elapsed / duration_secs;
-
-        // If animation is complete, return None
-        if self.easing.finished(time) {
-            return None;
-        }
-
-        // Calculate the full offset from start to release location
-        let full_offset = release_location - self.start_state.logical_point();
-
-        // Apply easing to get progress (0.0 = at release, 1.0 = at start)
-        let eased_progress = self.easing.eval(time);
-
-        // Interpolate from release back to start
-        // At progress 0.0: full_offset (at release location)
-        // At progress 1.0: zero offset (at start location)
-        Some(full_offset * (1.0 - eased_progress))
-    }
-
     /// Returns true if the animation has completed.
     pub fn is_animation_complete(&self) -> bool {
         let Some(released_at) = self.released_at else {
@@ -401,19 +362,12 @@ impl DragTracker {
         self.active_drag.is_some()
     }
 
-    /// Returns the ID of the element being dragged, if any.
-    pub fn dragging_element(&self) -> Option<ElementId> {
-        self.active_drag.as_ref().map(|d| d.element_id)
-    }
-
     /// Request a drag for an element that has pointer capture.
     pub fn request_drag(
         &mut self,
         element_id: ElementId,
-        pointer_id: PointerId,
         pointer_state: PointerState,
         button: Option<PointerButton>,
-        pointer: PointerInfo,
         config: DragConfig,
         use_default_preview: bool,
     ) -> bool {
@@ -429,10 +383,8 @@ impl DragTracker {
 
         self.pending_drag = Some(PendingDragState {
             element_id,
-            pointer_id,
             start_state: pointer_state,
             button,
-            pointer,
             threshold: config.threshold,
             use_default_preview,
             animation_duration: config.animation_duration,
@@ -494,9 +446,7 @@ impl DragTracker {
                 element_id: pending.element_id,
                 current_state: move_event.current.clone(),
                 start_state: pending.start_state.clone(),
-                pointer_id: pending.pointer_id,
                 button: pending.button,
-                pointer: move_event.pointer,
                 released_at: None,
                 release_location: None,
                 animation_duration: pending.animation_duration,
@@ -856,21 +806,5 @@ impl DragTracker {
         }
 
         events
-    }
-
-    /// Reset all drag state (both potential and active).
-    ///
-    /// This is useful for external cancellation or cleanup.
-    pub fn reset(&mut self) {
-        // Cancel any active animation timer before clearing state
-        if let Some(active_drag) = &self.active_drag {
-            if let Some(timer) = active_drag.animation_timer {
-                timer.cancel();
-            }
-        }
-
-        self.pending_drag = None;
-        self.active_drag = None;
-        self.hover_state.clear();
     }
 }

@@ -1,9 +1,7 @@
 use floem::{
-    peniko::{color::palette, Color},
+    action::inspect,
+    prelude::*,
     reactive::{Context, Scope},
-    ui_events::keyboard::{Key, NamedKey},
-    views::{Decorators, Empty, Label, Stack},
-    IntoView, View,
 };
 
 fn colored_label(text: String) -> impl IntoView {
@@ -34,7 +32,7 @@ fn context_container<V: IntoView + 'static>(
 fn app_view() -> impl IntoView {
     Context::provide(palette::css::BLACK);
 
-    let view = Stack::vertical((
+    Stack::vertical((
         colored_label(String::from("app_view")),
         context_container(
             palette::css::HOT_PINK,
@@ -56,14 +54,12 @@ fn app_view() -> impl IntoView {
             .items_center()
             .justify_center()
             .row_gap(5)
-    });
-
-    let id = view.id();
-    view.on_key_up(
-        Key::Named(NamedKey::F11),
-        |m| m.is_empty(),
-        move |_, _| id.inspect(),
-    )
+    })
+    .on_event_stop(el::KeyUp, |_, KeyboardEvent { key, .. }| {
+        if *key == Key::Named(NamedKey::F11) {
+            inspect();
+        }
+    })
 }
 
 fn main() {

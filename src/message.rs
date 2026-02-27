@@ -114,7 +114,6 @@ pub enum UpdateMessage {
         position: Point,
         size: Size,
     },
-    CheckPointerHover,
     WindowVisible(bool),
     ViewTransitionAnimComplete(ViewId),
     SetTheme(Option<Theme>),
@@ -141,7 +140,7 @@ pub enum UpdateMessage {
     RegisterListener(listener::EventListenerKey, ViewId),
     RemoveListener(listener::EventListenerKey, ViewId),
     RouteEvent {
-        id: ViewId,
+        id: ElementId,
         event: Box<Event>, // boxed because of large size
         route_kind: RouteKind,
         triggered_by: Option<Box<Event>>,

@@ -1,18 +1,12 @@
 use floem::{
-    reactive::{RwSignal, SignalGet, SignalUpdate},
-    ui_events::keyboard::{Key, NamedKey},
-    views::{
-        editor::{
-            command::{Command, CommandExecuted},
-            core::{
-                command::EditCommand, cursor::CursorAffinity, editor::EditType,
-                selection::Selection,
-            },
-            text::{default_dark_color, SimpleStyling},
+    prelude::*,
+    views::editor::{
+        command::{Command, CommandExecuted},
+        core::{
+            command::EditCommand, cursor::CursorAffinity, editor::EditType, selection::Selection,
         },
-        text_editor, Button, Decorators, Stack,
+        text::{default_dark_color, SimpleStyling},
     },
-    IntoView, View,
 };
 
 fn app_view() -> impl IntoView {
@@ -48,7 +42,7 @@ fn app_view() -> impl IntoView {
         .placeholder("Some placeholder text");
     let doc = editor_a.doc();
 
-    let view = Stack::new((
+    Stack::new((
         editor_a,
         editor_b,
         Stack::new((
@@ -66,14 +60,12 @@ fn app_view() -> impl IntoView {
         ))
         .style(|s| s.width_full().flex_row().items_center().justify_center()),
     ))
-    .style(|s| s.size_full().flex_col().items_center().justify_center());
-
-    let id = view.id();
-    view.on_key_up(
-        Key::Named(NamedKey::F11),
-        |m| m.is_empty(),
-        move |_, _| id.inspect(),
-    )
+    .style(|s| s.size_full().flex_col().items_center().justify_center())
+    .on_event_stop(el::KeyUp, move |_cx, KeyboardEvent { key, .. }| {
+        if let Key::Named(NamedKey::F11) = key {
+            floem::action::inspect();
+        }
+    })
 }
 
 fn main() {

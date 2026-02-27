@@ -1,5 +1,6 @@
 use floem::{
     action::set_window_scale,
+    event::EventPropagation,
     kurbo::{Point, Size},
     prelude::*,
     reactive::{Context, UpdaterEffect},
@@ -74,34 +75,36 @@ pub fn launch_with_track<V: IntoView + 'static>(app_view: impl FnOnce() -> V + '
         move |_| {
             set_window_scale(app_config.with(|c| c.window_scale));
             app_view()
-                .on_key_down(
-                    Key::Character("=".into()),
-                    |m| m == OS_MOD,
-                    move |_, _| {
-                        app_config.update(|ac| {
-                            ac.window_scale *= 1.1;
-                            floem::action::set_window_scale(ac.window_scale);
-                        });
-                    },
-                )
-                .on_key_down(
-                    Key::Character("-".into()),
-                    |m| m == OS_MOD,
-                    move |_, _| {
-                        app_config.update(|ac| {
-                            ac.window_scale /= 1.1;
-                            floem::action::set_window_scale(ac.window_scale);
-                        });
-                    },
-                )
-                .on_key_down(
-                    Key::Character("0".into()),
-                    |m| m == OS_MOD,
-                    move |_, _| {
-                        app_config.update(|ac| {
-                            ac.window_scale = 1.;
-                            floem::action::set_window_scale(ac.window_scale);
-                        });
+                .on_event(
+                    el::KeyDown,
+                    move |_, KeyboardEvent { key, modifiers, .. }| match key {
+                        Key::Character(ch)
+                            if (ch == "=" || ch == "+") && modifiers.contains(OS_MOD) =>
+                        {
+                            app_config.update(|ac| {
+                                ac.window_scale *= 1.1;
+                                floem::action::set_window_scale(ac.window_scale);
+                            });
+                            EventPropagation::Stop
+                        }
+
+                        Key::Character(ch) if ch == "-" && *modifiers == OS_MOD => {
+                            app_config.update(|ac| {
+                                ac.window_scale /= 1.1;
+                                floem::action::set_window_scale(ac.window_scale);
+                            });
+                            EventPropagation::Stop
+                        }
+
+                        Key::Character(ch) if ch == "0" && *modifiers == OS_MOD => {
+                            app_config.update(|ac| {
+                                ac.window_scale = 1.;
+                                floem::action::set_window_scale(ac.window_scale);
+                            });
+                            EventPropagation::Stop
+                        }
+
+                        _ => EventPropagation::Continue,
                     },
                 )
                 .on_event_stop(listener::WindowMoved, move |_cx, position| {

@@ -1,6 +1,5 @@
 use floem::{
     peniko::color::palette,
-    prelude::palette::css,
     reactive::{RwSignal, SignalGet, SignalUpdate},
     responsive::{range, ScreenSize},
     style::TextOverflow,

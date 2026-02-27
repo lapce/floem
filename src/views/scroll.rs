@@ -9,12 +9,12 @@ use std::{cell::RefCell, rc::Rc};
 use taffy::Overflow;
 use ui_events::pointer::{PointerButton, PointerEvent, PointerId};
 
-use crate::context::LayoutChanged;
 use crate::easing::Linear;
 use crate::event::{
-    CustomEvent, DragEvent, DragSourceEvent, PointerCaptureEvent, PointerScrollEventExt, RouteKind,
-    ScrollTo,
+    DragEvent, DragSourceEvent, PointerCaptureEvent, PointerScrollEventExt, RouteKind, ScrollTo,
 };
+use crate::prelude::EventListenerTrait;
+use crate::prelude::el::UpdatePhaseLayout;
 use crate::style::ScrollbarWidth;
 use crate::{
     BoxTree, ElementId, Renderer,
@@ -549,7 +549,7 @@ impl Scroll {
     /// ```
     pub fn new(child: impl IntoView) -> Self {
         let id = ViewId::new();
-        id.register_listener(LayoutChanged::listener_key());
+        id.register_listener(UpdatePhaseLayout::listener_key());
 
         let child = child.into_any();
         let child_id = child.id();
@@ -912,7 +912,7 @@ impl View for Scroll {
             return;
         }
 
-        for (element_id, reason) in cx.targeted_elements.clone() {
+        for (element_id, _reason) in cx.targeted_elements.clone() {
             if element_id == self.v_handle.element_id {
                 self.v_handle.style(cx);
             } else if element_id == self.h_handle.element_id {
@@ -927,7 +927,7 @@ impl View for Scroll {
 
     fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
         // in order to use this we had to set `id.has_layout_listener`.
-        if LayoutChanged::extract(&cx.event).is_some() {
+        if UpdatePhaseLayout::extract(&cx.event).is_some() {
             self.set_positions();
             return EventPropagation::Stop;
         }

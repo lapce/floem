@@ -1,6 +1,5 @@
 use floem::{
     close_window,
-    event::Event,
     kurbo::Size,
     new_window,
     prelude::*,

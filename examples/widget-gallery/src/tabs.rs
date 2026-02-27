@@ -48,7 +48,7 @@ pub fn tab_view() -> impl IntoView {
         move || tabs.get(),
         |tab| tab.idx,
         move |tab| {
-            tab_side_item(tab.clone(), active_tab).on_click_stop(move |_| {
+            tab_side_item(tab.clone(), active_tab).action(move || {
                 active_tab.update(|a| {
                     *a = Some(tab.idx);
                 });
@@ -57,7 +57,7 @@ pub fn tab_view() -> impl IntoView {
     )
     .style(|s| s.flex_col().width_full().row_gap(5.))
     .scroll()
-    .on_click_stop(move |_| {
+    .action(move || {
         if active_tab.with_untracked(|act| act.is_some()) {
             active_tab.set(None)
         }

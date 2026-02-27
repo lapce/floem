@@ -560,7 +560,7 @@ impl<'a> StyleCx<'a> {
         let base_style_disabled = base_style.builtin().set_disabled();
         let base_style_selected = base_style.builtin().set_selected();
         let base_style_hidden = base_style.builtin().display() == taffy::Display::None;
-        let mut view_interact_state = Self::get_interact_state(&self.window_state, element_id);
+        let mut view_interact_state = Self::get_interact_state(self.window_state, element_id);
         view_interact_state.is_disabled |= base_style_disabled;
         view_interact_state.is_selected |= base_style_selected;
         view_interact_state.is_hidden |= base_style_hidden;

@@ -1,20 +1,12 @@
 use floem::{
-    IntoView, View,
     action::inspect,
-    reactive::{RwSignal, SignalGet, SignalUpdate},
-    ui_events::keyboard::{Key, NamedKey},
-    unit::UnitExt,
-    views::{
-        Button, Decorators, Stack,
-        editor::{
-            command::{Command, CommandExecuted},
-            core::{
-                command::EditCommand, cursor::CursorAffinity, editor::EditType,
-                selection::Selection,
-            },
-            text::{SimpleStyling, default_dark_color},
+    prelude::*,
+    views::editor::{
+        command::{Command, CommandExecuted},
+        core::{
+            command::EditCommand, cursor::CursorAffinity, editor::EditType, selection::Selection,
         },
-        text_editor,
+        text::{SimpleStyling, default_dark_color},
     },
 };
 
@@ -81,9 +73,9 @@ pub fn editor_view() -> impl IntoView {
             .items_center()
             .justify_center()
     })
-    .on_key_up(
-        Key::Named(NamedKey::F11),
-        |m| m.is_empty(),
-        move |_, _| inspect(),
-    )
+    .on_event_stop(el::KeyUp, |_, KeyboardEvent { key, .. }| {
+        if *key == Key::Named(NamedKey::F11) {
+            inspect();
+        }
+    })
 }

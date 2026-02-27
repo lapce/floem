@@ -6,10 +6,8 @@
 //! - [`LayoutCx`] - Context for computing Taffy layout nodes
 //! - [`ComputeLayoutCx`] - Context for computing view positions after Taffy layout
 
-mod cx;
 pub mod responsive;
 mod screen;
 
-pub use cx::LayoutCx;
 pub use responsive::{GridBreakpoints, ScreenSize, range};
 pub use screen::{ScreenLayout, screen_layout_for_window, try_create_screen_layout};

@@ -13,11 +13,11 @@ pub fn dyn_stack_view() -> impl IntoView {
     let stack = dyn_stack(
         move || long_list.get(),
         move |item| *item,
-        move |item| item.style(|s| s.height(20).justify_center()),
+        move |item| item.style(|s| s.height(20)),
     )
-    .style(|s| s.flex_col().width_full())
+    .style(|s| s.flex_col())
     .scroll()
-    .style(|s| s.width(100).height(200).border(1));
+    .style(|s| s.flex_grow(1.).height(200).border(1));
 
-    Stack::horizontal((button, stack)).style(|s| s.flex_col().row_gap(5).margin_top(10))
+    Stack::vertical((button, stack)).style(|s| s.row_gap(5).margin_top(10))
 }

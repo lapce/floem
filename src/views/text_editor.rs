@@ -37,7 +37,6 @@ use super::editor::{
 /// logic.
 pub struct TextEditor {
     id: ViewId,
-    child: ViewId,
     // /// The scope this view was created in, used for creating the final view
     cx: Scope,
     editor: Editor,
@@ -89,15 +88,9 @@ pub fn text_editor(text: impl Into<Rope>) -> TextEditor {
         .enter(|| editor_container_view(editor_sig, |_| true, default_key_handler(editor_sig)))
         .into_view();
 
-    let child_id = child.id();
     id.set_children([child]);
 
-    TextEditor {
-        id,
-        child: child_id,
-        cx,
-        editor,
-    }
+    TextEditor { id, cx, editor }
 }
 
 /// A text editor view built on top of [Editor](super::editor::Editor) that allows providing your own keymap callback.
@@ -125,15 +118,9 @@ pub fn text_editor_keys(
         })
         .into_view();
 
-    let child_id = child.id();
     id.set_children([child]);
 
-    TextEditor {
-        id,
-        cx,
-        editor,
-        child: child_id,
-    }
+    TextEditor { id, cx, editor }
 }
 
 impl View for TextEditor {
@@ -453,14 +440,12 @@ impl TextEditor {
             .enter(|| editor_container_view(editor_sig, |_| true, default_key_handler(editor_sig)))
             .into_view();
 
-        let child_id = child.id();
         id.set_children([child]);
 
         TextEditor {
             id,
             cx: self.cx,
             editor,
-            child: child_id,
         }
     }
 

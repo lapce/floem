@@ -5,9 +5,9 @@ use crate::style::CustomStylable;
 use crate::theme::StyleThemeExt;
 use crate::unit::UnitExt;
 use crate::view::IntoView;
-use crate::views::resizable::ResizableStack;
+use crate::views::resizable::Resizable;
 use crate::views::{
-    Button, Clip, Container, ContainerExt, Decorators, Label, List, Scroll, Stack, dyn_container,
+    Button, Clip, Container, ContainerExt, Decorators, Label, Scroll, Stack, dyn_container,
     list,
 };
 use floem_reactive::{RwSignal, Scope, SignalGet, SignalUpdate};
@@ -242,7 +242,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
     let timeline = Stack::vertical((header("Timeline"), timeline))
         .style(|s| s.min_width(0).flex_basis(0).flex_grow(1.0));
 
-    ResizableStack::new((frames, timeline)).style(|s| s.height_full().width_full().max_width_full())
+    Resizable::new((frames, timeline)).style(|s| s.height_full().width_full().max_width_full())
 }
 
 thread_local! {

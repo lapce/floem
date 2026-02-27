@@ -25,10 +25,10 @@ pub fn app_view() -> impl IntoView {
         Label::derived(move || format!("Value: {}", counter.get())),
         // Create a horizontal layout
         (
-            "Increment".class(ButtonClass).on_click_stop(move |_| {
+            "Increment".class(ButtonClass).action(move || {
                 counter.update(|value| *value += 1);
             }),
-            "Decrement".class(ButtonClass).on_click_stop(move |_| {
+            "Decrement".class(ButtonClass).action(move || {
                 counter.update(|value| *value -= 1);
             }),
         ),

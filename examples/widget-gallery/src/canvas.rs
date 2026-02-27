@@ -1,8 +1,4 @@
-use std::{
-    cell::RefCell,
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::{cell::RefCell, rc::Rc, time::Instant};
 
 use floem::{
     ViewId,
@@ -342,7 +338,7 @@ impl View for HuePicker {
                     on_change(self.current_color.convert());
                     self.track = true;
                     if let Some(pointer_id) = pointer.pointer_id {
-                        self.id.set_pointer_capture(pointer_id);
+                        cx.request_pointer_capture(pointer_id);
                     }
                 }
                 Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. })) => {
@@ -468,7 +464,7 @@ impl View for OpacityPicker {
                     on_change(self.current_color);
                     self.track = true;
                     if let Some(pointer_id) = pointer.pointer_id {
-                        self.id.set_pointer_capture(pointer_id);
+                        cx.request_pointer_capture(pointer_id);
                     }
                 }
                 Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. })) => {

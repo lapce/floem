@@ -1,5 +1,4 @@
 use floem::{
-    event::Event,
     kurbo::Size,
     prelude::*,
     style::AlignContent,

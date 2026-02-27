@@ -465,11 +465,6 @@ impl TextInput {
         self.cursor_glyph_idx + cursor.0
     }
 
-    fn calculate_scroll_offset(&mut self) {
-        // Just call the unified update method
-        self.update_cursor_position_and_scroll();
-    }
-
     fn get_cursor_rect(&self) -> Rect {
         let (Some(parent_node), Some(text_node)) = (self.layout_node, self.text_node) else {
             return Rect::ZERO;

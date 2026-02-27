@@ -50,7 +50,7 @@ use crate::views::{Container, Decorators, Stack};
 use crate::{
     Application,
     app::UserEvent,
-    context::{FrameUpdate, LayoutChanged, LayoutCx, PaintState, StyleCx, UpdateCx, VisualChanged},
+    context::{FrameUpdate, LayoutChanged, PaintState, StyleCx, UpdateCx, VisualChanged},
     event::{
         Event, GlobalEventCx, ImeEvent, WindowEvent, clear_hit_test_cache,
         dropped_file::FileDragEvent,
@@ -584,14 +584,12 @@ impl WindowHandle {
     }
 
     fn layout(&mut self) -> Duration {
-        let cx = LayoutCx::new(&mut self.window_state);
-
         let start = Instant::now();
-        cx.window_state.compute_layout();
+        self.window_state.compute_layout();
         let taffy_duration = start.elapsed();
 
         // Update box tree from layout after layout completes
-        cx.window_state.update_box_tree_from_layout();
+        self.window_state.update_box_tree_from_layout();
 
         let root_element_id = self.window_state.root_view_id.get_element_id();
         let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::Layout));
@@ -1208,9 +1206,6 @@ impl WindowHandle {
                             state.registered_listener_keys.retain(|k| *k != key);
                         }
                     }
-                    UpdateMessage::CheckPointerHover => {
-                        self.event(Event::Window(WindowEvent::ChangeUnderCursor));
-                    }
                     UpdateMessage::WindowVisible(visible) => {
                         self.window.set_visible(visible);
                     }
@@ -1256,14 +1251,12 @@ impl WindowHandle {
                         setup.run();
                     }
                     UpdateMessage::RouteEvent {
-                        id: _,
+                        id,
                         event,
                         route_kind: dispatch_kind,
                         triggered_by,
                     } => {
-                        let root_element_id = self.window_state.root_view_id.get_element_id();
-                        let mut cx =
-                            GlobalEventCx::new(&mut self.window_state, root_element_id, *event);
+                        let mut cx = GlobalEventCx::new(&mut self.window_state, id, *event);
                         cx.route_normal(dispatch_kind, triggered_by.as_deref());
                     }
                 }

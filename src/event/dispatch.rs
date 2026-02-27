@@ -904,18 +904,16 @@ impl<'a> EventCx<'a> {
 
         self.window_state.drag_tracker.request_drag(
             self.target,
-            pointer_id,
             pbe.state.clone(),
             pbe.button,
-            pbe.pointer,
             config,
             use_default_preview,
         )
     }
 
     fn dispatch_one(&mut self) -> Outcome {
-        if self.target.is_view() & self.target.owning_id().is_disabled()
-            && !self.event.allow_disabled()
+        if self.target.is_view()
+            && (self.target.owning_id().is_disabled() && !self.event.allow_disabled())
         {
             return Outcome::Continue;
         }
@@ -951,6 +949,17 @@ impl<'a> EventCx<'a> {
         if self.target.is_view() {
             let listener_keys = self.event.listener_keys();
             for key in &listener_keys {
+                if self
+                    .target
+                    .owning_id()
+                    .state()
+                    .borrow()
+                    .disable_default_events
+                    .contains(key)
+                {
+                    dbg!("contineu");
+                    continue;
+                }
                 let handlers = self
                     .target
                     .owning_id()

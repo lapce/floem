@@ -275,8 +275,6 @@ pub(crate) enum FrameUpdate {
 // Re-export EventCx from event module for backward compatibility
 pub use crate::event::EventCx;
 
-// Re-export layout context types from layout module for backward compatibility
-pub use crate::layout::LayoutCx;
 // Re-export style context types from style module for backward compatibility
 pub use crate::style::{InteractionState, StyleCx};
 // Re-export paint context types from paint module for backward compatibility

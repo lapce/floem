@@ -68,11 +68,11 @@ fn app_view() -> impl IntoView {
                 .items_center()
                 .justify_center()
         })
-        .on_key_up(
-            Key::Named(NamedKey::F11),
-            |m| m.is_empty(),
-            move |_, _| inspect(),
-        )
+        .on_event_stop(el::KeyUp, |_, KeyboardEvent { key, .. }| {
+            if *key == Key::Named(NamedKey::F11) {
+                inspect();
+            }
+        })
 }
 
 fn main() {

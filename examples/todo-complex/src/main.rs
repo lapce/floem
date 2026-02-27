@@ -2,6 +2,7 @@ use std::time::Instant;
 
 use floem::{
     action::{exec_after, inspect},
+    event::EventPropagation,
     prelude::*,
     style::CustomStylable,
     ui_events::keyboard::Modifiers,
@@ -34,7 +35,7 @@ fn app_view() -> impl IntoView {
 
     let new_button = Button::new("New To-Do")
         .action(|| AppCommand::NewTodo.execute())
-        .style(|s| s.margin_horiz(10));
+        .style(|s| s.margin_horiz(10).keyboard_navigable());
 
     Stack::vertical((todos_scroll, new_button))
         .debug_name("Todos scroll list and new button")
@@ -56,67 +57,62 @@ fn app_view() -> impl IntoView {
         .action(move || {
             AppCommand::Escape.execute();
         })
-        .on_key_down(
-            Key::Named(NamedKey::F11),
-            |m| m.is_empty(),
-            |_, _| {
+        .on_event_stop(el::KeyUp, |_, KeyboardEvent { key, .. }| {
+            if *key == Key::Named(NamedKey::F11) {
                 inspect();
-            },
-        )
-        .on_key_down(
-            Key::Named(NamedKey::Escape),
-            |m| m.is_empty(),
-            move |_, _| {
-                AppCommand::Escape.execute();
-            },
-        )
-        .on_key_down(
-            Key::Character("n".into()),
-            |m| m == OS_MOD,
-            move |_, _| AppCommand::NewTodo.execute(),
-        )
-        .on_key_down(
-            Key::Character("r".into()),
-            |m| m == OS_MOD,
-            move |_, _| AppCommand::RefreshDB.execute(),
-        )
-        .on_key_down(
-            Key::Character("a".into()),
-            |m| m == OS_MOD,
-            move |_, _| AppCommand::SelectAll.execute(),
-        )
-        .on_key_down(
-            Key::Named(NamedKey::Enter),
-            |m| m.is_empty(),
-            |_, _| {
-                AppCommand::AppAction.execute();
-            },
-        )
-        .on_key_down(
-            Key::Character(" ".into()),
-            |m| m.is_empty(),
-            |_, _| {
-                AppCommand::AppAction.execute();
-            },
-        )
-        .on_key_down(
-            Key::Named(NamedKey::Backspace),
-            // empty, shift, or OS_MOD or OS_MOD + shift
-            move |m| !m.intersects((OS_MOD | Modifiers::SHIFT).complement()),
-            move |_, _| AppCommand::DeleteSelected.execute(),
-        )
-        .on_key_down(
-            Key::Named(NamedKey::ArrowDown),
-            |m| m == Modifiers::empty(),
-            |_, _| {
-                AppCommand::SelectDown.execute();
-            },
-        )
-        .on_key_down(
-            Key::Named(NamedKey::ArrowUp),
-            |m| m == Modifiers::empty(),
-            |_, _| {
-                AppCommand::SelectUp.execute();
+            }
+        })
+        .on_event(
+            el::KeyDown,
+            |_, KeyboardEvent { key, modifiers, .. }| match key {
+                Key::Named(NamedKey::Escape) if modifiers.is_empty() => {
+                    AppCommand::Escape.execute();
+                    EventPropagation::Stop
+                }
+
+                Key::Character(ch) if ch == "n" && *modifiers == OS_MOD => {
+                    AppCommand::NewTodo.execute();
+                    EventPropagation::Stop
+                }
+
+                Key::Character(ch) if ch == "r" && *modifiers == OS_MOD => {
+                    AppCommand::RefreshDB.execute();
+                    EventPropagation::Stop
+                }
+
+                Key::Character(ch) if ch == "a" && *modifiers == OS_MOD => {
+                    AppCommand::SelectAll.execute();
+                    EventPropagation::Stop
+                }
+
+                Key::Named(NamedKey::Enter) if modifiers.is_empty() => {
+                    AppCommand::AppAction.execute();
+                    EventPropagation::Stop
+                }
+
+                Key::Character(ch) if ch == " " && modifiers.is_empty() => {
+                    AppCommand::AppAction.execute();
+                    EventPropagation::Stop
+                }
+
+                Key::Named(NamedKey::Backspace)
+                    if !modifiers.intersects((OS_MOD | Modifiers::SHIFT).complement()) =>
+                {
+                    AppCommand::DeleteSelected.execute();
+                    EventPropagation::Stop
+                }
+
+                Key::Named(NamedKey::ArrowDown) if modifiers.is_empty() => {
+                    AppCommand::SelectDown.execute();
+                    EventPropagation::Stop
+                }
+
+                Key::Named(NamedKey::ArrowUp) if modifiers.is_empty() => {
+                    AppCommand::SelectUp.execute();
+                    EventPropagation::Stop
+                }
+
+                _ => EventPropagation::Continue,
             },
         )
 }

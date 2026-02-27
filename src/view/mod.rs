@@ -65,7 +65,7 @@ use std::hash::Hash;
 use std::rc::Rc;
 
 use crate::{
-    ElementId, Renderer,
+    Renderer,
     context::{EventCx, PaintCx, StyleCx, UpdateCx},
     event::EventPropagation,
     style::{LayoutProps, Style, StyleClassRef},
@@ -75,7 +75,6 @@ use crate::{
         dyn_stack::{FxIndexSet, HashRun, diff},
         dyn_view,
     },
-    window::state::WindowState,
 };
 use state::ViewStyleProps;
 
@@ -1059,28 +1058,6 @@ pub(crate) fn border_radius(radius: crate::unit::PxPct, size: f64) -> f64 {
 
 fn border_to_radii_view(style: &ViewStyleProps, size: Size) -> RoundedRectRadii {
     let border_radii = style.border_radius();
-    RoundedRectRadii {
-        top_left: border_radius(
-            border_radii.top_left.unwrap_or(PxPct::Px(0.0)),
-            size.min_side(),
-        ),
-        top_right: border_radius(
-            border_radii.top_right.unwrap_or(PxPct::Px(0.0)),
-            size.min_side(),
-        ),
-        bottom_left: border_radius(
-            border_radii.bottom_left.unwrap_or(PxPct::Px(0.0)),
-            size.min_side(),
-        ),
-        bottom_right: border_radius(
-            border_radii.bottom_right.unwrap_or(PxPct::Px(0.0)),
-            size.min_side(),
-        ),
-    }
-}
-
-pub(crate) fn border_to_radii(style: &Style, size: Size) -> RoundedRectRadii {
-    let border_radii = style.get(crate::style::BorderRadiusProp);
     RoundedRectRadii {
         top_left: border_radius(
             border_radii.top_left.unwrap_or(PxPct::Px(0.0)),

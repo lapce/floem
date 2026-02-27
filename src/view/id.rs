@@ -1392,7 +1392,7 @@ impl ViewId {
         caused_by: Option<crate::event::Event>,
     ) {
         self.add_update_message(UpdateMessage::RouteEvent {
-            id: *self,
+            id: self.get_element_id(),
             event: Box::new(event),
             route_kind,
             triggered_by: caused_by.map(Box::new),

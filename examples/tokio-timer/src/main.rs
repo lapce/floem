@@ -77,7 +77,11 @@ fn app_view() -> impl IntoView {
             .items_center()
             .justify_center()
     })
-    .on_key_down(Key::Named(NamedKey::F11), |_| true, |_, _| inspect())
+    .on_event_stop(el::KeyUp, |_, KeyboardEvent { key, .. }| {
+        if *key == Key::Named(NamedKey::F11) {
+            inspect();
+        }
+    })
 }
 
 /// A slider with a thin bar instead of the default thick bar.

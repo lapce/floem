@@ -7,7 +7,7 @@ use crate::{
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Default)]
-pub(crate) enum EffectPriority {
+pub enum EffectPriority {
     #[default]
     Normal,
     High,

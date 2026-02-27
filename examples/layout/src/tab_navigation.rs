@@ -1,10 +1,4 @@
-use floem::{
-    imbl,
-    prelude::*,
-    style::{CursorStyle, Position},
-    text::Weight,
-    LazyView,
-};
+use floem::{imbl, prelude::*, style::CursorStyle, text::Weight, LazyView};
 
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
 enum Tab {
@@ -65,7 +59,6 @@ fn tab_button(
         })
 }
 
-const TABBAR_HEIGHT: f64 = 37.0;
 const CONTENT_PADDING: f64 = 10.0;
 
 pub fn tab_navigation_view() -> impl IntoView {

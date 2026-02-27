@@ -37,7 +37,7 @@ style_class!(
     pub ResizableHandleClass
 );
 
-pub(crate) fn create_resizable(children: Vec<Box<dyn View>>) -> ResizableStack {
+pub(crate) fn create_resizable(children: Vec<Box<dyn View>>) -> Resizable {
     let id = ViewId::new();
     id.register_listener(listener::UpdatePhaseLayout::listener_key());
 
@@ -69,7 +69,7 @@ pub(crate) fn create_resizable(children: Vec<Box<dyn View>>) -> ResizableStack {
         handles.insert(handle.element_id, handle);
     }
 
-    ResizableStack {
+    Resizable {
         id,
         re_style: ReStyle::default(),
         handles,
@@ -78,7 +78,7 @@ pub(crate) fn create_resizable(children: Vec<Box<dyn View>>) -> ResizableStack {
 
 /// Creates a [ResizableStack] from a group of `Views`.
 #[deprecated(note = "use ResizableStack::new")]
-pub fn resizable<VT: ViewTuple + 'static>(children: VT) -> ResizableStack {
+pub fn resizable<VT: ViewTuple + 'static>(children: VT) -> Resizable {
     create_resizable(children.into_views())
 }
 
@@ -318,7 +318,10 @@ impl Handle {
             &[ResizableHandleClass::class_ref()],
             self.element_id,
         );
-        if self.handle_style.read_style_for(cx, &resolved, self.element_id) {
+        if self
+            .handle_style
+            .read_style_for(cx, &resolved, self.element_id)
+        {
             let cursor = match axis {
                 Axis::Horizontal => CursorStyle::ColResize,
                 Axis::Vertical => CursorStyle::RowResize,
@@ -362,13 +365,13 @@ impl Handle {
 }
 
 /// A container View around other Views that allows for resizing with a handle.
-pub struct ResizableStack {
+pub struct Resizable {
     id: ViewId,
     re_style: ReStyle,
     handles: FxHashMap<ElementId, Handle>,
 }
 
-impl View for ResizableStack {
+impl View for Resizable {
     fn id(&self) -> ViewId {
         self.id
     }
@@ -469,7 +472,7 @@ pub enum ResizableMessage {
     ClearAll,
 }
 
-impl ResizableStack {
+impl Resizable {
     pub fn new<VT: ViewTuple + 'static>(children: VT) -> Self {
         create_resizable(children.into_views())
     }
@@ -538,7 +541,7 @@ impl CustomStyle for ResizableCustomStyle {
     type StyleClass = ResizableHandleClass;
 }
 
-impl CustomStylable<ResizableCustomStyle> for ResizableStack {
+impl CustomStylable<ResizableCustomStyle> for Resizable {
     type DV = Self;
 }
 
