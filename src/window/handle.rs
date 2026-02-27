@@ -1777,4 +1777,31 @@ mod tests {
 
         // All should complete without panic
     }
+
+    #[test]
+    fn test_budgeted_update_quiesces_with_unreachable_style_dirty_view() {
+        let root_id = ViewId::new_root();
+        set_current_view(root_id);
+        let view = Empty::new().style(|s| s.size(100.0, 100.0));
+        let mut window_handle =
+            WindowHandle::new_headless(root_id, view, Size::new(800.0, 600.0), 1.0);
+
+        // Create a view ID that belongs to this root but is not in the tree.
+        let orphan = ViewId::new();
+        window_handle
+            .window_state
+            .mark_style_dirty(orphan.get_element_id());
+
+        // Must quiesce immediately instead of repeatedly trying to style an unreachable view.
+        let quiescent =
+            window_handle.process_update_budgeted(Instant::now(), Duration::from_millis(10));
+        assert!(
+            quiescent,
+            "process_update_budgeted should quiesce when style dirty contains unreachable views"
+        );
+        assert!(
+            window_handle.window_state.style_dirty.is_empty(),
+            "unreachable style dirty entries should be drained"
+        );
+    }
 }

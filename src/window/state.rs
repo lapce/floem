@@ -329,6 +329,13 @@ impl WindowState {
                     stack.push(*child);
                 }
             }
+
+            if remaining > 0 {
+                // Some dirty views were not reachable from this window root.
+                // Keeping them would cause style/update loops to spin forever
+                // because traversal can no longer make progress on them.
+                self.style_dirty.clear();
+            }
         }
 
         // Fix ordering for custom style parents
