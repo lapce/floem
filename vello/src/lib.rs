@@ -83,7 +83,7 @@ impl VelloRenderer {
             format: texture_format,
             width,
             height,
-            present_mode: wgpu::PresentMode::AutoNoVsync,
+            present_mode: wgpu::PresentMode::AutoVsync,
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
             view_formats: vec![],
             desired_maximum_frame_latency: 1,
@@ -125,7 +125,7 @@ impl VelloRenderer {
                 pipeline_cache: None,
                 use_cpu: false,
                 antialiasing_support: vello::AaSupport::all(),
-                num_init_threads: Some(NonZero::new(1).unwrap()),
+                num_init_threads: None,
             },
         )
         .unwrap();
@@ -356,7 +356,7 @@ impl Renderer for VelloRenderer {
             &img.img,
             self.transform
                 .pre_scale_non_uniform(scale_x, scale_y)
-                .pre_translate((translate_x, translate_y).into())
+                .then_translate((translate_x, translate_y).into())
                 .then_scale(self.window_scale),
         );
     }
