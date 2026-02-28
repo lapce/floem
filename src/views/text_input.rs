@@ -1425,6 +1425,7 @@ impl View for TextInput {
             // Update cursor position and scroll after text changes
             self.update_cursor_position_and_scroll();
             self.id.request_layout();
+            cx.window_state.request_paint(self.id);
             self.last_cursor_action_on = Instant::now();
         }
 

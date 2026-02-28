@@ -183,7 +183,7 @@ impl HeadlessHarness {
     /// let needs_repaint = harness.process_update_no_paint();
     /// assert!(needs_repaint, "Style change should trigger repaint");
     /// ```
-    pub fn process_update_no_paint(&mut self) -> bool {
+    pub fn process_update_no_paint(&mut self) {
         // Process any scheduled updates (style/layout requests from previous frame)
         self.window_handle.process_scheduled_updates();
 

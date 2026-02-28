@@ -12,7 +12,7 @@ use floem::{
     },
     prelude::*,
     reactive::{Effect, UpdaterEffect},
-    style::DirectTransition,
+    style::{DirectTransition, Transition},
     ui_events::pointer::{PointerButtonEvent, PointerEvent},
 };
 use palette::css;
@@ -22,13 +22,12 @@ use crate::form::{form, form_item};
 pub fn canvas_view() -> impl IntoView {
     let rounded = RwSignal::new(true);
     let color = RwSignal::new(css::AQUA);
+
     let border_radius = Rc::new(RefCell::new(DirectTransition::new(
         32.,
-        Some(floem::style::Transition::new(
-            500.millis(),
-            Spring::snappy(),
-        )),
+        Some(Transition::new(500.millis(), Spring::snappy())),
     )));
+
     let border_radius_ = border_radius.clone();
     Effect::new(move |_| {
         let rounded = rounded.get();

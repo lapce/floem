@@ -1410,10 +1410,13 @@ fn editor_content(
                     if !cx.window_state.is_focused(id) {
                         return EventPropagation::Continue;
                     }
-                    handle_key_event(KeypressKey {
+                    if handle_key_event(KeypressKey {
                         key: key.clone(),
                         modifiers: *modifiers,
-                    });
+                    }) == CommandExecuted::Yes
+                    {
+                        cx.window_state.request_paint(cx.target);
+                    }
 
                     let mut mods = *modifiers;
                     mods.set(Modifiers::SHIFT, false);
@@ -1423,6 +1426,7 @@ fn editor_content(
 
                     if mods.is_empty() {
                         if let Key::Character(c) = &key {
+                            cx.window_state.request_paint(cx.target);
                             editor.get_untracked().receive_char(c);
                         }
                     }

@@ -537,7 +537,7 @@ impl<'a> StyleCx<'a> {
             // ─────────────────────────────────────────────────────────────────────
             // Phase 8.3: request paint for view style changes if not hidden
             // ─────────────────────────────────────────────────────────────────────
-            if !is_hidden_final && (view_style_transitioning || view_style_changed) {
+            if !is_hidden_final && view_style_changed {
                 self.window_state.request_paint(view_id);
             }
         }

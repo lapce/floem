@@ -21,7 +21,7 @@ use crate::{
     },
     window::WindowConfig,
 };
-use floem_reactive::{Effect, RwSignal, SignalGet, SignalUpdate};
+use floem_reactive::{Effect, Memo, RwSignal, SignalGet, SignalUpdate};
 use peniko::{
     Color,
     color::palette::{self, css},
@@ -79,7 +79,7 @@ pub fn capture(window_id: WindowId) {
                 Stack::vertical((tabs, separator, tab))
                     .style(|s| s.width_full().height_full())
                     .on_event(
-                        listener::KeyUp,
+                        el::KeyUp,
                         move |_cx, KeyboardEvent { key, modifiers, .. }| {
                             if *key == ui_events::keyboard::Key::Named(NamedKey::F11)
                                 && modifiers.shift()
@@ -90,7 +90,7 @@ pub fn capture(window_id: WindowId) {
                             EventPropagation::Continue
                         },
                     )
-                    .on_event(listener::WindowClosed, |_, _| {
+                    .on_event(el::WindowClosed, |_, _| {
                         RUNNING.set(false);
                         EventPropagation::Continue
                     })
@@ -393,9 +393,7 @@ fn tree_node(
                 .apply_if(selected.get() == Some(id), |s| s.set_selected(true))
         })
         .action(move || selected.set(Some(id)))
-        .on_event_cont(listener::PointerEnter, move |_, _| {
-            highlighted.set(Some(id))
-        });
+        .on_event_cont(el::PointerEnter, move |_, _| highlighted.set(Some(id)));
     let row = add_event(
         row,
         view.view_conf.name.clone(),
@@ -517,12 +515,12 @@ impl InspectorImageView {
         datas: RwSignal<CapturedDatas>,
     ) -> Self {
         let id = ViewId::new();
+        let selected = Memo::new(move |_| capture_view.selected.get());
+        let highlighted = Memo::new(move |_| capture_view.highlighted.get());
         Effect::new(move |_| {
-            capture_view.selected.track();
-            capture_view.highlighted.track();
-            dbg!(Instant::now(), "paint requested");
+            selected.track();
+            highlighted.track();
             id.request_paint();
-            id.request_box_tree_commit();
         });
         id.add_child(child);
         let data_id_to_view = datas.get_untracked().visible_data_id_map();
@@ -712,7 +710,6 @@ impl View for InspectorImageView {
             if let Some(highlighted_overlay) =
                 self.overlay_rect(self.capture_view.highlighted.get())
             {
-                dbg!(Instant::now(), highlighted_overlay);
                 cx.fill(&highlighted_overlay, self.highlighted_overlay_color, 0.);
                 cx.stroke(
                     &highlighted_overlay,

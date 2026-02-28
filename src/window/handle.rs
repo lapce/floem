@@ -877,10 +877,7 @@ impl WindowHandle {
     }
 
     pub(crate) fn process_update(&mut self) {
-        let needs_paint = self.process_update_no_paint();
-        if needs_paint {
-            self.window_state.request_paint = true;
-        }
+        self.process_update_no_paint();
     }
 
     pub(crate) fn render_frame_if_due(&mut self, min_frame_interval: Duration) -> bool {
@@ -904,7 +901,6 @@ impl WindowHandle {
 
     /// Processes updates up to a shared budget and returns whether this window is quiescent.
     pub(crate) fn process_update_budgeted(&mut self, start: Instant, budget: Duration) -> bool {
-        let mut paint = false;
         let mut iterations = 0usize;
         const MAX_ITERS: usize = 32;
 
@@ -931,30 +927,23 @@ impl WindowHandle {
                 }
 
                 if self.needs_layout() {
-                    paint = true;
                     self.layout();
                 }
 
                 if self.needs_box_tree_update() {
-                    paint = true;
                     self.update_box_tree_from_layout();
                 }
 
                 if !self.window_state.views_needing_box_tree_update.is_empty() {
-                    paint = true;
                     self.process_pending_box_tree_updates();
                 }
 
                 if self.needs_box_tree_commit() {
-                    paint = true;
                     self.commit_box_tree();
                 }
 
                 iterations += 1;
                 if iterations >= MAX_ITERS || start.elapsed() >= budget {
-                    if paint {
-                        self.window_state.request_paint = true;
-                    }
                     return false;
                 }
             }
@@ -966,9 +955,6 @@ impl WindowHandle {
 
             iterations += 1;
             if iterations >= MAX_ITERS || start.elapsed() >= budget {
-                if paint {
-                    self.window_state.request_paint = true;
-                }
                 return false;
             }
         }
@@ -979,17 +965,11 @@ impl WindowHandle {
         let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::Complete));
         GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
 
-        if paint {
-            self.window_state.request_paint = true;
-        }
         true
     }
 
     /// Processes updates and runs style and layout if needed.
-    /// Returns `true` if painting is required.
-    pub(crate) fn process_update_no_paint(&mut self) -> bool {
-        let mut paint = false;
-
+    pub(crate) fn process_update_no_paint(&mut self) {
         loop {
             loop {
                 self.process_update_messages();
@@ -1013,23 +993,19 @@ impl WindowHandle {
                 }
 
                 if self.needs_layout() {
-                    paint = true;
                     self.layout();
                 }
 
                 if self.needs_box_tree_update() {
-                    paint = true;
                     self.update_box_tree_from_layout();
                 }
 
                 // Process any pending individual box tree updates after layout
                 if !self.window_state.views_needing_box_tree_update.is_empty() {
-                    paint = true;
                     self.process_pending_box_tree_updates();
                 }
 
                 if self.needs_box_tree_commit() {
-                    paint = true;
                     self.commit_box_tree();
                 }
             }
@@ -1044,9 +1020,6 @@ impl WindowHandle {
         let root_element_id = self.window_state.root_view_id.get_element_id();
         let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::Complete));
         GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
-
-        // TODO: This should only use `self.window_state.request_paint)`
-        paint || mem::take(&mut self.window_state.request_paint)
     }
 
     fn process_central_messages(&self) {
@@ -1487,8 +1460,7 @@ impl WindowHandle {
                     unsafe {
                         self.0.show_context_menu_for_nsview(
                             ns_view as _,
-                            logical_pos
-                                .map(|(x, y)| Position::Logical(LogicalPosition::new(x, y))),
+                            logical_pos.map(|(x, y)| Position::Logical(LogicalPosition::new(x, y))),
                         );
                     }
                 }

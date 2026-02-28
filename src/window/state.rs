@@ -132,8 +132,8 @@ impl WindowState {
             root_size: Size::ZERO,
             fixed_elements: FxHashSet::default(),
             screen_size_bp: ScreenSizeBp::Xs,
-            scheduled_updates: Vec::new(),
-            request_paint: false,
+            scheduled_updates: vec![FrameUpdate::Paint(root_view_id)],
+            request_paint: true,
             style_dirty: Default::default(),
             drag_tracker: DragTracker::new(),
             focus_state: FocusState::new(),
@@ -865,6 +865,9 @@ impl WindowState {
                 .route_window_event();
             }
         }
+        if !damage.dirty_rects.is_empty() {
+            self.request_paint = true;
+        }
         self.needs_box_tree_commit = false;
     }
 
@@ -1040,7 +1043,7 @@ impl WindowState {
     }
 
     // `Id` is unused currently, but could be used to calculate damage regions.
-    pub fn request_paint(&mut self, _id: ViewId) {
+    pub fn request_paint(&mut self, _id: impl Into<ElementId>) {
         self.request_paint = true;
     }
 

@@ -93,7 +93,10 @@ pub use inner::{
 };
 
 mod inner {
-    use std::{any::Any, ptr};
+    use std::{
+        any::{Any, TypeId},
+        ptr,
+    };
 
     use peniko::kurbo::{Point, Size};
     use ui_events::{
@@ -114,11 +117,13 @@ mod inner {
     #[derive(Copy, Clone)]
     pub struct EventListenerKey {
         pub info: &'static EventKeyInfo,
+        pub type_discriminant: Option<TypeId>,
     }
 
     impl PartialEq for EventListenerKey {
         fn eq(&self, other: &Self) -> bool {
             ptr::eq(self.info, other.info)
+                && self.type_discriminant == other.type_discriminant
         }
     }
 
@@ -126,7 +131,8 @@ mod inner {
 
     impl std::hash::Hash for EventListenerKey {
         fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-            state.write_usize(self.info as *const _ as usize)
+            state.write_usize(self.info as *const _ as usize);
+            self.type_discriminant.hash(state);
         }
     }
 
@@ -182,7 +188,10 @@ mod inner {
                     name: || std::any::type_name::<$name>(),
                     extract: $extract,
                 };
-                $crate::event::listener::EventListenerKey { info: &INFO }
+                $crate::event::listener::EventListenerKey {
+                    info: &INFO,
+                    type_discriminant: None,
+                }
             }
         }
     };

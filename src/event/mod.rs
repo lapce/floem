@@ -202,29 +202,17 @@ macro_rules! custom_event {
 
             impl<$($generic: Clone + 'static),*> [<$name Listener>]<$($generic),*> {
                 fn info() -> &'static $crate::event::listener::EventKeyInfo {
-                    trait HasInfo {
-                        fn get() -> &'static $crate::event::listener::EventKeyInfo;
-                    }
-
-                    struct InfoHolder<$($generic),*>(std::marker::PhantomData<$(fn() -> $generic),*>);
-
-                    impl<$($generic: Clone + 'static),*> HasInfo for InfoHolder<$($generic),*> {
-                        fn get() -> &'static $crate::event::listener::EventKeyInfo {
-                            static INFO: $crate::event::listener::EventKeyInfo = $crate::event::listener::EventKeyInfo {
-                                name: || stringify!($name),
-                                extract: |event| {
-                                    if let $crate::event::Event::Custom(custom) = event {
-                                        Some(custom.as_any() as &dyn std::any::Any)
-                                    } else {
-                                        None
-                                    }
-                                },
-                            };
-                            &INFO
-                        }
-                    }
-
-                    <InfoHolder<$($generic),*> as HasInfo>::get()
+                    static INFO: $crate::event::listener::EventKeyInfo = $crate::event::listener::EventKeyInfo {
+                        name: || stringify!($name),
+                        extract: |event| {
+                            if let $crate::event::Event::Custom(custom) = event {
+                                Some(custom.as_any() as &dyn std::any::Any)
+                            } else {
+                                None
+                            }
+                        },
+                    };
+                    &INFO
                 }
             }
 
@@ -232,7 +220,10 @@ macro_rules! custom_event {
                 type EventData = $name<$($generic),*>;
 
                 fn listener_key() -> $crate::event::listener::EventListenerKey {
-                    $crate::event::listener::EventListenerKey { info: Self::info() }
+                    $crate::event::listener::EventListenerKey {
+                        info: Self::info(),
+                        type_discriminant: Some(std::any::TypeId::of::<$name<$($generic),*>>()),
+                    }
                 }
 
                 fn extract(event: &$crate::event::Event) -> Option<&Self::EventData> {
@@ -278,6 +269,7 @@ macro_rules! custom_event {
 
             impl<$($generic: Clone + 'static),*> $name<$($generic),*> {
                 /// Get the event listener for this custom event
+                #[allow(dead_code)]
                 pub fn listener() -> [<$name Listener>]<$($generic),*> {
                     [<$name Listener>](std::marker::PhantomData)
                 }
@@ -2169,5 +2161,31 @@ impl PointerScrollEventExt for PointerScrollEvent {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Clone)]
+    pub struct GenericKeyCheck<T: Clone + 'static> {
+        _value: T,
+    }
+
+    custom_event!(GenericKeyCheck<T>);
+
+    #[test]
+    fn generic_custom_event_listener_keys_are_distinct() {
+        let string_key = GenericKeyCheck::<String>::listener_key();
+        let int_key = GenericKeyCheck::<i32>::listener_key();
+        assert_ne!(string_key, int_key);
+    }
+
+    #[test]
+    fn generic_custom_event_same_type_has_stable_key() {
+        let first = GenericKeyCheck::<String>::listener_key();
+        let second = GenericKeyCheck::<String>::listener_key();
+        assert_eq!(first, second);
     }
 }
