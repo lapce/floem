@@ -458,7 +458,6 @@ impl Renderer for VelloRenderer {
                         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                             label: Some("Surface Blit"),
                         });
-
                 self.surface.blitter.copy(
                     &self.device,
                     &mut encoder,
@@ -468,6 +467,7 @@ impl Renderer for VelloRenderer {
                         .create_view(&wgpu::TextureViewDescriptor::default()),
                 );
                 self.queue.submit([encoder.finish()]);
+
                 // Queue the texture to be presented on the surface
                 surface_texture.present();
             }

@@ -345,7 +345,8 @@ fn test_derived_children_triggers_repaint() {
     items.set(vec!["a", "b", "c"]);
 
     // Process update and check if repaint is needed
-    let needs_repaint = harness.process_update_no_paint();
+    harness.process_update_no_paint();
+    let needs_repaint = harness.paint_requested();
 
     assert!(
         needs_repaint,

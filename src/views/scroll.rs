@@ -1086,7 +1086,13 @@ impl ScrollCustomStyle {
     ///
     /// Internally this does a `s.min_size(0., 0.).size_full()`.
     pub fn shrink_to_fit(mut self) -> Self {
-        self = Self(self.0.min_size(0., 0.).size_full());
+        self = Self(
+            self.0
+                .min_size(0., 0.)
+                .size_full()
+                .flex_grow(1.)
+                .flex_basis(0.),
+        );
         self
     }
 

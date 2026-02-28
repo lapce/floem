@@ -69,12 +69,11 @@ fn app_view() -> impl IntoView {
     })
     .style(|s| {
         s.size(100.pct(), 100.pct())
-            .flex_row()
+            .flex_col()
             .gap(10)
             .justify_center()
             .items_center()
             .padding(20)
-            .max_window_width(1000., |s| s.flex_col())
     })
     .on_event_stop(el::KeyUp, move |_cx, KeyboardEvent { key, .. }| {
         if *key == Key::Named(NamedKey::F11) {

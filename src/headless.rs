@@ -205,6 +205,8 @@ impl HeadlessHarness {
     /// - Layout passes
     pub fn dispatch_event(&mut self, event: Event) -> EventResult {
         self.window_handle.event(event);
+        // the normal floem window will drive updates when rendering frames. the headless window processes updates after all events
+        self.process_update_no_paint();
 
         // Note: WindowHandle::event() doesn't return propagation info,
         // so we return a basic result. The important thing is that the

@@ -265,7 +265,10 @@ impl GlobalPaintCx<'_> {
             Err(e) => e.value().unwrap(),
         };
         let layout_rect_local = box_tree.local_bounds(element_id.0).unwrap_or_default();
-        let clip = box_tree.local_clip(element_id.0).flatten();
+        let clip = match box_tree.clipped_local_clip(element_id.0) {
+            Ok(t) => t,
+            Err(t) => t.value().flatten(),
+        };
         drop(box_tree);
 
         // Set absolute transform on renderer

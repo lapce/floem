@@ -73,7 +73,7 @@ use crate::{
 /// - requesting a new animation frame from the backend
 pub(crate) struct WindowHandle {
     pub(crate) window: Arc<dyn winit::window::Window>,
-    window_id: WindowId,
+    pub window_id: WindowId,
     /// The root view ID for this window.
     pub(crate) id: ViewId,
     /// Reactive Scope for this `WindowHandle`
@@ -120,9 +120,9 @@ impl WindowHandle {
         apply_default_theme: bool,
         font_embolden: f32,
     ) -> Self {
-        let scope = Scope::new();
-        let window_id = window.id();
         let id = ViewId::new_root();
+        let window_id = window.id();
+        let scope = Scope::new();
         let scale = window.scale_factor();
         let size: LogicalSize<f64> = window.surface_size().to_logical(scale);
         let size = Size::new(size.width, size.height);

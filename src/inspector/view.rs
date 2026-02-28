@@ -11,15 +11,14 @@ use crate::{
     },
     new_window,
     prelude::*,
-    style::theme::Theme,
-    style::{CustomStylable, FontSize, OverflowX, OverflowY, TextColor},
+    style::{CustomStylable, FontSize, OverflowX, OverflowY, TextColor, theme::Theme},
     theme::StyleThemeExt as _,
     unit::PxPctAuto,
     views::{
         Button, CheckboxClass, ContainerExt, Decorators, Label, ListClass, ListItemClass,
         ScrollExt, Stack, TabSelectorClass, TooltipExt, resizable::Resizable,
     },
-    window::WindowConfig,
+    window::{WindowConfig, handle::set_current_view, tracking::window_id_for_root},
 };
 use floem_reactive::{Effect, Memo, RwSignal, SignalGet, SignalUpdate};
 use peniko::{
@@ -37,7 +36,7 @@ pub fn capture(window_id: WindowId) {
 
     if !RUNNING.get() {
         new_window(
-            move |_| {
+            move |new_window_id: WindowId| {
                 let selected = RwSignal::new(0);
 
                 let tab_item = |name, index| {
@@ -177,9 +176,6 @@ fn capture_view(
             .keyboard_navigable()
     });
     let image_view = InspectorImageView::new(image, capture.clone(), capture_view, datas);
-    let image_view_id = image_view.id();
-    let image = image_view;
-
     let recapture = Button::new("Recapture").action(move || {
         add_app_update_event(AppUpdateEvent::CaptureWindow {
             window_id,
@@ -196,11 +192,7 @@ fn capture_view(
         |it| *it,
         move |it| {
             match it {
-                0 => Stack::vertical((
-                    header("Selected View"),
-                    selected_view(&capture_sig.get(), capture_view.selected),
-                ))
-                .into_any(),
+                0 => selected_view(&capture_sig.get(), capture_view.selected).into_any(),
                 1 => Stack::vertical((
                     header("Stats"),
                     stats(&capture_sig.get()),
@@ -210,16 +202,16 @@ fn capture_view(
                 .into_any(),
                 _ => panic!(),
             }
-            .style(|s| s.width_full())
+            .style(|s| s.min_size(0, 0.).flex_grow(1.))
             .scroll()
-            .custom_style(|s| s.shrink_to_fit())
             .style(|s| {
-                s.set(OverflowX, taffy::Overflow::Visible)
+                s.width_full()
+                    .set(OverflowX, taffy::Overflow::Visible)
                     .set(OverflowY, taffy::Overflow::Scroll)
             })
         },
     )
-    .style(|s| s.size_full().min_size(0, 0));
+    .style(|s| s.size_full().min_size(0, 0.));
 
     let clear = Button::new("Clear selection")
         .style(move |s| s.apply_if(capture_view.selected.get().is_none(), |s| s.hide()))
@@ -247,14 +239,20 @@ fn capture_view(
         .style(|s| s.items_end().gap(10).padding_top(5)),
         tab,
     ))
-    .style(|s| s.size_full());
+    .style(|s| s.size_full().min_size(0., 0.));
 
     let left = Stack::vertical((
         header("Captured Window"),
-        Resizable::new((image.scroll().style(|s| s.max_height_pct(60.0)), tabs))
-            .custom_sizes(move || vec![(0, size.height.min(500.))])
-            .style(|s| s.size_full().flex_col()),
-    ));
+        Resizable::new((
+            image_view
+                .scroll()
+                .style(|s| s.min_size(0, 0).flex_grow(1.)),
+            tabs,
+        ))
+        .custom_sizes(move || vec![(0, size.height.min(500.))])
+        .style(|s| s.size_full().flex_col().min_size(0., 0.)),
+    ))
+    .style(|s| s.min_size(0., 0.).flex_grow(1.));
 
     let root = capture.root.clone();
     let tree = view_tree(capture.clone(), capture_view, datas);
@@ -347,21 +345,24 @@ fn view_tree(
     )
     .class(ListClass)
     .style(|s| {
-        s.flex_col().flex_grow(1.).class(ListItemClass, |s| {
-            s.width_full()
-                .hover(|s| s.with_theme(|s, t| s.background(t.bg_elevated())))
-        })
+        s.flex_col()
+            .flex_grow(1.)
+            .min_size(0., 0.)
+            .class(ListItemClass, |s| {
+                s.width_full()
+                    .hover(|s| s.with_theme(|s, t| s.background(t.bg_elevated())))
+            })
     })
-    .style(|s| s.width_full())
     .scroll()
-    .custom_style(|s| s.shrink_to_fit())
+    .style(|s| s.size_full())
+    // .custom_style(|s| s.shrink_to_fit())
     .on_event_cont(listener::PointerLeave, move |_, _| {
         capture_signal_clone.highlighted.set(None)
     })
     .action(move || capture_signal_clone.selected.set(None))
     .scroll_to(move || {
         let focus_line = focus_line.get();
-        Some((0.0, focus_line as f64 * 20.0).into())
+        Some((0.0, focus_line.saturating_sub(1) as f64 * 20.0).into())
     })
     // .scroll_to_view(move || {
     //     let view_id = capture_signal_clone.scroll_to.get();
@@ -388,6 +389,7 @@ fn tree_node(
         .container()
         .style(move |s| {
             s.height(height)
+                .width_full()
                 .keyboard_navigable()
                 .text_clip()
                 .apply_if(selected.get() == Some(id), |s| s.set_selected(true))
@@ -637,6 +639,7 @@ impl View for InspectorImageView {
                                 self.contain_index - 1
                             };
                             if let Some(id) = self.contain_ids.get(self.contain_index).copied() {
+                                cx.window_state.request_paint = true;
                                 self.id.owning_id().request_paint();
                                 update_select_view_id(id, &self.capture_view, false, self.datas);
                                 return EventPropagation::Stop;
@@ -647,6 +650,7 @@ impl View for InspectorImageView {
                         if !self.contain_ids.is_empty() {
                             self.contain_index = (self.contain_index + 1) % self.contain_ids.len();
                             if let Some(id) = self.contain_ids.get(self.contain_index).copied() {
+                                cx.window_state.request_paint = true;
                                 self.id.owning_id().request_paint();
                                 update_select_view_id(id, &self.capture_view, false, self.datas);
                                 return EventPropagation::Stop;
@@ -666,6 +670,7 @@ impl View for InspectorImageView {
                             .filter_map(|data_id| self.data_id_to_view.get(data_id).copied()),
                     );
                 }
+                cx.window_state.request_paint = true;
                 self.contain_index = 0;
                 self.capture_view
                     .highlighted
@@ -683,6 +688,7 @@ impl View for InspectorImageView {
                 }
                 self.contain_index = 0;
                 if let Some(id) = self.contain_ids.last().copied() {
+                    cx.window_state.request_paint = true;
                     self.id.owning_id().request_paint();
                     update_select_view_id(id, &self.capture_view, false, self.datas);
                     return EventPropagation::Stop;

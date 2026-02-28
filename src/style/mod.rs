@@ -348,14 +348,13 @@ pub fn resolve_nested_maps(
             }),
         );
 
-        floem_reactive::Runtime::set_current_effect(saved_effect);
-
         let (resolved, new_mappings) = resolve_style_collecting_mappings(
             mapped,
             interact_state,
             screen_size_bp,
             &mut selectors,
         );
+        floem_reactive::Runtime::set_current_effect(saved_effect);
         context_result.apply_mut_no_mappings(resolved);
         class_context_mappings.splice(i + 1..i + 1, new_mappings);
         i += 1;
@@ -392,14 +391,13 @@ pub fn resolve_nested_maps(
             }),
         );
 
-        floem_reactive::Runtime::set_current_effect(saved_effect);
-
         let (resolved, new_mappings) = resolve_style_collecting_mappings(
             mapped,
             interact_state,
             screen_size_bp,
             &mut selectors,
         );
+        floem_reactive::Runtime::set_current_effect(saved_effect);
         result.apply_mut_no_mappings(resolved);
         view_context_mappings.splice(i + 1..i + 1, new_mappings);
         i += 1;
@@ -2093,7 +2091,7 @@ impl TransformProps {
         result
     }
 
-    pub fn clip_rect(&self, mut rect: kurbo::Rect) -> Option<RoundedRect> {
+    pub fn clip_rect(&self, mut local_rect: kurbo::Rect) -> Option<RoundedRect> {
         use Overflow::*;
 
         let (overflow_x, overflow_y) = (self.overflow_x(), self.overflow_y());
@@ -2105,19 +2103,19 @@ impl TransformProps {
 
         let border_radius = self
             .border_radius()
-            .resolve_border_radii(rect.size().min_side());
+            .resolve_border_radii(local_rect.size().min_side());
 
         // Extend to infinity on visible axes
         if overflow_x == Visible {
-            rect.x0 = f64::NEG_INFINITY;
-            rect.x1 = f64::INFINITY;
+            local_rect.x0 = f64::NEG_INFINITY;
+            local_rect.x1 = f64::INFINITY;
         }
         if overflow_y == Visible {
-            rect.y0 = f64::NEG_INFINITY;
-            rect.y1 = f64::INFINITY;
+            local_rect.y0 = f64::NEG_INFINITY;
+            local_rect.y1 = f64::INFINITY;
         }
 
-        Some(RoundedRect::from_rect(rect, border_radius))
+        Some(RoundedRect::from_rect(local_rect, border_radius))
     }
 }
 

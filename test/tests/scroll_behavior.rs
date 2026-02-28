@@ -550,6 +550,51 @@ fn test_scroll_propagation_at_limit() {
     );
 }
 
+/// Regression test: scrolling to an element inside a scroll view should not
+/// be offset by siblings above the scroll view in a parent stack.
+#[test]
+#[serial]
+fn test_scroll_to_element_in_stacked_scroll_view() {
+    let root = TestRoot::new();
+    let scroll_tracker = ScrollTracker::new();
+
+    let target_id = ViewId::new();
+    let content = Stack::new((
+        Empty::new().style(|s| s.size(100.0, 200.0)),
+        Empty::with_id(target_id).style(|s| s.size(100.0, 20.0)),
+        Empty::new().style(|s| s.size(100.0, 200.0)),
+    ))
+    .style(|s| s.flex_col().size(100.0, 420.0));
+
+    let scroll = scroll_tracker
+        .track(Scroll::new(content).style(|s| s.size(100.0, 60.0)))
+        .style(|s| s.size(100.0, 60.0));
+
+    let view = Stack::new((
+        Empty::new().style(|s| s.size(100.0, 40.0)),
+        scroll,
+    ))
+    .style(|s| s.flex_col().size(100.0, 100.0));
+
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
+    harness.rebuild();
+
+    target_id.scroll_to(None);
+    harness.process_update_no_paint();
+    harness.process_update_no_paint();
+
+    let offset = scroll_tracker
+        .last_offset()
+        .expect("Expected scroll_to to update scroll offset");
+
+    // target rect is y=[200,220], viewport height is 60, so minimal scroll is 220 - 60 = 160.
+    assert!(
+        (offset.y - 160.0).abs() < 0.5,
+        "Expected y offset near 160, got {}",
+        offset.y
+    );
+}
+
 // =============================================================================
 // Edge Cases
 // =============================================================================

@@ -403,7 +403,8 @@ fn test_reactive_style_change_requests_repaint() {
 
     // process_update_no_paint() runs reactive effects, processes style/layout, and returns
     // true if a repaint would be scheduled
-    let needs_repaint = harness.process_update_no_paint();
+    harness.process_update_no_paint();
+    let needs_repaint = harness.paint_requested();
 
     // Verify the style actually changed
     let style = harness.get_computed_style(id);
@@ -465,7 +466,8 @@ fn test_click_triggered_style_change_requests_repaint() {
     assert!(is_active.get(), "Signal should be true after click");
 
     // Now process the reactive effects and check if repaint is needed
-    let needs_repaint = harness.process_update_no_paint();
+    harness.process_update_no_paint();
+    let needs_repaint = harness.paint_requested();
 
     // Verify style updated
     let style = harness.get_computed_style(indicator_id);
@@ -499,7 +501,8 @@ fn test_request_style_triggers_repaint() {
     // id.request_style();
 
     // Process the message and check if repaint is needed
-    let needs_repaint = harness.process_update_no_paint();
+    harness.process_update_no_paint();
+    let needs_repaint = harness.paint_requested();
 
     // Style recalculation should trigger repaint
     assert!(
@@ -538,7 +541,8 @@ fn test_style_change_in_event_handler_triggers_repaint() {
     harness.click(50.0, 50.0);
 
     // Process the reactive effects and check if repaint is needed
-    let needs_repaint = harness.process_update_no_paint();
+    harness.process_update_no_paint();
+    let needs_repaint = harness.paint_requested();
 
     // Verify style changed
     let style = harness.get_computed_style(id);

@@ -515,6 +515,7 @@ impl<T> View for VirtualStack<T> {
                 taffy.insert_child_at_index(this_node, 0, before).unwrap();
                 taffy.add_child(this_node, after).unwrap();
                 self.id.request_style(StyleReason::style_pass());
+                self.id.request_layout();
             }
             Err(state) => {
                 // check if we got a selection change

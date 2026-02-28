@@ -34,6 +34,10 @@ thread_local! {
 /// Invalidates the stacking context cache for a view and its parent.
 /// Call this when z-index or children change.
 pub(crate) fn invalidate_stacking_cache(element_id: ElementId) {
+    // Hit testing now uses Understory ordering directly and caches the result in event/path.rs.
+    // Any stacking-affecting change must invalidate both caches together.
+    crate::event::clear_hit_test_cache();
+
     STACKING_CONTEXT_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
         // Invalidate this view's cache (its children order)
@@ -98,8 +102,6 @@ pub(crate) fn collect_stacking_context_items(
 
     // Cache miss - collect direct children from box tree
     let mut items = StackingContextItems::new();
-    let mut has_non_zero_z = false;
-
     // Iterate through all child visual rectangles in the box tree
     let box_tree_children = box_tree.children_of(parent_element_id.0);
 
@@ -111,10 +113,6 @@ pub(crate) fn collect_stacking_context_items(
         // Get z-index from box tree
         let z_index = box_tree.z_index(child_box_id).unwrap_or(0);
 
-        if z_index != 0 {
-            has_non_zero_z = true;
-        }
-
         items.push(StackingContextItem {
             element_id: child_element_id,
             z_index,
@@ -122,14 +120,13 @@ pub(crate) fn collect_stacking_context_items(
         });
     }
 
-    // Sort by z-index, then DOM order
-    if has_non_zero_z {
-        items.sort_by(|a, b| {
-            a.z_index
-                .cmp(&b.z_index)
-                .then(a.dom_order.cmp(&b.dom_order))
-        });
-    }
+    // Match Understory sibling ordering: lower z first, then lower child index first.
+    // Paint traversal consumes this bottom-to-top order directly.
+    items.sort_by(|a, b| {
+        a.z_index
+            .cmp(&b.z_index)
+            .then(a.dom_order.cmp(&b.dom_order))
+    });
 
     // Cache and return
     let items = Rc::new(items);

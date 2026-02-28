@@ -1,37 +1,31 @@
 mod data;
 pub(crate) mod profiler;
 mod view;
-
-use crate::{
-    AnyView, Clipboard,
-    context::StyleCx,
-    event::{EventPropagation, listener},
-    prelude::ViewTuple,
-    style::{
-        self, FontSize, OverflowX, OverflowY, Style, StyleClassRef, StyleKeyInfo, StylePropRef,
-        Transition,
-    },
-    theme::StyleThemeExt as _,
-    view::{IntoView, View, ViewId},
-    views::{ContainerExt, Decorators, Label, ScrollExt, Stack, dyn_container},
-    window::state::WindowState,
-};
-use floem_reactive::{Effect, RwSignal, Scope, SignalGet, SignalUpdate};
-use peniko::kurbo::{Point, Rect, Size};
-use peniko::{color::palette, kurbo::Affine};
-use slotmap::Key;
-use std::cell::Cell;
-use std::collections::{HashMap, HashSet};
-use std::fmt::Display;
-use std::rc::Rc;
-use ui_events::keyboard::{self, KeyboardEvent, NamedKey};
+use floem_reactive::{Effect, Scope};
+use peniko::kurbo::{Affine, Point, Rect, Size};
+use slotmap::Key as _;
 pub use view::capture;
 
-use crate::platform::{Duration, Instant};
+use crate::{
+    AnyView, Clipboard, ViewId, WindowState,
+    event::EventPropagation,
+    inspector::data::CapturedDatas,
+    platform::{Duration, Instant},
+    prelude::*,
+    style::{
+        self, FontSize, OverflowX, OverflowY, Style, StyleClassRef, StyleCx, StyleKeyInfo,
+        StylePropRef, StyleThemeExt, Transition,
+    },
+};
 
-use crate::inspector::data::CapturedDatas;
-use taffy::prelude::Layout;
-use taffy::style::FlexDirection;
+use std::{
+    cell::Cell,
+    collections::{HashMap, HashSet},
+    fmt::Display,
+    rc::Rc,
+};
+
+use taffy::{prelude::Layout, style::FlexDirection};
 
 #[derive(Clone, Debug)]
 pub struct CapturedView {
@@ -180,7 +174,7 @@ fn add_event<T: View + 'static>(
     .on_event_stop(listener::KeyDown, {
         let capture = capture.clone();
         move |_cx, KeyboardEvent { key, modifiers, .. }| match key {
-            keyboard::Key::Named(NamedKey::ArrowUp) => {
+            Key::Named(NamedKey::ArrowUp) => {
                 let rs = find_relative_view_by_id_with_self(id, &capture.root);
                 let Some(ids) = rs else {
                     return;
@@ -193,7 +187,7 @@ fn add_event<T: View + 'static>(
                     update_select_view_id(id, &capture_view, true, datas);
                 }
             }
-            keyboard::Key::Named(NamedKey::ArrowDown) => {
+            Key::Named(NamedKey::ArrowDown) => {
                 let rs = find_relative_view_by_id_with_self(id, &capture.root);
                 let Some(ids) = rs else {
                     return;
@@ -484,8 +478,7 @@ fn selected_view(
                 s.set(OverflowX, taffy::Overflow::Scroll)
                     .set(OverflowY, taffy::Overflow::Visible)
                     .height_full()
-                    .padding_bottom(10)
-                    .padding_right(10)
+                    .flex_grow(1.)
             });
 
             let selected_view_info = Stack::vertical_from_iter(
@@ -509,8 +502,7 @@ fn selected_view(
                 s.set(OverflowX, taffy::Overflow::Scroll)
                     .set(OverflowY, taffy::Overflow::Visible)
                     .height_full()
-                    .padding_bottom(10)
-                    .padding_right(10)
+                    .flex_grow(1.)
             });
 
             let class_list_view =
@@ -838,16 +830,24 @@ fn selected_view(
                         }
                     },
                 ))
-                .style(|s| s.gap(4).width_full());
+                .style(|s| s.gap(4).height_full().flex_grow(1.))
+                .scroll()
+                .style(|s| {
+                    s.set(OverflowX, taffy::Overflow::Scroll)
+                        .set(OverflowY, taffy::Overflow::Visible)
+                        .height_full()
+                        .flex_grow(1.)
+                });
 
             Stack::vertical((
+                header("Selected View"),
                 selected_view_info,
                 style_header,
                 style_list,
                 class_header,
                 class_list_view,
             ))
-            .style(|s| s.width_full())
+            .style(|s| s.width_full().flex_shrink(0.).gap(10))
             .into_any()
         } else {
             Label::new("No selection")
