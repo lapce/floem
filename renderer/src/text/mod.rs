@@ -32,8 +32,8 @@ mod layout;
 pub use attrs::{Attrs, AttrsList, AttrsOwned, FamilyOwned, LineHeightValue};
 pub use fontique::{FontStyle, FontWeight, FontWidth};
 pub use layout::{HitPoint, HitPosition, TextLayout, FONT_CONTEXT};
-pub use parley::Alignment;
 pub use parley::Affinity;
+pub use parley::Alignment;
 pub use parley::Cursor;
 
 // --- Font Properties ---

@@ -383,7 +383,9 @@ fn bench_selection(c: &mut Criterion) {
     // Direct cursor-to-selection (no byte-index round-trip).
     let size = layout.size();
     let c_start = layout.hit(0.0, 0.0).unwrap();
-    let c_end = layout.hit(size.width as f32, size.height as f32 / 2.0).unwrap();
+    let c_end = layout
+        .hit(size.width as f32, size.height as f32 / 2.0)
+        .unwrap();
     group.bench_function("select_from_cursors", |b| {
         b.iter(|| {
             let mut count = 0u32;

@@ -492,8 +492,7 @@ impl TextLayout {
             Some(ref ti) => ti.orig_to_display(idx),
             None => idx,
         };
-        let pcursor =
-            parley::editing::Cursor::from_byte_index(&self.layout, display_idx, affinity.into());
+        let pcursor = parley::editing::Cursor::from_byte_index(&self.layout, display_idx, affinity);
         let bbox = pcursor.geometry(&self.layout, 0.0);
 
         // Find which visual line this cursor is on using binary search on
@@ -889,7 +888,10 @@ mod tests {
         let cursor = layout.hit(0.0, y).unwrap();
         let idx = layout.cursor_to_byte_index(&cursor);
         // "aaa\n" = 4 bytes, so the second paragraph starts at byte 4.
-        assert!(idx >= 4, "should resolve to second paragraph, got byte {idx}");
+        assert!(
+            idx >= 4,
+            "should resolve to second paragraph, got byte {idx}"
+        );
     }
 
     // ========================== Hit position ==========================
@@ -970,11 +972,8 @@ mod tests {
     #[test]
     fn cursor_to_byte_index_start() {
         let layout = make("hello\nworld");
-        let cursor = parley::Cursor::from_byte_index(
-            layout.parley_layout(),
-            0,
-            Affinity::Downstream,
-        );
+        let cursor =
+            parley::Cursor::from_byte_index(layout.parley_layout(), 0, Affinity::Downstream);
         assert_eq!(layout.cursor_to_byte_index(&cursor), 0);
     }
 
@@ -982,11 +981,8 @@ mod tests {
     fn cursor_to_byte_index_mid_text() {
         let layout = make("hello\nworld");
         // Byte 8 = 'r' in "world" (6 + 2).
-        let cursor = parley::Cursor::from_byte_index(
-            layout.parley_layout(),
-            8,
-            Affinity::Downstream,
-        );
+        let cursor =
+            parley::Cursor::from_byte_index(layout.parley_layout(), 8, Affinity::Downstream);
         assert_eq!(layout.cursor_to_byte_index(&cursor), 8);
     }
 
