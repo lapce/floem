@@ -131,18 +131,16 @@ pub struct HitPosition {
 /// Result of hit-testing a point against a [`TextLayout`].
 ///
 /// Returned by [`TextLayout::hit_point`]. Maps a pixel coordinate to the
-/// nearest text position, indicating which paragraph line and byte offset
-/// the point maps to and whether it fell within the layout bounds.
+/// nearest text position, indicating the flat byte offset in the original
+/// text and whether the point fell within the layout bounds.
 pub struct HitPoint {
-    /// Paragraph line index the resolved position is on.
-    pub line: usize,
-    /// Byte offset within the paragraph line (insert position).
+    /// Flat byte offset into the original text (insert position).
     pub index: usize,
     /// Whether the queried point was inside the layout bounds.
     ///
     /// A click outside the layout still resolves to a text position:
-    /// - click to the right of a line resolves to the end of that line
-    /// - click below the last line resolves to a position in that line
+    /// - click to the right of a line resolves to the end of that line.
+    /// - click below the last line resolves to a position in that line.
     pub is_inside: bool,
     /// Cursor affinity at the resolved position.
     pub affinity: Affinity,
@@ -448,32 +446,22 @@ impl TextLayout {
         Size::new(width, height)
     }
 
-    /// Converts pixel coordinates to a [`Cursor`](crate::text::Cursor) (hit detection).
+    /// Converts pixel coordinates to a [`Cursor`] (hit detection).
     ///
-    /// Returns `Some(Cursor)` with the paragraph line and byte offset nearest
-    /// to `(x, y)`. Returns a zero cursor for empty text.
-    pub fn hit(&self, x: f32, y: f32) -> Option<crate::text::Cursor> {
+    /// Returns `Some(Cursor)` with the display-space byte index nearest to
+    /// `(x, y)`. The returned cursor can be passed directly to
+    /// [`cursor_to_byte_index`](Self::cursor_to_byte_index) to obtain the
+    /// original byte offset, or to [`selection_for_cursors`](Self::selection_for_cursors)
+    /// for selection painting.
+    pub fn hit(&self, x: f32, y: f32) -> Option<parley::Cursor> {
         if self.text.is_empty() {
-            return Some(crate::text::Cursor::new(0, 0));
+            return Some(parley::Cursor::from_byte_index(
+                &self.layout,
+                0,
+                Affinity::default(),
+            ));
         }
-
-        let pcursor = parley::editing::Cursor::from_point(&self.layout, x, y);
-        // Parley operates in display space — map back to original byte indices.
-        let flat_idx = match self.tab_info {
-            Some(ref ti) => ti.display_to_orig(pcursor.index()),
-            None => pcursor.index(),
-        };
-        let affinity: Affinity = pcursor.affinity().into();
-
-        // Convert flat byte index to (line, index_within_line) via binary search.
-        let line_i = self
-            .lines_range
-            .partition_point(|r| r.end < flat_idx)
-            .min(self.lines_range.len() - 1);
-        let local_idx = flat_idx.saturating_sub(self.lines_range[line_i].start);
-        Some(crate::text::Cursor::new_with_affinity(
-            line_i, local_idx, affinity,
-        ))
+        Some(parley::Cursor::from_point(&self.layout, x, y))
     }
 
     /// Returns the geometric position of the cursor at the given flat byte index.
@@ -550,35 +538,33 @@ impl TextLayout {
 
     /// Hit-tests a point and returns a [`HitPoint`] with the nearest text position.
     ///
-    /// Unlike [`hit`](Self::hit), this also reports whether the point was inside
-    /// the layout bounds via [`HitPoint::is_inside`].
+    /// Unlike [`hit`](Self::hit), this returns a flat original byte index and
+    /// reports whether the point was inside the layout bounds via
+    /// [`HitPoint::is_inside`].
     pub fn hit_point(&self, point: Point) -> HitPoint {
         if let Some(cursor) = self.hit(point.x as f32, point.y as f32) {
             let size = self.size();
-            let is_inside = point.x <= size.width && point.y <= size.height;
             HitPoint {
-                line: cursor.line,
-                index: cursor.index,
-                is_inside,
-                affinity: cursor.affinity,
+                index: self.cursor_to_byte_index(&cursor),
+                is_inside: point.x <= size.width && point.y <= size.height,
+                affinity: cursor.affinity(),
             }
         } else {
             HitPoint {
-                line: 0,
                 index: 0,
                 is_inside: false,
-                affinity: Affinity::Upstream,
+                affinity: Affinity::default(),
             }
         }
     }
 
-    /// Converts a [`Cursor`](crate::text::Cursor) (paragraph line + offset) to a flat byte index
-    /// into the full text.
-    pub fn cursor_to_byte_index(&self, cursor: &crate::text::Cursor) -> usize {
-        self.lines_range
-            .get(cursor.line)
-            .map(|r| r.start + cursor.index)
-            .unwrap_or(0)
+    /// Converts a [`Cursor`] (display-space) to a flat byte index into the
+    /// original text, accounting for tab expansion when present.
+    pub fn cursor_to_byte_index(&self, cursor: &parley::Cursor) -> usize {
+        match self.tab_info {
+            Some(ref ti) => ti.display_to_orig(cursor.index()),
+            None => cursor.index(),
+        }
     }
 
     /// Computes selection highlight rectangles between two flat byte indices.
@@ -608,6 +594,24 @@ impl TextLayout {
         );
         let selection = parley::editing::Selection::new(anchor, focus);
         selection.geometry_with(&self.layout, |bbox, _line_idx| {
+            f(bbox.x0, bbox.y0, bbox.x1, bbox.y1);
+        });
+    }
+
+    /// Computes selection highlight rectangles between two display-space
+    /// [`Cursor`] values, avoiding the byte-index round-trip.
+    ///
+    /// Calls `f(x0, y0, x1, y1)` once for each visual line that the selection
+    /// spans. Prefer this over [`selection_geometry_with`](Self::selection_geometry_with)
+    /// when you already hold cursors from [`hit`](Self::hit).
+    pub fn selection_for_cursors(
+        &self,
+        start: &parley::Cursor,
+        end: &parley::Cursor,
+        mut f: impl FnMut(f64, f64, f64, f64),
+    ) {
+        let selection = parley::editing::Selection::new(*start, *end);
+        selection.geometry_with(&self.layout, |bbox, _| {
             f(bbox.x0, bbox.y0, bbox.x1, bbox.y1);
         });
     }
@@ -642,7 +646,7 @@ impl TextLayout {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::text::{Attrs, AttrsList, Cursor, FamilyOwned};
+    use crate::text::{Attrs, AttrsList, FamilyOwned};
     use std::sync::Once;
 
     const DEJAVU_SERIF: &[u8] = include_bytes!("../../../examples/webgpu/fonts/DejaVuSerif.ttf");
@@ -860,25 +864,22 @@ mod tests {
     fn hit_empty_text() {
         let layout = make("");
         let cursor = layout.hit(0.0, 0.0).unwrap();
-        assert_eq!(cursor.line, 0);
-        assert_eq!(cursor.index, 0);
+        assert_eq!(layout.cursor_to_byte_index(&cursor), 0);
     }
 
     #[test]
     fn hit_origin_returns_start() {
         let layout = make("hello");
         let cursor = layout.hit(0.0, 0.0).unwrap();
-        assert_eq!(cursor.line, 0);
-        assert_eq!(cursor.index, 0);
+        assert_eq!(layout.cursor_to_byte_index(&cursor), 0);
     }
 
     #[test]
     fn hit_far_right_returns_line_end() {
         let layout = make("hello");
         let cursor = layout.hit(9999.0, 0.0).unwrap();
-        assert_eq!(cursor.line, 0);
-        // Index should be at or near the end of the text.
-        assert!(cursor.index >= 4, "expected near end, got {}", cursor.index);
+        let idx = layout.cursor_to_byte_index(&cursor);
+        assert!(idx >= 4, "expected near end, got {idx}");
     }
 
     #[test]
@@ -886,7 +887,9 @@ mod tests {
         let layout = make("aaa\nbbb");
         let y = layout.visual_line_y(1).unwrap_or(20.0);
         let cursor = layout.hit(0.0, y).unwrap();
-        assert_eq!(cursor.line, 1, "should resolve to second paragraph line");
+        let idx = layout.cursor_to_byte_index(&cursor);
+        // "aaa\n" = 4 bytes, so the second paragraph starts at byte 4.
+        assert!(idx >= 4, "should resolve to second paragraph, got byte {idx}");
     }
 
     // ========================== Hit position ==========================
@@ -953,7 +956,6 @@ mod tests {
         let size = layout.size();
         let hp = layout.hit_point(Point::new(size.width / 2.0, size.height / 2.0));
         assert!(hp.is_inside);
-        assert_eq!(hp.line, 0);
     }
 
     #[test]
@@ -966,25 +968,26 @@ mod tests {
     // ========================== Cursor conversion ==========================
 
     #[test]
-    fn cursor_to_byte_index_first_line() {
+    fn cursor_to_byte_index_start() {
         let layout = make("hello\nworld");
-        let idx = layout.cursor_to_byte_index(&Cursor::new(0, 3));
-        assert_eq!(idx, 3);
+        let cursor = parley::Cursor::from_byte_index(
+            layout.parley_layout(),
+            0,
+            Affinity::Downstream,
+        );
+        assert_eq!(layout.cursor_to_byte_index(&cursor), 0);
     }
 
     #[test]
-    fn cursor_to_byte_index_second_line() {
+    fn cursor_to_byte_index_mid_text() {
         let layout = make("hello\nworld");
-        let idx = layout.cursor_to_byte_index(&Cursor::new(1, 2));
-        // "hello\n" = 6 bytes, then index 2 within "world" = 8.
-        assert_eq!(idx, 8);
-    }
-
-    #[test]
-    fn cursor_to_byte_index_out_of_bounds_line() {
-        let layout = make("hello");
-        let idx = layout.cursor_to_byte_index(&Cursor::new(99, 0));
-        assert_eq!(idx, 0, "out-of-bounds line should return 0");
+        // Byte 8 = 'r' in "world" (6 + 2).
+        let cursor = parley::Cursor::from_byte_index(
+            layout.parley_layout(),
+            8,
+            Affinity::Downstream,
+        );
+        assert_eq!(layout.cursor_to_byte_index(&cursor), 8);
     }
 
     #[test]
@@ -1314,12 +1317,9 @@ mod tests {
     fn hit_far_right_tabs() {
         let layout = make_tab("a\tb", 4);
         let cursor = layout.hit(9999.0, 0.0).unwrap();
+        let idx = layout.cursor_to_byte_index(&cursor);
         // Should be at or near the end (byte 3 in original "a\tb").
-        assert!(
-            cursor.index >= 2,
-            "far right should be near end, got {}",
-            cursor.index
-        );
+        assert!(idx >= 2, "far right should be near end, got {idx}");
     }
 
     #[test]

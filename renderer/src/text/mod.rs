@@ -34,7 +34,7 @@ pub use fontique::{FontStyle, FontWeight, FontWidth};
 pub use layout::{HitPoint, HitPosition, TextLayout, FONT_CONTEXT};
 pub use parley::Alignment;
 pub use parley::Affinity;
-// pub use parley::Cursor;
+pub use parley::Cursor;
 
 // --- Font Properties ---
 
@@ -83,60 +83,6 @@ pub enum LineEnding {
     None,
 }
 
-// --- Cursor/Hit Testing ---
-
-/// A text cursor position expressed as a paragraph line and a byte offset within
-/// that line.
-///
-/// Produced by [`TextLayout::hit`] when converting an (x, y) point to a text
-/// position, and consumed by [`TextLayout::hit_point`] and
-/// [`TextLayout::cursor_to_byte_index`].
-///
-/// # Example
-///
-/// ```
-/// use floem_renderer::text::{Affinity, Cursor};
-///
-/// // Cursor at the start of the second paragraph line.
-/// let cursor = Cursor::new(1, 0);
-/// assert_eq!(cursor.line, 1);
-/// assert_eq!(cursor.index, 0);
-/// assert_eq!(cursor.affinity, Affinity::Before);
-///
-/// // With explicit affinity.
-/// let cursor = Cursor::new_with_affinity(0, 5, Affinity::After);
-/// assert_eq!(cursor.affinity, Affinity::After);
-/// ```
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Cursor {
-    /// Paragraph line index (zero-based).
-    pub line: usize,
-    /// Byte offset within the paragraph line.
-    pub index: usize,
-    /// Which side of the character boundary this cursor is on.
-    pub affinity: Affinity,
-}
-
-impl Cursor {
-    /// Create a cursor with [`Affinity::Before`] (the default).
-    pub fn new(line: usize, index: usize) -> Self {
-        Self {
-            line,
-            index,
-            affinity: Affinity::Upstream,
-        }
-    }
-
-    /// Create a cursor with an explicit affinity.
-    pub fn new_with_affinity(line: usize, index: usize, affinity: Affinity) -> Self {
-        Self {
-            line,
-            index,
-            affinity,
-        }
-    }
-}
-
 // --- Brush type for Parley ---
 
 /// A brush wrapper that satisfies Parley's `Brush` trait bound.
@@ -182,39 +128,6 @@ mod tests {
     #[test]
     fn line_ending_default_is_lf() {
         assert_eq!(LineEnding::default(), LineEnding::Lf);
-    }
-
-    // -- Affinity --
-
-    #[test]
-    fn affinity_default_is_before() {
-        assert_eq!(Affinity::default(), Affinity::Upstream);
-    }
-
-    #[test]
-    fn affinity_parley_roundtrip() {
-        let before: parley::layout::Affinity = Affinity::Upstream.into();
-        let after: parley::layout::Affinity = Affinity::Downstream.into();
-        assert_eq!(Affinity::from(before), Affinity::Upstream);
-        assert_eq!(Affinity::from(after), Affinity::Downstream);
-    }
-
-    // -- Cursor --
-
-    #[test]
-    fn cursor_new_has_before_affinity() {
-        let c = Cursor::new(2, 10);
-        assert_eq!(c.line, 2);
-        assert_eq!(c.index, 10);
-        assert_eq!(c.affinity, Affinity::Upstream);
-    }
-
-    #[test]
-    fn cursor_new_with_affinity() {
-        let c = Cursor::new_with_affinity(1, 5, Affinity::Downstream);
-        assert_eq!(c.line, 1);
-        assert_eq!(c.index, 5);
-        assert_eq!(c.affinity, Affinity::Downstream);
     }
 
     // -- TextBrush --

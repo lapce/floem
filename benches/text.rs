@@ -312,6 +312,31 @@ fn bench_hit_testing(c: &mut Criterion) {
         });
     });
 
+    // Round-trip: hit → cursor_to_byte_index (measures decomposition + recomposition cost).
+    group.bench_function("hit_then_byte_index", |b| {
+        let mid_x = size.width as f32 / 2.0;
+        let mid_y = size.height as f32 / 2.0;
+        b.iter(|| {
+            let cursor = layout.hit(mid_x, mid_y).unwrap();
+            black_box(layout.cursor_to_byte_index(&cursor));
+        });
+    });
+
+    // Full selection pipeline: hit × 2 → byte indices → selection_geometry_with.
+    group.bench_function("hit_then_selection", |b| {
+        let mid_x = size.width as f32 / 2.0;
+        let mid_y = size.height as f32 / 2.0;
+        b.iter(|| {
+            let c1 = layout.hit(0.0, 0.0).unwrap();
+            let c2 = layout.hit(mid_x, mid_y).unwrap();
+            let start = layout.cursor_to_byte_index(&c1);
+            let end = layout.cursor_to_byte_index(&c2);
+            let mut count = 0u32;
+            layout.selection_geometry_with(start, end, |_x0, _y0, _x1, _y1| count += 1);
+            black_box(count);
+        });
+    });
+
     group.finish();
 }
 
@@ -351,6 +376,18 @@ fn bench_selection(c: &mut Criterion) {
         b.iter(|| {
             let mut count = 0u32;
             layout.selection_geometry_with(0, len, |_x0, _y0, _x1, _y1| count += 1);
+            black_box(count);
+        });
+    });
+
+    // Direct cursor-to-selection (no byte-index round-trip).
+    let size = layout.size();
+    let c_start = layout.hit(0.0, 0.0).unwrap();
+    let c_end = layout.hit(size.width as f32, size.height as f32 / 2.0).unwrap();
+    group.bench_function("select_from_cursors", |b| {
+        b.iter(|| {
+            let mut count = 0u32;
+            layout.selection_for_cursors(&c_start, &c_end, |_x0, _y0, _x1, _y1| count += 1);
             black_box(count);
         });
     });
