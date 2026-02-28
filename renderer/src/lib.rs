@@ -185,8 +185,7 @@ pub trait Renderer {
     /// Draw an SVG image inside `rect`.
     ///
     /// When `brush` is `Some`, the SVG is rendered as a mask and filled with
-    /// the given brush — this is how Floem applies a tint color to monochrome
-    /// icons.
+    /// the given brush — this is how Floem applies a color override to icons.
     fn draw_svg<'b>(&mut self, svg: Svg<'b>, rect: Rect, brush: Option<impl Into<BrushRef<'b>>>);
 
     /// Draw a raster image inside `rect`.

@@ -289,7 +289,7 @@ impl TextLayout {
             .tab_width
             .and_then(|w| expand_tabs(text, w.get() as usize));
 
-        // Text that Parley will shape: expanded if tabs were substituted, original otherwise.
+        // Text that Parley will shape: expanded if tabs were substituted, original otherwise
         let layout_text = self
             .tab_info
             .as_ref()
@@ -481,7 +481,7 @@ impl TextLayout {
     /// Uses [`Affinity::Before`] by default. See [`hit_position_aff`](Self::hit_position_aff)
     /// for explicit affinity control.
     pub fn hit_position(&self, idx: usize) -> HitPosition {
-        self.hit_position_aff(idx, Affinity::Before)
+        self.hit_position_aff(idx, Affinity::Upstream)
     }
 
     /// Returns the geometric position of the cursor at the given flat byte index
@@ -567,7 +567,7 @@ impl TextLayout {
                 line: 0,
                 index: 0,
                 is_inside: false,
-                affinity: Affinity::Before,
+                affinity: Affinity::Upstream,
             }
         }
     }
@@ -934,8 +934,8 @@ mod tests {
     #[test]
     fn hit_position_aff_before_and_after() {
         let layout = make("hello");
-        let before = layout.hit_position_aff(3, Affinity::Before);
-        let after = layout.hit_position_aff(3, Affinity::After);
+        let before = layout.hit_position_aff(3, Affinity::Upstream);
+        let after = layout.hit_position_aff(3, Affinity::Downstream);
         // On a single non-wrapping line, both affinities should give similar positions.
         assert!(
             (before.point.x - after.point.x).abs() < 2.0,

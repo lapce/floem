@@ -992,8 +992,8 @@ impl Editor {
         };
 
         let aff = match affinity {
-            CursorAffinity::Backward => Affinity::Before,
-            CursorAffinity::Forward => Affinity::After,
+            CursorAffinity::Backward => Affinity::Upstream,
+            CursorAffinity::Forward => Affinity::Downstream,
         };
 
         text_layout.text.hit_position_aff(index, aff).point
@@ -1104,8 +1104,8 @@ impl Editor {
 
         let hit_point = text_layout.text.hit_point(Point::new(point.x, y as f64));
         let mut affinity = match hit_point.affinity {
-            Affinity::Before => CursorAffinity::Backward,
-            Affinity::After => CursorAffinity::Forward,
+            Affinity::Upstream => CursorAffinity::Backward,
+            Affinity::Downstream => CursorAffinity::Forward,
         };
         // We have to unapply the phantom text shifting in order to get back to the column in
         // the actual buffer

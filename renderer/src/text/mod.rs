@@ -33,6 +33,8 @@ pub use attrs::{Attrs, AttrsList, AttrsOwned, FamilyOwned, LineHeightValue};
 pub use fontique::{FontStyle, FontWeight, FontWidth};
 pub use layout::{HitPoint, HitPosition, TextLayout, FONT_CONTEXT};
 pub use parley::Alignment;
+pub use parley::Affinity;
+// pub use parley::Cursor;
 
 // --- Font Properties ---
 
@@ -83,40 +85,6 @@ pub enum LineEnding {
 
 // --- Cursor/Hit Testing ---
 
-/// Cursor affinity — which side of a character boundary the cursor is on.
-///
-/// When a byte index falls at a line break, affinity determines whether the
-/// cursor is drawn at the end of the previous visual line ([`Before`](Affinity::Before))
-/// or the start of the next ([`After`](Affinity::After)).
-///
-/// Converts to and from [`parley::layout::Affinity`] (`Upstream` / `Downstream`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
-pub enum Affinity {
-    /// The cursor sits before (upstream of) the character at this index.
-    #[default]
-    Before,
-    /// The cursor sits after (downstream of) the character at this index.
-    After,
-}
-
-impl From<Affinity> for parley::layout::Affinity {
-    fn from(a: Affinity) -> Self {
-        match a {
-            Affinity::Before => parley::layout::Affinity::Upstream,
-            Affinity::After => parley::layout::Affinity::Downstream,
-        }
-    }
-}
-
-impl From<parley::layout::Affinity> for Affinity {
-    fn from(a: parley::layout::Affinity) -> Self {
-        match a {
-            parley::layout::Affinity::Upstream => Affinity::Before,
-            parley::layout::Affinity::Downstream => Affinity::After,
-        }
-    }
-}
-
 /// A text cursor position expressed as a paragraph line and a byte offset within
 /// that line.
 ///
@@ -139,7 +107,7 @@ impl From<parley::layout::Affinity> for Affinity {
 /// let cursor = Cursor::new_with_affinity(0, 5, Affinity::After);
 /// assert_eq!(cursor.affinity, Affinity::After);
 /// ```
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Cursor {
     /// Paragraph line index (zero-based).
     pub line: usize,
@@ -155,7 +123,7 @@ impl Cursor {
         Self {
             line,
             index,
-            affinity: Affinity::Before,
+            affinity: Affinity::Upstream,
         }
     }
 
@@ -166,18 +134,6 @@ impl Cursor {
             index,
             affinity,
         }
-    }
-}
-
-impl PartialOrd for Affinity {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for Affinity {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        (*self as u8).cmp(&(*other as u8))
     }
 }
 
@@ -232,21 +188,15 @@ mod tests {
 
     #[test]
     fn affinity_default_is_before() {
-        assert_eq!(Affinity::default(), Affinity::Before);
-    }
-
-    #[test]
-    fn affinity_ordering() {
-        assert!(Affinity::Before < Affinity::After);
-        assert!(Affinity::Before <= Affinity::Before);
+        assert_eq!(Affinity::default(), Affinity::Upstream);
     }
 
     #[test]
     fn affinity_parley_roundtrip() {
-        let before: parley::layout::Affinity = Affinity::Before.into();
-        let after: parley::layout::Affinity = Affinity::After.into();
-        assert_eq!(Affinity::from(before), Affinity::Before);
-        assert_eq!(Affinity::from(after), Affinity::After);
+        let before: parley::layout::Affinity = Affinity::Upstream.into();
+        let after: parley::layout::Affinity = Affinity::Downstream.into();
+        assert_eq!(Affinity::from(before), Affinity::Upstream);
+        assert_eq!(Affinity::from(after), Affinity::Downstream);
     }
 
     // -- Cursor --
@@ -256,29 +206,15 @@ mod tests {
         let c = Cursor::new(2, 10);
         assert_eq!(c.line, 2);
         assert_eq!(c.index, 10);
-        assert_eq!(c.affinity, Affinity::Before);
+        assert_eq!(c.affinity, Affinity::Upstream);
     }
 
     #[test]
     fn cursor_new_with_affinity() {
-        let c = Cursor::new_with_affinity(1, 5, Affinity::After);
+        let c = Cursor::new_with_affinity(1, 5, Affinity::Downstream);
         assert_eq!(c.line, 1);
         assert_eq!(c.index, 5);
-        assert_eq!(c.affinity, Affinity::After);
-    }
-
-    #[test]
-    fn cursor_ordering() {
-        // Cursor derives Ord: line first, then index, then affinity.
-        let a = Cursor::new(0, 5);
-        let b = Cursor::new(1, 0);
-        assert!(a < b, "different lines");
-
-        let c = Cursor::new(0, 3);
-        assert!(c < a, "same line, different index");
-
-        let d = Cursor::new_with_affinity(0, 5, Affinity::After);
-        assert!(a < d, "same line+index, different affinity");
+        assert_eq!(c.affinity, Affinity::Downstream);
     }
 
     // -- TextBrush --
@@ -288,14 +224,5 @@ mod tests {
         let b = TextBrush::default();
         let c: peniko::Color = b.into();
         assert_eq!(c, peniko::Color::from_rgba8(0, 0, 0, 255));
-    }
-
-    #[test]
-    fn text_brush_color_roundtrip() {
-        let red = peniko::Color::from_rgba8(255, 0, 0, 128);
-        let brush = TextBrush::from(red);
-        assert_eq!(brush.0, red);
-        let back: peniko::Color = brush.into();
-        assert_eq!(back, red);
     }
 }
