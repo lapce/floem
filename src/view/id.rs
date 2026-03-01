@@ -170,10 +170,10 @@ impl ViewId {
             // Remove from overlays if registered
             s.overlays.remove(*self);
             // Remove self from parent's children list
-            if let Some(Some(parent)) = s.parent.get(*self) {
-                if let Some(children) = s.children.get_mut(*parent) {
-                    children.retain(|c| c != self);
-                }
+            if let Some(Some(parent)) = s.parent.get(*self)
+                && let Some(children) = s.children.get_mut(*parent)
+            {
+                children.retain(|c| c != self);
             }
             // Clean up all SecondaryMap entries for this view to prevent
             // stale data when slots are reused. SecondaryMaps don't auto-clean
@@ -1464,14 +1464,14 @@ pub fn process_pending_scope_reparents() {
             let child_scope = child_id.scope();
             if let Some(child_scope) = child_scope {
                 // Try to find a parent scope by walking up from the parent
-                if let Some(parent_id) = child_id.parent() {
-                    if let Some(parent_scope) = parent_id.find_scope() {
-                        // Guard: Don't create a cycle if same scope is on both views
-                        if child_scope != parent_scope {
-                            child_scope.set_parent(parent_scope);
-                        }
-                        return false; // Successfully handled, remove from pending
+                if let Some(parent_id) = child_id.parent()
+                    && let Some(parent_scope) = parent_id.find_scope()
+                {
+                    // Guard: Don't create a cycle if same scope is on both views
+                    if child_scope != parent_scope {
+                        child_scope.set_parent(parent_scope);
                     }
+                    return false; // Successfully handled, remove from pending
                 }
                 true // Still pending, keep in the set
             } else {

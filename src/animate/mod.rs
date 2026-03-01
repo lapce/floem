@@ -222,10 +222,10 @@ impl PropCache {
     }
 
     fn remove_prop(&mut self, prop: StylePropRef, idx: u16) {
-        if let imbl::hashmap::Entry::Occupied(mut oe) = self.prop_map.entry(prop) {
-            if let Ok(pos) = oe.get().binary_search(&PropFrameKind::Normal(idx)) {
-                oe.get_mut().remove(pos);
-            }
+        if let imbl::hashmap::Entry::Occupied(mut oe) = self.prop_map.entry(prop)
+            && let Ok(pos) = oe.get().binary_search(&PropFrameKind::Normal(idx))
+        {
+            oe.get_mut().remove(pos);
         }
     }
 
@@ -510,11 +510,11 @@ impl Animation {
     ) -> Self {
         let frame = key_frame(KeyFrame::new(frame_id));
         let frame_style = frame.style.clone();
-        if let Some(f) = self.key_frames.insert(frame_id, frame) {
-            if let KeyFrameStyle::Style(style) = f.style {
-                for prop in style.style_props() {
-                    self.cache.remove_prop(prop, frame_id);
-                }
+        if let Some(f) = self.key_frames.insert(frame_id, frame)
+            && let KeyFrameStyle::Style(style) = f.style
+        {
+            for prop in style.style_props() {
+                self.cache.remove_prop(prop, frame_id);
             }
         }
         if let KeyFrameStyle::Style(style) = frame_style {

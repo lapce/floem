@@ -1039,16 +1039,16 @@ fn find_vline_of_offset(
             .map(|line_index| (VLine(vline.get() + line_index), line_index))?;
 
     // If the most recent line break was due to a soft line break,
-    if line_index > 0 {
-        if let CursorAffinity::Backward = affinity {
-            // TODO: This can definitely be smarter. We're doing a vline search, and then this is
-            // practically doing another!
-            let line_end = lines.offset_of_vline(text_prov, vline);
-            // then if we're right at that soft line break, a backwards affinity
-            // means that we are on the previous visual line.
-            if line_end == offset && vline.get() != 0 {
-                return Some((VLine(vline.get() - 1), line_index - 1));
-            }
+    if line_index > 0
+        && let CursorAffinity::Backward = affinity
+    {
+        // TODO: This can definitely be smarter. We're doing a vline search, and then this is
+        // practically doing another!
+        let line_end = lines.offset_of_vline(text_prov, vline);
+        // then if we're right at that soft line break, a backwards affinity
+        // means that we are on the previous visual line.
+        if line_end == offset && vline.get() != 0 {
+            return Some((VLine(vline.get() - 1), line_index - 1));
         }
     }
 
@@ -1080,23 +1080,23 @@ fn find_rvline_of_offset(
         .map(|line_index| RVLine::new(buffer_line, line_index))?;
 
     // If the most recent line break was due to a soft line break,
-    if rv.line_index > 0 {
-        if let CursorAffinity::Backward = affinity {
-            let line_end = lines.offset_of_rvline(text_prov, rv);
-            // then if we're right at that soft line break, a backwards affinity
-            // means that we are on the previous visual line.
-            if line_end == offset {
-                if rv.line_index > 0 {
-                    return Some(RVLine::new(rv.line, rv.line_index - 1));
-                } else if rv.line == 0 {
-                    // There is no previous line, we do nothing.
-                } else {
-                    // We have to get rvline info for that rvline, so we can get the last line index
-                    // This should always have at least one rvline in it.
-                    let font_sizes = lines.font_sizes.borrow();
-                    let (prev, _) = prev_rvline(&layouts, text_prov, &**font_sizes, rv)?;
-                    return Some(prev);
-                }
+    if rv.line_index > 0
+        && let CursorAffinity::Backward = affinity
+    {
+        let line_end = lines.offset_of_rvline(text_prov, rv);
+        // then if we're right at that soft line break, a backwards affinity
+        // means that we are on the previous visual line.
+        if line_end == offset {
+            if rv.line_index > 0 {
+                return Some(RVLine::new(rv.line, rv.line_index - 1));
+            } else if rv.line == 0 {
+                // There is no previous line, we do nothing.
+            } else {
+                // We have to get rvline info for that rvline, so we can get the last line index
+                // This should always have at least one rvline in it.
+                let font_sizes = lines.font_sizes.borrow();
+                let (prev, _) = prev_rvline(&layouts, text_prov, &**font_sizes, rv)?;
+                return Some(prev);
             }
         }
     }
