@@ -154,8 +154,6 @@ impl StyleSelector {
 
 const PROPAGATING_FLAGS: StyleSelectors = StyleSelectors::DISABLED
     .union(StyleSelectors::DARK_MODE)
-    .union(StyleSelectors::DRAGGING)
-    .union(StyleSelectors::SELECTED)
     .union(StyleSelectors::DISABLED)
     .union(StyleSelectors::RESPONSIVE);
 

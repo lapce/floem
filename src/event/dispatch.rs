@@ -913,9 +913,14 @@ impl<'a> EventCx<'a> {
 
     fn dispatch_one(&mut self) -> Outcome {
         if self.target.is_view()
-            && (self.target.owning_id().is_disabled() && !self.event.allow_disabled())
+            && self.target.owning_id().is_disabled()
+            && !self.event.allow_disabled()
         {
             return Outcome::Continue;
+        }
+        if matches!(self.event, Event::Interaction(InteractionEvent::Click)) {
+            dbg!(self.target.owning_id().is_disabled());
+            dbg!(self.target);
         }
 
         VIEW_STORAGE.with(|s| {

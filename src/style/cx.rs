@@ -257,6 +257,13 @@ impl<'a> StyleCx<'a> {
                 &self.inherited,
                 &self.class_context,
             );
+        } else {
+            // Fast path: nested-map resolution was skipped, so reapply the view-local
+            // interaction state saved from the last combined-style computation.
+            let cached = view_state.borrow().post_compute_combined_interaction;
+            self.view_interact_state.is_hidden |= cached.hidden;
+            self.view_interact_state.is_selected |= cached.selected;
+            self.view_interact_state.is_disabled |= cached.disabled;
         }
 
         if self.reason.needs_animation() {
@@ -418,7 +425,22 @@ impl<'a> StyleCx<'a> {
             }
             view_id.request_layout();
         }
-        // selected and disabled are arlready pushed down in the change for children
+        if old_interact_state.selected != self.view_interact_state.is_selected {
+            for child in view_id.children() {
+                self.window_state.mark_style_dirty_with(
+                    child.get_element_id(),
+                    StyleReason::with_selector(super::StyleSelector::Selected),
+                );
+            }
+        }
+        if old_interact_state.disabled != self.view_interact_state.is_disabled {
+            for child in view_id.children() {
+                self.window_state.mark_style_dirty_with(
+                    child.get_element_id(),
+                    StyleReason::with_selector(super::StyleSelector::Disabled),
+                );
+            }
+        }
 
         CaptureState::capture_style(view_id, self, view_state.borrow().computed_style.clone());
 

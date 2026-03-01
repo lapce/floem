@@ -597,12 +597,15 @@ fn test_click_on_disabled_view_does_not_bubble() {
     let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
+    let disabled_child_id = ViewId::new();
+
     let view = tracker
         .track_named(
             "parent",
-            Container::new(
-                tracker.track_named("disabled_child", Empty::new().style(|s| s.size(50.0, 50.0))),
-            )
+            Container::new(tracker.track_named(
+                "disabled_child",
+                Empty::with_id(disabled_child_id).style(|s| s.size(50.0, 50.0)),
+            ))
             .style(|s| s.set_disabled(true))
             .style(|s| s.size(100.0, 100.0)),
         )
@@ -610,7 +613,11 @@ fn test_click_on_disabled_view_does_not_bubble() {
 
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
+    assert!(disabled_child_id.is_disabled());
+
     harness.click(25.0, 25.0);
+
+    assert!(disabled_child_id.is_disabled());
 
     // The disabled container and its children should not receive clicks
     // But the parent (which wraps the disabled container) might receive it

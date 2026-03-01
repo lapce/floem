@@ -73,7 +73,7 @@ use crate::{
 /// - requesting a new animation frame from the backend
 pub(crate) struct WindowHandle {
     pub(crate) window: Arc<dyn winit::window::Window>,
-    pub window_id: WindowId,
+    window_id: WindowId,
     /// The root view ID for this window.
     pub(crate) id: ViewId,
     /// Reactive Scope for this `WindowHandle`

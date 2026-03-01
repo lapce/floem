@@ -332,6 +332,11 @@ pub struct ViewState {
     /// the style interaction cx that is saved after computing the final style.
     /// This will be used as the base interaction for all **children** of this view as these are the inherited interactions
     pub(crate) style_interaction_cx: InheritedInteractionCx,
+    /// View-local interaction flags derived from this view's resolved combined style.
+    ///
+    /// This excludes inherited parent interaction and is OR'ed onto StyleCx interaction
+    /// state during fast-path style passes that skip `compute_combined`.
+    pub(crate) post_compute_combined_interaction: InheritedInteractionCx,
     /// This interaction context can be set by a parent on this view. This will be used when building the StyleCx for **this** view.
     pub(crate) parent_set_style_interaction: InheritedInteractionCx,
     /// Controls view visibility for phase transitions.
@@ -420,6 +425,7 @@ impl ViewState {
             style_cx: Style::new(),
             class_cx: Style::new(),
             style_interaction_cx: Default::default(),
+            post_compute_combined_interaction: Default::default(),
             parent_set_style_interaction: Default::default(),
             visibility: Visibility::default(),
             style_cursor: None,
@@ -483,6 +489,11 @@ impl ViewState {
         interact_state.is_hidden |= combined.builtin().display() == taffy::Display::None;
         interact_state.is_selected |= combined.builtin().set_selected();
         interact_state.is_disabled |= combined.builtin().set_disabled();
+        self.post_compute_combined_interaction = InheritedInteractionCx {
+            hidden: combined.builtin().display() == taffy::Display::None,
+            selected: combined.builtin().set_selected(),
+            disabled: combined.builtin().set_disabled(),
+        };
 
         self.has_style_selectors = Some(selectors | base_selectors);
         self.combined_pre_animation_style = combined.clone();
@@ -525,6 +536,11 @@ impl ViewState {
         interact_state.is_hidden |= combined.builtin().display() == taffy::Display::None;
         interact_state.is_selected |= combined.builtin().set_selected();
         interact_state.is_disabled |= combined.builtin().set_disabled();
+        self.post_compute_combined_interaction = InheritedInteractionCx {
+            hidden: combined.builtin().display() == taffy::Display::None,
+            selected: combined.builtin().set_selected(),
+            disabled: combined.builtin().set_disabled(),
+        };
 
         self.combined_style = combined;
 
