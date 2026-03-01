@@ -645,7 +645,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
         })
         .class(scroll::Handle, |s| {
             s.with_theme(|s, t| {
-                s.background(t.border())
+                s.background(css::TRANSPARENT)
                     .active(|s| s.background(t.text_muted()))
                     .hover(|s| s.background(t.text_muted()))
             })

@@ -145,20 +145,20 @@ pub(crate) enum PaintOrPost {
 /// Recursively collect VisualIds in paint order (depth-first, z-index sorted)
 pub(crate) fn collect_visual_recursive(
     element_id: ElementId,
-    box_tree: &crate::BoxTree,
+    box_tree: &mut crate::BoxTree,
     paint_order: &mut Vec<PaintOrPost>,
     is_drag_preview: bool,
     skip_element_id: Option<ElementId>,
 ) {
     // Local closure instead of nested fn
-    let should_paint = |element_id: ElementId| {
+    let should_paint = |element_id: ElementId, box_tree: &mut crate::BoxTree| {
         if is_drag_preview {
             return true;
         }
 
         box_tree
-            .world_bounds(element_id.0)
-            .map_or(true, |bounds| bounds.area() != 0.0)
+            .get_or_compute_world_bounds(element_id.0)
+            .is_none_or(|bounds| bounds.area() != 0.0)
     };
 
     // Skip specific element and subtree when not drag preview
@@ -174,7 +174,8 @@ pub(crate) fn collect_visual_recursive(
         return;
     }
 
-    if should_paint(element_id) {
+    let paints_this_node = should_paint(element_id, box_tree);
+    if paints_this_node {
         paint_order.push(PaintOrPost::Paint(element_id));
     }
 
@@ -191,7 +192,12 @@ pub(crate) fn collect_visual_recursive(
         );
     }
 
-    paint_order.push(PaintOrPost::Post(element_id));
+    // Keep Paint/Post paired for the same node. If a node is culled (e.g. zero world bounds),
+    // emitting Post without Paint can pop clip state that belongs to an ancestor and corrupt
+    // sibling paint order (scroll descendants painting above later siblings).
+    if paints_this_node {
+        paint_order.push(PaintOrPost::Post(element_id));
+    }
 }
 
 impl GlobalPaintCx<'_> {
@@ -206,7 +212,11 @@ impl GlobalPaintCx<'_> {
     ///
     /// # Returns
     /// Vector of VisualIds in paint order (back-to-front)
-    fn build_paint_order(&self, root: ElementId, box_tree: &crate::BoxTree) -> Vec<PaintOrPost> {
+    fn build_paint_order(
+        &self,
+        root: ElementId,
+        box_tree: &mut crate::BoxTree,
+    ) -> Vec<PaintOrPost> {
         let mut paint_order = Vec::new();
 
         let dragging_element_id = self
@@ -234,8 +244,8 @@ impl GlobalPaintCx<'_> {
     /// Paint entire tree using explicit traversal
     pub(crate) fn paint_with_traversal(&mut self, root_id: ViewId) {
         let root_element_id = root_id.get_element_id();
-        let box_tree = self.window_state.box_tree.borrow();
-        let paint_order = self.build_paint_order(root_element_id, &box_tree);
+        let mut box_tree = self.window_state.box_tree.borrow_mut();
+        let paint_order = self.build_paint_order(root_element_id, &mut box_tree);
         drop(box_tree);
 
         for id_or_pop in paint_order {
@@ -259,16 +269,12 @@ impl GlobalPaintCx<'_> {
     /// Paint a single visual node with its absolute transform
     pub(crate) fn paint_visual_node(&mut self, element_id: ElementId, is_post: bool) {
         // Get state from box tree for this visual node
-        let box_tree = self.window_state.box_tree.borrow();
-        let world_transform = match box_tree.world_transform(element_id.0) {
-            Ok(t) => t,
-            Err(e) => e.value().unwrap(),
-        };
+        let mut box_tree = self.window_state.box_tree.borrow_mut();
+        let world_transform = box_tree
+            .get_or_compute_world_transform(element_id.0)
+            .unwrap_or_default();
         let layout_rect_local = box_tree.local_bounds(element_id.0).unwrap_or_default();
-        let clip = match box_tree.clipped_local_clip(element_id.0) {
-            Ok(t) => t,
-            Err(t) => t.value().flatten(),
-        };
+        let clip = box_tree.clipped_local_clip(element_id.0).flatten();
         drop(box_tree);
 
         // Set absolute transform on renderer

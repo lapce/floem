@@ -768,7 +768,7 @@ impl Scroll {
     fn do_scroll_to_element(&mut self, scroll_to: ScrollTo) -> EventPropagation {
         let child_element_id = self.child.get_element_id();
         let box_tree = self.id.box_tree();
-        let box_tree = box_tree.borrow();
+        let mut box_tree = box_tree.borrow_mut();
 
         let Some(target_local_rect) = scroll_to
             .rect
@@ -778,10 +778,10 @@ impl Scroll {
         };
 
         let target_transform = box_tree
-            .compute_world_transform(scroll_to.id.0)
+            .get_or_compute_world_transform(scroll_to.id.0)
             .unwrap_or(Affine::IDENTITY);
         let child_transform = box_tree
-            .compute_world_transform(child_element_id.0)
+            .get_or_compute_world_transform(child_element_id.0)
             .unwrap_or(Affine::IDENTITY);
 
         let target_world_rect = target_transform.transform_rect_bbox(target_local_rect);

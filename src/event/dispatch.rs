@@ -10,7 +10,7 @@ use ui_events::{
         PointerButton, PointerButtonEvent, PointerEvent, PointerId, PointerInfo, PointerType,
     },
 };
-use understory_box_tree::{NodeFlags, QueryError};
+use understory_box_tree::NodeFlags;
 use understory_event_state::{click::ClickResult, hover::HoverEvent};
 use winit::keyboard::KeyCode;
 
@@ -801,20 +801,18 @@ impl RouteCx<'_, '_> {
             return Outcome::Continue;
         }
 
-        let world_transform = match self
+        let Some(world_transform) = self
             .gcx
             .window_state
             .box_tree
-            .borrow()
-            .world_transform(dispatch_step.target_element_id.0)
-        {
-            Ok(transform) | Err(QueryError::Dirty(transform)) => transform,
-            Err(QueryError::Stale) => {
-                // we are storing pending events so it's possible that a node because stale. if it did, don't panic, just continue
-                return Outcome::Continue;
-            }
-        }
-        .inverse();
+            .borrow_mut()
+            .get_or_compute_world_transform(dispatch_step.target_element_id.0)
+        else {
+            // we are storing pending events so it's possible that a node becomes stale. if it
+            // did, don't panic, just continue.
+            return Outcome::Continue;
+        };
+        let world_transform = world_transform.inverse();
 
         let mut cx = EventCx {
             window_state: self.gcx.window_state,
@@ -1071,12 +1069,12 @@ impl RouteCx<'_, '_> {
 
         if let Some(pu) = pointer_move {
             let box_tree = self.gcx.window_state.box_tree.clone();
-            if let Some(drag_dispatch) = self
+            let res = self
                 .gcx
                 .window_state
                 .drag_tracker
-                .check_threshold(&pu, &box_tree.borrow())
-            {
+                .check_threshold(&pu, &mut box_tree.borrow_mut());
+            if let Some(drag_dispatch) = res {
                 self.gcx.window_state.needs_box_tree_commit = true;
                 self.dispatch_drag_event(drag_dispatch);
             }
@@ -1240,9 +1238,8 @@ impl RouteCx<'_, '_> {
                     .gcx
                     .window_state
                     .box_tree
-                    .borrow()
-                    .world_bounds(hit.owning_id().get_element_id().0)
-                    .ok()
+                    .borrow_mut()
+                    .get_or_compute_world_bounds(hit.owning_id().get_element_id().0)
                     .unwrap_or_default();
                 let bottom_left = Point::new(bounds.x0, bounds.y1);
                 show_context_menu(menu(), Some(bottom_left));
@@ -1272,6 +1269,9 @@ impl RouteCx<'_, '_> {
         if let Some(old_target) = current_target {
             self.gcx.window_state.remove_active_capture(pointer_id);
             let event = Event::PointerCapture(PointerCaptureEvent::Lost(pointer_id));
+            self.gcx
+                .window_state
+                .mark_style_dirty_selector(old_target, StyleSelector::Active);
             self.route_synthetic(
                 RouteKind::Directed {
                     target: old_target,
@@ -1289,6 +1289,9 @@ impl RouteCx<'_, '_> {
                 .set_active_capture(pointer_id, new_target);
             let event =
                 Event::PointerCapture(PointerCaptureEvent::Gained(super::DragToken(pointer_id)));
+            self.gcx
+                .window_state
+                .mark_style_dirty_selector(new_target, StyleSelector::Active);
             self.route_synthetic(
                 RouteKind::Directed {
                     target: new_target,
@@ -1299,6 +1302,9 @@ impl RouteCx<'_, '_> {
 
             if new_target.owning_id().is_hidden() {
                 self.gcx.window_state.remove_active_capture(pointer_id);
+                self.gcx
+                    .window_state
+                    .mark_style_dirty_selector(new_target, StyleSelector::Active);
                 let event = Event::PointerCapture(PointerCaptureEvent::Lost(pointer_id));
                 self.route_synthetic(
                     RouteKind::Directed {

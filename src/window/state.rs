@@ -267,7 +267,8 @@ impl WindowState {
 
     pub fn is_active(&self, id: impl Into<ElementId>) -> bool {
         let id = id.into();
-        self.click_state.presses().any(|p| p.target.contains(&id))
+        self.pointer_capture_target.iter().any(|t| t.1 == id)
+            || self.click_state.presses().any(|p| p.target.contains(&id))
             || (self.key_trigger_state && self.focus_state.current_path().contains(&id))
     }
 
@@ -541,6 +542,10 @@ impl WindowState {
     /// Called when a view's style sets IsFixed to false.
     pub fn unregister_fixed_element(&mut self, id: ViewId) {
         if self.fixed_elements.remove(&id) {
+            self.box_tree
+                .borrow_mut()
+                .set_world_position(id.get_element_id().0, None);
+            self.needs_box_tree_commit = true;
             self.needs_layout = true;
         }
     }
@@ -783,7 +788,7 @@ impl WindowState {
     /// consistent for paint + hit testing.
     ///
     /// Order of operations:
-    /// 1. Apply drag-preview world translation (if an active drag preview exists)
+    /// 1. Apply drag-preview world position override (if an active drag preview exists)
     /// 2. Apply overlay parent-space remap (`apply_overlay_parent_transforms`)
     /// 3. Apply fixed-position viewport placement (`apply_fixed_positioning_transforms`)
     /// 4. Commit the box tree, producing dirty/damage regions
@@ -809,8 +814,8 @@ impl WindowState {
             // Get current world transform and update natural position (detects layout changes)
             let current_transform = self
                 .box_tree
-                .borrow()
-                .compute_world_transform(dragging_preview.element_id.0)
+                .borrow_mut()
+                .get_or_compute_world_transform(dragging_preview.element_id.0)
                 .unwrap_or(Affine::IDENTITY);
 
             let natural_position = dragging.update_and_get_natural_position(current_transform);
@@ -823,11 +828,11 @@ impl WindowState {
 
             // Calculate and apply position
             let new_point = dragging.calculate_position(natural_position, drag_point_offset);
-            dragging.record_applied_translation(new_point);
+            dragging.record_applied_position(new_point);
 
             self.box_tree
                 .borrow_mut()
-                .set_world_translation(dragging_preview.element_id.0, new_point);
+                .set_world_position(dragging_preview.element_id.0, Some(new_point));
 
             // Schedule next animation frame if needed
             if dragging.should_schedule_animation_frame() {
@@ -843,6 +848,11 @@ impl WindowState {
             && dragging.released_at.is_some()
             && dragging.is_animation_complete()
         {
+            if let Some(dragging_preview) = &dragging.dragging_preview {
+                self.box_tree
+                    .borrow_mut()
+                    .set_world_position(dragging_preview.element_id.0, None);
+            }
             self.views_needing_box_tree_update
                 .insert(dragging.element_id.owning_id());
             self.drag_tracker.active_drag = None;
@@ -942,7 +952,7 @@ impl WindowState {
         let mut tree = self.box_tree.borrow_mut();
         for (overlay_element_id, logical_parent_element_id, base_local_transform) in overlay_data {
             let parent_world = tree
-                .compute_world_transform(logical_parent_element_id.0)
+                .get_or_compute_world_transform(logical_parent_element_id.0)
                 .unwrap_or(Affine::IDENTITY);
             tree.set_local_transform(overlay_element_id.0, parent_world * base_local_transform);
         }
@@ -954,7 +964,7 @@ impl WindowState {
     /// semantics require final placement in window (viewport) coordinates, independent of
     /// ancestor scrolling/transforms. We resolve that at commit time by computing each fixed
     /// element's target viewport position from inset properties and writing it as a world
-    /// translation in the box tree.
+    /// position override in the box tree.
     ///
     /// Running this after local-transform updates keeps the adjustment stable for both full
     /// layout sync and incremental box-tree updates.
@@ -1005,7 +1015,7 @@ impl WindowState {
 
         let mut tree = self.box_tree.borrow_mut();
         for (element_id, pos) in positions {
-            tree.set_world_translation(element_id.0, pos);
+            tree.set_world_position(element_id.0, Some(pos));
         }
     }
 

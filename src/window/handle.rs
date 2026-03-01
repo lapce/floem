@@ -805,6 +805,9 @@ impl WindowHandle {
         cx.paint_with_traversal(self.id);
 
         self.window.pre_present_notify();
+        let root_element_id = cx.window_state.root_view_id.get_element_id();
+        let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::PaintPresent));
+        GlobalEventCx::new(cx.window_state, root_element_id, event).route_window_event();
 
         cx.paint_state.renderer_mut().finish()
     }

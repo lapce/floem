@@ -128,7 +128,7 @@ pub fn hit_test(root_id: ViewId, point: Point) -> Option<Rc<[ElementId]>> {
     }
     // Cache miss - query Understory
     let box_tree = root_id.box_tree();
-    let hit_ids = box_tree.borrow().hit_test_all(
+    let hit_ids = box_tree.borrow().hit_test_visual_stack(
         point,
         understory_box_tree::QueryFilter::new().visible().pickable(),
     );

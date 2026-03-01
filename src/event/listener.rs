@@ -76,8 +76,9 @@ pub use inner::{
     UpdatePhaseBoxTreePendingUpdates,
     UpdatePhaseBoxTreeUpdate,
     UpdatePhaseComplete,
-
     UpdatePhaseLayout,
+    UpdatePhasePaintPresent,
+
     // Update phase events
     UpdatePhaseProcessingMessages,
     UpdatePhaseStyle,
@@ -1140,6 +1141,25 @@ mod inner {
         pub UpdatePhaseComplete: (),
         |event| {
             if let Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::Complete)) = event {
+                return Some(&() as &dyn Any);
+            }
+            None
+        }
+    );
+
+    event_listener!(
+        /// Receives `Event::Window(UpdatePhase(PaintPresent))` — fired when the entire update cycle
+        /// is complete and the window is ready for painting if needed.
+        ///
+        /// # Routing
+        /// Dispatched to **Target phase only** on all views that have registered this listener.
+        /// Not all phases run every cycle; a single phase may run multiple times per cycle.
+        ///
+        /// # Default Actions
+        /// No preventable default action.
+        pub UpdatePhasePaintPresent: (),
+        |event| {
+            if let Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::PaintPresent)) = event {
                 return Some(&() as &dyn Any);
             }
             None

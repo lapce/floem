@@ -296,6 +296,10 @@ impl View for ToggleButton {
         "Toggle Button".into()
     }
 
+    fn view_style(&self) -> Option<Style> {
+        Some(Style::new().keyboard_navigable())
+    }
+
     fn update(&mut self, _cx: &mut UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(state) = state.downcast::<bool>() {
             self.state = *state;

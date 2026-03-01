@@ -225,8 +225,8 @@ pub(crate) struct ActiveDragState {
     pub animation_timer: Option<TimerToken>,
     /// Natural layout position before drag transform (for animation)
     pub natural_position: Option<Point>,
-    /// Last translation we applied via set_world_translation (for detecting layout changes)
-    pub last_applied_translation: Option<Point>,
+    /// Last position override we applied via set_world_position (for detecting layout changes)
+    pub last_applied_position: Option<Point>,
 
     pub dragging_preview: Option<DraggingPreview>,
     /// Custom data to pass through drag events
@@ -250,11 +250,11 @@ impl ActiveDragState {
 
     /// Update natural position by detecting layout changes.
     ///
-    /// Compares the current transform translation to the last applied translation.
+    /// Compares the current transform translation to the last applied position.
     /// If they differ, layout has changed and natural position is updated.
     ///
     /// # Arguments
-    /// * `current_transform` - The current world transform from compute_world_transform()
+    /// * `current_transform` - The current world transform from get-or-compute APIs
     ///
     /// # Returns
     /// The natural position to use for positioning calculations
@@ -268,9 +268,9 @@ impl ActiveDragState {
             current_transform.translation().y,
         );
 
-        // Detect if layout changed by comparing to last applied translation
+        // Detect if layout changed by comparing to last applied position
         let layout_changed = self
-            .last_applied_translation
+            .last_applied_position
             .map(|last| {
                 // If current translation doesn't match what we applied, layout changed
                 (current_translation.x - last.x).abs() > 0.01
@@ -287,11 +287,11 @@ impl ActiveDragState {
         self.natural_position.unwrap_or(current_translation)
     }
 
-    /// Record the translation that was just applied.
+    /// Record the position that was just applied.
     ///
     /// This is used for detecting layout changes on the next frame.
-    pub fn record_applied_translation(&mut self, translation: Point) {
-        self.last_applied_translation = Some(translation);
+    pub fn record_applied_position(&mut self, position: Point) {
+        self.last_applied_position = Some(position);
     }
 
     /// Returns true if an animation frame should be scheduled.
@@ -306,7 +306,7 @@ impl ActiveDragState {
     /// * `drag_point_offset` - The offset from top-left to where the user grabbed the element
     ///
     /// # Returns
-    /// The position to set via `set_world_translation()`
+    /// The position to set via `set_world_position(Some(...))`
     pub fn calculate_position(&self, natural_position: Point, drag_point_offset: Point) -> Point {
         if let Some(released_at) = self.released_at
             && !self.is_animation_complete()
@@ -400,7 +400,7 @@ impl DragTracker {
     pub fn check_threshold(
         &mut self,
         move_event: &PointerUpdate,
-        box_tree: &BoxTree,
+        box_tree: &mut BoxTree,
     ) -> Option<DragEventDispatch> {
         let pending_state = self.pending_drag.as_ref()?;
         let start_pos = pending_state.start_state.logical_point();
@@ -419,13 +419,9 @@ impl DragTracker {
 
                 // Calculate percentage based on custom_pct or initial click position
                 // Get world bounds at drag start to know where user clicked
-                let start_world_bounds = match box_tree
-                    .world_bounds(pending.element_id.0)
-                    .map_err(|e| e.value().expect("not stale"))
-                {
-                    Ok(t) => t,
-                    Err(e) => e,
-                };
+                let start_world_bounds = box_tree
+                    .get_or_compute_world_bounds(pending.element_id.0)
+                    .expect("drag source went stale during threshold check");
 
                 let click_offset_x = start_pos.x - start_world_bounds.x0;
                 let click_offset_y = start_pos.y - start_world_bounds.y0;
@@ -453,7 +449,7 @@ impl DragTracker {
                 easing: pending.easing,
                 animation_timer: None,
                 natural_position: None,
-                last_applied_translation: None,
+                last_applied_position: None,
                 dragging_preview,
                 custom_data: pending.custom_data,
                 track_targets: pending.track_targets,

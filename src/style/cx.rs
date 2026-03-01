@@ -281,8 +281,7 @@ impl<'a> StyleCx<'a> {
             (vs.style_interaction_cx, vs.taffy_style.clone())
         };
 
-        let mut view_style_transitioning = false;
-        let mut view_style_changed = false;
+        let mut need_paint = false;
 
         // ─────────────────────────────────────────────────────────────────────
         // Phase 5: Compute final style and propagate contexts to children
@@ -362,7 +361,6 @@ impl<'a> StyleCx<'a> {
             // We read from the computed_style (which includes animated values) rather than
             // from the raw styles, so that animations affect layout and visual properties.
             let mut transitioning = false;
-            let mut layout_transitioning = false;
             {
                 let mut vs = view_state.borrow_mut();
 
@@ -371,39 +369,28 @@ impl<'a> StyleCx<'a> {
                 let computed = vs.computed_style.clone();
 
                 // Layout properties (padding, margin, size, etc.)
-                if vs.layout_props.read_explicit(
-                    &computed,
-                    &computed,
-                    &self.now,
-                    &mut layout_transitioning,
-                ) {
-                    // layout_transitioning = true;
-                }
-                transitioning |= layout_transitioning;
+                vs.layout_props
+                    .read_explicit(&computed, &computed, &self.now, &mut transitioning);
 
                 // View style properties (background, border, etc.)
-                if vs.view_style_props.read_explicit(
+                need_paint |= vs.view_style_props.read_explicit(
                     &computed,
                     &computed,
                     &self.now,
-                    &mut view_style_transitioning,
-                ) {
-                    view_style_changed = true;
-                }
-                transitioning |= view_style_transitioning;
+                    &mut transitioning,
+                );
 
                 // Transform properties (translate, scale, rotation)
-                let mut box_tree_transitioning = false;
-                if vs.view_transform_props.read_explicit(
+                let mut box_tree_changed = false;
+                box_tree_changed |= vs.view_transform_props.read_explicit(
                     &computed,
                     &computed,
                     &self.now,
-                    &mut box_tree_transitioning,
-                ) || box_tree_transitioning
-                {
+                    &mut transitioning,
+                );
+                if box_tree_changed {
                     view_id.request_box_tree_update_for_view();
                 }
-                transitioning |= box_tree_transitioning;
 
                 let old_cursor = vs.style_cursor;
                 if old_cursor != computed.builtin().cursor() {
@@ -508,7 +495,7 @@ impl<'a> StyleCx<'a> {
                     .set_style(taffy_node, taffy_style.clone())
                     .unwrap();
                 if !is_hidden_final {
-                    self.window_state.schedule_layout();
+                    self.window_state.needs_layout = true;
                 }
             }
             // ─────────────────────────────────────────────────────────────────────
@@ -559,7 +546,7 @@ impl<'a> StyleCx<'a> {
             // ─────────────────────────────────────────────────────────────────────
             // Phase 8.3: request paint for view style changes if not hidden
             // ─────────────────────────────────────────────────────────────────────
-            if !is_hidden_final && view_style_changed {
+            if !is_hidden_final && need_paint {
                 self.window_state.request_paint(view_id);
             }
         }

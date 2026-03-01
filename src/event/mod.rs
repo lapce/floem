@@ -654,6 +654,11 @@ pub enum UpdatePhaseEvent {
     /// This phase signals that all updates have been processed and the window
     /// is ready for painting if needed.
     Complete,
+
+    /// Update cycle complete.
+    /// This phase signals that all updates have been processed and the window
+    /// is ready for painting if needed.
+    PaintPresent,
 }
 
 /// Events related to the application window state.
@@ -1831,7 +1836,7 @@ impl Event {
     /// coordinate space, you must pass the **inverse** of the view's world transform:
     ///
     /// ```ignore
-    /// let world_transform = box_tree.world_transform(node_id)?; // local → world
+    /// let world_transform = box_tree.get_or_compute_world_transform(node_id)?; // local → world
     /// let local_transform = world_transform.inverse();           // world → local
     /// let local_event = event.transform(local_transform);
     /// ```
@@ -2005,6 +2010,9 @@ impl Event {
             }
             Self::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::Complete)) => {
                 UpdatePhaseComplete::listener_key()
+            }
+            Self::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::PaintPresent)) => {
+                UpdatePhasePaintPresent::listener_key()
             }
             Self::Interaction(InteractionEvent::Click) => Click::listener_key(),
             Self::Interaction(InteractionEvent::DoubleClick) => DoubleClick::listener_key(),

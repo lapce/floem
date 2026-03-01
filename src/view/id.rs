@@ -610,11 +610,10 @@ impl ViewId {
     pub fn get_visual_transform(&self) -> peniko::kurbo::Affine {
         let element_id = self.get_element_id();
         VIEW_STORAGE.with_borrow_mut(|s| {
-            let box_tree = s.box_tree(*self);
-            match box_tree.borrow().world_transform(element_id.0) {
-                Ok(transform) => transform,
-                Err(transform) => transform.value().unwrap(),
-            }
+            s.box_tree(*self)
+                .borrow_mut()
+                .get_or_compute_world_transform(element_id.0)
+                .unwrap_or_default()
         })
     }
 
@@ -626,12 +625,10 @@ impl ViewId {
     pub fn get_visual_rect(&self) -> Rect {
         let element_id = self.get_element_id();
         VIEW_STORAGE.with_borrow_mut(|s| {
-            let box_tree = s.box_tree(*self);
-
-            match box_tree.borrow().world_bounds(element_id.0) {
-                Ok(bounds) => bounds,
-                Err(bounds) => bounds.value().unwrap(),
-            }
+            s.box_tree(*self)
+                .borrow_mut()
+                .get_or_compute_world_bounds(element_id.0)
+                .unwrap_or_default()
         })
     }
 
@@ -656,11 +653,10 @@ impl ViewId {
         let element_id = self.get_element_id();
         VIEW_STORAGE
             .with_borrow_mut(|s| {
-                let box_tree = s.box_tree(*self);
-                match box_tree.borrow().world_bounds(element_id.0) {
-                    Ok(bounds) => bounds,
-                    Err(bounds) => bounds.value().unwrap(),
-                }
+                s.box_tree(*self)
+                    .borrow_mut()
+                    .get_or_compute_world_bounds(element_id.0)
+                    .unwrap_or_default()
             })
             .origin()
     }
