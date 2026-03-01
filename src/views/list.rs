@@ -209,16 +209,16 @@ impl View for List {
         if let Ok(change) = state.downcast::<ListUpdate>() {
             match *change {
                 ListUpdate::SelectionChanged(old_selection) => {
-                    if let Some(index) = self.selection.get_untracked() {
-                        if let Some(child) = self.id.children().get(index) {
-                            child.request_style(StyleReason::style_pass());
-                            child.scroll_to(None);
-                        }
+                    if let Some(index) = self.selection.get_untracked()
+                        && let Some(child) = self.id.children().get(index)
+                    {
+                        child.request_style(StyleReason::style_pass());
+                        child.scroll_to(None);
                     }
-                    if let Some(index) = old_selection {
-                        if let Some(child) = self.id.children().get(index) {
-                            child.request_style(StyleReason::style_pass());
-                        }
+                    if let Some(index) = old_selection
+                        && let Some(child) = self.id.children().get(index)
+                    {
+                        child.request_style(StyleReason::style_pass());
                     }
                 }
                 ListUpdate::Accept => {

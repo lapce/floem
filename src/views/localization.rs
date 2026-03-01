@@ -423,11 +423,11 @@ impl View for L10n {
         if self.locale.read(cx) {
             self.has_format_value = false;
         }
-        if !self.has_format_value {
-            if let Some(formatted) = self.try_format_message() {
-                self.label_id.update_state(formatted);
-                self.has_format_value = true;
-            }
+        if !self.has_format_value
+            && let Some(formatted) = self.try_format_message()
+        {
+            self.label_id.update_state(formatted);
+            self.has_format_value = true;
         }
         self.fallback.read(cx);
         if !self.has_format_value {

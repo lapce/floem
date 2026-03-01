@@ -14,7 +14,9 @@ use winit::window::WindowId;
 
 use ui_events::pointer::PointerId;
 
-use super::stacking::{invalidate_all_overlay_caches, invalidate_stacking_cache};
+use super::stacking::{
+    invalidate_all_overlay_caches, invalidate_stacking_cache, invalidate_stacking_cache_for_ids,
+};
 use super::{IntoView, StackOffset, VIEW_STORAGE, View, ViewState, ViewStorage};
 
 thread_local! {
@@ -147,6 +149,7 @@ impl ViewId {
     /// Note: For full cleanup including taffy nodes and cleanup listeners,
     /// use `window_state.remove_view()` or send an `UpdateMessage::RemoveViews`.
     pub fn remove(&self) {
+        let element_id = self.get_element_id();
         // Dispose children scope if this view had reactive children
         if let Some(scope) = self.take_children_scope() {
             scope.dispose();
@@ -185,10 +188,10 @@ impl ViewId {
             // Remove from primary SlotMap last
             s.view_ids.remove(*self);
         });
-        // Invalidate parent's stacking cache since its children changed
-        if let Some(parent) = parent {
-            invalidate_stacking_cache(parent.get_element_id());
-        }
+        // Invalidate this view and parent cache entries. During removal, using
+        // explicit IDs avoids relying on storage lookups that may already be detached.
+        let parent_element_id = parent.map(|p| p.get_element_id());
+        invalidate_stacking_cache_for_ids(element_id, parent_element_id);
     }
 
     /// Register this view as an overlay.

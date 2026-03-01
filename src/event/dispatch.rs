@@ -669,24 +669,24 @@ impl RouteCx<'_, '_> {
             if (self.event.is_pointer() || self.event.is_file_drag()) && !is_hover_notification {
                 self.update_hover_from_path(path);
             }
-            if self.event.is_pointer_down() {
-                if let Some(hit) = path.last().copied() {
-                    self.update_focus(hit, false);
-                }
+            if self.event.is_pointer_down()
+                && let Some(hit) = path.last().copied()
+            {
+                self.update_focus(hit, false);
             }
         }
 
         // Keyboard trigger → queue a synthetic Click on the focused element.
-        if self.event.is_keyboard_trigger() {
-            if let Some(focus) = self.gcx.window_state.focus_state.current_path().last() {
-                self.pending_events.push((
-                    RouteKind::Directed {
-                        target: *focus,
-                        phases: Phases::STANDARD,
-                    },
-                    Event::Interaction(InteractionEvent::Click),
-                ));
-            }
+        if self.event.is_keyboard_trigger()
+            && let Some(focus) = self.gcx.window_state.focus_state.current_path().last()
+        {
+            self.pending_events.push((
+                RouteKind::Directed {
+                    target: *focus,
+                    phases: Phases::STANDARD,
+                },
+                Event::Interaction(InteractionEvent::Click),
+            ));
         }
 
         let result = if phases == Phases::TARGET {
@@ -918,10 +918,6 @@ impl<'a> EventCx<'a> {
         {
             return Outcome::Continue;
         }
-        if matches!(self.event, Event::Interaction(InteractionEvent::Click)) {
-            dbg!(self.target.owning_id().is_disabled());
-            dbg!(self.target);
-        }
 
         VIEW_STORAGE.with(|s| {
             assert!(
@@ -1022,10 +1018,10 @@ impl RouteCx<'_, '_> {
             self.handle_default_behaviors();
         }
 
-        if let Event::Pointer(pe) = &self.event {
-            if let Some(pointer_id) = pe.pointer_info().pointer_id {
-                self.process_pending_pointer_capture(pointer_id);
-            }
+        if let Event::Pointer(pe) = &self.event
+            && let Some(pointer_id) = pe.pointer_info().pointer_id
+        {
+            self.process_pending_pointer_capture(pointer_id);
         }
 
         self.flush_pending_events();
@@ -1143,11 +1139,10 @@ impl RouteCx<'_, '_> {
             state: KeyState::Down,
             ..
         }) = &self.event
+            && (modifiers.is_empty() || *modifiers == Modifiers::SHIFT)
         {
-            if modifiers.is_empty() || *modifiers == Modifiers::SHIFT {
-                let backwards = modifiers.contains(Modifiers::SHIFT);
-                self.view_tab_navigation(backwards);
-            }
+            let backwards = modifiers.contains(Modifiers::SHIFT);
+            self.view_tab_navigation(backwards);
         }
 
         // Arrow navigation.
@@ -1286,14 +1281,25 @@ impl RouteCx<'_, '_> {
             );
         }
 
-        if let Some(new_target) = pending_target {
-            if !new_target.owning_id().is_hidden() {
-                self.gcx
-                    .window_state
-                    .set_active_capture(pointer_id, new_target);
-                let event = Event::PointerCapture(PointerCaptureEvent::Gained(super::DragToken(
-                    pointer_id,
-                )));
+        if let Some(new_target) = pending_target
+            && !new_target.owning_id().is_hidden()
+        {
+            self.gcx
+                .window_state
+                .set_active_capture(pointer_id, new_target);
+            let event =
+                Event::PointerCapture(PointerCaptureEvent::Gained(super::DragToken(pointer_id)));
+            self.route_synthetic(
+                RouteKind::Directed {
+                    target: new_target,
+                    phases: Phases::TARGET,
+                },
+                event,
+            );
+
+            if new_target.owning_id().is_hidden() {
+                self.gcx.window_state.remove_active_capture(pointer_id);
+                let event = Event::PointerCapture(PointerCaptureEvent::Lost(pointer_id));
                 self.route_synthetic(
                     RouteKind::Directed {
                         target: new_target,
@@ -1301,18 +1307,6 @@ impl RouteCx<'_, '_> {
                     },
                     event,
                 );
-
-                if new_target.owning_id().is_hidden() {
-                    self.gcx.window_state.remove_active_capture(pointer_id);
-                    let event = Event::PointerCapture(PointerCaptureEvent::Lost(pointer_id));
-                    self.route_synthetic(
-                        RouteKind::Directed {
-                            target: new_target,
-                            phases: Phases::TARGET,
-                        },
-                        event,
-                    );
-                }
             }
         }
     }
@@ -1693,14 +1687,13 @@ impl RouteCx<'_, '_> {
                 // Touch pointers get implicit capture on pointer down.
                 // An explicit capture requested by handlers in the same dispatch can still
                 // override this pending target before capture is processed.
-                if pointer.pointer_type == PointerType::Touch {
-                    if let Some(pointer_id) = pointer.pointer_id {
-                        if let Some(target) = path.last().copied() {
-                            self.gcx
-                                .window_state
-                                .set_pointer_capture(pointer_id, target);
-                        }
-                    }
+                if pointer.pointer_type == PointerType::Touch
+                    && let Some(pointer_id) = pointer.pointer_id
+                    && let Some(target) = path.last().copied()
+                {
+                    self.gcx
+                        .window_state
+                        .set_pointer_capture(pointer_id, target);
                 }
             }
             PointerEvent::Up(pbe @ PointerButtonEvent { button, state, .. }) => {

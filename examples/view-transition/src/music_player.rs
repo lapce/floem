@@ -6,9 +6,7 @@ use floem::{
     text::Weight,
     unit::{DurationUnitExt, UnitExt},
     views::{
-        dyn_container,
-        slider::Slider,
-        svg, ButtonClass, Container, Decorators, Stack, SvgClass,
+        dyn_container, slider::Slider, svg, ButtonClass, Container, Decorators, Stack, SvgClass,
     },
     AnyView, IntoView,
 };

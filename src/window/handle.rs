@@ -1384,10 +1384,10 @@ impl WindowHandle {
         if self.window_state.needs_cursor_resolution {
             let mut temp = None;
             for hover in self.window_state.hover_state.current_path() {
-                if hover.is_view() {
-                    if let Some(cursor) = hover.owning_id().state().borrow().cursor() {
-                        temp = Some(cursor);
-                    }
+                if hover.is_view()
+                    && let Some(cursor) = hover.owning_id().state().borrow().cursor()
+                {
+                    temp = Some(cursor);
                 }
                 // it is important that the node cursors override the widget cursor because non View nodes will have a widget that maps to the parent View that they are associated with
                 if let Some(cursor) = self.window_state.element_id_cursors.get(hover) {

@@ -75,18 +75,18 @@ impl View for Tooltip {
     }
 
     fn update(&mut self, _cx: &mut UpdateCx, state: Box<dyn std::any::Any>) {
-        if let Ok(token) = state.downcast::<TimerToken>() {
-            if self.hover_point.map(|(_, t)| t) == Some(*token) {
-                let point =
-                    self.id.get_visual_origin() + self.hover_point.unwrap().0.to_vec2() + (0., 10.);
-                let overlay_id = add_overlay(
-                    (self.tip)()
-                        .class(TooltipClass)
-                        .style(move |s| s.inset_left(point.x).inset_top(point.y)),
-                );
-                overlay_id.set_style_parent(self.id);
-                *self.overlay.borrow_mut() = Some(overlay_id);
-            }
+        if let Ok(token) = state.downcast::<TimerToken>()
+            && self.hover_point.map(|(_, t)| t) == Some(*token)
+        {
+            let point =
+                self.id.get_visual_origin() + self.hover_point.unwrap().0.to_vec2() + (0., 10.);
+            let overlay_id = add_overlay(
+                (self.tip)()
+                    .class(TooltipClass)
+                    .style(move |s| s.inset_left(point.x).inset_top(point.y)),
+            );
+            overlay_id.set_style_parent(self.id);
+            *self.overlay.borrow_mut() = Some(overlay_id);
         }
     }
 

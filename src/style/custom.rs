@@ -13,7 +13,9 @@ use floem_reactive::UpdaterEffect;
 use crate::layout::responsive::ScreenSize;
 use crate::view::{IntoView, View};
 
-use super::{NthChild, StructuralSelector, Style, StyleClass, StyleProp, StyleSelector, Transition};
+use super::{
+    NthChild, StructuralSelector, Style, StyleClass, StyleProp, StyleSelector, Transition,
+};
 
 /// A trait for custom styling of specific view types.
 ///
@@ -108,8 +110,9 @@ pub trait CustomStyle: Default + Clone + Into<Style> + From<Style> {
     /// view or any descendant is in the focus path.
     fn focus_within(self, style: impl FnOnce(Self) -> Self) -> Self {
         let self_style: Style = self.into();
-        let new =
-            self_style.selector(StyleSelector::FocusWithin, |_| style(Self::default()).into());
+        let new = self_style.selector(StyleSelector::FocusWithin, |_| {
+            style(Self::default()).into()
+        });
         new.into()
     }
 
@@ -244,11 +247,7 @@ pub trait CustomStyle: Default + Clone + Into<Style> + From<Style> {
     }
 
     /// Applies custom styling when window width is at least `min`.
-    fn min_window_width(
-        self,
-        min: impl Into<super::Px>,
-        style: impl FnOnce(Self) -> Self,
-    ) -> Self {
+    fn min_window_width(self, min: impl Into<super::Px>, style: impl FnOnce(Self) -> Self) -> Self {
         let over = style(Self::default());
         let over_style: Style = over.into();
         let self_style: Style = self.into();
@@ -256,11 +255,7 @@ pub trait CustomStyle: Default + Clone + Into<Style> + From<Style> {
     }
 
     /// Applies custom styling when window width is at most `max`.
-    fn max_window_width(
-        self,
-        max: impl Into<super::Px>,
-        style: impl FnOnce(Self) -> Self,
-    ) -> Self {
+    fn max_window_width(self, max: impl Into<super::Px>, style: impl FnOnce(Self) -> Self) -> Self {
         let over = style(Self::default());
         let over_style: Style = over.into();
         let self_style: Style = self.into();
@@ -277,7 +272,9 @@ pub trait CustomStyle: Default + Clone + Into<Style> + From<Style> {
         let over = style(Self::default());
         let over_style: Style = over.into();
         let self_style: Style = self.into();
-        self_style.window_width_range(min, max, |_| over_style).into()
+        self_style
+            .window_width_range(min, max, |_| over_style)
+            .into()
     }
 
     /// Conditionally applies custom styling based on a boolean condition.

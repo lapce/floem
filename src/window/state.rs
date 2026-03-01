@@ -345,13 +345,12 @@ impl WindowState {
 
             let view_id = traversal[i].0;
 
-            if let Some(style_parent) = view_id.state().borrow().style_cx_parent {
-                if let Some(parent_pos) =
+            if let Some(style_parent) = view_id.state().borrow().style_cx_parent
+                && let Some(parent_pos) =
                     traversal[..i].iter().position(|(v, _)| *v == style_parent)
-                {
-                    let view = traversal.remove(i);
-                    traversal.insert(parent_pos + 1, view);
-                }
+            {
+                let view = traversal.remove(i);
+                traversal.insert(parent_pos + 1, view);
             }
         }
 
@@ -840,12 +839,13 @@ impl WindowState {
         }
 
         // Clean up completed animations
-        if let Some(dragging) = &self.drag_tracker.active_drag {
-            if dragging.released_at.is_some() && dragging.is_animation_complete() {
-                self.views_needing_box_tree_update
-                    .insert(dragging.element_id.owning_id());
-                self.drag_tracker.active_drag = None;
-            }
+        if let Some(dragging) = &self.drag_tracker.active_drag
+            && dragging.released_at.is_some()
+            && dragging.is_animation_complete()
+        {
+            self.views_needing_box_tree_update
+                .insert(dragging.element_id.owning_id());
+            self.drag_tracker.active_drag = None;
         }
 
         self.apply_overlay_parent_transforms();

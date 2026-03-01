@@ -2,7 +2,7 @@ mod data;
 pub(crate) mod profiler;
 mod view;
 use floem_reactive::{Effect, Scope};
-use peniko::kurbo::{Affine, Point, Rect, Size};
+use peniko::kurbo::{Rect, Size};
 use slotmap::Key as _;
 pub use view::capture;
 
@@ -32,7 +32,6 @@ pub struct CapturedView {
     id: ViewId,
     name: String,
     id_data_str: String,
-    local_to_window_xf: Affine,
     world_bounds: Rect,
     taffy: Layout,
     children: Vec<Rc<CapturedView>>,
@@ -44,7 +43,6 @@ pub struct CapturedView {
 
 impl CapturedView {
     pub fn capture(id: ViewId, window_state: &mut WindowState) -> Self {
-        let local_to_window_xf = id.get_visual_transform();
         let world_bounds = id.get_visual_rect_no_clip();
         let taffy = id.get_layout().unwrap_or_default();
         let view_state = id.state();
@@ -52,7 +50,6 @@ impl CapturedView {
         let combined_style = view_state.combined_style.clone();
         let focus = view_state.combined_style.builtin().set_focus();
         let focused = window_state.focus_state.current_path().last() == Some(&id.get_element_id());
-        let clipped = id.get_visual_rect();
         let custom_name = &view_state.debug_name;
         let classes = view_state.classes.clone();
         let view = id.view();
@@ -70,7 +67,6 @@ impl CapturedView {
             id,
             name,
             id_data_str: id.data().as_ffi().to_string(),
-            local_to_window_xf,
             world_bounds,
             taffy,
             direct_style: combined_style,
@@ -93,29 +89,6 @@ impl CapturedView {
             .iter()
             .filter_map(|child| child.find(id))
             .next()
-    }
-
-    fn find_all_by_pos(&self, pos: Point) -> Vec<ViewId> {
-        let mut match_ids = self
-            .children
-            .iter()
-            .rev()
-            .filter_map(|child| {
-                let child_ids = child.find_all_by_pos(pos);
-                if child_ids.is_empty() {
-                    None
-                } else {
-                    Some(child_ids)
-                }
-            })
-            .fold(Vec::new(), |mut init, mut item| {
-                init.append(&mut item);
-                init
-            });
-        if match_ids.is_empty() && self.world_bounds.contains(pos) {
-            match_ids.push(self.id);
-        }
-        match_ids
     }
 
     fn warnings(&self) -> bool {

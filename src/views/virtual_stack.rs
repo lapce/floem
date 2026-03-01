@@ -411,10 +411,10 @@ where
                 after_size = strip.after_extent;
                 content_sz = strip.content_extent;
                 if assumed.is_none() {
-                    if total_len > 0 {
-                        if let Some(item) = items_vector.slice(0..1).next() {
-                            items.push(item);
-                        }
+                    if total_len > 0
+                        && let Some(item) = items_vector.slice(0..1).next()
+                    {
+                        items.push(item);
                     }
                 } else {
                     for item in items_vector.slice(strip.start..strip.end) {
@@ -580,17 +580,15 @@ impl<T> View for VirtualStack<T> {
             let is_unassumed = self
                 .item_size
                 .with_untracked(|s| matches!(s, VirtualItemSize::Assume(None)));
-            if is_unassumed {
-                if let Some(Some((first_child, _))) = self.children.first() {
-                    let dir = self.direction.get_untracked();
-                    let rect = first_child.get_layout_rect_local();
-                    let size = match dir {
-                        FlexDirection::Row | FlexDirection::RowReverse => rect.width(),
-                        FlexDirection::Column | FlexDirection::ColumnReverse => rect.height(),
-                    };
-                    if size > 0.0 {
-                        self.item_size.set(VirtualItemSize::Assume(Some(size)));
-                    }
+            if is_unassumed && let Some(Some((first_child, _))) = self.children.first() {
+                let dir = self.direction.get_untracked();
+                let rect = first_child.get_layout_rect_local();
+                let size = match dir {
+                    FlexDirection::Row | FlexDirection::RowReverse => rect.width(),
+                    FlexDirection::Column | FlexDirection::ColumnReverse => rect.height(),
+                };
+                if size > 0.0 {
+                    self.item_size.set(VirtualItemSize::Assume(Some(size)));
                 }
             }
         }

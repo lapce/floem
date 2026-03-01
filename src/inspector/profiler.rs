@@ -7,8 +7,7 @@ use crate::unit::UnitExt;
 use crate::view::IntoView;
 use crate::views::resizable::Resizable;
 use crate::views::{
-    Button, Clip, Container, ContainerExt, Decorators, Label, Scroll, Stack, dyn_container,
-    list,
+    Button, Clip, Container, ContainerExt, Decorators, Label, Scroll, Stack, dyn_container, list,
 };
 use floem_reactive::{RwSignal, Scope, SignalGet, SignalUpdate};
 use std::fmt::Display;

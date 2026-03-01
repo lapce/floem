@@ -237,10 +237,10 @@ impl<T: 'static + Clone + PartialEq + core::fmt::Debug> View for Dropdown<T> {
             match *state {
                 Message::OpenState(true) => self.open_dropdown(),
                 Message::OpenState(false) => {
-                    if let Some(overlay_id) = self.overlay_id {
-                        if cx.window_state.is_focused(overlay_id) {
-                            self.id.request_focus();
-                        }
+                    if let Some(overlay_id) = self.overlay_id
+                        && cx.window_state.is_focused(overlay_id)
+                    {
+                        self.id.request_focus();
                     }
                     self.close_dropdown()
                 }
@@ -281,11 +281,11 @@ impl<T: 'static + Clone + PartialEq + core::fmt::Debug> View for Dropdown<T> {
     }
 
     fn event(&mut self, cx: &mut crate::context::EventCx) -> EventPropagation {
-        if cx.phase == Phase::Target {
-            if let Some(new_vis) = VisualChangedListener::extract(&cx.event) {
-                self.window_origin = Some(new_vis.new_visual_aabb.origin());
-                self.width.set(new_vis.new_visual_aabb.width());
-            }
+        if cx.phase == Phase::Target
+            && let Some(new_vis) = VisualChangedListener::extract(&cx.event)
+        {
+            self.window_origin = Some(new_vis.new_visual_aabb.origin());
+            self.width.set(new_vis.new_visual_aabb.width());
         }
 
         if (cx.phase != Phase::Capture && cx.event.is_pointer_down())

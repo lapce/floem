@@ -1223,10 +1223,10 @@ impl View for TextInput {
 
     fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) {
         if state.is::<TimerToken>() {
-            if let Ok(token) = state.downcast::<TimerToken>() {
-                if *token == self.cursor_blink_timer {
-                    self.cursor_blink_timer = TimerToken::INVALID;
-                }
+            if let Ok(token) = state.downcast::<TimerToken>()
+                && *token == self.cursor_blink_timer
+            {
+                self.cursor_blink_timer = TimerToken::INVALID;
             }
             return;
         }

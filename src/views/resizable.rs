@@ -12,7 +12,7 @@ use crate::{
     prop, prop_extractor,
     style::{
         CursorStyle, CustomStylable, CustomStyle, FlexDirectionProp, Style, StyleClass,
-        recalc::StyleReason,
+        recalc::{StyleReason, StyleReasonFlags},
     },
     style_class,
     unit::{Pct, Px},
@@ -328,6 +328,7 @@ impl Handle {
             };
             let cursor = self.handle_style.cursor().unwrap_or(cursor);
             cx.window_state.set_cursor(self.element_id, cursor);
+            cx.window_state.request_paint(self.element_id);
         }
     }
 
@@ -381,9 +382,22 @@ impl View for Resizable {
     }
 
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
-        self.re_style.read(cx);
-        for handle in self.handles.values_mut() {
-            handle.style(cx, self.re_style.direction().axis());
+        if cx.reason.flags != StyleReasonFlags::TARGET {
+            self.re_style.read(cx);
+        }
+
+        // If the reason implies nested style maps must be resolved, restyle everything.
+        if cx.reason.needs_resolve_nested_maps() {
+            for handle in self.handles.values_mut() {
+                handle.style(cx, self.re_style.direction().axis());
+            }
+            return;
+        }
+
+        for (element_id, _reason) in cx.targeted_elements.clone() {
+            if let Some(handle) = self.handles.get_mut(&element_id) {
+                handle.style(cx, self.re_style.direction().axis());
+            }
         }
     }
 
@@ -447,11 +461,11 @@ impl View for Resizable {
         if UpdatePhaseLayout::extract(&cx.event).is_some() {
             self.post_layout();
         }
-        if cx.phase == Phase::Target {
-            if let Some(handle) = self.handles.get_mut(&cx.target) {
-                handle.event(cx, self.re_style.direction().axis());
-                return EventPropagation::Stop;
-            }
+        if cx.phase == Phase::Target
+            && let Some(handle) = self.handles.get_mut(&cx.target)
+        {
+            handle.event(cx, self.re_style.direction().axis());
+            return EventPropagation::Stop;
         }
 
         EventPropagation::Continue

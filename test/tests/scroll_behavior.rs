@@ -570,11 +570,8 @@ fn test_scroll_to_element_in_stacked_scroll_view() {
         .track(Scroll::new(content).style(|s| s.size(100.0, 60.0)))
         .style(|s| s.size(100.0, 60.0));
 
-    let view = Stack::new((
-        Empty::new().style(|s| s.size(100.0, 40.0)),
-        scroll,
-    ))
-    .style(|s| s.flex_col().size(100.0, 100.0));
+    let view = Stack::new((Empty::new().style(|s| s.size(100.0, 40.0)), scroll))
+        .style(|s| s.flex_col().size(100.0, 100.0));
 
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.rebuild();

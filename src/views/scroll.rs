@@ -290,10 +290,10 @@ impl ScrollHandle {
             0.0,
         );
 
-        if edge_width > 0.0 {
-            if let Some(color) = self.style.border_color().right {
-                cx.stroke(&rounded_rect, &color, &Stroke::new(edge_width));
-            }
+        if edge_width > 0.0
+            && let Some(color) = self.style.border_color().right
+        {
+            cx.stroke(&rounded_rect, &color, &Stroke::new(edge_width));
         }
     }
 }
@@ -939,80 +939,76 @@ impl View for Scroll {
         if cx.phase == Phase::Target {
             if cx.target == self.v_handle.element_id {
                 let result = self.v_handle.event(cx, self.id, self.child);
-                if let Some(new_offset) = result.new_offset {
-                    if self
+                if let Some(new_offset) = result.new_offset
+                    && self
                         .apply_scroll_delta(new_offset - self.scroll_offset)
                         .is_some()
-                    {
-                        cx.window_state.request_paint(self.id);
-                    }
+                {
+                    cx.window_state.request_paint(self.id);
                 }
                 return result.propagation;
             }
             if cx.target == self.h_handle.element_id {
                 let result = self.h_handle.event(cx, self.id, self.child);
-                if let Some(new_offset) = result.new_offset {
-                    if self
+                if let Some(new_offset) = result.new_offset
+                    && self
                         .apply_scroll_delta(new_offset - self.scroll_offset)
                         .is_some()
-                    {
-                        cx.window_state.request_paint(self.id);
-                    }
+                {
+                    cx.window_state.request_paint(self.id);
                 }
                 return result.propagation;
             }
             if cx.target == self.v_track.element_id {
                 let result = self.v_track.event(cx, self.id, self.child);
-                if let Some(new_offset) = result.new_offset {
-                    if self
+                if let Some(new_offset) = result.new_offset
+                    && self
                         .apply_scroll_delta(new_offset - self.scroll_offset)
                         .is_some()
-                    {
-                        cx.window_state.request_paint(self.id);
-                    }
+                {
+                    cx.window_state.request_paint(self.id);
                 }
                 return result.propagation;
             }
             if cx.target == self.h_track.element_id {
                 let result = self.h_track.event(cx, self.id, self.child);
-                if let Some(new_offset) = result.new_offset {
-                    if self
+                if let Some(new_offset) = result.new_offset
+                    && self
                         .apply_scroll_delta(new_offset - self.scroll_offset)
                         .is_some()
-                    {
-                        cx.window_state.request_paint(self.id);
-                    }
+                {
+                    cx.window_state.request_paint(self.id);
                 }
                 return result.propagation;
             }
         }
 
         // Handle scroll wheel events in bubble phase
-        if cx.phase != Phase::Capture {
-            if let Event::Pointer(PointerEvent::Scroll(pse)) = &cx.event {
-                let size = self.id.get_layout_rect_local().size();
-                let delta = pse.resolve_to_points(None, Some(size));
-                let delta = -if self.scroll_style.vertical_scroll_as_horizontal()
-                    && delta.x == 0.0
-                    && delta.y != 0.0
-                {
-                    Vec2::new(delta.y, delta.x)
-                } else {
-                    delta
-                };
+        if cx.phase != Phase::Capture
+            && let Event::Pointer(PointerEvent::Scroll(pse)) = &cx.event
+        {
+            let size = self.id.get_layout_rect_local().size();
+            let delta = pse.resolve_to_points(None, Some(size));
+            let delta = -if self.scroll_style.vertical_scroll_as_horizontal()
+                && delta.x == 0.0
+                && delta.y != 0.0
+            {
+                Vec2::new(delta.y, delta.x)
+            } else {
+                delta
+            };
 
-                let change = self.apply_scroll_delta(delta);
+            let change = self.apply_scroll_delta(delta);
 
-                if change.is_some() {
-                    cx.window_state.request_paint(self.id);
-                }
-
-                return if self.scroll_style.propagate_pointer_wheel() && change.is_none() {
-                    EventPropagation::Continue
-                } else {
-                    EventPropagation::Stop
-                };
+            if change.is_some() {
+                cx.window_state.request_paint(self.id);
             }
+
+            return if self.scroll_style.propagate_pointer_wheel() && change.is_none() {
+                EventPropagation::Continue
+            } else {
+                EventPropagation::Stop
+            };
         }
 
         EventPropagation::Continue

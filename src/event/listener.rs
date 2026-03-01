@@ -122,8 +122,7 @@ mod inner {
 
     impl PartialEq for EventListenerKey {
         fn eq(&self, other: &Self) -> bool {
-            ptr::eq(self.info, other.info)
-                && self.type_discriminant == other.type_discriminant
+            ptr::eq(self.info, other.info) && self.type_discriminant == other.type_discriminant
         }
     }
 
@@ -216,11 +215,10 @@ mod inner {
         ///   on the focused element.
         pub KeyDown: ui_events::keyboard::KeyboardEvent,
         |event| {
-            if let Event::Key(kb_event) = event {
-                if kb_event.state == KeyState::Down {
+            if let Event::Key(kb_event) = event
+                && kb_event.state == KeyState::Down {
                     return Some(kb_event as &dyn Any);
                 }
-            }
             None
         }
     );
@@ -237,11 +235,10 @@ mod inner {
         ///   the focused element. (All other keys on key-up have no preventable default action.)
         pub KeyUp: ui_events::keyboard::KeyboardEvent,
         |event| {
-            if let Event::Key(kb_event) = event {
-                if kb_event.state == KeyState::Up {
+            if let Event::Key(kb_event) = event
+                && kb_event.state == KeyState::Up {
                     return Some(kb_event as &dyn Any);
                 }
-            }
             None
         }
     );

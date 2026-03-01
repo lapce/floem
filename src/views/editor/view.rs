@@ -1424,11 +1424,11 @@ fn editor_content(
                     #[cfg(target_os = "macos")]
                     mods.set(Modifiers::ALT, false);
 
-                    if mods.is_empty() {
-                        if let Key::Character(c) = &key {
-                            cx.window_state.request_paint(cx.target);
-                            editor.get_untracked().receive_char(c);
-                        }
+                    if mods.is_empty()
+                        && let Key::Character(c) = &key
+                    {
+                        cx.window_state.request_paint(cx.target);
+                        editor.get_untracked().receive_char(c);
                     }
                     EventPropagation::Stop
                 },

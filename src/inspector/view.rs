@@ -11,14 +11,14 @@ use crate::{
     },
     new_window,
     prelude::*,
-    style::{CustomStylable, FontSize, OverflowX, OverflowY, TextColor, theme::Theme},
+    style::{FontSize, OverflowX, OverflowY, TextColor, theme::Theme},
     theme::StyleThemeExt as _,
     unit::PxPctAuto,
     views::{
         Button, CheckboxClass, ContainerExt, Decorators, Label, ListClass, ListItemClass,
         ScrollExt, Stack, TabSelectorClass, TooltipExt, resizable::Resizable,
     },
-    window::{WindowConfig, handle::set_current_view, tracking::window_id_for_root},
+    window::WindowConfig,
 };
 use floem_reactive::{Effect, Memo, RwSignal, SignalGet, SignalUpdate};
 use peniko::{
@@ -26,8 +26,8 @@ use peniko::{
     color::palette::{self, css},
     kurbo::{Rect, Stroke},
 };
+use std::collections::HashMap;
 use std::rc::Rc;
-use std::{collections::HashMap, time::Instant};
 use understory_box_tree::NodeFlags;
 use winit::window::WindowId;
 
@@ -36,7 +36,7 @@ pub fn capture(window_id: WindowId) {
 
     if !RUNNING.get() {
         new_window(
-            move |new_window_id: WindowId| {
+            move |_| {
                 let selected = RwSignal::new(0);
 
                 let tab_item = |name, index| {

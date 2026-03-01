@@ -10,8 +10,8 @@ use std::sync::atomic::AtomicU64;
 
 use floem_reactive::{SignalWith, UpdaterEffect};
 use peniko::kurbo::{Point, Size, Vec2};
-use winit::window::{ResizeDirection, Theme};
 use winit::window::WindowId;
+use winit::window::{ResizeDirection, Theme};
 
 use crate::IntoView;
 use crate::platform::{Duration, Instant};

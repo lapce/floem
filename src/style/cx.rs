@@ -176,12 +176,12 @@ impl<'a> StyleCx<'a> {
         // ─────────────────────────────────────────────────────────────────────
 
         {
-            if reason.flags.contains(StyleReasonFlags::VIEW_STYLE) {
-                if let Some(view_style) = view.borrow().view_style() {
-                    let mut vs = view_state.borrow_mut();
-                    let offset = vs.view_style_offset;
-                    vs.style.set(offset, view_style);
-                }
+            if reason.flags.contains(StyleReasonFlags::VIEW_STYLE)
+                && let Some(view_style) = view.borrow().view_style()
+            {
+                let mut vs = view_state.borrow_mut();
+                let offset = vs.view_style_offset;
+                vs.style.set(offset, view_style);
             }
         }
 
@@ -238,11 +238,11 @@ impl<'a> StyleCx<'a> {
             }
         }
 
-        if let Some(changed) = &self.reason.classes_changed {
-            if !changed.iter().any(|c| classes.contains(c)) {
-                self.reason
-                    .clear_flag(StyleReasonFlags::CLASS_CONTEXT_CHANGE);
-            }
+        if let Some(changed) = &self.reason.classes_changed
+            && !changed.iter().any(|c| classes.contains(c))
+        {
+            self.reason
+                .clear_flag(StyleReasonFlags::CLASS_CONTEXT_CHANGE);
         }
 
         // ─────────────────────────────────────────────────────────────────────

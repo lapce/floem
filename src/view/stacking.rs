@@ -34,6 +34,21 @@ thread_local! {
 /// Invalidates the stacking context cache for a view and its parent.
 /// Call this when z-index or children change.
 pub(crate) fn invalidate_stacking_cache(element_id: ElementId) {
+    let parent_element_id = element_id
+        .owning_id()
+        .parent()
+        .map(|parent| parent.get_element_id());
+    invalidate_stacking_cache_for_ids(element_id, parent_element_id);
+}
+
+/// Invalidates stacking context cache for explicit element IDs.
+///
+/// This is used during teardown/removal paths where parent lookup via `ViewId`
+/// may no longer be reliable after detaching from storage.
+pub(crate) fn invalidate_stacking_cache_for_ids(
+    element_id: ElementId,
+    parent_element_id: Option<ElementId>,
+) {
     // Hit testing now uses Understory ordering directly and caches the result in event/path.rs.
     // Any stacking-affecting change must invalidate both caches together.
     crate::event::clear_hit_test_cache();
@@ -43,9 +58,7 @@ pub(crate) fn invalidate_stacking_cache(element_id: ElementId) {
         // Invalidate this view's cache (its children order)
         cache.remove(&element_id);
         // Invalidate parent's cache (sibling order)
-        let view_id = element_id.owning_id();
-        if let Some(parent) = view_id.parent() {
-            let parent_element_id = parent.get_element_id();
+        if let Some(parent_element_id) = parent_element_id {
             cache.remove(&parent_element_id);
         }
     });
@@ -822,3 +835,73 @@ pub(crate) fn collect_stacking_context_items(
 //         );
 //     }
 // }
+
+#[cfg(test)]
+mod cache_leak_tests {
+    use super::*;
+    use crate::view::ViewId;
+    use crate::window::handle::set_current_view;
+
+    fn cache_contains(element_id: ElementId) -> bool {
+        STACKING_CONTEXT_CACHE.with(|cache| cache.borrow().contains_key(&element_id))
+    }
+
+    fn cache_len() -> usize {
+        STACKING_CONTEXT_CACHE.with(|cache| cache.borrow().len())
+    }
+
+    #[test]
+    fn removed_view_evicts_its_own_stacking_cache_entry() {
+        clear_all_stacking_caches();
+
+        let root = ViewId::new_root();
+        set_current_view(root);
+
+        let parent = ViewId::new();
+        root.set_children_ids(vec![parent]);
+
+        let child = ViewId::new();
+        parent.set_children_ids(vec![child]);
+
+        let box_tree = parent.box_tree();
+        collect_stacking_context_items(child.get_element_id(), &box_tree.borrow());
+        assert!(cache_contains(child.get_element_id()));
+
+        child.remove();
+        assert!(!cache_contains(child.get_element_id()));
+
+        parent.remove();
+        root.remove();
+        clear_all_stacking_caches();
+    }
+
+    #[test]
+    fn repeated_add_remove_does_not_grow_stacking_cache() {
+        clear_all_stacking_caches();
+
+        let root = ViewId::new_root();
+        set_current_view(root);
+
+        let parent = ViewId::new();
+        root.set_children_ids(vec![parent]);
+
+        for _ in 0..200 {
+            let child = ViewId::new();
+            parent.set_children_ids(vec![child]);
+
+            let box_tree = parent.box_tree();
+            collect_stacking_context_items(child.get_element_id(), &box_tree.borrow());
+            child.remove();
+        }
+
+        assert_eq!(
+            cache_len(),
+            0,
+            "stacking cache should not retain removed virtualized children"
+        );
+
+        parent.remove();
+        root.remove();
+        clear_all_stacking_caches();
+    }
+}
