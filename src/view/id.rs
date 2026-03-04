@@ -14,9 +14,6 @@ use winit::window::WindowId;
 
 use ui_events::pointer::PointerId;
 
-use super::stacking::{
-    invalidate_all_overlay_caches, invalidate_stacking_cache, invalidate_stacking_cache_for_ids,
-};
 use super::{IntoView, StackOffset, VIEW_STORAGE, View, ViewState, ViewStorage};
 
 thread_local! {
@@ -191,7 +188,13 @@ impl ViewId {
         // Invalidate this view and parent cache entries. During removal, using
         // explicit IDs avoids relying on storage lookups that may already be detached.
         let parent_element_id = parent.map(|p| p.get_element_id());
-        invalidate_stacking_cache_for_ids(element_id, parent_element_id);
+        {
+            let _element_id = element_id;
+            let _parent_element_id = parent_element_id;
+            // Hit testing now uses Understory ordering directly and caches the result in event/path.rs.
+            // Any stacking-affecting change must invalidate both caches together.
+            crate::event::clear_hit_test_cache();
+        };
     }
 
     /// Register this view as an overlay.
@@ -211,8 +214,6 @@ impl ViewId {
                     .reparent(this_element_id.0, Some(parent_element_id.0));
             }
         });
-        // Invalidate overlay cache - use invalidate_all since root may not be finalized yet
-        invalidate_all_overlay_caches();
     }
 
     /// Unregister this view as an overlay.
@@ -228,8 +229,6 @@ impl ViewId {
                     .reparent(this_element_id.0, Some(parent_element_id.0));
             }
         });
-        // Invalidate overlay cache
-        invalidate_all_overlay_caches();
     }
 
     /// Get access to the layout tree tree
@@ -313,8 +312,6 @@ impl ViewId {
         // Re-parent child's scope under nearest ancestor's scope to match view hierarchy.
         // This ensures scope hierarchy matches view hierarchy for proper cleanup.
         reparent_scope_if_needed(child_id, *self);
-        // Invalidate stacking cache since children changed
-        invalidate_stacking_cache(self.get_element_id());
         request_structural_selector_restyle(&self.children());
     }
 
@@ -363,8 +360,6 @@ impl ViewId {
         for child_id in child_ids {
             reparent_scope_if_needed(child_id, *self);
         }
-        // Invalidate stacking cache since children changed
-        invalidate_stacking_cache(self.get_element_id());
         request_structural_selector_restyle(&self.children());
     }
 
@@ -404,8 +399,6 @@ impl ViewId {
         for child_id in children_ids {
             reparent_scope_if_needed(child_id, *self);
         }
-        // Invalidate stacking cache since children changed
-        invalidate_stacking_cache(self.get_element_id());
         request_structural_selector_restyle(&self.children());
     }
 
@@ -453,8 +446,6 @@ impl ViewId {
         for child_id in children_ids {
             reparent_scope_if_needed(child_id, *self);
         }
-        // Invalidate stacking cache since children changed
-        invalidate_stacking_cache(self.get_element_id());
         request_structural_selector_restyle(&self.children());
     }
 
@@ -515,8 +506,6 @@ impl ViewId {
                 .set_children(this_taffy_node, &taffy_children);
             s.children.insert(*self, children);
         });
-        // Invalidate stacking cache since children changed
-        invalidate_stacking_cache(self.get_element_id());
         request_structural_selector_restyle(&self.children());
     }
 

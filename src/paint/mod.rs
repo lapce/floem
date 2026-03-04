@@ -28,7 +28,7 @@ use std::sync::mpsc::Receiver;
 
 use crate::ElementId;
 use crate::view::ViewId;
-use crate::view::stacking::collect_stacking_context_items;
+use crate::view::stacking::{StackingContextItem, collect_stacking_context_items_into};
 use crate::view::{paint_bg, paint_border, paint_outline};
 use crate::window::state::WindowState;
 
@@ -142,14 +142,19 @@ pub(crate) enum PaintOrPost {
     Post(ElementId),
 }
 
-/// Recursively collect VisualIds in paint order (depth-first, z-index sorted)
-pub(crate) fn collect_visual_recursive(
-    element_id: ElementId,
+/// Collect VisualIds in paint order (depth-first, z-index sorted) without recursion.
+pub(crate) fn collect_visual_order(
+    root_element_id: ElementId,
     box_tree: &mut crate::BoxTree,
     paint_order: &mut Vec<PaintOrPost>,
     is_drag_preview: bool,
     skip_element_id: Option<ElementId>,
 ) {
+    enum TraversalStep {
+        Visit(ElementId),
+        Post(ElementId),
+    }
+
     // Local closure instead of nested fn
     let should_paint = |element_id: ElementId, box_tree: &mut crate::BoxTree| {
         if is_drag_preview {
@@ -161,42 +166,43 @@ pub(crate) fn collect_visual_recursive(
             .is_none_or(|bounds| bounds.area() != 0.0)
     };
 
-    // Skip specific element and subtree when not drag preview
-    if !is_drag_preview && Some(element_id) == skip_element_id {
-        return;
-    }
+    let mut stack = Vec::new();
+    let mut stacking_scratch: Vec<StackingContextItem> = Vec::new();
+    stack.push(TraversalStep::Visit(root_element_id));
 
-    // if is hidden skip this element and the subtree
-    if box_tree
-        .flags(element_id.0)
-        .is_none_or(|f| !f.contains(NodeFlags::VISIBLE))
-    {
-        return;
-    }
+    while let Some(step) = stack.pop() {
+        match step {
+            TraversalStep::Visit(element_id) => {
+                // Skip specific element and subtree when not drag preview
+                if !is_drag_preview && Some(element_id) == skip_element_id {
+                    continue;
+                }
 
-    let paints_this_node = should_paint(element_id, box_tree);
-    if paints_this_node {
-        paint_order.push(PaintOrPost::Paint(element_id));
-    }
+                // If hidden skip this element and the subtree
+                if box_tree
+                    .flags(element_id.0)
+                    .is_none_or(|f| !f.contains(NodeFlags::VISIBLE))
+                {
+                    continue;
+                }
 
-    // Get children from box tree (sorted by z-index)
-    let items = collect_stacking_context_items(element_id, box_tree);
+                let paints_this_node = should_paint(element_id, box_tree);
+                if paints_this_node {
+                    paint_order.push(PaintOrPost::Paint(element_id));
+                    // Keep Paint/Post paired for the same node. If a node is culled
+                    // (e.g. zero world bounds), emitting Post without Paint can pop clip
+                    // state that belongs to an ancestor and corrupt sibling paint order.
+                    stack.push(TraversalStep::Post(element_id));
+                }
 
-    for item in items.iter() {
-        collect_visual_recursive(
-            item.element_id,
-            box_tree,
-            paint_order,
-            is_drag_preview,
-            skip_element_id,
-        );
-    }
-
-    // Keep Paint/Post paired for the same node. If a node is culled (e.g. zero world bounds),
-    // emitting Post without Paint can pop clip state that belongs to an ancestor and corrupt
-    // sibling paint order (scroll descendants painting above later siblings).
-    if paints_this_node {
-        paint_order.push(PaintOrPost::Post(element_id));
+                // Push children in reverse so they are visited in forward order.
+                collect_stacking_context_items_into(element_id, box_tree, &mut stacking_scratch);
+                for item in stacking_scratch.iter().rev() {
+                    stack.push(TraversalStep::Visit(item.element_id));
+                }
+            }
+            TraversalStep::Post(element_id) => paint_order.push(PaintOrPost::Post(element_id)),
+        }
     }
 }
 
@@ -225,8 +231,8 @@ impl GlobalPaintCx<'_> {
             .active_drag
             .as_ref()
             .and_then(|ad| ad.dragging_preview.as_ref().map(|p| p.element_id));
-        // Recursively collect main tree
-        collect_visual_recursive(root, box_tree, &mut paint_order, false, dragging_element_id);
+        // Collect main tree
+        collect_visual_order(root, box_tree, &mut paint_order, false, dragging_element_id);
 
         // Paint drag overlay separately (always on top)
         if let Some(preview) = self
@@ -236,7 +242,7 @@ impl GlobalPaintCx<'_> {
             .as_ref()
             .and_then(|ad| ad.dragging_preview.as_ref().map(|p| p.element_id))
         {
-            crate::paint::collect_visual_recursive(preview, box_tree, &mut paint_order, true, None);
+            crate::paint::collect_visual_order(preview, box_tree, &mut paint_order, true, None);
         }
 
         paint_order
@@ -282,20 +288,10 @@ impl GlobalPaintCx<'_> {
             .renderer_mut()
             .set_transform(world_transform);
 
-        // Only access view state if this is a view element
-        let style_data = if element_id.is_view() {
-            let view_id = element_id.owning_id();
-            let view_state = view_id.state();
-            let view_style_props = view_state.borrow().view_style_props.clone();
-            let layout_props = view_state.borrow().layout_props.clone();
-            Some((view_style_props, layout_props))
-        } else {
-            None
-        };
-
         let layout_rect = layout_rect_local;
         let view_id = element_id.owning_id();
         let view = view_id.view();
+        let view_state = element_id.is_view().then(|| view_id.state());
 
         // Create per-target PaintCx
         let mut cx = PaintCx {
@@ -308,9 +304,15 @@ impl GlobalPaintCx<'_> {
         };
 
         if !is_post {
-            if let Some((view_style_props, layout_props)) = &style_data {
-                paint_bg(&mut cx, view_style_props, layout_rect);
-                paint_border(&mut cx, layout_props, view_style_props, layout_rect);
+            if let Some(view_state) = view_state.as_ref() {
+                let state = view_state.borrow();
+                paint_bg(&mut cx, &state.view_style_props, layout_rect);
+                paint_border(
+                    &mut cx,
+                    &state.layout_props,
+                    &state.view_style_props,
+                    layout_rect,
+                );
             }
             // Apply overflow clip (stays active through children)
             if let Some(clip_shape) = clip {
@@ -322,8 +324,9 @@ impl GlobalPaintCx<'_> {
                 cx.clear_clip();
             }
             view.borrow_mut().post_paint(&mut cx);
-            if let Some((view_style_props, _)) = &style_data {
-                paint_outline(&mut cx, view_style_props, layout_rect);
+            if let Some(view_state) = view_state.as_ref() {
+                let state = view_state.borrow();
+                paint_outline(&mut cx, &state.view_style_props, layout_rect);
             }
         }
     }

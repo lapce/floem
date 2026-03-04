@@ -62,7 +62,7 @@ use crate::{
     },
     style::{CursorStyle, Style},
     theme::default_theme,
-    view::{IntoView, View, ViewId, stacking::clear_all_stacking_caches},
+    view::{IntoView, View, ViewId},
 };
 
 /// The top-level window handle that owns the winit `Window`.
@@ -1629,7 +1629,6 @@ impl WindowHandle {
         // Clear all caches that might hold stale ViewId references.
         // This is crucial for test isolation when tests run on the same thread.
         clear_hit_test_cache();
-        clear_all_stacking_caches();
 
         // Remove the window from the global window tracking map.
         // This is crucial for test isolation - if not done, the old root ViewId

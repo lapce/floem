@@ -23,7 +23,7 @@ use crate::{
         recalc::{StyleReason, StyleReasonFlags},
         resolve_nested_maps,
     },
-    view::{ViewId, stacking::invalidate_stacking_cache},
+    view::ViewId,
     window::state::WindowState,
 };
 
@@ -460,7 +460,6 @@ impl<'a> StyleCx<'a> {
             );
 
             if old_phase != phase {
-                invalidate_stacking_cache(view_id.get_element_id());
                 view_state.borrow_mut().visibility.phase = phase;
             }
             phase.get_display_override()
@@ -539,7 +538,6 @@ impl<'a> StyleCx<'a> {
                 // Get old z-index from box tree
                 let old_z_index = box_tree.z_index(element_id.0).unwrap_or(0);
                 if old_z_index != new_z_index {
-                    invalidate_stacking_cache(element_id);
                     box_tree.set_z_index(element_id.0, new_z_index);
                 }
             }

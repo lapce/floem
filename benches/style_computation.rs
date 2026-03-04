@@ -236,7 +236,9 @@ fn bench_restyle_views(c: &mut Criterion) {
         b.iter(|| {
             // Request style recomputation for all views
             for id in &ids {
-                id.request_style();
+                id.request_style(floem::style::recalc::StyleReason::with_selector(
+                    floem::style::StyleSelector::Hover,
+                ));
             }
             // Process the style recomputation
             harness.recompute_styles();
@@ -278,7 +280,9 @@ fn bench_restyle_with_selectors(c: &mut Criterion) {
         b.iter(|| {
             // Request style recomputation for all views
             for id in &ids {
-                id.request_style();
+                id.request_style(floem::style::recalc::StyleReason::with_selector(
+                    floem::style::StyleSelector::Hover,
+                ));
             }
             // Process the style recomputation
             harness.recompute_styles();
