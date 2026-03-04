@@ -138,6 +138,7 @@ use std::any::Any;
 use std::collections::HashMap;
 use std::fmt::{self, Debug};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use taffy::GridTemplateComponent;
 
 pub use taffy::style::{
@@ -153,8 +154,10 @@ use taffy::{
     },
 };
 
-use crate::layout::responsive::{ScreenSize, ScreenSizeBp};
+use crate::layout::responsive::{GridBreakpoints, ScreenSize, ScreenSizeBp};
 
+use crate::style::components::Focus;
+use crate::views::editor::SelectionColor;
 // Import macros from crate root (they are #[macro_export] in props.rs)
 use crate::{prop, prop_extractor};
 
@@ -182,19 +185,62 @@ pub use props::{
     ExtractorField, StyleClass, StyleClassInfo, StyleClassRef, StyleKey, StyleKeyInfo, StyleProp,
     StylePropInfo, StylePropReader, StylePropRef,
 };
-pub use selectors::{StyleSelector, StyleSelectors};
+pub use selectors::{NthChild, StructuralSelector, StyleSelector, StyleSelectors};
 pub use theme::{DesignSystem, StyleThemeExt};
 pub use transition::{DirectTransition, Transition, TransitionState};
 pub use unit::{AnchorAbout, Angle, Auto, DurationUnitExt, Pct, Px, PxPct, PxPctAuto, UnitExt};
-pub use values::{CombineResult, StrokeWrap, StyleMapValue, StylePropValue, StyleValue};
+pub use values::{CombineResult, ObjectFit, StrokeWrap, StyleMapValue, StylePropValue, StyleValue};
 
 pub use cache::{StyleCache, StyleCacheKey};
-pub use recalc::{InheritedChanges, InheritedGroups, Propagate, RecalcFlags, StyleRecalcChange};
 
-pub(crate) use props::{CONTEXT_MAPPINGS_INFO, ImHashMap, style_key_selector};
+pub(crate) use props::{
+    CONTEXT_MAPPINGS_INFO, ImHashMap, RESPONSIVE_SELECTORS_INFO, STRUCTURAL_SELECTORS_INFO,
+    style_key_selector,
+};
+
+static NEXT_STYLE_MERGE_ID: AtomicU64 = AtomicU64::new(1);
+const MERGE_MIX_CONST: u64 = 0x9E3779B97F4A7C15;
+
+fn next_style_merge_id() -> u64 {
+    NEXT_STYLE_MERGE_ID.fetch_add(1, Ordering::Relaxed)
+}
+
+fn combine_merge_ids(a: u64, b: u64) -> u64 {
+    a.rotate_left(13) ^ b.wrapping_mul(MERGE_MIX_CONST)
+}
 
 /// A closure that maps context values to style properties.
-type ContextMapFn = Rc<dyn Fn(Style, &Style) -> Style>;
+type ContextMapFn = Rc<dyn Fn(Style, Box<dyn Fn(StyleKey) -> Option<Rc<dyn Any>>>) -> Style>;
+type StructuralSelectorRules = SmallVec<[(StructuralSelector, Rc<Style>); 2]>;
+type ResponsiveSelectorRules = SmallVec<[(ResponsiveSelector, Rc<Style>); 2]>;
+
+#[derive(Clone)]
+struct StructuralSelectors(StructuralSelectorRules);
+
+#[derive(Clone)]
+struct ResponsiveSelectors(ResponsiveSelectorRules);
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum ResponsiveSelector {
+    ScreenSize(ScreenSize),
+    MinWidth(Px),
+    MaxWidth(Px),
+    WidthRange { min: Px, max: Px },
+}
+
+impl ResponsiveSelector {
+    fn matches(&self, width: f64) -> bool {
+        match self {
+            ResponsiveSelector::ScreenSize(size) => {
+                let bp = GridBreakpoints::default().get_width_bp(width);
+                size.breakpoints().contains(&bp)
+            }
+            ResponsiveSelector::MinWidth(min) => width >= min.0,
+            ResponsiveSelector::MaxWidth(max) => width <= max.0,
+            ResponsiveSelector::WidthRange { min, max } => width >= min.0 && width <= max.0,
+        }
+    }
+}
 
 /// Simple storage for context mapping closures.
 /// Unlike the old ContextMappings, this only stores the closures themselves -
@@ -204,12 +250,12 @@ type ContextMapFn = Rc<dyn Fn(Style, &Style) -> Style>;
 #[derive(Clone)]
 pub(crate) struct ContextMappings(pub Rc<Vec<ContextMapFn>>);
 
-style_key_selector!(selector_xs, StyleSelectors::new().responsive());
-style_key_selector!(selector_sm, StyleSelectors::new().responsive());
-style_key_selector!(selector_md, StyleSelectors::new().responsive());
-style_key_selector!(selector_lg, StyleSelectors::new().responsive());
-style_key_selector!(selector_xl, StyleSelectors::new().responsive());
-style_key_selector!(selector_xxl, StyleSelectors::new().responsive());
+style_key_selector!(selector_xs, StyleSelectors::empty().responsive());
+style_key_selector!(selector_sm, StyleSelectors::empty().responsive());
+style_key_selector!(selector_md, StyleSelectors::empty().responsive());
+style_key_selector!(selector_lg, StyleSelectors::empty().responsive());
+style_key_selector!(selector_xl, StyleSelectors::empty().responsive());
+style_key_selector!(selector_xxl, StyleSelectors::empty().responsive());
 
 pub(crate) fn screen_size_bp_to_key(breakpoint: ScreenSizeBp) -> StyleKey {
     match breakpoint {
@@ -222,29 +268,52 @@ pub(crate) fn screen_size_bp_to_key(breakpoint: ScreenSizeBp) -> StyleKey {
     }
 }
 
+fn context_mappings_key() -> StyleKey {
+    StyleKey {
+        info: &CONTEXT_MAPPINGS_INFO,
+    }
+}
+
+fn structural_selectors_key() -> StyleKey {
+    StyleKey {
+        info: &STRUCTURAL_SELECTORS_INFO,
+    }
+}
+
+fn responsive_selectors_key() -> StyleKey {
+    StyleKey {
+        info: &RESPONSIVE_SELECTORS_INFO,
+    }
+}
+
 /// the bool in the return is a classes_applied flag. if a new class has been applied, we need to do a request_style_recursive
 pub fn resolve_nested_maps(
     style: Style,
-    interact_state: &InteractionState,
+    interact_state: &mut InteractionState,
     screen_size_bp: ScreenSizeBp,
     classes: &[StyleClassRef],
     inherited_context: &Style,
     class_context: &Style,
-) -> (Style, bool) {
-    let mut classes_applied = false;
+) -> (Style, StyleSelectors) {
+    // TODO: update interact state as each map is resolved
 
-    // Phase_ 1: Resolve class styles (with selectors, collecting context mappings)
+    let mut selectors = StyleSelectors::empty();
+
+    let effect_context = style.effect_context.clone();
+
+    // Phase 1: Resolve class styles (with selectors, collecting context mappings)
     let (class_style, mut class_context_mappings) = resolve_classes_collecting_mappings(
         classes,
         interact_state,
         screen_size_bp,
         class_context,
-        &mut classes_applied,
+        &mut selectors,
     );
+    selectors |= class_style.selectors();
 
     // Phase 2: Resolve view's inline style (with selectors, collecting context mappings)
     let (view_style, mut view_context_mappings) =
-        resolve_style_collecting_mappings(style, interact_state, screen_size_bp);
+        resolve_style_collecting_mappings(style, interact_state, screen_size_bp, &mut selectors);
 
     // Phase 3: Apply class context mappings (with recursive resolution)
     // Use class_style as the base, context includes class_style + view_style
@@ -252,13 +321,40 @@ pub fn resolve_nested_maps(
     let mut i = 0;
     while i < class_context_mappings.len() {
         let mapping = class_context_mappings[i].clone();
-        let combined_context = inherited_context
-            .clone()
-            .apply(view_style.clone())
-            .apply(context_result.clone());
-        let mapped = mapping(context_result.clone(), &combined_context);
-        let (resolved, new_mappings) =
-            resolve_selectors_collecting_mappings(mapped, interact_state, screen_size_bp);
+
+        let saved_effect = floem_reactive::Runtime::get_current_effect();
+        if let Some(effect) = &effect_context {
+            floem_reactive::Runtime::set_current_effect(Some(effect.clone()));
+        }
+
+        let mapped = mapping(
+            context_result.clone(),
+            Box::new({
+                let view_style = view_style.clone();
+                let context_result = context_result.clone();
+                let inherited_context = inherited_context.clone();
+                move |k| {
+                    view_style
+                        .map
+                        .get(&k)
+                        .or_else(|| {
+                            context_result
+                                .map
+                                .get(&k)
+                                .or_else(|| inherited_context.map.get(&k))
+                        })
+                        .cloned()
+                }
+            }),
+        );
+
+        let (resolved, new_mappings) = resolve_style_collecting_mappings(
+            mapped,
+            interact_state,
+            screen_size_bp,
+            &mut selectors,
+        );
+        floem_reactive::Runtime::set_current_effect(saved_effect);
         context_result.apply_mut_no_mappings(resolved);
         class_context_mappings.splice(i + 1..i + 1, new_mappings);
         i += 1;
@@ -269,18 +365,45 @@ pub fn resolve_nested_maps(
 
     // Phase 4: Apply view context mappings over result (with recursive resolution)
     let mut i = 0;
+    let mut combined_context = inherited_context.clone();
     while i < view_context_mappings.len() {
         let mapping = view_context_mappings[i].clone();
-        let combined_context = inherited_context.clone().apply(result.clone());
-        let mapped = mapping(result.clone(), &combined_context);
-        let (resolved, new_mappings) =
-            resolve_selectors_collecting_mappings(mapped, interact_state, screen_size_bp);
+        combined_context.apply_mut_no_mappings(result.clone());
+
+        let saved_effect = floem_reactive::Runtime::get_current_effect();
+        if let Some(effect) = &effect_context {
+            floem_reactive::Runtime::set_current_effect(Some(effect.clone()));
+        }
+
+        let mapped = mapping(
+            result.clone(),
+            Box::new({
+                let result = result.clone();
+                let inherited_context = inherited_context.clone();
+                move |k| {
+                    result
+                        .clone()
+                        .map
+                        .get(&k)
+                        .or_else(|| inherited_context.map.get(&k))
+                        .cloned()
+                }
+            }),
+        );
+
+        let (resolved, new_mappings) = resolve_style_collecting_mappings(
+            mapped,
+            interact_state,
+            screen_size_bp,
+            &mut selectors,
+        );
+        floem_reactive::Runtime::set_current_effect(saved_effect);
         result.apply_mut_no_mappings(resolved);
         view_context_mappings.splice(i + 1..i + 1, new_mappings);
         i += 1;
     }
 
-    (result, classes_applied)
+    (result, selectors)
 }
 
 fn resolve_classes_collecting_mappings(
@@ -288,17 +411,20 @@ fn resolve_classes_collecting_mappings(
     interact_state: &InteractionState,
     screen_size_bp: ScreenSizeBp,
     class_context: &Style,
-    classes_applied: &mut bool,
+    selectors: &mut StyleSelectors,
 ) -> (Style, Vec<ContextMapFn>) {
     let mut result = Style::new();
     let mut mappings = Vec::new();
 
     for class in classes {
         if let Some(map) = class_context.get_nested_map(class.key) {
-            *classes_applied = true;
-            let (resolved, class_mappings) =
-                resolve_style_collecting_mappings(map.clone(), interact_state, screen_size_bp);
-            result.apply_mut(resolved);
+            let (resolved, class_mappings) = resolve_style_collecting_mappings(
+                map.clone(),
+                interact_state,
+                screen_size_bp,
+                selectors,
+            );
+            result.apply_mut_no_mappings(resolved);
             mappings.extend(class_mappings);
         }
     }
@@ -307,20 +433,21 @@ fn resolve_classes_collecting_mappings(
 }
 
 fn resolve_style_collecting_mappings(
-    style: Style,
+    mut style: Style,
     interact_state: &InteractionState,
     screen_size_bp: ScreenSizeBp,
+    selectors: &mut StyleSelectors,
 ) -> (Style, Vec<ContextMapFn>) {
     let mut mappings = Vec::new();
 
     // Extract context mappings from style before resolving
-    if let Some(style_mappings) = extract_context_mappings(&style) {
+    if let Some(style_mappings) = extract_context_mappings(&mut style) {
         mappings.extend(style_mappings);
     }
 
     // Resolve all selectors (and collect any new mappings found)
     let (resolved, selector_mappings) =
-        resolve_selectors_collecting_mappings(style, interact_state, screen_size_bp);
+        resolve_selectors_collecting_mappings(style, interact_state, screen_size_bp, selectors);
     mappings.extend(selector_mappings);
 
     (resolved, mappings)
@@ -330,7 +457,10 @@ fn resolve_selectors_collecting_mappings(
     mut style: Style,
     interact_state: &InteractionState,
     screen_size_bp: ScreenSizeBp,
+    selectors: &mut StyleSelectors,
 ) -> (Style, Vec<ContextMapFn>) {
+    *selectors |= style.selectors();
+
     const MAX_DEPTH: u32 = 20;
     let mut depth = 0;
     let mut all_mappings = Vec::new();
@@ -343,11 +473,42 @@ fn resolve_selectors_collecting_mappings(
 
         let mut changed = false;
 
+        // Apply structural selectors (:first-child, :last-child, :nth-child(...))
+        // before state selectors so nested :hover/:focus inside structural maps can
+        // be discovered and applied in the same resolution loop.
+        if let Some(structural_rules) = extract_structural_selectors(&mut style) {
+            for (selector, map) in structural_rules {
+                if selector.matches(interact_state.child_index, interact_state.sibling_count) {
+                    let mut map = map.as_ref().clone();
+                    if let Some(mappings) = extract_context_mappings(&mut map) {
+                        all_mappings.extend(mappings);
+                    }
+                    style.apply_mut_no_mappings(map);
+                    changed = true;
+                }
+            }
+        }
+
+        // Apply responsive selectors (parameterized)
+        if let Some(responsive_rules) = extract_responsive_selectors(&mut style) {
+            for (selector, map) in responsive_rules {
+                if selector.matches(interact_state.window_width) {
+                    let mut map = map.as_ref().clone();
+                    if let Some(mappings) = extract_context_mappings(&mut map) {
+                        all_mappings.extend(mappings);
+                    }
+                    style.apply_mut_no_mappings(map);
+                    changed = true;
+                }
+            }
+        }
+
         // Helper to apply a nested map and collect any context mappings from it
         let mut apply_nested = |style: &mut Style, key: StyleKey| -> bool {
-            if let Some(map) = style.get_nested_map(key) {
+            if let Some(mut map) = style.get_nested_map(key) {
                 // Extract mappings before applying
-                if let Some(mappings) = extract_context_mappings(&map) {
+
+                if let Some(mappings) = extract_context_mappings(&mut map) {
                     all_mappings.extend(mappings);
                 }
                 style.apply_mut_no_mappings(map);
@@ -396,26 +557,31 @@ fn resolve_selectors_collecting_mappings(
             }
 
             // Focus states
-            if interact_state.is_focused {
-                if apply_nested(&mut style, StyleSelector::Focus.to_key()) {
+            if interact_state.is_focused && apply_nested(&mut style, StyleSelector::Focus.to_key())
+            {
+                changed = true;
+            }
+
+            if interact_state.is_focus_within
+                && apply_nested(&mut style, StyleSelector::FocusWithin.to_key())
+            {
+                changed = true;
+            }
+
+            if interact_state.is_focused && interact_state.using_keyboard_navigation {
+                if apply_nested(&mut style, StyleSelector::FocusVisible.to_key()) {
                     changed = true;
                 }
 
-                if interact_state.using_keyboard_navigation {
-                    if apply_nested(&mut style, StyleSelector::FocusVisible.to_key()) {
-                        changed = true;
-                    }
-
-                    if interact_state.is_clicking
-                        && apply_nested(&mut style, StyleSelector::Active.to_key())
-                    {
-                        changed = true;
-                    }
+                if interact_state.is_active
+                    && apply_nested(&mut style, StyleSelector::Active.to_key())
+                {
+                    changed = true;
                 }
             }
 
             // Active (mouse)
-            if interact_state.is_clicking
+            if interact_state.is_active
                 && !interact_state.using_keyboard_navigation
                 && apply_nested(&mut style, StyleSelector::Active.to_key())
             {
@@ -431,19 +597,35 @@ fn resolve_selectors_collecting_mappings(
     (style, all_mappings)
 }
 
-fn extract_context_mappings(style: &Style) -> Option<Vec<ContextMapFn>> {
-    let key = StyleKey {
-        info: &CONTEXT_MAPPINGS_INFO,
-    };
-    style.map.get(&key).map(|rc| {
+fn extract_context_mappings(style: &mut Style) -> Option<Vec<ContextMapFn>> {
+    let key = context_mappings_key();
+    style.map.remove(&key).map(|rc| {
         let mappings = rc.downcast_ref::<ContextMappings>().unwrap();
         mappings.0.iter().cloned().collect()
     })
 }
 
-#[derive(Default, Clone)]
+fn extract_structural_selectors(style: &mut Style) -> Option<StructuralSelectorRules> {
+    let key = structural_selectors_key();
+    style
+        .map
+        .remove(&key)
+        .map(|rc| rc.downcast_ref::<StructuralSelectors>().unwrap().0.clone())
+}
+
+fn extract_responsive_selectors(style: &mut Style) -> Option<ResponsiveSelectorRules> {
+    let key = responsive_selectors_key();
+    style
+        .map
+        .remove(&key)
+        .map(|rc| rc.downcast_ref::<ResponsiveSelectors>().unwrap().0.clone())
+}
+
+#[derive(Clone)]
 pub struct Style {
     pub(crate) map: ImHashMap<StyleKey, Rc<dyn Any>>,
+    /// Deterministic identity for style merges.
+    merge_id: u64,
     /// Cached flag indicating whether this style contains any class maps.
     /// This enables O(1) early-exit in `apply_only_class_maps` for the common case
     /// where a view's style has no class definitions.
@@ -452,6 +634,26 @@ pub struct Style {
     /// This enables O(1) early-exit in `apply_only_inherited` for the common case
     /// where a view's style has no inherited properties.
     has_inherited: bool,
+    /// The effect context that was active when this style was created.
+    /// This is restored when evaluating context mappings and selectors to ensure
+    /// reactive dependencies are tracked correctly.
+    effect_context: Option<Rc<dyn floem_reactive::EffectTrait>>,
+
+    context_selectors: StyleSelectors,
+}
+impl Default for Style {
+    fn default() -> Self {
+        let effect_context = floem_reactive::Runtime::get_current_effect();
+        let map = ImHashMap::default();
+        Self {
+            merge_id: next_style_merge_id(),
+            map,
+            has_class_maps: false,
+            has_inherited: false,
+            effect_context,
+            context_selectors: StyleSelectors::empty(),
+        }
+    }
 }
 
 impl Style {
@@ -465,13 +667,12 @@ impl Style {
     /// Only properties marked as `inherited: true` in their `StylePropInfo` are applied.
     /// This is more efficient than `apply_mut` when we only need to propagate
     /// inherited properties like font-size, color, etc.
-    pub fn apply_only_inherited(to: &mut Rc<Style>, from: &Style) {
+    pub fn apply_only_inherited(to: &mut Style, from: &Style) {
         if from.any_inherited() {
-            let mut new_style = (**to).clone();
-            // Only apply properties marked as inherited, not all properties
             let inherited = from.map.iter().filter(|(p, _)| p.inherited());
-            new_style.apply_iter(inherited);
-            *to = Rc::new(new_style);
+            to.apply_iter(inherited, None);
+            to.merge_id = combine_merge_ids(to.merge_id, from.merge_id);
+            to.context_selectors |= from.context_selectors;
         }
     }
 
@@ -491,7 +692,9 @@ impl Style {
             // Apply inherited properties
             if has_inherited {
                 let inherited = from.map.iter().filter(|(p, _)| p.inherited());
-                new_style.apply_iter(inherited);
+                new_style.apply_iter(inherited, None);
+                new_style.merge_id = combine_merge_ids(new_style.merge_id, from.merge_id);
+                new_style.context_selectors |= from.context_selectors;
             }
 
             // Apply class nested maps so they flow to descendants
@@ -500,7 +703,9 @@ impl Style {
                     .map
                     .iter()
                     .filter(|(k, _)| matches!(k.info, StyleKeyInfo::Class(..)));
-                new_style.apply_iter(class_maps);
+                new_style.apply_iter(class_maps, None);
+                new_style.merge_id = combine_merge_ids(new_style.merge_id, from.merge_id);
+                new_style.context_selectors |= from.context_selectors;
             }
 
             *to = Rc::new(new_style);
@@ -511,18 +716,60 @@ impl Style {
     /// This is used during style propagation to pass class definitions to children.
     ///
     /// Only class nested maps (`.class(SomeClass, ...)`) are applied, not inherited props.
-    pub fn apply_only_class_maps(to: &mut Rc<Style>, from: &Style) {
-        // O(1) early exit for the common case where the style has no class maps
+    pub fn apply_only_class_maps(to: &mut Style, from: &Style) {
         if !from.has_class_maps {
             return;
         }
-        let mut new_style = (**to).clone();
         let class_maps = from
             .map
             .iter()
             .filter(|(k, _)| matches!(k.info, StyleKeyInfo::Class(..)));
-        new_style.apply_iter(class_maps);
-        *to = Rc::new(new_style);
+        to.apply_iter(class_maps, None);
+        to.merge_id = combine_merge_ids(to.merge_id, from.merge_id);
+        to.context_selectors |= from.context_selectors;
+    }
+
+    pub(crate) fn merge_id(&self) -> u64 {
+        self.merge_id
+    }
+
+    pub fn class_maps_eq(&self, other: &Style) -> SmallVec<[StyleClassRef; 4]> {
+        // Pass 1: every Class entry in self must exist in other
+        let mut changed = SmallVec::new();
+        for (k, v) in &self.map {
+            let StyleKeyInfo::Class(_) = k.info else {
+                continue;
+            };
+
+            match other.map.get(k) {
+                Some(other_v) => {
+                    let v_style = v.downcast_ref::<Style>().unwrap();
+                    let other_v_style = other_v.downcast_ref::<Style>().unwrap();
+
+                    if v_style.merge_id != other_v_style.merge_id
+                        && !v_style.map.ptr_eq(&other_v_style.map)
+                    {
+                        changed.push(StyleClassRef { key: *k });
+                    }
+                }
+                None => {
+                    changed.push(StyleClassRef { key: *k });
+                }
+            }
+        }
+
+        // Pass 2: ensure other does not contain extra Class entries
+        for k in other.map.keys() {
+            if !matches!(k.info, StyleKeyInfo::Class(..)) {
+                continue;
+            }
+
+            if !self.map.contains_key(k) {
+                changed.push(StyleClassRef { key: *k });
+            }
+        }
+
+        changed
     }
 
     pub(crate) fn get_transition<P: StyleProp>(&self) -> Option<Transition> {
@@ -565,138 +812,32 @@ impl Style {
     }
 
     pub(crate) fn selectors(&self) -> StyleSelectors {
-        let mut result = StyleSelectors::new();
+        let mut result = self.context_selectors;
 
-        // Check for direct selectors
         for (k, v) in &self.map {
-            if let StyleKeyInfo::Selector(selector) = k.info {
-                result = result
-                    .union(*selector)
-                    .union(v.downcast_ref::<Style>().unwrap().selectors());
-            }
-        }
-        result
-    }
-
-    /// Applies class styling from the context (inherited from ancestors) to this style.
-    ///
-    /// The view's own explicit styles take precedence over context class styles.
-    /// This is achieved by applying context class styles first, then applying
-    /// the view's own styles on top.
-    ///
-    /// Context mappings (from `with_context`/`with_theme`) from class styles are
-    /// merged with the view's own context mappings. Class mappings run first (as
-    /// defaults), then view's own mappings run (allowing overrides). This ensures
-    /// that theme class styles can use `with_context` for context-aware styling
-    /// (like toggle button height based on font size) while still allowing views
-    /// to override via their own `with_context` closures.
-    ///
-    /// The returned boolean is true if a nested map was applied.
-    pub fn apply_classes_from_context(
-        self,
-        classes: &[StyleClassRef],
-        class_context: &std::rc::Rc<Style>,
-    ) -> (Style, bool) {
-        // Fast path: if no classes or no class maps in context, return unchanged
-        if classes.is_empty() || !class_context.has_class_maps {
-            return (self, false);
-        }
-
-        // Check if any of the classes actually have definitions in the context
-        let has_matching_classes = classes
-            .iter()
-            .any(|class| class_context.get_nested_map(class.key).is_some());
-        if !has_matching_classes {
-            return (self, false);
-        }
-
-        let mut changed = false;
-
-        let context_mappings_key = StyleKey {
-            info: &CONTEXT_MAPPINGS_INFO,
-        };
-
-        // CSS-like specificity: inline styles (the view's own styles) have higher
-        // specificity than class styles from ancestors. We achieve this by:
-        // 1. Building up class styles as a base
-        // 2. Applying the view's own styles on top
-        //
-        // Context mappings (from `with_context`/`with_theme`) from class styles are
-        // merged with the view's own context mappings. Class mappings run first (as
-        // defaults), then view's own mappings run (allowing overrides).
-
-        // Save the view's own styles and context mappings
-        let view_style = self;
-        let view_ctx_mappings = view_style.map.get(&context_mappings_key).cloned();
-
-        // Start with an empty style and build up from class styles
-        let mut result = Style::new();
-        let mut all_class_mappings: Vec<ContextMapFn> = Vec::new();
-
-        for class in classes {
-            if let Some(map) = class_context.get_nested_map(class.key) {
-                let mut class_style = map.clone();
-                // Extract class style's context mappings before applying other props
-                if let Some(class_mappings_rc) = class_style.map.remove(&context_mappings_key) {
-                    let class_mappings =
-                        class_mappings_rc.downcast_ref::<ContextMappings>().unwrap();
-                    all_class_mappings.extend(class_mappings.0.iter().cloned());
+            match k.info {
+                StyleKeyInfo::Selector(selector) => {
+                    result = result
+                        .union(*selector)
+                        .union(v.downcast_ref::<Style>().unwrap().selectors());
                 }
-                // Apply class style to result (later classes override earlier ones)
-                result.apply_mut(class_style);
-                changed = true;
-            }
-        }
-
-        // Now apply view's own styles ON TOP of class styles (inline styles win)
-        // We move the view_style into result to avoid cloning when possible
-        result.apply_mut(view_style.clone());
-
-        // Merge context mappings: class mappings FIRST (defaults), view's SECOND (overrides)
-        // Only do selector extraction if there are class context mappings that could override them
-        if !all_class_mappings.is_empty() {
-            // CSS-like specificity fix: The view's inline selector styles (like .selected())
-            // should override class styles, but class context mappings (like with_theme) run
-            // AFTER this and might override them. To fix this, we wrap the view's selector
-            // nested maps in a context mapping that runs LAST, after all class context mappings.
-            let view_selector_keys: Vec<_> = view_style
-                .map
-                .keys()
-                .filter(|k| matches!(k.info, StyleKeyInfo::Selector(..)))
-                .cloned()
-                .collect();
-
-            if !view_selector_keys.is_empty() {
-                let view_selectors: HashMap<StyleKey, Rc<dyn Any>> = view_selector_keys
-                    .iter()
-                    .filter_map(|k| view_style.map.get(k).map(|v| (*k, v.clone())))
-                    .collect();
-
-                // Add a context mapping that re-applies the view's selector styles LAST
-                let restore_selectors: ContextMapFn = Rc::new(move |mut s: Style, _ctx: &Style| {
-                    for (k, v) in view_selectors.iter() {
-                        s.apply_iter(std::iter::once((k, v)));
+                StyleKeyInfo::StructuralSelectors => {
+                    let rules = &v.downcast_ref::<StructuralSelectors>().unwrap().0;
+                    for (_, nested_style) in rules {
+                        result = result.union(nested_style.as_ref().selectors());
                     }
-                    s
-                });
-                all_class_mappings.push(restore_selectors);
+                }
+                StyleKeyInfo::ResponsiveSelectors => {
+                    let rules = &v.downcast_ref::<ResponsiveSelectors>().unwrap().0;
+                    for (_, nested_style) in rules {
+                        result = result.union(nested_style.as_ref().selectors());
+                    }
+                }
+                _ => {}
             }
-
-            // Add view's own context mappings AFTER class mappings (so view's override)
-            if let Some(view_mappings_rc) = view_ctx_mappings {
-                let view_mappings = view_mappings_rc.downcast_ref::<ContextMappings>().unwrap();
-                all_class_mappings.extend(view_mappings.0.iter().cloned());
-            }
-            result.map.insert(
-                context_mappings_key,
-                Rc::new(ContextMappings(Rc::new(all_class_mappings))),
-            );
-        } else if let Some(view_mappings_rc) = view_ctx_mappings {
-            // No class mappings, just preserve view's own context mappings
-            result.map.insert(context_mappings_key, view_mappings_rc);
         }
 
-        (result, changed)
+        result
     }
 
     pub fn apply_class<C: StyleClass>(mut self, _class: C) -> Style {
@@ -728,38 +869,35 @@ impl Style {
     ///
     /// Signal reactivity works because the outer style closure re-runs when signals change.
     pub fn with_context<P: StyleProp>(self, f: impl Fn(Self, &P::Type) -> Self + 'static) -> Self {
-        // Evaluate immediately with default value for selector/inherited discovery.
-        // This ensures selectors defined inside with_context are visible.
         let default_value = P::default_value();
         let result = f(self.clone(), &default_value);
+        let result_selectors = result.selectors();
 
         // Create a closure for context-aware re-evaluation during style resolution.
         // Cache default_value inside closure to avoid repeated allocations.
-        let mapper: ContextMapFn = Rc::new(move |style: Style, context: &Style| {
-            // Try getting the property from style first, then from context if not found
-            let value = style.get_prop::<P>().or_else(|| {
-                let prop_key = P::key();
-                if let StyleKeyInfo::Prop(_) = prop_key.info {
-                    context.get_prop::<P>()
-                } else {
-                    None
-                }
-            });
+        let mapper: ContextMapFn = Rc::new(
+            move |style: Style, context: Box<dyn Fn(StyleKey) -> Option<Rc<dyn Any>>>| {
+                // Try getting the property from style first, then from context if not found
+                let value = context(P::key()).and_then(|v| {
+                    v.downcast_ref::<StyleMapValue<P::Type>>()
+                        .unwrap()
+                        .as_ref()
+                        .cloned()
+                });
 
-            if let Some(value) = value {
-                f(style, &value)
-            } else {
-                f(style, &P::default_value())
-            }
-        });
+                if let Some(value) = value {
+                    f(style, &value)
+                } else {
+                    f(style, &P::default_value())
+                }
+            },
+        );
 
         // Store the closure for later context resolution
-        let key = StyleKey {
-            info: &CONTEXT_MAPPINGS_INFO,
-        };
+        let key = context_mappings_key();
 
         // Build new mappings vec - use Rc::make_mut for efficient copy-on-write
-        let mut mappings_vec = result
+        let mut mappings_vec = self
             .map
             .get(&key)
             .and_then(|v| v.downcast_ref::<ContextMappings>())
@@ -769,10 +907,12 @@ impl Style {
 
         // Start with the immediate result (has selectors/inherited props)
         // but add our closure storage
-        let mut final_result = result;
+        let mut final_result = self;
         final_result
             .map
             .insert(key, Rc::new(ContextMappings(Rc::new(mappings_vec))));
+        final_result.merge_id = next_style_merge_id();
+        final_result.context_selectors |= result_selectors;
         final_result
     }
 
@@ -780,37 +920,35 @@ impl Style {
     ///
     /// Like `with_context`, this evaluates immediately with defaults for discovery,
     /// and stores the closure for context-aware re-evaluation.
-    pub fn with_context_opt<P: StyleProp<Type = Option<T>>, T: 'static + Default>(
+    pub fn with_context_opt<P: StyleProp<Type = Option<T>>, T: 'static + Default + Clone>(
         self,
         f: impl Fn(Self, T) -> Self + 'static,
     ) -> Self {
-        // Evaluate immediately with default T value for selector/inherited discovery
         let result = f(self.clone(), T::default());
-
+        let result_selectors = result.selectors();
         // Create a closure for context-aware re-evaluation
-        let mapper: ContextMapFn = Rc::new(move |style: Style, context: &Style| {
-            let value = style.get_prop::<P>().or_else(|| {
-                let prop_key = P::key();
-                if let StyleKeyInfo::Prop(_) = prop_key.info {
-                    context.get_prop::<P>()
-                } else {
-                    None
-                }
-            });
+        let mapper: ContextMapFn = Rc::new(
+            move |style: Style, context: Box<dyn Fn(StyleKey) -> Option<Rc<dyn Any>>>| {
+                // Try getting the property from style first, then from context if not found
+                let value = context(P::key()).and_then(|v| {
+                    v.downcast_ref::<StyleMapValue<P::Type>>()
+                        .unwrap()
+                        .as_ref()
+                        .cloned()
+                });
 
-            match value {
-                Some(Some(value)) => f(style, value),
-                _ => style,
-            }
-        });
+                match value {
+                    Some(Some(value)) => f(style, value),
+                    _ => style,
+                }
+            },
+        );
 
         // Store the closure
-        let key = StyleKey {
-            info: &CONTEXT_MAPPINGS_INFO,
-        };
+        let key = context_mappings_key();
 
         // Build new mappings vec efficiently
-        let mut mappings_vec = result
+        let mut mappings_vec = self
             .map
             .get(&key)
             .and_then(|v| v.downcast_ref::<ContextMappings>())
@@ -818,10 +956,12 @@ impl Style {
             .unwrap_or_default();
         mappings_vec.push(mapper);
 
-        let mut final_result = result;
+        let mut final_result = self;
         final_result
             .map
             .insert(key, Rc::new(ContextMappings(Rc::new(mappings_vec))));
+        final_result.merge_id = next_style_merge_id();
+        final_result.context_selectors |= result_selectors;
         final_result
     }
 
@@ -832,9 +972,14 @@ impl Style {
     }
 
     pub(crate) fn remove_nested_map(&mut self, key: StyleKey) -> Option<Style> {
-        self.map
+        let removed = self
+            .map
             .remove(&key)
-            .map(|map| map.downcast_ref::<Style>().unwrap().clone())
+            .map(|map| map.downcast_ref::<Style>().unwrap().clone());
+        if removed.is_some() {
+            self.merge_id = next_style_merge_id();
+        }
+        removed
     }
 
     /// Check if this style has any inherited properties.
@@ -849,13 +994,60 @@ impl Style {
         if self.any_inherited() {
             let inherited = self.map.iter().filter(|(p, _)| p.inherited());
 
-            new.apply_iter(inherited);
+            new.apply_iter(inherited, None);
+            new.merge_id = combine_merge_ids(new.merge_id, self.merge_id);
+            new.context_selectors |= self.context_selectors;
         }
         new
     }
 
     fn set_selector(&mut self, selector: StyleSelector, map: Style) {
         self.set_map_selector(selector.to_key(), map)
+    }
+
+    fn set_structural_selector(&mut self, selector: StructuralSelector, map: Style) {
+        let key = structural_selectors_key();
+        match self.map.entry(key) {
+            Entry::Occupied(mut e) => {
+                let mut rules = e
+                    .get()
+                    .downcast_ref::<StructuralSelectors>()
+                    .unwrap()
+                    .0
+                    .clone();
+                rules.push((selector, Rc::new(map)));
+                *e.get_mut() = Rc::new(StructuralSelectors(rules));
+            }
+            Entry::Vacant(e) => {
+                let mut rules = SmallVec::new();
+                rules.push((selector, Rc::new(map)));
+                e.insert(Rc::new(StructuralSelectors(rules)));
+            }
+        }
+        self.merge_id = next_style_merge_id();
+    }
+
+    fn set_responsive_selector(&mut self, selector: ResponsiveSelector, map: Style) {
+        let key = responsive_selectors_key();
+        match self.map.entry(key) {
+            Entry::Occupied(mut e) => {
+                let mut rules = e
+                    .get()
+                    .downcast_ref::<ResponsiveSelectors>()
+                    .unwrap()
+                    .0
+                    .clone();
+                rules.push((selector, Rc::new(map)));
+                *e.get_mut() = Rc::new(ResponsiveSelectors(rules));
+            }
+            Entry::Vacant(e) => {
+                let mut rules = SmallVec::new();
+                rules.push((selector, Rc::new(map)));
+                e.insert(Rc::new(ResponsiveSelectors(rules)));
+            }
+        }
+        self.context_selectors |= StyleSelectors::empty().responsive();
+        self.merge_id = next_style_merge_id();
     }
 
     fn set_map_selector(&mut self, key: StyleKey, map: Style) {
@@ -869,10 +1061,7 @@ impl Style {
                 e.insert(Rc::new(map));
             }
         }
-    }
-
-    fn set_breakpoint(&mut self, breakpoint: ScreenSizeBp, map: Style) {
-        self.set_map_selector(screen_size_bp_to_key(breakpoint), map)
+        self.merge_id = next_style_merge_id();
     }
 
     fn set_class(&mut self, class: StyleClassRef, map: Style) {
@@ -887,7 +1076,11 @@ impl Style {
     pub(crate) fn apply_iter<'a>(
         &mut self,
         iter: impl Iterator<Item = (&'a StyleKey, &'a Rc<dyn Any>)>,
+        source_effect_context: Option<Rc<dyn floem_reactive::EffectTrait>>,
     ) {
+        if self.effect_context.is_none() && source_effect_context.is_some() {
+            self.effect_context = source_effect_context;
+        }
         for (k, v) in iter {
             match k.info {
                 StyleKeyInfo::Class(..) | StyleKeyInfo::Selector(..) => {
@@ -897,20 +1090,26 @@ impl Style {
                     }
                     match self.map.entry(*k) {
                         Entry::Occupied(mut e) => {
-                            // We need to merge the new map with the existing map.
+                            let existing_rc = Rc::clone(e.get());
 
-                            let v = v.downcast_ref::<Style>().unwrap();
+                            // Skip only this key
+                            if Rc::ptr_eq(&existing_rc, v) {
+                                continue;
+                            }
+
+                            let new_style = v.downcast_ref::<Style>().unwrap();
+
                             match Rc::get_mut(e.get_mut()) {
-                                Some(current) => {
-                                    current
+                                Some(current_any) => {
+                                    current_any
                                         .downcast_mut::<Style>()
                                         .unwrap()
-                                        .apply_mut(v.clone());
+                                        .apply_mut(new_style.clone());
                                 }
                                 None => {
                                     let mut current =
-                                        e.get_mut().downcast_ref::<Style>().unwrap().clone();
-                                    current.apply_mut(v.clone());
+                                        existing_rc.downcast_ref::<Style>().unwrap().clone();
+                                    current.apply_mut(new_style.clone());
                                     *e.get_mut() = Rc::new(current);
                                 }
                             }
@@ -929,6 +1128,30 @@ impl Style {
                         let mut merged: Vec<_> = (*current.0).clone();
                         merged.extend(new_ctx.0.iter().cloned());
                         *e.get_mut() = Rc::new(ContextMappings(Rc::new(merged)));
+                    }
+                    Entry::Vacant(e) => {
+                        e.insert(v.clone());
+                    }
+                },
+                StyleKeyInfo::StructuralSelectors => match self.map.entry(*k) {
+                    Entry::Occupied(mut e) => {
+                        let new_rules = &v.downcast_ref::<StructuralSelectors>().unwrap().0;
+                        let current = &e.get().downcast_ref::<StructuralSelectors>().unwrap().0;
+                        let mut merged: StructuralSelectorRules = current.clone();
+                        merged.extend(new_rules.iter().cloned());
+                        *e.get_mut() = Rc::new(StructuralSelectors(merged));
+                    }
+                    Entry::Vacant(e) => {
+                        e.insert(v.clone());
+                    }
+                },
+                StyleKeyInfo::ResponsiveSelectors => match self.map.entry(*k) {
+                    Entry::Occupied(mut e) => {
+                        let new_rules = &v.downcast_ref::<ResponsiveSelectors>().unwrap().0;
+                        let current = &e.get().downcast_ref::<ResponsiveSelectors>().unwrap().0;
+                        let mut merged: ResponsiveSelectorRules = current.clone();
+                        merged.extend(new_rules.iter().cloned());
+                        *e.get_mut() = Rc::new(ResponsiveSelectors(merged));
                     }
                     Entry::Vacant(e) => {
                         e.insert(v.clone());
@@ -959,7 +1182,11 @@ impl Style {
     pub(crate) fn apply_iter_no_mappings<'a>(
         &mut self,
         iter: impl Iterator<Item = (&'a StyleKey, &'a Rc<dyn Any>)>,
+        source_effect_context: Option<Rc<dyn floem_reactive::EffectTrait>>,
     ) {
+        if self.effect_context.is_none() && source_effect_context.is_some() {
+            self.effect_context = source_effect_context;
+        }
         for (k, v) in iter {
             match k.info {
                 StyleKeyInfo::Class(..) | StyleKeyInfo::Selector(..) => {
@@ -977,12 +1204,12 @@ impl Style {
                                     current
                                         .downcast_mut::<Style>()
                                         .unwrap()
-                                        .apply_mut(v.clone());
+                                        .apply_mut_no_mappings(v.clone());
                                 }
                                 None => {
                                     let mut current =
                                         e.get_mut().downcast_ref::<Style>().unwrap().clone();
-                                    current.apply_mut(v.clone());
+                                    current.apply_mut_no_mappings(v.clone());
                                     *e.get_mut() = Rc::new(current);
                                 }
                             }
@@ -995,6 +1222,30 @@ impl Style {
                 StyleKeyInfo::Transition => {
                     self.map.insert(*k, v.clone());
                 }
+                StyleKeyInfo::StructuralSelectors => match self.map.entry(*k) {
+                    Entry::Occupied(mut e) => {
+                        let new_rules = &v.downcast_ref::<StructuralSelectors>().unwrap().0;
+                        let current = &e.get().downcast_ref::<StructuralSelectors>().unwrap().0;
+                        let mut merged: StructuralSelectorRules = current.clone();
+                        merged.extend(new_rules.iter().cloned());
+                        *e.get_mut() = Rc::new(StructuralSelectors(merged));
+                    }
+                    Entry::Vacant(e) => {
+                        e.insert(v.clone());
+                    }
+                },
+                StyleKeyInfo::ResponsiveSelectors => match self.map.entry(*k) {
+                    Entry::Occupied(mut e) => {
+                        let new_rules = &v.downcast_ref::<ResponsiveSelectors>().unwrap().0;
+                        let current = &e.get().downcast_ref::<ResponsiveSelectors>().unwrap().0;
+                        let mut merged: ResponsiveSelectorRules = current.clone();
+                        merged.extend(new_rules.iter().cloned());
+                        *e.get_mut() = Rc::new(ResponsiveSelectors(merged));
+                    }
+                    Entry::Vacant(e) => {
+                        e.insert(v.clone());
+                    }
+                },
                 StyleKeyInfo::Prop(info) => {
                     // Track inherited props for O(1) early-exit in apply_only_inherited
                     if info.inherited {
@@ -1016,11 +1267,27 @@ impl Style {
     }
 
     pub(crate) fn apply_mut(&mut self, over: Style) {
-        self.apply_iter(over.map.iter());
+        // FAST PATH: identical semantic payload identity
+        if self.merge_id == over.merge_id {
+            return;
+        }
+        let over_merge_id = over.merge_id;
+        let effect_context = over.effect_context.clone();
+        self.apply_iter(over.map.iter(), effect_context);
+        self.merge_id = combine_merge_ids(self.merge_id, over_merge_id);
+        self.context_selectors |= over.context_selectors;
     }
 
     pub(crate) fn apply_mut_no_mappings(&mut self, over: Style) {
-        self.apply_iter_no_mappings(over.map.iter());
+        // FAST PATH: identical semantic payload identity
+        if self.merge_id == over.merge_id {
+            return;
+        }
+        let over_merge_id = over.merge_id;
+        let effect_context = over.effect_context.clone();
+        self.apply_iter_no_mappings(over.map.iter(), effect_context);
+        self.merge_id = combine_merge_ids(self.merge_id, over_merge_id);
+        self.context_selectors |= over.context_selectors;
     }
 
     /// Apply another `Style` to this style, returning a new `Style` with the overrides
@@ -1043,39 +1310,6 @@ impl Style {
     pub fn apply_overriding_styles(self, overrides: impl Iterator<Item = Style>) -> Style {
         overrides.fold(self, |acc, x| acc.apply(x))
     }
-
-    // /// Apply context mappings with the given context (inherited props from ancestors).
-    // /// Returns the style with context values applied and a flag indicating if changes were made.
-    // ///
-    // /// Uses iterative approach instead of recursion for better performance.
-    // pub(crate) fn apply_context_mappings(mut self, context: &Style) -> (Self, bool) {
-    //     let key = StyleKey {
-    //         info: &CONTEXT_MAPPINGS_INFO,
-    //     };
-    //     let mut changed = false;
-
-    //     // Iterative approach: keep processing until no more context mappings
-    //     loop {
-    //         // Single lookup: use remove directly instead of get + remove
-    //         let ctx_mappings = self
-    //             .map
-    //             .remove(&key)
-    //             .and_then(|v| v.downcast_ref::<ContextMappings>().cloned());
-
-    //         match ctx_mappings {
-    //             Some(mappings) => {
-    //                 changed = true;
-    //                 // Iterate over Rc<Vec> - no allocation needed
-    //                 for mapping in mappings.0.iter() {
-    //                     self = mapping(self, context);
-    //                 }
-    //             }
-    //             None => break,
-    //         }
-    //     }
-
-    //     (self, changed)
-    // }
 }
 
 impl Debug for Style {
@@ -1093,35 +1327,45 @@ impl Debug for Style {
     }
 }
 
-style_key_selector!(hover, StyleSelectors::new().set(StyleSelector::Hover, true));
+style_key_selector!(
+    hover,
+    StyleSelectors::empty().set_selector(StyleSelector::Hover, true)
+);
 style_key_selector!(
     file_hover,
-    StyleSelectors::new().set(StyleSelector::FileHover, true)
+    StyleSelectors::empty().set_selector(StyleSelector::FileHover, true)
 );
-style_key_selector!(focus, StyleSelectors::new().set(StyleSelector::Focus, true));
+style_key_selector!(
+    focus,
+    StyleSelectors::empty().set_selector(StyleSelector::Focus, true)
+);
 style_key_selector!(
     focus_visible,
-    StyleSelectors::new().set(StyleSelector::FocusVisible, true)
+    StyleSelectors::empty().set_selector(StyleSelector::FocusVisible, true)
+);
+style_key_selector!(
+    focus_within,
+    StyleSelectors::empty().set_selector(StyleSelector::FocusWithin, true)
 );
 style_key_selector!(
     disabled,
-    StyleSelectors::new().set(StyleSelector::Disabled, true)
+    StyleSelectors::empty().set_selector(StyleSelector::Disabled, true)
 );
 style_key_selector!(
     active,
-    StyleSelectors::new().set(StyleSelector::Active, true)
+    StyleSelectors::empty().set_selector(StyleSelector::Active, true)
 );
 style_key_selector!(
     dragging,
-    StyleSelectors::new().set(StyleSelector::Dragging, true)
+    StyleSelectors::empty().set_selector(StyleSelector::Dragging, true)
 );
 style_key_selector!(
     selected,
-    StyleSelectors::new().set(StyleSelector::Selected, true)
+    StyleSelectors::empty().set_selector(StyleSelector::Selected, true)
 );
 style_key_selector!(
     darkmode,
-    StyleSelectors::new().set(StyleSelector::DarkMode, true)
+    StyleSelectors::empty().set_selector(StyleSelector::DarkMode, true)
 );
 
 impl StyleSelector {
@@ -1130,6 +1374,7 @@ impl StyleSelector {
             StyleSelector::Hover => hover(),
             StyleSelector::Focus => focus(),
             StyleSelector::FocusVisible => focus_visible(),
+            StyleSelector::FocusWithin => focus_within(),
             StyleSelector::Disabled => disabled(),
             StyleSelector::Active => active(),
             StyleSelector::Dragging => dragging(),
@@ -1461,6 +1706,9 @@ define_builtin_props!(
 
     /// Controls the stack order of positioned views.
     ///
+    /// This is not a global z-index and will only be used as an override to the sorted order of sibling elements.
+    /// If you want a view positioned above others, use an overlay.
+    ///
     /// Higher values appear in front of lower values.
     ZIndex z_index { nocb, tr }: Option<i32> {} = None,
 
@@ -1522,12 +1770,13 @@ define_builtin_props!(
     /// Controls whether the view's text can be selected.
     ///
     /// This property is inherited by child views.
+    // TODO: rename this TextSelectable
     Selectable selectable {}: bool { inherited } = true,
 
     /// Controls how overflowed text content is handled.
     ///
     /// Determines whether text wraps or gets clipped.
-    TextOverflowProp text_overflow {}: TextOverflow {} = TextOverflow::Wrap,
+    TextOverflowProp text_overflow {}: TextOverflow { inherited } = TextOverflow::Clip,
 
     /// Sets text alignment within the view.
     ///
@@ -1544,6 +1793,13 @@ define_builtin_props!(
     /// Maintains width-to-height proportions during layout.
     AspectRatio aspect_ratio {tr}: Option<f32> {} = None,
 
+    /// Controls how replaced content (like images) should be resized to fit its container.
+    ///
+    /// This property specifies how an image or other replaced element should be resized
+    /// to fit within its container while potentially preserving its aspect ratio.
+    /// Corresponds to the CSS `object-fit` property.
+    ObjectFitProp object_fit {}: ObjectFit {} = ObjectFit::Fill,
+
     /// Sets the gap between columns in grid or flex layouts.
     ///
     /// Creates space between items in the horizontal direction.
@@ -1554,43 +1810,114 @@ define_builtin_props!(
     /// Creates space between items in the vertical direction.
     RowGap row_gap { nocb, tr }: PxPct {} = PxPct::Px(0.),
 
+    /// Width of the scrollbar track in pixels.
+    ///
+    /// This property reserves space for scrollbars when `overflow_x` or `overflow_y` is set to `Scroll`.
+    /// The reserved space reduces the available content area but ensures content doesn't flow under the scrollbar.
+    ///
+    /// **Layout behavior:**
+    /// - When `overflow_y: Scroll`, reserves `scrollbar_width` from the right side of the container
+    /// - When `overflow_x: Scroll`, reserves `scrollbar_width` from the bottom of the container
+    /// - Space is reserved inside the container's bounds, reducing the content rect size
+    /// - No space is reserved for `overflow: Hidden`, `Visible`, or `Clip`
+    ///
+    /// **Example:**
+    /// ```rust,ignore
+    /// // Reserve 10px for scrollbar
+    /// .scrollbar_width(10.0)
+    ///
+    /// // Thinner scrollbar for compact UI
+    /// .scrollbar_width(6.0)
+    /// ```
+    ///
+    /// **Default:** `8px`
+    ScrollbarWidth scrollbar_width {tr}: Px {} = Px(8.),
+
+    /// How children overflowing their container in X axis should affect layout
+    OverflowX overflow_x {}: Overflow {} = Overflow::default(),
+
+    /// How children overflowing their container in Y axis should affect layout
+    OverflowY overflow_y {}: Overflow {} = Overflow::default(),
+
     /// Sets the horizontal scale transform.
     ///
     /// Values less than 100% shrink the view, greater than 100% enlarge it.
+    /// Scale is applied last in the transform sequence, after translation and rotation.
+    /// The scaling occurs around the anchor point specified by `scale_about`.
+    /// Transform order: translate → rotate → scale (matches CSS individual transform properties).
     ScaleX scale_x {tr}: Pct {} = Pct(100.),
 
     /// Sets the vertical scale transform.
     ///
     /// Values less than 100% shrink the view, greater than 100% enlarge it.
+    /// Scale is applied last in the transform sequence, after translation and rotation.
+    /// The scaling occurs around the anchor point specified by `scale_about`.
+    /// Transform order: translate → rotate → scale (matches CSS individual transform properties).
     ScaleY scale_y {tr}: Pct {} = Pct(100.),
 
     /// Sets the horizontal translation transform.
     ///
     /// Moves the view left (negative) or right (positive).
+    /// Translation is applied first in the transform sequence, in the element's local coordinate space.
+    /// This matches CSS individual transform properties behavior.
+    /// Transform order: translate → rotate → scale.
     TranslateX translate_x {tr}: PxPct {} = PxPct::Px(0.),
 
     /// Sets the vertical translation transform.
     ///
     /// Moves the view up (negative) or down (positive).
+    /// Translation is applied first in the transform sequence, in the element's local coordinate space.
+    /// This matches CSS individual transform properties behavior.
+    /// Transform order: translate → rotate → scale.
     TranslateY translate_y {tr}: PxPct {} = PxPct::Px(0.),
 
     /// Sets the rotation transform angle.
     ///
     /// Positive values rotate clockwise, negative values rotate counter-clockwise.
     /// Use `.deg()` or `.rad()` methods to specify the angle unit.
+    /// Rotation is applied after translation but before scaling, around the anchor point
+    /// specified by `rotate_about`.
+    /// Transform order: translate → rotate → scale (matches CSS individual transform properties).
     Rotation rotate {tr}: Angle {} = Angle::Rad(0.0),
 
     /// Sets the anchor point for rotation transformations.
     ///
     /// Determines the point around which the view rotates. Use predefined constants
     /// like `AnchorAbout::CENTER` or create custom anchor points with pixel or percentage values.
+    /// The anchor point is specified in the element's local coordinate space (before any transforms).
     RotateAbout rotate_about {}: AnchorAbout {} = AnchorAbout::CENTER,
 
     /// Sets the anchor point for scaling transformations.
     ///
     /// Determines the point around which the view scales. Use predefined constants
     /// like `AnchorAbout::CENTER` or create custom anchor points with pixel or percentage values.
+    /// The anchor point is specified in the element's local coordinate space (before any transforms).
+    /// Transform order: translate → rotate → scale (matches CSS individual transform properties).
     ScaleAbout scale_about {tr}: AnchorAbout {} = AnchorAbout::CENTER,
+
+    /// Sets a custom affine transformation matrix.
+    ///
+    /// This property allows you to specify an arbitrary 2D affine transformation that will be
+    /// applied in addition to the individual transform properties (translate_x, translate_y,
+    /// scale_x, scale_y, rotate).
+    ///
+    /// **Transform application order:**
+    /// 1. Individual `translate_x` and `translate_y` properties
+    /// 2. Individual `rotate` property
+    /// 3. Individual `scale_x` and `scale_y` properties
+    /// 4. **This `transform` property (applied last)**
+    ///
+    /// This matches CSS behavior where individual transform properties are applied before
+    /// the `transform` property. The `transform` matrix is applied in the final coordinate
+    /// space after all individual transforms.
+    ///
+    /// **Example:**
+    /// ```rust
+    /// s.translate_x(10.0)  // Applied first
+    ///  .scale(1.5)          // Applied second
+    ///  .transform(Affine::rotate(0.5))  // Applied last (rotates the already-translated, scaled element)
+    /// ```
+    Transform transform {tr}: Affine {} = Affine::IDENTITY,
 
     /// Sets the opacity of the view.
     ///
@@ -1608,15 +1935,8 @@ define_builtin_props!(
     /// This property is inherited by child views.
     Disabled set_disabled {}: bool { inherited } = false,
 
-    /// Controls whether the view can receive focus.
-    ///
-    /// Focus is necessary for keyboard interaction.
-    Focusable focusable {}: bool { } = false,
-
-    /// Controls whether the view can be dragged.
-    ///
-    /// Enables drag-and-drop functionality for the view.
-    Draggable draggable {}: bool { } = false,
+    /// Controls whether the view can receive focus during navigation such as tab or arrow navigation.
+    Focusable set_focus {}: Focus { } = Focus::None,
 );
 
 impl BuiltinStyle<'_> {
@@ -1658,16 +1978,6 @@ impl BuiltinStyle<'_> {
     }
 }
 
-prop!(
-    /// How children overflowing their container in Y axis should affect layout
-    pub OverflowX: Overflow {} = Overflow::default()
-);
-
-prop!(
-    /// How children overflowing their container in X axis should affect layout
-    pub OverflowY: Overflow {} = Overflow::default()
-);
-
 prop_extractor! {
     pub FontProps {
         pub size: FontSize,
@@ -1679,6 +1989,7 @@ prop_extractor! {
 
 prop_extractor! {
     pub(crate) LayoutProps {
+        // display is used here to just to properly trigger transitions on layout change. it is not transitioned here
         pub border: BorderProp,
         pub padding: PaddingProp,
         pub margin: MarginProp,
@@ -1707,6 +2018,7 @@ prop_extractor! {
 }
 
 prop_extractor! {
+    /// These are properties that when changed the box tree needs committed.
     pub TransformProps {
         pub scale_x: ScaleX,
         pub scale_y: ScaleY,
@@ -1717,108 +2029,69 @@ prop_extractor! {
         pub rotation: Rotation,
         pub rotate_about: RotateAbout,
         pub scale_about: ScaleAbout,
-    }
-}
-impl TransformProps {
-    pub fn affine(&self, size: kurbo::Size) -> Affine {
-        let mut transform = Affine::IDENTITY;
 
-        let transform_x = match self.translate_x() {
-            crate::unit::PxPct::Px(px) => px,
-            crate::unit::PxPct::Pct(pct) => pct / 100.,
-        };
-        let transform_y = match self.translate_y() {
-            crate::unit::PxPct::Px(px) => px,
-            crate::unit::PxPct::Pct(pct) => pct / 100.,
-        };
-        transform *= Affine::translate(Vec2 {
-            x: transform_x,
-            y: transform_y,
-        });
+        pub transform: Transform,
 
-        let scale_x = self.scale_x().0 / 100.;
-        let scale_y = self.scale_y().0 / 100.;
-        let rotation = self.rotation().to_radians();
-
-        // Get rotation and scale anchor points
-        let rotate_about = self.rotate_about();
-        let scale_about = self.scale_about();
-
-        // Convert anchor points to fractional positions
-        let (rotate_x_frac, rotate_y_frac) = rotate_about.as_fractions();
-        let (scale_x_frac, scale_y_frac) = scale_about.as_fractions();
-
-        let rotate_point = Vec2 {
-            x: rotate_x_frac * size.width,
-            y: rotate_y_frac * size.height,
-        };
-
-        let scale_point = Vec2 {
-            x: scale_x_frac * size.width,
-            y: scale_y_frac * size.height,
-        };
-
-        // Apply transformations using the specified anchor points
-        if scale_x != 1.0 || scale_y != 1.0 {
-            // Manual non-uniform scaling about a point: translate -> scale -> translate back
-            let scale_center = scale_point;
-            transform = transform
-                .then_translate(-scale_center)
-                .then_scale_non_uniform(scale_x, scale_y)
-                .then_translate(scale_center);
-        }
-        if rotation != 0.0 {
-            // Manual rotation about a point: translate -> rotate -> translate back
-            let rotate_center = rotate_point;
-            transform = transform
-                .then_translate(-rotate_center)
-                .then_rotate(rotation)
-                .then_translate(rotate_center);
-        }
-
-        transform
-    }
-}
-
-prop_extractor! {
-    pub BoxTreeProps {
-        pub scale_about: ScaleAbout,
-        pub z_index: ZIndex,
-        pub pointer_events: PointerEventsProp,
-        pub focusable: Focusable,
-        pub disabled: Disabled,
-        pub display: DisplayProp,
         pub overflow_x: OverflowX,
         pub overflow_y: OverflowY,
         pub border_radius: BorderRadiusProp,
     }
 }
-impl BoxTreeProps {
-    pub fn pickable(&self) -> bool {
-        self.pointer_events() != Some(PointerEvents::None)
+impl TransformProps {
+    pub fn affine(&self, size: kurbo::Size) -> Affine {
+        let mut result = Affine::IDENTITY;
+        // CANONICAL ORDER (matches CSS individual properties):
+        // 1. translate → 2. rotate → 3. scale → 4. transform property
+
+        // 1. Translate
+        let transform_x = match self.translate_x() {
+            crate::unit::PxPct::Px(px) => px,
+            crate::unit::PxPct::Pct(pct) => (pct / 100.) * size.width,
+        };
+        let transform_y = match self.translate_y() {
+            crate::unit::PxPct::Px(px) => px,
+            crate::unit::PxPct::Pct(pct) => (pct / 100.) * size.height,
+        };
+        result *= Affine::translate(Vec2 {
+            x: transform_x,
+            y: transform_y,
+        });
+
+        // 2. Rotate (around rotate_about anchor)
+        let rotation = self.rotation().to_radians();
+        if rotation != 0.0 {
+            let rotate_about = self.rotate_about();
+            let (rotate_x_frac, rotate_y_frac) = rotate_about.as_fractions();
+            let rotate_point = Vec2 {
+                x: rotate_x_frac * size.width,
+                y: rotate_y_frac * size.height,
+            };
+            result *= Affine::translate(rotate_point)
+                * Affine::rotate(rotation)
+                * Affine::translate(-rotate_point);
+        }
+
+        // 3. Scale (around scale_about anchor)
+        let scale_x = self.scale_x().0 / 100.;
+        let scale_y = self.scale_y().0 / 100.;
+        if scale_x != 1.0 || scale_y != 1.0 {
+            let scale_about = self.scale_about();
+            let (scale_x_frac, scale_y_frac) = scale_about.as_fractions();
+            let scale_point = Vec2 {
+                x: scale_x_frac * size.width,
+                y: scale_y_frac * size.height,
+            };
+            result *= Affine::translate(scale_point)
+                * Affine::scale_non_uniform(scale_x, scale_y)
+                * Affine::translate(-scale_point);
+        }
+
+        // 4. Apply custom transform property last
+        result *= self.transform();
+        result
     }
 
-    // pub fn set_box_tree(
-    //     &self,
-    //     node_id: understory_box_tree::NodeId,
-    //     box_tree: &mut understory_box_tree::Tree,
-    // ) {
-    //     box_tree.set_z_index(node_id, self.z_index().unwrap_or(0));
-    //     let mut flags = NodeFlags::empty();
-    //     if self.pickable() {
-    //         flags |= NodeFlags::PICKABLE;
-    //     }
-    //     if self.focusable() && !self.hidden() && self.display() != Display::None && !self.disabled()
-    //     {
-    //         flags |= NodeFlags::FOCUSABLE;
-    //     }
-    //     if !self.hidden() {
-    //         flags |= NodeFlags::VISIBLE;
-    //     }
-    //     box_tree.set_flags(node_id, flags);
-    // }
-
-    pub fn clip_rect(&self, mut rect: kurbo::Rect) -> Option<RoundedRect> {
+    pub fn clip_rect(&self, mut local_rect: kurbo::Rect) -> Option<RoundedRect> {
         use Overflow::*;
 
         let (overflow_x, overflow_y) = (self.overflow_x(), self.overflow_y());
@@ -1830,19 +2103,19 @@ impl BoxTreeProps {
 
         let border_radius = self
             .border_radius()
-            .resolve_border_radii(rect.size().min_side());
+            .resolve_border_radii(local_rect.size().min_side());
 
         // Extend to infinity on visible axes
         if overflow_x == Visible {
-            rect.x0 = f64::NEG_INFINITY;
-            rect.x1 = f64::INFINITY;
+            local_rect.x0 = f64::NEG_INFINITY;
+            local_rect.x1 = f64::INFINITY;
         }
         if overflow_y == Visible {
-            rect.y0 = f64::NEG_INFINITY;
-            rect.y1 = f64::INFINITY;
+            local_rect.y0 = f64::NEG_INFINITY;
+            local_rect.y1 = f64::INFINITY;
         }
 
-        Some(RoundedRect::from_rect(rect, border_radius))
+        Some(RoundedRect::from_rect(local_rect, border_radius))
     }
 }
 
@@ -1876,7 +2149,7 @@ impl LayoutProps {
 prop_extractor! {
     pub SelectionStyle {
         pub corner_radius: SelectionCornerRadius,
-        pub selection_color: CursorColor,
+        pub selection_color: SelectionColor,
     }
 }
 
@@ -1902,7 +2175,9 @@ impl Style {
             StyleValue::Animated(value) => StyleMapValue::Animated(value),
             StyleValue::Unset => StyleMapValue::Unset,
             StyleValue::Base => {
-                self.map.remove(&P::key());
+                if self.map.remove(&P::key()).is_some() {
+                    self.merge_id = next_style_merge_id();
+                }
                 return self;
             }
         };
@@ -1911,6 +2186,7 @@ impl Style {
             self.has_inherited = true;
         }
         self.map.insert(P::key(), Rc::new(insert));
+        self.merge_id = next_style_merge_id();
         self
     }
 
@@ -1918,12 +2194,23 @@ impl Style {
     pub fn transition<P: StyleProp>(mut self, _prop: P, transition: Transition) -> Self {
         self.map
             .insert(P::prop_ref().info().transition_key, Rc::new(transition));
+        self.merge_id = next_style_merge_id();
         self
     }
 
     fn selector(mut self, selector: StyleSelector, style: impl FnOnce(Style) -> Style) -> Self {
         let over = style(Style::default());
         self.set_selector(selector, over);
+        self
+    }
+
+    pub(crate) fn structural_selector(
+        mut self,
+        selector: StructuralSelector,
+        style: impl FnOnce(Style) -> Style,
+    ) -> Self {
+        let over = style(Style::default());
+        self.set_structural_selector(selector, over);
         self
     }
 
@@ -1937,9 +2224,40 @@ impl Style {
         self.selector(StyleSelector::Focus, style)
     }
 
-    /// Similar to the `:focus-visible` css selector, this style only activates when tab navigation is used.
+    /// Similar to the `:focus-visible` css selector, this style only activates when the view was focused via tab or arrow navigation.
     pub fn focus_visible(self, style: impl FnOnce(Style) -> Style) -> Self {
         self.selector(StyleSelector::FocusVisible, style)
+    }
+
+    /// Similar to the `:focus-within` css selector, this style activates when this
+    /// view or any descendant is in the focus path.
+    pub fn focus_within(self, style: impl FnOnce(Style) -> Style) -> Self {
+        self.selector(StyleSelector::FocusWithin, style)
+    }
+
+    /// Similar to the `:first-child` css selector.
+    pub fn first_child(self, style: impl FnOnce(Style) -> Style) -> Self {
+        self.structural_selector(StructuralSelector::FirstChild, style)
+    }
+
+    /// Similar to the `:last-child` css selector.
+    pub fn last_child(self, style: impl FnOnce(Style) -> Style) -> Self {
+        self.structural_selector(StructuralSelector::LastChild, style)
+    }
+
+    /// Similar to the `:nth-child(...)` css selector.
+    pub fn nth_child(self, nth: NthChild, style: impl FnOnce(Style) -> Style) -> Self {
+        self.structural_selector(StructuralSelector::NthChild(nth), style)
+    }
+
+    /// Convenience for `:nth-child(odd)`.
+    pub fn odd(self, style: impl FnOnce(Style) -> Style) -> Self {
+        self.nth_child(NthChild::odd(), style)
+    }
+
+    /// Convenience for `:nth-child(even)`.
+    pub fn even(self, style: impl FnOnce(Style) -> Style) -> Self {
+        self.nth_child(NthChild::even(), style)
     }
 
     /// The visual style to apply when the view is in a selected state.
@@ -1975,9 +2293,47 @@ impl Style {
     /// Applies styles that activate at specific screen sizes (responsive design).
     pub fn responsive(mut self, size: ScreenSize, style: impl FnOnce(Style) -> Style) -> Self {
         let over = style(Style::default());
-        for breakpoint in size.breakpoints() {
-            self.set_breakpoint(breakpoint, over.clone());
-        }
+        self.set_responsive_selector(ResponsiveSelector::ScreenSize(size), over);
+        self
+    }
+
+    /// Applies styles when window width is at least `min`.
+    pub fn min_window_width(
+        mut self,
+        min: impl Into<Px>,
+        style: impl FnOnce(Style) -> Style,
+    ) -> Self {
+        let over = style(Style::default());
+        self.set_responsive_selector(ResponsiveSelector::MinWidth(min.into()), over);
+        self
+    }
+
+    /// Applies styles when window width is at most `max`.
+    pub fn max_window_width(
+        mut self,
+        max: impl Into<Px>,
+        style: impl FnOnce(Style) -> Style,
+    ) -> Self {
+        let over = style(Style::default());
+        self.set_responsive_selector(ResponsiveSelector::MaxWidth(max.into()), over);
+        self
+    }
+
+    /// Applies styles when window width is within `[min, max]` (inclusive).
+    pub fn window_width_range(
+        mut self,
+        min: impl Into<Px>,
+        max: impl Into<Px>,
+        style: impl FnOnce(Style) -> Style,
+    ) -> Self {
+        let over = style(Style::default());
+        self.set_responsive_selector(
+            ResponsiveSelector::WidthRange {
+                min: min.into(),
+                max: max.into(),
+            },
+            over,
+        );
         self
     }
 
@@ -2030,6 +2386,40 @@ impl Style {
     /// Sets the height as a percentage of the parent container.
     pub fn height_pct(self, height: f64) -> Self {
         self.height(height.pct())
+    }
+
+    /// Makes the view fully keyboard navigable.
+    ///
+    /// The view can receive focus via Tab/Shift+Tab navigation, arrow keys,
+    /// pointer clicks, and programmatic focus calls. This is the recommended
+    /// setting for interactive controls like buttons, inputs, and links.
+    ///
+    /// Equivalent to `focus(Focus::Keyboard)`.
+    pub fn keyboard_navigable(self) -> Self {
+        self.set(Focusable, Focus::Keyboard)
+    }
+
+    /// Makes the view focusable by pointer and programmatically, but excludes it
+    /// from keyboard navigation. For many elements (especially buttons) you should
+    /// probably use [Self::keyboard_navigable].
+    ///
+    /// The view can be clicked to receive focus or focused via `request_focus()`,
+    /// but will not be included in Tab order or arrow key navigation. Useful for
+    /// scroll containers, modal backdrops, or roving tabindex patterns.
+    ///
+    /// Equivalent to `focus(Focus::PointerAndProgrammatic)`.
+    pub fn focusable(self) -> Self {
+        self.set(Focusable, Focus::PointerAndProgrammatic)
+    }
+
+    /// Makes the view non-focusable through any means.
+    ///
+    /// The view cannot receive focus via keyboard, pointer, or programmatic calls.
+    /// Use this for decorative elements or containers that should never be interactive.
+    ///
+    /// Equivalent to `focus(Focus::None)`.
+    pub fn focus_none(self) -> Self {
+        self.set(Focusable, Focus::None)
     }
 
     /// Sets the gap between columns in grid or flex layouts.
@@ -2680,8 +3070,9 @@ impl Style {
     }
 
     /// Sets the font family for text content.
-    pub fn font_family(self, family: impl Into<StyleValue<String>>) -> Self {
-        self.set_style_value(FontFamily, family.into().map(Some))
+    pub fn font_family(self, family: impl Into<String>) -> Self {
+        let family = family.into();
+        self.set_style_value(FontFamily, StyleValue::Val(family).map(Some))
     }
 
     /// Sets the font weight (boldness) for text content.
@@ -2980,6 +3371,7 @@ impl Style {
             grid_auto_rows: style.grid_auto_rows(),
             grid_auto_columns: style.grid_auto_columns(),
             grid_auto_flow: style.grid_auto_flow(),
+            scrollbar_width: style.scrollbar_width().0 as f32,
             ..Default::default()
         }
     }

@@ -32,6 +32,22 @@ pub trait Easing: std::fmt::Debug {
     }
 }
 
+impl Easing for Box<dyn Easing> {
+    fn eval(&self, time: f64) -> f64 {
+        (**self).eval(time)
+    }
+}
+impl Easing for std::rc::Rc<dyn Easing> {
+    fn eval(&self, time: f64) -> f64 {
+        (**self).eval(time)
+    }
+}
+impl Easing for std::sync::Arc<dyn Easing> {
+    fn eval(&self, time: f64) -> f64 {
+        (**self).eval(time)
+    }
+}
+
 /// Linear easing - no acceleration or deceleration.
 #[derive(Debug, Clone, Copy)]
 pub struct Linear;

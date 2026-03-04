@@ -6,9 +6,9 @@ use smallvec::SmallVec;
 
 use crate::{
     context::{StyleCx, UpdateCx},
+    style::recalc::StyleReason,
     style_class,
-    view::ViewId,
-    view::{IntoView, View},
+    view::{IntoView, View, ViewId},
 };
 
 use super::{Diff, DiffOpAdd, FxIndexSet, HashRun, apply_diff, diff};
@@ -264,16 +264,12 @@ impl<T> View for Tab<T> {
                 }
                 TabState::Active(active) => {
                     self.active.replace(active);
-                    self.id.request_style_recursive();
                 }
                 TabState::None => {
                     self.active.take();
                 }
             }
-            self.id.request_all();
-            for (child, _) in self.children.iter().flatten() {
-                child.request_all();
-            }
+            self.id.request_style(StyleReason::style_pass());
         }
     }
 
@@ -287,17 +283,6 @@ impl<T> View for Tab<T> {
                     child.set_hidden();
                 }
             }
-        }
-    }
-
-    fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        if let Some(active_tab) = self.active
-            && let Some(Some((active, _))) = self
-                .children
-                .get(active_tab)
-                .or_else(|| self.children.first())
-        {
-            cx.paint_view(*active);
         }
     }
 }

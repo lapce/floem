@@ -5,7 +5,9 @@ use floem::{
     style::{ScaleX, ScaleY, Style, Transition},
     text::FontWeight,
     unit::{DurationUnitExt, UnitExt},
-    views::{dyn_container, slider, svg, ButtonClass, Container, Decorators, Stack, SvgClass},
+    views::{
+        dyn_container, slider::Slider, svg, ButtonClass, Container, Decorators, Stack, SvgClass,
+    },
     AnyView, IntoView,
 };
 
@@ -88,7 +90,7 @@ pub fn music_player() -> impl IntoView {
     let play_pause_button = Container::new(
         dyn_container(move || play_pause_state.get(), PlayPause::view).class(ButtonClass),
     )
-    .on_click_stop(move |_| play_pause_state.update(PlayPause::toggle));
+    .action(move || play_pause_state.update(PlayPause::toggle));
 
     let media_buttons = Stack::horizontal((
         Container::new(svg(svg::BACKWARD)).class(ButtonClass),
@@ -105,7 +107,7 @@ pub fn music_player() -> impl IntoView {
     let card = Stack::vertical((
         now_playing,
         dyn_container(move || song_info.get(), |info| info),
-        slider::slider(move || 40.pct())
+        Slider::new(move || 40.pct())
             .style(|s| s.width_full())
             .slider_style(|s| {
                 s.bar_height(3)

@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use floem::animate::Animation;
-use floem::headless::HeadlessHarness;
+use floem::headless::{HeadlessHarness, TestRoot};
 use floem::peniko::color::palette;
 use floem::prelude::*;
 use floem::views::{Decorators, Empty, Stack};
@@ -125,8 +125,9 @@ fn bench_no_animation_baseline(c: &mut Criterion) {
     for size in [10, 50, 100].iter() {
         group.bench_with_input(BenchmarkId::new("no_animation", size), size, |b, &size| {
             b.iter(|| {
+                let root = TestRoot::new();
                 let view = create_views_no_animation(size);
-                let harness = HeadlessHarness::new_with_size(view, 400.0, 400.0);
+                let harness = HeadlessHarness::new_with_size(root, view, 400.0, 400.0);
                 black_box(harness.root_id());
             });
         });
@@ -148,8 +149,9 @@ fn bench_with_animation_attached(c: &mut Criterion) {
             size,
             |b, &size| {
                 b.iter(|| {
+                    let root = TestRoot::new();
                     let view = create_views_with_animation(size);
-                    let harness = HeadlessHarness::new_with_size(view, 400.0, 400.0);
+                    let harness = HeadlessHarness::new_with_size(root, view, 400.0, 400.0);
                     black_box(harness.root_id());
                 });
             },
@@ -170,8 +172,9 @@ fn bench_active_animation_rebuild(c: &mut Criterion) {
             BenchmarkId::new("repeating_animation", size),
             size,
             |b, &size| {
+                let root = TestRoot::new();
                 let view = create_views_with_repeating_animation(size);
-                let mut harness = HeadlessHarness::new_with_size(view, 400.0, 400.0);
+                let mut harness = HeadlessHarness::new_with_size(root, view, 400.0, 400.0);
 
                 b.iter(|| {
                     harness.rebuild();
@@ -195,8 +198,9 @@ fn bench_complex_animation_rebuild(c: &mut Criterion) {
             BenchmarkId::new("complex_animation", size),
             size,
             |b, &size| {
+                let root = TestRoot::new();
                 let view = create_views_with_complex_animation(size);
-                let mut harness = HeadlessHarness::new_with_size(view, 400.0, 400.0);
+                let mut harness = HeadlessHarness::new_with_size(root, view, 400.0, 400.0);
 
                 b.iter(|| {
                     harness.rebuild();
@@ -261,8 +265,9 @@ fn bench_mixed_animation(c: &mut Criterion) {
             BenchmarkId::new("10_percent_animated", total),
             total,
             |b, &total| {
+                let root = TestRoot::new();
                 let view = create_mixed_views(total, 10);
-                let mut harness = HeadlessHarness::new_with_size(view, 400.0, 400.0);
+                let mut harness = HeadlessHarness::new_with_size(root, view, 400.0, 400.0);
 
                 b.iter(|| {
                     harness.rebuild();
@@ -282,8 +287,9 @@ fn bench_sustained_animation(c: &mut Criterion) {
     let mut group = c.benchmark_group("animation_sustained");
 
     group.bench_function("50_views_10_frames", |b| {
+        let root = TestRoot::new();
         let view = create_views_with_repeating_animation(50);
-        let mut harness = HeadlessHarness::new_with_size(view, 400.0, 400.0);
+        let mut harness = HeadlessHarness::new_with_size(root, view, 400.0, 400.0);
 
         b.iter(|| {
             for _ in 0..10 {
@@ -294,8 +300,9 @@ fn bench_sustained_animation(c: &mut Criterion) {
     });
 
     group.bench_function("100_views_10_frames", |b| {
+        let root = TestRoot::new();
         let view = create_views_with_repeating_animation(100);
-        let mut harness = HeadlessHarness::new_with_size(view, 400.0, 400.0);
+        let mut harness = HeadlessHarness::new_with_size(root, view, 400.0, 400.0);
 
         b.iter(|| {
             for _ in 0..10 {

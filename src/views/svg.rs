@@ -142,7 +142,7 @@ impl View for Svg {
             let aspect_ratio = size.width() / size.height();
             if self.aspect_ratio != aspect_ratio {
                 self.aspect_ratio = aspect_ratio;
-                self.id.request_style();
+                // self.id.request_style();
             }
         }
         if let Some(prop_reader) = &mut self.css_prop

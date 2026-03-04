@@ -23,6 +23,7 @@
 
 use peniko::kurbo::{Point, Size};
 
+use crate::ElementId;
 use crate::context::InteractionState;
 use crate::event::Event;
 use crate::event::path::hit_test;
@@ -32,7 +33,50 @@ use crate::paint::{
 use crate::style::{Style, StyleSelector};
 use crate::view::IntoView;
 use crate::view::ViewId;
-use crate::window::handle::WindowHandle;
+use crate::window::handle::{WindowHandle, set_current_view};
+
+/// A test root that owns a root ViewId and sets it as the current view.
+///
+/// This is used when creating views before creating a HeadlessHarness.
+/// By creating a TestRoot first, all subsequently created views will use
+/// the correct root ViewId and box tree.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use floem::headless::{TestRoot, HeadlessHarness};
+/// use floem::views::Empty;
+///
+/// let root = TestRoot::new();
+/// let view = Empty::new().style(|s| s.size(100.0, 100.0));
+/// let harness = HeadlessHarness::with_root(root, view, 100.0, 100.0);
+/// ```
+#[derive(Debug, Copy, Clone)]
+pub struct TestRoot {
+    root_id: ViewId,
+}
+
+impl TestRoot {
+    /// Create a new test root and set it as the current view.
+    ///
+    /// After calling this, all views created will use this root's box tree.
+    pub fn new() -> Self {
+        let root_id = ViewId::new_root();
+        set_current_view(root_id);
+        Self { root_id }
+    }
+
+    /// Get the root ViewId.
+    pub fn id(&self) -> ViewId {
+        self.root_id
+    }
+}
+
+impl Default for TestRoot {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 /// Result of an event dispatch operation.
 #[derive(Debug, Clone)]
@@ -59,14 +103,38 @@ impl HeadlessHarness {
     /// Create a new headless harness with the given root view.
     ///
     /// The view will be set up with default size (800x600) and scale (1.0).
-    pub fn new(view: impl IntoView) -> Self {
-        Self::new_with_size(view, 800.0, 600.0)
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use floem::headless::{TestRoot, HeadlessHarness};
+    /// use floem::views::Empty;
+    ///
+    /// let root = TestRoot::new();
+    /// let view = Empty::new().style(|s| s.size(100.0, 100.0));
+    /// let harness = HeadlessHarness::new(root, view);
+    /// ```
+    pub fn new(root: TestRoot, view: impl IntoView) -> Self {
+        Self::new_with_size(root, view, 800.0, 600.0)
     }
 
     /// Create a new headless harness with the given root view and window size.
-    pub fn new_with_size(view: impl IntoView, width: f64, height: f64) -> Self {
+    ///
+    /// Use this when you need to create views before creating the harness.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use floem::headless::{TestRoot, HeadlessHarness};
+    /// use floem::views::Empty;
+    ///
+    /// let root = TestRoot::new();
+    /// let view = Empty::new().style(|s| s.size(100.0, 100.0));
+    /// let harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
+    /// ```
+    pub fn new_with_size(root: TestRoot, view: impl IntoView, width: f64, height: f64) -> Self {
         let size = Size::new(width, height);
-        let window_handle = WindowHandle::new_headless(view, size, 1.0);
+        let window_handle = WindowHandle::new_headless(root.id(), view, size, 1.0);
 
         Self { window_handle }
     }
@@ -96,6 +164,13 @@ impl HeadlessHarness {
         self.process_update_no_paint();
     }
 
+    /// process update messages
+    ///
+    /// this can be used so that style requests can be integrated into the window state without restyling
+    pub fn process_update_messages(&mut self) {
+        self.window_handle.process_update_messages();
+    }
+
     /// Run pending reactive effects and process all updates.
     ///
     /// Returns `true` if a repaint would be scheduled (style or layout changed).
@@ -108,7 +183,7 @@ impl HeadlessHarness {
     /// let needs_repaint = harness.process_update_no_paint();
     /// assert!(needs_repaint, "Style change should trigger repaint");
     /// ```
-    pub fn process_update_no_paint(&mut self) -> bool {
+    pub fn process_update_no_paint(&mut self) {
         // Process any scheduled updates (style/layout requests from previous frame)
         self.window_handle.process_scheduled_updates();
 
@@ -130,6 +205,8 @@ impl HeadlessHarness {
     /// - Layout passes
     pub fn dispatch_event(&mut self, event: Event) -> EventResult {
         self.window_handle.event(event);
+        // the normal floem window will drive updates when rendering frames. the headless window processes updates after all events
+        self.process_update_no_paint();
 
         // Note: WindowHandle::event() doesn't return propagation info,
         // so we return a basic result. The important thing is that the
@@ -153,6 +230,11 @@ impl HeadlessHarness {
     /// Simulate a pointer move event to the given position.
     pub fn pointer_move(&mut self, x: f64, y: f64) -> EventResult {
         self.dispatch_event(create_pointer_move(x, y))
+    }
+
+    /// Simulate a pointer leave window event to the given position.
+    pub fn pointer_leave(&mut self) -> EventResult {
+        self.dispatch_event(create_pointer_leave())
     }
 
     /// Simulate a click (pointer down + pointer up) at the given position.
@@ -243,46 +325,43 @@ impl HeadlessHarness {
         self.dispatch_event(create_scroll_lines_event(x, y, lines_x, lines_y))
     }
 
-    /// Find the view at the given position (hit test).
-    pub fn view_at(&self, x: f64, y: f64) -> Option<ViewId> {
-        hit_test(self.root_id(), Point::new(x, y))
+    /// Find the visual id at the given position (hit test).
+    pub fn element_id_at(&self, x: f64, y: f64) -> Option<ElementId> {
+        hit_test(self.root_id(), Point::new(x, y)).and_then(|v| v.last().copied())
     }
 
-    /// Check if a view is currently in the "clicking" state (pointer down but not up).
-    pub fn is_clicking(&self, id: ViewId) -> bool {
-        self.window_handle.window_state.is_clicking(&id)
+    /// Check if a view is currently in the "active" state
+    /// active: pointer down and not up with the pointer in the element either by
+    ///   1: remaining in or
+    ///   2: returning into the element
+    /// or keyboard trigger is down).
+    pub fn is_active(&self, id: impl Into<ElementId>) -> bool {
+        self.window_handle.window_state.is_active(id)
     }
 
     /// Check if a view is currently hovered.
-    pub fn is_hovered(&self, id: ViewId) -> bool {
-        self.window_handle.window_state.is_hovered(&id)
+    pub fn is_hovered(&self, id: impl Into<ElementId>) -> bool {
+        self.window_handle.window_state.is_hovered(id)
     }
 
     /// Check if a view is currently focused.
-    pub fn is_focused(&self, id: ViewId) -> bool {
-        self.window_handle.window_state.is_focused(&id)
+    pub fn is_focused(&self, id: impl Into<ElementId>) -> bool {
+        self.window_handle.window_state.is_focused(id)
     }
 
-    /// Check if a view is currently active.
-    pub fn is_active(&self, id: ViewId) -> bool {
-        self.window_handle.window_state.is_active(&id)
+    /// Check if a view has pointer capture.
+    pub fn has_capture(&self, id: impl Into<ElementId>) -> bool {
+        self.window_handle.window_state.has_capture(id)
     }
 
     /// Get the current interaction state for a view.
     ///
     /// This returns the same state used during style computation to determine
     /// which style selectors (hover, active, focused, etc.) apply to the view.
-    pub fn get_interaction_state(&self, id: ViewId) -> InteractionState {
-        InteractionState {
-            is_selected: id.is_selected(),
-            is_hovered: self.window_handle.window_state.is_hovered(&id),
-            is_disabled: id.is_disabled(),
-            is_focused: self.window_handle.window_state.is_focused(&id),
-            is_clicking: self.window_handle.window_state.is_clicking(&id),
-            is_dark_mode: self.window_handle.window_state.is_dark_mode(),
-            is_file_hover: self.window_handle.window_state.is_file_hover(&id),
-            using_keyboard_navigation: self.window_handle.window_state.keyboard_navigation,
-        }
+    pub fn get_interaction_state(&mut self, id: impl Into<ElementId>) -> InteractionState {
+        let id: ElementId = id.into();
+        let view_id = id.owning_id();
+        crate::style::StyleCx::get_interact_state(&self.window_handle.window_state, view_id)
     }
 
     /// Check if a view has styles defined for the given selector.
@@ -326,25 +405,9 @@ impl HeadlessHarness {
     /// Request style recalculation for views with Active selector, then recompute.
     ///
     /// This simulates the full pointer-up flow:
-    /// 1. Request style update for views with Active selector
-    /// 2. Clear clicking state
-    /// 3. Run style recalculation via process_update
+    /// 1. Run style recalculation via process_update
     pub fn process_pointer_up_styles(&mut self) {
-        // Request style update for views that have Active selector
-        // Use selector-aware method to only update views with :active styles
-        for id in self.window_handle.window_state.clicking.clone() {
-            if self
-                .window_handle
-                .window_state
-                .has_style_for_sel(id, StyleSelector::Active)
-            {
-                id.request_style_for_selector_recursive(StyleSelector::Active);
-            }
-        }
-
-        // Clicking state should already be cleared by dispatch_event,
-        // but clear it here too for safety
-        self.window_handle.window_state.clicking.clear();
+        // requests for style updates caused by mouse events are handled in the event code
 
         // Run full update cycle
         self.window_handle.process_update_no_paint();
@@ -366,11 +429,10 @@ impl HeadlessHarness {
 
     /// Check if a view has pending style changes.
     pub fn has_pending_style_change(&self, id: ViewId) -> bool {
-        use crate::view::state::ChangeFlags;
-        id.state()
-            .borrow()
-            .requested_changes
-            .contains(ChangeFlags::STYLE)
+        self.window_handle
+            .window_state
+            .style_dirty
+            .contains_key(&id)
     }
 
     /// Check if there are scheduled updates for the next frame.
@@ -385,22 +447,17 @@ impl HeadlessHarness {
     ///
     /// Views in this set will be processed during the next style pass.
     pub fn is_style_dirty(&self, id: ViewId) -> bool {
-        self.window_handle.window_state.style_dirty.contains(&id)
-    }
-
-    /// Get the viewport rectangle for a view, if one is set.
-    ///
-    /// This is typically set on children of scroll views to indicate
-    /// which portion of the child is currently visible.
-    pub fn get_viewport(&self, id: ViewId) -> Option<peniko::kurbo::Rect> {
-        id.state().borrow().viewport
+        self.window_handle
+            .window_state
+            .style_dirty
+            .contains_key(&id)
     }
 
     /// Get the layout rectangle for a view.
     ///
     /// This is the rectangle in window coordinates where the view is positioned.
     pub fn get_layout_rect(&self, id: ViewId) -> peniko::kurbo::Rect {
-        id.state().borrow().layout_rect
+        id.get_layout_rect()
     }
 
     /// Get the size of a view from its layout.
@@ -431,7 +488,7 @@ impl HeadlessHarness {
     /// ```
     pub fn paint_and_get_order(&mut self) -> Vec<ViewId> {
         enable_paint_order_tracking();
-        self.window_handle.paint(None);
+        self.window_handle.paint();
         let order = get_paint_order();
         disable_paint_order_tracking();
         order
@@ -469,7 +526,7 @@ impl HeadlessHarness {
     /// Use with `enable_paint_tracking()` and `get_paint_order()` to
     /// verify paint order.
     pub fn paint(&mut self) {
-        self.window_handle.paint(None);
+        self.window_handle.paint();
     }
 }
 
@@ -593,6 +650,17 @@ fn create_pointer_move(x: f64, y: f64) -> Event {
         },
         coalesced: Vec::new(),
         predicted: Vec::new(),
+    }))
+}
+
+/// Create a pointer move event to the given position.
+fn create_pointer_leave() -> Event {
+    use ui_events::pointer::{PointerEvent, PointerId, PointerInfo, PointerType};
+
+    Event::Pointer(PointerEvent::Leave(PointerInfo {
+        pointer_id: Some(PointerId::PRIMARY),
+        persistent_device_id: None,
+        pointer_type: PointerType::Mouse,
     }))
 }
 

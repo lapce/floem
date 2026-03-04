@@ -14,6 +14,7 @@ use floem_test::prelude::*;
 /// This is a key property for caching - if inputs match, outputs must match.
 #[test]
 fn test_identical_styles_produce_identical_results() {
+    let root = TestRoot::new();
     // Create two views with exactly the same style
     let view1 = Empty::new().style(|s| {
         s.size(100.0, 100.0)
@@ -30,7 +31,7 @@ fn test_identical_styles_produce_identical_results() {
     let id2 = view2.view_id();
 
     let view = Stack::new((view1, view2)).style(|s| s.size(200.0, 100.0));
-    let harness = HeadlessHarness::new_with_size(view, 200.0, 100.0);
+    let harness = HeadlessHarness::new_with_size(root, view, 200.0, 100.0);
 
     let style1 = harness.get_computed_style(id1);
     let style2 = harness.get_computed_style(id2);
@@ -47,13 +48,14 @@ fn test_identical_styles_produce_identical_results() {
 /// Test stacked style decorators.
 #[test]
 fn test_stacked_style_decorators() {
+    let root = TestRoot::new();
     // Later .style() calls should override earlier ones
     let view = Empty::new()
         .style(|s| s.size(100.0, 100.0).background(palette::css::RED))
         .style(|s| s.background(palette::css::BLUE));
     let id = view.view_id();
 
-    let harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Background should be BLUE (second style takes precedence)
     let style = harness.get_computed_style(id);
@@ -68,6 +70,7 @@ fn test_stacked_style_decorators() {
 /// Test that style computation is deterministic.
 #[test]
 fn test_style_computation_deterministic() {
+    let root = TestRoot::new();
     let view = Empty::new().style(|s| {
         s.size(100.0, 100.0)
             .background(palette::css::PURPLE)
@@ -76,7 +79,7 @@ fn test_style_computation_deterministic() {
     });
     let id = view.view_id();
 
-    let harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Check initial state
     let style = harness.get_computed_style(id);
@@ -90,6 +93,7 @@ fn test_style_computation_deterministic() {
 /// Test many views with the same style (good candidate for caching).
 #[test]
 fn test_many_views_same_style() {
+    let root = TestRoot::new();
     let mut views: Vec<_> = Vec::new();
     let mut ids: Vec<ViewId> = Vec::new();
 
@@ -104,7 +108,7 @@ fn test_many_views_same_style() {
     }
 
     let container = Stack::from_iter(views).style(|s| s.size(400.0, 400.0));
-    let harness = HeadlessHarness::new_with_size(container, 400.0, 400.0);
+    let harness = HeadlessHarness::new_with_size(root, container, 400.0, 400.0);
 
     // All views should have the same background
     for id in &ids {
@@ -120,6 +124,7 @@ fn test_many_views_same_style() {
 /// Test deep nesting doesn't break style computation.
 #[test]
 fn test_deep_nesting_style_computation() {
+    let root = TestRoot::new();
     fn create_nested(depth: usize) -> Container {
         if depth == 0 {
             Container::new(
@@ -132,7 +137,7 @@ fn test_deep_nesting_style_computation() {
     }
 
     let view = create_nested(10);
-    let harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // View should have been laid out correctly (no panic)
     let root_id = harness.root_id();
@@ -144,12 +149,13 @@ fn test_deep_nesting_style_computation() {
 /// Test that view_style from view type is combined correctly.
 #[test]
 fn test_view_style_combined_with_decorators() {
+    let root = TestRoot::new();
     let view = Empty::new()
         .style(|s| s.size(100.0, 100.0))
         .style(|s| s.background(palette::css::NAVY));
     let id = view.view_id();
 
-    let harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     let style = harness.get_computed_style(id);
     let bg = style.get(Background);
@@ -162,6 +168,7 @@ fn test_view_style_combined_with_decorators() {
 /// Test different styles produce different computed results.
 #[test]
 fn test_different_styles_produce_different_results() {
+    let root = TestRoot::new();
     let view1 = Empty::new().style(|s| s.size(100.0, 100.0).background(palette::css::RED));
     let id1 = view1.view_id();
 
@@ -169,7 +176,7 @@ fn test_different_styles_produce_different_results() {
     let id2 = view2.view_id();
 
     let view = Stack::new((view1, view2)).style(|s| s.size(200.0, 100.0));
-    let harness = HeadlessHarness::new_with_size(view, 200.0, 100.0);
+    let harness = HeadlessHarness::new_with_size(root, view, 200.0, 100.0);
 
     let style1 = harness.get_computed_style(id1);
     let style2 = harness.get_computed_style(id2);

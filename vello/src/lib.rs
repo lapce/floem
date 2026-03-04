@@ -291,7 +291,7 @@ impl Renderer for VelloRenderer {
             Fill::NonZero,
             blend,
             alpha,
-            self.transform.then_scale(self.window_scale) * transform,
+            (self.transform * transform).then_scale(self.window_scale),
             clip,
         );
     }
@@ -366,7 +366,7 @@ impl Renderer for VelloRenderer {
             &img.img,
             self.transform
                 .pre_scale_non_uniform(scale_x, scale_y)
-                .then_translate((translate_x, translate_y).into())
+                .pre_translate((translate_x, translate_y).into())
                 .then_scale(self.window_scale),
         );
     }
@@ -475,7 +475,6 @@ impl Renderer for VelloRenderer {
                         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                             label: Some("Surface Blit"),
                         });
-
                 self.surface.blitter.copy(
                     &self.device,
                     &mut encoder,
@@ -485,6 +484,7 @@ impl Renderer for VelloRenderer {
                         .create_view(&wgpu::TextureViewDescriptor::default()),
                 );
                 self.queue.submit([encoder.finish()]);
+
                 // Queue the texture to be presented on the surface
                 surface_texture.present();
             }

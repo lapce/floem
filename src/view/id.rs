@@ -7,50 +7,130 @@
 use std::{any::Any, cell::RefCell, collections::HashSet, rc::Rc};
 
 use floem_reactive::Scope;
-use peniko::kurbo::{Affine, Insets, Point, Rect, Size};
-use slotmap::new_key_type;
-use taffy::{Layout, NodeId, TaffyTree};
+use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Size};
+use smallvec::smallvec;
+use taffy::{Layout, NodeId};
 use winit::window::WindowId;
 
 use ui_events::pointer::PointerId;
 
-use super::stacking::{invalidate_all_overlay_caches, invalidate_stacking_cache};
-use super::{ChangeFlags, IntoView, StackOffset, VIEW_STORAGE, View, ViewState};
+use super::{IntoView, StackOffset, VIEW_STORAGE, View, ViewState, ViewStorage};
 
 thread_local! {
     /// Views that have scopes but couldn't find a parent scope when added.
     /// These need to be re-parented after the view tree is fully assembled.
     static PENDING_SCOPE_REPARENTS: RefCell<HashSet<ViewId>> = RefCell::new(HashSet::new());
 }
+use crate::context::EventCallbackConfig;
+use crate::event::listener::EventListenerKey;
+use crate::event::{RouteKind, listener};
+use crate::style::recalc::StyleReason;
+use crate::view::LayoutTree;
+use crate::window::handle::get_current_view;
+use crate::{BoxTree, ElementId};
 use crate::{
     ScreenLayout,
     action::add_update_message,
     animate::{AnimStateCommand, Animation},
-    context::{EventCallback, ResizeCallback},
-    event::{EventListener, EventPropagation},
+    context::EventCallback,
     message::{
         CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES, DeferredChild, DeferredChildren,
         DeferredReactiveSetup, UpdateMessage,
     },
     platform::menu::Menu,
-    style::{Draggable, Focusable, PointerEvents, Style, StyleClassRef, StyleSelector},
-    unit::PxPct,
-    window::tracking::{is_known_root, window_id_for_root},
+    style::{Focusable, PointerEvents, Style, StyleClassRef, StyleSelector},
+    window::tracking::window_id_for_root,
 };
 
 use super::AnyView;
 
-new_key_type! {
-    /// A small unique identifier for an instance of a [View](crate::View).
-    ///
-    /// This id is how you can access and modify a view, including accessing children views and updating state.
-   pub struct ViewId;
+#[allow(unused)]
+pub struct NotThreadSafe(*const ());
+
+/// A small unique identifier, and handle, for an instance of a [View](crate::View).
+///
+/// Through this handle, you can access the associated view [ViewState](crate::view_state::ViewState).
+/// You can also use this handle to access the children ViewId's which allows you access to their states.
+///
+/// This type is not thread safe and can only be used from the main thread.
+#[derive(Copy, Clone, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[repr(transparent)]
+pub struct ViewId(
+    pub(crate) slotmap::KeyData,
+    std::marker::PhantomData<NotThreadSafe>,
+);
+impl std::fmt::Debug for ViewId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let debug_name = self.debug_name();
+        let mut start = f.debug_struct("ViewId");
+
+        if !debug_name.is_empty() {
+            start.field("id", &self.0).field("debug_name", &debug_name)
+        } else {
+            start.field("id", &self.0)
+        }
+        .finish()
+    }
+}
+impl slotmap::__impl::From<slotmap::KeyData> for ViewId {
+    fn from(k: slotmap::KeyData) -> Self {
+        ViewId(k, std::marker::PhantomData)
+    }
+}
+unsafe impl slotmap::Key for ViewId {
+    fn data(&self) -> slotmap::KeyData {
+        self.0
+    }
+}
+
+fn request_structural_selector_restyle(children: &[ViewId]) {
+    for child in children {
+        child.request_style(StyleReason::full_recalc());
+    }
 }
 
 impl ViewId {
     /// Create a new unique `Viewid`.
     pub fn new() -> ViewId {
-        VIEW_STORAGE.with_borrow_mut(|s| s.view_ids.insert(()))
+        VIEW_STORAGE.with_borrow_mut(|s| {
+            let root = get_current_view();
+            let new = s.view_ids.insert(());
+            s.root.insert(new, root);
+            new
+        })
+    }
+
+    pub(crate) fn new_root() -> ViewId {
+        VIEW_STORAGE.with_borrow_mut(|s| {
+            let new = s.view_ids.insert(());
+            s.root.insert(new, new);
+            new
+        })
+    }
+
+    /// Get the chain of debug names that have been applied to this view.
+    ///
+    /// This uses try_borrow on the view state so if the view state has already been borrowed when using this method, it won't crash and it will just return an empty string.
+    pub fn debug_name(&self) -> String {
+        let state_names = self
+            .state()
+            .try_borrow()
+            .ok()
+            .map(|state| state.debug_name.iter().rev().cloned().collect::<Vec<_>>())
+            .unwrap_or_default();
+
+        let view_name = self
+            .view()
+            .try_borrow()
+            .ok()
+            .map(|view| View::debug_name(view.as_ref()).to_string())
+            .unwrap_or_default();
+
+        state_names
+            .into_iter()
+            .chain(std::iter::once(view_name))
+            .collect::<Vec<_>>()
+            .join(" - ")
     }
 
     /// Check if this ViewId is still valid (exists in VIEW_STORAGE).
@@ -66,6 +146,7 @@ impl ViewId {
     /// Note: For full cleanup including taffy nodes and cleanup listeners,
     /// use `window_state.remove_view()` or send an `UpdateMessage::RemoveViews`.
     pub fn remove(&self) {
+        let element_id = self.get_element_id();
         // Dispose children scope if this view had reactive children
         if let Some(scope) = self.take_children_scope() {
             scope.dispose();
@@ -79,6 +160,10 @@ impl ViewId {
         // Get parent before removing, for stacking cache invalidation
         let parent = self.parent();
         VIEW_STORAGE.with_borrow_mut(|s| {
+            // remove the reverse mapping for taffy nodes
+            let taffy_node = s.state(*self).borrow().layout_id;
+            s.taffy_to_view.remove(&taffy_node);
+
             // Remove the cached root, in the (unlikely) case that this view is
             // re-added to a different window
             s.root.remove(*self);
@@ -100,10 +185,16 @@ impl ViewId {
             // Remove from primary SlotMap last
             s.view_ids.remove(*self);
         });
-        // Invalidate parent's stacking cache since its children changed
-        if let Some(parent) = parent {
-            invalidate_stacking_cache(parent);
-        }
+        // Invalidate this view and parent cache entries. During removal, using
+        // explicit IDs avoids relying on storage lookups that may already be detached.
+        let parent_element_id = parent.map(|p| p.get_element_id());
+        {
+            let _element_id = element_id;
+            let _parent_element_id = parent_element_id;
+            // Hit testing now uses Understory ordering directly and caches the result in event/path.rs.
+            // Any stacking-affecting change must invalidate both caches together.
+            crate::event::clear_hit_test_cache();
+        };
     }
 
     /// Register this view as an overlay.
@@ -111,32 +202,44 @@ impl ViewId {
     /// Overlays escape z-index constraints and are painted at the root level,
     /// above all other views. The root is determined at registration time.
     pub(crate) fn register_overlay(&self) {
-        let root_id = self.root().unwrap_or(*self);
+        let root_id = self.root();
         VIEW_STORAGE.with_borrow_mut(|s| {
             s.overlays.insert(*self, root_id);
+            if let Some(logical_parent_id) = s.parent.get(*self).and_then(|p| *p) {
+                let this_element_id = s.state(*self).borrow().element_id;
+                let parent_element_id =
+                    box_tree_parent_element_id_for_child(s, logical_parent_id, *self);
+                s.box_tree(*self)
+                    .borrow_mut()
+                    .reparent(this_element_id.0, Some(parent_element_id.0));
+            }
         });
-        // Invalidate overlay cache - use invalidate_all since root may not be finalized yet
-        invalidate_all_overlay_caches();
     }
 
     /// Unregister this view as an overlay.
-    #[allow(dead_code)] // Kept for API symmetry with register_overlay
+    #[expect(dead_code)] // Kept for API symmetry with register_overlay
     pub(crate) fn unregister_overlay(&self) {
         VIEW_STORAGE.with_borrow_mut(|s| {
             s.overlays.remove(*self);
+            if let Some(logical_parent_id) = s.parent.get(*self).and_then(|p| *p) {
+                let this_element_id = s.state(*self).borrow().element_id;
+                let parent_element_id = s.state(logical_parent_id).borrow().element_id;
+                s.box_tree(*self)
+                    .borrow_mut()
+                    .reparent(this_element_id.0, Some(parent_element_id.0));
+            }
         });
-        // Invalidate overlay cache
-        invalidate_all_overlay_caches();
     }
 
-    /// Check if this view is registered as an overlay.
-    pub(crate) fn is_overlay(&self) -> bool {
-        VIEW_STORAGE.with_borrow(|s| s.overlays.contains_key(*self))
+    /// Get access to the layout tree tree
+    /// TODO: rename layout tree
+    pub fn taffy(&self) -> Rc<RefCell<LayoutTree>> {
+        VIEW_STORAGE.with_borrow_mut(|s| s.taffy.clone())
     }
 
-    /// Get access to the taffy tree
-    pub fn taffy(&self) -> Rc<RefCell<TaffyTree>> {
-        VIEW_STORAGE.with_borrow(|s| s.taffy.clone())
+    /// Get access to the box tree
+    pub fn box_tree(&self) -> Rc<RefCell<BoxTree>> {
+        VIEW_STORAGE.with_borrow_mut(|s| s.box_tree(*self))
     }
 
     /// Create a new taffy layout node
@@ -164,59 +267,52 @@ impl ViewId {
     }
     /// Get the taffy node associated with this Id
     pub fn taffy_node(&self) -> NodeId {
-        self.state().borrow().node
+        self.state().borrow().layout_id
     }
 
     /// set the transform on a view that is applied after style transforms
     pub fn set_transform(&self, transform: Affine) {
         self.state().borrow_mut().transform = transform;
-        self.request_layout();
+        self.request_box_tree_update_for_view();
     }
 
     pub(crate) fn state(&self) -> Rc<RefCell<ViewState>> {
-        VIEW_STORAGE.with_borrow_mut(|s| {
-            if !s.view_ids.contains_key(*self) {
-                // if view_ids doesn't have this view id, that means it's been cleaned up,
-                // so we shouldn't create a new ViewState for this Id.
-                s.stale_view_state.clone()
-            } else {
-                s.states
-                    .entry(*self)
-                    .unwrap()
-                    .or_insert_with(|| {
-                        Rc::new(RefCell::new(ViewState::new(
-                            *self,
-                            &mut s.taffy.borrow_mut(),
-                        )))
-                    })
-                    .clone()
-            }
-        })
+        VIEW_STORAGE.with_borrow_mut(|s| s.state(*self))
     }
 
     /// Get access to the View
     pub(crate) fn view(&self) -> Rc<RefCell<Box<dyn View>>> {
         VIEW_STORAGE.with_borrow(|s| {
-            s.views
-                .get(*self)
-                .cloned()
-                .unwrap_or_else(|| s.stale_view.clone())
+            s.views.get(*self).cloned().unwrap_or_else(|| {
+                // eprintln!("stale");
+                s.stale_view.clone()
+            })
         })
     }
 
     /// Add a child View to this Id's list of children
     pub fn add_child(&self, child: Box<dyn View>) {
         let child_id = child.id();
+        let child_element_id = child_id.get_element_id();
         VIEW_STORAGE.with_borrow_mut(|s| {
             s.children.entry(*self).unwrap().or_default().push(child_id);
             s.parent.insert(child_id, Some(*self));
             s.views.insert(child_id, Rc::new(RefCell::new(child)));
+            let parent_element_id = box_tree_parent_element_id_for_child(s, *self, child_id);
+            s.box_tree(child_id)
+                .borrow_mut()
+                .reparent(child_element_id.0, Some(parent_element_id.0));
+            let child_taffy_node = s.state(child_id).borrow().layout_id;
+            let this_taffy_node = s.state(*self).borrow().layout_id;
+            let _ = s
+                .taffy
+                .borrow_mut()
+                .add_child(this_taffy_node, child_taffy_node);
         });
         // Re-parent child's scope under nearest ancestor's scope to match view hierarchy.
         // This ensures scope hierarchy matches view hierarchy for proper cleanup.
         reparent_scope_if_needed(child_id, *self);
-        // Invalidate stacking cache since children changed
-        invalidate_stacking_cache(*self);
+        request_structural_selector_restyle(&self.children());
     }
 
     /// Append multiple children to this Id's list of children.
@@ -229,20 +325,42 @@ impl ViewId {
     pub fn append_children(&self, children: Vec<Box<dyn View>>) {
         let child_ids: Vec<ViewId> = children.iter().map(|c| c.id()).collect();
         VIEW_STORAGE.with_borrow_mut(|s| {
-            let children_list = s.children.entry(*self).unwrap().or_default();
-            for child in children {
+            let this_taffy_node = s.state(*self).borrow().layout_id;
+            let child_element_ids: Vec<_> = children
+                .iter()
+                .map(|c| s.state(c.id()).borrow().element_id)
+                .collect();
+            let child_taffy_nodes: Vec<_> = children
+                .iter()
+                .map(|c| s.state(c.id()).borrow().layout_id)
+                .collect();
+
+            let box_tree = s.box_tree(*self);
+            let layout_tree = s.taffy.clone();
+
+            for ((child, child_element_id), child_taffy_node) in children
+                .into_iter()
+                .zip(child_element_ids)
+                .zip(child_taffy_nodes)
+            {
                 let child_id = child.id();
-                children_list.push(child_id);
+                s.children.entry(*self).unwrap().or_default().push(child_id);
                 s.parent.insert(child_id, Some(*self));
                 s.views.insert(child_id, Rc::new(RefCell::new(child)));
+                let parent_element_id = box_tree_parent_element_id_for_child(s, *self, child_id);
+                box_tree
+                    .borrow_mut()
+                    .reparent(child_element_id.0, Some(parent_element_id.0));
+                let _ = layout_tree
+                    .borrow_mut()
+                    .add_child(this_taffy_node, child_taffy_node);
             }
         });
         // Re-parent child scopes under nearest ancestor's scope
         for child_id in child_ids {
             reparent_scope_if_needed(child_id, *self);
         }
-        // Invalidate stacking cache since children changed
-        invalidate_stacking_cache(*self);
+        request_structural_selector_restyle(&self.children());
     }
 
     /// Set the children views of this Id
@@ -250,23 +368,38 @@ impl ViewId {
     pub fn set_children<const N: usize, V: IntoView>(&self, children: [V; N]) {
         let children_ids: Vec<ViewId> = VIEW_STORAGE.with_borrow_mut(|s| {
             let mut children_ids = Vec::new();
+            let mut children_nodes = Vec::with_capacity(children.len());
+            let box_tree = s.box_tree(*self);
+            let layout_tree = s.taffy.clone();
             for child in children {
                 let child_view = child.into_view();
                 let child_view_id = child_view.id();
+                let child_element_id = s.state(child_view_id).borrow().element_id;
+                let child_taffy_node = s.state(child_view_id).borrow().layout_id;
+                children_nodes.push(child_taffy_node);
                 children_ids.push(child_view_id);
                 s.parent.insert(child_view_id, Some(*self));
                 s.views
                     .insert(child_view_id, Rc::new(RefCell::new(child_view.into_any())));
+                let parent_element_id =
+                    box_tree_parent_element_id_for_child(s, *self, child_view_id);
+
+                box_tree
+                    .borrow_mut()
+                    .reparent(child_element_id.0, Some(parent_element_id.0));
             }
             s.children.insert(*self, children_ids.clone());
+            let this_taffy_node = s.state(*self).borrow().layout_id;
+            let _ = layout_tree
+                .borrow_mut()
+                .set_children(this_taffy_node, &children_nodes);
             children_ids
         });
         // Re-parent child scopes under nearest ancestor's scope
         for child_id in children_ids {
             reparent_scope_if_needed(child_id, *self);
         }
-        // Invalidate stacking cache since children changed
-        invalidate_stacking_cache(*self);
+        request_structural_selector_restyle(&self.children());
     }
 
     /// Set the children views of this Id using a Vector
@@ -284,22 +417,36 @@ impl ViewId {
     pub fn set_children_iter(&self, children: impl Iterator<Item = Box<dyn View>>) {
         let children_ids: Vec<ViewId> = VIEW_STORAGE.with_borrow_mut(|s| {
             let mut children_ids = Vec::new();
+            let mut children_nodes = Vec::new();
+            let box_tree = s.box_tree(*self);
+            let layout_tree = s.taffy.clone();
             for child_view in children {
                 let child_view_id = child_view.id();
+                let child_element_id = s.state(child_view_id).borrow().element_id;
+                let child_taffy_node = s.state(child_view_id).borrow().layout_id;
                 children_ids.push(child_view_id);
+                children_nodes.push(child_taffy_node);
                 s.parent.insert(child_view_id, Some(*self));
                 s.views
                     .insert(child_view_id, Rc::new(RefCell::new(child_view)));
+                let parent_element_id =
+                    box_tree_parent_element_id_for_child(s, *self, child_view_id);
+                box_tree
+                    .borrow_mut()
+                    .reparent(child_element_id.0, Some(parent_element_id.0));
             }
             s.children.insert(*self, children_ids.clone());
+            let this_taffy_node = s.state(*self).borrow().layout_id;
+            let _ = layout_tree
+                .borrow_mut()
+                .set_children(this_taffy_node, &children_nodes);
             children_ids
         });
         // Re-parent child scopes under nearest ancestor's scope
         for child_id in children_ids {
             reparent_scope_if_needed(child_id, *self);
         }
-        // Invalidate stacking cache since children changed
-        invalidate_stacking_cache(*self);
+        request_structural_selector_restyle(&self.children());
     }
 
     /// Set the view that should be associated with this Id
@@ -315,7 +462,13 @@ impl ViewId {
     pub fn set_parent(&self, parent: ViewId) {
         VIEW_STORAGE.with_borrow_mut(|s| {
             if s.view_ids.contains_key(*self) {
+                let this_element_id = s.state(*self).borrow().element_id;
                 s.parent.insert(*self, Some(parent));
+                let parent_element_id = box_tree_parent_element_id_for_child(s, parent, *self);
+                let box_tree = s.box_tree(*self);
+                box_tree
+                    .borrow_mut()
+                    .reparent(this_element_id.0, Some(parent_element_id.0));
             }
         });
     }
@@ -323,12 +476,37 @@ impl ViewId {
     /// Set the Ids that should be used as the children of this Id
     pub fn set_children_ids(&self, children: Vec<ViewId>) {
         VIEW_STORAGE.with_borrow_mut(|s| {
-            if s.view_ids.contains_key(*self) {
-                s.children.insert(*self, children);
+            if !s.view_ids.contains_key(*self) {
+                return;
             }
+
+            let this_taffy_node = s.state(*self).borrow().layout_id;
+
+            let child_element_ids: Vec<_> = children
+                .iter()
+                .map(|&child_id| s.state(child_id).borrow().element_id)
+                .collect();
+            let taffy_children: Vec<_> = children
+                .iter()
+                .map(|&child_id| s.state(child_id).borrow().layout_id)
+                .collect();
+
+            let box_tree = s.box_tree(*self);
+            let layout_tree = s.taffy.clone();
+            for (&child_id, child_element_id) in children.iter().zip(child_element_ids) {
+                s.parent.insert(child_id, Some(*self));
+                let parent_element_id = box_tree_parent_element_id_for_child(s, *self, child_id);
+                box_tree
+                    .borrow_mut()
+                    .reparent(child_element_id.0, Some(parent_element_id.0));
+            }
+
+            let _ = layout_tree
+                .borrow_mut()
+                .set_children(this_taffy_node, &taffy_children);
+            s.children.insert(*self, children);
         });
-        // Invalidate stacking cache since children changed
-        invalidate_stacking_cache(*self);
+        request_structural_selector_restyle(&self.children());
     }
 
     /// Get the list of `ViewId`s that are associated with the children views of this `ViewId`
@@ -347,29 +525,17 @@ impl ViewId {
     }
 
     /// Get the root view of the window that the given view is in
-    pub fn root(&self) -> Option<ViewId> {
-        VIEW_STORAGE.with_borrow_mut(|s| {
-            if let Some(root) = s.root.get(*self) {
-                // The cached value will be cleared on remove() above
-                return *root;
-            }
-            let root_view_id = s.root_view_id(*self);
-            // root_view_id() always returns SOMETHING.  If the view is not yet added
-            // to a window, it can be itself or its nearest ancestor, which means we
-            // will store garbage permanently.
-            if let Some(root) = root_view_id
-                && is_known_root(&root)
-            {
-                s.root.insert(*self, root_view_id);
-                return Some(root);
-            }
-            None
+    pub fn root(&self) -> ViewId {
+        VIEW_STORAGE.with_borrow(|s| {
+            *s.root.get(*self).expect(
+                "all view ids are entered into the root map and have a root id upon creation",
+            )
         })
     }
 
-    /// Get the computed rectangle that covers the area of this View
-    pub fn layout_rect(&self) -> Rect {
-        self.state().borrow().layout_rect
+    /// try to get the root. use this if it is possible that the view has been deleted
+    pub(crate) fn try_root(&self) -> Option<ViewId> {
+        VIEW_STORAGE.with_borrow(|s| s.root.get(*self).copied())
     }
 
     /// Get the size of this View
@@ -384,39 +550,17 @@ impl ViewId {
         parent_id.get_size()
     }
 
-    /// Returns the layout rect excluding borders, padding and position.
-    /// This is relative to the view.
-    pub fn get_content_rect(&self) -> Rect {
-        let size = self
-            .get_layout()
-            .map(|layout| layout.size)
-            .unwrap_or_default();
-        let rect = Size::new(size.width as f64, size.height as f64).to_rect();
-        let view_state = self.state();
-        let props = &view_state.borrow().layout_props;
-        let pixels = |px_pct, abs| match px_pct {
-            PxPct::Px(v) => v,
-            PxPct::Pct(pct) => pct * abs,
-        };
-        let border = props.border();
-        let padding = props.padding();
-        rect.inset(-Insets {
-            x0: border.left.map_or(0.0, |b| b.0.width)
-                + pixels(padding.left.unwrap_or(PxPct::Px(0.0)), rect.width()),
-            x1: border.right.map_or(0.0, |b| b.0.width)
-                + pixels(padding.right.unwrap_or(PxPct::Px(0.0)), rect.width()),
-            y0: border.top.map_or(0.0, |b| b.0.width)
-                + pixels(padding.top.unwrap_or(PxPct::Px(0.0)), rect.height()),
-            y1: border.bottom.map_or(0.0, |b| b.0.width)
-                + pixels(padding.bottom.unwrap_or(PxPct::Px(0.0)), rect.height()),
-        })
+    /// Get the total scroll offset for this view
+    pub fn get_scroll_cx(&self) -> peniko::kurbo::Vec2 {
+        self.state().borrow().scroll_cx
     }
+
     /// This gets the Taffy Layout and adjusts it to be relative to the parent `View`.
     pub fn get_layout(&self) -> Option<Layout> {
-        let widget_parent = self.parent().map(|id| id.state().borrow().node);
+        let widget_parent = self.parent().map(|id| id.state().borrow().layout_id);
 
         let taffy = self.taffy();
-        let mut node = self.state().borrow().node;
+        let mut node = self.state().borrow().layout_id;
         let mut layout = *taffy.borrow().layout(node).ok()?;
 
         loop {
@@ -434,74 +578,11 @@ impl ViewId {
         Some(layout)
     }
 
-    /// Get the taffy layout of this id relative to a parent/ancestor ID
-    pub fn get_layout_relative_to(&self, relative_to: ViewId) -> Option<Layout> {
-        let taffy = self.taffy();
-        let target_node = relative_to.state().borrow().node;
-        let mut node = self.state().borrow().node;
-        let mut layout = *taffy.borrow().layout(node).ok()?;
-
-        loop {
-            let parent = taffy.borrow().parent(node);
-            if parent == Some(target_node) {
-                break;
-            }
-
-            // If we've reached the root without finding the target, return None
-            node = parent?;
-            layout.location = layout.location + taffy.borrow().layout(node).ok()?.location;
-        }
-
-        Some(layout)
-    }
-
-    /// Get the taffy layout of this id relative to the root
-    pub fn get_layout_relative_to_root(&self) -> Option<Layout> {
-        let taffy = self.taffy();
-        let node = self.state().borrow().node;
-        let layout = *taffy.borrow().layout(node).ok()?;
-
-        Some(layout)
-    }
-
-    /// Returns the CSS transform applied to this view.
+    /// Returns the [`Visualid`] associated with this view.
     ///
-    /// This returns the view's local transform (not including parent transforms).
-    /// The transform includes translate, rotate, and scale operations.
-    pub fn get_transform(&self) -> peniko::kurbo::Affine {
-        self.state().borrow().transform
-    }
-
-    /// Returns the view's visual position in window coordinates.
-    ///
-    /// This is derived from `visual_transform`, which is the single source
-    /// of truth for a view's position. For views without CSS scale/rotate transforms,
-    /// this equals the layout position plus CSS translate. For views with scale/rotate,
-    /// this includes the effect of center-based transforms.
-    pub fn get_visual_origin(&self) -> peniko::kurbo::Point {
-        self.state().borrow().visual_origin()
-    }
-
-    /// Returns the view's window origin (layout position after CSS translate).
-    ///
-    /// This is the position used for child layout and does NOT include scale/rotate effects.
-    /// For the position including all CSS transforms (scale, rotate), use `get_visual_origin()`.
-    ///
-    /// The difference between `window_origin` and `visual_origin`:
-    /// - `window_origin`: Position from layout + CSS translate (used for child positioning)
-    /// - `visual_origin`: Position from visual_transform (includes center-based scale/rotate)
-    ///
-    /// For views without scale/rotate transforms, these values are identical.
-    pub fn get_window_origin(&self) -> peniko::kurbo::Point {
-        self.state().borrow().window_origin()
-    }
-
-    /// Returns the layout rect in window coordinates.
-    ///
-    /// This is the bounding rect that encompasses this view and its children,
-    /// positioned at the window origin. Useful for hit testing and paint bounds.
-    pub fn get_layout_rect(&self) -> peniko::kurbo::Rect {
-        self.state().borrow().layout_rect
+    /// This id can be used with the box tree.
+    pub fn get_element_id(&self) -> ElementId {
+        self.state().borrow().element_id
     }
 
     /// Returns the complete local-to-window coordinate transform.
@@ -516,12 +597,205 @@ impl ViewId {
     ///
     /// This is the transform used by event dispatch to convert pointer coordinates.
     pub fn get_visual_transform(&self) -> peniko::kurbo::Affine {
-        self.state().borrow().visual_transform
+        let element_id = self.get_element_id();
+        VIEW_STORAGE.with_borrow_mut(|s| {
+            s.box_tree(*self)
+                .borrow_mut()
+                .get_or_compute_world_transform(element_id.0)
+                .unwrap_or_default()
+        })
+    }
+
+    /// Return the world-space axis-aligned bounding box for this view.
+    ///
+    /// This is the loose AABB computed after applying local transforms and any active clips.
+    /// It fully contains the transformed bounds but may not be tight, especially under rotation
+    /// or rounded clips.
+    pub fn get_visual_rect(&self) -> Rect {
+        let element_id = self.get_element_id();
+        VIEW_STORAGE.with_borrow_mut(|s| {
+            s.box_tree(*self)
+                .borrow_mut()
+                .get_or_compute_world_bounds(element_id.0)
+                .unwrap_or_default()
+        })
+    }
+
+    /// Return the local bounds in world coordinate space
+    pub fn get_visual_rect_no_clip(&self) -> Rect {
+        let element_id = self.get_element_id();
+        let transform = self.get_visual_transform();
+        VIEW_STORAGE.with_borrow_mut(|s| {
+            let box_tree = s.box_tree(*self);
+
+            transform.transform_rect_bbox(
+                box_tree
+                    .borrow()
+                    .local_bounds(element_id.0)
+                    .unwrap_or_default(),
+            )
+        })
+    }
+
+    /// Returns the view's visual position (after applying all clips clips and css transforms) in window coordinates.
+    pub fn get_visual_origin(&self) -> peniko::kurbo::Point {
+        let element_id = self.get_element_id();
+        VIEW_STORAGE
+            .with_borrow_mut(|s| {
+                s.box_tree(*self)
+                    .borrow_mut()
+                    .get_or_compute_world_bounds(element_id.0)
+                    .unwrap_or_default()
+            })
+            .origin()
+    }
+
+    /// Returns the layout rect relative to the parent view.
+    ///
+    /// The position is relative to the parent view's origin. This is the raw layout
+    /// as computed by Taffy, useful for measuring and positioning views within their
+    /// parent's coordinate space.
+    pub fn get_layout_rect(&self) -> Rect {
+        self.get_layout()
+            .map(|l| Rect {
+                x0: f64::from(l.location.x),
+                y0: f64::from(l.location.y),
+                x1: f64::from(l.location.x + l.size.width),
+                y1: f64::from(l.location.y + l.size.height),
+            })
+            .unwrap_or_default()
+    }
+
+    /// Returns the content rect relative to the parent view.
+    ///
+    /// The content rect excludes borders and padding, representing the area where
+    /// content is positioned. The position is relative to the parent view's
+    /// origin.
+    pub fn get_content_rect(&self) -> Rect {
+        self.get_layout()
+            .map(|l| Rect {
+                x0: f64::from(l.content_box_x()),
+                y0: f64::from(l.content_box_y()),
+                x1: f64::from(l.content_box_x() + l.content_box_width()),
+                y1: f64::from(l.content_box_y() + l.content_box_height()),
+            })
+            .unwrap_or_default()
+    }
+
+    /// Returns the layout rect in the view's local coordinate space.
+    pub fn get_layout_rect_local(&self) -> Rect {
+        self.get_layout()
+            .map(|l| Rect {
+                x0: 0.0,
+                y0: 0.0,
+                x1: f64::from(l.size.width),
+                y1: f64::from(l.size.height),
+            })
+            .unwrap_or_default()
+    }
+
+    /// Returns the content rect in the view's local coordinate space.
+    ///
+    /// The content rect excludes borders and padding, representing the area where
+    /// child content should be positioned. This is in the view's local coordinate
+    /// space, with an offset that accounts for borders and padding.
+    ///
+    /// Like `layout_rect_local()`, this is in the same coordinate space as events
+    /// transformed via `window_event_to_view()`.
+    pub fn get_content_rect_local(&self) -> Rect {
+        self.get_layout()
+            .map(|r| {
+                let x0 = f64::from(r.border.left + r.padding.left);
+                let y0 = f64::from(r.border.top + r.padding.top);
+                let x1 = x0 + f64::from(r.content_box_width());
+                let y1 = y0 + f64::from(r.content_box_height());
+                Rect { x0, y0, x1, y1 }
+            })
+            .unwrap_or_default()
+    }
+
+    /// Returns the content rect of a child layout node, relative to the parent layout node's origin.
+    ///
+    /// This walks up the Taffy layout tree from `child_node` to `parent_node`, accumulating
+    /// the positions to compute the final relative content rect.
+    ///
+    /// Returns `None` if either node doesn't exist or if `child_node` is not a descendant of `parent_node`.
+    pub fn get_content_rect_relative(
+        &self,
+        child_node: taffy::NodeId,
+        parent_node: taffy::NodeId,
+    ) -> Option<Rect> {
+        let taffy = self.taffy();
+        let taffy = taffy.borrow();
+        let mut node = child_node;
+        let mut child_layout = *taffy.layout(node).ok()?;
+
+        // Accumulate position offsets from child up to parent
+        loop {
+            let current_parent = taffy.parent(node);
+
+            if current_parent == Some(parent_node) {
+                break;
+            }
+
+            node = current_parent?;
+            child_layout.location = child_layout.location + taffy.layout(node).ok()?.location;
+        }
+
+        // Build the content rect relative to the parent
+        Some(Rect::from_origin_size(
+            (
+                f64::from(child_layout.content_box_x()),
+                f64::from(child_layout.content_box_y()),
+            ),
+            (
+                f64::from(child_layout.content_box_width()),
+                f64::from(child_layout.content_box_height()),
+            ),
+        ))
+    }
+
+    /// Set a translation that will affect children.
+    ///
+    /// If you have a view that visually affects how far children should scroll, set it here.
+    pub fn set_child_translation(&self, child_translation: peniko::kurbo::Vec2) -> bool {
+        let state = self.state();
+        let needs_box_tree_update = {
+            let mut state = state.borrow_mut();
+            if state.child_translation != child_translation {
+                state.child_translation = child_translation;
+                true
+            } else {
+                false
+            }
+        };
+        if needs_box_tree_update {
+            for child in self.children() {
+                child.request_box_tree_update_for_view();
+            }
+        }
+        needs_box_tree_update
+    }
+
+    /// Get the translation that affects children
+    pub fn get_child_translation(&self) -> peniko::kurbo::Vec2 {
+        self.state().borrow().child_translation
+    }
+
+    /// set the clip rectange in local coordinates in the box tree
+    pub fn set_box_tree_clip(&self, clip: Option<RoundedRect>) {
+        let element_id = self.get_element_id();
+        VIEW_STORAGE.with_borrow_mut(|s| {
+            let box_tree = s.box_tree(*self);
+            box_tree.borrow_mut().set_local_clip(element_id.0, clip)
+        })
     }
 
     /// Returns true if this view is hidden.
     pub fn is_hidden(&self) -> bool {
-        self.state().borrow().visibility.is_hidden()
+        let state = self.state();
+        let state = state.borrow();
+        state.visibility.is_hidden()
     }
 
     /// if the view has pointer events none
@@ -553,35 +827,59 @@ impl ViewId {
 
     /// Check if this id can be focused.
     ///
-    /// This is done by checking if the style for this view has `Focusable` set to true.
+    /// This is done by checking if the style for this view has `Focusable` set to `Focus::PointerAndProgramatic` or `Focus::KeyboardNavigable`.
     pub fn can_focus(&self) -> bool {
-        self.state().borrow().computed_style.get(Focusable)
-    }
-
-    /// Check if this id can be dragged.
-    ///
-    /// This is done by checking if the style for this view has `Draggable` set to true.
-    pub fn can_drag(&self) -> bool {
-        self.state().borrow().computed_style.get(Draggable)
+        self.state()
+            .borrow()
+            .computed_style
+            .get(Focusable)
+            .is_focusable()
     }
 
     /// Request that this the `id` view be styled, laid out and painted again.
     /// This will recursively request this for all parents.
     pub fn request_all(&self) {
-        add_update_message(UpdateMessage::RequestStyle(*self));
-        add_update_message(UpdateMessage::RequestViewStyle(*self));
+        add_update_message(UpdateMessage::RequestStyle(
+            self.get_element_id(),
+            StyleReason::full_recalc(),
+        ));
         self.request_layout();
+        self.request_box_tree_commit();
         self.add_update_message(UpdateMessage::RequestPaint);
     }
 
     /// Request that this view have it's layout pass run
     pub fn request_layout(&self) {
-        self.request_changes(ChangeFlags::LAYOUT)
+        add_update_message(UpdateMessage::RequestLayout);
+    }
+
+    /// Request that this view have it's taffy node be marked dirty
+    pub fn request_mark_view_layout_dirty(&self) {
+        add_update_message(UpdateMessage::MarkViewLayoutDirty(*self));
+    }
+
+    /// Request that the box tree be updated from the layout tree (full walk) and committed.
+    /// Use this after layout changes that affect the entire tree.
+    pub fn request_box_tree_update(&self) {
+        add_update_message(UpdateMessage::RequestBoxTreeUpdate);
+    }
+
+    /// Request that this specific view's box tree node be updated and committed.
+    /// This is more efficient than a full tree update when only this view changed
+    /// (e.g., after a transform or scroll offset change).
+    pub fn request_box_tree_update_for_view(&self) {
+        add_update_message(UpdateMessage::RequestBoxTreeUpdateForView(*self));
+    }
+
+    /// Request that the box tree be committed without updating from layout.
+    /// Use this when you've manually updated box tree nodes and just need to commit.
+    pub fn request_box_tree_commit(&self) {
+        add_update_message(UpdateMessage::RequestBoxTreeCommit);
     }
 
     /// Get the window id of the window containing this view, if there is one.
     pub fn window_id(&self) -> Option<WindowId> {
-        self.root().and_then(window_id_for_root)
+        window_id_for_root(self.root())
     }
 
     /// Request that this view have it's paint pass run
@@ -590,75 +888,26 @@ impl ViewId {
     }
 
     /// request that this node be styled again
-    /// This will recursively request style for all parents.
-    pub fn request_style(&self) {
-        self.add_update_message(UpdateMessage::RequestStyle(*self));
+    pub fn request_style(&self, reason: StyleReason) {
+        self.add_update_message(UpdateMessage::RequestStyle(self.get_element_id(), reason));
     }
 
     /// Use this when you want the `view_style` method from the `View` trait to be rerun.
+    ///
+    // TODO: Add this to style reason set
+    #[deprecated(note = "use `id.request_style(StyleReasonSet::view_style())` directly instead")]
     pub fn request_view_style(&self) {
-        self.add_update_message(UpdateMessage::RequestViewStyle(*self));
-    }
-
-    pub(crate) fn request_changes(&self, flags: ChangeFlags) {
-        let state = self.state();
-        if state.borrow().requested_changes.contains(flags) {
-            return;
-        }
-        state.borrow_mut().requested_changes.insert(flags);
-        if let Some(parent) = self.parent() {
-            parent.request_changes(flags);
-        }
-    }
-
-    /// Requests style for this view and all direct and indirect children.
-    pub fn request_style_recursive(&self) {
-        let state = self.state();
-        state.borrow_mut().request_style_recursive = true;
-        self.request_style();
-    }
-
-    /// Requests style for this view and descendants that have the specified selector.
-    ///
-    /// This is more efficient than `request_style_recursive` when only views with
-    /// certain selectors (like `:focus`, `:active`) need to be updated.
-    /// Views without the selector in their `has_style_selectors` are skipped.
-    ///
-    /// # Arguments
-    /// * `selector` - The selector type to check for (e.g., `StyleSelector::Focus`)
-    pub fn request_style_for_selector_recursive(&self, selector: StyleSelector) {
-        // Always request style for self (the root of the recursive call)
-        self.request_style();
-
-        // Recursively check children
-        fn request_for_descendants(id: ViewId, selector: StyleSelector) {
-            for child in id.children() {
-                let needs_update = {
-                    let state = child.state();
-                    let state = state.borrow();
-                    state.has_style_selectors.has(selector)
-                };
-
-                if needs_update {
-                    child.request_style();
-                }
-
-                // Always recurse to find nested views with the selector
-                request_for_descendants(child, selector);
-            }
-        }
-
-        request_for_descendants(*self, selector);
+        self.request_style(StyleReason::view_style());
     }
 
     /// Request that this view gain the window focus
     pub fn request_focus(&self) {
-        self.add_update_message(UpdateMessage::Focus(*self));
+        self.add_update_message(UpdateMessage::Focus(self.get_element_id()));
     }
 
     /// Clear the focus from this window
     pub fn clear_focus(&self) {
-        self.add_update_message(UpdateMessage::ClearFocus(*self));
+        self.add_update_message(UpdateMessage::ClearFocus);
     }
 
     /// Set the system context menu that should be shown when this view is right-clicked
@@ -673,23 +922,10 @@ impl ViewId {
         self.state().borrow_mut().popout_menu = Some(Rc::new(menu));
     }
 
-    /// Request that this view receive the active state (mark that this element is currently being interacted with)
-    ///
-    /// When an View has Active, it will receive events such as mouse events, even if the mouse is not directly over this view.
-    /// This is usefor for views such as Sliders, where the mouse event should be sent to the slider view as long as the mouse is pressed down,
-    /// even if the mouse moves out of the view, or even out of the Window.
-    pub fn request_active(&self) {
-        self.add_update_message(UpdateMessage::Active(*self));
-    }
-
-    /// Request that the active state be removed from this View
-    pub fn clear_active(&self) {
-        self.add_update_message(UpdateMessage::ClearActive(*self));
-    }
-
     // =========================================================================
-    // Pointer Capture API (W3C Pointer Events inspired)
+    // Pointer Capture API (W3C Pointer Events)
     // =========================================================================
+    //
 
     /// Set pointer capture for this view.
     ///
@@ -702,7 +938,7 @@ impl ViewId {
     ///
     /// The capture will be applied on the next pointer event for this pointer ID.
     /// When capture is set:
-    /// - `GotPointerCapture` event is fired to this view
+    /// - `GainedPointerCapture` event is fired to this view
     /// - All subsequent pointer events for this pointer are routed here
     /// - When released, `LostPointerCapture` event is fired
     ///
@@ -719,9 +955,10 @@ impl ViewId {
     ///     EventPropagation::Continue
     /// }
     /// ```
+    #[deprecated(note = "directly use `set_pointer_capture` on the `EventCx`")]
     pub fn set_pointer_capture(&self, pointer_id: PointerId) {
         self.add_update_message(UpdateMessage::SetPointerCapture {
-            view_id: *self,
+            element_id: self.get_element_id(),
             pointer_id,
         });
     }
@@ -736,7 +973,7 @@ impl ViewId {
     /// It's safe to call even if this view doesn't have capture.
     pub fn release_pointer_capture(&self, pointer_id: PointerId) {
         self.add_update_message(UpdateMessage::ReleasePointerCapture {
-            view_id: *self,
+            element_id: self.get_element_id(),
             pointer_id,
         });
     }
@@ -749,7 +986,10 @@ impl ViewId {
     /// Scrolls the view and all direct and indirect children to bring the view to be
     /// visible. The optional rectangle can be used to add an additional offset and intersection.
     pub fn scroll_to(&self, rect: Option<Rect>) {
-        self.add_update_message(UpdateMessage::ScrollTo { id: *self, rect });
+        self.add_update_message(UpdateMessage::ScrollTo {
+            id: self.get_element_id(),
+            rect,
+        });
     }
 
     pub(crate) fn transition_anim_complete(&self) {
@@ -759,7 +999,7 @@ impl ViewId {
     pub(crate) fn update_animation(&self, offset: StackOffset<Animation>, animation: Animation) {
         let state = self.state();
         state.borrow_mut().animations.set(offset, animation);
-        self.request_style();
+        self.request_style(StyleReason::animation());
     }
 
     pub(crate) fn update_animation_state(
@@ -772,7 +1012,7 @@ impl ViewId {
             .borrow_mut()
             .animations
             .update(offset, move |anim| anim.transition(command));
-        self.request_style();
+        self.request_style(StyleReason::animation());
     }
 
     /// Send a state update to the `update` method of the associated View
@@ -783,28 +1023,20 @@ impl ViewId {
         });
     }
 
-    /// `viewport` is relative to the `id` view.
-    pub(crate) fn set_viewport(&self, viewport: Rect) {
-        let state = self.state();
-        state.borrow_mut().viewport = Some(viewport);
-    }
-
     /// Add an callback on an action for a given `EventListener`
-    pub fn add_event_listener(&self, listener: EventListener, action: Box<EventCallback>) {
+    pub(crate) fn add_event_listener(
+        &self,
+        listener: EventListenerKey,
+        action: Box<EventCallback>,
+        config: EventCallbackConfig,
+    ) {
+        add_update_message(crate::message::UpdateMessage::RegisterListener(
+            listener, *self,
+        ));
         let state = self.state();
-        state.borrow_mut().add_event_listener(listener, action);
-    }
-
-    /// Set a callback that should be run when the size of the view changes
-    pub fn add_resize_listener(&self, action: Rc<ResizeCallback>) {
-        let state = self.state();
-        state.borrow_mut().add_resize_listener(action);
-    }
-
-    /// Set a callback that should be run when the position of the view changes
-    pub fn add_move_listener(&self, action: Rc<dyn Fn(Point)>) {
-        let state = self.state();
-        state.borrow_mut().add_move_listener(action);
+        state
+            .borrow_mut()
+            .add_event_listener(listener, action, config);
     }
 
     /// Set a callback that should be run when the view is removed from the view tree
@@ -813,14 +1045,31 @@ impl ViewId {
         state.borrow_mut().add_cleanup_listener(action);
     }
 
-    /// Get the combined style that is associated with this View.
+    /// Get the resolved style for this view (base + selectors + classes).
     ///
-    /// This will have all of the style properties set in it that are relevant to this view, including all properties from relevant classes.
+    /// This contains all style properties explicitly set on this view, including
+    /// properties from applied classes and resolved selectors. It does NOT include
+    /// inherited properties from ancestor views (like font_size, color, etc.).
+    ///
+    /// ## When to use
+    /// Use `combined_style` when you need to know what this specific view defines:
+    /// - Checking if THIS view explicitly sets a property
+    /// - Computing what should propagate to children (class definitions)
+    /// - Building cache keys for style resolution
+    /// - Style resolution logic that shouldn't include inherited noise
+    ///
+    /// ## When NOT to use
+    /// Do not use for rendering or layout - use `computed_style` instead (accessed
+    /// via prop extractors in style_pass), which includes inherited properties and
+    /// represents what the user will actually see.
     ///
     /// ## Warning
-    /// The view styles do not store property transition states, only markers of which properties _should_ be transitioned over time on change.
+    /// The view styles do not store property transition states, only markers of which
+    /// properties _should_ be transitioned over time on change.
     ///
-    /// If you have a property that could be transitioned over time, make sure to use a [prop extractor](crate::prop_extractor) that is updated in a style method of the View to extract the property.
+    /// If you have a property that could be transitioned over time, make sure to use
+    /// a [prop extractor](crate::prop_extractor) that is updated in a style method
+    /// of the View to extract the property.
     pub fn get_combined_style(&self) -> Style {
         self.state().borrow().combined_style.clone()
     }
@@ -829,57 +1078,35 @@ impl ViewId {
     pub fn add_class(&self, class: StyleClassRef) {
         let state = self.state();
         state.borrow_mut().classes.push(class);
-        self.request_style_recursive();
+        self.request_style(StyleReason::class_cx(smallvec![class]));
     }
 
     /// Remove a class from the list of style classes that are associated with this `ViewId`
     pub fn remove_class(&self, class: StyleClassRef) {
         let state = self.state();
         state.borrow_mut().classes.retain_mut(|c| *c != class);
-        self.request_style_recursive();
+        self.request_style(StyleReason::class_cx(smallvec![class]));
     }
 
     pub(crate) fn update_style(&self, offset: StackOffset<Style>, style: Style) {
         let state = VIEW_STORAGE.with_borrow(|s| s.states.get(*self).cloned());
         if let Some(state) = state {
-            let old_any_inherited = state.borrow().style().any_inherited();
             state.borrow_mut().style.set(offset, style);
-            // Immediately set the STYLE flag so code can detect
-            // that a style change is pending before process_update runs
-            self.request_changes(ChangeFlags::STYLE);
-            if state.borrow().style().any_inherited() || old_any_inherited {
-                self.request_style_recursive();
-            } else {
-                self.request_style();
-            }
+            self.request_style(StyleReason::full_recalc());
         }
     }
 
-    pub(crate) fn apply_event(
-        &self,
-        listener: &EventListener,
-        event: &crate::event::Event,
-    ) -> Option<EventPropagation> {
-        let mut handled = false;
-        let event_listeners = self.state().borrow().event_listeners.clone();
-        if let Some(handlers) = event_listeners.get(listener) {
-            for handler in handlers {
-                handled |= (handler.borrow_mut())(event).is_processed();
-            }
-        } else {
-            return None;
-        }
-        if handled {
-            Some(EventPropagation::Stop)
-        } else {
-            Some(EventPropagation::Continue)
-        }
+    /// Set the cursor.
+    ///
+    /// This will be overridden by any cursor set by view styles and will be overriden by cursors set on visual ids.
+    pub fn set_cursor(&self, cursor: Option<crate::style::CursorStyle>) {
+        self.state().borrow_mut().user_cursor = cursor;
     }
 
     /// Disables the default view behavior for the specified event.
     ///
     /// Children will still see the event, but the view event function will not be called nor the event listeners on the view
-    pub fn disable_default_event(&self, event: EventListener) {
+    pub fn disable_default_event(&self, event: EventListenerKey) {
         self.state()
             .borrow_mut()
             .disable_default_events
@@ -887,7 +1114,7 @@ impl ViewId {
     }
 
     /// Re-enables the default view behavior for a previously disabled event.
-    pub fn remove_disable_default_event(&self, event: EventListener) {
+    pub fn remove_disable_default_event(&self, event: EventListenerKey) {
         self.state()
             .borrow_mut()
             .disable_default_events
@@ -1043,6 +1270,128 @@ impl ViewId {
         }
         None
     }
+
+    /// get the local clip
+    pub fn get_local_clip(&self) -> Option<RoundedRect> {
+        let element_id = self.get_element_id();
+        VIEW_STORAGE
+            .with_borrow_mut(|s| {
+                let box_tree = s.box_tree(*self);
+                box_tree.borrow().local_clip(element_id.0)
+            })
+            .flatten()
+    }
+
+    /// Create a visual that is a child of the current view.
+    ///
+    /// This will make it so that the visual id can receive events through the `ViewID`
+    pub fn create_child_element_id(&self, z_index: i32) -> ElementId {
+        let parent_box_node = self.get_element_id();
+        VIEW_STORAGE.with_borrow_mut(|s| {
+            let box_tree = s.box_tree(*self);
+            let child_element_id = box_tree.borrow_mut().push_child(
+                Some(parent_box_node.0),
+                understory_box_tree::LocalNode::default(),
+            );
+            let element_id = ElementId(child_element_id, *self, false);
+            box_tree
+                .borrow_mut()
+                .set_meta(child_element_id, Some(element_id));
+            box_tree.borrow_mut().set_z_index(child_element_id, z_index);
+            element_id
+        })
+    }
+
+    /// Register this view to receive a specific event type.
+    ///
+    /// Views must register for events they want to receive through the broadcast
+    /// dispatch system, such as [`LayoutChanged`](crate::context::LayoutChanged)
+    /// or [`VisualChanged`](crate::context::VisualChanged).
+    pub fn register_listener(&self, key: listener::EventListenerKey) {
+        self.add_update_message(UpdateMessage::RegisterListener(key, *self));
+    }
+
+    /// Unregister this view from receiving a specific event type.
+    pub fn remove_listener(&self, key: listener::EventListenerKey) {
+        self.add_update_message(UpdateMessage::RemoveListener(key, *self));
+    }
+
+    pub(crate) fn get_layout_window_origin(&self) -> Point {
+        self.state().borrow().layout_window_origin
+    }
+
+    /// Dispatch an event to this view using the specified routing strategy.
+    ///
+    /// This queues an event to be dispatched during the next event processing cycle.
+    /// The event will be routed according to the `dispatch_kind` parameter.
+    ///
+    /// # Arguments
+    ///
+    /// * `event` - The event to dispatch
+    /// * `dispatch_kind` - The routing strategy to use:
+    ///   - `DispatchKind::Directed { target, phases }` - Routes to target with specified phases
+    ///     - Use `Phases::all()` for full capture/bubble
+    ///     - Use `Phases::TARGET` for direct dispatch only
+    ///     - Use `Phases::BUBBLE` for bubble-only dispatch
+    ///   - `DispatchKind::Spatial { point, phases }` - Routes based on hit testing at a point
+    ///   - `DispatchKind::Subtree { target, respect_propagation }` - Routes to target and all descendants
+    ///   - `DispatchKind::Focused { phases }` - Routes to currently focused view
+    ///   - `DispatchKind::Global { respect_propagation }` - Broadcasts to all views
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// // Dispatch a click directly to a specific view (target only, no propagation)
+    /// view_id.dispatch_event(
+    ///     Event::Interaction(InteractionEvent::Click),
+    ///     DispatchKind::Directed {
+    ///         target: view_id.get_element_id(),
+    ///         phases: Phases::TARGET
+    ///     }
+    /// );
+    ///
+    /// // Dispatch a key event with full capture/bubble phases
+    /// view_id.dispatch_event(
+    ///     Event::Key(key_event),
+    ///     DispatchKind::Directed {
+    ///         target: focused_view,
+    ///         phases: Phases::all()
+    ///     }
+    /// );
+    /// ```
+    pub fn route_event(&self, event: crate::event::Event, route_kind: RouteKind) {
+        self.route_event_with_caused_by(event, route_kind, None);
+    }
+
+    /// Dispatch an event with an optional causing event.
+    ///
+    /// This is similar to `dispatch_event`, but allows you to specify an event that caused
+    /// this dispatch. The causing event will be available in the `EventCx::caused_by` field.
+    ///
+    /// # Arguments
+    ///
+    /// * `event` - The event to dispatch
+    /// * `dispatch_kind` - The routing strategy to use
+    /// * `caused_by` - An optional event that caused this dispatch (e.g., a PointerDown that caused a Click)
+    pub fn route_event_with_caused_by(
+        &self,
+        event: crate::event::Event,
+        route_kind: RouteKind,
+        caused_by: Option<crate::event::Event>,
+    ) {
+        self.add_update_message(UpdateMessage::RouteEvent {
+            id: self.get_element_id(),
+            event: Box::new(event),
+            route_kind,
+            triggered_by: caused_by.map(Box::new),
+        });
+    }
+}
+
+impl From<ViewId> for ElementId {
+    fn from(value: ViewId) -> Self {
+        value.get_element_id()
+    }
 }
 
 /// Re-parent a child view's scope under the nearest ancestor's scope.
@@ -1120,6 +1469,22 @@ pub fn process_pending_scope_reparents() {
     });
 }
 
+fn box_tree_parent_element_id_for_child(
+    storage: &mut ViewStorage,
+    logical_parent_id: ViewId,
+    child_id: ViewId,
+) -> ElementId {
+    if storage.overlays.contains_key(child_id) {
+        let root_id = *storage
+            .root
+            .get(child_id)
+            .expect("all view ids are created with a root");
+        storage.state(root_id).borrow().element_id
+    } else {
+        storage.state(logical_parent_id).borrow().element_id
+    }
+}
+
 impl ViewId {
     /// Set the selected state for child views during styling.
     /// This should be used by parent views to propagate selected state to their children.
@@ -1136,7 +1501,7 @@ impl ViewId {
             }
         };
         if changed {
-            self.request_style();
+            self.request_style(StyleReason::with_selector(StyleSelector::Selected));
         }
     }
 
@@ -1155,7 +1520,7 @@ impl ViewId {
             }
         };
         if changed {
-            self.request_style();
+            self.request_style(StyleReason::with_selector(StyleSelector::Selected));
         }
     }
 
@@ -1174,7 +1539,7 @@ impl ViewId {
             }
         };
         if changed {
-            self.request_style();
+            self.request_style(StyleReason::with_selector(StyleSelector::Disabled));
         }
     }
 
@@ -1193,19 +1558,21 @@ impl ViewId {
             }
         };
         if changed {
-            self.request_style();
+            self.request_style(StyleReason::with_selector(StyleSelector::Disabled));
         }
     }
 
-    /// Hide this view from layout. Sets the visibility state directly.
+    /// Hide this view from layout. Sets the parent set visibility state directly.
     /// Skips the normal transition animation logic.
+    /// This should be used by parent views to set hidden state propagation to their children.
+    /// Only requests a style update if the state actually changes.
     pub fn set_hidden(&self) {
         use crate::view::state::VisibilityPhase;
         let changed = {
             let state = self.state();
             let mut state = state.borrow_mut();
-            if !state.visibility.force_hidden {
-                state.visibility.force_hidden = true;
+            if !state.parent_set_style_interaction.hidden {
+                state.parent_set_style_interaction.hidden = true;
                 state.visibility.phase = VisibilityPhase::Hidden;
                 true
             } else {
@@ -1213,18 +1580,20 @@ impl ViewId {
             }
         };
         if changed {
-            self.request_layout();
+            self.request_style(StyleReason::visibility());
         }
     }
 
-    /// Show this view in layout. Clears the force-hidden state.
+    /// Show this view in layout. Clears the parent set hidden state.
+    /// This should be used by parent views to clear hidden state propagation to their children.
+    /// Only requests a style update if the state actually changes.
     pub fn set_visible(&self) {
         use crate::view::state::VisibilityPhase;
         let changed = {
             let state = self.state();
             let mut state = state.borrow_mut();
-            if state.visibility.force_hidden {
-                state.visibility.force_hidden = false;
+            if state.parent_set_style_interaction.hidden {
+                state.parent_set_style_interaction.hidden = false;
                 // Reset phase to Initial so the normal transition logic can run
                 state.visibility.phase = VisibilityPhase::Initial;
                 true
@@ -1233,9 +1602,7 @@ impl ViewId {
             }
         };
         if changed {
-            // Request both style (for transition) and layout (for size recalc)
-            self.request_style();
-            self.request_layout();
+            self.request_style(StyleReason::visibility());
         }
     }
 }

@@ -622,7 +622,7 @@ impl SignalState {
     }
 
     pub(crate) fn run_effects(&self) {
-        let ids: Vec<_> = self.subscriber_ids().into_iter().collect();
+        let ids: smallvec::SmallVec<[_; 3]> = self.subscriber_ids().into_iter().collect();
         let on_ui_thread = Runtime::is_ui_thread();
 
         if !on_ui_thread {

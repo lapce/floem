@@ -2,7 +2,9 @@ use floem_reactive::Effect;
 use taffy::FlexDirection;
 use ui_events::keyboard::{Key, NamedKey};
 
-use crate::event::{Event, EventListener, EventPropagation};
+use crate::event::{EventPropagation, listener};
+use crate::style::StyleSelector;
+use crate::style::recalc::StyleReason;
 use crate::{ViewId, prelude::*};
 
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -163,7 +165,7 @@ where
         move |(index, e)| {
             let child = view_fn(index, e).class(ListItemClass);
             let child_id = child.view_id();
-            child.on_click_cont(move |_| {
+            child.action(move || {
                 if selection.get_untracked() != Some(index) {
                     selection.set(Some(index));
                     child_id.scroll_to(None);
@@ -171,12 +173,11 @@ where
                         return;
                     };
                     parent.update_state(index);
-                    parent.request_style_recursive();
+                    parent.request_style(StyleReason::with_selector(StyleSelector::Selected));
                 }
             })
         },
-    )
-    .style(|s| s.size_full());
+    );
 
     let stack_id = stack.id();
 
@@ -188,44 +189,41 @@ where
 
     let direction = stack.direction;
 
-    let stack = stack
-        .class(ListClass)
-        .on_event(EventListener::KeyDown, move |e| {
-            if let Event::Key(key_event) = e {
-                match key_event.key {
-                    Key::Named(NamedKey::Home) => {
-                        if length.get_untracked() > 0 {
-                            selection.set(Some(0));
-                            stack_id.update_state(0_usize); // Must be usize to match state type
-                        }
-                        EventPropagation::Stop
+    let stack = stack.class(ListClass).on_event(
+        listener::KeyDown,
+        move |_cx, KeyboardEvent { key, .. }| {
+            match key {
+                Key::Named(NamedKey::Home) => {
+                    if length.get_untracked() > 0 {
+                        selection.set(Some(0));
+                        stack_id.update_state(0_usize); // Must be usize to match state type
                     }
-                    Key::Named(NamedKey::End) => {
-                        let len = length.get_untracked();
-                        if len > 0 {
-                            selection.set(Some(len - 1));
-                            stack_id.update_state(len - 1);
-                        }
-                        EventPropagation::Stop
-                    }
-                    Key::Named(
-                        named_key @ (NamedKey::ArrowUp
-                        | NamedKey::ArrowDown
-                        | NamedKey::ArrowLeft
-                        | NamedKey::ArrowRight),
-                    ) => handle_arrow_key(
-                        selection,
-                        length.get_untracked(),
-                        direction.get_untracked(),
-                        stack_id,
-                        named_key,
-                    ),
-                    _ => EventPropagation::Continue,
+                    EventPropagation::Stop
                 }
-            } else {
-                EventPropagation::Continue
+                Key::Named(NamedKey::End) => {
+                    let len = length.get_untracked();
+                    if len > 0 {
+                        selection.set(Some(len - 1));
+                        stack_id.update_state(len - 1);
+                    }
+                    EventPropagation::Stop
+                }
+                Key::Named(
+                    named_key @ (NamedKey::ArrowUp
+                    | NamedKey::ArrowDown
+                    | NamedKey::ArrowLeft
+                    | NamedKey::ArrowRight),
+                ) => handle_arrow_key(
+                    selection,
+                    length.get_untracked(),
+                    direction.get_untracked(),
+                    stack_id,
+                    named_key,
+                ),
+                _ => EventPropagation::Continue,
             }
-        });
+        },
+    );
     VirtualList { stack, selection }
 }
 
@@ -234,7 +232,7 @@ fn handle_arrow_key(
     len: usize,
     direction: FlexDirection,
     stack_id: ViewId,
-    key: NamedKey,
+    key: &NamedKey,
 ) -> EventPropagation {
     let current = selection.get();
 

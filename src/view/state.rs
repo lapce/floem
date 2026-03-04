@@ -1,32 +1,33 @@
 use crate::{
     ViewId,
+    action::add_update_message,
     animate::Animation,
     context::{
-        CleanupListeners, EventCallback, EventListenerVec, MenuCallback, MoveListeners,
-        ResizeCallback, ResizeListeners,
+        CleanupListeners, EventCallback, EventCallbackConfig, EventListenerVec, LayoutChanged,
+        MenuCallback, VisualChanged,
     },
-    event::EventListener,
-    message::{CENTRAL_UPDATE_MESSAGES, UpdateMessage},
+    event::listener::{self, EventListenerKey},
+    message::UpdateMessage,
     prop_extractor,
-    style::InheritedInteractionCx,
     style::{
-        Background, BorderColorProp, BorderRadiusProp, BoxShadowProp, LayoutProps, Outline,
-        OutlineColor, Style, StyleClassRef, StyleSelectors, TransformProps,
+        Background, BorderColorProp, BorderRadiusProp, BoxShadowProp, CursorStyle,
+        InheritedInteractionCx, LayoutProps, Outline, OutlineColor, Style, StyleClassRef,
+        StyleSelectors, TransformProps, recalc::StyleReason,
     },
+    view::LayoutTree,
 };
-use bitflags::bitflags;
 use floem_reactive::Scope;
 use imbl::HashSet;
-use peniko::kurbo::{Affine, Point, Rect};
+use peniko::kurbo::{Affine, Point, Vec2};
+use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
-use std::{cell::RefCell, collections::HashMap, marker::PhantomData, rc::Rc};
+use std::{cell::RefCell, marker::PhantomData, rc::Rc};
 use taffy::tree::NodeId;
-use ui_events::pointer::PointerState;
 
 /// A stack of view attributes. Each entry is associated with a view decorator call.
 #[derive(Debug)]
 pub struct Stack<T> {
-    pub stack: SmallVec<[T; 1]>,
+    pub stack: SmallVec<[T; 3]>,
 }
 
 impl<T> Default for Stack<T> {
@@ -37,6 +38,7 @@ impl<T> Default for Stack<T> {
     }
 }
 
+#[derive(Debug)]
 pub struct StackOffset<T> {
     offset: usize,
     phantom: PhantomData<T>,
@@ -101,16 +103,6 @@ prop_extractor! {
     }
 }
 
-bitflags! {
-    #[derive(Default, Copy, Clone, Debug)]
-    #[must_use]
-    pub(crate) struct ChangeFlags: u8 {
-        const LAYOUT = 1 << 1;
-        const STYLE = 1 << 2;
-        const VIEW_STYLE = 1 << 3;
-    }
-}
-
 /// The current phase of visibility for enter/exit animations.
 ///
 /// This enum tracks the display state during CSS-driven visibility transitions
@@ -129,7 +121,7 @@ pub enum VisibilityPhase {
 }
 
 impl VisibilityPhase {
-    pub(crate) fn get_display(&self) -> Option<taffy::style::Display> {
+    pub(crate) fn get_display_override(&self) -> Option<taffy::style::Display> {
         match self {
             VisibilityPhase::Animating(dis) => Some(*dis),
             _ => None,
@@ -192,95 +184,181 @@ impl VisibilityPhase {
 pub struct Visibility {
     /// The current visibility phase (for enter/exit animations).
     pub phase: VisibilityPhase,
-
-    /// When true, view is force-hidden via set_hidden() API.
-    /// This bypasses the normal transition logic.
-    pub force_hidden: bool,
+    // /// When true, view is force-hidden via set_hidden() API.
+    // /// This bypasses the normal transition logic.
+    // pub force_hidden: bool,
 }
 
 impl Visibility {
     /// Returns true if the view should be treated as hidden.
     pub fn is_hidden(&self) -> bool {
-        self.force_hidden || self.phase == VisibilityPhase::Hidden
+        self.phase == VisibilityPhase::Hidden
     }
 }
 
-/// Information about a view's stacking context.
-/// Used to determine paint order and event dispatch order.
-///
-/// In the simplified stacking model:
-/// - Every view is implicitly a stacking context
-/// - z-index only competes with siblings
-/// - Children are always bounded within their parent (no "escaping")
-#[derive(Debug, Clone, Copy, Default)]
-pub struct StackingInfo {
-    /// The effective z-index for sorting (0 if no z-index specified).
-    pub effective_z_index: i32,
+/// Cached prefix-sum style stack with dirty tracking.
+pub struct StyleStack {
+    /// The raw per-decorator styles (same role as Stack<Style>).
+    pub stack: Stack<Style>,
+    /// Prefix-sum cache: `cache[i]` = stack[0..=i] all applied together.
+    /// len() always equals stack.len() after a full recompute, but may be
+    /// shorter when the stack is dirty (new pushes haven't been cached yet).
+    cache: SmallVec<[Style; 3]>,
+    /// Index of the first entry that needs recomputation.
+    /// `dirty_from == stack.len()` means fully clean.
+    dirty_from: usize,
+}
+
+impl Default for StyleStack {
+    fn default() -> Self {
+        StyleStack {
+            stack: Stack::default(),
+            cache: SmallVec::new(),
+            dirty_from: 0,
+        }
+    }
+}
+
+impl StyleStack {
+    /// Reserve a slot and return its offset (mirrors Stack::next_offset).
+    pub fn next_offset(&mut self) -> StackOffset<Style> {
+        let offset = self.stack.next_offset();
+        self.mark_dirty(offset.offset);
+        offset
+    }
+
+    pub fn push(&mut self, style: Style) {
+        self.stack.push(style);
+    }
+
+    pub fn set(&mut self, offset: StackOffset<Style>, value: Style) {
+        self.stack.set(offset, value);
+        self.mark_dirty(offset.offset);
+    }
+
+    fn mark_dirty(&mut self, idx: usize) {
+        if idx < self.dirty_from {
+            self.dirty_from = idx;
+            self.cache.truncate(idx);
+        }
+    }
+
+    /// Recompute dirty entries and return the fully-combined style.
+    pub fn style(&mut self) -> Style {
+        let len = self.stack.stack.len();
+
+        if len == 0 {
+            self.cache.clear();
+            self.dirty_from = 0;
+            return Style::new();
+        }
+
+        if self.dirty_from >= len {
+            return self.cache[len - 1].clone();
+        }
+
+        let start = self.dirty_from;
+        self.cache.resize_with(len, Style::new);
+
+        for i in start..len {
+            self.cache[i] = if i == 0 {
+                self.stack.stack[0].clone()
+            } else {
+                let mut combined = self.cache[i - 1].clone();
+                combined.apply_mut(self.stack.stack[i].clone());
+                combined
+            };
+        }
+
+        self.dirty_from = len;
+        self.cache[len - 1].clone()
+    }
 }
 
 /// View state stores internal state associated with a view which is owned and managed by Floem.
 pub struct ViewState {
-    pub(crate) node: NodeId,
-    pub(crate) requested_changes: ChangeFlags,
-    pub(crate) style: Stack<Style>,
+    pub(crate) layout_id: NodeId,
+    pub(crate) element_id: crate::ElementId,
+    pub(crate) style: StyleStack,
     /// We store the stack offset to the view style to keep the api consistent but it should
     /// always be the first offset.
     pub(crate) view_style_offset: StackOffset<Style>,
-    /// Layout is requested on all direct and indirect children.
-    pub(crate) request_style_recursive: bool,
-    pub(crate) has_style_selectors: StyleSelectors,
-    pub(crate) viewport: Option<Rect>,
-    pub(crate) layout_rect: Rect,
-    /// The visible clip area in window coordinates. This is the intersection of
-    /// the view's layout_rect with all ancestor clip bounds (from overflow: hidden/scroll).
-    /// Used for clip-aware hit testing - clicks outside this rect should not hit the view.
-    pub(crate) clip_rect: Rect,
+    pub(crate) has_style_selectors: Option<StyleSelectors>,
+    // the translation value that this view applies to children elements. Scroll view can use this to scroll.
+    pub(crate) child_translation: Vec2,
+    // total accumulated offset from all scroll ancestors. This is updated when updating the box tree
+    pub(crate) scroll_cx: Vec2,
     pub(crate) layout_props: LayoutProps,
     pub(crate) view_style_props: ViewStyleProps,
     pub(crate) view_transform_props: TransformProps,
     pub(crate) animations: Stack<Animation>,
-    pub(crate) classes: Vec<StyleClassRef>,
+    pub(crate) classes: SmallVec<[StyleClassRef; 4]>,
     pub(crate) dragging_style: Option<Style>,
-    /// Combine the stacked style into one style, and apply the interact state.
+    pub(crate) combined_pre_animation_style: Style,
+    /// The resolved style for this view (base + selectors + classes).
+    /// Does NOT include inherited properties from ancestors.
+    ///
+    /// Use for style resolution logic (what did this view define?):
+    /// - Checking if a property is explicitly set on this view
+    /// - Computing class context propagation to children
+    /// - Building style cache keys
     pub(crate) combined_style: Style,
-    /// The final style including inherited style from parent.
+    /// The final computed style including inherited properties from ancestors.
+    /// This is combined_style merged with inherited context (font_size, color, etc.).
+    ///
+    /// Use for rendering and layout (what will the user see?):
+    /// - Layout calculations via prop extractors
+    /// - Visual properties (background, border, transform)
+    /// - Anything that affects what gets rendered
+    /// - Converting to taffy style for layout engine
     pub(crate) computed_style: Style,
     /// this can be used to make it so that a view will pull it's style context from a different parent.
     /// This is useful for overlays that are children of the window root but should pull their style cx from the creating view
     pub(crate) style_cx_parent: Option<ViewId>,
-    /// The style map that has the inherited properties that the children should use.
-    /// Contains only properties marked as `inherited` (font-size, color, etc.)
-    pub(crate) style_cx: Option<Style>,
-    /// The class context that has class nested maps for children to apply.
-    /// Contains `.class(SomeClass, ...)` definitions that flow to descendants.
-    pub(crate) class_cx: Option<Style>,
+    /// The inherited properties context for children.
+    /// Contains only properties marked as `inherited` (font-size, color, etc.).
+    ///
+    /// Derived from this view's computed_style (which includes inherited properties
+    /// from ancestors). Children will merge this with their combined_style to produce
+    /// their computed_style.
+    pub(crate) style_cx: Style,
+    /// The class context containing class definitions for descendants.
+    /// Contains `.class(SomeClass, ...)` nested maps that flow down the tree.
+    ///
+    /// Derived from this view's combined_style (only explicitly set class definitions).
+    /// Children will use this to resolve their class references when computing their
+    /// combined_style.
+    pub(crate) class_cx: Style,
     /// the style interaction cx that is saved after computing the final style.
     /// This will be used as the base interaction for all **children** of this view as these are the inherited interactions
     pub(crate) style_interaction_cx: InheritedInteractionCx,
+    /// View-local interaction flags derived from this view's resolved combined style.
+    ///
+    /// This excludes inherited parent interaction and is OR'ed onto StyleCx interaction
+    /// state during fast-path style passes that skip `compute_combined`.
+    pub(crate) post_compute_combined_interaction: InheritedInteractionCx,
     /// This interaction context can be set by a parent on this view. This will be used when building the StyleCx for **this** view.
     pub(crate) parent_set_style_interaction: InheritedInteractionCx,
-    /// Controls view visibility including phase transitions and force-hidden state.
+    /// Controls view visibility for phase transitions.
     pub(crate) visibility: Visibility,
+    /// The cursor style set by the style pass on the view. There is also the [`Self::user_cursor`] that takes precedance over this cursor.
+    pub(crate) style_cursor: Option<CursorStyle>,
+    /// the cursor style that a user can set on a view through the `ViewId`. This takes precedance over style_cursor.
+    pub(crate) user_cursor: Option<CursorStyle>,
     pub(crate) taffy_style: taffy::style::Style,
-    pub(crate) event_listeners: HashMap<EventListener, EventListenerVec>,
+    pub(crate) event_listeners: FxHashMap<EventListenerKey, EventListenerVec>,
+    /// these are the listeners that are registered in the window state. This is used to efficiently clean up those listeners from the window state.
+    pub(crate) registered_listener_keys: SmallVec<[listener::EventListenerKey; 2]>,
+    pub(crate) layout_window_origin: Point,
+    pub(crate) layout: Option<LayoutChanged>,
+    pub(crate) visual_change: Option<VisualChanged>,
     pub(crate) context_menu: Option<Rc<MenuCallback>>,
     pub(crate) popout_menu: Option<Rc<MenuCallback>>,
-    pub(crate) resize_listeners: Rc<RefCell<ResizeListeners>>,
-    pub(crate) move_listeners: Rc<RefCell<MoveListeners>>,
     pub(crate) cleanup_listeners: Rc<RefCell<CleanupListeners>>,
-    pub(crate) last_pointer_down: Option<PointerState>,
     pub(crate) num_waiting_animations: u16,
-    pub(crate) disable_default_events: HashSet<EventListener>,
+    pub(crate) disable_default_events: HashSet<EventListenerKey>,
+    /// This transform is user settable and is a transfrom that is applied after the transfrom from the `view_transform_props` which is the transfrom applied by style properties.
     pub(crate) transform: Affine,
-    /// The cumulative transform from this view's local coordinates to window coordinates.
-    /// This combines the view's position and any CSS transforms.
-    /// Use the inverse to convert from window coordinates to local coordinates.
-    pub(crate) visual_transform: Affine,
-    /// The window origin for this view (layout position after CSS translate).
-    /// This is the position used for child layout and does NOT include scale/rotate effects.
-    /// For the position including all CSS transforms, use `visual_transform.translation()`.
-    pub(crate) window_origin: Point,
-    pub(crate) stacking_info: StackingInfo,
     pub(crate) debug_name: SmallVec<[String; 1]>,
     /// Scope for reactive children (used by `ParentView::derived_children`).
     /// When children are updated reactively, the old scope is disposed.
@@ -296,93 +374,74 @@ pub struct ViewState {
 }
 
 impl ViewState {
-    pub(crate) fn new(id: ViewId, taffy: &mut taffy::TaffyTree) -> Self {
-        let mut style = Stack::<Style>::default();
+    pub(crate) fn new(id: ViewId, taffy: &mut LayoutTree, box_tree: &mut crate::BoxTree) -> Self {
+        let mut style = StyleStack::default();
         let view_style_offset = style.next_offset();
         style.push(Style::new());
 
-        CENTRAL_UPDATE_MESSAGES.with_borrow_mut(|m| m.push((id, UpdateMessage::RequestStyle(id))));
-        CENTRAL_UPDATE_MESSAGES
-            .with_borrow_mut(|m| m.push((id, UpdateMessage::RequestViewStyle(id))));
+        let element_id = crate::ElementId(
+            box_tree.push_child(None, understory_box_tree::LocalNode::default()),
+            id,
+            true,
+        );
+        box_tree.set_meta(element_id.0, Some(element_id));
+
+        add_update_message(UpdateMessage::RequestStyle(
+            element_id,
+            StyleReason::full_recalc(),
+        ));
+
         Self {
-            node: taffy.new_leaf(taffy::style::Style::DEFAULT).unwrap(),
-            viewport: None,
+            layout_id: taffy.new_leaf(taffy::style::Style::DEFAULT).unwrap(),
+            element_id,
             style,
             view_style_offset,
-            layout_rect: Rect::ZERO,
-            clip_rect: Rect::ZERO,
             layout_props: Default::default(),
             view_style_props: Default::default(),
-            requested_changes: ChangeFlags::all(),
-            request_style_recursive: false,
-            has_style_selectors: StyleSelectors::default(),
+            has_style_selectors: None,
             animations: Default::default(),
-            classes: Vec::new(),
+            classes: SmallVec::new(),
+            combined_pre_animation_style: Style::new(),
             combined_style: Style::new(),
             computed_style: Style::new(),
             taffy_style: taffy::style::Style::DEFAULT,
             dragging_style: None,
-            event_listeners: HashMap::new(),
+            event_listeners: FxHashMap::default(),
+            registered_listener_keys: SmallVec::new(),
+            layout_window_origin: Point::ZERO,
+            layout: None,
+            visual_change: None,
             context_menu: None,
             popout_menu: None,
-            resize_listeners: Default::default(),
-            move_listeners: Default::default(),
+            child_translation: Vec2::ZERO,
+            scroll_cx: Vec2::ZERO,
             cleanup_listeners: Default::default(),
-            last_pointer_down: None,
             num_waiting_animations: 0,
             disable_default_events: HashSet::new(),
             view_transform_props: Default::default(),
             transform: Affine::IDENTITY,
-            visual_transform: Affine::IDENTITY,
-            window_origin: Point::ZERO,
-            stacking_info: StackingInfo::default(),
             debug_name: Default::default(),
             style_cx_parent: None,
-            style_cx: None,
-            class_cx: None,
+            style_cx: Style::new(),
+            class_cx: Style::new(),
             style_interaction_cx: Default::default(),
+            post_compute_combined_interaction: Default::default(),
             parent_set_style_interaction: Default::default(),
             visibility: Visibility::default(),
+            style_cursor: None,
+            user_cursor: None,
             children_scope: None,
             keyed_children: None,
             scope: None,
         }
     }
 
-    pub(crate) fn has_active_animation(&self) -> bool {
-        for animation in self.animations.stack.iter() {
-            if animation.is_in_progress() {
-                return true;
-            }
-        }
-        false
+    pub(crate) fn style(&mut self) -> Style {
+        self.style.style()
     }
 
-    /// Returns the view's visual position in window coordinates.
-    ///
-    /// This is derived from `visual_transform`, which is the single source
-    /// of truth for a view's position. For views without CSS scale/rotate transforms,
-    /// this equals the layout position plus CSS translate. For views with scale/rotate,
-    /// this includes the effect of center-based transforms.
-    pub(crate) fn visual_origin(&self) -> Point {
-        let t = self.visual_transform.translation();
-        Point::new(t.x, t.y)
-    }
-
-    /// Returns the view's window origin (layout position after CSS translate).
-    ///
-    /// This is the position used for child layout and does NOT include scale/rotate effects.
-    /// For the position including all CSS transforms, use `visual_origin()`.
-    pub(crate) fn window_origin(&self) -> Point {
-        self.window_origin
-    }
-
-    pub(crate) fn style(&self) -> Style {
-        let mut result = Style::new();
-        for entry in self.style.stack.iter() {
-            result.apply_mut(entry.clone());
-        }
-        result
+    pub fn cursor(&self) -> Option<CursorStyle> {
+        self.style_cursor.or(self.user_cursor)
     }
 
     /// Compute the combined style by applying selectors, responsive styles, and classes.
@@ -395,19 +454,18 @@ impl ViewState {
     ///   Used for class styling that flows from ancestors.
     pub(crate) fn compute_combined(
         &mut self,
-        interact_state: crate::style::InteractionState,
+        interact_state: &mut crate::style::InteractionState,
         screen_size_bp: crate::layout::responsive::ScreenSizeBp,
         view_class: Option<crate::style::StyleClassRef>,
-        inherited_context: &std::rc::Rc<Style>,
-        class_context: &std::rc::Rc<Style>,
-    ) -> (Style, bool) {
+        inherited_context: &Style,
+        class_context: &Style,
+    ) {
         // Start with the combined stacked styles
         let base_style = self.style();
-
-        // Extract and store selectors from the base style for selector detection.
-        // This enables has_style_for_selector() to work correctly, including for
-        // selectors defined inside with_context closures.
-        self.has_style_selectors = base_style.selectors();
+        interact_state.is_disabled |= base_style.builtin().set_disabled();
+        interact_state.is_selected |= base_style.builtin().set_selected();
+        interact_state.is_hidden |= base_style.builtin().display() == taffy::Display::None;
+        let base_selectors = base_style.selectors() | class_context.selectors();
 
         // Build the full class list: view's classes + view type class
         let mut all_classes = self.classes.clone();
@@ -416,39 +474,89 @@ impl ViewState {
         }
 
         // Create mutable contexts - inherited for with_context evaluation
-        let inherited_ctx = (**inherited_context).clone();
+        let inherited_ctx = inherited_context.clone();
 
         // Resolve all nested maps: selectors, responsive styles, and classes
-        let (combined, classes_applied) = crate::style::resolve_nested_maps(
+        let (combined, selectors) = crate::style::resolve_nested_maps(
             base_style,
-            &interact_state,
+            interact_state,
             screen_size_bp,
             &all_classes,
             &inherited_ctx,
             class_context,
         );
 
+        interact_state.is_hidden |= combined.builtin().display() == taffy::Display::None;
+        interact_state.is_selected |= combined.builtin().set_selected();
+        interact_state.is_disabled |= combined.builtin().set_disabled();
+        self.post_compute_combined_interaction = InheritedInteractionCx {
+            hidden: combined.builtin().display() == taffy::Display::None,
+            selected: combined.builtin().set_selected(),
+            disabled: combined.builtin().set_disabled(),
+        };
+
+        self.has_style_selectors = Some(selectors | base_selectors);
+        self.combined_pre_animation_style = combined.clone();
         self.combined_style = combined.clone();
-        (combined, classes_applied)
+    }
+
+    pub fn apply_animations(
+        &mut self,
+        interact_state: &mut crate::style::InteractionState,
+    ) -> bool {
+        let mut combined = self.combined_pre_animation_style.clone();
+        // ─────────────────────────────────────────────────────────────────────
+        // Process animations
+        // ─────────────────────────────────────────────────────────────────────
+        // Animations modify the computed style by interpolating between keyframe values.
+        // We process animations here, after the base style is computed but before
+        // it's stored, so animated values override static style values.
+        let mut has_active_animation = false;
+        {
+            for animation in self
+                .animations
+                .stack
+                .iter_mut()
+                .filter(|anim| anim.can_advance() || anim.should_apply_folded())
+            {
+                if animation.can_advance() {
+                    has_active_animation = true;
+                    animation.animate_into(&mut combined);
+                    animation.advance();
+                } else {
+                    animation.apply_folded(&mut combined);
+                }
+                debug_assert!(
+                    !animation.is_idle(),
+                    "Animation should not be idle after processing"
+                );
+            }
+        }
+
+        interact_state.is_hidden |= combined.builtin().display() == taffy::Display::None;
+        interact_state.is_selected |= combined.builtin().set_selected();
+        interact_state.is_disabled |= combined.builtin().set_disabled();
+        self.post_compute_combined_interaction = InheritedInteractionCx {
+            hidden: combined.builtin().display() == taffy::Display::None,
+            selected: combined.builtin().set_selected(),
+            disabled: combined.builtin().set_disabled(),
+        };
+
+        self.combined_style = combined;
+
+        has_active_animation
     }
 
     pub(crate) fn add_event_listener(
         &mut self,
-        listener: EventListener,
+        listener: listener::EventListenerKey,
         action: Box<EventCallback>,
+        config: EventCallbackConfig,
     ) {
         self.event_listeners
             .entry(listener)
             .or_default()
-            .push(Rc::new(RefCell::new(action)));
-    }
-
-    pub(crate) fn add_resize_listener(&mut self, action: Rc<ResizeCallback>) {
-        self.resize_listeners.borrow_mut().callbacks.push(action);
-    }
-
-    pub(crate) fn add_move_listener(&mut self, action: Rc<dyn Fn(Point)>) {
-        self.move_listeners.borrow_mut().callbacks.push(action);
+            .push((Rc::new(RefCell::new(action)), config));
     }
 
     pub(crate) fn add_cleanup_listener(&mut self, action: Rc<dyn Fn()>) {
@@ -610,18 +718,21 @@ mod tests {
     #[test]
     fn test_get_display_during_animating() {
         let phase = VisibilityPhase::Animating(Display::Flex);
-        assert_eq!(phase.get_display(), Some(Display::Flex));
+        assert_eq!(phase.get_display_override(), Some(Display::Flex));
 
         let phase = VisibilityPhase::Animating(Display::Block);
-        assert_eq!(phase.get_display(), Some(Display::Block));
+        assert_eq!(phase.get_display_override(), Some(Display::Block));
     }
 
     /// Test get_display() returns None for non-Animating phases.
     #[test]
     fn test_get_display_for_other_phases() {
-        assert_eq!(VisibilityPhase::Initial.get_display(), None);
-        assert_eq!(VisibilityPhase::Visible(Display::Flex).get_display(), None);
-        assert_eq!(VisibilityPhase::Hidden.get_display(), None);
+        assert_eq!(VisibilityPhase::Initial.get_display_override(), None);
+        assert_eq!(
+            VisibilityPhase::Visible(Display::Flex).get_display_override(),
+            None
+        );
+        assert_eq!(VisibilityPhase::Hidden.get_display_override(), None);
     }
 
     /// Test Visible stays Visible when display changes to different visible value.

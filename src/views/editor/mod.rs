@@ -97,7 +97,7 @@ impl StylePropValue for IndentStyle {
 prop!(pub DropdownShadow: Option<Color> {} = None);
 prop!(pub Foreground: Color { inherited } = Color::from_rgb8(0x38, 0x3A, 0x42));
 prop!(pub Focus: Option<Color> {} = None);
-prop!(pub SelectionColor: Color {} = palette::css::BLACK.with_alpha(0.5));
+prop!(pub SelectionColor: Brush {} = Brush::Solid(palette::css::BLACK.with_alpha(0.5)));
 prop!(pub CurrentLineColor: Option<Color> {  } = None);
 prop!(pub Link: Option<Color> {} = None);
 prop!(pub VisibleWhitespaceColor: Color {} = palette::css::TRANSPARENT);
@@ -1385,7 +1385,6 @@ impl TextLayoutProvider for Editor {
         text_layout.set_tab_width(style.tab_width(edid, line));
         text_layout.set_text(&line_content, attrs_list, None);
 
-        // dbg!(self.editor_style.with(|s| s.wrap_method()));
         match self.es.with(|s| s.wrap_method()) {
             WrapMethod::None => {}
             WrapMethod::EditorWidth => {

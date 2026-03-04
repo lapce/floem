@@ -1,23 +1,28 @@
+use std::time::Duration;
+
 use floem::{
-    peniko::{color::palette, Color},
+    IntoView,
+    easing::Spring,
+    peniko::{Color, color::palette},
     prelude::{
         palette::css::{DARK_GRAY, WHITE_SMOKE},
-        RwSignal, SignalGet,
+        *,
     },
-    style::CursorStyle,
+    style::{CursorStyle, Transition},
     theme::StyleThemeExt,
-    views::{toggle_button, Button, Decorators, ToggleButton, ToggleHandleBehavior},
-    IntoView,
+    views::{Button, Decorators, ToggleButton},
 };
 
 use crate::form::{form, form_item};
 
 pub fn button_view() -> impl IntoView {
     let state = RwSignal::new(false);
+    let transition = || Transition::new(Duration::from_millis(100), Spring::snappy());
+
     form((
         form_item(
             "Basic Button:",
-            Button::new("Click me").action(|| println!("Button clicked")),
+            Button::new("Click me").action(move || println!("Button clicked")),
         ),
         form_item(
             "Styled Button:",
@@ -25,7 +30,7 @@ pub fn button_view() -> impl IntoView {
                 .action(|| println!("Button clicked"))
                 .style(|s| {
                     s.border(1.0)
-                        .border_radius(10.0)
+                        .border_radius(50.0)
                         .padding(10.0)
                         .background(palette::css::YELLOW_GREEN)
                         .color(palette::css::DARK_GREEN)
@@ -33,6 +38,11 @@ pub fn button_view() -> impl IntoView {
                         .active(|s| s.color(palette::css::WHITE).background(palette::css::RED))
                         .hover(|s| s.background(Color::from_rgb8(244, 67, 54)))
                         .focus_visible(|s| s.outline(2.).outline_color(palette::css::BLUE))
+                })
+                .style(move |s| {
+                    s.active(|s| s.scale(90.pct()))
+                        .transition_scale_x(transition())
+                        .transition_scale_y(transition())
                 }),
         ),
         form_item(
@@ -43,25 +53,15 @@ pub fn button_view() -> impl IntoView {
         ),
         form_item(
             "Secondary click button:",
-            Button::new("Right click me").on_secondary_click_stop(|_| {
+            Button::new("Right click me").on_event_stop(listener::SecondaryClick, |_, _| {
                 println!("Secondary mouse button click.");
             }),
         ),
         form_item(
-            "Toggle button - Snap:",
-            toggle_button(|| true)
-                .on_toggle(|_| {
-                    println!("Button Toggled");
-                })
-                .toggle_style(|s| s.behavior(ToggleHandleBehavior::Snap)),
-        ),
-        form_item(
-            "Toggle button - Follow:",
-            toggle_button(|| true)
-                .on_toggle(|_| {
-                    println!("Button Toggled");
-                })
-                .toggle_style(|s| s.behavior(ToggleHandleBehavior::Follow)),
+            "Toggle button:",
+            ToggleButton::new(|| true).on_event_stop(ToggleChanged::listener(), |_, _| {
+                println!("Button Toggled");
+            }),
         ),
         form_item(
             "Toggle button - toggle background:",
@@ -69,7 +69,6 @@ pub fn button_view() -> impl IntoView {
                 s.apply_if(state.get(), |s| {
                     s.accent_color(DARK_GRAY).handle_color(WHITE_SMOKE)
                 })
-                .behavior(ToggleHandleBehavior::Snap)
             }),
         ),
     ))

@@ -53,6 +53,7 @@ floem::style_class!(pub ItemClass);
 #[test]
 #[serial]
 fn test_direct_nested_class_style() {
+    let root = TestRoot::new();
     // Child with ItemClass
     let child = Empty::new().class(ItemClass).style(|s| s.width(50.0));
     let child_id = child.view_id();
@@ -61,7 +62,7 @@ fn test_direct_nested_class_style() {
     let parent =
         Container::new(child).style(|s| s.size(200.0, 200.0).class(ItemClass, |s| s.height(30.0)));
 
-    let mut harness = HeadlessHarness::new_with_size(parent, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, parent, 200.0, 200.0);
     harness.rebuild();
 
     let layout = child_id.get_layout().expect("Layout should exist");
@@ -80,6 +81,7 @@ fn test_direct_nested_class_style() {
 #[test]
 #[serial]
 fn test_verify_nested_class_propagation() {
+    let root = TestRoot::new();
     // Child with ItemClass
     let child = Empty::new().class(ItemClass).style(|s| s.width(50.0));
     let child_id = child.view_id();
@@ -96,7 +98,7 @@ fn test_verify_nested_class_propagation() {
             .class(OuterClass, |s| s.class(ItemClass, |s| s.height(45.0)))
     });
 
-    let mut harness = HeadlessHarness::new_with_size(grandparent, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, grandparent, 200.0, 200.0);
     harness.rebuild();
 
     let layout = child_id.get_layout().expect("Layout should exist");
@@ -121,6 +123,7 @@ fn test_verify_nested_class_propagation() {
 #[test]
 #[serial]
 fn test_outer_class_defines_item_style() {
+    let root_harness = TestRoot::new();
     // Item with ItemClass
     let item = Empty::new().class(ItemClass).style(|s| s.width(50.0));
     let item_id = item.view_id();
@@ -131,12 +134,12 @@ fn test_outer_class_defines_item_style() {
         .style(|s| s.size(200.0, 200.0));
 
     // Root defines OuterClass with nested ItemClass style
-    let root = Container::new(outer).style(|s| {
+    let view = Container::new(outer).style(|s| {
         s.size(300.0, 300.0)
             .class(OuterClass, |s| s.class(ItemClass, |s| s.height(25.0)))
     });
 
-    let mut harness = HeadlessHarness::new_with_size(root, 300.0, 300.0);
+    let mut harness = HeadlessHarness::new_with_size(root_harness, view, 300.0, 300.0);
     harness.rebuild();
 
     let layout = item_id.get_layout().expect("Layout should exist");
@@ -159,6 +162,7 @@ fn test_outer_class_defines_item_style() {
 #[test]
 #[serial]
 fn test_multiple_nested_paths_specificity() {
+    let root = TestRoot::new();
     // Item with ItemClass
     let item = Empty::new().class(ItemClass).style(|s| s.width(50.0));
     let item_id = item.view_id();
@@ -176,7 +180,7 @@ fn test_multiple_nested_paths_specificity() {
     // Root defines BOTH:
     // 1. OuterClass -> ItemClass (general path)
     // 2. OuterClass -> InnerClass -> ItemClass (specific path)
-    let root = Container::new(outer).style(|s| {
+    let view = Container::new(outer).style(|s| {
         s.size(300.0, 300.0)
             // General path: OuterClass defines ItemClass with height=40
             .class(OuterClass, |s| s.class(ItemClass, |s| s.height(40.0)))
@@ -186,7 +190,7 @@ fn test_multiple_nested_paths_specificity() {
             })
     });
 
-    let mut harness = HeadlessHarness::new_with_size(root, 300.0, 300.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 300.0, 300.0);
     harness.rebuild();
 
     let layout = item_id.get_layout().expect("Layout should exist");
@@ -215,6 +219,7 @@ fn test_multiple_nested_paths_specificity() {
 #[test]
 #[serial]
 fn test_css_like_padding_accumulation() {
+    let root = TestRoot::new();
     // Item with ItemClass
     let item = Empty::new().class(ItemClass).style(|s| s.size(50.0, 20.0));
     let item_id = item.view_id();
@@ -232,7 +237,7 @@ fn test_css_like_padding_accumulation() {
     // Root defines:
     // 1. OuterClass -> ItemClass with padding_left(10)
     // 2. OuterClass -> InnerClass -> ItemClass with padding(5)
-    let root = Container::new(outer).style(|s| {
+    let view = Container::new(outer).style(|s| {
         s.size(300.0, 300.0)
             .class(OuterClass, |s| s.class(ItemClass, |s| s.padding_left(10.0)))
             .class(OuterClass, |s| {
@@ -240,7 +245,7 @@ fn test_css_like_padding_accumulation() {
             })
     });
 
-    let mut harness = HeadlessHarness::new_with_size(root, 300.0, 300.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 300.0, 300.0);
     harness.rebuild();
 
     let layout = item_id.get_layout().expect("Layout should exist");
@@ -267,6 +272,7 @@ fn test_css_like_padding_accumulation() {
 #[test]
 #[serial]
 fn test_context_mappings_from_multiple_paths() {
+    let root = TestRoot::new();
     // Item with ItemClass that will receive context-based styling
     let item = Empty::new().class(ItemClass).style(|s| s.width(50.0));
     let item_id = item.view_id();
@@ -284,7 +290,7 @@ fn test_context_mappings_from_multiple_paths() {
     // Root defines:
     // 1. OuterClass -> ItemClass with height from font_size * 2 = 40
     // 2. OuterClass -> InnerClass -> ItemClass with height from font_size * 1 = 20
-    let root = Container::new(outer).style(|s| {
+    let view = Container::new(outer).style(|s| {
         s.size(300.0, 300.0)
             .class(OuterClass, |s| {
                 s.class(ItemClass, |s| {
@@ -304,7 +310,7 @@ fn test_context_mappings_from_multiple_paths() {
             })
     });
 
-    let mut harness = HeadlessHarness::new_with_size(root, 300.0, 300.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 300.0, 300.0);
     harness.rebuild();
 
     let layout = item_id.get_layout().expect("Layout should exist");
@@ -338,6 +344,7 @@ fn test_context_mappings_from_multiple_paths() {
 #[test]
 #[serial]
 fn test_css_like_style_accumulation_from_multiple_paths() {
+    let root = TestRoot::new();
     floem::style_class!(ListClass);
     floem::style_class!(ListItemClass);
     floem::style_class!(DropdownClass);
@@ -365,7 +372,7 @@ fn test_css_like_style_accumulation_from_multiple_paths() {
     // Root defines theme-like styles:
     // 1. ListClass -> ListItemClass (general list item styling) with HEIGHT=30
     // 2. DropdownClass -> ScrollClass -> ListItemClass (dropdown-specific) with HEIGHT=25
-    let root = Container::new(dropdown).style(|s| {
+    let view = Container::new(dropdown).style(|s| {
         s.size(300.0, 300.0)
             // General list item style
             .class(ListClass, |s| {
@@ -387,7 +394,7 @@ fn test_css_like_style_accumulation_from_multiple_paths() {
             })
     });
 
-    let mut harness = HeadlessHarness::new_with_size(root, 300.0, 300.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 300.0, 300.0);
     harness.rebuild();
 
     let layout = item_id.get_layout().expect("Layout should exist");
@@ -430,6 +437,7 @@ fn test_css_like_style_accumulation_from_multiple_paths() {
 #[test]
 #[serial]
 fn test_with_context_from_multiple_class_paths() {
+    let root = TestRoot::new();
     use std::cell::Cell;
     use std::rc::Rc;
 
@@ -465,7 +473,7 @@ fn test_with_context_from_multiple_class_paths() {
         .style(|s| s.size(200.0, 200.0).font_size(20.0));
 
     // Root defines theme-like styles with with_context closures
-    let root = Container::new(dropdown).style(move |s| {
+    let view = Container::new(dropdown).style(move |s| {
         let list_path_clone = list_path_clone.clone();
         let dropdown_path_clone = dropdown_path_clone.clone();
 
@@ -499,7 +507,7 @@ fn test_with_context_from_multiple_class_paths() {
             })
     });
 
-    let mut harness = HeadlessHarness::new_with_size(root, 300.0, 300.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 300.0, 300.0);
     harness.rebuild();
 
     let layout = item_id.get_layout().expect("Layout should exist");
@@ -546,6 +554,7 @@ fn test_with_context_from_multiple_class_paths() {
 #[test]
 #[serial]
 fn test_css_like_different_properties_accumulate() {
+    let root = TestRoot::new();
     use std::cell::Cell;
     use std::rc::Rc;
 
@@ -582,7 +591,7 @@ fn test_css_like_different_properties_accumulate() {
         .style(|s| s.size(200.0, 200.0).font_size(10.0));
 
     // Root defines styles where each path sets DIFFERENT properties
-    let root = Container::new(dropdown).style(move |s| {
+    let view = Container::new(dropdown).style(move |s| {
         let list_ran_clone = list_ran_clone.clone();
         let dropdown_ran_clone = dropdown_ran_clone.clone();
 
@@ -614,7 +623,7 @@ fn test_css_like_different_properties_accumulate() {
             })
     });
 
-    let mut harness = HeadlessHarness::new_with_size(root, 300.0, 300.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 300.0, 300.0);
     harness.rebuild();
 
     eprintln!("Style accumulation test:");
@@ -647,6 +656,7 @@ fn test_css_like_different_properties_accumulate() {
 #[test]
 #[serial]
 fn test_list_item_inside_list_class() {
+    let root = TestRoot::new();
     floem::style_class!(ListClass);
     floem::style_class!(ListItemClass);
 
@@ -660,13 +670,13 @@ fn test_list_item_inside_list_class() {
         .style(|s| s.size(200.0, 200.0));
 
     // Root defines ListClass -> ListItemClass style
-    let root = Container::new(list).style(|s| {
+    let view = Container::new(list).style(|s| {
         s.size(300.0, 300.0).class(ListClass, |s| {
             s.class(ListItemClass, |s| s.padding_left(15.0).height(35.0))
         })
     });
 
-    let mut harness = HeadlessHarness::new_with_size(root, 300.0, 300.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 300.0, 300.0);
     harness.rebuild();
 
     let layout = item_id.get_layout().expect("Layout should exist");
@@ -692,6 +702,7 @@ fn test_list_item_inside_list_class() {
 #[test]
 #[serial]
 fn test_class_style_requires_matching_class() {
+    let root = TestRoot::new();
     // Item WITHOUT ItemClass
     let item = Empty::new().style(|s| s.size(50.0, 20.0));
     let item_id = item.view_id();
@@ -700,7 +711,7 @@ fn test_class_style_requires_matching_class() {
     let parent =
         Container::new(item).style(|s| s.size(200.0, 200.0).class(ItemClass, |s| s.height(100.0)));
 
-    let mut harness = HeadlessHarness::new_with_size(parent, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, parent, 200.0, 200.0);
     harness.rebuild();
 
     let layout = item_id.get_layout().expect("Layout should exist");
@@ -717,6 +728,7 @@ fn test_class_style_requires_matching_class() {
 #[test]
 #[serial]
 fn test_deeply_nested_class_inheritance() {
+    let root = TestRoot::new();
     floem::style_class!(Level1);
     floem::style_class!(Level2);
     floem::style_class!(Level3);
@@ -736,7 +748,7 @@ fn test_deeply_nested_class_inheritance() {
         .style(|s| s.size(160.0, 160.0));
 
     // Define deeply nested class style
-    let root = Container::new(l1).style(|s| {
+    let view = Container::new(l1).style(|s| {
         s.size(200.0, 200.0).class(Level1, |s| {
             s.class(Level2, |s| {
                 s.class(Level3, |s| s.class(TargetClass, |s| s.height(15.0)))
@@ -744,7 +756,7 @@ fn test_deeply_nested_class_inheritance() {
         })
     });
 
-    let mut harness = HeadlessHarness::new_with_size(root, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     let layout = target_id.get_layout().expect("Layout should exist");

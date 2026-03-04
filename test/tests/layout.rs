@@ -5,6 +5,7 @@
 
 use floem::prelude::*;
 use floem::unit::Pct;
+use floem_test::TestRoot;
 use floem_test::prelude::*;
 use serial_test::serial;
 
@@ -15,10 +16,11 @@ use serial_test::serial;
 #[test]
 #[serial]
 fn test_explicit_size() {
+    let root = TestRoot::new();
     let view = Empty::new().style(|s| s.size(100.0, 50.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     let layout = id.get_layout().expect("Layout should exist");
@@ -37,10 +39,11 @@ fn test_explicit_size() {
 #[test]
 #[serial]
 fn test_width_and_height_separate() {
+    let root = TestRoot::new();
     let view = Empty::new().style(|s| s.width(80.0).height(40.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     let layout = id.get_layout().expect("Layout should exist");
@@ -59,11 +62,12 @@ fn test_width_and_height_separate() {
 #[test]
 #[serial]
 fn test_min_width_and_min_height() {
+    let root = TestRoot::new();
     // Content would be 0, but min-size forces larger
     let view = Empty::new().style(|s| s.min_width(60.0).min_height(30.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     let layout = id.get_layout().expect("Layout should exist");
@@ -82,11 +86,12 @@ fn test_min_width_and_min_height() {
 #[test]
 #[serial]
 fn test_max_width_and_max_height() {
+    let root = TestRoot::new();
     // Explicit size larger than max should be clamped
     let view = Empty::new().style(|s| s.size(200.0, 200.0).max_width(100.0).max_height(50.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 300.0, 300.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 300.0, 300.0);
     harness.rebuild();
 
     let layout = id.get_layout().expect("Layout should exist");
@@ -105,12 +110,13 @@ fn test_max_width_and_max_height() {
 #[test]
 #[serial]
 fn test_percentage_size() {
+    let root = TestRoot::new();
     let child = Empty::new().style(|s| s.width(Pct(50.0)).height(Pct(25.0)));
     let child_id = child.view_id();
 
     let container = Stack::new((child,)).style(|s| s.size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(container, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, container, 200.0, 200.0);
     harness.rebuild();
 
     let layout = child_id.get_layout().expect("Layout should exist");
@@ -129,12 +135,13 @@ fn test_percentage_size() {
 #[test]
 #[serial]
 fn test_size_full() {
+    let root = TestRoot::new();
     let child = Empty::new().style(|s| s.size_full());
     let child_id = child.view_id();
 
     let container = Stack::new((child,)).style(|s| s.size(150.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(container, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, container, 200.0, 200.0);
     harness.rebuild();
 
     let layout = child_id.get_layout().expect("Layout should exist");
@@ -157,13 +164,14 @@ fn test_size_full() {
 #[test]
 #[serial]
 fn test_flex_row_basic() {
+    let root = TestRoot::new();
     let child1 = Empty::new().style(|s| s.size(50.0, 30.0));
     let child2 = Empty::new().style(|s| s.size(50.0, 30.0));
     let child2_id = child2.view_id();
 
     let container = Stack::new((child1, child2)).style(|s| s.flex_row().size(200.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(container, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, container, 200.0, 200.0);
     harness.rebuild();
 
     let layout = child2_id.get_layout().expect("Layout should exist");
@@ -183,13 +191,14 @@ fn test_flex_row_basic() {
 #[test]
 #[serial]
 fn test_flex_column_basic() {
+    let root = TestRoot::new();
     let child1 = Empty::new().style(|s| s.size(50.0, 30.0));
     let child2 = Empty::new().style(|s| s.size(50.0, 30.0));
     let child2_id = child2.view_id();
 
     let container = Stack::new((child1, child2)).style(|s| s.flex_col().size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(container, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, container, 200.0, 200.0);
     harness.rebuild();
 
     let layout = child2_id.get_layout().expect("Layout should exist");
@@ -209,6 +218,7 @@ fn test_flex_column_basic() {
 #[test]
 #[serial]
 fn test_flex_gap() {
+    let root = TestRoot::new();
     let child1 = Empty::new().style(|s| s.size(50.0, 30.0));
     let child2 = Empty::new().style(|s| s.size(50.0, 30.0));
     let child2_id = child2.view_id();
@@ -216,7 +226,7 @@ fn test_flex_gap() {
     let container =
         Stack::new((child1, child2)).style(|s| s.flex_row().gap(20.0).size(200.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(container, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, container, 200.0, 200.0);
     harness.rebuild();
 
     let layout = child2_id.get_layout().expect("Layout should exist");
@@ -231,6 +241,7 @@ fn test_flex_gap() {
 #[test]
 #[serial]
 fn test_flex_grow() {
+    let root = TestRoot::new();
     let child1 = Empty::new().style(|s| s.flex_grow(1.0).height(30.0));
     let child1_id = child1.view_id();
     let child2 = Empty::new().style(|s| s.flex_grow(1.0).height(30.0));
@@ -238,7 +249,7 @@ fn test_flex_grow() {
 
     let container = Stack::new((child1, child2)).style(|s| s.flex_row().size(200.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(container, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, container, 200.0, 200.0);
     harness.rebuild();
 
     let layout1 = child1_id.get_layout().expect("Layout should exist");
@@ -260,6 +271,7 @@ fn test_flex_grow() {
 #[test]
 #[serial]
 fn test_flex_grow_unequal() {
+    let root = TestRoot::new();
     let child1 = Empty::new().style(|s| s.flex_grow(1.0).height(30.0));
     let child1_id = child1.view_id();
     let child2 = Empty::new().style(|s| s.flex_grow(2.0).height(30.0));
@@ -267,7 +279,7 @@ fn test_flex_grow_unequal() {
 
     let container = Stack::new((child1, child2)).style(|s| s.flex_row().size(300.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(container, 300.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, container, 300.0, 200.0);
     harness.rebuild();
 
     let layout1 = child1_id.get_layout().expect("Layout should exist");
@@ -289,6 +301,7 @@ fn test_flex_grow_unequal() {
 #[test]
 #[serial]
 fn test_flex_shrink() {
+    let root = TestRoot::new();
     // Children have base width 150 each = 300, but container is only 200
     let child1 = Empty::new().style(|s| s.width(150.0).flex_shrink(1.0).height(30.0));
     let child1_id = child1.view_id();
@@ -297,7 +310,7 @@ fn test_flex_shrink() {
 
     let container = Stack::new((child1, child2)).style(|s| s.flex_row().size(200.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(container, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, container, 200.0, 200.0);
     harness.rebuild();
 
     let layout1 = child1_id.get_layout().expect("Layout should exist");
@@ -319,12 +332,13 @@ fn test_flex_shrink() {
 #[test]
 #[serial]
 fn test_flex_basis() {
+    let root = TestRoot::new();
     let child1 = Empty::new().style(|s| s.flex_basis(80.0).height(30.0));
     let child1_id = child1.view_id();
 
     let container = Stack::new((child1,)).style(|s| s.flex_row().size(200.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(container, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, container, 200.0, 200.0);
     harness.rebuild();
 
     let layout = child1_id.get_layout().expect("Layout should exist");
@@ -342,12 +356,13 @@ fn test_flex_basis() {
 #[test]
 #[serial]
 fn test_align_items_center() {
+    let root = TestRoot::new();
     let child = Empty::new().style(|s| s.size(50.0, 30.0));
     let child_id = child.view_id();
 
     let container = Stack::new((child,)).style(|s| s.flex_row().items_center().size(200.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(container, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, container, 200.0, 200.0);
     harness.rebuild();
 
     let layout = child_id.get_layout().expect("Layout should exist");
@@ -362,12 +377,13 @@ fn test_align_items_center() {
 #[test]
 #[serial]
 fn test_align_items_end() {
+    let root = TestRoot::new();
     let child = Empty::new().style(|s| s.size(50.0, 30.0));
     let child_id = child.view_id();
 
     let container = Stack::new((child,)).style(|s| s.flex_row().items_end().size(200.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(container, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, container, 200.0, 200.0);
     harness.rebuild();
 
     let layout = child_id.get_layout().expect("Layout should exist");
@@ -382,13 +398,14 @@ fn test_align_items_end() {
 #[test]
 #[serial]
 fn test_justify_content_center() {
+    let root = TestRoot::new();
     let child = Empty::new().style(|s| s.size(50.0, 30.0));
     let child_id = child.view_id();
 
     let container =
         Stack::new((child,)).style(|s| s.flex_row().justify_center().size(200.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(container, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, container, 200.0, 200.0);
     harness.rebuild();
 
     let layout = child_id.get_layout().expect("Layout should exist");
@@ -403,6 +420,7 @@ fn test_justify_content_center() {
 #[test]
 #[serial]
 fn test_justify_content_space_between() {
+    let root = TestRoot::new();
     let child1 = Empty::new().style(|s| s.size(50.0, 30.0));
     let child1_id = child1.view_id();
     let child2 = Empty::new().style(|s| s.size(50.0, 30.0));
@@ -411,7 +429,7 @@ fn test_justify_content_space_between() {
     let container =
         Stack::new((child1, child2)).style(|s| s.flex_row().justify_between().size(200.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(container, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, container, 200.0, 200.0);
     harness.rebuild();
 
     let layout1 = child1_id.get_layout().expect("Layout should exist");
@@ -437,13 +455,14 @@ fn test_justify_content_space_between() {
 #[test]
 #[serial]
 fn test_padding_uniform() {
+    let root = TestRoot::new();
     let child = Empty::new().style(|s| s.size(50.0, 50.0));
     let child_id = child.view_id();
 
     let container =
         floem::views::Container::new(child).style(|s| s.padding(10.0).size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(container, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, container, 200.0, 200.0);
     harness.rebuild();
 
     let layout = child_id.get_layout().expect("Layout should exist");
@@ -462,6 +481,7 @@ fn test_padding_uniform() {
 #[test]
 #[serial]
 fn test_padding_directional() {
+    let root = TestRoot::new();
     let child = Empty::new().style(|s| s.size(50.0, 50.0));
     let child_id = child.view_id();
 
@@ -473,7 +493,7 @@ fn test_padding_directional() {
             .size(100.0, 100.0)
     });
 
-    let mut harness = HeadlessHarness::new_with_size(container, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, container, 200.0, 200.0);
     harness.rebuild();
 
     let layout = child_id.get_layout().expect("Layout should exist");
@@ -492,6 +512,7 @@ fn test_padding_directional() {
 #[test]
 #[serial]
 fn test_padding_reduces_content_area() {
+    let root = TestRoot::new();
     // Child with size_full should respect parent's padding
     let child = Empty::new().style(|s| s.size_full());
     let child_id = child.view_id();
@@ -499,7 +520,7 @@ fn test_padding_reduces_content_area() {
     let container =
         floem::views::Container::new(child).style(|s| s.padding(20.0).size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(container, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, container, 200.0, 200.0);
     harness.rebuild();
 
     let layout = child_id.get_layout().expect("Layout should exist");
@@ -523,12 +544,13 @@ fn test_padding_reduces_content_area() {
 #[test]
 #[serial]
 fn test_margin_uniform() {
+    let root = TestRoot::new();
     let child = Empty::new().style(|s| s.margin(15.0).size(50.0, 50.0));
     let child_id = child.view_id();
 
     let container = Stack::new((child,)).style(|s| s.size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(container, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, container, 200.0, 200.0);
     harness.rebuild();
 
     let layout = child_id.get_layout().expect("Layout should exist");
@@ -547,6 +569,7 @@ fn test_margin_uniform() {
 #[test]
 #[serial]
 fn test_margin_directional() {
+    let root = TestRoot::new();
     let child = Empty::new().style(|s| {
         s.margin_left(5.0)
             .margin_top(10.0)
@@ -558,7 +581,7 @@ fn test_margin_directional() {
 
     let container = Stack::new((child,)).style(|s| s.size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(container, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, container, 200.0, 200.0);
     harness.rebuild();
 
     let layout = child_id.get_layout().expect("Layout should exist");
@@ -577,13 +600,14 @@ fn test_margin_directional() {
 #[test]
 #[serial]
 fn test_margin_auto_centering() {
+    let root = TestRoot::new();
     // margin_horiz_auto should center horizontally in flex container
     let child = Empty::new().style(|s| s.margin_horiz(floem::style::Auto).size(50.0, 50.0));
     let child_id = child.view_id();
 
     let container = Stack::new((child,)).style(|s| s.flex_row().size(200.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(container, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, container, 200.0, 200.0);
     harness.rebuild();
 
     let layout = child_id.get_layout().expect("Layout should exist");
@@ -602,6 +626,7 @@ fn test_margin_auto_centering() {
 #[test]
 #[serial]
 fn test_absolute_positioning() {
+    let root = TestRoot::new();
     let child = Empty::new().style(|s| {
         s.absolute()
             .inset_left(20.0)
@@ -612,7 +637,7 @@ fn test_absolute_positioning() {
 
     let container = Stack::new((child,)).style(|s| s.size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(container, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, container, 200.0, 200.0);
     harness.rebuild();
 
     let layout = child_id.get_layout().expect("Layout should exist");
@@ -631,13 +656,14 @@ fn test_absolute_positioning() {
 #[test]
 #[serial]
 fn test_absolute_inset_all() {
+    let root = TestRoot::new();
     // inset(0) should fill the parent
     let child = Empty::new().style(|s| s.absolute().inset(0.0));
     let child_id = child.view_id();
 
     let container = Stack::new((child,)).style(|s| s.size(200.0, 150.0));
 
-    let mut harness = HeadlessHarness::new_with_size(container, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, container, 200.0, 200.0);
     harness.rebuild();
 
     let layout = child_id.get_layout().expect("Layout should exist");
@@ -656,13 +682,14 @@ fn test_absolute_inset_all() {
 #[test]
 #[serial]
 fn test_absolute_inset_with_size() {
+    let root = TestRoot::new();
     // Explicit size takes precedence over filling via inset
     let child = Empty::new().style(|s| s.absolute().inset(0.0).size(50.0, 40.0));
     let child_id = child.view_id();
 
     let container = Stack::new((child,)).style(|s| s.size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(container, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, container, 200.0, 200.0);
     harness.rebuild();
 
     let layout = child_id.get_layout().expect("Layout should exist");
@@ -681,6 +708,7 @@ fn test_absolute_inset_with_size() {
 #[test]
 #[serial]
 fn test_absolute_percentage_positioning() {
+    let root = TestRoot::new();
     let child = Empty::new().style(|s| {
         s.absolute()
             .inset_left(Pct(50.0))
@@ -691,7 +719,7 @@ fn test_absolute_percentage_positioning() {
 
     let container = Stack::new((child,)).style(|s| s.size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(container, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, container, 200.0, 200.0);
     harness.rebuild();
 
     let layout = child_id.get_layout().expect("Layout should exist");
@@ -710,6 +738,7 @@ fn test_absolute_percentage_positioning() {
 #[test]
 #[serial]
 fn test_absolute_does_not_affect_siblings() {
+    let root = TestRoot::new();
     // Absolute positioned elements should not affect layout of siblings
     let absolute_child = Empty::new().style(|s| {
         s.absolute()
@@ -723,7 +752,7 @@ fn test_absolute_does_not_affect_siblings() {
     let container =
         Stack::new((absolute_child, normal_child)).style(|s| s.flex_row().size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(container, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, container, 200.0, 200.0);
     harness.rebuild();
 
     let layout = normal_id.get_layout().expect("Layout should exist");
@@ -742,6 +771,7 @@ fn test_absolute_does_not_affect_siblings() {
 #[test]
 #[serial]
 fn test_nested_flex_containers() {
+    let root = TestRoot::new();
     let inner_child1 = Empty::new().style(|s| s.size(30.0, 30.0));
     let inner_child2 = Empty::new().style(|s| s.size(30.0, 30.0));
     let inner_child2_id = inner_child2.view_id();
@@ -753,7 +783,7 @@ fn test_nested_flex_containers() {
     let outer_container =
         Stack::new((inner_container,)).style(|s| s.padding(20.0).size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(outer_container, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, outer_container, 200.0, 200.0);
     harness.rebuild();
 
     let inner_layout = inner_id.get_layout().expect("Inner layout should exist");
@@ -779,6 +809,7 @@ fn test_nested_flex_containers() {
 #[test]
 #[serial]
 fn test_deeply_nested_percentage() {
+    let root = TestRoot::new();
     // Test that percentage sizing works through multiple levels
     let deep_child = Empty::new().style(|s| s.width(Pct(50.0)).height(Pct(50.0)));
     let deep_id = deep_child.view_id();
@@ -786,7 +817,7 @@ fn test_deeply_nested_percentage() {
     let level2 = Stack::new((deep_child,)).style(|s| s.width(Pct(50.0)).height(Pct(50.0)));
     let level1 = Stack::new((level2,)).style(|s| s.size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(level1, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, level1, 200.0, 200.0);
     harness.rebuild();
 
     let layout = deep_id.get_layout().expect("Layout should exist");
@@ -811,13 +842,14 @@ fn test_deeply_nested_percentage() {
 #[test]
 #[serial]
 fn test_aspect_ratio_with_width() {
+    let root = TestRoot::new();
     let child = Empty::new().style(|s| s.width(100.0).aspect_ratio(2.0)); // 2:1 ratio
     let child_id = child.view_id();
 
     // Use items_start to prevent stretching the child to full height
     let container = Stack::new((child,)).style(|s| s.items_start().size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(container, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, container, 200.0, 200.0);
     harness.rebuild();
 
     let layout = child_id.get_layout().expect("Layout should exist");
@@ -836,13 +868,14 @@ fn test_aspect_ratio_with_width() {
 #[test]
 #[serial]
 fn test_aspect_ratio_with_height() {
+    let root = TestRoot::new();
     let child = Empty::new().style(|s| s.height(100.0).aspect_ratio(0.5)); // 1:2 ratio
     let child_id = child.view_id();
 
     // Use items_start to prevent stretching the child
     let container = Stack::new((child,)).style(|s| s.items_start().size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(container, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, container, 200.0, 200.0);
     harness.rebuild();
 
     let layout = child_id.get_layout().expect("Layout should exist");
@@ -865,12 +898,13 @@ fn test_aspect_ratio_with_height() {
 #[test]
 #[serial]
 fn test_display_none_hides_element() {
+    let root = TestRoot::new();
     let child = Empty::new().style(|s| s.display(floem::taffy::Display::None).size(50.0, 50.0));
     let child_id = child.view_id();
 
     let container = Stack::new((child,)).style(|s| s.size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(container, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, container, 200.0, 200.0);
     harness.rebuild();
 
     let layout = child_id.get_layout().expect("Layout should exist");
@@ -890,13 +924,14 @@ fn test_display_none_hides_element() {
 #[test]
 #[serial]
 fn test_display_none_does_not_affect_siblings() {
+    let root = TestRoot::new();
     let hidden = Empty::new().style(|s| s.display(floem::taffy::Display::None).size(100.0, 100.0));
     let visible = Empty::new().style(|s| s.size(50.0, 50.0));
     let visible_id = visible.view_id();
 
     let container = Stack::new((hidden, visible)).style(|s| s.flex_row().size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(container, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, container, 200.0, 200.0);
     harness.rebuild();
 
     let layout = visible_id.get_layout().expect("Layout should exist");
@@ -915,12 +950,13 @@ fn test_display_none_does_not_affect_siblings() {
 #[test]
 #[serial]
 fn test_border_affects_layout() {
+    let root = TestRoot::new();
     let child = Empty::new().style(|s| s.size_full());
     let child_id = child.view_id();
 
     let container = floem::views::Container::new(child).style(|s| s.border(5.0).size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(container, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, container, 200.0, 200.0);
     harness.rebuild();
 
     let layout = child_id.get_layout().expect("Layout should exist");
@@ -944,13 +980,14 @@ fn test_border_affects_layout() {
 #[test]
 #[serial]
 fn test_transform_does_not_affect_layout_size() {
+    let root = TestRoot::new();
     // Transforms should affect painting but not layout
     let child = Empty::new().style(|s| s.size(50.0, 50.0).scale(Pct(200.0)));
     let child_id = child.view_id();
 
     let container = Stack::new((child,)).style(|s| s.size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(container, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, container, 200.0, 200.0);
     harness.rebuild();
 
     let layout = child_id.get_layout().expect("Layout should exist");
@@ -974,13 +1011,14 @@ fn test_transform_does_not_affect_layout_size() {
 #[test]
 #[serial]
 fn test_window_origin_accumulates() {
+    let root = TestRoot::new();
     let deep_child = Empty::new().style(|s| s.size(20.0, 20.0));
     let deep_id = deep_child.view_id();
 
     let level2 = Stack::new((deep_child,)).style(|s| s.padding(10.0).size(100.0, 100.0));
     let level1 = Stack::new((level2,)).style(|s| s.padding(20.0).size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(level1, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, level1, 200.0, 200.0);
     harness.rebuild();
 
     let window_origin = deep_id.get_visual_origin();

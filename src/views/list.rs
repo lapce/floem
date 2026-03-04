@@ -1,19 +1,35 @@
-use super::{Decorators, Stack};
-use crate::context::StyleCx;
-use crate::event::EventPropagation;
-use crate::style::Style;
-use crate::style_class;
-use crate::view::IntoView;
-use crate::view::ViewId;
 use crate::{
-    event::{Event, EventListener},
-    view::View,
+    AnyView, ViewId,
+    context::Phases,
+    custom_event,
+    event::{Event, EventPropagation, RouteKind},
+    prelude::*,
+    style::{Style, StyleCx, recalc::StyleReason},
+    style_class,
 };
 use floem_reactive::{Effect, RwSignal, SignalGet, SignalUpdate};
-use ui_events::keyboard::{Key, KeyState, KeyboardEvent, NamedKey};
+use ui_events::keyboard::{Key, KeyboardEvent, NamedKey};
 
 style_class!(pub ListClass);
 style_class!(pub ListItemClass);
+
+/// Event fired when a list's selection changes
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ListSelectionChanged {
+    /// The previous selection index
+    pub old_selection: Option<usize>,
+    /// The new selection index
+    pub new_selection: Option<usize>,
+}
+custom_event!(ListSelectionChanged);
+
+/// Event fired when a list item is accepted (Enter key or Space)
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ListAccept {
+    /// The accepted selection index
+    pub selection: Option<usize>,
+}
+custom_event!(ListAccept);
 
 enum ListUpdate {
     SelectionChanged(Option<usize>),
@@ -31,8 +47,6 @@ pub(crate) struct Item {
 pub struct List {
     id: ViewId,
     selection: RwSignal<Option<usize>>,
-    onaccept: Option<Box<dyn Fn(Option<usize>)>>,
-    child: ViewId,
 }
 
 impl List {
@@ -47,12 +61,6 @@ impl List {
             let selection = self.selection.get();
             on_select(selection);
         });
-        self
-    }
-
-    /// Adds a callback for user list selection with the `Enter` key.
-    pub fn on_accept(mut self, on_accept: impl Fn(Option<usize>) + 'static) -> Self {
-        self.onaccept = Some(Box::new(on_accept));
         self
     }
 }
@@ -78,105 +86,112 @@ where
 {
     let list_id = ViewId::new();
     let selection = RwSignal::new(Some(0));
-    Effect::new(move |old_idx: Option<Option<usize>>| {
-        let selection = selection.get();
-        list_id.update_state(ListUpdate::SelectionChanged(old_idx.flatten()));
-        selection
+    Effect::new(move |old_sel: Option<Option<usize>>| {
+        let new_sel = selection.get();
+        let old_sel = old_sel.flatten();
+
+        if old_sel != new_sel {
+            // Dispatch custom event when selection changes
+            list_id.route_event(
+                Event::new_custom(ListSelectionChanged {
+                    old_selection: old_sel,
+                    new_selection: new_sel,
+                }),
+                RouteKind::Directed {
+                    target: list_id.get_element_id(),
+                    phases: Phases::TARGET,
+                },
+            );
+            list_id.update_state(ListUpdate::SelectionChanged(old_sel));
+        }
+
+        new_sel
     });
-    let stack =
-        Stack::vertical_from_iter(iterator.into_iter().enumerate().map(move |(index, v)| {
-            let id = ViewId::new();
+    let children = iterator
+        .into_iter()
+        .enumerate()
+        .map(move |(index, v)| {
+            let item_id = ViewId::new();
             let v = v.into_view().class(ListItemClass);
             let child = v.id();
-            id.set_children([v]);
+            item_id.set_children([v]);
+            // Let row styles resolve against the list container so structural
+            // selectors like `.even()`/`.odd()` index across list rows instead
+            // of the internal per-row Item wrapper.
+            child.set_style_parent(list_id);
             Item {
-                id,
+                id: item_id,
                 selection,
                 index,
                 child,
             }
-            .on_click_stop(move |_| {
+            .action(move || {
                 if selection.get_untracked() != Some(index) {
                     selection.set(Some(index));
                     list_id.update_state(ListUpdate::Accept);
                 }
             })
-        }))
-        .style(|s| s.width_full().height_full());
-    let length = stack.id().children().len();
-    let child = stack.id();
-    list_id.set_children([stack]);
+        })
+        .map(|v| -> Box<dyn View> { v.into_any() })
+        .collect::<Vec<AnyView>>();
+    let length = children.len();
+    list_id.set_children_vec(children);
     List {
         id: list_id,
         selection,
-        child,
-        onaccept: None,
     }
-    .on_event(EventListener::KeyDown, move |e| {
-        if let Event::Key(KeyboardEvent {
-            state: KeyState::Down,
-            key,
-            ..
-        }) = e
-        {
-            match key {
-                Key::Named(NamedKey::Home) => {
-                    if length > 0 {
-                        selection.set(Some(0));
-                    }
-                    EventPropagation::Stop
+    .on_event(
+        listener::KeyDown,
+        move |_cx, KeyboardEvent { key, .. }| match key {
+            Key::Named(NamedKey::Home) => {
+                if length > 0 {
+                    selection.set(Some(0));
                 }
-                Key::Named(NamedKey::End) => {
-                    if length > 0 {
-                        selection.set(Some(length - 1));
-                    }
-                    EventPropagation::Stop
-                }
-                Key::Named(NamedKey::ArrowUp) => {
-                    let current = selection.get_untracked();
-                    match current {
-                        Some(i) => {
-                            if i > 0 {
-                                selection.set(Some(i - 1));
-                            }
-                        }
-                        None => {
-                            if length > 0 {
-                                selection.set(Some(length - 1));
-                            }
-                        }
-                    }
-                    EventPropagation::Stop
-                }
-                Key::Named(NamedKey::Enter) => {
-                    list_id.update_state(ListUpdate::Accept);
-                    EventPropagation::Stop
-                }
-                Key::Character(c) if c == " " => {
-                    list_id.update_state(ListUpdate::Accept);
-                    EventPropagation::Stop
-                }
-                Key::Named(NamedKey::ArrowDown) => {
-                    let current = selection.get_untracked();
-                    match current {
-                        Some(i) => {
-                            if i < length - 1 {
-                                selection.set(Some(i + 1));
-                            }
-                        }
-                        None => {
-                            if length > 0 {
-                                selection.set(Some(0));
-                            }
-                        }
-                    }
-                    EventPropagation::Stop
-                }
-                _ => EventPropagation::Continue,
+                EventPropagation::Stop
             }
-        } else {
-            EventPropagation::Continue
-        }
+            Key::Named(NamedKey::End) => {
+                if length > 0 {
+                    selection.set(Some(length - 1));
+                }
+                EventPropagation::Stop
+            }
+            Key::Named(NamedKey::ArrowUp) => {
+                let current = selection.get_untracked();
+                match current {
+                    Some(i) => {
+                        if i > 0 {
+                            selection.set(Some(i - 1));
+                        }
+                    }
+                    None => {
+                        if length > 0 {
+                            selection.set(Some(length - 1));
+                        }
+                    }
+                }
+                EventPropagation::Stop
+            }
+            Key::Named(NamedKey::ArrowDown) => {
+                let current = selection.get_untracked();
+                match current {
+                    Some(i) => {
+                        if i < length - 1 {
+                            selection.set(Some(i + 1));
+                        }
+                    }
+                    None => {
+                        if length > 0 {
+                            selection.set(Some(0));
+                        }
+                    }
+                }
+                EventPropagation::Stop
+            }
+            _ => EventPropagation::Continue,
+        },
+    )
+    .on_event_stop(listener::Click, move |_cx, _| {
+        list_id.update_state(ListUpdate::Accept);
     })
     .class(ListClass)
 }
@@ -186,24 +201,37 @@ impl View for List {
         self.id
     }
 
+    fn view_style(&self) -> Option<Style> {
+        Some(Style::new().flex_col())
+    }
+
     fn update(&mut self, _cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(change) = state.downcast::<ListUpdate>() {
             match *change {
-                ListUpdate::SelectionChanged(old_idx) => {
-                    if let Some(old_idx) = old_idx {
-                        let child = self.child.children()[old_idx];
-                        child.request_style_recursive();
-                    }
-                    if let Some(index) = self.selection.get_untracked() {
-                        let child = self.child.children()[index];
-                        child.request_style_recursive();
+                ListUpdate::SelectionChanged(old_selection) => {
+                    if let Some(index) = self.selection.get_untracked()
+                        && let Some(child) = self.id.children().get(index)
+                    {
+                        child.request_style(StyleReason::style_pass());
                         child.scroll_to(None);
+                    }
+                    if let Some(index) = old_selection
+                        && let Some(child) = self.id.children().get(index)
+                    {
+                        child.request_style(StyleReason::style_pass());
                     }
                 }
                 ListUpdate::Accept => {
-                    if let Some(on_accept) = &self.onaccept {
-                        on_accept(self.selection.get_untracked());
-                    }
+                    let selection = self.selection.get_untracked();
+
+                    // Dispatch custom event
+                    self.id.route_event(
+                        Event::new_custom(ListAccept { selection }),
+                        RouteKind::Directed {
+                            target: self.id.get_element_id(),
+                            phases: Phases::TARGET,
+                        },
+                    );
                 }
             }
         }

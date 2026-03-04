@@ -218,6 +218,71 @@ pub mod receiver_signal {
     pub use stream_signal::*;
 }
 
+mod element_id {
+    use crate::ViewId;
+
+    /// A visual identifier that represents a rectangle in the box tree.
+    ///
+    /// # ViewId vs ElementId Relationship
+    ///
+    /// **ViewId** represents a logical view in the view tree (1:1 with View instances).
+    /// **ElementId** represents a visual rectangle in the box tree (can be many per View).
+    ///
+    /// ## Key Relationships:
+    /// - Each **View** has exactly one primary **ViewId** (1:1)
+    /// - Each **View** can create multiple **ElementIds** for sub-widget rectangles (1:many)
+    ///   - Example: A scroll view creates VisualIds for content area, vertical scrollbar, horizontal scrollbar
+    /// - Each **VisualId** maps back to exactly one **ViewId** for event routing (many:1)
+    ///   - Call `element_id.view_id()` to get the owning ViewId
+    ///
+    /// ## Usage:
+    /// - **Hit testing** operates on VisualIds (tests against individual rectangles in box tree)
+    /// - **Event handling** happens on ViewIds (the view receives events with target VisualId)
+    /// - **Painting** iterates through VisualIds in z-index order from the box tree
+    /// - **View hierarchy** uses ViewIds for parent/child relationships
+    ///
+    /// ## Structure:
+    /// - `.0`: The box tree NodeId (identifies the rectangle in the spatial index)
+    /// - `.1`: The owning ViewId (identifies which view this rectangle belongs to)
+    ///
+    /// ## Example:
+    /// ```ignore
+    /// // A scroll view might create these VisualIds:
+    /// let scroll_view_id = ViewId::new();
+    /// let content_element_id = VisualId(node_id_1, scroll_view_id);     // content area
+    /// let vscroll_element_id = VisualId(node_id_2, scroll_view_id);     // vertical scrollbar
+    /// let hscroll_element_id = VisualId(node_id_3, scroll_view_id);     // horizontal scrollbar
+    ///
+    /// // All three VisualIds route events to the same scroll_view_id:
+    /// assert_eq!(content_element_id.view_id(), scroll_view_id);
+    /// assert_eq!(vscroll_element_id.view_id(), scroll_view_id);
+    /// assert_eq!(hscroll_element_id.view_id(), scroll_view_id);
+    ///
+    /// // But hit testing can distinguish which specific rectangle was hit
+    /// ```
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    // #[repr(transparent)]
+    pub struct ElementId(
+        pub(crate) understory_box_tree::NodeId,
+        pub(crate) ViewId,
+        pub(crate) bool,
+    );
+    impl ElementId {
+        pub fn owning_id(&self) -> crate::ViewId {
+            self.1
+        }
+
+        /// returns true if the element id is the id for a view
+        pub fn is_view(&self) -> bool {
+            self.2
+        }
+    }
+}
+pub use element_id::ElementId;
+
+pub type BoxTree = understory_box_tree::Tree<understory_index::backends::GridF64, ElementId>;
+// pub type BoxTree = understory_box_tree::Tree;
+
 pub use app::{AppConfig, AppEvent, Application, launch, quit_app, reopen};
 pub use floem_reactive as reactive;
 pub use floem_renderer::Renderer;
@@ -239,10 +304,7 @@ pub use platform::{Menu, SubMenu};
 pub use taffy;
 pub use ui_events;
 pub use view::ViewId;
-pub use view::{
-    AnyView, HasViewId, IntoView, LazyView, ParentView, View, default_compute_layout,
-    recursively_layout_view,
-};
+pub use view::{AnyView, HasViewId, IntoView, LazyView, ParentView, View};
 pub use view::{Stack, StackOffset};
 pub use window::{Urgency, WindowIdExt, WindowState, close_window, new_window};
 
@@ -251,6 +313,9 @@ pub use style::{theme, unit};
 
 pub mod prelude {
     pub use crate::Renderer;
+    pub use crate::event::listener as el;
+    pub use crate::event::listener;
+    pub use crate::event::listener::EventListenerTrait;
     pub use crate::unit::{DurationUnitExt, UnitExt};
     pub use crate::view::IntoViewIter;
     pub use crate::view::ViewTuple;

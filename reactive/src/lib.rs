@@ -29,7 +29,7 @@ pub use derived::{
 };
 pub use effect::{
     batch, create_effect, create_stateful_updater, create_tracker, create_updater, untrack, Effect,
-    SignalTracker, UpdaterEffect,
+    EffectTrait, SignalTracker, UpdaterEffect,
 };
 pub use id::Id as ReactiveId;
 pub use memo::{create_memo, Memo};

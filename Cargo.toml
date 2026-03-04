@@ -42,10 +42,11 @@ rust-version.workspace = true
 license.workspace = true
 
 [workspace.dependencies]
-peniko = { version = "0.6.0" }
+peniko = { version = "0.6.0", features = ["serde"] }
 parley = { version = "0.7.0" }
 fontique = { version = "0.7.0" }
 serde = { version = "1.0" }
+serde_json = { version = "1.0" }
 lapce-xi-rope = "0.4.0"
 strum = { version = "0.28", features = ["derive"] }
 strum_macros = { version = "0.28" }
@@ -72,7 +73,7 @@ indexmap = "2"
 rustc-hash = "2.1"
 smallvec = "1.15"
 educe = "0.6"
-taffy = { version = "0.9.1", features = ["grid"] }
+taffy = { version = "0.9.2", features = ["grid"] }
 rfd = { version = "0.17.1", default-features = true}
 tokio = { version = "1", features = ["sync", "rt"], optional = true }
 raw-window-handle = { workspace = true }
@@ -80,6 +81,7 @@ unicode-segmentation = { workspace = true }
 peniko = { workspace = true }
 imbl.workspace = true
 serde = { workspace = true, optional = true }
+serde_json = { workspace = true }
 lapce-xi-rope = { workspace = true, optional = true }
 strum = { workspace = true, optional = true }
 strum_macros = { workspace = true, optional = true }
@@ -106,6 +108,11 @@ wgpu.workspace = true
 fluent-bundle = { version = "0.16", optional = true }
 unic-langid = { version = "0.9", optional = true }
 sys-locale = { version = "0.3.2", optional = true }
+understory_box_tree = { git = "https://github.com/jrmoulton/understory", rev = "e3dc4f7bc94d2c87d0800b0dd55242cda876a278", package = "understory_box_tree" }
+understory_event_state = { git = "https://github.com/jrmoulton/understory", rev = "e3dc4f7bc94d2c87d0800b0dd55242cda876a278", package = "understory_event_state" }
+understory_index = { git = "https://github.com/jrmoulton/understory", rev = "e3dc4f7bc94d2c87d0800b0dd55242cda876a278", package = "understory_index" }
+understory_focus = { git = "https://github.com/jrmoulton/understory", rev = "e3dc4f7bc94d2c87d0800b0dd55242cda876a278", package = "understory_focus", features = ["box_tree_adapter"] }
+understory_virtual_list = { git = "https://github.com/jrmoulton/understory", rev = "e3dc4f7bc94d2c87d0800b0dd55242cda876a278", package = "understory_virtual_list" }
 
 [target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
 muda = { workspace = true }
@@ -129,9 +136,10 @@ objc2-app-kit = { version = "0.3", features = [
   "NSResponder",
   "NSView",
 ] }
+dispatch2 = {version = "0.3.0"}
 
 [features]
-default = ["editor", "default-image-formats", "vger"]
+default = ["editor", "default-image-formats", "vger", "serde"]
 vello = ["dep:floem_vello_renderer"]
 vger = ["dep:floem_vger_renderer"]
 # tiny-skia = ["dep:floem_tiny_skia_renderer"]
@@ -204,3 +212,6 @@ harness = false
 [[bench]]
 name = "editor_layout_cols"
 harness = false
+
+
+

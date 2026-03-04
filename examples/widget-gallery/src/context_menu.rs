@@ -1,8 +1,6 @@
-use floem::{
-    menu::*,
-    views::{ButtonClass, Decorators, Stack},
-    IntoView,
-};
+use std::time::Duration;
+
+use floem::{easing::Spring, kurbo::Affine, menu::*, prelude::*, style::Transition, unit::Angle};
 
 pub fn menu_view() -> impl IntoView {
     let export_submenu = |m: SubMenu| {
@@ -39,24 +37,54 @@ pub fn menu_view() -> impl IntoView {
             })
     };
 
-    let transform_submenu = |m: SubMenu| {
-        m.item("Rotate 90°", |i| {
-            i.action(|| println!("Rotating 90 degrees..."))
+    let rotation = RwSignal::new(Angle::Deg(0.));
+    let transform = RwSignal::new(Affine::IDENTITY);
+    let transform_submenu = move |m: SubMenu| {
+        m.item("Rotate 90°", move |i| {
+            i.action(move || {
+                rotation.update(|r| *r = Angle::Deg(r.to_degrees() - 90.));
+                println!("Rotating 90 degrees...")
+            })
         })
-        .item("Flip Horizontal", |i| {
-            i.action(|| println!("Flipping horizontally..."))
+        .item("Flip Horizontal", move |i| {
+            i.action(move || {
+                transform.update(|t| {
+                    let flip = Affine::scale_non_uniform(-1.0, 1.0);
+                    *t *= flip;
+                });
+                println!("Flipping horizontally...");
+            })
         })
-        .item("Flip Vertical", |i| {
-            i.action(|| println!("Flipping vertically..."))
+        .item("Flip Vertical", move |i| {
+            i.action(move || {
+                transform.update(|t| {
+                    let flip = Affine::scale_non_uniform(1.0, -1.0);
+                    *t *= flip;
+                });
+                println!("Flipping vertically...");
+            })
+        })
+        .item("Scale", move |i| {
+            i.action(move || {
+                transform.update(|t| *t = t.then_scale(2.));
+                println!("Scaling...");
+            })
         })
         .separator()
-        .item("Reset Transform", |i| {
-            i.action(|| println!("Resetting transform..."))
+        .item("Reset Transform", move |i| {
+            i.action(move || {
+                transform.set(Affine::IDENTITY);
+                rotation.set(0.0.into());
+                println!("Resetting transform...");
+            })
         })
     };
+
     let context_menu = move || {
         Menu::new()
-            .item("Cut", |i| i.action(|| println!("Cut to clipboard")))
+            .item("Cut", |i| {
+                i.enabled(false).action(|| println!("Cut to clipboard"))
+            })
             .item("Copy", |i| i.action(|| println!("Copied to clipboard")))
             .item("Paste", |i| {
                 i.enabled(false) // Simulate empty clipboard
@@ -77,13 +105,34 @@ pub fn menu_view() -> impl IntoView {
 
     let popout_button = "Click me (Popout menu)"
         .class(ButtonClass)
-        .style(|s| s.padding(10.0).margin_bottom(10.0))
+        .style(|s| s.padding(10.0))
         .popout_menu(popout_menu);
 
     let context_button = "Right click me (Context menu)"
         .class(ButtonClass)
-        .style(|s| s.padding(10.0).border(1.0))
+        .on_event_stop(el::DoubleClick, move |_, _| {
+            rotation.update(|r| *r = Angle::Deg(r.to_degrees() - 90.));
+        })
+        .style(move |s| {
+            s.padding(10.0)
+                .border(1.0)
+                .transform(transform.get())
+                .rotate(rotation.get())
+                .transition_rotate(Transition::new(
+                    Duration::from_millis(500),
+                    Spring::snappy(),
+                ))
+                .transition_transform(Transition::new(
+                    Duration::from_millis(500),
+                    Spring::snappy(),
+                ))
+        })
         .context_menu(context_menu);
 
-    Stack::vertical((popout_button, context_button)).style(|s| s.selectable(false))
+    Stack::vertical((
+        "Menus with theoretical actions",
+        popout_button,
+        context_button,
+    ))
+    .style(|s| s.selectable(false).gap(10))
 }

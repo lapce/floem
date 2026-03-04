@@ -2,16 +2,13 @@ use std::{collections::VecDeque, time::Duration};
 
 use floem::{
     IntoView, View,
-    action::exec_after,
-    event::{Event, EventPropagation},
+    action::exec_after_animation_frame,
+    event::{Event, EventPropagation, PointerScrollEventExt},
     kurbo::{self, Vec2},
     ui_events::pointer::{PointerButtonEvent, PointerEvent, PointerUpdate},
 };
 
 const VELOCITY_HISTORY_SIZE: usize = 8;
-/// The interval at which the view should update animations.
-/// Set to roughly 60 FPS.
-const UPDATE_INTERVAL: Duration = Duration::from_millis(16);
 
 const ZOOM_ANIMATION_DURATION: Duration = Duration::from_millis(333);
 
@@ -92,12 +89,8 @@ impl View for PanZoomView {
         self.id
     }
 
-    fn event_before_children(
-        &mut self,
-        _cx: &mut floem::context::EventCx,
-        event: &Event,
-    ) -> EventPropagation {
-        match event {
+    fn event(&mut self, cx: &mut floem::context::EventCx) -> EventPropagation {
+        match &cx.event {
             Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. })) => {
                 self.dragging = true;
                 self.drag_cursor_pos = Some(state.logical_point());
@@ -140,17 +133,16 @@ impl View for PanZoomView {
                     self.drag_velocity = kurbo::Vec2::ZERO;
                 }
             }
-            e @ Event::Pointer(PointerEvent::Scroll(_)) => {
-                if let Some(delta) = e.pixel_scroll_delta_vec2() {
-                    let scale = 1. - delta.y / 40.;
+            Event::Pointer(PointerEvent::Scroll(pse)) => {
+                let delta = pse.resolve_to_points(None, None);
+                let scale = 1. - delta.y / 40.;
 
-                    self.target_scale *= scale;
-                    if self.zoom_start_time.is_none() {
-                        self.zoom_start_time = Some(std::time::Instant::now());
-                        self.schedule_update();
-                    } else {
-                        self.zoom_start_time = Some(std::time::Instant::now());
-                    }
+                self.target_scale *= scale;
+                if self.zoom_start_time.is_none() {
+                    self.zoom_start_time = Some(std::time::Instant::now());
+                    self.schedule_update();
+                } else {
+                    self.zoom_start_time = Some(std::time::Instant::now());
                 }
             }
             _ => {}
@@ -186,7 +178,7 @@ impl PanZoomView {
 
     fn schedule_update(&mut self) {
         let id = self.id();
-        exec_after(UPDATE_INTERVAL, move |_| {
+        exec_after_animation_frame(move |_| {
             id.update_state(Box::new(()));
         });
     }

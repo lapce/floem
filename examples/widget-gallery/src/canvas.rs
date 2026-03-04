@@ -1,15 +1,19 @@
+use std::{cell::RefCell, rc::Rc, time::Instant};
+
 use floem::{
-    context::PaintCx,
-    event::{Event, EventPropagation},
+    ViewId,
+    context::{EventCx, LayoutChanged, LayoutChangedListener, PaintCx},
+    easing::Spring,
+    event::{CustomEvent, Event, EventPropagation},
     kurbo::{Affine, Circle, Point, Rect, Shape, Size, Stroke},
     peniko::{
-        color::{AlphaColor, ColorSpaceTag::LinearSrgb, Hsl},
         Gradient, Mix,
+        color::{AlphaColor, ColorSpaceTag::LinearSrgb, Hsl},
     },
     prelude::*,
-    reactive::UpdaterEffect,
+    reactive::{Effect, UpdaterEffect},
+    style::{DirectTransition, Transition},
     ui_events::pointer::{PointerButtonEvent, PointerEvent},
-    ViewId,
 };
 use palette::css;
 
@@ -17,22 +21,41 @@ use crate::form::{form, form_item};
 
 pub fn canvas_view() -> impl IntoView {
     let rounded = RwSignal::new(true);
+    let color = RwSignal::new(css::AQUA);
+
+    let border_radius = Rc::new(RefCell::new(DirectTransition::new(
+        32.,
+        Some(Transition::new(500.millis(), Spring::snappy())),
+    )));
+
+    let border_radius_ = border_radius.clone();
+    Effect::new(move |_| {
+        let rounded = rounded.get();
+        border_radius_
+            .borrow_mut()
+            .transition_to(if rounded { 32. } else { 0. });
+    });
 
     form((
         form_item(
             "Simple Canvas:",
             Stack::horizontal((
                 canvas(move |cx, size| {
+                    rounded.track();
+                    let now = Instant::now();
+                    if border_radius.borrow_mut().step(&now) {
+                        cx.window_state.schedule_paint(cx.target_id.owning_id());
+                    }
                     cx.fill(
                         &Rect::ZERO
                             .with_size(size)
-                            .to_rounded_rect(if rounded.get() { 8. } else { 0. }),
-                        css::PURPLE,
+                            .to_rounded_rect(border_radius.borrow().get()),
+                        color.get(),
                         0.,
                     );
                 })
-                .style(|s| s.size(100, 300)),
-                Button::new("toggle")
+                .style(|s| s.size(300, 100)),
+                Button::new("toggle rounded corners")
                     .action(move || rounded.update(|s| *s = !*s))
                     .style(|s| s.height(30)),
             ))
@@ -40,14 +63,12 @@ pub fn canvas_view() -> impl IntoView {
         ),
         form_item(
             "Complex Canvas:",
-            color_picker().style(|s| s.size(500, 500)),
+            color_picker(color).style(|s| s.size(500, 500)),
         ),
     ))
 }
 
-fn color_picker() -> impl IntoView {
-    let color = RwSignal::new(css::AQUA);
-
+fn color_picker(color: RwSignal<Color>) -> impl IntoView {
     let hue_opocity = Stack::vertical((
         HuePicker::new(move || color.get())
             .on_change(move |c| color.set(c))
@@ -130,6 +151,7 @@ pub struct SatValuePicker {
 impl SatValuePicker {
     pub fn new(color: impl Fn() -> Color + 'static) -> Self {
         let id = ViewId::new();
+        id.register_listener(LayoutChanged::listener_key());
         let color = UpdaterEffect::new(color, move |c| id.update_state(c));
         Self {
             id,
@@ -158,15 +180,14 @@ impl SatValuePicker {
         self.on_change = Some(Box::new(on_change));
         self
     }
+
+    fn post_layout(&mut self, new_layout: &LayoutChanged) {
+        self.size = new_layout.new_box.size();
+    }
 }
 impl View for SatValuePicker {
     fn id(&self) -> ViewId {
         self.id
-    }
-
-    fn compute_layout(&mut self, _cx: &mut floem::context::ComputeLayoutCx) -> Option<Rect> {
-        self.size = self.id.get_size().unwrap_or_default();
-        None
     }
 
     fn update(&mut self, _cx: &mut floem::context::UpdateCx, state: Box<dyn std::any::Any>) {
@@ -175,23 +196,25 @@ impl View for SatValuePicker {
         }
     }
 
-    fn event_before_children(
-        &mut self,
-        _cx: &mut floem::context::EventCx,
-        event: &Event,
-    ) -> EventPropagation {
+    fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
+        if let Some(new_layout) = LayoutChangedListener::extract(&cx.event) {
+            self.post_layout(new_layout);
+        }
         if let Some(on_change) = &self.on_change {
-            match event {
-                Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. })) => {
+            match &cx.event {
+                Event::Pointer(PointerEvent::Down(PointerButtonEvent {
+                    state, pointer, ..
+                })) => {
                     self.current_color = self.position_to_hsl(state.logical_point());
                     on_change(self.current_color.convert());
                     self.track = true;
-                    self.id.request_active();
+                    if let Some(pointer_id) = pointer.pointer_id {
+                        cx.request_pointer_capture(pointer_id);
+                    }
                 }
                 Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. })) => {
                     self.current_color = self.position_to_hsl(state.logical_point());
                     on_change(self.current_color.convert());
-                    self.id.clear_active();
                     self.track = false;
                 }
                 Event::Pointer(PointerEvent::Move(pu)) => {
@@ -227,7 +250,6 @@ impl View for SatValuePicker {
         cx.fill(&rect_path, &saturation_gradient, 0.);
 
         cx.pop_layer();
-        cx.save();
         cx.clip(&rect_path);
 
         if size.width > 0.0 && size.height > 0.0 {
@@ -245,7 +267,7 @@ impl View for SatValuePicker {
             cx.stroke(&indicator_circle, css::WHITE, &Stroke::new(2.0));
             cx.stroke(&inner_indicator_circle, css::BLACK, &Stroke::new(2.0));
         }
-        cx.restore();
+        cx.clear_clip();
     }
 }
 
@@ -260,6 +282,7 @@ pub struct HuePicker {
 impl HuePicker {
     pub fn new(color: impl Fn() -> Color + 'static) -> Self {
         let id = ViewId::new();
+        id.register_listener(LayoutChanged::listener_key());
         let color = UpdaterEffect::new(color, move |c| id.update_state(c));
         Self {
             id,
@@ -284,16 +307,15 @@ impl HuePicker {
         self.on_change = Some(Box::new(on_change));
         self
     }
+
+    fn post_layout(&mut self, new_layout: &LayoutChanged) {
+        self.size = new_layout.new_box.size();
+    }
 }
 
 impl View for HuePicker {
     fn id(&self) -> ViewId {
         self.id
-    }
-
-    fn compute_layout(&mut self, _cx: &mut floem::context::ComputeLayoutCx) -> Option<Rect> {
-        self.size = self.id.get_size().unwrap_or_default();
-        None
     }
 
     fn update(&mut self, _cx: &mut floem::context::UpdateCx, state: Box<dyn std::any::Any>) {
@@ -302,23 +324,25 @@ impl View for HuePicker {
         }
     }
 
-    fn event_before_children(
-        &mut self,
-        _cx: &mut floem::context::EventCx,
-        event: &Event,
-    ) -> EventPropagation {
+    fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
+        if let Some(new_layout) = LayoutChangedListener::extract(&cx.event) {
+            self.post_layout(new_layout);
+        }
         if let Some(on_change) = &self.on_change {
-            match event {
-                Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. })) => {
+            match &cx.event {
+                Event::Pointer(PointerEvent::Down(PointerButtonEvent {
+                    state, pointer, ..
+                })) => {
                     self.current_color = self.position_to_hsl(state.logical_point());
                     on_change(self.current_color.convert());
                     self.track = true;
-                    self.id.request_active();
+                    if let Some(pointer_id) = pointer.pointer_id {
+                        cx.request_pointer_capture(pointer_id);
+                    }
                 }
                 Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. })) => {
                     self.current_color = self.position_to_hsl(state.logical_point());
                     on_change(self.current_color.convert());
-                    self.id.clear_active();
                     self.track = false;
                 }
                 Event::Pointer(PointerEvent::Move(pu)) => {
@@ -369,11 +393,10 @@ impl View for HuePicker {
                 size.height,
             );
 
-            cx.save();
             cx.clip(&rect_path);
             cx.stroke(&indicator_rect, css::WHITE, &Stroke::new(2.0));
             cx.fill(&indicator_rect, css::BLACK, 0.);
-            cx.restore();
+            cx.clear_clip();
         }
     }
 }
@@ -389,6 +412,7 @@ pub struct OpacityPicker {
 impl OpacityPicker {
     pub fn new(color: impl Fn() -> Color + 'static) -> Self {
         let id = ViewId::new();
+        id.register_listener(LayoutChanged::listener_key());
         let color = UpdaterEffect::new(color, move |c| id.update_state(c));
         Self {
             id,
@@ -409,16 +433,15 @@ impl OpacityPicker {
         self.on_change = Some(Box::new(on_change));
         self
     }
+
+    fn post_layout(&mut self, layout_changed: &LayoutChanged) {
+        self.size = layout_changed.new_box.size();
+    }
 }
 
 impl View for OpacityPicker {
     fn id(&self) -> ViewId {
         self.id
-    }
-
-    fn compute_layout(&mut self, _cx: &mut floem::context::ComputeLayoutCx) -> Option<Rect> {
-        self.size = self.id.get_size().unwrap_or_default();
-        None
     }
 
     fn update(&mut self, _cx: &mut floem::context::UpdateCx, state: Box<dyn std::any::Any>) {
@@ -427,23 +450,25 @@ impl View for OpacityPicker {
         }
     }
 
-    fn event_before_children(
-        &mut self,
-        _cx: &mut floem::context::EventCx,
-        event: &Event,
-    ) -> EventPropagation {
+    fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
+        if let Some(new_layout) = LayoutChangedListener::extract(&cx.event) {
+            self.post_layout(new_layout);
+        }
         if let Some(on_change) = &self.on_change {
-            match event {
-                Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. })) => {
+            match &cx.event {
+                Event::Pointer(PointerEvent::Down(PointerButtonEvent {
+                    state, pointer, ..
+                })) => {
                     self.current_color = self.position_to_alpha(state.logical_point());
                     on_change(self.current_color);
                     self.track = true;
-                    self.id.request_active();
+                    if let Some(pointer_id) = pointer.pointer_id {
+                        cx.request_pointer_capture(pointer_id);
+                    }
                 }
                 Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. })) => {
                     self.current_color = self.position_to_alpha(state.logical_point());
                     on_change(self.current_color);
-                    self.id.clear_active();
                     self.track = false;
                 }
                 Event::Pointer(PointerEvent::Move(pu)) => {
@@ -490,11 +515,10 @@ impl View for OpacityPicker {
                 size.height,
             );
 
-            cx.save();
             cx.clip(&rect_path);
             cx.stroke(&indicator_rect, css::WHITE, &Stroke::new(2.0));
             cx.fill(&indicator_rect, css::BLACK, 0.);
-            cx.restore();
+            cx.clear_clip();
         }
     }
 }

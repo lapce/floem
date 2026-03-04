@@ -7,13 +7,13 @@ use crate::{
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Default)]
-pub(crate) enum EffectPriority {
+pub enum EffectPriority {
     #[default]
     Normal,
     High,
 }
 
-pub(crate) trait EffectTrait: Any {
+pub trait EffectTrait: Any {
     fn id(&self) -> Id;
     fn run(&self) -> bool;
     fn add_observer(&self, id: Id);

@@ -37,7 +37,6 @@ use super::editor::{
 /// logic.
 pub struct TextEditor {
     id: ViewId,
-    child: ViewId,
     // /// The scope this view was created in, used for creating the final view
     cx: Scope,
     editor: Editor,
@@ -89,15 +88,9 @@ pub fn text_editor(text: impl Into<Rope>) -> TextEditor {
         .enter(|| editor_container_view(editor_sig, |_| true, default_key_handler(editor_sig)))
         .into_view();
 
-    let child_id = child.id();
     id.set_children([child]);
 
-    TextEditor {
-        id,
-        child: child_id,
-        cx,
-        editor,
-    }
+    TextEditor { id, cx, editor }
 }
 
 /// A text editor view built on top of [Editor](super::editor::Editor) that allows providing your own keymap callback.
@@ -125,15 +118,9 @@ pub fn text_editor_keys(
         })
         .into_view();
 
-    let child_id = child.id();
     id.set_children([child]);
 
-    TextEditor {
-        id,
-        cx,
-        editor,
-        child: child_id,
-    }
+    TextEditor { id, cx, editor }
 }
 
 impl View for TextEditor {
@@ -149,26 +136,10 @@ impl View for TextEditor {
         "Text Editor".into()
     }
 
-    fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        cx.save();
-        let size = self
-            .id
-            .get_layout()
-            .map(|layout| {
-                peniko::kurbo::Size::new(layout.size.width as f64, layout.size.height as f64)
-            })
-            .unwrap_or_default();
-        let border_radii =
-            crate::view::border_to_radii(&self.id.state().borrow().combined_style, size);
-
-        if crate::view::radii_max(border_radii) > 0.0 {
-            let rect = size.to_rect().to_rounded_rect(border_radii);
-            cx.clip(&rect);
-        } else {
-            cx.clip(&size.to_rect());
-        }
-        cx.paint_view(self.child);
-        cx.restore();
+    fn paint(&mut self, _cx: &mut crate::context::PaintCx) {
+        // Clipping is now handled by the box tree and applied automatically
+        // during traversal. Children are painted by the traversal system.
+        // No explicit painting needed.
     }
 }
 
@@ -469,14 +440,12 @@ impl TextEditor {
             .enter(|| editor_container_view(editor_sig, |_| true, default_key_handler(editor_sig)))
             .into_view();
 
-        let child_id = child.id();
         id.set_children([child]);
 
         TextEditor {
             id,
             cx: self.cx,
             editor,
-            child: child_id,
         }
     }
 

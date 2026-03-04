@@ -4,7 +4,10 @@ use floem::{
     prelude::{SignalGet, SignalUpdate},
     reactive::RwSignal,
     unit::{Pct, UnitExt},
-    views::{slider, Container, Decorators, Label, Stack},
+    views::{
+        slider::{self, SliderChanged},
+        Container, Decorators, Label, Stack,
+    },
     IntoView,
 };
 
@@ -73,7 +76,9 @@ fn regular_slider(
     fill_percent: impl SignalGet<Pct> + SignalUpdate<Pct> + Copy + 'static,
 ) -> slider::Slider {
     slider::Slider::new(move || fill_percent.get())
-        .on_change_pct(move |v| fill_percent.set(v))
+        .on_event_stop(SliderChanged::listener(), move |_cx, s| {
+            fill_percent.set(s.pct);
+        })
         .style(|s| s.width(300).height(20.0))
 }
 
@@ -90,6 +95,8 @@ fn ranged_slider(
 ) -> slider::Slider {
     slider::Slider::new_ranged(move || value.get(), range)
         .step(step)
-        .on_change_value(move |v| value.set(v))
+        .on_event_stop(SliderChanged::listener(), move |_cx, s| {
+            value.set(s.value);
+        })
         .style(|s| s.width(300).height(20.0))
 }

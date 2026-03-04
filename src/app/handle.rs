@@ -9,9 +9,9 @@ use web_time::Instant;
 #[cfg(target_arch = "wasm32")]
 use wgpu::web_sys;
 
-use floem_reactive::SignalUpdate;
+use floem_reactive::{Runtime, SignalUpdate};
 use peniko::kurbo::{Point, Size};
-use std::{collections::HashMap, rc::Rc};
+use std::{collections::HashMap, rc::Rc, time::Duration};
 use winit::{
     dpi::{LogicalPosition, LogicalSize},
     event::WindowEvent,
@@ -21,34 +21,45 @@ use winit::{
 
 use super::{APP_UPDATE_EVENTS, AppConfig, AppEventCallback, AppUpdateEvent, UserEvent};
 use crate::{
-    AppEvent,
+    AppEvent, Application,
     action::{Timer, TimerToken},
     context::PaintState,
-    event::dropped_file::FileDragEvent::{self, DragDropped},
+    dropped_file,
+    event::dropped_file::FileDragEvent,
     ext_event::EXT_EVENT_HANDLER,
     inspector::{
         Capture,
         profiler::{Profile, ProfileEvent},
     },
     view::View,
-    window::WindowConfig,
-    window::handle::WindowHandle,
-    window::id::process_window_updates,
+    window::{WindowConfig, handle::WindowHandle, id::process_window_updates},
 };
+
+struct PendingContextMenu {
+    window_id: WindowId,
+    menu: super::MenuWrapper,
+    pos: Option<Point>,
+}
 
 pub(crate) struct ApplicationHandle {
     window_handles: HashMap<winit::window::WindowId, WindowHandle>,
     timers: HashMap<TimerToken, Timer>,
+    animating_windows: std::collections::HashSet<winit::window::WindowId>,
+    pending_context_menus: Vec<PendingContextMenu>,
     pub(crate) event_listener: Option<Box<AppEventCallback>>,
     pub(crate) gpu_resources: Option<GpuResources>,
     pub(crate) config: AppConfig,
 }
 
 impl ApplicationHandle {
+    const UPDATE_BUDGET: Duration = Duration::from_millis(4);
+
     pub(crate) fn new(config: AppConfig) -> Self {
         Self {
             window_handles: HashMap::new(),
             timers: HashMap::new(),
+            animating_windows: std::collections::HashSet::new(),
+            pending_context_menus: Vec::new(),
             event_listener: None,
             gpu_resources: None,
             config,
@@ -95,15 +106,29 @@ impl ApplicationHandle {
                     );
                     self.gpu_resources = Some(gpu_resources);
                     handle.paint_state = PaintState::Initialized { renderer };
-                    handle.init_renderer(self.gpu_resources.clone());
+                    handle.gpu_resources = self.gpu_resources.clone();
+                    handle.init_renderer();
                 } else {
                     panic!("Sent a gpu resource update after it had already been initialized");
                 }
+            }
+            UserEvent::ShowContextMenu {
+                window_id,
+                menu,
+                pos,
+            } => {
+                self.pending_context_menus.push(PendingContextMenu {
+                    window_id,
+                    menu,
+                    pos,
+                });
             }
         }
     }
 
     pub(crate) fn handle_update_event(&mut self, event_loop: &dyn ActiveEventLoop) {
+        Application::clear_update_posted();
+
         let events = APP_UPDATE_EVENTS.with(|events| {
             let mut events = events.borrow_mut();
             std::mem::take(&mut *events)
@@ -122,6 +147,24 @@ impl ApplicationHandle {
                 }
                 AppUpdateEvent::RequestTimer { timer } => {
                     self.request_timer(timer, event_loop);
+                }
+                AppUpdateEvent::RequestAnimationTimer {
+                    mut timer,
+                    window_id,
+                } => {
+                    if !self.window_can_render(&window_id) {
+                        continue;
+                    }
+                    timer.deadline = Instant::now() + self.frame_duration_for_window(&window_id);
+                    self.request_timer(timer, event_loop);
+                }
+                AppUpdateEvent::AnimationFrame(animate, window_id) => {
+                    if animate && self.window_can_render(&window_id) {
+                        self.animating_windows.insert(window_id);
+                    } else {
+                        self.animating_windows.remove(&window_id);
+                    }
+                    self.update_control_flow(event_loop);
                 }
                 AppUpdateEvent::CancelTimer { timer } => {
                     self.remove_timer(&timer, event_loop);
@@ -174,6 +217,21 @@ impl ApplicationHandle {
                 }
             }
         }
+
+        let start = Instant::now();
+        let mut any_work_remaining =
+            self.handle_updates_for_all_windows_budgeted(start, Self::UPDATE_BUDGET);
+
+        if start.elapsed() < Self::UPDATE_BUDGET && Runtime::has_pending_work() {
+            Runtime::drain_pending_work();
+            if Runtime::has_pending_work() {
+                any_work_remaining = true;
+            }
+        }
+
+        if any_work_remaining {
+            self.request_update();
+        }
     }
 
     pub(crate) fn handle_window_event(
@@ -182,6 +240,7 @@ impl ApplicationHandle {
         event: WindowEvent,
         event_loop: &dyn ActiveEventLoop,
     ) {
+        let is_redraw = matches!(event, WindowEvent::RedrawRequested);
         let window_handle = match self.window_handles.get_mut(&window_id) {
             Some(window_handle) => window_handle,
             None => return,
@@ -260,31 +319,28 @@ impl ApplicationHandle {
                 self.close_window(window_id, event_loop);
             }
             WindowEvent::DragDropped { paths, position } => {
-                window_handle.file_drag_event(DragDropped {
-                    paths,
-                    position: PhysicalPosition::new(position.x, position.y),
-                    scale_factor: window_handle.scale,
-                });
+                let logical_pos =
+                    PhysicalPosition::new(position.x, position.y).to_logical(window_handle.scale);
+                let paths_rc: std::rc::Rc<[std::path::PathBuf]> = paths.clone().into();
+                window_handle.file_drag_dropped(FileDragEvent::Drop(
+                    dropped_file::FileDragDropped {
+                        paths: paths_rc,
+                        position: Point::new(logical_pos.x, logical_pos.y),
+                    },
+                ));
             }
             WindowEvent::DragEntered { paths, position } => {
-                window_handle.file_drag_event(FileDragEvent::DragEntered {
-                    paths,
-                    position: PhysicalPosition::new(position.x, position.y),
-                    scale_factor: window_handle.scale,
-                });
+                let logical_pos =
+                    PhysicalPosition::new(position.x, position.y).to_logical(window_handle.scale);
+                window_handle.file_drag_start(paths, Point::new(logical_pos.x, logical_pos.y));
             }
             WindowEvent::DragMoved { position } => {
-                window_handle.file_drag_event(FileDragEvent::DragMoved {
-                    position: PhysicalPosition::new(position.x, position.y),
-                    scale_factor: window_handle.scale,
-                });
+                let logical_pos =
+                    PhysicalPosition::new(position.x, position.y).to_logical(window_handle.scale);
+                window_handle.file_drag_move(Point::new(logical_pos.x, logical_pos.y));
             }
-            WindowEvent::DragLeft { position } => {
-                let pos = position.map(|p| PhysicalPosition::new(p.x, p.y));
-                window_handle.file_drag_event(FileDragEvent::DragLeft {
-                    position: pos,
-                    scale_factor: window_handle.scale,
-                });
+            WindowEvent::DragLeft { .. } => {
+                window_handle.file_drag_end();
             }
             WindowEvent::Focused(focused) => {
                 window_handle.focused(focused);
@@ -311,9 +367,14 @@ impl ApplicationHandle {
             WindowEvent::ThemeChanged(theme) => {
                 window_handle.set_theme(Some(theme), true);
             }
-            WindowEvent::Occluded(_) => {}
+            WindowEvent::Occluded(occluded) => {
+                window_handle.set_occluded(occluded);
+                if occluded {
+                    self.animating_windows.remove(&window_id);
+                }
+            }
             WindowEvent::RedrawRequested => {
-                window_handle.render_frame(self.gpu_resources.clone());
+                window_handle.render_frame();
             }
             WindowEvent::PanGesture { .. } => {}
             WindowEvent::DoubleTapGesture { .. } => {}
@@ -348,7 +409,9 @@ impl ApplicationHandle {
                 }
             }
         }
-        self.handle_updates_for_all_windows();
+        if !is_redraw {
+            self.request_update();
+        }
     }
 
     pub(crate) fn new_window(
@@ -578,7 +641,7 @@ impl ApplicationHandle {
     fn capture_window(&mut self, window_id: WindowId) -> Option<Capture> {
         self.window_handles
             .get_mut(&window_id)
-            .map(|handle| handle.capture(self.gpu_resources.clone()))
+            .map(|handle| handle.capture())
     }
 
     pub(crate) fn idle(&mut self) {
@@ -587,14 +650,104 @@ impl ApplicationHandle {
         for trigger in ext_events {
             trigger.notify();
         }
-
-        self.handle_updates_for_all_windows();
+        self.request_update();
     }
 
-    pub(crate) fn handle_updates_for_all_windows(&mut self) {
+    pub(crate) fn request_update(&self) {
+        Application::request_update();
+    }
+
+    fn handle_updates_for_all_windows_budgeted(
+        &mut self,
+        start: Instant,
+        budget: Duration,
+    ) -> bool {
+        let mut any_work_remaining = false;
+
         for (window_id, handle) in self.window_handles.iter_mut() {
-            handle.process_update();
-            while process_window_updates(window_id) {}
+            handle.process_scheduled_updates();
+            let done = handle.process_update_budgeted(start, budget);
+            if !done {
+                any_work_remaining = true;
+            }
+
+            if handle.window_state.request_paint && handle.can_render_now() {
+                handle.window.request_redraw();
+                let frame_interval = handle
+                    .window
+                    .current_monitor()
+                    .and_then(|m| m.current_video_mode())
+                    .and_then(|v| v.refresh_rate_millihertz())
+                    .map(|mhz| Duration::from_nanos(1_000_000_000_000 / mhz.get() as u64))
+                    .unwrap_or(Duration::from_millis(8));
+                handle.render_frame_if_due(frame_interval);
+            }
+
+            if !done || start.elapsed() >= budget {
+                any_work_remaining = true;
+                break;
+            }
+
+            // Keep window updates in the same update phase but bound by the same budget.
+            while process_window_updates(window_id) {
+                if start.elapsed() >= budget {
+                    any_work_remaining = true;
+                    break;
+                }
+            }
+            if start.elapsed() >= budget {
+                any_work_remaining = true;
+                break;
+            }
+        }
+
+        any_work_remaining
+    }
+
+    fn frame_duration_for_window(&self, window_id: &winit::window::WindowId) -> Duration {
+        self.window_handles
+            .get(window_id)
+            .and_then(|h| h.window.current_monitor())
+            .and_then(|m| m.current_video_mode())
+            .and_then(|v| v.refresh_rate_millihertz())
+            .map(|mhz| Duration::from_nanos(1_000_000_000_000 / mhz.get() as u64))
+            .unwrap_or(Duration::from_millis(8))
+    }
+
+    fn window_can_render(&self, window_id: &winit::window::WindowId) -> bool {
+        self.window_handles
+            .get(window_id)
+            .map(|h| h.can_render_now())
+            .unwrap_or(false)
+    }
+
+    fn update_control_flow(&self, event_loop: &dyn ActiveEventLoop) {
+        let timer_deadline = self.timers.values().map(|t| t.deadline).min();
+
+        let animation_deadline = if self.animating_windows.is_empty() {
+            None
+        } else {
+            let now = Instant::now();
+            self.animating_windows
+                .iter()
+                .filter(|wid| self.window_can_render(wid))
+                .map(|wid| now + self.frame_duration_for_window(wid))
+                .min()
+        };
+
+        match (timer_deadline, animation_deadline) {
+            (Some(t), Some(a)) => {
+                event_loop.set_control_flow(ControlFlow::WaitUntil(t.min(a)));
+            }
+            (Some(t), None) => {
+                event_loop.set_control_flow(ControlFlow::WaitUntil(t));
+            }
+            (None, Some(a)) => {
+                event_loop.set_control_flow(ControlFlow::WaitUntil(a));
+            }
+            (None, None) => {
+                event_loop.set_control_flow(ControlFlow::Wait);
+            }
         }
     }
 
@@ -637,13 +790,32 @@ impl ApplicationHandle {
             .collect();
         if !tokens.is_empty() {
             for token in tokens {
-                if let Some(timer) = self.timers.remove(&token) {
+                if let Some(mut timer) = self.timers.remove(&token) {
+                    if timer.is_animation
+                        && timer
+                            .window_id
+                            .is_some_and(|window_id| !self.window_can_render(&window_id))
+                    {
+                        // Keep animation timers dormant while hidden/occluded.
+                        timer.deadline = now + Duration::from_millis(100);
+                        self.timers.insert(token, timer);
+                        continue;
+                    }
                     (timer.action)(token);
                 }
             }
-            self.handle_updates_for_all_windows();
+            self.request_update();
         }
         self.fire_timer(event_loop);
+    }
+
+    pub(crate) fn flush_deferred_context_menus(&mut self) {
+        let pending = std::mem::take(&mut self.pending_context_menus);
+        for item in pending {
+            if let Some(handle) = self.window_handles.get_mut(&item.window_id) {
+                handle.show_context_menu(item.menu.0, item.pos);
+            }
+        }
     }
 }
 

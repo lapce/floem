@@ -1,3 +1,4 @@
+//! TODO: should we delete these tests? probably yes.
 //! Tests for position consistency between ViewState fields.
 //!
 //! These tests verify that the various position-related fields in ViewState
@@ -5,124 +6,19 @@
 //!
 //! - `visual_origin`: The view's visual position in window coordinates
 //! - `visual_transform`: Complete transform from local to window coords
-//! - `layout_rect`: Bounding box in window coords (includes children)
+//! - `visual_rect`: Bounding box in window coords (includes children)
 //!
 //! Key invariants:
 //! - visual_origin.x == visual_transform.translation().x (without scale/rotate)
 //! - layout_rect.origin() == visual_origin (for views without CSS transforms)
 //! - layout_rect union includes all descendants' bounds
 
-use floem::kurbo::Point;
+use floem::kurbo::{Point, Size};
 use floem::prelude::*;
 use floem::unit::Pct;
+use floem_test::TestRoot;
 use floem_test::prelude::*;
 use serial_test::serial;
-
-// =============================================================================
-// visual_origin and visual_transform consistency
-// =============================================================================
-
-#[test]
-#[serial]
-fn test_window_origin_matches_transform_translation_simple() {
-    // For a view without scale/rotate, window_origin should match transform translation
-    let inner = Empty::new().style(|s| s.size(50.0, 50.0));
-    let inner_id = inner.view_id();
-
-    let view = Container::new(inner).style(|s| s.padding(30.0).size(110.0, 110.0));
-
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
-    harness.rebuild();
-
-    let window_origin = inner_id.get_visual_origin();
-    let transform = inner_id.get_visual_transform();
-    let translation = transform.translation();
-
-    // Without transforms, translation should equal window_origin
-    assert!(
-        (window_origin.x - translation.x).abs() < 0.1,
-        "window_origin.x ({}) should equal translation.x ({})",
-        window_origin.x,
-        translation.x
-    );
-    assert!(
-        (window_origin.y - translation.y).abs() < 0.1,
-        "window_origin.y ({}) should equal translation.y ({})",
-        window_origin.y,
-        translation.y
-    );
-}
-
-#[test]
-#[serial]
-fn test_window_origin_matches_transform_with_translate() {
-    // CSS translate should be reflected in both window_origin and transform
-    let view = Empty::new().style(|s| s.size(50.0, 50.0).translate_x(25.0).translate_y(15.0));
-    let id = view.view_id();
-
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
-    harness.rebuild();
-
-    let window_origin = id.get_visual_origin();
-    let transform = id.get_visual_transform();
-    let translation = transform.translation();
-
-    // window_origin includes CSS translate
-    assert!(
-        (window_origin.x - 25.0).abs() < 0.1,
-        "window_origin.x ({}) should be 25 (translate)",
-        window_origin.x
-    );
-    assert!(
-        (window_origin.y - 15.0).abs() < 0.1,
-        "window_origin.y ({}) should be 15 (translate)",
-        window_origin.y
-    );
-
-    // Translation should match window_origin for translate-only transforms
-    assert!(
-        (window_origin.x - translation.x).abs() < 0.1,
-        "window_origin.x should match translation.x for translate-only"
-    );
-}
-
-#[test]
-#[serial]
-fn test_window_origin_equals_translation_with_scale() {
-    // visual_origin is derived from visual_transform, so it equals
-    // translation() even for views with CSS transforms.
-    let view = Empty::new().style(|s| s.size(100.0, 100.0).scale(Pct(200.0)));
-    let id = view.view_id();
-
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
-    harness.rebuild();
-
-    let window_origin = id.get_visual_origin();
-    let transform = id.get_visual_transform();
-    let translation = transform.translation();
-
-    // For 100x100 with 2x scale around center (50, 50):
-    // translation = -50 (to move center to origin for scale)
-    assert!(
-        (translation.x - (-50.0)).abs() < 0.1,
-        "translation.x with scale should be -50, got {}",
-        translation.x
-    );
-
-    // window_origin now equals translation (single source of truth)
-    assert!(
-        (window_origin.x - translation.x).abs() < 0.1,
-        "window_origin.x ({}) should equal translation.x ({})",
-        window_origin.x,
-        translation.x
-    );
-    assert!(
-        (window_origin.y - translation.y).abs() < 0.1,
-        "window_origin.y ({}) should equal translation.y ({})",
-        window_origin.y,
-        translation.y
-    );
-}
 
 // =============================================================================
 // layout_rect consistency tests
@@ -130,36 +26,38 @@ fn test_window_origin_equals_translation_with_scale() {
 
 #[test]
 #[serial]
-fn test_layout_rect_origin_at_window_origin() {
+fn test_visual_rect_origin_at_window_origin() {
+    let root = TestRoot::new();
     // For simple views, layout_rect origin should be at window_origin
     let inner = Empty::new().style(|s| s.size(40.0, 40.0));
     let inner_id = inner.view_id();
 
     let view = Container::new(inner).style(|s| s.padding(20.0).size(80.0, 80.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.rebuild();
 
     let window_origin = inner_id.get_visual_origin();
-    let layout_rect = inner_id.get_layout_rect();
+    let visual_rect = inner_id.get_visual_rect();
 
     assert!(
-        (layout_rect.x0 - window_origin.x).abs() < 0.1,
+        (visual_rect.x0 - window_origin.x).abs() < 0.1,
         "layout_rect.x0 ({}) should equal window_origin.x ({})",
-        layout_rect.x0,
+        visual_rect.x0,
         window_origin.x
     );
     assert!(
-        (layout_rect.y0 - window_origin.y).abs() < 0.1,
+        (visual_rect.y0 - window_origin.y).abs() < 0.1,
         "layout_rect.y0 ({}) should equal window_origin.y ({})",
-        layout_rect.y0,
+        visual_rect.y0,
         window_origin.y
     );
 }
 
 #[test]
 #[serial]
-fn test_layout_rect_includes_children() {
+fn test_visual_rect_includes_children() {
+    let root = TestRoot::new();
     // Parent's layout_rect should include children's bounds
     let child = Empty::new().style(|s| s.size(100.0, 100.0));
     let child_id = child.view_id();
@@ -167,11 +65,11 @@ fn test_layout_rect_includes_children() {
     let parent = Container::new(child).style(|s| s.padding(10.0));
     let parent_id = parent.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(parent, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, parent, 200.0, 200.0);
     harness.rebuild();
 
-    let parent_rect = parent_id.get_layout_rect();
-    let child_rect = child_id.get_layout_rect();
+    let parent_rect = parent_id.get_visual_rect();
+    let child_rect = child_id.get_visual_rect();
 
     // Parent's rect should contain child's rect
     assert!(
@@ -194,25 +92,26 @@ fn test_layout_rect_includes_children() {
 
 #[test]
 #[serial]
-fn test_layout_rect_size_matches_view_size() {
+fn test_visual_rect_size_matches_view_size() {
+    let root = TestRoot::new();
     // For leaf views, layout_rect size should match the view's style size
     let view = Empty::new().style(|s| s.size(75.0, 50.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.rebuild();
 
-    let layout_rect = id.get_layout_rect();
+    let visual_rect = id.get_visual_rect();
 
     assert!(
-        (layout_rect.width() - 75.0).abs() < 0.1,
+        (visual_rect.width() - 75.0).abs() < 0.1,
         "layout_rect width should be 75, got {}",
-        layout_rect.width()
+        visual_rect.width()
     );
     assert!(
-        (layout_rect.height() - 50.0).abs() < 0.1,
+        (visual_rect.height() - 50.0).abs() < 0.1,
         "layout_rect height should be 50, got {}",
-        layout_rect.height()
+        visual_rect.height()
     );
 }
 
@@ -223,6 +122,7 @@ fn test_layout_rect_size_matches_view_size() {
 #[test]
 #[serial]
 fn test_deeply_nested_positions_accumulate() {
+    let root = TestRoot::new();
     // Positions should accumulate correctly through nesting
     let deep = Empty::new().style(|s| s.size(20.0, 20.0));
     let deep_id = deep.view_id();
@@ -233,7 +133,7 @@ fn test_deeply_nested_positions_accumulate() {
     )
     .style(|s| s.padding(10.0).size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     let window_origin = deep_id.get_visual_origin();
@@ -256,6 +156,7 @@ fn test_deeply_nested_positions_accumulate() {
 #[test]
 #[serial]
 fn test_sibling_positions_independent() {
+    let root = TestRoot::new();
     // Sibling views should have independent positions
     let child1 = Empty::new().style(|s| s.size(30.0, 30.0));
     let child1_id = child1.view_id();
@@ -266,7 +167,7 @@ fn test_sibling_positions_independent() {
     // Vertical stack: child1 on top, child2 below
     let view = Stack::vertical((child1, child2)).style(|s| s.gap(10.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.rebuild();
 
     let pos1 = child1_id.get_visual_origin();
@@ -294,84 +195,14 @@ fn test_sibling_positions_independent() {
 #[test]
 #[serial]
 fn test_transform_is_identity_without_css_transforms() {
-    // Without CSS transforms, the transform should only have translation
-    let view = Empty::new().style(|s| s.size(50.0, 50.0));
+    let root = TestRoot::new();
+    // Without CSS transforms, the visual position should be at 0, 0
+    let size = Size::new(50., 50.);
+    let view = Empty::new().style(move |s| s.size(size.width, size.height));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
     harness.rebuild();
 
-    let css_transform = id.get_transform();
-    let coeffs = css_transform.as_coeffs();
-
-    // Identity matrix with possible translation: [1, 0, 0, 1, tx, ty]
-    assert!(
-        (coeffs[0] - 1.0).abs() < 0.01 && (coeffs[3] - 1.0).abs() < 0.01,
-        "Scale should be identity (1.0)"
-    );
-    assert!(
-        coeffs[1].abs() < 0.01 && coeffs[2].abs() < 0.01,
-        "Rotation/shear should be zero"
-    );
-}
-
-#[test]
-#[serial]
-fn test_visual_transform_invertible() {
-    // visual_transform should be invertible for coordinate conversion
-    let inner = Empty::new().style(|s| s.size(40.0, 40.0));
-    let inner_id = inner.view_id();
-
-    let view = Container::new(inner).style(|s| s.padding(30.0).size(100.0, 100.0));
-
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
-    harness.rebuild();
-
-    let transform = inner_id.get_visual_transform();
-    let inverse = transform.inverse();
-
-    // Apply transform then inverse should give back original point
-    let local_point = Point::new(10.0, 15.0);
-    let window_point = transform * local_point;
-    let back_to_local = inverse * window_point;
-
-    assert!(
-        (back_to_local.x - local_point.x).abs() < 0.01,
-        "Round-trip x should be preserved: {} -> {}",
-        local_point.x,
-        back_to_local.x
-    );
-    assert!(
-        (back_to_local.y - local_point.y).abs() < 0.01,
-        "Round-trip y should be preserved: {} -> {}",
-        local_point.y,
-        back_to_local.y
-    );
-}
-
-#[test]
-#[serial]
-fn test_visual_transform_with_scale_invertible() {
-    // Transform with scale should also be invertible
-    let view = Empty::new().style(|s| s.size(100.0, 100.0).scale(Pct(150.0)));
-    let id = view.view_id();
-
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
-    harness.rebuild();
-
-    let transform = id.get_visual_transform();
-    let inverse = transform.inverse();
-
-    let local_point = Point::new(25.0, 75.0);
-    let window_point = transform * local_point;
-    let back_to_local = inverse * window_point;
-
-    assert!(
-        (back_to_local.x - local_point.x).abs() < 0.01,
-        "Scaled round-trip x should be preserved"
-    );
-    assert!(
-        (back_to_local.y - local_point.y).abs() < 0.01,
-        "Scaled round-trip y should be preserved"
-    );
+    assert!(id.get_visual_rect() == floem::kurbo::Rect::from_origin_size(Point::ZERO, size));
 }

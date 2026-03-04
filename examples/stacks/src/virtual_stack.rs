@@ -11,9 +11,9 @@ pub fn virtual_stack_view() -> impl IntoView {
         .action(move || long_list.update(|list| list.push_back(list.len() as i32 + 1)));
 
     let virtual_stack = VirtualStack::new(move || long_list.get())
-        .style(|s| s.flex_col().width_full())
+        .style(|s| s.flex_col())
         .scroll()
-        .style(|s| s.width(100).height(200).border(1));
+        .style(|s| s.flex_grow(1.).height(200).border(1));
 
     Stack::horizontal((button, virtual_stack)).style(|s| s.flex_col().row_gap(5).margin_top(10))
 }

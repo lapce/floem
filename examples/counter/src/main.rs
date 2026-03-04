@@ -1,8 +1,8 @@
-use floem::{prelude::*, unit::UnitExt};
+use floem::{action::inspect, prelude::*, unit::UnitExt};
 
 fn app_view() -> impl IntoView {
     let counter = RwSignal::new(0);
-    let view = (
+    (
         dyn_view(move || format!("Value: {}", counter.get())),
         counter.style(|s| s.padding(10.0)),
         (
@@ -12,7 +12,7 @@ fn app_view() -> impl IntoView {
                         .padding(10.0)
                         .background(palette::css::WHITE)
                         .box_shadow_blur(5.0)
-                        .focusable(true)
+                        .keyboard_navigable()
                         .focus_visible(|s| s.outline(2.).outline_color(palette::css::BLUE))
                         .hover(|s| s.background(palette::css::LIGHT_GREEN))
                         .active(|s| {
@@ -20,16 +20,12 @@ fn app_view() -> impl IntoView {
                                 .background(palette::css::DARK_GREEN)
                         })
                 })
-                .on_click_stop({
-                    move |_| {
-                        counter.update(|value| *value += 1);
-                    }
+                .action(move || {
+                    counter.update(|value| *value += 1);
                 }),
             "Decrement"
-                .on_click_stop({
-                    move |_| {
-                        counter.update(|value| *value -= 1);
-                    }
+                .action(move || {
+                    counter.update(|value| *value -= 1);
                 })
                 .style(|s| {
                     s.box_shadow_blur(5.0)
@@ -37,13 +33,13 @@ fn app_view() -> impl IntoView {
                         .border_radius(10.0)
                         .padding(10.0)
                         .margin_left(10.0)
-                        .focusable(true)
+                        .keyboard_navigable()
                         .focus_visible(|s| s.outline(2.).outline_color(palette::css::BLUE))
                         .hover(|s| s.background(Color::from_rgb8(244, 67, 54)))
                         .active(|s| s.color(palette::css::WHITE).background(palette::css::RED))
                 }),
             "Reset to 0"
-                .on_click_stop(move |_| {
+                .action(move || {
                     println!("Reset counter pressed"); // will not fire if button is disabled
                     counter.update(|value| *value = 0);
                 })
@@ -53,7 +49,7 @@ fn app_view() -> impl IntoView {
                         .padding(10.0)
                         .margin_left(10.0)
                         .background(palette::css::LIGHT_BLUE)
-                        .focusable(true)
+                        .keyboard_navigable()
                         .focus_visible(|s| s.outline(2.).outline_color(palette::css::BLUE))
                         .set_disabled(counter.get() == 0)
                         .disabled(|s| s.background(palette::css::LIGHT_GRAY))
@@ -71,14 +67,12 @@ fn app_view() -> impl IntoView {
                 .flex_col()
                 .items_center()
                 .justify_center()
-        });
-
-    let id = view.view_id();
-    view.on_key_up(
-        Key::Named(NamedKey::F11),
-        |m| m.is_empty(),
-        move |_| id.inspect(),
-    )
+        })
+        .on_event_stop(el::KeyUp, |_, KeyboardEvent { key, .. }| {
+            if *key == Key::Named(NamedKey::F11) {
+                inspect();
+            }
+        })
 }
 
 fn main() {

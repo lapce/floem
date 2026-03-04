@@ -2,13 +2,15 @@
 //!
 //! These tests verify the W3C Pointer Events-inspired capture API:
 //! - `set_pointer_capture` / `release_pointer_capture` API
-//! - `GotPointerCapture` / `LostPointerCapture` events
+//! - `GainedPointerCapture` / `LostPointerCapture` events
 //! - Capture routing (events go to captured view)
 //! - Automatic release on pointer up
 //! - Two-phase capture (pending → active) model
 
-use floem::event::{Event, EventListener, PointerId};
-use floem::ui_events::pointer::PointerEvent;
+use floem::event::{
+    PointerId,
+    listener::{PointerDown, PointerMove, PointerUp},
+};
 use floem_test::prelude::*;
 use serial_test::serial;
 
@@ -19,24 +21,22 @@ use serial_test::serial;
 #[test]
 #[serial]
 fn test_set_pointer_capture_fires_got_capture_event() {
-    // When a view calls set_pointer_capture, it should receive GotPointerCapture
+    // When a view calls set_pointer_capture, it should receive GainedPointerCapture
+    let root = TestRoot::new();
     let tracker = PointerCaptureTracker::new();
 
     let base = Empty::new().style(|s| s.size(100.0, 100.0));
-    let target_id = base.view_id();
     let target = tracker.track("target", base);
 
     // Add a handler that sets capture on pointer down
-    let view = target.on_event(EventListener::PointerDown, move |e| {
-        if let Event::Pointer(PointerEvent::Down(pe)) = e {
-            if let Some(pointer_id) = pe.pointer.pointer_id {
-                target_id.set_pointer_capture(pointer_id);
-            }
+    let view = target.on_event(PointerDown, move |cx, e| {
+        if let Some(pointer_id) = e.pointer.pointer_id {
+            cx.request_pointer_capture(pointer_id);
         }
         floem::event::EventPropagation::Continue
     });
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Pointer down to trigger capture
     harness.pointer_down(50.0, 50.0);
@@ -48,9 +48,9 @@ fn test_set_pointer_capture_fires_got_capture_event() {
     harness.pointer_move(50.0, 50.0);
 
     assert_eq!(
-        tracker.got_capture_count(),
+        tracker.gained_capture_count(),
         1,
-        "View should receive GotPointerCapture event"
+        "View should receive GainedPointerCapture event"
     );
     assert_eq!(
         tracker.got_capture_names(),
@@ -64,27 +64,25 @@ fn test_set_pointer_capture_fires_got_capture_event() {
 fn test_pointer_capture_routes_events_to_captured_view() {
     // When a view has capture, pointer events should route to it even when
     // the pointer is over a different view
+    let root = TestRoot::new();
     let tracker = PointerCaptureTracker::new();
 
     let left_base = Empty::new().style(|s| s.size(50.0, 100.0));
-    let left_id = left_base.view_id();
     let left = tracker.track("left", left_base);
 
     let right = tracker.track("right", Empty::new().style(|s| s.size(50.0, 100.0)));
 
     // Left view captures pointer on down
-    let left_with_capture = left.on_event(EventListener::PointerDown, move |e| {
-        if let Event::Pointer(PointerEvent::Down(pe)) = e {
-            if let Some(pointer_id) = pe.pointer.pointer_id {
-                left_id.set_pointer_capture(pointer_id);
-            }
+    let left_with_capture = left.on_event(PointerDown, move |cx, e| {
+        if let Some(pointer_id) = e.pointer.pointer_id {
+            cx.request_pointer_capture(pointer_id);
         }
         floem::event::EventPropagation::Continue
     });
 
     let view = Stack::new((left_with_capture, right)).style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Pointer down on left view (which sets capture)
     harness.pointer_down(25.0, 50.0);
@@ -105,23 +103,21 @@ fn test_pointer_capture_routes_events_to_captured_view() {
 #[test]
 #[serial]
 fn test_pointer_capture_auto_released_on_pointer_up() {
+    let root = TestRoot::new();
     // Capture should be automatically released on pointer up
     let tracker = PointerCaptureTracker::new();
 
     let base = Empty::new().style(|s| s.size(100.0, 100.0));
-    let target_id = base.view_id();
     let target = tracker.track("target", base);
 
-    let view = target.on_event(EventListener::PointerDown, move |e| {
-        if let Event::Pointer(PointerEvent::Down(pe)) = e {
-            if let Some(pointer_id) = pe.pointer.pointer_id {
-                target_id.set_pointer_capture(pointer_id);
-            }
+    let view = target.on_event(PointerDown, move |cx, e| {
+        if let Some(pointer_id) = e.pointer.pointer_id {
+            cx.request_pointer_capture(pointer_id);
         }
         floem::event::EventPropagation::Continue
     });
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Pointer down sets capture
     harness.pointer_down(50.0, 50.0);
@@ -132,9 +128,9 @@ fn test_pointer_capture_auto_released_on_pointer_up() {
 
     // Verify capture is active
     assert_eq!(
-        tracker.got_capture_count(),
+        tracker.gained_capture_count(),
         1,
-        "Should have received GotPointerCapture"
+        "Should have received GainedPointerCapture"
     );
 
     // Pointer up should release capture
@@ -153,6 +149,7 @@ fn test_pointer_capture_auto_released_on_pointer_up() {
 #[test]
 #[serial]
 fn test_release_pointer_capture_fires_lost_capture_event() {
+    let root = TestRoot::new();
     // Explicitly calling release_pointer_capture should fire LostPointerCapture
     let tracker = PointerCaptureTracker::new();
 
@@ -163,30 +160,26 @@ fn test_release_pointer_capture_fires_lost_capture_event() {
     // Set capture on pointer down, release on first move
     let captured = std::cell::Cell::new(false);
     let view = target
-        .on_event(EventListener::PointerDown, move |e| {
-            if let Event::Pointer(PointerEvent::Down(pe)) = e {
-                if let Some(pointer_id) = pe.pointer.pointer_id {
-                    target_id.set_pointer_capture(pointer_id);
-                }
+        .on_event(PointerDown, move |cx, e| {
+            if let Some(pointer_id) = e.pointer.pointer_id {
+                cx.request_pointer_capture(pointer_id);
             }
             floem::event::EventPropagation::Continue
         })
-        .on_event(EventListener::PointerMove, move |e| {
-            if let Event::Pointer(PointerEvent::Move(pu)) = e {
-                if let Some(pointer_id) = pu.pointer.pointer_id {
-                    // Release capture on first move after capture
-                    if captured.get() {
-                        target_id.release_pointer_capture(pointer_id);
-                        captured.set(false);
-                    } else {
-                        captured.set(true);
-                    }
+        .on_event(PointerMove, move |_cx, e| {
+            if let Some(pointer_id) = e.pointer.pointer_id {
+                // Release capture on first move after capture
+                if captured.get() {
+                    target_id.release_pointer_capture(pointer_id);
+                    captured.set(false);
+                } else {
+                    captured.set(true);
                 }
             }
             floem::event::EventPropagation::Continue
         });
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Pointer down sets capture
     harness.pointer_down(50.0, 50.0);
@@ -194,7 +187,7 @@ fn test_release_pointer_capture_fires_lost_capture_event() {
 
     // First move activates capture
     harness.pointer_move(50.0, 50.0);
-    assert_eq!(tracker.got_capture_count(), 1);
+    assert_eq!(tracker.gained_capture_count(), 1);
 
     // Second move triggers release
     harness.pointer_move(50.0, 60.0);
@@ -217,42 +210,37 @@ fn test_release_pointer_capture_fires_lost_capture_event() {
 #[test]
 #[serial]
 fn test_capture_transfer_fires_lost_then_got() {
+    let root = TestRoot::new();
     // When capture transfers from one view to another, the order should be:
     // 1. LostPointerCapture to old view
-    // 2. GotPointerCapture to new view
+    // 2. GainedPointerCapture to new view
     let tracker = PointerCaptureTracker::new();
 
     let base1 = Empty::new().style(|s| s.size(50.0, 100.0));
-    let view1_id = base1.view_id();
     let view1 = tracker.track("view1", base1);
 
     let base2 = Empty::new().style(|s| s.size(50.0, 100.0));
-    let view2_id = base2.view_id();
     let view2 = tracker.track("view2", base2);
 
     // view1 captures on down
-    let view1_with_capture = view1.on_event(EventListener::PointerDown, move |e| {
-        if let Event::Pointer(PointerEvent::Down(pe)) = e {
-            if let Some(pointer_id) = pe.pointer.pointer_id {
-                view1_id.set_pointer_capture(pointer_id);
-            }
+    let view1_with_capture = view1.on_event(PointerDown, move |cx, e| {
+        if let Some(pointer_id) = e.pointer.pointer_id {
+            cx.request_pointer_capture(pointer_id);
         }
         floem::event::EventPropagation::Continue
     });
 
     // view2 steals capture on up
-    let view2_with_capture = view2.on_event(EventListener::PointerUp, move |e| {
-        if let Event::Pointer(PointerEvent::Up(pe)) = e {
-            if let Some(pointer_id) = pe.pointer.pointer_id {
-                view2_id.set_pointer_capture(pointer_id);
-            }
+    let view2_with_capture = view2.on_event(PointerUp, move |cx, e| {
+        if let Some(pointer_id) = e.pointer.pointer_id {
+            cx.request_pointer_capture(pointer_id);
         }
         floem::event::EventPropagation::Continue
     });
 
     let view = Stack::new((view1_with_capture, view2_with_capture)).style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Pointer down on view1 (sets capture)
     harness.pointer_down(25.0, 50.0);
@@ -293,27 +281,25 @@ fn test_capture_transfer_fires_lost_then_got() {
 #[test]
 #[serial]
 fn test_capture_prevents_sibling_from_receiving_events() {
+    let root = TestRoot::new();
     // When left view has capture, right view should not receive pointer events
     let tracker = PointerCaptureTracker::new();
 
     let left_base = Empty::new().style(|s| s.size(50.0, 100.0));
-    let left_id = left_base.view_id();
     let left = tracker.track("left", left_base);
 
     let right = tracker.track("right", Empty::new().style(|s| s.size(50.0, 100.0)));
 
-    let left_with_capture = left.on_event(EventListener::PointerDown, move |e| {
-        if let Event::Pointer(PointerEvent::Down(pe)) = e {
-            if let Some(pointer_id) = pe.pointer.pointer_id {
-                left_id.set_pointer_capture(pointer_id);
-            }
+    let left_with_capture = left.on_event(PointerDown, move |cx, e| {
+        if let Some(pointer_id) = e.pointer.pointer_id {
+            cx.request_pointer_capture(pointer_id);
         }
         floem::event::EventPropagation::Continue
     });
 
     let view = Stack::new((left_with_capture, right)).style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Pointer down on left (captures)
     harness.pointer_down(25.0, 50.0);
@@ -347,6 +333,7 @@ fn test_capture_prevents_sibling_from_receiving_events() {
 #[test]
 #[serial]
 fn test_capture_on_hidden_view_not_activated() {
+    let root = TestRoot::new();
     // Setting capture on a hidden view should not activate
     let tracker = PointerCaptureTracker::new();
 
@@ -354,7 +341,7 @@ fn test_capture_on_hidden_view_not_activated() {
     let target_id = base.view_id();
     let target = tracker.track("target", base);
 
-    let mut harness = HeadlessHarness::new_with_size(target, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, target, 100.0, 100.0);
 
     // Try to set capture via update message
     target_id.set_pointer_capture(PointerId::PRIMARY);
@@ -363,34 +350,32 @@ fn test_capture_on_hidden_view_not_activated() {
     // Trigger capture processing
     harness.pointer_move(50.0, 50.0);
 
-    // Hidden view should not receive GotPointerCapture
+    // Hidden view should not receive GainedPointerCapture
     assert_eq!(
-        tracker.got_capture_count(),
+        tracker.gained_capture_count(),
         0,
-        "Hidden view should not receive GotPointerCapture"
+        "Hidden view should not receive GainedPointerCapture"
     );
 }
 
 #[test]
 #[serial]
 fn test_multiple_pointer_down_up_cycles() {
+    let root = TestRoot::new();
     // Multiple click cycles should properly set and release capture each time
     let tracker = PointerCaptureTracker::new();
 
     let base = Empty::new().style(|s| s.size(100.0, 100.0));
-    let target_id = base.view_id();
     let target = tracker.track("target", base);
 
-    let view = target.on_event(EventListener::PointerDown, move |e| {
-        if let Event::Pointer(PointerEvent::Down(pe)) = e {
-            if let Some(pointer_id) = pe.pointer.pointer_id {
-                target_id.set_pointer_capture(pointer_id);
-            }
+    let view = target.on_event(PointerDown, move |cx, e| {
+        if let Some(pointer_id) = e.pointer.pointer_id {
+            cx.request_pointer_capture(pointer_id);
         }
         floem::event::EventPropagation::Continue
     });
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // First click cycle
     harness.pointer_down(50.0, 50.0);
@@ -414,9 +399,9 @@ fn test_multiple_pointer_down_up_cycles() {
     harness.pointer_move(50.0, 50.0); // Process release
 
     assert_eq!(
-        tracker.got_capture_count(),
+        tracker.gained_capture_count(),
         3,
-        "Should have received 3 GotPointerCapture events"
+        "Should have received 3 GainedPointerCapture events"
     );
     assert_eq!(
         tracker.lost_capture_count(),
@@ -432,6 +417,7 @@ fn test_multiple_pointer_down_up_cycles() {
 #[test]
 #[serial]
 fn test_touch_pointer_gets_implicit_capture() {
+    let root = TestRoot::new();
     // Touch pointers should automatically get implicit capture per W3C spec
     let tracker = PointerCaptureTracker::new();
 
@@ -442,7 +428,7 @@ fn test_touch_pointer_gets_implicit_capture() {
 
     let view = Stack::new((left, right)).style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Touch down on left view - should trigger implicit capture
     harness.touch_down(25.0, 50.0);
@@ -451,9 +437,9 @@ fn test_touch_pointer_gets_implicit_capture() {
     // Move to trigger capture processing (implicit capture applied after dispatch)
     harness.touch_move(25.0, 50.0);
 
-    // Should have received GotPointerCapture from implicit touch capture
+    // Should have received GainedPointerCapture from implicit touch capture
     assert_eq!(
-        tracker.got_capture_count(),
+        tracker.gained_capture_count(),
         1,
         "Touch pointer should get implicit capture"
     );
@@ -476,6 +462,7 @@ fn test_touch_pointer_gets_implicit_capture() {
 #[test]
 #[serial]
 fn test_mouse_pointer_does_not_get_implicit_capture() {
+    let root = TestRoot::new();
     // Mouse pointers should NOT get implicit capture (only touch does)
     let tracker = PointerCaptureTracker::new();
 
@@ -486,7 +473,7 @@ fn test_mouse_pointer_does_not_get_implicit_capture() {
 
     let view = Stack::new((left, right)).style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Mouse down on left view - should NOT trigger implicit capture
     harness.pointer_down(25.0, 50.0);
@@ -495,9 +482,9 @@ fn test_mouse_pointer_does_not_get_implicit_capture() {
     // Move to process any pending captures
     harness.pointer_move(25.0, 50.0);
 
-    // Should NOT have received GotPointerCapture (no implicit capture for mouse)
+    // Should NOT have received GainedPointerCapture (no implicit capture for mouse)
     assert_eq!(
-        tracker.got_capture_count(),
+        tracker.gained_capture_count(),
         0,
         "Mouse pointer should NOT get implicit capture"
     );
@@ -516,30 +503,28 @@ fn test_mouse_pointer_does_not_get_implicit_capture() {
 #[test]
 #[serial]
 fn test_explicit_capture_overrides_implicit_touch_capture() {
+    let root = TestRoot::new();
     // If handler sets explicit capture during PointerDown, it should be used
     // instead of implicit touch capture
     let tracker = PointerCaptureTracker::new();
 
     let left_base = Empty::new().style(|s| s.size(50.0, 100.0));
-    let left_id = left_base.view_id();
     let left = tracker.track("left", left_base);
 
     let right = tracker.track("right", Empty::new().style(|s| s.size(50.0, 100.0)));
 
     // Left view sets explicit capture on touch down
-    let left_with_capture = left.on_event(EventListener::PointerDown, move |e| {
-        if let Event::Pointer(PointerEvent::Down(pe)) = e {
-            if let Some(pointer_id) = pe.pointer.pointer_id {
-                // Explicit capture to left view
-                left_id.set_pointer_capture(pointer_id);
-            }
+    let left_with_capture = left.on_event(PointerDown, move |cx, e| {
+        if let Some(pointer_id) = e.pointer.pointer_id {
+            // Explicit capture to left view
+            cx.request_pointer_capture(pointer_id);
         }
         floem::event::EventPropagation::Continue
     });
 
     let view = Stack::new((left_with_capture, right)).style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Touch down on left view - handler sets explicit capture
     harness.touch_down(25.0, 50.0);
@@ -548,9 +533,9 @@ fn test_explicit_capture_overrides_implicit_touch_capture() {
     // Move to trigger capture processing
     harness.touch_move(25.0, 50.0);
 
-    // Should have exactly 1 GotPointerCapture (explicit, not implicit)
+    // Should have exactly 1 GainedPointerCapture (explicit, not implicit)
     assert_eq!(
-        tracker.got_capture_count(),
+        tracker.gained_capture_count(),
         1,
         "Should have exactly one capture (explicit overrides implicit)"
     );
@@ -564,6 +549,7 @@ fn test_explicit_capture_overrides_implicit_touch_capture() {
 #[test]
 #[serial]
 fn test_handler_sees_capture_during_pointer_up() {
+    let root = TestRoot::new();
     // Handler should see that capture is still active during PointerUp
     // (auto-release happens AFTER PointerUp is dispatched)
     use std::cell::Cell;
@@ -574,19 +560,16 @@ fn test_handler_sees_capture_during_pointer_up() {
     let saw_capture_during_up_clone = saw_capture_during_up.clone();
 
     let base = Empty::new().style(|s| s.size(100.0, 100.0));
-    let target_id = base.view_id();
     let target = tracker.track("target", base);
 
     let view = target
-        .on_event(EventListener::PointerDown, move |e| {
-            if let Event::Pointer(PointerEvent::Down(pe)) = e {
-                if let Some(pointer_id) = pe.pointer.pointer_id {
-                    target_id.set_pointer_capture(pointer_id);
-                }
+        .on_event(PointerDown, move |cx, e| {
+            if let Some(pointer_id) = e.pointer.pointer_id {
+                cx.request_pointer_capture(pointer_id);
             }
             floem::event::EventPropagation::Continue
         })
-        .on_event(EventListener::PointerUp, move |_e| {
+        .on_event(PointerUp, move |_cx, _e| {
             // During PointerUp, capture should still be active
             // We can verify this by checking if we received the event at all
             // (captured views receive events even when pointer is elsewhere)
@@ -594,7 +577,7 @@ fn test_handler_sees_capture_during_pointer_up() {
             floem::event::EventPropagation::Continue
         });
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Pointer down sets capture
     harness.pointer_down(50.0, 50.0);
@@ -602,7 +585,7 @@ fn test_handler_sees_capture_during_pointer_up() {
 
     // Move to activate capture
     harness.pointer_move(50.0, 50.0);
-    assert_eq!(tracker.got_capture_count(), 1, "Should have capture");
+    assert_eq!(tracker.gained_capture_count(), 1, "Should have capture");
 
     // Pointer up at a different location - should still go to captured view
     harness.pointer_up(200.0, 200.0);

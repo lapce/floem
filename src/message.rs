@@ -6,7 +6,10 @@ use ui_events::pointer::PointerId;
 use winit::window::{ResizeDirection, Theme};
 
 use crate::{
+    element_id::ElementId,
+    event::{Event, RouteKind, listener},
     platform::menu::Menu,
+    style::recalc::StyleReason,
     view::{AnyView, View, ViewId},
     window::state::WindowState,
 };
@@ -27,35 +30,54 @@ thread_local! {
     pub(crate) static DEFERRED_UPDATE_MESSAGES: RefCell<DeferredUpdateMessages> = Default::default();
     /// It stores the active view handle, so that when you dispatch an action, it knows
     /// which view handle it submitted to
-    pub(crate) static CURRENT_RUNNING_VIEW_HANDLE: RefCell<ViewId> = RefCell::new(ViewId::new());
+    pub(crate) static CURRENT_RUNNING_VIEW_HANDLE: RefCell<Option<ViewId>> = const { RefCell::new(None) };
 }
 
 type DeferredUpdateMessages = HashMap<ViewId, Vec<(ViewId, Box<dyn Any>)>>;
 
 pub enum UpdateMessage {
-    Focus(ViewId),
-    ClearFocus(ViewId),
-    ClearAppFocus,
-    Active(ViewId),
-    ClearActive(ViewId),
+    ///
+    /// This will build a focus path from the root to the target element,
+    /// including all focusable ancestors. The path respects the current
+    /// keyboard navigation mode:
+    /// - In keyboard navigation mode: only includes keyboard-navigable elements
+    /// - In non-keyboard mode: includes all focusable elements
+    ///
+    /// Elements that gain or lose focus will receive `FocusEvent::Gained` or
+    /// `FocusEvent::Lost` events respectively.
+    Focus(ElementId),
+
+    /// Clear all focus state.
+    ///
+    /// This removes focus from all elements in the current focus path.
+    /// Each element in the path will receive a `FocusEvent::Lost` event
+    /// in order from deepest to shallowest.
+    ClearFocus,
+
     /// Set pointer capture for a view (W3C Pointer Events API).
     SetPointerCapture {
-        view_id: ViewId,
+        element_id: ElementId,
         pointer_id: PointerId,
     },
-    /// Release pointer capture from a view.
+    /// Release pointer capture from an element.
     ReleasePointerCapture {
-        view_id: ViewId,
+        element_id: ElementId,
         pointer_id: PointerId,
     },
     WindowScale(f64),
     RequestPaint,
+    RequestLayout,
+    /// Request that the box tree be updated from the layout tree (full walk) and committed
+    RequestBoxTreeUpdate,
+    /// Request that a specific view's box tree node be updated and committed
+    RequestBoxTreeUpdateForView(ViewId),
+    /// Request that the box tree be committed without updating from layout
+    RequestBoxTreeCommit,
     State {
         id: ViewId,
         state: Box<dyn Any>,
     },
-    RequestStyle(ViewId),
-    RequestViewStyle(ViewId),
+    RequestStyle(ElementId, StyleReason),
     ToggleWindowMaximized,
     SetWindowMaximized(bool),
     MinimizeWindow,
@@ -81,7 +103,7 @@ pub enum UpdateMessage {
     },
     Inspect,
     ScrollTo {
-        id: ViewId,
+        id: ElementId,
         rect: Option<Rect>,
     },
     FocusWindow,
@@ -115,6 +137,15 @@ pub enum UpdateMessage {
     SetupReactiveChildren {
         setup: DeferredReactiveSetup,
     },
+    RegisterListener(listener::EventListenerKey, ViewId),
+    RemoveListener(listener::EventListenerKey, ViewId),
+    RouteEvent {
+        id: ElementId,
+        event: Box<Event>, // boxed because of large size
+        route_kind: RouteKind,
+        triggered_by: Option<Box<Event>>,
+    },
+    MarkViewLayoutDirty(ViewId),
 }
 
 /// Context passed during the update phase of the view lifecycle.

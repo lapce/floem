@@ -63,16 +63,18 @@ use std::any::Any;
 use std::cell::Cell;
 use std::hash::Hash;
 use std::rc::Rc;
-use taffy::tree::NodeId;
 
 use crate::{
     Renderer,
-    context::{ComputeLayoutCx, EventCx, LayoutCx, PaintCx, StyleCx, UpdateCx},
-    event::{Event, EventPropagation},
+    context::{EventCx, PaintCx, StyleCx, UpdateCx},
+    event::EventPropagation,
     style::{LayoutProps, Style, StyleClassRef},
     unit::PxPct,
-    views::{DynamicView, dyn_stack::FxIndexSet, dyn_stack::HashRun, dyn_stack::diff, dyn_view},
-    window::state::WindowState,
+    views::{
+        DynamicView,
+        dyn_stack::{FxIndexSet, HashRun, diff},
+        dyn_view,
+    },
 };
 use state::ViewStyleProps;
 
@@ -904,21 +906,6 @@ impl IntoView for LazyView<()> {
     }
 }
 
-/// Default implementation of `View::layout()` which can be used by
-/// view implementations that need the default behavior and also need
-/// to implement that method to do additional work.
-pub fn recursively_layout_view(id: ViewId, cx: &mut LayoutCx) -> NodeId {
-    cx.layout_node(id, true, |cx| {
-        let mut nodes = Vec::new();
-        for child in id.children() {
-            let view = child.view();
-            let mut view = view.borrow_mut();
-            nodes.push(view.layout(cx));
-        }
-        nodes
-    })
-}
-
 /// The View trait contains the methods for implementing updates, styling, layout, events, and painting.
 ///
 /// The [`id`](View::id) method must be implemented.
@@ -1003,58 +990,24 @@ pub trait View {
         let _ = cx;
     }
 
-    /// Use this method to layout the view's children.
-    /// Usually you'll do this by calling [`LayoutCx::layout_node`].
-    ///
-    /// If the layout changes needs other passes to run you're expected to call
-    /// `cx.window_state_mut().request_changes`.
-    fn layout(&mut self, cx: &mut LayoutCx) -> NodeId {
-        recursively_layout_view(self.id(), cx)
-    }
-
-    /// Responsible for computing the layout of the view's children.
-    ///
-    /// If the layout changes needs other passes to run you're expected to call
-    /// `cx.window_state_mut().request_changes`.
-    fn compute_layout(&mut self, cx: &mut ComputeLayoutCx) -> Option<Rect> {
-        default_compute_layout(self.id(), cx)
-    }
-
-    fn event_before_children(&mut self, cx: &mut EventCx, event: &Event) -> EventPropagation {
+    fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
         // these are here to just ignore these arguments in the default case
         let _ = cx;
-        let _ = event;
 
         EventPropagation::Continue
     }
 
-    fn event_after_children(&mut self, cx: &mut EventCx, event: &Event) -> EventPropagation {
-        // these are here to just ignore these arguments in the default case
-        let _ = cx;
-        let _ = event;
-
-        EventPropagation::Continue
-    }
-
-    /// `View`-specific implementation. Will be called in [`PaintCx::paint_view`](crate::context::PaintCx::paint_view).
-    /// Usually you'll call `paint_view` for every child view. But you might also draw text, adjust the offset, clip
-    /// or draw text.
+    /// `View`-specific implementation. Called during paint traversal for this view.
+    /// Children are painted automatically by Floem.
+    /// Views should only paint their own content (backgrounds, borders, custom drawing).
     fn paint(&mut self, cx: &mut PaintCx) {
-        cx.paint_children(self.id());
+        let _ = cx;
+        // Default implementation: no custom painting
+        // Children are painted automatically by traversal
     }
 
-    /// Scrolls the view and all direct and indirect children to bring the `target` view to be
-    /// visible. Returns true if this view contains or is the target.
-    fn scroll_to(&mut self, cx: &mut WindowState, target: ViewId, rect: Option<Rect>) -> bool {
-        if self.id() == target {
-            return true;
-        }
-        let mut found = false;
-
-        for child in self.id().children() {
-            found |= child.view().borrow_mut().scroll_to(cx, target, rect);
-        }
-        found
+    fn post_paint(&mut self, cx: &mut PaintCx) {
+        let _ = cx;
     }
 }
 
@@ -1083,47 +1036,17 @@ impl View for Box<dyn View> {
         (**self).style_pass(cx)
     }
 
-    fn layout(&mut self, cx: &mut LayoutCx) -> NodeId {
-        (**self).layout(cx)
-    }
-
-    fn event_before_children(&mut self, cx: &mut EventCx, event: &Event) -> EventPropagation {
-        (**self).event_before_children(cx, event)
-    }
-
-    fn event_after_children(&mut self, cx: &mut EventCx, event: &Event) -> EventPropagation {
-        (**self).event_after_children(cx, event)
-    }
-
-    fn compute_layout(&mut self, cx: &mut ComputeLayoutCx) -> Option<Rect> {
-        (**self).compute_layout(cx)
+    fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
+        (**self).event(cx)
     }
 
     fn paint(&mut self, cx: &mut PaintCx) {
         (**self).paint(cx)
     }
 
-    fn scroll_to(&mut self, cx: &mut WindowState, target: ViewId, rect: Option<Rect>) -> bool {
-        (**self).scroll_to(cx, target, rect)
+    fn post_paint(&mut self, cx: &mut PaintCx) {
+        (**self).paint(cx)
     }
-}
-
-/// Computes the layout of the view's children, if any.
-pub fn default_compute_layout(id: ViewId, cx: &mut ComputeLayoutCx) -> Option<Rect> {
-    let mut layout_rect: Option<Rect> = None;
-    for child in id.children() {
-        if !child.is_hidden() {
-            let child_layout = cx.compute_view_layout(child);
-            if let Some(child_layout) = child_layout {
-                if let Some(rect) = layout_rect {
-                    layout_rect = Some(rect.union(child_layout));
-                } else {
-                    layout_rect = Some(child_layout);
-                }
-            }
-        }
-    }
-    layout_rect
 }
 
 pub(crate) fn border_radius(radius: crate::unit::PxPct, size: f64) -> f64 {
@@ -1155,32 +1078,9 @@ fn border_to_radii_view(style: &ViewStyleProps, size: Size) -> RoundedRectRadii 
     }
 }
 
-pub(crate) fn border_to_radii(style: &Style, size: Size) -> RoundedRectRadii {
-    let border_radii = style.get(crate::style::BorderRadiusProp);
-    RoundedRectRadii {
-        top_left: border_radius(
-            border_radii.top_left.unwrap_or(PxPct::Px(0.0)),
-            size.min_side(),
-        ),
-        top_right: border_radius(
-            border_radii.top_right.unwrap_or(PxPct::Px(0.0)),
-            size.min_side(),
-        ),
-        bottom_left: border_radius(
-            border_radii.bottom_left.unwrap_or(PxPct::Px(0.0)),
-            size.min_side(),
-        ),
-        bottom_right: border_radius(
-            border_radii.bottom_right.unwrap_or(PxPct::Px(0.0)),
-            size.min_side(),
-        ),
-    }
-}
-
-pub(crate) fn paint_bg(cx: &mut PaintCx, style: &ViewStyleProps, size: Size) {
-    let radii = border_to_radii_view(style, size);
+pub(crate) fn paint_bg(cx: &mut PaintCx, style: &ViewStyleProps, rect: Rect) {
+    let radii = border_to_radii_view(style, rect.size());
     if radii_max(radii) > 0.0 {
-        let rect = size.to_rect();
         paint_box_shadow(cx, style, rect, Some(radii));
         let bg = match style.background() {
             Some(color) => color,
@@ -1189,12 +1089,12 @@ pub(crate) fn paint_bg(cx: &mut PaintCx, style: &ViewStyleProps, size: Size) {
         let rounded_rect = rect.to_rounded_rect(radii);
         cx.fill(&rounded_rect, &bg, 0.0);
     } else {
-        paint_box_shadow(cx, style, size.to_rect(), None);
+        paint_box_shadow(cx, style, rect, None);
         let bg = match style.background() {
             Some(color) => color,
             None => return,
         };
-        cx.fill(&size.to_rect(), &bg, 0.0);
+        cx.fill(&rect, &bg, 0.0);
     }
 }
 
@@ -1246,7 +1146,7 @@ fn paint_box_shadow(
     }
 }
 #[cfg(feature = "vello")]
-pub(crate) fn paint_outline(cx: &mut PaintCx, style: &ViewStyleProps, size: Size) {
+pub(crate) fn paint_outline(cx: &mut PaintCx, style: &ViewStyleProps, rect: Rect) {
     use crate::{
         paint::{BorderPath, BorderPathEvent},
         unit::Pct,
@@ -1268,9 +1168,9 @@ pub(crate) fn paint_outline(cx: &mut PaintCx, style: &ViewStyleProps, size: Size
     let Pct(outline_progress) = style.outline_progress();
 
     let half_width = outlines[0].0.width / 2.0;
-    let rect = size.to_rect().inflate(half_width, half_width);
+    let rect = rect.inflate(half_width, half_width);
 
-    let radii = radii_map(border_to_radii_view(style, size), |r| {
+    let radii = radii_map(border_to_radii_view(style, rect.size()), |r| {
         (r + half_width).max(0.0)
     });
 
@@ -1298,15 +1198,15 @@ pub(crate) fn paint_outline(cx: &mut PaintCx, style: &ViewStyleProps, size: Size
 }
 
 #[cfg(not(feature = "vello"))]
-pub(crate) fn paint_outline(cx: &mut PaintCx, style: &ViewStyleProps, size: Size) {
+pub(crate) fn paint_outline(cx: &mut PaintCx, style: &ViewStyleProps, rect: Rect) {
     let outline = &style.outline().0;
     if outline.width == 0. {
         // TODO: we should warn! when outline is < 0
         return;
     }
     let half = outline.width / 2.0;
-    let rect = size.to_rect().inflate(half, half);
-    let border_radii = border_to_radii_view(style, size);
+    let rect = rect.inflate(half, half);
+    let border_radii = border_to_radii_view(style, rect.size());
     cx.stroke(
         &rect.to_rounded_rect(radii_add(border_radii, half)),
         &style.outline_color(),
@@ -1319,7 +1219,7 @@ pub(crate) fn paint_border(
     cx: &mut PaintCx,
     layout_style: &LayoutProps,
     style: &ViewStyleProps,
-    size: Size,
+    rect: Rect,
 ) {
     let border = layout_style.border();
 
@@ -1342,8 +1242,8 @@ pub(crate) fn paint_border(
         && style.border_color().right == style.border_color().bottom
     {
         let half = left.width / 2.0;
-        let rect = size.to_rect().inflate(-half, -half);
-        let radii = border_to_radii_view(style, size);
+        let rect = rect.inflate(-half, -half);
+        let radii = border_to_radii_view(style, rect.size());
         if let Some(color) = style.border_color().left {
             if radii_max(radii) > 0.0 {
                 let radii = radii_map(radii, |r| (r - half).max(0.0));
@@ -1359,7 +1259,7 @@ pub(crate) fn paint_border(
         {
             let half = left.width / 2.0;
             cx.stroke(
-                &Line::new(Point::new(half, 0.0), Point::new(half, size.height)),
+                &Line::new(Point::new(half, 0.0), Point::new(half, rect.height())),
                 &color,
                 &left,
             );
@@ -1370,8 +1270,8 @@ pub(crate) fn paint_border(
             let half = right.width / 2.0;
             cx.stroke(
                 &Line::new(
-                    Point::new(size.width - half, 0.0),
-                    Point::new(size.width - half, size.height),
+                    Point::new(rect.width() - half, 0.0),
+                    Point::new(rect.width() - half, rect.height()),
                 ),
                 &color,
                 &right,
@@ -1382,7 +1282,7 @@ pub(crate) fn paint_border(
         {
             let half = top.width / 2.0;
             cx.stroke(
-                &Line::new(Point::new(0.0, half), Point::new(size.width, half)),
+                &Line::new(Point::new(0.0, half), Point::new(rect.width(), half)),
                 &color,
                 &top,
             );
@@ -1393,8 +1293,8 @@ pub(crate) fn paint_border(
             let half = bottom.width / 2.0;
             cx.stroke(
                 &Line::new(
-                    Point::new(0.0, size.height - half),
-                    Point::new(size.width, size.height - half),
+                    Point::new(0.0, rect.height() - half),
+                    Point::new(rect.width(), rect.height() - half),
                 ),
                 &color,
                 &bottom,
@@ -1408,7 +1308,7 @@ pub(crate) fn paint_border(
     cx: &mut PaintCx,
     layout_style: &LayoutProps,
     style: &ViewStyleProps,
-    size: Size,
+    rect: Rect,
 ) {
     use crate::{
         paint::{BorderPath, BorderPathEvent},
@@ -1443,9 +1343,9 @@ pub(crate) fn paint_border(
     let Pct(border_progress) = style.border_progress();
 
     let half_width = borders[0].0.width / 2.0;
-    let rect = size.to_rect().inflate(-half_width, -half_width);
+    let rect = rect.inflate(-half_width, -half_width);
 
-    let radii = radii_map(border_to_radii_view(style, size), |r| {
+    let radii = radii_map(border_to_radii_view(style, rect.size()), |r| {
         (r - half_width).max(0.0)
     });
 
@@ -1479,107 +1379,6 @@ pub(crate) fn paint_border(
         }
     }
     assert!(current_path.is_empty());
-}
-
-/// Tab navigation finds the next or previous view with the `keyboard_navigatable` status in the tree.
-pub(crate) fn view_tab_navigation(
-    root_view: ViewId,
-    window_state: &mut WindowState,
-    backwards: bool,
-) {
-    let start = window_state
-        .focus
-        .unwrap_or(window_state.prev_focus.unwrap_or(root_view));
-
-    let tree_iter = |id: ViewId| {
-        if backwards {
-            view_tree_previous(root_view, id).unwrap_or_else(|| view_nested_last_child(root_view))
-        } else {
-            view_tree_next(id).unwrap_or(root_view)
-        }
-    };
-
-    let mut new_focus = tree_iter(start);
-    while new_focus != start && !window_state.focusable.contains(&new_focus) {
-        new_focus = tree_iter(new_focus);
-    }
-
-    window_state.clear_focus();
-    window_state.update_focus(new_focus, true);
-}
-
-/// Get the next item in the tree, either the first child or the next sibling of this view or of the first parent view
-fn view_tree_next(id: ViewId) -> Option<ViewId> {
-    if let Some(child) = id.children().into_iter().next() {
-        return Some(child);
-    }
-
-    let mut ancestor = id;
-    loop {
-        if let Some(next_sibling) = view_next_sibling(ancestor) {
-            return Some(next_sibling);
-        }
-        ancestor = ancestor.parent()?;
-    }
-}
-
-/// Get the id of the view after this one (but with the same parent and level of nesting)
-fn view_next_sibling(id: ViewId) -> Option<ViewId> {
-    let parent = id.parent();
-
-    let Some(parent) = parent else {
-        // We're the root, which has no sibling
-        return None;
-    };
-
-    let children = parent.children();
-    //TODO: Log a warning if the child isn't found. This shouldn't happen (error in floem if it does), but this shouldn't panic if that does happen
-    let pos = children.iter().position(|v| v == &id)?;
-
-    if pos + 1 < children.len() {
-        Some(children[pos + 1])
-    } else {
-        None
-    }
-}
-
-/// Get the next item in the tree, the deepest last child of the previous sibling of this view or the parent
-fn view_tree_previous(root_view: ViewId, id: ViewId) -> Option<ViewId> {
-    view_previous_sibling(id)
-        .map(view_nested_last_child)
-        .or_else(|| {
-            (root_view != id).then_some(
-                id.parent()
-                    .unwrap_or_else(|| view_nested_last_child(root_view)),
-            )
-        })
-}
-
-/// Get the id of the view before this one (but with the same parent and level of nesting)
-fn view_previous_sibling(id: ViewId) -> Option<ViewId> {
-    let parent = id.parent();
-
-    let Some(parent) = parent else {
-        // We're the root, which has no sibling
-        return None;
-    };
-
-    let children = parent.children();
-    let pos = children.iter().position(|v| v == &id).unwrap();
-
-    if pos > 0 {
-        Some(children[pos - 1])
-    } else {
-        None
-    }
-}
-
-fn view_nested_last_child(view: ViewId) -> ViewId {
-    let mut last_child = view;
-    while let Some(new_last_child) = last_child.children().pop() {
-        last_child = new_last_child;
-    }
-    last_child
 }
 
 // Helper functions for futzing with RoundedRectRadii. These should probably be in kurbo.

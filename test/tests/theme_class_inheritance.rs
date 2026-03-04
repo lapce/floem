@@ -19,6 +19,7 @@ use serial_test::serial;
 #[test]
 #[serial]
 fn test_parent_class_styling_flows_to_child() {
+    let root = TestRoot::new();
     // Define a custom class for testing
     floem::style_class!(TestChildClass);
 
@@ -33,7 +34,7 @@ fn test_parent_class_styling_flows_to_child() {
             .class(TestChildClass, |s| s.background(palette::css::RED))
     });
 
-    let _harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
+    let _harness = HeadlessHarness::new_with_size(root, parent, 100.0, 100.0);
 
     // The child should have RED background from parent's class styling
     let style = _harness.get_computed_style(child_id);
@@ -60,16 +61,16 @@ fn test_parent_class_styling_flows_to_child() {
 #[test]
 #[serial]
 fn test_theme_list_class_selected_styling() {
+    let root = TestRoot::new();
     let items = vec!["A", "B", "C"];
 
     let list_view = list(items.into_iter().map(Label::new)).style(|s| s.width(200.0).height(120.0));
 
     let list_id = list_view.view_id();
-    let _harness = HeadlessHarness::new_with_size(list_view, 200.0, 120.0);
+    let _harness = HeadlessHarness::new_with_size(root, list_view, 200.0, 120.0);
 
     // Get the ListItemClass views
-    let stack_id = list_id.children()[0];
-    let item_ids: Vec<_> = stack_id.children();
+    let item_ids: Vec<_> = list_id.children();
 
     // The first item is selected by default
     // It should have theme's primary background from ListItemClass selected styling
@@ -104,16 +105,16 @@ fn test_theme_list_class_selected_styling() {
 #[test]
 #[serial]
 fn test_theme_list_item_hover_styling() {
+    let root = TestRoot::new();
     let items = vec!["Hover", "Me"];
 
     let list_view = list(items.into_iter().map(Label::new)).style(|s| s.width(200.0).height(80.0));
 
     let list_id = list_view.view_id();
-    let harness = HeadlessHarness::new_with_size(list_view, 200.0, 80.0);
+    let harness = HeadlessHarness::new_with_size(root, list_view, 200.0, 80.0);
 
     // Get the second item (not selected, so we can test hover without selected styling)
-    let stack_id = list_id.children()[0];
-    let item_ids: Vec<_> = stack_id.children();
+    let item_ids: Vec<_> = list_id.children();
     let second_item = item_ids[1].children()[0]; // The view with ListItemClass
 
     // Just verify the list structure is set up correctly
@@ -132,6 +133,7 @@ fn test_theme_list_item_hover_styling() {
 #[test]
 #[serial]
 fn test_deeply_nested_class_styling() {
+    let root = TestRoot::new();
     floem::style_class!(DeepClass);
 
     let grandchild = Empty::new().class(DeepClass).style(|s| s.size(20.0, 20.0));
@@ -144,7 +146,7 @@ fn test_deeply_nested_class_styling() {
             .class(DeepClass, |s| s.background(palette::css::PURPLE))
     });
 
-    let _harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
+    let _harness = HeadlessHarness::new_with_size(root, parent, 100.0, 100.0);
 
     // The grandchild should receive the class styling from parent
     let style = _harness.get_computed_style(grandchild_id);
@@ -160,6 +162,7 @@ fn test_deeply_nested_class_styling() {
 #[test]
 #[serial]
 fn test_class_styling_with_selectors() {
+    let root = TestRoot::new();
     floem::style_class!(SelectorClass);
 
     let child = Empty::new()
@@ -174,7 +177,7 @@ fn test_class_styling_with_selectors() {
         })
     });
 
-    let _harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
+    let _harness = HeadlessHarness::new_with_size(root, parent, 100.0, 100.0);
 
     // The child is selected, so it should have GOLD background
     let style = _harness.get_computed_style(child_id);
@@ -193,6 +196,7 @@ fn test_class_styling_with_selectors() {
 #[test]
 #[serial]
 fn test_child_style_overrides_parent_class_style() {
+    let root = TestRoot::new();
     floem::style_class!(OverrideClass);
 
     // Child has its own .selected() styling that should override parent's class styling
@@ -211,7 +215,7 @@ fn test_child_style_overrides_parent_class_style() {
         })
     });
 
-    let _harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
+    let _harness = HeadlessHarness::new_with_size(root, parent, 100.0, 100.0);
 
     // The child's own .selected() styling (BLUE) should override parent's class styling (RED)
     let style = _harness.get_computed_style(child_id);

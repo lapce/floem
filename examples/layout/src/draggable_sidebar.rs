@@ -1,7 +1,7 @@
 use floem::{
-    event::EventListener,
     prelude::*,
     style::{CustomStylable, CustomStyle},
+    views::resizable::Resizable,
 };
 
 pub fn draggable_sidebar_view() -> impl IntoView {
@@ -27,6 +27,7 @@ pub fn draggable_sidebar_view() -> impl IntoView {
         s.border_right(1.0)
             .border_top(1.0)
             .border_color(Color::from_rgb8(205, 205, 205))
+            .flex_grow(1.)
     });
 
     let main_window = Scroll::new(
@@ -40,9 +41,7 @@ pub fn draggable_sidebar_view() -> impl IntoView {
     )
     .style(|s| {
         s.flex_col()
-            .flex_basis(0)
-            .min_width(0)
-            .flex_grow(1.0)
+            .width_full()
             .border_top(1.0)
             .border_color(Color::from_rgb8(205, 205, 205))
     });
@@ -50,24 +49,15 @@ pub fn draggable_sidebar_view() -> impl IntoView {
     let dragger_color = Color::from_rgb8(205, 205, 205);
     let active_dragger_color = Color::from_rgb8(41, 98, 218);
 
-    let view = resizable::resizable((side_bar, main_window))
+    Resizable::new((side_bar, main_window))
         .style(|s| s.width_full().height_full())
         .custom_style(move |s| {
             s.handle_color(dragger_color)
                 .active(|s| s.handle_color(active_dragger_color))
-        });
-
-    let id = view.id();
-    view.on_event_stop(EventListener::KeyUp, move |e| {
-        if let floem::event::Event::Key(KeyboardEvent {
-            state: KeyState::Up,
-            key,
-            ..
-        }) = e
-        {
-            if *key == Key::Named(NamedKey::F11) {
-                id.inspect();
+        })
+        .on_event_stop(el::KeyUp, move |_cx, KeyboardEvent { key, .. }| {
+            if let Key::Named(NamedKey::F11) = key {
+                floem::action::inspect();
             }
-        }
-    })
+        })
 }

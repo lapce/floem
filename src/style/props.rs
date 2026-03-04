@@ -496,20 +496,39 @@ macro_rules! prop_extractor {
         impl $name {
             #[allow(dead_code)]
             $vis fn read_style(&mut self, cx: &mut $crate::context::StyleCx, style: &$crate::style::Style) -> bool {
+                self.read_style_for(cx, style, cx.current_view().get_element_id())
+            }
+
+            #[allow(dead_code)]
+            $vis fn read_style_for(
+                &mut self,
+                cx: &mut $crate::context::StyleCx,
+                style: &$crate::style::Style,
+                target: impl Into<$crate::ElementId>,
+            ) -> bool {
                 let mut transition = false;
                 let changed = false $(| self.$prop.read(style, style, &cx.now(), &mut transition))*;
                 if transition {
-                    cx.request_transition();
+                    cx.request_transition_for(target);
                 }
                 changed
             }
 
            #[allow(dead_code)]
             $vis fn read(&mut self, cx: &mut $crate::context::StyleCx) -> bool {
+                self.read_for(cx, cx.current_view().get_element_id())
+            }
+
+           #[allow(dead_code)]
+            $vis fn read_for(
+                &mut self,
+                cx: &mut $crate::context::StyleCx,
+                target: impl Into<$crate::ElementId>,
+            ) -> bool {
                 let mut transition = false;
                 let changed = self.read_explicit(&cx.direct_style(), &cx.indirect_style(), &cx.now(), &mut transition);
                 if transition {
-                    cx.request_transition();
+                    cx.request_transition_for(target);
                 }
                 changed
             }
@@ -558,9 +577,15 @@ pub enum StyleKeyInfo {
     Class(StyleClassInfo),
     /// Storage for context mapping closures.
     ContextMappings,
+    /// Storage for parameterized structural selectors (`:first-child`, `:nth-child(...)`, etc.).
+    StructuralSelectors,
+    /// Storage for parameterized responsive selectors (`min/max/range` window width).
+    ResponsiveSelectors,
 }
 
 pub(crate) static CONTEXT_MAPPINGS_INFO: StyleKeyInfo = StyleKeyInfo::ContextMappings;
+pub(crate) static STRUCTURAL_SELECTORS_INFO: StyleKeyInfo = StyleKeyInfo::StructuralSelectors;
+pub(crate) static RESPONSIVE_SELECTORS_INFO: StyleKeyInfo = StyleKeyInfo::ResponsiveSelectors;
 
 #[derive(Copy, Clone)]
 pub struct StyleKey {
@@ -571,7 +596,10 @@ impl StyleKey {
     pub(crate) fn debug_any(&self, value: &dyn Any) -> String {
         match self.info {
             StyleKeyInfo::Selector(selectors) => selectors.debug_string(),
-            StyleKeyInfo::Transition | StyleKeyInfo::ContextMappings => String::new(),
+            StyleKeyInfo::Transition
+            | StyleKeyInfo::ContextMappings
+            | StyleKeyInfo::StructuralSelectors
+            | StyleKeyInfo::ResponsiveSelectors => String::new(),
             StyleKeyInfo::Class(info) => (info.name)().to_string(),
             StyleKeyInfo::Prop(v) => (v.debug_any)(value),
         }
@@ -580,7 +608,9 @@ impl StyleKey {
         match self.info {
             StyleKeyInfo::Selector(..)
             | StyleKeyInfo::Transition
-            | StyleKeyInfo::ContextMappings => false,
+            | StyleKeyInfo::ContextMappings
+            | StyleKeyInfo::StructuralSelectors
+            | StyleKeyInfo::ResponsiveSelectors => false,
             StyleKeyInfo::Class(..) => true,
             StyleKeyInfo::Prop(v) => v.inherited,
         }
@@ -609,6 +639,8 @@ impl Debug for StyleKey {
             }
             StyleKeyInfo::Transition => write!(f, "transition"),
             StyleKeyInfo::ContextMappings => write!(f, "ContextMappings"),
+            StyleKeyInfo::StructuralSelectors => write!(f, "StructuralSelectors"),
+            StyleKeyInfo::ResponsiveSelectors => write!(f, "ResponsiveSelectors"),
             StyleKeyInfo::Class(v) => write!(f, "{}", (v.name)()),
             StyleKeyInfo::Prop(v) => write!(f, "{}", (v.name)()),
         }

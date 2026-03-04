@@ -4,15 +4,16 @@
 //! - When an overlay wrapper has display:none, its content should not receive events
 //! - When overlay content has display:none, background views should receive events
 
-use floem::headless::HeadlessHarness;
+use floem::headless::{HeadlessHarness, TestRoot};
 use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 use floem::view::ParentView;
-use floem::views::{Decorators, Empty, Overlay, Stack};
+use floem::views::{Decorators, Empty, OverlayExt, Stack};
 use std::cell::Cell;
 use std::rc::Rc;
 
 #[test]
 fn test_overlay_wrapper_display_none() {
+    let root = TestRoot::new();
     // Test: When the Overlay wrapper has display:none, its content should not receive clicks
     // and the background should receive them instead.
     let visible = RwSignal::new(true);
@@ -25,22 +26,20 @@ fn test_overlay_wrapper_display_none() {
     let view = Stack::new((
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
-            .on_click_stop(move |_| {
+            .action(move || {
                 bg_clone.set(true);
             }),
-        Overlay::new()
-            .child(
-                Empty::new()
-                    .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
-                    .on_click_stop(move |_| {
-                        overlay_clone.set(true);
-                    }),
-            )
+        Empty::new()
+            .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
+            .action(move || {
+                overlay_clone.set(true);
+            })
+            .overlay()
             .style(move |s| s.apply_if(!visible.get(), |s| s.display(floem::taffy::Display::None))),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // When visible, overlay should receive click
     harness.click(50.0, 50.0);
@@ -73,6 +72,7 @@ fn test_overlay_wrapper_display_none() {
 
 #[test]
 fn test_overlay_content_display_none() {
+    let root = TestRoot::new();
     // Test: When the content inside an Overlay has display:none,
     // the background should receive clicks instead.
     let visible = RwSignal::new(true);
@@ -85,25 +85,24 @@ fn test_overlay_content_display_none() {
     let view = Stack::new((
         Empty::new()
             .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
-            .on_click_stop(move |_| {
+            .action(move || {
                 bg_clone.set(true);
             }),
-        Overlay::new().child(
-            Empty::new()
-                .style(move |s| {
-                    s.absolute()
-                        .inset(0.0)
-                        .size(100.0, 100.0)
-                        .apply_if(!visible.get(), |s| s.display(floem::taffy::Display::None))
-                })
-                .on_click_stop(move |_| {
-                    overlay_clone.set(true);
-                }),
-        ),
+        Empty::new()
+            .style(move |s| {
+                s.absolute()
+                    .inset(0.0)
+                    .size(100.0, 100.0)
+                    .apply_if(!visible.get(), |s| s.display(floem::taffy::Display::None))
+            })
+            .action(move || {
+                overlay_clone.set(true);
+            })
+            .overlay(),
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // When visible, overlay content should receive click
     harness.click(50.0, 50.0);

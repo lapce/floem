@@ -9,6 +9,7 @@ repository.workspace = true
 
 [dependencies]
 floem = { path = ".." }
+ui-events.workspace = true
 
 [dev-dependencies]
 serial_test = "3.2"
