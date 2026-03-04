@@ -8,7 +8,6 @@ use floem_reactive::{Effect, SignalGet, SignalUpdate};
 use peniko::Brush;
 use peniko::kurbo::{Point, Rect, Size};
 use ui_events::pointer::PointerEvent;
-use understory_box_tree::NodeFlags;
 
 use crate::context::Phases;
 use crate::custom_event;
@@ -94,7 +93,6 @@ impl Handle {
         );
         let mut bt = self.box_tree.borrow_mut();
         bt.set_local_bounds(self.element_id.0, rect);
-        bt.set_flags(self.element_id.0, NodeFlags::VISIBLE | NodeFlags::PICKABLE);
     }
 
     fn snap(&mut self, state: bool, size: Size, radius: f64, inset: f64) {
@@ -210,6 +208,14 @@ impl ToggleButton {
         let size = self.id.get_layout_rect_local().size();
         let radius = self.circle_radius(size);
         let inset = self.inset(size.width);
+        self.handle.restrict(size.width, radius, inset);
+        self.handle.update_bounds(size, radius);
+    }
+
+    fn snap(&mut self) {
+        let size = self.id.get_layout_rect_local().size();
+        let radius = self.circle_radius(size);
+        let inset = self.inset(size.width);
         self.handle.snap(self.state, size, radius, inset);
     }
 
@@ -303,7 +309,7 @@ impl View for ToggleButton {
     fn update(&mut self, _cx: &mut UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(state) = state.downcast::<bool>() {
             self.state = *state;
-            self.post_layout();
+            self.snap();
             self.id.request_paint();
         }
     }
@@ -365,7 +371,7 @@ impl View for ToggleButton {
                             phases: Phases::TARGET,
                         },
                     );
-                    self.post_layout();
+                    self.snap();
                     self.id.request_paint();
                     return EventPropagation::Stop;
                 }
@@ -383,6 +389,7 @@ impl View for ToggleButton {
     }
 
     fn paint(&mut self, cx: &mut PaintCx) {
+        self.id.request_layout();
         if cx.target_id == self.handle.element_id {
             let size = self.id.get_layout_rect_local().size();
             let radius = self.circle_radius(size);
