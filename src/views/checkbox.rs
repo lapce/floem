@@ -40,10 +40,7 @@ fn checkbox_svg(
             }
         }
     };
-    svg(check_svg)
-        .update_value(update_svg)
-        .class(CheckboxClass)
-        .style(|s| s.keyboard_navigable())
+    svg(check_svg).update_value(update_svg).class(CheckboxClass)
 }
 
 /// # A customizable checkbox view for boolean selection.

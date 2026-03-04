@@ -41,7 +41,7 @@ pub(crate) fn collect_stacking_context_items_into(
     // use box tree children (includes all visual rectangles)
     for &child_box_id in box_tree_children {
         // Construct VisualId from box tree node id
-        let child_element_id = box_tree.meta(child_box_id).flatten().unwrap();
+        let child_element_id = box_tree.meta(child_box_id).flatten().unwrap().element_id;
 
         // Get z-index from box tree
         let z_index = box_tree.z_index(child_box_id).unwrap_or(0);

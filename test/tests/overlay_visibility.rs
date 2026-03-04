@@ -6,7 +6,6 @@
 
 use floem::headless::{HeadlessHarness, TestRoot};
 use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
-use floem::view::ParentView;
 use floem::views::{Decorators, Empty, OverlayExt, Stack};
 use std::cell::Cell;
 use std::rc::Rc;

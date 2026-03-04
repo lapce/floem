@@ -7,9 +7,10 @@ use floem_reactive::{Effect, RwSignal, Scope, SignalGet, SignalUpdate, SignalWit
 use peniko::Color;
 use peniko::color::palette;
 use peniko::kurbo::{Point, Size};
-use ui_events::keyboard::{Key, KeyboardEvent, NamedKey};
+use ui_events::keyboard::{Key, NamedKey};
 
-use crate::event::{Event, EventListener};
+use crate::context::VisualChangedListener;
+use crate::event::listener;
 use crate::platform::menu::MudaMenu;
 use crate::style::CursorStyle;
 
@@ -146,30 +147,30 @@ pub(crate) fn context_menu_view(
                                     .apply_if(!has_submenu, |s| s.hide())
                             }),
                         ))
-                        .on_event_stop(EventListener::PointerEnter, move |_| {
+                        .on_event_stop(listener::PointerEnter, move |_, _| {
                             if has_submenu {
                                 show_submenu.set(true);
                             }
                         })
-                        .on_event_stop(EventListener::PointerLeave, move |_| {
+                        .on_event_stop(listener::PointerLeave, move |_, _| {
                             if has_submenu {
                                 show_submenu.set(false);
                             }
                         })
-                        .on_resize(move |rect| {
-                            let width = rect.width();
+                        .on_event_stop(VisualChangedListener, move |_, visual| {
+                            let width = visual.new_visual_aabb.width();
                             if menu_width.get_untracked() != width {
                                 menu_width.set(width);
                             }
                         })
-                        .on_event_stop(EventListener::PointerDown, move |_| {
+                        .on_event_stop(listener::PointerDown, move |_, _| {
                             context_menu.update(|context_menu| {
                                 if let Some((_, _, had_pointer_down)) = context_menu.as_mut() {
                                     *had_pointer_down = true;
                                 }
                             });
                         })
-                        .on_event_stop(EventListener::PointerUp, move |_| {
+                        .on_event_stop(listener::PointerUp, move |_, _| {
                             if has_submenu {
                                 // don't handle the click if there's submenu
                                 return;
@@ -203,20 +204,18 @@ pub(crate) fn context_menu_view(
                             move |s| s.clone(),
                             move |menu| view_fn(menu, context_menu, on_child_submenu),
                         )
-                        .on_event_stop(EventListener::KeyDown, move |event| {
-                            if let Event::Key(KeyboardEvent { key, .. }) = event
-                                && *key == Key::Named(NamedKey::Escape)
-                            {
+                        .on_event_stop(listener::KeyDown, move |_, event| {
+                            if event.key == Key::Named(NamedKey::Escape) {
                                 context_menu.set(None);
                             }
                         })
-                        .on_event_stop(EventListener::PointerEnter, move |_| {
+                        .on_event_stop(listener::PointerEnter, move |_, _| {
                             if has_submenu {
                                 on_submenu.set(true);
                                 on_child_submenu_for_parent.set(true);
                             }
                         })
-                        .on_event_stop(EventListener::PointerLeave, move |_| {
+                        .on_event_stop(listener::PointerLeave, move |_, _| {
                             if has_submenu {
                                 on_submenu.set(false);
                                 on_child_submenu_for_parent.set(false);
@@ -224,7 +223,7 @@ pub(crate) fn context_menu_view(
                         })
                         .style(move |s| {
                             s.absolute()
-                                .focusable(true)
+                                .focusable()
                                 .min_width(200.0)
                                 .margin_top(-5.0)
                                 .margin_left(menu_width.get() as f32)
@@ -266,28 +265,26 @@ pub(crate) fn context_menu_view(
         move |s| s.clone(),
         move |menu| view_fn(menu, context_menu, on_child_submenu),
     )
-    .on_resize(move |rect| {
-        context_menu_size.set(rect.size());
+    .on_event_stop(VisualChangedListener, move |_, visual| {
+        context_menu_size.set(visual.new_visual_aabb.size());
     })
-    .on_event_stop(EventListener::PointerDown, move |_| {
+    .on_event_stop(listener::PointerDown, move |_, _| {
         context_menu.update(|context_menu| {
             if let Some((_, _, had_pointer_down)) = context_menu.as_mut() {
                 *had_pointer_down = true;
             }
         });
     })
-    .on_event_stop(EventListener::PointerUp, move |_| {
+    .on_event_stop(listener::PointerUp, move |_, _| {
         context_menu.update(|context_menu| {
             if let Some((_, _, had_pointer_down)) = context_menu.as_mut() {
                 *had_pointer_down = false;
             }
         });
     })
-    .on_event_stop(EventListener::PointerMove, move |_| {})
-    .on_event_stop(EventListener::KeyDown, move |event| {
-        if let Event::Key(KeyboardEvent { key, .. }) = event
-            && *key == Key::Named(NamedKey::Escape)
-        {
+    .on_event_stop(listener::PointerMove, move |_, _| {})
+    .on_event_stop(listener::KeyDown, move |_, event| {
+        if event.key == Key::Named(NamedKey::Escape) {
             context_menu.set(None);
         }
     })
@@ -306,7 +303,7 @@ pub(crate) fn context_menu_view(
             .min_width(200.0)
             .flex_col()
             .border_radius(10.0)
-            .focusable(true)
+            .focusable()
             .background(Color::from_rgb8(44, 44, 44))
             .color(Color::from_rgb8(201, 201, 201))
             .z_index(999)

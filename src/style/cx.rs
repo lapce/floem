@@ -500,10 +500,12 @@ impl<'a> StyleCx<'a> {
             // ─────────────────────────────────────────────────────────────────────
             // Phase 8.2: Update box tree visiblity dependent props  (must happen after visibility phase override)
             // ─────────────────────────────────────────────────────────────────────
+            let focus_nav_flags_changed;
             {
                 let box_tree = view_id.box_tree();
                 let element_id = vs.element_id;
                 let box_tree = &mut box_tree.borrow_mut();
+                let old_flags = box_tree.flags(element_id.0).unwrap_or(NodeFlags::empty());
                 let mut flags = NodeFlags::empty();
                 // need to update this after visibility.
                 if (vs.computed_style.builtin().pointer_events()
@@ -532,6 +534,8 @@ impl<'a> StyleCx<'a> {
                     flags |= NodeFlags::VISIBLE;
                 }
                 box_tree.set_flags(element_id.0, flags);
+                let nav_bits = NodeFlags::VISIBLE | NodeFlags::KEYBOARD_NAVIGABLE;
+                focus_nav_flags_changed = (old_flags & nav_bits) != (flags & nav_bits);
 
                 let new_z_index = vs.combined_style.builtin().z_index().unwrap_or(0);
 
@@ -540,6 +544,9 @@ impl<'a> StyleCx<'a> {
                 if old_z_index != new_z_index {
                     box_tree.set_z_index(element_id.0, new_z_index);
                 }
+            }
+            if focus_nav_flags_changed {
+                self.window_state.invalidate_focus_nav_cache();
             }
             // ─────────────────────────────────────────────────────────────────────
             // Phase 8.3: request paint for view style changes if not hidden

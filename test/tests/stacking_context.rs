@@ -8,8 +8,8 @@
 //! - DOM order is used as a tiebreaker when z-index values are equal
 //! - Event bubbling follows DOM tree
 
-use floem::event::EventPropagation;
 use floem::headless::{HeadlessHarness, TestRoot};
+use floem::prelude::el;
 use floem::taffy;
 use floem::unit::UnitExt;
 use floem::views::{Decorators, Empty, Stack};
@@ -854,14 +854,12 @@ fn test_stacking_context_hidden_does_not_bubble() {
 
     let view = Stack::new((Empty::new()
         .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(5))
-        .on_click(move |_| {
+        .on_event_cont(el::Click, move |_, _| {
             c_clone.set(true);
-            EventPropagation::Continue
         }),))
     .style(|s| s.size(100.0, 100.0).display(taffy::Display::None))
-    .on_click(move |_| {
+    .on_event_cont(el::Click, move |_, _| {
         p_clone.set(true);
-        EventPropagation::Continue
     });
 
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
@@ -1011,14 +1009,12 @@ fn test_stacking_context_event_bubbling() {
 
     let view = Stack::new((Empty::new()
         .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(5))
-        .on_click(move |_| {
+        .on_event_cont(el::Click, move |_, _| {
             clicked_child_clone.set(true);
-            EventPropagation::Continue
         }),))
     .style(|s| s.size(100.0, 100.0))
-    .on_click(move |_| {
+    .on_event_cont(el::Click, move |_, _| {
         clicked_parent_clone.set(true);
-        EventPropagation::Continue
     });
 
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
@@ -1096,19 +1092,16 @@ fn test_stacking_context_deep_bubbling() {
 
     let view = Stack::new((Stack::new((Empty::new()
         .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(5))
-        .on_click(move |_| {
+        .on_event_cont(el::Click, move |_, _| {
             c_clone.set(true);
-            EventPropagation::Continue
         }),))
     .style(|s| s.absolute().inset(0.0).size(100.0, 100.0))
-    .on_click(move |_| {
+    .on_event_cont(el::Click, move |_, _| {
         p_clone.set(true);
-        EventPropagation::Continue
     }),))
     .style(|s| s.size(100.0, 100.0))
-    .on_click(move |_| {
+    .on_event_cont(el::Click, move |_, _| {
         gp_clone.set(true);
-        EventPropagation::Continue
     });
 
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
@@ -1154,19 +1147,16 @@ fn test_stacking_context_bubbling_across_stacking_contexts() {
 
     let view = Stack::new((Stack::new((Empty::new()
         .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(3))
-        .on_click(move |_| {
+        .on_event_cont(el::Click, move |_, _| {
             c_clone.set(true);
-            EventPropagation::Continue
         }),))
     .style(|s| s.absolute().inset(0.0).size(100.0, 100.0).z_index(2))
-    .on_click(move |_| {
+    .on_event_cont(el::Click, move |_, _| {
         p_clone.set(true);
-        EventPropagation::Continue
     }),))
     .style(|s| s.size(100.0, 100.0).z_index(1))
-    .on_click(move |_| {
+    .on_event_cont(el::Click, move |_, _| {
         gp_clone.set(true);
-        EventPropagation::Continue
     });
 
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);

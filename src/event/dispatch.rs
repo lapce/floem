@@ -2,7 +2,7 @@
 
 use std::{rc::Rc, sync::LazyLock, time::Instant};
 
-use peniko::kurbo::{Affine, Point};
+use peniko::kurbo::{Affine, Point, Rect};
 use smallvec::SmallVec;
 use ui_events::{
     keyboard::{Key, KeyState, KeyboardEvent, Modifiers, NamedKey},
@@ -10,19 +10,22 @@ use ui_events::{
         PointerButton, PointerButtonEvent, PointerEvent, PointerId, PointerInfo, PointerType,
     },
 };
-use understory_box_tree::NodeFlags;
+use understory_box_tree::{NodeFlags, QueryFilter};
 use understory_event_state::{click::ClickResult, hover::HoverEvent};
+use understory_focus::{
+    DefaultPolicy, FocusEntry, FocusPolicy, FocusSpace, Navigation as FocusNavigation, WrapMode,
+};
 use winit::keyboard::KeyCode;
 
 use crate::{
-    BoxTree, ElementId, ViewId,
+    BoxTree, ElementId, ElementMeta, ViewId,
     action::show_context_menu,
     context::Phases,
     event::{
         DragEvent, DragToken, Event, FocusEvent, InteractionEvent, Phase, PointerCaptureEvent,
         WindowEvent, drag_state::DragEventDispatch, dropped_file::FileDragEvent, path::hit_test,
     },
-    style::StyleSelector,
+    style::{StyleSelector, StyleSelectors, recalc::StyleReason},
     view::{VIEW_STORAGE, View},
     window::WindowState,
 };
@@ -115,7 +118,7 @@ fn build_ancestor_chain(target: ElementId, box_tree: &BoxTree) -> SmallVec<[Elem
             break;
         };
 
-        let Some(next) = box_tree.meta(parent_node).flatten() else {
+        let Some(next) = box_tree.meta(parent_node).flatten().map(|m| m.element_id) else {
             break;
         };
 
@@ -298,16 +301,22 @@ impl<'a> GlobalEventCx<'a> {
 
     /// Route using the original OS event, with an optional causal event.
     pub fn route_normal(
-        &mut self,
+        mut self,
         kind: RouteKind,
         triggered_by: Option<&Event>,
     ) -> Option<Dispatch> {
         self.route(kind, OverrideKind::Normal { triggered_by })
     }
 
+    /// Create exactly one event scope for this event and run `f` inside it.
+    pub fn with_route_cx<R>(mut self, f: impl FnOnce(&mut RouteCx<'_, 'a>) -> R) -> R {
+        let mut rcx = RouteCx::new_event_scope(&mut self);
+        f(&mut rcx)
+    }
+
     /// Core routing entry point. Creates a [`RouteCx`] scope for this event,
     /// dispatches it, then runs lifecycle hooks on drop.
-    pub fn route(&mut self, kind: RouteKind, override_kind: OverrideKind) -> Option<Dispatch> {
+    fn route(&mut self, kind: RouteKind, override_kind: OverrideKind) -> Option<Dispatch> {
         let mut rcx = RouteCx::new(self, &kind, override_kind);
         rcx.dispatch(kind)
         // RouteCx drops here → finish() → handle_default_behaviors,
@@ -316,168 +325,135 @@ impl<'a> GlobalEventCx<'a> {
 
     /// Route the original OS window event. This is the primary entry point
     /// called once per OS event from the window handle.
-    pub fn route_window_event(&mut self) {
-        match &self.event {
-            Event::Pointer(pointer_event) => {
-                // Pointer leave — clear all hover state.
-                let pointer_id = pointer_event.pointer_info().pointer_id;
-                let capture_target =
-                    pointer_id.and_then(|id| self.window_state.get_pointer_capture_target(id));
-                if let Some(point) = pointer_event.logical_point() {
-                    self.window_state.last_pointer = (point, pointer_event.pointer_info())
-                }
+    pub fn route_window_event(self) {
+        self.with_route_cx(|rcx| {
+            let event = rcx.event.clone();
 
-                if let Some(capture_target) = capture_target {
-                    self.route_normal(
-                        RouteKind::Directed {
+            match &event {
+                Event::Pointer(pointer_event) => {
+                    // Pointer leave — clear all hover state.
+                    let pointer_id = pointer_event.pointer_info().pointer_id;
+                    let capture_target = pointer_id
+                        .and_then(|id| rcx.gcx.window_state.get_pointer_capture_target(id));
+                    if let Some(point) = pointer_event.logical_point() {
+                        rcx.gcx.window_state.last_pointer = (point, pointer_event.pointer_info())
+                    }
+
+                    if let Some(capture_target) = capture_target {
+                        rcx.dispatch(RouteKind::Directed {
                             target: capture_target,
                             phases: Phases::STANDARD,
-                        },
-                        None,
-                    );
-                } else if let Some(point) = pointer_event.logical_point() {
-                    self.route_normal(
-                        RouteKind::Spatial {
+                        });
+                    } else if let Some(point) = pointer_event.logical_point() {
+                        rcx.dispatch(RouteKind::Spatial {
                             point: Some(point),
                             phases: Phases::STANDARD,
-                        },
-                        None,
-                    );
-                } else {
-                    // Pointer Enter / Leave / Cancel with no capture and no point:
-                    // not routed to any view, but lifecycle still runs (hover clearing, etc.)
-                    self.route_lifecycle_only();
+                        });
+                    }
                 }
-            }
-            Event::Key(ke) => {
-                if ke.is_shortcut_like() {
-                    // Try the focused path first with capture → bubble.
-                    let consumed = self.route_normal(
-                        RouteKind::Focused {
+                Event::Key(ke) => {
+                    if ke.is_shortcut_like() {
+                        // Try the focused path first with capture → bubble.
+                        let consumed = rcx.dispatch(RouteKind::Focused {
                             phases: Phases::STANDARD,
-                        },
-                        None,
-                    );
+                        });
 
-                    // If no focus or focus path didn't consume it, fall back to registry.
-                    if consumed.is_none() {
-                        let listener_keys = self.event.listener_keys();
-                        let mut interested: SmallVec<[ViewId; 16]> = SmallVec::new();
-                        for key in &listener_keys {
-                            if let Some(ids) = self.window_state.listeners.get(key) {
-                                for &id in ids {
-                                    if !interested.contains(&id) {
-                                        interested.push(id);
+                        // If no focus or focus path didn't consume it, fall back to registry.
+                        if consumed.is_none() {
+                            let listener_keys = event.listener_keys();
+                            let mut interested: SmallVec<[ViewId; 16]> = SmallVec::new();
+                            for key in &listener_keys {
+                                if let Some(ids) = rcx.gcx.window_state.listeners.get(key) {
+                                    for &id in ids {
+                                        if !interested.contains(&id) {
+                                            interested.push(id);
+                                        }
                                     }
                                 }
                             }
-                        }
-                        for id in interested {
-                            let result = self.route_normal(
-                                RouteKind::Directed {
+                            for id in interested {
+                                let result = rcx.dispatch(RouteKind::Directed {
                                     target: id.get_element_id(),
                                     phases: Phases::TARGET,
-                                },
-                                None,
-                            );
-                            if result.is_some() {
-                                break;
+                                });
+                                if result.is_some() {
+                                    break;
+                                }
                             }
                         }
-                    }
-                } else {
-                    // Typing keys: capture → target → bubble on the focused element.
-                    self.route_normal(
-                        RouteKind::Focused {
+                    } else {
+                        // Typing keys: capture → target → bubble on the focused element.
+                        rcx.dispatch(RouteKind::Focused {
                             phases: Phases::STANDARD,
-                        },
-                        None,
-                    );
+                        });
+                    }
                 }
-            }
-            Event::Ime(_) => {
-                self.route_normal(
-                    RouteKind::Focused {
+                Event::Ime(_) => {
+                    rcx.dispatch(RouteKind::Focused {
                         phases: Phases::STANDARD,
-                    },
-                    None,
-                );
-            }
-            Event::FileDrag(fde) => {
-                let point = fde.logical_point();
-                self.route_normal(
-                    RouteKind::Spatial {
+                    });
+                }
+                Event::FileDrag(fde) => {
+                    let point = fde.logical_point();
+                    rcx.dispatch(RouteKind::Spatial {
                         point: Some(point),
                         phases: Phases::TARGET,
-                    },
-                    None,
-                );
-            }
-            Event::Window(we) => {
-                if matches!(we, WindowEvent::ChangeUnderCursor) {
-                    let point = self.window_state.last_pointer.0;
-                    RouteCx::new_lifecycle(self).update_hover_from_point(point);
+                    });
                 }
-                let listener_keys = self.event.listener_keys();
-                let mut interested: SmallVec<[ViewId; 64]> = SmallVec::new();
-                for key in &listener_keys {
-                    if let Some(ids) = self.window_state.listeners.get(key) {
-                        for &id in ids {
-                            if !interested.contains(&id) {
-                                interested.push(id);
+                Event::Window(we) => {
+                    if matches!(we, WindowEvent::ChangeUnderCursor) {
+                        let point = rcx.gcx.window_state.last_pointer.0;
+                        rcx.update_hover_from_point(point);
+                    }
+                    let listener_keys = event.listener_keys();
+                    let mut interested: SmallVec<[ViewId; 64]> = SmallVec::new();
+                    for key in &listener_keys {
+                        if let Some(ids) = rcx.gcx.window_state.listeners.get(key) {
+                            for &id in ids {
+                                if !interested.contains(&id) {
+                                    interested.push(id);
+                                }
                             }
                         }
                     }
-                }
 
-                for id in interested {
-                    self.route_normal(
-                        RouteKind::Directed {
+                    for id in interested {
+                        rcx.dispatch(RouteKind::Directed {
                             target: id.get_element_id(),
                             phases: Phases::TARGET,
-                        },
-                        None,
-                    );
+                        });
+                    }
+                }
+                Event::PointerCapture(_)
+                | Event::Focus(_)
+                | Event::Interaction(_)
+                | Event::Drag(_)
+                | Event::Custom(_)
+                | Event::Extracted => {
+                    panic!("received {:?}, which is not an external event.", &event);
                 }
             }
-            Event::PointerCapture(_)
-            | Event::Focus(_)
-            | Event::Interaction(_)
-            | Event::Drag(_)
-            | Event::Custom(_)
-            | Event::Extracted => {
-                panic!(
-                    "received {:?}, which is not an external event.",
-                    &self.event
-                );
+
+            if let Event::Pointer(PointerEvent::Leave(_)) = &event {
+                rcx.update_hover_from_path(&[]);
             }
-        }
-
-        if let Event::Pointer(PointerEvent::Leave(_)) = &self.event {
-            self.update_hover_from_path(&[]);
-        }
-    }
-
-    /// Create a lifecycle-only scope: no dispatch, but `handle_default_behaviors`
-    /// and pending event flushing will run when the scope drops.
-    fn route_lifecycle_only(&mut self) {
-        let _rcx = RouteCx::new_lifecycle(self);
+        });
     }
 
     /// Update hover from a path without dispatching any event to views.
     /// Used by `file_drag_end` and similar external callers.
-    pub fn update_hover_from_path(&mut self, path: &[ElementId]) {
-        RouteCx::new_lifecycle(self).update_hover_from_path(path);
+    pub fn update_hover_from_path(mut self, path: &[ElementId]) {
+        RouteCx::new_lifecycle(&mut self).update_hover_from_path(path);
     }
 
     /// Update focus to a specific element without dispatching an event to views.
-    pub fn update_focus(&mut self, element_id: ElementId, keyboard_navigation: bool) {
-        RouteCx::new_lifecycle(self).update_focus(element_id, keyboard_navigation);
+    pub fn update_focus(mut self, element_id: ElementId, keyboard_navigation: bool) {
+        RouteCx::new_lifecycle(&mut self).update_focus(element_id, keyboard_navigation);
     }
 
     /// Update focus from an already-built path without dispatching an event to views.
-    pub fn clear_focus(&mut self) {
-        RouteCx::new_lifecycle(self).clear_focus();
+    pub fn clear_focus(mut self) {
+        RouteCx::new_lifecycle(&mut self).clear_focus();
     }
 }
 
@@ -565,6 +541,28 @@ impl<'r, 'w> RouteCx<'r, 'w> {
             dispatch,
             source,
             triggered_by,
+            pending_events: SmallVec::new(),
+            pending_default_events: SmallVec::new(),
+            finished: false,
+            prevent_default: false,
+        }
+    }
+
+    /// Constructor for one-scope-per-event routing inside `route_window_event`.
+    fn new_event_scope(gcx: &'r mut GlobalEventCx<'w>) -> Self {
+        let event = gcx.event.clone();
+        let source = gcx.source;
+        let hit_path = event
+            .point()
+            .and_then(|point| hit_test(gcx.window_state.root_view_id, point));
+
+        Self {
+            gcx,
+            event,
+            hit_path,
+            dispatch: None,
+            source,
+            triggered_by: None,
             pending_events: SmallVec::new(),
             pending_default_events: SmallVec::new(),
             finished: false,
@@ -992,7 +990,7 @@ impl<'a> EventCx<'a> {
 }
 
 // ============================================================================
-// RouteCx — Lifecycle (RAII via Drop)
+// RouteCx — Lifecycle
 // ============================================================================
 
 impl Drop for RouteCx<'_, '_> {
@@ -1140,7 +1138,7 @@ impl RouteCx<'_, '_> {
             && (modifiers.is_empty() || *modifiers == Modifiers::SHIFT)
         {
             let backwards = modifiers.contains(Modifiers::SHIFT);
-            self.view_tab_navigation(backwards);
+            self.element_tab_navigation(backwards);
         }
 
         // Arrow navigation.
@@ -1159,13 +1157,8 @@ impl RouteCx<'_, '_> {
             }) if *modifiers == Modifiers::ALT => Some(*name),
             _ => None,
         };
-        if let Some(name) = arrow_key {
-            self.view_arrow_navigation(&name);
-        }
-
-        // Window resized — mark responsive styles dirty.
-        if let Event::Window(WindowEvent::Resized(_)) = &self.event {
-            // TODO: mark responsive styles dirty when the style system supports it
+        if let Some(arrow_key) = arrow_key {
+            self.element_arrow_navigation(&arrow_key);
         }
 
         // Context / popout menus (platform-specific timing).
@@ -1344,7 +1337,10 @@ impl RouteCx<'_, '_> {
             .last()
             .copied();
 
-        if old_focus == new_focus.last().copied() {
+        let old_keyboard_navigation = self.gcx.window_state.keyboard_navigation;
+
+        if old_focus == new_focus.last().copied() && old_keyboard_navigation == keyboard_navigation
+        {
             return;
         }
         self.gcx.window_state.focus_state.update_path(&new_focus);
@@ -1361,9 +1357,10 @@ impl RouteCx<'_, '_> {
         }
 
         if let Some(old) = old_focus {
-            self.gcx
-                .window_state
-                .mark_style_dirty_selector(old, StyleSelector::Focus);
+            self.gcx.window_state.mark_style_dirty_with(
+                old,
+                StyleReason::with_selectors(StyleSelectors::FOCUS_VISIBLE | StyleSelectors::FOCUS),
+            );
             self.pending_default_events.push((
                 RouteKind::Directed {
                     target: old,
@@ -1374,9 +1371,11 @@ impl RouteCx<'_, '_> {
         }
 
         if let Some(new_focus) = new_focus.last().copied() {
-            self.gcx
-                .window_state
-                .mark_style_dirty_selector(new_focus, StyleSelector::Focus);
+            self.gcx.window_state.last_focused_element = Some(new_focus);
+            self.gcx.window_state.mark_style_dirty_with(
+                new_focus,
+                StyleReason::with_selectors(StyleSelectors::FOCUS_VISIBLE | StyleSelectors::FOCUS),
+            );
             self.pending_default_events.push((
                 RouteKind::Directed {
                     target: new_focus,
@@ -1414,9 +1413,10 @@ impl RouteCx<'_, '_> {
         }
 
         if let Some(old) = old_focus {
-            self.gcx
-                .window_state
-                .mark_style_dirty_selector(old, StyleSelector::Focus);
+            self.gcx.window_state.mark_style_dirty_with(
+                old,
+                StyleReason::with_selectors(StyleSelectors::FOCUS_VISIBLE | StyleSelectors::FOCUS),
+            );
             self.pending_default_events.push((
                 RouteKind::Directed {
                     target: old,
@@ -1444,15 +1444,21 @@ impl RouteCx<'_, '_> {
             std::iter::successors(Some(target), |&cur| {
                 box_tree
                     .parent_of(cur.0)
-                    .map(|p| box_tree.meta(p).flatten().unwrap())
+                    .and_then(|p| box_tree.meta(p).flatten().map(|m| m.element_id))
             })
         };
 
         let focus_target = ancestors().find(|id| {
-            box_tree
+            let flags_match = box_tree
                 .flags(id.0)
                 .map(|f| f.contains(required))
-                .unwrap_or(false)
+                .unwrap_or(false);
+            let nav_enabled = box_tree
+                .meta(id.0)
+                .flatten()
+                .map(|m| m.focus.enabled)
+                .unwrap_or(true);
+            flags_match && nav_enabled
         });
 
         let Some(focus_target) = focus_target else {
@@ -1462,7 +1468,7 @@ impl RouteCx<'_, '_> {
         std::iter::successors(Some(focus_target), |&cur| {
             box_tree
                 .parent_of(cur.0)
-                .map(|p| box_tree.meta(p).flatten().unwrap())
+                .and_then(|p| box_tree.meta(p).flatten().map(|m| m.element_id))
         })
         .collect()
     }
@@ -1471,27 +1477,419 @@ impl RouteCx<'_, '_> {
 // ============================================================================
 // RouteCx — Keyboard Navigation
 // ============================================================================
+//
+// Keyboard navigation is split into two paths:
+// - Tab/Shift+Tab: linear traversal in focus order.
+// - Arrow keys: directional traversal with spatial filtering.
+//
+// Data model:
+// - Candidates are represented as `FocusEntry<ElementId>`.
+// - Full-space candidates come from `WindowState::keyboard_focus_space()` (cached).
+// - Directional candidates are built from box-tree `intersect_rect` as a fast prefilter.
+//
+// Ordering model:
+// - Explicit `FocusEntry.order` wins when present.
+// - Otherwise traversal falls back to geometric reading order (top-to-bottom, left-to-right).
+//
+// Group model:
+// - If the current focused element has a `group`, traversal first attempts that group.
+// - If no result is found, traversal falls back to the full candidate space.
+//
+// Semantics:
+// - Tab from no active focus starts at the beginning/end of tab order (Chrome-like behavior).
+// - Arrow navigation does not wrap (`WrapMode::Never`).
 
 impl RouteCx<'_, '_> {
-    pub(crate) fn view_tab_navigation(&mut self, backwards: bool) {
-        let scope_root = self.gcx.window_state.root_view_id.get_element_id();
+    /// Compare two rectangles by reading order for tab traversal tie-breaking.
+    ///
+    /// Uses y-first, then x, with a relative epsilon to avoid unstable ordering
+    /// from tiny floating-point deltas.
+    #[inline]
+    fn compare_tab_reading_rect(a: &Rect, b: &Rect) -> std::cmp::Ordering {
+        const RELATIVE_EPS: f64 = 1e-6;
+        let ay = a.y0;
+        let by = b.y0;
+        if (ay - by).abs() > f64::max(ay.abs(), by.abs()) * RELATIVE_EPS {
+            return ay.partial_cmp(&by).unwrap_or(std::cmp::Ordering::Equal);
+        }
+        let ax = a.x0;
+        let bx = b.x0;
+        ax.partial_cmp(&bx).unwrap_or(std::cmp::Ordering::Equal)
+    }
 
-        let current_focus = self
+    #[inline]
+    fn compare_tab_order_keys<O: Ord>(
+        a_order: &Option<O>,
+        a_rect: &Rect,
+        b_order: &Option<O>,
+        b_rect: &Rect,
+    ) -> std::cmp::Ordering {
+        match (a_order, b_order) {
+            (Some(ao), Some(bo)) => ao
+                .cmp(bo)
+                .then_with(|| Self::compare_tab_reading_rect(a_rect, b_rect)),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => Self::compare_tab_reading_rect(a_rect, b_rect),
+        }
+    }
+
+    /// Select initial Tab target when the window currently has no active focus.
+    ///
+    /// This mirrors browser-like behavior:
+    /// - `Tab` -> first enabled candidate in tab order.
+    /// - `Shift+Tab` -> last enabled candidate in tab order.
+    ///
+    /// The ordering rules here match the linear policy model:
+    /// explicit `order` first, then reading-order geometry.
+    #[inline]
+    fn initial_tab_target(entries: &[FocusEntry<ElementId>], backwards: bool) -> Option<ElementId> {
+        let mut indices: SmallVec<[usize; 128]> = entries
+            .iter()
+            .enumerate()
+            .filter_map(|(i, e)| e.enabled.then_some(i))
+            .collect();
+        if indices.is_empty() {
+            return None;
+        }
+        indices.sort_by(|&ia, &ib| {
+            let a = &entries[ia];
+            let b = &entries[ib];
+            Self::compare_tab_order_keys(&a.order, &a.rect, &b.order, &b.rect)
+        });
+        let idx = if backwards {
+            *indices.last().unwrap_or(&indices[0])
+        } else {
+            indices[0]
+        };
+        Some(entries[idx].id)
+    }
+
+    /// Resolve a starting element for directional keyboard navigation.
+    ///
+    /// Fallback chain:
+    /// 1. Current active focus (if present).
+    /// 2. Last focused element (if still keyboard-navigable and enabled).
+    /// 3. Topmost keyboard-navigable element under last pointer position.
+    /// 4. Root element.
+    ///
+    /// This preserves user intent after transient blur while still allowing
+    /// pointer context to seed navigation when no focus history is valid.
+    #[inline]
+    fn keyboard_navigation_origin(
+        &self,
+        box_tree: &BoxTree,
+        root_element_id: ElementId,
+    ) -> ElementId {
+        let is_valid_nav_target = |id: ElementId| {
+            box_tree.flags(id.0).is_some_and(|flags| {
+                flags.contains(NodeFlags::VISIBLE | NodeFlags::KEYBOARD_NAVIGABLE)
+            }) && box_tree
+                .meta(id.0)
+                .flatten()
+                .map(|m| m.focus.enabled)
+                .unwrap_or(true)
+        };
+
+        if let Some(current_focus) = self
             .gcx
             .window_state
             .focus_state
             .current_path()
             .last()
             .copied()
-            .unwrap_or(scope_root);
+        {
+            return current_focus;
+        }
 
-        // TODO: replace with non-build_focus_space traversal
-        let _ = (scope_root, current_focus, backwards);
+        if let Some(last_focused) = self.gcx.window_state.last_focused_element
+            && is_valid_nav_target(last_focused)
+        {
+            return last_focused;
+        }
+
+        let pointer_point = self.gcx.window_state.last_pointer.0;
+        box_tree
+            .hit_test_visual_stack(
+                pointer_point,
+                QueryFilter::new().visible().keyboard_navigable(),
+            )
+            .into_iter()
+            .rev()
+            .find_map(|node| box_tree.meta(node).flatten().map(|m| m.element_id))
+            .unwrap_or(root_element_id)
     }
 
-    pub(crate) fn view_arrow_navigation(&mut self, key: &NamedKey) {
-        // TODO: replace with non-build_focus_space traversal
-        let _ = key;
+    /// Convert box-tree metadata + world rect into a `FocusEntry`.
+    #[inline]
+    fn push_focus_entry(
+        node_meta: ElementMeta,
+        rect: Rect,
+        out: &mut SmallVec<[FocusEntry<ElementId>; 64]>,
+    ) {
+        let focus = node_meta.focus;
+        out.push(FocusEntry {
+            id: node_meta.element_id,
+            rect,
+            order: focus.order,
+            group: focus.group,
+            enabled: focus.enabled,
+            scope_depth: focus.scope_depth,
+        });
+    }
+
+    /// Build directional candidates by spatial intersection.
+    ///
+    /// This is used as a high-performance first pass for arrow navigation.
+    /// It intentionally avoids building the full focus space for every key press.
+    #[inline]
+    fn collect_keyboard_focus_entries_in_rect(
+        box_tree: &BoxTree,
+        rect: Rect,
+        out: &mut SmallVec<[FocusEntry<ElementId>; 64]>,
+    ) {
+        for node in box_tree.intersect_rect(rect, QueryFilter::new().visible().keyboard_navigable())
+        {
+            let Some(meta) = box_tree.meta(node).flatten() else {
+                continue;
+            };
+            let Some(rect) = box_tree.world_bounds(node) else {
+                continue;
+            };
+            Self::push_focus_entry(meta, rect, out);
+        }
+    }
+
+    /// Handle Tab / Shift+Tab keyboard focus traversal.
+    ///
+    /// Behavior:
+    /// - No active focus: jumps to first/last candidate in linear tab order.
+    /// - Active focus: uses `DefaultPolicy` linear traversal (`Next`/`Prev`).
+    /// - If the focused element has a `group`, tries group-local traversal first.
+    /// - Falls back to full-space traversal if group traversal cannot produce a target.
+    ///
+    /// Candidates come from the cached full focus space to minimize repeated
+    /// tree walks and allocations during key-repeat.
+    pub(crate) fn element_tab_navigation(&mut self, backwards: bool) {
+        let active_focus = self
+            .gcx
+            .window_state
+            .focus_state
+            .current_path()
+            .last()
+            .copied();
+        let non_keyboard_anchor = active_focus.and_then(|current_focus| {
+            let box_tree = self.gcx.window_state.box_tree.borrow();
+            let flags = box_tree.flags(current_focus.0)?;
+            if !flags.contains(NodeFlags::VISIBLE | NodeFlags::FOCUSABLE)
+                || flags.contains(NodeFlags::KEYBOARD_NAVIGABLE)
+            {
+                return None;
+            }
+            box_tree.meta(current_focus.0).flatten().and_then(|meta| {
+                if !meta.focus.enabled {
+                    return None;
+                }
+                box_tree
+                    .world_bounds(current_focus.0)
+                    .map(|rect| (meta.focus.order, rect))
+            })
+        });
+        let current_group = if let Some(current_focus) = active_focus {
+            let box_tree = self.gcx.window_state.box_tree.borrow();
+            box_tree
+                .meta(current_focus.0)
+                .flatten()
+                .and_then(|m| m.focus.group)
+        } else {
+            None
+        };
+        let space = self.gcx.window_state.keyboard_focus_space();
+        let entries = space.nodes;
+
+        let next = if entries.is_empty() {
+            None
+        } else if active_focus.is_none() {
+            Self::initial_tab_target(entries, backwards)
+        } else {
+            let current_focus = active_focus.unwrap();
+            if !entries.iter().any(|e| e.id == current_focus) {
+                if let Some((anchor_order, anchor_rect)) = non_keyboard_anchor {
+                    let mut indices: SmallVec<[usize; 128]> = entries
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(i, e)| e.enabled.then_some(i))
+                        .collect();
+                    if indices.is_empty() {
+                        None
+                    } else {
+                        indices.sort_by(|&ia, &ib| {
+                            let a = &entries[ia];
+                            let b = &entries[ib];
+                            Self::compare_tab_order_keys(&a.order, &a.rect, &b.order, &b.rect)
+                        });
+
+                        let compare_to_anchor = |entry: &FocusEntry<ElementId>| {
+                            Self::compare_tab_order_keys(
+                                &entry.order,
+                                &entry.rect,
+                                &anchor_order,
+                                &anchor_rect,
+                            )
+                        };
+
+                        let idx = if backwards {
+                            indices
+                                .iter()
+                                .rev()
+                                .find(|&&i| compare_to_anchor(&entries[i]).is_lt())
+                                .copied()
+                                .unwrap_or(*indices.last().unwrap_or(&indices[0]))
+                        } else {
+                            indices
+                                .iter()
+                                .find(|&&i| compare_to_anchor(&entries[i]).is_gt())
+                                .copied()
+                                .unwrap_or(indices[0])
+                        };
+
+                        Some(entries[idx].id)
+                    }
+                } else {
+                    Self::initial_tab_target(entries, backwards)
+                }
+            } else {
+                let navigation = if backwards {
+                    FocusNavigation::Prev
+                } else {
+                    FocusNavigation::Next
+                };
+                let policy = DefaultPolicy {
+                    wrap: WrapMode::Scope,
+                };
+                if let Some(group) = current_group {
+                    let mut grouped: SmallVec<[FocusEntry<ElementId>; 64]> = entries
+                        .iter()
+                        .filter(|&e| e.group == Some(group))
+                        .cloned()
+                        .collect();
+                    if grouped.iter().any(|e| e.id == current_focus) && grouped.len() > 1 {
+                        let grouped_space = FocusSpace { nodes: &grouped };
+                        if let Some(next) = policy.next(current_focus, navigation, &grouped_space) {
+                            Some(next)
+                        } else {
+                            policy.next(current_focus, navigation, &space)
+                        }
+                    } else {
+                        grouped.clear();
+                        policy.next(current_focus, navigation, &space)
+                    }
+                } else {
+                    policy.next(current_focus, navigation, &space)
+                }
+            }
+        };
+
+        if let Some(next) = next {
+            self.update_focus(next, true);
+        }
+    }
+
+    /// Handle directional arrow-key focus traversal.
+    ///
+    /// Behavior:
+    /// - Builds a directional half-plane rectangle from the focused element center.
+    /// - Collects candidates via box-tree `intersect_rect` (fast spatial prefilter).
+    /// - Ensures current focus is present in the candidate set for stable policy behavior.
+    /// - Runs directional policy with no wrap (`WrapMode::Never`).
+    /// - Falls back to cached full focus space if the directional subset yields no target.
+    ///
+    /// Group semantics mirror tab traversal: group-first, then global fallback.
+    pub(crate) fn element_arrow_navigation(&mut self, key: &NamedKey) {
+        let direction = match key {
+            NamedKey::ArrowUp => FocusNavigation::Up,
+            NamedKey::ArrowDown => FocusNavigation::Down,
+            NamedKey::ArrowLeft => FocusNavigation::Left,
+            NamedKey::ArrowRight => FocusNavigation::Right,
+            _ => return,
+        };
+
+        let root_element_id = self.gcx.window_state.root_view_id.get_element_id();
+        let box_tree = self.gcx.window_state.box_tree.borrow();
+        let current_focus = self.keyboard_navigation_origin(&box_tree, root_element_id);
+        let current_group = box_tree
+            .meta(current_focus.0)
+            .flatten()
+            .and_then(|m| m.focus.group);
+        let current_rect = box_tree.world_bounds(current_focus.0);
+        let root_rect = box_tree.world_bounds(root_element_id.0);
+
+        let directional_rect = current_rect.zip(root_rect).map(|(origin, root)| {
+            let center = origin.center();
+            match direction {
+                FocusNavigation::Up => Rect::new(root.x0, root.y0, root.x1, center.y),
+                FocusNavigation::Down => Rect::new(root.x0, center.y, root.x1, root.y1),
+                FocusNavigation::Left => Rect::new(root.x0, root.y0, center.x, root.y1),
+                FocusNavigation::Right => Rect::new(center.x, root.y0, root.x1, root.y1),
+                _ => root,
+            }
+        });
+
+        let mut entries: SmallVec<[FocusEntry<ElementId>; 64]> = SmallVec::new();
+        if let Some(rect) = directional_rect {
+            Self::collect_keyboard_focus_entries_in_rect(&box_tree, rect, &mut entries);
+            if !entries.iter().any(|entry| entry.id == current_focus)
+                && box_tree.flags(current_focus.0).is_some_and(|flags| {
+                    flags.contains(NodeFlags::VISIBLE | NodeFlags::KEYBOARD_NAVIGABLE)
+                })
+                && let Some(meta) = box_tree.meta(current_focus.0).flatten()
+                && let Some(rect) = box_tree.world_bounds(current_focus.0)
+            {
+                Self::push_focus_entry(meta, rect, &mut entries);
+            }
+        }
+
+        let policy = DefaultPolicy {
+            wrap: WrapMode::Never,
+        };
+        let mut next = if entries.is_empty() {
+            None
+        } else if let Some(group) = current_group {
+            let grouped: SmallVec<[FocusEntry<ElementId>; 64]> = entries
+                .iter()
+                .filter(|&e| e.group == Some(group))
+                .cloned()
+                .collect();
+            if grouped.iter().any(|e| e.id == current_focus) {
+                let grouped_space = FocusSpace { nodes: &grouped };
+                policy
+                    .next(current_focus, direction, &grouped_space)
+                    .or_else(|| {
+                        let space = FocusSpace { nodes: &entries };
+                        policy.next(current_focus, direction, &space)
+                    })
+            } else {
+                let space = FocusSpace { nodes: &entries };
+                policy.next(current_focus, direction, &space)
+            }
+        } else {
+            let space = FocusSpace { nodes: &entries };
+            policy.next(current_focus, direction, &space)
+        };
+
+        if next.is_none() {
+            drop(box_tree);
+            let space = self.gcx.window_state.keyboard_focus_space();
+            if !space.nodes.is_empty() {
+                next = policy.next(current_focus, direction, &space);
+            }
+        } else {
+            drop(box_tree);
+        }
+
+        if let Some(next) = next {
+            self.update_focus(next, true);
+        }
     }
 }
 
@@ -1834,7 +2232,7 @@ impl RouteCx<'_, '_> {
     }
 }
 
-pub trait KeyEventExt {
+trait KeyEventExt {
     fn is_shortcut_like(&self) -> bool;
 }
 
@@ -1846,6 +2244,19 @@ impl KeyEventExt for ui_events::keyboard::KeyboardEvent {
     /// - Bare function keys (F1–F24), Escape, Delete, PrintScreen, etc.
     /// - Tab (even unmodified — it's navigation, not text)
     fn is_shortcut_like(&self) -> bool {
+        let is_arrow = matches!(
+            self.key,
+            Key::Named(
+                NamedKey::ArrowUp
+                    | NamedKey::ArrowDown
+                    | NamedKey::ArrowLeft
+                    | NamedKey::ArrowRight
+            )
+        );
+        if is_arrow && self.modifiers == Modifiers::ALT {
+            return false;
+        }
+
         let has_command_modifier = self
             .modifiers
             .intersects(Modifiers::CONTROL | Modifiers::META | Modifiers::ALT);
@@ -1873,7 +2284,7 @@ impl KeyEventExt for ui_events::keyboard::KeyboardEvent {
     }
 }
 
-pub trait PointerButtonExt {
+trait PointerButtonExt {
     fn pointer_info(&self) -> PointerInfo;
     fn logical_point(&self) -> Option<Point>;
 }

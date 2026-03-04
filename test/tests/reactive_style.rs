@@ -1115,9 +1115,6 @@ fn test_click_changes_selection_style() {
         btn1_rect
     );
 
-    // Process reactive effects and check if repaint is needed
-    let needs_repaint = harness.process_update_no_paint();
-
     // After click: btn0 should be WHITE, btn1 should be GREEN
     let style0 = harness.get_computed_style(btn0_id);
     let style1 = harness.get_computed_style(btn1_id);
@@ -1131,9 +1128,4 @@ fn test_click_changes_selection_style() {
         "Button 1 should be GREEN after clicking it, got {:?}",
         style1.get(Background)
     );
-
-    // Note: We don't check needs_repaint here because the click event already
-    // triggers process_update() internally, and the reactive effects may have
-    // already been processed. The important thing is that the styles updated.
-    let _ = needs_repaint;
 }

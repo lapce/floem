@@ -148,7 +148,7 @@ fn test_animation_affects_size() {
 fn test_animation_pause_stops_updates() {
     let root = TestRoot::new();
     let pause = Trigger::new();
-    let pause_clone = pause.clone();
+    let pause_clone = pause;
 
     let view = Empty::new()
         .style(|s| s.size(100.0, 100.0).background(palette::css::RED))
@@ -186,8 +186,8 @@ fn test_animation_resume_after_pause() {
     let root = TestRoot::new();
     let pause = Trigger::new();
     let resume = Trigger::new();
-    let pause_clone = pause.clone();
-    let resume_clone = resume.clone();
+    let pause_clone = pause;
+    let resume_clone = resume;
 
     let view = Empty::new()
         .style(|s| s.size(100.0, 100.0).background(palette::css::RED))
@@ -708,7 +708,7 @@ fn test_multiple_property_animation() {
 fn test_paused_animation_maintains_values() {
     let root = TestRoot::new();
     let pause = Trigger::new();
-    let pause_clone = pause.clone();
+    let pause_clone = pause;
 
     let view = Empty::new()
         .style(|s| s.size(50.0, 50.0))

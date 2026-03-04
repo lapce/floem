@@ -181,6 +181,7 @@ impl View for Svg {
             self.svg_hash = Some(hash);
 
             self.id.request_layout();
+            self.id.request_paint();
         }
     }
 

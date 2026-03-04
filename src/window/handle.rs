@@ -142,16 +142,12 @@ impl WindowHandle {
         #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
         let view = scope.enter(move || {
             let main_view = view_fn(window_id);
-            let main_view_id = main_view.id();
-            (
-                main_view_id,
-                Stack::new((
-                    Container::new(main_view).style(|s| s.size(100.pct(), 100.pct())),
-                    context_menu_view(scope, context_menu, size),
-                ))
-                .style(|s| s.size(100.pct(), 100.pct()))
-                .into_any(),
-            )
+            Stack::new((
+                Container::new(main_view).style(|s| s.size(100.pct(), 100.pct())),
+                context_menu_view(scope, context_menu, size),
+            ))
+            .style(|s| s.size(100.pct(), 100.pct()))
+            .into_any()
         });
 
         id.add_child(view);
@@ -1329,7 +1325,7 @@ impl WindowHandle {
                         route_kind: dispatch_kind,
                         triggered_by,
                     } => {
-                        let mut cx = GlobalEventCx::new(&mut self.window_state, id, *event);
+                        let cx = GlobalEventCx::new(&mut self.window_state, id, *event);
                         cx.route_normal(dispatch_kind, triggered_by.as_deref());
                     }
                 }
@@ -1542,7 +1538,7 @@ impl WindowHandle {
 
     #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
     pub(crate) fn show_context_menu(&self, menu: MudaMenu, pos: Option<Point>) {
-        let pos = pos.unwrap_or(self.cursor_position);
+        let pos = pos.unwrap_or(self.window_state.last_pointer.0);
         let pos = Point::new(
             pos.x / self.window_state.scale,
             pos.y / self.window_state.scale,

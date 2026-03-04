@@ -14,6 +14,10 @@ use smallvec::{SmallVec, smallvec};
 use taffy::{AvailableSpace, NodeId};
 use ui_events::pointer::{PointerId, PointerInfo};
 use understory_event_state::{click::ClickState, focus::FocusState, hover::HoverState};
+use understory_focus::{
+    FocusEntry, FocusProps,
+    adapters::box_tree::{FocusPropsLookup, build_focus_space_for_scope},
+};
 use winit::cursor::CursorIcon;
 use winit::window::Theme;
 
@@ -35,6 +39,34 @@ use crate::{
 /// Most applications only have a mouse pointer or a few touch points active at once.
 /// Uses linear search which is faster than HashMap for small N due to cache locality.
 pub(crate) type PointerCaptureMap = SmallVec<[(PointerId, ElementId); 2]>;
+
+#[derive(Default)]
+pub(crate) struct FocusNavCache {
+    built: bool,
+    meta_revision: u64,
+    adapter_nodes: Vec<FocusEntry<understory_box_tree::NodeId>>,
+    entries: SmallVec<[FocusEntry<ElementId>; 128]>,
+}
+
+struct ElementMetaFocusPropsLookup<'a> {
+    tree: &'a BoxTree,
+}
+
+impl FocusPropsLookup<understory_box_tree::NodeId> for ElementMetaFocusPropsLookup<'_> {
+    fn props(&self, id: &understory_box_tree::NodeId) -> FocusProps {
+        let Some(meta) = self.tree.meta(*id).flatten() else {
+            return FocusProps::default();
+        };
+        let focus = meta.focus;
+        FocusProps {
+            enabled: focus.enabled,
+            order: focus.order,
+            group: focus.group,
+            autofocus: focus.autofocus,
+            policy_hint: focus.policy_hint,
+        }
+    }
+}
 
 /// Encapsulates and owns the global state of the application,
 pub struct WindowState {
@@ -70,6 +102,7 @@ pub struct WindowState {
     pub(crate) hover_state: HoverState<ElementId>,
     pub(crate) key_trigger_state: bool,
     pub(crate) focus_state: FocusState<ElementId>,
+    pub(crate) last_focused_element: Option<ElementId>,
     pub(crate) file_drag_paths: Option<Rc<[std::path::PathBuf]>>,
     pub(crate) element_id_cursors: FxHashMap<ElementId, CursorStyle>,
     // whether the window is in light or dark mode
@@ -111,6 +144,7 @@ pub struct WindowState {
     /// Views that need their box tree node updated (e.g., after transform or scroll changes).
     /// These are processed after layout and before commit.
     pub(crate) views_needing_box_tree_update: FxHashSet<ViewId>,
+    pub(crate) focus_nav_cache: FocusNavCache,
 }
 
 impl WindowState {
@@ -137,6 +171,7 @@ impl WindowState {
             style_dirty: Default::default(),
             drag_tracker: DragTracker::new(),
             focus_state: FocusState::new(),
+            last_focused_element: None,
             key_trigger_state: false,
             click_state: ClickState::new(),
             hover_state: HoverState::new(),
@@ -166,6 +201,61 @@ impl WindowState {
             needs_box_tree_commit: true,
             listeners: FxHashMap::default(),
             views_needing_box_tree_update: FxHashSet::default(),
+            focus_nav_cache: FocusNavCache::default(),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn invalidate_focus_nav_cache(&mut self) {
+        self.focus_nav_cache.built = false;
+        self.focus_nav_cache.entries.clear();
+    }
+
+    #[inline]
+    fn focus_nav_cache_is_stale(&self) -> bool {
+        if !self.focus_nav_cache.built {
+            return true;
+        }
+
+        self.focus_nav_cache.meta_revision != crate::focus_nav_meta_revision()
+    }
+
+    pub(crate) fn keyboard_focus_space(&mut self) -> understory_focus::FocusSpace<'_, ElementId> {
+        if self.focus_nav_cache_is_stale() {
+            self.focus_nav_cache.entries.clear();
+            let box_tree = self.box_tree.borrow();
+            let root = self.root_view_id.get_element_id();
+            let lookup = ElementMetaFocusPropsLookup { tree: &box_tree };
+            let space = build_focus_space_for_scope(
+                &box_tree,
+                root.0,
+                &lookup,
+                &mut self.focus_nav_cache.adapter_nodes,
+            );
+
+            for node_entry in space.nodes {
+                if let Some(meta) = box_tree.meta(node_entry.id).flatten() {
+                    self.focus_nav_cache.entries.push(FocusEntry {
+                        id: meta.element_id,
+                        rect: node_entry.rect,
+                        order: node_entry.order,
+                        group: node_entry.group,
+                        enabled: node_entry.enabled,
+                        scope_depth: if meta.focus.scope_depth == 0 {
+                            node_entry.scope_depth
+                        } else {
+                            meta.focus.scope_depth
+                        },
+                    });
+                }
+            }
+
+            self.focus_nav_cache.meta_revision = crate::focus_nav_meta_revision();
+            self.focus_nav_cache.built = true;
+        }
+
+        understory_focus::FocusSpace {
+            nodes: &self.focus_nav_cache.entries,
         }
     }
 
@@ -189,6 +279,7 @@ impl WindowState {
 
     /// This removes a view from the app state.
     pub fn remove_view(&mut self, id: ViewId) {
+        self.invalidate_focus_nav_cache();
         let exists = VIEW_STORAGE.with_borrow(|s| s.view_ids.contains_key(id));
         if !exists {
             return;
@@ -706,6 +797,7 @@ impl WindowState {
     /// Call this after layout completes; then run `commit_box_tree()` to finalize world
     /// transforms, damage, and hit-testing consistency.
     pub fn update_box_tree_from_layout(&mut self) {
+        self.invalidate_focus_nav_cache();
         let box_tree = self.box_tree.clone();
         let layout_tree = self.layout_tree.clone();
         VIEW_STORAGE.with_borrow(|s| {
@@ -729,6 +821,7 @@ impl WindowState {
     /// without walking the layout tree. Children's transforms are not recalculated here;
     /// they'll be handled by the box tree's hierarchical transform system during commit.
     pub fn update_box_tree_for_view(&mut self, view_id: ViewId) {
+        self.invalidate_focus_nav_cache();
         VIEW_STORAGE.with_borrow(|s| {
             let state = s.states.get(view_id);
 
@@ -802,6 +895,7 @@ impl WindowState {
     /// Call this after any box-tree local update before relying on paint order, hit-test
     /// correctness, or damage-driven cursor/hover updates.
     pub fn commit_box_tree(&mut self) {
+        self.invalidate_focus_nav_cache();
         if let Some(dragging) = &mut self.drag_tracker.active_drag
             && let Some(dragging_preview) = dragging.dragging_preview.clone()
         {
@@ -876,6 +970,7 @@ impl WindowState {
             }
         }
         if !damage.dirty_rects.is_empty() {
+            self.invalidate_focus_nav_cache();
             self.request_paint = true;
         }
         self.needs_box_tree_commit = false;

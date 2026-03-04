@@ -277,11 +277,68 @@ mod element_id {
             self.2
         }
     }
+
+    /// Per-element focus navigation metadata kept in the box tree.
+    ///
+    /// This is intentionally lightweight (`Copy`) so event dispatch can read it
+    /// with minimal overhead while building transient focus spaces.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+    pub struct FocusNavMeta {
+        /// Optional explicit linear order key (used for tab traversal).
+        pub order: Option<i32>,
+        /// Optional logical group for policy-aware navigation.
+        pub group: Option<understory_focus::FocusSymbol>,
+        /// Optional policy selection hint for host-level policy switching.
+        pub policy_hint: Option<understory_focus::FocusSymbol>,
+        /// Depth within an app-defined focus scope.
+        pub scope_depth: u8,
+        /// Preferred initial focus candidate for a scope.
+        pub autofocus: bool,
+        /// Additional enable/disable gate independent of style flags.
+        pub enabled: bool,
+    }
+
+    /// Metadata stored per box tree node.
+    ///
+    /// Keeps the `ElementId` used by hit-testing/event routing plus optional
+    /// navigation hints for high-quality keyboard focus behavior.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct ElementMeta {
+        pub element_id: ElementId,
+        pub focus: FocusNavMeta,
+    }
+
+    impl ElementMeta {
+        pub const fn new(element_id: ElementId) -> Self {
+            Self {
+                element_id,
+                focus: FocusNavMeta {
+                    order: None,
+                    group: None,
+                    policy_hint: None,
+                    scope_depth: 0,
+                    autofocus: false,
+                    enabled: true,
+                },
+            }
+        }
+    }
 }
 pub use element_id::ElementId;
+pub use element_id::{ElementMeta, FocusNavMeta};
 
-pub type BoxTree = understory_box_tree::Tree<understory_index::backends::GridF64, ElementId>;
+pub type BoxTree = understory_box_tree::Tree<understory_index::backends::GridF64, ElementMeta>;
 // pub type BoxTree = understory_box_tree::Tree;
+
+static FOCUS_NAV_META_REVISION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+pub(crate) fn bump_focus_nav_meta_revision() {
+    FOCUS_NAV_META_REVISION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub(crate) fn focus_nav_meta_revision() -> u64 {
+    FOCUS_NAV_META_REVISION.load(std::sync::atomic::Ordering::Relaxed)
+}
 
 pub use app::{AppConfig, AppEvent, Application, launch, quit_app, reopen};
 pub use floem_reactive as reactive;
@@ -303,6 +360,7 @@ pub use platform::{Clipboard, ClipboardError, FileDialogOptions, FileInfo, FileS
 pub use platform::{Menu, SubMenu};
 pub use taffy;
 pub use ui_events;
+pub use understory_focus;
 pub use view::ViewId;
 pub use view::{AnyView, HasViewId, IntoView, LazyView, ParentView, View};
 pub use view::{Stack, StackOffset};

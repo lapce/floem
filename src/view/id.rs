@@ -27,7 +27,7 @@ use crate::event::{RouteKind, listener};
 use crate::style::recalc::StyleReason;
 use crate::view::LayoutTree;
 use crate::window::handle::get_current_view;
-use crate::{BoxTree, ElementId};
+use crate::{BoxTree, ElementId, FocusNavMeta};
 use crate::{
     ScreenLayout,
     action::add_update_message,
@@ -955,7 +955,6 @@ impl ViewId {
     ///     EventPropagation::Continue
     /// }
     /// ```
-    #[deprecated(note = "directly use `set_pointer_capture` on the `EventCx`")]
     pub fn set_pointer_capture(&self, pointer_id: PointerId) {
         self.add_update_message(UpdateMessage::SetPointerCapture {
             element_id: self.get_element_id(),
@@ -1296,10 +1295,57 @@ impl ViewId {
             let element_id = ElementId(child_element_id, *self, false);
             box_tree
                 .borrow_mut()
-                .set_meta(child_element_id, Some(element_id));
+                .set_meta(child_element_id, Some(crate::ElementMeta::new(element_id)));
             box_tree.borrow_mut().set_z_index(child_element_id, z_index);
             element_id
         })
+    }
+
+    /// Read focus navigation metadata for a specific element owned by this view.
+    pub fn focus_nav_meta_for_element(&self, element_id: ElementId) -> Option<FocusNavMeta> {
+        let box_tree = self.box_tree();
+        box_tree
+            .borrow()
+            .meta(element_id.0)
+            .flatten()
+            .map(|m| m.focus)
+    }
+
+    /// Replace focus navigation metadata for a specific element.
+    ///
+    /// Returns `false` when the element is stale and no metadata was written.
+    pub fn set_focus_nav_meta_for_element(
+        &self,
+        element_id: ElementId,
+        focus: FocusNavMeta,
+    ) -> bool {
+        debug_assert_eq!(
+            element_id.owning_id(),
+            *self,
+            "element must be owned by this view"
+        );
+        let box_tree = self.box_tree();
+        let mut box_tree = box_tree.borrow_mut();
+        let Some(mut meta) = box_tree.meta(element_id.0).flatten() else {
+            return false;
+        };
+        meta.focus = focus;
+        box_tree.set_meta(element_id.0, Some(meta));
+        crate::bump_focus_nav_meta_revision();
+        true
+    }
+
+    /// Set or clear group membership used by keyboard focus traversal policies.
+    pub fn set_focus_group_for_element(
+        &self,
+        element_id: ElementId,
+        group: Option<understory_focus::FocusSymbol>,
+    ) -> bool {
+        let Some(mut focus) = self.focus_nav_meta_for_element(element_id) else {
+            return false;
+        };
+        focus.group = group;
+        self.set_focus_nav_meta_for_element(element_id, focus)
     }
 
     /// Register this view to receive a specific event type.

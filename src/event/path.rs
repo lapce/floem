@@ -138,7 +138,7 @@ pub fn hit_test(root_id: ViewId, point: Point) -> Option<Rc<[ElementId]>> {
         // use vec instead of smallvec here for optimization of being turned into Rc<[]>.
         let path: Vec<_> = hit_ids
             .iter()
-            .map(|id| box_tree.meta(*id).flatten().unwrap())
+            .map(|id| box_tree.meta(*id).flatten().unwrap().element_id)
             .collect();
         Some(path.into())
     } else {

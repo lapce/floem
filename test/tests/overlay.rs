@@ -3,13 +3,12 @@
 //! These tests verify that the Overlay view correctly manages overlays,
 //! including event dispatch order and paint order.
 
+use floem::HasViewId;
 use floem::headless::{HeadlessHarness, TestRoot};
 use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
-use floem::view::ParentView;
 use floem::views::{
     Clip, ClipExt, ContainerExt, Decorators, Empty, Label, Overlay, OverlayExt, Stack,
 };
-use floem::{HasViewId, View};
 use serial_test::serial;
 use std::cell::Cell;
 use std::rc::Rc;

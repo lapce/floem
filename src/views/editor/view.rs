@@ -27,6 +27,7 @@ use ui_events::{
     keyboard::{Key, KeyboardEvent, Modifiers},
     pointer::{PointerButton, PointerButtonEvent},
 };
+use winit::keyboard::NamedKey;
 
 use crate::views::editor::{
     command::CommandExecuted,
@@ -1409,6 +1410,9 @@ fn editor_content(
                 move |cx, KeyboardEvent { key, modifiers, .. }| {
                     if !cx.window_state.is_focused(id) {
                         return EventPropagation::Continue;
+                    }
+                    if *key == Key::Named(NamedKey::Tab) {
+                        cx.prevent_default();
                     }
                     if handle_key_event(KeypressKey {
                         key: key.clone(),

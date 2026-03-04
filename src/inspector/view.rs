@@ -584,7 +584,12 @@ fn register_capture_elements(
             bt.reparent(element.0, Some(parent_element.0));
             bt.set_local_bounds(element.0, rect);
             bt.set_flags(element.0, NodeFlags::VISIBLE | NodeFlags::PICKABLE);
-            bt.set_meta(element.0, Some(ElementId(element.0, owner_id, false)));
+            bt.set_meta(
+                element.0,
+                Some(crate::ElementMeta::new(ElementId(
+                    element.0, owner_id, false,
+                ))),
+            );
             drop(bt);
             element_to_data_id.insert(element, captured.id_data_str.clone());
             next_parent = element;
