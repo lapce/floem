@@ -158,10 +158,16 @@ pub trait CustomEvent: Any + 'static {
 ///
 /// **Firing an event:**
 /// ```rust
-/// self.id.dispatch_event(
-///     Event::new_custom(DropdownAccept { value: *val }),
-///     DispatchKind::Directed {
-///         target: self.id.get_element_id(),
+/// # use floem::context::Phases;
+/// # use floem::event::{Event, RouteKind};
+/// # use floem::prelude::dropdown::DropdownAccept;
+/// # use floem::ViewId;
+/// let view_id = ViewId::new();
+/// let value = 1usize;
+/// view_id.route_event(
+///     Event::new_custom(DropdownAccept { value }),
+///     RouteKind::Directed {
+///         target: view_id.get_element_id(),
 ///         phases: Phases::TARGET,
 ///     },
 /// );
@@ -1215,9 +1221,16 @@ pub enum Event {
     ///
     /// # Example
     /// ```rust
-    /// Event::Pointer(PointerEvent::Down(pe)) => {
-    ///     if let Some(pointer_id) = pe.pointer.pointer_id {
-    ///         cx.request_pointer_capture(pointer_id);
+    /// # use floem::event::{Event, EventCx};
+    /// # use ui_events::pointer::PointerEvent;
+    /// fn handle(event: Event, cx: &mut EventCx) {
+    ///     match event {
+    ///         Event::Pointer(PointerEvent::Down(pe)) => {
+    ///             if let Some(pointer_id) = pe.pointer.pointer_id {
+    ///                 cx.request_pointer_capture(pointer_id);
+    ///             }
+    ///         }
+    ///         _ => {}
     ///     }
     /// }
     /// ```
@@ -1251,11 +1264,17 @@ pub enum Event {
     ///
     /// # Example
     /// ```rust
-    /// Event::Key(KeyboardEvent { key: Key::Character(c), state: KeyState::Down, .. }) => {
-    ///     if c == "s" && cx.modifiers().contains(Modifiers::CONTROL) {
-    ///         // Handle Ctrl+S — this is shortcut-like, so if the focused view
-    ///         // doesn't consume it, any view with a key listener will receive it.
-    ///         cx.prevent_default();
+    /// # use floem::event::{Event, EventCx};
+    /// # use ui_events::keyboard::{Key, KeyboardEvent, KeyState};
+    /// fn handle(event: Event, cx: &mut EventCx) {
+    ///     match event {
+    ///         Event::Key(KeyboardEvent { key: Key::Character(c), state: KeyState::Down, .. }) => {
+    ///             if c == "s" {
+    ///                 // Handle a "save" shortcut.
+    ///                 cx.prevent_default();
+    ///             }
+    ///         }
+    ///         _ => {}
     ///     }
     /// }
     /// ```
@@ -1283,9 +1302,12 @@ pub enum Event {
     ///
     /// # Example
     /// ```rust
-    /// Event::FileDrag(FileDragEvent::Drop(drop)) => {
-    ///     for path in drop.paths {
-    ///         println!("Dropped file: {:?}", path);
+    /// # use floem::event::{Event, FileDragEvent};
+    /// fn handle(event: Event) {
+    ///     if let Event::FileDrag(FileDragEvent::Drop(drop)) = event {
+    ///         for path in drop.paths.iter() {
+    ///             println!("Dropped file: {:?}", path);
+    ///         }
     ///     }
     /// }
     /// ```
@@ -1314,9 +1336,12 @@ pub enum Event {
     ///
     /// # Example
     /// ```rust
-    /// Event::PointerCapture(PointerCaptureEvent::Gained(drag_token)) => {
-    ///     // Now we have capture, start tracking the drag
-    ///     cx.start_drag(drag_token, DragConfig::default(), true);
+    /// # use floem::event::{DragConfig, Event, EventCx, PointerCaptureEvent};
+    /// fn handle(event: Event, cx: &mut EventCx) {
+    ///     if let Event::PointerCapture(PointerCaptureEvent::Gained(drag_token)) = event {
+    ///         // Now we have capture, start tracking the drag
+    ///         cx.start_drag(drag_token, DragConfig::default(), true);
+    ///     }
     /// }
     /// ```
     PointerCapture(PointerCaptureEvent),
@@ -1345,13 +1370,19 @@ pub enum Event {
     ///
     /// # Example
     /// ```rust
-    /// Event::Ime(ImeEvent::Commit(text)) => {
-    ///     // Insert the composed text into the text input
-    ///     self.insert_text(&text);
-    /// }
-    /// Event::Ime(ImeEvent::Preedit(text, cursor)) => {
-    ///     // Show preview of composition in progress
-    ///     self.show_preedit(&text, cursor);
+    /// # use floem::event::{Event, ImeEvent};
+    /// # fn insert_text(_text: &str) {}
+    /// # fn show_preedit(_text: &str, _cursor: Option<(usize, usize)>) {}
+    /// fn handle(event: Event) {
+    ///     match event {
+    ///         Event::Ime(ImeEvent::Commit(text)) => {
+    ///             insert_text(&text);
+    ///         }
+    ///         Event::Ime(ImeEvent::Preedit { text, cursor }) => {
+    ///             show_preedit(&text, cursor);
+    ///         }
+    ///         _ => {}
+    ///     }
     /// }
     /// ```
     Ime(ImeEvent),
@@ -1385,13 +1416,19 @@ pub enum Event {
     ///
     /// # Example
     /// ```rust
-    /// Event::Focus(FocusEvent::Gained) => {
-    ///     // Start showing cursor, enable text input
-    ///     self.cursor_visible = true;
-    /// }
-    /// Event::Focus(FocusEvent::Lost) => {
-    ///     // Hide cursor, commit changes
-    ///     self.cursor_visible = false;
+    /// # use floem::event::{Event, FocusEvent};
+    /// fn handle(event: Event) {
+    ///     let mut cursor_visible = false;
+    ///     match event {
+    ///         Event::Focus(FocusEvent::Gained) => {
+    ///             cursor_visible = true;
+    ///         }
+    ///         Event::Focus(FocusEvent::Lost) => {
+    ///             cursor_visible = false;
+    ///         }
+    ///         _ => {}
+    ///     }
+    ///     let _ = cursor_visible;
     /// }
     /// ```
     Focus(FocusEvent),
@@ -1419,12 +1456,13 @@ pub enum Event {
     ///
     /// # Example
     /// ```rust
-    /// view.on_event(listener::WindowResized, |cx, event| {
+    /// # use floem::event::{Event, EventPropagation, WindowEvent};
+    /// fn on_window_event(event: &Event) -> EventPropagation {
     ///     if let Event::Window(WindowEvent::Resized(size)) = event {
     ///         println!("Window resized to {}x{}", size.width, size.height);
     ///     }
     ///     EventPropagation::Continue
-    /// })
+    /// }
     /// ```
     Window(WindowEvent),
 
@@ -1460,9 +1498,12 @@ pub enum Event {
     ///
     /// # Example
     /// ```rust
-    /// Event::Interaction(InteractionEvent::Click) => {
-    ///     // Handle click regardless of whether it came from mouse or keyboard
-    ///     if let Some(Event::Pointer(pe)) = cx.triggered_by {
+    /// # use floem::event::{Event, InteractionEvent};
+    /// let event = Event::Interaction(InteractionEvent::Click);
+    /// let triggered_by: Option<Event> = None;
+    /// if matches!(event, Event::Interaction(InteractionEvent::Click)) {
+    ///     // Handle click regardless of whether it came from mouse or keyboard.
+    ///     if let Some(Event::Pointer(_)) = triggered_by {
     ///         // Access pointer-specific details
     ///     }
     /// }
@@ -1609,19 +1650,18 @@ pub enum Event {
     /// directly. Use the typed event data parameter passed to your handler instead:
     ///
     /// ```rust
+    /// # enum Event { Pointer, Extracted }
+    /// # struct Cx { event: Event }
     /// // ❌ Don't do this:
-    /// view.on_event(EventListener::PointerDown, |cx, _| {
-    ///     if let Event::Pointer(pe) = &cx.event {  // Will be Event::Extracted!
-    ///         // ...
-    ///     }
-    /// });
+    /// let bad = |cx: &Cx| {
+    ///     matches!(cx.event, Event::Pointer) // may observe temporary extraction state
+    /// };
     ///
     /// // ✅ Do this instead:
-    /// view.on_event(EventListener::PointerDown, |cx, event| {
-    ///     if let Event::Pointer(pe) = event {  // Correct - use the parameter
-    ///         // ...
-    ///     }
-    /// });
+    /// let good = |event: &Event| {
+    ///     matches!(event, Event::Pointer)
+    /// };
+    /// # let _ = (bad, good);
     /// ```
     Extracted,
 }

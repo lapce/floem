@@ -1913,9 +1913,12 @@ define_builtin_props!(
     ///
     /// **Example:**
     /// ```rust
-    /// s.translate_x(10.0)  // Applied first
-    ///  .scale(1.5)          // Applied second
-    ///  .transform(Affine::rotate(0.5))  // Applied last (rotates the already-translated, scaled element)
+    /// # use floem::peniko::kurbo::Affine;
+    /// # use floem::style::Style;
+    /// let _style = Style::new()
+    ///     .translate_x(10.0) // Applied first
+    ///     .scale(1.5) // Applied second
+    ///     .transform(Affine::rotate(0.5)); // Applied last
     /// ```
     Transform transform {tr}: Affine {} = Affine::IDENTITY,
 

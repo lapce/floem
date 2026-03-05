@@ -852,17 +852,19 @@ impl StylePropValue for BoxShadow {
 /// # Examples
 ///
 /// ```rust
+/// # use floem::prelude::*;
 /// // A button that can be focused by any means
-/// button("Click me")
-///     .focusable(Focus::Keyboard)
+/// let _button = Button::new("Click me")
+///     .style(|s| s.keyboard_navigable());
 ///
 /// // A custom scrollable container: focusable for arrow keys, but not in tab order
-/// scroll_view(content)
-///     .focusable(Focus::PointerAndProgrammatic)
+/// let _scrollable = Empty::new()
+///     .scroll()
+///     .style(|s| s.focusable());
 ///
 /// // A purely decorative element that should never receive focus
-/// container(decoration)
-///     .focusable(Focus::None)
+/// let _decorative = Container::new(Empty::new())
+///     .style(|s| s.focus_none());
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Focus {

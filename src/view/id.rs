@@ -1386,24 +1386,32 @@ impl ViewId {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```rust
+    /// # use floem::context::Phases;
+    /// # use floem::event::{Event, InteractionEvent, RouteKind};
+    /// # use floem::ViewId;
+    /// # let view_id = ViewId::new();
+    /// # let focused_view = view_id.get_element_id();
     /// // Dispatch a click directly to a specific view (target only, no propagation)
-    /// view_id.dispatch_event(
+    /// view_id.route_event(
     ///     Event::Interaction(InteractionEvent::Click),
-    ///     DispatchKind::Directed {
+    ///     RouteKind::Directed {
     ///         target: view_id.get_element_id(),
     ///         phases: Phases::TARGET
     ///     }
     /// );
     ///
     /// // Dispatch a key event with full capture/bubble phases
-    /// view_id.dispatch_event(
-    ///     Event::Key(key_event),
-    ///     DispatchKind::Directed {
-    ///         target: focused_view,
-    ///         phases: Phases::all()
-    ///     }
-    /// );
+    /// # if false {
+    /// # let key_event = unimplemented!();
+    /// # view_id.route_event(
+    /// #     Event::Key(key_event),
+    /// #     RouteKind::Directed {
+    /// #         target: focused_view,
+    /// #         phases: Phases::all()
+    /// #     }
+    /// # );
+    /// # }
     /// ```
     pub fn route_event(&self, event: crate::event::Event, route_kind: RouteKind) {
         self.route_event_with_caused_by(event, route_kind, None);

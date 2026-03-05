@@ -153,11 +153,13 @@ custom_event!(SliderHover, SliderState, SliderHover::extract_state);
 /// **Responding to events**:
 /// You can respond to slider changes by listening to `SliderChanged` events:
 /// ```rust
+/// # use floem::event::EventPropagation;
 /// # use floem::prelude::*;
+/// # use floem::views::slider::{self, SliderChanged};
 /// slider::Slider::new(|| 40.pct())
 ///     .on_event(SliderChanged::listener(), |cx, state| {
 ///         println!("Value: {}", state.value);
-///         println!("Percent: {}", state.pct);
+///         println!("Percent: {:?}", state.pct);
 ///         println!("Pixels: {}", state.px);
 ///         EventPropagation::Continue
 ///     });
@@ -165,10 +167,12 @@ custom_event!(SliderHover, SliderState, SliderHover::extract_state);
 ///
 /// You can also listen to `SliderHover` events to respond when the user hovers over the slider:
 /// ```rust
+/// # use floem::event::EventPropagation;
 /// # use floem::prelude::*;
+/// # use floem::views::slider::{self, SliderHover};
 /// slider::Slider::new(|| 40.pct())
 ///     .on_event(SliderHover::listener(), |cx, state| {
-///         println!("Hovering at: {}", state.pct);
+///         println!("Hovering at: {:?}", state.pct);
 ///         EventPropagation::Continue
 ///     });
 /// ```
@@ -364,12 +368,14 @@ impl Slider {
     ///
     /// # Example
     /// ```rust
+    /// # use floem::event::EventPropagation;
     /// # use floem::prelude::*;
+    /// # use floem::views::slider::{self, SliderChanged};
     /// let percent = RwSignal::new(40.pct());
     ///
     /// slider::Slider::new(move || percent.get())
     ///     .on_event(SliderChanged::listener(), move |cx, event| {
-    ///         percent.set(event.state.pct);
+    ///         percent.set(event.pct);
     ///         EventPropagation::Continue
     ///     })
     ///     .slider_style(|s| {
@@ -452,14 +458,16 @@ impl Slider {
     ///
     /// # Example
     /// ```rust
+    /// # use floem::event::EventPropagation;
     /// # use floem::prelude::*;
+    /// # use floem::views::slider::{self, SliderChanged};
     /// let value = RwSignal::new(-25.0);
     /// let range = -50.0..=100.0;
     ///
     /// slider::Slider::new_ranged(move || value.get(), range)
     ///     .step(5.0)
     ///     .on_event(SliderChanged::listener(), move |cx, event| {
-    ///         value.set(event.state.value);
+    ///         value.set(event.value);
     ///         EventPropagation::Continue
     ///     })
     ///     .slider_style(|s| {

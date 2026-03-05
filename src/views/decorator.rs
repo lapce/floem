@@ -220,14 +220,15 @@ pub trait Decorators: IntoView {
     ///
     /// # Example
     /// ```rust
+    /// # use floem::prelude::*;
     /// use floem::event::DragConfig;
     /// use std::time::Duration;
     ///
-    /// view.draggable_with_config(
+    /// let _view = empty().draggable_with_config(|| {
     ///     DragConfig::default()
     ///         .with_threshold(5.0)
     ///         .with_animation_duration(Duration::from_millis(400))
-    /// )
+    /// });
     /// ```
     fn draggable_with_config(
         self,

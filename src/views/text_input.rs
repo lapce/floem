@@ -167,7 +167,7 @@ pub enum TextDirection {
 ///     .style(|s| s
 ///         .width(250.)
 ///         // Enable keyboard navigation on the widget
-///         .focusable(true)
+///         .focusable()
 ///      );
 ///
 /// // Stylized text example:
@@ -196,7 +196,7 @@ pub enum TextDirection {
 ///             .font_weight(FontWeight::BOLD)
 ///         )
 ///         .font_family("monospace".to_owned())
-///         .focusable(true)
+///         .focusable()
 ///     );
 /// ```
 /// ### Reactivity

@@ -251,14 +251,14 @@ pub(crate) struct VirtualStackState<T> {
 /// ```
 /// use floem::prelude::*;
 ///
-/// VirtualStack::new(move || 1..=1000000)
+/// let _list = VirtualStack::new(move || 1..=1000000)
 ///     .style(|s| {
 ///         s.flex_col().class(LabelClass, |s| {
 ///             s.padding_vert(2.5).width_full().justify_center()
 ///         })
 ///     })
 ///     .scroll()
-///     .style(|s| s.size(200., 500.).border(1.0))
+///     .style(|s| s.size(200., 500.).border(1.0));
 /// ```
 pub fn virtual_stack<T, IF, I, KF, K, VF, V>(
     each_fn: IF,

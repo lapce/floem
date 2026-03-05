@@ -91,11 +91,11 @@ impl Overlay {
     /// # Example
     /// ```rust
     /// use floem::prelude::*;
-    /// use floem::views::Overlay;
+    /// use floem::views::{Label, Overlay};
     ///
     /// let message = RwSignal::new("Loading...".to_string());
     ///
-    /// Overlay::new_dyn(move || Label::new(message.get()))
+    /// Overlay::new_dyn(move || Label::new(message.get()));
     /// ```
     pub fn new_dyn<CF, V>(child_fn: CF) -> Self
     where

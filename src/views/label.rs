@@ -443,7 +443,10 @@ style_class!(
 /// # Example
 ///
 /// ```rust
-/// "Some long text that might overflow"
+/// # use floem::event::EventPropagation;
+/// # use floem::prelude::*;
+/// # use floem::style::TextOverflow;
+/// Label::derived(|| "Some long text that might overflow")
 ///     .style(|s| s.text_overflow(TextOverflow::Ellipsis))
 ///     .on_event(TextOverflowChanged::listener(), |cx, event| {
 ///         if event.is_overflowing {
@@ -452,7 +455,7 @@ style_class!(
 ///             println!("Text fits completely");
 ///         }
 ///         EventPropagation::Continue
-///     })
+///     });
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TextOverflowChanged {

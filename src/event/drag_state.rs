@@ -136,34 +136,35 @@ pub(crate) struct DraggingPreview {
 /// # Example
 ///
 /// ```rust
-/// impl MyView {
-///     fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
-///         match &cx.event {
-///             Event::Pointer(PointerEvent::Down(pe)) => {
-///                 // Request pointer capture first
-///                 if let Some(pointer_id) = pe.pointer.pointer_id {
-///                     cx.set_pointer_capture(pointer_id);
-///                 }
+/// use floem::event::{
+///     DragConfig, DragEvent, DragSourceEvent, DragTargetEvent, Event, EventCx, EventPropagation,
+///     PointerCaptureEvent,
+/// };
+/// use ui_events::pointer::PointerEvent;
+///
+/// fn handle(event: Event, cx: &mut EventCx) -> EventPropagation {
+///     match event {
+///         Event::Pointer(PointerEvent::Down(pe)) => {
+///             if let Some(pointer_id) = pe.pointer.pointer_id {
+///                 cx.request_pointer_capture(pointer_id);
 ///             }
-///             Event::PointerCapture(PointerCaptureEvent::Gained(_)) => {
-///                 // Now request drag
-///                 cx.request_drag();
-///             }
-///             Event::DragSource(DragSourceEvent::Start(_)) => {
-///                 println!("Drag started!");
-///             }
-///             Event::DragSource(DragSourceEvent::Drop(_)) => {
-///                 println!("Dropped!");
-///             }
-///             Event::DragTarget(DragTargetEvent::Drop(e)) => {
-///                 // Accept the drop
-///                 cx.prevent_default();
-///                 println!("Drop accepted from element {:?}", e.other_element);
-///             }
-///             _ => {}
 ///         }
-///         EventPropagation::Continue
+///         Event::PointerCapture(PointerCaptureEvent::Gained(drag_token)) => {
+///             cx.start_drag(drag_token, DragConfig::default(), true);
+///         }
+///         Event::Drag(DragEvent::Source(DragSourceEvent::Start(_))) => {
+///             println!("Drag started!");
+///         }
+///         Event::Drag(DragEvent::Source(DragSourceEvent::End(_))) => {
+///             println!("Drag ended!");
+///         }
+///         Event::Drag(DragEvent::Target(DragTargetEvent::Drop(e))) => {
+///             cx.prevent_default();
+///             println!("Drop accepted from element {:?}", e.other_element);
+///         }
+///         _ => {}
 ///     }
+///     EventPropagation::Continue
 /// }
 /// ```
 pub(crate) struct DragTracker {

@@ -154,7 +154,7 @@ custom_event!(DropdownAccept<T>);
 /// ```rust
 /// # use strum::IntoEnumIterator;
 /// #
-/// # #[derive(Clone, strum::EnumIter, PartialEq)]
+/// # #[derive(Clone, Debug, strum::EnumIter, PartialEq)]
 /// # enum Character {
 /// #     Ori,
 /// #     Naru,
