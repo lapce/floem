@@ -40,10 +40,7 @@ fn checkbox_svg(
             }
         }
     };
-    svg(check_svg)
-        .update_value(update_svg)
-        .class(CheckboxClass)
-        .style(|s| s.focusable(true))
+    svg(check_svg).update_value(update_svg).class(CheckboxClass)
 }
 
 /// # A customizable checkbox view for boolean selection.
@@ -80,7 +77,7 @@ impl Checkbox {
         let (inbound_signal, outbound_signal) = create_value_container_signals(checked);
 
         value_container(
-            checkbox_svg(inbound_signal.read_only(), custom_check).on_click_stop(move |_| {
+            checkbox_svg(inbound_signal.read_only(), custom_check).action(move || {
                 let checked = inbound_signal.get_untracked();
                 outbound_signal.set(!checked);
             }),
@@ -106,7 +103,7 @@ impl Checkbox {
         checked: impl SignalGet<bool> + SignalUpdate<bool> + Copy + 'static,
         custom_check: impl Into<String> + Clone + 'static,
     ) -> impl IntoView {
-        checkbox_svg(checked, custom_check).on_click_stop(move |_| {
+        checkbox_svg(checked, custom_check).action(move || {
             checked.update(|val| *val = !*val);
         })
     }
@@ -135,14 +132,14 @@ impl Checkbox {
 
         value_container(
             Stack::horizontal((
-                checkbox_svg(inbound_signal.read_only(), custom_check).on_click_stop(move |_| {
+                checkbox_svg(inbound_signal.read_only(), custom_check).action(move || {
                     let checked = inbound_signal.get_untracked();
                     outbound_signal.set(!checked);
                 }),
                 views::Label::derived(label),
             ))
             .class(LabeledCheckboxClass)
-            .on_click_stop(move |_| {
+            .action(move || {
                 let checked = inbound_signal.get_untracked();
                 outbound_signal.set(!checked);
             })
@@ -172,12 +169,12 @@ impl Checkbox {
         custom_check: impl Into<String> + Clone + 'static,
     ) -> impl IntoView {
         Stack::horizontal((
-            checkbox_svg(checked, custom_check).on_click_stop(move |_| {
+            checkbox_svg(checked, custom_check).action(move || {
                 checked.update(|val| *val = !*val);
             }),
             views::Label::derived(label),
         ))
-        .on_click_stop(move |_| {
+        .action(move || {
             checked.update(|val| *val = !*val);
         })
         .class(LabeledCheckboxClass)

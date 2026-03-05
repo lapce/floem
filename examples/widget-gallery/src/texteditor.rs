@@ -1,19 +1,13 @@
 use floem::{
-    reactive::{RwSignal, SignalGet, SignalUpdate},
-    ui_events::keyboard::{Key, NamedKey},
-    unit::UnitExt,
-    views::{
-        editor::{
-            command::{Command, CommandExecuted},
-            core::{
-                command::EditCommand, cursor::CursorAffinity, editor::EditType,
-                selection::Selection,
-            },
-            text::{default_dark_color, SimpleStyling},
+    action::inspect,
+    prelude::*,
+    views::editor::{
+        command::{Command, CommandExecuted},
+        core::{
+            command::EditCommand, cursor::CursorAffinity, editor::EditType, selection::Selection,
         },
-        text_editor, Button, Decorators, Stack,
+        text::{SimpleStyling, default_dark_color},
     },
-    IntoView, View,
 };
 
 pub fn editor_view() -> impl IntoView {
@@ -48,7 +42,7 @@ pub fn editor_view() -> impl IntoView {
         .placeholder("Some placeholder text");
     let doc = editor_a.doc();
 
-    let view = Stack::new((
+    Stack::new((
         editor_a,
         editor_b,
         Stack::new((
@@ -78,12 +72,10 @@ pub fn editor_view() -> impl IntoView {
             .gap(10)
             .items_center()
             .justify_center()
-    });
-
-    let id = view.id();
-    view.on_key_up(
-        Key::Named(NamedKey::F11),
-        |m| m.is_empty(),
-        move |_| id.inspect(),
-    )
+    })
+    .on_event_stop(el::KeyUp, |_, KeyboardEvent { key, .. }| {
+        if *key == Key::Named(NamedKey::F11) {
+            inspect();
+        }
+    })
 }

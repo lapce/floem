@@ -2,21 +2,27 @@ use crate::ViewId;
 use crate::inspector::CapturedView;
 use crate::views::VirtualVector;
 use floem_reactive::{RwSignal, SignalGet, SignalUpdate};
+use std::collections::HashMap;
 use std::ops::AddAssign;
 use std::rc::Rc;
+use taffy::Display;
 
 #[derive(Clone)]
 pub struct CapturedDatas {
     pub root: CapturedData,
     pub focus_line: RwSignal<usize>,
+    by_data_id: HashMap<String, (ViewId, bool)>,
 }
 
 impl CapturedDatas {
     pub fn init_from_view(view: Rc<CapturedView>) -> Self {
         let root = CapturedData::init_from_view(view);
+        let mut by_data_id = HashMap::new();
+        root.fill_data_id_index(&mut by_data_id);
         Self {
             root,
             focus_line: RwSignal::new(0),
+            by_data_id,
         }
     }
 
@@ -44,6 +50,19 @@ impl CapturedDatas {
         level: usize,
     ) -> Vec<(usize, usize, CapturedData)> {
         self.root.get_children(next, min, max, level)
+    }
+
+    pub fn visible_data_id_map(&self) -> HashMap<String, ViewId> {
+        self.by_data_id
+            .iter()
+            .filter_map(|(data_id, (view_id, is_visible))| {
+                if *is_visible {
+                    Some((data_id.clone(), *view_id))
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 }
 #[derive(Clone, Debug)]
@@ -177,6 +196,17 @@ impl CapturedData {
         }
         children_data
     }
+
+    fn fill_data_id_index(&self, index: &mut HashMap<String, (ViewId, bool)>) {
+        let visible = self.view_conf.direct_style.builtin().display() != Display::None
+            && self.view_conf.world_bounds.area() > 0.0;
+        index.insert(self.view_conf.id_data_str.clone(), (self.id, visible));
+        if let DataType::Internal { children, .. } = &self.ty {
+            for child in children {
+                child.fill_data_id_index(index);
+            }
+        }
+    }
 }
 
 impl VirtualVector<(usize, usize, CapturedData)> for CapturedDatas {
@@ -185,7 +215,7 @@ impl VirtualVector<(usize, usize, CapturedData)> for CapturedDatas {
     }
 
     fn slice(
-        &mut self,
+        &self,
         range: std::ops::Range<usize>,
     ) -> impl Iterator<Item = (usize, usize, CapturedData)> {
         let min = range.start;

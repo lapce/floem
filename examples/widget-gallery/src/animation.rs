@@ -1,12 +1,4 @@
-use floem::{
-    animate::Animation,
-    event::EventListener as EL,
-    peniko::color::palette,
-    reactive::{RwSignal, SignalGet, Trigger},
-    unit::DurationUnitExt,
-    views::{Decorators, Stack},
-    IntoView,
-};
+use floem::{animate::Animation, prelude::*, reactive::Trigger};
 
 pub fn animation_view() -> impl IntoView {
     let animation = RwSignal::new(
@@ -30,6 +22,7 @@ pub fn animation_view() -> impl IntoView {
 
     Stack::horizontal((
         ().style(|s| s.background(palette::css::RED).size(500, 100))
+            .debug_name("Animating")
             .animation(move |_| animation.get().duration(10.seconds())),
         ().style(|s| {
             s.background(palette::css::BLUE)
@@ -55,10 +48,10 @@ pub fn animation_view() -> impl IntoView {
                     .resume(move || resume.track())
                     .delay(3.seconds())
             })
-            .on_event_stop(EL::PointerEnter, move |_| {
+            .on_event_stop(listener::PointerEnter, move |_, _| {
                 pause.notify();
             })
-            .on_event_stop(EL::PointerLeave, move |_| {
+            .on_event_stop(listener::PointerLeave, move |_, _| {
                 resume.notify();
             }),
     ))

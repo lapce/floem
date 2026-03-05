@@ -1,5 +1,4 @@
 use floem::{
-    event::{Event, EventListener},
     kurbo::Size,
     prelude::*,
     style::AlignContent,
@@ -14,14 +13,14 @@ pub mod tab_navigation;
 
 fn list_item<V: IntoView + 'static>(name: String, view_fn: impl Fn() -> V) -> impl IntoView {
     Stack::horizontal((
-        Label::derived(move || name.clone()).style(|s| s),
+        name.style(|s| s.width_full()),
         Container::new(view_fn()).style(|s| s.width_full().justify_content(AlignContent::End)),
     ))
-    .style(|s| s.width(200))
+    .style(|s| s.width(250))
 }
 
 fn app_view() -> impl IntoView {
-    let view = Stack::vertical((
+    Stack::vertical((
         Label::derived(move || String::from("Static layouts"))
             .style(|s| s.font_size(30.0).margin_bottom(15.0)),
         list_item(String::from("Left sidebar"), move || {
@@ -93,19 +92,10 @@ fn app_view() -> impl IntoView {
             .height_full()
             .padding(10.0)
             .row_gap(10.0)
-    });
-
-    let id = view.id();
-    view.on_event_stop(EventListener::KeyUp, move |e| {
-        if let Event::Key(KeyboardEvent {
-            state: KeyState::Up,
-            key,
-            ..
-        }) = e
-        {
-            if *key == Key::Named(NamedKey::F11) {
-                id.inspect();
-            }
+    })
+    .on_event_stop(listener::KeyUp, move |_cx, KeyboardEvent { key, .. }| {
+        if let Key::Named(NamedKey::F11) = key {
+            floem::action::inspect();
         }
     })
     .window_title(|| String::from("Layout examples"))

@@ -1,70 +1,98 @@
+use std::{any::Any, cell::RefCell, rc::Rc, time::Duration};
+
 use crate::{
-    ViewId,
-    context::{ComputeLayoutCx, EventCx, PaintCx, UpdateCx},
-    event::{Event, EventPropagation},
+    BoxTree, ElementId, ViewId,
+    context::{EventCx, PaintCx, UpdateCx},
+    easing::Linear,
+    event::{
+        DragEvent, DragSourceEvent, Event, EventPropagation, InteractionEvent, Phase,
+        listener::UpdatePhaseLayout,
+    },
     prelude::*,
     prop, prop_extractor,
     style::{
         CursorStyle, CustomStylable, CustomStyle, FlexDirectionProp, Style, StyleClass,
-        StyleSelector,
+        recalc::{StyleReason, StyleReasonFlags},
     },
     style_class,
-    unit::Px,
-    view::StackOffset,
+    unit::{Pct, Px},
 };
 use floem_reactive::Effect;
 use peniko::{
     Brush,
-    kurbo::{self, Line, Point, Rect, Stroke},
+    color::palette::css,
+    kurbo::{Axis, Rect},
 };
-use taffy::FlexDirection;
-use ui_events::pointer::{
-    PointerButton, PointerButtonEvent, PointerEvent, PointerState, PointerUpdate,
-};
+use rustc_hash::FxHashMap;
+use taffy::{FlexDirection, Overflow};
+use ui_events::pointer::PointerEvent;
+use understory_box_tree::NodeFlags;
 
 style_class!(
     /// The style class that is applied to all [`ResizableStack`] views.
     pub ResizableClass
 );
+style_class!(
+    /// The style class that is applied to all ResizableHandles.
+    pub ResizableHandleClass
+);
 
-pub(crate) fn create_resizable(children: Vec<Box<dyn View>>) -> ResizableStack {
+pub(crate) fn create_resizable(children: Vec<Box<dyn View>>) -> Resizable {
     let id = ViewId::new();
-    let offsets = children
-        .iter()
-        .map(|c| {
-            let state = c.id().state();
-            let offset = state.borrow_mut().style.next_offset();
-            state.borrow_mut().style.push(Style::new());
-            offset
-        })
-        .collect();
-    id.set_children_vec(children);
+    id.register_listener(listener::UpdatePhaseLayout::listener_key());
 
-    ResizableStack {
+    let mut view_children = Vec::new();
+    let mut child_ids = Vec::new();
+
+    let mut children_iter = children.into_iter().peekable();
+
+    while let Some(c) = children_iter.next() {
+        let child_id = ViewId::new();
+        child_id.add_child(c);
+        let resize_child = ResizeChild {
+            id: child_id,
+            set_basis_percent: None,
+            is_last: children_iter.peek().is_none(),
+        }
+        .into_any();
+        child_ids.push(child_id);
+        view_children.push(resize_child);
+    }
+
+    id.set_children_vec(view_children);
+
+    let mut handles = FxHashMap::default();
+    for i in 0..child_ids.len() - 1 {
+        let child_id = child_ids[i];
+        let next_child_id = child_ids[i + 1];
+        let handle = Handle::new(id, child_id, next_child_id);
+        handles.insert(handle.element_id, handle);
+    }
+
+    Resizable {
         id,
-        style: Default::default(),
         re_style: ReStyle::default(),
-        handle_style: Default::default(),
-        hovered_handle_style: Default::default(),
-        cursor_pos: Point::ZERO,
-        should_clear_on_up: None,
-        layouts: Vec::new(),
-        handle_state: HandleState::None,
-        style_offsets: offsets,
+        handles,
     }
 }
+
 /// Creates a [ResizableStack] from a group of `Views`.
-pub fn resizable<VT: ViewTuple + 'static>(children: VT) -> ResizableStack {
+#[deprecated(note = "use ResizableStack::new")]
+pub fn resizable<VT: ViewTuple + 'static>(children: VT) -> Resizable {
     create_resizable(children.into_views())
 }
 
 prop!(
     /// The color of the handle
-    pub HandleColor: Option<Brush> {} = None
+    pub HandleColor: Brush {} = Brush::Solid(css::TRANSPARENT)
 );
 prop!(
     /// The width of the handle
-    pub HandleThickness: Px {} = Px(10.)
+    pub HandleThickness: Px {} = Px(6.)
+);
+prop!(
+    /// The width of the handle that is used for hit testing.
+    pub HandleHitTestThickness: Px {} = Px(10.)
 );
 prop!(
     /// The cursor style over the handle.
@@ -81,31 +109,270 @@ prop_extractor! {
     HandleStyle {
         color: HandleColor,
         thickness: HandleThickness,
+        hit_test_thickness: HandleHitTestThickness,
         cursor: HandleCursorStyle,
     }
 }
 
-enum HandleState {
-    None,
-    Hovered(usize),
-    Active(usize),
+pub enum ResizeChildMessage {
+    SetBasisPercent(Pct),
+    ClearBasis,
+}
+
+pub struct ResizeChild {
+    id: ViewId,
+    set_basis_percent: Option<Pct>,
+    is_last: bool,
+}
+impl View for ResizeChild {
+    fn id(&self) -> ViewId {
+        self.id
+    }
+
+    fn view_style(&self) -> Option<Style> {
+        Some(
+            Style::new()
+                .apply_opt(self.set_basis_percent, |s, percent| s.flex_basis(percent))
+                .apply_if(self.is_last, |s| s.flex_grow(1.))
+                .min_size(0., 0.)
+                .overflow_x(Overflow::Clip)
+                .overflow_y(Overflow::Clip),
+        )
+    }
+
+    fn update(&mut self, _cx: &mut UpdateCx, state: Box<dyn Any>) {
+        if let Ok(msg) = state.downcast::<ResizeChildMessage>() {
+            self.id.request_style(StyleReason::view_style());
+            self.id.request_layout();
+            match *msg {
+                ResizeChildMessage::SetBasisPercent(percent) => {
+                    self.set_basis_percent = Some(percent)
+                }
+                ResizeChildMessage::ClearBasis => self.set_basis_percent = None,
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct Handle {
+    /// Access to relevent view ids for message passing
+    parent_id: ViewId,
+    affected_child_id: ViewId,
+    next_child_id: ViewId,
+    element_id: ElementId,
+    box_tree: Rc<RefCell<BoxTree>>,
+    handle_style: HandleStyle,
+}
+impl Handle {
+    fn new(parent_id: ViewId, affected_child_id: ViewId, next_child_id: ViewId) -> Self {
+        let box_tree = parent_id.box_tree();
+        let element_id = parent_id.create_child_element_id(1);
+
+        Self {
+            parent_id,
+            affected_child_id,
+            next_child_id,
+            element_id,
+            box_tree,
+            handle_style: Default::default(),
+        }
+    }
+
+    fn set_position(&mut self, axis: Axis) {
+        let parent_content = self.parent_id.get_content_rect_local();
+        let affected_rect = self.affected_child_id.get_layout_rect();
+        let next_rect = self.next_child_id.get_layout_rect();
+        let hit_test_thickness = self.handle_style.hit_test_thickness().0;
+
+        let new_rect = match axis {
+            Axis::Horizontal => {
+                // Center handle in the gap between children
+                let center_x = (affected_rect.x1 + next_rect.x0) / 2.0;
+                let half_width = hit_test_thickness / 2.0;
+                Rect::new(
+                    center_x - half_width,
+                    parent_content.y0,
+                    center_x + half_width,
+                    parent_content.y1,
+                )
+            }
+            Axis::Vertical => {
+                // Center handle in the gap between children
+                let center_y = (affected_rect.y1 + next_rect.y0) / 2.0;
+                let half_height = hit_test_thickness / 2.0;
+                Rect::new(
+                    parent_content.x0,
+                    center_y - half_height,
+                    parent_content.x1,
+                    center_y + half_height,
+                )
+            }
+        };
+
+        self.box_tree
+            .borrow_mut()
+            .set_local_bounds(self.element_id.0, new_rect);
+        self.box_tree
+            .borrow_mut()
+            .set_flags(self.element_id.0, NodeFlags::VISIBLE | NodeFlags::PICKABLE);
+    }
+
+    fn event(&mut self, cx: &mut EventCx, axis: Axis) {
+        match &cx.event {
+            Event::Interaction(InteractionEvent::DoubleClick) => {
+                // Reset to equal sizes
+                self.affected_child_id
+                    .update_state(ResizeChildMessage::ClearBasis);
+                self.next_child_id
+                    .update_state(ResizeChildMessage::ClearBasis);
+            }
+            Event::Pointer(PointerEvent::Down(e)) => {
+                if let Some(pointer_id) = e.pointer.pointer_id {
+                    cx.window_state
+                        .set_pointer_capture(pointer_id, self.element_id);
+                }
+            }
+            Event::PointerCapture(crate::event::PointerCaptureEvent::Gained(drag)) => {
+                cx.start_drag(
+                    *drag,
+                    crate::event::DragConfig {
+                        threshold: 1.,
+                        animation_duration: Duration::ZERO,
+                        easing: Rc::new(Linear),
+                        custom_data: None,
+                        track_targets: false,
+                    },
+                    false,
+                );
+            }
+            Event::Pointer(PointerEvent::Leave(_)) => {
+                cx.window_state.clear_cursor(self.element_id);
+            }
+            Event::Pointer(PointerEvent::Move(_)) => {
+                let cursor = match axis {
+                    Axis::Horizontal => CursorStyle::ColResize,
+                    Axis::Vertical => CursorStyle::RowResize,
+                };
+                let cursor = self.handle_style.cursor().unwrap_or(cursor);
+                cx.window_state.set_cursor(self.element_id, cursor);
+            }
+            Event::Drag(DragEvent::Source(DragSourceEvent::Move(dme))) => {
+                let point = dme.current_state.logical_point();
+                let affected_rect = self.affected_child_id.get_layout_rect();
+                let next_rect = self.next_child_id.get_layout_rect();
+
+                // Calculate the gap between children
+                let (_, affected_x1) = affected_rect.get_coords(axis);
+                let (next_x0, _) = next_rect.get_coords(axis);
+                let gap_size = next_x0 - affected_x1;
+
+                // Use the CURRENT rendered sizes of just these two children
+                let pair_total =
+                    affected_rect.size().get_coord(axis) + next_rect.size().get_coord(axis);
+
+                if pair_total <= 0.0 {
+                    return;
+                }
+
+                // The mouse position relative to where the affected child starts
+                let mouse_offset = point.get_coord(axis) - affected_rect.origin().get_coord(axis);
+
+                // Subtract half the gap since the handle is centered in it
+                let affected_size = mouse_offset - (gap_size / 2.0);
+
+                // What fraction of the pair does the affected child want?
+                let affected_fraction = affected_size / pair_total;
+
+                // Apply min/max as fractions
+                let min_fraction = 0.1; // 10%
+                let max_fraction = 0.9; // 90%
+                let clamped_fraction = affected_fraction.clamp(min_fraction, max_fraction);
+
+                // Calculate the new sizes
+                let new_affected_size = clamped_fraction * pair_total;
+                let new_next_size = (1.0 - clamped_fraction) * pair_total;
+
+                // Convert these pixel sizes to percentages of parent
+                let parent_content = self.parent_id.get_content_rect_local();
+                let parent_size = parent_content.size().get_coord(axis);
+
+                if parent_size > 0.0 {
+                    let affected_percent = (new_affected_size / parent_size) * 100.0;
+                    let next_percent = (new_next_size / parent_size) * 100.0;
+
+                    self.affected_child_id
+                        .update_state(ResizeChildMessage::SetBasisPercent(Pct(affected_percent)));
+                    self.next_child_id
+                        .update_state(ResizeChildMessage::SetBasisPercent(Pct(next_percent)));
+                }
+            }
+
+            _ => {}
+        }
+    }
+
+    fn style(&mut self, cx: &mut crate::context::StyleCx<'_>, axis: Axis) {
+        let resolved = cx.resolve_nested_maps(
+            Style::new(),
+            &[ResizableHandleClass::class_ref()],
+            self.element_id,
+        );
+        if self
+            .handle_style
+            .read_style_for(cx, &resolved, self.element_id)
+        {
+            let cursor = match axis {
+                Axis::Horizontal => CursorStyle::ColResize,
+                Axis::Vertical => CursorStyle::RowResize,
+            };
+            let cursor = self.handle_style.cursor().unwrap_or(cursor);
+            cx.window_state.set_cursor(self.element_id, cursor);
+            cx.window_state.request_paint(self.element_id);
+        }
+    }
+
+    fn paint(&self, cx: &mut PaintCx<'_>, axis: Axis) {
+        let box_tree = self.box_tree.borrow();
+        let rect = box_tree.local_bounds(self.element_id.0).unwrap_or_default();
+        let thickness = self.handle_style.thickness().0;
+
+        // Center the actual thickness within the hit-testable rect
+        let paint_rect = match axis {
+            Axis::Horizontal => {
+                let center_x = (rect.x0 + rect.x1) / 2.0;
+                let half_thickness = thickness / 2.0;
+                Rect::new(
+                    center_x - half_thickness,
+                    rect.y0,
+                    center_x + half_thickness,
+                    rect.y1,
+                )
+            }
+            Axis::Vertical => {
+                let center_y = (rect.y0 + rect.y1) / 2.0;
+                let half_thickness = thickness / 2.0;
+                Rect::new(
+                    rect.x0,
+                    center_y - half_thickness,
+                    rect.x1,
+                    center_y + half_thickness,
+                )
+            }
+        };
+
+        cx.fill(&paint_rect, &self.handle_style.color(), 0.);
+    }
 }
 
 /// A container View around other Views that allows for resizing with a handle.
-pub struct ResizableStack {
+pub struct Resizable {
     id: ViewId,
-    style: Style,
-    handle_style: HandleStyle,
-    hovered_handle_style: HandleStyle,
     re_style: ReStyle,
-    cursor_pos: Point,
-    should_clear_on_up: Option<usize>,
-    layouts: Vec<Rect>,
-    handle_state: HandleState,
-    style_offsets: Vec<StackOffset<Style>>,
+    handles: FxHashMap<ElementId, Handle>,
 }
 
-impl View for ResizableStack {
+impl View for Resizable {
     fn id(&self) -> ViewId {
         self.id
     }
@@ -114,359 +381,147 @@ impl View for ResizableStack {
         Some(ResizableClass::class_ref())
     }
 
-    fn view_style(&self) -> Option<Style> {
-        Some(self.style.clone())
-    }
-
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
-        if self.re_style.read(cx) {
-            self.id.request_layout();
-        };
-        self.handle_style.read(cx);
-        let style = cx.style();
-        let handle_style = match self.handle_state {
-            HandleState::None => Style::new(),
-            HandleState::Hovered(_) => style.apply_selectors(&[StyleSelector::Hover]),
-            HandleState::Active(_) => style.apply_selectors(&[StyleSelector::Active]),
-        };
-        self.hovered_handle_style.read_style(cx, &handle_style);
+        if cx.reason.flags != StyleReasonFlags::TARGET {
+            self.re_style.read(cx);
+        }
+
+        // If the reason implies nested style maps must be resolved, restyle everything.
+        if cx.reason.needs_resolve_nested_maps() {
+            for handle in self.handles.values_mut() {
+                handle.style(cx, self.re_style.direction().axis());
+            }
+            return;
+        }
+
+        for (element_id, _reason) in cx.targeted_elements.clone() {
+            if let Some(handle) = self.handles.get_mut(&element_id) {
+                handle.style(cx, self.re_style.direction().axis());
+            }
+        }
     }
 
     fn update(&mut self, _cx: &mut UpdateCx, state: Box<dyn std::any::Any>) {
-        if let Ok(state) = state.downcast::<Vec<(usize, f64)>>() {
-            self.id.request_style();
-            self.id.request_layout();
-            for (idx, size) in *state {
-                self.apply_size_to_child(idx, size);
-            }
-        }
-    }
-
-    fn compute_layout(&mut self, cx: &mut ComputeLayoutCx) -> Option<kurbo::Rect> {
-        self.layouts.clear();
-        let mut layout_rect: Option<Rect> = None;
-        for child in self.id.children().iter() {
-            if !child.is_hidden() {
-                let child_layout = cx.compute_view_layout(*child);
-                if let Some(child_layout) = child_layout {
-                    let layout = child.get_layout().map(|v| {
-                        Rect::from_origin_size(
-                            (v.location.x, v.location.y),
-                            (v.size.width as f64, v.size.height as f64),
-                        )
-                    });
-                    self.layouts.push(layout.unwrap());
-                    if let Some(rect) = layout_rect {
-                        layout_rect = Some(rect.union(child_layout));
-                    } else {
-                        layout_rect = Some(child_layout);
-                    }
-                }
-            }
-        }
-        self.reapply_current_sizes();
-        layout_rect
-    }
-
-    fn event_before_children(&mut self, _cx: &mut EventCx, event: &Event) -> EventPropagation {
-        match event {
-            Event::Pointer(PointerEvent::Down(PointerButtonEvent {
-                button: Some(PointerButton::Primary),
-                state: state @ PointerState { count, .. },
-                ..
-            })) => {
-                let point = state.logical_point();
-                if let Some(handle_idx) = self.find_handle_at_position(point) {
-                    if *count == 2 {
-                        self.should_clear_on_up = Some(handle_idx);
-                    }
-                    self.id.request_active();
-                    self.handle_state = HandleState::Active(handle_idx);
-                    self.id.request_all();
-                    {
-                        let cursor = if let Some(cursor) = self.handle_style.cursor() {
-                            cursor
-                        } else {
-                            match self.re_style.direction() {
-                                FlexDirection::Row | FlexDirection::RowReverse => {
-                                    CursorStyle::ColResize
-                                }
-                                FlexDirection::Column | FlexDirection::ColumnReverse => {
-                                    CursorStyle::RowResize
-                                }
-                            }
-                        };
-                        self.id.request_style();
-                        self.style = self.style.clone().cursor(cursor);
-                    };
-
-                    return EventPropagation::Stop;
-                }
-            }
-            Event::Pointer(PointerEvent::Up(PointerButtonEvent {
-                button: Some(PointerButton::Primary),
-                ..
-            })) => {
-                if let Some(idx) = self.should_clear_on_up {
-                    // Reset the handle positions on double-click
-                    self.clear_handle_pos(idx);
-                    self.should_clear_on_up = None;
-                }
-                if let HandleState::Active(_) | HandleState::Hovered(_) = self.handle_state {
-                    self.id.clear_active();
-                    self.handle_state = HandleState::None;
-                    self.id.request_all();
-                    let cursor = CursorStyle::Default;
-                    self.id.request_style();
-                    self.style = self.style.clone().cursor(cursor);
-                    return EventPropagation::Stop;
-                }
-            }
-            Event::Pointer(PointerEvent::Move(PointerUpdate { current, .. })) => {
-                let point = current.logical_point();
-                self.cursor_pos = point;
-                if let HandleState::Active(handle_idx) = self.handle_state {
-                    self.update_handle_position(handle_idx, point);
-                    let cursor = match self.re_style.direction() {
-                        FlexDirection::Row | FlexDirection::RowReverse => CursorStyle::ColResize,
-                        FlexDirection::Column | FlexDirection::ColumnReverse => {
-                            CursorStyle::RowResize
-                        }
-                    };
-                    self.style = self.style.clone().cursor(cursor);
-                    self.id.request_style();
+        if let Ok(state) = state.downcast::<ResizableMessage>() {
+            match *state {
+                ResizableMessage::SetSizesPercent(sizes) => {
+                    // self.id.request_style();
                     self.id.request_layout();
-                    return EventPropagation::Stop;
-                } else if let Some(handle_idx) = self.find_handle_at_position(point) {
-                    self.handle_state = HandleState::Hovered(handle_idx);
-                    let cursor = match self.re_style.direction() {
-                        FlexDirection::Row | FlexDirection::RowReverse => CursorStyle::ColResize,
-                        FlexDirection::Column | FlexDirection::ColumnReverse => {
-                            CursorStyle::RowResize
+
+                    for (idx, percent) in sizes {
+                        let child = self.id.with_children(|children| children.get(idx).copied());
+                        if let Some(child) = child {
+                            child.update_state(ResizeChildMessage::SetBasisPercent(percent));
                         }
-                    };
-                    self.style = self.style.clone().cursor(cursor);
-                    self.id.request_style();
-                    return EventPropagation::Stop;
-                } else {
-                    self.handle_state = HandleState::None;
-                    let cursor = CursorStyle::default();
-                    self.style = self.style.clone().cursor(cursor);
-                    self.id.request_style();
+                    }
+                }
+                ResizableMessage::SetSizesPixels(sizes) => {
+                    // self.id.request_style();
+                    self.id.request_layout();
+
+                    let axis = self.re_style.direction().axis();
+
+                    for (idx, pixel_size) in sizes {
+                        // Convert pixels to percentages for this child and the next
+                        let (affected_percent, next_percent) =
+                            self.pixels_to_percent_for_pair(idx, pixel_size, axis);
+
+                        let (affected, next) = self.id.with_children(|children| {
+                            (children.get(idx).copied(), children.get(idx + 1).copied())
+                        });
+                        if let Some(child) = affected {
+                            child.update_state(ResizeChildMessage::SetBasisPercent(Pct(
+                                affected_percent,
+                            )));
+                        }
+                        if let Some(next_child) = next {
+                            next_child.update_state(ResizeChildMessage::SetBasisPercent(Pct(
+                                next_percent,
+                            )));
+                        }
+                    }
+                }
+                ResizableMessage::ClearSize(idx) => {
+                    let child = self.id.with_children(|c| c.get(idx).copied());
+                    if let Some(child) = child {
+                        child.update_state(ResizeChildMessage::ClearBasis);
+                    }
+                }
+                ResizableMessage::ClearAll => {
+                    for child in self.id.children() {
+                        child.update_state(ResizeChildMessage::ClearBasis);
+                    }
                 }
             }
-            _ => {}
+        }
+    }
+
+    fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
+        // for this to work we had to set `id.has_layout_listener`.
+        if UpdatePhaseLayout::extract(&cx.event).is_some() {
+            self.post_layout();
+        }
+        if cx.phase == Phase::Target
+            && let Some(handle) = self.handles.get_mut(&cx.target)
+        {
+            handle.event(cx, self.re_style.direction().axis());
+            return EventPropagation::Stop;
         }
 
         EventPropagation::Continue
     }
 
     fn paint(&mut self, cx: &mut PaintCx) {
-        cx.paint_children(self.id());
-
-        let drawn = if let Some(color) = self.hovered_handle_style.color() {
-            match self.handle_state {
-                HandleState::Hovered(idx) | HandleState::Active(idx) => {
-                    let handle_line = self.get_handle_line(idx);
-                    cx.stroke(
-                        &handle_line,
-                        &color,
-                        &Stroke::new(self.hovered_handle_style.thickness().0),
-                    );
-                    Some(idx)
-                }
-                _ => None,
-            }
-        } else {
-            None
-        };
-
-        let color = self.handle_style.color();
-        if let Some(color) = color {
-            for (idx, handle_line) in
-                (0..(self.layouts.len() - 1)).map(|idx| (idx, self.get_handle_line(idx)))
-            {
-                if Some(idx) == drawn {
-                    continue;
-                }
-                cx.stroke(
-                    &handle_line,
-                    &color,
-                    &Stroke::new(self.handle_style.thickness().0),
-                );
-            }
+        // Children are now painted automatically by traversal system
+        if let Some(handle) = self.handles.get(&cx.target_id) {
+            handle.paint(cx, self.re_style.direction().axis())
         }
     }
 }
 
-impl ResizableStack {
+pub enum ResizableMessage {
+    SetSizesPercent(Vec<(usize, Pct)>), // (index, percentage)
+    SetSizesPixels(Vec<(usize, f64)>),
+    ClearSize(usize),
+    ClearAll,
+}
+
+impl Resizable {
+    pub fn new<VT: ViewTuple + 'static>(children: VT) -> Self {
+        create_resizable(children.into_views())
+    }
+
+    /// Convert pixel sizes to percentages for adjacent children
+    fn pixels_to_percent_for_pair(&self, _idx: usize, pixel_size: f64, axis: Axis) -> (f64, f64) {
+        // Get parent size instead of pair size
+        let parent_content = self.id.get_content_rect_local();
+        let parent_size = parent_content.size().get_coord(axis);
+
+        if parent_size > 0.0 {
+            let affected_percent = (pixel_size / parent_size) * 100.0;
+            let next_percent = 100.0 - affected_percent;
+            return (affected_percent, next_percent);
+        }
+
+        (50.0, 50.0) // Default to equal split
+    }
+
     pub fn custom_sizes(self, sizes: impl Fn() -> Vec<(usize, f64)> + 'static) -> Self {
         let id = self.id;
         Effect::new(move |_| {
             let sizes = sizes();
-            id.update_state(sizes);
+            id.update_state(ResizableMessage::SetSizesPixels(sizes));
         });
         self
     }
 
-    fn get_handle_line(&self, handle_idx: usize) -> Line {
-        assert!(
-            handle_idx < self.layouts.len() - 1,
-            "handle_idx must be less than layouts.len() - 1"
-        );
-
-        let current_layout = self.layouts[handle_idx];
-        let next_layout = self.layouts[handle_idx + 1];
-
-        match self.re_style.direction() {
-            FlexDirection::Row | FlexDirection::RowReverse => {
-                let x = current_layout.x1;
-                let min_y = current_layout.y0.min(next_layout.y0);
-                let max_y = current_layout.y1.max(next_layout.y1);
-                Line::new(Point::new(x, min_y), Point::new(x, max_y))
-            }
-            FlexDirection::Column | FlexDirection::ColumnReverse => {
-                let y = current_layout.y1;
-                let min_x = current_layout.x0.min(next_layout.x0);
-                let max_x = current_layout.x1.max(next_layout.x1);
-                Line::new(Point::new(min_x, y), Point::new(max_x, y))
-            }
-        }
-    }
-
-    fn find_handle_at_position(&self, pos: Point) -> Option<usize> {
-        for i in 0..self.layouts.len() - 1 {
-            let handle_rect = self.get_handle_line(i);
-            // TODO make hit target configurable
-            if handle_rect.hit(pos, 5.) {
-                return Some(i);
-            }
-        }
-        None
-    }
-
-    fn update_handle_position(&mut self, handle_idx: usize, pos: Point) {
-        if handle_idx >= self.layouts.len() - 1 {
-            return;
-        }
-        let current_layout = self.layouts[handle_idx];
-        let next_layout = self.layouts[handle_idx + 1];
-
-        match self.re_style.direction() {
-            FlexDirection::Row | FlexDirection::RowReverse => {
-                // Calculate potential new width
-                let mut new_width = pos.x - current_layout.x0;
-
-                // Apply minimum constraint to current element
-                new_width = new_width.max(20.);
-
-                // Calculate available space in next element
-                let available_space = next_layout.width() - 20.0; // Reserve minimum 20px
-                let diff = new_width - current_layout.width();
-
-                // If requested change exceeds available space, limit the change
-                if diff > available_space {
-                    new_width = current_layout.width() + available_space;
-                }
-
-                // Only proceed if there's an actual change
-                if (new_width - current_layout.width()).abs() < 0.1 {
-                    return;
-                }
-
-                self.apply_size_to_child(handle_idx, new_width);
-
-                // Calculate next width based on actual applied change
-                let actual_diff = new_width - current_layout.width();
-                let next_width = next_layout.width() - actual_diff;
-
-                self.apply_size_to_child(handle_idx + 1, next_width);
-            }
-            FlexDirection::Column | FlexDirection::ColumnReverse => {
-                // Calculate potential new height
-                let mut new_height = pos.y - current_layout.y0;
-
-                // Apply minimum constraint to current element
-                new_height = new_height.max(20.);
-
-                // Calculate available space in next element
-                let available_space = next_layout.height() - 20.0; // Reserve minimum 20px
-                let diff = new_height - current_layout.height();
-
-                // If requested change exceeds available space, limit the change
-                if diff > available_space {
-                    new_height = current_layout.height() + available_space;
-                }
-
-                // Only proceed if there's an actual change
-                if (new_height - current_layout.height()).abs() < 0.1 {
-                    return;
-                }
-
-                self.apply_size_to_child(handle_idx, new_height);
-
-                // Calculate next height based on actual applied change
-                let actual_diff = new_height - current_layout.height();
-                let next_height = next_layout.height() - actual_diff;
-
-                self.apply_size_to_child(handle_idx + 1, next_height);
-            }
-        }
-    }
-
-    fn apply_size_to_child(&self, child_idx: usize, size: f64) {
-        let child = self.id.with_children(|c| c[child_idx]);
-        let offset = self.style_offsets[child_idx];
-        let is_last = child_idx == self.style_offsets.len() - 1;
-
-        match self.re_style.direction() {
-            FlexDirection::Row | FlexDirection::RowReverse => {
-                child.update_style(
-                    offset,
-                    Style::new()
-                        .width(size)
-                        .min_width(20.)
-                        .apply_if(!is_last, |s| s.max_width(size))
-                        .apply_if(is_last, |s| s.flex_grow(1.)),
-                );
-            }
-            FlexDirection::Column | FlexDirection::ColumnReverse => {
-                child.update_style(
-                    offset,
-                    Style::new()
-                        .height(size)
-                        .min_height(20.)
-                        .apply_if(!is_last, |s| s.max_height(size))
-                        .apply_if(is_last, |s| s.flex_grow(1.)),
-                );
-            }
-        }
-    }
-
-    fn reapply_current_sizes(&self) {
-        for (idx, layout) in self.layouts.iter().enumerate() {
-            let size = match self.re_style.direction() {
-                FlexDirection::Row | FlexDirection::RowReverse => layout.width(),
-                FlexDirection::Column | FlexDirection::ColumnReverse => layout.height(),
-            };
-            self.apply_size_to_child(idx, size);
-        }
-    }
-
-    fn clear_handle_pos(&mut self, handle_idx: usize) {
-        if handle_idx >= self.layouts.len() - 1 {
-            return;
-        }
-
-        let child = self.id.with_children(|c| c[handle_idx]);
-        let offset = self.style_offsets[handle_idx];
-        child.update_style(offset, Style::new());
-
-        let child = self.id.with_children(|c| c[handle_idx + 1]);
-        let offset = self.style_offsets[handle_idx + 1];
-        child.update_style(offset, Style::new());
-
-        self.id.request_layout();
+    pub fn custom_sizes_pct(self, sizes: impl Fn() -> Vec<(usize, Pct)> + 'static) -> Self {
+        let id = self.id;
+        Effect::new(move |_| {
+            let sizes = sizes();
+            id.update_state(ResizableMessage::SetSizesPercent(sizes));
+        });
+        self
     }
 
     /// Sets the custom style properties of the `ResizableStack`.
@@ -475,6 +530,12 @@ impl ResizableStack {
         style: impl Fn(ResizableCustomStyle) -> ResizableCustomStyle + 'static,
     ) -> Self {
         self.custom_style(style)
+    }
+
+    fn post_layout(&mut self) {
+        for handle in self.handles.values_mut() {
+            handle.set_position(self.re_style.direction().axis());
+        }
     }
 }
 
@@ -491,10 +552,10 @@ impl From<Style> for ResizableCustomStyle {
     }
 }
 impl CustomStyle for ResizableCustomStyle {
-    type StyleClass = ResizableClass;
+    type StyleClass = ResizableHandleClass;
 }
 
-impl CustomStylable<ResizableCustomStyle> for ResizableStack {
+impl CustomStylable<ResizableCustomStyle> for Resizable {
     type DV = Self;
 }
 
@@ -509,7 +570,7 @@ impl ResizableCustomStyle {
     /// * `color` - An optional `Brush` that sets the handle's color. If `None` is provided, the handle color is not set.
     pub fn handle_color(mut self, color: impl Into<Brush>) -> Self {
         let color = color.into();
-        self = ResizableCustomStyle(self.0.set(HandleColor, Some(color)));
+        self = ResizableCustomStyle(self.0.set(HandleColor, color));
         self
     }
 
@@ -533,17 +594,29 @@ impl ResizableCustomStyle {
     }
 }
 
-pub trait HitExt {
-    fn hit(&self, point: Point, threshhold: f64) -> bool;
-}
+// trait HitExt {
+//     fn hit(&self, point: Point, threshhold: f64) -> bool;
+// }
 
-impl<T> HitExt for T
-where
-    T: kurbo::ParamCurveNearest,
-{
-    fn hit(&self, point: Point, threshhold: f64) -> bool {
-        const ACCURACY: f64 = 0.1;
-        let nearest = self.nearest(point, ACCURACY);
-        nearest.distance_sq < threshhold * threshhold
+// impl<T> HitExt for T
+// where
+//     T: kurbo::ParamCurveNearest,
+// {
+//     fn hit(&self, point: Point, threshhold: f64) -> bool {
+//         const ACCURACY: f64 = 0.1;
+//         let nearest = self.nearest(point, ACCURACY);
+//         nearest.distance_sq < threshhold * threshhold
+//     }
+// }
+
+trait AxisExt {
+    fn axis(&self) -> Axis;
+}
+impl AxisExt for FlexDirection {
+    fn axis(&self) -> Axis {
+        match self {
+            Self::Row | Self::RowReverse => Axis::Horizontal,
+            Self::Column | Self::ColumnReverse => Axis::Vertical,
+        }
     }
 }

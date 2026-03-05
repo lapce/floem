@@ -1,10 +1,10 @@
 #![deny(missing_docs)]
 
-use peniko::kurbo::Size;
+use taffy::Overflow;
 
 use crate::{
-    view::ViewId,
-    view::{IntoView, View},
+    style::Style,
+    view::{IntoView, View, ViewId},
 };
 
 /// A wrapper around a child View that clips painting so the child does not show outside of the viewport.
@@ -44,29 +44,16 @@ impl View for Clip {
         self.id
     }
 
-    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
-        "Clip".into()
+    fn view_style(&self) -> Option<crate::style::Style> {
+        Some(
+            Style::new()
+                .overflow_x(Overflow::Clip)
+                .overflow_y(Overflow::Clip),
+        )
     }
 
-    fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        cx.save();
-        let view_state = self.id.state();
-        let size = self
-            .id
-            .get_layout()
-            .map(|layout| Size::new(layout.size.width as f64, layout.size.height as f64))
-            .unwrap_or_default();
-
-        let radii = crate::view::border_to_radii(&view_state.borrow().combined_style, size);
-
-        if crate::view::radii_max(radii) > 0.0 {
-            let rect = size.to_rect().to_rounded_rect(radii);
-            cx.clip(&rect);
-        } else {
-            cx.clip(&size.to_rect());
-        }
-        cx.paint_children(self.id);
-        cx.restore();
+    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
+        "Clip".into()
     }
 }
 

@@ -23,6 +23,7 @@ use serial_test::serial;
 #[serial]
 fn test_click_bubbles_to_parent_with_handler() {
     // Click on child (no handler) should bubble to parent (with handler)
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = tracker
@@ -36,7 +37,7 @@ fn test_click_bubbles_to_parent_with_handler() {
         )
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Click on the child area (no handler), should bubble to parent
     harness.click(25.0, 25.0);
@@ -52,6 +53,7 @@ fn test_click_bubbles_to_parent_with_handler() {
 #[serial]
 fn test_click_bubbles_through_multiple_ancestors() {
     // Click on deeply nested child should bubble through all ancestors
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = tracker
@@ -71,7 +73,7 @@ fn test_click_bubbles_through_multiple_ancestors() {
         )
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Click on the deeply nested child (no handler)
     harness.click(15.0, 15.0);
@@ -88,6 +90,7 @@ fn test_click_bubbles_through_multiple_ancestors() {
 #[serial]
 fn test_click_stop_at_child_prevents_parent_handler() {
     // When child returns Stop, parent handler should NOT fire
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = tracker
@@ -100,7 +103,7 @@ fn test_click_stop_at_child_prevents_parent_handler() {
         )
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(25.0, 25.0);
 
@@ -115,6 +118,7 @@ fn test_click_stop_at_child_prevents_parent_handler() {
 #[serial]
 fn test_click_stop_in_middle_prevents_further_bubbling() {
     // Stop in the middle of the path prevents further bubbling
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = tracker
@@ -134,7 +138,7 @@ fn test_click_stop_in_middle_prevents_further_bubbling() {
         )
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(15.0, 15.0);
 
@@ -149,6 +153,7 @@ fn test_click_stop_in_middle_prevents_further_bubbling() {
 #[serial]
 fn test_click_bubbles_with_z_index_layers() {
     // Click on z-index layered view should still bubble to parent
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = tracker
@@ -166,7 +171,7 @@ fn test_click_bubbles_with_z_index_layers() {
         )
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -183,6 +188,7 @@ fn test_click_bubbles_with_z_index_layers() {
 #[serial]
 fn test_click_with_cont_bubbles_through_layers() {
     // When layered view uses cont, click should bubble to container
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = tracker
@@ -195,7 +201,7 @@ fn test_click_with_cont_bubbles_through_layers() {
         )
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -215,6 +221,7 @@ fn test_click_with_cont_bubbles_through_layers() {
 #[serial]
 fn test_double_click_bubbles_to_parent() {
     // DoubleClick on child (no handler) should bubble to parent
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = tracker
@@ -228,7 +235,7 @@ fn test_double_click_bubbles_to_parent() {
         )
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Double-click on child area
     harness.double_click(25.0, 25.0);
@@ -245,6 +252,7 @@ fn test_double_click_bubbles_to_parent() {
 #[serial]
 fn test_double_click_at_target_fires_first() {
     // When both child and parent have DoubleClick handlers, child fires first
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = tracker
@@ -257,7 +265,7 @@ fn test_double_click_at_target_fires_first() {
         )
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.double_click(25.0, 25.0);
 
@@ -277,6 +285,7 @@ fn test_double_click_at_target_fires_first() {
 #[serial]
 fn test_secondary_click_bubbles_to_parent() {
     // SecondaryClick on child (no handler) should bubble to parent
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = tracker
@@ -290,7 +299,7 @@ fn test_secondary_click_bubbles_to_parent() {
         )
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.secondary_click(25.0, 25.0);
 
@@ -306,6 +315,7 @@ fn test_secondary_click_bubbles_to_parent() {
 #[serial]
 fn test_secondary_click_at_target_fires_first() {
     // When both child and parent have SecondaryClick handlers, child fires first
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = tracker
@@ -318,7 +328,7 @@ fn test_secondary_click_at_target_fires_first() {
         )
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.secondary_click(25.0, 25.0);
 
@@ -339,6 +349,7 @@ fn test_secondary_click_at_target_fires_first() {
 fn test_click_is_synthetic_after_pointer_up() {
     // This test verifies that click handlers work correctly with the
     // new synthetic click dispatch (click fires after PointerUp completes)
+    let root = TestRoot::new();
     use std::cell::Cell;
     use std::rc::Rc;
 
@@ -353,10 +364,10 @@ fn test_click_is_synthetic_after_pointer_up() {
 
     let view = Empty::new()
         .style(|s| s.size(100.0, 100.0))
-        .on_event_stop(floem::event::EventListener::PointerUp, move |_| {
+        .on_event_stop(floem::event::listener::PointerUp, move |_, _| {
             pointer_up_clone.set(true);
         })
-        .on_click_stop(move |_| {
+        .action(move || {
             click_seen_clone.set(true);
             // At the time click fires, PointerUp should have already been processed
             // (This is the Chromium-style behavior)
@@ -365,7 +376,7 @@ fn test_click_is_synthetic_after_pointer_up() {
             }
         });
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -385,6 +396,7 @@ fn test_click_is_synthetic_after_pointer_up() {
 #[serial]
 fn test_path_includes_all_ancestors() {
     // Verify that the event path includes all ancestors from target to root
+    let root = TestRoot::new();
     use std::cell::RefCell;
     use std::rc::Rc;
 
@@ -396,21 +408,20 @@ fn test_path_includes_all_ancestors() {
 
     let view = Empty::new()
         .style(|s| s.size(100.0, 100.0))
-        .on_click_cont(move |_| {
+        .on_event_cont(floem::event::listener::Click, move |_, _| {
             visit_order_gp.borrow_mut().push("grandparent".to_string());
         })
         .into_view();
 
     let parent = Container::new(
-        Container::new(
-            Empty::new()
-                .style(|s| s.size(30.0, 30.0))
-                .on_click_cont(move |_| {
-                    visit_order_c.borrow_mut().push("child".to_string());
-                }),
-        )
+        Container::new(Empty::new().style(|s| s.size(30.0, 30.0)).on_event_cont(
+            floem::event::listener::Click,
+            move |_, _| {
+                visit_order_c.borrow_mut().push("child".to_string());
+            },
+        ))
         .style(|s| s.size(60.0, 60.0))
-        .on_click_cont(move |_| {
+        .on_event_cont(floem::event::listener::Click, move |_, _| {
             visit_order_p.borrow_mut().push("parent".to_string());
         }),
     )
@@ -418,7 +429,7 @@ fn test_path_includes_all_ancestors() {
 
     let view = layers((view, parent));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(15.0, 15.0);
 
@@ -443,6 +454,7 @@ fn test_path_includes_all_ancestors() {
 #[serial]
 fn test_hit_test_finds_topmost_z_index() {
     // Hit test should find the topmost (highest z-index) view
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = layers((
@@ -452,7 +464,7 @@ fn test_hit_test_finds_topmost_z_index() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -467,6 +479,7 @@ fn test_hit_test_finds_topmost_z_index() {
 #[serial]
 fn test_hit_test_uses_dom_order_for_equal_z_index() {
     // When z-indices are equal, later in DOM order should be on top
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = layers((
@@ -476,7 +489,7 @@ fn test_hit_test_uses_dom_order_for_equal_z_index() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -491,6 +504,7 @@ fn test_hit_test_uses_dom_order_for_equal_z_index() {
 #[serial]
 fn test_hit_test_respects_pointer_events_none() {
     // Views with pointer_events_none should not receive clicks
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = layers((
@@ -502,7 +516,7 @@ fn test_hit_test_respects_pointer_events_none() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 
@@ -521,6 +535,7 @@ fn test_hit_test_respects_pointer_events_none() {
 #[serial]
 fn test_click_outside_all_children_hits_container() {
     // Clicking in container area but outside all children should hit container
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = tracker
@@ -533,7 +548,7 @@ fn test_click_outside_all_children_hits_container() {
         )
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Click outside child (30x30) but inside container
     harness.click(80.0, 80.0);
@@ -549,6 +564,7 @@ fn test_click_outside_all_children_hits_container() {
 #[serial]
 fn test_multiple_clicks_each_bubble_separately() {
     // Multiple clicks should each follow the full bubbling path
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = tracker
@@ -561,7 +577,7 @@ fn test_multiple_clicks_each_bubble_separately() {
         )
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(25.0, 25.0);
     harness.click(25.0, 25.0);
@@ -578,22 +594,30 @@ fn test_multiple_clicks_each_bubble_separately() {
 #[serial]
 fn test_click_on_disabled_view_does_not_bubble() {
     // Disabled views should not receive or bubble clicks
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
+
+    let disabled_child_id = ViewId::new();
 
     let view = tracker
         .track_named(
             "parent",
-            Container::new(
-                tracker.track_named("disabled_child", Empty::new().style(|s| s.size(50.0, 50.0))),
-            )
+            Container::new(tracker.track_named(
+                "disabled_child",
+                Empty::with_id(disabled_child_id).style(|s| s.size(50.0, 50.0)),
+            ))
             .style(|s| s.set_disabled(true))
             .style(|s| s.size(100.0, 100.0)),
         )
         .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
+
+    assert!(disabled_child_id.is_disabled());
 
     harness.click(25.0, 25.0);
+
+    assert!(disabled_child_id.is_disabled());
 
     // The disabled container and its children should not receive clicks
     // But the parent (which wraps the disabled container) might receive it
@@ -609,6 +633,7 @@ fn test_click_on_disabled_view_does_not_bubble() {
 #[serial]
 fn test_hidden_view_does_not_receive_click() {
     // Hidden views should not be hit tested
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let view = layers((
@@ -617,7 +642,7 @@ fn test_hidden_view_does_not_receive_click() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     harness.click(50.0, 50.0);
 

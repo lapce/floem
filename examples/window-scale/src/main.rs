@@ -1,11 +1,4 @@
-use floem::{
-    action::set_window_scale,
-    event::{Event, EventListener},
-    prelude::*,
-    reactive::Effect,
-    style_class,
-    unit::UnitExt,
-};
+use floem::{action::set_window_scale, prelude::*, reactive::Effect, style_class, unit::UnitExt};
 
 style_class!(pub Button);
 
@@ -20,12 +13,12 @@ fn app_view() -> impl IntoView {
     let value_label =
         Label::derived(move || format!("Value: {}", counter.get())).style(|s| s.padding(10.0));
 
-    let increment_button = "Increment".class(Button).on_click_stop(move |_| {
+    let increment_button = "Increment".class(Button).action(move || {
         counter.update(|value| *value += 1);
     });
     let decrement_button = "Decrement"
         .class(Button)
-        .on_click_stop(move |_| {
+        .action(move || {
             counter.update(|value| *value -= 1);
         })
         .style(|s| {
@@ -35,7 +28,7 @@ fn app_view() -> impl IntoView {
         });
     let reset_to_zero_button = "Reset to 0"
         .class(Button)
-        .on_click_stop(move |_| {
+        .action(move || {
             println!("Reset counter pressed"); // will not fire if button is disabled
             counter.update(|value| *value = 0);
         })
@@ -52,19 +45,19 @@ fn app_view() -> impl IntoView {
 
     let zoom_in_button = "Zoom In"
         .class(Button)
-        .on_click_stop(move |_| {
+        .action(move || {
             window_scale.update(|scale| *scale *= 1.2);
         })
         .style(|s| s.margin_top(10.0).margin_right(10.0));
     let zoom_out_button = "Zoom Out"
         .class(Button)
-        .on_click_stop(move |_| {
+        .action(move || {
             window_scale.update(|scale| *scale /= 1.2);
         })
         .style(|s| s.margin_top(10.0).margin_right(10.0));
     let zoom_reset_button = "Zoom Reset"
         .class(Button)
-        .on_click_stop(move |_| {
+        .action(move || {
             window_scale.set(1.0);
         })
         .style(move |s| {
@@ -76,37 +69,29 @@ fn app_view() -> impl IntoView {
     let scale_buttons = Stack::horizontal((zoom_in_button, zoom_out_button, zoom_reset_button))
         .style(|s| s.absolute().inset_top(0).inset_right(0));
 
-    let view = Stack::vertical((value_label, counter_buttons, scale_buttons)).style(|s| {
-        s.size(100.pct(), 100.pct())
-            .items_center()
-            .justify_center()
-            .class(Button, |s| {
-                s.border(1.0)
-                    .border_radius(10.0)
-                    .padding(10.0)
-                    .focus_visible(|s| s.border(2.).border_color(palette::css::BLUE))
-                    .disabled(|s| s.background(palette::css::LIGHT_GRAY))
-                    .hover(|s| s.background(palette::css::LIGHT_GREEN))
-                    .active(|s| {
-                        s.color(palette::css::WHITE)
-                            .background(palette::css::DARK_GREEN)
-                    })
-            })
-    });
-
-    let id = view.id();
-    view.on_event_stop(EventListener::KeyUp, move |e| {
-        if let Event::Key(KeyboardEvent {
-            state: KeyState::Up,
-            key,
-            ..
-        }) = e
-        {
-            if *key == Key::Named(NamedKey::F11) {
-                id.inspect();
+    Stack::vertical((value_label, counter_buttons, scale_buttons))
+        .style(|s| {
+            s.size(100.pct(), 100.pct())
+                .items_center()
+                .justify_center()
+                .class(Button, |s| {
+                    s.border(1.0)
+                        .border_radius(10.0)
+                        .padding(10.0)
+                        .focus_visible(|s| s.border(2.).border_color(palette::css::BLUE))
+                        .disabled(|s| s.background(palette::css::LIGHT_GRAY))
+                        .hover(|s| s.background(palette::css::LIGHT_GREEN))
+                        .active(|s| {
+                            s.color(palette::css::WHITE)
+                                .background(palette::css::DARK_GREEN)
+                        })
+                })
+        })
+        .on_event_stop(listener::KeyUp, move |_cx, KeyboardEvent { key, .. }| {
+            if let Key::Named(NamedKey::F11) = key {
+                floem::action::inspect();
             }
-        }
-    })
+        })
 }
 
 fn main() {

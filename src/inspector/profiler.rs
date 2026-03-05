@@ -1,11 +1,13 @@
 use super::header;
 use crate::app::{AppUpdateEvent, add_app_update_event};
-use crate::event::{EventListener, EventPropagation};
+use crate::event::{EventPropagation, PointerScrollEventExt, listener};
+use crate::style::CustomStylable;
 use crate::theme::StyleThemeExt;
 use crate::unit::UnitExt;
 use crate::view::IntoView;
+use crate::views::resizable::Resizable;
 use crate::views::{
-    Button, Clip, Container, ContainerExt, Decorators, Label, Scroll, Stack, dyn_container,
+    Button, Clip, Container, ContainerExt, Decorators, Label, Scroll, Stack, dyn_container, list,
 };
 use floem_reactive::{RwSignal, Scope, SignalGet, SignalUpdate};
 use std::fmt::Display;
@@ -93,40 +95,24 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
         })
         .collect();
     frames.sort_by(|a, b| b.sum.cmp(&a.sum));
+    let frames: Rc<[_]> = frames.into();
 
     let selected_frame = RwSignal::new(None);
 
     let zoom = RwSignal::new(1.0);
 
-    let frames: Vec<_> = frames
+    let frame_views: Vec<_> = frames
         .iter()
+        .cloned()
         .enumerate()
         .map(|(i, frame)| {
             let frame = frame.clone();
-            let frame_ = frame.clone();
             Stack::horizontal((
                 Label::new(format!("Frame #{i}")).style(|s| s.flex_grow(1.0)),
                 Label::new(format!("{:.4} ms", frame.sum.as_secs_f64() * 1000.0))
                     .style(|s| s.margin_right(16)),
             ))
-            .on_click_stop(move |_| {
-                selected_frame.set(Some(frame.clone()));
-                zoom.set(1.0);
-            })
-            .style(move |s| {
-                let selected = selected_frame
-                    .get()
-                    .map(|selected| Rc::ptr_eq(&selected, &frame_))
-                    .unwrap_or(false);
-                s.with_theme(move |s, t| {
-                    s.hover(|s| s.background(t.bg_elevated()))
-                        .apply_if(selected, |s| {
-                            s.background(t.primary_muted())
-                                .hover(|s| s.background(t.primary_muted()))
-                        })
-                })
-                .padding(5.0)
-            })
+            .style(move |s| s.selectable(false).padding(5.0))
         })
         .collect();
 
@@ -154,17 +140,23 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
         },
     )
     .style(|s| s.width_full());
+    let frames_clone = frames.clone();
 
     let frames = Stack::vertical((
         header("Frames"),
-        Scroll::new(Stack::vertical_from_iter(frames).style(|s| s.width_full()))
-            .style(|s| {
-                s.flex_basis(0)
-                    .min_height(0)
-                    .flex_grow(1.0)
-                    .with_theme(|s, t| s.background(t.bg_base()))
-            })
-            .scroll_style(|s| s.handle_thickness(6.)),
+        Scroll::new(
+            list(frame_views)
+                .on_select(move |idx| {
+                    selected_frame.set(idx.and_then(|idx| frames_clone.get(idx)).cloned())
+                })
+                .style(|s| s.width_full()),
+        )
+        .style(|s| {
+            s.flex_basis(0)
+                .min_height(0)
+                .flex_grow(1.0)
+                .with_theme(|s, t| s.background(t.bg_base()))
+        }),
         header("Event").style(|s| {
             s.with_theme(|s, t| {
                 s.border_top(1)
@@ -174,13 +166,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
         }),
         event_tooltip,
     ))
-    .style(|s| s.width(230.0));
-
-    let separator = ().style(move |s| {
-        s.height_full()
-            .min_width(1.0)
-            .with_theme(|s, t| s.background(t.border()))
-    });
+    .style(|s| s.min_width(230.0).flex_grow(1.));
 
     let timeline = dyn_container(
         move || selected_frame.get(),
@@ -202,6 +188,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
                         Label::new(format!("{} ({:.4} ms)", event.name, len * 1000.0)).style(|s| {
                             s.selectable(false)
                                 .padding(5.0)
+                                .text_clip()
                                 .align_self(AlignItems::Center)
                         }),
                     )
@@ -220,7 +207,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
                                     .hover(|s| s.background(t.primary().with_alpha(0.5)))
                             })
                     })
-                    .on_event_cont(EventListener::PointerEnter, move |_| {
+                    .on_event_cont(listener::PointerEnter, move |_, _| {
                         hovered_event.set(Some(event_.clone()))
                     })
                 });
@@ -228,19 +215,12 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
                     Stack::vertical_from_iter(list)
                         .style(move |s| s.min_width_pct(zoom.get() * 100.0).height_full()),
                 )
-                .scroll_style(|s| {
-                    s.handle_thickness(6.)
-                        .vertical_track_inset(5.)
-                        .show_bars_when_idle(false)
-                })
+                .custom_style(|s| s.vertical_track_inset(5.).show_bars_when_idle(false))
                 .style(|s| s.height_full().min_width(0).flex_basis(0).flex_grow(1.0))
-                .on_event(EventListener::PointerWheel, move |e| {
-                    if let Some(delta) = e.pixel_scroll_delta_vec2() {
-                        zoom.set(zoom.get() * (1.0 - delta.y / 400.0));
-                        EventPropagation::Stop
-                    } else {
-                        EventPropagation::Continue
-                    }
+                .on_event(listener::PointerWheel, move |_cx, se| {
+                    let delta = se.resolve_to_points(None, None);
+                    zoom.set(zoom.get() * (1.0 - delta.y / 400.0));
+                    EventPropagation::Stop
                 })
                 .into_any()
             } else {
@@ -261,8 +241,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
     let timeline = Stack::vertical((header("Timeline"), timeline))
         .style(|s| s.min_width(0).flex_basis(0).flex_grow(1.0));
 
-    Stack::horizontal((frames, separator, timeline))
-        .style(|s| s.height_full().width_full().max_width_full())
+    Resizable::new((frames, timeline)).style(|s| s.height_full().width_full().max_width_full())
 }
 
 thread_local! {
@@ -283,7 +262,7 @@ pub fn profiler(window_id: WindowId) -> impl IntoView {
                 "Start Profiling"
             }
         }))
-        .on_click_stop(move |_| {
+        .action(move || {
             add_app_update_event(AppUpdateEvent::ProfileWindow {
                 window_id,
                 end_profile: if profiling.get() {
@@ -322,7 +301,7 @@ pub fn profiler(window_id: WindowId) -> impl IntoView {
     // FIXME: This needs an extra `container` or the `Stack::vertical` ends up horizontal.
     Container::new(Stack::vertical((button, separator, lower)).style(|s| s.size_full()))
         .style(|s| s.size_full())
-        .on_event_cont(EventListener::WindowClosed, move |_| {
+        .on_event_cont(listener::WindowClosed, move |_, _| {
             if profiling.get() {
                 add_app_update_event(AppUpdateEvent::ProfileWindow {
                     window_id,

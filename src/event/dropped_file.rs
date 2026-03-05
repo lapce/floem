@@ -1,83 +1,70 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, rc::Rc};
 
-use dpi::PhysicalPosition;
 use peniko::kurbo::Point;
 
 /// A standard `DragEvent` for file drag events.
 #[derive(Clone, Debug)]
 pub enum FileDragEvent {
-    /// A file drag operation has entered the window.
-    DragEntered {
-        /// List of paths that are being dragged onto the window.
-        paths: Vec<PathBuf>,
-        /// (x,y) coordinates in pixels relative to the top-left corner of the window. May be
-        /// negative on some platforms if something is dragged over a window's decorations (title
-        /// bar, frame, etc).
-        position: PhysicalPosition<f64>,
+    /// A file drag operation has entered an element.
+    Enter(FileDragEnter),
+    /// A file drag operation has moved over an element.
+    Move(FileDragMove),
+    /// A file drag operation has left an element.
+    Leave(FileDragLeave),
+    /// The file drag operation has dropped file(s).
+    Drop(FileDragDropped),
+}
 
-        scale_factor: f64,
-    },
-    /// A file drag operation has moved over the window.
-    DragMoved {
-        /// (x,y) coordinates in pixels relative to the top-left corner of the window. May be
-        /// negative on some platforms if something is dragged over a window's decorations (title
-        /// bar, frame, etc).
-        position: PhysicalPosition<f64>,
+/// A file drag operation has entered an element.
+#[derive(Clone, Debug)]
+pub struct FileDragEnter {
+    /// List of paths that are being dragged.
+    pub paths: Rc<[PathBuf]>,
+    /// Logical position (x,y) relative to the window's top-left corner.
+    pub position: Point,
+}
 
-        scale_factor: f64,
-    },
-    /// The file drag operation has dropped file(s) on the window.
-    DragDropped {
-        /// List of paths that are being dragged onto the window.
-        paths: Vec<PathBuf>,
-        /// (x,y) coordinates in pixels relative to the top-left corner of the window. May be
-        /// negative on some platforms if something is dragged over a window's decorations (title
-        /// bar, frame, etc).
-        position: PhysicalPosition<f64>,
+/// A file drag operation has moved over an element.
+#[derive(Clone, Debug)]
+pub struct FileDragMove {
+    /// List of paths that are being dragged.
+    pub paths: Rc<[PathBuf]>,
+    /// Logical position (x,y) relative to the window's top-left corner.
+    pub position: Point,
+}
 
-        scale_factor: f64,
-    },
-    /// The file drag operation has been cancelled or left the window.
-    DragLeft {
-        /// (x,y) coordinates in pixels relative to the top-left corner of the window. May be
-        /// negative on some platforms if something is dragged over a window's decorations (title
-        /// bar, frame, etc).
-        ///
-        /// ## Platform-specific
-        ///
-        /// - **Windows:** Always emits [`None`].
-        position: Option<PhysicalPosition<f64>>,
+/// A file drag operation has left an element.
+#[derive(Clone, Debug)]
+pub struct FileDragLeave {
+    /// Logical position (x,y) relative to the window's top-left corner.
+    pub position: Point,
+}
 
-        scale_factor: f64,
-    },
+/// The file drag operation has dropped file(s).
+#[derive(Clone, Debug)]
+pub struct FileDragDropped {
+    /// List of paths that were dropped.
+    pub paths: Rc<[PathBuf]>,
+    /// Logical position (x,y) relative to the window's top-left corner.
+    pub position: Point,
 }
 
 impl FileDragEvent {
-    pub fn logical_point(&self) -> Option<Point> {
+    pub fn logical_point(&self) -> Point {
         match self {
-            FileDragEvent::DragEntered {
-                position,
-                scale_factor,
-                ..
-            }
-            | FileDragEvent::DragMoved {
-                position,
-                scale_factor,
-            }
-            | FileDragEvent::DragDropped {
-                position,
-                scale_factor,
-                ..
-            }
-            | FileDragEvent::DragLeft {
-                position: Some(position),
-                scale_factor,
-            } => {
-                let log_pos = position.to_logical(*scale_factor);
-                let point = Point::new(log_pos.x, log_pos.y);
-                Some(point)
-            }
-            _ => None,
+            FileDragEvent::Enter(e) => e.position,
+            FileDragEvent::Move(e) => e.position,
+            FileDragEvent::Leave(e) => e.position,
+            FileDragEvent::Drop(e) => e.position,
+        }
+    }
+
+    pub fn paths(&self) -> Option<&Rc<[PathBuf]>> {
+        match self {
+            FileDragEvent::Enter(e) => Some(&e.paths),
+            FileDragEvent::Move(e) => Some(&e.paths),
+            FileDragEvent::Leave(_) => None,
+            FileDragEvent::Drop(e) => Some(&e.paths),
         }
     }
 }

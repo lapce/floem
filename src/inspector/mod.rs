@@ -1,64 +1,55 @@
 mod data;
 pub(crate) mod profiler;
 mod view;
-
-use crate::context::StyleCx;
-use crate::event::{Event, EventListener, EventPropagation};
-use crate::prelude::ViewTuple;
-use crate::style::{
-    Focusable, FontSize, OverflowX, OverflowY, Style, StyleClassRef, StyleKeyInfo, StylePropRef,
-    Transition,
-};
-use crate::theme::StyleThemeExt as _;
-use crate::view::ChangeFlags;
-use crate::view::ViewId;
-use crate::view::{IntoView, View};
-use crate::views::{ContainerExt, Decorators, Label, ScrollExt, Stack, dyn_container};
-use crate::window::state::WindowState;
-use crate::{AnyView, Clipboard, style};
-use floem_reactive::{Effect, RwSignal, Scope, SignalGet, SignalUpdate};
-use peniko::color::palette;
-use peniko::kurbo::{Point, Rect, Size};
-use slotmap::Key;
-use std::cell::Cell;
-use std::collections::{HashMap, HashSet};
-use std::fmt::Display;
-use std::rc::Rc;
-use ui_events::keyboard::{self, KeyboardEvent, NamedKey};
+use floem_reactive::{Effect, Scope};
+use peniko::kurbo::{Rect, Size};
+use slotmap::Key as _;
 pub use view::capture;
 
-use crate::platform::{Duration, Instant};
+use crate::{
+    AnyView, Clipboard, ViewId, WindowState,
+    event::EventPropagation,
+    inspector::data::CapturedDatas,
+    platform::{Duration, Instant},
+    prelude::*,
+    style::{
+        self, FontSize, OverflowX, OverflowY, Style, StyleClassRef, StyleCx, StyleKeyInfo,
+        StylePropRef, StyleThemeExt, Transition,
+    },
+};
 
-use crate::inspector::data::CapturedDatas;
-use taffy::prelude::Layout;
-use taffy::style::FlexDirection;
+use std::{
+    cell::Cell,
+    collections::{HashMap, HashSet},
+    fmt::Display,
+    rc::Rc,
+};
+
+use taffy::{prelude::Layout, style::FlexDirection};
 
 #[derive(Clone, Debug)]
 pub struct CapturedView {
     id: ViewId,
     name: String,
     id_data_str: String,
-    custom_name: String,
-    layout: Rect,
+    world_bounds: Rect,
     taffy: Layout,
     children: Vec<Rc<CapturedView>>,
     direct_style: Style,
-    requested_changes: ChangeFlags,
     keyboard_navigable: bool,
     classes: Vec<StyleClassRef>,
     focused: bool,
 }
 
 impl CapturedView {
-    pub fn capture(id: ViewId, window_state: &mut WindowState, clip: Rect) -> Self {
-        let layout = id.layout_rect();
+    pub fn capture(id: ViewId, window_state: &mut WindowState) -> Self {
+        let world_bounds = id.get_visual_rect_no_clip();
         let taffy = id.get_layout().unwrap_or_default();
         let view_state = id.state();
         let view_state = view_state.borrow();
         let combined_style = view_state.combined_style.clone();
-        let keyboard_navigable = view_state.combined_style.get(Focusable);
-        let focused = window_state.focus == Some(id);
-        let clipped = layout.intersect(clip);
+        let focus = view_state.combined_style.builtin().set_focus();
+        let focused = window_state.focus_state.current_path().last() == Some(&id.get_element_id());
         let custom_name = &view_state.debug_name;
         let classes = view_state.classes.clone();
         let view = id.view();
@@ -72,23 +63,20 @@ impl CapturedView {
             .cloned()
             .collect::<Vec<_>>()
             .join(" - ");
-        let custom_name = custom_name.iter().cloned().collect::<Vec<_>>().join(" - ");
         Self {
             id,
             name,
             id_data_str: id.data().as_ffi().to_string(),
-            custom_name,
-            layout,
+            world_bounds,
             taffy,
             direct_style: combined_style,
-            requested_changes: view_state.requested_changes,
-            keyboard_navigable,
+            keyboard_navigable: focus.allows_keyboard_navigation(),
             focused,
-            classes,
+            classes: classes.to_vec(),
             children: id
                 .children()
                 .into_iter()
-                .map(|view| Rc::new(CapturedView::capture(view, window_state, clipped)))
+                .map(|view| Rc::new(CapturedView::capture(view, window_state)))
                 .collect(),
         }
     }
@@ -103,31 +91,8 @@ impl CapturedView {
             .next()
     }
 
-    fn find_all_by_pos(&self, pos: Point) -> Vec<ViewId> {
-        let mut match_ids = self
-            .children
-            .iter()
-            .rev()
-            .filter_map(|child| {
-                let child_ids = child.find_all_by_pos(pos);
-                if child_ids.is_empty() {
-                    None
-                } else {
-                    Some(child_ids)
-                }
-            })
-            .fold(Vec::new(), |mut init, mut item| {
-                init.append(&mut item);
-                init
-            });
-        if match_ids.is_empty() && self.layout.contains(pos) {
-            match_ids.push(self.id);
-        }
-        match_ids
-    }
-
     fn warnings(&self) -> bool {
-        !self.requested_changes.is_empty() || self.children.iter().any(|child| child.warnings())
+        false
     }
 }
 
@@ -149,13 +114,13 @@ pub struct Capture {
 
 #[derive(Default)]
 pub struct CaptureState {
-    styles: HashMap<ViewId, Style>,
+    computed_styles: HashMap<ViewId, Style>,
 }
 
 impl CaptureState {
     pub(crate) fn capture_style(id: ViewId, cx: &mut StyleCx, computed_style: Style) {
         if let Some(capture) = cx.window_state.capture.as_mut() {
-            capture.styles.insert(id, computed_style);
+            capture.computed_styles.insert(id, computed_style);
         }
     }
 }
@@ -169,9 +134,9 @@ fn add_event<T: View + 'static>(
     datas: RwSignal<CapturedDatas>,
 ) -> impl View + use<T> {
     let capture = capture.clone();
-    row.on_secondary_click({
+    row.on_event(listener::SecondaryClick, {
         let name = name.clone();
-        move |_| {
+        move |_, _| {
             if !name.is_empty() {
                 // TODO: Log error
                 let _ = Clipboard::set_contents(name.clone());
@@ -179,40 +144,36 @@ fn add_event<T: View + 'static>(
             EventPropagation::Stop
         }
     })
-    .on_event_stop(EventListener::KeyDown, {
+    .on_event_stop(listener::KeyDown, {
         let capture = capture.clone();
-        move |event| {
-            if let Event::Key(KeyboardEvent { key, modifiers, .. }) = event {
-                match key {
-                    keyboard::Key::Named(NamedKey::ArrowUp) => {
-                        let rs = find_relative_view_by_id_with_self(id, &capture.root);
-                        let Some(ids) = rs else {
-                            return;
-                        };
-                        if !modifiers.ctrl() {
-                            if let Some(id) = ids.big_brother_id {
-                                update_select_view_id(id, &capture_view, true, datas);
-                            }
-                        } else if let Some(id) = ids.parent_id {
-                            update_select_view_id(id, &capture_view, true, datas);
-                        }
+        move |_cx, KeyboardEvent { key, modifiers, .. }| match key {
+            Key::Named(NamedKey::ArrowUp) => {
+                let rs = find_relative_view_by_id_with_self(id, &capture.root);
+                let Some(ids) = rs else {
+                    return;
+                };
+                if !modifiers.ctrl() {
+                    if let Some(id) = ids.big_brother_id {
+                        update_select_view_id(id, &capture_view, true, datas);
                     }
-                    keyboard::Key::Named(NamedKey::ArrowDown) => {
-                        let rs = find_relative_view_by_id_with_self(id, &capture.root);
-                        let Some(ids) = rs else {
-                            return;
-                        };
-                        if !modifiers.ctrl() {
-                            if let Some(id) = ids.next_brother_id {
-                                update_select_view_id(id, &capture_view, true, datas);
-                            }
-                        } else if let Some(id) = ids.child_id {
-                            update_select_view_id(id, &capture_view, true, datas);
-                        }
-                    }
-                    _ => {}
+                } else if let Some(id) = ids.parent_id {
+                    update_select_view_id(id, &capture_view, true, datas);
                 }
             }
+            Key::Named(NamedKey::ArrowDown) => {
+                let rs = find_relative_view_by_id_with_self(id, &capture.root);
+                let Some(ids) = rs else {
+                    return;
+                };
+                if !modifiers.ctrl() {
+                    if let Some(id) = ids.next_brother_id {
+                        update_select_view_id(id, &capture_view, true, datas);
+                    }
+                } else if let Some(id) = ids.child_id {
+                    update_select_view_id(id, &capture_view, true, datas);
+                }
+            }
+            _ => {}
         }
     })
 }
@@ -318,32 +279,32 @@ fn selected_view(
                 "X",
                 format!(
                     "{}{}",
-                    view.layout.x0,
-                    beyond(view.layout.x0, capture.window_size.width)
+                    view.world_bounds.x0,
+                    beyond(view.world_bounds.x0, capture.window_size.width)
                 ),
             );
             let y = info(
                 "Y",
                 format!(
                     "{}{}",
-                    view.layout.y0,
-                    beyond(view.layout.y0, capture.window_size.height)
+                    view.world_bounds.y0,
+                    beyond(view.world_bounds.y0, capture.window_size.height)
                 ),
             );
             let w = info(
                 "Width",
                 format!(
                     "{}{}",
-                    view.layout.width(),
-                    beyond(view.layout.x1, capture.window_size.width)
+                    view.world_bounds.width(),
+                    beyond(view.world_bounds.x1, capture.window_size.width)
                 ),
             );
             let h = info(
                 "Height",
                 format!(
                     "{}{}",
-                    view.layout.height(),
-                    beyond(view.layout.y1, capture.window_size.height)
+                    view.world_bounds.height(),
+                    beyond(view.world_bounds.y1, capture.window_size.height)
                 ),
             );
             let tx = info(
@@ -398,7 +359,7 @@ fn selected_view(
 
             let style = capture
                 .state
-                .styles
+                .computed_styles
                 .get(&view.id)
                 .cloned()
                 .unwrap_or_default();
@@ -490,8 +451,7 @@ fn selected_view(
                 s.set(OverflowX, taffy::Overflow::Scroll)
                     .set(OverflowY, taffy::Overflow::Visible)
                     .height_full()
-                    .padding_bottom(10)
-                    .padding_right(10)
+                    .flex_grow(1.)
             });
 
             let selected_view_info = Stack::vertical_from_iter(
@@ -515,24 +475,26 @@ fn selected_view(
                 s.set(OverflowX, taffy::Overflow::Scroll)
                     .set(OverflowY, taffy::Overflow::Visible)
                     .height_full()
-                    .padding_bottom(10)
-                    .padding_right(10)
+                    .flex_grow(1.)
             });
 
             let class_list_view =
                 Stack::vertical_from_iter(view.classes.clone().into_iter().enumerate().map(
                     |(idx, class_ref)| {
-                        let class_style = capture.state.styles.get(&view.id).map(|style| {
-                            let style_rc = std::rc::Rc::new(style.clone());
-                            Style::new().apply_classes_from_context(&[class_ref], &style_rc)
-                        });
+                        let class_style =
+                            capture.state.computed_styles.get(&view.id).map(|style| {
+                                // let style_rc = std::rc::Rc::new(style.clone());
+                                style.get_nested_map(class_ref.key).unwrap_or_default()
+
+                                // Style::new().apply_classes_from_context(&[class_ref], &style_rc)
+                            });
 
                         let class_name = format!("{:?}", class_ref.key);
 
                         let class_header = Label::new(&class_name)
                             .style(|s| s.font_bold().with_theme(|s, t| s.color(t.text())));
 
-                        if let Some((class_style, _changed)) = class_style {
+                        if let Some(class_style) = class_style {
                             let mut props: Vec<_> = class_style
                                 .map
                                 .clone()
@@ -841,16 +803,24 @@ fn selected_view(
                         }
                     },
                 ))
-                .style(|s| s.gap(4).width_full());
+                .style(|s| s.gap(4).height_full().flex_grow(1.))
+                .scroll()
+                .style(|s| {
+                    s.set(OverflowX, taffy::Overflow::Scroll)
+                        .set(OverflowY, taffy::Overflow::Visible)
+                        .height_full()
+                        .flex_grow(1.)
+                });
 
             Stack::vertical((
+                header("Selected View"),
                 selected_view_info,
                 style_header,
                 style_list,
                 class_header,
                 class_list_view,
             ))
-            .style(|s| s.width_full())
+            .style(|s| s.width_full().flex_shrink(0.).gap(10))
             .into_any()
         } else {
             Label::new("No selection")

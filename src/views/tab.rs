@@ -6,9 +6,9 @@ use smallvec::SmallVec;
 
 use crate::{
     context::{StyleCx, UpdateCx},
+    style::recalc::StyleReason,
     style_class,
-    view::ViewId,
-    view::{IntoView, View},
+    view::{IntoView, View, ViewId},
 };
 
 use super::{Diff, DiffOpAdd, FxIndexSet, HashRun, apply_diff, diff};
@@ -81,101 +81,94 @@ where
 /// ### Complex example
 /// ```rust
 /// # use floem::prelude::*;
-/// # use floem::theme;
-/// # use floem::theme::StyleThemeExt;
-/// # use floem_reactive::create_effect;
-/// // Tabs from dynamic list
+/// # use floem::event::listener;
+/// # use floem::reactive::Effect;
+/// # use floem::views::{Button, Label, Stack, dyn_stack};
+/// // Tabs from a dynamic list using current APIs.
 /// #[derive(Clone)]
 /// struct TabContent {
 ///     idx: usize,
 ///     name: String,
 /// }
 ///
-/// impl TabContent {
-///     fn new(tabs_count: usize) -> Self {
-///         Self {
-///             idx: tabs_count,
-///             name: format!("Tab with index"),
-///         }
-///     }
-/// }
-///
-/// #[derive(Clone)]
+/// #[derive(Clone, Copy)]
 /// enum Action {
 ///     Add,
 ///     Remove,
 ///     None,
 /// }
-/// let tabs = RwSignal::new(vec![]);
-/// let active_tab = RwSignal::new(None::<usize>);
+///
+/// let tabs = RwSignal::new(Vec::<TabContent>::new());
+/// let active_tab = RwSignal::new(Some(0usize));
 /// let tab_action = RwSignal::new(Action::None);
-/// create_effect(move |_| match tab_action.get() {
+///
+/// Effect::new(move |_| match tab_action.get() {
 ///     Action::Add => {
-///         tabs.update(|tabs| tabs.push(TabContent::new(tabs.len())));
+///         tabs.update(|tabs| {
+///             let idx = tabs.len();
+///             tabs.push(TabContent {
+///                 idx,
+///                 name: format!("Tab {idx}"),
+///             });
+///         });
+///         tab_action.set(Action::None);
 ///     }
 ///     Action::Remove => {
-///         tabs.update(|tabs| { tabs.pop(); });
+///         tabs.update(|tabs| {
+///             tabs.pop();
+///         });
+///         tab_action.set(Action::None);
 ///     }
-///     Action::None => ()
-/// });///
-/// let tabs_view = stack((dyn_stack(
+///     Action::None => {}
+/// });
+///
+/// let tabs_view = dyn_stack(
 ///     move || tabs.get(),
 ///     |tab| tab.idx,
 ///     move |tab| {
-///         text(format!("{} {}", tab.name, tab.idx)).button().style(move |s| s
-///             .width_full()
-///             .height(36.px())
-///             .apply_if(active_tab.get().is_some_and(|a| a == tab.idx), |s| {
-///                 s.with_theme(|s, t| s.border_color(t.primary()))
+///         let idx = tab.idx;
+///         Label::new(format!("{} {}", tab.name, tab.idx))
+///             .style(move |s| {
+///                 s.width_full()
+///                     .height(36.0)
+///                     .apply_if(active_tab.get() == Some(idx), |s| s.font_bold())
 ///             })
-///         )
-///         .on_click_stop(move |_| {
-///             active_tab.update(|a| {
-///                 *a = Some(tab.idx);
-///             });
-///         })
+///             .on_event_stop(listener::Click, move |_cx, _| active_tab.set(Some(idx)))
 ///     },
 /// )
-/// .style(|s| s.flex_col().width_full().row_gap(5.))
 /// .scroll()
-/// .on_click_stop(move |_| {
-///     if active_tab.with_untracked(|act| act.is_some()) {
-///         active_tab.set(None)
-///     }
-/// })
-/// .style(|s| s.size_full().padding(5.).padding_right(7.))
-/// .scroll_style(|s| s.handle_thickness(6.).shrink_to_fit()),))
-/// .style(|s| s
-///     .width(140.)
-///     .min_width(140.)
-///     .height_full()
-///     .border_right(1.)
-///     .with_theme(|s, t| s.border_color(t.border_muted()))
+/// .style(|s| s.width(140.).height_full().padding(5.0));
+///
+/// let tabs_content_view = tab(
+///     move || active_tab.get(),
+///     move || tabs.get(),
+///     |tab| tab.idx,
+///     move |tab| {
+///         Stack::vertical((
+///             Label::new(tab.name.clone()).style(|s| s.font_size(15.0).font_bold()),
+///             Label::new(format!("{}", tab.idx)).style(|s| s.font_size(20.0).font_bold()),
+///             Label::new("is now active"),
+///         ))
+///         .style(|s| {
+///             s.size(150.0, 150.0)
+///                 .items_center()
+///                 .justify_center()
+///                 .row_gap(10.0)
+///         })
+///     },
 /// );
-/// let tabs_content_view = stack((
-///     tab(
-///         move || active_tab.get(),
-///         move || tabs.get(),
-///         |tab| tab.idx,
-///         move |tab| {
-///          v_stack((
-///             label(move || format!("{}", tab.name)).style(|s| s
-///                 .font_size(15.)
-///                 .font_bold()),
-///             label(move || format!("{}", tab.idx)).style(|s| s
-///                 .font_size(20.)
-///                 .font_bold()),
-///             label(move || "is now active").style(|s| s
-///                 .font_size(13.)),
-///         )).style(|s| s
-///             .size(150.px(), 150.px())
-///             .items_center()
-///             .justify_center()
-///             .row_gap(10.))
-///         },
-///     ).style(|s| s.size_full()),
-/// ))
-/// .style(|s| s.size_full());
+///
+/// let controls = Stack::new((
+///     Button::new("Add tab").on_event_stop(listener::Click, move |_cx, _| {
+///         tab_action.set(Action::Add)
+///     }),
+///     Button::new("Remove tab").on_event_stop(listener::Click, move |_cx, _| {
+///         tab_action.set(Action::Remove)
+///     }),
+/// ));
+///
+/// let _layout = Stack::vertical((controls, Stack::new((tabs_view, tabs_content_view))))
+///     .style(|s| s.size_full().row_gap(10.0));
 /// ```
 pub fn tab<IF, I, T, KF, K, VF, V>(
     active_fn: impl Fn() -> Option<usize> + 'static,
@@ -264,16 +257,12 @@ impl<T> View for Tab<T> {
                 }
                 TabState::Active(active) => {
                     self.active.replace(active);
-                    self.id.request_style_recursive();
                 }
                 TabState::None => {
                     self.active.take();
                 }
             }
-            self.id.request_all();
-            for (child, _) in self.children.iter().flatten() {
-                child.request_all();
-            }
+            self.id.request_style(StyleReason::style_pass());
         }
     }
 
@@ -287,17 +276,6 @@ impl<T> View for Tab<T> {
                     child.set_hidden();
                 }
             }
-        }
-    }
-
-    fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        if let Some(active_tab) = self.active
-            && let Some(Some((active, _))) = self
-                .children
-                .get(active_tab)
-                .or_else(|| self.children.first())
-        {
-            cx.paint_view(*active);
         }
     }
 }

@@ -9,6 +9,7 @@ use serial_test::serial;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use floem::headless::TestRoot;
 use floem::prelude::*;
 use floem::views::tab;
 use floem_test::prelude::*;
@@ -22,6 +23,7 @@ use floem_test::prelude::*;
 #[test]
 #[serial]
 fn test_inactive_tabs_have_zero_size() {
+    let root = TestRoot::new();
     let active_tab = RwSignal::new(Some(0usize));
     let tabs = vec![0, 1, 2];
 
@@ -46,7 +48,7 @@ fn test_inactive_tabs_have_zero_size() {
         },
     );
 
-    let mut harness = HeadlessHarness::new_with_size(tab_view, 200.0, 400.0);
+    let mut harness = HeadlessHarness::new_with_size(root, tab_view, 200.0, 400.0);
     harness.rebuild();
 
     let ids = child_ids.borrow();
@@ -80,6 +82,7 @@ fn test_inactive_tabs_have_zero_size() {
 #[test]
 #[serial]
 fn test_switching_tabs_updates_child_sizes() {
+    let root = TestRoot::new();
     let active_tab = RwSignal::new(Some(0usize));
     let tabs = vec![0, 1];
 
@@ -98,7 +101,7 @@ fn test_switching_tabs_updates_child_sizes() {
         },
     );
 
-    let mut harness = HeadlessHarness::new_with_size(tab_view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, tab_view, 200.0, 200.0);
     harness.rebuild();
 
     let ids = child_ids.borrow();
@@ -144,6 +147,7 @@ fn test_switching_tabs_updates_child_sizes() {
 #[test]
 #[serial]
 fn test_no_active_tab_all_hidden() {
+    let root = TestRoot::new();
     let active_tab = RwSignal::new(None::<usize>);
     let tabs = vec![0, 1];
 
@@ -161,7 +165,7 @@ fn test_no_active_tab_all_hidden() {
         },
     );
 
-    let mut harness = HeadlessHarness::new_with_size(tab_view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, tab_view, 200.0, 200.0);
     harness.rebuild();
 
     let ids = child_ids.borrow();
@@ -186,6 +190,7 @@ fn test_no_active_tab_all_hidden() {
 #[test]
 #[serial]
 fn test_set_hidden_removes_from_layout() {
+    let root = TestRoot::new();
     let child1 = Empty::new().style(|s| s.size(50.0, 30.0));
     let child1_id = child1.view_id();
     let child2 = Empty::new().style(|s| s.size(50.0, 30.0));
@@ -193,7 +198,7 @@ fn test_set_hidden_removes_from_layout() {
 
     let container = Stack::new((child1, child2)).style(|s| s.flex_row().size(200.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(container, 200.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, container, 200.0, 100.0);
     harness.rebuild();
 
     // Initially both visible, child2 at x=50
@@ -229,10 +234,11 @@ fn test_set_hidden_removes_from_layout() {
 #[test]
 #[serial]
 fn test_is_hidden_state() {
+    let root = TestRoot::new();
     let view = Empty::new().style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     // Initially visible
@@ -256,10 +262,11 @@ fn test_is_hidden_state() {
 #[test]
 #[serial]
 fn test_set_visible_clears_hidden_flag() {
+    let root = TestRoot::new();
     let view = Empty::new().style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     // Hide it
@@ -294,6 +301,7 @@ fn test_set_visible_clears_hidden_flag() {
 #[test]
 #[serial]
 fn test_hidden_child_doesnt_affect_flex_siblings() {
+    let root = TestRoot::new();
     let child1 = Empty::new().style(|s| s.size(50.0, 30.0));
     let _child1_id = child1.view_id();
     let child2 = Empty::new().style(|s| s.size(50.0, 30.0));
@@ -303,7 +311,7 @@ fn test_hidden_child_doesnt_affect_flex_siblings() {
 
     let container = Stack::new((child1, child2, child3)).style(|s| s.flex_row().size(200.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(container, 200.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, container, 200.0, 100.0);
     harness.rebuild();
 
     // Initially: child3 at x=100 (50+50)
@@ -343,10 +351,11 @@ fn test_hidden_child_doesnt_affect_flex_siblings() {
 #[test]
 #[serial]
 fn test_hidden_toggle_multiple_times() {
+    let root = TestRoot::new();
     let view = Empty::new().style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     // Toggle hidden state multiple times
@@ -388,10 +397,11 @@ fn test_hidden_toggle_multiple_times() {
 #[test]
 #[serial]
 fn test_set_hidden_idempotent() {
+    let root = TestRoot::new();
     let view = Empty::new().style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     // Hide once
@@ -412,10 +422,11 @@ fn test_set_hidden_idempotent() {
 #[test]
 #[serial]
 fn test_set_visible_idempotent() {
+    let root = TestRoot::new();
     let view = Empty::new().style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     // Already visible
@@ -437,6 +448,7 @@ fn test_set_visible_idempotent() {
 #[test]
 #[serial]
 fn test_hidden_with_display_none_style() {
+    let root = TestRoot::new();
     let is_display_none = RwSignal::new(false);
 
     let view = Empty::new().style(move |s| {
@@ -448,7 +460,7 @@ fn test_hidden_with_display_none_style() {
     });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     // Initially visible
@@ -504,13 +516,14 @@ fn test_hidden_with_display_none_style() {
 #[test]
 #[serial]
 fn test_nested_hidden_views() {
+    let root = TestRoot::new();
     let inner = Empty::new().style(|s| s.size(50.0, 50.0));
     let inner_id = inner.view_id();
 
     let outer = Container::new(inner).style(|s| s.size(100.0, 100.0));
     let outer_id = outer.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(outer, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, outer, 200.0, 200.0);
     harness.rebuild();
 
     // Hide outer - inner should also have 0 layout
@@ -545,13 +558,14 @@ fn test_nested_hidden_views() {
 #[test]
 #[serial]
 fn test_hidden_view_not_clickable() {
+    let root = TestRoot::new();
     let tracker = ClickTracker::new();
 
     let inner = Empty::new().style(|s| s.size(100.0, 100.0));
     let id = inner.view_id();
     let view = tracker.track_named("target", inner);
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     // Click when visible
@@ -582,6 +596,7 @@ fn test_hidden_view_not_clickable() {
 #[test]
 #[serial]
 fn test_flex_row_display_recovered_after_visible() {
+    let root = TestRoot::new();
     let child1 = Empty::new().style(|s| s.size(50.0, 30.0));
     let child2 = Empty::new().style(|s| s.size(50.0, 30.0));
     let child2_id = child2.view_id();
@@ -590,7 +605,7 @@ fn test_flex_row_display_recovered_after_visible() {
     let container = Stack::new((child1, child2)).style(|s| s.flex_row().size(200.0, 100.0));
     let container_id = container.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(container, 200.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, container, 200.0, 100.0);
     harness.rebuild();
 
     // Initially: child2 at x=50 (flex-row layout)
@@ -623,6 +638,7 @@ fn test_flex_row_display_recovered_after_visible() {
 #[test]
 #[serial]
 fn test_flex_col_display_recovered_after_visible() {
+    let root = TestRoot::new();
     let child1 = Empty::new().style(|s| s.size(50.0, 30.0));
     let child2 = Empty::new().style(|s| s.size(50.0, 30.0));
     let child2_id = child2.view_id();
@@ -631,7 +647,7 @@ fn test_flex_col_display_recovered_after_visible() {
     let container = Stack::new((child1, child2)).style(|s| s.flex_col().size(100.0, 200.0));
     let container_id = container.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(container, 100.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, container, 100.0, 200.0);
     harness.rebuild();
 
     // Initially: child2 at y=30 (flex-col layout)
@@ -664,6 +680,7 @@ fn test_flex_col_display_recovered_after_visible() {
 #[test]
 #[serial]
 fn test_tab_restores_display_on_switch() {
+    let root = TestRoot::new();
     let active_tab = RwSignal::new(Some(0usize));
     let tabs = vec![0, 1];
 
@@ -689,7 +706,7 @@ fn test_tab_restores_display_on_switch() {
         },
     );
 
-    let mut harness = HeadlessHarness::new_with_size(tab_view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, tab_view, 200.0, 200.0);
     harness.rebuild();
 
     let inner_ids = inner_child_ids.borrow();

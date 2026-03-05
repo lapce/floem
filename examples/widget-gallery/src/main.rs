@@ -19,16 +19,15 @@ pub mod tabs;
 pub mod texteditor;
 
 use floem::{
-    action::{add_overlay, set_theme, set_window_menu, toggle_global_theme, toggle_window_theme},
-    event::{Event, EventListener},
+    action::{set_theme, set_window_menu, toggle_global_theme, toggle_window_theme},
     kurbo::Size,
     menu::*,
     muda::{AboutMetadataBuilder, PredefinedMenuItem},
     new_window,
-    prelude::*,
-    style::{Background, CursorStyle, Transition},
+    prelude::{palette::css, *},
+    style::{Background, CursorStyle, CustomStylable, Transition},
     theme::StyleThemeExt,
-    ui_events::keyboard::{Key, KeyState, KeyboardEvent, Modifiers, NamedKey},
+    ui_events::keyboard::{Key, KeyboardEvent, Modifiers, NamedKey},
     window::{Theme, WindowConfig, WindowId},
 };
 
@@ -88,10 +87,11 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         .get()
         .into_iter()
         .map(move |item| {
-            item.debug_name(item).style(move |s| {
-                s.flex_row()
-                    .font_size(18.)
+            item.style(move |s| {
+                s.font_size(18.)
                     .height(36.0)
+                    .width_full()
+                    .items_center()
                     .transition(Background, Transition::ease_in_out(100.millis()))
                     .active(|s| {
                         s.with_theme(|s, t| {
@@ -104,14 +104,19 @@ fn app_view(window_id: WindowId) -> impl IntoView {
             })
         })
         .list()
-        .style(|s| s.flex_col().width(140.0).flex_grow(1.));
+        .style(|s| {
+            s.flex_col()
+                .width(140.0)
+                .flex_grow(1.)
+                .even(|s| s.background(css::PINK))
+        });
 
     let active_tab = side_bar_list.selection();
 
     let side_tab_bar = side_bar_list
         .scroll()
         .debug_name("Side Tab Bar")
-        .scroll_style(|s| s.shrink_to_fit().handle_thickness(8.))
+        .custom_style(|s| s.shrink_to_fit())
         .style(|s| {
             s.border(1.)
                 .flex_col()
@@ -153,7 +158,18 @@ fn app_view(window_id: WindowId) -> impl IntoView {
 
     let tab = tab.scroll().style(|s| s.size_full());
 
-    let view = Stack::horizontal((left_side_bar, tab))
+    let floem_logo = svg(include_str!("../assets/floem.svg"))
+        .style(|s| s.unset_color().size_full().size(50, 50))
+        .overlay()
+        .style(|s| {
+            s.absolute()
+                .z_index(1)
+                .size(50, 50)
+                .inset_bottom(20.)
+                .inset_right(15.)
+        });
+
+    let view = Stack::horizontal((left_side_bar, tab, floem_logo))
         .style(|s| s.padding(5.0).width_full().height_full().col_gap(5.0))
         .window_title(|| "Widget Gallery".to_owned());
 
@@ -292,22 +308,9 @@ fn app_view(window_id: WindowId) -> impl IntoView {
             }),
     );
 
-    add_overlay(svg(include_str!("../assets/floem.svg")).style(|s| {
-        s.unset_color()
-            .size(50, 50)
-            .absolute()
-            .inset_bottom(20.)
-            .inset_right(15.)
-    }));
-
-    view.on_event_stop(EventListener::KeyUp, move |e| {
-        if let Event::Key(KeyboardEvent {
-            state: KeyState::Up,
-            key,
-            modifiers,
-            ..
-        }) = e
-        {
+    view.on_event_stop(
+        listener::KeyUp,
+        move |_cx, KeyboardEvent { modifiers, key, .. }| {
             if *key == Key::Named(NamedKey::F11) {
                 floem::action::inspect();
             } else if *key == Key::Character("q".into()) && modifiers.contains(Modifiers::META) {
@@ -315,8 +318,8 @@ fn app_view(window_id: WindowId) -> impl IntoView {
             } else if *key == Key::Character("w".into()) && modifiers.contains(Modifiers::META) {
                 floem::close_window(window_id);
             }
-        }
-    })
+        },
+    )
 }
 
 fn main() {

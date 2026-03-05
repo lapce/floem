@@ -1,15 +1,9 @@
-use floem::{
-    event::{Event, EventListener},
-    kurbo::Size,
-    prelude::*,
-    window::WindowConfig,
-    Application,
-};
+use floem::{context::LayoutChanged, kurbo::Size, prelude::*, window::WindowConfig, Application};
 
 fn app_view() -> impl IntoView {
     let size = RwSignal::new(Size::default());
 
-    let view = Label::derived(move || format!("{}", size.get()))
+    Label::derived(move || format!("{}", size.get()))
         .style(|s| s.font_size(30.0))
         .container()
         .style(|s| {
@@ -19,22 +13,16 @@ fn app_view() -> impl IntoView {
                 .width_full()
                 .height_full()
                 .row_gap(10.0)
-        });
-
-    let id = view.id();
-    view.on_event_stop(EventListener::KeyUp, move |e| {
-        if let Event::Key(KeyboardEvent {
-            state: KeyState::Up,
-            key,
-            ..
-        }) = e
-        {
-            if *key == Key::Named(NamedKey::F11) {
-                id.inspect();
+        })
+        .on_event_stop(listener::KeyUp, move |_cx, KeyboardEvent { key, .. }| {
+            if let Key::Named(NamedKey::F11) = key {
+                floem::action::inspect();
             }
-        }
-    })
-    .on_resize(move |r| size.set(r.size()))
+        })
+        .on_event_stop(
+            LayoutChanged::listener(),
+            move |_cx, LayoutChanged { new_box, .. }| size.set(new_box.size()),
+        )
 }
 
 fn main() {

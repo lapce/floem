@@ -11,6 +11,7 @@
 use floem::kurbo::Point;
 use floem::prelude::*;
 use floem::unit::Pct;
+use floem_test::TestRoot;
 use floem_test::prelude::*;
 use serial_test::serial;
 
@@ -21,11 +22,12 @@ use serial_test::serial;
 #[test]
 #[serial]
 fn test_visual_transform_at_origin() {
+    let root = TestRoot::new();
     // A view at the origin with no transforms should have identity transform
     let view = Empty::new().style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     let transform = id.get_visual_transform();
@@ -54,13 +56,14 @@ fn test_visual_transform_at_origin() {
 #[test]
 #[serial]
 fn test_visual_transform_with_padding() {
+    let root = TestRoot::new();
     // A view inside a container with padding should have visual_origin offset
     let inner = Empty::new().style(|s| s.size(50.0, 50.0));
     let inner_id = inner.view_id();
 
     let view = Container::new(inner).style(|s| s.padding(30.0).size(110.0, 110.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     let transform = inner_id.get_visual_transform();
@@ -95,6 +98,7 @@ fn test_visual_transform_with_padding() {
 #[test]
 #[serial]
 fn test_visual_transform_nested_accumulates() {
+    let root = TestRoot::new();
     // Deeply nested views should accumulate all parent offsets
     let deep = Empty::new().style(|s| s.size(20.0, 20.0));
     let deep_id = deep.view_id();
@@ -105,7 +109,7 @@ fn test_visual_transform_nested_accumulates() {
     )
     .style(|s| s.padding(10.0).size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     let transform = deep_id.get_visual_transform();
@@ -133,15 +137,16 @@ fn test_visual_transform_nested_accumulates() {
 #[test]
 #[serial]
 fn test_visual_transform_with_scale() {
+    let root = TestRoot::new();
     // A view with CSS scale transform
     let view = Empty::new().style(|s| s.size(100.0, 100.0).scale(Pct(200.0))); // 2x scale
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 300.0, 300.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 300.0, 300.0);
     harness.rebuild();
 
     let transform = id.get_visual_transform();
-    let css_transform = id.get_transform();
+    let css_transform = id.get_visual_transform();
 
     // CSS transform should have scale
     let css_coeffs = css_transform.as_coeffs();
@@ -163,11 +168,12 @@ fn test_visual_transform_with_scale() {
 #[test]
 #[serial]
 fn test_visual_transform_with_translate() {
+    let root = TestRoot::new();
     // A view with CSS translate
     let view = Empty::new().style(|s| s.size(50.0, 50.0).translate_x(20.0).translate_y(10.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     let transform = id.get_visual_transform();
@@ -198,17 +204,18 @@ fn test_visual_transform_with_translate() {
 #[test]
 #[serial]
 fn test_visual_transform_with_rotation() {
+    let root = TestRoot::new();
     // A view with CSS rotation (90 degrees)
     let view = Empty::new().style(|s| {
         s.size(50.0, 50.0).rotate(90.0.deg()) // 90 degrees
     });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     let transform = id.get_visual_transform();
-    let css_transform = id.get_transform();
+    let css_transform = id.get_visual_transform();
 
     // CSS transform should have rotation
     // For 90 degree rotation: [cos, sin, -sin, cos, tx, ty] = [0, 1, -1, 0, tx, ty]
@@ -233,6 +240,7 @@ fn test_visual_transform_with_rotation() {
 #[test]
 #[serial]
 fn test_visual_transform_combined_transforms() {
+    let root = TestRoot::new();
     // A view with position + translate + scale.
     // visual_origin is derived from visual_transform, so it equals
     // the transform's translation component.
@@ -243,7 +251,7 @@ fn test_visual_transform_combined_transforms() {
 
     let view = Container::new(inner).style(|s| s.padding(20.0).size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     let transform = inner_id.get_visual_transform();
@@ -257,6 +265,7 @@ fn test_visual_transform_combined_transforms() {
         coeffs[0]
     );
 
+    // CSS canonical order: translate → rotate → scale
     // For a 40x40 element at position (20,20) with translate(10) and 1.5x scale:
     // - Layout position = 20 (padding)
     // - CSS translate = 10
@@ -296,13 +305,14 @@ fn test_visual_transform_combined_transforms() {
 #[test]
 #[serial]
 fn test_visual_transform_point_conversion() {
+    let root = TestRoot::new();
     // Test that we can convert points correctly using the transform
     let inner = Empty::new().style(|s| s.size(100.0, 100.0));
     let inner_id = inner.view_id();
 
     let view = Container::new(inner).style(|s| s.padding(50.0).size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     let transform = inner_id.get_visual_transform();
@@ -334,13 +344,14 @@ fn test_visual_transform_point_conversion() {
 #[test]
 #[serial]
 fn test_root_to_local_point_conversion() {
+    let root = TestRoot::new();
     // Test inverse transform: window to local
     let inner = Empty::new().style(|s| s.size(100.0, 100.0));
     let inner_id = inner.view_id();
 
     let view = Container::new(inner).style(|s| s.padding(50.0).size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     let transform = inner_id.get_visual_transform();
@@ -373,11 +384,12 @@ fn test_root_to_local_point_conversion() {
 #[test]
 #[serial]
 fn test_point_conversion_with_scale() {
+    let root = TestRoot::new();
     // Test point conversion with scale transform
     let view = Empty::new().style(|s| s.size(50.0, 50.0).scale(Pct(200.0))); // 2x scale
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     let transform = id.get_visual_transform();
@@ -412,6 +424,7 @@ fn test_point_conversion_with_scale() {
 #[test]
 #[serial]
 fn test_nested_transforms_parent_rotation_child_scale() {
+    let root = TestRoot::new();
     // Parent has rotation, child has scale
     // The visual_transform should include both transforms
     let inner = Empty::new().style(|s| s.size(40.0, 40.0).scale(Pct(200.0)));
@@ -421,7 +434,7 @@ fn test_nested_transforms_parent_rotation_child_scale() {
         Container::new(inner).style(|s| s.padding(20.0).size(100.0, 100.0).rotate(45.0.deg()));
     let outer_id = outer.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(outer, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, outer, 200.0, 200.0);
     harness.rebuild();
 
     let outer_transform = outer_id.get_visual_transform();

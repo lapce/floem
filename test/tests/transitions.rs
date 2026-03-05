@@ -31,6 +31,7 @@ use floem_test::prelude::*;
 /// 3. Verify the transition starts (background begins to change)
 #[test]
 fn test_hover_triggers_transition() {
+    let root = TestRoot::new();
     let view = Empty::new().style(|s| {
         s.size(100.0, 100.0)
             .background(palette::css::WHITE)
@@ -39,7 +40,7 @@ fn test_hover_triggers_transition() {
     });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Initial state: background should be WHITE
     let style = harness.get_computed_style(id);
@@ -79,6 +80,7 @@ fn test_hover_triggers_transition() {
 /// the `ChangeFlags::STYLE` flag.
 #[test]
 fn test_transition_animates_across_frames() {
+    let root = TestRoot::new();
     let view = Empty::new().style(|s| {
         s.size(100.0, 100.0)
             .background(palette::css::WHITE)
@@ -87,7 +89,7 @@ fn test_transition_animates_across_frames() {
     });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // First change: hover (this sets initial=true, value jumps to BLUE)
     harness.pointer_move(50.0, 50.0);
@@ -126,6 +128,7 @@ fn test_transition_animates_across_frames() {
 /// NOTE: Transitions only work on the SECOND property change (initial flag).
 #[test]
 fn test_schedule_style_sets_dirty_flag() {
+    let root = TestRoot::new();
     let view = Empty::new().style(|s| {
         s.size(100.0, 100.0)
             .background(palette::css::WHITE)
@@ -134,7 +137,7 @@ fn test_schedule_style_sets_dirty_flag() {
     });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // First change: hover (sets initial=true, value jumps to BLUE)
     harness.pointer_move(50.0, 50.0);
@@ -176,6 +179,7 @@ fn test_schedule_style_sets_dirty_flag() {
 /// This test checks that after TWO rebuilds, there are still scheduled updates.
 #[test]
 fn test_transition_schedules_updates_on_subsequent_frames() {
+    let root = TestRoot::new();
     let is_blue = RwSignal::new(false);
 
     let view = Empty::new().style(move |s| {
@@ -190,7 +194,7 @@ fn test_transition_schedules_updates_on_subsequent_frames() {
     });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // First change: set to blue (sets initial=true)
     is_blue.set(true);
@@ -242,6 +246,7 @@ fn test_transition_schedules_updates_on_subsequent_frames() {
 /// NOTE: Transitions only work on the SECOND property change (initial flag).
 #[test]
 fn test_frame_update_style_missing_flag() {
+    let root = TestRoot::new();
     let view = Empty::new().style(|s| {
         s.size(100.0, 100.0)
             .background(palette::css::WHITE)
@@ -250,7 +255,7 @@ fn test_frame_update_style_missing_flag() {
     });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // First change: hover (sets initial=true, value jumps to BLUE)
     harness.pointer_move(50.0, 50.0);
@@ -304,6 +309,7 @@ fn test_frame_update_style_missing_flag() {
 /// NOTE: Transitions only work on the SECOND property change (initial flag).
 #[test]
 fn test_transition_layout_schedules_updates_on_subsequent_frames() {
+    let root = TestRoot::new();
     let is_wide = RwSignal::new(false);
 
     let view = Empty::new().style(move |s| {
@@ -315,7 +321,7 @@ fn test_transition_layout_schedules_updates_on_subsequent_frames() {
     });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
 
     // First change: set to wide (sets initial=true)
     is_wide.set(true);

@@ -3,9 +3,9 @@ use floem::{
     prelude::*,
     reactive::Effect,
     style::CursorStyle,
-    taffy::{prelude::*, Line},
+    taffy::{Line, prelude::*},
     text::FontWeight,
-    theme::{border_style, StyleThemeExt},
+    theme::{StyleThemeExt, border_style},
 };
 
 use crate::{
@@ -29,6 +29,7 @@ pub fn list_view() -> impl IntoView {
             .grid_template_rows([auto(), auto(), length(20.), auto(), auto()])
             .row_gap(20)
             .justify_items(JustifyItems::Center)
+            .selectable(false)
     })
 }
 
@@ -37,11 +38,11 @@ fn simple_list() -> impl IntoView {
         .list()
         .style(|s| s.width_full().class(LabelClass, |s| s.height(24)))
         .scroll()
-        .style(|s| s.size(100, 200).apply(border_style(true)))
+        .style(|s| s.size(100, 500).apply(border_style(true)))
 }
 
 fn enhanced_list() -> impl IntoView {
-    let long_list: imbl::Vector<(bool, i32)> = (0..1000).map(|v| (true, v)).collect();
+    let long_list: imbl::Vector<(bool, i32)> = (0..1000000).map(|v| (true, v)).collect();
     let long_list = RwSignal::new(long_list);
 
     let list_width = 180.0;
@@ -52,7 +53,7 @@ fn enhanced_list() -> impl IntoView {
 
     let x_mark = move |index| {
         svg(CROSS_SVG)
-            .on_click_stop(move |_| {
+            .action(move || {
                 print!("Item Removed");
                 long_list.update(|list| {
                     list.remove(index);
@@ -86,17 +87,21 @@ fn enhanced_list() -> impl IntoView {
             });
         });
 
-        Stack::horizontal((
-            Checkbox::new_rw(checkbox_state)
-                .style(|s| s.with_theme(|s, t| s.selected(|s| s.color(t.text())))),
-            label(item),
-            x_mark(index),
-        ))
-        .style(move |s| s.items_center().gap(5).padding_left(6).height(item_height))
+        Stack::horizontal((Checkbox::new_rw(checkbox_state), label(item), x_mark(index))).style(
+            move |s| {
+                s.items_center()
+                    .gap(5)
+                    .padding_left(6)
+                    .height(item_height)
+                    .class(CheckboxClass, |s| {
+                        s.with_theme(|s, t| s.selected(|s| s.color(t.text())))
+                    })
+            },
+        )
     };
 
     VirtualList::with_view(move || long_list.get().enumerate(), item_view)
         .style(move |s| s.flex_col().flex_grow(1.0))
         .scroll()
-        .style(move |s| s.width(list_width).height(200.0).apply(border_style(true)))
+        .style(move |s| s.width(list_width).height(500.0).apply(border_style(true)))
 }

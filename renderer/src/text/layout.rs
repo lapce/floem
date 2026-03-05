@@ -347,20 +347,7 @@ impl TextLayout {
         };
         self.layout.break_all_lines(max_advance);
 
-        // Two-pass alignment for non-left alignment without width constraint
-        let needs_two_pass =
-            align.is_some() && align != Some(Alignment::Left) && self.width_opt.is_none();
-
-        if needs_two_pass {
-            let measured_width = self.layout.full_width();
-            if measured_width > 0.0 {
-                self.layout.align(
-                    Some(measured_width),
-                    align.unwrap_or_default(),
-                    AlignmentOptions::default(),
-                );
-            }
-        } else if let Some(align) = align {
+        if let Some(align) = self.alignment {
             self.layout
                 .align(self.width_opt, align, AlignmentOptions::default());
         }
@@ -410,6 +397,30 @@ impl TextLayout {
         if let Some(align) = self.alignment {
             self.layout
                 .align(Some(width), align, AlignmentOptions::default());
+        }
+    }
+
+    /// Sets text alignment without changing text content or attributes.
+    ///
+    /// This updates the stored alignment and recomputes line layout so the new
+    /// alignment takes effect for the current width/wrap constraints.
+    pub fn set_align(&mut self, align: Option<Alignment>) {
+        if self.alignment == align {
+            return;
+        }
+
+        self.alignment = align;
+
+        let max_advance = if self.wrap == Wrap::None {
+            None
+        } else {
+            self.width_opt
+        };
+        self.layout.break_all_lines(max_advance);
+
+        if let Some(align) = self.alignment {
+            self.layout
+                .align(self.width_opt, align, AlignmentOptions::default());
         }
     }
 
@@ -597,6 +608,40 @@ impl TextLayout {
         });
     }
 
+    /// Computes selection highlight rectangles between two flat byte indices,
+    /// using per-line fragment metrics for vertical bounds.
+    pub fn selection_geometry_with_line_metrics(
+        &self,
+        start_byte: usize,
+        end_byte: usize,
+        mut f: impl FnMut(f64, f64, f64, f64),
+    ) {
+        // Map original byte indices to display space for Parley.
+        let (display_start, display_end) = match self.tab_info {
+            Some(ref ti) => (ti.orig_to_display(start_byte), ti.orig_to_display(end_byte)),
+            None => (start_byte, end_byte),
+        };
+        let anchor = parley::editing::Cursor::from_byte_index(
+            &self.layout,
+            display_start,
+            parley::layout::Affinity::Downstream,
+        );
+        let focus = parley::editing::Cursor::from_byte_index(
+            &self.layout,
+            display_end,
+            parley::layout::Affinity::Upstream,
+        );
+        let selection = parley::editing::Selection::new(anchor, focus);
+        selection.geometry_with(&self.layout, |bbox, line_idx| {
+            if let Some(line) = self.layout.get(line_idx) {
+                let m = line.metrics();
+                f(bbox.x0, m.min_coord as f64, bbox.x1, m.max_coord as f64);
+            } else {
+                f(bbox.x0, bbox.y0, bbox.x1, bbox.y1);
+            }
+        });
+    }
+
     /// Computes selection highlight rectangles between two display-space
     /// [`Cursor`] values, avoiding the byte-index round-trip.
     ///
@@ -612,6 +657,27 @@ impl TextLayout {
         let selection = parley::editing::Selection::new(*start, *end);
         selection.geometry_with(&self.layout, |bbox, _| {
             f(bbox.x0, bbox.y0, bbox.x1, bbox.y1);
+        });
+    }
+
+    /// Computes selection highlight rectangles using per-line fragment metrics
+    /// for vertical bounds, which generally looks closer to native selection.
+    ///
+    /// Calls `f(x0, y0, x1, y1)` once for each visual line the selection spans.
+    pub fn selection_for_cursors_with_line_metrics(
+        &self,
+        start: &parley::Cursor,
+        end: &parley::Cursor,
+        mut f: impl FnMut(f64, f64, f64, f64),
+    ) {
+        let selection = parley::editing::Selection::new(*start, *end);
+        selection.geometry_with(&self.layout, |bbox, line_idx| {
+            if let Some(line) = self.layout.get(line_idx) {
+                let m = line.metrics();
+                f(bbox.x0, m.min_coord as f64, bbox.x1, m.max_coord as f64);
+            } else {
+                f(bbox.x0, bbox.y0, bbox.x1, bbox.y1);
+            }
         });
     }
 
@@ -640,9 +706,42 @@ impl TextLayout {
     pub fn visual_line_is_empty(&self, nth: usize) -> bool {
         self.layout.get(nth).is_none_or(|l| l.is_empty())
     }
+
+    /// Returns the vertical bounds of all visual lines as `(min_y, max_y)`.
+    ///
+    /// Values are in layout-local coordinates and are derived from per-line
+    /// metrics (`min_coord` / `max_coord`).
+    pub fn visual_bounds_y(&self) -> Option<(f32, f32)> {
+        if self.layout.is_empty() {
+            return None;
+        }
+
+        let mut min_y = f32::INFINITY;
+        let mut max_y = f32::NEG_INFINITY;
+        for i in 0..self.layout.len() {
+            if let Some(line) = self.layout.get(i) {
+                let m = line.metrics();
+                min_y = min_y.min(m.min_coord);
+                max_y = max_y.max(m.max_coord);
+            }
+        }
+
+        if min_y.is_finite() && max_y.is_finite() {
+            Some((min_y, max_y))
+        } else {
+            None
+        }
+    }
+
+    pub fn clear_size(&mut self) {
+        self.width_opt = None;
+        self.height_opt = None;
+        self.layout.break_all_lines(None);
+    }
 }
 
 #[cfg(test)]
+#[allow(clippy::single_range_in_vec_init)]
 mod tests {
     use super::*;
     use crate::text::{Attrs, AttrsList, FamilyOwned};

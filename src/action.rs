@@ -10,8 +10,10 @@ use std::sync::atomic::AtomicU64;
 
 use floem_reactive::{SignalWith, UpdaterEffect};
 use peniko::kurbo::{Point, Size, Vec2};
+use winit::window::WindowId;
 use winit::window::{ResizeDirection, Theme};
 
+use crate::IntoView;
 use crate::platform::{Duration, Instant};
 
 use crate::{
@@ -124,6 +126,8 @@ pub(crate) struct Timer {
     pub(crate) token: TimerToken,
     pub(crate) action: Box<dyn FnOnce(TimerToken)>,
     pub(crate) deadline: Instant,
+    pub(crate) is_animation: bool,
+    pub(crate) window_id: Option<WindowId>,
 }
 
 /// A token associated with a timer.
@@ -162,7 +166,7 @@ pub fn exec_after(duration: Duration, action: impl FnOnce(TimerToken) + 'static)
     let view = get_current_view();
     let action = move |token| {
         let current_view = get_current_view();
-        set_current_view(view);
+        set_current_view(view.root());
         action(token);
         set_current_view(current_view);
     };
@@ -174,7 +178,40 @@ pub fn exec_after(duration: Duration, action: impl FnOnce(TimerToken) + 'static)
             token,
             action: Box::new(action),
             deadline,
+            is_animation: false,
+            window_id: None,
         },
+    });
+    token
+}
+
+/// Execute a callback on the next animation frame, synchronized with the display's refresh rate.
+///
+/// Returns a [`TimerToken`] that can be used to cancel the callback before it fires.
+/// Returns [`TimerToken::INVALID`] if called outside of a window context.
+pub fn exec_after_animation_frame(action: impl FnOnce(TimerToken) + 'static) -> TimerToken {
+    let view = get_current_view();
+    let Some(window_id) = view.window_id() else {
+        return TimerToken::INVALID;
+    };
+
+    let action = move |token| {
+        let current_view = get_current_view();
+        set_current_view(view.root());
+        action(token);
+        set_current_view(current_view);
+    };
+
+    let token = TimerToken::next();
+    add_app_update_event(AppUpdateEvent::RequestAnimationTimer {
+        timer: Timer {
+            token,
+            action: Box::new(action),
+            deadline: Instant::now(), // overridden by handler using monitor refresh rate
+            is_animation: true,
+            window_id: Some(window_id),
+        },
+        window_id,
     });
     token
 }
@@ -244,14 +281,14 @@ pub fn set_window_title(title: String) {
     add_update_message(UpdateMessage::SetWindowTitle { title });
 }
 
+/// Clear the focus from this window
+pub fn clear_focus() {
+    add_update_message(UpdateMessage::ClearFocus);
+}
+
 /// Focus the window.
 pub fn focus_window() {
     add_update_message(UpdateMessage::FocusWindow);
-}
-
-/// Clear the app focus.
-pub fn clear_app_focus() {
-    add_update_message(UpdateMessage::ClearAppFocus);
 }
 
 /// Set whether ime input is shown.
@@ -266,12 +303,10 @@ pub fn set_ime_cursor_area(position: Point, size: Size) {
 
 /// Creates a new overlay on the current window.
 pub fn add_overlay<V: View + 'static>(view: V) -> ViewId {
+    let view = view.style(move |s| s.absolute()).into_any();
     let id = view.id();
-    let view = view.style(move |s| s.absolute());
 
-    add_update_message(UpdateMessage::AddOverlay {
-        view: Box::new(view),
-    });
+    add_update_message(UpdateMessage::AddOverlay { view });
     id
 }
 

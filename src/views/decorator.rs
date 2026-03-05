@@ -5,15 +5,15 @@
 //! The decorator trait is the primary interface for extending the appearance and functionality of ['View']s.
 
 use floem_reactive::{Effect, SignalUpdate, UpdaterEffect};
-use peniko::kurbo::{Point, Rect};
 use std::rc::Rc;
-use ui_events::keyboard::{Key, KeyState, KeyboardEvent, Modifiers};
+use ui_events::keyboard::{Key, KeyboardEvent, Modifiers};
 
 use crate::{
     ViewId,
     action::{set_window_scale, set_window_title},
     animate::Animation,
-    event::{Event, EventListener, EventPropagation},
+    context::EventCallbackConfig,
+    event::{EventCx, EventPropagation, listener},
     platform::menu::Menu,
     style::{Style, StyleClass},
     view::{HasViewId, IntoView},
@@ -30,6 +30,8 @@ use crate::{
 /// - **Tuples/Vecs**: Converted eagerly to their view type
 pub trait Decorators: IntoView {
     /// Alter the style of the view.
+    ///
+    /// Ensure that if you are using signals inside of the style that you track them at the top level
     ///
     /// The Floem style system provides comprehensive styling capabilities including:
     ///
@@ -140,7 +142,7 @@ pub trait Decorators: IntoView {
                 let state = view_id.state();
                 state.borrow_mut().dragging_style = Some(style);
             }
-            view_id.request_style();
+            view_id.request_style(crate::style::recalc::StyleReason::full_recalc());
         });
         intermediate
     }
@@ -179,9 +181,9 @@ pub trait Decorators: IntoView {
     }
 
     /// Allows the element to be navigated to with the keyboard. Similar to setting tabindex="0" in html.
-    #[deprecated(note = "Set this property using `Style::focusable` instead")]
+    #[deprecated(note = "Set this property using `Style::keyboard_navigable` instead")]
     fn keyboard_navigable(self) -> Self::Intermediate {
-        self.style(|s| s.focusable(true))
+        self.style(|s| s.keyboard_navigable())
     }
 
     /// Dynamically controls whether the default view behavior for an event should be disabled.
@@ -190,27 +192,58 @@ pub trait Decorators: IntoView {
     ///
     /// # Reactivity
     /// This function is reactive and will re-run the disable function automatically in response to changes in signals
-    fn disable_default_event(
+    fn disable_default_event<L: listener::EventListenerTrait>(
         self,
-        disable: impl Fn() -> (EventListener, bool) + 'static,
+        disable: impl Fn() -> (L, bool) + 'static,
     ) -> Self::Intermediate {
         let intermediate = self.into_intermediate();
         let id = intermediate.view_id();
         Effect::new(move |_| {
-            let (event, disable) = disable();
+            let (_event, disable) = disable();
             if disable {
-                id.disable_default_event(event);
+                id.disable_default_event(L::listener_key());
             } else {
-                id.remove_disable_default_event(event);
+                id.remove_disable_default_event(L::listener_key());
             }
         });
         intermediate
     }
 
-    /// Mark the view as draggable
-    #[deprecated(note = "use `Style::draggable` directly instead")]
-    fn draggable(self) -> Self::Intermediate {
-        self.style(move |s| s.draggable(true))
+    /// Mark the current view as draggable with default configuration.
+    ///
+    /// Uses default threshold of 3.0 pixels, 300ms animation, and linear easing.
+    fn draggable(self) -> <<Self as IntoView>::Intermediate as IntoView>::Intermediate {
+        self.draggable_with_config(crate::event::DragConfig::default)
+    }
+
+    /// Mark the current view as draggable with custom configuration.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use floem::prelude::*;
+    /// use floem::event::DragConfig;
+    /// use std::time::Duration;
+    ///
+    /// let _view = empty().draggable_with_config(|| {
+    ///     DragConfig::default()
+    ///         .with_threshold(5.0)
+    ///         .with_animation_duration(Duration::from_millis(400))
+    /// });
+    /// ```
+    fn draggable_with_config(
+        self,
+        config: impl Fn() -> crate::event::DragConfig + 'static,
+    ) -> <<Self as IntoView>::Intermediate as IntoView>::Intermediate {
+        self.on_event_stop(listener::PointerDown, |cx, pbe| {
+            if let Some(pointer_id) = pbe.pointer.pointer_id
+                && pointer_id.is_primary_pointer()
+            {
+                cx.request_pointer_capture(pointer_id);
+            }
+        })
+        .on_event_stop(listener::GainedPointerCapture, move |cx, dt| {
+            cx.start_drag(*dt, config(), true);
+        })
     }
 
     /// Mark the view as disabled
@@ -222,205 +255,246 @@ pub trait Decorators: IntoView {
         self.style(move |s| s.set_disabled(disabled_fn()))
     }
 
-    /// Add an event handler for the given [`EventListener`].
-    fn on_event(
+    /// Add an event handler for the given `EventListener` with custom phase configuration.
+    fn on_event_with_config<L: listener::EventListenerTrait>(
         self,
-        listener: EventListener,
-        action: impl FnMut(&Event) -> EventPropagation + 'static,
-    ) -> Self::Intermediate {
+        listener: L,
+        config: EventCallbackConfig,
+        mut action: impl FnMut(&mut EventCx, &L::EventData) -> EventPropagation + 'static,
+    ) -> Self::Intermediate
+    where
+        L::EventData: Sized,
+    {
+        let _ = listener;
         let intermediate = self.into_intermediate();
-        intermediate
-            .view_id()
-            .add_event_listener(listener, Box::new(action));
+        let id = intermediate.view_id();
+        id.add_event_listener(
+            L::listener_key(),
+            Box::new(move |cx| {
+                let event = std::mem::replace(&mut cx.event, crate::event::Event::Extracted);
+                let result = if let Some(extracted) = L::extract(&event) {
+                    action(cx, extracted)
+                } else {
+                    EventPropagation::Continue
+                };
+                cx.event = event;
+                result
+            }),
+            config,
+        );
         intermediate
     }
 
-    /// Add an handler for pressing down a specific key.
-    ///
-    /// NOTE: View should have `.keyboard_navigable()` in order to receive keyboard events
+    /// Add an event handler for the given `EventListener`. This event will be handled with
+    /// the given handler and the event will continue propagating.
+    fn on_event_cont_with_config<L: listener::EventListenerTrait>(
+        self,
+        listener: L,
+        config: EventCallbackConfig,
+        mut action: impl FnMut(&mut EventCx, &L::EventData) + 'static,
+    ) -> Self::Intermediate
+    where
+        L::EventData: Clone,
+    {
+        self.on_event_with_config(listener, config, move |e, data| {
+            action(e, data);
+            EventPropagation::Continue
+        })
+    }
+
+    /// Add an event handler for the given `EventListener`. This event will be handled with
+    /// the given handler and the event will stop propagating.
+    fn on_event_stop_with_config<L: listener::EventListenerTrait>(
+        self,
+        listener: L,
+        config: EventCallbackConfig,
+        mut action: impl FnMut(&mut EventCx, &L::EventData) + 'static,
+    ) -> Self::Intermediate
+    where
+        L::EventData: Clone,
+    {
+        self.on_event_with_config(listener, config, move |e, data| {
+            action(e, data);
+            EventPropagation::Stop
+        })
+    }
+
+    // Update existing functions to use the config versions
+
+    /// Add an event handler for the given `EventListener`.
+    fn on_event<L: listener::EventListenerTrait>(
+        self,
+        listener: L,
+        action: impl FnMut(&mut EventCx, &L::EventData) -> EventPropagation + 'static,
+    ) -> Self::Intermediate
+    where
+        L::EventData: Sized,
+    {
+        self.on_event_with_config(listener, EventCallbackConfig::default(), action)
+    }
+
+    /// Add an event handler for the given `EventListener`. This event will be handled with
+    /// the given handler and the event will continue propagating.
+    fn on_event_cont<L: listener::EventListenerTrait>(
+        self,
+        listener: L,
+        action: impl FnMut(&mut EventCx, &L::EventData) + 'static,
+    ) -> Self::Intermediate
+    where
+        L::EventData: Clone,
+    {
+        self.on_event_cont_with_config(listener, EventCallbackConfig::default(), action)
+    }
+
+    /// Add an event handler for the given `EventListener`. This event will be handled with
+    /// the given handler and the event will stop propagating.
+    fn on_event_stop<L: listener::EventListenerTrait>(
+        self,
+        listener: L,
+        action: impl FnMut(&mut EventCx, &L::EventData) + 'static,
+    ) -> Self::Intermediate
+    where
+        L::EventData: Clone,
+    {
+        self.on_event_stop_with_config(listener, EventCallbackConfig::default(), action)
+    }
+
+    /// Add a handler for pressing down a specific key.
+    #[deprecated(note = "Use `on_event(listener::KeyDown, ...)` instead.")]
     fn on_key_down(
         self,
         key: Key,
         cmp: impl Fn(Modifiers) -> bool + 'static,
-        action: impl Fn(&Event) + 'static,
+        mut action: impl FnMut(&mut EventCx, &KeyboardEvent) + 'static,
     ) -> Self::Intermediate {
-        self.on_event(EventListener::KeyDown, move |e| {
-            if let Event::Key(KeyboardEvent {
-                state: KeyState::Down,
-                key: event_key,
-                modifiers,
-                ..
-            }) = e
-                && *event_key == key
-                && cmp(*modifiers)
-            {
-                action(e);
+        self.on_event(listener::KeyDown, move |cx, kb_event| {
+            if kb_event.key == key && cmp(kb_event.modifiers) {
+                action(cx, kb_event);
                 return EventPropagation::Stop;
             }
             EventPropagation::Continue
         })
     }
 
-    /// Add an handler for a specific key being released.
-    ///
-    /// NOTE: View should have `.keyboard_navigable()` in order to receive keyboard events
+    /// Add a handler for a specific key being released.
+    #[deprecated(note = "Use `on_event(listener::KeyUp, ...)` instead.")]
     fn on_key_up(
         self,
         key: Key,
         cmp: impl Fn(Modifiers) -> bool + 'static,
-        action: impl Fn(&Event) + 'static,
+        mut action: impl FnMut(&mut EventCx, &KeyboardEvent) + 'static,
     ) -> Self::Intermediate {
-        self.on_event(EventListener::KeyUp, move |e| {
-            if let Event::Key(KeyboardEvent {
-                state: KeyState::Up,
-                key: event_key,
-                modifiers,
-                ..
-            }) = e
-                && *event_key == key
-                && cmp(*modifiers)
-            {
-                action(e);
+        self.on_event(listener::KeyUp, move |e, kb_event| {
+            if kb_event.key == key && cmp(kb_event.modifiers) {
+                action(e, kb_event);
                 return EventPropagation::Stop;
             }
             EventPropagation::Continue
         })
     }
 
-    /// Add an event handler for the given [`EventListener`]. This event will be handled with
-    /// the given handler and the event will continue propagating.
-    fn on_event_cont(
-        self,
-        listener: EventListener,
-        action: impl Fn(&Event) + 'static,
-    ) -> Self::Intermediate {
-        self.on_event(listener, move |e| {
-            action(e);
-            EventPropagation::Continue
-        })
-    }
-
-    /// Add an event handler for the given [`EventListener`]. This event will be handled with
-    /// the given handler and the event will stop propagating.
-    fn on_event_stop(
-        self,
-        listener: EventListener,
-        action: impl Fn(&Event) + 'static,
-    ) -> Self::Intermediate {
-        self.on_event(listener, move |e| {
-            action(e);
-            EventPropagation::Stop
-        })
-    }
-
-    /// Add an event handler for [`EventListener::Click`].
+    /// Add an event handler for `EventListener::Click`.
+    #[deprecated(
+        note = "Use `on_event(Click, |cx, _event| { ... })` instead. The new API provides direct access to typed event data."
+    )]
     fn on_click(
         self,
-        action: impl FnMut(&Event) -> EventPropagation + 'static,
+        mut action: impl FnMut(&mut EventCx) -> EventPropagation + 'static,
     ) -> Self::Intermediate {
-        self.on_event(EventListener::Click, action)
+        self.on_event(listener::Click, move |cx, _event| action(cx))
     }
 
-    /// Add an event handler for [`EventListener::Click`]. This event will be handled with
+    /// Add an event handler for `EventListener::Click`. This event will be handled with
     /// the given handler and the event will continue propagating.
-    fn on_click_cont(self, action: impl Fn(&Event) + 'static) -> Self::Intermediate {
-        self.on_click(move |e| {
-            action(e);
-            EventPropagation::Continue
-        })
+    #[deprecated(
+        note = "Use `on_event_cont(Click, |cx, _event| { ... })` instead. The new API provides direct access to typed event data."
+    )]
+    fn on_click_cont(self, mut action: impl FnMut(&mut EventCx) + 'static) -> Self::Intermediate {
+        self.on_event_cont(listener::Click, move |cx, _event| action(cx))
     }
 
-    /// Add an event handler for [`EventListener::Click`]. This event will be handled with
+    /// Add an event handler for `EventListener::Click`. This event will be handled with
     /// the given handler and the event will stop propagating.
-    fn on_click_stop(self, mut action: impl FnMut(&Event) + 'static) -> Self::Intermediate {
-        self.on_click(move |e| {
-            action(e);
-            EventPropagation::Stop
-        })
+    #[deprecated(
+        note = "Use `on_event_stop(Click, |cx, _event| { ... })` instead. The new API provides direct access to typed event data."
+    )]
+    fn on_click_stop(self, mut action: impl FnMut(&mut EventCx) + 'static) -> Self::Intermediate {
+        self.on_event_stop(listener::Click, move |cx, _event| action(cx))
     }
 
     /// Attach action executed on button click or Enter or Space Key.
     fn action(self, mut action: impl FnMut() + 'static) -> Self::Intermediate {
-        self.on_click(move |_| {
-            action();
-            EventPropagation::Stop
-        })
+        self.on_event_stop(listener::Click, move |_cx, _event| action())
     }
 
-    /// Add an event handler for [`EventListener::DoubleClick`]
+    /// Add an event handler for `EventListener::DoubleClick`
+    #[deprecated(
+        note = "Use `on_event(DoubleClick, |cx, _event| { ... })` instead. The new API provides direct access to typed event data."
+    )]
     fn on_double_click(
         self,
-        action: impl Fn(&Event) -> EventPropagation + 'static,
+        mut action: impl FnMut(&mut EventCx) -> EventPropagation + 'static,
     ) -> Self::Intermediate {
-        self.on_event(EventListener::DoubleClick, action)
+        self.on_event(listener::DoubleClick, move |cx, _event| action(cx))
     }
 
-    /// Add an event handler for [`EventListener::DoubleClick`]. This event will be handled with
+    /// Add an event handler for `EventListener::DoubleClick`. This event will be handled with
     /// the given handler and the event will continue propagating.
-    fn on_double_click_cont(self, action: impl Fn(&Event) + 'static) -> Self::Intermediate {
-        self.on_double_click(move |e| {
-            action(e);
-            EventPropagation::Continue
-        })
+    #[deprecated(
+        note = "Use `on_event_cont(DoubleClick, |cx, _event| { ... })` instead. The new API provides direct access to typed event data."
+    )]
+    fn on_double_click_cont(
+        self,
+        mut action: impl FnMut(&mut EventCx) + 'static,
+    ) -> Self::Intermediate {
+        self.on_event_cont(listener::DoubleClick, move |cx, _event| action(cx))
     }
 
-    /// Add an event handler for [`EventListener::DoubleClick`]. This event will be handled with
+    /// Add an event handler for `EventListener::DoubleClick`. This event will be handled with
     /// the given handler and the event will stop propagating.
-    fn on_double_click_stop(self, action: impl Fn(&Event) + 'static) -> Self::Intermediate {
-        self.on_double_click(move |e| {
-            action(e);
-            EventPropagation::Stop
-        })
+    #[deprecated(
+        note = "Use `on_event_stop(DoubleClick, |cx, _event| { ... })` instead. The new API provides direct access to typed event data."
+    )]
+    fn on_double_click_stop(
+        self,
+        mut action: impl FnMut(&mut EventCx) + 'static,
+    ) -> Self::Intermediate {
+        self.on_event_stop(listener::DoubleClick, move |cx, _event| action(cx))
     }
 
-    /// Add an event handler for [`EventListener::SecondaryClick`]. This is most often the "Right" click.
+    /// Add an event handler for `EventListener::SecondaryClick`. This is most often the "Right" click.
+    #[deprecated(
+        note = "Use `on_event(SecondaryClick, |cx, _event| { ... })` instead. The new API provides direct access to typed event data."
+    )]
     fn on_secondary_click(
         self,
-        action: impl Fn(&Event) -> EventPropagation + 'static,
+        mut action: impl FnMut(&mut EventCx) -> EventPropagation + 'static,
     ) -> Self::Intermediate {
-        self.on_event(EventListener::SecondaryClick, action)
+        self.on_event(listener::SecondaryClick, move |cx, _event| action(cx))
     }
 
-    /// Add an event handler for [`EventListener::SecondaryClick`]. This is most often the "Right" click.
+    /// Add an event handler for `EventListener::SecondaryClick`. This is most often the "Right" click.
     /// This event will be handled with the given handler and the event will continue propagating.
-    fn on_secondary_click_cont(self, action: impl Fn(&Event) + 'static) -> Self::Intermediate {
-        self.on_secondary_click(move |e| {
-            action(e);
-            EventPropagation::Continue
-        })
+    #[deprecated(
+        note = "Use `on_event_cont(SecondaryClick, |cx, _event| { ... })` instead. The new API provides direct access to typed event data."
+    )]
+    fn on_secondary_click_cont(
+        self,
+        mut action: impl FnMut(&mut EventCx) + 'static,
+    ) -> Self::Intermediate {
+        self.on_event_cont(listener::SecondaryClick, move |cx, _event| action(cx))
     }
 
-    /// Add an event handler for [`EventListener::SecondaryClick`]. This is most often the "Right" click.
+    /// Add an event handler for `EventListener::SecondaryClick`. This is most often the "Right" click.
     /// This event will be handled with the given handler and the event will stop propagating.
-    fn on_secondary_click_stop(self, action: impl Fn(&Event) + 'static) -> Self::Intermediate {
-        self.on_secondary_click(move |e| {
-            action(e);
-            EventPropagation::Stop
-        })
-    }
-
-    /// Adds an event handler for resize events for this view.
-    ///
-    /// # Reactivity
-    /// The action will be called whenever the view is resized but will not rerun automatically in response to signal changes
-    fn on_resize(self, action: impl Fn(Rect) + 'static) -> Self::Intermediate {
-        let intermediate = self.into_intermediate();
-        let id = intermediate.view_id();
-        let state = id.state();
-        state.borrow_mut().add_resize_listener(Rc::new(action));
-        intermediate
-    }
-
-    /// Adds an event handler for move events for this view.
-    ///
-    /// # Reactivity
-    /// The action will be called whenever the view is moved but will not rerun automatically in response to signal changes
-    fn on_move(self, action: impl Fn(Point) + 'static) -> Self::Intermediate {
-        let intermediate = self.into_intermediate();
-        let id = intermediate.view_id();
-        let state = id.state();
-        state.borrow_mut().add_move_listener(Rc::new(action));
-        intermediate
+    #[deprecated(
+        note = "Use `on_event_stop(SecondaryClick, |cx, _event| { ... })` instead. The new API provides direct access to typed event data."
+    )]
+    fn on_secondary_click_stop(
+        self,
+        mut action: impl FnMut(&mut EventCx) + 'static,
+    ) -> Self::Intermediate {
+        self.on_event_stop(listener::SecondaryClick, move |cx, _event| action(cx))
     }
 
     /// Adds an event handler for cleanup events for this view.
@@ -475,7 +549,7 @@ pub trait Decorators: IntoView {
         let id = intermediate.view_id();
         Effect::new(move |_| {
             when();
-            id.clear_focus();
+            ViewId::clear_focus(&id);
         });
         intermediate
     }
@@ -489,7 +563,7 @@ pub trait Decorators: IntoView {
         let id = intermediate.view_id();
         Effect::new(move |_| {
             when();
-            id.request_focus();
+            ViewId::request_focus(&id);
         });
         intermediate
     }

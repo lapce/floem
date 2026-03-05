@@ -43,7 +43,7 @@ pub fn radio_buttons_view() -> impl IntoView {
             .class(RadioButtonGroupClass),
         ),
         form_item(
-            "Labelled Radio Buttons:",
+            "Labeled Radio Buttons:",
             Stack::vertical_from_iter(
                 OperatingSystem::iter()
                     .map(move |os| RadioButton::new_labeled_rw(os, operating_system, move || os)),
@@ -51,7 +51,7 @@ pub fn radio_buttons_view() -> impl IntoView {
             .class(RadioButtonGroupClass),
         ),
         form_item(
-            "Disabled Labelled Radio Buttons:",
+            "Disabled Labeled Radio Buttons:",
             Stack::vertical_from_iter(OperatingSystem::iter().map(move |os| {
                 RadioButton::new_labeled_get(os, operating_system, move || os)
                     .style(|s| s.set_disabled(true))
@@ -59,5 +59,8 @@ pub fn radio_buttons_view() -> impl IntoView {
             .class(RadioButtonGroupClass),
         ),
     ))
-    .style(|s| s.class(RadioButtonGroupClass, |s| s.gap(10.).margin_left(5.)))
+    .style(|s| {
+        s.class(RadioButtonGroupClass, |s| s.gap(10.).margin_left(5.))
+            .class(LabelClass, |s| s.flex_shrink(0.))
+    })
 }

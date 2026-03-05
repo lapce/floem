@@ -2,7 +2,15 @@
 use std::collections::HashMap;
 use std::{cell::RefCell, mem, rc::Rc, sync::Arc};
 
+#[cfg(feature = "crossbeam")]
+use crossbeam::channel::bounded as sync_channel;
+#[cfg(not(feature = "crossbeam"))]
+use std::sync::mpsc::sync_channel;
+
+use crate::event::{CustomEvent, RouteKind, ScrollTo, UpdatePhaseEvent};
 use crate::platform::menu_types::{Menu as MudaMenu, MenuId};
+use crate::style::recalc::StyleReason;
+use crate::style::{StyleSelector, StyleSelectors};
 #[cfg(target_os = "windows")]
 use muda::MenuTheme as MudaMenuTheme;
 
@@ -19,7 +27,7 @@ use floem_reactive::{RwSignal, Scope, SignalGet, SignalUpdate};
 use floem_renderer::Renderer;
 use floem_renderer::gpu_resources::GpuResources;
 use peniko::color::palette;
-use peniko::kurbo::{Affine, Point, Size};
+use peniko::kurbo::{self, Point, Size};
 use winit::{
     cursor::CursorIcon,
     dpi::{LogicalPosition, LogicalSize},
@@ -29,33 +37,32 @@ use winit::{
 
 use super::state::WindowState;
 use super::tracking::{remove_window_id_mapping, store_window_id_mapping};
-use crate::event::dropped_file::FileDragEvent;
+use crate::app::{MenuWrapper, add_app_update_event};
 #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
 use crate::platform::context_menu::context_menu_view;
 #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
 use crate::reactive::SignalWith;
 #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
 use crate::unit::UnitExt;
+use crate::view::{LayoutTree, VIEW_STORAGE};
 #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
 use crate::views::{Container, Decorators, Stack};
 use crate::{
     Application,
     app::UserEvent,
-    context::{
-        ComputeLayoutCx, EventCx, FrameUpdate, LayoutCx, PaintCx, PaintState, StyleCx, UpdateCx,
+    context::{FrameUpdate, LayoutChanged, PaintState, StyleCx, UpdateCx, VisualChanged},
+    event::{
+        Event, GlobalEventCx, ImeEvent, WindowEvent, clear_hit_test_cache,
+        dropped_file::FileDragEvent,
     },
-    event::{Event, clear_hit_test_cache},
     inspector::{self, Capture, CaptureState, CapturedView, profiler::Profile},
     message::{
         CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES, CURRENT_RUNNING_VIEW_HANDLE,
         DEFERRED_UPDATE_MESSAGES, UPDATE_MESSAGES, UpdateMessage,
     },
-    style::{CursorStyle, Style, StyleSelector},
+    style::{CursorStyle, Style},
     theme::default_theme,
-    view::ChangeFlags,
-    view::ViewId,
-    view::stacking::clear_all_stacking_caches,
-    view::{IntoView, View},
+    view::{IntoView, View, ViewId},
 };
 
 /// The top-level window handle that owns the winit `Window`.
@@ -69,7 +76,6 @@ pub(crate) struct WindowHandle {
     window_id: WindowId,
     /// The root view ID for this window.
     pub(crate) id: ViewId,
-    main_view: ViewId,
     /// Reactive Scope for this `WindowHandle`
     scope: Scope,
     pub(crate) window_state: WindowState,
@@ -81,7 +87,6 @@ pub(crate) struct WindowHandle {
     transparent: bool,
     pub(crate) scale: f64,
     pub(crate) modifiers: Modifiers,
-    pub(crate) cursor_position: Point,
     pub(crate) window_position: Point,
     #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
     pub(crate) context_menu: RwSignal<Option<(MudaMenu, Point, bool)>>,
@@ -90,6 +95,17 @@ pub(crate) struct WindowHandle {
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) window_menu: Option<MudaMenu>,
     pub(crate) event_reducer: WindowEventReducer,
+    pub(crate) gpu_resources: Option<GpuResources>,
+    last_presented_at: Instant,
+    is_occluded: bool,
+}
+
+impl Drop for WindowHandle {
+    fn drop(&mut self) {
+        VIEW_STORAGE.with_borrow_mut(|s| {
+            s.box_tree.remove(&self.id);
+        })
+    }
 }
 
 impl WindowHandle {
@@ -104,9 +120,9 @@ impl WindowHandle {
         apply_default_theme: bool,
         font_embolden: f32,
     ) -> Self {
-        let scope = Scope::new();
+        let id = ViewId::new_root();
         let window_id = window.id();
-        let id = ViewId::new();
+        let scope = Scope::new();
         let scale = window.scale_factor();
         let size: LogicalSize<f64> = window.surface_size().to_logical(scale);
         let size = Size::new(size.width, size.height);
@@ -121,29 +137,20 @@ impl WindowHandle {
         let context_menu = scope.create_rw_signal(None);
 
         #[cfg(not(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32")))]
-        let view = scope.enter(move || {
-            let main_view = view_fn(window_id);
-            let main_view_id = main_view.id();
-            (main_view_id, main_view)
-        });
+        let view = scope.enter(move || view_fn(window_id));
 
         #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
         let view = scope.enter(move || {
             let main_view = view_fn(window_id);
-            let main_view_id = main_view.id();
-            (
-                main_view_id,
-                Stack::new((
-                    Container::new(main_view).style(|s| s.size(100.pct(), 100.pct())),
-                    context_menu_view(scope, context_menu, size),
-                ))
-                .style(|s| s.size(100.pct(), 100.pct()))
-                .into_any(),
-            )
+            Stack::new((
+                Container::new(main_view).style(|s| s.size(100.pct(), 100.pct())),
+                context_menu_view(scope, context_menu, size),
+            ))
+            .style(|s| s.size(100.pct(), 100.pct()))
+            .into_any()
         });
 
-        let (main_view_id, widget) = view;
-        id.set_children([widget]);
+        id.add_child(view);
 
         let view = WindowView { id };
         id.set_view(view.into_any());
@@ -190,7 +197,6 @@ impl WindowHandle {
             window,
             window_id,
             id,
-            main_view: main_view_id,
             scope,
             paint_state,
             size,
@@ -204,7 +210,6 @@ impl WindowHandle {
             profile: None,
             scale,
             modifiers: Modifiers::default(),
-            cursor_position: Point::ZERO,
             window_position: Point::ZERO,
             #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
             context_menu,
@@ -213,21 +218,30 @@ impl WindowHandle {
             #[cfg(not(target_arch = "wasm32"))]
             window_menu: None,
             event_reducer: WindowEventReducer::default(),
+            gpu_resources,
+            last_presented_at: Instant::now(),
+            is_occluded: false,
         };
         if paint_state_initialized {
-            window_handle.init_renderer(gpu_resources);
+            window_handle.init_renderer();
         }
         window_handle
             .window_state
             .set_root_size(size.get_untracked());
+        window_handle
+            .window_state
+            .update_screen_size_bp(size.get_untracked());
+        window_handle.process_update_no_paint();
 
         window_handle.window_state.light_dark_theme =
             os_theme.unwrap_or(winit::window::Theme::Light);
 
-        window_handle.event(Event::ThemeChanged(
+        window_handle.event(Event::Window(WindowEvent::ThemeChanged(
             window_handle.window_state.light_dark_theme,
-        ));
-        window_handle.window_state.mark_dark_mode_changed();
+        )));
+        window_handle
+            .window_state
+            .mark_style_dirty_selector(window_handle.id.get_element_id(), StyleSelector::DarkMode);
         window_handle.size(size.get_untracked());
         window_handle
     }
@@ -238,25 +252,31 @@ impl WindowHandle {
     /// suitable for testing the event handling and view update logic without a real window.
     ///
     /// # Arguments
+    /// * `root_id` - The root ViewId (from TestRoot)
     /// * `view` - The root view for this window
     /// * `size` - The virtual window size
     /// * `scale` - The window scale factor (default 1.0)
-    pub(crate) fn new_headless(view: impl IntoView, size_val: Size, scale: f64) -> Self {
+    pub(crate) fn new_headless(
+        root_id: ViewId,
+        view: impl IntoView,
+        size_val: Size,
+        scale: f64,
+    ) -> Self {
         use super::mock::MockWindow;
 
         let scope = Scope::new();
         let mock_window = MockWindow::with_size(size_val.width as u32, size_val.height as u32);
         let window_id = mock_window.id();
-        let id = ViewId::new();
+        let id = root_id;
         let size = scope.create_rw_signal(size_val);
         let os_theme = mock_window.theme();
         let is_maximized = mock_window.is_maximized();
 
+        // Root is already set by TestRoot, but set it again to be safe
         set_current_view(id);
 
         // Convert the view
         let main_view = view.into_view();
-        let main_view_id = main_view.id();
         let widget: Box<dyn View> = main_view.into_any();
 
         id.set_children([widget]);
@@ -269,10 +289,7 @@ impl WindowHandle {
 
         // Create a paint state that will never initialize (for headless testing)
         // We use a channel that will never receive a value
-        #[cfg(feature = "crossbeam")]
-        let (tx, rx) = crossbeam::channel::unbounded();
-        #[cfg(not(feature = "crossbeam"))]
-        let (tx, rx) = std::sync::mpsc::channel();
+        let (tx, rx) = sync_channel(1);
         drop(tx); // Drop sender so receiver will never receive
         let paint_state = PaintState::new_pending(
             window.clone(),
@@ -288,7 +305,6 @@ impl WindowHandle {
             window,
             window_id,
             id,
-            main_view: main_view_id,
             scope,
             paint_state,
             size,
@@ -299,7 +315,6 @@ impl WindowHandle {
             profile: None,
             scale,
             modifiers: Modifiers::default(),
-            cursor_position: Point::ZERO,
             window_position: Point::ZERO,
             #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
             context_menu: scope.create_rw_signal(None),
@@ -308,6 +323,9 @@ impl WindowHandle {
             #[cfg(not(target_arch = "wasm32"))]
             window_menu: None,
             event_reducer: WindowEventReducer::default(),
+            gpu_resources: None,
+            last_presented_at: Instant::now(),
+            is_occluded: false,
         };
 
         window_handle
@@ -321,16 +339,16 @@ impl WindowHandle {
         window_handle.process_update_messages();
         // Mark root view as needing style so initial style pass runs compute_combined
         // and populates has_style_selectors for selector detection
-        window_handle.id.request_style_recursive();
+        window_handle.id.request_style(StyleReason::full_recalc());
         window_handle.process_update_messages();
         window_handle.style();
         window_handle.layout();
-        window_handle.compute_layout();
+        window_handle.commit_box_tree();
 
         window_handle
     }
 
-    pub(crate) fn init_renderer(&mut self, gpu_resources: Option<GpuResources>) {
+    pub(crate) fn init_renderer(&mut self) {
         // On the web, we need to get the canvas size once. The size will be updated automatically
         // when the canvas element is resized subsequently. This is the correct place to do so
         // because the renderer is not initialized until now.
@@ -344,12 +362,12 @@ impl WindowHandle {
             self.size(Size::new(size.width, size.height));
         }
         // Now that the renderer is initialized, draw the first frame
-        self.render_frame(gpu_resources);
+        self.render_frame();
         self.window.set_visible(true);
     }
 
     pub fn event(&mut self, event: Event) {
-        set_current_view(self.id);
+        set_current_view(self.id.root());
 
         // Check event type for platform-specific context menu handling
         #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
@@ -357,11 +375,8 @@ impl WindowHandle {
         #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
         let is_pointer_up = matches!(&event, Event::Pointer(PointerEvent::Up { .. }));
 
-        // Use the shared event dispatch logic
-        let mut cx = EventCx {
-            window_state: &mut self.window_state,
-        };
-        cx.dispatch_event(self.id, self.main_view, event);
+        let root_element_id = self.window_state.root_view_id.get_element_id();
+        GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
 
         // Platform-specific context menu handling
         #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
@@ -385,15 +400,14 @@ impl WindowHandle {
                 self.context_menu.set(None);
             }
         }
-
-        self.process_update();
     }
 
     pub(crate) fn scale(&mut self, scale: f64) {
         self.scale = scale;
         let scale = self.scale * self.window_state.scale;
         self.paint_state.set_scale(scale);
-        self.event(Event::WindowScaleChanged(scale));
+        self.event(Event::Window(WindowEvent::ScaleChanged(scale)));
+        self.window_state.request_paint = true;
         self.schedule_repaint();
     }
 
@@ -402,7 +416,10 @@ impl WindowHandle {
             // if the window theme has been set manually then changes from the os shouldn't do anything
             return;
         }
-        self.window_state.mark_dark_mode_changed();
+        self.window_state.mark_style_dirty_selector(
+            self.window_state.root_view_id.get_element_id(),
+            StyleSelector::DarkMode,
+        );
         if let Some(theme) = theme {
             // Only override the theme with the default if the user did not provide one
             if self.default_theme.is_some() {
@@ -426,40 +443,87 @@ impl WindowHandle {
         if !change_from_os {
             self.window.set_theme(theme);
         }
-        self.id.request_style_recursive();
-        self.id.request_all();
+        self.id.request_style(StyleReason::inherited());
         if let Some(theme) = theme {
-            self.event(Event::ThemeChanged(theme));
+            self.event(Event::Window(WindowEvent::ThemeChanged(theme)));
         }
     }
 
     pub(crate) fn size(&mut self, size: Size) {
+        let width_changed = (self.window_state.root_size.width - size.width).abs() > f64::EPSILON;
         self.size.set(size);
+
+        // Update root size first so any style work triggered by resize observes
+        // the new width instead of the previous frame's value.
+        self.window_state.set_root_size(size);
+        if width_changed {
+            self.window_state.mark_style_dirty_with(
+                self.window_state.root_view_id.get_element_id(),
+                StyleReason::with_selectors(StyleSelectors::empty().responsive()),
+            );
+        }
+
         self.window_state.update_screen_size_bp(size);
-        self.event(Event::WindowResized(size));
+        self.event(Event::Window(WindowEvent::Resized(size)));
         let scale = self.scale * self.window_state.scale;
         self.paint_state.resize(scale, size * self.scale);
-        self.window_state.set_root_size(size);
 
         let is_maximized = self.window.is_maximized();
         if is_maximized != self.is_maximized {
             self.is_maximized = is_maximized;
-            self.event(Event::WindowMaximizeChanged(is_maximized));
+            self.event(Event::Window(WindowEvent::MaximizeChanged(is_maximized)));
         }
 
         self.style();
         self.layout();
-        self.process_update();
+        self.commit_box_tree();
+        self.process_update_no_paint();
+        self.window_state.request_paint = true;
         self.schedule_repaint();
     }
 
     pub(crate) fn position(&mut self, point: Point) {
         self.window_position = point;
-        self.event(Event::WindowMoved(point));
+        self.event(Event::Window(WindowEvent::Moved(point)));
     }
 
-    pub(crate) fn file_drag_event(&mut self, file_drag_event: FileDragEvent) {
+    pub(crate) fn file_drag_dropped(&mut self, file_drag_event: FileDragEvent) {
+        // Store paths in window state for tracking during drag
+        self.window_state.file_drag_paths = None;
         self.event(Event::FileDrag(file_drag_event));
+    }
+
+    pub(crate) fn file_drag_start(&mut self, paths: Vec<std::path::PathBuf>, position: Point) {
+        // Store paths and dispatch as a move event to trigger hit testing
+        let paths_rc: Rc<[std::path::PathBuf]> = paths.into();
+        self.window_state.file_drag_paths = Some(paths_rc.clone());
+        self.event(Event::FileDrag(FileDragEvent::Move(
+            crate::event::dropped_file::FileDragMove {
+                paths: paths_rc,
+                position,
+            },
+        )));
+    }
+
+    pub(crate) fn file_drag_move(&mut self, position: Point) {
+        if let Some(paths) = &self.window_state.file_drag_paths {
+            self.event(Event::FileDrag(FileDragEvent::Move(
+                crate::event::dropped_file::FileDragMove {
+                    paths: paths.clone(),
+                    position,
+                },
+            )));
+        }
+    }
+
+    pub(crate) fn file_drag_end(&mut self) {
+        // Clear paths and file hover state
+        self.window_state.file_drag_paths = None;
+        set_current_view(self.id.root());
+        let root_element_id = self.window_state.root_view_id.get_element_id();
+        GlobalEventCx::new(&mut self.window_state, root_element_id, Event::Extracted)
+            .update_hover_from_path(&[]);
+        self.process_update();
     }
 
     pub(crate) fn key_event(&mut self, key_event: KeyboardEvent) {
@@ -475,39 +539,6 @@ impl WindowHandle {
     }
 
     pub(crate) fn pointer_event(&mut self, pointer_event: PointerEvent) {
-        match &pointer_event {
-            PointerEvent::Move(pointer_update) => {
-                let pos = pointer_update.current.logical_point();
-                if self.cursor_position != pos {
-                    self.cursor_position = pos;
-                }
-            }
-            PointerEvent::Leave(_pointer_info) => {
-                set_current_view(self.id);
-                let cx = EventCx {
-                    window_state: &mut self.window_state,
-                };
-                let was_hovered = std::mem::take(&mut cx.window_state.hovered);
-                for id in was_hovered {
-                    let view_state = id.state();
-                    if view_state
-                        .borrow()
-                        .has_style_selectors
-                        .has(StyleSelector::Hover)
-                        || view_state
-                            .borrow()
-                            .has_style_selectors
-                            .has(StyleSelector::Active)
-                        || view_state.borrow().has_active_animation()
-                    {
-                        id.request_style();
-                    }
-                }
-                self.process_update();
-            }
-            _ => {}
-        }
-
         self.event(Event::Pointer(pointer_event));
     }
 
@@ -517,16 +548,13 @@ impl WindowHandle {
             if let Some(window_menu) = &self.window_menu {
                 window_menu.init_for_nsapp();
             }
-            self.event(Event::WindowGotFocus);
+            self.event(Event::Window(WindowEvent::FocusGained));
         } else {
-            self.event(Event::WindowLostFocus);
+            self.event(Event::Window(WindowEvent::FocusLost));
         }
     }
 
     fn style(&mut self) {
-        // Take any pending global recalc (dark mode, responsive changes)
-        let global_change = self.window_state.take_global_recalc();
-
         // Loop until no more views need styling
         // This handles the case where styling a parent marks children dirty
         // (e.g., when inherited properties change)
@@ -534,17 +562,16 @@ impl WindowHandle {
             // Build explicit traversal order
             let traversal = self.window_state.build_style_traversal(self.id);
             if traversal.is_empty() {
-                self.window_state.style_dirty.clear();
-                self.window_state.view_style_dirty.clear();
                 break;
             }
 
             // Style each view in order, passing the global change for first iteration
-            for view_id in traversal {
-                let cx = &mut StyleCx::new(&mut self.window_state, view_id);
-                cx.style_view_with_change(view_id, global_change);
+            for (view_id, traversal_reason) in traversal {
+                let cx = &mut StyleCx::new(&mut self.window_state, view_id, traversal_reason);
+                cx.style_view();
             }
             if self.window_state.capture.is_some() {
+                self.window_state.style_dirty.clear();
                 // we need to break if capture because when capturing we style all views so no need to loop here.
                 // we style all views so that the capture can accurately report how long a full style takes
                 break;
@@ -552,34 +579,150 @@ impl WindowHandle {
         }
 
         // Clear pending child changes after style pass completes
-        self.window_state.pending_child_change.clear();
+        let root_element_id = self.window_state.root_view_id.get_element_id();
+        let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::Style));
+        GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
     }
 
     fn layout(&mut self) -> Duration {
-        let mut cx = LayoutCx::new(&mut self.window_state);
-
-        cx.window_state.root = {
-            let view = self.id.view();
-            let mut view = view.borrow_mut();
-            Some(cx.layout_view(view.as_mut()))
-        };
-
         let start = Instant::now();
-        cx.window_state.compute_layout();
-        let taffy_duration = Instant::now().saturating_duration_since(start);
+        self.window_state.compute_layout();
+        let taffy_duration = start.elapsed();
 
-        self.compute_layout();
+        // Update box tree from layout after layout completes
+        self.window_state.update_box_tree_from_layout();
+
+        let root_element_id = self.window_state.root_view_id.get_element_id();
+        let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::Layout));
+        GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
 
         taffy_duration
     }
 
-    fn compute_layout(&mut self) {
-        self.window_state.request_compute_layout = false;
-        let viewport = (self.window_state.root_size / self.window_state.scale).to_rect();
-        let mut cx = ComputeLayoutCx::new(&mut self.window_state, viewport);
-        cx.compute_view_layout(self.id);
-        // Invalidate hit test cache since layout rects have changed
-        clear_hit_test_cache();
+    fn update_box_tree_from_layout(&mut self) {
+        self.window_state.update_box_tree_from_layout();
+        let root_element_id = self.window_state.root_view_id.get_element_id();
+        let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::BoxTreeUpdate));
+        GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
+    }
+
+    fn process_pending_box_tree_updates(&mut self) {
+        self.window_state.process_pending_box_tree_updates();
+        let root_element_id = self.window_state.root_view_id.get_element_id();
+        let event = Event::Window(WindowEvent::UpdatePhase(
+            UpdatePhaseEvent::BoxTreePendingUpdates,
+        ));
+        GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
+    }
+
+    fn commit_box_tree(&mut self) -> Duration {
+        let start = Instant::now();
+        self.window_state.commit_box_tree();
+        self.window_state.needs_box_tree_commit = false;
+
+        let has_layout_listener: smallvec::SmallVec<[ViewId; 64]> = self
+            .window_state
+            .listeners
+            .get(&LayoutChanged::listener_key())
+            .into_iter()
+            .flatten()
+            .copied()
+            .collect();
+        for id in has_layout_listener {
+            if let Some(layout) = id.get_layout() {
+                let window_origin = id.get_layout_window_origin();
+                let new_box = kurbo::Rect::from_origin_size(
+                    (layout.location.x as f64, layout.location.y as f64),
+                    (layout.size.width as f64, layout.size.height as f64),
+                );
+                let new_content_box = kurbo::Rect::from_origin_size(
+                    (layout.content_box_x() as f64, layout.content_box_y() as f64),
+                    (
+                        layout.content_box_width() as f64,
+                        layout.content_box_height() as f64,
+                    ),
+                );
+                let new_layout = LayoutChanged {
+                    new_box,
+                    new_content_box,
+                    new_window_origin: window_origin,
+                };
+                let (old_layout, element_id) = {
+                    let state = id.state();
+                    let mut state = state.borrow_mut();
+                    let old: Option<LayoutChanged> = state.layout;
+                    state.layout = Some(new_layout);
+                    let element_id = state.element_id;
+                    (old, element_id)
+                };
+                if old_layout.is_none_or(|old| old != new_layout) {
+                    use crate::context::Phases;
+                    use crate::event::RouteKind;
+                    GlobalEventCx::new(
+                        &mut self.window_state,
+                        element_id,
+                        Event::new_custom(new_layout),
+                    )
+                    .route_normal(
+                        RouteKind::Directed {
+                            target: element_id,
+                            phases: Phases::TARGET,
+                        },
+                        None,
+                    );
+                }
+            }
+        }
+
+        let needs_moved: smallvec::SmallVec<[ViewId; 64]> = self
+            .window_state
+            .listeners
+            .get(&VisualChanged::listener_key())
+            .into_iter()
+            .flatten()
+            .copied()
+            .collect();
+        for id in needs_moved {
+            let transform = id.get_visual_transform();
+            let visual_aabb = id.get_visual_rect();
+            let element_id = id.get_element_id();
+
+            let new_visual = VisualChanged {
+                new_visual_aabb: visual_aabb,
+                new_world_transform: transform,
+            };
+
+            let old_visual = {
+                let state = id.state();
+                let mut state = state.borrow_mut();
+                let old = state.visual_change;
+                state.visual_change = Some(new_visual);
+                old
+            };
+
+            if old_visual.is_none_or(|old| old != new_visual) {
+                use crate::context::Phases;
+                use crate::event::RouteKind;
+                GlobalEventCx::new(
+                    &mut self.window_state,
+                    element_id,
+                    Event::new_custom(new_visual),
+                )
+                .route_normal(
+                    RouteKind::Directed {
+                        target: element_id,
+                        phases: Phases::TARGET,
+                    },
+                    None,
+                );
+            }
+        }
+
+        let root_element_id = self.window_state.root_view_id.get_element_id();
+        let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::BoxTreeCommit));
+        GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
+
+        start.elapsed()
     }
 
     /// Process any scheduled updates (style/layout/paint requests from previous frame).
@@ -587,53 +730,51 @@ impl WindowHandle {
     pub(crate) fn process_scheduled_updates(&mut self) {
         for update in mem::take(&mut self.window_state.scheduled_updates) {
             match update {
-                FrameUpdate::Layout(id) => id.request_layout(),
-                FrameUpdate::Style(id) => {
-                    self.window_state.style_dirty.insert(id);
-                    // Also set the STYLE flag so style_view doesn't skip this view
-                    id.state()
-                        .borrow_mut()
-                        .requested_changes
-                        .insert(crate::view::state::ChangeFlags::STYLE);
+                FrameUpdate::Layout => {
+                    self.window_state.needs_layout = true;
+                }
+                FrameUpdate::BoxTreeCommit => {
+                    self.window_state.needs_box_tree_commit = true;
+                }
+                FrameUpdate::Style(id, reason) => {
+                    self.window_state.mark_style_dirty_with(id, reason);
                 }
                 FrameUpdate::Paint(id) => self.window_state.request_paint(id),
             }
         }
     }
 
-    pub(crate) fn render_frame(&mut self, gpu_resources: Option<GpuResources>) {
-        // Processes updates scheduled on this frame.
-        self.process_scheduled_updates();
+    pub(crate) fn render_frame(&mut self) {
+        if self.window_state.request_paint {
+            self.window_state.request_paint = false;
+            self.paint();
+            self.last_presented_at = Instant::now();
+        }
 
-        self.process_update_no_paint();
-        self.paint(gpu_resources);
-
-        // Request a new frame if there's any scheduled updates.
+        // Keep animation control flow in sync with scheduled updates.
+        let window_id = self.window.id();
         if !self.window_state.scheduled_updates.is_empty() {
-            self.schedule_repaint();
+            add_app_update_event(crate::app::AppUpdateEvent::AnimationFrame(true, window_id));
+        } else {
+            add_app_update_event(crate::app::AppUpdateEvent::AnimationFrame(false, window_id));
         }
     }
 
-    pub fn paint(&mut self, gpu_resources: Option<GpuResources>) -> Option<peniko::ImageBrush> {
-        let mut cx = PaintCx {
+    pub fn paint(&mut self) -> Option<peniko::ImageBrush> {
+        // Create GlobalPaintCx (global/shared state)
+        let mut cx = crate::paint::GlobalPaintCx {
             window_state: &mut self.window_state,
             paint_state: &mut self.paint_state,
-            transform: Affine::IDENTITY,
-            clip: None,
-            saved_transforms: Vec::new(),
-            saved_clips: Vec::new(),
-            pending_drag_paint: None,
-            gpu_resources,
+            gpu_resources: self.gpu_resources.clone(),
             window: self.window.clone(),
-            #[cfg(feature = "vello")]
-            saved_layer_counts: Vec::new(),
-            #[cfg(feature = "vello")]
-            layer_count: 0,
             record_paint_order: crate::paint::is_paint_order_tracking_enabled(),
         };
+
         cx.paint_state
             .renderer_mut()
             .begin(cx.window_state.capture.is_some());
+
+        // Background fill (unchanged)
         if !self.transparent {
             let scale = cx.window_state.scale;
             let color = self
@@ -641,8 +782,10 @@ impl WindowHandle {
                 .as_ref()
                 .and_then(|theme| theme.get(crate::style::Background))
                 .unwrap_or(peniko::Brush::Solid(palette::css::WHITE));
+
             // fill window with default white background if it's not transparent
-            cx.fill(
+            let renderer = cx.paint_state.renderer_mut();
+            renderer.fill(
                 &self
                     .size
                     .get_untracked()
@@ -653,43 +796,40 @@ impl WindowHandle {
                 0.0,
             );
         }
-        cx.paint_view(self.id);
-        // Paint registered overlays above all regular content
-        cx.paint_overlays(self.id);
-        // Paint drag overlay last to ensure it appears on top of all content
-        cx.paint_pending_drag();
-        if cx.window_state.capture.is_none() {
-            self.window.pre_present_notify();
-        }
+
+        // Paint main tree with overlays using explicit traversal
+        cx.paint_with_traversal(self.id);
+
+        self.window.pre_present_notify();
+        let root_element_id = cx.window_state.root_view_id.get_element_id();
+        let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::PaintPresent));
+        GlobalEventCx::new(cx.window_state, root_element_id, event).route_window_event();
+
         cx.paint_state.renderer_mut().finish()
     }
 
-    pub(crate) fn capture(&mut self, gpu_resources: Option<GpuResources>) -> Capture {
+    pub(crate) fn capture(&mut self) -> Capture {
         // Capture the view before we run `style` and `layout` to catch missing `request_style`` or
         // `request_layout` flags.
-        let root_layout = self.id.layout_rect();
-        let root = CapturedView::capture(self.id, &mut self.window_state, root_layout);
+        let root = CapturedView::capture(self.id, &mut self.window_state);
 
         self.window_state.capture = Some(CaptureState::default());
 
         // Trigger painting to create a Vger renderer which can capture the output.
         // This can be expensive so it could skew the paint time measurement.
-        self.paint(gpu_resources.clone());
+        self.paint();
 
         // Ensure we run layout and styling again for accurate timing. We also need to ensure
         // styles are recomputed to capture them.
         fn request_changes(id: ViewId) {
-            id.state().borrow_mut().requested_changes = ChangeFlags::all();
+            id.request_all();
             for child in id.children() {
                 request_changes(child);
             }
         }
         request_changes(self.id);
 
-        fn get_taffy_depth(
-            taffy: Rc<RefCell<taffy::TaffyTree>>,
-            root: taffy::tree::NodeId,
-        ) -> usize {
+        fn get_taffy_depth(taffy: Rc<RefCell<LayoutTree>>, root: taffy::tree::NodeId) -> usize {
             let children = taffy.borrow().children(root).unwrap();
             if children.is_empty() {
                 1
@@ -707,10 +847,11 @@ impl WindowHandle {
         self.style();
         let post_style = Instant::now();
 
-        let taffy_root_node = self.id.state().borrow().node;
+        let taffy_root_node = self.id.state().borrow().layout_id;
         let taffy_duration = self.layout();
+        let _box_tree_duration = self.commit_box_tree();
         let post_layout = Instant::now();
-        let window = self.paint(gpu_resources);
+        let window = self.paint();
         let end = Instant::now();
 
         let capture = Capture {
@@ -735,38 +876,136 @@ impl WindowHandle {
     }
 
     pub(crate) fn process_update(&mut self) {
-        let needs_paint = self.process_update_no_paint();
-        if needs_paint {
-            self.schedule_repaint();
-        }
+        self.process_update_no_paint();
     }
 
-    /// Processes updates and runs style and layout if needed.
-    /// Returns `true` if painting is required.
-    pub(crate) fn process_update_no_paint(&mut self) -> bool {
-        let mut paint = false;
+    pub(crate) fn render_frame_if_due(&mut self, min_frame_interval: Duration) -> bool {
+        if !self.window_state.request_paint {
+            return false;
+        }
+        if self.last_presented_at.elapsed() < min_frame_interval {
+            return false;
+        }
+        self.render_frame();
+        true
+    }
+
+    pub(crate) fn set_occluded(&mut self, is_occluded: bool) {
+        self.is_occluded = is_occluded;
+    }
+
+    pub(crate) fn can_render_now(&self) -> bool {
+        !self.is_occluded && self.window.is_visible().unwrap_or(true)
+    }
+
+    /// Processes updates up to a shared budget and returns whether this window is quiescent.
+    pub(crate) fn process_update_budgeted(&mut self, start: Instant, budget: Duration) -> bool {
+        let mut iterations = 0usize;
+        const MAX_ITERS: usize = 32;
 
         loop {
             loop {
                 self.process_update_messages();
                 let needs_style = self.needs_style();
                 let needs_layout = self.needs_layout();
-                if !needs_layout && !needs_style && !self.window_state.request_compute_layout {
+                let needs_box_update = self.needs_box_tree_update();
+                let needs_box = self.needs_box_tree_commit();
+                let has_pending_box_updates =
+                    !self.window_state.views_needing_box_tree_update.is_empty();
+                if !needs_layout
+                    && !needs_style
+                    && !needs_box
+                    && !has_pending_box_updates
+                    && !needs_box_update
+                {
                     break;
                 }
 
                 if needs_style {
-                    paint = true;
                     self.style();
                 }
 
                 if self.needs_layout() {
-                    paint = true;
                     self.layout();
                 }
 
-                if self.window_state.request_compute_layout {
-                    self.compute_layout();
+                if self.needs_box_tree_update() {
+                    self.update_box_tree_from_layout();
+                }
+
+                if !self.window_state.views_needing_box_tree_update.is_empty() {
+                    self.process_pending_box_tree_updates();
+                }
+
+                if self.needs_box_tree_commit() {
+                    self.commit_box_tree();
+                }
+
+                iterations += 1;
+                if iterations >= MAX_ITERS || start.elapsed() >= budget {
+                    return false;
+                }
+            }
+
+            if !self.has_deferred_update_messages() {
+                break;
+            }
+            self.process_deferred_update_messages();
+
+            iterations += 1;
+            if iterations >= MAX_ITERS || start.elapsed() >= budget {
+                return false;
+            }
+        }
+
+        self.set_cursor();
+
+        let root_element_id = self.window_state.root_view_id.get_element_id();
+        let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::Complete));
+        GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
+
+        true
+    }
+
+    /// Processes updates and runs style and layout if needed.
+    pub(crate) fn process_update_no_paint(&mut self) {
+        loop {
+            loop {
+                self.process_update_messages();
+                let needs_style = self.needs_style();
+                let needs_layout = self.needs_layout();
+                let needs_box_update = self.needs_box_tree_update();
+                let needs_box = self.needs_box_tree_commit();
+                let has_pending_box_updates =
+                    !self.window_state.views_needing_box_tree_update.is_empty();
+                if !needs_layout
+                    && !needs_style
+                    && !needs_box
+                    && !has_pending_box_updates
+                    && !needs_box_update
+                {
+                    break;
+                }
+
+                if needs_style {
+                    self.style();
+                }
+
+                if self.needs_layout() {
+                    self.layout();
+                }
+
+                if self.needs_box_tree_update() {
+                    self.update_box_tree_from_layout();
+                }
+
+                // Process any pending individual box tree updates after layout
+                if !self.window_state.views_needing_box_tree_update.is_empty() {
+                    self.process_pending_box_tree_updates();
+                }
+
+                if self.needs_box_tree_commit() {
+                    self.commit_box_tree();
                 }
             }
             if !self.has_deferred_update_messages() {
@@ -777,8 +1016,9 @@ impl WindowHandle {
 
         self.set_cursor();
 
-        // TODO: This should only use `self.window_state.request_paint)`
-        paint || mem::take(&mut self.window_state.request_paint)
+        let root_element_id = self.window_state.root_view_id.get_element_id();
+        let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::Complete));
+        GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
     }
 
     fn process_central_messages(&self) {
@@ -790,23 +1030,9 @@ impl WindowHandle {
                     let removed_central_msgs =
                         std::mem::replace(central_msgs, Vec::with_capacity(central_msgs.len()));
                     for (id, msg) in removed_central_msgs {
-                        if let Some(root) = id.root() {
+                        if let Some(root) = id.try_root() {
                             let msgs = msgs.entry(root).or_default();
                             msgs.push(msg);
-                        } else {
-                            // Messages that are not for our root get put back - they may
-                            // belong to another window, or may be construction-time messages
-                            // for a View that does not yet have a window but will momentarily.
-                            //
-                            // Note that if there is a plethora of events for ids which were created
-                            // but never assigned to any view, they will probably pile up in here,
-                            // and if that becomes a real problem, we may want a garbage collection
-                            // mechanism, or give every message a max-touch-count and discard it
-                            // if it survives too many iterations through here. Unclear if there
-                            // are real-world app development patterns where that could actually be
-                            // an issue. Since any such mechanism would have some overhead, there
-                            // should be a proven need before building one.
-                            central_msgs.push((id, msg));
                         }
                     }
                 });
@@ -821,13 +1047,10 @@ impl WindowHandle {
                         &mut *central_msgs.borrow_mut(),
                         Vec::with_capacity(msgs.len()),
                     );
-                    let unprocessed = &mut *central_msgs.borrow_mut();
                     for (id, msg) in removed_central_msgs {
-                        if let Some(root) = id.root() {
+                        if let Some(root) = id.try_root() {
                             let msgs = msgs.entry(root).or_default();
                             msgs.push((id, msg));
-                        } else {
-                            unprocessed.push((id, msg));
                         }
                     }
                 });
@@ -836,6 +1059,7 @@ impl WindowHandle {
     }
 
     pub(crate) fn process_update_messages(&mut self) {
+        set_current_view(self.id.root());
         loop {
             self.process_central_messages();
             let msgs =
@@ -848,81 +1072,73 @@ impl WindowHandle {
                     window_state: &mut self.window_state,
                 };
                 match msg {
-                    UpdateMessage::RequestStyle(id) => {
-                        self.window_state.style_dirty.insert(id);
-                        // Also set the STYLE flag so style_view doesn't skip this view
-                        id.state()
-                            .borrow_mut()
-                            .requested_changes
-                            .insert(crate::view::state::ChangeFlags::STYLE);
+                    UpdateMessage::RequestStyle(id, reason) => {
+                        self.window_state.mark_style_dirty_with(id, reason);
                     }
-                    UpdateMessage::RequestViewStyle(id) => {
-                        self.window_state.view_style_dirty.insert(id);
+                    UpdateMessage::RequestLayout => {
+                        self.window_state.needs_layout = true;
+                    }
+                    UpdateMessage::MarkViewLayoutDirty(id) => {
+                        let _ = id.mark_view_layout_dirty();
+                    }
+                    UpdateMessage::RequestBoxTreeUpdate => {
+                        self.window_state.needs_box_tree_from_layout = true;
+                    }
+                    UpdateMessage::RequestBoxTreeUpdateForView(view_id) => {
+                        self.window_state
+                            .views_needing_box_tree_update
+                            .insert(view_id);
+                    }
+                    UpdateMessage::RequestBoxTreeCommit => {
+                        self.window_state.needs_box_tree_commit = true;
                     }
                     UpdateMessage::RequestPaint => {
                         cx.window_state.request_paint = true;
                     }
                     UpdateMessage::Focus(id) => {
-                        if cx.window_state.focus != Some(id) {
-                            let old = cx.window_state.focus;
-                            cx.window_state.focus = Some(id);
-                            cx.window_state.focus_changed(old, cx.window_state.focus);
-                        }
+                        // because we do not call route, the processing messages event is not sent.
+                        // this is desirable because the process messages event will be sent explicitly another time.
+                        let keyboard_navigation = cx.window_state.keyboard_navigation;
+                        let root_element_id = cx.window_state.root_view_id.get_element_id();
+                        GlobalEventCx::new(
+                            cx.window_state,
+                            root_element_id,
+                            Event::Window(WindowEvent::UpdatePhase(
+                                UpdatePhaseEvent::ProcessingMessages,
+                            )),
+                        )
+                        .update_focus(id, keyboard_navigation);
                     }
-                    UpdateMessage::ClearFocus(id) => {
-                        if cx.window_state.focus == Some(id) {
-                            cx.window_state.clear_focus();
-                            cx.window_state.focus_changed(Some(id), None);
-                        }
-                    }
-                    UpdateMessage::ClearAppFocus => {
-                        let focus = cx.window_state.focus;
-                        cx.window_state.clear_focus();
-                        if let Some(id) = focus {
-                            cx.window_state.focus_changed(Some(id), None);
-                        }
-                    }
-                    UpdateMessage::Active(id) => {
-                        let old = cx.window_state.active;
-                        cx.window_state.active = Some(id);
-
-                        if let Some(old_id) = old {
-                            // To remove the styles applied by the Active selector
-                            // Use selector-aware method to only update views with :active styles
-                            if cx
-                                .window_state
-                                .has_style_for_sel(old_id, StyleSelector::Active)
-                            {
-                                old_id.request_style_for_selector_recursive(StyleSelector::Active);
-                            }
-                        }
-
-                        if cx.window_state.has_style_for_sel(id, StyleSelector::Active) {
-                            id.request_style_for_selector_recursive(StyleSelector::Active);
-                        }
-                    }
-                    UpdateMessage::ClearActive(id) => {
-                        if Some(id) == cx.window_state.active {
-                            cx.window_state.active = None;
-                        }
+                    UpdateMessage::ClearFocus => {
+                        // because we do not call route, the processing messages event is not sent.
+                        // this is desirable because the process messages event will be sent explicitly another time.
+                        let root_element_id = cx.window_state.root_view_id.get_element_id();
+                        GlobalEventCx::new(
+                            cx.window_state,
+                            root_element_id,
+                            Event::Window(WindowEvent::UpdatePhase(
+                                UpdatePhaseEvent::ProcessingMessages,
+                            )),
+                        )
+                        .clear_focus();
                     }
                     UpdateMessage::SetPointerCapture {
-                        view_id,
+                        element_id: view_id,
                         pointer_id,
                     } => {
                         cx.window_state.set_pointer_capture(pointer_id, view_id);
                     }
                     UpdateMessage::ReleasePointerCapture {
-                        view_id,
+                        element_id: view_id,
                         pointer_id,
                     } => {
                         cx.window_state.release_pointer_capture(pointer_id, view_id);
                     }
                     UpdateMessage::ScrollTo { id, rect } => {
-                        self.id
-                            .view()
-                            .borrow_mut()
-                            .scroll_to(cx.window_state, id, rect);
+                        let event = ScrollTo { id, rect };
+                        let event = Event::new_custom(event);
+                        GlobalEventCx::new(&mut self.window_state, self.id.get_element_id(), event)
+                            .route_normal(RouteKind::bubble_from(id), None);
                     }
                     UpdateMessage::State { id, state } => {
                         let view = id.view();
@@ -963,9 +1179,14 @@ impl WindowHandle {
                         let (menu, registry) = menu.build();
                         cx.window_state.context_menu.clear();
                         cx.window_state.update_context_menu(registry);
-                        self.show_context_menu(menu, pos);
+
+                        // Queue the context menu to show after this event completes
+                        Application::send_proxy_event(UserEvent::ShowContextMenu {
+                            window_id: self.window_id,
+                            menu: MenuWrapper(menu),
+                            pos,
+                        });
                     }
-                    #[cfg(not(target_arch = "wasm32"))]
                     UpdateMessage::WindowMenu { menu } => {
                         self.window_menu_actions.clear();
                         let (menu, registry) = menu.build();
@@ -1042,6 +1263,18 @@ impl WindowHandle {
                         cx.window_state.remove_view(id);
                         self.id.request_all();
                     }
+                    UpdateMessage::RegisterListener(key, id) => {
+                        cx.window_state.listeners.entry(key).or_default().push(id);
+                        id.state().borrow_mut().registered_listener_keys.push(key);
+                    }
+                    UpdateMessage::RemoveListener(key, id) => {
+                        if let Some(ids) = cx.window_state.listeners.get_mut(&key) {
+                            ids.retain(|v| *v != id);
+                        }
+                        if let Ok(mut state) = id.state().try_borrow_mut() {
+                            state.registered_listener_keys.retain(|k| *k != key);
+                        }
+                    }
                     UpdateMessage::WindowVisible(visible) => {
                         self.window.set_visible(visible);
                     }
@@ -1086,12 +1319,26 @@ impl WindowHandle {
                     UpdateMessage::SetupReactiveChildren { mut setup } => {
                         setup.run();
                     }
+                    UpdateMessage::RouteEvent {
+                        id,
+                        event,
+                        route_kind: dispatch_kind,
+                        triggered_by,
+                    } => {
+                        let cx = GlobalEventCx::new(&mut self.window_state, id, *event);
+                        cx.route_normal(dispatch_kind, triggered_by.as_deref());
+                    }
                 }
             }
         }
         // After all messages are processed, re-parent any scopes that couldn't find
         // a parent scope earlier (because the view tree wasn't fully assembled yet).
         crate::view::process_pending_scope_reparents();
+        let root_element_id = self.window_state.root_view_id.get_element_id();
+        let event = Event::Window(WindowEvent::UpdatePhase(
+            UpdatePhaseEvent::ProcessingMessages,
+        ));
+        GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
     }
 
     fn process_deferred_update_messages(&mut self) {
@@ -1108,15 +1355,19 @@ impl WindowHandle {
     }
 
     fn needs_layout(&mut self) -> bool {
-        self.id
-            .state()
-            .borrow()
-            .requested_changes
-            .contains(ChangeFlags::LAYOUT)
+        self.window_state.needs_layout
+    }
+
+    fn needs_box_tree_commit(&mut self) -> bool {
+        self.window_state.needs_box_tree_commit
+    }
+
+    fn needs_box_tree_update(&mut self) -> bool {
+        self.window_state.needs_box_tree_from_layout
     }
 
     fn needs_style(&mut self) -> bool {
-        !self.window_state.style_dirty.is_empty() || !self.window_state.view_style_dirty.is_empty()
+        !self.window_state.style_dirty.is_empty()
     }
 
     fn has_deferred_update_messages(&self) -> bool {
@@ -1129,6 +1380,22 @@ impl WindowHandle {
     }
 
     fn set_cursor(&mut self) {
+        if self.window_state.needs_cursor_resolution {
+            let mut temp = None;
+            for hover in self.window_state.hover_state.current_path() {
+                if hover.is_view()
+                    && let Some(cursor) = hover.owning_id().state().borrow().cursor()
+                {
+                    temp = Some(cursor);
+                }
+                // it is important that the node cursors override the widget cursor because non View nodes will have a widget that maps to the parent View that they are associated with
+                if let Some(cursor) = self.window_state.element_id_cursors.get(hover) {
+                    temp = Some(*cursor);
+                }
+            }
+            self.window_state.needs_cursor_resolution = false;
+            self.window_state.cursor = temp;
+        }
         let cursor = match self.window_state.cursor {
             Some(CursorStyle::Default) => CursorIcon::Default,
             Some(CursorStyle::Pointer) => CursorIcon::Pointer,
@@ -1153,9 +1420,9 @@ impl WindowHandle {
             Some(CursorStyle::NwseResize) => CursorIcon::NwseResize,
             None => CursorIcon::Default,
         };
-        if cursor != self.window_state.last_cursor {
+        if cursor != self.window_state.last_cursor_icon {
             self.window.set_cursor(cursor.into());
-            self.window_state.last_cursor = cursor;
+            self.window_state.last_cursor_icon = cursor;
         }
     }
 
@@ -1164,13 +1431,14 @@ impl WindowHandle {
     }
 
     pub(crate) fn destroy(&mut self) {
-        self.event(Event::WindowClosed);
+        self.event(Event::Window(WindowEvent::Closed));
         self.scope.dispose();
         remove_window_id_mapping(&self.id, &self.window_id);
     }
 
     #[cfg(target_os = "macos")]
-    fn show_context_menu(&self, menu: MudaMenu, pos: Option<Point>) {
+    pub(crate) fn show_context_menu(&self, menu: MudaMenu, pos: Option<Point>) {
+        use dispatch2::DispatchQueue;
         use muda::{
             ContextMenu,
             dpi::{LogicalPosition, Position},
@@ -1179,22 +1447,35 @@ impl WindowHandle {
         use raw_window_handle::RawWindowHandle;
 
         if let RawWindowHandle::AppKit(handle) = self.window.window_handle().unwrap().as_raw() {
-            unsafe {
-                menu.show_context_menu_for_nsview(
-                    handle.ns_view.as_ptr() as _,
-                    pos.map(|pos| {
-                        Position::Logical(LogicalPosition::new(
-                            pos.x * self.window_state.scale,
-                            (self.size.get_untracked().height - pos.y) * self.window_state.scale,
-                        ))
-                    }),
-                )
-            };
+            let ns_view = handle.ns_view.as_ptr() as usize;
+            let scale = self.window_state.scale;
+            let height = self.size.get_untracked().height;
+            let logical_pos = pos.map(|pos| (pos.x * scale, (height - pos.y) * scale));
+
+            struct SendMenu(MudaMenu);
+            unsafe impl Send for SendMenu {}
+            impl SendMenu {
+                unsafe fn show(self, ns_view: usize, logical_pos: Option<(f64, f64)>) {
+                    unsafe {
+                        self.0.show_context_menu_for_nsview(
+                            ns_view as _,
+                            logical_pos.map(|(x, y)| Position::Logical(LogicalPosition::new(x, y))),
+                        );
+                    }
+                }
+            }
+
+            let menu = SendMenu(menu);
+            DispatchQueue::main().exec_async(move || {
+                unsafe {
+                    menu.show(ns_view, logical_pos);
+                };
+            });
         }
     }
 
     #[cfg(target_os = "windows")]
-    fn show_context_menu(&self, menu: MudaMenu, pos: Option<Point>) {
+    pub(crate) fn show_context_menu(&self, menu: MudaMenu, pos: Option<Point>) {
         use muda::{
             ContextMenu,
             dpi::{LogicalPosition, Position},
@@ -1256,8 +1537,8 @@ impl WindowHandle {
     }
 
     #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
-    fn show_context_menu(&self, menu: MudaMenu, pos: Option<Point>) {
-        let pos = pos.unwrap_or(self.cursor_position);
+    pub(crate) fn show_context_menu(&self, menu: MudaMenu, pos: Option<Point>) {
+        let pos = pos.unwrap_or(self.window_state.last_pointer.0);
         let pos = Point::new(
             pos.x / self.window_state.scale,
             pos.y / self.window_state.scale,
@@ -1287,29 +1568,20 @@ impl WindowHandle {
     }
 
     pub(crate) fn ime(&mut self, ime: Ime) {
-        match ime {
-            Ime::Enabled => {
-                self.event(Event::ImeEnabled);
-            }
-            Ime::Preedit(text, cursor) => {
-                self.event(Event::ImePreedit { text, cursor });
-            }
-            Ime::Commit(text) => {
-                self.event(Event::ImeCommit(text));
-            }
-            Ime::Disabled => {
-                self.event(Event::ImeDisabled);
-            }
+        let floem_ime = match ime {
+            Ime::Enabled => ImeEvent::Enabled,
+            Ime::Preedit(text, cursor) => ImeEvent::Preedit { text, cursor },
+            Ime::Commit(text) => ImeEvent::Commit(text),
+            Ime::Disabled => ImeEvent::Disabled,
             Ime::DeleteSurrounding {
                 before_bytes,
                 after_bytes,
-            } => {
-                self.event(Event::ImeDeleteSurrounding {
-                    before_bytes,
-                    after_bytes,
-                });
-            }
-        }
+            } => ImeEvent::DeleteSurrounding {
+                before_bytes,
+                after_bytes,
+            },
+        };
+        self.event(Event::Ime(floem_ime));
     }
 
     pub(crate) fn modifiers_changed(&mut self, modifiers: Modifiers) {
@@ -1353,7 +1625,6 @@ impl WindowHandle {
         // Clear all caches that might hold stale ViewId references.
         // This is crucial for test isolation when tests run on the same thread.
         clear_hit_test_cache();
-        clear_all_stacking_caches();
 
         // Remove the window from the global window tracking map.
         // This is crucial for test isolation - if not done, the old root ViewId
@@ -1363,12 +1634,14 @@ impl WindowHandle {
 }
 
 pub(crate) fn get_current_view() -> ViewId {
-    CURRENT_RUNNING_VIEW_HANDLE.with(|running| *running.borrow())
+    CURRENT_RUNNING_VIEW_HANDLE
+        .with(|running| *running.borrow())
+        .expect("view id must have been set before getting")
 }
 /// Set this view handle to the current running view handle
 pub(crate) fn set_current_view(id: ViewId) {
     CURRENT_RUNNING_VIEW_HANDLE.with(|running| {
-        *running.borrow_mut() = id;
+        *running.borrow_mut() = Some(id);
     });
 }
 
@@ -1399,8 +1672,10 @@ mod tests {
     /// Test that we can create a headless WindowHandle.
     #[test]
     fn test_headless_window_handle_creation() {
+        let root_id = ViewId::new_root();
+        set_current_view(root_id);
         let view = Empty::new().style(|s| s.size(100.0, 100.0));
-        let window_handle = WindowHandle::new_headless(view, Size::new(800.0, 600.0), 1.0);
+        let window_handle = WindowHandle::new_headless(root_id, view, Size::new(800.0, 600.0), 1.0);
 
         // Just verify creation doesn't panic
         assert!(window_handle.scale > 0.0);
@@ -1414,8 +1689,11 @@ mod tests {
             PointerButton, PointerButtonEvent, PointerEvent, PointerId, PointerInfo, PointerType,
         };
 
+        let root_id = ViewId::new_root();
+        set_current_view(root_id);
         let view = Empty::new().style(|s| s.size(100.0, 100.0));
-        let mut window_handle = WindowHandle::new_headless(view, Size::new(800.0, 600.0), 1.0);
+        let mut window_handle =
+            WindowHandle::new_headless(root_id, view, Size::new(800.0, 600.0), 1.0);
 
         // Create a pointer down event
         let event = Event::Pointer(PointerEvent::Down(PointerButtonEvent {
@@ -1444,8 +1722,11 @@ mod tests {
             PointerButton, PointerButtonEvent, PointerEvent, PointerId, PointerInfo, PointerType,
         };
 
+        let root_id = ViewId::new_root();
+        set_current_view(root_id);
         let view = Empty::new().style(|s| s.size(100.0, 100.0));
-        let mut window_handle = WindowHandle::new_headless(view, Size::new(800.0, 600.0), 1.0);
+        let mut window_handle =
+            WindowHandle::new_headless(root_id, view, Size::new(800.0, 600.0), 1.0);
 
         // Dispatch pointer down
         window_handle.event(Event::Pointer(PointerEvent::Down(PointerButtonEvent {
@@ -1478,5 +1759,32 @@ mod tests {
         })));
 
         // All should complete without panic
+    }
+
+    #[test]
+    fn test_budgeted_update_quiesces_with_unreachable_style_dirty_view() {
+        let root_id = ViewId::new_root();
+        set_current_view(root_id);
+        let view = Empty::new().style(|s| s.size(100.0, 100.0));
+        let mut window_handle =
+            WindowHandle::new_headless(root_id, view, Size::new(800.0, 600.0), 1.0);
+
+        // Create a view ID that belongs to this root but is not in the tree.
+        let orphan = ViewId::new();
+        window_handle
+            .window_state
+            .mark_style_dirty(orphan.get_element_id());
+
+        // Must quiesce immediately instead of repeatedly trying to style an unreachable view.
+        let quiescent =
+            window_handle.process_update_budgeted(Instant::now(), Duration::from_millis(10));
+        assert!(
+            quiescent,
+            "process_update_budgeted should quiesce when style dirty contains unreachable views"
+        );
+        assert!(
+            window_handle.window_state.style_dirty.is_empty(),
+            "unreachable style dirty entries should be drained"
+        );
     }
 }

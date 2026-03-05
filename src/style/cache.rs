@@ -452,7 +452,7 @@ impl InteractionState {
         if self.is_focused {
             bits |= 1 << 3;
         }
-        if self.is_clicking {
+        if self.is_active {
             bits |= 1 << 4;
         }
         if self.is_dark_mode {
@@ -500,7 +500,10 @@ impl Style {
                         nested_style.content_hash().hash(&mut hasher);
                     }
                 }
-                StyleKeyInfo::ContextMappings | StyleKeyInfo::Transition => {
+                StyleKeyInfo::ContextMappings
+                | StyleKeyInfo::StructuralSelectors
+                | StyleKeyInfo::ResponsiveSelectors
+                | StyleKeyInfo::Transition => {
                     // Context mappings and transitions use pointer hash for identity
                     // since closures can't be meaningfully hashed
                     std::ptr::hash(std::rc::Rc::as_ptr(value), &mut hasher);
@@ -812,13 +815,12 @@ mod tests {
     #[test]
     fn test_apply_only_class_maps_changes_hash() {
         use crate::style_class;
-        use std::rc::Rc;
 
         // Define a test class
         style_class!(TestClass2);
 
         // Create initial class_context (empty)
-        let mut class_context = Rc::new(Style::new());
+        let mut class_context = Style::new();
         let initial_hash = class_context.content_hash();
 
         // Create a style with class maps (like parent's direct style would have)

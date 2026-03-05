@@ -64,7 +64,8 @@ fn test_size_applied_directly() {
     let view = Empty::new().style(|s| s.size(100.0, 50.0));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     let layout = id.get_layout().expect("Layout should exist");
@@ -94,7 +95,8 @@ fn test_absolute_positioning_directly() {
 
     let view = Stack::new((element,)).style(|s| s.size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     let layout = element_id.get_layout().expect("Layout should exist");
@@ -128,7 +130,8 @@ fn test_size_inside_with_context() {
     });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     let layout = id.get_layout().expect("Layout should exist");
@@ -155,7 +158,8 @@ fn test_width_inside_with_context() {
     });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     let layout = id.get_layout().expect("Layout should exist");
@@ -183,7 +187,8 @@ fn test_absolute_inside_with_context() {
 
     let view = Stack::new((element,)).style(|s| s.size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     let layout = element_id.get_layout().expect("Layout should exist");
@@ -213,7 +218,8 @@ fn test_flex_inside_with_context() {
     // Put it in a flex container with fixed width
     let container = Stack::new((view,)).style(|s| s.flex_row().size(200.0, 100.0));
 
-    let mut harness = HeadlessHarness::new_with_size(container, 200.0, 200.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, container, 200.0, 200.0);
     harness.rebuild();
 
     let layout = id.get_layout().expect("Layout should exist");
@@ -240,7 +246,8 @@ fn test_padding_inside_with_context() {
 
     let view = Stack::new((container,)).style(|s| s.size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     let layout = child_id.get_layout().expect("Layout should exist");
@@ -270,7 +277,8 @@ fn test_margin_inside_with_context() {
 
     let view = Stack::new((element,)).style(|s| s.size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     let layout = element_id.get_layout().expect("Layout should exist");
@@ -304,7 +312,8 @@ fn test_gap_inside_with_context() {
 
     let view = Stack::new((container,)).style(|s| s.size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     let layout = child2_id.get_layout().expect("Layout should exist");
@@ -333,7 +342,8 @@ fn test_layout_outside_color_inside_with_context() {
     });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     // Layout should work (set outside with_context)
@@ -371,7 +381,8 @@ fn test_mixed_layout_inside_outside_with_context() {
 
     let view = Stack::new((element,)).style(|s| s.size(200.0, 200.0));
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     let layout = element_id.get_layout().expect("Layout should exist");
@@ -417,7 +428,8 @@ fn test_theme_value_for_size() {
     });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
     let layout = id.get_layout().expect("Layout should exist");
@@ -455,7 +467,8 @@ fn test_size_with_inherited_context() {
     let parent =
         Stack::new((child,)).style(move |s| s.size(300.0, 200.0).set(TestThemeProp, theme));
 
-    let mut harness = HeadlessHarness::new_with_size(parent, 300.0, 200.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, parent, 300.0, 200.0);
     harness.rebuild();
 
     let layout = child_id.get_layout().expect("Layout should exist");
@@ -498,7 +511,8 @@ fn test_absolute_with_inherited_context() {
     let parent =
         Stack::new((child,)).style(move |s| s.size(200.0, 200.0).set(TestThemeProp, theme));
 
-    let mut harness = HeadlessHarness::new_with_size(parent, 200.0, 200.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, parent, 200.0, 200.0);
     harness.rebuild();
 
     let layout = child_id.get_layout().expect("Layout should exist");
@@ -542,7 +556,8 @@ fn test_container_derived_with_inherited_context() {
     let parent =
         Stack::new((child,)).style(move |s| s.size(400.0, 300.0).set(TestThemeProp, theme));
 
-    let mut harness = HeadlessHarness::new_with_size(parent, 400.0, 300.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, parent, 400.0, 300.0);
     harness.rebuild();
 
     let layout = child_id.get_layout().expect("Layout should exist");
@@ -593,7 +608,8 @@ fn test_layout_with_context_no_theme_set() {
     // Parent does NOT set theme - this is the key difference!
     let parent = Stack::new((child,)).style(|s| s.size(400.0, 300.0));
 
-    let mut harness = HeadlessHarness::new_with_size(parent, 400.0, 300.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, parent, 400.0, 300.0);
     harness.rebuild();
 
     let layout = child_id.get_layout().expect("Layout should exist");
@@ -644,7 +660,8 @@ fn test_container_derived_no_theme_set() {
     // Parent does NOT set theme!
     let parent = Stack::new((child,)).style(|s| s.size(400.0, 300.0));
 
-    let mut harness = HeadlessHarness::new_with_size(parent, 400.0, 300.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, parent, 400.0, 300.0);
     harness.rebuild();
 
     let layout = child_id.get_layout().expect("Layout should exist");
@@ -701,11 +718,12 @@ fn test_centering_with_inherited_context() {
     let parent =
         Stack::new((child,)).style(move |s| s.size(400.0, 300.0).set(TestThemeProp, theme));
 
-    let mut harness = HeadlessHarness::new_with_size(parent, 400.0, 300.0);
+    let root = TestRoot::new();
+    let mut harness = HeadlessHarness::new_with_size(root, parent, 400.0, 300.0);
     harness.rebuild();
 
     let layout = child_id.get_layout().expect("Layout should exist");
-    let transform = child_id.get_transform();
+    let transform = child_id.get_visual_transform();
     let coeffs = transform.as_coeffs();
 
     eprintln!(

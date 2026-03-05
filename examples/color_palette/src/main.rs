@@ -3,7 +3,7 @@ use floem::peniko::Color;
 use floem::prelude::{Decorators, RwSignal};
 use floem::reactive::{SignalGet, SignalUpdate};
 use floem::style::Position;
-use floem::views::slider::Slider;
+use floem::views::slider::{Slider, SliderChanged};
 use floem::views::{dyn_view, Empty, Label};
 use floem::window::WindowConfig;
 use floem::Application;
@@ -19,7 +19,9 @@ fn create_color_sliders(
     (
         Label::derived(move || text_label.clone()).style(|s| s.size(65, 30)),
         Slider::new(move || signal.get())
-            .on_change_px(move |new_value| update_fn(new_value as f32))
+            .on_event_stop(SliderChanged::listener(), move |_cx, state| {
+                update_fn(state.px as f32)
+            })
             .style(|s| s.width(250)),
     )
         .style(|s| s.flex_row().gap(3).width_full())

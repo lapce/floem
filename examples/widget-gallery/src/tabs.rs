@@ -1,7 +1,7 @@
 use floem::prelude::palette::css;
 use floem::prelude::*;
 use floem::reactive::Effect;
-use floem::style::BoxShadow;
+use floem::style::{BoxShadow, CustomStylable};
 use floem::taffy::AlignContent;
 use floem::theme::StyleThemeExt;
 
@@ -48,7 +48,7 @@ pub fn tab_view() -> impl IntoView {
         move || tabs.get(),
         |tab| tab.idx,
         move |tab| {
-            tab_side_item(tab.clone(), active_tab).on_click_stop(move |_| {
+            tab_side_item(tab.clone(), active_tab).action(move || {
                 active_tab.update(|a| {
                     *a = Some(tab.idx);
                 });
@@ -57,13 +57,13 @@ pub fn tab_view() -> impl IntoView {
     )
     .style(|s| s.flex_col().width_full().row_gap(5.))
     .scroll()
-    .on_click_stop(move |_| {
+    .action(move || {
         if active_tab.with_untracked(|act| act.is_some()) {
             active_tab.set(None)
         }
     })
     .style(|s| s.size_full().padding(5.).padding_right(7.))
-    .scroll_style(|s| s.handle_thickness(6.).shrink_to_fit())
+    .custom_style(|s| s.shrink_to_fit())
     .style(|s| {
         s.width(140.)
             .min_width(140.)
@@ -72,13 +72,12 @@ pub fn tab_view() -> impl IntoView {
             .with_theme(|s, t| s.border_color(t.border_muted()))
     });
 
-    let tabs_content_view = Stack::new((tab(
+    let tabs_content_view = tab(
         move || active_tab.get(),
         move || tabs.get(),
         |tab| tab.idx,
         show_tab_content,
     )
-    .style(|s| s.size_full()),))
     .style(|s| s.size_full());
 
     Stack::vertical((

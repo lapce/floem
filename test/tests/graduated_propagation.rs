@@ -49,6 +49,7 @@ floem::style_class!(pub TestButtonClass);
 #[test]
 #[serial]
 fn test_inherited_prop_propagates_to_deep_children() {
+    let root = TestRoot::new();
     let color_signal = RwSignal::new(palette::css::RED);
 
     // Create a deep hierarchy where only the leaf uses the inherited color
@@ -62,12 +63,12 @@ fn test_inherited_prop_propagates_to_deep_children() {
     let level2 = Container::new(level3).style(|s| s.size(60.0, 60.0));
     let level1 = Container::new(level2).style(|s| s.size(80.0, 80.0));
 
-    let root = Container::new(level1).style(move |s| {
+    let root_view = Container::new(level1).style(move |s| {
         s.size(100.0, 100.0)
             .set(TestInheritedColor, color_signal.get())
     });
 
-    let mut harness = HeadlessHarness::new_with_size(root, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, root_view, 100.0, 100.0);
 
     // Initial: leaf should be RED
     let style = harness.get_computed_style(leaf_id);
@@ -96,6 +97,7 @@ fn test_inherited_prop_propagates_to_deep_children() {
 #[test]
 #[serial]
 fn test_inherited_prop_propagates_to_siblings() {
+    let root = TestRoot::new();
     let color_signal = RwSignal::new(palette::css::GREEN);
 
     let mut children = Vec::new();
@@ -115,7 +117,7 @@ fn test_inherited_prop_propagates_to_siblings() {
             .set(TestInheritedColor, color_signal.get())
     });
 
-    let mut harness = HeadlessHarness::new_with_size(container, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, container, 100.0, 100.0);
 
     // All children should be GREEN
     for id in &child_ids {
@@ -151,6 +153,7 @@ fn test_inherited_prop_propagates_to_siblings() {
 #[test]
 #[serial]
 fn test_hover_selector_view_updates_correctly() {
+    let root = TestRoot::new();
     let view = Empty::new().style(|s| {
         s.size(100.0, 100.0)
             .background(palette::css::GRAY)
@@ -158,7 +161,7 @@ fn test_hover_selector_view_updates_correctly() {
     });
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Initial: should be GRAY
     let style = harness.get_computed_style(id);
@@ -193,6 +196,7 @@ fn test_hover_selector_view_updates_correctly() {
 #[test]
 #[serial]
 fn test_child_with_selectors_receives_inherited_updates() {
+    let root = TestRoot::new();
     let color_signal = RwSignal::new(palette::css::RED);
 
     // Child has hover selector, making it ineligible for inherited-only fast path
@@ -209,7 +213,7 @@ fn test_child_with_selectors_receives_inherited_updates() {
             .set(TestInheritedColor, color_signal.get())
     });
 
-    let mut harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, parent, 100.0, 100.0);
 
     // Initial: child should be RED (from inherited)
     let style = harness.get_computed_style(child_id);
@@ -242,6 +246,7 @@ fn test_child_with_selectors_receives_inherited_updates() {
 #[test]
 #[serial]
 fn test_class_application_triggers_child_recalc() {
+    let root = TestRoot::new();
     // Define a class that sets background
     let class_style = Style::new()
         .background(palette::css::ORANGE)
@@ -254,7 +259,7 @@ fn test_class_application_triggers_child_recalc() {
 
     let parent = Container::new(child).style(move |_| class_style.clone().size(100.0, 100.0));
 
-    let harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
+    let harness = HeadlessHarness::new_with_size(root, parent, 100.0, 100.0);
 
     // Child should have PURPLE background from class
     let style = harness.get_computed_style(child_id);
@@ -273,6 +278,7 @@ fn test_class_application_triggers_child_recalc() {
 #[test]
 #[serial]
 fn test_dynamic_class_change_updates_children() {
+    let root = TestRoot::new();
     let use_class = RwSignal::new(false);
 
     // Child has NO inline background - should receive class styling when enabled
@@ -290,7 +296,7 @@ fn test_dynamic_class_change_updates_children() {
         }
     });
 
-    let mut harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, parent, 100.0, 100.0);
 
     // Initial: no class styling, no background
     let style = harness.get_computed_style(child_id);
@@ -323,6 +329,7 @@ fn test_dynamic_class_change_updates_children() {
 #[test]
 #[serial]
 fn test_disabled_state_propagates_to_children() {
+    let root = TestRoot::new();
     let disabled_signal = RwSignal::new(false);
 
     let child = Empty::new().style(|s| {
@@ -335,7 +342,7 @@ fn test_disabled_state_propagates_to_children() {
     let parent = Container::new(child)
         .style(move |s| s.size(100.0, 100.0).set_disabled(disabled_signal.get()));
 
-    let mut harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, parent, 100.0, 100.0);
 
     // Initial: child should be GREEN
     let style = harness.get_computed_style(child_id);
@@ -367,12 +374,13 @@ fn test_disabled_state_propagates_to_children() {
 #[test]
 #[serial]
 fn test_rapid_style_updates() {
+    let root = TestRoot::new();
     let color_signal = RwSignal::new(palette::css::RED);
 
     let view = Empty::new().style(move |s| s.size(100.0, 100.0).background(color_signal.get()));
     let id = view.view_id();
 
-    let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Rapid updates
     for color in [
@@ -398,6 +406,7 @@ fn test_rapid_style_updates() {
 #[test]
 #[serial]
 fn test_combined_inherited_and_local_changes() {
+    let root = TestRoot::new();
     let inherited_color = RwSignal::new(palette::css::RED);
     let local_padding = RwSignal::new(5.0);
 
@@ -413,7 +422,7 @@ fn test_combined_inherited_and_local_changes() {
             .set(TestInheritedColor, inherited_color.get())
     });
 
-    let mut harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
+    let mut harness = HeadlessHarness::new_with_size(root, parent, 100.0, 100.0);
 
     // Initial check
     let style = harness.get_computed_style(child_id);
@@ -442,10 +451,11 @@ fn test_combined_inherited_and_local_changes() {
 #[test]
 #[serial]
 fn test_empty_hierarchy() {
+    let root = TestRoot::new();
     let view = Empty::new().style(|s| s.size(100.0, 100.0));
     let id = view.view_id();
 
-    let harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+    let harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Should not panic
     let _style = harness.get_computed_style(id);
@@ -455,6 +465,7 @@ fn test_empty_hierarchy() {
 #[test]
 #[serial]
 fn test_very_deep_nesting_propagation() {
+    let root = TestRoot::new();
     let color_signal = RwSignal::new(palette::css::RED);
 
     fn create_deep_hierarchy(depth: usize, _color_signal: RwSignal<Color>) -> Container {
@@ -469,12 +480,12 @@ fn test_very_deep_nesting_propagation() {
         }
     }
 
-    let root = Container::new(create_deep_hierarchy(15, color_signal)).style(move |s| {
+    let root_view = Container::new(create_deep_hierarchy(15, color_signal)).style(move |s| {
         s.size(200.0, 200.0)
             .set(TestInheritedColor, color_signal.get())
     });
 
-    let mut harness = HeadlessHarness::new_with_size(root, 200.0, 200.0);
+    let mut harness = HeadlessHarness::new_with_size(root, root_view, 200.0, 200.0);
 
     // Update should propagate through 15+ levels
     color_signal.set(palette::css::CYAN);
@@ -489,12 +500,13 @@ fn test_very_deep_nesting_propagation() {
 #[test]
 #[serial]
 fn test_unstyled_views() {
+    let root = TestRoot::new();
     let child = Empty::new();
     let child_id = child.view_id();
 
     let parent = Container::new(child).style(|s| s.size(100.0, 100.0));
 
-    let harness = HeadlessHarness::new_with_size(parent, 100.0, 100.0);
+    let harness = HeadlessHarness::new_with_size(root, parent, 100.0, 100.0);
 
     // Should not panic
     let _style = harness.get_computed_style(child_id);

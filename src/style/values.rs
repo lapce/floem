@@ -4,7 +4,7 @@ use floem_reactive::{RwSignal, SignalGet, SignalUpdate as _};
 use floem_renderer::Renderer;
 use floem_renderer::text::{FontWeight, LineHeightValue};
 use peniko::color::{HueDirection, palette};
-use peniko::kurbo::{self, Point, Stroke};
+use peniko::kurbo::{self, Affine, Point, Stroke, Vec2};
 use peniko::{
     Brush, Color, ColorStop, ColorStops, Gradient, GradientKind, InterpolationAlphaSpace,
     LinearGradientPosition,
@@ -113,6 +113,182 @@ impl<T: StylePropValue, M: StylePropValue> StylePropValue for MinMax<T, M> {}
 impl<T: StylePropValue> StylePropValue for Line<T> {}
 impl StylePropValue for taffy::GridAutoFlow {}
 impl StylePropValue for GridPlacement {}
+
+/// How the content of a replaced element, such as an img, should be resized to fit its container.
+/// Corresponds to the CSS `object-fit` property.
+/// See <https://developer.mozilla.org/en-US/docs/Web/CSS/object-fit>.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum ObjectFit {
+    /// The replaced content is sized to fill the element's content box.
+    /// The entire object will completely fill the box.
+    /// If the object's aspect ratio does not match the aspect ratio of its box,
+    /// then the object will be stretched to fit.
+    #[default]
+    Fill,
+    /// The replaced content is scaled to maintain its aspect ratio while fitting
+    /// within the element's content box. The entire object is made to fill the box,
+    /// while preserving its aspect ratio, so the object will be "letterboxed"
+    /// if its aspect ratio does not match the aspect ratio of the box.
+    Contain,
+    /// The content is sized to maintain its aspect ratio while filling the element's
+    /// entire content box. If the object's aspect ratio does not match the aspect
+    /// ratio of its box, then the object will be clipped to fit.
+    Cover,
+    /// The content is sized as if none or contain were specified, whichever would
+    /// result in a smaller concrete object size.
+    ScaleDown,
+    /// The replaced content is not resized.
+    None,
+}
+
+impl StylePropValue for ObjectFit {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        use peniko::kurbo::RoundedRect;
+
+        let object_fit = *self;
+        let container_color = RwSignal::new(palette::css::GRAY);
+        let image_color = RwSignal::new(palette::css::BLUE);
+
+        // Visual preview showing how an image with 2:1 aspect ratio fits in a square container
+        let preview = canvas(move |cx, size| {
+            let width = size.width;
+            let height = size.height;
+            let padding = 4.0;
+            let container_size = width.min(height) - padding * 2.0;
+
+            // Draw container box (square)
+            let container_x = (width - container_size) / 2.0;
+            let container_y = (height - container_size) / 2.0;
+            let container_rect = RoundedRect::from_rect(
+                kurbo::Rect::new(
+                    container_x,
+                    container_y,
+                    container_x + container_size,
+                    container_y + container_size,
+                ),
+                2.0,
+            );
+            cx.stroke(
+                &container_rect,
+                container_color.get(),
+                &Stroke {
+                    width: 1.5,
+                    ..Default::default()
+                },
+            );
+
+            // Simulate an image with 2:1 aspect ratio (wider than tall)
+            let image_aspect = 2.0;
+            let (img_width, img_height) = match object_fit {
+                ObjectFit::Fill => {
+                    // Stretch to fill container
+                    (container_size, container_size)
+                }
+                ObjectFit::Contain => {
+                    // Fit inside while maintaining aspect ratio
+                    // Image is 2:1, container is 1:1, so width is the constraint
+                    let w = container_size;
+                    let h = w / image_aspect;
+                    (w, h)
+                }
+                ObjectFit::Cover => {
+                    // Cover entire container while maintaining aspect ratio
+                    // Height is the constraint
+                    let h = container_size;
+                    let w = h * image_aspect;
+                    (w, h)
+                }
+                ObjectFit::ScaleDown => {
+                    // Like contain but don't scale up
+                    // Assume natural image size is smaller than container
+                    let natural_w = container_size * 0.6;
+                    let natural_h = natural_w / image_aspect;
+                    (natural_w, natural_h)
+                }
+                ObjectFit::None => {
+                    // Natural size (simulated as 60% of container)
+                    let natural_w = container_size * 0.6;
+                    let natural_h = natural_w / image_aspect;
+                    (natural_w, natural_h)
+                }
+            };
+
+            // Center the image in the container
+            let img_x = container_x + (container_size - img_width) / 2.0;
+            let img_y = container_y + (container_size - img_height) / 2.0;
+
+            // Clip to container bounds for Cover mode
+            if matches!(object_fit, ObjectFit::Cover) {
+                // Draw the image rect (it will extend beyond container)
+                let img_rect = RoundedRect::from_rect(
+                    kurbo::Rect::new(img_x, img_y, img_x + img_width, img_y + img_height),
+                    2.0,
+                );
+                // Show it as semi-transparent to indicate it's clipped
+                let clipped_color = image_color.get().with_alpha(0.7);
+                cx.fill(&img_rect, clipped_color, 0.0);
+            } else {
+                // Draw the image rect normally
+                let img_rect = RoundedRect::from_rect(
+                    kurbo::Rect::new(img_x, img_y, img_x + img_width, img_y + img_height),
+                    2.0,
+                );
+                cx.fill(&img_rect, image_color.get(), 0.0);
+            }
+        })
+        .style(|s| s.width(70.0).height(70.0))
+        .container()
+        .style(move |s| {
+            s.padding(4.0)
+                .border(1.)
+                .border_radius(5.0)
+                .with_theme(move |s, t| {
+                    container_color.set(t.text_muted());
+                    image_color.set(t.primary());
+                    s.border_color(t.border())
+                })
+        });
+
+        let label_text = match object_fit {
+            ObjectFit::Fill => "Fill",
+            ObjectFit::Contain => "Contain",
+            ObjectFit::Cover => "Cover",
+            ObjectFit::ScaleDown => "ScaleDown",
+            ObjectFit::None => "None",
+        };
+
+        let tooltip_view = move || {
+            let description = match object_fit {
+                ObjectFit::Fill => "Stretches content to fill the box.\nMay distort aspect ratio.",
+                ObjectFit::Contain => {
+                    "Scales content to fit inside the box.\nPreserves aspect ratio (letterboxed)."
+                }
+                ObjectFit::Cover => {
+                    "Scales content to cover the box.\nPreserves aspect ratio (may clip)."
+                }
+                ObjectFit::ScaleDown => {
+                    "Like 'contain' but won't scale up.\nNever larger than natural size."
+                }
+                ObjectFit::None => {
+                    "Content keeps its natural size.\nMay overflow or be smaller than box."
+                }
+            };
+
+            Stack::vertical((
+                Label::new(label_text).style(|s| s.font_bold()),
+                Label::new(description).style(|s| s.with_theme(|s, t| s.color(t.text_muted()))),
+            ))
+            .style(|s| s.gap(8.0).padding(12.0).max_width(220.0))
+        };
+
+        Some(
+            preview
+                .tooltip(tooltip_view)
+                .style(|s| s.items_center())
+                .into_any(),
+        )
+    }
+}
 
 impl<A: smallvec::Array> StylePropValue for SmallVec<A>
 where
@@ -756,11 +932,7 @@ impl StylePropValue for Duration {
 
 impl StylePropValue for super::Angle {
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
-        let self_rad = self.to_radians();
-        let other_rad = other.to_radians();
-        self_rad
-            .interpolate(&other_rad, value)
-            .map(super::Angle::Rad)
+        Some(self.lerp(other, value))
     }
 }
 
@@ -770,6 +942,307 @@ impl StylePropValue for super::AnchorAbout {
             x: self.x + (other.x - self.x) * value,
             y: self.y + (other.y - self.y) * value,
         })
+    }
+}
+
+impl StylePropValue for Affine {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        let affine = *self;
+        let coeffs = affine.as_coeffs();
+
+        // Decompose to show meaningful transform components
+        let (scale, rotation) = affine.svd();
+        let translation = affine.translation();
+
+        // Create a visual preview showing the transform effect
+        let preview = canvas(move |cx, size| {
+            let center = Point::new(size.width / 2., size.height / 2.);
+            let box_size = 20.0;
+
+            // Draw original position (dashed outline)
+            let original_rect =
+                kurbo::Rect::from_center_size(center, kurbo::Size::new(box_size, box_size));
+            cx.stroke(
+                &original_rect,
+                palette::css::GRAY.with_alpha(0.5),
+                &kurbo::Stroke::new(1.0).with_dashes(0., [3., 3.]),
+            );
+
+            // Draw transformed position
+            let transform_offset =
+                Affine::translate((center.x - box_size / 2., center.y - box_size / 2.));
+            let display_transform = transform_offset * affine * transform_offset.inverse();
+
+            let transformed_rect = kurbo::Rect::new(0., 0., box_size, box_size);
+            cx.fill(
+                &display_transform.transform_rect_bbox(transformed_rect),
+                palette::css::BLUE.with_alpha(0.7),
+                0.,
+            );
+            cx.stroke(
+                &(display_transform.transform_rect_bbox(transformed_rect)),
+                palette::css::BLUE,
+                &kurbo::Stroke::new(2.0),
+            );
+
+            // Draw origin point
+            let origin_marker = kurbo::Circle::new(display_transform * Point::ZERO, 3.0);
+            cx.fill(&origin_marker, palette::css::RED, 0.);
+        })
+        .style(|s| s.width(80.0).height(60.0))
+        .container()
+        .style(|s| {
+            s.padding(4.0)
+                .border(1.)
+                .border_radius(5.0)
+                .with_theme(|s, t| s.border_color(t.border()))
+        });
+
+        let tooltip_view = move || {
+            // Matrix coefficients in a grid
+            let matrix_label = Label::new("Matrix:").style(|s| s.font_bold().margin_bottom(8.0));
+
+            let matrix_grid = (
+                views((
+                    Label::new(format!("{:.3}", coeffs[0])),
+                    Label::new(format!("{:.3}", coeffs[2])),
+                    Label::new(format!("{:.3}", coeffs[4])),
+                )),
+                views((
+                    Label::new(format!("{:.3}", coeffs[1])),
+                    Label::new(format!("{:.3}", coeffs[3])),
+                    Label::new(format!("{:.3}", coeffs[5])),
+                )),
+                views((Label::new("0"), Label::new("0"), Label::new("1"))),
+            )
+                .v_stack()
+                .style(|s| {
+                    s.gap(4.0)
+                        .padding(8.0)
+                        .border(1.)
+                        .border_radius(4.0)
+                        .with_theme(|s, t| {
+                            s.background(t.primary().with_alpha(0.5))
+                                .border_color(t.border())
+                        })
+                });
+
+            // Decomposed components
+            let components_label = Label::new("Components:")
+                .style(|s| s.font_bold().margin_top(16.0).margin_bottom(8.0));
+
+            let translate_row = views((
+                "Translate:".style(|s| s.font_bold().min_width(100.0).justify_end()),
+                Label::derived(move || format!("({:.2}, {:.2})", translation.x, translation.y)),
+            ));
+
+            let rotate_row = views((
+                "Rotate:".style(|s| s.font_bold().min_width(100.0).justify_end()),
+                Label::derived(move || format!("{:.1}°", rotation.to_degrees())),
+            ));
+
+            let scale_row = views((
+                "Scale:".style(|s| s.font_bold().min_width(100.0).justify_end()),
+                Label::derived(move || format!("({:.2}, {:.2})", scale.x, scale.y)),
+            ));
+
+            // Check for special properties
+            let is_identity = affine == Affine::IDENTITY;
+            let determinant = coeffs[0] * coeffs[3] - coeffs[1] * coeffs[2];
+            let has_reflection = determinant < 0.0;
+
+            let properties = if is_identity {
+                Some(
+                    Label::new("Identity (no transform)")
+                        .style(|s| s.with_theme(|s, t| s.color(t.text_muted()))),
+                )
+            } else if has_reflection {
+                Some(
+                    Label::new("⚠ Contains reflection")
+                        .style(|s| s.with_theme(|s, t| s.color(t.warning()))),
+                )
+            } else {
+                None
+            };
+
+            let components_grid = (translate_row, rotate_row, scale_row).flatten().style(|s| {
+                s.grid()
+                    .grid_template_columns([auto(), fr(1.)])
+                    .justify_center()
+                    .items_center()
+                    .row_gap(8)
+                    .col_gap(10)
+            });
+
+            let mut content = vec![
+                matrix_label.into_any(),
+                matrix_grid.into_any(),
+                components_label.into_any(),
+                components_grid.into_any(),
+            ];
+
+            if let Some(props) = properties {
+                content.push(props.into_any());
+            }
+
+            Stack::vertical_from_iter(content).style(|s| s.padding(20))
+        };
+
+        Some(
+            preview
+                .tooltip(tooltip_view)
+                .style(|s| s.items_center())
+                .into_any(),
+        )
+    }
+
+    fn interpolate(&self, other: &Self, t: f64) -> Option<Self> {
+        Some(self.lerp(other, t))
+    }
+
+    fn content_hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = rustc_hash::FxHasher::default();
+
+        let coeffs = self.as_coeffs();
+        for coeff in coeffs {
+            coeff.to_bits().hash(&mut hasher);
+        }
+
+        hasher.finish()
+    }
+}
+
+pub trait AffineLerp {
+    fn svd(self) -> (Vec2, f64);
+
+    /// Linearly interpolate between two affine transforms.
+    ///
+    /// This implements the CSS Transforms interpolation algorithm:
+    /// - Decompose both transforms into translation, rotation, and scale components
+    /// - Interpolate each component separately
+    /// - Recompose the result
+    ///
+    /// `t` should be in the range [0.0, 1.0] where:
+    /// - t = 0.0 returns `self`
+    /// - t = 1.0 returns `other`
+    /// - t = 0.5 returns the midpoint
+    fn lerp(&self, other: &Affine, t: f64) -> Affine;
+}
+
+impl AffineLerp for Affine {
+    fn svd(self) -> (Vec2, f64) {
+        let [a, b, c, d, _, _] = self.as_coeffs();
+        let a2 = a * a;
+        let b2 = b * b;
+        let c2 = c * c;
+        let d2 = d * d;
+        let ab = a * b;
+        let cd = c * d;
+        let angle = 0.5 * (2.0 * (ab + cd)).atan2(a2 - b2 + c2 - d2);
+        let s1 = a2 + b2 + c2 + d2;
+        let s2 = ((a2 - b2 + c2 - d2).powi(2) + 4.0 * (ab + cd).powi(2)).sqrt();
+        (
+            Vec2 {
+                x: (0.5 * (s1 + s2)).sqrt(),
+                y: (0.5 * (s1 - s2)).sqrt(),
+            },
+            angle,
+        )
+    }
+
+    fn lerp(&self, other: &Affine, t: f64) -> Affine {
+        // Extract translations
+        let trans_a = self.translation();
+        let trans_b = other.translation();
+
+        // Remove translations to get the linear parts
+        let linear_a = self.with_translation(Vec2::ZERO);
+        let linear_b = other.with_translation(Vec2::ZERO);
+
+        // Decompose into scale and rotation using SVD
+        let (scale_a, rotation_a) = linear_a.svd();
+        let (scale_b, rotation_b) = linear_b.svd();
+
+        // Interpolate translation
+        let trans = Vec2 {
+            x: trans_a.x + (trans_b.x - trans_a.x) * t,
+            y: trans_a.y + (trans_b.y - trans_a.y) * t,
+        };
+
+        // Interpolate scale
+        let scale = Vec2 {
+            x: scale_a.x + (scale_b.x - scale_a.x) * t,
+            y: scale_a.y + (scale_b.y - scale_a.y) * t,
+        };
+
+        // Interpolate rotation (taking the shorter path)
+        let mut angle_diff = rotation_b - rotation_a;
+        // Normalize to [-π, π] to take the shorter rotation path
+        while angle_diff > std::f64::consts::PI {
+            angle_diff -= 2.0 * std::f64::consts::PI;
+        }
+        while angle_diff < -std::f64::consts::PI {
+            angle_diff += 2.0 * std::f64::consts::PI;
+        }
+        let rotation = rotation_a + angle_diff * t;
+
+        // Recompose: rotate -> scale -> translate
+        Affine::rotate(rotation)
+            .then_scale_non_uniform(scale.x, scale.y)
+            .then_translate(trans)
+    }
+}
+
+#[cfg(test)]
+mod affine_lerp_tests {
+    use super::*;
+
+    #[test]
+    fn test_lerp_identity() {
+        let a = Affine::IDENTITY;
+        let b = Affine::translate(Vec2::new(100.0, 50.0));
+
+        let result = a.lerp(&b, 0.0);
+        assert_eq!(result.as_coeffs(), a.as_coeffs());
+
+        let result = a.lerp(&b, 1.0);
+        assert_eq!(result.as_coeffs(), b.as_coeffs());
+    }
+
+    #[test]
+    fn test_lerp_translation() {
+        let a = Affine::translate(Vec2::new(0.0, 0.0));
+        let b = Affine::translate(Vec2::new(100.0, 50.0));
+
+        let result = a.lerp(&b, 0.5);
+        let trans = result.translation();
+        assert!((trans.x - 50.0).abs() < 1e-10);
+        assert!((trans.y - 25.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_lerp_rotation() {
+        let a = Affine::rotate(0.0);
+        let b = Affine::rotate(std::f64::consts::PI / 2.0);
+
+        let result = a.lerp(&b, 0.5);
+        // Should be rotated by π/4
+        let point = result * Point::new(1.0, 0.0);
+        let expected_angle = std::f64::consts::PI / 4.0;
+        assert!((point.x - expected_angle.cos()).abs() < 1e-10);
+        assert!((point.y - expected_angle.sin()).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_lerp_scale() {
+        let a = Affine::scale(1.0);
+        let b = Affine::scale(2.0);
+
+        let result = a.lerp(&b, 0.5);
+        let point = result * Point::new(1.0, 1.0);
+        assert!((point.x - 1.5).abs() < 1e-10);
+        assert!((point.y - 1.5).abs() < 1e-10);
     }
 }
 

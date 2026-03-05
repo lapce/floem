@@ -12,7 +12,7 @@
 use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use floem::headless::HeadlessHarness;
+use floem::headless::{HeadlessHarness, TestRoot};
 use floem::prelude::*;
 use floem::style::FlexWrap;
 use floem::unit::Pct;
@@ -114,8 +114,9 @@ fn bench_paint_flat_tree(c: &mut Criterion) {
 
     for n in [10, 50, 100, 200].iter() {
         group.bench_with_input(BenchmarkId::new("n", n), n, |b, &n| {
+            let root = TestRoot::new();
             let view = create_flat_tree(n);
-            let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+            let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
             b.iter(|| {
                 harness.paint();
@@ -136,8 +137,9 @@ fn bench_paint_deep_tree(c: &mut Criterion) {
 
     for depth in [10, 25, 50, 100].iter() {
         group.bench_with_input(BenchmarkId::new("depth", depth), depth, |b, &depth| {
+            let root = TestRoot::new();
             let view = create_deep_tree(depth);
-            let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+            let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
             b.iter(|| {
                 harness.paint();
@@ -162,8 +164,9 @@ fn bench_paint_with_transforms(c: &mut Criterion) {
             BenchmarkId::new("deep_transforms", depth),
             depth,
             |b, &depth| {
+                let root = TestRoot::new();
                 let view = create_deep_tree_with_transforms(depth);
-                let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+                let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
 
                 b.iter(|| {
                     harness.paint();
@@ -176,8 +179,9 @@ fn bench_paint_with_transforms(c: &mut Criterion) {
     // Mixed transform tree (flat with different transform types)
     for n in [10, 25, 50].iter() {
         group.bench_with_input(BenchmarkId::new("mixed_transforms", n), n, |b, &n| {
+            let root = TestRoot::new();
             let view = create_mixed_transform_tree(n);
-            let mut harness = HeadlessHarness::new_with_size(view, 200.0, 200.0);
+            let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
 
             b.iter(|| {
                 harness.paint();
@@ -201,8 +205,9 @@ fn bench_paint_wide_tree(c: &mut Criterion) {
         let label = format!("w{}_n{}", width, total_nodes);
 
         group.bench_with_input(BenchmarkId::new("d2", &label), width, |b, &width| {
+            let root = TestRoot::new();
             let view = create_wide_tree_depth2(width);
-            let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+            let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
             b.iter(|| {
                 harness.paint();
@@ -225,8 +230,9 @@ fn bench_paint_order_tracking(c: &mut Criterion) {
     for n in [50, 100].iter() {
         // Without tracking
         group.bench_with_input(BenchmarkId::new("no_tracking", n), n, |b, &n| {
+            let root = TestRoot::new();
             let view = create_flat_tree(n);
-            let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+            let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
             b.iter(|| {
                 harness.paint();
@@ -236,8 +242,9 @@ fn bench_paint_order_tracking(c: &mut Criterion) {
 
         // With tracking
         group.bench_with_input(BenchmarkId::new("with_tracking", n), n, |b, &n| {
+            let root = TestRoot::new();
             let view = create_flat_tree(n);
-            let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+            let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
             b.iter(|| {
                 black_box(harness.paint_and_get_order());
@@ -261,8 +268,9 @@ fn bench_repaint_after_change(c: &mut Criterion) {
             BenchmarkId::new("after_layout_change", depth),
             depth,
             |b, &depth| {
+                let root = TestRoot::new();
                 let view = create_deep_tree(depth);
-                let mut harness = HeadlessHarness::new_with_size(view, 100.0, 100.0);
+                let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
                 b.iter(|| {
                     // Simulate a frame: process updates and paint

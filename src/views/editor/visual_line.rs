@@ -2185,7 +2185,7 @@ mod tests {
                             continue;
                         }
                         // Strip trailing newlines to match old glyph-based behavior
-                        let line_content = raw.trim_end_matches(|c: char| c == '\n' || c == '\r');
+                        let line_content = raw.trim_end_matches(['\n', '\r']);
                         result.push(Cow::Owned(line_content.to_string()));
                     }
                 }
