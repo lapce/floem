@@ -57,9 +57,9 @@ impl View for RichText {
         format!(
             "RichText: {:?}",
             self.text_layout
-                .lines()
+                .lines_range()
                 .iter()
-                .map(|text| text.text())
+                .map(|r| &self.text_layout.text()[r.clone()])
                 .collect::<String>()
         )
         .into()
@@ -186,17 +186,17 @@ impl<'a> RichSpan<'a> {
         self
     }
 
-    pub fn stretch(mut self, stretch: floem_renderer::text::Stretch) -> RichSpan<'a> {
-        self.attrs = self.attrs.stretch(stretch);
+    pub fn font_width(mut self, stretch: floem_renderer::text::FontWidth) -> RichSpan<'a> {
+        self.attrs = self.attrs.font_width(stretch);
         self
     }
 
-    pub fn text_style(mut self, style: floem_renderer::text::Style) -> RichSpan<'a> {
-        self.attrs = self.attrs.style(style);
+    pub fn text_style(mut self, style: floem_renderer::text::FontStyle) -> RichSpan<'a> {
+        self.attrs = self.attrs.font_style(style);
         self
     }
 
-    pub fn weight(mut self, weight: floem_renderer::text::Weight) -> RichSpan<'a> {
+    pub fn weight(mut self, weight: floem_renderer::text::FontWeight) -> RichSpan<'a> {
         self.attrs = self.attrs.weight(weight);
         self
     }
@@ -429,45 +429,45 @@ where
         let span: RichSpan = self.into();
         span.family(family)
     }
-    fn stretch(self, stretch: crate::text::Stretch) -> RichSpan<'a> {
+    fn stretch(self, stretch: crate::text::FontWidth) -> RichSpan<'a> {
         let span: RichSpan = self.into();
-        span.stretch(stretch)
+        span.font_width(stretch)
     }
-    fn text_style(self, style: crate::text::Style) -> RichSpan<'a> {
+    fn text_style(self, style: crate::text::FontStyle) -> RichSpan<'a> {
         let span: RichSpan = self.into();
         span.text_style(style)
     }
     fn italic(self) -> RichSpan<'a> {
-        self.text_style(crate::text::Style::Italic)
+        self.text_style(crate::text::FontStyle::Italic)
     }
     fn oblique(self) -> RichSpan<'a> {
-        self.text_style(crate::text::Style::Oblique)
+        self.text_style(crate::text::FontStyle::Oblique(None))
     }
 
-    fn weight(self, weight: crate::text::Weight) -> RichSpan<'a> {
+    fn weight(self, weight: crate::text::FontWeight) -> RichSpan<'a> {
         let span: RichSpan = self.into();
         span.weight(weight)
     }
     fn thin(self) -> RichSpan<'a> {
-        self.weight(crate::text::Weight::THIN)
+        self.weight(crate::text::FontWeight::THIN)
     }
     fn extra_light(self) -> RichSpan<'a> {
-        self.weight(crate::text::Weight::EXTRA_LIGHT)
+        self.weight(crate::text::FontWeight::EXTRA_LIGHT)
     }
     fn light(self) -> RichSpan<'a> {
-        self.weight(crate::text::Weight::LIGHT)
+        self.weight(crate::text::FontWeight::LIGHT)
     }
     fn medium(self) -> RichSpan<'a> {
-        self.weight(crate::text::Weight::MEDIUM)
+        self.weight(crate::text::FontWeight::MEDIUM)
     }
     fn semibold(self) -> RichSpan<'a> {
-        self.weight(crate::text::Weight::SEMIBOLD)
+        self.weight(crate::text::FontWeight::SEMI_BOLD)
     }
     fn bold(self) -> RichSpan<'a> {
-        self.weight(crate::text::Weight::BOLD)
+        self.weight(crate::text::FontWeight::BOLD)
     }
     fn extra_bold(self) -> RichSpan<'a> {
-        self.weight(crate::text::Weight::EXTRA_BOLD)
+        self.weight(crate::text::FontWeight::EXTRA_BOLD)
     }
 
     fn raw_weight(self, weight: u16) -> RichSpan<'a> {

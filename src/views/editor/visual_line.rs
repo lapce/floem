@@ -862,10 +862,7 @@ impl Lines {
 
             let line_index = line_index.min(text_layout.line_count() - 1);
 
-            let col = text_layout
-                .start_layout_cols(text_prov, line)
-                .nth(line_index)
-                .unwrap_or(0);
+            let col = text_layout.start_layout_cols().nth(line_index).unwrap_or(0);
             let col = text_prov.before_phantom_col(line, col);
 
             rope_text.offset_of_line_col(line, col)
@@ -1114,12 +1111,9 @@ fn find_start_line_index(
     col: usize,
     affinity: CursorAffinity,
 ) -> Option<usize> {
-    let mut starts = text_layout
-        .layout_cols(text_prov, line)
-        .enumerate()
-        .peekable();
+    let mut starts = text_layout.start_layout_cols().enumerate().peekable();
 
-    while let Some((i, (layout_start, _))) = starts.next() {
+    while let Some((i, layout_start)) = starts.next() {
         if affinity == CursorAffinity::Backward {
             // TODO: we should just apply after_col to col to do this transformation once
             let layout_start = text_prov.before_phantom_col(line, layout_start);
@@ -1130,7 +1124,7 @@ fn find_start_line_index(
 
         let next_start = starts
             .peek()
-            .map(|(_, (next_start, _))| text_prov.before_phantom_col(line, *next_start));
+            .map(|(_, next_start)| text_prov.before_phantom_col(line, *next_start));
 
         if let Some(next_start) = next_start {
             if next_start > col {
@@ -1315,10 +1309,7 @@ fn find_vline_init_info_forward(
                 // We can now find the offset of the visual line within the line.
                 let line_index = vline.get() - cur_vline;
                 // TODO: is it fine to unwrap here?
-                let col = text_layout
-                    .start_layout_cols(text_prov, cur_line)
-                    .nth(line_index)
-                    .unwrap_or(0);
+                let col = text_layout.start_layout_cols().nth(line_index).unwrap_or(0);
                 let col = text_prov.before_phantom_col(cur_line, col);
 
                 let offset = rope_text.offset_of_line_col(cur_line, col);
@@ -1476,7 +1467,7 @@ fn vline_init_info_b(
 ) -> Option<(usize, RVLine)> {
     let rope_text = text_prov.rope_text();
     let col = text_layout
-        .start_layout_cols(text_prov, rv.line)
+        .start_layout_cols()
         .nth(rv.line_index)
         .unwrap_or(0);
     let col = text_prov.before_phantom_col(rv.line, col);
@@ -1887,7 +1878,7 @@ fn next_rvline(
 ) -> (RVLine, usize) {
     let rope_text = text_prov.rope_text();
     if let Some(layout_line) = layouts.get(font_size, line) {
-        if let Some((line_col, _)) = layout_line.layout_cols(text_prov, line).nth(line_index + 1) {
+        if let Some(line_col) = layout_line.start_layout_cols().nth(line_index + 1) {
             let line_col = text_prov.before_phantom_col(line, line_col);
             let offset = rope_text.offset_of_line_col(line, line_col);
 
@@ -1928,7 +1919,7 @@ fn prev_rvline(
         let font_size = font_sizes.font_size(prev_line);
         if let Some(layout_line) = layouts.get(font_size, prev_line) {
             let (i, line_col) = layout_line
-                .start_layout_cols(text_prov, prev_line)
+                .start_layout_cols()
                 .enumerate()
                 .last()
                 .unwrap_or((0, 0));
@@ -1947,10 +1938,7 @@ fn prev_rvline(
         let prev_line_index = line_index - 1;
         let font_size = font_sizes.font_size(line);
         if let Some(layout_line) = layouts.get(font_size, line) {
-            if let Some((line_col, _)) = layout_line
-                .layout_cols(text_prov, line)
-                .nth(prev_line_index)
-            {
+            if let Some(line_col) = layout_line.start_layout_cols().nth(prev_line_index) {
                 let line_col = text_prov.before_phantom_col(line, line_col);
                 let offset = rope_text.offset_of_line_col(line, line_col);
 
@@ -2183,20 +2171,21 @@ mod tests {
 
         for line in 0..rope_text.num_lines() {
             if let Some(text_layout) = layouts.get(font_size, line) {
-                for line in text_layout.text.lines() {
-                    let layouts = line.layout_opt().unwrap();
-                    for layout in layouts {
-                        // Spacing
-                        if layout.glyphs.is_empty() {
+                let full_text = text_layout.text.text();
+                let count = text_layout.text.visual_line_count();
+                for i in 0..count {
+                    if text_layout.text.visual_line_is_empty(i) {
+                        continue;
+                    }
+                    if let Some(text_range) = text_layout.text.visual_line_text_range(i) {
+                        let raw = &full_text[text_range];
+                        // Skip lines that are entirely whitespace (matches old behavior
+                        // where trailing whitespace was stripped from glyph lists)
+                        if !raw.chars().any(|c| !c.is_whitespace()) {
                             continue;
                         }
-                        let start_idx = layout.glyphs[0].start;
-                        let end_idx = layout.glyphs.last().unwrap().end;
-                        // Hacky solution to include the ending space/newline since those get trimmed off
-                        let line_content = line
-                            .text()
-                            .get(start_idx..=end_idx)
-                            .unwrap_or(&line.text()[start_idx..end_idx]);
+                        // Strip trailing newlines to match old glyph-based behavior
+                        let line_content = raw.trim_end_matches(|c: char| c == '\n' || c == '\r');
                         result.push(Cow::Owned(line_content.to_string()));
                     }
                 }
@@ -3416,6 +3405,71 @@ mod tests {
             layout.layout_cols(&text_prov, 0).collect::<Vec<_>>(),
             vec![(0, 4)]
         );
+    }
+
+    /// Verify that `start_layout_cols` (standalone) returns the same start
+    /// values as `layout_cols` for every case.
+    #[test]
+    fn start_layout_cols_matches_layout_cols() {
+        // Simple single-line, no wrapping.
+        let text = Rope::from("aaaa\nbb bb cc\ndd");
+        let mut tl = TextLayout::new();
+        tl.set_text("aaaa", AttrsList::new(Attrs::new()), None);
+        let layout = TextLayoutLine {
+            extra_style: Vec::new(),
+            text: tl,
+            whitespaces: None,
+            indent: 0.,
+            phantom_text: PhantomTextLine::default(),
+        };
+        let (text_prov, _) = make_lines(&text, 10000., false);
+        let from_full: Vec<usize> = layout.layout_cols(&text_prov, 0).map(|(s, _)| s).collect();
+        let from_standalone: Vec<usize> = layout.start_layout_cols().collect();
+        assert_eq!(from_full, from_standalone, "single-line no wrap");
+
+        // Wrapped multi-line text (the case from iter_lines test).
+        let text: Rope = "aaaa\nbb bb cc\ncc dddd eeee ff\nff gggg".into();
+        let (text_prov, lines) = make_lines(&text, 2., true);
+        let v = lines.get_init_text_layout(0, ConfigId::new(0, 0), &text_prov, 2, true);
+
+        let from_full: Vec<usize> = v.layout_cols(&text_prov, 2).map(|(s, _)| s).collect();
+        let from_standalone: Vec<usize> = v.start_layout_cols().collect();
+        assert_eq!(from_full, from_standalone, "wrapped multi-line");
+
+        // CRLF line endings.
+        let text = Rope::from("aaaa\r\nbb bb cc\r\ndd");
+        let mut tl = TextLayout::new();
+        tl.set_text("aaaa", AttrsList::new(Attrs::new()), None);
+        let layout = TextLayoutLine {
+            extra_style: Vec::new(),
+            text: tl,
+            whitespaces: None,
+            indent: 0.,
+            phantom_text: PhantomTextLine::default(),
+        };
+        let (text_prov, _) = make_lines(&text, 10000., true);
+        let from_full: Vec<usize> = layout.layout_cols(&text_prov, 0).map(|(s, _)| s).collect();
+        let from_standalone: Vec<usize> = layout.start_layout_cols().collect();
+        assert_eq!(from_full, from_standalone, "CRLF");
+    }
+
+    /// Test that `start_layout_cols` handles whitespace-only content
+    /// (the prefix fallback path).
+    #[test]
+    fn start_layout_cols_whitespace_only() {
+        let mut tl = TextLayout::new();
+        tl.set_text("    ", AttrsList::new(Attrs::new()), None);
+        let layout = TextLayoutLine {
+            extra_style: Vec::new(),
+            text: tl,
+            whitespaces: None,
+            indent: 0.,
+            phantom_text: PhantomTextLine::default(),
+        };
+        let starts: Vec<usize> = layout.start_layout_cols().collect();
+        // Should produce exactly one entry (the prefix fallback).
+        assert_eq!(starts.len(), 1, "whitespace-only should have prefix");
+        assert_eq!(starts[0], 0, "prefix start should be 0");
     }
 
     #[test]

@@ -196,7 +196,7 @@ impl Label {
             attrs = attrs.font_size(font_size);
         }
         if let Some(font_style) = self.font.style() {
-            attrs = attrs.style(font_style);
+            attrs = attrs.font_style(font_style);
         }
         let font_family = self.font.family().as_ref().map(|font_family| {
             let family: Vec<FamilyOwned> = FamilyOwned::parse_list(font_family).collect();
@@ -252,13 +252,9 @@ impl Label {
             SelectionState::Selecting(start, end) | SelectionState::Selected(start, end) => {
                 let mut start_cursor = self.get_hit_point(start).expect("Start position is valid");
                 if let Some(mut end_cursor) = self.get_hit_point(end) {
-                    if start_cursor.line > end_cursor.line
-                        || (start_cursor.line == end_cursor.line
-                            && start_cursor.index > end_cursor.index)
-                    {
+                    if start_cursor.index() > end_cursor.index() {
                         swap(&mut start_cursor, &mut end_cursor);
                     }
-
                     self.selection_range = Some((start_cursor, end_cursor));
                 }
             }
@@ -272,10 +268,8 @@ impl Label {
                 if let Some((start_c, end_c)) = &self.selection_range
                     && let Some(ref text_layout) = self.text_layout
                 {
-                    let start_line_idx = text_layout.lines_range()[start_c.line].start;
-                    let end_line_idx = text_layout.lines_range()[end_c.line].start;
-                    let start_idx = start_line_idx + start_c.index;
-                    let end_idx = end_line_idx + end_c.index;
+                    let start_idx = text_layout.cursor_to_byte_index(start_c);
+                    let end_idx = text_layout.cursor_to_byte_index(end_c);
                     let selection_txt = self.label[start_idx..end_idx].into();
                     let _ = Clipboard::set_contents(selection_txt);
                 }
@@ -308,17 +302,16 @@ impl Label {
             let ss = &self.selection_style;
             let selection_color = ss.selection_color();
 
-            for run in text_layout.layout_runs() {
-                if let Some((mut start_x, width)) = run.highlight(*start_c, *end_c) {
-                    start_x += location.x;
-                    let end_x = width + start_x;
-                    let start_y = location.y as f64 + run.line_top as f64;
-                    let end_y = start_y + run.line_height as f64;
-                    let rect = Rect::new(start_x.into(), start_y, end_x.into(), end_y)
-                        .to_rounded_rect(ss.corner_radius());
-                    paint_cx.fill(&rect, &selection_color, 0.0);
-                }
-            }
+            // Use cursors directly — avoids the display→orig→display round-trip.
+            text_layout.selection_for_cursors(start_c, end_c, |x0, y0, x1, y1| {
+                let start_x = x0 + location.x as f64;
+                let end_x = x1 + location.x as f64;
+                let start_y = y0 + location.y as f64;
+                let end_y = y1 + location.y as f64;
+                let rect =
+                    Rect::new(start_x, start_y, end_x, end_y).to_rounded_rect(ss.corner_radius());
+                paint_cx.fill(&rect, &selection_color, 0.0);
+            });
         }
     }
 

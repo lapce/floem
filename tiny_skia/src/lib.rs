@@ -1,15 +1,14 @@
 use anyhow::{anyhow, Result};
-use floem_renderer::swash::SwashScaler;
-use floem_renderer::text::{CacheKey, LayoutRun, SwashContent};
+use floem_renderer::text::TextLayout;
 use floem_renderer::tiny_skia::{
     self, FillRule, FilterQuality, GradientStop, LinearGradient, Mask, MaskType, Paint, Path,
     PathBuilder, Pattern, Pixmap, RadialGradient, Shader, SpreadMode, Stroke, Transform,
 };
 use floem_renderer::Img;
 use floem_renderer::Renderer;
+use parley::layout::PositionedLayoutItem;
 use peniko::kurbo::{PathEl, Size};
 use peniko::{
-    color::palette,
     kurbo::{Affine, Point, Rect, Shape},
     BrushRef, Color, GradientKind,
 };
@@ -20,18 +19,87 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::rc::Rc;
+use swash::scale::image::Content;
+use swash::scale::{Render, ScaleContext, Source, StrikeWith};
+use swash::zeno::Format;
+use swash::FontRef;
 use tiny_skia::{LineCap, LineJoin};
+
+/// Cache key for rasterized glyphs, replacing cosmic-text's CacheKey.
+/// Uses Parley's font blob identity + swash-compatible glyph parameters.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct GlyphCacheKey {
+    font_blob_id: u64,
+    font_index: u32,
+    glyph_id: u16,
+    font_size_bits: u32,
+    x_bin: u8,
+    y_bin: u8,
+    embolden: bool,
+    skew_bits: u32,
+}
+
+impl GlyphCacheKey {
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        font_blob_id: u64,
+        font_index: u32,
+        glyph_id: u16,
+        font_size: f32,
+        x: f32,
+        y: f32,
+        embolden: bool,
+        skew: Option<f32>,
+    ) -> (Self, f32, f32) {
+        let font_size_bits = font_size.to_bits();
+        let x_floor = x.floor();
+        let y_floor = y.floor();
+        let x_fract = x - x_floor;
+        let y_fract = y - y_floor;
+        // 4 subpixel bins per axis (matching old SubpixelBin behavior)
+        let x_bin = (x_fract * 4.0).min(3.0) as u8;
+        let y_bin = (y_fract * 4.0).min(3.0) as u8;
+        let skew_bits = skew.unwrap_or(0.0).to_bits();
+
+        (
+            Self {
+                font_blob_id,
+                font_index,
+                glyph_id,
+                font_size_bits,
+                x_bin,
+                y_bin,
+                embolden,
+                skew_bits,
+            },
+            x_floor + (x_bin as f32) / 4.0,
+            y_floor + (y_bin as f32) / 4.0,
+        )
+    }
+}
 
 thread_local! {
     #[allow(clippy::type_complexity)]
     static IMAGE_CACHE: RefCell<HashMap<Vec<u8>, (CacheColor, Rc<Pixmap>)>> = RefCell::new(HashMap::new());
     #[allow(clippy::type_complexity)]
     // The `u32` is a color encoded as a u32 so that it is hashable and eq.
-    static GLYPH_CACHE: RefCell<HashMap<(CacheKey, u32), (CacheColor, Option<Rc<Glyph>>)>> = RefCell::new(HashMap::new());
-    static SWASH_SCALER: RefCell<SwashScaler> = RefCell::new(SwashScaler::default());
+    static GLYPH_CACHE: RefCell<HashMap<(GlyphCacheKey, u32), (CacheColor, Option<Rc<Glyph>>)>> = RefCell::new(HashMap::new());
+    static SCALE_CONTEXT: RefCell<ScaleContext> = RefCell::new(ScaleContext::new());
 }
 
-fn cache_glyph(cache_color: CacheColor, cache_key: CacheKey, color: Color) -> Option<Rc<Glyph>> {
+#[allow(clippy::too_many_arguments)]
+fn cache_glyph(
+    cache_color: CacheColor,
+    cache_key: GlyphCacheKey,
+    color: Color,
+    font_ref: &FontRef<'_>,
+    font_size: f32,
+    normalized_coords: &[i16],
+    embolden_strength: f32,
+    skew: Option<f32>,
+    offset_x: f32,
+    offset_y: f32,
+) -> Option<Rc<Glyph>> {
     let c = color.to_rgba8();
 
     if let Some(opt_glyph) = GLYPH_CACHE.with_borrow_mut(|gc| {
@@ -45,7 +113,31 @@ fn cache_glyph(cache_color: CacheColor, cache_key: CacheKey, color: Color) -> Op
         return opt_glyph;
     };
 
-    let image = SWASH_SCALER.with_borrow_mut(|s| s.get_image(cache_key))?;
+    let image = SCALE_CONTEXT.with_borrow_mut(|context| {
+        let mut scaler = context
+            .builder(*font_ref)
+            .size(font_size)
+            .hint(true)
+            .normalized_coords(normalized_coords)
+            .build();
+
+        let mut render = Render::new(&[
+            Source::ColorOutline(0),
+            Source::ColorBitmap(StrikeWith::BestFit),
+            Source::Outline,
+        ]);
+        render
+            .format(Format::Alpha)
+            .offset(swash::zeno::Vector::new(offset_x.fract(), offset_y.fract()))
+            .embolden(embolden_strength);
+        if let Some(angle) = skew {
+            render.transform(Some(swash::zeno::Transform::skew(
+                swash::zeno::Angle::from_degrees(angle),
+                swash::zeno::Angle::ZERO,
+            )));
+        }
+        render.render(&mut scaler, cache_key.glyph_id)
+    })?;
 
     let result = if image.placement.width == 0 || image.placement.height == 0 {
         // We can't create an empty `Pixmap`
@@ -53,20 +145,22 @@ fn cache_glyph(cache_color: CacheColor, cache_key: CacheKey, color: Color) -> Op
     } else {
         let mut pixmap = Pixmap::new(image.placement.width, image.placement.height)?;
 
-        if image.content == SwashContent::Mask {
-            for (a, &alpha) in pixmap.pixels_mut().iter_mut().zip(image.data.iter()) {
-                *a = tiny_skia::Color::from_rgba8(c.r, c.g, c.b, alpha)
-                    .premultiply()
-                    .to_color_u8();
+        match image.content {
+            Content::Mask => {
+                for (a, &alpha) in pixmap.pixels_mut().iter_mut().zip(image.data.iter()) {
+                    *a = tiny_skia::Color::from_rgba8(c.r, c.g, c.b, alpha)
+                        .premultiply()
+                        .to_color_u8();
+                }
             }
-        } else if image.content == SwashContent::Color {
-            for (a, b) in pixmap.pixels_mut().iter_mut().zip(image.data.chunks(4)) {
-                *a = tiny_skia::Color::from_rgba8(b[0], b[1], b[2], b[3])
-                    .premultiply()
-                    .to_color_u8();
+            Content::Color => {
+                for (a, b) in pixmap.pixels_mut().iter_mut().zip(image.data.chunks(4)) {
+                    *a = tiny_skia::Color::from_rgba8(b[0], b[1], b[2], b[3])
+                        .premultiply()
+                        .to_color_u8();
+                }
             }
-        } else {
-            return None;
+            _ => return None,
         }
 
         Some(Rc::new(Glyph {
@@ -334,11 +428,7 @@ impl Layer {
         }
     }
 
-    fn draw_text_with_layout<'b>(
-        &mut self,
-        layout: impl Iterator<Item = LayoutRun<'b>>,
-        pos: impl Into<Point>,
-    ) {
+    fn draw_text(&mut self, text_layout: &TextLayout, pos: impl Into<Point>, font_embolden: f32) {
         // this pos is relative to the current transform, but not the current window scale.
         // That is why we remove the window scale from the clip below
         let pos: Point = pos.into();
@@ -354,51 +444,97 @@ impl Layer {
         let offset = self.transform.translation();
         let transform = self.transform * Affine::translate((-offset.x, -offset.y));
 
-        for line in layout {
+        let layout = text_layout.parley_layout();
+
+        for line in layout.lines() {
+            let metrics = line.metrics();
             if let Some(rect) = scaled_clip {
-                let y = pos.y + offset.y + line.line_y as f64;
-                if y + (line.line_height as f64) < rect.y0 {
+                let y = pos.y + offset.y + metrics.baseline as f64;
+                if y + (metrics.line_height as f64) < rect.y0 {
                     continue;
                 }
-                if y - (line.line_height as f64) > rect.y1 {
+                if y - (metrics.line_height as f64) > rect.y1 {
                     break;
                 }
             }
-            'line_loop: for glyph_run in line.glyphs {
-                let x = glyph_run.x + pos.x as f32 + offset.x as f32;
-                let y = line.line_y + pos.y as f32 + offset.y as f32;
-                if let Some(rect) = scaled_clip {
-                    if ((x + glyph_run.w) as f64) < rect.x0 {
-                        continue;
-                    } else if x as f64 > rect.x1 {
-                        break 'line_loop;
+
+            for item in line.items() {
+                let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
+                    continue;
+                };
+
+                let run = glyph_run.run();
+                let font = run.font();
+                let font_size = run.font_size();
+                let synthesis = run.synthesis();
+                let normalized_coords = run.normalized_coords();
+                let style = glyph_run.style();
+                let brush_color: Color = style.brush.0;
+
+                let font_ref = match FontRef::from_index(font.data.data(), font.index as usize) {
+                    Some(f) => f,
+                    None => continue,
+                };
+
+                let font_blob_id = font.data.id();
+                // Extra embolden strength when Parley requests synthetic bold
+                // (font lacks a native bold variant). Additive so it's always
+                // distinguishable from the base `font_embolden` weight.
+                const SYNTHESIS_EMBOLDEN_STRENGTH: f32 = 0.02;
+                let embolden_strength = font_embolden
+                    + if synthesis.embolden() {
+                        SYNTHESIS_EMBOLDEN_STRENGTH
+                    } else {
+                        0.0
+                    };
+                let skew = synthesis.skew();
+
+                for glyph in glyph_run.positioned_glyphs() {
+                    let x = glyph.x + pos.x as f32 + offset.x as f32;
+                    let y = glyph.y + pos.y as f32 + offset.y as f32;
+
+                    if let Some(rect) = scaled_clip {
+                        if x as f64 > rect.x1 {
+                            break;
+                        }
                     }
-                }
 
-                let glyph_x = x * self.window_scale as f32;
-                let glyph_y = y * self.window_scale as f32;
-                let font_size = glyph_run.font_size * self.window_scale as f32;
+                    let glyph_x = x * self.window_scale as f32;
+                    let glyph_y = y * self.window_scale as f32;
+                    let scaled_font_size = font_size * self.window_scale as f32;
 
-                let (cache_key, new_x, new_y) = CacheKey::new(
-                    glyph_run.font_id,
-                    glyph_run.glyph_id,
-                    font_size,
-                    (glyph_x, glyph_y),
-                    glyph_run.cache_key_flags,
-                );
-
-                let color = glyph_run.color_opt.map_or(palette::css::BLACK, |c| {
-                    Color::from_rgba8(c.r(), c.g(), c.b(), c.a())
-                });
-
-                let glyph = cache_glyph(self.cache_color, cache_key, color);
-                if let Some(glyph) = glyph {
-                    self.render_pixmap_direct(
-                        &glyph.pixmap,
-                        new_x as f32 + glyph.left,
-                        new_y as f32 - glyph.top,
-                        transform,
+                    let (cache_key, new_x, new_y) = GlyphCacheKey::new(
+                        font_blob_id,
+                        font.index,
+                        glyph.id as u16,
+                        scaled_font_size,
+                        glyph_x,
+                        glyph_y,
+                        synthesis.embolden(),
+                        skew,
                     );
+
+                    let cached = cache_glyph(
+                        self.cache_color,
+                        cache_key,
+                        brush_color,
+                        &font_ref,
+                        scaled_font_size,
+                        normalized_coords,
+                        embolden_strength,
+                        skew,
+                        new_x,
+                        new_y,
+                    );
+
+                    if let Some(cached) = cached {
+                        self.render_pixmap_direct(
+                            &cached.pixmap,
+                            new_x.floor() + cached.left,
+                            new_y.floor() - cached.top,
+                            transform,
+                        );
+                    }
                 }
             }
         }
@@ -494,6 +630,7 @@ pub struct TinySkiaRenderer<W> {
     transform: Affine,
     window_scale: f64,
     layers: Vec<Layer>,
+    font_embolden: f32,
 }
 
 impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle>
@@ -519,9 +656,6 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
 
         let mask = Mask::new(width, height).ok_or_else(|| anyhow!("unable to create mask"))?;
 
-        // this is fine to modify the embolden here but it shouldn't be modified any other time
-        SWASH_SCALER.with_borrow_mut(|s| s.font_embolden = font_embolden);
-
         let main_layer = Layer {
             pixmap,
             mask,
@@ -540,6 +674,7 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
             window_scale: scale,
             cache_color: CacheColor(false),
             layers: vec![main_layer],
+            font_embolden,
         })
     }
 
@@ -611,15 +746,11 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
             .fill(shape, brush, blur_radius);
     }
 
-    fn draw_text_with_layout<'b>(
-        &mut self,
-        layout: impl Iterator<Item = LayoutRun<'b>>,
-        pos: impl Into<Point>,
-    ) {
+    fn draw_text(&mut self, layout: &TextLayout, pos: impl Into<Point>) {
         self.layers
             .last_mut()
             .unwrap()
-            .draw_text_with_layout(layout, pos);
+            .draw_text(layout, pos, self.font_embolden);
     }
 
     fn draw_img(&mut self, img: Img<'_>, rect: Rect) {
@@ -809,11 +940,6 @@ enum BlendStrategy {
 fn determine_blend_strategy(peniko_mode: &BlendMode) -> BlendStrategy {
     match (peniko_mode.mix, peniko_mode.compose) {
         (Mix::Normal, compose) => BlendStrategy::SinglePass(compose_to_tiny_blend_mode(compose)),
-        #[allow(deprecated, reason = "n/a")]
-        (Mix::Clip, compose) => BlendStrategy::MultiPass {
-            first_pass: compose_to_tiny_blend_mode(compose),
-            second_pass: TinyBlendMode::Source,
-        },
 
         (mix, Compose::SrcOver) => BlendStrategy::SinglePass(mix_to_tiny_blend_mode(mix)),
 
@@ -861,8 +987,6 @@ fn mix_to_tiny_blend_mode(mix: Mix) -> TinyBlendMode {
         Mix::Saturation => TinyBlendMode::Saturation,
         Mix::Color => TinyBlendMode::Color,
         Mix::Luminosity => TinyBlendMode::Luminosity,
-        #[allow(deprecated, reason = "n/a")]
-        Mix::Clip => TinyBlendMode::SourceOver,
     }
 }
 
@@ -1005,4 +1129,108 @@ fn skia_transform_with_scaled_translation(
         transform[5] as f32 * translation_scale,
     )
     .post_scale(render_scale, render_scale)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use floem_renderer::text::{Attrs, AttrsList, FamilyOwned, FONT_CONTEXT};
+    use std::sync::Once;
+
+    const DEJAVU_SERIF: &[u8] = include_bytes!("../../examples/webgpu/fonts/DejaVuSerif.ttf");
+
+    static FONT_INIT: Once = Once::new();
+
+    fn ensure_font() {
+        FONT_INIT.call_once(|| {
+            let mut font_cx = FONT_CONTEXT.lock();
+            font_cx
+                .collection
+                .register_fonts(DEJAVU_SERIF.to_vec().into(), None);
+        });
+    }
+
+    /// Creates a `Layer` directly without a window, for offscreen rendering.
+    fn make_layer(width: u32, height: u32) -> Layer {
+        Layer {
+            pixmap: Pixmap::new(width, height).expect("failed to create pixmap"),
+            clip: None,
+            mask: Mask::new(width, height).expect("failed to create mask"),
+            transform: Affine::IDENTITY,
+            combine_transform: Affine::IDENTITY,
+            blend_mode: Mix::Normal.into(),
+            alpha: 1.0,
+            window_scale: 1.0,
+            cache_color: CacheColor(false),
+        }
+    }
+
+    fn make_attrs(size: f32) -> AttrsList {
+        let family = vec![FamilyOwned::Name("DejaVu Serif".into())];
+        AttrsList::new(Attrs::new().font_size(size).family(&family))
+    }
+
+    /// Clears the thread-local glyph cache so that subsequent draws at a
+    /// different embolden strength are not served stale rasterizations.
+    /// Needed because the cache key stores `embolden: bool` (synthesis flag)
+    /// but not the float strength value.
+    fn clear_glyph_cache() {
+        GLYPH_CACHE.with_borrow_mut(|gc| gc.clear());
+    }
+
+    /// Visual test: renders text at three embolden strengths onto a single PNG.
+    ///
+    /// Run with:
+    /// ```text
+    /// cargo test -p floem_tiny_skia_renderer -- --ignored visual_embolden
+    /// ```
+    /// Output: `target/test_embolden.png`
+    #[test]
+    #[ignore]
+    fn visual_embolden() {
+        ensure_font();
+
+        let width = 550u32;
+        let height = 250u32;
+        let mut layer = make_layer(width, height);
+        layer.pixmap.fill(tiny_skia::Color::WHITE);
+
+        let font_size = 28.0;
+        let attrs = make_attrs(font_size);
+        let sample = "The quick brown fox jumps";
+
+        // Row 1: normal (no embolden)
+        let label = TextLayout::new_with_text("Normal:", make_attrs(14.0), None);
+        layer.draw_text(&label, Point::new(10.0, 10.0), 0.0);
+        let text = TextLayout::new_with_text(sample, attrs.clone(), None);
+        layer.draw_text(&text, Point::new(10.0, 35.0), 0.0);
+
+        clear_glyph_cache();
+
+        // Row 2: moderate embolden (0.05)
+        let label = TextLayout::new_with_text("Emboldened (0.05):", make_attrs(14.0), None);
+        layer.draw_text(&label, Point::new(10.0, 100.0), 0.0);
+        let text = TextLayout::new_with_text(sample, attrs.clone(), None);
+        layer.draw_text(&text, Point::new(10.0, 125.0), 0.05);
+
+        clear_glyph_cache();
+
+        // Row 3: strong embolden (0.10)
+        let label = TextLayout::new_with_text("Emboldened (0.10):", make_attrs(14.0), None);
+        layer.draw_text(&label, Point::new(10.0, 190.0), 0.0);
+        let text = TextLayout::new_with_text(sample, attrs, None);
+        layer.draw_text(&text, Point::new(10.0, 215.0), 0.10);
+
+        // Save to workspace target directory.
+        let out_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("target")
+            .join("test_embolden.png");
+        layer
+            .pixmap
+            .save_png(&out_path)
+            .expect("failed to save PNG");
+        eprintln!("Saved embolden visual test to: {}", out_path.display());
+    }
 }

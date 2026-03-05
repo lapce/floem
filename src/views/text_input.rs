@@ -144,7 +144,7 @@ pub enum TextDirection {
 /// ```rust
 /// # use floem::prelude::*;
 /// # use floem::prelude::palette::css;
-/// # use floem::text::Weight;
+/// # use floem::text::FontWeight;
 /// # use floem::style::SelectionCornerRadius;
 /// // Create empty `String` as a text buffer in the read-write signal
 /// let text = RwSignal::new(String::new());
@@ -181,8 +181,8 @@ pub enum TextDirection {
 ///         // Apply class and override some of its styles.
 ///         .class(PlaceholderTextClass, |s| s
 ///             .color(css::SKY_BLUE)
-///             .font_style(floem::text::Style::Italic)
-///             .font_weight(Weight::BOLD)
+///             .font_style(floem::text::FontStyle::Italic)
+///             .font_weight(FontWeight::BOLD)
 ///         )
 ///         .font_family("monospace".to_owned())
 ///         .focusable(true)
@@ -668,9 +668,9 @@ impl TextInput {
         attrs = attrs.font_size(self.font_size());
 
         if let Some(font_style) = self.placeholder_style.font_style() {
-            attrs = attrs.style(font_style);
+            attrs = attrs.font_style(font_style);
         } else if let Some(font_style) = self.font.style() {
-            attrs = attrs.style(font_style);
+            attrs = attrs.font_style(font_style);
         }
 
         if let Some(font_weight) = self.placeholder_style.font_weight() {
@@ -710,7 +710,7 @@ impl TextInput {
         attrs = attrs.font_size(self.font_size());
 
         if let Some(font_style) = self.font.style() {
-            attrs = attrs.style(font_style);
+            attrs = attrs.font_style(font_style);
         }
         let font_family = self.font.family().as_ref().map(|font_family| {
             let family: Vec<FamilyOwned> = FamilyOwned::parse_list(font_family).collect();

@@ -2,7 +2,7 @@ use floem::{
     action::{open_file, save_as},
     file::{FileDialogOptions, FileInfo, FileSpec},
     reactive::{RwSignal, SignalGet, SignalUpdate},
-    text::Weight,
+    text::FontWeight,
     views::{Button, Decorators, Label, Stack},
     IntoView,
 };
@@ -90,7 +90,7 @@ pub fn files_view() -> impl IntoView {
     Stack::vertical((
         view,
         Stack::horizontal((
-            "Path(s): ".style(|s| s.font_weight(Weight::BOLD)),
+            "Path(s): ".style(|s| s.font_weight(FontWeight::BOLD)),
             Label::derived(move || files.get()),
         )),
     ))

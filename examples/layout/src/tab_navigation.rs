@@ -3,7 +3,7 @@ use floem::{
     imbl,
     prelude::*,
     style::{CursorStyle, Position},
-    text::Weight,
+    text::FontWeight,
 };
 
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
@@ -41,7 +41,7 @@ fn tab_button(
         })
         .style(move |s| {
             s.width(70)
-                .hover(|s| s.font_weight(Weight::BOLD).cursor(CursorStyle::Pointer))
+                .hover(|s| s.font_weight(FontWeight::BOLD).cursor(CursorStyle::Pointer))
                 .apply_if(
                     active_tab.get()
                         == tabs
@@ -49,7 +49,7 @@ fn tab_button(
                             .iter()
                             .position(|it| *it == this_tab)
                             .unwrap(),
-                    |s| s.font_weight(Weight::BOLD),
+                    |s| s.font_weight(FontWeight::BOLD),
                 )
         })
 }

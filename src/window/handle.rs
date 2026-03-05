@@ -269,6 +269,9 @@ impl WindowHandle {
 
         // Create a paint state that will never initialize (for headless testing)
         // We use a channel that will never receive a value
+        #[cfg(feature = "crossbeam")]
+        let (tx, rx) = crossbeam::channel::unbounded();
+        #[cfg(not(feature = "crossbeam"))]
         let (tx, rx) = std::sync::mpsc::channel();
         drop(tx); // Drop sender so receiver will never receive
         let paint_state = PaintState::new_pending(

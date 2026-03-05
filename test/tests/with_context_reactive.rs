@@ -15,7 +15,7 @@ use floem::prelude::*;
 use floem::prop;
 use floem::reactive::RwSignal;
 use floem::style::{Background, FontWeight, Style, TextColor};
-use floem::text::Weight;
+use floem::text::FontWeight as Weight;
 use floem_test::prelude::*;
 use serial_test::serial;
 

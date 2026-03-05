@@ -6,7 +6,7 @@ use floem::{
     reactive::Trigger,
     receiver_signal::Resource,
     style::{Background, CursorStyle, Transition},
-    text::Weight,
+    text::FontWeight,
 };
 use serde::Deserialize;
 use tokio::runtime::Runtime;
@@ -169,7 +169,7 @@ async fn fetch_github_user(username: String, token: Option<String>) -> UserResul
 fn stat_item(label: &str, value: u32) -> impl IntoView {
     let value_view = value
         .to_string()
-        .style(|s| s.font_size(18.0).font_weight(Weight::BOLD));
+        .style(|s| s.font_size(18.0).font_weight(FontWeight::BOLD));
 
     let label_view = label
         .to_string()
@@ -200,7 +200,7 @@ fn user_display(user_resource: Resource<Option<UserResult>>) -> impl IntoView {
                     .login
                     .clone()
                     .unwrap_or("None".to_string())
-                    .style(|s| s.font_size(20.0).font_weight(Weight::BOLD));
+                    .style(|s| s.font_size(20.0).font_weight(FontWeight::BOLD));
 
                 let username = user
                     .name
@@ -256,7 +256,10 @@ fn user_display(user_resource: Resource<Option<UserResult>>) -> impl IntoView {
                 .style(|s| s.color(css::RED))
                 .into_any(),
             None => "Enter a GitHub username to search"
-                .style(|s| s.color(css::GRAY).font_style(floem::text::Style::Italic))
+                .style(|s| {
+                    s.color(css::GRAY)
+                        .font_style(floem::text::FontStyle::Italic)
+                })
                 .into_any(),
         },
     )
@@ -310,7 +313,7 @@ fn app_view() -> impl IntoView {
 
     let title = "GitHub User Search".style(|s| {
         s.font_size(28.0)
-            .font_weight(Weight::BOLD)
+            .font_weight(FontWeight::BOLD)
             .margin_bottom(30.0)
     });
 
@@ -408,7 +411,7 @@ fn app_view() -> impl IntoView {
         s.font_size(12.0)
             .color(css::GRAY)
             .margin_top(20.0)
-            .font_style(floem::text::Style::Italic)
+            .font_style(floem::text::FontStyle::Italic)
     });
 
     Stack::vertical((

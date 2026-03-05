@@ -1,24 +1,33 @@
+use std::cell::RefCell;
 use std::mem;
-use std::sync::mpsc::sync_channel;
 use std::sync::Arc;
+use std::sync::mpsc::sync_channel;
 
 use anyhow::Result;
 use floem_renderer::gpu_resources::GpuResources;
-use floem_renderer::swash::SwashScaler;
-use floem_renderer::text::{CacheKey, LayoutRun};
-use floem_renderer::{tiny_skia, Img, Renderer};
-use floem_vger_rs::{Image, PaintIndex, PixelFormat, Vger};
-use image::EncodableLayout;
+use floem_renderer::text::TextLayout;
+use floem_renderer::{Img, Renderer, tiny_skia};
+use floem_vger_rs::{GlyphImage, Image, PaintIndex, PixelFormat, Vger};
+use parley::layout::PositionedLayoutItem;
 use peniko::kurbo::{Size, Stroke};
-use peniko::{
-    color::palette,
-    kurbo::{Affine, Point, Rect, Shape},
-    BrushRef, Color, GradientKind,
-};
 use peniko::{Blob, ImageData, LinearGradientPosition};
+use peniko::{
+    BrushRef, Color, GradientKind,
+    kurbo::{Affine, Point, Rect, Shape},
+};
+use swash::FontRef;
+use swash::scale::{Render, ScaleContext, Source, StrikeWith};
+use swash::zeno::Format;
 use wgpu::{
     Adapter, Device, DeviceType, Queue, StoreOp, Surface, SurfaceConfiguration, TextureFormat,
 };
+
+thread_local! {
+    /// Swash [`ScaleContext`] used for CPU glyph rasterization on vger cache misses.
+    /// Thread-local so the `FnOnce` closure passed to `Vger::render_glyph` can
+    /// borrow it without conflicting with the `&mut self` borrow on [`VgerRenderer`].
+    static SCALE_CONTEXT: RefCell<ScaleContext> = RefCell::new(ScaleContext::new());
+}
 
 pub struct VgerRenderer {
     device: Arc<Device>,
@@ -32,7 +41,7 @@ pub struct VgerRenderer {
     transform: Affine,
     clip: Option<Rect>,
     capture: bool,
-    swash_scaler: SwashScaler,
+    font_embolden: f32,
     adapter: Adapter,
 }
 
@@ -104,7 +113,7 @@ impl VgerRenderer {
             transform: Affine::IDENTITY,
             clip: None,
             capture: false,
-            swash_scaler: SwashScaler::new(font_embolden),
+            font_embolden,
             adapter,
         })
     }
@@ -246,7 +255,7 @@ impl VgerRenderer {
         );
         let command_buffer = encoder.finish();
         self.queue.submit(Some(command_buffer));
-        self.device.poll(wgpu::PollType::Wait).ok()?;
+        self.device.poll(wgpu::PollType::wait_indefinitely()).ok()?;
 
         let slice = buffer.slice(..);
         let (tx, rx) = sync_channel(1);
@@ -256,7 +265,9 @@ impl VgerRenderer {
             if let Ok(r) = rx.try_recv() {
                 break r.ok()?;
             }
-            if let wgpu::PollStatus::WaitSucceeded = self.device.poll(wgpu::PollType::Wait).ok()? {
+            if let wgpu::PollStatus::WaitSucceeded =
+                self.device.poll(wgpu::PollType::wait_indefinitely()).ok()?
+            {
                 rx.recv().ok()?.ok()?;
                 break;
             }
@@ -480,32 +491,26 @@ impl Renderer for VgerRenderer {
         self.vger.fill(paint);
     }
 
-    fn draw_text_with_layout<'b>(
-        &mut self,
-        layout: impl Iterator<Item = LayoutRun<'b>>,
-        pos: impl Into<Point>,
-    ) {
+    fn draw_text(&mut self, text_layout: &TextLayout, pos: impl Into<Point>) {
+        let layout = text_layout.parley_layout();
+
         // Drawing text happens in the final coordinate space,
         // i.e. with all transforms and the window scale factor (self.scale) being applied.
         let coeffs = self.transform.as_coeffs();
         let pos: Point = pos.into();
         let pos = Affine::scale(self.scale) * self.transform * pos;
         // This assumes that the text is axis-aligned.
-        // We currently make this assumption in the entirety of this module.
         let scale = (coeffs[0] + coeffs[3]) / 2. * self.scale;
 
-        // Assumption: The clipped rectangle lives in the final coordinate space,
-        // i.e. with all transforms and the window scale factor (self.scale) being applied.
-        // This needs to be kept in sync with `VgerRenderer::clip`.
         let clip = self.clip;
-        for line in layout {
+        let font_embolden = self.font_embolden;
+
+        for line in layout.lines() {
+            let metrics = line.metrics();
+
             if let Some(rect) = clip {
-                // Use line_top for the actual top of the line, not line_y (which is the baseline)
-                // Glyphs extend upward from the baseline by their ascent, so using the baseline
-                // for clipping would incorrectly skip lines where the baseline is outside the clip
-                // but the visible portion of glyphs is still inside.
-                let y_top = pos.y + (line.line_top as f64) * scale;
-                let y_bot = y_top + (line.line_height as f64) * scale;
+                let y_top = pos.y + (metrics.baseline - metrics.ascent) as f64 * scale;
+                let y_bot = pos.y + (metrics.baseline + metrics.descent) as f64 * scale;
                 if y_bot < rect.y0 {
                     continue;
                 }
@@ -514,52 +519,120 @@ impl Renderer for VgerRenderer {
                 }
             }
 
-            'line_loop: for glyph_run in line.glyphs {
-                let x = pos.x + (glyph_run.x as f64) * scale;
-                let y = pos.y + (line.line_y as f64) * scale;
-
-                if let Some(rect) = clip {
-                    let w = (glyph_run.w as f64) * scale;
-                    if x + w < rect.x0 {
-                        continue;
-                    }
-                    if x > rect.x1 {
-                        break 'line_loop;
-                    }
-                }
-
-                // if glyph_run.is_tab {
-                //     continue;
-                // }
-
-                let color = match glyph_run.color_opt {
-                    Some(c) => Color::from_rgba8(c.r(), c.g(), c.b(), c.a()),
-                    None => palette::css::BLACK,
+            for item in line.items() {
+                let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
+                    continue;
                 };
-                if let Some(paint) = self.brush_to_paint(color) {
-                    let glyph_x = x as f32;
-                    let glyph_y = y.round() as f32;
-                    let font_size = (glyph_run.font_size * (scale as f32)).round() as u32;
-                    let (cache_key, new_x, new_y) = CacheKey::new(
-                        glyph_run.font_id,
-                        glyph_run.glyph_id,
-                        font_size as f32,
-                        (glyph_x, glyph_y),
-                        glyph_run.cache_key_flags,
-                    );
+                let run = glyph_run.run();
+                let font = run.font();
+                let font_size = run.font_size();
+                let synthesis = run.synthesis();
+                let coords: Vec<i16> = run.normalized_coords().to_vec();
+                let color: Color = glyph_run.style().brush.0;
 
-                    let glyph_x = new_x as f32;
-                    let glyph_y = new_y as f32;
+                let Some(font_ref) = FontRef::from_index(font.data.data(), font.index as usize)
+                else {
+                    continue;
+                };
+                let font_blob_id = font.data.id();
+
+                // Extra embolden strength when Parley requests synthetic bold
+                // (font lacks a native bold variant). Additive so it's always
+                // distinguishable from the base `font_embolden` weight.
+                const SYNTHESIS_EMBOLDEN_STRENGTH: f32 = 0.02;
+                let embolden = font_embolden
+                    + if synthesis.embolden() {
+                        SYNTHESIS_EMBOLDEN_STRENGTH
+                    } else {
+                        0.0
+                    };
+                let skew = synthesis.skew();
+
+                let Some(paint) = self.brush_to_paint(color) else {
+                    continue;
+                };
+
+                for glyph in glyph_run.positioned_glyphs() {
+                    let glyph_x = pos.x as f32 + glyph.x * scale as f32;
+                    let glyph_y = pos.y as f32 + glyph.y * scale as f32;
+
+                    if let Some(rect) = clip
+                        && (glyph_x as f64) > rect.x1
+                    {
+                        break;
+                    }
+
+                    let scaled_font_size = (font_size * scale as f32).round() as u32;
+
+                    // Subpixel binning: 4 bins per axis
+                    let x_bin = ((glyph_x.fract() + 1.0).fract() * 4.0).min(3.0) as u8;
+                    let y_bin = ((glyph_y.fract() + 1.0).fract() * 4.0).min(3.0) as u8;
+
+                    let glyph_id = glyph.id as u16;
+                    let scaled_size = font_size * scale as f32;
+                    let coords_clone = coords.clone();
+
+                    // Encode synthesis state into a cache discriminator so that
+                    // the same glyph rendered with/without faux bold or italic
+                    // gets separate cache entries in vger-rs.
+                    let synthesis_bits = (synthesis.embolden() as u32)
+                        | (skew.unwrap_or(0.0).to_bits() & 0xFFFF_FFFE);
+
                     self.vger.render_glyph(
-                        glyph_x,
-                        glyph_y,
-                        glyph_run.font_id,
-                        glyph_run.glyph_id,
-                        font_size,
-                        (cache_key.x_bin, cache_key.y_bin),
+                        glyph_x.floor(),
+                        glyph_y.floor(),
+                        font_blob_id,
+                        glyph_id,
+                        scaled_font_size,
+                        (x_bin, y_bin),
+                        synthesis_bits,
                         || {
-                            let image = self.swash_scaler.get_image(cache_key);
-                            image.unwrap_or_default()
+                            // Rasterize glyph via swash on cache miss
+                            let image = SCALE_CONTEXT.with_borrow_mut(|ctx| {
+                                let mut scaler = ctx
+                                    .builder(font_ref)
+                                    .size(scaled_size)
+                                    .hint(true)
+                                    .normalized_coords(&coords_clone)
+                                    .build();
+                                let mut render = Render::new(&[
+                                    Source::ColorOutline(0),
+                                    Source::ColorBitmap(StrikeWith::BestFit),
+                                    Source::Outline,
+                                ]);
+                                render
+                                    .format(Format::Alpha)
+                                    .offset(swash::zeno::Vector::new(
+                                        glyph_x.fract(),
+                                        glyph_y.fract(),
+                                    ))
+                                    .embolden(embolden);
+                                if let Some(angle) = skew {
+                                    render.transform(Some(swash::zeno::Transform::skew(
+                                        swash::zeno::Angle::from_degrees(angle),
+                                        swash::zeno::Angle::ZERO,
+                                    )));
+                                }
+                                render.render(&mut scaler, glyph_id)
+                            });
+                            match image {
+                                Some(img) => GlyphImage {
+                                    colored: img.content != swash::scale::image::Content::Mask,
+                                    data: img.data.into(),
+                                    width: img.placement.width,
+                                    height: img.placement.height,
+                                    left: img.placement.left,
+                                    top: img.placement.top,
+                                },
+                                None => GlyphImage {
+                                    data: Blob::new(Arc::new([])),
+                                    width: 0,
+                                    height: 0,
+                                    left: 0,
+                                    top: 0,
+                                    colored: false,
+                                },
+                            }
                         },
                         paint,
                     );
@@ -587,9 +660,7 @@ impl Renderer for VgerRenderer {
         let height = (rect.height() * scale_y).round().max(1.0) as u32;
 
         self.vger.render_image(x, y, img.hash, width, height, || {
-            let rgba = img.img.image.data.data();
-            let data = rgba.as_bytes().to_vec();
-
+            let data = img.img.image.data;
             let (width, height) = (img.img.image.width, img.img.image.height);
 
             Image {
@@ -673,7 +744,7 @@ impl Renderer for VgerRenderer {
 
         // Assumption: The clipped rectangle lives in the final coordinate space,
         // i.e. with all transforms and the window scale factor (self.scale) being applied.
-        // This needs to be kept in sync with `VgerRenderer::draw_text_with_layout`.
+        // This needs to be kept in sync with `VgerRenderer::draw_text`.
         let transformed_rect = self
             .transform
             .then_scale(self.scale)

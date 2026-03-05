@@ -9,7 +9,7 @@ use crate::view::{Stack as StackStruct, StackOffset};
 use crate::views::Decorators;
 use crate::{AnyView, IntoView, View, ViewId, prop, prop_extractor, style_class};
 use floem_reactive::UpdaterEffect;
-use floem_renderer::text::Align;
+use floem_renderer::text::Alignment;
 use fluent_bundle::{FluentBundle, FluentResource};
 
 pub use fluent_bundle::FluentArgs;
@@ -69,7 +69,7 @@ impl StylePropValue for LocaleMap {
         let view = Stack::new((
             format!("Languages ({count})").style(|s| {
                 s.font_size(12.0)
-                    .font_weight(floem_renderer::text::Weight::SEMIBOLD)
+                    .font_weight(floem_renderer::text::FontWeight::SEMI_BOLD)
             }),
             Stack::vertical_from_iter(languages.into_iter().map(|lang| {
                 lang.style(|s| {
@@ -78,7 +78,7 @@ impl StylePropValue for LocaleMap {
                         .width_full()
                         .items_center()
                         .justify_center()
-                        .text_align(Align::Center)
+                        .text_align(Alignment::Center)
                 })
             }))
             .style(|s| s.gap(2.0).width_full()),
@@ -423,11 +423,11 @@ impl View for L10n {
         if self.locale.read(cx) {
             self.has_format_value = false;
         }
-        if !self.has_format_value {
-            if let Some(formatted) = self.try_format_message() {
-                self.label_id.update_state(formatted);
-                self.has_format_value = true;
-            }
+        if !self.has_format_value
+            && let Some(formatted) = self.try_format_message()
+        {
+            self.label_id.update_state(formatted);
+            self.has_format_value = true;
         }
         self.fallback.read(cx);
         if !self.has_format_value {

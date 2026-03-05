@@ -2,7 +2,7 @@
 
 use floem_reactive::{RwSignal, SignalGet, SignalUpdate as _};
 use floem_renderer::Renderer;
-use floem_renderer::text::{LineHeightValue, Weight};
+use floem_renderer::text::{FontWeight, LineHeightValue};
 use peniko::color::{HueDirection, palette};
 use peniko::kurbo::{self, Point, Stroke};
 use peniko::{
@@ -143,7 +143,7 @@ where
                 .padding_horiz(6.0)
                 .items_center()
                 .justify_center()
-                .text_align(floem_renderer::text::Align::Center)
+                .text_align(floem_renderer::text::Alignment::Center)
                 .border(1.)
                 .border_radius(5.0)
                 .margin_left(6.0)
@@ -194,7 +194,7 @@ where
     }
 }
 impl StylePropValue for String {}
-impl StylePropValue for Weight {
+impl StylePropValue for FontWeight {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         let clone = *self;
         Some(
@@ -204,10 +204,12 @@ impl StylePropValue for Weight {
         )
     }
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
-        self.0.interpolate(&other.0, value).map(Weight)
+        self.value()
+            .interpolate(&other.value(), value)
+            .map(FontWeight::new)
     }
 }
-impl StylePropValue for crate::text::Style {
+impl StylePropValue for crate::text::FontStyle {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         let clone = *self;
         Some(
@@ -217,7 +219,7 @@ impl StylePropValue for crate::text::Style {
         )
     }
 }
-impl StylePropValue for crate::text::Align {}
+impl StylePropValue for crate::text::Alignment {}
 impl StylePropValue for LineHeightValue {
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         match (self, other) {

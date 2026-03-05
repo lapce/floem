@@ -1,15 +1,14 @@
 [package]
 name = "floem_vger_renderer"
 version.workspace = true
-edition = "2021"
+edition = "2024"
 repository = "https://github.com/lapce/floem"
 description = "A native Rust UI library with fine-grained reactivity"
 license.workspace = true
 
 [dependencies.floem-vger-rs]
-git = "https://github.com/lapce/vger-rs.git"
-rev = "643be0713321054a4cb07ae4ad7b440b63b72d72"
-version = "0.3.1"
+git = "https://github.com/lapce/vger-rs"
+rev = "54ab8135d9d870a4ac2b84fc6b9846b3b03ec919"
 package = "floem-vger"
 
 [dependencies]
@@ -17,6 +16,8 @@ image = { workspace = true }
 resvg = { workspace = true }
 peniko = { workspace = true }
 wgpu = { workspace = true }
+parley = { workspace = true }
+swash = { workspace = true }
 
 anyhow = "1.0"
 floem_renderer = { path = "../renderer", version = "0.2.0" }

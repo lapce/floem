@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use floem::{
     peniko::color::palette,
-    text::{Attrs, AttrsList, Style, TextLayout},
+    text::{Attrs, AttrsList, FontStyle, TextLayout},
     views::{rich_text, Decorators, RichTextExt, Scroll, Stack},
     IntoView,
 };
@@ -25,7 +25,9 @@ pub fn rich_text_view() -> impl IntoView {
 
                 attrs_list.add_span(
                     Range { start: 5, end: 66 },
-                    Attrs::new().color(palette::css::GRAY).style(Style::Italic),
+                    Attrs::new()
+                        .color(palette::css::GRAY)
+                        .font_style(FontStyle::Italic),
                 );
 
                 attrs_list.add_span(

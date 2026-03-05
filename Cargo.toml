@@ -1,5 +1,5 @@
 [workspace]
-resolver = "2"
+resolver = "3"
 members = [
   "renderer",
   "vello",
@@ -42,23 +42,25 @@ rust-version.workspace = true
 license.workspace = true
 
 [workspace.dependencies]
-peniko = { version = "0.5.0" }
+peniko = { version = "0.6.0" }
+parley = { version = "0.7.0" }
+fontique = { version = "0.7.0" }
 serde = { version = "1.0" }
 lapce-xi-rope = "0.4.0"
-strum = { version = "0.27", features = ["derive"] }
-strum_macros = { version = "0.27" }
+strum = { version = "0.28", features = ["derive"] }
+strum_macros = { version = "0.28" }
 # Image format features are defined via new features
 image = { version = "0.25", default-features = false }
-imbl = "6.1.0"
-resvg = { version = "0.45" }
+imbl = "7.0"
+resvg = { version = "0.46" }
 raw-window-handle = "0.6.0"
 unicode-segmentation = "1.10"
-wgpu = { version = "26.0" }
+wgpu = { version = "27.0" }
 parking_lot = { version = "0.12" }
 swash = { version = "0.2" }
 muda = { version = "0.17.1", default-features = false }
 winit = { git = "https://github.com/lapce/winit", rev = "133268de675a4fda70816d78a7a1435eb972fea1", package = "floem-winit" }
-ui-events = { version = "0.2", features = ["kurbo"] }
+ui-events = { version = "0.3", features = ["kurbo"] }
 ui-events-winit = { path = "./ui-events-winit", package = "ui-events-floem-winit" }
 dpi = { version = "0.1.2", default-features = false }
 
@@ -132,6 +134,7 @@ objc2-app-kit = { version = "0.3", features = [
 default = ["editor", "default-image-formats", "vger"]
 vello = ["dep:floem_vello_renderer"]
 vger = ["dep:floem_vger_renderer"]
+# tiny-skia = ["dep:floem_tiny_skia_renderer"]
 serde = [
   "dep:serde",
   "winit/serde",
@@ -171,6 +174,8 @@ localization = ["dep:fluent-bundle", "dep:unic-langid", "dep:sys-locale"]
 
 [dev-dependencies]
 criterion = { version = "0.8.1", features = ["html_reports"] }
+floem_renderer = { path = "renderer" }
+peniko = { workspace = true }
 
 [[bench]]
 name = "event_dispatch"
@@ -190,4 +195,12 @@ harness = false
 
 [[bench]]
 name = "animation"
+harness = false
+
+[[bench]]
+name = "text"
+harness = false
+
+[[bench]]
+name = "editor_layout_cols"
 harness = false

@@ -4,7 +4,7 @@ use crate::{
     peniko::Color,
     peniko::color::palette,
     reactive::{RwSignal, Scope},
-    text::{Attrs, AttrsList, FamilyOwned, Stretch, Weight},
+    text::{Attrs, AttrsList, FamilyOwned, FontWeight, FontWidth},
     views::EditorCustomStyle,
 };
 use floem_editor_core::{
@@ -313,17 +313,17 @@ pub trait Styling {
         Cow::Borrowed(&[FamilyOwned::SansSerif])
     }
 
-    fn weight(&self, _edid: EditorId, _line: usize) -> Weight {
-        Weight::NORMAL
+    fn weight(&self, _edid: EditorId, _line: usize) -> FontWeight {
+        FontWeight::NORMAL
     }
 
     // TODO(minor): better name?
-    fn italic_style(&self, _edid: EditorId, _line: usize) -> crate::text::Style {
-        crate::text::Style::Normal
+    fn italic_style(&self, _edid: EditorId, _line: usize) -> crate::text::FontStyle {
+        crate::text::FontStyle::Normal
     }
 
-    fn stretch(&self, _edid: EditorId, _line: usize) -> Stretch {
-        Stretch::Normal
+    fn font_width(&self, _edid: EditorId, _line: usize) -> FontWidth {
+        FontWidth::NORMAL
     }
 
     /// Which line the indentation line should be based off of
@@ -585,9 +585,9 @@ pub struct SimpleStyling {
     /// If less than 5.0, line height will be a multiple of the font size
     line_height: f32,
     font_family: Vec<FamilyOwned>,
-    weight: Weight,
-    italic_style: crate::text::Style,
-    stretch: Stretch,
+    weight: FontWeight,
+    italic_style: crate::text::FontStyle,
+    font_width: FontWidth,
     tab_width: usize,
     atomic_soft_tabs: bool,
 }
@@ -620,18 +620,18 @@ impl SimpleStyling {
         self.increment_id();
     }
 
-    pub fn set_weight(&mut self, weight: Weight) {
+    pub fn set_weight(&mut self, weight: FontWeight) {
         self.weight = weight;
         self.increment_id();
     }
 
-    pub fn set_italic_style(&mut self, italic_style: crate::text::Style) {
+    pub fn set_italic_style(&mut self, italic_style: crate::text::FontStyle) {
         self.italic_style = italic_style;
         self.increment_id();
     }
 
-    pub fn set_stretch(&mut self, stretch: Stretch) {
-        self.stretch = stretch;
+    pub fn set_stretch(&mut self, stretch: FontWidth) {
+        self.font_width = stretch;
         self.increment_id();
     }
 
@@ -652,9 +652,9 @@ impl Default for SimpleStyling {
             font_size: 16,
             line_height: 1.5,
             font_family: vec![FamilyOwned::SansSerif],
-            weight: Weight::NORMAL,
-            italic_style: crate::text::Style::Normal,
-            stretch: Stretch::Normal,
+            weight: FontWeight::NORMAL,
+            italic_style: crate::text::FontStyle::Normal,
+            font_width: FontWidth::NORMAL,
             tab_width: 4,
             atomic_soft_tabs: false,
         }
@@ -684,16 +684,16 @@ impl Styling for SimpleStyling {
         Cow::Borrowed(&self.font_family)
     }
 
-    fn weight(&self, _edid: EditorId, _line: usize) -> Weight {
+    fn weight(&self, _edid: EditorId, _line: usize) -> FontWeight {
         self.weight
     }
 
-    fn italic_style(&self, _edid: EditorId, _line: usize) -> crate::text::Style {
+    fn italic_style(&self, _edid: EditorId, _line: usize) -> crate::text::FontStyle {
         self.italic_style
     }
 
-    fn stretch(&self, _edid: EditorId, _line: usize) -> Stretch {
-        self.stretch
+    fn font_width(&self, _edid: EditorId, _line: usize) -> FontWidth {
+        self.font_width
     }
 
     fn tab_width(&self, _edid: EditorId, _line: usize) -> usize {
@@ -729,9 +729,9 @@ pub struct SimpleStylingBuilder {
     font_size: Option<usize>,
     line_height: Option<f32>,
     font_family: Option<Vec<FamilyOwned>>,
-    weight: Option<Weight>,
-    italic_style: Option<crate::text::Style>,
-    stretch: Option<Stretch>,
+    weight: Option<FontWeight>,
+    italic_style: Option<crate::text::FontStyle>,
+    font_width: Option<FontWidth>,
     indent_style: Option<IndentStyle>,
     tab_width: Option<usize>,
     atomic_soft_tabs: Option<bool>,
@@ -761,22 +761,22 @@ impl SimpleStylingBuilder {
 
     /// Set the font weight (such as boldness or thinness)
     /// Default: `Weight::NORMAL`
-    pub fn weight(&mut self, weight: Weight) -> &mut Self {
+    pub fn weight(&mut self, weight: FontWeight) -> &mut Self {
         self.weight = Some(weight);
         self
     }
 
     /// Set the italic style
     /// Default: `Style::Normal`
-    pub fn italic_style(&mut self, italic_style: crate::text::Style) -> &mut Self {
+    pub fn italic_style(&mut self, italic_style: crate::text::FontStyle) -> &mut Self {
         self.italic_style = Some(italic_style);
         self
     }
 
-    /// Set the font stretch
-    /// Default: `Stretch::Normal`
-    pub fn stretch(&mut self, stretch: Stretch) -> &mut Self {
-        self.stretch = Some(stretch);
+    /// Set the font width
+    /// Default: `FontWidth::Normal`
+    pub fn font_width(&mut self, stretch: FontWidth) -> &mut Self {
+        self.font_width = Some(stretch);
         self
     }
 
@@ -818,7 +818,7 @@ impl SimpleStylingBuilder {
             font_family: self.font_family.clone().unwrap_or(default.font_family),
             weight: self.weight.unwrap_or(default.weight),
             italic_style: self.italic_style.unwrap_or(default.italic_style),
-            stretch: self.stretch.unwrap_or(default.stretch),
+            font_width: self.font_width.unwrap_or(default.font_width),
             tab_width: self.tab_width.unwrap_or(default.tab_width),
             atomic_soft_tabs: self.atomic_soft_tabs.unwrap_or(default.atomic_soft_tabs),
         }

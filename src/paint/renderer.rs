@@ -52,7 +52,7 @@ use std::sync::Arc;
 use crate::kurbo::Point;
 use floem_renderer::Img;
 use floem_renderer::gpu_resources::GpuResources;
-use floem_renderer::text::LayoutRun;
+use floem_renderer::text::TextLayout;
 use floem_tiny_skia_renderer::TinySkiaRenderer;
 #[cfg(feature = "vello")]
 use floem_vello_renderer::VelloRenderer;
@@ -78,6 +78,7 @@ pub enum Renderer {
 }
 
 impl Renderer {
+    #[allow(unused_variables)]
     pub fn new(
         window: Arc<dyn Window>,
         gpu_resources: GpuResources,
@@ -343,22 +344,18 @@ impl floem_renderer::Renderer for Renderer {
         }
     }
 
-    fn draw_text_with_layout<'b>(
-        &mut self,
-        layout: impl Iterator<Item = LayoutRun<'b>>,
-        pos: impl Into<Point>,
-    ) {
+    fn draw_text(&mut self, layout: &TextLayout, pos: impl Into<Point>) {
         match self {
             #[cfg(feature = "vello")]
             Renderer::Vello(v) => {
-                v.draw_text_with_layout(layout, pos);
+                v.draw_text(layout, pos);
             }
             #[cfg(not(feature = "vello"))]
             Renderer::Vger(v) => {
-                v.draw_text_with_layout(layout, pos);
+                v.draw_text(layout, pos);
             }
             Renderer::TinySkia(v) => {
-                v.draw_text_with_layout(layout, pos);
+                v.draw_text(layout, pos);
             }
             Renderer::Uninitialized { .. } => {}
         }

@@ -128,7 +128,7 @@
 //!
 //! You can create custom extractors and embed them in your custom views so that you can get out any built in prop, or any of your custom props from the final combined style that is applied to your `View`.
 
-use floem_renderer::text::{LineHeightValue, Weight};
+use floem_renderer::text::{FontWeight as FontWeightProp, LineHeightValue};
 use imbl::hashmap::Entry;
 use peniko::color::palette;
 use peniko::kurbo::{self, Affine, RoundedRect, Vec2};
@@ -1502,12 +1502,12 @@ define_builtin_props!(
     /// Sets the font weight (boldness) for text content.
     ///
     /// This property is inherited by child views.
-    FontWeight font_weight { nocb }: Option<Weight> { inherited } = None,
+    FontWeight font_weight { nocb }: Option<FontWeightProp> { inherited } = None,
 
     /// Sets the font style (italic, normal) for text content.
     ///
     /// This property is inherited by child views.
-    FontStyle font_style { nocb }: Option<crate::text::Style> { inherited } = None,
+    FontStyle font_style { nocb }: Option<crate::text::FontStyle> { inherited } = None,
 
     /// Sets the color of the text cursor.
     ///
@@ -1532,7 +1532,7 @@ define_builtin_props!(
     /// Sets text alignment within the view.
     ///
     /// Controls horizontal alignment of text content.
-    TextAlignProp text_align {}: Option<crate::text::Align> {} = None,
+    TextAlignProp text_align {}: Option<crate::text::Alignment> {} = None,
 
     /// Sets the line height for text content.
     ///
@@ -2685,17 +2685,17 @@ impl Style {
     }
 
     /// Sets the font weight (boldness) for text content.
-    pub fn font_weight(self, weight: impl Into<StyleValue<Weight>>) -> Self {
+    pub fn font_weight(self, weight: impl Into<StyleValue<FontWeightProp>>) -> Self {
         self.set_style_value(FontWeight, weight.into().map(Some))
     }
 
     /// Sets the font weight to bold.
     pub fn font_bold(self) -> Self {
-        self.font_weight(Weight::BOLD)
+        self.font_weight(FontWeightProp::BOLD)
     }
 
     /// Sets the font style (italic, normal) for text content.
-    pub fn font_style(self, style: impl Into<StyleValue<crate::text::Style>>) -> Self {
+    pub fn font_style(self, style: impl Into<StyleValue<crate::text::FontStyle>>) -> Self {
         self.set_style_value(FontStyle, style.into().map(Some))
     }
 
