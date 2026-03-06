@@ -17,7 +17,10 @@ use crate::{
     event::{Event, EventPropagation, FocusEvent},
     prelude::*,
     prop, prop_extractor,
-    style::{Background, BorderRadiusProp, CustomStylable, CustomStyle, Foreground, Height, Style},
+    style::{
+        Background, BorderBottomLeftRadius, BorderBottomRightRadius, BorderTopLeftRadius,
+        BorderTopRightRadius, CustomStylable, CustomStyle, Foreground, Height, Style,
+    },
     style_class,
     unit::{Pct, PxPct, PxPctAuto},
     view::{View, ViewId},
@@ -50,10 +53,24 @@ style_class!(pub AccentBarClass);
 
 prop_extractor! {
     BarStyle {
-        border_radius: BorderRadiusProp,
+        border_top_left_radius: BorderTopLeftRadius,
+        border_top_right_radius: BorderTopRightRadius,
+        border_bottom_left_radius: BorderBottomLeftRadius,
+        border_bottom_right_radius: BorderBottomRightRadius,
         color: Background,
         height: Height
 
+    }
+}
+
+impl BarStyle {
+    fn border_radius(&self) -> crate::style::BorderRadius {
+        crate::style::BorderRadius {
+            top_left: Some(self.border_top_left_radius()),
+            top_right: Some(self.border_top_right_radius()),
+            bottom_left: Some(self.border_bottom_left_radius()),
+            bottom_right: Some(self.border_bottom_right_radius()),
+        }
     }
 }
 

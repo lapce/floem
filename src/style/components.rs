@@ -12,7 +12,7 @@ use crate::unit::{PxPct, PxPctAuto};
 use crate::view::{IntoView, View};
 use crate::views::{ContainerExt, Decorators, Stack, TooltipExt};
 
-use super::values::{CombineResult, StrokeWrap, StylePropValue};
+use super::values::{StrokeWrap, StylePropValue};
 
 /// Pointer event handling mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -248,21 +248,6 @@ impl StylePropValue for Border {
             bottom: self.bottom.interpolate(&other.bottom, value)?,
         })
     }
-
-    fn combine(&self, other: &Self) -> CombineResult<Self> {
-        let result = Border {
-            left: other.left.clone().or_else(|| self.left.clone()),
-            top: other.top.clone().or_else(|| self.top.clone()),
-            right: other.right.clone().or_else(|| self.right.clone()),
-            bottom: other.bottom.clone().or_else(|| self.bottom.clone()),
-        };
-
-        if result == *other {
-            CombineResult::Other
-        } else {
-            CombineResult::New(result)
-        }
-    }
 }
 
 /// Structure holding border colors for all four sides
@@ -359,21 +344,6 @@ impl StylePropValue for BorderColor {
             right: self.right.interpolate(&other.right, value)?,
             bottom: self.bottom.interpolate(&other.bottom, value)?,
         })
-    }
-
-    fn combine(&self, other: &Self) -> CombineResult<Self> {
-        let result = BorderColor {
-            left: other.left.clone().or_else(|| self.left.clone()),
-            top: other.top.clone().or_else(|| self.top.clone()),
-            right: other.right.clone().or_else(|| self.right.clone()),
-            bottom: other.bottom.clone().or_else(|| self.bottom.clone()),
-        };
-
-        if result == *other {
-            CombineResult::Other
-        } else {
-            CombineResult::New(result)
-        }
     }
 }
 
@@ -504,21 +474,6 @@ impl StylePropValue for BorderRadius {
             bottom_right: self.bottom_right.interpolate(&other.bottom_right, value)?,
         })
     }
-
-    fn combine(&self, other: &Self) -> CombineResult<Self> {
-        let result = BorderRadius {
-            top_left: other.top_left.or(self.top_left),
-            top_right: other.top_right.or(self.top_right),
-            bottom_left: other.bottom_left.or(self.bottom_left),
-            bottom_right: other.bottom_right.or(self.bottom_right),
-        };
-
-        if result == *other {
-            CombineResult::Other
-        } else {
-            CombineResult::New(result)
-        }
-    }
 }
 
 /// Structure holding padding values for all four sides
@@ -616,21 +571,6 @@ impl StylePropValue for Padding {
             bottom: self.bottom.interpolate(&other.bottom, value)?,
         })
     }
-
-    fn combine(&self, other: &Self) -> CombineResult<Self> {
-        let result = Padding {
-            left: other.left.or(self.left),
-            top: other.top.or(self.top),
-            right: other.right.or(self.right),
-            bottom: other.bottom.or(self.bottom),
-        };
-
-        if result == *other {
-            CombineResult::Other
-        } else {
-            CombineResult::New(result)
-        }
-    }
 }
 
 /// Structure holding margin values for all four sides
@@ -727,21 +667,6 @@ impl StylePropValue for Margin {
             right: self.right.interpolate(&other.right, value)?,
             bottom: self.bottom.interpolate(&other.bottom, value)?,
         })
-    }
-
-    fn combine(&self, other: &Self) -> CombineResult<Self> {
-        let result = Margin {
-            left: other.left.or(self.left),
-            top: other.top.or(self.top),
-            right: other.right.or(self.right),
-            bottom: other.bottom.or(self.bottom),
-        };
-
-        if result == *other {
-            CombineResult::Other
-        } else {
-            CombineResult::New(result)
-        }
     }
 }
 

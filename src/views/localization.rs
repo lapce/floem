@@ -106,10 +106,6 @@ impl StylePropValue for LanguageIdentifier {
     fn interpolate(&self, _other: &Self, _value: f64) -> Option<Self> {
         None
     }
-
-    fn combine(&self, _other: &Self) -> crate::style::CombineResult<Self> {
-        crate::style::CombineResult::Other
-    }
 }
 
 impl LocaleMap {

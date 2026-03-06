@@ -660,7 +660,7 @@ fn test_size_animation_reaches_target() {
 #[serial]
 fn test_multiple_property_animation() {
     let root = TestRoot::new();
-    use floem::style::BorderRadiusProp;
+    use floem::style::BorderTopLeftRadius;
 
     let view = Empty::new()
         .style(|s| s.size(50.0, 50.0).border_radius(0.0))
@@ -692,7 +692,7 @@ fn test_multiple_property_animation() {
 
     // Border radius should be present in computed style (even if default/zero)
     // This verifies the animation infrastructure is processing the property
-    let border_radius = style.get(BorderRadiusProp);
+    let border_radius = style.get(BorderTopLeftRadius);
     // Just verify we can read the property - the exact value depends on timing
     let _ = border_radius;
 
