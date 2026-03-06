@@ -31,12 +31,18 @@ use std::rc::Rc;
 use understory_box_tree::NodeFlags;
 use winit::window::WindowId;
 
+const OS_MOD: Modifiers = if cfg!(target_os = "macos") {
+    Modifiers::META
+} else {
+    Modifiers::CONTROL
+};
+
 pub fn capture(window_id: WindowId) {
     let capture = CAPTURE.with(|c| *c);
 
     if !RUNNING.get() {
         new_window(
-            move |_| {
+            move |inspector_window_id| {
                 let selected = RwSignal::new(0);
 
                 let tab_item = |name, index| {
@@ -75,6 +81,8 @@ pub fn capture(window_id: WindowId) {
                         .with_theme(|s, t| s.background(t.border()))
                 });
 
+                let mut window_scale = RwSignal::new(1.);
+
                 Stack::vertical((tabs, separator, tab))
                     .style(|s| s.width_full().height_full())
                     .on_event(
@@ -93,6 +101,40 @@ pub fn capture(window_id: WindowId) {
                         RUNNING.set(false);
                         EventPropagation::Continue
                     })
+                    .on_event_stop(
+                        listener::KeyUp,
+                        move |_cx, KeyboardEvent { modifiers, key, .. }| {
+                            if *key == Key::Character("q".into()) && modifiers.contains(OS_MOD) {
+                                crate::quit_app();
+                            } else if *key == Key::Character("w".into())
+                                && modifiers.contains(OS_MOD)
+                            {
+                                crate::close_window(inspector_window_id);
+                            }
+                        },
+                    )
+                    .on_event_stop(
+                        el::KeyDown,
+                        move |_, KeyboardEvent { key, modifiers, .. }| match key {
+                            Key::Character(ch)
+                                if (ch == "=" || ch == "+") && modifiers.contains(OS_MOD) =>
+                            {
+                                window_scale *= 1.1;
+                                crate::action::set_window_scale(window_scale.get());
+                            }
+
+                            Key::Character(ch) if ch == "-" && *modifiers == OS_MOD => {
+                                window_scale /= 1.1;
+                                crate::action::set_window_scale(window_scale.get());
+                            }
+
+                            Key::Character(ch) if ch == "0" && *modifiers == OS_MOD => {
+                                window_scale.set(1.);
+                                crate::action::set_window_scale(window_scale.get());
+                            }
+                            _ => {}
+                        },
+                    )
             },
             Some(WindowConfig::default().size((1200.0, 800.0))),
         );
@@ -148,17 +190,9 @@ fn capture_view(
     let datas = RwSignal::new(CapturedDatas::init_from_view(capture.root.clone()));
     let window = capture.window.clone();
     let capture_ = capture.clone();
-    let (image_width, image_height) = capture
-        .window
-        .as_ref()
-        .map(|img| {
-            (
-                img.image.width as f64 / capture.scale,
-                img.image.height as f64 / capture.scale,
-            )
-        })
-        .unwrap_or_default();
     let size = capture_.window_size;
+    let image_width = size.width;
+    let image_height = size.height;
     let renderer = capture_.renderer.clone();
 
     let image = if let Some(window) = window {

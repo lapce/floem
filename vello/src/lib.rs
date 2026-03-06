@@ -536,7 +536,7 @@ impl VelloRenderer {
                 &self.scene,
                 &view,
                 &vello::RenderParams {
-                    base_color: palette::css::BLACK, // Background color
+                    base_color: palette::css::TRANSPARENT,
                     width: self.surface.config.width,
                     height: self.surface.config.height,
                     antialiasing_method: AaConfig::Area,

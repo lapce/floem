@@ -12,13 +12,14 @@ use peniko::{
     kurbo::{Affine, Point, Rect, Shape},
     BrushRef, Color, GradientKind,
 };
-use peniko::{BlendMode, Compose, Mix, RadialGradientPosition};
+use peniko::{BlendMode, Blob, Compose, ImageAlphaType, ImageData, Mix, RadialGradientPosition};
 use resvg::tiny_skia::StrokeDash;
 use softbuffer::{Context, Surface};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::rc::Rc;
+use std::sync::Arc;
 use swash::scale::image::Content;
 use swash::scale::{Render, ScaleContext, Source, StrikeWith};
 use swash::zeno::Format;
@@ -664,6 +665,7 @@ pub struct TinySkiaRenderer<W> {
     cache_color: CacheColor,
     transform: Affine,
     window_scale: f64,
+    capture: bool,
     layers: Vec<Layer>,
     font_embolden: f32,
 }
@@ -707,6 +709,7 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
             surface,
             transform: Affine::IDENTITY,
             window_scale: scale,
+            capture: false,
             cache_color: CacheColor(false),
             layers: vec![main_layer],
             font_embolden,
@@ -753,10 +756,12 @@ fn to_point(point: Point) -> tiny_skia::Point {
 impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle> Renderer
     for TinySkiaRenderer<W>
 {
-    fn begin(&mut self, _capture: bool) {
+    fn begin(&mut self, capture: bool) {
+        self.capture = capture;
         assert!(self.layers.len() == 1);
+        self.transform = Affine::IDENTITY;
         let first_layer = self.layers.last_mut().unwrap();
-        first_layer.pixmap.fill(tiny_skia::Color::WHITE);
+        first_layer.pixmap.fill(tiny_skia::Color::TRANSPARENT);
         first_layer.clip = None;
         first_layer.transform = Affine::IDENTITY;
     }
@@ -822,6 +827,18 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
 
         // Swap the cache color.
         self.cache_color = CacheColor(!self.cache_color.0);
+
+        if self.capture {
+            let pixmap = &self.layers.last().unwrap().pixmap;
+            let data = pixmap.data().to_vec();
+            return Some(peniko::ImageBrush::new(ImageData {
+                data: Blob::new(Arc::new(data)),
+                format: peniko::ImageFormat::Rgba8,
+                alpha_type: ImageAlphaType::AlphaPremultiplied,
+                width: pixmap.width(),
+                height: pixmap.height(),
+            }));
+        }
 
         let mut buffer = self
             .surface

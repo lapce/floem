@@ -321,9 +321,9 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         move |_cx, KeyboardEvent { modifiers, key, .. }| {
             if *key == Key::Named(NamedKey::F11) {
                 floem::action::inspect();
-            } else if *key == Key::Character("q".into()) && modifiers.contains(Modifiers::META) {
+            } else if *key == Key::Character("q".into()) && modifiers.contains(OS_MOD) {
                 floem::quit_app();
-            } else if *key == Key::Character("w".into()) && modifiers.contains(Modifiers::META) {
+            } else if *key == Key::Character("w".into()) && modifiers.contains(OS_MOD) {
                 floem::close_window(window_id);
             }
         },

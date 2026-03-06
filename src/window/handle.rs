@@ -839,6 +839,7 @@ impl WindowHandle {
         let post_layout = Instant::now();
         let window = self.paint();
         let end = Instant::now();
+        let window_size = self.paint_state.renderer().size() / self.window_state.effective_scale();
 
         let capture = Capture {
             start,
@@ -849,8 +850,7 @@ impl WindowHandle {
             taffy_node_count: self.id.taffy().borrow().total_node_count(),
             taffy_depth: get_taffy_depth(self.id.taffy(), taffy_root_node),
             window,
-            window_size: self.size.get_untracked() / self.window_state.user_scale,
-            scale: self.window_state.effective_scale(),
+            window_size,
             root: Rc::new(root),
             state: self.window_state.capture.take().unwrap(),
             renderer: self.paint_state.renderer().debug_info(),
