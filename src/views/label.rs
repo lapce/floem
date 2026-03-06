@@ -167,7 +167,7 @@ impl TextLayoutData {
         let mut origin = content_rect.origin();
         self.with_effective_text_layout(|layout| {
             let (min_y, max_y) = layout
-                .visual_bounds_y()
+                .centering_bounds_y()
                 .map(|(min_y, max_y)| (min_y as f64, max_y as f64))
                 .unwrap_or((0.0, layout.size().height));
             let text_height = (max_y - min_y).max(0.0);

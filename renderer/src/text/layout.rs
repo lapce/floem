@@ -733,6 +733,33 @@ impl TextLayout {
         }
     }
 
+    /// Returns vertical bounds suitable for optical centering that exclude descenders.
+    ///
+    /// Values are in layout-local coordinates. The top bound is derived from
+    /// each line's ascent, while the bottom bound is clamped to the baseline
+    /// instead of the full line box so descenders do not affect centering.
+    pub fn centering_bounds_y(&self) -> Option<(f32, f32)> {
+        if self.layout.is_empty() {
+            return None;
+        }
+
+        let mut min_y = f32::INFINITY;
+        let mut max_y = f32::NEG_INFINITY;
+        for i in 0..self.layout.len() {
+            if let Some(line) = self.layout.get(i) {
+                let m = line.metrics();
+                min_y = min_y.min(m.baseline - m.ascent);
+                max_y = max_y.max(m.baseline);
+            }
+        }
+
+        if min_y.is_finite() && max_y.is_finite() {
+            Some((min_y, max_y))
+        } else {
+            None
+        }
+    }
+
     pub fn clear_size(&mut self) {
         self.width_opt = None;
         self.height_opt = None;
@@ -804,6 +831,17 @@ mod tests {
 
         layout.set_text("second", default_attrs(), None);
         assert_eq!(layout.text(), "second");
+    }
+
+    #[test]
+    fn centering_bounds_exclude_descenders() {
+        let layout = make("gy");
+        let (visual_min, visual_max) = layout.visual_bounds_y().unwrap();
+        let (center_min, center_max) = layout.centering_bounds_y().unwrap();
+
+        assert!(center_min >= visual_min);
+        assert!(center_min < center_max);
+        assert!(center_max < visual_max);
     }
 
     // ========================== Paragraph lines ==========================
