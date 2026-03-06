@@ -210,6 +210,33 @@ struct Layer {
     cache_color: CacheColor,
 }
 impl Layer {
+    fn device_transform(&self) -> Affine {
+        Affine::scale(self.window_scale) * self.transform
+    }
+
+    fn scale_components(&self) -> (f64, f64, f64) {
+        let coeffs = self.device_transform().as_coeffs();
+        let scale_x = coeffs[0].hypot(coeffs[1]);
+        let scale_y = coeffs[2].hypot(coeffs[3]);
+        let uniform = (scale_x + scale_y) * 0.5;
+        (scale_x, scale_y, uniform)
+    }
+
+    fn normalized_linear_transform(&self, include_translation: bool) -> Affine {
+        let device = self.device_transform().as_coeffs();
+        let (scale_x, scale_y, _) = self.scale_components();
+        let tx = if include_translation { device[4] } else { 0.0 };
+        let ty = if include_translation { device[5] } else { 0.0 };
+        Affine::new([
+            if scale_x != 0.0 { device[0] / scale_x } else { 0.0 },
+            if scale_x != 0.0 { device[1] / scale_x } else { 0.0 },
+            if scale_y != 0.0 { device[2] / scale_y } else { 0.0 },
+            if scale_y != 0.0 { device[3] / scale_y } else { 0.0 },
+            tx,
+            ty,
+        ])
+    }
+
     /// the img_rect should already be in the correct transformed space along with the window_scale applied
     fn clip_rect(&self, img_rect: Rect) -> Option<tiny_skia::Rect> {
         if let Some(clip) = self.clip {
@@ -252,7 +279,12 @@ impl Layer {
         }
     }
 
-    fn render_pixmap_rect(&mut self, pixmap: &Pixmap, rect: tiny_skia::Rect) {
+    fn render_pixmap_rect(
+        &mut self,
+        pixmap: &Pixmap,
+        rect: tiny_skia::Rect,
+        transform: Transform,
+    ) {
         let paint = Paint {
             shader: Pattern::new(
                 pixmap.as_ref(),
@@ -270,7 +302,7 @@ impl Layer {
         self.pixmap.fill_rect(
             rect,
             &paint,
-            self.skia_transform(),
+            transform,
             self.clip.is_some().then_some(&self.mask),
         );
     }
@@ -279,12 +311,13 @@ impl Layer {
         &mut self,
         pixmap: &Pixmap,
         rect: tiny_skia::Rect,
+        transform: Transform,
         paint: Option<Paint<'static>>,
     ) {
         let paint = if let Some(paint) = paint {
             paint
         } else {
-            return self.render_pixmap_rect(pixmap, rect);
+            return self.render_pixmap_rect(pixmap, rect, transform);
         };
 
         let mut colored_bg = try_ret!(Pixmap::new(pixmap.width(), pixmap.height()));
@@ -303,11 +336,11 @@ impl Layer {
         let mask = Mask::from_pixmap(pixmap.as_ref(), MaskType::Alpha);
         colored_bg.apply_mask(&mask);
 
-        self.render_pixmap_rect(&colored_bg, rect);
+        self.render_pixmap_rect(&colored_bg, rect, transform);
     }
 
     fn skia_transform(&self) -> Transform {
-        skia_transform(self.transform, self.window_scale as f32)
+        skia_transform(self.device_transform())
     }
 }
 impl Layer {
@@ -350,11 +383,7 @@ impl Layer {
     }
 
     fn clip(&mut self, shape: &impl Shape) {
-        self.clip = Some(
-            self.transform
-                .then_scale(self.window_scale)
-                .transform_rect_bbox(shape.bounding_box()),
-        );
+        self.clip = Some(self.device_transform().transform_rect_bbox(shape.bounding_box()));
         let path = try_ret!(shape_to_path(shape));
         self.mask.clear();
         self.mask
@@ -429,27 +458,18 @@ impl Layer {
     }
 
     fn draw_text(&mut self, text_layout: &TextLayout, pos: impl Into<Point>, font_embolden: f32) {
-        // this pos is relative to the current transform, but not the current window scale.
-        // That is why we remove the window scale from the clip below
         let pos: Point = pos.into();
         let clip = self.clip;
-        let undo_transform = |r| {
-            Affine::scale(self.window_scale)
-                .inverse()
-                .transform_rect_bbox(r)
-        };
-        let scaled_clip = clip.map(undo_transform);
-
-        // we manually handle the offset so that the glyph_x and y can be scaled by the window_scale
-        let offset = self.transform.translation();
-        let transform = self.transform * Affine::translate((-offset.x, -offset.y));
+        let (_, _, raster_scale) = self.scale_components();
+        let pos = self.device_transform() * pos;
+        let transform = self.normalized_linear_transform(false);
 
         let layout = text_layout.parley_layout();
 
         for line in layout.lines() {
             let metrics = line.metrics();
-            if let Some(rect) = scaled_clip {
-                let y = pos.y + offset.y + metrics.baseline as f64;
+            if let Some(rect) = clip {
+                let y = pos.y + metrics.baseline as f64 * raster_scale;
                 if y + (metrics.line_height as f64) < rect.y0 {
                     continue;
                 }
@@ -490,18 +510,16 @@ impl Layer {
                 let skew = synthesis.skew();
 
                 for glyph in glyph_run.positioned_glyphs() {
-                    let x = glyph.x + pos.x as f32 + offset.x as f32;
-                    let y = glyph.y + pos.y as f32 + offset.y as f32;
+                    let glyph_x = pos.x as f32 + glyph.x * raster_scale as f32;
+                    let glyph_y = pos.y as f32 + glyph.y * raster_scale as f32;
 
-                    if let Some(rect) = scaled_clip {
-                        if x as f64 > rect.x1 {
+                    if let Some(rect) = clip {
+                        if glyph_x as f64 > rect.x1 {
                             break;
                         }
                     }
 
-                    let glyph_x = x * self.window_scale as f32;
-                    let glyph_y = y * self.window_scale as f32;
-                    let scaled_font_size = font_size * self.window_scale as f32;
+                    let scaled_font_size = font_size * raster_scale as f32;
 
                     let (cache_key, new_x, new_y) = GlyphCacheKey::new(
                         font_blob_id,
@@ -546,10 +564,18 @@ impl Layer {
         rect: Rect,
         brush: Option<impl Into<BrushRef<'b>>>,
     ) {
-        let width = (rect.width() * self.window_scale).round() as u32;
-        let height = (rect.height() * self.window_scale).round() as u32;
-
-        let rect = try_ret!(to_skia_rect(rect));
+        let (scale_x, scale_y, _) = self.scale_components();
+        let device_transform = self.device_transform();
+        let normalized_transform = affine_to_skia(self.normalized_linear_transform(false));
+        let origin = device_transform * rect.origin();
+        let width = (rect.width() * scale_x.abs()).round().max(1.0) as u32;
+        let height = (rect.height() * scale_y.abs()).round().max(1.0) as u32;
+        let rect = try_ret!(tiny_skia::Rect::from_xywh(
+            origin.x as f32,
+            origin.y as f32,
+            width as f32,
+            height as f32,
+        ));
 
         let paint = brush.and_then(|brush| brush_to_paint(brush));
 
@@ -557,7 +583,7 @@ impl Layer {
             if let Some((color, non_colored_svg_pixmap)) = ic.get_mut(svg.hash) {
                 *color = self.cache_color;
                 let pixmap = non_colored_svg_pixmap.clone();
-                self.render_pixmap_with_paint(&pixmap, rect, paint.clone());
+                self.render_pixmap_with_paint(&pixmap, rect, normalized_transform, paint.clone());
                 // return
                 true
             } else {
@@ -575,7 +601,7 @@ impl Layer {
         );
         resvg::render(svg.tree, svg_transform, &mut non_colored_svg.as_mut());
 
-        self.render_pixmap_with_paint(&non_colored_svg, rect, paint);
+        self.render_pixmap_with_paint(&non_colored_svg, rect, normalized_transform, paint);
 
         IMAGE_CACHE.with_borrow_mut(|ic| {
             ic.insert(
@@ -586,12 +612,21 @@ impl Layer {
     }
 
     fn draw_img(&mut self, img: Img<'_>, rect: Rect) {
-        let rect = try_ret!(to_skia_rect(rect));
+        let (scale_x, scale_y, _) = self.scale_components();
+        let device_transform = self.device_transform();
+        let normalized_transform = affine_to_skia(self.normalized_linear_transform(false));
+        let origin = device_transform * rect.origin();
+        let rect = try_ret!(tiny_skia::Rect::from_xywh(
+            origin.x as f32,
+            origin.y as f32,
+            (rect.width() * scale_x.abs()).max(1.0) as f32,
+            (rect.height() * scale_y.abs()).max(1.0) as f32,
+        ));
         if IMAGE_CACHE.with_borrow_mut(|ic| {
             if let Some((color, pixmap)) = ic.get_mut(img.hash) {
                 *color = self.cache_color;
                 let pixmap = pixmap.clone();
-                self.render_pixmap_rect(&pixmap, rect);
+                self.render_pixmap_rect(&pixmap, rect, normalized_transform);
                 // return
                 true
             } else {
@@ -614,7 +649,7 @@ impl Layer {
                 .to_color_u8();
         }
 
-        self.render_pixmap_rect(&pixmap, rect);
+        self.render_pixmap_rect(&pixmap, rect, normalized_transform);
 
         IMAGE_CACHE.with_borrow_mut(|ic| {
             ic.insert(img.hash.to_owned(), (self.cache_color, Rc::new(pixmap)))
@@ -1101,7 +1136,7 @@ fn apply_layer(layer: &Layer, parent: &mut Layer) {
     parent.transform *= layer.transform;
 }
 
-fn skia_transform(affine: Affine, window_scale: f32) -> Transform {
+fn affine_to_skia(affine: Affine) -> Transform {
     let transform = affine.as_coeffs();
     Transform::from_row(
         transform[0] as f32,
@@ -1111,7 +1146,10 @@ fn skia_transform(affine: Affine, window_scale: f32) -> Transform {
         transform[4] as f32,
         transform[5] as f32,
     )
-    .post_scale(window_scale, window_scale)
+}
+
+fn skia_transform(affine: Affine) -> Transform {
+    affine_to_skia(affine)
 }
 
 fn skia_transform_with_scaled_translation(

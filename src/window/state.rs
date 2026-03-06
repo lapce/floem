@@ -101,7 +101,7 @@ pub struct WindowState {
     pub(crate) os_scale: f64,
     /// The user-controlled zoom factor for the window.
     ///
-    /// This is an application-level scale, distinct from DPI. It affects:
+    /// This is an window-level scale, distinct from DPI. It affects:
     /// - layout: the root layout space is divided by this value so views lay out in zoomed logical units
     /// - rendering: combines with [`Self::os_scale`] to produce the renderer scale
     /// - events: combines with [`Self::os_scale`] so pointer/file-drag coordinates resolve into the
