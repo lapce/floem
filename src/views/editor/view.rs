@@ -1397,7 +1397,11 @@ fn editor_content(
                 },
             )
             .on_event_cont(listener::PointerMove, move |_cx, pu| {
-                editor.get_untracked().pointer_move(&pu.current);
+                let editor = editor.get_untracked();
+                if editor.active.get_untracked() {
+                    id.request_paint();
+                }
+                editor.pointer_move(&pu.current);
             })
             .on_event_cont(
                 listener::PointerUp,
