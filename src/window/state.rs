@@ -90,7 +90,23 @@ pub struct WindowState {
     /// Set of ViewIds that have IsFixed style. When root_size changes,
     /// we request layout on these views directly instead of traversing the tree.
     pub(crate) fixed_elements: FxHashSet<ViewId>,
-    pub(crate) scale: f64,
+    /// The OS-provided DPI scale for this window.
+    ///
+    /// This comes from the platform/windowing backend and changes when the window
+    /// moves between monitors with different DPI settings. It does not change layout
+    /// coordinates directly. Instead, it affects:
+    /// - rendering: converts logical units to physical pixels for the renderer/surface
+    /// - events: converts incoming physical event coordinates into the window's logical space
+    /// - layout: indirectly, because `root_size` is stored in OS-logical units derived from it
+    pub(crate) os_scale: f64,
+    /// The user-controlled zoom factor for the window.
+    ///
+    /// This is an application-level scale, distinct from DPI. It affects:
+    /// - layout: the root layout space is divided by this value so views lay out in zoomed logical units
+    /// - rendering: combines with [`Self::os_scale`] to produce the renderer scale
+    /// - events: combines with [`Self::os_scale`] so pointer/file-drag coordinates resolve into the
+    ///   same logical space used by layout and the box tree
+    pub(crate) user_scale: f64,
     pub(crate) scheduled_updates: Vec<FrameUpdate>,
     pub(crate) style_dirty: FxHashMap<ViewId, StyleReason>,
     pub(crate) request_paint: bool,
@@ -148,7 +164,7 @@ pub struct WindowState {
 }
 
 impl WindowState {
-    pub fn new(root_view_id: ViewId, os_theme: Option<Theme>) -> Self {
+    pub fn new(root_view_id: ViewId, os_theme: Option<Theme>, os_scale: f64) -> Self {
         let theme = default_theme(os_theme.unwrap_or(Theme::Light));
         let inherited = Self::extract_inherited_props(&theme);
         let box_tree = VIEW_STORAGE.with_borrow_mut(|s| s.box_tree(root_view_id));
@@ -162,7 +178,8 @@ impl WindowState {
             box_tree,
             pointer_capture_target: PointerCaptureMap::new(),
             pending_pointer_capture_target: PointerCaptureMap::new(),
-            scale: 1.0,
+            os_scale,
+            user_scale: 1.0,
             root_size: Size::ZERO,
             fixed_elements: FxHashSet::default(),
             screen_size_bp: ScreenSizeBp::Xs,
@@ -209,6 +226,22 @@ impl WindowState {
     pub(crate) fn invalidate_focus_nav_cache(&mut self) {
         self.focus_nav_cache.built = false;
         self.focus_nav_cache.entries.clear();
+    }
+
+    /// Returns the effective window scale used when converting between logical
+    /// layout units and physical pixels.
+    ///
+    /// This is the scale that rendering and input coordinate conversion should use.
+    /// It combines:
+    /// - [`Self::os_scale`]: platform DPI scaling
+    /// - [`Self::user_scale`]: application zoom
+    ///
+    /// Layout should usually not use this directly. Layout operates in logical
+    /// coordinates and already accounts for user zoom by dividing the root layout
+    /// space by [`Self::user_scale`].
+    #[inline]
+    pub fn effective_scale(&self) -> f64 {
+        self.os_scale * self.user_scale
     }
 
     #[inline]
@@ -642,7 +675,7 @@ impl WindowState {
     }
 
     fn apply_fixed_element_styles(&self) {
-        let root_size = self.root_size / self.scale;
+        let root_size = self.root_size / self.user_scale;
         let fixed_views: SmallVec<[ViewId; 32]> = self.fixed_elements.iter().copied().collect();
         VIEW_STORAGE.with_borrow(|s| {
             for view_id in fixed_views {
@@ -714,8 +747,12 @@ impl WindowState {
             .compute_layout_with_measure(
                 self.root_layout_node,
                 taffy::prelude::Size {
-                    width: AvailableSpace::Definite((self.root_size.width / self.scale) as f32),
-                    height: AvailableSpace::Definite((self.root_size.height / self.scale) as f32),
+                    width: AvailableSpace::Definite(
+                        (self.root_size.width / self.user_scale) as f32,
+                    ),
+                    height: AvailableSpace::Definite(
+                        (self.root_size.height / self.user_scale) as f32,
+                    ),
                 },
                 |known_dimensions, available_space, node_id, node_context, style| match node_context
                 {
@@ -1064,7 +1101,7 @@ impl WindowState {
     /// Running this after local-transform updates keeps the adjustment stable for both full
     /// layout sync and incremental box-tree updates.
     fn apply_fixed_positioning_transforms(&self) {
-        let root_size = self.root_size / self.scale;
+        let root_size = self.root_size / self.user_scale;
         let positions: SmallVec<[(ElementId, Point); 32]> = VIEW_STORAGE.with_borrow(|s| {
             self.fixed_elements
                 .iter()
