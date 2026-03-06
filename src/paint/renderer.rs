@@ -71,10 +71,33 @@ pub enum Renderer {
     TinySkia(TinySkiaRenderer<Arc<dyn Window>>),
     /// Uninitialized renderer, used to allow the renderer to be created lazily
     /// All operations on this renderer are no-ops
-    Uninitialized { size: Size },
+    Uninitialized {
+        size: Size,
+    },
 }
 
 impl Renderer {
+    #[cfg(feature = "vello")]
+    pub(crate) fn is_vger(&self) -> bool {
+        false
+    }
+
+    #[cfg(not(feature = "vello"))]
+    pub(crate) fn is_vger(&self) -> bool {
+        matches!(self, Renderer::Vger(_))
+    }
+
+    pub(crate) fn uses_layer_clip(&self) -> bool {
+        match self {
+            #[cfg(feature = "vello")]
+            Renderer::Vello(_) => true,
+            #[cfg(not(feature = "vello"))]
+            Renderer::Vger(_) => false,
+            Renderer::TinySkia(_) => true,
+            Renderer::Uninitialized { .. } => false,
+        }
+    }
+
     #[allow(unused_variables)]
     pub fn new(
         window: Arc<dyn Window>,

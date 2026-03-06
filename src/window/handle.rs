@@ -461,7 +461,8 @@ impl WindowHandle {
         self.window_state.update_screen_size_bp(size);
         self.event(Event::Window(WindowEvent::Resized(size)));
         let scale = self.window_state.effective_scale();
-        self.paint_state.resize(scale, size * self.window_state.os_scale);
+        self.paint_state
+            .resize(scale, size * self.window_state.os_scale);
 
         let is_maximized = self.window.is_maximized();
         if is_maximized != self.is_maximized {
@@ -1470,7 +1471,7 @@ impl WindowHandle {
         use raw_window_handle::HasWindowHandle;
         use raw_window_handle::RawWindowHandle;
 
-                        if let RawWindowHandle::Win32(handle) = self.window.window_handle().unwrap().as_raw() {
+        if let RawWindowHandle::Win32(handle) = self.window.window_handle().unwrap().as_raw() {
             unsafe {
                 menu.show_context_menu_for_hwnd(
                     isize::from(handle.hwnd),

@@ -319,8 +319,8 @@ impl ApplicationHandle {
                 self.close_window(window_id, event_loop);
             }
             WindowEvent::DragDropped { paths, position } => {
-                let logical_pos = PhysicalPosition::new(position.x, position.y)
-                    .to_logical(event_scale);
+                let logical_pos =
+                    PhysicalPosition::new(position.x, position.y).to_logical(event_scale);
                 let paths_rc: std::rc::Rc<[std::path::PathBuf]> = paths.clone().into();
                 window_handle.file_drag_dropped(FileDragEvent::Drop(
                     dropped_file::FileDragDropped {
@@ -330,13 +330,13 @@ impl ApplicationHandle {
                 ));
             }
             WindowEvent::DragEntered { paths, position } => {
-                let logical_pos = PhysicalPosition::new(position.x, position.y)
-                    .to_logical(event_scale);
+                let logical_pos =
+                    PhysicalPosition::new(position.x, position.y).to_logical(event_scale);
                 window_handle.file_drag_start(paths, Point::new(logical_pos.x, logical_pos.y));
             }
             WindowEvent::DragMoved { position } => {
-                let logical_pos = PhysicalPosition::new(position.x, position.y)
-                    .to_logical(event_scale);
+                let logical_pos =
+                    PhysicalPosition::new(position.x, position.y).to_logical(event_scale);
                 window_handle.file_drag_move(Point::new(logical_pos.x, logical_pos.y));
             }
             WindowEvent::DragLeft { .. } => {

@@ -203,11 +203,8 @@ struct Layer {
     mask: Mask,
     /// this transform should generally only be used when making a draw call to skia
     transform: Affine,
-    // the transform that the layer was pushed with that will be used when applying the layer
-    combine_transform: Affine,
     blend_mode: BlendMode,
     alpha: f32,
-    window_scale: f64,
     cache_color: CacheColor,
 }
 impl Layer {
@@ -229,23 +226,36 @@ impl Layer {
         let tx = if include_translation { device[4] } else { 0.0 };
         let ty = if include_translation { device[5] } else { 0.0 };
         Affine::new([
-            if scale_x != 0.0 { device[0] / scale_x } else { 0.0 },
-            if scale_x != 0.0 { device[1] / scale_x } else { 0.0 },
-            if scale_y != 0.0 { device[2] / scale_y } else { 0.0 },
-            if scale_y != 0.0 { device[3] / scale_y } else { 0.0 },
+            if scale_x != 0.0 {
+                device[0] / scale_x
+            } else {
+                0.0
+            },
+            if scale_x != 0.0 {
+                device[1] / scale_x
+            } else {
+                0.0
+            },
+            if scale_y != 0.0 {
+                device[2] / scale_y
+            } else {
+                0.0
+            },
+            if scale_y != 0.0 {
+                device[3] / scale_y
+            } else {
+                0.0
+            },
             tx,
             ty,
         ])
     }
 
-    /// the img_rect should already be in the correct transformed space along with the window_scale applied
-    fn clip_rect(&self, img_rect: Rect) -> Option<tiny_skia::Rect> {
-        if let Some(clip) = self.clip {
-            let clip = clip.intersect(img_rect);
-            to_skia_rect(clip)
-        } else {
-            to_skia_rect(img_rect)
-        }
+    fn intersects_clip(&self, img_rect: Rect, transform: Affine) -> bool {
+        let device_rect = transform.transform_rect_bbox(img_rect);
+        self.clip
+            .map(|clip| to_skia_rect(clip.intersect(device_rect)).is_some())
+            .unwrap_or(true)
     }
 
     /// Renders the pixmap at the position and transforms it with the given transform.
@@ -255,6 +265,9 @@ impl Layer {
             (x, y),
             (img_pixmap.width() as f64, img_pixmap.height() as f64),
         );
+        if !self.intersects_clip(img_rect, transform) {
+            return;
+        }
         let paint = Paint {
             shader: Pattern::new(
                 img_pixmap.as_ref(),
@@ -275,17 +288,24 @@ impl Layer {
             transform[4] as f32,
             transform[5] as f32,
         );
-        if let Some(rect) = self.clip_rect(img_rect) {
-            self.pixmap.fill_rect(rect, &paint, transform, None);
-        }
+        let Some(rect) = to_skia_rect(img_rect) else {
+            return;
+        };
+        self.pixmap.fill_rect(
+            rect,
+            &paint,
+            transform,
+            self.clip.is_some().then_some(&self.mask),
+        );
     }
 
-    fn render_pixmap_rect(
-        &mut self,
-        pixmap: &Pixmap,
-        rect: tiny_skia::Rect,
-        transform: Transform,
-    ) {
+    fn render_pixmap_rect(&mut self, pixmap: &Pixmap, rect: Rect, transform: Affine) {
+        if !self.intersects_clip(rect, transform) {
+            return;
+        }
+        let Some(rect) = to_skia_rect(rect) else {
+            return;
+        };
         let paint = Paint {
             shader: Pattern::new(
                 pixmap.as_ref(),
@@ -303,7 +323,7 @@ impl Layer {
         self.pixmap.fill_rect(
             rect,
             &paint,
-            transform,
+            affine_to_skia(transform),
             self.clip.is_some().then_some(&self.mask),
         );
     }
@@ -311,8 +331,8 @@ impl Layer {
     fn render_pixmap_with_paint(
         &mut self,
         pixmap: &Pixmap,
-        rect: tiny_skia::Rect,
-        transform: Transform,
+        rect: Rect,
+        transform: Affine,
         paint: Option<Paint<'static>>,
     ) {
         let paint = if let Some(paint) = paint {
@@ -345,36 +365,29 @@ impl Layer {
     }
 }
 impl Layer {
-    /// The combine transform should be the transform that the layer is pushed with without combining with the previous transform. It will be used when combining layers to offset/transform this layer into the parent with the parent transform
     fn new(
         blend: impl Into<peniko::BlendMode>,
         alpha: f32,
-        combine_transform: Affine,
+        transform: Affine,
         clip: &impl Shape,
-        window_scale: f64,
+        width: u32,
+        height: u32,
         cache_color: CacheColor,
     ) -> Result<Self, anyhow::Error> {
-        let transform = Affine::IDENTITY;
-        let bbox = clip.bounding_box();
-        let scaled_box = Affine::scale(window_scale).transform_rect_bbox(bbox);
-        let width = scaled_box.width() as u32;
-        let height = scaled_box.height() as u32;
         let mut mask = Mask::new(width, height).ok_or_else(|| anyhow!("unable to create mask"))?;
         mask.fill_path(
             &shape_to_path(clip).ok_or_else(|| anyhow!("unable to create clip shape"))?,
             FillRule::Winding,
             false,
-            Transform::from_scale(window_scale as f32, window_scale as f32),
+            affine_to_skia(transform),
         );
         Ok(Self {
             pixmap: Pixmap::new(width, height).ok_or_else(|| anyhow!("unable to create pixmap"))?,
             mask,
-            clip: Some(bbox),
+            clip: Some(transform.transform_rect_bbox(clip.bounding_box())),
             transform,
-            combine_transform,
             blend_mode: blend.into(),
             alpha,
-            window_scale,
             cache_color,
         })
     }
@@ -384,7 +397,10 @@ impl Layer {
     }
 
     fn clip(&mut self, shape: &impl Shape) {
-        self.clip = Some(self.device_transform().transform_rect_bbox(shape.bounding_box()));
+        self.clip = Some(
+            self.device_transform()
+                .transform_rect_bbox(shape.bounding_box()),
+        );
         let path = try_ret!(shape_to_path(shape));
         self.mask.clear();
         self.mask
@@ -566,17 +582,9 @@ impl Layer {
         brush: Option<impl Into<BrushRef<'b>>>,
     ) {
         let (scale_x, scale_y, _) = self.scale_components();
-        let device_transform = self.device_transform();
-        let normalized_transform = affine_to_skia(self.normalized_linear_transform(false));
-        let origin = device_transform * rect.origin();
         let width = (rect.width() * scale_x.abs()).round().max(1.0) as u32;
         let height = (rect.height() * scale_y.abs()).round().max(1.0) as u32;
-        let rect = try_ret!(tiny_skia::Rect::from_xywh(
-            origin.x as f32,
-            origin.y as f32,
-            width as f32,
-            height as f32,
-        ));
+        let transform = self.device_transform();
 
         let paint = brush.and_then(|brush| brush_to_paint(brush));
 
@@ -584,7 +592,7 @@ impl Layer {
             if let Some((color, non_colored_svg_pixmap)) = ic.get_mut(svg.hash) {
                 *color = self.cache_color;
                 let pixmap = non_colored_svg_pixmap.clone();
-                self.render_pixmap_with_paint(&pixmap, rect, normalized_transform, paint.clone());
+                self.render_pixmap_with_paint(&pixmap, rect, transform, paint.clone());
                 // return
                 true
             } else {
@@ -602,7 +610,7 @@ impl Layer {
         );
         resvg::render(svg.tree, svg_transform, &mut non_colored_svg.as_mut());
 
-        self.render_pixmap_with_paint(&non_colored_svg, rect, normalized_transform, paint);
+        self.render_pixmap_with_paint(&non_colored_svg, rect, transform, paint);
 
         IMAGE_CACHE.with_borrow_mut(|ic| {
             ic.insert(
@@ -613,21 +621,12 @@ impl Layer {
     }
 
     fn draw_img(&mut self, img: Img<'_>, rect: Rect) {
-        let (scale_x, scale_y, _) = self.scale_components();
-        let device_transform = self.device_transform();
-        let normalized_transform = affine_to_skia(self.normalized_linear_transform(false));
-        let origin = device_transform * rect.origin();
-        let rect = try_ret!(tiny_skia::Rect::from_xywh(
-            origin.x as f32,
-            origin.y as f32,
-            (rect.width() * scale_x.abs()).max(1.0) as f32,
-            (rect.height() * scale_y.abs()).max(1.0) as f32,
-        ));
+        let transform = self.device_transform();
         if IMAGE_CACHE.with_borrow_mut(|ic| {
             if let Some((color, pixmap)) = ic.get_mut(img.hash) {
                 *color = self.cache_color;
                 let pixmap = pixmap.clone();
-                self.render_pixmap_rect(&pixmap, rect, normalized_transform);
+                self.render_pixmap_rect(&pixmap, rect, transform);
                 // return
                 true
             } else {
@@ -650,7 +649,7 @@ impl Layer {
                 .to_color_u8();
         }
 
-        self.render_pixmap_rect(&pixmap, rect, normalized_transform);
+        self.render_pixmap_rect(&pixmap, rect, transform);
 
         IMAGE_CACHE.with_borrow_mut(|ic| {
             ic.insert(img.hash.to_owned(), (self.cache_color, Rc::new(pixmap)))
@@ -699,9 +698,7 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
             clip: None,
             alpha: 1.,
             transform: Affine::IDENTITY,
-            combine_transform: Affine::IDENTITY,
             blend_mode: Mix::Normal.into(),
-            window_scale: scale,
             cache_color: CacheColor(false),
         };
         Ok(Self {
@@ -717,7 +714,7 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
     }
 
     pub fn resize(&mut self, width: u32, height: u32, scale: f64) {
-        if width != self.layers[0].pixmap.width() || height != self.layers[0].pixmap.width() {
+        if width != self.layers[0].pixmap.width() || height != self.layers[0].pixmap.height() {
             self.surface
                 .resize(
                     NonZeroU32::new(width).unwrap_or(NonZeroU32::new(1).unwrap()),
@@ -727,12 +724,10 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
             self.layers[0].pixmap = Pixmap::new(width, height).expect("unable to create pixmap");
             self.layers[0].mask = Mask::new(width, height).expect("unable to create mask");
         }
-        self.layers[0].window_scale = scale;
         self.window_scale = scale;
     }
 
     pub fn set_scale(&mut self, scale: f64) {
-        self.layers[0].window_scale = scale;
         self.window_scale = scale;
     }
 
@@ -871,9 +866,10 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
         if let Ok(res) = Layer::new(
             blend,
             alpha,
-            transform,
+            self.transform * transform,
             clip,
-            self.window_scale,
+            self.layers.last().unwrap().pixmap.width(),
+            self.layers.last().unwrap().pixmap.height(),
             self.cache_color,
         ) {
             self.layers.push(res);
@@ -1047,11 +1043,7 @@ fn apply_layer(layer: &Layer, parent: &mut Layer) {
                 ..Default::default()
             };
 
-            let transform = skia_transform_with_scaled_translation(
-                parent.transform * layer.combine_transform,
-                layer.window_scale as f32,
-                1.,
-            );
+            let transform = Transform::identity();
 
             let layer_pattern = Pattern::new(
                 layer.pixmap.as_ref(),
@@ -1089,11 +1081,7 @@ fn apply_layer(layer: &Layer, parent: &mut Layer) {
                 ..Default::default()
             };
 
-            let transform = skia_transform_with_scaled_translation(
-                parent.transform * layer.combine_transform,
-                layer.window_scale as f32,
-                1.,
-            );
+            let transform = Transform::identity();
             let layer_pattern = Pattern::new(
                 layer.pixmap.as_ref(),
                 SpreadMode::Pad,
@@ -1146,7 +1134,6 @@ fn apply_layer(layer: &Layer, parent: &mut Layer) {
             )
         }
     }
-    parent.transform *= layer.transform;
 }
 
 fn affine_to_skia(affine: Affine) -> Transform {
@@ -1163,23 +1150,6 @@ fn affine_to_skia(affine: Affine) -> Transform {
 
 fn skia_transform(affine: Affine) -> Transform {
     affine_to_skia(affine)
-}
-
-fn skia_transform_with_scaled_translation(
-    affine: Affine,
-    translation_scale: f32,
-    render_scale: f32,
-) -> Transform {
-    let transform = affine.as_coeffs();
-    Transform::from_row(
-        transform[0] as f32,
-        transform[1] as f32,
-        transform[2] as f32,
-        transform[3] as f32,
-        transform[4] as f32 * translation_scale,
-        transform[5] as f32 * translation_scale,
-    )
-    .post_scale(render_scale, render_scale)
 }
 
 #[cfg(test)]
@@ -1208,10 +1178,8 @@ mod tests {
             clip: None,
             mask: Mask::new(width, height).expect("failed to create mask"),
             transform: Affine::IDENTITY,
-            combine_transform: Affine::IDENTITY,
             blend_mode: Mix::Normal.into(),
             alpha: 1.0,
-            window_scale: 1.0,
             cache_color: CacheColor(false),
         }
     }
@@ -1227,6 +1195,35 @@ mod tests {
     /// but not the float strength value.
     fn clear_glyph_cache() {
         GLYPH_CACHE.with_borrow_mut(|gc| gc.clear());
+    }
+
+    fn pixel_rgba(layer: &Layer, x: u32, y: u32) -> (u8, u8, u8, u8) {
+        let idx = (y * layer.pixmap.width() + x) as usize;
+        let pixel = layer.pixmap.pixels()[idx];
+        (pixel.red(), pixel.green(), pixel.blue(), pixel.alpha())
+    }
+
+    #[test]
+    fn render_pixmap_rect_uses_transform_and_mask() {
+        let mut layer = make_layer(12, 12);
+        layer.transform = Affine::translate((4.0, 0.0));
+        layer.clip(&Rect::new(1.0, 0.0, 3.0, 4.0));
+
+        let mut src = Pixmap::new(2, 2).expect("failed to create src pixmap");
+        src.fill(tiny_skia::Color::from_rgba8(255, 0, 0, 255));
+
+        layer.render_pixmap_rect(
+            &src,
+            Rect::new(0.0, 0.0, 4.0, 4.0),
+            layer.device_transform(),
+        );
+
+        assert_eq!(pixel_rgba(&layer, 3, 1), (0, 0, 0, 0));
+        assert_eq!(pixel_rgba(&layer, 4, 1), (0, 0, 0, 0));
+        assert_eq!(pixel_rgba(&layer, 5, 1), (255, 0, 0, 255));
+        assert_eq!(pixel_rgba(&layer, 6, 1), (255, 0, 0, 255));
+        assert_eq!(pixel_rgba(&layer, 7, 1), (0, 0, 0, 0));
+        assert_eq!(pixel_rgba(&layer, 8, 1), (0, 0, 0, 0));
     }
 
     /// Visual test: renders text at three embolden strengths onto a single PNG.

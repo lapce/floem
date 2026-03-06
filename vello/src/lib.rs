@@ -297,9 +297,7 @@ impl Renderer for VelloRenderer {
 
     fn draw_text(&mut self, text_layout: &TextLayout, pos: impl Into<Point>) {
         let pos: Point = pos.into();
-        let transform = self
-            .device_transform()
-            .pre_translate((pos.x, pos.y).into());
+        let transform = self.device_transform().pre_translate((pos.x, pos.y).into());
 
         let layout = text_layout.parley_layout();
 
@@ -360,7 +358,7 @@ impl Renderer for VelloRenderer {
             &img.img,
             self.device_transform()
                 .pre_scale_non_uniform(scale_x, scale_y)
-                .pre_translate((translate_x, translate_y).into())
+                .pre_translate((translate_x, translate_y).into()),
         );
     }
 
