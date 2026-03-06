@@ -28,7 +28,7 @@ use crate::views::Label;
 use super::Style;
 use super::selectors::StyleSelectors;
 use super::transition::TransitionState;
-use super::values::{CombineResult, StyleMapValue, StylePropValue, StyleValue};
+use super::values::{StyleMapValue, StylePropValue, StyleValue};
 
 // ============================================================================
 // StyleClass
@@ -39,6 +39,15 @@ pub trait StyleClass: Default + Copy + 'static {
     fn class_ref() -> StyleClassRef {
         StyleClassRef { key: Self::key() }
     }
+}
+
+pub trait StyleDebugGroup: Default + Copy + 'static {
+    fn key() -> StyleKey;
+    fn group_ref() -> StyleDebugGroupRef {
+        StyleDebugGroupRef { key: Self::key() }
+    }
+    fn member_props() -> Vec<StyleKey>;
+    fn debug_view(style: &Style) -> Option<Box<dyn View>>;
 }
 
 #[derive(Debug, Clone)]
@@ -56,6 +65,34 @@ impl StyleClassInfo {
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct StyleClassRef {
+    pub key: StyleKey,
+}
+
+#[derive(Debug, Clone)]
+pub struct StyleDebugGroupInfo {
+    pub(crate) name: fn() -> &'static str,
+    pub(crate) inherited: bool,
+    pub(crate) member_props: fn() -> Vec<StyleKey>,
+    pub(crate) debug_view: fn(style: &Style) -> Option<Box<dyn View>>,
+}
+
+impl StyleDebugGroupInfo {
+    pub const fn new<Name>(
+        inherited: bool,
+        member_props: fn() -> Vec<StyleKey>,
+        debug_view: fn(style: &Style) -> Option<Box<dyn View>>,
+    ) -> Self {
+        StyleDebugGroupInfo {
+            name: || std::any::type_name::<Name>(),
+            inherited,
+            member_props,
+            debug_view,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct StyleDebugGroupRef {
     pub key: StyleKey,
 }
 
@@ -88,6 +125,43 @@ macro_rules! style_class {
     };
 }
 
+#[macro_export]
+macro_rules! style_debug_group {
+    ($(#[$meta:meta])* $v:vis $name:ident $(, inherited = $inherited:ident)?, members = [$($prop:ty),* $(,)?], view = $view:path) => {
+        $(#[$meta])*
+        #[derive(Default, Copy, Clone)]
+        $v struct $name;
+
+        impl $crate::style::StyleDebugGroup for $name {
+            fn key() -> $crate::style::StyleKey {
+                static INFO: $crate::style::StyleKeyInfo =
+                    $crate::style::StyleKeyInfo::DebugGroup(
+                        $crate::style::StyleDebugGroupInfo::new::<$name>(
+                            style_debug_group!(@inherited $($inherited)?),
+                            || vec![$(<$prop as $crate::style::StyleProp>::key()),*],
+                            $view,
+                        )
+                    );
+                $crate::style::StyleKey { info: &INFO }
+            }
+
+            fn member_props() -> Vec<$crate::style::StyleKey> {
+                vec![$(<$prop as $crate::style::StyleProp>::key()),*]
+            }
+
+            fn debug_view(style: &$crate::style::Style) -> Option<Box<dyn $crate::view::View>> {
+                $view(style)
+            }
+        }
+    };
+    (@inherited inherited) => {
+        true
+    };
+    (@inherited) => {
+        false
+    };
+}
+
 // ============================================================================
 // StyleProp
 // ============================================================================
@@ -104,8 +178,6 @@ pub trait StyleProp: Default + Copy + 'static {
 pub(crate) type InterpolateFn =
     fn(val1: &dyn Any, val2: &dyn Any, time: f64) -> Option<Rc<dyn Any>>;
 
-pub(crate) type CombineFn = fn(val1: Rc<dyn Any>, val2: Rc<dyn Any>) -> Rc<dyn Any>;
-
 /// Function pointer type for computing content hash of a style value.
 pub(crate) type HashAnyFn = fn(val: &dyn Any) -> u64;
 
@@ -121,7 +193,6 @@ pub struct StylePropInfo {
     pub(crate) interpolate: InterpolateFn,
     pub(crate) debug_any: fn(val: &dyn Any) -> String,
     pub(crate) debug_view: fn(val: &dyn Any) -> Option<Box<dyn View>>,
-    pub(crate) combine: CombineFn,
     pub(crate) transition_key: StyleKey,
     /// Computes a content-based hash for a style value.
     pub(crate) hash_any: HashAnyFn,
@@ -191,40 +262,6 @@ impl StylePropInfo {
                         "expected type {} for property {}",
                         type_name::<T>(),
                         std::any::type_name::<Name>(),
-                    )
-                }
-            },
-            combine: |val1, val2| {
-                if let (Some(v1), Some(v2)) = (
-                    val1.downcast_ref::<StyleMapValue<T>>(),
-                    val2.downcast_ref::<StyleMapValue<T>>(),
-                ) {
-                    match (v1, v2) {
-                        (StyleMapValue::Val(a), StyleMapValue::Val(b)) => match a.combine(b) {
-                            CombineResult::Other => val2,
-                            CombineResult::New(result) => {
-                                Rc::new(StyleMapValue::Val(result)) as Rc<dyn Any>
-                            }
-                        },
-                        (StyleMapValue::Unset, _) => val2,
-                        (_, StyleMapValue::Unset) => val2,
-                        (
-                            StyleMapValue::Val(a) | StyleMapValue::Animated(a),
-                            StyleMapValue::Animated(b) | StyleMapValue::Val(b),
-                        ) => match a.combine(b) {
-                            CombineResult::Other => val2,
-                            CombineResult::New(result) => {
-                                Rc::new(StyleMapValue::Animated(result)) as Rc<dyn Any>
-                            }
-                        },
-                    }
-                } else {
-                    panic!(
-                        "expected type {} for property {}. Got typeids {:?} and {:?}",
-                        type_name::<StyleMapValue<T>>(),
-                        std::any::type_name::<Name>(),
-                        val1.type_id(),
-                        val2.type_id()
                     )
                 }
             },
@@ -575,6 +612,7 @@ pub enum StyleKeyInfo {
     Prop(StylePropInfo),
     Selector(StyleSelectors),
     Class(StyleClassInfo),
+    DebugGroup(StyleDebugGroupInfo),
     /// Storage for context mapping closures.
     ContextMappings,
     /// Storage for parameterized structural selectors (`:first-child`, `:nth-child(...)`, etc.).
@@ -597,6 +635,7 @@ impl StyleKey {
         match self.info {
             StyleKeyInfo::Selector(selectors) => selectors.debug_string(),
             StyleKeyInfo::Transition
+            | StyleKeyInfo::DebugGroup(_)
             | StyleKeyInfo::ContextMappings
             | StyleKeyInfo::StructuralSelectors
             | StyleKeyInfo::ResponsiveSelectors => String::new(),
@@ -612,6 +651,7 @@ impl StyleKey {
             | StyleKeyInfo::StructuralSelectors
             | StyleKeyInfo::ResponsiveSelectors => false,
             StyleKeyInfo::Class(..) => true,
+            StyleKeyInfo::DebugGroup(v) => v.inherited,
             StyleKeyInfo::Prop(v) => v.inherited,
         }
     }
@@ -642,6 +682,7 @@ impl Debug for StyleKey {
             StyleKeyInfo::StructuralSelectors => write!(f, "StructuralSelectors"),
             StyleKeyInfo::ResponsiveSelectors => write!(f, "ResponsiveSelectors"),
             StyleKeyInfo::Class(v) => write!(f, "{}", (v.name)()),
+            StyleKeyInfo::DebugGroup(v) => write!(f, "{}", (v.name)()),
             StyleKeyInfo::Prop(v) => write!(f, "{}", (v.name)()),
         }
     }

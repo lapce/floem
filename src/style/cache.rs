@@ -503,6 +503,7 @@ impl Style {
                 StyleKeyInfo::ContextMappings
                 | StyleKeyInfo::StructuralSelectors
                 | StyleKeyInfo::ResponsiveSelectors
+                | StyleKeyInfo::DebugGroup(_)
                 | StyleKeyInfo::Transition => {
                     // Context mappings and transitions use pointer hash for identity
                     // since closures can't be meaningfully hashed

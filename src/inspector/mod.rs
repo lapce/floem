@@ -12,15 +12,12 @@ use crate::{
     inspector::data::CapturedDatas,
     platform::{Duration, Instant},
     prelude::*,
-    style::{
-        self, FontSize, OverflowX, OverflowY, Style, StyleClassRef, StyleCx, StyleKeyInfo,
-        StylePropRef, StyleThemeExt, Transition,
-    },
+    style::{OverflowX, OverflowY, Style, StyleCx, StyleThemeExt},
 };
 
 use std::{
     cell::Cell,
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fmt::Display,
     rc::Rc,
 };
@@ -37,7 +34,6 @@ pub struct CapturedView {
     children: Vec<Rc<CapturedView>>,
     direct_style: Style,
     keyboard_navigable: bool,
-    classes: Vec<StyleClassRef>,
     focused: bool,
 }
 
@@ -51,7 +47,6 @@ impl CapturedView {
         let focus = view_state.combined_style.builtin().set_focus();
         let focused = window_state.focus_state.current_path().last() == Some(&id.get_element_id());
         let custom_name = &view_state.debug_name;
-        let classes = view_state.classes.clone();
         let view = id.view();
         let view = view.borrow();
         let name = custom_name
@@ -72,7 +67,6 @@ impl CapturedView {
             direct_style: combined_style,
             keyboard_navigable: focus.allows_keyboard_navigation(),
             focused,
-            classes: classes.to_vec(),
             children: id
                 .children()
                 .into_iter()
@@ -353,9 +347,6 @@ fn selected_view(
             );
 
             let style_header = header("View Style");
-            let class_header = header("Classes");
-
-            let direct: HashSet<_> = view.direct_style.map.keys().copied().collect();
 
             let style = capture
                 .state
@@ -364,95 +355,16 @@ fn selected_view(
                 .cloned()
                 .unwrap_or_default();
 
-            let mut style_list = style
-                .map
-                .clone()
-                .into_iter()
-                .filter_map(|(p, v)| match p.info {
-                    style::StyleKeyInfo::Prop(..) => Some((StylePropRef { key: p }, v)),
-                    _ => None,
-                })
-                .map(|(p, v)| ((p, format!("{:?}", p.key)), v))
-                .collect::<Vec<_>>();
-
-            style_list.sort_unstable_by(|a, b| a.0.1.cmp(&b.0.1));
-
-            let style_list = Stack::vertical_from_iter(style_list.into_iter().enumerate().map(
-                |(idx, ((prop, name), value))| {
-                    let name = name.strip_prefix("floem::style::").unwrap_or(&name);
-                    let name = if direct.contains(&prop.key) {
-                        Label::new(name).into_any()
-                    } else {
-                        Stack::new((
-                            "Inherited".style(|s| {
-                                s.margin_right(5.0)
-                                    .border(1.)
-                                    .border_radius(5.0)
-                                    .border_color(palette::css::WHITE_SMOKE)
-                                    .with_context_opt::<FontSize, _>(|s, fs| s.font_size(fs * 0.8))
-                                    .with_theme(|s, t| {
-                                        s.color(t.text_muted()).padding(t.padding() / 2.)
-                                    })
-                            }),
-                            Label::new(name),
-                        ))
-                        .style(|s| s.items_center().justify_center())
-                        .into_any()
-                    };
-                    let mut v = (prop.info().debug_view)(&*value)
-                        .unwrap_or_else(|| Label::new((prop.info().debug_any)(&*value)).into_any());
-                    if let Some(transition) = style
-                        .map
-                        .get(&prop.info().transition_key)
-                        .map(|v| v.downcast_ref::<Transition>().unwrap().clone())
-                    {
-                        let transition = Stack::new((
-                            "Transition".style(|s| {
-                                s.margin_top(5.0)
-                                    .margin_right(5.0)
-                                    .border(1.)
-                                    .border_radius(5.0)
-                                    .padding(4.0)
-                                    .with_theme(|s, t| {
-                                        s.color(t.text_muted()).border_color(t.border())
-                                    })
-                                    .with_context_opt::<FontSize, _>(|s, fs| s.font_size(fs * 0.8))
-                            }),
-                            transition.debug_view(),
-                        ))
-                        .style(|s| s.items_center());
-                        v = Stack::vertical((v, transition)).into_any();
-                    }
-                    Stack::new((
-                        name.style(|s| {
-                            s.margin_right(5.0)
-                                .with_theme(|s, t| s.color(t.text_muted()))
-                        })
-                        .container()
-                        .style(|s| s.min_width(150.0).flex_direction(FlexDirection::RowReverse)),
-                        v,
-                    ))
-                    .style(move |s| {
-                        s.padding(5.0)
-                            .items_center()
-                            .width_full()
-                            .with_theme(move |s, t| {
-                                s.apply_if(idx.is_multiple_of(2), |s| s.background(t.bg_base()))
-                                    .apply_if(!idx.is_multiple_of(2), |s| {
-                                        s.background(t.bg_elevated())
-                                    })
-                            })
-                    })
-                },
-            ))
-            .style(|s| s.height_full().flex_grow(1.))
-            .scroll()
-            .style(|s| {
-                s.set(OverflowX, taffy::Overflow::Scroll)
-                    .set(OverflowY, taffy::Overflow::Visible)
-                    .height_full()
-                    .flex_grow(1.)
-            });
+            let style_list = style
+                .debug_view(Some(&view.direct_style))
+                .style(|s| s.height_full().flex_grow(1.))
+                .scroll()
+                .style(|s| {
+                    s.set(OverflowX, taffy::Overflow::Scroll)
+                        .set(OverflowY, taffy::Overflow::Visible)
+                        .height_full()
+                        .flex_grow(1.)
+                });
 
             let selected_view_info = Stack::vertical_from_iter(
                 [name, id, count, x, y, w, h, tx, ty, tw, th]
@@ -478,348 +390,7 @@ fn selected_view(
                     .flex_grow(1.)
             });
 
-            let class_list_view =
-                Stack::vertical_from_iter(view.classes.clone().into_iter().enumerate().map(
-                    |(idx, class_ref)| {
-                        let class_style =
-                            capture.state.computed_styles.get(&view.id).map(|style| {
-                                // let style_rc = std::rc::Rc::new(style.clone());
-                                style.get_nested_map(class_ref.key).unwrap_or_default()
-
-                                // Style::new().apply_classes_from_context(&[class_ref], &style_rc)
-                            });
-
-                        let class_name = format!("{:?}", class_ref.key);
-
-                        let class_header = Label::new(&class_name)
-                            .style(|s| s.font_bold().with_theme(|s, t| s.color(t.text())));
-
-                        if let Some(class_style) = class_style {
-                            let mut props: Vec<_> = class_style
-                                .map
-                                .clone()
-                                .into_iter()
-                                .filter_map(|(k, v)| match k.info {
-                                    StyleKeyInfo::Prop(..) => Some((StylePropRef { key: k }, v)),
-                                    _ => None,
-                                })
-                                .map(|(p, v)| ((p, format!("{:?}", p.key)), v))
-                                .collect();
-
-                            let mut selectors: Vec<_> = class_style
-                                .map
-                                .clone()
-                                .into_iter()
-                                .filter_map(|(k, v)| match k.info {
-                                    StyleKeyInfo::Selector(sel) => {
-                                        Some((sel, v.downcast_ref::<Style>()?.clone()))
-                                    }
-                                    _ => None,
-                                })
-                                .collect();
-
-                            props.sort_unstable_by(|a, b| a.0.1.cmp(&b.0.1));
-                            selectors.sort_unstable_by(|a, b| {
-                                a.0.debug_string().cmp(&b.0.debug_string())
-                            });
-
-                            let prop_count = props.len();
-                            let selector_count = selectors.len();
-
-                            let total_text = if prop_count > 0 && selector_count > 0 {
-                                format!("{} properties, {} selectors", prop_count, selector_count)
-                            } else if prop_count > 0 {
-                                format!(
-                                    "{} {}",
-                                    prop_count,
-                                    if prop_count == 1 {
-                                        "property"
-                                    } else {
-                                        "properties"
-                                    }
-                                )
-                            } else if selector_count > 0 {
-                                format!(
-                                    "{} {}",
-                                    selector_count,
-                                    if selector_count == 1 {
-                                        "selector"
-                                    } else {
-                                        "selectors"
-                                    }
-                                )
-                            } else {
-                                "empty".to_string()
-                            };
-
-                            let count_badge = Label::new(total_text).style(|s| {
-                                s.padding(2.0)
-                                    .padding_horiz(6.0)
-                                    .border(1.)
-                                    .border_radius(10.0)
-                                    .margin_left(8.0)
-                                    .with_theme(|s, t| {
-                                        s.color(t.text_muted()).border_color(t.border())
-                                    })
-                                    .with_context_opt::<FontSize, _>(|s, fs| s.font_size(fs * 0.75))
-                            });
-
-                            let header_row =
-                                Stack::new((class_header, count_badge)).style(|s| s.items_center());
-
-                            let props_view =
-                                if !props.is_empty() {
-                                    Some(
-                                        Stack::vertical_from_iter(props.into_iter().map(
-                                            |((prop, name), value)| {
-                                                let name = name
-                                                    .strip_prefix("floem::style::")
-                                                    .unwrap_or(&name);
-                                                let mut v = (prop.info().debug_view)(&*value)
-                                                    .unwrap_or_else(|| {
-                                                        Label::new((prop.info().debug_any)(&*value))
-                                                            .into_any()
-                                                    });
-
-                                                if let Some(transition) = class_style
-                                                    .map
-                                                    .get(&prop.info().transition_key)
-                                                    .and_then(|v| v.downcast_ref::<Transition>())
-                                                {
-                                                    let transition_badge = Stack::new((
-                                                        "Transition".style(|s| {
-                                                            s.margin_top(5.0)
-                                                                .margin_right(5.0)
-                                                                .border(1.)
-                                                                .border_radius(5.0)
-                                                                .padding(4.0)
-                                                                .with_theme(|s, t| {
-                                                                    s.color(t.text_muted())
-                                                                        .border_color(t.border())
-                                                                })
-                                                                .with_context_opt::<FontSize, _>(
-                                                                    |s, fs| s.font_size(fs * 0.8),
-                                                                )
-                                                        }),
-                                                        format!("{:?}", transition),
-                                                    ))
-                                                    .style(|s| s.items_center());
-                                                    v = Stack::vertical((v, transition_badge))
-                                                        .into_any();
-                                                }
-
-                                                Stack::new((
-                                                    Label::new(name)
-                                                        .style(|s| {
-                                                            s.margin_right(5.0).with_theme(
-                                                                |s, t| s.color(t.text_muted()),
-                                                            )
-                                                        })
-                                                        .container()
-                                                        .style(|s| {
-                                                            s.min_width(120.0).flex_direction(
-                                                                FlexDirection::RowReverse,
-                                                            )
-                                                        }),
-                                                    v,
-                                                ))
-                                                .style(|s| {
-                                                    s.padding(4.0)
-                                                        .padding_left(20.0)
-                                                        .items_center()
-                                                        .width_full()
-                                                })
-                                            },
-                                        ))
-                                        .style(|s| s.width_full()),
-                                    )
-                                } else {
-                                    None
-                                };
-
-                            let selectors_view = if !selectors.is_empty() {
-                                Some(
-                                    Stack::vertical_from_iter(selectors.into_iter().map(
-                                        |(selector_info, selector_style)| {
-                                            let selector_name = selector_info.debug_string();
-
-                                            let mut nested_props: Vec<_> = selector_style
-                                                .map
-                                                .clone()
-                                                .into_iter()
-                                                .filter_map(|(k, v)| match k.info {
-                                                    StyleKeyInfo::Prop(..) => {
-                                                        Some((StylePropRef { key: k }, v))
-                                                    }
-                                                    _ => None,
-                                                })
-                                                .map(|(p, v)| ((p, format!("{:?}", p.key)), v))
-                                                .collect();
-
-                                            nested_props.sort_unstable_by(|a, b| a.0.1.cmp(&b.0.1));
-
-                                            let selector_header =
-                                                Label::new(selector_name).style(|s| {
-                                                    s.font_bold()
-                                                        .with_theme(|s, t| s.color(t.text()))
-                                                        .with_context_opt::<FontSize, _>(|s, fs| {
-                                                            s.font_size(fs * 0.9)
-                                                        })
-                                                });
-
-                                            let nested_count = Label::new(format!(
-                                                "{} {}",
-                                                nested_props.len(),
-                                                if nested_props.len() == 1 {
-                                                    "property"
-                                                } else {
-                                                    "properties"
-                                                }
-                                            ))
-                                            .style(|s| {
-                                                s.padding(1.0)
-                                                    .padding_horiz(4.0)
-                                                    .border(1.)
-                                                    .border_radius(8.0)
-                                                    .margin_left(6.0)
-                                                    .with_theme(|s, t| {
-                                                        s.color(t.text_muted())
-                                                            .border_color(t.border())
-                                                    })
-                                                    .with_context_opt::<FontSize, _>(|s, fs| {
-                                                        s.font_size(fs * 0.7)
-                                                    })
-                                            });
-
-                                            let nested_header = Stack::new((
-                                                selector_header,
-                                                nested_count,
-                                            ))
-                                            .style(|s| {
-                                                s.items_center().padding_left(20.0).padding_top(6.0)
-                                            });
-
-                                            let nested_props_view = Stack::vertical_from_iter(
-                                                nested_props.into_iter().map(
-                                                    |((prop, name), value)| {
-                                                        let name = name
-                                                            .strip_prefix("floem::style::")
-                                                            .unwrap_or(&name);
-                                                        let v = (prop.info().debug_view)(&*value)
-                                                            .unwrap_or_else(|| {
-                                                                Label::new((prop.info().debug_any)(
-                                                                    &*value,
-                                                                ))
-                                                                .into_any()
-                                                            });
-
-                                                        Stack::new((
-                                                            Label::new(name)
-                                                                .style(|s| {
-                                                                    s.margin_right(5.0).with_theme(
-                                                                        |s, t| {
-                                                                            s.color(t.text_muted())
-                                                                        },
-                                                                    )
-                                                                })
-                                                                .container()
-                                                                .style(|s| {
-                                                                    s.min_width(120.0)
-                                                                        .flex_direction(
-                                                                        FlexDirection::RowReverse,
-                                                                    )
-                                                                }),
-                                                            v,
-                                                        ))
-                                                        .style(|s| {
-                                                            s.padding(4.0)
-                                                                .padding_left(40.0)
-                                                                .items_center()
-                                                                .width_full()
-                                                        })
-                                                    },
-                                                ),
-                                            )
-                                            .style(|s| s.width_full());
-
-                                            Stack::vertical((nested_header, nested_props_view))
-                                                .style(|s| s.width_full())
-                                        },
-                                    ))
-                                    .style(|s| s.width_full().gap(4)),
-                                )
-                            } else {
-                                None
-                            };
-
-                            let content = match (props_view, selectors_view) {
-                                (Some(props), Some(selectors)) => {
-                                    Stack::vertical((props, selectors))
-                                        .style(|s| s.width_full().gap(8))
-                                        .into_any()
-                                }
-                                (Some(props), None) => props.into_any(),
-                                (None, Some(selectors)) => selectors.into_any(),
-                                (None, None) => ().into_any(),
-                            };
-
-                            Stack::vertical((header_row, content)).style(move |s| {
-                                s.padding(8.0).width_full().border_radius(5.0).with_theme(
-                                    move |s, t| {
-                                        s.apply_if(idx.is_multiple_of(2), |s| {
-                                            s.background(t.bg_base())
-                                        })
-                                        .apply_if(!idx.is_multiple_of(2), |s| {
-                                            s.background(t.bg_elevated())
-                                        })
-                                    },
-                                )
-                            })
-                        } else {
-                            Stack::new((
-                                class_header,
-                                Label::new("(no properties)").style(|s| {
-                                    s.margin_left(8.0)
-                                        .with_theme(|s, t| s.color(t.text_muted()))
-                                        .with_context_opt::<FontSize, _>(|s, fs| {
-                                            s.font_size(fs * 0.85)
-                                        })
-                                }),
-                            ))
-                            .style(move |s| {
-                                s.padding(8.0)
-                                    .width_full()
-                                    .items_center()
-                                    .border_radius(5.0)
-                                    .with_theme(move |s, t| {
-                                        s.apply_if(idx.is_multiple_of(2), |s| {
-                                            s.background(t.bg_base())
-                                        })
-                                        .apply_if(!idx.is_multiple_of(2), |s| {
-                                            s.background(t.bg_elevated())
-                                        })
-                                    })
-                            })
-                        }
-                    },
-                ))
-                .style(|s| s.gap(4).height_full().flex_grow(1.))
-                .scroll()
-                .style(|s| {
-                    s.set(OverflowX, taffy::Overflow::Scroll)
-                        .set(OverflowY, taffy::Overflow::Visible)
-                        .height_full()
-                        .flex_grow(1.)
-                });
-
-            Stack::vertical((
-                header("Selected View"),
-                selected_view_info,
-                style_header,
-                style_list,
-                class_header,
-                class_list_view,
-            ))
+            Stack::vertical((header("Selected View"), selected_view_info, style_header, style_list))
             .style(|s| s.width_full().flex_shrink(0.).gap(10))
             .into_any()
         } else {

@@ -2,14 +2,19 @@ use std::time::Duration;
 
 use super::unit::{DurationUnitExt, UnitExt};
 use super::{
-    Background, BoxShadow, CursorStyle, CustomStyle, FontSize, Foreground, Style, StylePropValue,
+    Background, Border, BorderBottom, BorderBottomColor, BorderBottomLeftRadius, BorderBottomRightRadius,
+    BorderColor, BorderLeft, BorderLeftColor, BorderRadius, BorderRight, BorderRightColor,
+    BorderTop, BorderTopColor, BorderTopLeftRadius, BorderTopRightRadius, BoxShadow, CursorStyle,
+    CustomStyle, FontSize, Foreground, Margin, MarginBottom, MarginLeft, MarginRight, MarginTop,
+    Padding, PaddingBottom, PaddingLeft, PaddingRight, PaddingTop, Style, StylePropValue,
     Transition,
 };
 use crate::style::Selectable;
+use crate::view::View;
 use crate::views::editor::SelectionColor;
 use crate::views::resizable::ResizableHandleClass;
 use crate::{
-    AnyView, prop, style_class,
+    AnyView, prop, style_class, style_debug_group,
     views::{
         ButtonClass, CheckboxClass, LabelClass, LabelCustomStyle, LabeledCheckboxClass,
         LabeledRadioButtonClass, ListClass, ListItemClass, PlaceholderTextClass, RadioButtonClass,
@@ -25,6 +30,87 @@ use peniko::{Brush, Color, color::palette::css};
 use smallvec::smallvec;
 
 style_class!(pub HoverTargetClass);
+
+fn border_debug_view(style: &Style) -> Option<Box<dyn View>> {
+    Border {
+        left: style.get_prop::<BorderLeft>(),
+        top: style.get_prop::<BorderTop>(),
+        right: style.get_prop::<BorderRight>(),
+        bottom: style.get_prop::<BorderBottom>(),
+    }
+    .debug_view()
+}
+
+fn border_color_debug_view(style: &Style) -> Option<Box<dyn View>> {
+    BorderColor {
+        left: style.get_prop::<BorderLeftColor>().flatten(),
+        top: style.get_prop::<BorderTopColor>().flatten(),
+        right: style.get_prop::<BorderRightColor>().flatten(),
+        bottom: style.get_prop::<BorderBottomColor>().flatten(),
+    }
+    .debug_view()
+}
+
+fn border_radius_debug_view(style: &Style) -> Option<Box<dyn View>> {
+    BorderRadius {
+        top_left: style.get_prop::<BorderTopLeftRadius>(),
+        top_right: style.get_prop::<BorderTopRightRadius>(),
+        bottom_left: style.get_prop::<BorderBottomLeftRadius>(),
+        bottom_right: style.get_prop::<BorderBottomRightRadius>(),
+    }
+    .debug_view()
+}
+
+fn padding_debug_view(style: &Style) -> Option<Box<dyn View>> {
+    Padding {
+        left: style.get_prop::<PaddingLeft>(),
+        top: style.get_prop::<PaddingTop>(),
+        right: style.get_prop::<PaddingRight>(),
+        bottom: style.get_prop::<PaddingBottom>(),
+    }
+    .debug_view()
+}
+
+fn margin_debug_view(style: &Style) -> Option<Box<dyn View>> {
+    Margin {
+        left: style.get_prop::<MarginLeft>(),
+        top: style.get_prop::<MarginTop>(),
+        right: style.get_prop::<MarginRight>(),
+        bottom: style.get_prop::<MarginBottom>(),
+    }
+    .debug_view()
+}
+
+style_debug_group!(
+    pub BorderDebugGroup,
+    inherited = inherited,
+    members = [BorderLeft, BorderTop, BorderRight, BorderBottom],
+    view = border_debug_view
+);
+style_debug_group!(
+    pub BorderColorDebugGroup,
+    inherited = inherited,
+    members = [BorderLeftColor, BorderTopColor, BorderRightColor, BorderBottomColor],
+    view = border_color_debug_view
+);
+style_debug_group!(
+    pub BorderRadiusDebugGroup,
+    inherited = inherited,
+    members = [BorderTopLeftRadius, BorderTopRightRadius, BorderBottomLeftRadius, BorderBottomRightRadius],
+    view = border_radius_debug_view
+);
+style_debug_group!(
+    pub PaddingDebugGroup,
+    inherited = inherited,
+    members = [PaddingLeft, PaddingTop, PaddingRight, PaddingBottom],
+    view = padding_debug_view
+);
+style_debug_group!(
+    pub MarginDebugGroup,
+    inherited = inherited,
+    members = [MarginLeft, MarginTop, MarginRight, MarginBottom],
+    view = margin_debug_view
+);
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DesignSystem {
@@ -591,6 +677,11 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
     // });
 
     Style::new()
+        .debug_group(BorderDebugGroup)
+        .debug_group(BorderColorDebugGroup)
+        .debug_group(BorderRadiusDebugGroup)
+        .debug_group(PaddingDebugGroup)
+        .debug_group(MarginDebugGroup)
         .apply_if(os_theme == winit::window::Theme::Light, |s| {
             let light = DesignSystem::light();
             s.color(light.text())

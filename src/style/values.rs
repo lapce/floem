@@ -10,7 +10,9 @@ use peniko::{
     LinearGradientPosition,
 };
 use smallvec::SmallVec;
+use std::collections::HashSet;
 use std::fmt::Debug;
+use std::rc::Rc;
 use taffy::GridTemplateComponent;
 use taffy::prelude::{auto, fr};
 
@@ -30,18 +32,20 @@ use taffy::{
 
 use crate::AnyView;
 use crate::prelude::ViewTuple;
+use crate::style::CursorStyle;
 use crate::theme::StyleThemeExt;
 use crate::unit::{Pct, Px, PxPct, PxPctAuto};
 use crate::view::ViewTupleFlat;
 use crate::view::{IntoView, View};
-use crate::views::{ContainerExt, Decorators, Label, Stack, TooltipExt, canvas};
+use crate::views::{
+    ButtonClass, ContainerExt, Decorators, Label, Stack, TooltipExt, canvas, dyn_view, svg,
+};
 
 use super::FontSize;
-
-pub enum CombineResult<T> {
-    Other,  // The result is semantically `other` - caller can reuse it
-    New(T), // A new value was created
-}
+use super::{
+    ResponsiveSelectors, StructuralSelectors, Style, StyleKey, StyleKeyInfo, StylePropRef,
+    Transition,
+};
 
 pub trait StylePropValue: Clone + PartialEq + Debug {
     fn debug_view(&self) -> Option<Box<dyn View>> {
@@ -50,10 +54,6 @@ pub trait StylePropValue: Clone + PartialEq + Debug {
 
     fn interpolate(&self, _other: &Self, _value: f64) -> Option<Self> {
         None
-    }
-
-    fn combine(&self, _other: &Self) -> CombineResult<Self> {
-        CombineResult::Other
     }
 
     /// Compute a content-based hash for this value.
@@ -1329,5 +1329,408 @@ impl<T> StyleValue<T> {
 impl<T> From<T> for StyleValue<T> {
     fn from(x: T) -> Self {
         Self::Val(x)
+    }
+}
+
+fn short_style_name(name: &str) -> String {
+    name.strip_prefix("floem::style::")
+        .unwrap_or(name)
+        .to_string()
+}
+
+struct StyleDebugRow {
+    render: Box<dyn FnOnce(bool) -> AnyView>,
+    is_empty: bool,
+}
+
+fn style_debug_is_empty(style: &Style) -> bool {
+    let mut hidden_props = HashSet::new();
+
+    for info in style.map.keys().filter_map(|key| match key.info {
+        StyleKeyInfo::DebugGroup(info) if style.debug_group_enabled(*key) => Some(info),
+        _ => None,
+    }) {
+        let members = (info.member_props)();
+        let present = members
+            .iter()
+            .copied()
+            .filter(|key| style.map.contains_key(key) && !hidden_props.contains(key))
+            .collect::<Vec<_>>();
+        if !present.is_empty() {
+            hidden_props.extend(present);
+        }
+    }
+
+    if style.map.iter().any(|(key, _)| {
+        matches!(key.info, StyleKeyInfo::Prop(..)) && !hidden_props.contains(key)
+    }) {
+        return false;
+    }
+
+    if style.map.iter().any(|(key, value)| match key.info {
+        StyleKeyInfo::Selector(..) | StyleKeyInfo::Class(..) => value
+            .downcast_ref::<Style>()
+            .is_some_and(|nested| !style_debug_is_empty(nested)),
+        _ => false,
+    }) {
+        return false;
+    }
+
+    for value in style.map.values() {
+        if let Some(rules) = value.downcast_ref::<StructuralSelectors>()
+            && rules.0.iter().any(|(_, nested)| !style_debug_is_empty(nested))
+        {
+            return false;
+        }
+        if let Some(rules) = value.downcast_ref::<ResponsiveSelectors>()
+            && rules.0.iter().any(|(_, nested)| !style_debug_is_empty(nested))
+        {
+            return false;
+        }
+    }
+
+    true
+}
+
+fn debug_name_cell(name: String, is_direct: bool, indent: usize) -> AnyView {
+    let indent = (indent as f64) * 16.0;
+    let name = if is_direct {
+        Label::new(name).into_any()
+    } else {
+        Stack::new((
+            "Inherited".style(|s| {
+                s.margin_right(5.0)
+                    .border(1.)
+                    .border_radius(5.0)
+                    .with_theme(|s, t| {
+                        s.color(t.text_muted())
+                            .border_color(t.border())
+                            .padding_horiz(4.0)
+                    })
+                    .with_context_opt::<FontSize, _>(|s, fs| s.font_size(fs * 0.8))
+            }),
+            Label::new(name),
+        ))
+        .style(|s| s.items_center().gap(6.0))
+        .into_any()
+    };
+
+    name.style(move |s| s.min_width(170.0).padding_left(indent))
+        .into_any()
+}
+
+fn style_debug_prop_row(
+    style: &Style,
+    prop: StylePropRef,
+    value: &Rc<dyn std::any::Any>,
+    is_direct: bool,
+    indent: usize,
+) -> StyleDebugRow {
+    let name = short_style_name(&format!("{:?}", prop.key));
+    let mut value_view = (prop.info().debug_view)(&**value)
+        .unwrap_or_else(|| Label::new((prop.info().debug_any)(&**value)).into_any());
+
+    if let Some(transition) = style
+        .map
+        .get(&prop.info().transition_key)
+        .and_then(|v| v.downcast_ref::<Transition>())
+    {
+        value_view = Stack::vertical((
+            value_view,
+            Stack::new((
+                "Transition".style(|s| {
+                    s.margin_top(4.0)
+                        .margin_right(5.0)
+                        .border(1.)
+                        .border_radius(5.0)
+                        .padding_horiz(4.0)
+                        .with_theme(|s, t| s.color(t.text_muted()).border_color(t.border()))
+                        .with_context_opt::<FontSize, _>(|s, fs| s.font_size(fs * 0.8))
+                }),
+                transition.debug_view(),
+            ))
+            .style(|s| s.items_center().gap(6.0)),
+        ))
+        .into_any();
+    }
+
+    let row = Stack::new((debug_name_cell(name, is_direct, indent), value_view))
+        .style(|s| s.items_center().width_full().padding_vert(4.0).gap(8.0))
+        .into_any();
+    StyleDebugRow {
+        render: Box::new(move |_| row),
+        is_empty: false,
+    }
+}
+
+fn style_debug_group_row(
+    name: String,
+    value_view: AnyView,
+    is_direct: bool,
+    indent: usize,
+) -> StyleDebugRow {
+    let row = Stack::new((debug_name_cell(name, is_direct, indent), value_view))
+        .style(|s| s.items_center().width_full().padding_vert(4.0).gap(8.0))
+        .into_any();
+    StyleDebugRow {
+        render: Box::new(move |_| row),
+        is_empty: false,
+    }
+}
+
+fn style_debug_section(
+    title: String,
+    child: StyleDebugRow,
+    indent: usize,
+) -> StyleDebugRow {
+    let expanded = RwSignal::new(false);
+    let title_text = title.clone();
+    let child_is_empty = child.is_empty;
+    let chevron = move || {
+        if expanded.get() {
+            svg(
+                r#"<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M4.427 6.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 6H4.604a.25.25 0 00-.177.427z"/></svg>"#,
+            )
+        } else {
+            svg(
+                r#"<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M6.427 4.427l3.396 3.396a.25.25 0 010 .354l-3.396 3.396A.25.25 0 016 11.396V4.604a.25.25 0 01.427-.177z"/></svg>"#,
+            )
+        }
+        .style(|s| s.size_full().with_theme(|s, t| s.color(t.text())))
+    };
+
+    StyleDebugRow {
+        render: Box::new(move |row_is_base| {
+            Stack::vertical((
+                Stack::new((
+                    dyn_view(chevron)
+                        .class(ButtonClass)
+                        .style(|s| s.size(16.0, 16.0).padding(0.)),
+                    Label::new(title_text.clone()).style(|s| {
+                        s.font_bold()
+                            .cursor(CursorStyle::Pointer)
+                            .with_theme(|s, t| s.color(t.primary()))
+                    }),
+                    Label::new("empty")
+                        .style(|s| {
+                            s.padding_horiz(6.0)
+                                .border(1.)
+                                .border_radius(999.0)
+                                .with_theme(|s, t| {
+                                    s.color(t.text_muted()).border_color(t.border())
+                                })
+                                .with_context_opt::<FontSize, _>(|s, fs| s.font_size(fs * 0.75))
+                        })
+                        .style(move |s| s.apply_if(!child_is_empty, |s| s.hide())),
+                ))
+                .style(move |s| {
+                    s.items_center()
+                        .gap(6.0)
+                        .padding_left((indent as f64) * 16.0)
+                        .cursor(super::CursorStyle::Pointer)
+                })
+                .on_event_stop(crate::event::listener::Click, move |_cx, _event| {
+                    expanded.update(|value| *value = !*value)
+                }),
+                (child.render)(!row_is_base)
+                    .style(move |s| s.apply_if(!expanded.get(), |s| s.hide()).padding_left(12.0))
+                    .into_any(),
+            ))
+            .style(|s| s.gap(6.0).width_full().padding_vert(4.0))
+            .into_any()
+        }),
+        is_empty: false,
+    }
+}
+
+fn style_debug_sections(
+    title: &str,
+    children: Vec<StyleDebugRow>,
+    indent: usize,
+) -> Option<StyleDebugRow> {
+    if children.is_empty() {
+        return None;
+    }
+
+    Some(style_debug_section(
+        title.to_string(),
+        StyleDebugRow {
+            render: Box::new(move |start_with_base| style_debug_rows(children, start_with_base)),
+            is_empty: false,
+        },
+        indent,
+    ))
+}
+
+fn style_debug_body(
+    style: &Style,
+    direct_keys: Option<&HashSet<StyleKey>>,
+    indent: usize,
+) -> StyleDebugRow {
+    let style = style.clone();
+    let is_empty = style_debug_is_empty(&style);
+    let direct_keys = direct_keys.cloned();
+    StyleDebugRow {
+        render: Box::new(move |start_with_base| {
+            let mut rows: Vec<StyleDebugRow> = Vec::new();
+            let mut hidden_props = HashSet::new();
+
+            let mut custom_groups = style
+                .map
+                .keys()
+                .filter_map(|key| match key.info {
+                    StyleKeyInfo::DebugGroup(info) if style.debug_group_enabled(*key) => Some(info),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            custom_groups.sort_unstable_by_key(|info| short_style_name((info.name)()));
+
+            for info in custom_groups {
+                let members = (info.member_props)();
+                let present = members
+                    .iter()
+                    .copied()
+                    .filter(|key| style.map.contains_key(key) && !hidden_props.contains(key))
+                    .collect::<Vec<_>>();
+                if present.is_empty() {
+                    continue;
+                }
+                hidden_props.extend(present);
+                if let Some(view) = (info.debug_view)(&style) {
+                    rows.push(style_debug_group_row(
+                        short_style_name((info.name)()),
+                        view.into_any(),
+                        true,
+                        indent,
+                    ));
+                }
+            }
+
+            let mut props = style
+                .map
+                .iter()
+                .filter_map(|(key, value)| match key.info {
+                    StyleKeyInfo::Prop(..) if !hidden_props.contains(key) => {
+                        Some((StylePropRef { key: *key }, value))
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            props.sort_unstable_by_key(|(prop, _)| short_style_name(&format!("{:?}", prop.key)));
+
+            for (prop, value) in props {
+                let is_direct = direct_keys
+                    .as_ref()
+                    .is_none_or(|keys| keys.contains(&prop.key));
+                rows.push(style_debug_prop_row(&style, prop, value, is_direct, indent));
+            }
+
+            let mut selector_rows: Vec<StyleDebugRow> = Vec::new();
+            let mut selectors = style
+                .map
+                .iter()
+                .filter_map(|(key, value)| match key.info {
+                    StyleKeyInfo::Selector(selector) => Some((selector.debug_string(), value)),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            selectors.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+            for (name, value) in selectors {
+                if let Some(nested_style) = value.downcast_ref::<Style>() {
+                    selector_rows.push(style_debug_section(
+                        name,
+                        style_debug_body(nested_style, None, indent + 1),
+                        indent,
+                    ));
+                }
+            }
+
+            for value in style.map.values() {
+                if let Some(rules) = value.downcast_ref::<StructuralSelectors>() {
+                    for (selector, nested_style) in &rules.0 {
+                        selector_rows.push(style_debug_section(
+                            format!("Structural: {selector:?}"),
+                            style_debug_body(nested_style, None, indent + 1),
+                            indent,
+                        ));
+                    }
+                }
+                if let Some(rules) = value.downcast_ref::<ResponsiveSelectors>() {
+                    for (selector, nested_style) in &rules.0 {
+                        selector_rows.push(style_debug_section(
+                            format!("Responsive: {selector:?}"),
+                            style_debug_body(nested_style, None, indent + 1),
+                            indent,
+                        ));
+                    }
+                }
+            }
+
+            let mut class_rows: Vec<StyleDebugRow> = Vec::new();
+            let mut classes = style
+                .map
+                .iter()
+                .filter_map(|(key, value)| match key.info {
+                    StyleKeyInfo::Class(info) => Some((short_style_name((info.name)()), value)),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            classes.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+            for (name, value) in classes {
+                if let Some(nested_style) = value.downcast_ref::<Style>() {
+                    class_rows.push(style_debug_section(
+                        name,
+                        style_debug_body(nested_style, None, indent + 1),
+                        indent,
+                    ));
+                }
+            }
+
+            if let Some(selectors_section) =
+                style_debug_sections("Selectors", selector_rows, indent)
+            {
+                rows.push(selectors_section);
+            }
+            if let Some(classes_section) = style_debug_sections("Classes", class_rows, indent) {
+                rows.push(classes_section);
+            }
+
+            if rows.is_empty() {
+                return Label::new("empty")
+                    .style(|s| s.with_theme(|s, t| s.color(t.text_muted())))
+                    .into_any();
+            }
+
+            style_debug_rows(rows, start_with_base)
+        }),
+        is_empty,
+    }
+}
+
+fn style_debug_rows(rows: Vec<StyleDebugRow>, start_with_base: bool) -> AnyView {
+    Stack::vertical_from_iter(rows.into_iter().enumerate().map(|(idx, row)| {
+        let is_base = if start_with_base {
+            idx.is_multiple_of(2)
+        } else {
+            !idx.is_multiple_of(2)
+        };
+        (row.render)(is_base).style(move |s| {
+            s.width_full().padding_horiz(4.0).with_theme(move |s, t| {
+                s.apply_if(is_base, |s| s.background(t.bg_base()))
+                    .apply_if(!is_base, |s| s.background(t.bg_elevated()))
+            })
+        })
+    }))
+    .style(|s| s.gap(4.0).width_full())
+    .into_any()
+}
+
+impl Style {
+    pub fn debug_view(&self, direct_style: Option<&Style>) -> Box<dyn View> {
+        let direct_keys =
+            direct_style.map(|style| style.map.keys().copied().collect::<HashSet<_>>());
+        (style_debug_body(self, direct_keys.as_ref(), 0).render)(true)
+            .style(|s| s.width_full())
+            .into_any()
     }
 }

@@ -182,14 +182,15 @@ pub use components::{
 pub use custom::{CustomStylable, CustomStyle};
 pub use cx::{InheritedInteractionCx, InteractionState, StyleCx};
 pub use props::{
-    ExtractorField, StyleClass, StyleClassInfo, StyleClassRef, StyleKey, StyleKeyInfo, StyleProp,
-    StylePropInfo, StylePropReader, StylePropRef,
+    ExtractorField, StyleClass, StyleClassInfo, StyleClassRef, StyleDebugGroup,
+    StyleDebugGroupInfo, StyleDebugGroupRef, StyleKey, StyleKeyInfo, StyleProp, StylePropInfo,
+    StylePropReader, StylePropRef,
 };
 pub use selectors::{NthChild, StructuralSelector, StyleSelector, StyleSelectors};
 pub use theme::{DesignSystem, StyleThemeExt};
 pub use transition::{DirectTransition, Transition, TransitionState};
 pub use unit::{AnchorAbout, Angle, Auto, DurationUnitExt, Pct, Px, PxPct, PxPctAuto, UnitExt};
-pub use values::{CombineResult, ObjectFit, StrokeWrap, StyleMapValue, StylePropValue, StyleValue};
+pub use values::{ObjectFit, StrokeWrap, StyleMapValue, StylePropValue, StyleValue};
 
 pub use cache::{StyleCache, StyleCacheKey};
 
@@ -833,6 +834,7 @@ impl Style {
                         result = result.union(nested_style.as_ref().selectors());
                     }
                 }
+                StyleKeyInfo::DebugGroup(..) => {}
                 _ => {}
             }
         }
@@ -971,6 +973,13 @@ impl Style {
             .map(|map| map.downcast_ref::<Style>().unwrap().clone())
     }
 
+    pub(crate) fn debug_group_enabled(&self, key: StyleKey) -> bool {
+        self.map
+            .get(&key)
+            .and_then(|value| value.downcast_ref::<bool>().copied())
+            .unwrap_or(false)
+    }
+
     pub(crate) fn remove_nested_map(&mut self, key: StyleKey) -> Option<Style> {
         let removed = self
             .map
@@ -1069,6 +1078,18 @@ impl Style {
         self.set_map_selector(class.key, map)
     }
 
+    pub fn debug_group<G: StyleDebugGroup>(mut self, _group: G) -> Self {
+        self.map.insert(G::key(), Rc::new(true));
+        self.merge_id = next_style_merge_id();
+        self
+    }
+
+    pub fn unset_debug_group<G: StyleDebugGroup>(mut self, _group: G) -> Self {
+        self.map.insert(G::key(), Rc::new(false));
+        self.merge_id = next_style_merge_id();
+        self
+    }
+
     pub fn builtin(&self) -> BuiltinStyle<'_> {
         BuiltinStyle { style: self }
     }
@@ -1157,7 +1178,7 @@ impl Style {
                         e.insert(v.clone());
                     }
                 },
-                StyleKeyInfo::Transition => {
+                StyleKeyInfo::Transition | StyleKeyInfo::DebugGroup(..) => {
                     self.map.insert(*k, v.clone());
                 }
                 StyleKeyInfo::Prop(info) => {
@@ -1167,8 +1188,7 @@ impl Style {
                     }
                     match self.map.entry(*k) {
                         Entry::Occupied(mut e) => {
-                            // We need to merge the new map with the existing map.
-                            e.insert((info.combine)(e.get().clone(), v.clone()));
+                            e.insert(v.clone());
                         }
                         Entry::Vacant(e) => {
                             e.insert(v.clone());
@@ -1219,7 +1239,7 @@ impl Style {
                         }
                     }
                 }
-                StyleKeyInfo::Transition => {
+                StyleKeyInfo::Transition | StyleKeyInfo::DebugGroup(..) => {
                     self.map.insert(*k, v.clone());
                 }
                 StyleKeyInfo::StructuralSelectors => match self.map.entry(*k) {
@@ -1253,8 +1273,7 @@ impl Style {
                     }
                     match self.map.entry(*k) {
                         Entry::Occupied(mut e) => {
-                            // We need to merge the new map with the existing map.
-                            e.insert((info.combine)(e.get().clone(), v.clone()));
+                            e.insert(v.clone());
                         }
                         Entry::Vacant(e) => {
                             e.insert(v.clone());
@@ -1662,30 +1681,50 @@ define_builtin_props!(
     /// Useful for creating animated border effects.
     BorderProgress border_progress {tr}: Pct {} = Pct(100.),
 
-    /// Sets the border properties for all sides.
-    ///
-    /// Defines width, style, and other border characteristics.
-    BorderProp border_combined {nocb, tr}: Border {} = Border::default(),
+    /// Sets the left border.
+    BorderLeft border_left {tr}: StrokeWrap {} = StrokeWrap::new(0.),
+    /// Sets the top border.
+    BorderTop border_top {tr}: StrokeWrap {} = StrokeWrap::new(0.),
+    /// Sets the right border.
+    BorderRight border_right {tr}: StrokeWrap {} = StrokeWrap::new(0.),
+    /// Sets the bottom border.
+    BorderBottom border_bottom {tr}: StrokeWrap {} = StrokeWrap::new(0.),
 
-    /// Sets the border color for all sides.
-    ///
-    /// Can be set individually for each side or all at once.
-    BorderColorProp border_color_combined { nocb, tr }: BorderColor {} = BorderColor::default(),
+    /// Sets the left border color.
+    BorderLeftColor border_left_color_prop { nocb, tr }: Option<Brush> {} = None,
+    /// Sets the top border color.
+    BorderTopColor border_top_color_prop { nocb, tr }: Option<Brush> {} = None,
+    /// Sets the right border color.
+    BorderRightColor border_right_color_prop { nocb, tr }: Option<Brush> {} = None,
+    /// Sets the bottom border color.
+    BorderBottomColor border_bottom_color_prop { nocb, tr }: Option<Brush> {} = None,
 
-    /// Sets the border radius for all corners.
-    ///
-    /// Controls how rounded the corners of the view are.
-    BorderRadiusProp border_radius_combined { nocb, tr }: BorderRadius {} = BorderRadius::default(),
+    /// Sets the top-left border radius.
+    BorderTopLeftRadius border_top_left_radius { tr }: PxPct {} = PxPct::Px(0.),
+    /// Sets the top-right border radius.
+    BorderTopRightRadius border_top_right_radius { tr }: PxPct {} = PxPct::Px(0.),
+    /// Sets the bottom-left border radius.
+    BorderBottomLeftRadius border_bottom_left_radius { tr }: PxPct {} = PxPct::Px(0.),
+    /// Sets the bottom-right border radius.
+    BorderBottomRightRadius border_bottom_right_radius { tr }: PxPct {} = PxPct::Px(0.),
 
-    /// Sets the padding for all sides.
-    ///
-    /// Padding is the space between the view's content and its border.
-    PaddingProp padding_combined { nocb, tr }: Padding {} = Padding::default(),
+    /// Sets the left padding.
+    PaddingLeft padding_left { tr }: PxPct {} = PxPct::Px(0.),
+    /// Sets the top padding.
+    PaddingTop padding_top { tr }: PxPct {} = PxPct::Px(0.),
+    /// Sets the right padding.
+    PaddingRight padding_right { tr }: PxPct {} = PxPct::Px(0.),
+    /// Sets the bottom padding.
+    PaddingBottom padding_bottom { tr }: PxPct {} = PxPct::Px(0.),
 
-    /// Sets the margin for all sides.
-    ///
-    /// Margin is the space outside the view's border.
-    MarginProp margin_combined { nocb, tr }: Margin {} = Margin::default(),
+    /// Sets the left margin.
+    MarginLeft margin_left { tr }: PxPctAuto {} = PxPctAuto::Px(0.),
+    /// Sets the top margin.
+    MarginTop margin_top { tr }: PxPctAuto {} = PxPctAuto::Px(0.),
+    /// Sets the right margin.
+    MarginRight margin_right { tr }: PxPctAuto {} = PxPctAuto::Px(0.),
+    /// Sets the bottom margin.
+    MarginBottom margin_bottom { tr }: PxPctAuto {} = PxPctAuto::Px(0.),
 
     /// Sets the left offset for positioned views.
     InsetLeft inset_left {tr}: PxPctAuto {} = PxPctAuto::Auto,
@@ -1942,45 +1981,6 @@ define_builtin_props!(
     Focusable set_focus {}: Focus { } = Focus::None,
 );
 
-impl BuiltinStyle<'_> {
-    // Individual padding accessors
-    pub fn padding_left(&self) -> PxPct {
-        self.style.get(PaddingProp).left.unwrap_or(PxPct::Px(0.0))
-    }
-    pub fn padding_top(&self) -> PxPct {
-        self.style.get(PaddingProp).top.unwrap_or(PxPct::Px(0.0))
-    }
-    pub fn padding_right(&self) -> PxPct {
-        self.style.get(PaddingProp).right.unwrap_or(PxPct::Px(0.0))
-    }
-    pub fn padding_bottom(&self) -> PxPct {
-        self.style.get(PaddingProp).bottom.unwrap_or(PxPct::Px(0.0))
-    }
-
-    // Individual margin accessors
-    pub fn margin_left(&self) -> PxPctAuto {
-        self.style
-            .get(MarginProp)
-            .left
-            .unwrap_or(PxPctAuto::Px(0.0))
-    }
-    pub fn margin_top(&self) -> PxPctAuto {
-        self.style.get(MarginProp).top.unwrap_or(PxPctAuto::Px(0.0))
-    }
-    pub fn margin_right(&self) -> PxPctAuto {
-        self.style
-            .get(MarginProp)
-            .right
-            .unwrap_or(PxPctAuto::Px(0.0))
-    }
-    pub fn margin_bottom(&self) -> PxPctAuto {
-        self.style
-            .get(MarginProp)
-            .bottom
-            .unwrap_or(PxPctAuto::Px(0.0))
-    }
-}
-
 prop_extractor! {
     pub FontProps {
         pub size: FontSize,
@@ -1993,9 +1993,20 @@ prop_extractor! {
 prop_extractor! {
     pub(crate) LayoutProps {
         // display is used here to just to properly trigger transitions on layout change. it is not transitioned here
-        pub border: BorderProp,
-        pub padding: PaddingProp,
-        pub margin: MarginProp,
+        pub border_left: BorderLeft,
+        pub border_top: BorderTop,
+        pub border_right: BorderRight,
+        pub border_bottom: BorderBottom,
+
+        pub padding_left: PaddingLeft,
+        pub padding_top: PaddingTop,
+        pub padding_right: PaddingRight,
+        pub padding_bottom: PaddingBottom,
+
+        pub margin_left: MarginLeft,
+        pub margin_top: MarginTop,
+        pub margin_right: MarginRight,
+        pub margin_bottom: MarginBottom,
 
         pub width: Width,
         pub height: Height,
@@ -2037,10 +2048,22 @@ prop_extractor! {
 
         pub overflow_x: OverflowX,
         pub overflow_y: OverflowY,
-        pub border_radius: BorderRadiusProp,
+        pub border_top_left_radius: BorderTopLeftRadius,
+        pub border_top_right_radius: BorderTopRightRadius,
+        pub border_bottom_left_radius: BorderBottomLeftRadius,
+        pub border_bottom_right_radius: BorderBottomRightRadius,
     }
 }
 impl TransformProps {
+    pub fn border_radius(&self) -> BorderRadius {
+        BorderRadius {
+            top_left: Some(self.border_top_left_radius()),
+            top_right: Some(self.border_top_right_radius()),
+            bottom_left: Some(self.border_bottom_left_radius()),
+            bottom_right: Some(self.border_bottom_right_radius()),
+        }
+    }
+
     pub fn affine(&self, size: kurbo::Size) -> Affine {
         let mut result = Affine::IDENTITY;
         // CANONICAL ORDER (matches CSS individual properties):
@@ -2123,6 +2146,33 @@ impl TransformProps {
 }
 
 impl LayoutProps {
+    pub fn border(&self) -> Border {
+        Border {
+            left: Some(self.border_left()),
+            top: Some(self.border_top()),
+            right: Some(self.border_right()),
+            bottom: Some(self.border_bottom()),
+        }
+    }
+
+    pub fn padding(&self) -> Padding {
+        Padding {
+            left: Some(self.padding_left()),
+            top: Some(self.padding_top()),
+            right: Some(self.padding_right()),
+            bottom: Some(self.padding_bottom()),
+        }
+    }
+
+    pub fn margin(&self) -> Margin {
+        Margin {
+            left: Some(self.margin_left()),
+            top: Some(self.margin_top()),
+            right: Some(self.margin_right()),
+            bottom: Some(self.margin_bottom()),
+        }
+    }
+
     pub fn to_style(&self) -> Style {
         let border = self.border();
         let padding = self.padding();
@@ -2541,12 +2591,20 @@ impl Style {
 
     /// Sets the border color for all sides of the view.
     pub fn border_color(self, color: impl Into<Brush>) -> Self {
-        self.set(BorderColorProp, BorderColor::all(color))
+        let color = color.into();
+        self.set(BorderLeftColor, Some(color.clone()))
+            .set(BorderTopColor, Some(color.clone()))
+            .set(BorderRightColor, Some(color.clone()))
+            .set(BorderBottomColor, Some(color))
     }
 
     /// Sets the border properties for all sides of the view.
     pub fn border(self, border: impl Into<StrokeWrap>) -> Self {
-        self.set(BorderProp, Border::all(border))
+        let border = border.into();
+        self.set(BorderLeft, border.clone())
+            .set(BorderTop, border.clone())
+            .set(BorderRight, border.clone())
+            .set(BorderBottom, border)
     }
 
     /// Sets the outline properties of the view.
@@ -2556,20 +2614,16 @@ impl Style {
 
     /// Sets `border_left` and `border_right` to `border`
     pub fn border_horiz(self, border: impl Into<StrokeWrap>) -> Self {
-        let mut current = self.get(BorderProp);
         let border = border.into();
-        current.left = Some(border.clone());
-        current.right = Some(border);
-        self.set(BorderProp, current)
+        self.set(BorderLeft, border.clone())
+            .set(BorderRight, border)
     }
 
     /// Sets `border_top` and `border_bottom` to `border`
     pub fn border_vert(self, border: impl Into<StrokeWrap>) -> Self {
-        let mut current = self.get(BorderProp);
         let border = border.into();
-        current.top = Some(border.clone());
-        current.bottom = Some(border);
-        self.set(BorderProp, current)
+        self.set(BorderTop, border.clone())
+            .set(BorderBottom, border)
     }
 
     /// Sets the left padding as a percentage of the parent container width.
@@ -2594,21 +2648,23 @@ impl Style {
 
     /// Set padding on all directions
     pub fn padding(self, padding: impl Into<PxPct>) -> Self {
-        self.set(PaddingProp, Padding::all(padding))
+        let padding = padding.into();
+        self.set(PaddingLeft, padding)
+            .set(PaddingTop, padding)
+            .set(PaddingRight, padding)
+            .set(PaddingBottom, padding)
     }
 
     /// Sets padding on all sides as a percentage of the parent container width.
     pub fn padding_pct(self, padding: f64) -> Self {
-        self.set(PaddingProp, Padding::all(padding.pct()))
+        self.padding(padding.pct())
     }
 
     /// Sets `padding_left` and `padding_right` to `padding`
     pub fn padding_horiz(self, padding: impl Into<PxPct>) -> Self {
-        let mut current = self.get(PaddingProp);
         let padding = padding.into();
-        current.left = Some(padding);
-        current.right = Some(padding);
-        self.set(PaddingProp, current)
+        self.set(PaddingLeft, padding)
+            .set(PaddingRight, padding)
     }
 
     /// Sets horizontal padding as a percentage of the parent container width.
@@ -2618,11 +2674,9 @@ impl Style {
 
     /// Sets `padding_top` and `padding_bottom` to `padding`
     pub fn padding_vert(self, padding: impl Into<PxPct>) -> Self {
-        let mut current = self.get(PaddingProp);
         let padding = padding.into();
-        current.top = Some(padding);
-        current.bottom = Some(padding);
-        self.set(PaddingProp, current)
+        self.set(PaddingTop, padding)
+            .set(PaddingBottom, padding)
     }
 
     /// Sets vertical padding as a percentage of the parent container width.
@@ -2652,21 +2706,23 @@ impl Style {
 
     /// Sets margin on all sides of the view.
     pub fn margin(self, margin: impl Into<PxPctAuto>) -> Self {
-        self.set(MarginProp, Margin::all(margin))
+        let margin = margin.into();
+        self.set(MarginLeft, margin)
+            .set(MarginTop, margin)
+            .set(MarginRight, margin)
+            .set(MarginBottom, margin)
     }
 
     /// Sets margin on all sides as a percentage of the parent container width.
     pub fn margin_pct(self, margin: f64) -> Self {
-        self.set(MarginProp, Margin::all(margin.pct()))
+        self.margin(margin.pct())
     }
 
     /// Sets `margin_left` and `margin_right` to `margin`
     pub fn margin_horiz(self, margin: impl Into<PxPctAuto>) -> Self {
-        let mut current = self.get(MarginProp);
         let margin = margin.into();
-        current.left = Some(margin);
-        current.right = Some(margin);
-        self.set(MarginProp, current)
+        self.set(MarginLeft, margin)
+            .set(MarginRight, margin)
     }
 
     /// Sets horizontal margin as a percentage of the parent container width.
@@ -2676,11 +2732,9 @@ impl Style {
 
     /// Sets `margin_top` and `margin_bottom` to `margin`
     pub fn margin_vert(self, margin: impl Into<PxPctAuto>) -> Self {
-        let mut current = self.get(MarginProp);
         let margin = margin.into();
-        current.top = Some(margin);
-        current.bottom = Some(margin);
-        self.set(MarginProp, current)
+        self.set(MarginTop, margin)
+            .set(MarginBottom, margin)
     }
 
     /// Sets vertical margin as a percentage of the parent container width.
@@ -2688,156 +2742,117 @@ impl Style {
         self.margin_vert(margin.pct())
     }
 
-    /// Sets the left padding of the view.
-    pub fn padding_left(self, padding: impl Into<PxPct>) -> Self {
-        let mut current = self.get(PaddingProp);
-        current.left = Some(padding.into());
-        self.set(PaddingProp, current)
-    }
-    /// Sets the right padding of the view.
-    pub fn padding_right(self, padding: impl Into<PxPct>) -> Self {
-        let mut current = self.get(PaddingProp);
-        current.right = Some(padding.into());
-        self.set(PaddingProp, current)
-    }
-    /// Sets the top padding of the view.
-    pub fn padding_top(self, padding: impl Into<PxPct>) -> Self {
-        let mut current = self.get(PaddingProp);
-        current.top = Some(padding.into());
-        self.set(PaddingProp, current)
-    }
-    /// Sets the bottom padding of the view.
-    pub fn padding_bottom(self, padding: impl Into<PxPct>) -> Self {
-        let mut current = self.get(PaddingProp);
-        current.bottom = Some(padding.into());
-        self.set(PaddingProp, current)
-    }
-
-    /// Sets the left margin of the view.
-    pub fn margin_left(self, margin: impl Into<PxPctAuto>) -> Self {
-        let mut current = self.get(MarginProp);
-        current.left = Some(margin.into());
-        self.set(MarginProp, current)
-    }
-    /// Sets the right margin of the view.
-    pub fn margin_right(self, margin: impl Into<PxPctAuto>) -> Self {
-        let mut current = self.get(MarginProp);
-        current.right = Some(margin.into());
-        self.set(MarginProp, current)
-    }
-    /// Sets the top margin of the view.
-    pub fn margin_top(self, margin: impl Into<PxPctAuto>) -> Self {
-        let mut current = self.get(MarginProp);
-        current.top = Some(margin.into());
-        self.set(MarginProp, current)
-    }
-    /// Sets the bottom margin of the view.
-    pub fn margin_bottom(self, margin: impl Into<PxPctAuto>) -> Self {
-        let mut current = self.get(MarginProp);
-        current.bottom = Some(margin.into());
-        self.set(MarginProp, current)
-    }
-
     /// Applies a complete padding configuration to the view.
     pub fn apply_padding(self, padding: Padding) -> Self {
-        self.set(PaddingProp, padding)
+        let mut style = self;
+        if let Some(left) = padding.left {
+            style = style.set(PaddingLeft, left);
+        }
+        if let Some(top) = padding.top {
+            style = style.set(PaddingTop, top);
+        }
+        if let Some(right) = padding.right {
+            style = style.set(PaddingRight, right);
+        }
+        if let Some(bottom) = padding.bottom {
+            style = style.set(PaddingBottom, bottom);
+        }
+        style
     }
     /// Applies a complete margin configuration to the view.
     pub fn apply_margin(self, margin: Margin) -> Self {
-        self.set(MarginProp, margin)
+        let mut style = self;
+        if let Some(left) = margin.left {
+            style = style.set(MarginLeft, left);
+        }
+        if let Some(top) = margin.top {
+            style = style.set(MarginTop, top);
+        }
+        if let Some(right) = margin.right {
+            style = style.set(MarginRight, right);
+        }
+        if let Some(bottom) = margin.bottom {
+            style = style.set(MarginBottom, bottom);
+        }
+        style
     }
 
     /// Sets the border radius for all corners of the view.
     pub fn border_radius(self, radius: impl Into<PxPct>) -> Self {
-        self.set(BorderRadiusProp, BorderRadius::all(radius))
-    }
-
-    /// Sets the left border of the view.
-    pub fn border_left(self, border: impl Into<StrokeWrap>) -> Self {
-        let mut current = self.get(BorderProp);
-        current.left = Some(border.into());
-        self.set(BorderProp, current)
-    }
-    /// Sets the right border of the view.
-    pub fn border_right(self, border: impl Into<StrokeWrap>) -> Self {
-        let mut current = self.get(BorderProp);
-        current.right = Some(border.into());
-        self.set(BorderProp, current)
-    }
-    /// Sets the top border of the view.
-    pub fn border_top(self, border: impl Into<StrokeWrap>) -> Self {
-        let mut current = self.get(BorderProp);
-        current.top = Some(border.into());
-        self.set(BorderProp, current)
-    }
-    /// Sets the bottom border of the view.
-    pub fn border_bottom(self, border: impl Into<StrokeWrap>) -> Self {
-        let mut current = self.get(BorderProp);
-        current.bottom = Some(border.into());
-        self.set(BorderProp, current)
+        let radius = radius.into();
+        self.set(BorderTopLeftRadius, radius)
+            .set(BorderTopRightRadius, radius)
+            .set(BorderBottomLeftRadius, radius)
+            .set(BorderBottomRightRadius, radius)
     }
 
     /// Sets the left border color of the view.
     pub fn border_left_color(self, color: impl Into<Brush>) -> Self {
-        let mut current = self.get(BorderColorProp);
-        current.left = Some(color.into());
-        self.set(BorderColorProp, current)
+        self.set(BorderLeftColor, Some(color.into()))
     }
     /// Sets the right border color of the view.
     pub fn border_right_color(self, color: impl Into<Brush>) -> Self {
-        let mut current = self.get(BorderColorProp);
-        current.right = Some(color.into());
-        self.set(BorderColorProp, current)
+        self.set(BorderRightColor, Some(color.into()))
     }
     /// Sets the top border color of the view.
     pub fn border_top_color(self, color: impl Into<Brush>) -> Self {
-        let mut current = self.get(BorderColorProp);
-        current.top = Some(color.into());
-        self.set(BorderColorProp, current)
+        self.set(BorderTopColor, Some(color.into()))
     }
     /// Sets the bottom border color of the view.
     pub fn border_bottom_color(self, color: impl Into<Brush>) -> Self {
-        let mut current = self.get(BorderColorProp);
-        current.bottom = Some(color.into());
-        self.set(BorderColorProp, current)
-    }
-
-    /// Sets the top-left border radius of the view.
-    pub fn border_top_left_radius(self, radius: impl Into<PxPct>) -> Self {
-        let mut current = self.get(BorderRadiusProp);
-        current.top_left = Some(radius.into());
-        self.set(BorderRadiusProp, current)
-    }
-    /// Sets the top-right border radius of the view.
-    pub fn border_top_right_radius(self, radius: impl Into<PxPct>) -> Self {
-        let mut current = self.get(BorderRadiusProp);
-        current.top_right = Some(radius.into());
-        self.set(BorderRadiusProp, current)
-    }
-    /// Sets the bottom-left border radius of the view.
-    pub fn border_bottom_left_radius(self, radius: impl Into<PxPct>) -> Self {
-        let mut current = self.get(BorderRadiusProp);
-        current.bottom_left = Some(radius.into());
-        self.set(BorderRadiusProp, current)
-    }
-    /// Sets the bottom-right border radius of the view.
-    pub fn border_bottom_right_radius(self, radius: impl Into<PxPct>) -> Self {
-        let mut current = self.get(BorderRadiusProp);
-        current.bottom_right = Some(radius.into());
-        self.set(BorderRadiusProp, current)
+        self.set(BorderBottomColor, Some(color.into()))
     }
 
     /// Applies a complete border configuration to the view.
     pub fn apply_border(self, border: Border) -> Self {
-        self.set(BorderProp, border)
+        let mut style = self;
+        if let Some(left) = border.left {
+            style = style.set(BorderLeft, left);
+        }
+        if let Some(top) = border.top {
+            style = style.set(BorderTop, top);
+        }
+        if let Some(right) = border.right {
+            style = style.set(BorderRight, right);
+        }
+        if let Some(bottom) = border.bottom {
+            style = style.set(BorderBottom, bottom);
+        }
+        style
     }
     /// Applies a complete border color configuration to the view.
     pub fn apply_border_color(self, border_color: BorderColor) -> Self {
-        self.set(BorderColorProp, border_color)
+        let mut style = self;
+        if let Some(left) = border_color.left {
+            style = style.set(BorderLeftColor, Some(left));
+        }
+        if let Some(top) = border_color.top {
+            style = style.set(BorderTopColor, Some(top));
+        }
+        if let Some(right) = border_color.right {
+            style = style.set(BorderRightColor, Some(right));
+        }
+        if let Some(bottom) = border_color.bottom {
+            style = style.set(BorderBottomColor, Some(bottom));
+        }
+        style
     }
     /// Applies a complete border radius configuration to the view.
     pub fn apply_border_radius(self, border_radius: BorderRadius) -> Self {
-        self.set(BorderRadiusProp, border_radius)
+        let mut style = self;
+        if let Some(top_left) = border_radius.top_left {
+            style = style.set(BorderTopLeftRadius, top_left);
+        }
+        if let Some(top_right) = border_radius.top_right {
+            style = style.set(BorderTopRightRadius, top_right);
+        }
+        if let Some(bottom_left) = border_radius.bottom_left {
+            style = style.set(BorderBottomLeftRadius, bottom_left);
+        }
+        if let Some(bottom_right) = border_radius.bottom_right {
+            style = style.set(BorderBottomRightRadius, bottom_right);
+        }
+        style
     }
 
     /// Sets the left inset as a percentage of the parent container width.
@@ -3329,32 +3344,27 @@ impl Style {
             align_self: style.align_self(),
             aspect_ratio: style.aspect_ratio(),
             border: {
-                let border = style.style.get(BorderProp);
                 Rect {
-                    left: LengthPercentage::length(border.left.map_or(0.0, |b| b.0.width) as f32),
-                    top: LengthPercentage::length(border.top.map_or(0.0, |b| b.0.width) as f32),
-                    right: LengthPercentage::length(border.right.map_or(0.0, |b| b.0.width) as f32),
-                    bottom: LengthPercentage::length(
-                        border.bottom.map_or(0.0, |b| b.0.width) as f32
-                    ),
+                    left: LengthPercentage::length(style.border_left().0.width as f32),
+                    top: LengthPercentage::length(style.border_top().0.width as f32),
+                    right: LengthPercentage::length(style.border_right().0.width as f32),
+                    bottom: LengthPercentage::length(style.border_bottom().0.width as f32),
                 }
             },
             padding: {
-                let padding = style.style.get(PaddingProp);
                 Rect {
-                    left: padding.left.unwrap_or(PxPct::Px(0.0)).into(),
-                    top: padding.top.unwrap_or(PxPct::Px(0.0)).into(),
-                    right: padding.right.unwrap_or(PxPct::Px(0.0)).into(),
-                    bottom: padding.bottom.unwrap_or(PxPct::Px(0.0)).into(),
+                    left: style.padding_left().into(),
+                    top: style.padding_top().into(),
+                    right: style.padding_right().into(),
+                    bottom: style.padding_bottom().into(),
                 }
             },
             margin: {
-                let margin = style.style.get(MarginProp);
                 Rect {
-                    left: margin.left.unwrap_or(PxPctAuto::Px(0.0)).into(),
-                    top: margin.top.unwrap_or(PxPctAuto::Px(0.0)).into(),
-                    right: margin.right.unwrap_or(PxPctAuto::Px(0.0)).into(),
-                    bottom: margin.bottom.unwrap_or(PxPctAuto::Px(0.0)).into(),
+                    left: style.margin_left().into(),
+                    top: style.margin_top().into(),
+                    right: style.margin_right().into(),
+                    bottom: style.margin_bottom().into(),
                 }
             },
             inset: Rect {

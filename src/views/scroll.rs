@@ -22,8 +22,10 @@ use crate::{
     event::{Event, EventPropagation, Phase},
     prop, prop_extractor,
     style::{
-        Background, BorderColorProp, BorderRadiusProp, CustomStylable, CustomStyle, OverflowX,
-        OverflowY, Style, StyleClass,
+        Background, BorderBottomColor, BorderBottomLeftRadius, BorderBottomRightRadius,
+        BorderLeftColor, BorderRightColor, BorderTopColor, BorderTopLeftRadius,
+        BorderTopRightRadius, CustomStylable, CustomStyle, OverflowX, OverflowY, Style,
+        StyleClass,
     },
     style_class,
     unit::{Px, PxPct},
@@ -462,10 +464,36 @@ prop!(
 prop_extractor! {
     ScrollTrackStyle {
         color: Background,
-        border_radius: BorderRadiusProp,
-        border_color: BorderColorProp,
+        border_top_left_radius: BorderTopLeftRadius,
+        border_top_right_radius: BorderTopRightRadius,
+        border_bottom_left_radius: BorderBottomLeftRadius,
+        border_bottom_right_radius: BorderBottomRightRadius,
+        border_left_color: BorderLeftColor,
+        border_top_color: BorderTopColor,
+        border_right_color: BorderRightColor,
+        border_bottom_color: BorderBottomColor,
         border: Border,
         rounded: Rounded,
+    }
+}
+
+impl ScrollTrackStyle {
+    fn border_radius(&self) -> crate::style::BorderRadius {
+        crate::style::BorderRadius {
+            top_left: Some(self.border_top_left_radius()),
+            top_right: Some(self.border_top_right_radius()),
+            bottom_left: Some(self.border_bottom_left_radius()),
+            bottom_right: Some(self.border_bottom_right_radius()),
+        }
+    }
+
+    fn border_color(&self) -> crate::style::BorderColor {
+        crate::style::BorderColor {
+            left: self.border_left_color(),
+            top: self.border_top_color(),
+            right: self.border_right_color(),
+            bottom: self.border_bottom_color(),
+        }
     }
 }
 

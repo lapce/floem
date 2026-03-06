@@ -10,7 +10,9 @@ use crate::{
     message::UpdateMessage,
     prop_extractor,
     style::{
-        Background, BorderColorProp, BorderRadiusProp, BoxShadowProp, CursorStyle,
+        Background, BorderBottomColor, BorderBottomLeftRadius, BorderBottomRightRadius,
+        BorderLeftColor, BorderRightColor, BorderTopColor, BorderTopLeftRadius,
+        BorderTopRightRadius, BoxShadowProp, CursorStyle,
         InheritedInteractionCx, LayoutProps, Outline, OutlineColor, Style, StyleClassRef,
         StyleSelectors, TransformProps, recalc::StyleReason,
     },
@@ -78,13 +80,19 @@ impl<T> Stack<T> {
 #[cfg(feature = "vello")]
 prop_extractor! {
     pub(crate) ViewStyleProps {
-        pub border_radius: BorderRadiusProp,
+        pub border_top_left_radius: BorderTopLeftRadius,
+        pub border_top_right_radius: BorderTopRightRadius,
+        pub border_bottom_left_radius: BorderBottomLeftRadius,
+        pub border_bottom_right_radius: BorderBottomRightRadius,
         pub border_progress: crate::style::BorderProgress,
 
         pub outline: Outline,
         pub outline_color: OutlineColor,
         pub outline_progress: crate::style::OutlineProgress,
-        pub border_color: BorderColorProp,
+        pub border_left_color: BorderLeftColor,
+        pub border_top_color: BorderTopColor,
+        pub border_right_color: BorderRightColor,
+        pub border_bottom_color: BorderBottomColor,
         pub background: Background,
         pub shadow: BoxShadowProp,
     }
@@ -93,11 +101,17 @@ prop_extractor! {
 #[cfg(not(feature = "vello"))]
 prop_extractor! {
     pub(crate) ViewStyleProps {
-        pub border_radius: BorderRadiusProp,
+        pub border_top_left_radius: BorderTopLeftRadius,
+        pub border_top_right_radius: BorderTopRightRadius,
+        pub border_bottom_left_radius: BorderBottomLeftRadius,
+        pub border_bottom_right_radius: BorderBottomRightRadius,
 
         pub outline: Outline,
         pub outline_color: OutlineColor,
-        pub border_color: BorderColorProp,
+        pub border_left_color: BorderLeftColor,
+        pub border_top_color: BorderTopColor,
+        pub border_right_color: BorderRightColor,
+        pub border_bottom_color: BorderBottomColor,
         pub background: Background,
         pub shadow: BoxShadowProp,
     }
@@ -193,6 +207,26 @@ impl Visibility {
     /// Returns true if the view should be treated as hidden.
     pub fn is_hidden(&self) -> bool {
         self.phase == VisibilityPhase::Hidden
+    }
+}
+
+impl ViewStyleProps {
+    pub fn border_radius(&self) -> crate::style::BorderRadius {
+        crate::style::BorderRadius {
+            top_left: Some(self.border_top_left_radius()),
+            top_right: Some(self.border_top_right_radius()),
+            bottom_left: Some(self.border_bottom_left_radius()),
+            bottom_right: Some(self.border_bottom_right_radius()),
+        }
+    }
+
+    pub fn border_color(&self) -> crate::style::BorderColor {
+        crate::style::BorderColor {
+            left: self.border_left_color(),
+            top: self.border_top_color(),
+            right: self.border_right_color(),
+            bottom: self.border_bottom_color(),
+        }
     }
 }
 
