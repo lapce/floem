@@ -211,7 +211,7 @@ struct Layer {
 }
 impl Layer {
     fn device_transform(&self) -> Affine {
-        Affine::scale(self.window_scale) * self.transform
+        self.transform
     }
 
     fn scale_components(&self) -> (f64, f64, f64) {
@@ -731,10 +731,6 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
     pub fn set_scale(&mut self, scale: f64) {
         self.layers[0].window_scale = scale;
         self.window_scale = scale;
-    }
-
-    pub fn scale(&self) -> f64 {
-        self.window_scale
     }
 
     pub fn size(&self) -> Size {

@@ -100,7 +100,7 @@ impl ApplicationHandle {
                         window.clone(),
                         gpu_resources.clone(),
                         surface,
-                        renderer.scale(),
+                        handle.window_state.effective_scale(),
                         renderer.size(),
                         *font_embolden,
                     );

@@ -182,7 +182,6 @@ impl WindowHandle {
             PaintState::new_pending(
                 window.clone(),
                 gpu_resources_rx,
-                os_scale,
                 size.get_untracked() * os_scale,
                 font_embolden,
             )
@@ -292,7 +291,6 @@ impl WindowHandle {
         let paint_state = PaintState::new_pending(
             window.clone(),
             rx,
-            os_scale,
             size_val * os_scale,
             0.0, // font_embolden
         );
@@ -773,25 +771,16 @@ impl WindowHandle {
 
         // Background fill (unchanged)
         if !self.transparent {
-            let scale = cx.window_state.user_scale;
             let color = self
                 .default_theme
                 .as_ref()
                 .and_then(|theme| theme.get(crate::style::Background))
                 .unwrap_or(peniko::Brush::Solid(palette::css::WHITE));
 
-            // fill window with default white background if it's not transparent
+            // Fill the full render target. The renderer now operates in device space
+            // during paint, so this must use the physical surface size, not logical size.
             let renderer = cx.paint_state.renderer_mut();
-            renderer.fill(
-                &self
-                    .size
-                    .get_untracked()
-                    .to_rect()
-                    .scale_from_origin(1.0 / scale)
-                    .expand(),
-                &color,
-                0.0,
-            );
+            renderer.fill(&renderer.size().to_rect().expand(), &color, 0.0);
         }
 
         // Paint main tree with overlays using explicit traversal

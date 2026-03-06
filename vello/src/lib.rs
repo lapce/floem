@@ -47,7 +47,7 @@ pub struct VelloRenderer {
 
 impl VelloRenderer {
     fn device_transform(&self) -> Affine {
-        self.transform.then_scale(self.window_scale)
+        self.transform
     }
 
     pub fn new(
@@ -190,10 +190,6 @@ impl VelloRenderer {
         self.window_scale = scale;
     }
 
-    pub const fn scale(&self) -> f64 {
-        self.window_scale
-    }
-
     pub const fn size(&self) -> Size {
         Size::new(
             self.surface.config.width as f64,
@@ -290,7 +286,7 @@ impl Renderer for VelloRenderer {
             Fill::NonZero,
             blend,
             alpha,
-            (self.transform * transform).then_scale(self.window_scale),
+            self.transform * transform,
             clip,
         );
     }
@@ -541,8 +537,8 @@ impl VelloRenderer {
                 &view,
                 &vello::RenderParams {
                     base_color: palette::css::BLACK, // Background color
-                    width: self.surface.config.width * self.window_scale as u32,
-                    height: self.surface.config.height * self.window_scale as u32,
+                    width: self.surface.config.width,
+                    height: self.surface.config.height,
                     antialiasing_method: AaConfig::Area,
                 },
             )

@@ -131,10 +131,6 @@ impl VgerRenderer {
         self.scale = scale;
     }
 
-    pub fn scale(&self) -> f64 {
-        self.scale
-    }
-
     pub fn size(&self) -> Size {
         Size::new(self.config.width as f64, self.config.height as f64)
     }
@@ -142,7 +138,7 @@ impl VgerRenderer {
 
 impl VgerRenderer {
     fn device_transform(&self) -> Affine {
-        Affine::scale(self.scale) * self.transform
+        self.transform
     }
 
     fn scale_components(&self) -> (f64, f64, f64) {
@@ -319,11 +315,8 @@ impl Renderer for VgerRenderer {
         }
 
         self.transform = Affine::IDENTITY;
-        self.vger.begin(
-            self.config.width as f32,
-            self.config.height as f32,
-            self.scale as f32,
-        );
+        self.vger
+            .begin(self.config.width as f32, self.config.height as f32, 1.0);
     }
 
     fn stroke<'b, 's>(

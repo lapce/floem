@@ -284,9 +284,8 @@ impl GlobalPaintCx<'_> {
         drop(box_tree);
 
         // Set absolute transform on renderer
-        self.paint_state
-            .renderer_mut()
-            .set_transform(world_transform);
+        let device_transform = world_transform.then_scale(self.window_state.effective_scale());
+        self.paint_state.renderer_mut().set_transform(device_transform);
 
         let layout_rect = layout_rect_local;
         let view_id = element_id.owning_id();
@@ -401,7 +400,6 @@ impl PaintState {
     pub fn new_pending(
         window: Arc<dyn Window>,
         rx: Receiver<Result<(GpuResources, wgpu::Surface<'static>), GpuResourceError>>,
-        scale: f64,
         size: Size,
         font_embolden: f32,
     ) -> Self {
@@ -409,7 +407,7 @@ impl PaintState {
             window,
             rx,
             font_embolden,
-            renderer: Renderer::Uninitialized { scale, size },
+            renderer: Renderer::Uninitialized { size },
         }
     }
 

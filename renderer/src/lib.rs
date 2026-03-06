@@ -111,11 +111,16 @@ pub trait Renderer {
     /// inspector to take snapshots.
     fn begin(&mut self, capture: bool);
 
-    /// Set the current affine transform.
+    /// Set the current affine transform in device/render-target coordinates.
     ///
     /// All subsequent drawing commands are transformed by `transform` until it
-    /// is changed again. The framework calls this whenever the coordinate space
-    /// changes (e.g. when entering a child view with an offset or rotation).
+    /// is changed again. The framework provides this as the final transform for
+    /// the current visual node, including window scaling, so backends should not
+    /// apply an additional global window-scale multiply to ordinary geometry.
+    ///
+    /// Raster-backed operations such as glyph and SVG caching may still derive
+    /// a rasterization scale from this transform to choose an appropriate pixel
+    /// resolution.
     fn set_transform(&mut self, transform: Affine);
 
     /// Set the z-index for subsequent draw commands.
