@@ -1360,6 +1360,7 @@ impl WindowHandle {
 
     fn needs_box_tree_commit(&mut self) -> bool {
         self.window_state.needs_box_tree_commit
+            || self.window_state.box_tree.borrow().needs_commit()
     }
 
     fn needs_box_tree_update(&mut self) -> bool {
