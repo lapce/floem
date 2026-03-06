@@ -236,16 +236,11 @@ impl<'a> StyleCx<'a> {
             if intersection.is_some_and(|i| i.is_empty()) {
                 self.reason.clear_flag(StyleReasonFlags::SELECTOR);
             }
-        } else {
-            self.reason.clear_flag(StyleReasonFlags::SELECTOR);
         }
 
         if let Some(changed) = &self.reason.classes_changed
             && !changed.iter().any(|c| classes.contains(c))
         {
-            self.reason
-                .clear_flag(StyleReasonFlags::CLASS_CONTEXT_CHANGE);
-        } else {
             self.reason
                 .clear_flag(StyleReasonFlags::CLASS_CONTEXT_CHANGE);
         }
