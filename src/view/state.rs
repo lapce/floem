@@ -12,9 +12,9 @@ use crate::{
     style::{
         Background, BorderBottomColor, BorderBottomLeftRadius, BorderBottomRightRadius,
         BorderLeftColor, BorderRightColor, BorderTopColor, BorderTopLeftRadius,
-        BorderTopRightRadius, BoxShadowProp, CursorStyle,
-        InheritedInteractionCx, LayoutProps, Outline, OutlineColor, Style, StyleClassRef,
-        StyleSelectors, TransformProps, recalc::StyleReason,
+        BorderTopRightRadius, BoxShadowProp, CursorStyle, InheritedInteractionCx, LayoutProps,
+        Outline, OutlineColor, Style, StyleClassRef, StyleSelectors, TransformProps,
+        recalc::StyleReason,
     },
     view::LayoutTree,
 };

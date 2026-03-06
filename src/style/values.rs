@@ -38,13 +38,14 @@ use crate::unit::{Pct, Px, PxPct, PxPctAuto};
 use crate::view::ViewTupleFlat;
 use crate::view::{IntoView, View};
 use crate::views::{
-    ButtonClass, ContainerExt, Decorators, Label, Stack, TooltipExt, canvas, dyn_view, svg,
+    ButtonClass, ContainerExt, Decorators, Label, Stack, TabSelectorClass, TooltipExt, canvas,
+    dyn_view, svg, tab,
 };
 
 use super::FontSize;
 use super::{
-    ResponsiveSelectors, StructuralSelectors, Style, StyleKey, StyleKeyInfo, StylePropRef,
-    Transition,
+    ResponsiveSelectors, StructuralSelectors, Style, StyleDebugGroupInfo, StyleKey, StyleKeyInfo,
+    StylePropRef, Transition,
 };
 
 pub trait StylePropValue: Clone + PartialEq + Debug {
@@ -1343,13 +1344,55 @@ struct StyleDebugRow {
     is_empty: bool,
 }
 
-fn style_debug_is_empty(style: &Style) -> bool {
+fn effective_inherited_debug_groups(
+    style: &Style,
+    parent_groups: &HashSet<StyleKey>,
+) -> HashSet<StyleKey> {
+    let mut groups = parent_groups.clone();
+    for key in style.map.keys() {
+        if let StyleKeyInfo::DebugGroup(info) = key.info {
+            if style.debug_group_enabled(*key) {
+                if info.inherited {
+                    groups.insert(*key);
+                }
+            } else {
+                groups.remove(key);
+            }
+        }
+    }
+    groups
+}
+
+fn style_debug_active_groups(
+    style: &Style,
+    inherited_groups: &HashSet<StyleKey>,
+) -> Vec<&'static StyleDebugGroupInfo> {
+    let mut groups = style
+        .map
+        .keys()
+        .filter_map(|key| match key.info {
+            StyleKeyInfo::DebugGroup(info) if style.debug_group_enabled(*key) => Some(info),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    for key in inherited_groups {
+        if let StyleKeyInfo::DebugGroup(info) = key.info
+            && !style.map.contains_key(key)
+        {
+            groups.push(info);
+        }
+    }
+
+    groups.sort_unstable_by_key(|info| short_style_name((info.name)()));
+    groups.dedup_by_key(|info| (info.name)());
+    groups
+}
+
+fn style_debug_is_empty(style: &Style, inherited_groups: &HashSet<StyleKey>) -> bool {
     let mut hidden_props = HashSet::new();
 
-    for info in style.map.keys().filter_map(|key| match key.info {
-        StyleKeyInfo::DebugGroup(info) if style.debug_group_enabled(*key) => Some(info),
-        _ => None,
-    }) {
+    for info in style_debug_active_groups(style, inherited_groups) {
         let members = (info.member_props)();
         let present = members
             .iter()
@@ -1361,16 +1404,23 @@ fn style_debug_is_empty(style: &Style) -> bool {
         }
     }
 
-    if style.map.iter().any(|(key, _)| {
-        matches!(key.info, StyleKeyInfo::Prop(..)) && !hidden_props.contains(key)
-    }) {
+    if style
+        .map
+        .iter()
+        .any(|(key, _)| matches!(key.info, StyleKeyInfo::Prop(..)) && !hidden_props.contains(key))
+    {
         return false;
     }
 
     if style.map.iter().any(|(key, value)| match key.info {
-        StyleKeyInfo::Selector(..) | StyleKeyInfo::Class(..) => value
-            .downcast_ref::<Style>()
-            .is_some_and(|nested| !style_debug_is_empty(nested)),
+        StyleKeyInfo::Selector(..) | StyleKeyInfo::Class(..) => {
+            value.downcast_ref::<Style>().is_some_and(|nested| {
+                !style_debug_is_empty(
+                    nested,
+                    &effective_inherited_debug_groups(nested, inherited_groups),
+                )
+            })
+        }
         _ => false,
     }) {
         return false;
@@ -1378,12 +1428,22 @@ fn style_debug_is_empty(style: &Style) -> bool {
 
     for value in style.map.values() {
         if let Some(rules) = value.downcast_ref::<StructuralSelectors>()
-            && rules.0.iter().any(|(_, nested)| !style_debug_is_empty(nested))
+            && rules.0.iter().any(|(_, nested)| {
+                !style_debug_is_empty(
+                    nested,
+                    &effective_inherited_debug_groups(nested, inherited_groups),
+                )
+            })
         {
             return false;
         }
         if let Some(rules) = value.downcast_ref::<ResponsiveSelectors>()
-            && rules.0.iter().any(|(_, nested)| !style_debug_is_empty(nested))
+            && rules.0.iter().any(|(_, nested)| {
+                !style_debug_is_empty(
+                    nested,
+                    &effective_inherited_debug_groups(nested, inherited_groups),
+                )
+            })
         {
             return false;
         }
@@ -1415,7 +1475,13 @@ fn debug_name_cell(name: String, is_direct: bool, indent: usize) -> AnyView {
         .into_any()
     };
 
-    name.style(move |s| s.min_width(170.0).padding_left(indent))
+    name.container()
+        .style(move |s| {
+            s.padding_left(indent)
+                .min_width(170.)
+                .padding_right(5.0)
+                .flex_direction(FlexDirection::RowReverse)
+        })
         .into_any()
 }
 
@@ -1478,11 +1544,7 @@ fn style_debug_group_row(
     }
 }
 
-fn style_debug_section(
-    title: String,
-    child: StyleDebugRow,
-    indent: usize,
-) -> StyleDebugRow {
+fn style_debug_section(title: String, child: StyleDebugRow, indent: usize) -> StyleDebugRow {
     let expanded = RwSignal::new(false);
     let title_text = title.clone();
     let child_is_empty = child.is_empty;
@@ -1516,9 +1578,7 @@ fn style_debug_section(
                             s.padding_horiz(6.0)
                                 .border(1.)
                                 .border_radius(999.0)
-                                .with_theme(|s, t| {
-                                    s.color(t.text_muted()).border_color(t.border())
-                                })
+                                .with_theme(|s, t| s.color(t.text_muted()).border_color(t.border()))
                                 .with_context_opt::<FontSize, _>(|s, fs| s.font_size(fs * 0.75))
                         })
                         .style(move |s| s.apply_if(!child_is_empty, |s| s.hide())),
@@ -1562,136 +1622,178 @@ fn style_debug_sections(
     ))
 }
 
+fn style_debug_style_section(
+    title: String,
+    style: &Style,
+    inherited_groups: &HashSet<StyleKey>,
+    indent: usize,
+) -> StyleDebugRow {
+    let nested_inherited = effective_inherited_debug_groups(style, inherited_groups);
+    style_debug_section(
+        title,
+        style_debug_body(style, None, &nested_inherited, indent + 1),
+        indent,
+    )
+}
+
+fn style_debug_prop_rows(
+    style: &Style,
+    direct_keys: Option<&HashSet<StyleKey>>,
+    inherited_groups: &HashSet<StyleKey>,
+    indent: usize,
+) -> Vec<StyleDebugRow> {
+    let mut rows: Vec<StyleDebugRow> = Vec::new();
+    let mut hidden_props = HashSet::new();
+
+    for info in style_debug_active_groups(style, inherited_groups) {
+        let members = (info.member_props)();
+        let present = members
+            .iter()
+            .copied()
+            .filter(|key| style.map.contains_key(key) && !hidden_props.contains(key))
+            .collect::<Vec<_>>();
+        if present.is_empty() {
+            continue;
+        }
+        hidden_props.extend(present);
+        if let Some(view) = (info.debug_view)(style) {
+            rows.push(style_debug_group_row(
+                short_style_name((info.name)()),
+                view.into_any(),
+                true,
+                indent,
+            ));
+        }
+    }
+
+    let mut props = style
+        .map
+        .iter()
+        .filter_map(|(key, value)| match key.info {
+            StyleKeyInfo::Prop(..) if !hidden_props.contains(key) => {
+                Some((StylePropRef { key: *key }, value))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    props.sort_unstable_by_key(|(prop, _)| short_style_name(&format!("{:?}", prop.key)));
+
+    for (prop, value) in props {
+        let is_direct = direct_keys
+            .as_ref()
+            .is_none_or(|keys| keys.contains(&prop.key));
+        rows.push(style_debug_prop_row(style, prop, value, is_direct, indent));
+    }
+
+    rows
+}
+
+fn style_debug_selector_rows(
+    style: &Style,
+    inherited_groups: &HashSet<StyleKey>,
+    indent: usize,
+) -> Vec<StyleDebugRow> {
+    let mut selector_rows: Vec<StyleDebugRow> = Vec::new();
+    let mut selectors = style
+        .map
+        .iter()
+        .filter_map(|(key, value)| match key.info {
+            StyleKeyInfo::Selector(selector) => Some((selector.debug_string(), value)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    selectors.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+    for (name, value) in selectors {
+        if let Some(nested_style) = value.downcast_ref::<Style>() {
+            selector_rows.push(style_debug_style_section(
+                name,
+                nested_style,
+                inherited_groups,
+                indent,
+            ));
+        }
+    }
+
+    for value in style.map.values() {
+        if let Some(rules) = value.downcast_ref::<StructuralSelectors>() {
+            for (selector, nested_style) in &rules.0 {
+                selector_rows.push(style_debug_style_section(
+                    format!("Structural: {selector:?}"),
+                    nested_style,
+                    inherited_groups,
+                    indent,
+                ));
+            }
+        }
+        if let Some(rules) = value.downcast_ref::<ResponsiveSelectors>() {
+            for (selector, nested_style) in &rules.0 {
+                selector_rows.push(style_debug_style_section(
+                    format!("Responsive: {selector:?}"),
+                    nested_style,
+                    inherited_groups,
+                    indent,
+                ));
+            }
+        }
+    }
+
+    selector_rows
+}
+
+fn style_debug_class_rows(
+    style: &Style,
+    inherited_groups: &HashSet<StyleKey>,
+    indent: usize,
+) -> Vec<StyleDebugRow> {
+    let mut class_rows: Vec<StyleDebugRow> = Vec::new();
+    let mut classes = style
+        .map
+        .iter()
+        .filter_map(|(key, value)| match key.info {
+            StyleKeyInfo::Class(info) => Some((short_style_name((info.name)()), value)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    classes.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+    for (name, value) in classes {
+        if let Some(nested_style) = value.downcast_ref::<Style>() {
+            class_rows.push(style_debug_style_section(
+                name,
+                nested_style,
+                inherited_groups,
+                indent,
+            ));
+        }
+    }
+    class_rows
+}
+
 fn style_debug_body(
     style: &Style,
     direct_keys: Option<&HashSet<StyleKey>>,
+    inherited_groups: &HashSet<StyleKey>,
     indent: usize,
 ) -> StyleDebugRow {
     let style = style.clone();
-    let is_empty = style_debug_is_empty(&style);
+    let inherited_groups = inherited_groups.clone();
+    let is_empty = style_debug_is_empty(&style, &inherited_groups);
     let direct_keys = direct_keys.cloned();
     StyleDebugRow {
         render: Box::new(move |start_with_base| {
-            let mut rows: Vec<StyleDebugRow> = Vec::new();
-            let mut hidden_props = HashSet::new();
-
-            let mut custom_groups = style
-                .map
-                .keys()
-                .filter_map(|key| match key.info {
-                    StyleKeyInfo::DebugGroup(info) if style.debug_group_enabled(*key) => Some(info),
-                    _ => None,
-                })
-                .collect::<Vec<_>>();
-            custom_groups.sort_unstable_by_key(|info| short_style_name((info.name)()));
-
-            for info in custom_groups {
-                let members = (info.member_props)();
-                let present = members
-                    .iter()
-                    .copied()
-                    .filter(|key| style.map.contains_key(key) && !hidden_props.contains(key))
-                    .collect::<Vec<_>>();
-                if present.is_empty() {
-                    continue;
-                }
-                hidden_props.extend(present);
-                if let Some(view) = (info.debug_view)(&style) {
-                    rows.push(style_debug_group_row(
-                        short_style_name((info.name)()),
-                        view.into_any(),
-                        true,
-                        indent,
-                    ));
-                }
-            }
-
-            let mut props = style
-                .map
-                .iter()
-                .filter_map(|(key, value)| match key.info {
-                    StyleKeyInfo::Prop(..) if !hidden_props.contains(key) => {
-                        Some((StylePropRef { key: *key }, value))
-                    }
-                    _ => None,
-                })
-                .collect::<Vec<_>>();
-            props.sort_unstable_by_key(|(prop, _)| short_style_name(&format!("{:?}", prop.key)));
-
-            for (prop, value) in props {
-                let is_direct = direct_keys
-                    .as_ref()
-                    .is_none_or(|keys| keys.contains(&prop.key));
-                rows.push(style_debug_prop_row(&style, prop, value, is_direct, indent));
-            }
-
-            let mut selector_rows: Vec<StyleDebugRow> = Vec::new();
-            let mut selectors = style
-                .map
-                .iter()
-                .filter_map(|(key, value)| match key.info {
-                    StyleKeyInfo::Selector(selector) => Some((selector.debug_string(), value)),
-                    _ => None,
-                })
-                .collect::<Vec<_>>();
-            selectors.sort_unstable_by(|a, b| a.0.cmp(&b.0));
-            for (name, value) in selectors {
-                if let Some(nested_style) = value.downcast_ref::<Style>() {
-                    selector_rows.push(style_debug_section(
-                        name,
-                        style_debug_body(nested_style, None, indent + 1),
-                        indent,
-                    ));
-                }
-            }
-
-            for value in style.map.values() {
-                if let Some(rules) = value.downcast_ref::<StructuralSelectors>() {
-                    for (selector, nested_style) in &rules.0 {
-                        selector_rows.push(style_debug_section(
-                            format!("Structural: {selector:?}"),
-                            style_debug_body(nested_style, None, indent + 1),
-                            indent,
-                        ));
-                    }
-                }
-                if let Some(rules) = value.downcast_ref::<ResponsiveSelectors>() {
-                    for (selector, nested_style) in &rules.0 {
-                        selector_rows.push(style_debug_section(
-                            format!("Responsive: {selector:?}"),
-                            style_debug_body(nested_style, None, indent + 1),
-                            indent,
-                        ));
-                    }
-                }
-            }
-
-            let mut class_rows: Vec<StyleDebugRow> = Vec::new();
-            let mut classes = style
-                .map
-                .iter()
-                .filter_map(|(key, value)| match key.info {
-                    StyleKeyInfo::Class(info) => Some((short_style_name((info.name)()), value)),
-                    _ => None,
-                })
-                .collect::<Vec<_>>();
-            classes.sort_unstable_by(|a, b| a.0.cmp(&b.0));
-            for (name, value) in classes {
-                if let Some(nested_style) = value.downcast_ref::<Style>() {
-                    class_rows.push(style_debug_section(
-                        name,
-                        style_debug_body(nested_style, None, indent + 1),
-                        indent,
-                    ));
-                }
-            }
-
-            if let Some(selectors_section) =
-                style_debug_sections("Selectors", selector_rows, indent)
-            {
+            let mut rows =
+                style_debug_prop_rows(&style, direct_keys.as_ref(), &inherited_groups, indent);
+            if let Some(selectors_section) = style_debug_sections(
+                "Selectors",
+                style_debug_selector_rows(&style, &inherited_groups, indent),
+                indent,
+            ) {
                 rows.push(selectors_section);
             }
-            if let Some(classes_section) = style_debug_sections("Classes", class_rows, indent) {
+            if let Some(classes_section) = style_debug_sections(
+                "Classes",
+                style_debug_class_rows(&style, &inherited_groups, indent),
+                indent,
+            ) {
                 rows.push(classes_section);
             }
 
@@ -1729,8 +1831,74 @@ impl Style {
     pub fn debug_view(&self, direct_style: Option<&Style>) -> Box<dyn View> {
         let direct_keys =
             direct_style.map(|style| style.map.keys().copied().collect::<HashSet<_>>());
-        (style_debug_body(self, direct_keys.as_ref(), 0).render)(true)
-            .style(|s| s.width_full())
-            .into_any()
+        let style = self.clone();
+        let inherited_groups = effective_inherited_debug_groups(&style, &HashSet::new());
+        let selected_tab = RwSignal::new(0);
+        let tab_item = move |name, index| {
+            Label::new(name)
+                .class(TabSelectorClass)
+                .action(move || selected_tab.set(index))
+                .style(move |s| s.set_selected(selected_tab.get() == index))
+        };
+        let tabs = (
+            tab_item("View Style", 0),
+            tab_item("Selectors", 1),
+            tab_item("Classes", 2),
+        )
+            .h_stack()
+            .style(|s| s.with_theme(|s, t| s.background(t.bg_base())));
+        let direct_keys_for_body = direct_keys.clone();
+        let style_for_body = style.clone();
+        let style_for_selectors = style.clone();
+        let style_for_classes = style.clone();
+        Stack::vertical((
+            tabs,
+            tab(
+                move || Some(selected_tab.get()),
+                move || [0, 1, 2],
+                |it| *it,
+                move |it| match it {
+                    0 => {
+                        let rows = style_debug_prop_rows(
+                            &style_for_body,
+                            direct_keys_for_body.as_ref(),
+                            &inherited_groups,
+                            0,
+                        );
+                        if rows.is_empty() {
+                            Label::new("empty")
+                                .style(|s| s.with_theme(|s, t| s.color(t.text_muted())))
+                                .into_any()
+                        } else {
+                            style_debug_rows(rows, true)
+                        }
+                    }
+                    1 => {
+                        let rows =
+                            style_debug_selector_rows(&style_for_selectors, &inherited_groups, 0);
+                        if rows.is_empty() {
+                            Label::new("empty")
+                                .style(|s| s.with_theme(|s, t| s.color(t.text_muted())))
+                                .into_any()
+                        } else {
+                            style_debug_rows(rows, true)
+                        }
+                    }
+                    2 => {
+                        let rows = style_debug_class_rows(&style_for_classes, &inherited_groups, 0);
+                        if rows.is_empty() {
+                            Label::new("empty")
+                                .style(|s| s.with_theme(|s, t| s.color(t.text_muted())))
+                                .into_any()
+                        } else {
+                            style_debug_rows(rows, true)
+                        }
+                    }
+                    _ => Label::new("empty").into_any(),
+                },
+            ),
+        ))
+        .style(|s| s.width_full().gap(6.0))
+        .into_any()
     }
 }

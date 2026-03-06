@@ -24,8 +24,7 @@ use crate::{
     style::{
         Background, BorderBottomColor, BorderBottomLeftRadius, BorderBottomRightRadius,
         BorderLeftColor, BorderRightColor, BorderTopColor, BorderTopLeftRadius,
-        BorderTopRightRadius, CustomStylable, CustomStyle, OverflowX, OverflowY, Style,
-        StyleClass,
+        BorderTopRightRadius, CustomStylable, CustomStyle, OverflowX, OverflowY, Style, StyleClass,
     },
     style_class,
     unit::{Px, PxPct},

@@ -2,12 +2,12 @@ use std::time::Duration;
 
 use super::unit::{DurationUnitExt, UnitExt};
 use super::{
-    Background, Border, BorderBottom, BorderBottomColor, BorderBottomLeftRadius, BorderBottomRightRadius,
-    BorderColor, BorderLeft, BorderLeftColor, BorderRadius, BorderRight, BorderRightColor,
-    BorderTop, BorderTopColor, BorderTopLeftRadius, BorderTopRightRadius, BoxShadow, CursorStyle,
-    CustomStyle, FontSize, Foreground, Margin, MarginBottom, MarginLeft, MarginRight, MarginTop,
-    Padding, PaddingBottom, PaddingLeft, PaddingRight, PaddingTop, Style, StylePropValue,
-    Transition,
+    Background, Border, BorderBottom, BorderBottomColor, BorderBottomLeftRadius,
+    BorderBottomRightRadius, BorderColor, BorderLeft, BorderLeftColor, BorderRadius, BorderRight,
+    BorderRightColor, BorderTop, BorderTopColor, BorderTopLeftRadius, BorderTopRightRadius,
+    BoxShadow, CursorStyle, CustomStyle, FontSize, Foreground, Margin, MarginBottom, MarginLeft,
+    MarginRight, MarginTop, Padding, PaddingBottom, PaddingLeft, PaddingRight, PaddingTop, Style,
+    StylePropValue, Transition,
 };
 use crate::style::Selectable;
 use crate::view::View;

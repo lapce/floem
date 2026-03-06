@@ -248,7 +248,6 @@ impl StylePropValue for Border {
             bottom: self.bottom.interpolate(&other.bottom, value)?,
         })
     }
-
 }
 
 /// Structure holding border colors for all four sides
@@ -346,7 +345,6 @@ impl StylePropValue for BorderColor {
             bottom: self.bottom.interpolate(&other.bottom, value)?,
         })
     }
-
 }
 
 /// Structure holding border radius for all four corners
@@ -476,7 +474,6 @@ impl StylePropValue for BorderRadius {
             bottom_right: self.bottom_right.interpolate(&other.bottom_right, value)?,
         })
     }
-
 }
 
 /// Structure holding padding values for all four sides
@@ -574,7 +571,6 @@ impl StylePropValue for Padding {
             bottom: self.bottom.interpolate(&other.bottom, value)?,
         })
     }
-
 }
 
 /// Structure holding margin values for all four sides
@@ -672,7 +668,6 @@ impl StylePropValue for Margin {
             bottom: self.bottom.interpolate(&other.bottom, value)?,
         })
     }
-
 }
 
 // Simple StylePropValue implementations for enums

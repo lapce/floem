@@ -2663,8 +2663,7 @@ impl Style {
     /// Sets `padding_left` and `padding_right` to `padding`
     pub fn padding_horiz(self, padding: impl Into<PxPct>) -> Self {
         let padding = padding.into();
-        self.set(PaddingLeft, padding)
-            .set(PaddingRight, padding)
+        self.set(PaddingLeft, padding).set(PaddingRight, padding)
     }
 
     /// Sets horizontal padding as a percentage of the parent container width.
@@ -2675,8 +2674,7 @@ impl Style {
     /// Sets `padding_top` and `padding_bottom` to `padding`
     pub fn padding_vert(self, padding: impl Into<PxPct>) -> Self {
         let padding = padding.into();
-        self.set(PaddingTop, padding)
-            .set(PaddingBottom, padding)
+        self.set(PaddingTop, padding).set(PaddingBottom, padding)
     }
 
     /// Sets vertical padding as a percentage of the parent container width.
@@ -2721,8 +2719,7 @@ impl Style {
     /// Sets `margin_left` and `margin_right` to `margin`
     pub fn margin_horiz(self, margin: impl Into<PxPctAuto>) -> Self {
         let margin = margin.into();
-        self.set(MarginLeft, margin)
-            .set(MarginRight, margin)
+        self.set(MarginLeft, margin).set(MarginRight, margin)
     }
 
     /// Sets horizontal margin as a percentage of the parent container width.
@@ -2733,8 +2730,7 @@ impl Style {
     /// Sets `margin_top` and `margin_bottom` to `margin`
     pub fn margin_vert(self, margin: impl Into<PxPctAuto>) -> Self {
         let margin = margin.into();
-        self.set(MarginTop, margin)
-            .set(MarginBottom, margin)
+        self.set(MarginTop, margin).set(MarginBottom, margin)
     }
 
     /// Sets vertical margin as a percentage of the parent container width.
