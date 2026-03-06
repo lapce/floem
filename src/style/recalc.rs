@@ -348,8 +348,10 @@ impl StyleReason {
         let mut out = self.clone();
         out.targets.clear();
         out.flags.remove(StyleReasonFlags::TARGET);
+        out.flags.remove(StyleReasonFlags::TRANSITION);
         out.flags.remove(StyleReasonFlags::ANIMATION);
         out.flags.remove(StyleReasonFlags::STYLE_PASS);
+        out.flags.remove(StyleReasonFlags::VIEW_STYLE);
         // visibility is handled later
         out.flags.remove(StyleReasonFlags::VISIBILITY);
 
