@@ -281,9 +281,7 @@ impl<T: 'static + Clone + PartialEq + core::fmt::Debug> View for Dropdown<T> {
     }
 
     fn event(&mut self, cx: &mut crate::context::EventCx) -> EventPropagation {
-        if cx.phase == Phase::Target
-            && let Some(new_vis) = VisualChangedListener::extract(&cx.event)
-        {
+        if let Some(new_vis) = VisualChangedListener::extract(&cx.event) {
             self.window_origin = Some(new_vis.new_visual_aabb.origin());
             self.width.set(new_vis.new_visual_aabb.width());
         }
