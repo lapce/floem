@@ -5,11 +5,9 @@
 //! - [`PaintState`] - State for the renderer (pending or initialized)
 //! - [`Renderer`] - Backend renderer abstraction
 
-#[cfg(feature = "vello")]
 pub mod border_path_iter;
 pub mod renderer;
 
-#[cfg(feature = "vello")]
 pub use border_path_iter::{BorderPath, BorderPathEvent};
 pub use renderer::Renderer;
 
@@ -284,9 +282,10 @@ impl GlobalPaintCx<'_> {
         drop(box_tree);
 
         // Set absolute transform on renderer
+        let device_transform = world_transform.then_scale(self.window_state.effective_scale());
         self.paint_state
             .renderer_mut()
-            .set_transform(world_transform);
+            .set_transform(device_transform);
 
         let layout_rect = layout_rect_local;
         let view_id = element_id.owning_id();
@@ -351,25 +350,19 @@ impl PaintCx<'_> {
 
     /// Clip the drawing area (delegates to helper methods)
     pub fn clip(&mut self, shape: &impl Shape) {
-        #[cfg(feature = "vello")]
-        {
+        if self.paint_state.renderer().uses_layer_clip() {
             use peniko::Mix;
             self.push_layer(Mix::Normal, 1.0, Affine::IDENTITY, shape);
-        }
-        #[cfg(not(feature = "vello"))]
-        {
+        } else {
             self.paint_state.renderer_mut().clip(shape);
         }
     }
 
     /// Clear clip
     pub fn clear_clip(&mut self) {
-        #[cfg(feature = "vello")]
-        {
+        if self.paint_state.renderer().uses_layer_clip() {
             self.pop_layer();
-        }
-        #[cfg(not(feature = "vello"))]
-        {
+        } else {
             self.paint_state.renderer_mut().clear_clip();
         }
     }
@@ -401,7 +394,6 @@ impl PaintState {
     pub fn new_pending(
         window: Arc<dyn Window>,
         rx: Receiver<Result<(GpuResources, wgpu::Surface<'static>), GpuResourceError>>,
-        scale: f64,
         size: Size,
         font_embolden: f32,
     ) -> Self {
@@ -409,7 +401,7 @@ impl PaintState {
             window,
             rx,
             font_embolden,
-            renderer: Renderer::Uninitialized { scale, size },
+            renderer: Renderer::Uninitialized { size },
         }
     }
 

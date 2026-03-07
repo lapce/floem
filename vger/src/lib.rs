@@ -131,16 +131,24 @@ impl VgerRenderer {
         self.scale = scale;
     }
 
-    pub fn scale(&self) -> f64 {
-        self.scale
-    }
-
     pub fn size(&self) -> Size {
         Size::new(self.config.width as f64, self.config.height as f64)
     }
 }
 
 impl VgerRenderer {
+    fn device_transform(&self) -> Affine {
+        self.transform
+    }
+
+    fn scale_components(&self) -> (f64, f64, f64) {
+        let coeffs = self.device_transform().as_coeffs();
+        let scale_x = coeffs[0].hypot(coeffs[1]);
+        let scale_y = coeffs[2].hypot(coeffs[3]);
+        let uniform = (scale_x + scale_y) * 0.5;
+        (scale_x, scale_y, uniform)
+    }
+
     fn brush_to_paint<'b>(&mut self, brush: impl Into<BrushRef<'b>>) -> Option<PaintIndex> {
         let paint = match brush.into() {
             BrushRef::Solid(color) => self.vger.color_paint(vger_color(color)),
@@ -171,15 +179,12 @@ impl VgerRenderer {
     }
 
     fn vger_point(&self, point: Point) -> floem_vger_rs::defs::LocalPoint {
-        let coeffs = self.transform.as_coeffs();
+        let coeffs = self.device_transform().as_coeffs();
 
         let transformed_x = coeffs[0] * point.x + coeffs[2] * point.y + coeffs[4];
         let transformed_y = coeffs[1] * point.x + coeffs[3] * point.y + coeffs[5];
 
-        floem_vger_rs::defs::LocalPoint::new(
-            (transformed_x * self.scale) as f32,
-            (transformed_y * self.scale) as f32,
-        )
+        floem_vger_rs::defs::LocalPoint::new(transformed_x as f32, transformed_y as f32)
     }
 
     fn vger_rect(&self, rect: Rect) -> floem_vger_rs::defs::LocalRect {
@@ -310,11 +315,8 @@ impl Renderer for VgerRenderer {
         }
 
         self.transform = Affine::IDENTITY;
-        self.vger.begin(
-            self.config.width as f32,
-            self.config.height as f32,
-            self.scale as f32,
-        );
+        self.vger
+            .begin(self.config.width as f32, self.config.height as f32, 1.0);
     }
 
     fn stroke<'b, 's>(
@@ -323,8 +325,7 @@ impl Renderer for VgerRenderer {
         brush: impl Into<BrushRef<'b>>,
         stroke: &'s Stroke,
     ) {
-        let coeffs = self.transform.as_coeffs();
-        let scale = (coeffs[0] + coeffs[3]) / 2. * self.scale;
+        let (_, _, scale) = self.scale_components();
         let paint = match self.brush_to_paint(brush) {
             Some(paint) => paint,
             None => return,
@@ -416,8 +417,7 @@ impl Renderer for VgerRenderer {
     }
 
     fn fill<'b>(&mut self, path: &impl Shape, brush: impl Into<BrushRef<'b>>, blur_radius: f64) {
-        let coeffs = self.transform.as_coeffs();
-        let scale = (coeffs[0] + coeffs[3]) / 2. * self.scale;
+        let (_, _, scale) = self.scale_components();
         let paint = match self.brush_to_paint(brush) {
             Some(paint) => paint,
             None => return,
@@ -494,13 +494,10 @@ impl Renderer for VgerRenderer {
     fn draw_text(&mut self, text_layout: &TextLayout, pos: impl Into<Point>) {
         let layout = text_layout.parley_layout();
 
-        // Drawing text happens in the final coordinate space,
-        // i.e. with all transforms and the window scale factor (self.scale) being applied.
-        let coeffs = self.transform.as_coeffs();
         let pos: Point = pos.into();
-        let pos = Affine::scale(self.scale) * self.transform * pos;
+        let pos = self.device_transform() * pos;
         // This assumes that the text is axis-aligned.
-        let scale = (coeffs[0] + coeffs[3]) / 2. * self.scale;
+        let (_, _, scale) = self.scale_components();
 
         let clip = self.clip;
         let font_embolden = self.font_embolden;
@@ -642,22 +639,18 @@ impl Renderer for VgerRenderer {
     }
 
     fn draw_img(&mut self, img: Img<'_>, rect: Rect) {
-        let transform = self.transform.as_coeffs();
-
-        let scale_x = transform[0] * self.scale;
-        let scale_y = transform[3] * self.scale;
+        let transform = self.device_transform().as_coeffs();
+        let (scale_x, scale_y, _) = self.scale_components();
 
         let origin = rect.origin();
-        let transformed_x =
-            (transform[0] * origin.x + transform[2] * origin.y + transform[4]) * self.scale;
-        let transformed_y =
-            (transform[1] * origin.x + transform[3] * origin.y + transform[5]) * self.scale;
+        let transformed_x = transform[0] * origin.x + transform[2] * origin.y + transform[4];
+        let transformed_y = transform[1] * origin.x + transform[3] * origin.y + transform[5];
 
         let x = transformed_x.round() as f32;
         let y = transformed_y.round() as f32;
 
-        let width = (rect.width() * scale_x).round().max(1.0) as u32;
-        let height = (rect.height() * scale_y).round().max(1.0) as u32;
+        let width = (rect.width() * scale_x.abs()).round().max(1.0) as u32;
+        let height = (rect.height() * scale_y.abs()).round().max(1.0) as u32;
 
         self.vger.render_image(x, y, img.hash, width, height, || {
             let data = img.img.image.data;
@@ -678,22 +671,18 @@ impl Renderer for VgerRenderer {
         rect: Rect,
         brush: Option<impl Into<BrushRef<'b>>>,
     ) {
-        let transform = self.transform.as_coeffs();
-
-        let scale_x = transform[0] * self.scale;
-        let scale_y = transform[3] * self.scale;
+        let transform = self.device_transform().as_coeffs();
+        let (scale_x, scale_y, _) = self.scale_components();
 
         let origin = rect.origin();
-        let transformed_x =
-            (transform[0] * origin.x + transform[2] * origin.y + transform[4]) * self.scale;
-        let transformed_y =
-            (transform[1] * origin.x + transform[3] * origin.y + transform[5]) * self.scale;
+        let transformed_x = transform[0] * origin.x + transform[2] * origin.y + transform[4];
+        let transformed_y = transform[1] * origin.x + transform[3] * origin.y + transform[5];
 
         let x = transformed_x.round() as f32;
         let y = transformed_y.round() as f32;
 
-        let width = (rect.width() * scale_x).round().max(1.0) as u32;
-        let height = (rect.height() * scale_y).round().max(1.0) as u32;
+        let width = (rect.width() * scale_x.abs()).round().max(1.0) as u32;
+        let height = (rect.height() * scale_y.abs()).round().max(1.0) as u32;
 
         let paint = brush.and_then(|b| self.brush_to_paint(b));
 
@@ -739,16 +728,11 @@ impl Renderer for VgerRenderer {
             (shape.bounding_box(), 0.0)
         };
 
+        let (_, _, scale) = self.scale_components();
         self.vger
-            .scissor(self.vger_rect(rect), (radius * self.scale) as f32);
+            .scissor(self.vger_rect(rect), (radius * scale) as f32);
 
-        // Assumption: The clipped rectangle lives in the final coordinate space,
-        // i.e. with all transforms and the window scale factor (self.scale) being applied.
-        // This needs to be kept in sync with `VgerRenderer::draw_text`.
-        let transformed_rect = self
-            .transform
-            .then_scale(self.scale)
-            .transform_rect_bbox(rect);
+        let transformed_rect = self.device_transform().transform_rect_bbox(rect);
 
         self.clip = Some(transformed_rect);
     }

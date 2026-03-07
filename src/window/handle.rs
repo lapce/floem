@@ -85,7 +85,6 @@ pub(crate) struct WindowHandle {
     pub(crate) profile: Option<Profile>,
     is_maximized: bool,
     transparent: bool,
-    pub(crate) scale: f64,
     pub(crate) modifiers: Modifiers,
     pub(crate) window_position: Point,
     #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
@@ -123,8 +122,8 @@ impl WindowHandle {
         let id = ViewId::new_root();
         let window_id = window.id();
         let scope = Scope::new();
-        let scale = window.scale_factor();
-        let size: LogicalSize<f64> = window.surface_size().to_logical(scale);
+        let os_scale = window.scale_factor();
+        let size: LogicalSize<f64> = window.surface_size().to_logical(os_scale);
         let size = Size::new(size.width, size.height);
         let size = scope.create_rw_signal(Size::new(size.width, size.height));
         let os_theme = window.theme();
@@ -167,8 +166,8 @@ impl WindowHandle {
                 window.clone(),
                 surface,
                 resources,
-                scale,
-                size.get_untracked() * scale,
+                os_scale,
+                size.get_untracked() * os_scale,
                 font_embolden,
             )
         } else {
@@ -183,15 +182,14 @@ impl WindowHandle {
             PaintState::new_pending(
                 window.clone(),
                 gpu_resources_rx,
-                scale,
-                size.get_untracked() * scale,
+                size.get_untracked() * os_scale,
                 font_embolden,
             )
         };
 
         let paint_state_initialized = matches!(paint_state, PaintState::Initialized { .. });
 
-        let window_state = WindowState::new(id, os_theme);
+        let window_state = WindowState::new(id, os_theme, os_scale);
 
         let mut window_handle = Self {
             window,
@@ -208,7 +206,6 @@ impl WindowHandle {
             is_maximized,
             transparent,
             profile: None,
-            scale,
             modifiers: Modifiers::default(),
             window_position: Point::ZERO,
             #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
@@ -260,7 +257,7 @@ impl WindowHandle {
         root_id: ViewId,
         view: impl IntoView,
         size_val: Size,
-        scale: f64,
+        os_scale: f64,
     ) -> Self {
         use super::mock::MockWindow;
 
@@ -294,12 +291,11 @@ impl WindowHandle {
         let paint_state = PaintState::new_pending(
             window.clone(),
             rx,
-            scale,
-            size_val * scale,
+            size_val * os_scale,
             0.0, // font_embolden
         );
 
-        let window_state = WindowState::new(id, os_theme);
+        let window_state = WindowState::new(id, os_theme, os_scale);
 
         let mut window_handle = Self {
             window,
@@ -313,7 +309,6 @@ impl WindowHandle {
             is_maximized,
             transparent: false,
             profile: None,
-            scale,
             modifiers: Modifiers::default(),
             window_position: Point::ZERO,
             #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
@@ -402,9 +397,9 @@ impl WindowHandle {
         }
     }
 
-    pub(crate) fn scale(&mut self, scale: f64) {
-        self.scale = scale;
-        let scale = self.scale * self.window_state.scale;
+    pub(crate) fn os_scale(&mut self, os_scale: f64) {
+        self.window_state.os_scale = os_scale;
+        let scale = self.window_state.effective_scale();
         self.paint_state.set_scale(scale);
         self.event(Event::Window(WindowEvent::ScaleChanged(scale)));
         self.window_state.request_paint = true;
@@ -465,8 +460,9 @@ impl WindowHandle {
 
         self.window_state.update_screen_size_bp(size);
         self.event(Event::Window(WindowEvent::Resized(size)));
-        let scale = self.scale * self.window_state.scale;
-        self.paint_state.resize(scale, size * self.scale);
+        let scale = self.window_state.effective_scale();
+        self.paint_state
+            .resize(scale, size * self.window_state.os_scale);
 
         let is_maximized = self.window.is_maximized();
         if is_maximized != self.is_maximized {
@@ -776,25 +772,16 @@ impl WindowHandle {
 
         // Background fill (unchanged)
         if !self.transparent {
-            let scale = cx.window_state.scale;
             let color = self
                 .default_theme
                 .as_ref()
                 .and_then(|theme| theme.get(crate::style::Background))
                 .unwrap_or(peniko::Brush::Solid(palette::css::WHITE));
 
-            // fill window with default white background if it's not transparent
+            // Fill the full render target. The renderer now operates in device space
+            // during paint, so this must use the physical surface size, not logical size.
             let renderer = cx.paint_state.renderer_mut();
-            renderer.fill(
-                &self
-                    .size
-                    .get_untracked()
-                    .to_rect()
-                    .scale_from_origin(1.0 / scale)
-                    .expand(),
-                &color,
-                0.0,
-            );
+            renderer.fill(&renderer.size().to_rect().expand(), &color, 0.0);
         }
 
         // Paint main tree with overlays using explicit traversal
@@ -853,6 +840,7 @@ impl WindowHandle {
         let post_layout = Instant::now();
         let window = self.paint();
         let end = Instant::now();
+        let window_size = self.paint_state.renderer().size() / self.window_state.effective_scale();
 
         let capture = Capture {
             start,
@@ -863,8 +851,7 @@ impl WindowHandle {
             taffy_node_count: self.id.taffy().borrow().total_node_count(),
             taffy_depth: get_taffy_depth(self.id.taffy(), taffy_root_node),
             window,
-            window_size: self.size.get_untracked() / self.window_state.scale,
-            scale: self.scale * self.window_state.scale,
+            window_size,
             root: Rc::new(root),
             state: self.window_state.capture.take().unwrap(),
             renderer: self.paint_state.renderer().debug_info(),
@@ -1170,9 +1157,9 @@ impl WindowHandle {
                             ));
                     }
                     UpdateMessage::WindowScale(scale) => {
-                        cx.window_state.scale = scale;
+                        cx.window_state.user_scale = scale;
                         self.id.request_layout();
-                        let scale = self.scale * cx.window_state.scale;
+                        let scale = cx.window_state.effective_scale();
                         self.paint_state.set_scale(scale);
                     }
                     UpdateMessage::ShowContextMenu { menu, pos } => {
@@ -1238,12 +1225,12 @@ impl WindowHandle {
                         {
                             let position =
                                 winit::dpi::Position::Logical(winit::dpi::LogicalPosition::new(
-                                    position.x * self.window_state.scale,
-                                    position.y * self.window_state.scale,
+                                    position.x * self.window_state.user_scale,
+                                    position.y * self.window_state.user_scale,
                                 ));
                             let size = winit::dpi::Size::Logical(winit::dpi::LogicalSize::new(
-                                size.width * self.window_state.scale,
-                                size.height * self.window_state.scale,
+                                size.width * self.window_state.user_scale,
+                                size.height * self.window_state.user_scale,
                             ));
                             self.window
                                 .request_ime_update(ImeRequest::Update(
@@ -1449,7 +1436,7 @@ impl WindowHandle {
 
         if let RawWindowHandle::AppKit(handle) = self.window.window_handle().unwrap().as_raw() {
             let ns_view = handle.ns_view.as_ptr() as usize;
-            let scale = self.window_state.scale;
+            let scale = self.window_state.user_scale;
             let height = self.size.get_untracked().height;
             let logical_pos = pos.map(|pos| (pos.x * scale, (height - pos.y) * scale));
 
@@ -1490,8 +1477,8 @@ impl WindowHandle {
                     isize::from(handle.hwnd),
                     pos.map(|pos| {
                         Position::Logical(LogicalPosition::new(
-                            pos.x * self.window_state.scale,
-                            pos.y * self.window_state.scale,
+                            pos.x * self.window_state.user_scale,
+                            pos.y * self.window_state.user_scale,
                         ))
                     }),
                 );
@@ -1541,8 +1528,8 @@ impl WindowHandle {
     pub(crate) fn show_context_menu(&self, menu: MudaMenu, pos: Option<Point>) {
         let pos = pos.unwrap_or(self.window_state.last_pointer.0);
         let pos = Point::new(
-            pos.x / self.window_state.scale,
-            pos.y / self.window_state.scale,
+            pos.x / self.window_state.user_scale,
+            pos.y / self.window_state.user_scale,
         );
         self.context_menu.set(Some((menu, pos, false)));
     }
@@ -1679,7 +1666,7 @@ mod tests {
         let window_handle = WindowHandle::new_headless(root_id, view, Size::new(800.0, 600.0), 1.0);
 
         // Just verify creation doesn't panic
-        assert!(window_handle.scale > 0.0);
+        assert!(window_handle.window_state.os_scale > 0.0);
     }
 
     /// Test that headless WindowHandle can dispatch events.

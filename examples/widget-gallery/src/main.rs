@@ -31,6 +31,12 @@ use floem::{
     window::{Theme, WindowConfig, WindowId},
 };
 
+pub const OS_MOD: Modifiers = if cfg!(target_os = "macos") {
+    Modifiers::META
+} else {
+    Modifiers::CONTROL
+};
+
 fn app_view(window_id: WindowId) -> impl IntoView {
     let tabs: Vec<&'static str> = vec![
         "Label",
@@ -308,16 +314,38 @@ fn app_view(window_id: WindowId) -> impl IntoView {
             }),
     );
 
+    let mut window_scale = RwSignal::new(1.);
+
     view.on_event_stop(
         listener::KeyUp,
         move |_cx, KeyboardEvent { modifiers, key, .. }| {
             if *key == Key::Named(NamedKey::F11) {
                 floem::action::inspect();
-            } else if *key == Key::Character("q".into()) && modifiers.contains(Modifiers::META) {
+            } else if *key == Key::Character("q".into()) && modifiers.contains(OS_MOD) {
                 floem::quit_app();
-            } else if *key == Key::Character("w".into()) && modifiers.contains(Modifiers::META) {
+            } else if *key == Key::Character("w".into()) && modifiers.contains(OS_MOD) {
                 floem::close_window(window_id);
             }
+        },
+    )
+    .on_event_stop(
+        el::KeyDown,
+        move |_, KeyboardEvent { key, modifiers, .. }| match key {
+            Key::Character(ch) if (ch == "=" || ch == "+") && modifiers.contains(OS_MOD) => {
+                window_scale *= 1.1;
+                floem::action::set_window_scale(window_scale.get());
+            }
+
+            Key::Character(ch) if ch == "-" && *modifiers == OS_MOD => {
+                window_scale /= 1.1;
+                floem::action::set_window_scale(window_scale.get());
+            }
+
+            Key::Character(ch) if ch == "0" && *modifiers == OS_MOD => {
+                window_scale.set(1.);
+                floem::action::set_window_scale(window_scale.get());
+            }
+            _ => {}
         },
     )
 }

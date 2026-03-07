@@ -46,6 +46,10 @@ pub struct VelloRenderer {
 }
 
 impl VelloRenderer {
+    fn device_transform(&self) -> Affine {
+        self.transform
+    }
+
     pub fn new(
         gpu_resources: GpuResources,
         surface: wgpu::Surface<'static>,
@@ -186,10 +190,6 @@ impl VelloRenderer {
         self.window_scale = scale;
     }
 
-    pub const fn scale(&self) -> f64 {
-        self.window_scale
-    }
-
     pub const fn size(&self) -> Size {
         Size::new(
             self.surface.config.width as f64,
@@ -227,13 +227,8 @@ impl Renderer for VelloRenderer {
         brush: impl Into<BrushRef<'b>>,
         stroke: &'s Stroke,
     ) {
-        self.scene.stroke(
-            stroke,
-            self.transform.then_scale(self.window_scale),
-            brush,
-            None,
-            shape,
-        );
+        self.scene
+            .stroke(stroke, self.device_transform(), brush, None, shape);
     }
 
     fn fill<'b>(&mut self, path: &impl Shape, brush: impl Into<BrushRef<'b>>, blur_radius: f64) {
@@ -250,7 +245,7 @@ impl Renderer for VelloRenderer {
                         let rect_radius = rounded.radii().top_left;
                         let rect = rounded.rect();
                         self.scene.draw_blurred_rounded_rect(
-                            self.transform.then_scale(self.window_scale),
+                            self.device_transform(),
                             rect,
                             color,
                             rect_radius,
@@ -260,7 +255,7 @@ impl Renderer for VelloRenderer {
                     }
                 } else if let Some(rect) = path.as_rect() {
                     self.scene.draw_blurred_rounded_rect(
-                        self.transform.then_scale(self.window_scale),
+                        self.device_transform(),
                         rect,
                         color,
                         0.,
@@ -273,7 +268,7 @@ impl Renderer for VelloRenderer {
 
         self.scene.fill(
             vello::peniko::Fill::NonZero,
-            self.transform.then_scale(self.window_scale),
+            self.device_transform(),
             brush,
             None,
             path,
@@ -291,7 +286,7 @@ impl Renderer for VelloRenderer {
             Fill::NonZero,
             blend,
             alpha,
-            (self.transform * transform).then_scale(self.window_scale),
+            self.transform * transform,
             clip,
         );
     }
@@ -302,10 +297,7 @@ impl Renderer for VelloRenderer {
 
     fn draw_text(&mut self, text_layout: &TextLayout, pos: impl Into<Point>) {
         let pos: Point = pos.into();
-        let transform = self
-            .transform
-            .pre_translate((pos.x, pos.y).into())
-            .then_scale(self.window_scale);
+        let transform = self.device_transform().pre_translate((pos.x, pos.y).into());
 
         let layout = text_layout.parley_layout();
 
@@ -364,10 +356,9 @@ impl Renderer for VelloRenderer {
 
         self.scene.draw_image(
             &img.img,
-            self.transform
+            self.device_transform()
                 .pre_scale_non_uniform(scale_x, scale_y)
-                .pre_translate((translate_x, translate_y).into())
-                .then_scale(self.window_scale),
+                .pre_translate((translate_x, translate_y).into()),
         );
     }
 
@@ -388,6 +379,11 @@ impl Renderer for VelloRenderer {
         let translate_x = rect.min_x();
         let translate_y = rect.min_y();
 
+        let transform = self
+            .device_transform()
+            .pre_scale_non_uniform(scale_x, scale_y)
+            .pre_translate((translate_x, translate_y).into());
+
         // Look up (or create) the cached base scene for this SVG.
         let gen = self.cache_generation;
         let base = self
@@ -395,12 +391,6 @@ impl Renderer for VelloRenderer {
             .entry(svg.hash.to_owned())
             .and_modify(|(g, _)| *g = gen)
             .or_insert_with(|| (gen, vello_svg::render_tree(svg.tree)));
-
-        let transform = self
-            .transform
-            .pre_scale_non_uniform(scale_x, scale_y)
-            .pre_translate((translate_x, translate_y).into())
-            .then_scale(self.window_scale);
 
         // When a brush is applied (tinted icons), composite through an alpha mask.
         // The base scene is cached; only the masking composite is rebuilt per frame.
@@ -544,9 +534,9 @@ impl VelloRenderer {
                 &self.scene,
                 &view,
                 &vello::RenderParams {
-                    base_color: palette::css::BLACK, // Background color
-                    width: self.surface.config.width * self.window_scale as u32,
-                    height: self.surface.config.height * self.window_scale as u32,
+                    base_color: palette::css::TRANSPARENT,
+                    width: self.surface.config.width,
+                    height: self.surface.config.height,
                     antialiasing_method: AaConfig::Area,
                 },
             )

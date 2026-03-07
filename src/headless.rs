@@ -147,7 +147,7 @@ impl HeadlessHarness {
 
     /// Set the window scale factor.
     pub fn set_scale(&mut self, scale: f64) -> &mut Self {
-        self.window_handle.scale(scale);
+        self.window_handle.os_scale(scale);
         self
     }
 

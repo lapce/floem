@@ -694,6 +694,8 @@ pub enum WindowEvent {
     MaximizeChanged(bool),
 
     /// The window's scale factor changed (e.g., moved to a different DPI display).
+    ///
+    /// This is not affected by the user set window scale that is used for zooming in.
     ScaleChanged(f64),
 
     /// The system theme changed (e.g., light to dark mode).

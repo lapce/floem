@@ -72,12 +72,32 @@ pub enum Renderer {
     /// Uninitialized renderer, used to allow the renderer to be created lazily
     /// All operations on this renderer are no-ops
     Uninitialized {
-        scale: f64,
         size: Size,
     },
 }
 
 impl Renderer {
+    #[cfg(feature = "vello")]
+    pub(crate) fn is_vger(&self) -> bool {
+        false
+    }
+
+    #[cfg(not(feature = "vello"))]
+    pub(crate) fn is_vger(&self) -> bool {
+        matches!(self, Renderer::Vger(_))
+    }
+
+    pub(crate) fn uses_layer_clip(&self) -> bool {
+        match self {
+            #[cfg(feature = "vello")]
+            Renderer::Vello(_) => true,
+            #[cfg(not(feature = "vello"))]
+            Renderer::Vger(_) => false,
+            Renderer::TinySkia(_) => true,
+            Renderer::Uninitialized { .. } => false,
+        }
+    }
+
     #[allow(unused_variables)]
     pub fn new(
         window: Arc<dyn Window>,
@@ -168,22 +188,7 @@ impl Renderer {
             #[cfg(not(feature = "vello"))]
             Renderer::Vger(r) => r.set_scale(scale),
             Renderer::TinySkia(r) => r.set_scale(scale),
-            Renderer::Uninitialized {
-                scale: old_scale, ..
-            } => {
-                *old_scale = scale;
-            }
-        }
-    }
-
-    pub fn scale(&self) -> f64 {
-        match self {
-            #[cfg(feature = "vello")]
-            Renderer::Vello(r) => r.scale(),
-            #[cfg(not(feature = "vello"))]
-            Renderer::Vger(r) => r.scale(),
-            Renderer::TinySkia(r) => r.scale(),
-            Renderer::Uninitialized { scale, .. } => *scale,
+            Renderer::Uninitialized { .. } => {}
         }
     }
 
@@ -194,7 +199,7 @@ impl Renderer {
             #[cfg(not(feature = "vello"))]
             Renderer::Vger(r) => r.size(),
             Renderer::TinySkia(r) => r.size(),
-            Renderer::Uninitialized { size, .. } => *size,
+            Renderer::Uninitialized { size } => *size,
         }
     }
 

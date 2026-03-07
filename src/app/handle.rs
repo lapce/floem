@@ -100,7 +100,7 @@ impl ApplicationHandle {
                         window.clone(),
                         gpu_resources.clone(),
                         surface,
-                        renderer.scale(),
+                        handle.window_state.effective_scale(),
                         renderer.size(),
                         *font_embolden,
                     );
@@ -283,10 +283,9 @@ impl ApplicationHandle {
             )
         });
 
-        match window_handle
-            .event_reducer
-            .reduce(window_handle.scale, &event)
-        {
+        let event_scale = window_handle.window_state.effective_scale();
+
+        match window_handle.event_reducer.reduce(event_scale, &event) {
             Some(WindowEventTranslation::Keyboard(ke)) => {
                 if let WindowEvent::KeyboardInput { is_synthetic, .. } = event
                     && !is_synthetic
@@ -303,12 +302,13 @@ impl ApplicationHandle {
         match event {
             WindowEvent::ActivationTokenDone { .. } => {}
             WindowEvent::SurfaceResized(size) => {
-                let size: LogicalSize<f64> = size.to_logical(window_handle.scale);
+                let size: LogicalSize<f64> = size.to_logical(window_handle.window_state.os_scale);
                 let size = Size::new(size.width, size.height);
                 window_handle.size(size);
             }
             WindowEvent::Moved(position) => {
-                let position: LogicalPosition<f64> = position.to_logical(window_handle.scale);
+                let position: LogicalPosition<f64> =
+                    position.to_logical(window_handle.window_state.os_scale);
                 let point = Point::new(position.x, position.y);
                 window_handle.position(point);
             }
@@ -320,7 +320,7 @@ impl ApplicationHandle {
             }
             WindowEvent::DragDropped { paths, position } => {
                 let logical_pos =
-                    PhysicalPosition::new(position.x, position.y).to_logical(window_handle.scale);
+                    PhysicalPosition::new(position.x, position.y).to_logical(event_scale);
                 let paths_rc: std::rc::Rc<[std::path::PathBuf]> = paths.clone().into();
                 window_handle.file_drag_dropped(FileDragEvent::Drop(
                     dropped_file::FileDragDropped {
@@ -331,12 +331,12 @@ impl ApplicationHandle {
             }
             WindowEvent::DragEntered { paths, position } => {
                 let logical_pos =
-                    PhysicalPosition::new(position.x, position.y).to_logical(window_handle.scale);
+                    PhysicalPosition::new(position.x, position.y).to_logical(event_scale);
                 window_handle.file_drag_start(paths, Point::new(logical_pos.x, logical_pos.y));
             }
             WindowEvent::DragMoved { position } => {
                 let logical_pos =
-                    PhysicalPosition::new(position.x, position.y).to_logical(window_handle.scale);
+                    PhysicalPosition::new(position.x, position.y).to_logical(event_scale);
                 window_handle.file_drag_move(Point::new(logical_pos.x, logical_pos.y));
             }
             WindowEvent::DragLeft { .. } => {
@@ -362,7 +362,7 @@ impl ApplicationHandle {
             } => {}
             WindowEvent::TouchpadPressure { .. } => {}
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
-                window_handle.scale(scale_factor);
+                window_handle.os_scale(scale_factor);
             }
             WindowEvent::ThemeChanged(theme) => {
                 window_handle.set_theme(Some(theme), true);
