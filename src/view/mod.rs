@@ -990,10 +990,90 @@ pub trait View {
         let _ = cx;
     }
 
-    fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
-        // these are here to just ignore these arguments in the default case
-        let _ = cx;
+    /// Handles an event during the **capture phase** of event propagation.
+    ///
+    /// The capture phase runs **from the root of the dispatch path down toward
+    /// the target element**, before the target itself receives the event. This
+    /// method is invoked for each element encountered during that downward
+    /// traversal.
+    ///
+    /// In contrast, [`Self::event`] runs during the **target and bubble phases**,
+    /// after the event reaches the target and begins propagating back up the
+    /// ancestor chain.
+    ///
+    /// Capture handlers are useful when an element must observe or influence an
+    /// event **before the target processes it**. This can be necessary when:
+    ///
+    /// - the ancestor needs an opportunity to intercept or block the event before
+    ///   it reaches the target
+    /// - the ancestor must coordinate state across a subtree before the target
+    ///   reacts
+    /// - the event must be transformed or redirected before normal handling occurs
+    ///
+    /// Returning [`EventPropagation::Stop`] prevents the event from propagating to
+    /// additional elements further along the dispatch path. The current element’s
+    /// handlers will still complete.
+    ///
+    /// This differs from [`EventCx::stop_immediate_propagation`], which halts
+    /// dispatch **immediately**, preventing any remaining handlers on the current
+    /// element from running.
+    ///
+    /// Calling [`EventCx::prevent_default`] marks the event as having its default
+    /// behavior suppressed. This flag is shared across all phases of dispatch,
+    /// allowing capture handlers to prevent the default action before the event
+    /// reaches the target.
+    ///
+    /// # See also
+    ///
+    /// - [`Self::event`] — handles the same event during the target and bubble phases.
+    ///
+    /// # Default behavior
+    ///
+    /// The default implementation ignores the event and allows propagation to
+    /// continue.
+    fn event_capture(&mut self, _cx: &mut EventCx) -> EventPropagation {
+        EventPropagation::Continue
+    }
 
+    /// Handles an event during the **target and bubble phases** of event propagation.
+    ///
+    /// After the capture phase completes, the event is delivered to the **target
+    /// element** and then propagates upward through its ancestors. This method is
+    /// invoked for the target and for each ancestor encountered during that upward
+    /// traversal.
+    ///
+    /// In contrast, [`Self::event_capture`] runs earlier during the **capture phase**
+    /// while the event travels downward toward the target.
+    ///
+    /// Returning [`EventPropagation::Stop`] prevents the event from propagating to
+    /// additional elements further along the dispatch path. The current element’s
+    /// handlers will still complete.
+    ///
+    /// This differs from [`EventCx::stop_immediate_propagation`], which stops
+    /// dispatch immediately and prevents any remaining handlers on the current
+    /// element from executing.
+    ///
+    /// Calling [`EventCx::prevent_default`] suppresses the event’s default behavior.
+    /// This flag is shared across all phases of dispatch and can be set in either
+    /// [`Self::event_capture`] or [`Self::event`].
+    ///
+    /// # Propagation behavior
+    ///
+    /// Event dispatch proceeds in this order:
+    ///
+    /// 1. [`Self::event_capture`] on ancestors from root → target
+    /// 2. [`Self::event`] on the target
+    /// 3. [`Self::event`] on ancestors from target → root
+    ///
+    /// Propagation may be stopped at any point by returning
+    /// [`EventPropagation::Stop`] or by calling
+    /// [`EventCx::stop_immediate_propagation`].
+    ///
+    /// # Default behavior
+    ///
+    /// The default implementation ignores the event and allows propagation to
+    /// continue.
+    fn event(&mut self, _cx: &mut EventCx) -> EventPropagation {
         EventPropagation::Continue
     }
 
@@ -1034,6 +1114,10 @@ impl View for Box<dyn View> {
 
     fn style_pass(&mut self, cx: &mut StyleCx) {
         (**self).style_pass(cx)
+    }
+
+    fn event_capture(&mut self, cx: &mut EventCx) -> EventPropagation {
+        (**self).event_capture(cx)
     }
 
     fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
