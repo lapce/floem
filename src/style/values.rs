@@ -38,8 +38,8 @@ use crate::unit::{Pct, Px, PxPct, PxPctAuto};
 use crate::view::ViewTupleFlat;
 use crate::view::{IntoView, View};
 use crate::views::{
-    ButtonClass, ContainerExt, Decorators, Label, Stack, TabSelectorClass, TooltipExt, canvas,
-    dyn_view, svg, tab,
+    ButtonClass, ContainerExt, Decorators, Empty, Label, Stack, StackExt, TabSelectorClass,
+    TooltipExt, canvas, dyn_view, svg, tab,
 };
 
 use super::FontSize;
@@ -930,6 +930,61 @@ impl StylePropValue for super::AnchorAbout {
         Some(Self {
             x: self.x + (other.x - self.x) * value,
             y: self.y + (other.y - self.y) * value,
+        })
+    }
+}
+
+impl StylePropValue for kurbo::Rect {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        let r = *self;
+
+        let w = r.x1 - r.x0;
+        let h = r.y1 - r.y0;
+
+        let coords = [
+            format!("x0: {:.2}", r.x0),
+            format!("y0: {:.2}", r.y0),
+            format!("x1: {:.2}", r.x1),
+            format!("y1: {:.2}", r.y1),
+        ]
+        .v_stack();
+
+        let wh = [format!("w: {:.2}", w), format!("h: {:.2}", h)].h_stack();
+
+        let preview = Empty::new().style(move |s| {
+            let max = w.abs().max(h.abs()).max(1.0);
+            let scale = 60.0 / max;
+
+            s.width(w.abs() * scale)
+                .height(h.abs() * scale)
+                .border(1.0)
+                .with_theme(|s, t| {
+                    s.border_color(t.border())
+                        .background(t.primary_muted())
+                        .border_radius(t.border_radius())
+                })
+        });
+
+        Some(
+            (
+                "Rect",
+                preview,
+                coords.style(|s| s.gap(2)),
+                wh.style(|s| s.gap(8)),
+            )
+                .v_stack()
+                .into_any(),
+        )
+    }
+
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        let lerp = |a: f64, b: f64| a + (b - a) * value;
+
+        Some(Self {
+            x0: lerp(self.x0, other.x0),
+            y0: lerp(self.y0, other.y0),
+            x1: lerp(self.x1, other.x1),
+            y1: lerp(self.y1, other.y1),
         })
     }
 }
