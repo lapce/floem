@@ -253,7 +253,7 @@ pub fn img(image: impl Fn() -> Vec<u8> + 'static) -> Img {
     let image = peniko::ImageBrush::new(ImageData {
         data: blob,
         format: peniko::ImageFormat::Rgba8,
-        alpha_type: ImageAlphaType::AlphaPremultiplied,
+        alpha_type: ImageAlphaType::Alpha,
         width,
         height,
     })
@@ -288,7 +288,7 @@ pub fn img_from_path(image: impl Fn() -> PathBuf + 'static) -> Img {
     let image = peniko::ImageBrush::new(ImageData {
         data: blob,
         format: peniko::ImageFormat::Rgba8,
-        alpha_type: ImageAlphaType::AlphaPremultiplied,
+        alpha_type: ImageAlphaType::Alpha,
         width,
         height,
     });
