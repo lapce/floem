@@ -292,9 +292,9 @@ fn box_model_layer(
         let highlighted = hovered.get() == Some(region);
         let any_hovered = hovered.get().is_some();
         let layer_padding = if region == BoxModelRegion::Position {
-            14.0
+            8.0
         } else {
-            12.0
+            6.0
         };
         let s =
             s.items_center()
