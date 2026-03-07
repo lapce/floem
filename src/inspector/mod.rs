@@ -128,14 +128,14 @@ fn box_model_data(style: &Style, bounds: Rect) -> BoxModelViewData {
 
     let horizontal_basis = bounds.width().max(0.0);
     let content_width = (bounds.width()
-        - border[1].0.width
-        - border[3].0.width
+        - border[1].width
+        - border[3].width
         - resolve_px_pct(padding[1], horizontal_basis)
         - resolve_px_pct(padding[3], horizontal_basis))
     .max(0.0);
     let content_height = (bounds.height()
-        - border[0].0.width
-        - border[2].0.width
+        - border[0].width
+        - border[2].width
         - resolve_px_pct(padding[0], horizontal_basis)
         - resolve_px_pct(padding[2], horizontal_basis))
     .max(0.0);
@@ -143,7 +143,7 @@ fn box_model_data(style: &Style, bounds: Rect) -> BoxModelViewData {
     BoxModelViewData {
         position,
         margin,
-        border,
+        border: border.map(StrokeWrap),
         border_radius,
         padding,
         content_width,

@@ -1231,7 +1231,7 @@ fn paint_box_shadow(
 }
 pub(crate) fn paint_outline(cx: &mut PaintCx, style: &ViewStyleProps, rect: Rect) {
     if cx.is_vger() {
-        let outline = &style.outline().0;
+        let outline = &style.outline();
         if outline.width == 0. {
             return;
         }
@@ -1252,10 +1252,10 @@ pub(crate) fn paint_outline(cx: &mut PaintCx, style: &ViewStyleProps, rect: Rect
     };
 
     let outlines = [
-        (style.outline().0, style.outline_color()),
-        (style.outline().0, style.outline_color()),
-        (style.outline().0, style.outline_color()),
-        (style.outline().0, style.outline_color()),
+        (style.outline(), style.outline_color()),
+        (style.outline(), style.outline_color()),
+        (style.outline(), style.outline_color()),
+        (style.outline(), style.outline_color()),
     ];
 
     // Early return if no outlines
@@ -1305,10 +1305,10 @@ pub(crate) fn paint_border(
     if cx.is_vger() {
         let border = layout_style.border();
 
-        let left = border.left.map(|v| v.0).unwrap_or(Stroke::new(0.));
-        let top = border.top.map(|v| v.0).unwrap_or(Stroke::new(0.));
-        let right = border.right.map(|v| v.0).unwrap_or(Stroke::new(0.));
-        let bottom = border.bottom.map(|v| v.0).unwrap_or(Stroke::new(0.));
+        let left = border.left.unwrap_or(Stroke::new(0.));
+        let top = border.top.unwrap_or(Stroke::new(0.));
+        let right = border.right.unwrap_or(Stroke::new(0.));
+        let bottom = border.bottom.unwrap_or(Stroke::new(0.));
 
         if left.width == top.width
             && top.width == right.width
@@ -1393,19 +1393,19 @@ pub(crate) fn paint_border(
     let border = layout_style.border();
     let borders = [
         (
-            border.top.map(|v| v.0).unwrap_or(Stroke::new(0.)),
+            border.top.unwrap_or(Stroke::new(0.)),
             style.border_color().top.unwrap_or_default(),
         ),
         (
-            border.right.map(|v| v.0).unwrap_or(Stroke::new(0.)),
+            border.right.unwrap_or(Stroke::new(0.)),
             style.border_color().right.unwrap_or_default(),
         ),
         (
-            border.bottom.map(|v| v.0).unwrap_or(Stroke::new(0.)),
+            border.bottom.unwrap_or(Stroke::new(0.)),
             style.border_color().bottom.unwrap_or_default(),
         ),
         (
-            border.left.map(|v| v.0).unwrap_or(Stroke::new(0.)),
+            border.left.unwrap_or(Stroke::new(0.)),
             style.border_color().left.unwrap_or_default(),
         ),
     ];

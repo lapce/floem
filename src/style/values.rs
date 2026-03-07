@@ -699,7 +699,7 @@ impl StylePropValue for Gradient {
     }
 }
 
-// this is necessary because Stroke doesn't impl partial eq. it probably should...
+// this is a convenience wrapper so border/outline setters can accept numeric widths.
 #[derive(Clone, Debug, Default)]
 pub struct StrokeWrap(pub Stroke);
 impl StrokeWrap {
@@ -707,20 +707,7 @@ impl StrokeWrap {
         Self(Stroke::new(width))
     }
 }
-impl PartialEq for StrokeWrap {
-    fn eq(&self, other: &Self) -> bool {
-        let self_stroke = &self.0;
-        let other_stroke = &other.0;
 
-        self_stroke.width == other_stroke.width
-            && self_stroke.join == other_stroke.join
-            && self_stroke.miter_limit == other_stroke.miter_limit
-            && self_stroke.start_cap == other_stroke.start_cap
-            && self_stroke.end_cap == other_stroke.end_cap
-            && self_stroke.dash_pattern == other_stroke.dash_pattern
-            && self_stroke.dash_offset == other_stroke.dash_offset
-    }
-}
 impl From<Stroke> for StrokeWrap {
     fn from(value: Stroke) -> Self {
         Self(value)
@@ -741,9 +728,10 @@ impl From<i32> for StrokeWrap {
         Self(Stroke::new(value.into()))
     }
 }
-impl StylePropValue for StrokeWrap {
+
+impl StylePropValue for Stroke {
     fn debug_view(&self) -> Option<Box<dyn View>> {
-        let stroke = self.0.clone();
+        let stroke = self.clone();
         let clone = stroke.clone();
 
         let color = RwSignal::new(palette::css::RED);

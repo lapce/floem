@@ -131,7 +131,7 @@
 use floem_renderer::text::{FontWeight as FontWeightProp, LineHeightValue};
 use imbl::hashmap::Entry;
 use peniko::color::palette;
-use peniko::kurbo::{self, Affine, RoundedRect, Vec2};
+use peniko::kurbo::{self, Affine, RoundedRect, Stroke, Vec2};
 use peniko::{Brush, Color};
 use smallvec::SmallVec;
 use std::any::Any;
@@ -1669,7 +1669,7 @@ define_builtin_props!(
     /// Sets the outline stroke properties.
     ///
     /// Defines the width, style, and other properties of the outline.
-    Outline outline {nocb, tr}: StrokeWrap {} = StrokeWrap::new(0.),
+    Outline outline {nocb, tr}: Stroke {} = Stroke::new(0.),
 
     /// Controls the progress/completion of the outline animation.
     ///
@@ -1682,22 +1682,22 @@ define_builtin_props!(
     BorderProgress border_progress {tr}: Pct {} = Pct(100.),
 
     /// Sets the left border.
-    BorderLeft border_left {tr}: StrokeWrap {} = StrokeWrap::new(0.),
+    BorderLeft border_left {nocb, tr}: Stroke {} = Stroke::new(0.),
     /// Sets the top border.
-    BorderTop border_top {tr}: StrokeWrap {} = StrokeWrap::new(0.),
+    BorderTop border_top {nocb, tr}: Stroke {} = Stroke::new(0.),
     /// Sets the right border.
-    BorderRight border_right {tr}: StrokeWrap {} = StrokeWrap::new(0.),
+    BorderRight border_right {nocb, tr}: Stroke {} = Stroke::new(0.),
     /// Sets the bottom border.
-    BorderBottom border_bottom {tr}: StrokeWrap {} = StrokeWrap::new(0.),
+    BorderBottom border_bottom {nocb, tr}: Stroke {} = Stroke::new(0.),
 
     /// Sets the left border color.
-    BorderLeftColor border_left_color_prop { nocb, tr }: Option<Brush> {} = None,
+    BorderLeftColor border_left_color { nocb, tr }: Option<Brush> {} = None,
     /// Sets the top border color.
-    BorderTopColor border_top_color_prop { nocb, tr }: Option<Brush> {} = None,
+    BorderTopColor border_top_color { nocb, tr }: Option<Brush> {} = None,
     /// Sets the right border color.
-    BorderRightColor border_right_color_prop { nocb, tr }: Option<Brush> {} = None,
+    BorderRightColor border_right_color { nocb, tr }: Option<Brush> {} = None,
     /// Sets the bottom border color.
-    BorderBottomColor border_bottom_color_prop { nocb, tr }: Option<Brush> {} = None,
+    BorderBottomColor border_bottom_color { nocb, tr }: Option<Brush> {} = None,
 
     /// Sets the top-left border radius.
     BorderTopLeftRadius border_top_left_radius { tr }: PxPct {} = PxPct::Px(0.),
@@ -2601,29 +2601,49 @@ impl Style {
     /// Sets the border properties for all sides of the view.
     pub fn border(self, border: impl Into<StrokeWrap>) -> Self {
         let border = border.into();
-        self.set(BorderLeft, border.clone())
-            .set(BorderTop, border.clone())
-            .set(BorderRight, border.clone())
-            .set(BorderBottom, border)
+        self.set(BorderLeft, border.0.clone())
+            .set(BorderTop, border.0.clone())
+            .set(BorderRight, border.0.clone())
+            .set(BorderBottom, border.0)
     }
 
     /// Sets the outline properties of the view.
     pub fn outline(self, outline: impl Into<StrokeWrap>) -> Self {
-        self.set_style_value(Outline, StyleValue::Val(outline.into()))
+        self.set_style_value(Outline, StyleValue::Val(outline.into().0))
+    }
+
+    /// Sets the left border.
+    pub fn border_left(self, border: impl Into<StrokeWrap>) -> Self {
+        self.set(BorderLeft, border.into().0)
+    }
+
+    /// Sets the top border.
+    pub fn border_top(self, border: impl Into<StrokeWrap>) -> Self {
+        self.set(BorderTop, border.into().0)
+    }
+
+    /// Sets the right border.
+    pub fn border_right(self, border: impl Into<StrokeWrap>) -> Self {
+        self.set(BorderRight, border.into().0)
+    }
+
+    /// Sets the bottom border.
+    pub fn border_bottom(self, border: impl Into<StrokeWrap>) -> Self {
+        self.set(BorderBottom, border.into().0)
     }
 
     /// Sets `border_left` and `border_right` to `border`
     pub fn border_horiz(self, border: impl Into<StrokeWrap>) -> Self {
         let border = border.into();
-        self.set(BorderLeft, border.clone())
-            .set(BorderRight, border)
+        self.set(BorderLeft, border.0.clone())
+            .set(BorderRight, border.0)
     }
 
     /// Sets `border_top` and `border_bottom` to `border`
     pub fn border_vert(self, border: impl Into<StrokeWrap>) -> Self {
         let border = border.into();
-        self.set(BorderTop, border.clone())
-            .set(BorderBottom, border)
+        self.set(BorderTop, border.0.clone())
+            .set(BorderBottom, border.0)
     }
 
     /// Sets the left padding as a percentage of the parent container width.
@@ -3341,10 +3361,10 @@ impl Style {
             aspect_ratio: style.aspect_ratio(),
             border: {
                 Rect {
-                    left: LengthPercentage::length(style.border_left().0.width as f32),
-                    top: LengthPercentage::length(style.border_top().0.width as f32),
-                    right: LengthPercentage::length(style.border_right().0.width as f32),
-                    bottom: LengthPercentage::length(style.border_bottom().0.width as f32),
+                    left: LengthPercentage::length(style.border_left().width as f32),
+                    top: LengthPercentage::length(style.border_top().width as f32),
+                    right: LengthPercentage::length(style.border_right().width as f32),
+                    bottom: LengthPercentage::length(style.border_bottom().width as f32),
                 }
             },
             padding: {

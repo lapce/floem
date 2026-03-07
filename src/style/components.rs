@@ -5,6 +5,7 @@
 
 use floem_renderer::text::FontWeight;
 use peniko::color::palette;
+use peniko::kurbo::Stroke;
 use peniko::{Brush, Color};
 
 use crate::theme::StyleThemeExt;
@@ -155,10 +156,10 @@ impl Default for BoxShadow {
 /// Structure holding border widths for all four sides
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Border {
-    pub left: Option<StrokeWrap>,
-    pub top: Option<StrokeWrap>,
-    pub right: Option<StrokeWrap>,
-    pub bottom: Option<StrokeWrap>,
+    pub left: Option<Stroke>,
+    pub top: Option<Stroke>,
+    pub right: Option<Stroke>,
+    pub bottom: Option<Stroke>,
 }
 
 impl Border {
@@ -169,44 +170,44 @@ impl Border {
     pub fn all(border: impl Into<StrokeWrap>) -> Self {
         let border = border.into();
         Self {
-            left: Some(border.clone()),
-            top: Some(border.clone()),
-            right: Some(border.clone()),
-            bottom: Some(border),
+            left: Some(border.0.clone()),
+            top: Some(border.0.clone()),
+            right: Some(border.0.clone()),
+            bottom: Some(border.0),
         }
     }
 
     pub fn left(mut self, border: impl Into<StrokeWrap>) -> Self {
-        self.left = Some(border.into());
+        self.left = Some(border.into().0);
         self
     }
 
     pub fn top(mut self, border: impl Into<StrokeWrap>) -> Self {
-        self.top = Some(border.into());
+        self.top = Some(border.into().0);
         self
     }
 
     pub fn right(mut self, border: impl Into<StrokeWrap>) -> Self {
-        self.right = Some(border.into());
+        self.right = Some(border.into().0);
         self
     }
 
     pub fn bottom(mut self, border: impl Into<StrokeWrap>) -> Self {
-        self.bottom = Some(border.into());
+        self.bottom = Some(border.into().0);
         self
     }
 
     pub fn horiz(mut self, border: impl Into<StrokeWrap>) -> Self {
         let border = border.into();
-        self.left = Some(border.clone());
-        self.right = Some(border);
+        self.left = Some(border.0.clone());
+        self.right = Some(border.0);
         self
     }
 
     pub fn vert(mut self, border: impl Into<StrokeWrap>) -> Self {
         let border = border.into();
-        self.top = Some(border.clone());
-        self.bottom = Some(border);
+        self.top = Some(border.0.clone());
+        self.bottom = Some(border.0);
         self
     }
 }
