@@ -99,10 +99,20 @@ impl View for Tooltip {
         }
     }
 
+    fn event_capture(&mut self, cx: &mut EventCx) -> EventPropagation {
+        self.handle_event(cx)
+    }
+
     fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
-        if cx.phase == Phase::Bubble {
+        if cx.phase != Phase::Target {
             return EventPropagation::Continue;
         }
+        self.handle_event(cx)
+    }
+}
+
+impl Tooltip {
+    fn handle_event(&mut self, cx: &mut EventCx) -> EventPropagation {
         match &cx.event {
             Event::Pointer(PointerEvent::Move(pu)) => {
                 if self.overlay.borrow().is_none() {

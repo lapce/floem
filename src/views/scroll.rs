@@ -1011,9 +1011,7 @@ impl View for Scroll {
         }
 
         // Handle scroll wheel events in bubble phase
-        if cx.phase != Phase::Capture
-            && let Event::Pointer(PointerEvent::Scroll(pse)) = &cx.event
-        {
+        if let Event::Pointer(PointerEvent::Scroll(pse)) = &cx.event {
             let size = self.id.get_layout_rect_local().size();
             let delta = pse.resolve_to_points(None, Some(size));
             let delta = -if self.scroll_style.vertical_scroll_as_horizontal()

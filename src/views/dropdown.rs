@@ -288,7 +288,7 @@ impl<T: 'static + Clone + PartialEq + core::fmt::Debug> View for Dropdown<T> {
             self.width.set(new_vis.new_visual_aabb.width());
         }
 
-        if (cx.phase != Phase::Capture && cx.event.is_pointer_down())
+        if cx.event.is_pointer_down()
             || (cx.phase == Phase::Target && cx.event.is_keyboard_trigger())
         {
             self.swap_state();

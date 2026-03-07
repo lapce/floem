@@ -933,7 +933,10 @@ impl<'a> EventCx<'a> {
 
         let mut stop_propagation = false;
 
-        let view_result = view.borrow_mut().event(self);
+        let view_result = match self.phase {
+            Phase::Capture => view.borrow_mut().event_capture(self),
+            Phase::Broadcast | Phase::Target | Phase::Bubble => view.borrow_mut().event(self),
+        };
 
         if self.stop_immediate {
             return Outcome::Stop;
