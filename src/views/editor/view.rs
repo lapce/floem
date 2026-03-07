@@ -1389,6 +1389,7 @@ fn editor_content(
                         cx.request_pointer_capture(pointer_id);
                     }
                     id.request_focus();
+                    id.request_paint();
                     if pointer.is_primary_pointer() {
                         editor.get_untracked().pointer_down_primary(state);
                     } else if button.is_some_and(|b| b == PointerButton::Secondary) {
