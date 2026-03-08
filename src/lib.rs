@@ -383,6 +383,7 @@ pub mod prelude {
     pub use floem_reactive::{
         RwSignal, SignalGet, SignalTrack, SignalUpdate, SignalWith, create_rw_signal, create_signal,
     };
+    pub use palette::css;
     pub use peniko::Color;
     pub use peniko::color::palette;
     pub use ui_events::{
