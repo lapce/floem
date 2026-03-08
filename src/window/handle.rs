@@ -741,7 +741,8 @@ impl WindowHandle {
     }
 
     pub(crate) fn render_frame(&mut self) {
-        if self.window_state.request_paint {
+        let renderer_ready = matches!(self.paint_state, PaintState::Initialized { .. });
+        if self.window_state.request_paint && renderer_ready {
             self.window_state.request_paint = false;
             self.paint();
             self.last_presented_at = Instant::now();
