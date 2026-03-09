@@ -3,7 +3,7 @@ use std::ops::Range;
 use crate::text::TextBrush;
 use crate::text::{FontStyle, FontWeight, FontWidth};
 use fontique::GenericFamily;
-use parley::style::{FontFamily, FontStack, StyleProperty};
+use parley::style::{FontFamily, FontStack, StyleProperty, WordBreakStrength};
 use peniko::Color;
 
 /// An owned font family identifier.
@@ -176,6 +176,8 @@ pub struct Attrs<'a> {
     style: Option<FontStyle>,
     /// Font width / stretch (e.g. condensed, expanded), or `None` for normal.
     font_width: Option<FontWidth>,
+    /// Word break strength used during wrapping, or `None` for Parley's default.
+    word_break: Option<WordBreakStrength>,
     /// Application-defined metadata carried through layout without interpretation.
     metadata: Option<usize>,
 }
@@ -197,6 +199,7 @@ impl<'a> Attrs<'a> {
             weight: None,
             style: None,
             font_width: None,
+            word_break: None,
             metadata: None,
         }
     }
@@ -240,6 +243,12 @@ impl<'a> Attrs<'a> {
     /// Sets the font size in pixels.
     pub fn font_size(mut self, font_size: f32) -> Self {
         self.font_size = font_size;
+        self
+    }
+
+    /// Sets the word break strength used when text wrapping is enabled.
+    pub fn word_break(mut self, word_break: WordBreakStrength) -> Self {
+        self.word_break = Some(word_break);
         self
     }
 
@@ -288,6 +297,11 @@ impl<'a> Attrs<'a> {
         self.font_width
     }
 
+    /// Returns the word break strength, or `None` if unset.
+    pub fn get_word_break(&self) -> Option<WordBreakStrength> {
+        self.word_break
+    }
+
     /// Returns the metadata value, or `None` if unset.
     pub fn get_metadata(&self) -> Option<usize> {
         self.metadata
@@ -332,6 +346,9 @@ impl<'a> Attrs<'a> {
         if let Some(width) = self.font_width {
             builder.push_default(StyleProperty::FontWidth(width));
         }
+        if let Some(word_break) = self.word_break {
+            builder.push_default(StyleProperty::WordBreak(word_break));
+        }
     }
 
     /// Pushes style properties for a specific byte range onto a Parley [`RangedBuilder`].
@@ -370,7 +387,10 @@ impl<'a> Attrs<'a> {
             builder.push(StyleProperty::FontStyle(style), range.clone());
         }
         if let Some(width) = self.font_width {
-            builder.push(StyleProperty::FontWidth(width), range);
+            builder.push(StyleProperty::FontWidth(width), range.clone());
+        }
+        if let Some(word_break) = self.word_break {
+            builder.push(StyleProperty::WordBreak(word_break), range);
         }
     }
 }
@@ -408,6 +428,8 @@ pub struct AttrsOwned {
     style: Option<FontStyle>,
     /// Font width / stretch (e.g. condensed, expanded), or `None` for normal.
     font_width: Option<FontWidth>,
+    /// Word break strength used during wrapping, or `None` for Parley's default.
+    word_break: Option<WordBreakStrength>,
     /// Application-defined metadata carried through layout without interpretation.
     metadata: Option<usize>,
 }
@@ -423,6 +445,7 @@ impl AttrsOwned {
             weight: attrs.weight,
             style: attrs.style,
             font_width: attrs.font_width,
+            word_break: attrs.word_break,
             metadata: attrs.metadata,
         }
     }
@@ -437,6 +460,7 @@ impl AttrsOwned {
             weight: self.weight,
             style: self.style,
             font_width: self.font_width,
+            word_break: self.word_break,
             metadata: self.metadata,
         }
     }

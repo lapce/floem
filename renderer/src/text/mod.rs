@@ -1,40 +1,21 @@
 //! Text layout, shaping, and font management for Floem.
 //!
-//! This module provides the text rendering infrastructure built on
-//! [Parley](https://docs.rs/parley). The central type is [`TextLayout`], which shapes
-//! and positions text for display. Attributes such as font family, weight, and color
-//! are described with [`Attrs`] and collected into an [`AttrsList`] that maps byte ranges
-//! to styling.
-//!
-//! # Quick start
-//!
-//! ```no_run
-//! use floem_renderer::text::{Attrs, AttrsList, FontWeight, TextLayout};
-//!
-//! let attrs = Attrs::new()
-//!     .font_size(18.0)
-//!     .weight(FontWeight::BOLD);
-//! let attrs_list = AttrsList::new(attrs);
-//!
-//! let layout = TextLayout::new_with_text("Hello, Floem!", attrs_list, None);
-//! let size = layout.size();
-//! ```
+//! This module provides the renderer-facing text vocabulary built on
+//! [Parley](https://docs.rs/parley).
 //!
 //! # Re-exports
 //!
 //! [`FontStyle`] and [`FontWidth`] come from [`fontique`](https://docs.rs/fontique).
 
 mod attrs;
-mod layout;
 
 use peniko::{
     BrushRef, Fill, FontData, StyleRef,
-    kurbo::{Affine, Point},
+    kurbo::Affine,
 };
 
 pub use attrs::{Attrs, AttrsList, AttrsOwned, FamilyOwned, LineHeightValue};
 pub use fontique::{FontStyle, FontWeight, FontWidth};
-pub use layout::{FONT_CONTEXT, HitPoint, HitPosition, TextLayout};
 pub use parley::layout::Glyph;
 
 // --- Brush type for Parley ---
@@ -213,72 +194,6 @@ where
 
     fn runs(&self) -> impl Iterator<Item = Self::Run<'_>> + Clone + '_ {
         self.runs.clone()
-    }
-}
-
-pub struct LayoutLine<'a> {
-    line: parley::layout::Line<'a, TextBrush>,
-    origin: Point,
-}
-
-pub struct LayoutRun<'a> {
-    glyph_run: parley::layout::GlyphRun<'a, TextBrush>,
-    origin: Point,
-}
-
-impl TextRun for LayoutRun<'_> {
-    fn props(&self) -> TextGlyphsProps<'_> {
-        let run = self.glyph_run.run();
-        let synthesis = run.synthesis();
-        let glyph_transform = synthesis
-            .skew()
-            .map(|angle| Affine::skew((angle as f64).to_radians().tan(), 0.0));
-
-        TextGlyphsProps::new(run.font())
-            .font_size(run.font_size())
-            .hint(false)
-            .normalized_coords(run.normalized_coords())
-            .style(Fill::NonZero)
-            .brush(self.glyph_run.style().brush.0)
-            .transform(Affine::translate((self.origin.x, self.origin.y)))
-            .glyph_transform(glyph_transform)
-    }
-
-    fn glyphs(&self) -> impl Iterator<Item = Glyph> + Clone + '_ {
-        self.glyph_run.positioned_glyphs()
-    }
-}
-
-impl TextLine for LayoutLine<'_> {
-    type Run<'a>
-        = LayoutRun<'a>
-    where
-        Self: 'a;
-
-    fn runs(&self) -> impl Iterator<Item = Self::Run<'_>> + Clone + '_ {
-        self.line.items().filter_map(move |item| {
-            let parley::layout::PositionedLayoutItem::GlyphRun(glyph_run) = item else {
-                return None;
-            };
-
-            Some(LayoutRun {
-                glyph_run,
-                origin: self.origin,
-            })
-        })
-    }
-}
-
-impl TextLayout {
-    /// Adapts this layout into an iterator of visual lines and glyph runs.
-    pub fn layout_lines(
-        &self,
-        origin: impl Into<Point>,
-    ) -> impl Iterator<Item = LayoutLine<'_>> + Clone {
-        let origin = origin.into();
-        self.parley_layout()
-            .lines()
-            .map(move |line| LayoutLine { line, origin })
     }
 }
 

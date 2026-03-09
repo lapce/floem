@@ -1129,22 +1129,6 @@ fn skia_transform(affine: Affine) -> Transform {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use floem_renderer::text::{Attrs, AttrsList, FONT_CONTEXT, FamilyOwned, TextLayout, TextLine, TextRun};
-    use std::sync::Once;
-
-    const DEJAVU_SERIF: &[u8] = include_bytes!("../../examples/webgpu/fonts/DejaVuSerif.ttf");
-
-    static FONT_INIT: Once = Once::new();
-
-    fn ensure_font() {
-        FONT_INIT.call_once(|| {
-            let mut font_cx = FONT_CONTEXT.lock();
-            font_cx
-                .collection
-                .register_fonts(DEJAVU_SERIF.to_vec().into(), None);
-        });
-    }
-
     /// Creates a `Layer` directly without a window, for offscreen rendering.
     fn make_layer(width: u32, height: u32) -> Layer {
         Layer {
@@ -1158,32 +1142,10 @@ mod tests {
         }
     }
 
-    fn make_attrs(size: f32) -> AttrsList {
-        let family = vec![FamilyOwned::Name("DejaVu Serif".into())];
-        AttrsList::new(Attrs::new().font_size(size).family(&family))
-    }
-
-    /// Clears the thread-local glyph cache so that subsequent draws at a
-    /// different embolden strength are not served stale rasterizations.
-    /// Needed because the cache key stores `embolden: bool` (synthesis flag)
-    /// but not the float strength value.
-    fn clear_glyph_cache() {
-        GLYPH_CACHE.with_borrow_mut(|gc| gc.clear());
-    }
-
     fn pixel_rgba(layer: &Layer, x: u32, y: u32) -> (u8, u8, u8, u8) {
         let idx = (y * layer.pixmap.width() + x) as usize;
         let pixel = layer.pixmap.pixels()[idx];
         (pixel.red(), pixel.green(), pixel.blue(), pixel.alpha())
-    }
-
-    fn draw_text(layer: &mut Layer, layout: &TextLayout, origin: Point, embolden: f32) {
-        for line in layout.layout_lines(origin) {
-            for run in line.runs() {
-                let props = run.props();
-                layer.draw_glyphs(&props, run.glyphs(), embolden);
-            }
-        }
     }
 
     #[test]
@@ -1207,61 +1169,5 @@ mod tests {
         assert_eq!(pixel_rgba(&layer, 6, 1), (255, 0, 0, 255));
         assert_eq!(pixel_rgba(&layer, 7, 1), (0, 0, 0, 0));
         assert_eq!(pixel_rgba(&layer, 8, 1), (0, 0, 0, 0));
-    }
-
-    /// Visual test: renders text at three embolden strengths onto a single PNG.
-    ///
-    /// Run with:
-    /// ```text
-    /// cargo test -p floem_tiny_skia_renderer -- --ignored visual_embolden
-    /// ```
-    /// Output: `target/test_embolden.png`
-    #[test]
-    #[ignore]
-    fn visual_embolden() {
-        ensure_font();
-
-        let width = 550u32;
-        let height = 250u32;
-        let mut layer = make_layer(width, height);
-        layer.pixmap.fill(tiny_skia::Color::WHITE);
-
-        let font_size = 28.0;
-        let attrs = make_attrs(font_size);
-        let sample = "The quick brown fox jumps";
-
-        // Row 1: normal (no embolden)
-        let label = TextLayout::new_with_text("Normal:", make_attrs(14.0), None);
-        draw_text(&mut layer, &label, Point::new(10.0, 10.0), 0.0);
-        let text = TextLayout::new_with_text(sample, attrs.clone(), None);
-        draw_text(&mut layer, &text, Point::new(10.0, 35.0), 0.0);
-
-        clear_glyph_cache();
-
-        // Row 2: moderate embolden (0.05)
-        let label = TextLayout::new_with_text("Emboldened (0.05):", make_attrs(14.0), None);
-        draw_text(&mut layer, &label, Point::new(10.0, 100.0), 0.0);
-        let text = TextLayout::new_with_text(sample, attrs.clone(), None);
-        draw_text(&mut layer, &text, Point::new(10.0, 125.0), 0.05);
-
-        clear_glyph_cache();
-
-        // Row 3: strong embolden (0.10)
-        let label = TextLayout::new_with_text("Emboldened (0.10):", make_attrs(14.0), None);
-        draw_text(&mut layer, &label, Point::new(10.0, 190.0), 0.0);
-        let text = TextLayout::new_with_text(sample, attrs, None);
-        draw_text(&mut layer, &text, Point::new(10.0, 215.0), 0.10);
-
-        // Save to workspace target directory.
-        let out_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .join("target")
-            .join("test_embolden.png");
-        layer
-            .pixmap
-            .save_png(&out_path)
-            .expect("failed to save PNG");
-        eprintln!("Saved embolden visual test to: {}", out_path.display());
     }
 }

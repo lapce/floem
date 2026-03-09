@@ -1,13 +1,16 @@
 use std::ops::Range;
 
+#[path = "text_layout.rs"]
+mod text_layout;
+
 pub use floem_renderer::text::{
-    Attrs, AttrsList, AttrsOwned, FONT_CONTEXT, FamilyOwned, FontStyle, FontWeight, FontWidth,
-    Glyph, GlyphRun, HitPoint, HitPosition, Line, LineHeightValue, NormalizedCoord,
-    TextGlyphsProps, TextLayout, TextLine, TextRun,
+    Attrs, AttrsList, AttrsOwned, FamilyOwned, FontStyle, FontWeight, FontWidth, Glyph, GlyphRun,
+    Line, LineHeightValue, NormalizedCoord, TextGlyphsProps, TextLine, TextRun,
 };
 pub use parley::Alignment;
 pub use parley::layout::{Affinity, Cursor};
-pub use parley::style::{OverflowWrap, TextWrapMode};
+pub use parley::style::{OverflowWrap, TextWrapMode, WordBreakStrength};
+pub use text_layout::{FONT_CONTEXT, HitPoint, HitPosition, TextLayout};
 
 pub fn line_ranges(text: &str) -> impl Iterator<Item = Range<usize>> + '_ {
     let bytes = text.as_bytes();

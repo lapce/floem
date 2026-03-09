@@ -7,6 +7,7 @@ use floem_renderer::text::FontWeight;
 use peniko::color::palette;
 use peniko::kurbo::Stroke;
 use peniko::{Brush, Color};
+use parley::style::{OverflowWrap, WordBreakStrength};
 
 use crate::theme::StyleThemeExt;
 use crate::unit::{PxPct, PxPctAuto};
@@ -25,7 +26,15 @@ pub enum PointerEvents {
 /// Text overflow behavior
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TextOverflow {
-    Wrap,
+    NoWrap(NoWrapOverflow),
+    Wrap {
+        overflow_wrap: OverflowWrap,
+        word_break: WordBreakStrength,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NoWrapOverflow {
     Clip,
     Ellipsis,
 }

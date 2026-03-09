@@ -640,7 +640,7 @@ impl TextInput {
 
             let mut layout_data = self.layout_data.borrow_mut();
             layout_data.set_text(placeholder_text, attrs_list, align);
-            layout_data.set_text_overflow(TextOverflow::Clip);
+            layout_data.set_text_overflow(TextOverflow::NoWrap(crate::style::NoWrapOverflow::Clip));
         } else {
             let attrs_list = self.get_text_attrs();
             let align = self.style.text_align();
@@ -663,7 +663,7 @@ impl TextInput {
 
                 let mut layout_data = self.layout_data.borrow_mut();
                 layout_data.set_text(display_text, attrs_list, align);
-                layout_data.set_text_overflow(TextOverflow::Clip);
+                layout_data.set_text_overflow(TextOverflow::NoWrap(crate::style::NoWrapOverflow::Clip));
             });
         }
     }

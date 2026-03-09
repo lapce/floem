@@ -8,11 +8,12 @@ use crate::{
     prelude::EventListenerTrait,
     prop_extractor,
     style::{
-        CustomStylable, CustomStyle, FontProps, LineHeight, Selectable, SelectionCornerRadius,
-        SelectionStyle, Style, TextAlignProp, TextColor, TextOverflow, TextOverflowProp,
+        CustomStylable, CustomStyle, FontProps, LineHeight, NoWrapOverflow, Selectable,
+        SelectionCornerRadius, SelectionStyle, Style, TextAlignProp, TextColor, TextOverflow,
+        TextOverflowProp,
     },
     style_class,
-    text::{Alignment, Attrs, AttrsList, Cursor, FamilyOwned, TextLayout},
+    text::{Alignment, Attrs, AttrsList, Cursor, FamilyOwned, TextLayout, WordBreakStrength},
     view::{FinalizeFn, LayoutNodeCx, MeasureFn, View},
     views::editor::SelectionColor,
 };
@@ -71,7 +72,7 @@ impl TextLayoutData {
             available_text_layout: None,
             attrs_list: AttrsList::new(Attrs::new()),
             text_align: None,
-            text_overflow: TextOverflow::Clip,
+            text_overflow: TextOverflow::NoWrap(NoWrapOverflow::Clip),
             last_overflow_state: None,
             view_id,
         }
@@ -83,6 +84,7 @@ impl TextLayoutData {
         self.text_align = text_align;
 
         let mut text_layout = TextLayout::new();
+        self.apply_text_overflow(&mut text_layout);
         text_layout.set_text(text, attrs_list, text_align);
         self.text_layout = Some(text_layout);
 
@@ -95,6 +97,16 @@ impl TextLayoutData {
     pub fn set_text_overflow(&mut self, text_overflow: TextOverflow) {
         if self.text_overflow != text_overflow {
             self.text_overflow = text_overflow;
+            if !self.original_text.is_empty() {
+                let mut text_layout = TextLayout::new();
+                self.apply_text_overflow(&mut text_layout);
+                text_layout.set_text(
+                    &self.original_text,
+                    self.attrs_list.clone(),
+                    self.text_align,
+                );
+                self.text_layout = Some(text_layout);
+            }
             // Clear cached overflow layouts when overflow mode changes
             self.available_text = None;
             self.available_width = None;
@@ -111,8 +123,28 @@ impl TextLayoutData {
     pub fn with_effective_text_layout<O>(&self, with: impl FnOnce(&TextLayout) -> O) -> O {
         if let Some(layout) = self.available_text_layout.as_ref() {
             with(layout)
+        } else if let Some(layout) = self.text_layout.as_ref() {
+            with(layout)
         } else {
-            with(self.text_layout.as_ref().unwrap_or(&TextLayout::new()))
+            let layout = TextLayout::new();
+            with(&layout)
+        }
+    }
+
+    fn build_layout(&self, text: &str) -> TextLayout {
+        let mut layout = TextLayout::new();
+        self.apply_text_overflow(&mut layout);
+        layout.set_text(text, self.attrs_list.clone(), self.text_align);
+        layout
+    }
+
+    fn apply_text_overflow(&self, layout: &mut TextLayout) {
+        match self.text_overflow {
+            TextOverflow::NoWrap(_) => layout.set_text_wrap_mode(crate::text::TextWrapMode::NoWrap),
+            TextOverflow::Wrap { overflow_wrap, .. } => {
+                layout.set_text_wrap_mode(crate::text::TextWrapMode::Wrap);
+                layout.set_overflow_wrap(overflow_wrap);
+            }
         }
     }
 
@@ -196,12 +228,11 @@ impl TextLayoutData {
         };
 
         let Some(available_width) = width_constraint else {
-            text_layout.clear_size();
-            return text_layout.size();
+            return self.build_layout(&self.original_text).size();
         };
 
         match text_overflow {
-            TextOverflow::Ellipsis => {
+            TextOverflow::NoWrap(NoWrapOverflow::Ellipsis) => {
                 let mut dots_text = TextLayout::new();
                 dots_text.set_text("...", self.attrs_list.clone(), self.text_align);
                 let dots_width = dots_text.size().width as f32;
@@ -220,11 +251,10 @@ impl TextLayoutData {
                 temp_layout.set_text(&new_text, self.attrs_list.clone(), self.text_align);
                 temp_layout.size()
             }
-            TextOverflow::Wrap => {
-                text_layout.set_size(available_width, f32::MAX);
-                let size = text_layout.size();
-                text_layout.clear_size(); // Reset
-                size
+            TextOverflow::Wrap { .. } => {
+                let mut layout = text_layout.clone();
+                layout.set_size(available_width, f32::MAX);
+                layout.size()
             }
             _ => peniko::kurbo::Size::new(available_width as f64, text_layout.size().height),
         }
@@ -282,7 +312,7 @@ impl TextLayoutData {
             }
 
             match self.text_overflow {
-                TextOverflow::Ellipsis => {
+                TextOverflow::NoWrap(NoWrapOverflow::Ellipsis) => {
                     let mut dots_text = TextLayout::new();
                     dots_text.set_text("...", self.attrs_list.clone(), self.text_align);
                     let dots_width = dots_text.size().width as f32;
@@ -306,18 +336,10 @@ impl TextLayoutData {
                     }
                     self.available_width = Some(final_width);
                 }
-                TextOverflow::Wrap => {
-                    // Keep cached wrapped layout aligned to current style.
-                    if let Some(ref mut layout) = self.available_text_layout {
-                        layout.set_align(self.text_align);
-                        layout.set_size(final_width, f32::MAX);
-                    } else {
-                        // First wrapped layout starts from the base text layout.
-                        let mut layout = text_layout.clone();
-                        layout.set_align(self.text_align);
-                        layout.set_size(final_width, f32::MAX);
-                        self.available_text_layout = Some(layout);
-                    }
+                TextOverflow::Wrap { .. } => {
+                    let mut layout = self.build_layout(&self.original_text);
+                    layout.set_size(final_width, f32::MAX);
+                    self.available_text_layout = Some(layout);
                     self.available_width = Some(final_width);
                 }
                 _ => {
@@ -368,18 +390,18 @@ impl TextLayoutData {
                     known_dimensions.width.or(match available_space.width {
                         AvailableSpace::Definite(w) => Some(w),
                         AvailableSpace::MinContent => match text_overflow {
-                            TextOverflow::Wrap => {
+                            TextOverflow::Wrap { .. } => {
                                 // TODO:
                                 // Calculate min-content: width of longest unbreakable word
                                 // let mut layout_data = layout_data.borrow_mut();
                                 // let min_width = layout_data.compute_min_content_width();
                                 Some(5.)
                             }
-                            TextOverflow::Ellipsis => {
+                            TextOverflow::NoWrap(NoWrapOverflow::Ellipsis) => {
                                 // TODO: similar to wrap
                                 Some(5.)
                             }
-                            TextOverflow::Clip => None,
+                            TextOverflow::NoWrap(NoWrapOverflow::Clip) => None,
                         },
                         AvailableSpace::MaxContent => None,
                     });
@@ -426,9 +448,9 @@ style_class!(
 /// This is fired when text transitions between fitting within its bounds and overflowing,
 /// or vice versa. The overflow state depends on the `text_overflow` style property:
 ///
-/// - `TextOverflow::Clip`: Text is clipped at the boundary
-/// - `TextOverflow::Ellipsis`: Text is truncated with "..." when it overflows
-/// - `TextOverflow::Wrap`: Text wraps to multiple lines (changes line count, not overflow state)
+/// - `TextOverflow::NoWrap(NoWrapOverflow::Clip)`: Text is clipped at the boundary
+/// - `TextOverflow::NoWrap(NoWrapOverflow::Ellipsis)`: Text is truncated with "..." when it overflows
+/// - `TextOverflow::Wrap { .. }`: Text wraps to multiple lines (changes line count, not overflow state)
 ///
 /// # Use Cases
 ///
@@ -442,9 +464,9 @@ style_class!(
 /// ```rust
 /// # use floem::event::EventPropagation;
 /// # use floem::prelude::*;
-/// # use floem::style::TextOverflow;
+/// # use floem::style::{NoWrapOverflow, TextOverflow};
 /// Label::derived(|| "Some long text that might overflow")
-///     .style(|s| s.text_overflow(TextOverflow::Ellipsis))
+///     .style(|s| s.text_overflow(TextOverflow::NoWrap(NoWrapOverflow::Ellipsis)))
 ///     .on_event(TextOverflowChanged::listener(), |cx, event| {
 ///         if event.is_overflowing {
 ///             println!("Text is now overflowing and truncated");
@@ -609,6 +631,11 @@ impl Label {
         }
         if let Some(line_height) = self.style.line_height() {
             attrs = attrs.line_height(line_height);
+        }
+        if let TextOverflow::Wrap { word_break, .. } = self.style.text_overflow()
+            && word_break != WordBreakStrength::Normal
+        {
+            attrs = attrs.word_break(word_break);
         }
         AttrsList::new(attrs)
     }
