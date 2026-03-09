@@ -1,7 +1,7 @@
 [package]
 name = "floem-editor-core"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 repository = "https://github.com/lapce/floem"
 license.workspace = true
 description = "The core of the floem text editor"

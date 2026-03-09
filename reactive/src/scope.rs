@@ -285,12 +285,12 @@ impl Scope {
 
     /// Wraps a closure so it runs under a new child scope of this scope.
     #[cfg_attr(debug_assertions, track_caller)]
-    pub fn enter_child<T, U>(&self, f: impl Fn(T) -> U + 'static) -> impl Fn(T) -> (U, Scope)
+    pub fn enter_child<T, U>(self, f: impl Fn(T) -> U + 'static) -> impl Fn(T) -> (U, Scope) + 'static
     where
         T: 'static,
     {
         Runtime::assert_ui_thread();
-        let parent = *self;
+        let parent = self;
         move |t| {
             let scope = parent.create_child();
             let prev_scope = RUNTIME.with(|runtime| {
@@ -358,5 +358,22 @@ pub fn as_child_of_current_scope<T, U>(f: impl Fn(T) -> U + 'static) -> impl Fn(
 where
     T: 'static,
 {
-    Scope::current().enter_child(f)
+    let parent = Scope::current();
+    move |t| {
+        let scope = parent.create_child();
+        let prev_scope = RUNTIME.with(|runtime| {
+            let mut current_scope = runtime.current_scope.borrow_mut();
+            let prev_scope = *current_scope;
+            *current_scope = scope.0;
+            prev_scope
+        });
+
+        let result = f(t);
+
+        RUNTIME.with(|runtime| {
+            *runtime.current_scope.borrow_mut() = prev_scope;
+        });
+
+        (result, scope)
+    }
 }

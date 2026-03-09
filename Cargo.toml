@@ -80,6 +80,7 @@ raw-window-handle = { workspace = true }
 unicode-segmentation = { workspace = true }
 peniko = { workspace = true }
 imbl.workspace = true
+parley = { workspace = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true }
 lapce-xi-rope = { workspace = true, optional = true }
@@ -212,6 +213,5 @@ harness = false
 [[bench]]
 name = "editor_layout_cols"
 harness = false
-
 
 

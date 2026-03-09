@@ -1439,10 +1439,10 @@ impl View for TextInput {
         self.layout_data
             .borrow()
             .with_effective_text_layout(|text_layout| {
-                cx.draw_text(
-                    text_layout,
-                    Point::new(text_start_point.x - self.scroll_offset, text_start_point.y),
-                );
+                cx.draw_text_lines(text_layout.layout_lines(Point::new(
+                    text_start_point.x - self.scroll_offset,
+                    text_start_point.y,
+                )));
             });
 
         // underline the preedit text

@@ -130,7 +130,7 @@ impl View for RichText {
         self.layout_data
             .borrow()
             .with_effective_text_layout(|layout| {
-                cx.draw_text(layout, text_loc);
+                cx.draw_text_lines(layout.layout_lines(text_loc));
             });
     }
 }

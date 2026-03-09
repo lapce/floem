@@ -6,14 +6,13 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use floem_renderer::gpu_resources::GpuResources;
-use floem_renderer::text::TextLayout;
+use floem_renderer::text::{Glyph, TextGlyphsProps};
 use floem_renderer::{Img, Renderer};
-use parley::layout::PositionedLayoutItem;
 use peniko::kurbo::Size;
 use peniko::{
     color::palette,
     kurbo::{Affine, Point, Rect, Shape},
-    Blob, BrushRef, Color,
+    Blob, BrushRef,
 };
 use peniko::{Compose, Fill, ImageAlphaType, ImageData, Mix};
 use vello::kurbo::Stroke;
@@ -216,9 +215,9 @@ impl Renderer for VelloRenderer {
         self.transform = Affine::IDENTITY;
 
         // Evict SVG scenes not used in the previous frame, then flip generation.
-        let gen = self.cache_generation;
-        self.svg_cache.retain(|_, (g, _)| *g == gen);
-        self.cache_generation = !gen;
+        let generation = self.cache_generation;
+        self.svg_cache.retain(|_, (g, _)| *g == generation);
+        self.cache_generation = !generation;
     }
 
     fn stroke<'b, 's>(
@@ -295,53 +294,31 @@ impl Renderer for VelloRenderer {
         self.scene.pop_layer();
     }
 
-    fn draw_text(&mut self, text_layout: &TextLayout, pos: impl Into<Point>) {
-        let pos: Point = pos.into();
-        let transform = self.device_transform().pre_translate((pos.x, pos.y).into());
-
-        let layout = text_layout.parley_layout();
-
-        for line in layout.lines() {
-            for item in line.items() {
-                let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
-                    continue;
-                };
-
-                let style = glyph_run.style();
-                let run = glyph_run.run();
-                let font = run.font();
-                let font_size = run.font_size();
-                let synthesis = run.synthesis();
-                // TODO: Vello 0.7's DrawGlyphs API has no embolden support.
-                // `synthesis.embolden()` and `self.font_embolden` are not applied.
-                // See https://github.com/linebender/vello/issues for upstream tracking.
-
-                // `Affine::skew` takes tangent values, not radians.
-                // `synthesis.skew()` returns degrees (typically 14° for faux italic).
-                let glyph_xform = synthesis
-                    .skew()
-                    .map(|angle| Affine::skew((angle as f64).to_radians().tan(), 0.0));
-                let coords = run.normalized_coords();
-                let color: Color = style.brush.0;
-
-                self.scene
-                    .draw_glyphs(font)
-                    .brush(color)
-                    .hint(false)
-                    .transform(transform)
-                    .glyph_transform(glyph_xform)
-                    .font_size(font_size)
-                    .normalized_coords(coords)
-                    .draw(
-                        Fill::NonZero,
-                        glyph_run.positioned_glyphs().map(|glyph| vello::Glyph {
-                            id: glyph.id,
-                            x: glyph.x,
-                            y: glyph.y,
-                        }),
-                    );
-            }
-        }
+    fn draw_glyphs<'a>(
+        &mut self,
+        props: &TextGlyphsProps<'a>,
+        glyphs: impl Iterator<Item = Glyph> + 'a,
+    ) {
+        // TODO: Vello 0.7's DrawGlyphs API has no embolden support.
+        // Synthetic bold from layout synthesis and `self.font_embolden` are not applied.
+        let transform = self.device_transform() * props.transform;
+        self.scene
+            .draw_glyphs(&props.font)
+            .brush(props.brush)
+            .brush_alpha(props.brush_alpha)
+            .hint(props.hint)
+            .transform(transform)
+            .glyph_transform(props.glyph_transform)
+            .font_size(props.font_size)
+            .normalized_coords(props.normalized_coords)
+            .draw(
+                props.style,
+                glyphs.map(|glyph| vello::Glyph {
+                    id: glyph.id,
+                    x: glyph.x,
+                    y: glyph.y,
+                }),
+            );
     }
 
     fn draw_img(&mut self, img: Img<'_>, rect: Rect) {
@@ -385,12 +362,12 @@ impl Renderer for VelloRenderer {
             .pre_translate((translate_x, translate_y).into());
 
         // Look up (or create) the cached base scene for this SVG.
-        let gen = self.cache_generation;
+        let generation = self.cache_generation;
         let base = self
             .svg_cache
             .entry(svg.hash.to_owned())
-            .and_modify(|(g, _)| *g = gen)
-            .or_insert_with(|| (gen, vello_svg::render_tree(svg.tree)));
+            .and_modify(|(g, _)| *g = generation)
+            .or_insert_with(|| (generation, vello_svg::render_tree(svg.tree)));
 
         // When a brush is applied (tinted icons), composite through an alpha mask.
         // The base scene is cached; only the masking composite is rebuilt per frame.

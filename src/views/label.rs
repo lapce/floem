@@ -868,7 +868,7 @@ impl View for Label {
         let text_loc = self.get_text_origin(this_node, text_node);
 
         self.with_effective_text_layout(|l| {
-            cx.draw_text(l, text_loc);
+            cx.draw_text_lines(l.layout_lines(text_loc));
             if cx.window_state.is_focused(self.id) {
                 self.paint_selection(text_loc, cx);
             }
