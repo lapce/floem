@@ -1059,8 +1059,12 @@ impl Editor {
 
         let y = text_layout.get_layout_y(rvline.line_index).unwrap_or(0.0);
 
-        let hit_point = text_layout.text.hit_point(Point::new(point.x, y as f64));
-        (line, hit_point.index)
+        let index = text_layout
+            .text
+            .hit_test(Point::new(point.x, y as f64))
+            .map(|cursor| text_layout.text.cursor_to_byte_index(&cursor))
+            .unwrap_or(0);
+        (line, index)
     }
 
     /// Get the (line, col) of a particular point within the editor.
@@ -1102,14 +1106,26 @@ impl Editor {
 
         let y = text_layout.get_layout_y(rvline.line_index).unwrap_or(0.0);
 
-        let hit_point = text_layout.text.hit_point(Point::new(point.x, y as f64));
-        let mut affinity = match hit_point.affinity {
+        let hit_point = Point::new(point.x, y as f64);
+        let size = text_layout.text.size();
+        let is_inside = hit_point.x <= size.width && hit_point.y <= size.height;
+        let (index, affinity) = text_layout
+            .text
+            .hit_test(hit_point)
+            .map(|cursor| {
+                (
+                    text_layout.text.cursor_to_byte_index(&cursor),
+                    cursor.affinity(),
+                )
+            })
+            .unwrap_or((0, Affinity::default()));
+        let mut affinity = match affinity {
             Affinity::Upstream => CursorAffinity::Backward,
             Affinity::Downstream => CursorAffinity::Forward,
         };
         // We have to unapply the phantom text shifting in order to get back to the column in
         // the actual buffer
-        let col = text_layout.phantom_text.before_col(hit_point.index);
+        let col = text_layout.phantom_text.before_col(index);
         // Ensure that the column doesn't end up out of bounds, so things like clicking on the far
         // right end will just go to the end of the line.
         let max_col = self.line_end_col(line, mode != Mode::Normal);
@@ -1117,7 +1133,7 @@ impl Editor {
 
         // TODO: this is a hack to get around text layouts not including spaces at the end of
         // wrapped lines, but we want to be able to click on them
-        if !hit_point.is_inside {
+        if !is_inside {
             // TODO(minor): this is probably wrong in some manners
             col = info.last_col(&self.text_prov(), true);
         }
@@ -1134,7 +1150,7 @@ impl Editor {
             affinity = CursorAffinity::Forward;
         }
 
-        ((line, col), hit_point.is_inside, affinity)
+        ((line, col), is_inside, affinity)
     }
 
     // TODO: colposition probably has issues with wrapping?
@@ -1144,8 +1160,11 @@ impl Editor {
                 // TODO: won't this be incorrect with phantom text? Shouldn't this just use
                 // line_col_of_point and get the col from that?
                 let text_layout = self.text_layout(line);
-                let hit_point = text_layout.text.hit_point(Point::new(x, 0.0));
-                let n = hit_point.index;
+                let n = text_layout
+                    .text
+                    .hit_test(Point::new(x, 0.0))
+                    .map(|cursor| text_layout.text.cursor_to_byte_index(&cursor))
+                    .unwrap_or(0);
                 let col = text_layout.phantom_text.before_col(n);
 
                 col.min(self.line_end_col(line, caret))
@@ -1176,8 +1195,11 @@ impl Editor {
                         }
                     })
                     .unwrap_or(0.0);
-                let hit_point = text_layout.text.hit_point(Point::new(x, y_pos as f64));
-                let n = hit_point.index;
+                let n = text_layout
+                    .text
+                    .hit_test(Point::new(x, y_pos as f64))
+                    .map(|cursor| text_layout.text.cursor_to_byte_index(&cursor))
+                    .unwrap_or(0);
                 let col = text_layout.phantom_text.before_col(n);
 
                 col.min(self.line_end_col(line, caret))

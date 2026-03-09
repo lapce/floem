@@ -9,7 +9,10 @@
 
 mod attrs;
 
-use peniko::{BrushRef, Fill, FontData, StyleRef, kurbo::Affine};
+use peniko::{
+    BrushRef, Fill, FontData, StyleRef,
+    kurbo::{Affine, Point},
+};
 
 pub use attrs::{Attrs, AttrsList, AttrsOwned, FamilyOwned, LineHeightValue};
 pub use fontique::{FontStyle, FontWeight, FontWidth};
@@ -49,7 +52,7 @@ pub type NormalizedCoord = i16;
 
 /// Rendering properties shared by a glyph run.
 #[derive(Clone, Debug)]
-pub struct TextGlyphsProps<'a> {
+pub struct GlyphRunProps<'a> {
     pub font: FontData,
     pub font_size: f32,
     pub hint: bool,
@@ -61,7 +64,7 @@ pub struct TextGlyphsProps<'a> {
     pub glyph_transform: Option<Affine>,
 }
 
-impl<'a> TextGlyphsProps<'a> {
+impl<'a> GlyphRunProps<'a> {
     pub fn new(font: &FontData) -> Self {
         Self {
             font: font.clone(),
@@ -122,76 +125,13 @@ impl<'a> TextGlyphsProps<'a> {
     }
 }
 
-pub trait TextRun {
-    fn props(&self) -> TextGlyphsProps<'_>;
-    fn glyphs(&self) -> impl Iterator<Item = Glyph> + Clone + '_;
-}
-
-pub trait TextLine {
-    type Run<'a>: TextRun
-    where
-        Self: 'a;
-
-    fn runs(&self) -> impl Iterator<Item = Self::Run<'_>> + Clone + '_;
-}
-
-/// A generic glyph run backed by any cloneable glyph iterator.
-pub struct GlyphRun<'a, G> {
-    props: TextGlyphsProps<'a>,
-    glyphs: G,
-}
-
-impl<'a, G> GlyphRun<'a, G> {
-    pub fn new(font: &'a FontData, glyphs: G) -> Self {
-        Self {
-            props: TextGlyphsProps::new(font),
-            glyphs,
-        }
-    }
-
-    pub fn props(mut self, props: TextGlyphsProps<'a>) -> Self {
-        self.props = props;
-        self
-    }
-}
-
-impl<G> TextRun for GlyphRun<'_, G>
-where
-    G: Iterator<Item = Glyph> + Clone,
-{
-    fn props(&self) -> TextGlyphsProps<'_> {
-        self.props.clone()
-    }
-
-    fn glyphs(&self) -> impl Iterator<Item = Glyph> + Clone + '_ {
-        self.glyphs.clone()
-    }
-}
-
-/// A generic text line backed by any cloneable run iterator.
-pub struct Line<R> {
-    runs: R,
-}
-
-impl<R> Line<R> {
-    pub fn new(runs: R) -> Self {
-        Self { runs }
-    }
-}
-
-impl<R, Run> TextLine for Line<R>
-where
-    R: Iterator<Item = Run> + Clone,
-    Run: TextRun,
-{
-    type Run<'a>
-        = Run
-    where
-        Self: 'a;
-
-    fn runs(&self) -> impl Iterator<Item = Self::Run<'_>> + Clone + '_ {
-        self.runs.clone()
-    }
+pub trait GlyphDrawer {
+    fn draw_glyphs<'a>(
+        &mut self,
+        origin: Point,
+        props: &GlyphRunProps<'a>,
+        glyphs: impl Iterator<Item = Glyph> + 'a,
+    );
 }
 
 #[cfg(test)]
@@ -210,7 +150,7 @@ mod tests {
     #[test]
     fn text_glyphs_props_default_is_usable() {
         let font = FontData::new(peniko::Blob::new(std::sync::Arc::new([])), 0);
-        let props = TextGlyphsProps::new(&font);
+        let props = GlyphRunProps::new(&font);
         assert_eq!(props.font, font);
         assert_eq!(props.font_size, 16.0);
         assert_eq!(props.brush_alpha, 1.0);

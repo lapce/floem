@@ -1,7 +1,7 @@
 use anyhow::{Result, anyhow};
 use floem_renderer::Img;
 use floem_renderer::Renderer;
-use floem_renderer::text::{Glyph as ParleyGlyph, TextGlyphsProps};
+use floem_renderer::text::{Glyph as ParleyGlyph, GlyphRunProps};
 use floem_renderer::tiny_skia::{
     self, FillRule, FilterQuality, GradientStop, LinearGradient, Mask, MaskType, Paint, Path,
     PathBuilder, Pattern, Pixmap, RadialGradient, Shader, SpreadMode, Stroke, Transform,
@@ -475,7 +475,8 @@ impl Layer {
 
     fn draw_glyphs<'a>(
         &mut self,
-        props: &TextGlyphsProps<'a>,
+        origin: Point,
+        props: &GlyphRunProps<'a>,
         glyphs: impl Iterator<Item = ParleyGlyph> + 'a,
         font_embolden: f32,
     ) {
@@ -483,7 +484,8 @@ impl Layer {
         let clip = self.clip;
         let (_, _, raster_scale) = self.scale_components();
         let coeffs = props.transform.as_coeffs();
-        let pos = self.device_transform() * peniko::kurbo::Point::new(coeffs[4], coeffs[5]);
+        let pos = self.device_transform()
+            * (origin + peniko::kurbo::Point::new(coeffs[4], coeffs[5]).to_vec2());
         let transform = self.normalized_linear_transform(false);
         let brush_color = match &props.brush {
             peniko::Brush::Solid(color) => Color::from(*color),
@@ -749,13 +751,14 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
 
     fn draw_glyphs<'a>(
         &mut self,
-        props: &TextGlyphsProps<'a>,
+        origin: Point,
+        props: &GlyphRunProps<'a>,
         glyphs: impl Iterator<Item = ParleyGlyph> + 'a,
     ) {
         self.layers
             .last_mut()
             .unwrap()
-            .draw_glyphs(props, glyphs, self.font_embolden);
+            .draw_glyphs(origin, props, glyphs, self.font_embolden);
     }
 
     fn draw_img(&mut self, img: Img<'_>, rect: Rect) {

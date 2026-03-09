@@ -1,10 +1,7 @@
 use std::{any::Any, cell::RefCell, rc::Rc};
 
 use floem_reactive::Effect;
-use floem_renderer::{
-    Renderer,
-    text::{Attrs, AttrsList, AttrsOwned},
-};
+use floem_renderer::text::{Attrs, AttrsList, AttrsOwned};
 use peniko::{Color, color::palette};
 use smallvec::{SmallVec, smallvec};
 use taffy::tree::NodeId;
@@ -136,7 +133,7 @@ impl View for RichText {
         self.layout_data
             .borrow()
             .with_effective_text_layout(|layout| {
-                cx.draw_text_lines(layout.layout_lines(text_loc));
+                layout.draw(cx, text_loc);
             });
     }
 }

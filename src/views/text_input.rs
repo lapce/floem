@@ -1,12 +1,18 @@
 #![deny(missing_docs)]
-use crate::action::{TimerToken, exec_after, set_ime_allowed, set_ime_cursor_area};
-use crate::event::{EventPropagation, ImeEvent, Phase, listener};
-use crate::reactive::{Effect, RwSignal};
-use crate::style::{FontFamily, FontProps, SelectionStyle, Style, StyleClass, TextAlignProp};
-use crate::style::{FontStyle, FontWeight, TextColor};
-use crate::view::LayoutNodeCx;
-use crate::{Clipboard, ViewId, WindowState, prop_extractor, style_class};
-use floem_reactive::{SignalGet, SignalUpdate, SignalWith};
+use crate::{
+    Clipboard, ViewId, WindowState,
+    action::{TimerToken, exec_after, set_ime_allowed, set_ime_cursor_area},
+    event::{EventPropagation, FocusEvent, ImeEvent, Phase},
+    prop_extractor,
+    reactive::RwSignal,
+    style::{
+        FontFamily, FontProps, FontStyle, FontWeight, SelectionStyle, Style, StyleClass,
+        TextAlignProp, TextColor,
+    },
+    style_class,
+    view::LayoutNodeCx,
+};
+use floem_reactive::{Effect, SignalGet, SignalTrack, SignalUpdate, SignalWith};
 
 use floem_renderer::Renderer;
 use taffy::Dimension;
@@ -116,8 +122,6 @@ pub struct TextInput {
     /// Horizontal scroll offset for text that overflows the visible area
     scroll_offset: f64,
     selection: Option<Range<usize>>,
-    // Approx max size of a glyph, given the current font weight & size.
-    glyph_max_size: Size,
     style: Extractor,
     font: FontProps,
     cursor_width: f64, // TODO: make this configurable
@@ -205,15 +209,11 @@ pub enum TextDirection {
 /// For more advanced editing see [TextEditor](super::text_editor::TextEditor).
 pub fn text_input(buffer: RwSignal<String>) -> TextInput {
     let id = ViewId::new();
-    let is_focused = RwSignal::new(false);
 
-    {
-        Effect::new(move |_| {
-            // subscribe to changes without cloning string
-            buffer.with(|_| {});
-            id.update_state(is_focused.get());
-        });
-    }
+    Effect::new(move |_| {
+        buffer.track();
+        id.update_state(());
+    });
 
     let mut text_input = TextInput {
         id,
@@ -231,7 +231,6 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
         font: FontProps::default(),
         cursor_x: 0.0,
         selection: None,
-        glyph_max_size: Size::ZERO,
         scroll_offset: 0.0,
         cursor_width: 1.5,
         is_focused: false,
@@ -246,16 +245,7 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
 
     text_input.update_text_layout();
     text_input.set_taffy_layout();
-    text_input
-        .on_event_stop(listener::FocusGained, move |_, _| {
-            is_focused.set(true);
-            set_ime_allowed(true);
-        })
-        .on_event_stop(listener::FocusLost, move |_, _| {
-            is_focused.set(false);
-            set_ime_allowed(false);
-        })
-        .class(TextInputClass)
+    text_input.class(TextInputClass)
 }
 
 pub(crate) enum TextCommand {
@@ -529,22 +519,10 @@ impl TextInput {
             .borrow()
             .with_effective_text_layout(|layout| {
                 layout
-                    .hit_point(Point::new(pos_x + self.scroll_offset - text_loc.x, 0.0))
-                    .index
+                    .hit_test(Point::new(pos_x + self.scroll_offset - text_loc.x, 0.0))
+                    .map(|cursor| layout.cursor_to_byte_index(&cursor))
+                    .unwrap_or(0)
             })
-    }
-
-    /// Determine approximate max size of a single glyph, given the current font weight & size
-    fn get_font_glyph_max_size(&self) -> Size {
-        let mut tmp = TextLayoutData::new(None);
-        let attrs_list = self.get_text_attrs();
-        let align = self.style.text_align();
-        tmp.set_text("W", attrs_list, align);
-        if let Some(text_layout) = tmp.get_text_layout() {
-            text_layout.size() + Size::new(0., text_layout.hit_position(0).glyph_descent)
-        } else {
-            Size::new(8.0, DEFAULT_FONT_SIZE as f64) // fallback size
-        }
     }
 
     fn update_selection(&mut self, selection_start: usize, selection_end: usize) {
@@ -627,9 +605,6 @@ impl TextInput {
     }
 
     fn update_text_layout(&mut self) {
-        let glyph_max_size = self.get_font_glyph_max_size();
-        self.glyph_max_size = glyph_max_size;
-
         let buffer_is_empty = self.buffer.with_untracked(|buff| {
             buff.is_empty() && self.preedit.as_ref().is_none_or(|p| p.text.is_empty())
         });
@@ -1184,7 +1159,7 @@ impl View for TextInput {
         format!("TextInput: {:?}", self.buffer.get_untracked()).into()
     }
 
-    fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) {
+    fn update(&mut self, _cx: &mut UpdateCx, state: Box<dyn Any>) {
         if state.is::<TimerToken>() {
             if let Ok(token) = state.downcast::<TimerToken>()
                 && *token == self.cursor_blink_timer
@@ -1193,25 +1168,7 @@ impl View for TextInput {
             }
             return;
         }
-        if let Ok(state) = state.downcast::<bool>() {
-            let is_focused = *state;
-
-            if self.is_focused != is_focused {
-                self.is_focused = is_focused;
-                self.last_ime_cursor_area = None;
-
-                self.commit_preedit();
-                self.update_ime_cursor_area();
-
-                if is_focused && !cx.window_state.has_capture(self.id) {
-                    self.selection = None;
-                    self.cursor_glyph_idx = self.buffer.with_untracked(|buf| buf.len());
-                } else {
-                    self.cursor_blink_timer.cancel();
-                    self.cursor_blink_timer = TimerToken::INVALID;
-                }
-            }
-
+        if state.downcast::<()>().is_ok() {
             // Only update recomputation if the state has actually changed
             let text_updated = self.buffer.buffer.with_untracked(|buf| {
                 let updated = *buf != self.buffer.last_buffer;
@@ -1380,6 +1337,37 @@ impl View for TextInput {
                     false
                 }
             }
+
+            Event::Focus(focus) => {
+                match focus {
+                    FocusEvent::Gained(keyboard) => {
+                        set_ime_allowed(true);
+
+                        if *keyboard {
+                            // Keyboard navigation (Tab, etc.)
+                            // Select the entire contents for quick overwrite.
+                            self.select_all();
+                        }
+
+                        self.is_focused = true;
+                    }
+                    FocusEvent::Lost => {
+                        set_ime_allowed(false);
+                        self.is_focused = false;
+
+                        self.cursor_blink_timer.cancel();
+                        self.cursor_blink_timer = TimerToken::INVALID;
+                    }
+                }
+
+                self.last_ime_cursor_area = None;
+
+                self.commit_preedit();
+                self.update_ime_cursor_area();
+
+                true
+            }
+
             _ => false,
         };
 
@@ -1440,10 +1428,10 @@ impl View for TextInput {
         self.layout_data
             .borrow()
             .with_effective_text_layout(|text_layout| {
-                cx.draw_text_lines(text_layout.layout_lines(Point::new(
-                    text_start_point.x - self.scroll_offset,
-                    text_start_point.y,
-                )));
+                text_layout.draw(
+                    cx,
+                    Point::new(text_start_point.x - self.scroll_offset, text_start_point.y),
+                );
             });
 
         // underline the preedit text
@@ -1470,11 +1458,10 @@ impl View for TextInput {
                 });
         }
 
-        // Clear the custom clip we applied
-        cx.clear_clip();
-
         // skip rendering selection / cursor if we don't have focus
         if !cx.window_state.is_focused(self.id) {
+            // Clear the custom clip we applied
+            cx.clear_clip();
             return;
         }
 
@@ -1486,9 +1473,14 @@ impl View for TextInput {
                 .is_some_and(|p| p.cursor.is_some_and(|c| c.0 != c.1));
 
         if has_selection {
+            // Clear the custom clip we applied
             self.paint_selection_rect(cx);
+            cx.clear_clip();
             return;
         }
+
+        // Clear the custom clip we applied
+        cx.clear_clip();
 
         // see if we should render the cursor
         let is_cursor_visible = (self.last_cursor_action_on.elapsed().as_millis()

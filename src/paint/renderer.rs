@@ -57,7 +57,7 @@ use floem_vello_renderer::VelloRenderer;
 #[cfg(not(feature = "vello"))]
 use floem_vger_renderer::VgerRenderer;
 use peniko::BrushRef;
-use peniko::kurbo::{Affine, Rect, Shape, Size, Stroke};
+use peniko::kurbo::{Affine, Point, Rect, Shape, Size, Stroke};
 use winit::window::Window;
 
 #[allow(clippy::large_enum_variant)]
@@ -366,15 +366,16 @@ impl floem_renderer::Renderer for Renderer {
 
     fn draw_glyphs<'a>(
         &mut self,
-        props: &floem_renderer::text::TextGlyphsProps<'a>,
+        origin: Point,
+        props: &floem_renderer::text::GlyphRunProps<'a>,
         glyphs: impl Iterator<Item = floem_renderer::text::Glyph> + 'a,
     ) {
         match self {
             #[cfg(feature = "vello")]
-            Renderer::Vello(v) => v.draw_glyphs(props, glyphs),
+            Renderer::Vello(v) => v.draw_glyphs(origin, props, glyphs),
             #[cfg(not(feature = "vello"))]
-            Renderer::Vger(v) => v.draw_glyphs(props, glyphs),
-            Renderer::TinySkia(v) => v.draw_glyphs(props, glyphs),
+            Renderer::Vger(v) => v.draw_glyphs(origin, props, glyphs),
+            Renderer::TinySkia(v) => v.draw_glyphs(origin, props, glyphs),
             Renderer::Uninitialized { .. } => {}
         }
     }

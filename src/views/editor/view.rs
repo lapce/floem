@@ -949,17 +949,17 @@ impl EditorView {
                 for (c, (x0, _x1)) in whitespaces.iter() {
                     match *c {
                         '\t' => {
-                            cx.draw_text_lines(tab_text.layout_lines(Point::new(*x0, y)));
+                            tab_text.draw(cx, Point::new(*x0, y));
                         }
                         ' ' => {
-                            cx.draw_text_lines(space_text.layout_lines(Point::new(*x0, y)));
+                            space_text.draw(cx, Point::new(*x0, y));
                         }
                         _ => {}
                     }
                 }
             }
 
-            cx.draw_text_lines(text_layout.text.layout_lines(Point::new(0.0, y)));
+            text_layout.text.draw(cx, Point::new(0.0, y));
         }
     }
 }

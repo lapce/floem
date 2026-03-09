@@ -218,8 +218,10 @@ impl TextLayoutData {
             TextOverflow::NoWrap(NoWrapOverflow::Ellipsis) => {
                 let dots_width = self.ellipsis_layout().size().width as f32;
                 let width_left = available_width - dots_width;
-                let hit_point = text_layout.hit_point(Point::new(width_left as f64, 0.0));
-                let byte_end = hit_point.index;
+                let byte_end = text_layout
+                    .hit_test(Point::new(width_left as f64, 0.0))
+                    .map(|cursor| text_layout.cursor_to_byte_index(&cursor))
+                    .unwrap_or(0);
                 self.build_layout(&Self::ellipsis_text(text_layout.text(), byte_end))
                     .size()
             }
@@ -266,8 +268,10 @@ impl TextLayoutData {
                 TextOverflow::NoWrap(NoWrapOverflow::Ellipsis) => {
                     let dots_width = self.ellipsis_layout().size().width as f32;
                     let width_left = final_width - dots_width;
-                    let hit_point = text_layout.hit_point(Point::new(width_left as f64, 0.0));
-                    let byte_end = hit_point.index;
+                    let byte_end = text_layout
+                        .hit_test(Point::new(width_left as f64, 0.0))
+                        .map(|cursor| text_layout.cursor_to_byte_index(&cursor))
+                        .unwrap_or(0);
                     let next_kind = AvailableLayoutKind::Ellipsis { byte_end };
                     if self.available_layout_kind != Some(next_kind) {
                         let new_text = Self::ellipsis_text(text_layout.text(), byte_end);

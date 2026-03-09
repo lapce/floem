@@ -252,14 +252,7 @@ impl Label {
         };
 
         let text_loc = self.get_text_origin(parent_node, text_node);
-        self.with_effective_text_layout(|l| {
-            l.hit(
-                point.x as f32 - text_loc.x as f32,
-                // TODO: prevent cursor incorrectly going to end of buffer when clicking
-                // slightly below the text
-                point.y as f32 - text_loc.y as f32,
-            )
-        })
+        self.with_effective_text_layout(|l| l.hit_test(point - text_loc.to_vec2()))
     }
 
     fn get_text_origin(&self, parent_node: taffy::NodeId, text_node: taffy::NodeId) -> Point {
@@ -486,7 +479,7 @@ impl View for Label {
         let text_loc = self.get_text_origin(this_node, text_node);
 
         self.with_effective_text_layout(|l| {
-            cx.draw_text_lines(l.layout_lines(text_loc));
+            l.draw(cx, text_loc);
             if cx.window_state.is_focused(self.id) {
                 self.paint_selection(text_loc, cx);
             }

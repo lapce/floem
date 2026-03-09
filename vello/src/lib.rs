@@ -6,7 +6,7 @@ use std::sync::mpsc::sync_channel;
 
 use anyhow::Result;
 use floem_renderer::gpu_resources::GpuResources;
-use floem_renderer::text::{Glyph, TextGlyphsProps};
+use floem_renderer::text::{Glyph, GlyphRunProps};
 use floem_renderer::{Img, Renderer};
 use peniko::kurbo::Size;
 use peniko::{
@@ -296,12 +296,14 @@ impl Renderer for VelloRenderer {
 
     fn draw_glyphs<'a>(
         &mut self,
-        props: &TextGlyphsProps<'a>,
+        origin: Point,
+        props: &GlyphRunProps<'a>,
         glyphs: impl Iterator<Item = Glyph> + 'a,
     ) {
         // TODO: Vello 0.7's DrawGlyphs API has no embolden support.
         // Synthetic bold from layout synthesis and `self.font_embolden` are not applied.
-        let transform = self.device_transform() * props.transform;
+        let transform =
+            self.device_transform() * Affine::translate((origin.x, origin.y)) * props.transform;
         self.scene
             .draw_glyphs(&props.font)
             .brush(props.brush)

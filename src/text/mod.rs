@@ -4,10 +4,10 @@ mod layout;
 mod layout_data;
 
 pub use floem_renderer::text::{
-    Attrs, AttrsList, AttrsOwned, FamilyOwned, FontStyle, FontWeight, FontWidth, Glyph, GlyphRun,
-    Line, LineHeightValue, NormalizedCoord, TextGlyphsProps, TextLine, TextRun,
+    Attrs, AttrsList, AttrsOwned, FamilyOwned, FontStyle, FontWeight, FontWidth, Glyph,
+    GlyphRunProps, LineHeightValue, NormalizedCoord,
 };
-pub use layout::{FONT_CONTEXT, HitPoint, HitPosition, TextLayout};
+pub use layout::{FONT_CONTEXT, HitPosition, TextLayout};
 pub use layout_data::{TextLayoutData, TextOverflowChanged};
 pub use parley::Alignment;
 pub use parley::layout::{Affinity, Cursor};

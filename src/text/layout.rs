@@ -1,16 +1,19 @@
 use std::{cell::RefCell, num::NonZeroU8, ops::Range, sync::LazyLock};
 
-use floem_renderer::text::{AttrsList, TextBrush, TextGlyphsProps, TextLine, TextRun};
+use floem_renderer::Renderer as _;
+use floem_renderer::text::{AttrsList, GlyphRunProps, TextBrush};
 use parking_lot::Mutex;
 use parley::{
     Affinity, Alignment, Cursor, FontContext, LayoutContext,
-    layout::{AlignmentOptions, Glyph, Layout},
+    layout::{AlignmentOptions, Layout},
     style::{OverflowWrap, StyleProperty, TextWrapMode},
 };
 use peniko::{
     Fill,
     kurbo::{Affine, Point, Size},
 };
+
+use crate::paint::Renderer;
 
 pub static FONT_CONTEXT: LazyLock<Mutex<FontContext>> =
     LazyLock::new(|| Mutex::new(FontContext::new()));
@@ -88,12 +91,6 @@ pub struct HitPosition {
     pub glyph_descent: f64,
 }
 
-pub struct HitPoint {
-    pub index: usize,
-    pub is_inside: bool,
-    pub affinity: Affinity,
-}
-
 #[derive(Clone)]
 pub struct TextLayout {
     layout: Layout<TextBrush>,
@@ -120,59 +117,6 @@ impl std::fmt::Debug for TextLayout {
 impl Default for TextLayout {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-pub struct LayoutLine<'a> {
-    line: parley::layout::Line<'a, TextBrush>,
-    origin: Point,
-}
-
-pub struct LayoutRun<'a> {
-    glyph_run: parley::layout::GlyphRun<'a, TextBrush>,
-    origin: Point,
-}
-
-impl TextRun for LayoutRun<'_> {
-    fn props(&self) -> TextGlyphsProps<'_> {
-        let run = self.glyph_run.run();
-        let synthesis = run.synthesis();
-        let glyph_transform = synthesis
-            .skew()
-            .map(|angle| Affine::skew((angle as f64).to_radians().tan(), 0.0));
-
-        TextGlyphsProps::new(run.font())
-            .font_size(run.font_size())
-            .hint(false)
-            .normalized_coords(run.normalized_coords())
-            .style(Fill::NonZero)
-            .brush(self.glyph_run.style().brush.0)
-            .transform(Affine::translate((self.origin.x, self.origin.y)))
-            .glyph_transform(glyph_transform)
-    }
-
-    fn glyphs(&self) -> impl Iterator<Item = Glyph> + Clone + '_ {
-        self.glyph_run.positioned_glyphs()
-    }
-}
-
-impl TextLine for LayoutLine<'_> {
-    type Run<'a>
-        = LayoutRun<'a>
-    where
-        Self: 'a;
-
-    fn runs(&self) -> impl Iterator<Item = Self::Run<'_>> + Clone + '_ {
-        self.line.items().filter_map(move |item| {
-            let parley::layout::PositionedLayoutItem::GlyphRun(glyph_run) = item else {
-                return None;
-            };
-
-            Some(LayoutRun {
-                glyph_run,
-                origin: self.origin,
-            })
-        })
     }
 }
 
@@ -331,7 +275,7 @@ impl TextLayout {
         Size::new(self.layout.full_width() as f64, self.layout.height() as f64)
     }
 
-    pub fn hit(&self, x: f32, y: f32) -> Option<Cursor> {
+    pub fn hit_test(&self, point: Point) -> Option<Cursor> {
         if self.text.is_empty() {
             return Some(Cursor::from_byte_index(
                 &self.layout,
@@ -339,7 +283,11 @@ impl TextLayout {
                 Affinity::default(),
             ));
         }
-        Some(Cursor::from_point(&self.layout, x, y))
+        Some(Cursor::from_point(
+            &self.layout,
+            point.x as f32,
+            point.y as f32,
+        ))
     }
 
     pub fn hit_position(&self, idx: usize) -> HitPosition {
@@ -397,23 +345,6 @@ impl TextLayout {
             point: Point::new(bbox.x0, metrics.baseline as f64),
             glyph_ascent: metrics.ascent as f64,
             glyph_descent: metrics.descent as f64,
-        }
-    }
-
-    pub fn hit_point(&self, point: Point) -> HitPoint {
-        if let Some(cursor) = self.hit(point.x as f32, point.y as f32) {
-            let size = self.size();
-            HitPoint {
-                index: self.cursor_to_byte_index(&cursor),
-                is_inside: point.x <= size.width && point.y <= size.height,
-                affinity: cursor.affinity(),
-            }
-        } else {
-            HitPoint {
-                index: 0,
-                is_inside: false,
-                affinity: Affinity::default(),
-            }
         }
     }
 
@@ -534,13 +465,30 @@ impl TextLayout {
         (min_y.is_finite() && max_y.is_finite()).then_some((min_y, max_y))
     }
 
-    pub fn layout_lines(
-        &self,
-        origin: impl Into<Point>,
-    ) -> impl Iterator<Item = LayoutLine<'_>> + Clone {
+    pub fn draw(&self, renderer: &mut Renderer, origin: impl Into<Point>) {
         let origin = origin.into();
-        self.layout
-            .lines()
-            .map(move |line| LayoutLine { line, origin })
+        for line in self.layout.lines() {
+            for item in line.items() {
+                let parley::layout::PositionedLayoutItem::GlyphRun(glyph_run) = item else {
+                    continue;
+                };
+
+                let run = glyph_run.run();
+                let synthesis = run.synthesis();
+                let glyph_transform = synthesis
+                    .skew()
+                    .map(|angle| Affine::skew((angle as f64).to_radians().tan(), 0.0));
+
+                let props = GlyphRunProps::new(run.font())
+                    .font_size(run.font_size())
+                    .hint(false)
+                    .normalized_coords(run.normalized_coords())
+                    .style(Fill::NonZero)
+                    .brush(glyph_run.style().brush.0)
+                    .glyph_transform(glyph_transform);
+
+                renderer.draw_glyphs(origin, &props, glyph_run.positioned_glyphs());
+            }
+        }
     }
 }

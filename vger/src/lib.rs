@@ -5,7 +5,7 @@ use std::sync::mpsc::sync_channel;
 
 use anyhow::Result;
 use floem_renderer::gpu_resources::GpuResources;
-use floem_renderer::text::{Glyph, TextGlyphsProps};
+use floem_renderer::text::{Glyph, GlyphRunProps};
 use floem_renderer::{Img, Renderer, tiny_skia};
 use floem_vger_rs::{GlyphImage, Image, PaintIndex, PixelFormat, Vger};
 use peniko::kurbo::{Size, Stroke};
@@ -492,12 +492,14 @@ impl Renderer for VgerRenderer {
 
     fn draw_glyphs<'a>(
         &mut self,
-        props: &TextGlyphsProps<'a>,
+        origin: Point,
+        props: &GlyphRunProps<'a>,
         glyphs: impl Iterator<Item = Glyph> + 'a,
     ) {
         let font = &props.font;
         let coeffs = props.transform.as_coeffs();
-        let pos = self.device_transform() * Point::new(coeffs[4], coeffs[5]);
+        let pos =
+            self.device_transform() * (origin + Point::new(coeffs[4], coeffs[5]).to_vec2());
         // This assumes that text is axis-aligned.
         let (_, _, scale) = self.scale_components();
 

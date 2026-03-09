@@ -20,11 +20,9 @@
 //! without adding them as direct dependencies.
 
 pub mod text;
-
-use crate::text::TextRun as _;
 use peniko::{
     BlendMode, BrushRef,
-    kurbo::{Affine, Rect, Shape, Stroke},
+    kurbo::{Affine, Point, Rect, Shape, Stroke},
 };
 pub use resvg::tiny_skia;
 pub use resvg::usvg;
@@ -184,28 +182,10 @@ pub trait Renderer {
     /// Draw a single glyph run.
     fn draw_glyphs<'a>(
         &mut self,
-        props: &text::TextGlyphsProps<'a>,
+        origin: Point,
+        props: &text::GlyphRunProps<'a>,
         glyphs: impl Iterator<Item = text::Glyph> + 'a,
     );
-
-    /// Draw a sequence of glyph runs for one visual line.
-    fn draw_text_line<L: text::TextLine>(&mut self, line: &L) {
-        for run in line.runs() {
-            let props = run.props();
-            self.draw_glyphs(&props, run.glyphs());
-        }
-    }
-
-    /// Draw a sequence of visual lines composed of glyph runs.
-    fn draw_text_lines<Lines, L>(&mut self, lines: Lines)
-    where
-        Lines: IntoIterator<Item = L>,
-        L: text::TextLine,
-    {
-        for line in lines {
-            self.draw_text_line(&line);
-        }
-    }
 
     /// Draw an SVG image inside `rect`.
     ///
