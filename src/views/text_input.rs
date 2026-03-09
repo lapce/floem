@@ -32,7 +32,7 @@ pub struct Preedit {
 
 use crate::{
     style::TextOverflow,
-    text::{Attrs, AttrsList, FamilyOwned},
+    text::{Attrs, AttrsList, FamilyOwned, TextLayoutData},
 };
 
 use peniko::Brush;
@@ -44,7 +44,7 @@ use crate::{
     event::Event,
 };
 
-use super::{Decorators, label::TextLayoutData};
+use super::Decorators;
 
 style_class!(
     /// The style class that is applied to all `TextInput` views.
@@ -663,7 +663,8 @@ impl TextInput {
 
                 let mut layout_data = self.layout_data.borrow_mut();
                 layout_data.set_text(display_text, attrs_list, align);
-                layout_data.set_text_overflow(TextOverflow::NoWrap(crate::style::NoWrapOverflow::Clip));
+                layout_data
+                    .set_text_overflow(TextOverflow::NoWrap(crate::style::NoWrapOverflow::Clip));
             });
         }
     }

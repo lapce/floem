@@ -234,34 +234,34 @@ impl Renderer for VelloRenderer {
         let brush: BrushRef<'b> = brush.into();
 
         // For solid colors with specific shapes, use optimized methods
-        if blur_radius > 0.0 {
-            if let BrushRef::Solid(color) = brush {
-                if let Some(rounded) = path.as_rounded_rect() {
-                    if rounded.radii().top_left == rounded.radii().top_right
-                        && rounded.radii().top_left == rounded.radii().bottom_left
-                        && rounded.radii().top_left == rounded.radii().bottom_right
-                    {
-                        let rect_radius = rounded.radii().top_left;
-                        let rect = rounded.rect();
-                        self.scene.draw_blurred_rounded_rect(
-                            self.device_transform(),
-                            rect,
-                            color,
-                            rect_radius,
-                            blur_radius,
-                        );
-                        return;
-                    }
-                } else if let Some(rect) = path.as_rect() {
+        if blur_radius > 0.0
+            && let BrushRef::Solid(color) = brush
+        {
+            if let Some(rounded) = path.as_rounded_rect() {
+                if rounded.radii().top_left == rounded.radii().top_right
+                    && rounded.radii().top_left == rounded.radii().bottom_left
+                    && rounded.radii().top_left == rounded.radii().bottom_right
+                {
+                    let rect_radius = rounded.radii().top_left;
+                    let rect = rounded.rect();
                     self.scene.draw_blurred_rounded_rect(
                         self.device_transform(),
                         rect,
                         color,
-                        0.,
+                        rect_radius,
                         blur_radius,
                     );
                     return;
                 }
+            } else if let Some(rect) = path.as_rect() {
+                self.scene.draw_blurred_rounded_rect(
+                    self.device_transform(),
+                    rect,
+                    color,
+                    0.,
+                    blur_radius,
+                );
+                return;
             }
         }
 

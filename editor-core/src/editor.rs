@@ -386,17 +386,14 @@ impl Action {
 
             edits.push((selection, new_line_content));
 
-            if let Some(c) = first_half.chars().rev().find(|&c| c != ' ') {
-                if let Some(true) = matching_pair_direction(c) {
-                    if let Some(c) = matching_char(c) {
-                        if second_half_trim.starts_with(c) {
-                            let selection =
-                                Selection::imaginary_caret((region.max() as i32 + shift) as usize);
-                            let content = format!("{line_ending}{line_indent}",);
-                            extra_edits.push((selection, content));
-                        }
-                    }
-                }
+            if let Some(c) = first_half.chars().rev().find(|&c| c != ' ')
+                && let Some(true) = matching_pair_direction(c)
+                && let Some(c) = matching_char(c)
+                && second_half_trim.starts_with(c)
+            {
+                let selection = Selection::imaginary_caret((region.max() as i32 + shift) as usize);
+                let content = format!("{line_ending}{line_indent}",);
+                extra_edits.push((selection, content));
             }
         }
 

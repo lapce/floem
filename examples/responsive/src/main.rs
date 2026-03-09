@@ -3,9 +3,8 @@ use floem::{
     prelude::*,
     reactive::{SignalGet, SignalUpdate},
     responsive::{range, ScreenSize},
-    style::TextOverflow,
+    text::TextOverflowChanged,
     unit::UnitExt,
-    views::TextOverflowChanged,
 };
 
 fn app_view() -> impl IntoView {

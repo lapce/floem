@@ -11,7 +11,7 @@ use taffy::tree::NodeId;
 
 use crate::{IntoView, context::UpdateCx, view::LayoutNodeCx, view::View, view::ViewId};
 
-use super::label::TextLayoutData;
+use crate::text::TextLayoutData;
 
 pub struct RichText {
     id: ViewId,
@@ -97,8 +97,8 @@ impl View for RichText {
                 let data = self.layout_data.borrow();
                 format!(
                     "RichText: {:?}",
-                    crate::text::line_ranges(&data.original_text)
-                        .map(|r| data.original_text[r].to_string())
+                    crate::text::paragraph_ranges(data.text().unwrap_or_default())
+                        .map(|r| data.text().unwrap_or_default()[r].to_string())
                         .collect::<Vec<_>>()
                 )
             })

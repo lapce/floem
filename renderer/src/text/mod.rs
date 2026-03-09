@@ -9,10 +9,7 @@
 
 mod attrs;
 
-use peniko::{
-    BrushRef, Fill, FontData, StyleRef,
-    kurbo::Affine,
-};
+use peniko::{BrushRef, Fill, FontData, StyleRef, kurbo::Affine};
 
 pub use attrs::{Attrs, AttrsList, AttrsOwned, FamilyOwned, LineHeightValue};
 pub use fontique::{FontStyle, FontWeight, FontWidth};

@@ -527,7 +527,7 @@ impl Layer {
                 brush_color,
                 &font_ref,
                 scaled_font_size,
-                &props.normalized_coords,
+                props.normalized_coords,
                 font_embolden,
                 skew,
                 new_x,

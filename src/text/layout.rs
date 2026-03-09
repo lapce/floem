@@ -3,7 +3,7 @@ use std::{cell::RefCell, num::NonZeroU8, ops::Range, sync::LazyLock};
 use floem_renderer::text::{AttrsList, TextBrush, TextGlyphsProps, TextLine, TextRun};
 use parking_lot::Mutex;
 use parley::{
-    Alignment, Affinity, Cursor, FontContext, LayoutContext,
+    Affinity, Alignment, Cursor, FontContext, LayoutContext,
     layout::{AlignmentOptions, Glyph, Layout},
     style::{OverflowWrap, StyleProperty, TextWrapMode},
 };
@@ -177,8 +177,13 @@ impl TextLine for LayoutLine<'_> {
 }
 
 impl TextLayout {
+    #[inline]
     fn display_byte_index(&self, idx: usize) -> usize {
-        self.tab_info.as_ref().map_or(idx, |ti| ti.orig_to_display(idx))
+        if let Some(tab_info) = self.tab_info.as_ref() {
+            tab_info.orig_to_display(idx)
+        } else {
+            idx
+        }
     }
 
     fn selection_from_byte_range(
@@ -199,12 +204,6 @@ impl TextLayout {
         parley::editing::Selection::new(anchor, focus)
     }
 
-    fn original_byte_index(&self, idx: usize) -> usize {
-        self.tab_info
-            .as_ref()
-            .map_or(idx, |ti| ti.display_to_orig(idx))
-    }
-
     fn reflow(&mut self, width: Option<f32>) {
         let max_advance = if self.text_wrap_mode == TextWrapMode::NoWrap {
             None
@@ -213,7 +212,9 @@ impl TextLayout {
         };
         self.layout.break_all_lines(max_advance);
 
-        if let Some(align) = self.alignment && let Some(width) = width {
+        if let Some(align) = self.alignment
+            && let Some(width) = width
+        {
             self.layout
                 .align(Some(width), align, AlignmentOptions::default());
         }
@@ -332,7 +333,11 @@ impl TextLayout {
 
     pub fn hit(&self, x: f32, y: f32) -> Option<Cursor> {
         if self.text.is_empty() {
-            return Some(Cursor::from_byte_index(&self.layout, 0, Affinity::default()));
+            return Some(Cursor::from_byte_index(
+                &self.layout,
+                0,
+                Affinity::default(),
+            ));
         }
         Some(Cursor::from_point(&self.layout, x, y))
     }
@@ -351,7 +356,11 @@ impl TextLayout {
             };
         }
 
-        let display_idx = self.display_byte_index(idx);
+        let display_idx = if let Some(tab_info) = self.tab_info.as_ref() {
+            tab_info.orig_to_display(idx)
+        } else {
+            idx
+        };
         let pcursor = parley::editing::Cursor::from_byte_index(&self.layout, display_idx, affinity);
         let bbox = pcursor.geometry(&self.layout, 0.0);
 
@@ -409,7 +418,12 @@ impl TextLayout {
     }
 
     pub fn cursor_to_byte_index(&self, cursor: &Cursor) -> usize {
-        self.original_byte_index(cursor.index())
+        let idx = cursor.index();
+        if let Some(tab_info) = self.tab_info.as_ref() {
+            tab_info.display_to_orig(idx)
+        } else {
+            idx
+        }
     }
 
     pub fn selection_geometry_with(
@@ -520,8 +534,13 @@ impl TextLayout {
         (min_y.is_finite() && max_y.is_finite()).then_some((min_y, max_y))
     }
 
-    pub fn layout_lines(&self, origin: impl Into<Point>) -> impl Iterator<Item = LayoutLine<'_>> + Clone {
+    pub fn layout_lines(
+        &self,
+        origin: impl Into<Point>,
+    ) -> impl Iterator<Item = LayoutLine<'_>> + Clone {
         let origin = origin.into();
-        self.layout.lines().map(move |line| LayoutLine { line, origin })
+        self.layout
+            .lines()
+            .map(move |line| LayoutLine { line, origin })
     }
 }

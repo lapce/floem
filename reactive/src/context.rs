@@ -87,10 +87,10 @@ impl Context {
             let parents = runtime.parents.borrow();
 
             loop {
-                if let Some(contexts) = scope_contexts.get(&scope) {
-                    if let Some(value) = contexts.get(&ty) {
-                        return value.downcast_ref::<T>().cloned();
-                    }
+                if let Some(contexts) = scope_contexts.get(&scope)
+                    && let Some(value) = contexts.get(&ty)
+                {
+                    return value.downcast_ref::<T>().cloned();
                 }
                 // Walk up to parent scope
                 match parents.get(&scope) {
@@ -137,10 +137,10 @@ where
         let parents = runtime.parents.borrow();
 
         loop {
-            if let Some(contexts) = scope_contexts.get(&scope) {
-                if let Some(value) = contexts.get(&ty) {
-                    return value.downcast_ref::<T>().cloned();
-                }
+            if let Some(contexts) = scope_contexts.get(&scope)
+                && let Some(value) = contexts.get(&ty)
+            {
+                return value.downcast_ref::<T>().cloned();
             }
             // Walk up to parent scope
             match parents.get(&scope) {

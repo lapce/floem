@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use crate::{
     peniko::Color,
-    text::{TextLayout, line_ranges},
+    text::{TextLayout, paragraph_ranges},
 };
 use floem_editor_core::buffer::rope_text::RopeText;
 
@@ -83,10 +83,12 @@ impl TextLayoutLine {
             .collect();
 
         let prefix = if visual_ranges.is_empty()
-            && line_ranges(full_text).count() == 1
+            && paragraph_ranges(full_text).count() == 1
             && visual_line_count > 0
         {
-            let s = line_ranges(full_text).next().map_or(0, |range| range.start);
+            let s = paragraph_ranges(full_text)
+                .next()
+                .map_or(0, |range| range.start);
             Some((s, s))
         } else {
             None
@@ -146,8 +148,12 @@ impl TextLayoutLine {
             .collect();
 
         // Fallback for all-whitespace single paragraph.
-        if starts.is_empty() && line_ranges(full_text).count() == 1 && visual_line_count > 0 {
-            starts.push(line_ranges(full_text).next().map_or(0, |range| range.start));
+        if starts.is_empty() && paragraph_ranges(full_text).count() == 1 && visual_line_count > 0 {
+            starts.push(
+                paragraph_ranges(full_text)
+                    .next()
+                    .map_or(0, |range| range.start),
+            );
         }
 
         starts.into_iter()

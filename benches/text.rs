@@ -17,9 +17,7 @@ use std::hint::black_box;
 use std::sync::Once;
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use floem::text::{
-    Attrs, AttrsList, FONT_CONTEXT, FamilyOwned, FontStyle, FontWeight, TextLayout,
-};
+use floem::text::{Attrs, AttrsList, FONT_CONTEXT, FamilyOwned, FontStyle, FontWeight, TextLayout};
 use peniko::Color;
 
 // =============================================================================

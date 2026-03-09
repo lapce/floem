@@ -254,10 +254,8 @@ impl<T: PartialEq + 'static> MemoState<T> {
         });
         RUNTIME.with(|runtime| *runtime.current_effect.borrow_mut() = prev_effect);
 
-        if changed {
-            if let Some(setter) = self.setter.borrow().as_ref() {
-                setter.set(new_value);
-            }
+        if changed && let Some(setter) = self.setter.borrow().as_ref() {
+            setter.set(new_value);
         }
 
         self.dirty.set(false);

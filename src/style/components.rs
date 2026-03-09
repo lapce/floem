@@ -4,10 +4,10 @@
 //! CSS properties like borders and padding.
 
 use floem_renderer::text::FontWeight;
+use parley::style::{OverflowWrap, WordBreakStrength};
 use peniko::color::palette;
 use peniko::kurbo::Stroke;
 use peniko::{Brush, Color};
-use parley::style::{OverflowWrap, WordBreakStrength};
 
 use crate::theme::StyleThemeExt;
 use crate::unit::{PxPct, PxPctAuto};
