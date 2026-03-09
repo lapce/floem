@@ -2,7 +2,7 @@ use std::sync::atomic::AtomicU64;
 
 use crate::{
     effect::observer_clean_up,
-    runtime::{Runtime, RUNTIME},
+    runtime::{RUNTIME, Runtime},
     signal::SignalState,
     sync_runtime::SYNC_RUNTIME,
 };
@@ -116,10 +116,9 @@ mod tests {
     use std::{cell::Cell, rc::Rc};
 
     use crate::{
-        create_effect, create_rw_signal,
-        runtime::{Runtime, RUNTIME},
+        SignalTrack, SignalUpdate, create_effect, create_rw_signal,
+        runtime::{RUNTIME, Runtime},
         scope::Scope,
-        SignalTrack, SignalUpdate,
     };
 
     #[test]

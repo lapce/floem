@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::mem;
 use std::num::NonZero;
-use std::sync::mpsc::sync_channel;
 use std::sync::Arc;
+use std::sync::mpsc::sync_channel;
 
 use anyhow::Result;
 use floem_renderer::gpu_resources::GpuResources;
@@ -10,9 +10,9 @@ use floem_renderer::text::{Glyph, TextGlyphsProps};
 use floem_renderer::{Img, Renderer};
 use peniko::kurbo::Size;
 use peniko::{
+    Blob, BrushRef,
     color::palette,
     kurbo::{Affine, Point, Rect, Shape},
-    Blob, BrushRef,
 };
 use peniko::{Compose, Fill, ImageAlphaType, ImageData, Mix};
 use vello::kurbo::Stroke;

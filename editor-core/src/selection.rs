@@ -1,4 +1,4 @@
-use std::cmp::{max, min, Ordering};
+use std::cmp::{Ordering, max, min};
 
 use lapce_xi_rope::{RopeDelta, Transformer};
 #[cfg(feature = "serde")]

@@ -4,21 +4,21 @@ use std::{
     collections::BTreeSet,
     fmt::Display,
     sync::{
-        atomic::{self, AtomicU64},
         Arc,
+        atomic::{self, AtomicU64},
     },
 };
 
 use lapce_xi_rope::{
+    Delta, DeltaBuilder, DeltaElement, Interval, Rope, RopeDelta,
     multiset::Subset,
     tree::{Node, NodeInfo},
-    Delta, DeltaBuilder, DeltaElement, Interval, Rope, RopeDelta,
 };
 
 use crate::{
     cursor::CursorMode,
     editor::EditType,
-    indent::{auto_detect_indent_style, IndentStyle},
+    indent::{IndentStyle, auto_detect_indent_style},
     line_ending::{LineEnding, LineEndingDetermination},
     mode::Mode,
     selection::Selection,

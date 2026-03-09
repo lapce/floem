@@ -2,7 +2,7 @@ use std::{any::Any, cell::RefCell, collections::HashSet, marker::PhantomData, me
 
 use crate::{
     id::Id,
-    runtime::{Runtime, RUNTIME},
+    runtime::{RUNTIME, Runtime},
     scope::Scope,
 };
 

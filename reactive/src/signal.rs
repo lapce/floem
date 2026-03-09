@@ -16,13 +16,13 @@ use std::panic::Location;
 use parking_lot::{Mutex, MutexGuard};
 
 use crate::{
+    SignalGet, SignalUpdate,
     id::Id,
     read::{SignalRead, SignalTrack, SignalWith},
-    runtime::{Runtime, RUNTIME},
+    runtime::{RUNTIME, Runtime},
     storage::{Storage, SyncStorage, UnsyncStorage},
-    sync_runtime::{SyncSignal, SYNC_RUNTIME},
+    sync_runtime::{SYNC_RUNTIME, SyncSignal},
     write::SignalWrite,
-    SignalGet, SignalUpdate,
 };
 
 #[derive(Debug)]

@@ -1,17 +1,17 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
+use floem_renderer::Img;
+use floem_renderer::Renderer;
 use floem_renderer::text::{Glyph as ParleyGlyph, TextGlyphsProps};
 use floem_renderer::tiny_skia::{
     self, FillRule, FilterQuality, GradientStop, LinearGradient, Mask, MaskType, Paint, Path,
     PathBuilder, Pattern, Pixmap, RadialGradient, Shader, SpreadMode, Stroke, Transform,
 };
-use floem_renderer::Img;
-use floem_renderer::Renderer;
 use peniko::kurbo::{PathEl, Size};
-use peniko::{
-    kurbo::{Affine, Point, Rect, Shape},
-    BrushRef, Color, GradientKind,
-};
 use peniko::{BlendMode, Blob, Compose, ImageAlphaType, ImageData, Mix, RadialGradientPosition};
+use peniko::{
+    BrushRef, Color, GradientKind,
+    kurbo::{Affine, Point, Rect, Shape},
+};
 use resvg::tiny_skia::StrokeDash;
 use softbuffer::{Context, Surface};
 use std::cell::RefCell;
@@ -19,10 +19,10 @@ use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::rc::Rc;
 use std::sync::Arc;
+use swash::FontRef;
 use swash::scale::image::Content;
 use swash::scale::{Render, ScaleContext, Source, StrikeWith};
 use swash::zeno::Format;
-use swash::FontRef;
 use tiny_skia::{LineCap, LineJoin};
 
 /// Cache key for rasterized glyphs, replacing cosmic-text's CacheKey.
@@ -1129,7 +1129,7 @@ fn skia_transform(affine: Affine) -> Transform {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use floem_renderer::text::{Attrs, AttrsList, FamilyOwned, FONT_CONTEXT};
+    use floem_renderer::text::{Attrs, AttrsList, FONT_CONTEXT, FamilyOwned, TextLayout, TextLine, TextRun};
     use std::sync::Once;
 
     const DEJAVU_SERIF: &[u8] = include_bytes!("../../examples/webgpu/fonts/DejaVuSerif.ttf");
@@ -1175,6 +1175,15 @@ mod tests {
         let idx = (y * layer.pixmap.width() + x) as usize;
         let pixel = layer.pixmap.pixels()[idx];
         (pixel.red(), pixel.green(), pixel.blue(), pixel.alpha())
+    }
+
+    fn draw_text(layer: &mut Layer, layout: &TextLayout, origin: Point, embolden: f32) {
+        for line in layout.layout_lines(origin) {
+            for run in line.runs() {
+                let props = run.props();
+                layer.draw_glyphs(&props, run.glyphs(), embolden);
+            }
+        }
     }
 
     #[test]
@@ -1223,25 +1232,25 @@ mod tests {
 
         // Row 1: normal (no embolden)
         let label = TextLayout::new_with_text("Normal:", make_attrs(14.0), None);
-        layer.draw_text(&label, Point::new(10.0, 10.0), 0.0);
+        draw_text(&mut layer, &label, Point::new(10.0, 10.0), 0.0);
         let text = TextLayout::new_with_text(sample, attrs.clone(), None);
-        layer.draw_text(&text, Point::new(10.0, 35.0), 0.0);
+        draw_text(&mut layer, &text, Point::new(10.0, 35.0), 0.0);
 
         clear_glyph_cache();
 
         // Row 2: moderate embolden (0.05)
         let label = TextLayout::new_with_text("Emboldened (0.05):", make_attrs(14.0), None);
-        layer.draw_text(&label, Point::new(10.0, 100.0), 0.0);
+        draw_text(&mut layer, &label, Point::new(10.0, 100.0), 0.0);
         let text = TextLayout::new_with_text(sample, attrs.clone(), None);
-        layer.draw_text(&text, Point::new(10.0, 125.0), 0.05);
+        draw_text(&mut layer, &text, Point::new(10.0, 125.0), 0.05);
 
         clear_glyph_cache();
 
         // Row 3: strong embolden (0.10)
         let label = TextLayout::new_with_text("Emboldened (0.10):", make_attrs(14.0), None);
-        layer.draw_text(&label, Point::new(10.0, 190.0), 0.0);
+        draw_text(&mut layer, &label, Point::new(10.0, 190.0), 0.0);
         let text = TextLayout::new_with_text(sample, attrs, None);
-        layer.draw_text(&text, Point::new(10.0, 215.0), 0.10);
+        draw_text(&mut layer, &text, Point::new(10.0, 215.0), 0.10);
 
         // Save to workspace target directory.
         let out_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

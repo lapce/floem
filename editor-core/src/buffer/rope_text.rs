@@ -1,6 +1,6 @@
 use std::{borrow::Cow, ops::Range};
 
-use lapce_xi_rope::{interval::IntervalBounds, rope::ChunkIter, Cursor, Rope};
+use lapce_xi_rope::{Cursor, Rope, interval::IntervalBounds, rope::ChunkIter};
 
 use crate::{mode::Mode, paragraph::ParagraphCursor, word::WordCursor};
 

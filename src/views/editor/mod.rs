@@ -16,7 +16,7 @@ use crate::{
     prop, prop_extractor,
     reactive::{Effect, ReadSignal, RwSignal, Scope},
     style::{CursorColor, StylePropValue, TextColor},
-    text::{Attrs, AttrsList, LineHeightValue, TextLayout, Wrap},
+    text::{Attrs, AttrsList, LineHeightValue, OverflowWrap, TextLayout, TextWrapMode},
     view::{IntoView, View},
 };
 use floem_editor_core::{
@@ -31,8 +31,8 @@ use floem_editor_core::{
     word::WordCursor,
 };
 use floem_reactive::{SignalGet, SignalTrack, SignalUpdate, SignalWith, Trigger};
-use floem_renderer::text::Affinity;
 use lapce_xi_rope::Rope;
+use parley::Affinity;
 
 pub mod actions;
 pub mod color;
@@ -1389,11 +1389,13 @@ impl TextLayoutProvider for Editor {
             WrapMethod::None => {}
             WrapMethod::EditorWidth => {
                 let width = self.viewport.get_untracked().width();
-                text_layout.set_wrap(Wrap::WordOrGlyph);
+                text_layout.set_text_wrap_mode(TextWrapMode::Wrap);
+                text_layout.set_overflow_wrap(OverflowWrap::BreakWord);
                 text_layout.set_size(width as f32, f32::MAX);
             }
             WrapMethod::WrapWidth { width } => {
-                text_layout.set_wrap(Wrap::WordOrGlyph);
+                text_layout.set_text_wrap_mode(TextWrapMode::Wrap);
+                text_layout.set_overflow_wrap(OverflowWrap::BreakWord);
                 text_layout.set_size(width, f32::MAX);
             }
             // TODO:

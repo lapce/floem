@@ -1,8 +1,8 @@
 use std::marker::PhantomData;
 
 use crate::{
-    storage::{SyncStorage, UnsyncStorage},
     RwSignal, SignalGet, SignalTrack, SignalUpdate, SignalWith,
+    storage::{SyncStorage, UnsyncStorage},
 };
 
 /// A derived signal backed by a local [`RwSignal`] (UI-thread only).

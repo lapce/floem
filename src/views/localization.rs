@@ -9,8 +9,8 @@ use crate::view::{Stack as StackStruct, StackOffset};
 use crate::views::Decorators;
 use crate::{AnyView, IntoView, View, ViewId, prop, prop_extractor, style_class};
 use floem_reactive::UpdaterEffect;
-use floem_renderer::text::Alignment;
 use fluent_bundle::{FluentBundle, FluentResource};
+use parley::Alignment;
 
 pub use fluent_bundle::FluentArgs;
 pub use fluent_bundle::types::FluentValue;

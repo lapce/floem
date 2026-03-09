@@ -23,8 +23,8 @@ pub mod text;
 
 use crate::text::TextRun as _;
 use peniko::{
-    kurbo::{Affine, Rect, Shape, Stroke},
     BlendMode, BrushRef,
+    kurbo::{Affine, Rect, Shape, Stroke},
 };
 pub use resvg::tiny_skia;
 pub use resvg::usvg;
@@ -182,7 +182,11 @@ pub trait Renderer {
     fn pop_layer(&mut self);
 
     /// Draw a single glyph run.
-    fn draw_glyphs<'a>(&mut self, props: &text::TextGlyphsProps<'a>, glyphs: impl Iterator<Item = text::Glyph> + 'a);
+    fn draw_glyphs<'a>(
+        &mut self,
+        props: &text::TextGlyphsProps<'a>,
+        glyphs: impl Iterator<Item = text::Glyph> + 'a,
+    );
 
     /// Draw a sequence of glyph runs for one visual line.
     fn draw_text_line<L: text::TextLine>(&mut self, line: &L) {

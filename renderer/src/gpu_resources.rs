@@ -11,9 +11,9 @@
 use std::{future::Future, sync::Arc};
 
 #[cfg(feature = "crossbeam")]
-use crossbeam::channel::{bounded as sync_channel, Receiver};
+use crossbeam::channel::{Receiver, bounded as sync_channel};
 #[cfg(not(feature = "crossbeam"))]
-use std::sync::mpsc::{sync_channel, Receiver};
+use std::sync::mpsc::{Receiver, sync_channel};
 use wgpu::{Backends, InstanceFlags};
 
 use winit::window::{Window, WindowId};

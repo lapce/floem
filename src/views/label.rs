@@ -12,15 +12,12 @@ use crate::{
         SelectionStyle, Style, TextAlignProp, TextColor, TextOverflow, TextOverflowProp,
     },
     style_class,
-    text::{Attrs, AttrsList, FamilyOwned, TextLayout},
+    text::{Alignment, Attrs, AttrsList, Cursor, FamilyOwned, TextLayout},
     view::{FinalizeFn, LayoutNodeCx, MeasureFn, View},
     views::editor::SelectionColor,
 };
 use floem_reactive::UpdaterEffect;
-use floem_renderer::{
-    Renderer,
-    text::{Alignment, Cursor},
-};
+use floem_renderer::Renderer;
 use peniko::{
     Brush,
     color::palette::{self},

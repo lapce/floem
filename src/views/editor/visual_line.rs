@@ -1967,12 +1967,12 @@ fn prev_rvline(
 mod tests {
     use std::{borrow::Cow, cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 
+    use crate::text::{Attrs, AttrsList, FamilyOwned, OverflowWrap, TextLayout, TextWrapMode};
     use floem_editor_core::{
         buffer::rope_text::{RopeText, RopeTextRef, RopeTextVal},
         cursor::CursorAffinity,
     };
     use floem_reactive::Scope;
-    use floem_renderer::text::{Attrs, AttrsList, FamilyOwned, TextLayout, Wrap};
     use lapce_xi_rope::Rope;
     use smallvec::smallvec;
 
@@ -1995,10 +1995,10 @@ mod tests {
         phantom: HashMap<usize, PhantomTextLine>,
         font_family: Vec<FamilyOwned>,
         #[allow(dead_code)]
-        wrap: Wrap,
+        wrap: TextWrapMode,
     }
     impl<'a> TestTextLayoutProvider<'a> {
-        fn new(text: &'a Rope, ph: HashMap<usize, PhantomTextLine>, wrap: Wrap) -> Self {
+        fn new(text: &'a Rope, ph: HashMap<usize, PhantomTextLine>, wrap: TextWrapMode) -> Self {
             Self {
                 text,
                 phantom: ph,
@@ -2082,16 +2082,17 @@ mod tests {
             }
 
             let mut text_layout = TextLayout::new();
-            text_layout.set_wrap(Wrap::Word);
+            text_layout.set_text(&line_content, attrs_list, None);
+
             match wrap {
-                // We do not have to set the wrap mode if we do not set the width
                 ResolvedWrap::None => {}
                 ResolvedWrap::Column(_col) => todo!(),
                 ResolvedWrap::Width(px) => {
+                    text_layout.set_text_wrap_mode(TextWrapMode::Wrap);
+                    text_layout.set_overflow_wrap(OverflowWrap::BreakWord);
                     text_layout.set_size(px, f32::MAX);
                 }
             }
-            text_layout.set_text(&line_content, attrs_list, None);
 
             // skip phantom text background styling because it doesn't shift positions
             // skip severity styling
@@ -2142,7 +2143,7 @@ mod tests {
         init: bool,
         ph: HashMap<usize, PhantomTextLine>,
     ) -> (TestTextLayoutProvider<'_>, Lines) {
-        let wrap = Wrap::Word;
+        let wrap = TextWrapMode::Wrap;
         let r_wrap = ResolvedWrap::Width(width);
         let font_sizes = TestFontSize {
             font_size: FONT_SIZE,
@@ -2174,7 +2175,12 @@ mod tests {
                 let full_text = text_layout.text.text();
                 let count = text_layout.text.visual_line_count();
                 for i in 0..count {
-                    if text_layout.text.visual_line_is_empty(i) {
+                    if text_layout
+                        .text
+                        .parley_layout()
+                        .get(i)
+                        .is_none_or(|line| line.is_empty())
+                    {
                         continue;
                     }
                     if let Some(text_range) = text_layout.text.visual_line_text_range(i) {

@@ -9,13 +9,13 @@ use std::hint::black_box;
 use std::sync::{Arc, Once};
 
 use criterion::{Criterion, criterion_group, criterion_main};
+use floem::text::{Attrs, AttrsList, FONT_CONTEXT, FamilyOwned, TextLayout, TextWrapMode};
 use floem::views::editor::{
     layout::TextLayoutLine,
     phantom_text::PhantomTextLine,
     visual_line::{ResolvedWrap, TextLayoutProvider},
 };
 use floem_editor_core::buffer::rope_text::RopeTextVal;
-use floem_renderer::text::{Attrs, AttrsList, FONT_CONTEXT, FamilyOwned, TextLayout, Wrap};
 use lapce_xi_rope::Rope;
 
 // ============================================================================
@@ -80,7 +80,7 @@ fn make_layout_line(text: &str, wrap_width: f32) -> TextLayoutLine {
     let attrs_list = AttrsList::new(attrs);
 
     let mut text_layout = TextLayout::new();
-    text_layout.set_wrap(Wrap::Word);
+    text_layout.set_text_wrap_mode(TextWrapMode::Wrap);
     text_layout.set_text(text, attrs_list, None);
     text_layout.set_size(wrap_width, f32::MAX);
 

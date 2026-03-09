@@ -90,13 +90,13 @@ impl View for RichText {
         self.layout_data
             .borrow()
             .get_text_layout()
-            .map(|layout| {
+            .map(|_| {
+                let data = self.layout_data.borrow();
                 format!(
                     "RichText: {:?}",
-                    layout
-                        .lines_range()
-                        .iter()
-                        .map(|r| self.layout_data.borrow().original_text[r.clone()].to_string())
+                    crate::text::line_ranges(&data.original_text)
+                        .map(|r| data.original_text[r].to_string())
+                        .collect::<Vec<_>>()
                 )
             })
             .unwrap_or_else(|| "RichText: <empty>".to_string())

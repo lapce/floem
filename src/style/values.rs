@@ -320,7 +320,7 @@ where
                 .padding_horiz(6.0)
                 .items_center()
                 .justify_center()
-                .text_align(floem_renderer::text::Alignment::Center)
+                .text_align(parley::Alignment::Center)
                 .border(1.)
                 .border_radius(5.0)
                 .margin_left(6.0)

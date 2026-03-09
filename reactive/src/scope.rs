@@ -7,11 +7,11 @@ use parking_lot::Mutex;
 use crate::{
     create_effect, create_updater,
     id::Id,
-    memo::{create_memo, Memo},
-    runtime::{Runtime, RUNTIME},
+    memo::{Memo, create_memo},
+    runtime::{RUNTIME, Runtime},
     signal::{ReadSignal, RwSignal, SignalState, SignalValue, WriteSignal},
     storage::{SyncStorage, UnsyncStorage},
-    trigger::{create_trigger, Trigger},
+    trigger::{Trigger, create_trigger},
 };
 
 /// You can manually control Signal's lifetime by using Scope.
@@ -285,7 +285,10 @@ impl Scope {
 
     /// Wraps a closure so it runs under a new child scope of this scope.
     #[cfg_attr(debug_assertions, track_caller)]
-    pub fn enter_child<T, U>(self, f: impl Fn(T) -> U + 'static) -> impl Fn(T) -> (U, Scope) + 'static
+    pub fn enter_child<T, U>(
+        self,
+        f: impl Fn(T) -> U + 'static,
+    ) -> impl Fn(T) -> (U, Scope) + 'static
     where
         T: 'static,
     {

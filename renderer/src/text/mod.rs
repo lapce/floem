@@ -22,72 +22,20 @@
 //!
 //! # Re-exports
 //!
-//! [`FontStyle`] and [`FontWidth`] come from [`fontique`](https://docs.rs/fontique), and
-//! [`Alignment`] from [`parley`](https://docs.rs/parley). They are re-exported here so
-//! that downstream crates do not need to depend on those libraries directly.
+//! [`FontStyle`] and [`FontWidth`] come from [`fontique`](https://docs.rs/fontique).
 
 mod attrs;
 mod layout;
 
 use peniko::{
-    kurbo::{Affine, Point},
     BrushRef, Fill, FontData, StyleRef,
+    kurbo::{Affine, Point},
 };
 
 pub use attrs::{Attrs, AttrsList, AttrsOwned, FamilyOwned, LineHeightValue};
 pub use fontique::{FontStyle, FontWeight, FontWidth};
-pub use layout::{HitPoint, HitPosition, TextLayout, FONT_CONTEXT};
+pub use layout::{FONT_CONTEXT, HitPoint, HitPosition, TextLayout};
 pub use parley::layout::Glyph;
-pub use parley::Affinity;
-pub use parley::Alignment;
-pub use parley::Cursor;
-
-// --- Font Properties ---
-
-/// Text wrapping strategy.
-///
-/// Controls how [`TextLayout`] breaks long lines when a maximum width is set
-/// via [`TextLayout::set_size`].
-///
-/// # Example
-///
-/// ```no_run
-/// use floem_renderer::text::{Attrs, AttrsList, TextLayout, Wrap};
-///
-/// let mut layout = TextLayout::new();
-/// layout.set_wrap(Wrap::WordOrGlyph);
-/// layout.set_text("A long paragraph…", AttrsList::new(Attrs::new()), None);
-/// layout.set_size(200.0, f32::MAX);
-/// ```
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
-pub enum Wrap {
-    /// No wrapping — text extends beyond the layout width.
-    None,
-    /// Break at any glyph boundary.
-    Glyph,
-    /// Break at word boundaries (default).
-    #[default]
-    Word,
-    /// Break at word boundaries, but fall back to glyph boundaries when a
-    /// single word is wider than the available width.
-    WordOrGlyph,
-}
-
-/// Line ending style.
-///
-/// Represents the newline convention of a text document.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
-pub enum LineEnding {
-    /// Unix-style line feed (`\n`).
-    #[default]
-    Lf,
-    /// Windows-style carriage return + line feed (`\r\n`).
-    CrLf,
-    /// Classic Mac-style carriage return (`\r`).
-    Cr,
-    /// No line ending.
-    None,
-}
 
 // --- Brush type for Parley ---
 
@@ -337,20 +285,6 @@ impl TextLayout {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // -- Wrap --
-
-    #[test]
-    fn wrap_default_is_word() {
-        assert_eq!(Wrap::default(), Wrap::Word);
-    }
-
-    // -- LineEnding --
-
-    #[test]
-    fn line_ending_default_is_lf() {
-        assert_eq!(LineEnding::default(), LineEnding::Lf);
-    }
 
     // -- TextBrush --
 

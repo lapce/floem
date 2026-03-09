@@ -1,4 +1,4 @@
-use crate::{signal::RwSignal, SignalUpdate, SignalWith};
+use crate::{SignalUpdate, SignalWith, signal::RwSignal};
 
 #[derive(Debug)]
 pub struct Trigger {

@@ -476,7 +476,7 @@ mod tests {
 
     #[test]
     fn context_with_rw_signal() {
-        use crate::{create_rw_signal, SignalGet, SignalUpdate};
+        use crate::{SignalGet, SignalUpdate, create_rw_signal};
 
         let scope = Scope::new();
         scope.enter(|| {
@@ -640,7 +640,7 @@ mod tests {
 
     #[test]
     fn context_visible_in_effect() {
-        use crate::{create_effect, create_rw_signal, SignalGet};
+        use crate::{SignalGet, create_effect, create_rw_signal};
         use std::cell::Cell;
         use std::rc::Rc;
 
@@ -654,7 +654,7 @@ mod tests {
             let seen = seen_value.clone();
             create_effect(move |_| {
                 trigger.get(); // Subscribe to trigger
-                               // Effect should see the context from the scope it was created in
+                // Effect should see the context from the scope it was created in
                 if let Some(val) = use_context::<i32>() {
                     seen.set(val);
                 }

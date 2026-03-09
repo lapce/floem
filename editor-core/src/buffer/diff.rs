@@ -2,8 +2,8 @@ use std::{
     borrow::Cow,
     ops::Range,
     sync::{
-        atomic::{self, AtomicU64},
         Arc,
+        atomic::{self, AtomicU64},
     },
 };
 

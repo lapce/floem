@@ -3,7 +3,7 @@ use lapce_xi_rope::{RopeDelta, Transformer};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    buffer::{rope_text::RopeText, Buffer},
+    buffer::{Buffer, rope_text::RopeText},
     mode::{Mode, MotionMode, VisualMode},
     register::RegisterData,
     selection::{InsertDrift, SelRegion, Selection},
@@ -707,11 +707,7 @@ pub fn get_first_selection_after(
     );
     positions.sort_by_key(|p| {
         let p = *p as i32 - offset as i32;
-        if p > 0 {
-            p as usize
-        } else {
-            -p as usize
-        }
+        if p > 0 { p as usize } else { -p as usize }
     });
 
     positions

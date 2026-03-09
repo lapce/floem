@@ -1,11 +1,11 @@
 use std::{cell::RefCell, num::NonZeroU8, ops::Range, sync::LazyLock};
 
-use crate::text::{Affinity, Alignment, AttrsList, TextBrush, Wrap};
+use crate::text::{AttrsList, TextBrush};
 use parking_lot::Mutex;
 use parley::{
     layout::{AlignmentOptions, Layout},
-    style::StyleProperty,
-    FontContext, LayoutContext,
+    style::{OverflowWrap, StyleProperty, TextWrapMode},
+    Affinity, Alignment, Cursor, FontContext, LayoutContext,
 };
 use peniko::kurbo::{Point, Size};
 
@@ -163,10 +163,11 @@ pub struct HitPoint {
 /// # Example
 ///
 /// ```no_run
-/// use floem_renderer::text::{Attrs, AttrsList, TextLayout, Wrap};
+/// use floem_renderer::text::{Attrs, AttrsList, TextLayout};
+/// use parley::style::TextWrapMode;
 ///
 /// let mut layout = TextLayout::new();
-/// layout.set_wrap(Wrap::Word);
+/// layout.set_text_wrap_mode(TextWrapMode::Wrap);
 /// layout.set_text("Hello, world!", AttrsList::new(Attrs::new()), None);
 /// layout.set_size(200.0, f32::MAX);
 ///
@@ -178,18 +179,16 @@ pub struct TextLayout {
     layout: Layout<TextBrush>,
     /// The full text content.
     text: String,
-    /// Byte ranges for each paragraph line (split on `\n`, `\r\n`, or `\r`).
-    lines_range: Vec<Range<usize>>,
     /// Text alignment (left, center, right, justified), or `None` for the default (left).
     alignment: Option<Alignment>,
-    /// Word/glyph wrapping strategy.
-    wrap: Wrap,
+    /// Control over non-emergency line breaks.
+    text_wrap_mode: TextWrapMode,
+    /// Control over emergency line breaks.
+    overflow_wrap: OverflowWrap,
     /// Maximum width constraint in pixels, or `None` if unconstrained.
     width_opt: Option<f32>,
     /// Maximum height constraint in pixels, or `None` if unconstrained.
     height_opt: Option<f32>,
-    /// Default line height computed from the attrs at [`set_text`](Self::set_text) time.
-    default_line_height: f32,
     /// Tab width in spaces, or `None` to leave `\t` as-is (Parley default: near-zero width).
     tab_width: Option<NonZeroU8>,
     /// Tab expansion mapping, present when `tab_width` is set and text contains `\t`.
@@ -200,7 +199,6 @@ impl std::fmt::Debug for TextLayout {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TextLayout")
             .field("text", &self.text)
-            .field("lines_range", &self.lines_range)
             .field("width_opt", &self.width_opt)
             .field("height_opt", &self.height_opt)
             .finish()
@@ -214,6 +212,49 @@ impl Default for TextLayout {
 }
 
 impl TextLayout {
+    fn display_byte_index(&self, idx: usize) -> usize {
+        self.tab_info
+            .as_ref()
+            .map_or(idx, |ti| ti.orig_to_display(idx))
+    }
+
+    fn original_byte_index(&self, idx: usize) -> usize {
+        self.tab_info
+            .as_ref()
+            .map_or(idx, |ti| ti.display_to_orig(idx))
+    }
+
+    fn selection_from_byte_range(
+        &self,
+        start_byte: usize,
+        end_byte: usize,
+    ) -> parley::editing::Selection {
+        let anchor = parley::editing::Cursor::from_byte_index(
+            &self.layout,
+            self.display_byte_index(start_byte),
+            Affinity::Downstream,
+        );
+        let focus = parley::editing::Cursor::from_byte_index(
+            &self.layout,
+            self.display_byte_index(end_byte),
+            Affinity::Upstream,
+        );
+        parley::editing::Selection::new(anchor, focus)
+    }
+
+    fn reflow(&mut self, width: Option<f32>) {
+        let max_advance = if self.text_wrap_mode == TextWrapMode::NoWrap {
+            None
+        } else {
+            width
+        };
+        self.layout.break_all_lines(max_advance);
+
+        if let Some(align) = self.alignment {
+            self.layout.align(width, align, AlignmentOptions::default());
+        }
+    }
+
     /// Creates an empty `TextLayout` with word wrapping and no text.
     ///
     /// Call [`set_text`](Self::set_text) afterwards to populate it.
@@ -221,12 +262,11 @@ impl TextLayout {
         TextLayout {
             layout: Layout::new(),
             text: String::new(),
-            lines_range: Vec::new(),
             alignment: None,
-            wrap: Wrap::Word,
+            text_wrap_mode: TextWrapMode::Wrap,
+            overflow_wrap: OverflowWrap::Normal,
             width_opt: None,
             height_opt: None,
-            default_line_height: 16.0,
             tab_width: None,
             tab_info: None,
         }
@@ -251,36 +291,6 @@ impl TextLayout {
     pub fn set_text(&mut self, text: &str, attrs_list: AttrsList, align: Option<Alignment>) {
         self.text = text.to_string();
         self.alignment = align;
-        self.lines_range.clear();
-
-        // Compute per-paragraph byte ranges
-        let mut start = 0;
-        let bytes = text.as_bytes();
-        let len = bytes.len();
-        let mut i = 0;
-        while i < len {
-            if bytes[i] == b'\r' {
-                if i + 1 < len && bytes[i + 1] == b'\n' {
-                    self.lines_range.push(start..i);
-                    i += 2;
-                    start = i;
-                } else {
-                    self.lines_range.push(start..i);
-                    i += 1;
-                    start = i;
-                }
-            } else if bytes[i] == b'\n' {
-                self.lines_range.push(start..i);
-                i += 1;
-                start = i;
-            } else {
-                i += 1;
-            }
-        }
-        self.lines_range.push(start..len);
-
-        // Store default line height from attrs
-        self.default_line_height = attrs_list.defaults().effective_line_height();
 
         // Expand tabs to spaces if configured
         self.tab_info = self
@@ -315,50 +325,31 @@ impl TextLayout {
                     attrs_list.apply_to_builder(&mut builder);
                 }
 
-                // Apply wrap mode
-                match self.wrap {
-                    Wrap::None => {
-                        builder.push_default(StyleProperty::TextWrapMode(
-                            parley::style::TextWrapMode::NoWrap,
-                        ));
-                    }
-                    Wrap::Glyph => {
-                        builder.push_default(StyleProperty::OverflowWrap(
-                            parley::style::OverflowWrap::BreakWord,
-                        ));
-                    }
-                    Wrap::Word => {}
-                    Wrap::WordOrGlyph => {
-                        builder.push_default(StyleProperty::OverflowWrap(
-                            parley::style::OverflowWrap::BreakWord,
-                        ));
-                    }
-                }
+                builder.push_default(StyleProperty::TextWrapMode(self.text_wrap_mode));
+                builder.push_default(StyleProperty::OverflowWrap(self.overflow_wrap));
 
                 builder.build_into(&mut self.layout, layout_text);
             });
         }
 
         // Line breaking (no font context needed)
-        let max_advance = if self.wrap == Wrap::None {
-            None
-        } else {
-            self.width_opt
-        };
-        self.layout.break_all_lines(max_advance);
-
-        if let Some(align) = self.alignment {
-            self.layout
-                .align(self.width_opt, align, AlignmentOptions::default());
-        }
+        self.reflow(self.width_opt);
     }
 
-    /// Sets the text wrapping strategy.
+    /// Sets Parley's non-emergency text wrapping mode.
     ///
     /// Must be called **before** [`set_text`](Self::set_text) for the wrap mode
     /// to take effect during shaping.
-    pub fn set_wrap(&mut self, wrap: Wrap) {
-        self.wrap = wrap;
+    pub fn set_text_wrap_mode(&mut self, text_wrap_mode: TextWrapMode) {
+        self.text_wrap_mode = text_wrap_mode;
+    }
+
+    /// Sets Parley's emergency wrap strategy.
+    ///
+    /// Must be called **before** [`set_text`](Self::set_text) for the wrap mode
+    /// to take effect during shaping.
+    pub fn set_overflow_wrap(&mut self, overflow_wrap: OverflowWrap) {
+        self.overflow_wrap = overflow_wrap;
     }
 
     /// Sets the tab width in number of spaces.
@@ -387,17 +378,7 @@ impl TextLayout {
             return;
         }
 
-        let max_advance = if self.wrap == Wrap::None {
-            None
-        } else {
-            Some(width)
-        };
-        self.layout.break_all_lines(max_advance);
-
-        if let Some(align) = self.alignment {
-            self.layout
-                .align(Some(width), align, AlignmentOptions::default());
-        }
+        self.reflow(Some(width));
     }
 
     /// Sets text alignment without changing text content or attributes.
@@ -411,25 +392,7 @@ impl TextLayout {
 
         self.alignment = align;
 
-        let max_advance = if self.wrap == Wrap::None {
-            None
-        } else {
-            self.width_opt
-        };
-        self.layout.break_all_lines(max_advance);
-
-        if let Some(align) = self.alignment {
-            self.layout
-                .align(self.width_opt, align, AlignmentOptions::default());
-        }
-    }
-
-    /// Returns the byte ranges of each paragraph line.
-    ///
-    /// Paragraph lines are split on `\n`, `\r\n`, or `\r`. Each range covers
-    /// the text content without the line ending.
-    pub fn lines_range(&self) -> &[Range<usize>] {
-        &self.lines_range
+        self.reflow(self.width_opt);
     }
 
     /// Returns the full text content.
@@ -464,15 +427,15 @@ impl TextLayout {
     /// [`cursor_to_byte_index`](Self::cursor_to_byte_index) to obtain the
     /// original byte offset, or to [`selection_for_cursors`](Self::selection_for_cursors)
     /// for selection painting.
-    pub fn hit(&self, x: f32, y: f32) -> Option<parley::Cursor> {
+    pub fn hit(&self, x: f32, y: f32) -> Option<Cursor> {
         if self.text.is_empty() {
-            return Some(parley::Cursor::from_byte_index(
+            return Some(Cursor::from_byte_index(
                 &self.layout,
                 0,
                 Affinity::default(),
             ));
         }
-        Some(parley::Cursor::from_point(&self.layout, x, y))
+        Some(Cursor::from_point(&self.layout, x, y))
     }
 
     /// Returns the geometric position of the cursor at the given flat byte index.
@@ -499,10 +462,7 @@ impl TextLayout {
         }
 
         // Map original byte index to display space for Parley.
-        let display_idx = match self.tab_info {
-            Some(ref ti) => ti.orig_to_display(idx),
-            None => idx,
-        };
+        let display_idx = self.display_byte_index(idx);
         let pcursor = parley::editing::Cursor::from_byte_index(&self.layout, display_idx, affinity);
         let bbox = pcursor.geometry(&self.layout, 0.0);
 
@@ -570,11 +530,8 @@ impl TextLayout {
 
     /// Converts a [`Cursor`] (display-space) to a flat byte index into the
     /// original text, accounting for tab expansion when present.
-    pub fn cursor_to_byte_index(&self, cursor: &parley::Cursor) -> usize {
-        match self.tab_info {
-            Some(ref ti) => ti.display_to_orig(cursor.index()),
-            None => cursor.index(),
-        }
+    pub fn cursor_to_byte_index(&self, cursor: &Cursor) -> usize {
+        self.original_byte_index(cursor.index())
     }
 
     /// Computes selection highlight rectangles between two flat byte indices.
@@ -588,21 +545,7 @@ impl TextLayout {
         mut f: impl FnMut(f64, f64, f64, f64),
     ) {
         // Map original byte indices to display space for Parley.
-        let (display_start, display_end) = match self.tab_info {
-            Some(ref ti) => (ti.orig_to_display(start_byte), ti.orig_to_display(end_byte)),
-            None => (start_byte, end_byte),
-        };
-        let anchor = parley::editing::Cursor::from_byte_index(
-            &self.layout,
-            display_start,
-            parley::layout::Affinity::Downstream,
-        );
-        let focus = parley::editing::Cursor::from_byte_index(
-            &self.layout,
-            display_end,
-            parley::layout::Affinity::Upstream,
-        );
-        let selection = parley::editing::Selection::new(anchor, focus);
+        let selection = self.selection_from_byte_range(start_byte, end_byte);
         selection.geometry_with(&self.layout, |bbox, _line_idx| {
             f(bbox.x0, bbox.y0, bbox.x1, bbox.y1);
         });
@@ -617,21 +560,7 @@ impl TextLayout {
         mut f: impl FnMut(f64, f64, f64, f64),
     ) {
         // Map original byte indices to display space for Parley.
-        let (display_start, display_end) = match self.tab_info {
-            Some(ref ti) => (ti.orig_to_display(start_byte), ti.orig_to_display(end_byte)),
-            None => (start_byte, end_byte),
-        };
-        let anchor = parley::editing::Cursor::from_byte_index(
-            &self.layout,
-            display_start,
-            parley::layout::Affinity::Downstream,
-        );
-        let focus = parley::editing::Cursor::from_byte_index(
-            &self.layout,
-            display_end,
-            parley::layout::Affinity::Upstream,
-        );
-        let selection = parley::editing::Selection::new(anchor, focus);
+        let selection = self.selection_from_byte_range(start_byte, end_byte);
         selection.geometry_with(&self.layout, |bbox, line_idx| {
             if let Some(line) = self.layout.get(line_idx) {
                 let m = line.metrics();
@@ -702,11 +631,6 @@ impl TextLayout {
         })
     }
 
-    /// Returns `true` if the `nth` visual line has no glyph items (or does not exist).
-    pub fn visual_line_is_empty(&self, nth: usize) -> bool {
-        self.layout.get(nth).is_none_or(|l| l.is_empty())
-    }
-
     /// Returns the vertical bounds of all visual lines as `(min_y, max_y)`.
     ///
     /// Values are in layout-local coordinates and are derived from per-line
@@ -763,7 +687,7 @@ impl TextLayout {
     pub fn clear_size(&mut self) {
         self.width_opt = None;
         self.height_opt = None;
-        self.layout.break_all_lines(None);
+        self.reflow(None);
     }
 }
 
@@ -812,7 +736,6 @@ mod tests {
         let layout = TextLayout::new();
         assert!(layout.text().is_empty());
         assert_eq!(layout.visual_line_count(), 0);
-        assert!(layout.lines_range().is_empty());
     }
 
     #[test]
@@ -842,51 +765,6 @@ mod tests {
         assert!(center_min >= visual_min);
         assert!(center_min < center_max);
         assert!(center_max < visual_max);
-    }
-
-    // ========================== Paragraph lines ==========================
-
-    #[test]
-    fn lines_range_single_line() {
-        let layout = make("hello world");
-        assert_eq!(layout.lines_range(), &[0..11]);
-    }
-
-    #[test]
-    fn lines_range_lf() {
-        let layout = make("aaa\nbbb\nccc");
-        assert_eq!(layout.lines_range(), &[0..3, 4..7, 8..11]);
-    }
-
-    #[test]
-    fn lines_range_crlf() {
-        let layout = make("aaa\r\nbbb\r\nccc");
-        assert_eq!(layout.lines_range(), &[0..3, 5..8, 10..13]);
-    }
-
-    #[test]
-    fn lines_range_cr() {
-        let layout = make("aaa\rbbb");
-        assert_eq!(layout.lines_range(), &[0..3, 4..7]);
-    }
-
-    #[test]
-    fn lines_range_trailing_newline() {
-        let layout = make("aaa\n");
-        assert_eq!(layout.lines_range(), &[0..3, 4..4]);
-    }
-
-    #[test]
-    fn lines_range_empty_text() {
-        let layout = make("");
-        // Even empty text produces one (empty) paragraph.
-        assert_eq!(layout.lines_range(), &[0..0]);
-    }
-
-    #[test]
-    fn lines_range_multiple_empty_lines() {
-        let layout = make("\n\n");
-        assert_eq!(layout.lines_range(), &[0..0, 1..1, 2..2]);
     }
 
     // ========================== Measurement ==========================
@@ -985,13 +863,19 @@ mod tests {
     #[test]
     fn visual_line_is_empty_on_text() {
         let layout = make("hello");
-        assert!(!layout.visual_line_is_empty(0));
+        assert!(layout
+            .parley_layout()
+            .get(0)
+            .is_some_and(|line| !line.is_empty()));
     }
 
     #[test]
     fn visual_line_is_empty_out_of_bounds() {
         let layout = make("hello");
-        assert!(layout.visual_line_is_empty(999));
+        assert!(layout
+            .parley_layout()
+            .get(999)
+            .is_none_or(|line| line.is_empty()));
     }
 
     // ========================== Hit testing ==========================
@@ -1187,7 +1071,7 @@ mod tests {
     fn set_wrap_none_no_breaking() {
         ensure_font();
         let mut layout = TextLayout::new();
-        layout.set_wrap(Wrap::None);
+        layout.set_text_wrap_mode(TextWrapMode::NoWrap);
         layout.set_text(
             "a very long line that should not wrap at all even with a narrow width constraint",
             default_attrs(),
@@ -1490,12 +1374,6 @@ mod tests {
             range.end <= 2,
             "range should be in original space, got {range:?}"
         );
-    }
-
-    #[test]
-    fn lines_range_unaffected_by_tabs() {
-        let layout = make_tab("a\tb\nc\td", 4);
-        assert_eq!(layout.lines_range(), &[0..3, 4..7]);
     }
 
     #[test]
