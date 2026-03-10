@@ -295,7 +295,7 @@ fn capture_view(
     let inner_search = search_str;
     let match_ids = RwSignal::new((0, Vec::<ViewId>::new()));
 
-    let search = text_input(search_str)
+    let search = TextInput::new(search_str)
         .style(|s| s.width_full())
         .placeholder("View Search...")
         .on_event_stop(

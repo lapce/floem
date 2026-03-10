@@ -16,7 +16,7 @@ pub fn clipboard_view() -> impl IntoView {
         form_item(
             "Copy from input",
             Stack::horizontal((
-                text_input(text1).style(|s| s.width_full().min_width(150)),
+                TextInput::new(text1).style(|s| s.width_full().min_width(150)),
                 Button::new("Copy")
                     .style(|s| s.flex_shrink(0.))
                     .action(move || {

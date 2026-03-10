@@ -108,11 +108,11 @@ impl BufferState {
 ///
 /// Useful for submitting forms using a keyboard.
 /// ```
-/// # use floem::views::{text_input, Decorators, TextInputEnter};
+/// # use floem::views::{Decorators, TextInput, TextInputEnter};
 /// # use floem_reactive::RwSignal;
 /// # use floem_reactive::SignalGet;
 /// let form = RwSignal::new(String::new());
-/// text_input(form)
+/// TextInput::new(form)
 ///     .placeholder("fill the form")
 ///     .on_event_stop(TextInputEnter::listener(), move |_, _| {
 ///         let _ = format!("Form {} submitted!", form.get_untracked());
@@ -180,10 +180,11 @@ pub enum TextDirection {
 /// # use floem::prelude::palette::css;
 /// # use floem::text::FontWeight;
 /// # use floem::style::SelectionCornerRadius;
+/// # use floem::views::TextInput;
 /// // Create empty `String` as a text buffer in the read-write signal
 /// let text = RwSignal::new(String::new());
 /// // Create simple text imput from it
-/// let simple = text_input(text)
+/// let simple = TextInput::new(text)
 ///     // Optional placeholder text
 ///     .placeholder("Placeholder text")
 ///     // Width of the text widget
@@ -194,7 +195,7 @@ pub enum TextDirection {
 ///      );
 ///
 /// // Stylized text example:
-/// let stylized = text_input(text)
+/// let stylized = TextInput::new(text)
 ///     .placeholder("Placeholder text")
 ///     .style(|s| s
 ///         .border(1.5)
@@ -226,44 +227,9 @@ pub enum TextDirection {
 /// The view is reactive and will track updates on buffer signal.
 /// ### Info
 /// For more advanced editing see [TextEditor](super::text_editor::TextEditor).
+#[deprecated(note = "use `TextInput::new(buffer)` instead")]
 pub fn text_input(buffer: RwSignal<String>) -> TextInput {
-    let id = ViewId::new();
-
-    Effect::new(move |_| {
-        buffer.track();
-        id.update_state(());
-    });
-
-    let mut text_input = TextInput {
-        id,
-        cursor_glyph_idx: 0,
-        placeholder_text: None,
-        placeholder_style: Default::default(),
-        selection_style: Default::default(),
-        preedit: None,
-        buffer: BufferState {
-            buffer,
-            last_buffer: buffer.get_untracked(),
-        },
-        layout_data: Rc::new(RefCell::new(TextLayoutState::new(Some(id)))),
-        style: Default::default(),
-        font: FontProps::default(),
-        cursor_x: 0.0,
-        selection: None,
-        scroll_offset: 0.0,
-        cursor_width: 1.5,
-        is_focused: false,
-        last_pointer_down: Point::ZERO,
-        last_cursor_action_on: Instant::now(),
-        last_ime_cursor_area: None,
-        text_node: None,
-        layout_node: None,
-        cursor_blink_timer: TimerToken::INVALID,
-    };
-
-    text_input.update_text_layout();
-    text_input.set_taffy_layout();
-    text_input.class(TextInputClass)
+    TextInput::new(buffer)
 }
 
 pub(crate) enum TextCommand {
@@ -319,12 +285,53 @@ const DEFAULT_FONT_SIZE: f32 = 14.0;
 const CURSOR_BLINK_INTERVAL_MS: u64 = 500;
 
 impl TextInput {
+    /// Creates a [TextInput] view. This can be used for basic text input.
+    pub fn new(buffer: RwSignal<String>) -> Self {
+        let id = ViewId::new();
+
+        Effect::new(move |_| {
+            buffer.track();
+            id.update_state(());
+        });
+
+        let mut text_input = Self {
+            id,
+            cursor_glyph_idx: 0,
+            placeholder_text: None,
+            placeholder_style: Default::default(),
+            selection_style: Default::default(),
+            preedit: None,
+            buffer: BufferState {
+                buffer,
+                last_buffer: buffer.get_untracked(),
+            },
+            layout_data: Rc::new(RefCell::new(TextLayoutState::new(Some(id)))),
+            style: Default::default(),
+            font: FontProps::default(),
+            cursor_x: 0.0,
+            selection: None,
+            scroll_offset: 0.0,
+            cursor_width: 1.5,
+            is_focused: false,
+            last_pointer_down: Point::ZERO,
+            last_cursor_action_on: Instant::now(),
+            last_ime_cursor_area: None,
+            text_node: None,
+            layout_node: None,
+            cursor_blink_timer: TimerToken::INVALID,
+        };
+
+        text_input.update_text_layout();
+        text_input.set_taffy_layout();
+        text_input.class(TextInputClass)
+    }
+
     /// Add placeholder text visible when buffer is empty.
     /// ```
-    /// # use floem::views::text_input;
+    /// # use floem::views::TextInput;
     /// # use floem_reactive::RwSignal;
     /// let text = RwSignal::new(String::new());
-    /// let simple = text_input(text)
+    /// let simple = TextInput::new(text)
     ///     // Optional placeholder text
     ///     .placeholder("Placeholder text");
     /// ```

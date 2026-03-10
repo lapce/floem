@@ -25,13 +25,13 @@ pub fn text_input_view() -> impl IntoView {
     form((
         form_item(
             "Simple Input:",
-            text_input(text)
+            TextInput::new(text)
                 .placeholder("Placeholder text")
                 .style(|s| s.width(250.)),
         ),
         form_item(
             "Styled Input:",
-            text_input(text)
+            TextInput::new(text)
                 .placeholder("Placeholder text")
                 .style(|s| {
                     s.border(Stroke::new(1.5).with_dashes(0., [5., 5.]))
@@ -60,7 +60,7 @@ pub fn text_input_view() -> impl IntoView {
         ),
         form_item(
             "Disabled Input:",
-            text_input(text)
+            TextInput::new(text)
                 .placeholder("Disabled input")
                 .style(|s| s.set_disabled(true)),
         ),
