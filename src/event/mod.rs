@@ -1446,7 +1446,7 @@ pub enum Event {
     /// fn handle(event: Event) {
     ///     let mut cursor_visible = false;
     ///     match event {
-    ///         Event::Focus(FocusEvent::Gained) => {
+    ///         Event::Focus(FocusEvent::Gained(_)) => {
     ///             cursor_visible = true;
     ///         }
     ///         Event::Focus(FocusEvent::Lost) => {

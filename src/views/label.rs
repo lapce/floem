@@ -69,9 +69,10 @@ style_class!(
 /// # use floem::event::EventPropagation;
 /// # use floem::prelude::*;
 /// # use floem::style::{NoWrapOverflow, TextOverflow};
+/// # use floem::text::TextOverflowChanged;
 /// Label::derived(|| "Some long text that might overflow")
 ///     .style(|s| s.text_overflow(TextOverflow::NoWrap(NoWrapOverflow::Ellipsis)))
-///     .on_event(TextOverflowChanged::listener(), |cx, event| {
+///     .on_event(TextOverflowChanged::listener(), |_cx, event| {
 ///         if event.is_overflowing {
 ///             println!("Text is now overflowing and truncated");
 ///         } else {

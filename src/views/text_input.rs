@@ -108,15 +108,16 @@ impl BufferState {
 ///
 /// Useful for submitting forms using a keyboard.
 /// ```
-/// # use floem::views::text_input;
-/// # use floem::views::text_input::TextInputEnter;
+/// # use floem::views::{text_input, Decorators, TextInputEnter};
 /// # use floem_reactive::RwSignal;
 /// # use floem_reactive::SignalGet;
 /// let form = RwSignal::new(String::new());
 /// text_input(form)
 ///     .placeholder("fill the form")
-///     .on_event_stop(TextInputEnter::listener(), move |_| { format!("Form {} submitted!", form.get_untracked()); });
-/// ``````
+///     .on_event_stop(TextInputEnter::listener(), move |_, _| {
+///         let _ = format!("Form {} submitted!", form.get_untracked());
+///     });
+/// ```
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct TextInputEnter;
 

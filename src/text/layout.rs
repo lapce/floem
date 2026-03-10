@@ -573,9 +573,11 @@ impl TextLayout {
         };
         let pcursor = Cursor::from_byte_index(&self.layout, display_idx, affinity);
         let bbox = pcursor.geometry(&self.layout, 0.0);
+        let visual_line = self.line_index_for_cursor_y(bbox.y0 as f32);
         let baseline = self
-            .line_metrics_at(idx, affinity)
-            .map(|metrics| metrics.baseline as f64)
+            .layout
+            .get(visual_line)
+            .map(|line| line.metrics().baseline as f64)
             .unwrap_or(0.0);
         Point::new(bbox.x0, baseline)
     }
