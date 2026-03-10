@@ -1,4 +1,4 @@
-use std::{any::Any, cell::RefCell, fmt::Display, mem::swap, rc::Rc};
+use std::{any::Any, cell::RefCell, fmt::Display, rc::Rc};
 
 use crate::{
     Clipboard, ViewId,
@@ -11,7 +11,10 @@ use crate::{
         SelectionStyle, Style, TextAlignProp, TextColor, TextOverflow, TextOverflowProp,
     },
     style_class,
-    text::{Attrs, AttrsList, Cursor, FamilyOwned, TextLayout, TextLayoutData, WordBreakStrength},
+    text::{
+        Attrs, AttrsList, Cursor, FamilyOwned, TextLayout, TextLayoutState, TextSelection,
+        WordBreakStrength,
+    },
     view::{LayoutNodeCx, View},
     views::editor::SelectionColor,
 };
@@ -80,9 +83,12 @@ style_class!(
 #[derive(Debug, Clone, PartialEq)]
 enum SelectionState {
     None,
-    Ready(Point),
-    Selecting(Point, Point),
-    Selected(Point, Point),
+    Ready {
+        origin: Point,
+        selection: TextSelection,
+    },
+    Selecting(TextSelection),
+    Selected(TextSelection),
 }
 
 /// A View that can display text from a [`String`]. See [`label`], [`text`], and [`static_label`].
@@ -90,9 +96,8 @@ pub struct Label {
     id: ViewId,
     label: String,
     /// Layout data containing text layouts and overflow handling logic
-    layout_data: Rc<RefCell<TextLayoutData>>,
+    layout_data: Rc<RefCell<TextLayoutState>>,
     selection_state: SelectionState,
-    selection_range: Option<(Cursor, Cursor)>,
     selection_style: SelectionStyle,
     font_props: FontProps,
     label_props: LabelProps,
@@ -103,7 +108,7 @@ pub struct Label {
 impl Label {
     fn new_internal(id: ViewId, label: String) -> Self {
         id.register_listener(LayoutChangedListener::listener_key());
-        let layout_data = Rc::new(RefCell::new(TextLayoutData::new(Some(id))));
+        let layout_data = Rc::new(RefCell::new(TextLayoutState::new(Some(id))));
         let mut label = Label {
             id,
             label,
@@ -111,7 +116,6 @@ impl Label {
             text_node: None,
             layout_node: None,
             selection_state: SelectionState::None,
-            selection_range: None,
             selection_style: Default::default(),
             font_props: FontProps::default(),
             label_props: Default::default(),
@@ -263,33 +267,54 @@ impl Label {
         self.layout_data.borrow().centered_text_origin(content_rect)
     }
 
-    fn set_selection_range(&mut self) {
+    fn update_drag_selection(&mut self, focus_point: Point) {
+        let Some(focus) = self.get_hit_point(focus_point) else {
+            return;
+        };
+
         match self.selection_state {
-            SelectionState::None => {
-                self.selection_range = None;
+            SelectionState::Ready { selection, .. } => {
+                let next_selection = self
+                    .layout_data
+                    .borrow()
+                    .get_effective_text_layout()
+                    .map(|layout| layout.begin_selection(selection.anchor(), focus))
+                    .expect("label text layout should be available while selecting");
+                self.selection_state = SelectionState::Selecting(next_selection);
             }
-            SelectionState::Selecting(start, end) | SelectionState::Selected(start, end) => {
-                let mut start_cursor = self.get_hit_point(start).expect("Start position is valid");
-                if let Some(mut end_cursor) = self.get_hit_point(end) {
-                    if start_cursor.index() > end_cursor.index() {
-                        swap(&mut start_cursor, &mut end_cursor);
-                    }
-                    self.selection_range = Some((start_cursor, end_cursor));
-                }
+            SelectionState::Selecting(selection) | SelectionState::Selected(selection) => {
+                let selection = self
+                    .layout_data
+                    .borrow()
+                    .get_effective_text_layout()
+                    .map(|layout| layout.selection(selection.anchor(), focus))
+                    .expect("label text layout should be available while selecting");
+                self.selection_state = SelectionState::Selecting(selection);
             }
-            _ => {}
+            SelectionState::None => {}
+        }
+    }
+
+    fn selection(&self) -> Option<TextSelection> {
+        match self.selection_state {
+            SelectionState::Selecting(selection) | SelectionState::Selected(selection)
+                if !selection.is_collapsed() =>
+            {
+                Some(selection)
+            }
+            SelectionState::Ready { .. } | SelectionState::None => None,
+            SelectionState::Selecting(_) | SelectionState::Selected(_) => None,
         }
     }
 
     fn handle_modifier_cmd(&mut self, command: &TextCommand) -> bool {
         match command {
             TextCommand::Copy => {
-                if let Some((start_c, end_c)) = &self.selection_range {
+                if let Some(selection) = self.selection() {
                     let layout_data = self.layout_data.borrow();
-                    if let Some(text_layout) = layout_data.get_text_layout() {
-                        let start_idx = text_layout.cursor_to_byte_index(start_c);
-                        let end_idx = text_layout.cursor_to_byte_index(end_c);
-                        let selection_txt = self.label[start_idx..end_idx].into();
+                    if let Some(text_layout) = layout_data.get_effective_text_layout() {
+                        let range = text_layout.selection_text_range(&selection);
+                        let selection_txt = self.label[range].into();
                         let _ = Clipboard::set_contents(selection_txt);
                     }
                 }
@@ -310,16 +335,13 @@ impl Label {
     }
 
     fn paint_selection(&self, text_loc: Point, paint_cx: &mut PaintCx) {
-        if let Some((start_c, end_c)) = &self.selection_range {
+        if let Some(selection) = self.selection() {
             let selection_color = self.selection_style.selection_color();
-            self.layout_data.borrow().selection_rects_for_cursors(
-                start_c,
-                end_c,
-                text_loc,
-                |rect| {
+            self.layout_data
+                .borrow()
+                .selection_rects_for_selection(&selection, text_loc, |rect| {
                     paint_cx.fill(&rect, &selection_color, 0.0);
-                },
-            );
+                });
         }
     }
 
@@ -333,8 +355,8 @@ impl Label {
             })
             .unwrap();
 
-        let layout_fn = TextLayoutData::create_taffy_layout_fn(self.layout_data.clone());
-        let finalize_fn = TextLayoutData::create_finalize_fn(self.layout_data.clone());
+        let layout_fn = TextLayoutState::create_taffy_layout_fn(self.layout_data.clone());
+        let finalize_fn = TextLayoutState::create_finalize_fn(self.layout_data.clone());
         self.text_node = Some(text_node);
         self.layout_node = Some(taffy_node);
 
@@ -373,7 +395,6 @@ impl View for Label {
         match &cx.event {
             Event::Focus(FocusEvent::Lost) => {
                 self.selection_state = SelectionState::None;
-                self.selection_range = None;
                 cx.window_state.request_paint(self.id);
                 return EventPropagation::Continue;
             }
@@ -383,8 +404,18 @@ impl View for Label {
                         .buttons
                         .contains(ui_events::pointer::PointerButton::Primary)
                 {
-                    self.selection_range = None;
-                    self.selection_state = SelectionState::Ready(state.logical_point());
+                    self.selection_state = self
+                        .get_hit_point(state.logical_point())
+                        .map(|cursor| SelectionState::Ready {
+                            origin: state.logical_point(),
+                            selection: self
+                                .layout_data
+                                .borrow()
+                                .get_effective_text_layout()
+                                .map(|layout| layout.collapsed_selection(cursor))
+                                .expect("label text layout should be available on pointer down"),
+                        })
+                        .unwrap_or(SelectionState::None);
                     if let Some(pointer_id) = pointer.pointer_id {
                         cx.window_state.set_pointer_capture(pointer_id, self.id);
                     }
@@ -395,36 +426,34 @@ impl View for Label {
                 if !self.label_props.text_selectable() {
                     if self.selection_state != SelectionState::None {
                         self.selection_state = SelectionState::None;
-                        self.selection_range = None;
                         cx.window_state.request_paint(self.id);
                     }
                 } else {
-                    let (SelectionState::Selecting(start, _) | SelectionState::Ready(start)) =
-                        self.selection_state
-                    else {
-                        return EventPropagation::Continue;
-                    };
-                    // this check is here to make it so that text selection doesn't eat pointer events on very small move events
-                    if start.distance(pu.current.logical_point()).abs() > 2.
-                        && matches!(
-                            self.selection_state,
-                            SelectionState::Ready(_) | SelectionState::Selecting(_, _)
-                        )
-                    {
-                        self.selection_state =
-                            SelectionState::Selecting(start, pu.current.logical_point());
-                        self.set_selection_range();
-                        cx.window_state.request_paint(self.id);
-                        self.id.request_focus();
+                    match self.selection_state {
+                        SelectionState::Ready { origin, .. } => {
+                            // This check prevents text selection from eating tiny pointer moves.
+                            if origin.distance(pu.current.logical_point()).abs() > 2. {
+                                self.update_drag_selection(pu.current.logical_point());
+                                cx.window_state.request_paint(self.id);
+                                self.id.request_focus();
+                            }
+                        }
+                        SelectionState::Selecting(_) => {
+                            self.update_drag_selection(pu.current.logical_point());
+                            cx.window_state.request_paint(self.id);
+                        }
+                        SelectionState::Selected(_) => return EventPropagation::Continue,
+                        SelectionState::None => return EventPropagation::Continue,
                     }
                 }
             }
             Event::Pointer(PointerEvent::Up { .. }) => {
-                if let SelectionState::Selecting(start, end) = self.selection_state {
-                    self.selection_state = SelectionState::Selected(start, end);
-                } else {
-                    self.selection_state = SelectionState::None;
-                }
+                self.selection_state = match self.selection_state {
+                    SelectionState::Selecting(selection) if !selection.is_collapsed() => {
+                        SelectionState::Selected(selection)
+                    }
+                    _ => SelectionState::None,
+                };
                 cx.window_state.request_paint(self.id);
             }
             Event::Key(

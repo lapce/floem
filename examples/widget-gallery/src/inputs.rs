@@ -31,27 +31,32 @@ pub fn text_input_view() -> impl IntoView {
         ),
         form_item(
             "Styled Input:",
-            text_input(text).placeholder("Placeholder text").style(|s| {
-                s.border(Stroke::new(1.5).with_dashes(0., [5., 5.]))
-                    .width(250.0)
-                    .background(LIGHT_GRAY_BG)
-                    .transition_background(Transition::spring(Duration::from_millis(300)))
-                    .border_radius(15.0)
-                    .border_color(MEDIUM_GRAY_189)
-                    .padding(10.0)
-                    .hover(|s| s.background(LIGHT_GRAY_BG_HOVER).border_color(DARK_GRAY_66))
-                    .set(SelectionCornerRadius, 4.0)
-                    .focus(|s| {
-                        s.border_color(SKY_BLUE_FOCUS)
-                            .hover(|s| s.border_color(SKY_BLUE))
-                    })
-                    .class(PlaceholderTextClass, |s| {
-                        s.with_theme(|s, t| s.color(t.primary_muted()))
-                            .font_style(floem::text::FontStyle::Italic)
-                            .font_weight(FontWeight::BOLD)
-                    })
-                    .font_family("monospace".to_owned())
-            }),
+            text_input(text)
+                .placeholder("Placeholder text")
+                .style(|s| {
+                    s.border(Stroke::new(1.5).with_dashes(0., [5., 5.]))
+                        .width(250.0)
+                        .background(LIGHT_GRAY_BG)
+                        .transition_background(Transition::spring(Duration::from_millis(300)))
+                        .border_radius(15.0)
+                        .border_color(MEDIUM_GRAY_189)
+                        .padding(10.0)
+                        .hover(|s| s.background(LIGHT_GRAY_BG_HOVER).border_color(DARK_GRAY_66))
+                        .set(SelectionCornerRadius, 4.0)
+                        .focus(|s| {
+                            s.border_color(SKY_BLUE_FOCUS)
+                                .hover(|s| s.border_color(SKY_BLUE))
+                        })
+                        .class(PlaceholderTextClass, |s| {
+                            s.with_theme(|s, t| s.color(t.primary_muted()))
+                                .font_style(floem::text::FontStyle::Italic)
+                                .font_weight(FontWeight::BOLD)
+                        })
+                        .font_family("monospace".to_owned())
+                })
+                .on_event_stop(TextInputEnter::listener(), |_, _| {
+                    println!("Received an Accept!")
+                }),
         ),
         form_item(
             "Disabled Input:",

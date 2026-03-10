@@ -8,12 +8,12 @@ use taffy::tree::NodeId;
 
 use crate::{IntoView, context::UpdateCx, view::LayoutNodeCx, view::View, view::ViewId};
 
-use crate::text::TextLayoutData;
+use crate::text::TextLayoutState;
 
 pub struct RichText {
     id: ViewId,
     /// Layout data containing text layouts and overflow handling logic
-    layout_data: Rc<RefCell<TextLayoutData>>,
+    layout_data: Rc<RefCell<TextLayoutState>>,
     text_node: Option<NodeId>,
     layout_node: Option<NodeId>,
 }
@@ -29,7 +29,7 @@ pub fn rich_text(
         id.update_state((new_text, new_attrs));
     });
 
-    let layout_data = Rc::new(RefCell::new(TextLayoutData::new(Some(id))));
+    let layout_data = Rc::new(RefCell::new(TextLayoutState::new(Some(id))));
 
     // Initialize the layout data with the text and attrs
     {
@@ -63,8 +63,8 @@ impl RichText {
             })
             .unwrap();
 
-        let layout_fn = TextLayoutData::create_taffy_layout_fn(self.layout_data.clone());
-        let finalize_fn = TextLayoutData::create_finalize_fn(self.layout_data.clone());
+        let layout_fn = TextLayoutState::create_taffy_layout_fn(self.layout_data.clone());
+        let finalize_fn = TextLayoutState::create_finalize_fn(self.layout_data.clone());
         self.text_node = Some(text_node);
         self.layout_node = Some(taffy_node);
 

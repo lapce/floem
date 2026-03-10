@@ -255,6 +255,16 @@ impl RouteKind {
             phases: Phases::TARGET | Phases::BUBBLE,
         }
     }
+
+    /// Invoke on the target.
+    ///
+    /// Traversal: target
+    pub fn target(target: ElementId) -> Self {
+        Self::Directed {
+            target,
+            phases: Phases::TARGET,
+        }
+    }
 }
 
 /// Event routing data containing routing strategy and event source.

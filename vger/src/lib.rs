@@ -87,6 +87,11 @@ impl VgerRenderer {
             .find(|it| matches!(it, TextureFormat::Rgba8Unorm | TextureFormat::Bgra8Unorm))
             .ok_or_else(|| anyhow::anyhow!("surface should support Rgba8Unorm or Bgra8Unorm"))?;
 
+        let latency = match adapter.get_info().backend {
+            wgpu::Backend::Vulkan => 2,
+            _ => 1,
+        };
+
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: texture_format,
@@ -95,7 +100,7 @@ impl VgerRenderer {
             present_mode: wgpu::PresentMode::AutoVsync,
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
             view_formats: vec![],
-            desired_maximum_frame_latency: 1,
+            desired_maximum_frame_latency: latency,
         };
         surface.configure(&device, &config);
 
@@ -498,8 +503,7 @@ impl Renderer for VgerRenderer {
     ) {
         let font = &props.font;
         let coeffs = props.transform.as_coeffs();
-        let pos =
-            self.device_transform() * (origin + Point::new(coeffs[4], coeffs[5]).to_vec2());
+        let pos = self.device_transform() * (origin + Point::new(coeffs[4], coeffs[5]).to_vec2());
         // This assumes that text is axis-aligned.
         let (_, _, scale) = self.scale_components();
 

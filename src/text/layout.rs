@@ -1,15 +1,22 @@
-use std::{cell::RefCell, num::NonZeroU8, ops::Range, sync::LazyLock};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    num::NonZeroU8,
+    ops::{Deref, DerefMut, Range},
+    sync::LazyLock,
+};
 
 use floem_renderer::Renderer as _;
 use floem_renderer::text::{AttrsList, GlyphRunProps, TextBrush};
 use parking_lot::Mutex;
+use parley::swash::{FontRef, scale::ScaleContext, zeno};
 use parley::{
-    Affinity, Alignment, Cursor, FontContext, LayoutContext,
+    Affinity, Alignment, Cursor, FontContext, LayoutContext, Selection,
     layout::{AlignmentOptions, Layout},
     style::{OverflowWrap, StyleProperty, TextWrapMode},
 };
 use peniko::{
-    Fill,
+    Fill, FontData,
     kurbo::{Affine, Point, Size},
 };
 
@@ -25,6 +32,49 @@ pub static FONT_CONTEXT: LazyLock<Mutex<FontContext>> =
 thread_local! {
     static LAYOUT_CONTEXT: RefCell<LayoutContext<TextBrush>> =
         RefCell::new(LayoutContext::new());
+    static OUTLINE_SCALE_CONTEXT: RefCell<ScaleContext> =
+        RefCell::new(ScaleContext::new());
+    static GLYPH_OUTLINE_BOUNDS_CACHE: RefCell<HashMap<GlyphOutlineBoundsKey, Option<zeno::Bounds>>> =
+        RefCell::new(HashMap::new());
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct GlyphOutlineBoundsKey {
+    font_blob_id: u64,
+    font_index: u32,
+    glyph_id: u16,
+    font_size_bits: u32,
+    normalized_coords: Vec<i16>,
+    skew_bits: u32,
+}
+
+/// A `TextLayout`-owned selection value.
+///
+/// This wraps Parley's selection type for APIs that depend on `TextLayout`'s
+/// selection-geometry invariants and cache lifecycle.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct TextSelection {
+    selection: Selection,
+}
+
+impl TextSelection {
+    fn new(selection: Selection) -> Self {
+        Self { selection }
+    }
+}
+
+impl Deref for TextSelection {
+    type Target = Selection;
+
+    fn deref(&self) -> &Self::Target {
+        &self.selection
+    }
+}
+
+impl DerefMut for TextSelection {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.selection
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -130,6 +180,103 @@ impl Default for TextLayout {
 }
 
 impl TextLayout {
+    /// Creates a selection without clearing the cached selection outline
+    /// bounds.
+    ///
+    /// Use this when updating an existing selection rather than beginning a
+    /// new one.
+    pub fn selection(&self, anchor: Cursor, focus: Cursor) -> TextSelection {
+        TextSelection::new(Selection::new(anchor, focus))
+    }
+
+    /// Clears the cached glyph outline bounds used for selection geometry.
+    ///
+    /// Floem uses this cache to avoid repeatedly scaling glyph outlines when
+    /// selection rectangles need ink-tight horizontal bounds. Callers that
+    /// treat selection as a short-lived interaction can clear it when starting
+    /// a new selection to keep the cache from growing across unrelated
+    /// gestures.
+    pub fn clear_selection_geometry_cache() {
+        GLYPH_OUTLINE_BOUNDS_CACHE.with_borrow_mut(|cache| cache.clear());
+    }
+
+    /// Creates a new selection and clears the cached selection outline bounds.
+    ///
+    /// This is the preferred entry point when beginning a new user selection.
+    /// It makes the outline-bounds cache invalidation explicit and local to the
+    /// selection-construction API instead of requiring callers to remember a
+    /// separate cache-management step.
+    pub fn begin_selection(&self, anchor: Cursor, focus: Cursor) -> TextSelection {
+        Self::clear_selection_geometry_cache();
+        TextSelection::new(Selection::new(anchor, focus))
+    }
+
+    /// Creates a new selection from a source-text byte range and clears the
+    /// cached selection outline bounds.
+    ///
+    /// Use this when a new selection starts from byte offsets rather than from
+    /// existing Parley cursors.
+    pub fn begin_selection_from_byte_range(
+        &self,
+        start_byte: usize,
+        end_byte: usize,
+    ) -> TextSelection {
+        Self::clear_selection_geometry_cache();
+        self.selection_from_byte_range(start_byte, end_byte)
+    }
+
+    /// Creates a new collapsed selection at the given cursor.
+    pub fn collapsed_selection(&self, cursor: Cursor) -> TextSelection {
+        self.selection(cursor, cursor)
+    }
+
+    fn glyph_outline_bounds(
+        font: &FontData,
+        font_size: f32,
+        normalized_coords: &[i16],
+        skew: Option<f32>,
+        glyph_id: u16,
+    ) -> Option<zeno::Bounds> {
+        let key = GlyphOutlineBoundsKey {
+            font_blob_id: font.data.id(),
+            font_index: font.index,
+            glyph_id,
+            font_size_bits: font_size.to_bits(),
+            normalized_coords: normalized_coords.to_vec(),
+            skew_bits: skew.unwrap_or(0.0).to_bits(),
+        };
+
+        if let Some(bounds) =
+            GLYPH_OUTLINE_BOUNDS_CACHE.with_borrow(|cache| cache.get(&key).cloned())
+        {
+            return bounds;
+        }
+
+        let font_ref = FontRef::from_index(font.data.data(), font.index as usize)?;
+        let bounds = OUTLINE_SCALE_CONTEXT.with_borrow_mut(|context| {
+            let mut scaler = context
+                .builder(font_ref)
+                .size(font_size)
+                .hint(true)
+                .normalized_coords(normalized_coords)
+                .build();
+            let mut outline = scaler.scale_outline(glyph_id)?;
+            if let Some(angle) = skew {
+                outline.transform(&zeno::Transform::skew(
+                    zeno::Angle::from_degrees(angle),
+                    zeno::Angle::ZERO,
+                ));
+            }
+            let bounds = outline.bounds();
+            (!bounds.is_empty()).then_some(bounds)
+        });
+
+        GLYPH_OUTLINE_BOUNDS_CACHE.with_borrow_mut(|cache| {
+            cache.insert(key, bounds);
+        });
+        bounds
+    }
+
     #[inline]
     fn display_byte_index(&self, idx: usize) -> usize {
         if let Some(tab_info) = self.tab_info.as_ref() {
@@ -139,22 +286,63 @@ impl TextLayout {
         }
     }
 
-    fn selection_from_byte_range(
-        &self,
-        start_byte: usize,
-        end_byte: usize,
-    ) -> parley::editing::Selection {
-        let anchor = parley::editing::Cursor::from_byte_index(
+    /// Creates a Parley selection from a source-text byte range.
+    pub fn selection_from_byte_range(&self, start_byte: usize, end_byte: usize) -> TextSelection {
+        let anchor = Cursor::from_byte_index(
             &self.layout,
             self.display_byte_index(start_byte),
             Affinity::Downstream,
         );
-        let focus = parley::editing::Cursor::from_byte_index(
+        let focus = Cursor::from_byte_index(
             &self.layout,
             self.display_byte_index(end_byte),
             Affinity::Upstream,
         );
-        parley::editing::Selection::new(anchor, focus)
+        TextSelection::new(Selection::new(anchor, focus))
+    }
+
+    /// Creates a selection from source-text byte positions while preserving
+    /// anchor/focus direction.
+    pub fn selection_from_byte_positions(
+        &self,
+        anchor_byte: usize,
+        focus_byte: usize,
+    ) -> Option<TextSelection> {
+        if anchor_byte == focus_byte {
+            return None;
+        }
+        let start = anchor_byte.min(focus_byte);
+        let end = anchor_byte.max(focus_byte);
+        let selection = self.selection_from_byte_range(start, end);
+        Some(if anchor_byte <= focus_byte {
+            selection
+        } else {
+            TextSelection::new(Selection::new(selection.focus(), selection.anchor()))
+        })
+    }
+
+    /// Creates a new selection from source-text byte positions while
+    /// preserving anchor/focus direction and clearing the cached selection
+    /// outline bounds.
+    pub fn begin_selection_from_byte_positions(
+        &self,
+        anchor_byte: usize,
+        focus_byte: usize,
+    ) -> Option<TextSelection> {
+        if anchor_byte == focus_byte {
+            return None;
+        }
+        Self::clear_selection_geometry_cache();
+        self.selection_from_byte_positions(anchor_byte, focus_byte)
+    }
+
+    /// Converts a Parley selection into a byte range in the original source text.
+    pub fn selection_text_range(&self, selection: &TextSelection) -> Range<usize> {
+        let range = selection.selection.text_range();
+        match self.tab_info {
+            Some(ref ti) => ti.display_to_orig(range.start)..ti.display_to_orig(range.end),
+            None => range,
+        }
     }
 
     fn reflow(&mut self, width: Option<f32>) {
@@ -345,16 +533,19 @@ impl TextLayout {
         let mut hi = line_count;
         while lo < hi {
             let mid = lo + (hi - lo) / 2;
-            let ordering = self.layout.get(mid).map_or(std::cmp::Ordering::Greater, |line| {
-                let metrics = line.metrics();
-                if cursor_y < metrics.min_coord {
-                    std::cmp::Ordering::Greater
-                } else if cursor_y >= metrics.max_coord {
-                    std::cmp::Ordering::Less
-                } else {
-                    std::cmp::Ordering::Equal
-                }
-            });
+            let ordering = self
+                .layout
+                .get(mid)
+                .map_or(std::cmp::Ordering::Greater, |line| {
+                    let metrics = line.metrics();
+                    if cursor_y < metrics.min_coord {
+                        std::cmp::Ordering::Greater
+                    } else if cursor_y >= metrics.max_coord {
+                        std::cmp::Ordering::Less
+                    } else {
+                        std::cmp::Ordering::Equal
+                    }
+                });
 
             match ordering {
                 std::cmp::Ordering::Greater => hi = mid,
@@ -380,7 +571,7 @@ impl TextLayout {
         } else {
             idx
         };
-        let pcursor = parley::editing::Cursor::from_byte_index(&self.layout, display_idx, affinity);
+        let pcursor = Cursor::from_byte_index(&self.layout, display_idx, affinity);
         let bbox = pcursor.geometry(&self.layout, 0.0);
         let baseline = self
             .line_metrics_at(idx, affinity)
@@ -408,7 +599,7 @@ impl TextLayout {
         } else {
             idx
         };
-        let pcursor = parley::editing::Cursor::from_byte_index(&self.layout, display_idx, affinity);
+        let pcursor = Cursor::from_byte_index(&self.layout, display_idx, affinity);
         let bbox = pcursor.geometry(&self.layout, 0.0);
         let visual_line = self.line_index_for_cursor_y(bbox.y0 as f32);
         let line = self.layout.get(visual_line)?;
@@ -428,66 +619,108 @@ impl TextLayout {
         }
     }
 
-    /// Iterates selection rectangles for a byte range using raw cursor geometry.
+    /// Iterates selection rectangles for a Parley selection using raw cursor geometry.
     pub fn selection_geometry_with(
         &self,
-        start_byte: usize,
-        end_byte: usize,
+        selection: &TextSelection,
         mut f: impl FnMut(f64, f64, f64, f64),
     ) {
-        let selection = self.selection_from_byte_range(start_byte, end_byte);
-        selection.geometry_with(&self.layout, |bbox, _| {
+        selection.selection.geometry_with(&self.layout, |bbox, _| {
             f(bbox.x0, bbox.y0, bbox.x1, bbox.y1);
         });
     }
 
-    /// Iterates selection rectangles for a byte range using full visual-line metrics.
+    /// Iterates selection rectangles for a Parley selection using full visual-line metrics.
+    ///
+    /// This is the geometry helper to use for painted selection backgrounds.
+    ///
+    /// Compared with [`selection_geometry_with`](Self::selection_geometry_with), this method:
+    /// - expands each rectangle vertically to the containing line's full `min_coord..max_coord`
+    /// - expands horizontal bounds to the actual glyph outline bounds of the selected text
+    ///
+    /// The vertical expansion is important for consistent full-line selection backgrounds.
+    /// The horizontal expansion is important because cursor/advance-based selection geometry
+    /// is not always wide enough to cover italic or otherwise overhanging glyph outlines.
+    ///
+    /// The x extents are computed by:
+    /// - starting from Parley's selection geometry for the selected line fragment
+    /// - scanning the selected glyphs on that line
+    /// - unioning in cached Swash outline bounds for those glyphs
+    ///
+    /// Complexity:
+    /// - baseline Parley selection coverage is proportional to the number of selected line fragments
+    /// - the additional Floem work here is proportional to the number of selected runs/clusters/glyphs
+    ///   on the affected lines
+    /// - outline extraction itself is cached by font blob, font index, glyph id, size,
+    ///   normalized coords, and skew, so repeated paints normally pay lookup cost rather than
+    ///   outline-scaling cost
+    ///
+    /// In practice, this is more expensive than raw cursor-box geometry but is only intended for
+    /// selection painting, where correct ink coverage matters more than the absolute minimum amount
+    /// of work.
     pub fn selection_geometry_with_line_metrics(
         &self,
-        start_byte: usize,
-        end_byte: usize,
+        selection: &TextSelection,
         mut f: impl FnMut(f64, f64, f64, f64),
     ) {
-        let selection = self.selection_from_byte_range(start_byte, end_byte);
-        selection.geometry_with(&self.layout, |bbox, line_idx| {
-            if let Some(line) = self.layout.get(line_idx) {
-                let m = line.metrics();
-                f(bbox.x0, m.min_coord as f64, bbox.x1, m.max_coord as f64);
-            } else {
-                f(bbox.x0, bbox.y0, bbox.x1, bbox.y1);
-            }
-        });
-    }
+        let selection_range = selection.selection.text_range();
+        selection
+            .selection
+            .geometry_with(&self.layout, |bbox, line_idx| {
+                if let Some(line) = self.layout.get(line_idx) {
+                    let m = line.metrics();
+                    let mut min_x = bbox.x0;
+                    let mut max_x = bbox.x1;
 
-    /// Iterates selection rectangles between two Parley cursors using raw cursor geometry.
-    pub fn selection_for_cursors(
-        &self,
-        start: &Cursor,
-        end: &Cursor,
-        mut f: impl FnMut(f64, f64, f64, f64),
-    ) {
-        let selection = parley::editing::Selection::new(*start, *end);
-        selection.geometry_with(&self.layout, |bbox, _| {
-            f(bbox.x0, bbox.y0, bbox.x1, bbox.y1);
-        });
-    }
+                    // Parley's selection geometry is based on cursor/advance coverage, which can be
+                    // narrower than the actual ink for italic or otherwise overhanging outlines.
+                    // We union in cached outline bounds for the selected glyphs on this line so the
+                    // painted selection fully covers the rendered text.
+                    let mut run_offset = m.offset as f64;
+                    for run in line.runs() {
+                        let run_range = run.text_range();
+                        if run_range.end <= selection_range.start
+                            || run_range.start >= selection_range.end
+                        {
+                            run_offset += run.advance() as f64;
+                            continue;
+                        }
 
-    /// Iterates selection rectangles between two Parley cursors using full visual-line metrics.
-    pub fn selection_for_cursors_with_line_metrics(
-        &self,
-        start: &Cursor,
-        end: &Cursor,
-        mut f: impl FnMut(f64, f64, f64, f64),
-    ) {
-        let selection = parley::editing::Selection::new(*start, *end);
-        selection.geometry_with(&self.layout, |bbox, line_idx| {
-            if let Some(line) = self.layout.get(line_idx) {
-                let m = line.metrics();
-                f(bbox.x0, m.min_coord as f64, bbox.x1, m.max_coord as f64);
-            } else {
-                f(bbox.x0, bbox.y0, bbox.x1, bbox.y1);
-            }
-        });
+                        let mut cluster_offset = run_offset;
+                        for cluster in run.visual_clusters() {
+                            let cluster_range = cluster.text_range();
+                            let cluster_advance = cluster.advance() as f64;
+                            if cluster_range.end > selection_range.start
+                                && cluster_range.start < selection_range.end
+                            {
+                                for glyph in cluster.glyphs() {
+                                    if let Some(bounds) = Self::glyph_outline_bounds(
+                                        run.font(),
+                                        run.font_size(),
+                                        run.normalized_coords(),
+                                        run.synthesis().skew(),
+                                        glyph.id as u16,
+                                    ) {
+                                        min_x = min_x.min(
+                                            cluster_offset + glyph.x as f64 + bounds.min.x as f64,
+                                        );
+                                        max_x = max_x.max(
+                                            cluster_offset + glyph.x as f64 + bounds.max.x as f64,
+                                        );
+                                    }
+                                }
+                            }
+                            cluster_offset += cluster_advance;
+                        }
+
+                        run_offset += run.advance() as f64;
+                    }
+
+                    f(min_x, m.min_coord as f64, max_x, m.max_coord as f64);
+                } else {
+                    f(bbox.x0, bbox.y0, bbox.x1, bbox.y1);
+                }
+            });
     }
 
     /// Returns the baseline y coordinate for the `nth` visual line.

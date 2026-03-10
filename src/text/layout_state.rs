@@ -11,7 +11,7 @@ use crate::{
     view::{FinalizeFn, MeasureFn},
 };
 
-use super::{Alignment, Attrs, AttrsList, Cursor, TextLayout, TextWrapMode};
+use super::{Alignment, Attrs, AttrsList, TextLayout, TextSelection, TextWrapMode};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum AvailableLayoutKind {
@@ -34,7 +34,7 @@ custom_event!(TextOverflowChanged);
 /// wrapping, alignment, or ellipsis handling. It is intended to be shared by
 /// text-oriented views such as labels, rich text, and text inputs.
 #[derive(Clone)]
-pub struct TextLayoutData {
+pub struct TextLayoutState {
     text_layout: Option<TextLayout>,
     available_width: Option<f32>,
     available_text_layout: Option<TextLayout>,
@@ -46,9 +46,7 @@ pub struct TextLayoutData {
     view_id: Option<ViewId>,
 }
 
-impl TextLayoutData {
-    const SELECTION_X_PAD: f64 = 0.35;
-
+impl TextLayoutState {
     /// Creates empty shared text-layout state.
     pub fn new(view_id: Option<ViewId>) -> Self {
         Self {
@@ -145,20 +143,19 @@ impl TextLayoutData {
         }
     }
 
-    /// Iterates selection rectangles for two Parley cursors in view coordinates.
-    pub fn selection_rects_for_cursors(
+    /// Iterates selection rectangles for a Parley selection in view coordinates.
+    pub fn selection_rects_for_selection(
         &self,
-        start: &Cursor,
-        end: &Cursor,
+        selection: &TextSelection,
         text_origin: Point,
         mut f: impl FnMut(Rect),
     ) {
         self.with_effective_text_layout(|layout| {
-            layout.selection_for_cursors_with_line_metrics(start, end, |x0, y0, x1, y1| {
+            layout.selection_geometry_with_line_metrics(selection, |x0, y0, x1, y1| {
                 let rect = Rect::new(
-                    x0 + text_origin.x - Self::SELECTION_X_PAD,
+                    x0 + text_origin.x,
                     y0 + text_origin.y,
-                    x1 + text_origin.x + Self::SELECTION_X_PAD,
+                    x1 + text_origin.x,
                     y1 + text_origin.y,
                 );
                 if rect.width() > 0.0 && rect.height() > 0.0 {
@@ -177,11 +174,12 @@ impl TextLayoutData {
         mut f: impl FnMut(Rect),
     ) {
         self.with_effective_text_layout(|layout| {
-            layout.selection_geometry_with_line_metrics(start, end, |x0, y0, x1, y1| {
+            let selection = layout.selection_from_byte_range(start, end);
+            layout.selection_geometry_with_line_metrics(&selection, |x0, y0, x1, y1| {
                 let rect = Rect::new(
-                    x0 + text_origin.x - Self::SELECTION_X_PAD,
+                    x0 + text_origin.x,
                     y0 + text_origin.y,
-                    x1 + text_origin.x + Self::SELECTION_X_PAD,
+                    x1 + text_origin.x,
                     y1 + text_origin.y,
                 );
                 if rect.width() > 0.0 && rect.height() > 0.0 {
@@ -240,7 +238,11 @@ impl TextLayoutData {
                 let width_left = available_width - dots_width;
                 let byte_end = text_layout
                     .hit_test(Point::new(width_left as f64, 0.0))
-                    .map(|cursor| text_layout.cursor_to_byte_index(&cursor))
+                    .map(|cursor| {
+                        text_layout
+                            .selection_text_range(&text_layout.collapsed_selection(cursor))
+                            .start
+                    })
                     .unwrap_or(0);
                 self.build_layout(&Self::ellipsis_text(text_layout.text(), byte_end))
                     .size()
@@ -294,7 +296,11 @@ impl TextLayoutData {
                     let width_left = final_width - dots_width;
                     let byte_end = text_layout
                         .hit_test(Point::new(width_left as f64, 0.0))
-                        .map(|cursor| text_layout.cursor_to_byte_index(&cursor))
+                        .map(|cursor| {
+                            text_layout
+                                .selection_text_range(&text_layout.collapsed_selection(cursor))
+                                .start
+                        })
                         .unwrap_or(0);
                     let next_kind = AvailableLayoutKind::Ellipsis { byte_end };
                     if self.available_layout_kind != Some(next_kind) {

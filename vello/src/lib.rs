@@ -88,6 +88,11 @@ impl VelloRenderer {
             .find(|it| matches!(it, TextureFormat::Rgba8Unorm | TextureFormat::Bgra8Unorm))
             .ok_or_else(|| anyhow::anyhow!("surface should support Rgba8Unorm or Bgra8Unorm"))?;
 
+        let latency = match adapter.get_info().backend {
+            wgpu::Backend::Vulkan => 2,
+            _ => 1,
+        };
+
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: texture_format,
@@ -96,7 +101,7 @@ impl VelloRenderer {
             present_mode: wgpu::PresentMode::AutoVsync,
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
             view_formats: vec![],
-            desired_maximum_frame_latency: 1,
+            desired_maximum_frame_latency: latency,
         };
 
         surface.configure(&device, &config);

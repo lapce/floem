@@ -173,7 +173,10 @@ impl TextLayoutLine {
             return Some((0.0, 0.0));
         }
 
-        let start_x = self.text.cursor_point(text_range.start, Affinity::Upstream).x;
+        let start_x = self
+            .text
+            .cursor_point(text_range.start, Affinity::Upstream)
+            .x;
         // For end, find last non-whitespace char
         let mut end_byte = text_range.end;
         while end_byte > text_range.start {
