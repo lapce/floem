@@ -12,7 +12,7 @@ use crate::{
     style::{CursorStyle, Style},
     style_class,
     taffy::tree::NodeId,
-    text::{Attrs, AttrsList, TextLayout},
+    text::{Affinity, Attrs, AttrsList, TextLayout},
     view::{FinalizeFn, IntoView, LayoutNodeCx, MeasureFn, View, ViewId},
     views::{Decorators, Scroll, Stack, editor::keypress::KeypressKey},
 };
@@ -898,7 +898,9 @@ impl EditorView {
 
         let mut indent_text = TextLayout::new();
         indent_text.set_text(&format!("{indent_unit}a"), attrs_list, None);
-        let indent_text_width = indent_text.hit_position(indent_unit.len()).point.x;
+        let indent_text_width = indent_text
+            .cursor_point(indent_unit.len(), Affinity::Upstream)
+            .x;
 
         if ed.es.with(|s| s.show_indent_guide()) {
             // Cache the indent guide color outside the loop to avoid repeated signal access

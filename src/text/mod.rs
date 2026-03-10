@@ -1,3 +1,14 @@
+//! Floem's high-level text API.
+//!
+//! This module exposes the text types used by Floem views and editor code:
+//! - styling attributes and font vocabulary re-exported from `floem_renderer::text`
+//! - Parley alignment, cursor, and wrapping vocabulary used directly by Floem
+//! - [`TextLayout`], Floem's layout wrapper around Parley
+//! - [`TextLayoutData`], shared view state for overflow-aware text layout
+//!
+//! `TextLayout` deliberately hides Parley's concrete layout type from most
+//! callers while still using Parley's lower-level vocabulary types.
+
 use std::ops::Range;
 
 mod layout;
@@ -7,7 +18,7 @@ pub use floem_renderer::text::{
     Attrs, AttrsList, AttrsOwned, FamilyOwned, FontStyle, FontWeight, FontWidth, Glyph,
     GlyphRunProps, LineHeightValue, NormalizedCoord,
 };
-pub use layout::{FONT_CONTEXT, HitPosition, TextLayout};
+pub use layout::{FONT_CONTEXT, TextLayout};
 pub use layout_data::{TextLayoutData, TextOverflowChanged};
 pub use parley::Alignment;
 pub use parley::layout::{Affinity, Cursor};

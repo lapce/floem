@@ -29,6 +29,10 @@ pub struct TextOverflowChanged {
 custom_event!(TextOverflowChanged);
 
 /// Shared text layout state used by text-based views.
+///
+/// This type owns the base layout plus any derived overflow layout used for
+/// wrapping, alignment, or ellipsis handling. It is intended to be shared by
+/// text-oriented views such as labels, rich text, and text inputs.
 #[derive(Clone)]
 pub struct TextLayoutData {
     text_layout: Option<TextLayout>,
@@ -45,6 +49,7 @@ pub struct TextLayoutData {
 impl TextLayoutData {
     const SELECTION_X_PAD: f64 = 0.35;
 
+    /// Creates empty shared text-layout state.
     pub fn new(view_id: Option<ViewId>) -> Self {
         Self {
             text_layout: None,
@@ -59,6 +64,7 @@ impl TextLayoutData {
         }
     }
 
+    /// Replaces the base text, attributes, and alignment for this state.
     pub fn set_text(&mut self, text: &str, attrs_list: AttrsList, text_align: Option<Alignment>) {
         self.attrs_list = attrs_list.clone();
         self.text_align = text_align;
@@ -70,6 +76,7 @@ impl TextLayoutData {
         self.clear_overflow_state();
     }
 
+    /// Sets the overflow behavior used when finalizing constrained layouts.
     pub fn set_text_overflow(&mut self, text_overflow: TextOverflow) {
         if self.text_overflow != text_overflow {
             self.text_overflow = text_overflow;
@@ -83,16 +90,21 @@ impl TextLayoutData {
         }
     }
 
+    /// Returns the current base text, if any.
     pub fn text(&self) -> Option<&str> {
         self.text_layout.as_ref().map(TextLayout::text)
     }
 
+    /// Returns the layout that should currently be painted.
+    ///
+    /// This prefers a derived overflow/alignment layout when one is active.
     pub fn get_effective_text_layout(&self) -> Option<&TextLayout> {
         self.available_text_layout
             .as_ref()
             .or(self.text_layout.as_ref())
     }
 
+    /// Runs `with` on the effective layout, falling back to an empty layout.
     pub fn with_effective_text_layout<O>(&self, with: impl FnOnce(&TextLayout) -> O) -> O {
         if let Some(layout) = self.available_text_layout.as_ref() {
             with(layout)
@@ -133,6 +145,7 @@ impl TextLayoutData {
         }
     }
 
+    /// Iterates selection rectangles for two Parley cursors in view coordinates.
     pub fn selection_rects_for_cursors(
         &self,
         start: &Cursor,
@@ -155,6 +168,7 @@ impl TextLayoutData {
         });
     }
 
+    /// Iterates selection rectangles for a byte range in view coordinates.
     pub fn selection_rects_for_byte_range(
         &self,
         start: usize,
@@ -177,6 +191,7 @@ impl TextLayoutData {
         });
     }
 
+    /// Returns the origin that vertically centers the effective layout in `content_rect`.
     pub fn centered_text_origin(&self, content_rect: Rect) -> Point {
         let mut origin = content_rect.origin();
         self.with_effective_text_layout(|layout| {
@@ -191,16 +206,21 @@ impl TextLayoutData {
         origin
     }
 
+    /// Clears any cached derived overflow/alignment layout.
     pub fn clear_overflow_state(&mut self) {
         self.available_width = None;
         self.available_text_layout = None;
         self.available_layout_kind = None;
     }
 
+    /// Returns the base text layout before overflow-specific derivation.
     pub fn get_text_layout(&self) -> Option<&TextLayout> {
         self.text_layout.as_ref()
     }
 
+    /// Computes the size the text would occupy under the given width constraint.
+    ///
+    /// This does not mutate the currently visible effective layout.
     pub fn compute_overflow_size(
         &mut self,
         width_constraint: Option<f32>,
@@ -234,6 +254,10 @@ impl TextLayoutData {
         }
     }
 
+    /// Finalizes the effective layout for the given width.
+    ///
+    /// This updates the cached derived layout used for painting and emits a
+    /// [`TextOverflowChanged`] event when the overflowing state changes.
     pub fn finalize_for_width(&mut self, final_width: f32) {
         let Some(text_layout) = self.text_layout.as_ref() else {
             return;
@@ -307,6 +331,7 @@ impl TextLayoutData {
         }
     }
 
+    /// Creates a Taffy measure function backed by this shared text-layout state.
     pub fn create_taffy_layout_fn(layout_data: Rc<RefCell<Self>>) -> Box<MeasureFn> {
         Box::new(
             move |known_dimensions, available_space, node_id, _style, measure_ctx| {
@@ -351,6 +376,7 @@ impl TextLayoutData {
         )
     }
 
+    /// Creates a Taffy finalize function backed by this shared text-layout state.
     pub fn create_finalize_fn(layout_data: Rc<RefCell<Self>>) -> Box<FinalizeFn> {
         Box::new(move |_node_id, layout| {
             let mut layout_data = layout_data.borrow_mut();

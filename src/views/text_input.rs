@@ -38,7 +38,7 @@ pub struct Preedit {
 
 use crate::{
     style::TextOverflow,
-    text::{Attrs, AttrsList, FamilyOwned, TextLayoutData},
+    text::{Affinity, Attrs, AttrsList, FamilyOwned, TextLayoutData},
 };
 
 use peniko::Brush;
@@ -566,8 +566,10 @@ impl TextInput {
                 self.layout_data
                     .borrow()
                     .with_effective_text_layout(|text_layout| {
-                        let start_x = text_layout.hit_position(start_idx).point.x;
-                        let end_x = text_layout.hit_position(end_idx).point.x;
+                        let start_x = text_layout
+                            .cursor_point(start_idx, Affinity::Upstream)
+                            .x;
+                        let end_x = text_layout.cursor_point(end_idx, Affinity::Upstream).x;
                         (end_x - start_x).abs()
                     })
             })
@@ -649,8 +651,12 @@ impl TextInput {
         let cursor_glyph_pos = self
             .layout_data
             .borrow()
-            .with_effective_text_layout(|layout| layout.hit_position(self.cursor_visual_idx()));
-        self.cursor_x = cursor_glyph_pos.point.x;
+            .with_effective_text_layout(|layout| {
+                layout
+                    .cursor_point(self.cursor_visual_idx(), Affinity::Upstream)
+                    .x
+            });
+        self.cursor_x = cursor_glyph_pos;
 
         // Update scroll offset using layout context
         let visible_width = self.id.get_content_rect_local().size().width;
@@ -1442,13 +1448,19 @@ impl View for TextInput {
             self.layout_data
                 .borrow()
                 .with_effective_text_layout(|text_layout| {
-                    let start_hit = text_layout.hit_position(start_idx);
-                    let start_x = text_start_point.x + start_hit.point.x - self.scroll_offset;
-                    let end_x = text_start_point.x + text_layout.hit_position(end_idx).point.x
+                    let start_x = text_start_point.x
+                        + text_layout.cursor_point(start_idx, Affinity::Upstream).x
+                        - self.scroll_offset;
+                    let end_x = text_start_point.x
+                        + text_layout.cursor_point(end_idx, Affinity::Upstream).x
                         - self.scroll_offset;
 
                     let color = self.style.color().unwrap_or(palette::css::BLACK);
-                    let y = text_start_point.y + start_hit.glyph_ascent;
+                    let y = text_start_point.y
+                        + text_layout
+                            .line_metrics_at(start_idx, Affinity::Upstream)
+                            .map(|metrics| metrics.ascent as f64)
+                            .unwrap_or(0.0);
 
                     cx.fill(
                         &Rect::new(start_x, y, end_x, y + 1.0),

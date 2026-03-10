@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use crate::{
     peniko::Color,
-    text::{TextLayout, paragraph_ranges},
+    text::{Affinity, TextLayout, paragraph_ranges},
 };
 use floem_editor_core::buffer::rope_text::RopeText;
 
@@ -173,7 +173,7 @@ impl TextLayoutLine {
             return Some((0.0, 0.0));
         }
 
-        let start_hit = self.text.hit_position(text_range.start);
+        let start_x = self.text.cursor_point(text_range.start, Affinity::Upstream).x;
         // For end, find last non-whitespace char
         let mut end_byte = text_range.end;
         while end_byte > text_range.start {
@@ -184,8 +184,8 @@ impl TextLayoutLine {
                 break;
             }
         }
-        let end_hit = self.text.hit_position(end_byte);
+        let end_x = self.text.cursor_point(end_byte, Affinity::Upstream).x;
 
-        Some((start_hit.point.x as f32, end_hit.point.x as f32))
+        Some((start_x as f32, end_x as f32))
     }
 }

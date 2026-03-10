@@ -17,7 +17,9 @@ use std::hint::black_box;
 use std::sync::Once;
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use floem::text::{Attrs, AttrsList, FONT_CONTEXT, FamilyOwned, FontStyle, FontWeight, TextLayout};
+use floem::text::{
+    Affinity, Attrs, AttrsList, FONT_CONTEXT, FamilyOwned, FontStyle, FontWeight, TextLayout,
+};
 use peniko::Color;
 
 // =============================================================================
@@ -283,10 +285,10 @@ fn bench_hit_testing(c: &mut Criterion) {
     group.bench_function("hit_middlhit_test |b| {
         b.iter(|| {
             black_box(layout.hit(Point::new(
-                size.width / 2.0,hit_test
+                size.width / 2.0,
                 size.height / 2.0,
             )))
-        });hit_test
+        });
     });
     group.bench_function("hit_end", |b| {
         b.iter(|| black_box(layout.hit(Point::new(size.width, size.height))));
@@ -294,13 +296,13 @@ fn bench_hit_testing(c: &mut Criterion) {
 
     // Reverse: cursor → pixel
     group.bench_function("hit_position_start", |b| {
-        b.iter(|| black_box(layout.hit_position(0)));
+        b.iter(|| black_box(layout.cursor_point(0, Affinity::Upstream)));
     });
     group.bench_function("hit_position_middle", |b| {
-        b.iter(|| black_box(layout.hit_position(text_len / 2)));
+        b.iter(|| black_box(layout.cursor_point(text_len / 2, Affinity::Upstream)));
     });
     group.bench_function("hit_position_end", |b| {
-        b.iter(|| black_box(layout.hit_position(text_len)));
+        b.iter(|| black_box(layout.cursor_point(text_len, Affinity::Upstream)));
     });
 
     // Hit testing on BiDi text

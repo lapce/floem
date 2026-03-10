@@ -15,6 +15,10 @@ use peniko::{
 
 use crate::paint::Renderer;
 
+/// Shared Parley font context used by Floem text layout construction.
+///
+/// This is exposed so callers that need to register or inspect fonts can work
+/// with the same font database used by [`TextLayout`].
 pub static FONT_CONTEXT: LazyLock<Mutex<FontContext>> =
     LazyLock::new(|| Mutex::new(FontContext::new()));
 
@@ -84,14 +88,19 @@ fn expand_tabs(text: &str, tab_width: usize) -> Option<TabInfo> {
     })
 }
 
-pub struct HitPosition {
-    pub line: usize,
-    pub point: Point,
-    pub glyph_ascent: f64,
-    pub glyph_descent: f64,
-}
-
 #[derive(Clone)]
+/// A Floem wrapper around a Parley text layout.
+///
+/// This type owns the source text, shaping result, wrapping configuration, and
+/// the tab-expansion mapping Floem uses for editor-style tab handling.
+///
+/// Use this when you need:
+/// - shaping and wrapping text for painting
+/// - hit testing and cursor geometry
+/// - visual-line text ranges and metrics
+///
+/// This is a higher-level Floem wrapper, not a direct re-export of Parley's
+/// layout type.
 pub struct TextLayout {
     layout: Layout<TextBrush>,
     text: String,
@@ -164,6 +173,7 @@ impl TextLayout {
         }
     }
 
+    /// Creates an empty text layout with Floem's default wrapping settings.
     pub fn new() -> Self {
         Self {
             layout: Layout::new(),
@@ -178,12 +188,17 @@ impl TextLayout {
         }
     }
 
+    /// Creates a new layout and immediately sets its text and attributes.
     pub fn new_with_text(text: &str, attrs_list: AttrsList, align: Option<Alignment>) -> Self {
         let mut layout = Self::new();
         layout.set_text(text, attrs_list, align);
         layout
     }
 
+    /// Replaces the text content and style spans for this layout.
+    ///
+    /// This rebuilds the underlying Parley layout and reapplies the current
+    /// wrapping configuration.
     pub fn set_text(&mut self, text: &str, attrs_list: AttrsList, align: Option<Alignment>) {
         self.text = text.to_string();
         self.alignment = align;
@@ -225,18 +240,28 @@ impl TextLayout {
         self.reflow(self.width_opt);
     }
 
+    /// Sets the primary wrap mode used when reflowing the layout.
     pub fn set_text_wrap_mode(&mut self, text_wrap_mode: TextWrapMode) {
         self.text_wrap_mode = text_wrap_mode;
     }
 
+    /// Sets the emergency wrap behavior used when wrapping is enabled.
     pub fn set_overflow_wrap(&mut self, overflow_wrap: OverflowWrap) {
         self.overflow_wrap = overflow_wrap;
     }
 
+    /// Sets the visual width of tab characters in spaces.
+    ///
+    /// When set, Floem expands tabs before shaping and keeps a mapping between
+    /// original and display byte indices so hit-testing still refers back to
+    /// the source text.
     pub fn set_tab_width(&mut self, tab_width: usize) {
         self.tab_width = NonZeroU8::new(tab_width as u8);
     }
 
+    /// Sets the layout bounds used for reflow.
+    ///
+    /// Width changes trigger line breaking and optional alignment.
     pub fn set_size(&mut self, width: f32, height: f32) {
         let old_width = self.width_opt;
         self.width_opt = Some(width);
@@ -246,12 +271,14 @@ impl TextLayout {
         }
     }
 
+    /// Removes any explicit layout size and reflows without a width constraint.
     pub fn clear_size(&mut self) {
         self.width_opt = None;
         self.height_opt = None;
         self.reflow(None);
     }
 
+    /// Sets horizontal alignment for wrapped text.
     pub fn set_align(&mut self, align: Option<Alignment>) {
         if self.alignment != align {
             self.alignment = align;
@@ -259,22 +286,34 @@ impl TextLayout {
         }
     }
 
+    /// Returns the original source text for this layout.
     pub fn text(&self) -> &str {
         &self.text
     }
 
+    /// Returns the underlying Parley layout.
+    ///
+    /// This is an escape hatch for code that genuinely needs direct Parley
+    /// access and should be used sparingly.
     pub fn parley_layout(&self) -> &Layout<TextBrush> {
         &self.layout
     }
 
+    /// Returns the number of visual lines currently in the layout.
     pub fn visual_line_count(&self) -> usize {
         self.layout.len()
     }
 
+    /// Returns the overall layout size in layout coordinates.
     pub fn size(&self) -> Size {
         Size::new(self.layout.full_width() as f64, self.layout.height() as f64)
     }
 
+    /// Performs hit testing and returns the nearest Parley cursor.
+    ///
+    /// The returned cursor remains in display/layout coordinates. Use
+    /// [`cursor_to_byte_index`](Self::cursor_to_byte_index) when you need a byte
+    /// index in the original source text.
     pub fn hit_test(&self, point: Point) -> Option<Cursor> {
         if self.text.is_empty() {
             return Some(Cursor::from_byte_index(
@@ -290,18 +329,50 @@ impl TextLayout {
         ))
     }
 
-    pub fn hit_position(&self, idx: usize) -> HitPosition {
-        self.hit_position_aff(idx, Affinity::Upstream)
+    fn line_index_for_cursor_y(&self, cursor_y: f32) -> usize {
+        // Mirrors Parley's internal `Layout::line_for_offset` behavior so our
+        // cursor-line lookup stays consistent until Parley exposes that API.
+        let line_count = self.layout.len();
+        if line_count <= 1 {
+            return 0;
+        }
+
+        if cursor_y < 0.0 {
+            return 0;
+        }
+
+        let mut lo = 0usize;
+        let mut hi = line_count;
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2;
+            let ordering = self.layout.get(mid).map_or(std::cmp::Ordering::Greater, |line| {
+                let metrics = line.metrics();
+                if cursor_y < metrics.min_coord {
+                    std::cmp::Ordering::Greater
+                } else if cursor_y >= metrics.max_coord {
+                    std::cmp::Ordering::Less
+                } else {
+                    std::cmp::Ordering::Equal
+                }
+            });
+
+            match ordering {
+                std::cmp::Ordering::Greater => hi = mid,
+                std::cmp::Ordering::Less => lo = mid + 1,
+                std::cmp::Ordering::Equal => return mid,
+            }
+        }
+
+        lo.saturating_sub(1).min(line_count - 1)
     }
 
-    pub fn hit_position_aff(&self, idx: usize, affinity: Affinity) -> HitPosition {
+    /// Returns the cursor's visual point for a source-text byte index.
+    ///
+    /// The resulting point is in layout coordinates, with `x` at the cursor
+    /// position and `y` at the line baseline.
+    pub fn cursor_point(&self, idx: usize, affinity: Affinity) -> Point {
         if self.text.is_empty() || self.layout.is_empty() {
-            return HitPosition {
-                line: 0,
-                point: Point::ZERO,
-                glyph_ascent: 0.0,
-                glyph_descent: 0.0,
-            };
+            return Point::ZERO;
         }
 
         let display_idx = if let Some(tab_info) = self.tab_info.as_ref() {
@@ -311,43 +382,43 @@ impl TextLayout {
         };
         let pcursor = parley::editing::Cursor::from_byte_index(&self.layout, display_idx, affinity);
         let bbox = pcursor.geometry(&self.layout, 0.0);
-
-        let cursor_y = bbox.y0 as f32;
-        let line_count = self.layout.len();
-        let visual_line = if line_count <= 1 {
-            0
-        } else {
-            let mut lo = 0usize;
-            let mut hi = line_count;
-            while lo < hi {
-                let mid = lo + (hi - lo) / 2;
-                let exceeds = self
-                    .layout
-                    .get(mid)
-                    .is_none_or(|l| l.metrics().max_coord <= cursor_y);
-                if exceeds {
-                    lo = mid + 1;
-                } else {
-                    hi = mid;
-                }
-            }
-            lo.min(line_count - 1)
-        };
-
-        let metrics = self
-            .layout
-            .get(visual_line)
-            .map(|l| *l.metrics())
-            .unwrap_or_default();
-
-        HitPosition {
-            line: visual_line,
-            point: Point::new(bbox.x0, metrics.baseline as f64),
-            glyph_ascent: metrics.ascent as f64,
-            glyph_descent: metrics.descent as f64,
-        }
+        let baseline = self
+            .line_metrics_at(idx, affinity)
+            .map(|metrics| metrics.baseline as f64)
+            .unwrap_or(0.0);
+        Point::new(bbox.x0, baseline)
     }
 
+    /// Returns the visual line metrics for the line containing the given byte index.
+    ///
+    /// The returned metrics are copied from Parley because Parley's public line
+    /// wrapper does not allow us to return a borrowed `&LineMetrics` directly
+    /// from this wrapper type.
+    pub fn line_metrics_at(
+        &self,
+        idx: usize,
+        affinity: Affinity,
+    ) -> Option<parley::layout::LineMetrics> {
+        if self.text.is_empty() || self.layout.is_empty() {
+            return None;
+        }
+
+        let display_idx = if let Some(tab_info) = self.tab_info.as_ref() {
+            tab_info.orig_to_display(idx)
+        } else {
+            idx
+        };
+        let pcursor = parley::editing::Cursor::from_byte_index(&self.layout, display_idx, affinity);
+        let bbox = pcursor.geometry(&self.layout, 0.0);
+        let visual_line = self.line_index_for_cursor_y(bbox.y0 as f32);
+        let line = self.layout.get(visual_line)?;
+        Some(*line.metrics())
+    }
+
+    /// Converts a Parley cursor back into a byte index in the original source text.
+    ///
+    /// This reverses Floem's internal tab-expansion mapping when tab handling is
+    /// enabled.
     pub fn cursor_to_byte_index(&self, cursor: &Cursor) -> usize {
         let idx = cursor.index();
         if let Some(tab_info) = self.tab_info.as_ref() {
@@ -357,6 +428,7 @@ impl TextLayout {
         }
     }
 
+    /// Iterates selection rectangles for a byte range using raw cursor geometry.
     pub fn selection_geometry_with(
         &self,
         start_byte: usize,
@@ -369,6 +441,7 @@ impl TextLayout {
         });
     }
 
+    /// Iterates selection rectangles for a byte range using full visual-line metrics.
     pub fn selection_geometry_with_line_metrics(
         &self,
         start_byte: usize,
@@ -386,6 +459,7 @@ impl TextLayout {
         });
     }
 
+    /// Iterates selection rectangles between two Parley cursors using raw cursor geometry.
     pub fn selection_for_cursors(
         &self,
         start: &Cursor,
@@ -398,6 +472,7 @@ impl TextLayout {
         });
     }
 
+    /// Iterates selection rectangles between two Parley cursors using full visual-line metrics.
     pub fn selection_for_cursors_with_line_metrics(
         &self,
         start: &Cursor,
@@ -415,10 +490,12 @@ impl TextLayout {
         });
     }
 
+    /// Returns the baseline y coordinate for the `nth` visual line.
     pub fn visual_line_y(&self, nth: usize) -> Option<f32> {
         self.layout.get(nth).map(|l| l.metrics().baseline)
     }
 
+    /// Returns the source-text byte range covered by the `nth` visual line.
     pub fn visual_line_text_range(&self, nth: usize) -> Option<Range<usize>> {
         self.layout.get(nth).map(|l| {
             let r = l.text_range();
@@ -429,6 +506,7 @@ impl TextLayout {
         })
     }
 
+    /// Returns the top and bottom extents of the visual line boxes.
     pub fn visual_bounds_y(&self) -> Option<(f32, f32)> {
         if self.layout.is_empty() {
             return None;
@@ -447,6 +525,7 @@ impl TextLayout {
         (min_y.is_finite() && max_y.is_finite()).then_some((min_y, max_y))
     }
 
+    /// Returns the vertical bounds used when visually centering this layout.
     pub fn centering_bounds_y(&self) -> Option<(f32, f32)> {
         if self.layout.is_empty() {
             return None;
@@ -465,6 +544,7 @@ impl TextLayout {
         (min_y.is_finite() && max_y.is_finite()).then_some((min_y, max_y))
     }
 
+    /// Draws the layout at the given origin using Floem's renderer wrapper.
     pub fn draw(&self, renderer: &mut Renderer, origin: impl Into<Point>) {
         let origin = origin.into();
         for line in self.layout.lines() {

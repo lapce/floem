@@ -996,7 +996,7 @@ impl Editor {
             CursorAffinity::Forward => Affinity::Downstream,
         };
 
-        text_layout.text.hit_position_aff(index, aff).point
+        text_layout.text.cursor_point(index, aff)
     }
 
     /// Get the (point above, point below) of a particular offset within the editor.
@@ -1299,15 +1299,15 @@ impl Editor {
                 '\t' => {
                     let col_left = phantom.col_after(col, true);
                     let col_right = phantom.col_after(col + 1, false);
-                    let x0 = text_layout.hit_position(col_left).point.x;
-                    let x1 = text_layout.hit_position(col_right).point.x;
+                    let x0 = text_layout.cursor_point(col_left, Affinity::Upstream).x;
+                    let x1 = text_layout.cursor_point(col_right, Affinity::Upstream).x;
                     whitespace_buffer.push(('\t', (x0, x1)));
                 }
                 ' ' => {
                     let col_left = phantom.col_after(col, true);
                     let col_right = phantom.col_after(col + 1, false);
-                    let x0 = text_layout.hit_position(col_left).point.x;
-                    let x1 = text_layout.hit_position(col_right).point.x;
+                    let x0 = text_layout.cursor_point(col_left, Affinity::Upstream).x;
+                    let x1 = text_layout.cursor_point(col_right, Affinity::Upstream).x;
                     whitespace_buffer.push((' ', (x0, x1)));
                 }
                 _ => {
@@ -1447,7 +1447,7 @@ impl TextLayoutProvider for Editor {
         } else {
             let offset = text.first_non_blank_character_on_line(indent_line);
             let (_, col) = text.offset_to_line_col(offset);
-            text_layout.hit_position(col).point.x
+            text_layout.cursor_point(col, Affinity::Upstream).x
         };
 
         let mut layout_line = TextLayoutLine {
