@@ -53,6 +53,13 @@ pub fn rich_text(
 }
 
 impl RichText {
+    fn mark_text_measure_dirty(&self) {
+        if let Some(text_node) = self.text_node {
+            let _ = self.id.taffy().borrow_mut().mark_dirty(text_node);
+        }
+        let _ = self.id.mark_view_layout_dirty();
+    }
+
     fn set_taffy_layout(&mut self) {
         let taffy_node = self.id.taffy_node();
         let taffy = self.id.taffy();
@@ -115,6 +122,7 @@ impl View for RichText {
             });
             drop(data);
 
+            self.mark_text_measure_dirty();
             self.id.request_layout();
         }
     }

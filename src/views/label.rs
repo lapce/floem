@@ -210,6 +210,13 @@ pub fn label<S: Display + 'static>(label: impl Fn() -> S + 'static) -> Label {
 }
 
 impl Label {
+    fn mark_text_measure_dirty(&self) {
+        if let Some(text_node) = self.text_node {
+            let _ = self.id.taffy().borrow_mut().mark_dirty(text_node);
+        }
+        let _ = self.id.mark_view_layout_dirty();
+    }
+
     fn get_attrs_list(&self) -> AttrsList {
         let mut attrs = Attrs::new().color(self.label_props.color().unwrap_or(palette::css::BLACK));
         if let Some(font_size) = self.font_props.size() {
@@ -248,7 +255,7 @@ impl Label {
         layout_data.set_text(&self.label, attrs_list, align);
         layout_data.set_text_overflow(text_overflow);
 
-        let _ = self.id.mark_view_layout_dirty();
+        self.mark_text_measure_dirty();
     }
 
     fn get_hit_point(&self, point: Point) -> Option<Cursor> {

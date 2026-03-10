@@ -374,12 +374,6 @@ impl TextLayoutState {
                     layout_data.compute_overflow_size(width_constraint, text_overflow)
                 };
 
-                dbg!(text_size);
-                if let Some(t) = layout_data.borrow().text_layout.as_ref() {
-                    dbg!(t.text());
-                } else {
-                    dbg!("none");
-                }
                 Size {
                     width: known_dimensions.width.unwrap_or(text_size.width as f32) + 1.,
                     height: known_dimensions.height.unwrap_or(text_size.height as f32),
@@ -394,5 +388,107 @@ impl TextLayoutState {
             let mut layout_data = layout_data.borrow_mut();
             layout_data.finalize_for_width(layout.content_box_width());
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TextLayoutState;
+    use crate::{
+        style::{NoWrapOverflow, TextOverflow},
+        text::{Attrs, AttrsList},
+        view::{LayoutNodeCx, MeasureCx},
+    };
+    use std::{cell::RefCell, rc::Rc};
+    use taffy::{AvailableSpace, Size, Style, TaffyTree};
+
+    #[test]
+    fn taffy_layout_updates_after_text_change_for_measured_text_child() {
+        let layout_data = Rc::new(RefCell::new(TextLayoutState::new(None)));
+        layout_data
+            .borrow_mut()
+            .set_text("short", AttrsList::new(Attrs::new()), None);
+        layout_data
+            .borrow_mut()
+            .set_text_overflow(TextOverflow::NoWrap(NoWrapOverflow::Clip));
+
+        let text_node = {
+            let mut taffy = TaffyTree::<LayoutNodeCx>::new();
+            let root = taffy.new_leaf(Style::DEFAULT).unwrap();
+            let wrapper = taffy.new_leaf(Style::DEFAULT).unwrap();
+            let text = taffy.new_leaf(Style::DEFAULT).unwrap();
+            taffy.set_children(root, &[wrapper]).unwrap();
+            taffy.set_children(wrapper, &[text]).unwrap();
+            let layout_fn = TextLayoutState::create_taffy_layout_fn(layout_data.clone());
+            let finalize_fn = TextLayoutState::create_finalize_fn(layout_data.clone());
+            taffy
+                .set_node_context(
+                    text,
+                    Some(LayoutNodeCx::Custom {
+                        measure: layout_fn,
+                        finalize: Some(finalize_fn),
+                    }),
+                )
+                .unwrap();
+
+            let mut measure_cx = MeasureCx::default();
+            taffy
+                .compute_layout_with_measure(
+                    root,
+                    Size {
+                        width: AvailableSpace::Definite(1000.0),
+                        height: AvailableSpace::Definite(1000.0),
+                    },
+                    |known_dimensions, available_space, node_id, node_context, style| {
+                        match node_context {
+                            Some(LayoutNodeCx::Custom { measure, .. }) => measure(
+                                known_dimensions,
+                                available_space,
+                                node_id,
+                                style,
+                                &mut measure_cx,
+                            ),
+                            None => Size::ZERO,
+                        }
+                    },
+                )
+                .unwrap();
+            let short = taffy.layout(wrapper).unwrap().size.width;
+
+            layout_data.borrow_mut().set_text(
+                "a much longer piece of text",
+                AttrsList::new(Attrs::new()),
+                None,
+            );
+
+            taffy.mark_dirty(text).unwrap();
+            measure_cx = MeasureCx::default();
+            taffy
+                .compute_layout_with_measure(
+                    root,
+                    Size {
+                        width: AvailableSpace::Definite(1000.0),
+                        height: AvailableSpace::Definite(1000.0),
+                    },
+                    |known_dimensions, available_space, node_id, node_context, style| {
+                        match node_context {
+                            Some(LayoutNodeCx::Custom { measure, .. }) => measure(
+                                known_dimensions,
+                                available_space,
+                                node_id,
+                                style,
+                                &mut measure_cx,
+                            ),
+                            None => Size::ZERO,
+                        }
+                    },
+                )
+                .unwrap();
+            let long = taffy.layout(wrapper).unwrap().size.width;
+            assert!(long > short, "short={short}, long={long}");
+            text
+        };
+
+        let _ = text_node;
     }
 }

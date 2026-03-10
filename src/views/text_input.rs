@@ -387,6 +387,13 @@ impl TextInput {
 }
 
 impl TextInput {
+    fn mark_text_measure_dirty(&self) {
+        if let Some(text_node) = self.text_node {
+            let _ = self.id.taffy().borrow_mut().mark_dirty(text_node);
+        }
+        let _ = self.id.mark_view_layout_dirty();
+    }
+
     fn move_cursor(&mut self, move_kind: Movement, direction: TextDirection) -> bool {
         match (move_kind, direction) {
             (Movement::Glyph, TextDirection::Left) => {
@@ -677,6 +684,8 @@ impl TextInput {
                     .set_text_overflow(TextOverflow::NoWrap(crate::style::NoWrapOverflow::Clip));
             });
         }
+
+        self.mark_text_measure_dirty();
     }
 
     fn update_cursor_position_and_scroll(&mut self) {
