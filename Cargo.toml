@@ -215,3 +215,6 @@ harness = false
 name = "editor_layout_cols"
 harness = false
 
+[[bench]]
+name = "view_creation"
+harness = false
