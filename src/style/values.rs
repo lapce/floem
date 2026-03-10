@@ -1383,7 +1383,7 @@ fn short_style_name(name: &str) -> String {
 }
 
 struct StyleDebugRow {
-    render: Box<dyn FnOnce(bool) -> AnyView>,
+    render: Rc<dyn Fn(bool) -> AnyView>,
     is_empty: bool,
 }
 
@@ -1535,54 +1535,64 @@ fn style_debug_prop_row(
     is_direct: bool,
     indent: usize,
 ) -> StyleDebugRow {
+    let style = style.clone();
+    let value = value.clone();
     let name = short_style_name(&format!("{:?}", prop.key));
-    let mut value_view = (prop.info().debug_view)(&**value)
-        .unwrap_or_else(|| Label::new((prop.info().debug_any)(&**value)).into_any());
-
-    if let Some(transition) = style
-        .map
-        .get(&prop.info().transition_key)
-        .and_then(|v| v.downcast_ref::<Transition>())
-    {
-        value_view = Stack::vertical((
-            value_view,
-            Stack::new((
-                "Transition".style(|s| {
-                    s.margin_top(4.0)
-                        .margin_right(5.0)
-                        .border(1.)
-                        .border_radius(5.0)
-                        .padding_horiz(4.0)
-                        .with_theme(|s, t| s.color(t.text_muted()).border_color(t.border()))
-                        .with_context_opt::<FontSize, _>(|s, fs| s.font_size(fs * 0.8))
-                }),
-                transition.debug_view(),
-            ))
-            .style(|s| s.items_center().gap(6.0)),
-        ))
-        .into_any();
-    }
-
-    let row = Stack::new((debug_name_cell(name, is_direct, indent), value_view))
-        .style(|s| s.items_center().width_full().padding_vert(4.0).gap(8.0))
-        .into_any();
     StyleDebugRow {
-        render: Box::new(move |_| row),
+        render: Rc::new(move |_| {
+            let mut value_view = (prop.info().debug_view)(&*value)
+                .unwrap_or_else(|| Label::new((prop.info().debug_any)(&*value)).into_any());
+
+            if let Some(transition) = style
+                .map
+                .get(&prop.info().transition_key)
+                .and_then(|v| v.downcast_ref::<Transition>())
+            {
+                value_view = Stack::vertical((
+                    value_view,
+                    Stack::new((
+                        "Transition".style(|s| {
+                            s.margin_top(4.0)
+                                .margin_right(5.0)
+                                .border(1.)
+                                .border_radius(5.0)
+                                .padding_horiz(4.0)
+                                .with_theme(|s, t| s.color(t.text_muted()).border_color(t.border()))
+                                .with_context_opt::<FontSize, _>(|s, fs| s.font_size(fs * 0.8))
+                        }),
+                        transition.debug_view(),
+                    ))
+                    .style(|s| s.items_center().gap(6.0)),
+                ))
+                .into_any();
+            }
+
+            Stack::new((debug_name_cell(name.clone(), is_direct, indent), value_view))
+                .style(|s| s.items_center().width_full().padding_vert(4.0).gap(8.0))
+                .into_any()
+        }),
         is_empty: false,
     }
 }
 
-fn style_debug_group_row(
+fn style_debug_group_row<V>(
     name: String,
-    value_view: AnyView,
+    value_view: V,
     is_direct: bool,
     indent: usize,
-) -> StyleDebugRow {
-    let row = Stack::new((debug_name_cell(name, is_direct, indent), value_view))
-        .style(|s| s.items_center().width_full().padding_vert(4.0).gap(8.0))
-        .into_any();
+) -> StyleDebugRow
+where
+    V: Fn() -> AnyView + 'static,
+{
     StyleDebugRow {
-        render: Box::new(move |_| row),
+        render: Rc::new(move |_| {
+            Stack::new((
+                debug_name_cell(name.clone(), is_direct, indent),
+                value_view(),
+            ))
+            .style(|s| s.items_center().width_full().padding_vert(4.0).gap(8.0))
+            .into_any()
+        }),
         is_empty: false,
     }
 }
@@ -1605,7 +1615,8 @@ fn style_debug_section(title: String, child: StyleDebugRow, indent: usize) -> St
     };
 
     StyleDebugRow {
-        render: Box::new(move |row_is_base| {
+        render: Rc::new(move |row_is_base| {
+            let child_render = child.render.clone();
             Stack::vertical((
                 Stack::new((
                     dyn_view(chevron)
@@ -1635,9 +1646,16 @@ fn style_debug_section(title: String, child: StyleDebugRow, indent: usize) -> St
                 .on_event_stop(crate::event::listener::Click, move |_cx, _event| {
                     expanded.update(|value| *value = !*value)
                 }),
-                (child.render)(!row_is_base)
-                    .style(move |s| s.apply_if(!expanded.get(), |s| s.hide()).padding_left(12.0))
-                    .into_any(),
+                dyn_view(move || {
+                    if expanded.get() {
+                        child_render(!row_is_base)
+                            .style(|s| s.padding_left(12.0))
+                            .into_any()
+                    } else {
+                        Empty::new().into_any()
+                    }
+                })
+                .into_any(),
             ))
             .style(|s| s.gap(6.0).width_full().padding_vert(4.0))
             .into_any()
@@ -1658,7 +1676,7 @@ fn style_debug_sections(
     Some(style_debug_section(
         title.to_string(),
         StyleDebugRow {
-            render: Box::new(move |start_with_base| style_debug_rows(children, start_with_base)),
+            render: Rc::new(move |start_with_base| style_debug_rows(&children, start_with_base)),
             is_empty: false,
         },
         indent,
@@ -1699,10 +1717,16 @@ fn style_debug_prop_rows(
             continue;
         }
         hidden_props.extend(present);
-        if let Some(view) = (info.debug_view)(style) {
+        if (info.debug_view)(style).is_some() {
+            let info = info.clone();
+            let style = style.clone();
             rows.push(style_debug_group_row(
                 short_style_name((info.name)()),
-                view.into_any(),
+                move || {
+                    (info.debug_view)(&style)
+                        .unwrap_or_else(|| Label::new("empty").into_any())
+                        .into_any()
+                },
                 true,
                 indent,
             ));
@@ -1822,7 +1846,7 @@ fn style_debug_body(
     let is_empty = style_debug_is_empty(&style, &inherited_groups);
     let direct_keys = direct_keys.cloned();
     StyleDebugRow {
-        render: Box::new(move |start_with_base| {
+        render: Rc::new(move |start_with_base| {
             let mut rows =
                 style_debug_prop_rows(&style, direct_keys.as_ref(), &inherited_groups, indent);
             if let Some(selectors_section) = style_debug_sections(
@@ -1846,14 +1870,14 @@ fn style_debug_body(
                     .into_any();
             }
 
-            style_debug_rows(rows, start_with_base)
+            style_debug_rows(&rows, start_with_base)
         }),
         is_empty,
     }
 }
 
-fn style_debug_rows(rows: Vec<StyleDebugRow>, start_with_base: bool) -> AnyView {
-    Stack::vertical_from_iter(rows.into_iter().enumerate().map(|(idx, row)| {
+fn style_debug_rows(rows: &[StyleDebugRow], start_with_base: bool) -> AnyView {
+    Stack::vertical_from_iter(rows.iter().enumerate().map(|(idx, row)| {
         let is_base = if start_with_base {
             idx.is_multiple_of(2)
         } else {
@@ -1913,7 +1937,7 @@ impl Style {
                                 .style(|s| s.with_theme(|s, t| s.color(t.text_muted())))
                                 .into_any()
                         } else {
-                            style_debug_rows(rows, true)
+                            style_debug_rows(&rows, true)
                         }
                     }
                     1 => {
@@ -1924,7 +1948,7 @@ impl Style {
                                 .style(|s| s.with_theme(|s, t| s.color(t.text_muted())))
                                 .into_any()
                         } else {
-                            style_debug_rows(rows, true)
+                            style_debug_rows(&rows, true)
                         }
                     }
                     2 => {
@@ -1934,7 +1958,7 @@ impl Style {
                                 .style(|s| s.with_theme(|s, t| s.color(t.text_muted())))
                                 .into_any()
                         } else {
-                            style_debug_rows(rows, true)
+                            style_debug_rows(&rows, true)
                         }
                     }
                     _ => Label::new("empty").into_any(),
