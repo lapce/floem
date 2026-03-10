@@ -26,10 +26,10 @@ fn main() {
 fn counter_view() -> impl IntoView {
     let mut counter = RwSignal::new(0);
 
-    h_stack((
-        button("Increment").action(move || counter += 1),
-        label(move || format!("Value: {counter}")),
-        button("Decrement").action(move || counter -= 1),
+    Stack::horizontal((
+        Button::new("Increment").action(move || counter += 1),
+        Label::derived(move || format!("Value: {counter}")),
+        Button::new("Decrement").action(move || counter -= 1),
     ))
     .style(|s| s.size_full().items_center().justify_center().gap(10))
 }
@@ -50,8 +50,7 @@ Inspired by [Xilem](https://github.com/linebender/xilem), [Leptos](https://githu
 - **Flexbox & Grid layout**: Using [Taffy](https://crates.io/crates/taffy), the library provides the Flexbox and Grid layout systems, which can be applied to any View node.
 - **Customizable widgets**: Widgets are highly customizable. You can customize both the appearance and behavior of widgets using the styling API, which supports theming with classes. You can also install third-party themes.
 - **Transitions and Animations**: Floem supports both transitions and animations. Transitions, like css transitions, can animate any property that can be interpolated and can be applied alongside other styles, including in classes.
-
-        Floem also supports full keyframe animations that build on the ergonomics of the style system. In both transitions and animations, Floem supports easing with spring functions.
+    Floem also supports full keyframe animations that build on the ergonomics of the style system. In both transitions and animations, Floem supports easing with spring functions.
 - **Element inspector**: Inspired by your browser's developer tools, Floem provides a [diagnostic tool](docs/img/inspector.png) to debug your layout.
 - **Global themes**: Support for light and dark themes, built in design system to easly delare your own
 - **Localization**: Floem supports localizations via [Fluent](https://github.com/projectfluent/fluent-rs) crate with support for fallbacks, easy switching languages on runtime or even overriding active language for chosen part of you app
