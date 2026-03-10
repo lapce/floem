@@ -374,6 +374,12 @@ impl TextLayoutState {
                     layout_data.compute_overflow_size(width_constraint, text_overflow)
                 };
 
+                dbg!(text_size);
+                if let Some(t) = layout_data.borrow().text_layout.as_ref() {
+                    dbg!(t.text());
+                } else {
+                    dbg!("none");
+                }
                 Size {
                     width: known_dimensions.width.unwrap_or(text_size.width as f32) + 1.,
                     height: known_dimensions.height.unwrap_or(text_size.height as f32),

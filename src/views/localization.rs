@@ -1,20 +1,18 @@
 #![deny(missing_docs)]
 //! Localization privitives.
 use std::borrow::Cow;
-use std::pin::Pin;
 use std::rc::Rc;
 
 use crate::style::{CustomStylable, CustomStyle, Style, StylePropValue};
-use crate::view::{Stack as StackStruct, StackOffset};
 use crate::views::Decorators;
 use crate::{AnyView, IntoView, View, ViewId, prop, prop_extractor, style_class};
 use floem_reactive::UpdaterEffect;
 use fluent_bundle::{FluentBundle, FluentResource};
+use ouroboros::self_referencing;
 use parley::Alignment;
 
 pub use fluent_bundle::FluentArgs;
 pub use fluent_bundle::types::FluentValue;
-use smallvec::smallvec;
 pub use unic_langid::LanguageIdentifier;
 
 use super::Label;
@@ -186,10 +184,65 @@ pub enum L10nState {
     /// ### Example:
     /// `msg-key = Hello, { $user }. You have { $emailCount } messages.`
     /// `$user` and `$emailCount` are the arguments, which can be filled with values.
-    Arg(StackOffset<String>, FluentValue<'static>),
+    Arg(usize, FluentValue<'static>),
     /// Add a fallback label that will be displayed for the
     /// localized label when translation will be unavailable.
     Fallback(String),
+}
+
+#[self_referencing]
+struct L10nArgs {
+    arg_keys: Vec<String>,
+    arg_values: Vec<FluentValue<'static>>,
+    #[borrows(arg_keys)]
+    #[covariant]
+    args: FluentArgs<'this>,
+}
+
+impl L10nArgs {
+    fn empty() -> Self {
+        L10nArgsBuilder {
+            arg_keys: Vec::new(),
+            arg_values: Vec::new(),
+            args_builder: |_| FluentArgs::new(),
+        }
+        .build()
+    }
+
+    fn from_parts(arg_keys: Vec<String>, arg_values: Vec<FluentValue<'static>>) -> Self {
+        let values_for_args = arg_values.clone();
+        L10nArgsBuilder {
+            arg_keys,
+            arg_values,
+            args_builder: move |arg_keys| {
+                let mut args = FluentArgs::with_capacity(values_for_args.len());
+                for (key, value) in arg_keys.iter().zip(values_for_args.iter().cloned()) {
+                    args.set(Cow::Borrowed(key.as_str()), value);
+                }
+                args
+            },
+        }
+        .build()
+    }
+
+    fn len(&self) -> usize {
+        self.borrow_arg_keys().len()
+    }
+
+    fn insert(self, arg_key: String, arg_val: FluentValue<'static>) -> Self {
+        let mut heads = self.into_heads();
+        heads.arg_keys.push(arg_key);
+        heads.arg_values.push(arg_val);
+        Self::from_parts(heads.arg_keys, heads.arg_values)
+    }
+
+    fn set(&mut self, offset: usize, arg_val: FluentValue<'static>) {
+        self.with_arg_values_mut(|values| values[offset] = arg_val.clone());
+        self.with_mut(|fields| {
+            let key = fields.arg_keys[offset].as_str();
+            fields.args.set(Cow::Borrowed(key), arg_val);
+        });
+    }
 }
 
 /// A localization primitive that stores localized message data and state.
@@ -197,8 +250,7 @@ pub struct L10n {
     id: ViewId,
     label_id: ViewId,
     key: String,
-    args: FluentArgs<'static>,
-    arg_keys: Pin<Box<StackStruct<String>>>, // Pinned allocation
+    args: L10nArgs,
     locale: LanguageExtractor,
     fallback: FallBackExtractor,
     fallback_override: Option<String>,
@@ -217,8 +269,7 @@ impl L10n {
             id,
             label_id,
             key,
-            args: FluentArgs::new(),
-            arg_keys: Box::pin(StackStruct { stack: smallvec![] }),
+            args: L10nArgs::empty(),
             locale: Default::default(),
             fallback: Default::default(),
             fallback_override: None,
@@ -234,7 +285,7 @@ impl L10n {
     /// # use floem::prelude::{RwSignal, SignalGet};
     /// # use floem::views::localization::l10n;
     ///
-    /// let username = RwSignal::new("Jared");
+    /// let username = RwSignal::new("John");
     /// let localized_label = l10n("Hello").arg("user", move || username.get());
     /// ```
     /// ### Reactivity
@@ -246,17 +297,7 @@ impl L10n {
     ) -> Self {
         let id = self.id;
         let arg_key = arg_key.into();
-
-        // Pin projection: get mutable access to pinned data
-        let arg_keys = unsafe { self.arg_keys.as_mut().get_unchecked_mut() };
-        let offset = arg_keys.next_offset();
-        arg_keys.push(arg_key);
-
-        let arg_key_ref = arg_keys.get(offset);
-        let arg_key_ptr: *const str = arg_key_ref.as_ref();
-        // SAFETY: arg_keys is pinned in a Box, so the pointer remains valid
-        // for the lifetime of the L10n struct
-        let static_ref: &'static str = unsafe { &*arg_key_ptr };
+        let offset = self.args.len();
 
         let initial_val = UpdaterEffect::new(
             move || arg_val().into(),
@@ -264,7 +305,7 @@ impl L10n {
                 id.update_state(L10nState::Arg(offset, arg_val));
             },
         );
-        self.args.set(Cow::Borrowed(static_ref), initial_val);
+        self.args = self.args.insert(arg_key, initial_val);
         self
     }
 
@@ -275,7 +316,7 @@ impl L10n {
     /// # use floem::prelude::{RwSignal, SignalGet};
     /// # use floem::views::localization::l10n;
     /// let localized_with_fallback = l10n("greet").fallback(|| "Hello user!");
-    /// let username = RwSignal::new("Jared");
+    /// let username = RwSignal::new("John");
     /// let localized_with_fallback_and_args = l10n("greet")
     ///     .arg("user", move || username.get())
     ///     .fallback(|| "Hello user!");
@@ -303,19 +344,25 @@ impl L10n {
         let message = resource.get_message(&self.key)?;
         let pattern = message.value()?;
         let errors = &mut vec![];
-        let value = resource.format_pattern(pattern, Some(&self.args), errors);
-        if errors.is_empty() {
-            Some(value.to_string())
-        } else {
-            None
-        }
+        self.args.with_args(|args| {
+            let value = resource.format_pattern(pattern, Some(args), errors);
+            if errors.is_empty() {
+                Some(value.to_string())
+            } else {
+                None
+            }
+        })
     }
 
-    fn apply_fallback(&self) {
+    fn apply_fallback(&self) -> bool {
         if let Some(fallback) = &self.fallback_override {
             self.label_id.update_state(fallback.to_string());
+            true
         } else if let Some(fallback) = self.fallback.fallback() {
             self.label_id.update_state(fallback.to_string());
+            true
+        } else {
+            false
         }
     }
 }
@@ -329,7 +376,7 @@ impl L10n {
 /// // Simple label:
 /// let simple = l10n("greet");
 /// // With arg (variables):
-/// let user = RwSignal::new("Jared");
+/// let user = RwSignal::new("John");
 /// let with_args = l10n("greet").arg("user", move || user.get());
 /// // With fallback label:
 /// let with_fallback = l10n("greet").fallback(|| "Hello user!");
@@ -426,8 +473,8 @@ impl View for L10n {
             self.has_format_value = true;
         }
         self.fallback.read(cx);
-        if !self.has_format_value {
-            self.apply_fallback();
+        if !self.has_format_value && !self.apply_fallback() {
+            self.label_id.update_state(self.key.clone());
         }
     }
 
@@ -436,20 +483,15 @@ impl View for L10n {
             match *inner {
                 L10nState::Arg(stack_offset, fluent_value) => {
                     self.has_format_value = false;
-                    let arg_key_ref = self.arg_keys.get(stack_offset);
-                    let arg_key_ptr: *const str = arg_key_ref.as_ref();
-                    // SAFETY: arg_keys is pinned in a Box, so the pointer remains valid
-                    // for the lifetime of the L10n struct
-                    let static_ref: &'static str = unsafe { &*arg_key_ptr };
-                    self.args.set(Cow::Borrowed(static_ref), fluent_value);
+                    self.args.set(stack_offset, fluent_value);
 
                     if let Some(formatted) = self.try_format_message() {
                         self.label_id.update_state(formatted);
                         self.has_format_value = true;
                     }
 
-                    if !self.has_format_value {
-                        self.apply_fallback();
+                    if !self.has_format_value && !self.apply_fallback() {
+                        self.label_id.update_state(self.key.clone());
                     }
                 }
                 L10nState::Fallback(fallback_override) => {

@@ -109,6 +109,7 @@ wgpu.workspace = true
 fluent-bundle = { version = "0.16", optional = true }
 unic-langid = { version = "0.9", optional = true }
 sys-locale = { version = "0.3.2", optional = true }
+ouroboros = { version = "0.18", optional = true }
 understory_box_tree = { git = "https://github.com/jrmoulton/understory", rev = "e3dc4f7bc94d2c87d0800b0dd55242cda876a278", package = "understory_box_tree" }
 understory_event_state = { git = "https://github.com/jrmoulton/understory", rev = "e3dc4f7bc94d2c87d0800b0dd55242cda876a278", package = "understory_event_state" }
 understory_index = { git = "https://github.com/jrmoulton/understory", rev = "e3dc4f7bc94d2c87d0800b0dd55242cda876a278", package = "understory_index" }
@@ -179,7 +180,7 @@ image-webp = ["image/webp"]
 tokio = ["dep:tokio"]
 # rfd (file dialog) async runtime
 crossbeam = ["dep:crossbeam", "floem_renderer/crossbeam"]
-localization = ["dep:fluent-bundle", "dep:unic-langid", "dep:sys-locale"]
+localization = ["dep:fluent-bundle", "dep:unic-langid", "dep:sys-locale", "dep:ouroboros"]
 
 [dev-dependencies]
 criterion = { version = "0.8.1", features = ["html_reports"] }
@@ -213,5 +214,4 @@ harness = false
 [[bench]]
 name = "editor_layout_cols"
 harness = false
-
 
