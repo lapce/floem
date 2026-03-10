@@ -21,6 +21,7 @@ use floem::text::{
     Affinity, Attrs, AttrsList, FONT_CONTEXT, FamilyOwned, FontStyle, FontWeight, TextLayout,
 };
 use peniko::Color;
+use peniko::kurbo::Point;
 
 // =============================================================================
 // Font setup — bundled DejaVu Serif for reproducibility
