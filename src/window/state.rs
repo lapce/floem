@@ -109,6 +109,9 @@ pub struct WindowState {
     pub(crate) user_scale: f64,
     pub(crate) scheduled_updates: Vec<FrameUpdate>,
     pub(crate) style_dirty: FxHashMap<ViewId, StyleReason>,
+    pub(crate) responsive_selector_views: FxHashMap<ViewId, ()>,
+    pub(crate) disabled_selector_views: FxHashMap<ViewId, ()>,
+    pub(crate) selected_selector_views: FxHashMap<ViewId, ()>,
     pub(crate) request_paint: bool,
     pub(crate) drag_tracker: DragTracker,
     pub(crate) screen_size_bp: ScreenSizeBp,
@@ -186,6 +189,9 @@ impl WindowState {
             scheduled_updates: vec![FrameUpdate::Paint(root_view_id)],
             request_paint: true,
             style_dirty: Default::default(),
+            responsive_selector_views: FxHashMap::default(),
+            disabled_selector_views: FxHashMap::default(),
+            selected_selector_views: FxHashMap::default(),
             drag_tracker: DragTracker::new(),
             focus_state: FocusState::new(),
             last_focused_element: None,
@@ -357,6 +363,9 @@ impl WindowState {
             }
         }
         self.style_dirty.remove(&id);
+        self.responsive_selector_views.remove(&id);
+        self.disabled_selector_views.remove(&id);
+        self.selected_selector_views.remove(&id);
         self.views_needing_box_tree_update.remove(&id);
 
         // Clean up pointer capture state for removed view
@@ -1206,6 +1215,77 @@ impl WindowState {
         view_state
             .has_style_selectors
             .is_some_and(|s| s.has(selector_kind))
+    }
+
+    pub(crate) fn update_selector_interest(
+        &mut self,
+        id: ViewId,
+        selectors: Option<StyleSelectors>,
+    ) {
+        let has_responsive = selectors.is_some_and(StyleSelectors::has_responsive);
+        let has_disabled = selectors.is_some_and(|s| s.has(StyleSelector::Disabled));
+        let has_selected = selectors.is_some_and(|s| s.has(StyleSelector::Selected));
+
+        Self::set_selector_interest_entry(&mut self.responsive_selector_views, id, has_responsive);
+        Self::set_selector_interest_entry(&mut self.disabled_selector_views, id, has_disabled);
+        Self::set_selector_interest_entry(&mut self.selected_selector_views, id, has_selected);
+    }
+
+    fn set_selector_interest_entry(
+        index: &mut FxHashMap<ViewId, ()>,
+        id: ViewId,
+        interested: bool,
+    ) {
+        if interested {
+            index.insert(id, ());
+        } else {
+            index.remove(&id);
+        }
+    }
+
+    fn is_descendant_of(descendant: ViewId, ancestor: ViewId) -> bool {
+        let mut current = descendant.parent();
+        while let Some(parent) = current {
+            if parent == ancestor {
+                return true;
+            }
+            current = parent.parent();
+        }
+        false
+    }
+
+    pub(crate) fn mark_descendants_with_selector_dirty(
+        &mut self,
+        ancestor: ViewId,
+        selector: StyleSelector,
+    ) {
+        let candidates: Vec<ViewId> = match selector {
+            StyleSelector::Disabled => self.disabled_selector_views.keys().copied().collect(),
+            StyleSelector::Selected => self.selected_selector_views.keys().copied().collect(),
+            _ => return,
+        };
+
+        for view_id in candidates {
+            if Self::is_descendant_of(view_id, ancestor) {
+                self.mark_style_dirty_with(
+                    view_id.get_element_id(),
+                    StyleReason::with_selector(selector),
+                );
+            }
+        }
+    }
+
+    pub(crate) fn mark_descendants_with_responsive_selector_dirty(&mut self, ancestor: ViewId) {
+        let candidates: Vec<ViewId> = self.responsive_selector_views.keys().copied().collect();
+
+        for view_id in candidates {
+            if Self::is_descendant_of(view_id, ancestor) {
+                self.mark_style_dirty_with(
+                    view_id.get_element_id(),
+                    StyleReason::with_selectors(StyleSelectors::empty().responsive()),
+                );
+            }
+        }
     }
 
     pub(crate) fn update_context_menu(

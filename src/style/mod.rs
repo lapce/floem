@@ -2156,47 +2156,50 @@ impl LayoutProps {
         }
     }
 
-    pub fn padding(&self) -> Padding {
-        Padding {
-            left: Some(self.padding_left()),
-            top: Some(self.padding_top()),
-            right: Some(self.padding_right()),
-            bottom: Some(self.padding_bottom()),
-        }
-    }
-
-    pub fn margin(&self) -> Margin {
-        Margin {
-            left: Some(self.margin_left()),
-            top: Some(self.margin_top()),
-            right: Some(self.margin_right()),
-            bottom: Some(self.margin_bottom()),
-        }
-    }
-
-    pub fn to_style(&self) -> Style {
-        let border = self.border();
-        let padding = self.padding();
-        let margin = self.margin();
-        Style::new()
-            .width(self.width())
-            .height(self.height())
-            .apply_border(border)
-            .apply_padding(padding)
-            .min_width(self.min_width())
-            .min_height(self.min_height())
-            .max_width(self.max_width())
-            .max_height(self.max_height())
-            .flex_grow(self.flex_grow())
-            .flex_shrink(self.flex_shrink())
-            .flex_basis(self.flex_basis())
-            .inset_left(self.inset_left())
-            .inset_top(self.inset_top())
-            .inset_right(self.inset_right())
-            .inset_bottom(self.inset_bottom())
-            .apply_margin(margin)
-            .col_gap(self.col_gap())
-            .row_gap(self.row_gap())
+    pub fn apply_to_taffy_style(&self, style: &mut TaffyStyle) {
+        style.size = taffy::prelude::Size {
+            width: self.width().into(),
+            height: self.height().into(),
+        };
+        style.min_size = taffy::prelude::Size {
+            width: self.min_width().into(),
+            height: self.min_height().into(),
+        };
+        style.max_size = taffy::prelude::Size {
+            width: self.max_width().into(),
+            height: self.max_height().into(),
+        };
+        style.flex_grow = self.flex_grow();
+        style.flex_shrink = self.flex_shrink();
+        style.flex_basis = self.flex_basis().into();
+        style.border = Rect {
+            left: LengthPercentage::length(self.border_left().width as f32),
+            top: LengthPercentage::length(self.border_top().width as f32),
+            right: LengthPercentage::length(self.border_right().width as f32),
+            bottom: LengthPercentage::length(self.border_bottom().width as f32),
+        };
+        style.padding = Rect {
+            left: self.padding_left().into(),
+            top: self.padding_top().into(),
+            right: self.padding_right().into(),
+            bottom: self.padding_bottom().into(),
+        };
+        style.margin = Rect {
+            left: self.margin_left().into(),
+            top: self.margin_top().into(),
+            right: self.margin_right().into(),
+            bottom: self.margin_bottom().into(),
+        };
+        style.inset = Rect {
+            left: self.inset_left().into(),
+            top: self.inset_top().into(),
+            right: self.inset_right().into(),
+            bottom: self.inset_bottom().into(),
+        };
+        style.gap = Size {
+            width: self.col_gap().into(),
+            height: self.row_gap().into(),
+        };
     }
 }
 
