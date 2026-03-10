@@ -5,10 +5,9 @@ use std::sync::mpsc::sync_channel;
 
 use anyhow::Result;
 use floem_renderer::gpu_resources::GpuResources;
-use floem_renderer::text::TextLayout;
+use floem_renderer::text::{Glyph, GlyphRunProps};
 use floem_renderer::{Img, Renderer, tiny_skia};
 use floem_vger_rs::{GlyphImage, Image, PaintIndex, PixelFormat, Vger};
-use parley::layout::PositionedLayoutItem;
 use peniko::kurbo::{Size, Stroke};
 use peniko::{Blob, ImageData, LinearGradientPosition};
 use peniko::{
@@ -88,6 +87,11 @@ impl VgerRenderer {
             .find(|it| matches!(it, TextureFormat::Rgba8Unorm | TextureFormat::Bgra8Unorm))
             .ok_or_else(|| anyhow::anyhow!("surface should support Rgba8Unorm or Bgra8Unorm"))?;
 
+        let latency = match adapter.get_info().backend {
+            wgpu::Backend::Vulkan => 2,
+            _ => 1,
+        };
+
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: texture_format,
@@ -96,7 +100,7 @@ impl VgerRenderer {
             present_mode: wgpu::PresentMode::AutoVsync,
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
             view_formats: vec![],
-            desired_maximum_frame_latency: 1,
+            desired_maximum_frame_latency: latency,
         };
         surface.configure(&device, &config);
 
@@ -491,150 +495,111 @@ impl Renderer for VgerRenderer {
         self.vger.fill(paint);
     }
 
-    fn draw_text(&mut self, text_layout: &TextLayout, pos: impl Into<Point>) {
-        let layout = text_layout.parley_layout();
-
-        let pos: Point = pos.into();
-        let pos = self.device_transform() * pos;
-        // This assumes that the text is axis-aligned.
+    fn draw_glyphs<'a>(
+        &mut self,
+        origin: Point,
+        props: &GlyphRunProps<'a>,
+        glyphs: impl Iterator<Item = Glyph> + 'a,
+    ) {
+        let font = &props.font;
+        let coeffs = props.transform.as_coeffs();
+        let pos = self.device_transform() * (origin + Point::new(coeffs[4], coeffs[5]).to_vec2());
+        // This assumes that text is axis-aligned.
         let (_, _, scale) = self.scale_components();
 
         let clip = self.clip;
         let font_embolden = self.font_embolden;
+        let Some(font_ref) = FontRef::from_index(font.data.data(), font.index as usize) else {
+            return;
+        };
+        let font_blob_id = font.data.id();
+        let _color = match &props.brush {
+            peniko::Brush::Solid(color) => Color::from(*color),
+            _ => return,
+        };
+        let Some(paint) = self.brush_to_paint(props.brush) else {
+            return;
+        };
+        let skew = props
+            .glyph_transform
+            .map(|transform| transform.as_coeffs()[0].atan().to_degrees() as f32);
+        let embolden = font_embolden;
 
-        for line in layout.lines() {
-            let metrics = line.metrics();
+        for glyph in glyphs {
+            let glyph_x = pos.x as f32 + glyph.x * scale as f32;
+            let glyph_y = pos.y as f32 + glyph.y * scale as f32;
 
-            if let Some(rect) = clip {
-                let y_top = pos.y + (metrics.baseline - metrics.ascent) as f64 * scale;
-                let y_bot = pos.y + (metrics.baseline + metrics.descent) as f64 * scale;
-                if y_bot < rect.y0 {
-                    continue;
-                }
-                if y_top > rect.y1 {
-                    break;
-                }
+            if let Some(rect) = clip
+                && (glyph_x as f64) > rect.x1
+            {
+                break;
             }
 
-            for item in line.items() {
-                let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
-                    continue;
-                };
-                let run = glyph_run.run();
-                let font = run.font();
-                let font_size = run.font_size();
-                let synthesis = run.synthesis();
-                let coords: Vec<i16> = run.normalized_coords().to_vec();
-                let color: Color = glyph_run.style().brush.0;
+            let scaled_font_size = (props.font_size * scale as f32).round() as u32;
 
-                let Some(font_ref) = FontRef::from_index(font.data.data(), font.index as usize)
-                else {
-                    continue;
-                };
-                let font_blob_id = font.data.id();
+            let x_bin = ((glyph_x.fract() + 1.0).fract() * 4.0).min(3.0) as u8;
+            let y_bin = ((glyph_y.fract() + 1.0).fract() * 4.0).min(3.0) as u8;
 
-                // Extra embolden strength when Parley requests synthetic bold
-                // (font lacks a native bold variant). Additive so it's always
-                // distinguishable from the base `font_embolden` weight.
-                const SYNTHESIS_EMBOLDEN_STRENGTH: f32 = 0.02;
-                let embolden = font_embolden
-                    + if synthesis.embolden() {
-                        SYNTHESIS_EMBOLDEN_STRENGTH
-                    } else {
-                        0.0
-                    };
-                let skew = synthesis.skew();
+            let glyph_id = glyph.id as u16;
+            let scaled_size = props.font_size * scale as f32;
+            let coords = props.normalized_coords;
 
-                let Some(paint) = self.brush_to_paint(color) else {
-                    continue;
-                };
+            let synthesis_bits = skew.unwrap_or(0.0).to_bits() & 0xFFFF_FFFE;
 
-                for glyph in glyph_run.positioned_glyphs() {
-                    let glyph_x = pos.x as f32 + glyph.x * scale as f32;
-                    let glyph_y = pos.y as f32 + glyph.y * scale as f32;
-
-                    if let Some(rect) = clip
-                        && (glyph_x as f64) > rect.x1
-                    {
-                        break;
-                    }
-
-                    let scaled_font_size = (font_size * scale as f32).round() as u32;
-
-                    // Subpixel binning: 4 bins per axis
-                    let x_bin = ((glyph_x.fract() + 1.0).fract() * 4.0).min(3.0) as u8;
-                    let y_bin = ((glyph_y.fract() + 1.0).fract() * 4.0).min(3.0) as u8;
-
-                    let glyph_id = glyph.id as u16;
-                    let scaled_size = font_size * scale as f32;
-                    let coords_clone = coords.clone();
-
-                    // Encode synthesis state into a cache discriminator so that
-                    // the same glyph rendered with/without faux bold or italic
-                    // gets separate cache entries in vger-rs.
-                    let synthesis_bits = (synthesis.embolden() as u32)
-                        | (skew.unwrap_or(0.0).to_bits() & 0xFFFF_FFFE);
-
-                    self.vger.render_glyph(
-                        glyph_x.floor(),
-                        glyph_y.floor(),
-                        font_blob_id,
-                        glyph_id,
-                        scaled_font_size,
-                        (x_bin, y_bin),
-                        synthesis_bits,
-                        || {
-                            // Rasterize glyph via swash on cache miss
-                            let image = SCALE_CONTEXT.with_borrow_mut(|ctx| {
-                                let mut scaler = ctx
-                                    .builder(font_ref)
-                                    .size(scaled_size)
-                                    .hint(true)
-                                    .normalized_coords(&coords_clone)
-                                    .build();
-                                let mut render = Render::new(&[
-                                    Source::ColorOutline(0),
-                                    Source::ColorBitmap(StrikeWith::BestFit),
-                                    Source::Outline,
-                                ]);
-                                render
-                                    .format(Format::Alpha)
-                                    .offset(swash::zeno::Vector::new(
-                                        glyph_x.fract(),
-                                        glyph_y.fract(),
-                                    ))
-                                    .embolden(embolden);
-                                if let Some(angle) = skew {
-                                    render.transform(Some(swash::zeno::Transform::skew(
-                                        swash::zeno::Angle::from_degrees(angle),
-                                        swash::zeno::Angle::ZERO,
-                                    )));
-                                }
-                                render.render(&mut scaler, glyph_id)
-                            });
-                            match image {
-                                Some(img) => GlyphImage {
-                                    colored: img.content != swash::scale::image::Content::Mask,
-                                    data: img.data.into(),
-                                    width: img.placement.width,
-                                    height: img.placement.height,
-                                    left: img.placement.left,
-                                    top: img.placement.top,
-                                },
-                                None => GlyphImage {
-                                    data: Blob::new(Arc::new([])),
-                                    width: 0,
-                                    height: 0,
-                                    left: 0,
-                                    top: 0,
-                                    colored: false,
-                                },
-                            }
+            self.vger.render_glyph(
+                glyph_x.floor(),
+                glyph_y.floor(),
+                font_blob_id,
+                glyph_id,
+                scaled_font_size,
+                (x_bin, y_bin),
+                synthesis_bits,
+                || {
+                    let image = SCALE_CONTEXT.with_borrow_mut(|ctx| {
+                        let mut scaler = ctx
+                            .builder(font_ref)
+                            .size(scaled_size)
+                            .hint(props.hint)
+                            .normalized_coords(coords)
+                            .build();
+                        let mut render = Render::new(&[
+                            Source::ColorOutline(0),
+                            Source::ColorBitmap(StrikeWith::BestFit),
+                            Source::Outline,
+                        ]);
+                        render
+                            .format(Format::Alpha)
+                            .offset(swash::zeno::Vector::new(glyph_x.fract(), glyph_y.fract()))
+                            .embolden(embolden);
+                        if let Some(angle) = skew {
+                            render.transform(Some(swash::zeno::Transform::skew(
+                                swash::zeno::Angle::from_degrees(angle),
+                                swash::zeno::Angle::ZERO,
+                            )));
+                        }
+                        render.render(&mut scaler, glyph_id)
+                    });
+                    match image {
+                        Some(img) => GlyphImage {
+                            colored: img.content != swash::scale::image::Content::Mask,
+                            data: img.data.into(),
+                            width: img.placement.width,
+                            height: img.placement.height,
+                            left: img.placement.left,
+                            top: img.placement.top,
                         },
-                        paint,
-                    );
-                }
-            }
+                        None => GlyphImage {
+                            data: Blob::new(Arc::new([])),
+                            width: 0,
+                            height: 0,
+                            left: 0,
+                            top: 0,
+                            colored: false,
+                        },
+                    }
+                },
+                paint,
+            );
         }
     }
 

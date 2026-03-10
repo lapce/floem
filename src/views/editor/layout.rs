@@ -1,6 +1,9 @@
 use std::ops::Range;
 
-use crate::{peniko::Color, text::TextLayout};
+use crate::{
+    peniko::Color,
+    text::{Affinity, TextLayout, paragraph_ranges},
+};
 use floem_editor_core::buffer::rope_text::RopeText;
 
 use super::{phantom_text::PhantomTextLine, visual_line::TextLayoutProvider};
@@ -80,10 +83,12 @@ impl TextLayoutLine {
             .collect();
 
         let prefix = if visual_ranges.is_empty()
-            && self.text.lines_range().len() == 1
+            && paragraph_ranges(full_text).count() == 1
             && visual_line_count > 0
         {
-            let s = self.text.lines_range()[0].start;
+            let s = paragraph_ranges(full_text)
+                .next()
+                .map_or(0, |range| range.start);
             Some((s, s))
         } else {
             None
@@ -143,8 +148,12 @@ impl TextLayoutLine {
             .collect();
 
         // Fallback for all-whitespace single paragraph.
-        if starts.is_empty() && self.text.lines_range().len() == 1 && visual_line_count > 0 {
-            starts.push(self.text.lines_range()[0].start);
+        if starts.is_empty() && paragraph_ranges(full_text).count() == 1 && visual_line_count > 0 {
+            starts.push(
+                paragraph_ranges(full_text)
+                    .next()
+                    .map_or(0, |range| range.start),
+            );
         }
 
         starts.into_iter()
@@ -164,7 +173,10 @@ impl TextLayoutLine {
             return Some((0.0, 0.0));
         }
 
-        let start_hit = self.text.hit_position(text_range.start);
+        let start_x = self
+            .text
+            .cursor_point(text_range.start, Affinity::Upstream)
+            .x;
         // For end, find last non-whitespace char
         let mut end_byte = text_range.end;
         while end_byte > text_range.start {
@@ -175,8 +187,8 @@ impl TextLayoutLine {
                 break;
             }
         }
-        let end_hit = self.text.hit_position(end_byte);
+        let end_x = self.text.cursor_point(end_byte, Affinity::Upstream).x;
 
-        Some((start_hit.point.x as f32, end_hit.point.x as f32))
+        Some((start_x as f32, end_x as f32))
     }
 }

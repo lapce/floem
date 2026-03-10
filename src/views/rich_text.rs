@@ -1,22 +1,19 @@
 use std::{any::Any, cell::RefCell, rc::Rc};
 
 use floem_reactive::Effect;
-use floem_renderer::{
-    Renderer,
-    text::{Attrs, AttrsList, AttrsOwned},
-};
+use floem_renderer::text::{Attrs, AttrsList, AttrsOwned};
 use peniko::{Color, color::palette};
 use smallvec::{SmallVec, smallvec};
 use taffy::tree::NodeId;
 
 use crate::{IntoView, context::UpdateCx, view::LayoutNodeCx, view::View, view::ViewId};
 
-use super::label::TextLayoutData;
+use crate::text::TextLayoutState;
 
 pub struct RichText {
     id: ViewId,
     /// Layout data containing text layouts and overflow handling logic
-    layout_data: Rc<RefCell<TextLayoutData>>,
+    layout_data: Rc<RefCell<TextLayoutState>>,
     text_node: Option<NodeId>,
     layout_node: Option<NodeId>,
 }
@@ -32,13 +29,16 @@ pub fn rich_text(
         id.update_state((new_text, new_attrs));
     });
 
-    let layout_data = Rc::new(RefCell::new(TextLayoutData::new(Some(id))));
+    let layout_data = Rc::new(RefCell::new(TextLayoutState::new(Some(id))));
 
     // Initialize the layout data with the text and attrs
     {
         let mut data = layout_data.borrow_mut();
         data.set_text(&text, attrs_list, None);
-        data.set_text_overflow(crate::style::TextOverflow::Wrap);
+        data.set_text_overflow(crate::style::TextOverflow::Wrap {
+            overflow_wrap: crate::text::OverflowWrap::Normal,
+            word_break: crate::text::WordBreakStrength::Normal,
+        });
     }
 
     let mut rich_text = RichText {
@@ -63,8 +63,8 @@ impl RichText {
             })
             .unwrap();
 
-        let layout_fn = TextLayoutData::create_taffy_layout_fn(self.layout_data.clone());
-        let finalize_fn = TextLayoutData::create_finalize_fn(self.layout_data.clone());
+        let layout_fn = TextLayoutState::create_taffy_layout_fn(self.layout_data.clone());
+        let finalize_fn = TextLayoutState::create_finalize_fn(self.layout_data.clone());
         self.text_node = Some(text_node);
         self.layout_node = Some(taffy_node);
 
@@ -90,13 +90,13 @@ impl View for RichText {
         self.layout_data
             .borrow()
             .get_text_layout()
-            .map(|layout| {
+            .map(|_| {
+                let data = self.layout_data.borrow();
                 format!(
                     "RichText: {:?}",
-                    layout
-                        .lines_range()
-                        .iter()
-                        .map(|r| self.layout_data.borrow().original_text[r.clone()].to_string())
+                    crate::text::paragraph_ranges(data.text().unwrap_or_default())
+                        .map(|r| data.text().unwrap_or_default()[r].to_string())
+                        .collect::<Vec<_>>()
                 )
             })
             .unwrap_or_else(|| "RichText: <empty>".to_string())
@@ -109,7 +109,10 @@ impl View for RichText {
 
             let mut data = self.layout_data.borrow_mut();
             data.set_text(&text, attrs_list, None);
-            data.set_text_overflow(crate::style::TextOverflow::Wrap);
+            data.set_text_overflow(crate::style::TextOverflow::Wrap {
+                overflow_wrap: crate::text::OverflowWrap::Normal,
+                word_break: crate::text::WordBreakStrength::Normal,
+            });
             drop(data);
 
             self.id.request_layout();
@@ -130,7 +133,7 @@ impl View for RichText {
         self.layout_data
             .borrow()
             .with_effective_text_layout(|layout| {
-                cx.draw_text(layout, text_loc);
+                layout.draw(cx, text_loc);
             });
     }
 }

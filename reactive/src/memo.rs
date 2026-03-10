@@ -7,14 +7,14 @@ use std::{
 };
 
 use crate::{
-    effect::{observer_clean_up, EffectPriority, EffectTrait},
+    SignalGet, SignalWith,
+    effect::{EffectPriority, EffectTrait, observer_clean_up},
     id::Id,
     read::SignalTrack,
-    runtime::{Runtime, RUNTIME},
+    runtime::{RUNTIME, Runtime},
     scope::Scope,
     signal::{ReadSignal, RwSignal, WriteSignal},
     write::SignalUpdate,
-    SignalGet, SignalWith,
 };
 
 /// A memoized derived value that only recomputes when one of its tracked
@@ -254,10 +254,8 @@ impl<T: PartialEq + 'static> MemoState<T> {
         });
         RUNTIME.with(|runtime| *runtime.current_effect.borrow_mut() = prev_effect);
 
-        if changed {
-            if let Some(setter) = self.setter.borrow().as_ref() {
-                setter.set(new_value);
-            }
+        if changed && let Some(setter) = self.setter.borrow().as_ref() {
+            setter.set(new_value);
         }
 
         self.dirty.set(false);

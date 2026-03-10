@@ -1,87 +1,22 @@
 //! Text layout, shaping, and font management for Floem.
 //!
-//! This module provides the text rendering infrastructure built on
-//! [Parley](https://docs.rs/parley). The central type is [`TextLayout`], which shapes
-//! and positions text for display. Attributes such as font family, weight, and color
-//! are described with [`Attrs`] and collected into an [`AttrsList`] that maps byte ranges
-//! to styling.
-//!
-//! # Quick start
-//!
-//! ```no_run
-//! use floem_renderer::text::{Attrs, AttrsList, FontWeight, TextLayout};
-//!
-//! let attrs = Attrs::new()
-//!     .font_size(18.0)
-//!     .weight(FontWeight::BOLD);
-//! let attrs_list = AttrsList::new(attrs);
-//!
-//! let layout = TextLayout::new_with_text("Hello, Floem!", attrs_list, None);
-//! let size = layout.size();
-//! ```
+//! This module provides the renderer-facing text vocabulary built on
+//! [Parley](https://docs.rs/parley).
 //!
 //! # Re-exports
 //!
-//! [`FontStyle`] and [`FontWidth`] come from [`fontique`](https://docs.rs/fontique), and
-//! [`Alignment`] from [`parley`](https://docs.rs/parley). They are re-exported here so
-//! that downstream crates do not need to depend on those libraries directly.
+//! [`FontStyle`] and [`FontWidth`] come from [`fontique`](https://docs.rs/fontique).
 
 mod attrs;
-mod layout;
+
+use peniko::{
+    BrushRef, Fill, FontData, StyleRef,
+    kurbo::{Affine, Point},
+};
 
 pub use attrs::{Attrs, AttrsList, AttrsOwned, FamilyOwned, LineHeightValue};
 pub use fontique::{FontStyle, FontWeight, FontWidth};
-pub use layout::{HitPoint, HitPosition, TextLayout, FONT_CONTEXT};
-pub use parley::Affinity;
-pub use parley::Alignment;
-pub use parley::Cursor;
-
-// --- Font Properties ---
-
-/// Text wrapping strategy.
-///
-/// Controls how [`TextLayout`] breaks long lines when a maximum width is set
-/// via [`TextLayout::set_size`].
-///
-/// # Example
-///
-/// ```no_run
-/// use floem_renderer::text::{Attrs, AttrsList, TextLayout, Wrap};
-///
-/// let mut layout = TextLayout::new();
-/// layout.set_wrap(Wrap::WordOrGlyph);
-/// layout.set_text("A long paragraph…", AttrsList::new(Attrs::new()), None);
-/// layout.set_size(200.0, f32::MAX);
-/// ```
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
-pub enum Wrap {
-    /// No wrapping — text extends beyond the layout width.
-    None,
-    /// Break at any glyph boundary.
-    Glyph,
-    /// Break at word boundaries (default).
-    #[default]
-    Word,
-    /// Break at word boundaries, but fall back to glyph boundaries when a
-    /// single word is wider than the available width.
-    WordOrGlyph,
-}
-
-/// Line ending style.
-///
-/// Represents the newline convention of a text document.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
-pub enum LineEnding {
-    /// Unix-style line feed (`\n`).
-    #[default]
-    Lf,
-    /// Windows-style carriage return + line feed (`\r\n`).
-    CrLf,
-    /// Classic Mac-style carriage return (`\r`).
-    Cr,
-    /// No line ending.
-    None,
-}
+pub use parley::layout::Glyph;
 
 // --- Brush type for Parley ---
 
@@ -112,23 +47,96 @@ impl From<TextBrush> for peniko::Color {
     }
 }
 
+/// Variable font design-space coordinate.
+pub type NormalizedCoord = i16;
+
+/// Rendering properties shared by a glyph run.
+#[derive(Clone, Debug)]
+pub struct GlyphRunProps<'a> {
+    pub font: FontData,
+    pub font_size: f32,
+    pub hint: bool,
+    pub normalized_coords: &'a [NormalizedCoord],
+    pub style: StyleRef<'a>,
+    pub brush: BrushRef<'a>,
+    pub brush_alpha: f32,
+    pub transform: Affine,
+    pub glyph_transform: Option<Affine>,
+}
+
+impl<'a> GlyphRunProps<'a> {
+    pub fn new(font: &FontData) -> Self {
+        Self {
+            font: font.clone(),
+            font_size: 16.0,
+            hint: false,
+            normalized_coords: &[],
+            style: Fill::NonZero.into(),
+            brush: peniko::color::palette::css::BLACK.into(),
+            brush_alpha: 1.0,
+            transform: Affine::IDENTITY,
+            glyph_transform: None,
+        }
+    }
+
+    pub fn font(mut self, font: &FontData) -> Self {
+        self.font = font.clone();
+        self
+    }
+
+    pub fn font_size(mut self, font_size: f32) -> Self {
+        self.font_size = font_size;
+        self
+    }
+
+    pub fn hint(mut self, hint: bool) -> Self {
+        self.hint = hint;
+        self
+    }
+
+    pub fn normalized_coords(mut self, normalized_coords: &'a [NormalizedCoord]) -> Self {
+        self.normalized_coords = normalized_coords;
+        self
+    }
+
+    pub fn style(mut self, style: impl Into<StyleRef<'a>>) -> Self {
+        self.style = style.into();
+        self
+    }
+
+    pub fn brush(mut self, brush: impl Into<BrushRef<'a>>) -> Self {
+        self.brush = brush.into();
+        self
+    }
+
+    pub fn brush_alpha(mut self, brush_alpha: f32) -> Self {
+        self.brush_alpha = brush_alpha;
+        self
+    }
+
+    pub fn transform(mut self, transform: Affine) -> Self {
+        self.transform = transform;
+        self
+    }
+
+    pub fn glyph_transform(mut self, glyph_transform: Option<Affine>) -> Self {
+        self.glyph_transform = glyph_transform;
+        self
+    }
+}
+
+pub trait GlyphDrawer {
+    fn draw_glyphs<'a>(
+        &mut self,
+        origin: Point,
+        props: &GlyphRunProps<'a>,
+        glyphs: impl Iterator<Item = Glyph> + 'a,
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // -- Wrap --
-
-    #[test]
-    fn wrap_default_is_word() {
-        assert_eq!(Wrap::default(), Wrap::Word);
-    }
-
-    // -- LineEnding --
-
-    #[test]
-    fn line_ending_default_is_lf() {
-        assert_eq!(LineEnding::default(), LineEnding::Lf);
-    }
 
     // -- TextBrush --
 
@@ -137,5 +145,16 @@ mod tests {
         let b = TextBrush::default();
         let c: peniko::Color = b.into();
         assert_eq!(c, peniko::Color::from_rgba8(0, 0, 0, 255));
+    }
+
+    #[test]
+    fn text_glyphs_props_default_is_usable() {
+        let font = FontData::new(peniko::Blob::new(std::sync::Arc::new([])), 0);
+        let props = GlyphRunProps::new(&font);
+        assert_eq!(props.font, font);
+        assert_eq!(props.font_size, 16.0);
+        assert_eq!(props.brush_alpha, 1.0);
+        assert_eq!(props.transform, Affine::IDENTITY);
+        assert!(props.normalized_coords.is_empty());
     }
 }

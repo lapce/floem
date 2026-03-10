@@ -49,17 +49,15 @@
 //!
 use std::sync::Arc;
 
-use crate::kurbo::Point;
 use floem_renderer::Img;
 use floem_renderer::gpu_resources::GpuResources;
-use floem_renderer::text::TextLayout;
 use floem_tiny_skia_renderer::TinySkiaRenderer;
 #[cfg(feature = "vello")]
 use floem_vello_renderer::VelloRenderer;
 #[cfg(not(feature = "vello"))]
 use floem_vger_renderer::VgerRenderer;
 use peniko::BrushRef;
-use peniko::kurbo::{Affine, Rect, Shape, Size, Stroke};
+use peniko::kurbo::{Affine, Point, Rect, Shape, Size, Stroke};
 use winit::window::Window;
 
 #[allow(clippy::large_enum_variant)]
@@ -349,23 +347,6 @@ impl floem_renderer::Renderer for Renderer {
         }
     }
 
-    fn draw_text(&mut self, layout: &TextLayout, pos: impl Into<Point>) {
-        match self {
-            #[cfg(feature = "vello")]
-            Renderer::Vello(v) => {
-                v.draw_text(layout, pos);
-            }
-            #[cfg(not(feature = "vello"))]
-            Renderer::Vger(v) => {
-                v.draw_text(layout, pos);
-            }
-            Renderer::TinySkia(v) => {
-                v.draw_text(layout, pos);
-            }
-            Renderer::Uninitialized { .. } => {}
-        }
-    }
-
     fn draw_img(&mut self, img: Img<'_>, rect: Rect) {
         match self {
             #[cfg(feature = "vello")]
@@ -379,6 +360,22 @@ impl floem_renderer::Renderer for Renderer {
             Renderer::TinySkia(v) => {
                 v.draw_img(img, rect);
             }
+            Renderer::Uninitialized { .. } => {}
+        }
+    }
+
+    fn draw_glyphs<'a>(
+        &mut self,
+        origin: Point,
+        props: &floem_renderer::text::GlyphRunProps<'a>,
+        glyphs: impl Iterator<Item = floem_renderer::text::Glyph> + 'a,
+    ) {
+        match self {
+            #[cfg(feature = "vello")]
+            Renderer::Vello(v) => v.draw_glyphs(origin, props, glyphs),
+            #[cfg(not(feature = "vello"))]
+            Renderer::Vger(v) => v.draw_glyphs(origin, props, glyphs),
+            Renderer::TinySkia(v) => v.draw_glyphs(origin, props, glyphs),
             Renderer::Uninitialized { .. } => {}
         }
     }

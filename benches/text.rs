@@ -17,10 +17,11 @@ use std::hint::black_box;
 use std::sync::Once;
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use floem_renderer::text::{
-    Attrs, AttrsList, FONT_CONTEXT, FamilyOwned, FontStyle, FontWeight, TextLayout,
+use floem::text::{
+    Affinity, Attrs, AttrsList, FONT_CONTEXT, FamilyOwned, FontStyle, FontWeight, TextLayout,
 };
 use peniko::Color;
+use peniko::kurbo::Point;
 
 // =============================================================================
 // Font setup — bundled DejaVu Serif for reproducibility
@@ -280,24 +281,24 @@ fn bench_hit_testing(c: &mut Criterion) {
 
     // Forward: pixel → cursor
     group.bench_function("hit_start", |b| {
-        b.iter(|| black_box(layout.hit(0.0, 0.0)));
+        b.iter(|| black_box(layout.hit_test(Point::new(0.0, 0.0))));
     });
     group.bench_function("hit_middle", |b| {
-        b.iter(|| black_box(layout.hit(size.width as f32 / 2.0, size.height as f32 / 2.0)));
+        b.iter(|| black_box(layout.hit_test(Point::new(size.width / 2.0, size.height / 2.0))));
     });
     group.bench_function("hit_end", |b| {
-        b.iter(|| black_box(layout.hit(size.width as f32, size.height as f32)));
+        b.iter(|| black_box(layout.hit_test(Point::new(size.width, size.height))));
     });
 
     // Reverse: cursor → pixel
     group.bench_function("hit_position_start", |b| {
-        b.iter(|| black_box(layout.hit_position(0)));
+        b.iter(|| black_box(layout.cursor_point(0, Affinity::Upstream)));
     });
     group.bench_function("hit_position_middle", |b| {
-        b.iter(|| black_box(layout.hit_position(text_len / 2)));
+        b.iter(|| black_box(layout.cursor_point(text_len / 2, Affinity::Upstream)));
     });
     group.bench_function("hit_position_end", |b| {
-        b.iter(|| black_box(layout.hit_position(text_len)));
+        b.iter(|| black_box(layout.cursor_point(text_len, Affinity::Upstream)));
     });
 
     // Hit testing on BiDi text
@@ -305,10 +306,11 @@ fn bench_hit_testing(c: &mut Criterion) {
     bidi_layout.set_text(MIXED_BIDI, default_attrs(), None);
     bidi_layout.set_size(400.0, f32::MAX);
     let bidi_size = bidi_layout.size();
-
     group.bench_function("hit_middle_bidi", |b| {
         b.iter(|| {
-            black_box(bidi_layout.hit(bidi_size.width as f32 / 2.0, bidi_size.height as f32 / 2.0))
+            black_box(
+                bidi_layout.hit_test(Point::new(bidi_size.width / 2.0, bidi_size.height / 2.0)),
+            )
         });
     });
 
@@ -317,7 +319,9 @@ fn bench_hit_testing(c: &mut Criterion) {
         let mid_x = size.width as f32 / 2.0;
         let mid_y = size.height as f32 / 2.0;
         b.iter(|| {
-            let cursor = layout.hit(mid_x, mid_y).unwrap();
+            let cursor = layout
+                .hit_test(Point::new(mid_x as f64, mid_y as f64))
+                .unwrap();
             black_box(layout.cursor_to_byte_index(&cursor));
         });
     });
@@ -327,12 +331,15 @@ fn bench_hit_testing(c: &mut Criterion) {
         let mid_x = size.width as f32 / 2.0;
         let mid_y = size.height as f32 / 2.0;
         b.iter(|| {
-            let c1 = layout.hit(0.0, 0.0).unwrap();
-            let c2 = layout.hit(mid_x, mid_y).unwrap();
+            let c1 = layout.hit_test(Point::new(0.0, 0.0)).unwrap();
+            let c2 = layout
+                .hit_test(Point::new(mid_x as f64, mid_y as f64))
+                .unwrap();
             let start = layout.cursor_to_byte_index(&c1);
             let end = layout.cursor_to_byte_index(&c2);
+            let selection = layout.selection_from_byte_range(start, end);
             let mut count = 0u32;
-            layout.selection_geometry_with(start, end, |_x0, _y0, _x1, _y1| count += 1);
+            layout.selection_geometry_with(&selection, |_x0, _y0, _x1, _y1| count += 1);
             black_box(count);
         });
     });
@@ -356,8 +363,9 @@ fn bench_selection(c: &mut Criterion) {
     // Small selection: single word (~20 bytes)
     group.bench_function("select_word", |b| {
         b.iter(|| {
+            let selection = layout.selection_from_byte_range(10, 30);
             let mut count = 0u32;
-            layout.selection_geometry_with(10, 30, |_x0, _y0, _x1, _y1| count += 1);
+            layout.selection_geometry_with(&selection, |_x0, _y0, _x1, _y1| count += 1);
             black_box(count);
         });
     });
@@ -365,8 +373,9 @@ fn bench_selection(c: &mut Criterion) {
     // Cross-line selection: ~half the text
     group.bench_function("select_half", |b| {
         b.iter(|| {
+            let selection = layout.selection_from_byte_range(0, len / 2);
             let mut count = 0u32;
-            layout.selection_geometry_with(0, len / 2, |_x0, _y0, _x1, _y1| count += 1);
+            layout.selection_geometry_with(&selection, |_x0, _y0, _x1, _y1| count += 1);
             black_box(count);
         });
     });
@@ -374,22 +383,24 @@ fn bench_selection(c: &mut Criterion) {
     // Full selection: entire text
     group.bench_function("select_full", |b| {
         b.iter(|| {
+            let selection = layout.selection_from_byte_range(0, len);
             let mut count = 0u32;
-            layout.selection_geometry_with(0, len, |_x0, _y0, _x1, _y1| count += 1);
+            layout.selection_geometry_with(&selection, |_x0, _y0, _x1, _y1| count += 1);
             black_box(count);
         });
     });
 
     // Direct cursor-to-selection (no byte-index round-trip).
     let size = layout.size();
-    let c_start = layout.hit(0.0, 0.0).unwrap();
+    let c_start = layout.hit_test(Point::new(0.0, 0.0)).unwrap();
     let c_end = layout
-        .hit(size.width as f32, size.height as f32 / 2.0)
+        .hit_test(Point::new(size.width, size.height / 2.0))
         .unwrap();
     group.bench_function("select_from_cursors", |b| {
         b.iter(|| {
+            let selection = layout.selection(c_start, c_end);
             let mut count = 0u32;
-            layout.selection_for_cursors(&c_start, &c_end, |_x0, _y0, _x1, _y1| count += 1);
+            layout.selection_geometry_with(&selection, |_x0, _y0, _x1, _y1| count += 1);
             black_box(count);
         });
     });

@@ -20,14 +20,12 @@
 //! without adding them as direct dependencies.
 
 pub mod text;
-
 use peniko::{
-    kurbo::{Affine, Point, Rect, Shape, Stroke},
     BlendMode, BrushRef,
+    kurbo::{Affine, Point, Rect, Shape, Stroke},
 };
 pub use resvg::tiny_skia;
 pub use resvg::usvg;
-use text::TextLayout;
 
 pub mod gpu_resources;
 
@@ -94,7 +92,7 @@ pub struct Img<'a> {
 /// renderer.set_transform(..);
 /// renderer.fill(..);          // background
 /// renderer.clip(..);          // restrict drawing area
-/// renderer.draw_text(..);     // labels, editors
+/// renderer.draw_text_lines(..); // labels, editors
 /// renderer.draw_svg(..);      // icons
 /// renderer.draw_img(..);      // photos
 /// renderer.stroke(..);        // borders
@@ -181,11 +179,13 @@ pub trait Renderer {
     /// blend mode and alpha that were specified when the layer was pushed.
     fn pop_layer(&mut self);
 
-    /// Draw a [`TextLayout`] at the given position.
-    ///
-    /// The `pos` parameter specifies the upper-left corner of the layout object
-    /// (even for right-to-left text).
-    fn draw_text(&mut self, layout: &TextLayout, pos: impl Into<Point>);
+    /// Draw a single glyph run.
+    fn draw_glyphs<'a>(
+        &mut self,
+        origin: Point,
+        props: &text::GlyphRunProps<'a>,
+        glyphs: impl Iterator<Item = text::Glyph> + 'a,
+    );
 
     /// Draw an SVG image inside `rect`.
     ///

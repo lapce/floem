@@ -97,6 +97,7 @@ pub(crate) struct WindowHandle {
     pub(crate) gpu_resources: Option<GpuResources>,
     last_presented_at: Instant,
     is_occluded: bool,
+    live_resize_until: Option<Instant>,
 }
 
 impl Drop for WindowHandle {
@@ -108,6 +109,8 @@ impl Drop for WindowHandle {
 }
 
 impl WindowHandle {
+    const LIVE_RESIZE_IDLE_TIMEOUT: Duration = Duration::from_millis(120);
+
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         window: Box<dyn winit::window::Window>,
@@ -218,6 +221,7 @@ impl WindowHandle {
             gpu_resources,
             last_presented_at: Instant::now(),
             is_occluded: false,
+            live_resize_until: None,
         };
         if paint_state_initialized {
             window_handle.init_renderer();
@@ -321,6 +325,7 @@ impl WindowHandle {
             gpu_resources: None,
             last_presented_at: Instant::now(),
             is_occluded: false,
+            live_resize_until: None,
         };
 
         window_handle
@@ -476,6 +481,15 @@ impl WindowHandle {
         self.process_update_no_paint();
         self.window_state.request_paint = true;
         self.schedule_repaint();
+    }
+
+    pub(crate) fn refresh_live_resize(&mut self) {
+        self.live_resize_until = Some(Instant::now() + Self::LIVE_RESIZE_IDLE_TIMEOUT);
+    }
+
+    fn live_resize_active(&self) -> bool {
+        self.live_resize_until
+            .is_some_and(|deadline| Instant::now() < deadline)
     }
 
     pub(crate) fn position(&mut self, point: Point) {
@@ -746,6 +760,14 @@ impl WindowHandle {
             self.window_state.request_paint = false;
             self.paint();
             self.last_presented_at = Instant::now();
+        }
+
+        if self.live_resize_active() {
+            self.window_state.schedule_paint(self.id);
+            self.window_state.request_paint = true;
+            self.schedule_repaint();
+        } else {
+            self.live_resize_until = None;
         }
 
         // Keep animation control flow in sync with scheduled updates.

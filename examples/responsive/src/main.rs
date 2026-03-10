@@ -3,9 +3,8 @@ use floem::{
     prelude::*,
     reactive::{SignalGet, SignalUpdate},
     responsive::{range, ScreenSize},
-    style::TextOverflow,
+    text::TextOverflowChanged,
     unit::UnitExt,
-    views::TextOverflowChanged,
 };
 
 fn app_view() -> impl IntoView {
@@ -48,7 +47,7 @@ fn app_view() -> impl IntoView {
                     .padding(10)
                     .font_size(20.0)
                     .max_width(800.)
-                    .text_overflow(TextOverflow::Ellipsis)
+                    .text_ellipsis()
             }),
             Stack::horizontal((
                 Label::new("The text fits in the available width?:"),

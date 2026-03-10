@@ -5,8 +5,8 @@ use std::{
     collections::{HashMap, HashSet},
     rc::Rc,
     sync::{
-        atomic::{AtomicBool, Ordering},
         OnceLock,
+        atomic::{AtomicBool, Ordering},
     },
     thread::{self, ThreadId},
 };
@@ -14,7 +14,7 @@ use std::{
 use smallvec::SmallVec;
 
 use crate::{
-    effect::{run_effect, EffectPriority, EffectTrait},
+    effect::{EffectPriority, EffectTrait, run_effect},
     id::Id,
     signal::SignalState,
     sync_runtime::SYNC_RUNTIME,

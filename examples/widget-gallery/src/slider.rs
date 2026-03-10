@@ -10,7 +10,7 @@ pub fn slider_view() -> impl IntoView {
         |val| val.0.to_string(),
     );
     form::form((
-        form_item("Input Control:", text_input(input)),
+        form_item("Input Control:", TextInput::new(input)),
         form_item(
             "Default Slider:",
             Stack::new((

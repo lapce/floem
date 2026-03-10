@@ -7,11 +7,11 @@ use parking_lot::Mutex;
 use crate::{
     create_effect, create_updater,
     id::Id,
-    memo::{create_memo, Memo},
-    runtime::{Runtime, RUNTIME},
+    memo::{Memo, create_memo},
+    runtime::{RUNTIME, Runtime},
     signal::{ReadSignal, RwSignal, SignalState, SignalValue, WriteSignal},
     storage::{SyncStorage, UnsyncStorage},
-    trigger::{create_trigger, Trigger},
+    trigger::{Trigger, create_trigger},
 };
 
 /// You can manually control Signal's lifetime by using Scope.
@@ -81,10 +81,10 @@ impl Scope {
     pub fn set_parent(&self, new_parent: Scope) {
         RUNTIME.with(|runtime| {
             // Remove from old parent's children set (if any)
-            if let Some(old_parent) = runtime.parents.borrow_mut().remove(&self.0) {
-                if let Some(children) = runtime.children.borrow_mut().get_mut(&old_parent) {
-                    children.remove(&self.0);
-                }
+            if let Some(old_parent) = runtime.parents.borrow_mut().remove(&self.0)
+                && let Some(children) = runtime.children.borrow_mut().get_mut(&old_parent)
+            {
+                children.remove(&self.0);
             }
 
             // Add to new parent's children set
@@ -285,12 +285,15 @@ impl Scope {
 
     /// Wraps a closure so it runs under a new child scope of this scope.
     #[cfg_attr(debug_assertions, track_caller)]
-    pub fn enter_child<T, U>(&self, f: impl Fn(T) -> U + 'static) -> impl Fn(T) -> (U, Scope)
+    pub fn enter_child<T, U>(
+        self,
+        f: impl Fn(T) -> U + 'static,
+    ) -> impl Fn(T) -> (U, Scope) + 'static
     where
         T: 'static,
     {
         Runtime::assert_ui_thread();
-        let parent = *self;
+        let parent = self;
         move |t| {
             let scope = parent.create_child();
             let prev_scope = RUNTIME.with(|runtime| {
@@ -358,5 +361,22 @@ pub fn as_child_of_current_scope<T, U>(f: impl Fn(T) -> U + 'static) -> impl Fn(
 where
     T: 'static,
 {
-    Scope::current().enter_child(f)
+    let parent = Scope::current();
+    move |t| {
+        let scope = parent.create_child();
+        let prev_scope = RUNTIME.with(|runtime| {
+            let mut current_scope = runtime.current_scope.borrow_mut();
+            let prev_scope = *current_scope;
+            *current_scope = scope.0;
+            prev_scope
+        });
+
+        let result = f(t);
+
+        RUNTIME.with(|runtime| {
+            *runtime.current_scope.borrow_mut() = prev_scope;
+        });
+
+        (result, scope)
+    }
 }

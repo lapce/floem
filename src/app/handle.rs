@@ -302,6 +302,7 @@ impl ApplicationHandle {
         match event {
             WindowEvent::ActivationTokenDone { .. } => {}
             WindowEvent::SurfaceResized(size) => {
+                window_handle.refresh_live_resize();
                 let size: LogicalSize<f64> = size.to_logical(window_handle.window_state.os_scale);
                 let size = Size::new(size.width, size.height);
                 window_handle.size(size);

@@ -177,7 +177,7 @@ impl View for EditorGutterView {
                     y + (line_height - height) / 2.0 - viewport.y0,
                 );
 
-                cx.draw_text(&text_layout, pos);
+                text_layout.draw(cx, pos);
             }
         });
     }

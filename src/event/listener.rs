@@ -790,6 +790,11 @@ mod inner {
         /// standard DOM events. **By default, event listeners using `on_event` only listen to
         /// target and bubble phases.**
         ///
+        /// The event payload is a `bool` indicating whether the focus change was caused by
+        /// **keyboard navigation**. This is typically `true` for focus movement initiated by
+        /// keys such as `Tab`, `Shift+Tab`, or directional navigation, and `false` when focus
+        /// was triggered by pointer interaction or programmatic focus.
+        ///
         /// # Filtering by Phase
         ///
         /// To only respond when this specific element gains focus (not descendants):
@@ -831,10 +836,10 @@ mod inner {
         /// );
         /// ```
         #[doc(alias = "GotFocus")]
-        pub FocusGained: (),
+        pub FocusGained: bool,
         |event| {
-            if let Event::Focus(FocusEvent::Gained) = event {
-                return Some(&() as &dyn Any);
+            if let Event::Focus(FocusEvent::Gained(keyboard)) = event {
+                return Some(keyboard as &dyn Any);
             }
             None
         }

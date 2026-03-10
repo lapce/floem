@@ -2,8 +2,8 @@ use std::{
     borrow::Cow,
     ops::Range,
     sync::{
-        atomic::{self, AtomicU64},
         Arc,
+        atomic::{self, AtomicU64},
     },
 };
 
@@ -43,33 +43,33 @@ pub fn expand_diff_lines(
     is_right: bool,
 ) {
     for diff_line in diff_lines.iter_mut() {
-        if let DiffLines::Both(info) = diff_line {
-            if (is_right && info.right.start == line) || (!is_right && info.left.start == line) {
-                match expand {
-                    DiffExpand::All => {
-                        info.skip = None;
-                    }
-                    DiffExpand::Up(n) => {
-                        if let Some(skip) = &mut info.skip {
-                            if n >= skip.len() {
-                                info.skip = None;
-                            } else {
-                                skip.start += n;
-                            }
-                        }
-                    }
-                    DiffExpand::Down(n) => {
-                        if let Some(skip) = &mut info.skip {
-                            if n >= skip.len() {
-                                info.skip = None;
-                            } else {
-                                skip.end -= n;
-                            }
+        if let DiffLines::Both(info) = diff_line
+            && ((is_right && info.right.start == line) || (!is_right && info.left.start == line))
+        {
+            match expand {
+                DiffExpand::All => {
+                    info.skip = None;
+                }
+                DiffExpand::Up(n) => {
+                    if let Some(skip) = &mut info.skip {
+                        if n >= skip.len() {
+                            info.skip = None;
+                        } else {
+                            skip.start += n;
                         }
                     }
                 }
-                break;
+                DiffExpand::Down(n) => {
+                    if let Some(skip) = &mut info.skip {
+                        if n >= skip.len() {
+                            info.skip = None;
+                        } else {
+                            skip.end -= n;
+                        }
+                    }
+                }
             }
+            break;
         }
     }
 }
@@ -214,25 +214,25 @@ pub fn rope_diff(
             skip: None,
         }));
     }
-    if let Some(context_lines) = context_lines {
-        if !changes.is_empty() {
-            let changes_last = changes.len() - 1;
-            for (i, change) in changes.iter_mut().enumerate() {
-                if atomic_rev.load(atomic::Ordering::Acquire) != rev {
-                    return None;
-                }
-                if let DiffLines::Both(info) = change {
-                    if i == 0 || i == changes_last {
-                        if info.right.len() > context_lines {
-                            if i == 0 {
-                                info.skip = Some(0..info.right.len() - context_lines);
-                            } else {
-                                info.skip = Some(context_lines..info.right.len());
-                            }
+    if let Some(context_lines) = context_lines
+        && !changes.is_empty()
+    {
+        let changes_last = changes.len() - 1;
+        for (i, change) in changes.iter_mut().enumerate() {
+            if atomic_rev.load(atomic::Ordering::Acquire) != rev {
+                return None;
+            }
+            if let DiffLines::Both(info) = change {
+                if i == 0 || i == changes_last {
+                    if info.right.len() > context_lines {
+                        if i == 0 {
+                            info.skip = Some(0..info.right.len() - context_lines);
+                        } else {
+                            info.skip = Some(context_lines..info.right.len());
                         }
-                    } else if info.right.len() > context_lines * 2 {
-                        info.skip = Some(context_lines..info.right.len() - context_lines);
                     }
+                } else if info.right.len() > context_lines * 2 {
+                    info.skip = Some(context_lines..info.right.len() - context_lines);
                 }
             }
         }

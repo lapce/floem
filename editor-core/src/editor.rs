@@ -4,9 +4,9 @@ use itertools::Itertools;
 use lapce_xi_rope::{DeltaElement, Rope, RopeDelta};
 
 use crate::{
-    buffer::{rope_text::RopeText, Buffer, InvalLines},
+    buffer::{Buffer, InvalLines, rope_text::RopeText},
     command::EditCommand,
-    cursor::{get_first_selection_after, Cursor, CursorAffinity, CursorMode},
+    cursor::{Cursor, CursorAffinity, CursorMode, get_first_selection_after},
     mode::{Mode, MotionMode, VisualMode},
     register::{Clipboard, Register, RegisterData, RegisterKind},
     selection::{InsertDrift, SelRegion, Selection},
@@ -14,7 +14,7 @@ use crate::{
         has_unmatched_pair, matching_char, matching_pair_direction, str_is_pair_left,
         str_matching_pair,
     },
-    word::{get_char_property, CharClassification},
+    word::{CharClassification, get_char_property},
 };
 
 fn format_start_end(
@@ -386,17 +386,14 @@ impl Action {
 
             edits.push((selection, new_line_content));
 
-            if let Some(c) = first_half.chars().rev().find(|&c| c != ' ') {
-                if let Some(true) = matching_pair_direction(c) {
-                    if let Some(c) = matching_char(c) {
-                        if second_half_trim.starts_with(c) {
-                            let selection =
-                                Selection::imaginary_caret((region.max() as i32 + shift) as usize);
-                            let content = format!("{line_ending}{line_indent}",);
-                            extra_edits.push((selection, content));
-                        }
-                    }
-                }
+            if let Some(c) = first_half.chars().rev().find(|&c| c != ' ')
+                && let Some(true) = matching_pair_direction(c)
+                && let Some(c) = matching_char(c)
+                && second_half_trim.starts_with(c)
+            {
+                let selection = Selection::imaginary_caret((region.max() as i32 + shift) as usize);
+                let content = format!("{line_ending}{line_indent}",);
+                extra_edits.push((selection, content));
             }
         }
 
@@ -1153,11 +1150,7 @@ impl Action {
                                     let (_, col) = buffer.offset_to_line_col(region.start);
                                     let count = if region.start <= nonblank && col > 0 {
                                         let r = col % indent.len();
-                                        if r == 0 {
-                                            indent.len()
-                                        } else {
-                                            r
-                                        }
+                                        if r == 0 { indent.len() } else { r }
                                     } else {
                                         1
                                     };
@@ -1606,7 +1599,7 @@ enum DuplicateDirection {
 #[cfg(test)]
 mod test {
     use crate::{
-        buffer::{rope_text::RopeText, Buffer},
+        buffer::{Buffer, rope_text::RopeText},
         cursor::{Cursor, CursorAffinity, CursorMode},
         editor::{Action, DuplicateDirection},
         selection::{SelRegion, Selection},

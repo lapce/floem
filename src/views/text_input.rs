@@ -1,12 +1,19 @@
 #![deny(missing_docs)]
-use crate::action::{TimerToken, exec_after, set_ime_allowed, set_ime_cursor_area};
-use crate::event::{EventPropagation, ImeEvent, Phase, listener};
-use crate::reactive::{Effect, RwSignal};
-use crate::style::{FontFamily, FontProps, SelectionStyle, Style, StyleClass, TextAlignProp};
-use crate::style::{FontStyle, FontWeight, TextColor};
-use crate::view::LayoutNodeCx;
-use crate::{Clipboard, ViewId, WindowState, prop_extractor, style_class};
-use floem_reactive::{SignalGet, SignalUpdate, SignalWith};
+use crate::{
+    Clipboard, ViewId, WindowState,
+    action::{TimerToken, exec_after, set_ime_allowed, set_ime_cursor_area},
+    custom_event,
+    event::{EventPropagation, FocusEvent, ImeEvent, Phase, RouteKind},
+    prop_extractor,
+    reactive::RwSignal,
+    style::{
+        FontFamily, FontProps, FontStyle, FontWeight, SelectionStyle, Style, StyleClass,
+        TextAlignProp, TextColor,
+    },
+    style_class,
+    view::LayoutNodeCx,
+};
+use floem_reactive::{Effect, SignalGet, SignalTrack, SignalUpdate, SignalWith};
 
 use floem_renderer::Renderer;
 use taffy::Dimension;
@@ -32,7 +39,7 @@ pub struct Preedit {
 
 use crate::{
     style::TextOverflow,
-    text::{Attrs, AttrsList, FamilyOwned},
+    text::{Affinity, Attrs, AttrsList, FamilyOwned, TextLayoutState, TextSelection},
 };
 
 use peniko::Brush;
@@ -44,7 +51,7 @@ use crate::{
     event::Event,
 };
 
-use super::{Decorators, label::TextLayoutData};
+use super::Decorators;
 
 style_class!(
     /// The style class that is applied to all `TextInput` views.
@@ -97,13 +104,31 @@ impl BufferState {
     }
 }
 
+/// Add action that will run on `Enter` key press.
+///
+/// Useful for submitting forms using a keyboard.
+/// ```
+/// # use floem::views::{Decorators, TextInput, TextInputEnter};
+/// # use floem_reactive::RwSignal;
+/// # use floem_reactive::SignalGet;
+/// let form = RwSignal::new(String::new());
+/// TextInput::new(form)
+///     .placeholder("fill the form")
+///     .on_event_stop(TextInputEnter::listener(), move |_, _| {
+///         let _ = format!("Form {} submitted!", form.get_untracked());
+///     });
+/// ```
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct TextInputEnter;
+
+custom_event!(TextInputEnter);
+
 /// Text Input View.
 pub struct TextInput {
     id: ViewId,
     buffer: BufferState,
     /// Optional text shown when the text input buffer is empty.
     placeholder_text: Option<String>,
-    on_enter: Option<Box<dyn Fn()>>,
     placeholder_style: PlaceholderStyle,
     selection_style: SelectionStyle,
     preedit: Option<Preedit>,
@@ -112,12 +137,10 @@ pub struct TextInput {
     // This can be retrieved from the glyph, but we store it for efficiency.
     cursor_x: f64,
     /// Layout data containing text layouts and overflow handling logic
-    layout_data: Rc<RefCell<TextLayoutData>>,
+    layout_data: Rc<RefCell<TextLayoutState>>,
     /// Horizontal scroll offset for text that overflows the visible area
     scroll_offset: f64,
-    selection: Option<Range<usize>>,
-    // Approx max size of a glyph, given the current font weight & size.
-    glyph_max_size: Size,
+    selection: Option<TextSelection>,
     style: Extractor,
     font: FontProps,
     cursor_width: f64, // TODO: make this configurable
@@ -157,10 +180,11 @@ pub enum TextDirection {
 /// # use floem::prelude::palette::css;
 /// # use floem::text::FontWeight;
 /// # use floem::style::SelectionCornerRadius;
+/// # use floem::views::TextInput;
 /// // Create empty `String` as a text buffer in the read-write signal
 /// let text = RwSignal::new(String::new());
 /// // Create simple text imput from it
-/// let simple = text_input(text)
+/// let simple = TextInput::new(text)
 ///     // Optional placeholder text
 ///     .placeholder("Placeholder text")
 ///     // Width of the text widget
@@ -171,7 +195,7 @@ pub enum TextDirection {
 ///      );
 ///
 /// // Stylized text example:
-/// let stylized = text_input(text)
+/// let stylized = TextInput::new(text)
 ///     .placeholder("Placeholder text")
 ///     .style(|s| s
 ///         .border(1.5)
@@ -203,59 +227,9 @@ pub enum TextDirection {
 /// The view is reactive and will track updates on buffer signal.
 /// ### Info
 /// For more advanced editing see [TextEditor](super::text_editor::TextEditor).
+#[deprecated(note = "use `TextInput::new(buffer)` instead")]
 pub fn text_input(buffer: RwSignal<String>) -> TextInput {
-    let id = ViewId::new();
-    let is_focused = RwSignal::new(false);
-
-    {
-        Effect::new(move |_| {
-            // subscribe to changes without cloning string
-            buffer.with(|_| {});
-            id.update_state(is_focused.get());
-        });
-    }
-
-    let mut text_input = TextInput {
-        id,
-        cursor_glyph_idx: 0,
-        placeholder_text: None,
-        placeholder_style: Default::default(),
-        selection_style: Default::default(),
-        preedit: None,
-        buffer: BufferState {
-            buffer,
-            last_buffer: buffer.get_untracked(),
-        },
-        layout_data: Rc::new(RefCell::new(TextLayoutData::new(Some(id)))),
-        style: Default::default(),
-        font: FontProps::default(),
-        cursor_x: 0.0,
-        selection: None,
-        glyph_max_size: Size::ZERO,
-        scroll_offset: 0.0,
-        cursor_width: 1.5,
-        is_focused: false,
-        last_pointer_down: Point::ZERO,
-        last_cursor_action_on: Instant::now(),
-        on_enter: None,
-        last_ime_cursor_area: None,
-        text_node: None,
-        layout_node: None,
-        cursor_blink_timer: TimerToken::INVALID,
-    };
-
-    text_input.update_text_layout();
-    text_input.set_taffy_layout();
-    text_input
-        .on_event_stop(listener::FocusGained, move |_, _| {
-            is_focused.set(true);
-            set_ime_allowed(true);
-        })
-        .on_event_stop(listener::FocusLost, move |_, _| {
-            is_focused.set(false);
-            set_ime_allowed(false);
-        })
-        .class(TextInputClass)
+    TextInput::new(buffer)
 }
 
 pub(crate) enum TextCommand {
@@ -311,12 +285,53 @@ const DEFAULT_FONT_SIZE: f32 = 14.0;
 const CURSOR_BLINK_INTERVAL_MS: u64 = 500;
 
 impl TextInput {
+    /// Creates a [TextInput] view. This can be used for basic text input.
+    pub fn new(buffer: RwSignal<String>) -> Self {
+        let id = ViewId::new();
+
+        Effect::new(move |_| {
+            buffer.track();
+            id.update_state(());
+        });
+
+        let mut text_input = Self {
+            id,
+            cursor_glyph_idx: 0,
+            placeholder_text: None,
+            placeholder_style: Default::default(),
+            selection_style: Default::default(),
+            preedit: None,
+            buffer: BufferState {
+                buffer,
+                last_buffer: buffer.get_untracked(),
+            },
+            layout_data: Rc::new(RefCell::new(TextLayoutState::new(Some(id)))),
+            style: Default::default(),
+            font: FontProps::default(),
+            cursor_x: 0.0,
+            selection: None,
+            scroll_offset: 0.0,
+            cursor_width: 1.5,
+            is_focused: false,
+            last_pointer_down: Point::ZERO,
+            last_cursor_action_on: Instant::now(),
+            last_ime_cursor_area: None,
+            text_node: None,
+            layout_node: None,
+            cursor_blink_timer: TimerToken::INVALID,
+        };
+
+        text_input.update_text_layout();
+        text_input.set_taffy_layout();
+        text_input.class(TextInputClass)
+    }
+
     /// Add placeholder text visible when buffer is empty.
     /// ```
-    /// # use floem::views::text_input;
+    /// # use floem::views::TextInput;
     /// # use floem_reactive::RwSignal;
     /// let text = RwSignal::new(String::new());
-    /// let simple = text_input(text)
+    /// let simple = TextInput::new(text)
     ///     // Optional placeholder text
     ///     .placeholder("Placeholder text");
     /// ```
@@ -327,24 +342,10 @@ impl TextInput {
         self
     }
 
-    /// Add action that will run on `Enter` key press.
-    ///
-    /// Useful for submitting forms using a keyboard.
-    /// ```
-    /// # use floem::views::text_input;
-    /// # use floem_reactive::RwSignal;
-    /// # use floem_reactive::SignalGet;
-    /// let form = RwSignal::new(String::new());
-    /// text_input(form)
-    ///     .placeholder("fill the form")
-    ///     .on_enter(move || { format!("Form {} submitted!", form.get_untracked()); });
-    /// ``````
-    /// ### Reactivity
-    /// This method is not reactive, but will always run provided function
-    /// when pressed `Enter`.
-    pub fn on_enter(mut self, action: impl Fn() + 'static) -> Self {
-        self.on_enter = Some(Box::new(action));
-        self
+    #[deprecated(note = "use `on_event_stop(TextInputEnter::listener())` directly")]
+    /// Add an event listener to run when the enter key is pressed.
+    pub fn on_enter(self, action: impl Fn() + 'static) -> Self {
+        self.on_event_stop(TextInputEnter::listener(), move |_, _| action())
     }
 
     fn set_taffy_layout(&mut self) {
@@ -366,8 +367,8 @@ impl TextInput {
             })
             .unwrap();
 
-        let layout_fn = TextLayoutData::create_taffy_layout_fn(self.layout_data.clone());
-        let finalize_fn = TextLayoutData::create_finalize_fn(self.layout_data.clone());
+        let layout_fn = TextLayoutState::create_taffy_layout_fn(self.layout_data.clone());
+        let finalize_fn = TextLayoutState::create_finalize_fn(self.layout_data.clone());
 
         self.text_node = Some(text_node);
         self.layout_node = Some(taffy_node);
@@ -503,24 +504,23 @@ impl TextInput {
     }
 
     fn handle_double_click(&mut self, pos_x: f64) {
-        let clicked_glyph_idx = self.get_box_position(pos_x);
-
-        self.buffer.with_untracked(|buff| {
-            let selection = get_dbl_click_selection(clicked_glyph_idx, buff);
-            if selection.start != selection.end {
-                self.cursor_glyph_idx = selection.end;
-                self.selection = Some(selection);
-            }
-        })
+        let clicked_glyph_idx = self.hit_byte_index(pos_x);
+        let range = self
+            .buffer
+            .with_untracked(|buff| get_dbl_click_selection(clicked_glyph_idx, buff));
+        if range.start != range.end {
+            self.cursor_glyph_idx = range.end;
+            self.selection = self.selection_from_byte_positions(range.start, range.end);
+        }
     }
 
     fn handle_triple_click(&mut self) {
         self.select_all();
     }
 
-    fn get_box_position(&self, pos_x: f64) -> usize {
+    fn hit_cursor(&self, pos_x: f64) -> Option<crate::text::Cursor> {
         if self.layout_node.is_none() || self.text_node.is_none() {
-            return 0;
+            return None;
         }
 
         let text_loc = self.get_text_origin();
@@ -528,37 +528,50 @@ impl TextInput {
         self.layout_data
             .borrow()
             .with_effective_text_layout(|layout| {
-                layout
-                    .hit_point(Point::new(pos_x + self.scroll_offset - text_loc.x, 0.0))
-                    .index
+                layout.hit_test(Point::new(pos_x + self.scroll_offset - text_loc.x, 0.0))
             })
     }
 
-    /// Determine approximate max size of a single glyph, given the current font weight & size
-    fn get_font_glyph_max_size(&self) -> Size {
-        let mut tmp = TextLayoutData::new(None);
-        let attrs_list = self.get_text_attrs();
-        let align = self.style.text_align();
-        tmp.set_text("W", attrs_list, align);
-        if let Some(text_layout) = tmp.get_text_layout() {
-            text_layout.size() + Size::new(0., text_layout.hit_position(0).glyph_descent)
-        } else {
-            Size::new(8.0, DEFAULT_FONT_SIZE as f64) // fallback size
-        }
+    fn hit_byte_index(&self, pos_x: f64) -> usize {
+        let Some(cursor) = self.hit_cursor(pos_x) else {
+            return 0;
+        };
+        self.layout_data
+            .borrow()
+            .with_effective_text_layout(|layout| {
+                layout
+                    .selection_text_range(&layout.collapsed_selection(cursor))
+                    .start
+            })
     }
 
-    fn update_selection(&mut self, selection_start: usize, selection_end: usize) {
-        self.selection = match selection_start.cmp(&selection_end) {
-            std::cmp::Ordering::Less => Some(Range {
-                start: selection_start,
-                end: selection_end,
-            }),
-            std::cmp::Ordering::Greater => Some(Range {
-                start: selection_end,
-                end: selection_start,
-            }),
-            std::cmp::Ordering::Equal => None,
+    fn selection_from_byte_positions(&self, anchor: usize, focus: usize) -> Option<TextSelection> {
+        self.layout_data
+            .borrow()
+            .get_effective_text_layout()
+            .and_then(|layout| layout.selection_from_byte_positions(anchor, focus))
+    }
+
+    fn selection_byte_range(&self) -> Option<Range<usize>> {
+        let selection = self.selection?;
+        self.layout_data
+            .borrow()
+            .get_effective_text_layout()
+            .map(|layout| layout.selection_text_range(&selection))
+    }
+
+    fn update_selection(&mut self, selection_anchor: usize, selection_focus: usize) {
+        let next_selection = if self.selection.is_none() && selection_anchor != selection_focus {
+            self.layout_data
+                .borrow()
+                .get_effective_text_layout()
+                .and_then(|layout| {
+                    layout.begin_selection_from_byte_positions(selection_anchor, selection_focus)
+                })
+        } else {
+            self.selection_from_byte_positions(selection_anchor, selection_focus)
         };
+        self.selection = next_selection;
     }
 
     fn update_ime_cursor_area(&mut self) {
@@ -588,8 +601,8 @@ impl TextInput {
                 self.layout_data
                     .borrow()
                     .with_effective_text_layout(|text_layout| {
-                        let start_x = text_layout.hit_position(start_idx).point.x;
-                        let end_x = text_layout.hit_position(end_idx).point.x;
+                        let start_x = text_layout.cursor_point(start_idx, Affinity::Upstream).x;
+                        let end_x = text_layout.cursor_point(end_idx, Affinity::Upstream).x;
                         (end_x - start_x).abs()
                     })
             })
@@ -627,9 +640,6 @@ impl TextInput {
     }
 
     fn update_text_layout(&mut self) {
-        let glyph_max_size = self.get_font_glyph_max_size();
-        self.glyph_max_size = glyph_max_size;
-
         let buffer_is_empty = self.buffer.with_untracked(|buff| {
             buff.is_empty() && self.preedit.as_ref().is_none_or(|p| p.text.is_empty())
         });
@@ -640,7 +650,7 @@ impl TextInput {
 
             let mut layout_data = self.layout_data.borrow_mut();
             layout_data.set_text(placeholder_text, attrs_list, align);
-            layout_data.set_text_overflow(TextOverflow::Clip);
+            layout_data.set_text_overflow(TextOverflow::NoWrap(crate::style::NoWrapOverflow::Clip));
         } else {
             let attrs_list = self.get_text_attrs();
             let align = self.style.text_align();
@@ -663,7 +673,8 @@ impl TextInput {
 
                 let mut layout_data = self.layout_data.borrow_mut();
                 layout_data.set_text(display_text, attrs_list, align);
-                layout_data.set_text_overflow(TextOverflow::Clip);
+                layout_data
+                    .set_text_overflow(TextOverflow::NoWrap(crate::style::NoWrapOverflow::Clip));
             });
         }
     }
@@ -673,8 +684,12 @@ impl TextInput {
         let cursor_glyph_pos = self
             .layout_data
             .borrow()
-            .with_effective_text_layout(|layout| layout.hit_position(self.cursor_visual_idx()));
-        self.cursor_x = cursor_glyph_pos.point.x;
+            .with_effective_text_layout(|layout| {
+                layout
+                    .cursor_point(self.cursor_visual_idx(), Affinity::Upstream)
+                    .x
+            });
+        self.cursor_x = cursor_glyph_pos;
 
         // Update scroll offset using layout context
         let visible_width = self.id.get_content_rect_local().size().width;
@@ -789,7 +804,8 @@ impl TextInput {
         // Update cursor position and scroll
         self.update_cursor_position_and_scroll();
 
-        self.selection = Some(0..len);
+        self.selection = None;
+        self.update_selection(0, len);
     }
 
     fn handle_modifier_cmd(&mut self, event: &KeyboardEvent) -> bool {
@@ -805,27 +821,19 @@ impl TextInput {
                 true
             }
             TextCommand::Copy => {
-                if let Some(selection) = &self.selection {
+                if let Some(selection) = self.selection_byte_range() {
                     let selection_txt = self
                         .buffer
-                        .get_untracked()
-                        .chars()
-                        .skip(selection.start)
-                        .take(selection.end - selection.start)
-                        .collect();
+                        .with_untracked(|buf| buf[selection.clone()].to_string());
                     let _ = Clipboard::set_contents(selection_txt);
                 }
                 true
             }
             TextCommand::Cut => {
-                if let Some(selection) = &self.selection {
+                if let Some(selection) = self.selection_byte_range() {
                     let selection_txt = self
                         .buffer
-                        .get_untracked()
-                        .chars()
-                        .skip(selection.start)
-                        .take(selection.end - selection.start)
-                        .collect();
+                        .with_untracked(|buf| buf[selection.clone()].to_string());
                     let _ = Clipboard::set_contents(selection_txt);
 
                     self.buffer
@@ -849,7 +857,8 @@ impl TextInput {
                     return false;
                 }
 
-                if let Some(selection) = self.selection.take() {
+                if let Some(selection) = self.selection_byte_range() {
+                    self.selection = None;
                     self.buffer.update(|buf| {
                         replace_range(buf, selection.clone(), Some(&clipboard_content))
                     });
@@ -873,7 +882,7 @@ impl TextInput {
     fn handle_key_down(&mut self, window_state: &mut WindowState, event: &KeyboardEvent) -> bool {
         let handled = match event.key {
             Key::Character(ref c) if c == " " => {
-                if let Some(selection) = &self.selection {
+                if let Some(selection) = self.selection_byte_range() {
                     self.buffer
                         .update(|buf| replace_range(buf, selection.clone(), None));
                     self.cursor_glyph_idx = selection.start;
@@ -885,7 +894,7 @@ impl TextInput {
                 self.move_cursor(Movement::Glyph, TextDirection::Right)
             }
             Key::Named(NamedKey::Backspace) => {
-                let selection = self.selection.clone();
+                let selection = self.selection_byte_range();
                 if let Some(selection) = selection {
                     self.cursor_glyph_idx = selection.start;
                     self.buffer
@@ -911,7 +920,7 @@ impl TextInput {
                 }
             }
             Key::Named(NamedKey::Delete) => {
-                let selection = self.selection.clone();
+                let selection = self.selection_byte_range();
                 if let Some(selection) = selection {
                     self.cursor_glyph_idx = selection.start;
                     self.buffer
@@ -943,22 +952,26 @@ impl TextInput {
                 true
             }
             Key::Named(NamedKey::Enter) => {
-                if let Some(action) = &self.on_enter {
-                    action();
-                }
+                self.id.route_event(
+                    Event::new_custom(TextInputEnter),
+                    RouteKind::target(self.id.get_element_id()),
+                );
                 true
             }
             Key::Named(NamedKey::End) => {
                 if event.modifiers.contains(Modifiers::SHIFT) {
+                    let selection_start = match &self.selection {
+                        Some(selection_value) => self
+                            .layout_data
+                            .borrow()
+                            .with_effective_text_layout(|layout| {
+                                layout.selection_text_range(selection_value).start
+                            }),
+                        None => self.cursor_glyph_idx,
+                    };
                     match &self.selection {
-                        Some(selection_value) => self.update_selection(
-                            selection_value.start,
-                            self.buffer.get_untracked().len(),
-                        ),
-                        None => self.update_selection(
-                            self.cursor_glyph_idx,
-                            self.buffer.get_untracked().len(),
-                        ),
+                        Some(_) | None => self
+                            .update_selection(selection_start, self.buffer.get_untracked().len()),
                     }
                 } else {
                     self.selection = None;
@@ -967,9 +980,17 @@ impl TextInput {
             }
             Key::Named(NamedKey::Home) => {
                 if event.modifiers.contains(Modifiers::SHIFT) {
+                    let selection_end = match &self.selection {
+                        Some(selection_value) => self
+                            .layout_data
+                            .borrow()
+                            .with_effective_text_layout(|layout| {
+                                layout.selection_text_range(selection_value).end
+                            }),
+                        None => self.cursor_glyph_idx,
+                    };
                     match &self.selection {
-                        Some(selection_value) => self.update_selection(0, selection_value.end),
-                        None => self.update_selection(0, self.cursor_glyph_idx),
+                        Some(_) | None => self.update_selection(0, selection_end),
                     }
                 } else {
                     self.selection = None;
@@ -987,7 +1008,12 @@ impl TextInput {
                 } else if let Some(selection) = self.selection.take() {
                     // clear and jump to the start of the selection
                     if matches!(move_kind, Movement::Glyph) {
-                        self.cursor_glyph_idx = selection.start;
+                        self.cursor_glyph_idx = self
+                            .layout_data
+                            .borrow()
+                            .with_effective_text_layout(|layout| {
+                                layout.selection_text_range(&selection).start
+                            });
                         window_state.request_paint(self.id);
                     }
                 }
@@ -1005,7 +1031,12 @@ impl TextInput {
                 } else if let Some(selection) = self.selection.take() {
                     // clear and jump to the end of the selection
                     if matches!(move_kind, Movement::Glyph) {
-                        self.cursor_glyph_idx = selection.end;
+                        self.cursor_glyph_idx = self
+                            .layout_data
+                            .borrow()
+                            .with_effective_text_layout(|layout| {
+                                layout.selection_text_range(&selection).end
+                            });
                         window_state.request_paint(self.id);
                     }
                 }
@@ -1035,7 +1066,7 @@ impl TextInput {
     }
 
     fn insert_text(&mut self, ch: &str) -> bool {
-        let selection = self.selection.clone();
+        let selection = self.selection_byte_range();
         if let Some(selection) = selection {
             self.buffer
                 .update(|buf| replace_range(buf, selection.clone(), None));
@@ -1049,7 +1080,7 @@ impl TextInput {
     }
 
     fn move_selection(&mut self, old_glyph_idx: usize, curr_glyph_idx: usize) {
-        let new_selection = if let Some(selection) = &self.selection {
+        let new_selection = if let Some(selection) = self.selection_byte_range() {
             // we're making an assumption that the caret is at the selection's edge
             // the opposite edge will be our anchor
             let anchor = if selection.start == old_glyph_idx {
@@ -1069,20 +1100,20 @@ impl TextInput {
             curr_glyph_idx..old_glyph_idx
         };
 
-        // avoid empty selection
-        self.selection = if new_selection.is_empty() {
-            None
-        } else {
-            Some(new_selection)
-        };
+        self.selection = self.selection_from_byte_positions(new_selection.start, new_selection.end);
     }
 
     fn paint_selection_rect(&self, cx: &mut crate::context::PaintCx<'_>) {
         let cursor_color = self.selection_style.selection_color();
-        let selection = if let Some(curr_selection) = &self.selection {
-            curr_selection.clone()
+        let selection = if let Some(selection) = self.selection {
+            selection
         } else if let Some(cursor) = self.preedit.as_ref().and_then(|p| p.cursor) {
-            self.cursor_glyph_idx + cursor.0..self.cursor_glyph_idx + cursor.1
+            let start = self.cursor_glyph_idx + cursor.0;
+            let end = self.cursor_glyph_idx + cursor.1;
+            let Some(selection) = self.selection_from_byte_positions(start, end) else {
+                return;
+            };
+            selection
         } else {
             return;
         };
@@ -1095,9 +1126,8 @@ impl TextInput {
         let selection_origin =
             Point::new(text_start_point.x - self.scroll_offset, text_start_point.y);
 
-        self.layout_data.borrow().selection_rects_for_byte_range(
-            selection.start,
-            selection.end,
+        self.layout_data.borrow().selection_rects_for_selection(
+            &selection,
             selection_origin,
             |rect| {
                 // Clipping already handled by traversal.
@@ -1183,7 +1213,7 @@ impl View for TextInput {
         format!("TextInput: {:?}", self.buffer.get_untracked()).into()
     }
 
-    fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) {
+    fn update(&mut self, _cx: &mut UpdateCx, state: Box<dyn Any>) {
         if state.is::<TimerToken>() {
             if let Ok(token) = state.downcast::<TimerToken>()
                 && *token == self.cursor_blink_timer
@@ -1192,25 +1222,7 @@ impl View for TextInput {
             }
             return;
         }
-        if let Ok(state) = state.downcast::<bool>() {
-            let is_focused = *state;
-
-            if self.is_focused != is_focused {
-                self.is_focused = is_focused;
-                self.last_ime_cursor_area = None;
-
-                self.commit_preedit();
-                self.update_ime_cursor_area();
-
-                if is_focused && !cx.window_state.has_capture(self.id) {
-                    self.selection = None;
-                    self.cursor_glyph_idx = self.buffer.with_untracked(|buf| buf.len());
-                } else {
-                    self.cursor_blink_timer.cancel();
-                    self.cursor_blink_timer = TimerToken::INVALID;
-                }
-            }
-
+        if state.downcast::<()>().is_ok() {
             // Only update recomputation if the state has actually changed
             let text_updated = self.buffer.buffer.with_untracked(|buf| {
                 let updated = *buf != self.buffer.last_buffer;
@@ -1265,7 +1277,7 @@ impl View for TextInput {
                     } else if state.count == 3 {
                         self.handle_triple_click();
                     } else {
-                        self.cursor_glyph_idx = self.get_box_position(point.x);
+                        self.cursor_glyph_idx = self.hit_byte_index(point.x);
                         self.selection = None;
                     }
                 }
@@ -1290,7 +1302,7 @@ impl View for TextInput {
                         self.scroll(pos.x - visible_width, visible_width);
                     }
 
-                    let selection_stop = self.get_box_position(pos.x);
+                    let selection_stop = self.hit_byte_index(pos.x);
                     self.update_selection(self.cursor_glyph_idx, selection_stop);
 
                     cx.window_state.request_paint(self.id);
@@ -1310,7 +1322,8 @@ impl View for TextInput {
             }
             Event::Ime(ImeEvent::Preedit { text, cursor }) => {
                 if self.is_focused && !text.is_empty() {
-                    if let Some(selection) = self.selection.take() {
+                    if let Some(selection) = self.selection_byte_range() {
+                        self.selection = None;
                         self.cursor_glyph_idx = selection.start;
                         self.buffer
                             .update(|buf| replace_range(buf, selection.clone(), None));
@@ -1336,9 +1349,13 @@ impl View for TextInput {
                 after_bytes,
             }) => {
                 if self.is_focused {
+                    let selection = self.selection_byte_range();
+                    if let Some(selection) = selection.as_ref() {
+                        self.selection = None;
+                        self.cursor_glyph_idx = selection.start;
+                    }
                     self.buffer.update(|buf| {
-                        if let Some(selection) = self.selection.take() {
-                            self.cursor_glyph_idx = selection.start;
+                        if let Some(selection) = selection.clone() {
                             buf.replace_range(selection, "");
                         }
                         // If the index falls inside a character, delete that character too.
@@ -1379,6 +1396,37 @@ impl View for TextInput {
                     false
                 }
             }
+
+            Event::Focus(focus) => {
+                match focus {
+                    FocusEvent::Gained(keyboard) => {
+                        set_ime_allowed(true);
+
+                        if *keyboard {
+                            // Keyboard navigation (Tab, etc.)
+                            // Select the entire contents for quick overwrite.
+                            self.select_all();
+                        }
+
+                        self.is_focused = true;
+                    }
+                    FocusEvent::Lost => {
+                        set_ime_allowed(false);
+                        self.is_focused = false;
+
+                        self.cursor_blink_timer.cancel();
+                        self.cursor_blink_timer = TimerToken::INVALID;
+                    }
+                }
+
+                self.last_ime_cursor_area = None;
+
+                self.commit_preedit();
+                self.update_ime_cursor_area();
+
+                true
+            }
+
             _ => false,
         };
 
@@ -1439,8 +1487,8 @@ impl View for TextInput {
         self.layout_data
             .borrow()
             .with_effective_text_layout(|text_layout| {
-                cx.draw_text(
-                    text_layout,
+                text_layout.draw(
+                    cx,
                     Point::new(text_start_point.x - self.scroll_offset, text_start_point.y),
                 );
             });
@@ -1453,13 +1501,19 @@ impl View for TextInput {
             self.layout_data
                 .borrow()
                 .with_effective_text_layout(|text_layout| {
-                    let start_hit = text_layout.hit_position(start_idx);
-                    let start_x = text_start_point.x + start_hit.point.x - self.scroll_offset;
-                    let end_x = text_start_point.x + text_layout.hit_position(end_idx).point.x
+                    let start_x = text_start_point.x
+                        + text_layout.cursor_point(start_idx, Affinity::Upstream).x
+                        - self.scroll_offset;
+                    let end_x = text_start_point.x
+                        + text_layout.cursor_point(end_idx, Affinity::Upstream).x
                         - self.scroll_offset;
 
                     let color = self.style.color().unwrap_or(palette::css::BLACK);
-                    let y = text_start_point.y + start_hit.glyph_ascent;
+                    let y = text_start_point.y
+                        + text_layout
+                            .line_metrics_at(start_idx, Affinity::Upstream)
+                            .map(|metrics| metrics.ascent as f64)
+                            .unwrap_or(0.0);
 
                     cx.fill(
                         &Rect::new(start_x, y, end_x, y + 1.0),
@@ -1469,11 +1523,10 @@ impl View for TextInput {
                 });
         }
 
-        // Clear the custom clip we applied
-        cx.clear_clip();
-
         // skip rendering selection / cursor if we don't have focus
         if !cx.window_state.is_focused(self.id) {
+            // Clear the custom clip we applied
+            cx.clear_clip();
             return;
         }
 
@@ -1485,9 +1538,14 @@ impl View for TextInput {
                 .is_some_and(|p| p.cursor.is_some_and(|c| c.0 != c.1));
 
         if has_selection {
+            // Clear the custom clip we applied
             self.paint_selection_rect(cx);
+            cx.clear_clip();
             return;
         }
+
+        // Clear the custom clip we applied
+        cx.clear_clip();
 
         // see if we should render the cursor
         let is_cursor_visible = (self.last_cursor_action_on.elapsed().as_millis()

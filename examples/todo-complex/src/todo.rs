@@ -130,7 +130,7 @@ impl IntoView for TodoState {
             // TODO: is this necessary anymore? I think it was here because of mistakes in the old event dispatch
             .on_event_stop(el::KeyDown, |_, _| {});
 
-        let input = text_input(self.description)
+        let input = TextInput::new(self.description)
             .placeholder("New To-Do")
             .into_view();
         let input_id = input.id();

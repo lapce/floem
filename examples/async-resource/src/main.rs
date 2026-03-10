@@ -319,7 +319,7 @@ fn app_view() -> impl IntoView {
 
     let search_input = Stack::vertical((
         "Username:".style(|s| s.font_size(14.0).margin_bottom(5.0)),
-        text_input(username)
+        TextInput::new(username)
             .placeholder("e.g., octocat")
             .style(|s| {
                 s.padding(8.0)
@@ -337,7 +337,7 @@ fn app_view() -> impl IntoView {
         let token_label =
             "GitHub Token (optional):".style(|s| s.font_size(14.0).margin_bottom(5.0));
 
-        let token_input = text_input(token)
+        let token_input = TextInput::new(token)
             .placeholder("ghp_xxxxxxxxxxxxxxxxxxxx")
             .style(|s| {
                 s.padding(8.0)

@@ -467,14 +467,20 @@ impl EventPropagation {
 /// listening during the capture or bubble phases.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum FocusEvent {
-    /// The element directly received focus.
+    /// The element received focus.
     ///
     /// This event participates in all three phases: capture, target, and bubble
     /// (using `Phases::STANDARD`), similar to W3C's `focusin` event.
     ///
     /// The event is targeted at the element that became focused, meaning listeners
     /// on ancestor elements can observe it during the capture and bubble phases.
-    Gained,
+    ///
+    /// The `bool` indicates whether the focus change was caused by **keyboard
+    /// navigation** (for example `Tab`, `Shift+Tab`, or other directional focus
+    /// movement). When `true`, the focus was initiated via keyboard navigation.
+    /// When `false`, the focus was caused by another mechanism such as pointer
+    /// interaction or programmatic focus.
+    Gained(bool),
 
     /// The element directly lost focus.
     ///
@@ -484,6 +490,24 @@ pub enum FocusEvent {
     /// The event is targeted at the element that lost focus, meaning listeners
     /// on ancestor elements can observe it during the capture and bubble phases.
     Lost,
+}
+
+impl FocusEvent {
+    /// Returns `true` if the focus event is [`Gained`].
+    ///
+    /// [`Gained`]: FocusEvent::Gained
+    #[must_use]
+    pub fn is_gained(&self) -> bool {
+        matches!(self, Self::Gained(_))
+    }
+
+    /// Returns `true` if the focus event is [`Lost`].
+    ///
+    /// [`Lost`]: FocusEvent::Lost
+    #[must_use]
+    pub fn is_lost(&self) -> bool {
+        matches!(self, Self::Lost)
+    }
 }
 
 /// Pointer capture state changes.
@@ -1422,7 +1446,7 @@ pub enum Event {
     /// fn handle(event: Event) {
     ///     let mut cursor_visible = false;
     ///     match event {
-    ///         Event::Focus(FocusEvent::Gained) => {
+    ///         Event::Focus(FocusEvent::Gained(_)) => {
     ///             cursor_visible = true;
     ///         }
     ///         Event::Focus(FocusEvent::Lost) => {
@@ -2021,7 +2045,7 @@ impl Event {
             Self::Ime(ImeEvent::Preedit { .. }) => ImePreedit::listener_key(),
             Self::Ime(ImeEvent::Commit(_)) => ImeCommit::listener_key(),
             Self::Ime(ImeEvent::DeleteSurrounding { .. }) => ImeDeleteSurrounding::listener_key(),
-            Self::Focus(FocusEvent::Gained) => FocusGained::listener_key(),
+            Self::Focus(FocusEvent::Gained(_)) => FocusGained::listener_key(),
             Self::Focus(FocusEvent::Lost) => FocusLost::listener_key(),
             Self::Window(WindowEvent::Closed) => WindowClosed::listener_key(),
             Self::Window(WindowEvent::Resized(_)) => WindowResized::listener_key(),

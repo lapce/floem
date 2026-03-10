@@ -4,8 +4,9 @@ use floem::views::{Button, Label};
 use floem::{
     peniko::color::palette,
     reactive::{RwSignal, SignalGet, SignalUpdate},
+    style::Style,
     unit::UnitExt,
-    views::{dyn_container, text_input, Decorators, RadioButton, Stack},
+    views::{dyn_container, Decorators, RadioButton, Stack, TextInput},
     IntoView,
 };
 use strum::IntoEnumIterator;
@@ -68,12 +69,15 @@ pub fn app_view() -> impl IntoView {
         FlightMode::iter().map(move |fm| RadioButton::new_labeled_rw(fm, flight_mode, move || fm)),
     );
 
-    let start_date_input = text_input(start_text)
-        .placeholder("Start date")
-        .style(move |s| s.apply_if(!start_date_is_valid(), |s| s.background(palette::css::RED)));
-    let return_date_input = text_input(return_text)
+    let start_date_input =
+        TextInput::new(start_text)
+            .placeholder("Start date")
+            .style(move |s: Style| {
+                s.apply_if(!start_date_is_valid(), |s| s.background(palette::css::RED))
+            });
+    let return_date_input = TextInput::new(return_text)
         .placeholder("Return date")
-        .style(move |s| {
+        .style(move |s: Style| {
             s.set_disabled(!return_text_is_enabled())
                 .apply_if(!return_date_is_valid(), |s| s.background(palette::css::RED))
         });

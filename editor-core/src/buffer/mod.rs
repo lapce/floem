@@ -4,21 +4,21 @@ use std::{
     collections::BTreeSet,
     fmt::Display,
     sync::{
-        atomic::{self, AtomicU64},
         Arc,
+        atomic::{self, AtomicU64},
     },
 };
 
 use lapce_xi_rope::{
+    Delta, DeltaBuilder, DeltaElement, Interval, Rope, RopeDelta,
     multiset::Subset,
     tree::{Node, NodeInfo},
-    Delta, DeltaBuilder, DeltaElement, Interval, Rope, RopeDelta,
 };
 
 use crate::{
     cursor::CursorMode,
     editor::EditType,
-    indent::{auto_detect_indent_style, IndentStyle},
+    indent::{IndentStyle, auto_detect_indent_style},
     line_ending::{LineEnding, LineEndingDetermination},
     mode::Mode,
     selection::Selection,
@@ -437,10 +437,10 @@ impl Buffer {
     fn deletes_from_cur_union_for_index(&self, rev_index: usize) -> Cow<'_, Subset> {
         let mut deletes_from_union = self.deletes_from_union_for_index(rev_index);
         for rev in &self.revs[rev_index + 1..] {
-            if let Contents::Edit { ref inserts, .. } = rev.edit {
-                if !inserts.is_empty() {
-                    deletes_from_union = Cow::Owned(deletes_from_union.transform_union(inserts));
-                }
+            if let Contents::Edit { ref inserts, .. } = rev.edit
+                && !inserts.is_empty()
+            {
+                deletes_from_union = Cow::Owned(deletes_from_union.transform_union(inserts));
             }
         }
         deletes_from_union

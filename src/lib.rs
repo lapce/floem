@@ -187,6 +187,7 @@ pub mod layout;
 mod message;
 pub mod paint;
 pub mod platform;
+pub mod text;
 /// Re-export easing module from animate for backward compatibility.
 pub use animate::easing;
 /// Re-export dropped_file module from event for backward compatibility.
@@ -345,7 +346,6 @@ pub use floem_reactive as reactive;
 pub use floem_renderer::Renderer;
 pub use floem_renderer::Svg as RendererSvg;
 pub use floem_renderer::gpu_resources::GpuResources;
-pub use floem_renderer::text;
 pub use imbl;
 pub use layout::ScreenLayout;
 #[cfg(not(target_arch = "wasm32"))]

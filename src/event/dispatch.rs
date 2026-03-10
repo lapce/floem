@@ -255,6 +255,16 @@ impl RouteKind {
             phases: Phases::TARGET | Phases::BUBBLE,
         }
     }
+
+    /// Invoke on the target.
+    ///
+    /// Traversal: target
+    pub fn target(target: ElementId) -> Self {
+        Self::Directed {
+            target,
+            phases: Phases::TARGET,
+        }
+    }
 }
 
 /// Event routing data containing routing strategy and event source.
@@ -1384,7 +1394,7 @@ impl RouteCx<'_, '_> {
                     target: new_focus,
                     phases: Phases::STANDARD,
                 },
-                Event::Focus(FocusEvent::Gained),
+                Event::Focus(FocusEvent::Gained(keyboard_navigation)),
             ));
         }
 

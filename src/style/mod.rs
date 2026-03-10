@@ -157,6 +157,7 @@ use taffy::{
 use crate::layout::responsive::{GridBreakpoints, ScreenSize, ScreenSizeBp};
 
 use crate::style::components::Focus;
+use crate::text::{OverflowWrap, WordBreakStrength};
 use crate::views::editor::SelectionColor;
 // Import macros from crate root (they are #[macro_export] in props.rs)
 use crate::{prop, prop_extractor};
@@ -176,8 +177,8 @@ pub mod unit;
 mod values;
 
 pub use components::{
-    Border, BorderColor, BorderRadius, BoxShadow, CursorStyle, Margin, Padding, PointerEvents,
-    TextOverflow,
+    Border, BorderColor, BorderRadius, BoxShadow, CursorStyle, Margin, NoWrapOverflow, Padding,
+    PointerEvents, TextOverflow,
 };
 pub use custom::{CustomStylable, CustomStyle};
 pub use cx::{InheritedInteractionCx, InteractionState, StyleCx};
@@ -1815,7 +1816,7 @@ define_builtin_props!(
     /// Controls how overflowed text content is handled.
     ///
     /// Determines whether text wraps or gets clipped.
-    TextOverflowProp text_overflow {}: TextOverflow { inherited } = TextOverflow::Clip,
+    TextOverflowProp text_overflow {}: TextOverflow { inherited } = TextOverflow::NoWrap(NoWrapOverflow::Clip),
 
     /// Sets text alignment within the view.
     ///
@@ -3147,12 +3148,20 @@ impl Style {
 
     /// Sets text overflow to show ellipsis (...) when text is clipped.
     pub fn text_ellipsis(self) -> Self {
-        self.text_overflow(TextOverflow::Ellipsis)
+        self.text_overflow(TextOverflow::NoWrap(NoWrapOverflow::Ellipsis))
     }
 
     /// Sets text overflow to clip text without showing ellipsis.
     pub fn text_clip(self) -> Self {
-        self.text_overflow(TextOverflow::Clip)
+        self.text_overflow(TextOverflow::NoWrap(NoWrapOverflow::Clip))
+    }
+
+    /// Sets text to wrap using Parley's normal overflow-wrap behavior.
+    pub fn text_wrap(self) -> Self {
+        self.text_overflow(TextOverflow::Wrap {
+            overflow_wrap: OverflowWrap::Normal,
+            word_break: WordBreakStrength::Normal,
+        })
     }
 
     /// Sets the view to absolute positioning.
