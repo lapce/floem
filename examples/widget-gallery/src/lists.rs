@@ -1,5 +1,4 @@
 use floem::{
-    imbl,
     prelude::*,
     reactive::Effect,
     style::CursorStyle,
@@ -42,7 +41,8 @@ fn simple_list() -> impl IntoView {
 }
 
 fn enhanced_list() -> impl IntoView {
-    let long_list: imbl::Vector<(bool, i32)> = (0..1000000).map(|v| (true, v)).collect();
+    let long_list: Vec<(usize, (bool, i32))> =
+        (0..1000000).map(|v| (v as usize, (true, v))).collect();
     let long_list = RwSignal::new(long_list);
 
     let list_width = 180.0;
@@ -81,7 +81,7 @@ fn enhanced_list() -> impl IntoView {
             let state = checkbox_state.get();
             long_list.update(|list| {
                 // because this is an immutable vector, getting the index will always result in the correct item even if we remove elements.
-                if let Some((s, _v)) = list.get_mut(index) {
+                if let Some((_, (s, _v))) = list.get_mut(index) {
                     *s = state;
                 };
             });
@@ -100,7 +100,7 @@ fn enhanced_list() -> impl IntoView {
         )
     };
 
-    VirtualList::with_view(move || long_list.get().enumerate(), item_view)
+    VirtualList::with_view(move || long_list, item_view)
         .style(move |s| s.flex_col().flex_grow(1.0))
         .scroll()
         .style(move |s| s.width(list_width).height(500.0).apply(border_style(true)))

@@ -129,7 +129,6 @@
 //! You can create custom extractors and embed them in your custom views so that you can get out any built in prop, or any of your custom props from the final combined style that is applied to your `View`.
 
 use floem_renderer::text::{FontWeight as FontWeightProp, LineHeightValue};
-use imbl::hashmap::Entry;
 use peniko::color::palette;
 use peniko::kurbo::{self, Affine, RoundedRect, Stroke, Vec2};
 use peniko::{Brush, Color};
@@ -196,7 +195,7 @@ pub use values::{ObjectFit, StrokeWrap, StyleMapValue, StylePropValue, StyleValu
 pub use cache::{StyleCache, StyleCacheKey};
 
 pub(crate) use props::{
-    CONTEXT_MAPPINGS_INFO, ImHashMap, RESPONSIVE_SELECTORS_INFO, STRUCTURAL_SELECTORS_INFO,
+    CONTEXT_MAPPINGS_INFO, MapStorage, RESPONSIVE_SELECTORS_INFO, STRUCTURAL_SELECTORS_INFO,
     style_key_selector,
 };
 
@@ -215,6 +214,12 @@ fn combine_merge_ids(a: u64, b: u64) -> u64 {
 type ContextMapFn = Rc<dyn Fn(Style, Box<dyn Fn(StyleKey) -> Option<Rc<dyn Any>>>) -> Style>;
 type StructuralSelectorRules = SmallVec<[(StructuralSelector, Rc<Style>); 2]>;
 type ResponsiveSelectorRules = SmallVec<[(ResponsiveSelector, Rc<Style>); 2]>;
+
+fn take_any<T: Any + Clone>(value: Rc<dyn Any>) -> T {
+    Rc::downcast::<T>(value)
+        .map(|rc| Rc::try_unwrap(rc).unwrap_or_else(|rc| (*rc).clone()))
+        .unwrap_or_else(|_| panic!("unexpected style map payload type"))
+}
 
 #[derive(Clone)]
 struct StructuralSelectors(StructuralSelectorRules);
@@ -601,8 +606,8 @@ fn resolve_selectors_collecting_mappings(
 
 fn extract_context_mappings(style: &mut Style) -> Option<Vec<ContextMapFn>> {
     let key = context_mappings_key();
-    style.map.remove(&key).map(|rc| {
-        let mappings = rc.downcast_ref::<ContextMappings>().unwrap();
+    style.map_mut().remove(&key).map(|rc| {
+        let mappings: ContextMappings = take_any(rc);
         mappings.0.iter().cloned().collect()
     })
 }
@@ -610,22 +615,22 @@ fn extract_context_mappings(style: &mut Style) -> Option<Vec<ContextMapFn>> {
 fn extract_structural_selectors(style: &mut Style) -> Option<StructuralSelectorRules> {
     let key = structural_selectors_key();
     style
-        .map
+        .map_mut()
         .remove(&key)
-        .map(|rc| rc.downcast_ref::<StructuralSelectors>().unwrap().0.clone())
+        .map(|rc| take_any::<StructuralSelectors>(rc).0)
 }
 
 fn extract_responsive_selectors(style: &mut Style) -> Option<ResponsiveSelectorRules> {
     let key = responsive_selectors_key();
     style
-        .map
+        .map_mut()
         .remove(&key)
-        .map(|rc| rc.downcast_ref::<ResponsiveSelectors>().unwrap().0.clone())
+        .map(|rc| take_any::<ResponsiveSelectors>(rc).0)
 }
 
 #[derive(Clone)]
 pub struct Style {
-    pub(crate) map: ImHashMap<StyleKey, Rc<dyn Any>>,
+    pub(crate) map: Rc<MapStorage<StyleKey, Rc<dyn Any>>>,
     /// Deterministic identity for style merges.
     merge_id: u64,
     /// Cached flag indicating whether this style contains any class maps.
@@ -646,7 +651,7 @@ pub struct Style {
 impl Default for Style {
     fn default() -> Self {
         let effect_context = floem_reactive::Runtime::get_current_effect();
-        let map = ImHashMap::default();
+        let map = Rc::new(MapStorage::default());
         Self {
             merge_id: next_style_merge_id(),
             map,
@@ -659,6 +664,10 @@ impl Default for Style {
 }
 
 impl Style {
+    fn map_mut(&mut self) -> &mut MapStorage<StyleKey, Rc<dyn Any>> {
+        Rc::make_mut(&mut self.map)
+    }
+
     pub fn new() -> Self {
         Self::default()
     }
@@ -738,7 +747,7 @@ impl Style {
     pub fn class_maps_eq(&self, other: &Style) -> SmallVec<[StyleClassRef; 4]> {
         // Pass 1: every Class entry in self must exist in other
         let mut changed = SmallVec::new();
-        for (k, v) in &self.map {
+        for (k, v) in self.map.iter() {
             let StyleKeyInfo::Class(_) = k.info else {
                 continue;
             };
@@ -748,9 +757,7 @@ impl Style {
                     let v_style = v.downcast_ref::<Style>().unwrap();
                     let other_v_style = other_v.downcast_ref::<Style>().unwrap();
 
-                    if v_style.merge_id != other_v_style.merge_id
-                        && !v_style.map.ptr_eq(&other_v_style.map)
-                    {
+                    if v_style.merge_id != other_v_style.merge_id {
                         changed.push(StyleClassRef { key: *k });
                     }
                 }
@@ -816,7 +823,7 @@ impl Style {
     pub(crate) fn selectors(&self) -> StyleSelectors {
         let mut result = self.context_selectors;
 
-        for (k, v) in &self.map {
+        for (k, v) in self.map.iter() {
             match k.info {
                 StyleKeyInfo::Selector(selector) => {
                     result = result
@@ -912,7 +919,7 @@ impl Style {
         // but add our closure storage
         let mut final_result = self;
         final_result
-            .map
+            .map_mut()
             .insert(key, Rc::new(ContextMappings(Rc::new(mappings_vec))));
         final_result.merge_id = next_style_merge_id();
         final_result.context_selectors |= result_selectors;
@@ -961,7 +968,7 @@ impl Style {
 
         let mut final_result = self;
         final_result
-            .map
+            .map_mut()
             .insert(key, Rc::new(ContextMappings(Rc::new(mappings_vec))));
         final_result.merge_id = next_style_merge_id();
         final_result.context_selectors |= result_selectors;
@@ -982,10 +989,7 @@ impl Style {
     }
 
     pub(crate) fn remove_nested_map(&mut self, key: StyleKey) -> Option<Style> {
-        let removed = self
-            .map
-            .remove(&key)
-            .map(|map| map.downcast_ref::<Style>().unwrap().clone());
+        let removed = self.map_mut().remove(&key).map(take_any::<Style>);
         if removed.is_some() {
             self.merge_id = next_style_merge_id();
         }
@@ -1017,60 +1021,40 @@ impl Style {
 
     fn set_structural_selector(&mut self, selector: StructuralSelector, map: Style) {
         let key = structural_selectors_key();
-        match self.map.entry(key) {
-            Entry::Occupied(mut e) => {
-                let mut rules = e
-                    .get()
-                    .downcast_ref::<StructuralSelectors>()
-                    .unwrap()
-                    .0
-                    .clone();
-                rules.push((selector, Rc::new(map)));
-                *e.get_mut() = Rc::new(StructuralSelectors(rules));
-            }
-            Entry::Vacant(e) => {
-                let mut rules = SmallVec::new();
-                rules.push((selector, Rc::new(map)));
-                e.insert(Rc::new(StructuralSelectors(rules)));
-            }
-        }
+        let mut rules = self
+            .map_mut()
+            .remove(&key)
+            .map(|current| take_any::<StructuralSelectors>(current).0)
+            .unwrap_or_default();
+        rules.push((selector, Rc::new(map)));
+        self.map_mut()
+            .insert(key, Rc::new(StructuralSelectors(rules)));
         self.merge_id = next_style_merge_id();
     }
 
     fn set_responsive_selector(&mut self, selector: ResponsiveSelector, map: Style) {
         let key = responsive_selectors_key();
-        match self.map.entry(key) {
-            Entry::Occupied(mut e) => {
-                let mut rules = e
-                    .get()
-                    .downcast_ref::<ResponsiveSelectors>()
-                    .unwrap()
-                    .0
-                    .clone();
-                rules.push((selector, Rc::new(map)));
-                *e.get_mut() = Rc::new(ResponsiveSelectors(rules));
-            }
-            Entry::Vacant(e) => {
-                let mut rules = SmallVec::new();
-                rules.push((selector, Rc::new(map)));
-                e.insert(Rc::new(ResponsiveSelectors(rules)));
-            }
-        }
+        let mut rules = self
+            .map_mut()
+            .remove(&key)
+            .map(|current| take_any::<ResponsiveSelectors>(current).0)
+            .unwrap_or_default();
+        rules.push((selector, Rc::new(map)));
+        self.map_mut()
+            .insert(key, Rc::new(ResponsiveSelectors(rules)));
         self.context_selectors |= StyleSelectors::empty().responsive();
         self.merge_id = next_style_merge_id();
     }
 
     fn set_map_selector(&mut self, key: StyleKey, map: Style) {
-        match self.map.entry(key) {
-            Entry::Occupied(mut e) => {
-                let mut current = e.get_mut().downcast_ref::<Style>().unwrap().clone();
-                current.apply_mut(map);
-                *e.get_mut() = Rc::new(current);
-            }
-            Entry::Vacant(e) => {
-                e.insert(Rc::new(map));
-            }
-        }
+        let value = if let Some(current) = self.map_mut().remove(&key) {
+            let mut current: Style = take_any(current);
+            current.apply_mut(map);
+            Rc::new(current)
+        } else {
+            Rc::new(map)
+        };
+        self.map_mut().insert(key, value);
         self.merge_id = next_style_merge_id();
     }
 
@@ -1080,13 +1064,13 @@ impl Style {
     }
 
     pub fn debug_group<G: StyleDebugGroup>(mut self, _group: G) -> Self {
-        self.map.insert(G::key(), Rc::new(true));
+        self.map_mut().insert(G::key(), Rc::new(true));
         self.merge_id = next_style_merge_id();
         self
     }
 
     pub fn unset_debug_group<G: StyleDebugGroup>(mut self, _group: G) -> Self {
-        self.map.insert(G::key(), Rc::new(false));
+        self.map_mut().insert(G::key(), Rc::new(false));
         self.merge_id = next_style_merge_id();
         self
     }
@@ -1110,91 +1094,64 @@ impl Style {
                     if matches!(k.info, StyleKeyInfo::Class(..)) {
                         self.has_class_maps = true;
                     }
-                    match self.map.entry(*k) {
-                        Entry::Occupied(mut e) => {
-                            let existing_rc = Rc::clone(e.get());
-
-                            // Skip only this key
-                            if Rc::ptr_eq(&existing_rc, v) {
-                                continue;
-                            }
-
-                            let new_style = v.downcast_ref::<Style>().unwrap();
-
-                            match Rc::get_mut(e.get_mut()) {
-                                Some(current_any) => {
-                                    current_any
-                                        .downcast_mut::<Style>()
-                                        .unwrap()
-                                        .apply_mut(new_style.clone());
-                                }
-                                None => {
-                                    let mut current =
-                                        existing_rc.downcast_ref::<Style>().unwrap().clone();
-                                    current.apply_mut(new_style.clone());
-                                    *e.get_mut() = Rc::new(current);
-                                }
-                            }
+                    if let Some(existing_rc) = self.map_mut().remove(k) {
+                        if Rc::ptr_eq(&existing_rc, v) {
+                            self.map_mut().insert(*k, existing_rc);
+                            continue;
                         }
-                        Entry::Vacant(e) => {
-                            e.insert(v.clone());
-                        }
+
+                        let mut current: Style = take_any(existing_rc);
+                        current.apply_mut(v.downcast_ref::<Style>().unwrap().clone());
+                        self.map_mut().insert(*k, Rc::new(current));
+                    } else {
+                        self.map_mut().insert(*k, v.clone());
                     }
                 }
-                StyleKeyInfo::ContextMappings => match self.map.entry(*k) {
-                    Entry::Occupied(mut e) => {
-                        // Merge the new ContextMappings with existing ones
+                StyleKeyInfo::ContextMappings => {
+                    let merged = if let Some(current) = self.map_mut().remove(k) {
                         let new_ctx = v.downcast_ref::<ContextMappings>().unwrap();
-                        let current = e.get().downcast_ref::<ContextMappings>().unwrap();
-                        // Build merged Vec - can't mutate through Rc, so create new
+                        let current: ContextMappings = take_any(current);
                         let mut merged: Vec<_> = (*current.0).clone();
                         merged.extend(new_ctx.0.iter().cloned());
-                        *e.get_mut() = Rc::new(ContextMappings(Rc::new(merged)));
-                    }
-                    Entry::Vacant(e) => {
-                        e.insert(v.clone());
-                    }
-                },
-                StyleKeyInfo::StructuralSelectors => match self.map.entry(*k) {
-                    Entry::Occupied(mut e) => {
+                        Rc::new(ContextMappings(Rc::new(merged)))
+                    } else {
+                        v.clone()
+                    };
+                    self.map_mut().insert(*k, merged);
+                }
+                StyleKeyInfo::StructuralSelectors => {
+                    let merged = if let Some(current) = self.map_mut().remove(k) {
                         let new_rules = &v.downcast_ref::<StructuralSelectors>().unwrap().0;
-                        let current = &e.get().downcast_ref::<StructuralSelectors>().unwrap().0;
-                        let mut merged: StructuralSelectorRules = current.clone();
+                        let current: StructuralSelectors = take_any(current);
+                        let mut merged: StructuralSelectorRules = current.0;
                         merged.extend(new_rules.iter().cloned());
-                        *e.get_mut() = Rc::new(StructuralSelectors(merged));
-                    }
-                    Entry::Vacant(e) => {
-                        e.insert(v.clone());
-                    }
-                },
-                StyleKeyInfo::ResponsiveSelectors => match self.map.entry(*k) {
-                    Entry::Occupied(mut e) => {
+                        Rc::new(StructuralSelectors(merged))
+                    } else {
+                        v.clone()
+                    };
+                    self.map_mut().insert(*k, merged);
+                }
+                StyleKeyInfo::ResponsiveSelectors => {
+                    let merged = if let Some(current) = self.map_mut().remove(k) {
                         let new_rules = &v.downcast_ref::<ResponsiveSelectors>().unwrap().0;
-                        let current = &e.get().downcast_ref::<ResponsiveSelectors>().unwrap().0;
-                        let mut merged: ResponsiveSelectorRules = current.clone();
+                        let current: ResponsiveSelectors = take_any(current);
+                        let mut merged: ResponsiveSelectorRules = current.0;
                         merged.extend(new_rules.iter().cloned());
-                        *e.get_mut() = Rc::new(ResponsiveSelectors(merged));
-                    }
-                    Entry::Vacant(e) => {
-                        e.insert(v.clone());
-                    }
-                },
+                        Rc::new(ResponsiveSelectors(merged))
+                    } else {
+                        v.clone()
+                    };
+                    self.map_mut().insert(*k, merged);
+                }
                 StyleKeyInfo::Transition | StyleKeyInfo::DebugGroup(..) => {
-                    self.map.insert(*k, v.clone());
+                    self.map_mut().insert(*k, v.clone());
                 }
                 StyleKeyInfo::Prop(info) => {
                     // Track inherited props for O(1) early-exit in apply_only_inherited
                     if info.inherited {
                         self.has_inherited = true;
                     }
-                    match self.map.entry(*k) {
-                        Entry::Occupied(mut e) => {
-                            e.insert(v.clone());
-                        }
-                        Entry::Vacant(e) => {
-                            e.insert(v.clone());
-                        }
-                    }
+                    self.map_mut().insert(*k, v.clone());
                 }
             }
         }
@@ -1215,71 +1172,47 @@ impl Style {
                     if matches!(k.info, StyleKeyInfo::Class(..)) {
                         self.has_class_maps = true;
                     }
-                    match self.map.entry(*k) {
-                        Entry::Occupied(mut e) => {
-                            // We need to merge the new map with the existing map.
-
-                            let v = v.downcast_ref::<Style>().unwrap();
-                            match Rc::get_mut(e.get_mut()) {
-                                Some(current) => {
-                                    current
-                                        .downcast_mut::<Style>()
-                                        .unwrap()
-                                        .apply_mut_no_mappings(v.clone());
-                                }
-                                None => {
-                                    let mut current =
-                                        e.get_mut().downcast_ref::<Style>().unwrap().clone();
-                                    current.apply_mut_no_mappings(v.clone());
-                                    *e.get_mut() = Rc::new(current);
-                                }
-                            }
-                        }
-                        Entry::Vacant(e) => {
-                            e.insert(v.clone());
-                        }
+                    if let Some(current) = self.map_mut().remove(k) {
+                        let mut current: Style = take_any(current);
+                        current.apply_mut_no_mappings(v.downcast_ref::<Style>().unwrap().clone());
+                        self.map_mut().insert(*k, Rc::new(current));
+                    } else {
+                        self.map_mut().insert(*k, v.clone());
                     }
                 }
                 StyleKeyInfo::Transition | StyleKeyInfo::DebugGroup(..) => {
-                    self.map.insert(*k, v.clone());
+                    self.map_mut().insert(*k, v.clone());
                 }
-                StyleKeyInfo::StructuralSelectors => match self.map.entry(*k) {
-                    Entry::Occupied(mut e) => {
+                StyleKeyInfo::StructuralSelectors => {
+                    let merged = if let Some(current) = self.map_mut().remove(k) {
                         let new_rules = &v.downcast_ref::<StructuralSelectors>().unwrap().0;
-                        let current = &e.get().downcast_ref::<StructuralSelectors>().unwrap().0;
-                        let mut merged: StructuralSelectorRules = current.clone();
+                        let current: StructuralSelectors = take_any(current);
+                        let mut merged: StructuralSelectorRules = current.0;
                         merged.extend(new_rules.iter().cloned());
-                        *e.get_mut() = Rc::new(StructuralSelectors(merged));
-                    }
-                    Entry::Vacant(e) => {
-                        e.insert(v.clone());
-                    }
-                },
-                StyleKeyInfo::ResponsiveSelectors => match self.map.entry(*k) {
-                    Entry::Occupied(mut e) => {
+                        Rc::new(StructuralSelectors(merged))
+                    } else {
+                        v.clone()
+                    };
+                    self.map_mut().insert(*k, merged);
+                }
+                StyleKeyInfo::ResponsiveSelectors => {
+                    let merged = if let Some(current) = self.map_mut().remove(k) {
                         let new_rules = &v.downcast_ref::<ResponsiveSelectors>().unwrap().0;
-                        let current = &e.get().downcast_ref::<ResponsiveSelectors>().unwrap().0;
-                        let mut merged: ResponsiveSelectorRules = current.clone();
+                        let current: ResponsiveSelectors = take_any(current);
+                        let mut merged: ResponsiveSelectorRules = current.0;
                         merged.extend(new_rules.iter().cloned());
-                        *e.get_mut() = Rc::new(ResponsiveSelectors(merged));
-                    }
-                    Entry::Vacant(e) => {
-                        e.insert(v.clone());
-                    }
-                },
+                        Rc::new(ResponsiveSelectors(merged))
+                    } else {
+                        v.clone()
+                    };
+                    self.map_mut().insert(*k, merged);
+                }
                 StyleKeyInfo::Prop(info) => {
                     // Track inherited props for O(1) early-exit in apply_only_inherited
                     if info.inherited {
                         self.has_inherited = true;
                     }
-                    match self.map.entry(*k) {
-                        Entry::Occupied(mut e) => {
-                            e.insert(v.clone());
-                        }
-                        Entry::Vacant(e) => {
-                            e.insert(v.clone());
-                        }
-                    }
+                    self.map_mut().insert(*k, v.clone());
                 }
                 _ => {}
             }
@@ -2232,7 +2165,7 @@ impl Style {
             StyleValue::Animated(value) => StyleMapValue::Animated(value),
             StyleValue::Unset => StyleMapValue::Unset,
             StyleValue::Base => {
-                if self.map.remove(&P::key()).is_some() {
+                if self.map_mut().remove(&P::key()).is_some() {
                     self.merge_id = next_style_merge_id();
                 }
                 return self;
@@ -2242,14 +2175,14 @@ impl Style {
         if P::prop_ref().info().inherited {
             self.has_inherited = true;
         }
-        self.map.insert(P::key(), Rc::new(insert));
+        self.map_mut().insert(P::key(), Rc::new(insert));
         self.merge_id = next_style_merge_id();
         self
     }
 
     /// Sets a transition animation for a specific style property.
     pub fn transition<P: StyleProp>(mut self, _prop: P, transition: Transition) -> Self {
-        self.map
+        self.map_mut()
             .insert(P::prop_ref().info().transition_key, Rc::new(transition));
         self.merge_id = next_style_merge_id();
         self

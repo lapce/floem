@@ -1,10 +1,10 @@
 use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
+use floem::ViewId;
 use floem::headless::{HeadlessHarness, TestRoot};
 use floem::prelude::*;
 use floem::views::{Decorators, Empty, Label, LabelClass, Stack};
-use floem::ViewId;
 
 const LABEL_COUNT: usize = 100;
 const EMPTY_COUNT: usize = 100;
@@ -41,15 +41,13 @@ fn create_themed_labels(count: usize) -> (impl IntoView, Vec<ViewId>) {
 fn create_themed_empty_views(count: usize) -> (impl IntoView, Vec<ViewId>) {
     let empties: Vec<_> = (0..count)
         .map(|i| {
-            Empty::new()
-                .class(BenchEmptyClass)
-                .style(move |s| {
-                    s.size(24.0 + (i % 3) as f32, 18.0 + (i % 5) as f32)
-                        .padding(3.0)
-                        .border(1.0)
-                        .border_color(palette::css::DARK_GRAY)
-                        .background(palette::css::LIGHT_BLUE)
-                })
+            Empty::new().class(BenchEmptyClass).style(move |s| {
+                s.size(24.0 + (i % 3) as f32, 18.0 + (i % 5) as f32)
+                    .padding(3.0)
+                    .border(1.0)
+                    .border_color(palette::css::DARK_GRAY)
+                    .background(palette::css::LIGHT_BLUE)
+            })
         })
         .collect();
 

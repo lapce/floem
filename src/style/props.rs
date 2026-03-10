@@ -10,12 +10,12 @@
 
 use std::any::{Any, type_name};
 use std::fmt::{self, Debug};
-use std::hash::{BuildHasherDefault, Hash, Hasher};
+use std::hash::{Hash, Hasher};
 use std::ptr;
 use std::rc::Rc;
 
-use imbl::shared_ptr::DefaultSharedPtr;
-use rustc_hash::FxHasher;
+use rustc_hash::FxHashMap;
+use smallvec::SmallVec;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
@@ -689,8 +689,253 @@ impl Debug for StyleKey {
 }
 
 // ============================================================================
-// ImHashMap
+// MapStorage
 // ============================================================================
 
-pub(crate) type ImHashMap<K, V> =
-    imbl::GenericHashMap<K, V, BuildHasherDefault<FxHasher>, DefaultSharedPtr>;
+/// Number of entries that stay fully inline inside [`MapStorage::Inline`].
+///
+/// The intent is that tiny style maps avoid heap allocation entirely. This is
+/// the dominant case for local view styles and many nested selector/class maps.
+const INLINE_STYLE_MAP_CAPACITY: usize = 4;
+
+/// Maximum number of entries we allow in the spilled `SmallVec` representation
+/// before switching to [`FxHashMap`].
+///
+/// This gives us three effective stages with a single enum:
+/// 1. `SmallVec` inline storage while `len <= INLINE_STYLE_MAP_CAPACITY`
+/// 2. spilled `SmallVec` heap storage while `INLINE_STYLE_MAP_CAPACITY < len <= HEAP_STYLE_MAP_CAPACITY`
+/// 3. `FxHashMap` once the linear representation is large enough that lookup cost dominates
+///
+/// The exact threshold is a tuning knob and is intentionally documented here so
+/// benchmark-driven adjustments stay easy.
+const HEAP_STYLE_MAP_CAPACITY: usize = 16;
+
+/// Backing storage for style maps.
+///
+/// # Motivation
+///
+/// The style system creates a very large number of tiny maps. A full hash map is
+/// wasteful in both allocation cost and memory traffic for those cases, while a
+/// flat linear representation is often faster when there are only a handful of
+/// entries. At the same time, some merged styles do grow large enough that a
+/// hash table becomes the right tradeoff.
+///
+/// This enum encodes that directly:
+/// - `Inline`: a `SmallVec` that starts on the stack and transparently spills to
+///   the heap once it outgrows its inline capacity
+/// - `Hash`: an `FxHashMap` for the larger cases where repeated linear scans are
+///   no longer acceptable
+///
+/// # Correctness Invariants
+///
+/// - Every key appears at most once, regardless of storage variant.
+/// - Promotion from `Inline` to `Hash` preserves all key/value pairs.
+/// - Removal is order-insensitive. We use `swap_remove` for the linear form,
+///   which is correct because no caller relies on stable insertion order.
+/// - Iteration order is therefore not semantically meaningful. Code that needs
+///   deterministic hashing must sort keys explicitly, which the style cache does.
+///
+/// # API Design
+///
+/// The methods below intentionally mirror the small subset of map operations the
+/// style system actually needs: lookup, insertion, removal, clearing, and cheap
+/// iteration over keys/values/entries. Keeping that surface small makes it much
+/// easier to reason about promotion behavior and cloning costs.
+#[derive(Clone)]
+pub(crate) enum MapStorage<K, V> {
+    Inline(SmallVec<[(K, V); INLINE_STYLE_MAP_CAPACITY]>),
+    Hash(FxHashMap<K, V>),
+}
+
+impl<K, V> Default for MapStorage<K, V> {
+    fn default() -> Self {
+        Self::Inline(SmallVec::new())
+    }
+}
+
+impl<K, V> MapStorage<K, V>
+where
+    K: Copy + Eq + Hash,
+{
+    /// Returns the number of live entries in the map.
+    ///
+    /// This must agree across both representations and is used in hot paths such
+    /// as content hashing and cacheability checks.
+    pub fn len(&self) -> usize {
+        match self {
+            MapStorage::Inline(entries) => entries.len(),
+            MapStorage::Hash(entries) => entries.len(),
+        }
+    }
+
+    /// Returns `true` when the map contains no entries.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Clears all entries and resets the storage back to the inline form.
+    ///
+    /// Resetting to `Inline` is deliberate: a large style that is cleared should
+    /// not permanently retain a hash map allocation if the next usage is tiny.
+    pub fn clear(&mut self) {
+        *self = MapStorage::Inline(SmallVec::new());
+    }
+
+    /// Returns a shared reference to the value for `key`, if present.
+    ///
+    /// The inline path performs a linear scan. That is intentional and faster
+    /// than hashing for these tiny maps.
+    pub fn get(&self, key: &K) -> Option<&V> {
+        match self {
+            MapStorage::Inline(entries) => entries.iter().find(|(k, _)| k == key).map(|(_, v)| v),
+            MapStorage::Hash(entries) => entries.get(key),
+        }
+    }
+
+    /// Returns `true` if `key` is present.
+    pub fn contains_key(&self, key: &K) -> bool {
+        self.get(key).is_some()
+    }
+
+    /// Inserts or replaces a key/value pair.
+    ///
+    /// # Promotion Behavior
+    ///
+    /// While in `Inline`, we append until the spilled `SmallVec` reaches
+    /// [`HEAP_STYLE_MAP_CAPACITY`]. Beyond that point we promote once into
+    /// `FxHashMap` and continue there.
+    ///
+    /// # Correctness
+    ///
+    /// Replacements preserve the single-entry-per-key invariant. Promotion drains
+    /// the linear storage exactly once into the hash map before inserting any
+    /// future updates.
+    pub fn insert(&mut self, key: K, value: V) -> Option<V> {
+        match self {
+            MapStorage::Inline(entries) => {
+                if let Some((_, existing)) = entries.iter_mut().find(|(k, _)| *k == key) {
+                    return Some(std::mem::replace(existing, value));
+                }
+                if entries.len() < INLINE_STYLE_MAP_CAPACITY {
+                    entries.push((key, value));
+                    return None;
+                }
+
+                entries.push((key, value));
+                if entries.len() <= HEAP_STYLE_MAP_CAPACITY {
+                    return None;
+                }
+
+                let mut map = FxHashMap::default();
+                map.reserve(entries.len());
+                for (k, v) in entries.drain(..) {
+                    map.insert(k, v);
+                }
+                *self = MapStorage::Hash(map);
+                None
+            }
+            MapStorage::Hash(entries) => entries.insert(key, value),
+        }
+    }
+
+    /// Removes `key` and returns its value if present.
+    ///
+    /// We use `swap_remove` in the inline representation because stable order is
+    /// not part of the contract and this avoids shifting all tail elements.
+    pub fn remove(&mut self, key: &K) -> Option<V> {
+        match self {
+            MapStorage::Inline(entries) => entries
+                .iter()
+                .position(|(k, _)| k == key)
+                .map(|idx| entries.swap_remove(idx).1),
+            MapStorage::Hash(entries) => entries.remove(key),
+        }
+    }
+
+    /// Iterates over `(key, value)` pairs.
+    pub fn iter(&self) -> MapStorageIter<'_, K, V> {
+        match self {
+            MapStorage::Inline(entries) => MapStorageIter::Inline(entries.iter()),
+            MapStorage::Hash(entries) => MapStorageIter::Hash(entries.iter()),
+        }
+    }
+
+    /// Iterates over keys.
+    pub fn keys(&self) -> MapStorageKeys<'_, K, V> {
+        match self {
+            MapStorage::Inline(entries) => MapStorageKeys::Inline(entries.iter()),
+            MapStorage::Hash(entries) => MapStorageKeys::Hash(entries.keys()),
+        }
+    }
+
+    /// Iterates over values.
+    pub fn values(&self) -> MapStorageValues<'_, K, V> {
+        match self {
+            MapStorage::Inline(entries) => MapStorageValues::Inline(entries.iter()),
+            MapStorage::Hash(entries) => MapStorageValues::Hash(entries.values()),
+        }
+    }
+}
+
+/// Iterator over entries in [`MapStorage`].
+pub(crate) enum MapStorageIter<'a, K, V> {
+    Inline(std::slice::Iter<'a, (K, V)>),
+    Hash(std::collections::hash_map::Iter<'a, K, V>),
+}
+
+impl<'a, K, V> Iterator for MapStorageIter<'a, K, V> {
+    type Item = (&'a K, &'a V);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            MapStorageIter::Inline(iter) => iter.next().map(|(k, v)| (k, v)),
+            MapStorageIter::Hash(iter) => iter.next(),
+        }
+    }
+}
+
+/// Iterator over keys in [`MapStorage`].
+pub(crate) enum MapStorageKeys<'a, K, V> {
+    Inline(std::slice::Iter<'a, (K, V)>),
+    Hash(std::collections::hash_map::Keys<'a, K, V>),
+}
+
+impl<'a, K, V> Iterator for MapStorageKeys<'a, K, V> {
+    type Item = &'a K;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            MapStorageKeys::Inline(iter) => iter.next().map(|(k, _)| k),
+            MapStorageKeys::Hash(iter) => iter.next(),
+        }
+    }
+}
+
+/// Iterator over values in [`MapStorage`].
+pub(crate) enum MapStorageValues<'a, K, V> {
+    Inline(std::slice::Iter<'a, (K, V)>),
+    Hash(std::collections::hash_map::Values<'a, K, V>),
+}
+
+impl<'a, K, V> Iterator for MapStorageValues<'a, K, V> {
+    type Item = &'a V;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            MapStorageValues::Inline(iter) => iter.next().map(|(_, v)| v),
+            MapStorageValues::Hash(iter) => iter.next(),
+        }
+    }
+}
+
+impl<'a, K, V> IntoIterator for &'a MapStorage<K, V>
+where
+    K: Copy + Eq + Hash,
+{
+    type Item = (&'a K, &'a V);
+    type IntoIter = MapStorageIter<'a, K, V>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}

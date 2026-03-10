@@ -332,7 +332,7 @@ pub trait CustomStyle: Default + Clone + Into<Style> + From<Style> {
     fn transition<P: StyleProp>(self, _prop: P, transition: Transition) -> Self {
         let mut self_style: Style = self.into();
         self_style
-            .map
+            .map_mut()
             .insert(P::prop_ref().info().transition_key, Rc::new(transition));
         self_style.into()
     }
