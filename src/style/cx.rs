@@ -248,7 +248,9 @@ impl<'a> StyleCx<'a> {
             let selectors = vs.has_style_selectors;
 
             // Build the full class list: view's classes + view type class
-            let mut all_classes = vs.classes.clone();
+            let mut all_classes =
+                Vec::with_capacity(vs.classes.len() + usize::from(view_class.is_some()));
+            all_classes.extend(vs.classes.iter().copied());
             if let Some(vc) = view_class {
                 all_classes.push(vc);
             }

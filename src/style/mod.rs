@@ -132,6 +132,7 @@ use floem_renderer::text::{FontWeight as FontWeightProp, LineHeightValue};
 use peniko::color::palette;
 use peniko::kurbo::{self, Affine, RoundedRect, Stroke, Vec2};
 use peniko::{Brush, Color};
+use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 use std::any::Any;
 use std::collections::HashMap;
@@ -195,8 +196,7 @@ pub use values::{ObjectFit, StrokeWrap, StyleMapValue, StylePropValue, StyleValu
 pub use cache::{StyleCache, StyleCacheKey};
 
 pub(crate) use props::{
-    CONTEXT_MAPPINGS_INFO, MapStorage, RESPONSIVE_SELECTORS_INFO, STRUCTURAL_SELECTORS_INFO,
-    style_key_selector,
+    CONTEXT_MAPPINGS_INFO, RESPONSIVE_SELECTORS_INFO, STRUCTURAL_SELECTORS_INFO, style_key_selector,
 };
 
 static NEXT_STYLE_MERGE_ID: AtomicU64 = AtomicU64::new(1);
@@ -214,6 +214,10 @@ fn combine_merge_ids(a: u64, b: u64) -> u64 {
 type ContextMapFn = Rc<dyn Fn(Style, Box<dyn Fn(StyleKey) -> Option<Rc<dyn Any>>>) -> Style>;
 type StructuralSelectorRules = SmallVec<[(StructuralSelector, Rc<Style>); 2]>;
 type ResponsiveSelectorRules = SmallVec<[(ResponsiveSelector, Rc<Style>); 2]>;
+
+fn fx_hash_map_with_capacity<K, V>(capacity: usize) -> FxHashMap<K, V> {
+    FxHashMap::with_capacity_and_hasher(capacity, Default::default())
+}
 
 fn take_any<T: Any + Clone>(value: Rc<dyn Any>) -> T {
     Rc::downcast::<T>(value)
@@ -420,8 +424,8 @@ fn resolve_classes_collecting_mappings(
     class_context: &Style,
     selectors: &mut StyleSelectors,
 ) -> (Style, Vec<ContextMapFn>) {
-    let mut result = Style::new();
-    let mut mappings = Vec::new();
+    let mut result = Style::with_capacity(classes.len());
+    let mut mappings = Vec::with_capacity(classes.len());
 
     for class in classes {
         if let Some(map) = class_context.get_nested_map(class.key) {
@@ -445,7 +449,7 @@ fn resolve_style_collecting_mappings(
     screen_size_bp: ScreenSizeBp,
     selectors: &mut StyleSelectors,
 ) -> (Style, Vec<ContextMapFn>) {
-    let mut mappings = Vec::new();
+    let mut mappings = Vec::with_capacity(1);
 
     // Extract context mappings from style before resolving
     if let Some(style_mappings) = extract_context_mappings(&mut style) {
@@ -470,7 +474,7 @@ fn resolve_selectors_collecting_mappings(
 
     const MAX_DEPTH: u32 = 20;
     let mut depth = 0;
-    let mut all_mappings = Vec::new();
+    let mut all_mappings = Vec::with_capacity(style.map.len());
 
     loop {
         if depth >= MAX_DEPTH {
@@ -608,7 +612,9 @@ fn extract_context_mappings(style: &mut Style) -> Option<Vec<ContextMapFn>> {
     let key = context_mappings_key();
     style.map_mut().remove(&key).map(|rc| {
         let mappings: ContextMappings = take_any(rc);
-        mappings.0.iter().cloned().collect()
+        let mut extracted = Vec::with_capacity(mappings.0.len());
+        extracted.extend(mappings.0.iter().cloned());
+        extracted
     })
 }
 
@@ -630,7 +636,7 @@ fn extract_responsive_selectors(style: &mut Style) -> Option<ResponsiveSelectorR
 
 #[derive(Clone)]
 pub struct Style {
-    pub(crate) map: Rc<MapStorage<StyleKey, Rc<dyn Any>>>,
+    pub(crate) map: Rc<FxHashMap<StyleKey, Rc<dyn Any>>>,
     /// Deterministic identity for style merges.
     merge_id: u64,
     /// Cached flag indicating whether this style contains any class maps.
@@ -650,8 +656,14 @@ pub struct Style {
 }
 impl Default for Style {
     fn default() -> Self {
+        Self::with_capacity(0)
+    }
+}
+
+impl Style {
+    fn with_capacity(capacity: usize) -> Self {
         let effect_context = floem_reactive::Runtime::get_current_effect();
-        let map = Rc::new(MapStorage::default());
+        let map = Rc::new(fx_hash_map_with_capacity(capacity));
         Self {
             merge_id: next_style_merge_id(),
             map,
@@ -661,15 +673,13 @@ impl Default for Style {
             context_selectors: StyleSelectors::empty(),
         }
     }
-}
 
-impl Style {
-    fn map_mut(&mut self) -> &mut MapStorage<StyleKey, Rc<dyn Any>> {
+    fn map_mut(&mut self) -> &mut FxHashMap<StyleKey, Rc<dyn Any>> {
         Rc::make_mut(&mut self.map)
     }
 
     pub fn new() -> Self {
-        Self::default()
+        Self::with_capacity(0)
     }
 
     /// Apply only inherited properties from `from` style to `to` style.
@@ -906,13 +916,19 @@ impl Style {
         // Store the closure for later context resolution
         let key = context_mappings_key();
 
-        // Build new mappings vec - use Rc::make_mut for efficient copy-on-write
-        let mut mappings_vec = self
+        let existing_mappings = self
             .map
             .get(&key)
             .and_then(|v| v.downcast_ref::<ContextMappings>())
-            .map(|cm| (*cm.0).clone())
-            .unwrap_or_default();
+            .map(|cm| cm.0.clone());
+        let mut mappings_vec = Vec::with_capacity(
+            existing_mappings
+                .as_ref()
+                .map_or(1, |mappings| mappings.len() + 1),
+        );
+        if let Some(existing_mappings) = existing_mappings {
+            mappings_vec.extend(existing_mappings.iter().cloned());
+        }
         mappings_vec.push(mapper);
 
         // Start with the immediate result (has selectors/inherited props)
@@ -957,13 +973,19 @@ impl Style {
         // Store the closure
         let key = context_mappings_key();
 
-        // Build new mappings vec efficiently
-        let mut mappings_vec = self
+        let existing_mappings = self
             .map
             .get(&key)
             .and_then(|v| v.downcast_ref::<ContextMappings>())
-            .map(|cm| (*cm.0).clone())
-            .unwrap_or_default();
+            .map(|cm| cm.0.clone());
+        let mut mappings_vec = Vec::with_capacity(
+            existing_mappings
+                .as_ref()
+                .map_or(1, |mappings| mappings.len() + 1),
+        );
+        if let Some(existing_mappings) = existing_mappings {
+            mappings_vec.extend(existing_mappings.iter().cloned());
+        }
         mappings_vec.push(mapper);
 
         let mut final_result = self;
