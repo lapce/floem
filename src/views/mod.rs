@@ -100,6 +100,9 @@ pub use decorator::*;
 mod list;
 pub use list::*;
 
+mod navigation_stack;
+pub use navigation_stack::*;
+
 mod virtual_list;
 pub use virtual_list::*;
 
