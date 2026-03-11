@@ -1,5 +1,5 @@
 use floem::{
-    AnyView, Application,
+    AnyView, Application, LazyView,
     action::{exec_after_animation_frame, set_window_scale},
     event::listener,
     kurbo::Size,
@@ -25,6 +25,12 @@ thread_local! {
 const BACK_CHEVRON_SVG: &str = r#"
 <svg width="12" height="20" viewBox="0 0 12 20" fill="none" xmlns="http://www.w3.org/2000/svg">
   <path d="M10.5 1.5L2 10L10.5 18.5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+"#;
+
+const HOME_SVG: &str = r#"
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M4 10.5L12 4L20 10.5V20H14.5V14H9.5V20H4V10.5Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
 "#;
 
@@ -113,7 +119,7 @@ impl Spot {
     }
 
     fn feature_banner(self) -> impl IntoView {
-        let pills = (pill("Curated"), pill("iOS style"), pill("Quiet stay"))
+        let pills = (Pill("Curated"), Pill("iOS style"), Pill("Quiet stay"))
             .h_stack()
             .style(|s| {
                 s.col_gap(8.0)
@@ -147,8 +153,7 @@ impl Spot {
     }
 
     fn detail_screen(self) -> impl IntoView {
-        let header =
-            mobile_header("Stay Details", Some(|| current_router().pop())).debug_name("header");
+        let header = MobileHeader::new("Stay Details", HeaderAction::Pop);
         let banner = self.feature_banner().debug_name("banner");
 
         let city = self
@@ -190,13 +195,12 @@ impl Spot {
         (header, banner, content)
             .v_stack()
             .scroll()
-            .style(|s| s.items_stretch().padding_horiz(18.0).row_gap(18.0))
+            .style(|s| s.items_stretch().row_gap(18.0))
             .debug_name("detail_screen")
     }
 
     fn booking_screen(self) -> impl IntoView {
-        let header =
-            mobile_header("Confirm Booking", Some(|| current_router().pop())).debug_name("header");
+        let header = MobileHeader::new("Confirm Booking", HeaderAction::Pop);
 
         let summary_title = "Summary"
             .style(|s| s.font_size(18.0).font_bold())
@@ -237,19 +241,12 @@ impl Spot {
 
         (header, summary, actions)
             .v_stack()
-            .style(|s| {
-                s.width_full()
-                    .items_stretch()
-                    .padding_horiz(18.0)
-                    .padding_top(6.0)
-                    .row_gap(18.0)
-            })
+            .style(|s| s.width_full().items_stretch().row_gap(18.0))
             .debug_name("booking_screen")
     }
 
     fn payment_result_screen(self, result: PaymentResult) -> impl IntoView {
-        let header = mobile_header("Payment Status", Some(|| current_router().nav_to_home()))
-            .debug_name("header");
+        let header = MobileHeader::new("Payment Status", HeaderAction::Home);
 
         let badge = payment_badge(result).debug_name("badge");
         let title = result
@@ -267,6 +264,7 @@ impl Spot {
                 s.font_size(15.0)
                     .line_height(1.5)
                     .text_align(Alignment::Center)
+                    .max_width_full()
                     .text_wrap()
                     .with_theme(|s, t| s.color(t.text_muted()))
             })
@@ -303,17 +301,21 @@ impl Spot {
             .into_any(),
         };
 
-        let secondary = secondary_button("Browse stays", || current_router().nav_to_home())
+        let secondary = secondary_button("Go Home", || current_router().nav_to_home())
             .debug_name("secondary")
             .into_any();
 
-        let actions = Stack::new((primary, secondary))
-            .style(|s| s.flex_col().width_full().row_gap(10.0))
-            .debug_name("actions");
+        let actions = match result {
+            PaymentResult::Success => primary.into_any(),
+            PaymentResult::Failure => Stack::new((primary, secondary))
+                .style(|s| s.flex_col().width_full().row_gap(10.0))
+                .debug_name("actions")
+                .into_any(),
+        };
 
         (header, result_body, actions)
             .v_stack()
-            .style(|s| s.items_stretch().padding(18.0).row_gap(18.0))
+            .style(|s| s.items_stretch().row_gap(18.0))
             .debug_name("payment_result_screen")
     }
 }
@@ -411,6 +413,7 @@ impl IntoView for Route {
             Route::Booking(spot) => spot.booking_screen().into_any(),
             Route::PaymentResult(spot, result) => spot.payment_result_screen(result).into_any(),
         }
+        .style(|s| s.padding(18))
     }
 }
 
@@ -446,6 +449,93 @@ impl PaymentResult {
             PaymentResult::Success => theme.success(),
             PaymentResult::Failure => theme.danger(),
         }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum HeaderAction {
+    Pop,
+    Home,
+}
+impl IntoView for HeaderAction {
+    type V = Button;
+
+    type Intermediate = Self::V;
+
+    fn into_intermediate(self) -> Self::Intermediate {
+        self.into_view()
+    }
+
+    fn into_view(self) -> Self::V {
+        match self {
+            HeaderAction::Pop => svg(BACK_CHEVRON_SVG).style(|s| s.size(12, 12)),
+            HeaderAction::Home => svg(HOME_SVG).style(|s| s.size(24, 24)),
+        }
+        .button()
+        .style(move |s| {
+            s.border_radius(999.0)
+                .background(Color::WHITE)
+                .color(Color::from_rgb8(44, 37, 33))
+                .font_size(18.0)
+                .font_bold()
+        })
+        .action(move || match self {
+            HeaderAction::Pop => current_router().pop(),
+            HeaderAction::Home => current_router().nav_to_home(),
+        })
+    }
+}
+
+#[derive(Clone, Copy)]
+struct MobileHeader {
+    title: &'static str,
+    back: Option<HeaderAction>,
+}
+
+impl MobileHeader {
+    fn new(title: &'static str, back: HeaderAction) -> Self {
+        Self {
+            title,
+            back: Some(back),
+        }
+    }
+}
+
+impl IntoView for MobileHeader {
+    type V = AnyView;
+    type Intermediate = AnyView;
+
+    fn into_intermediate(self) -> Self::Intermediate {
+        self.into_view()
+    }
+
+    fn into_view(self) -> Self::V {
+        let leading = match self.back {
+            Some(action_button) => action_button.into_any(),
+            None => Empty::new().into_any(),
+        }
+        .style(|s| s.size(44, 44));
+
+        let title = self
+            .title
+            .style(|s| s.font_size(18.0).font_bold())
+            .debug_name("title");
+        let trailing = Empty::new()
+            .style(|s| s.size(44.0, 44.0))
+            .debug_name("trailing");
+
+        (leading, title, trailing)
+            .h_stack()
+            .style(|s| {
+                s.width_full()
+                    .justify_between()
+                    .items_center()
+                    .padding_horiz(18.0)
+                    .padding_vert(12.0)
+                    .with_theme(|s, t| s.color(t.text()))
+            })
+            .debug_name("header")
+            .into_any()
     }
 }
 
@@ -628,7 +718,7 @@ fn home_screen() -> impl IntoView {
         .debug_name("hero_subtitle");
     let hero_dots = feature_dots(Color::from_rgb8(108, 132, 255)).debug_name("hero_dots");
 
-    let hero = (status_row(), hero_title, hero_subtitle, hero_dots)
+    let hero = (hero_title, hero_subtitle, hero_dots)
         .v_stack()
         .style(|s| {
             s.padding(22.0).row_gap(10.0).with_theme(|s, t| {
@@ -656,60 +746,12 @@ fn home_screen() -> impl IntoView {
     (hero, section_title, cards)
         .v_stack()
         .scroll()
-        .style(|s| s.items_stretch().padding(18.0).row_gap(14.0))
+        .style(|s| s.items_stretch().row_gap(14.0))
         .debug_name("home_screen")
 }
 
-fn mobile_header(title: &'static str, back: Option<impl Fn() + 'static>) -> impl IntoView {
-    let leading = match back {
-        Some(action) => svg(BACK_CHEVRON_SVG)
-            .style(|s| s.size(12.0, 20.0))
-            .button()
-            .action(action)
-            .style(button_circle_style(
-                Color::WHITE,
-                Color::from_rgb8(44, 37, 33),
-            ))
-            .into_any(),
-        None => Empty::new().style(|s| s.size(44.0, 44.0)).into_any(),
-    };
-
-    let title = title
-        .style(|s| s.font_size(18.0).font_bold())
-        .debug_name("title");
-    let trailing = Empty::new()
-        .style(|s| s.size(44.0, 44.0))
-        .debug_name("trailing");
-
-    (leading, title, trailing)
-        .h_stack()
-        .style(|s| {
-            s.width_full()
-                .justify_between()
-                .items_center()
-                .padding_horiz(18.0)
-                .padding_vert(12.0)
-                .with_theme(|s, t| s.color(t.text()))
-        })
-        .debug_name("mobile_header")
-}
-
-fn status_row() -> impl IntoView {
-    let time = "9:41"
-        .style(|s| s.font_bold().color(Color::WHITE))
-        .debug_name("time");
-    let indicators = "● ● ●"
-        .style(|s| s.color(Color::WHITE.with_alpha(0.85)))
-        .debug_name("indicators");
-
-    (time, indicators)
-        .h_stack()
-        .style(|s| s.width_full().justify_between().items_center())
-        .debug_name("status_row")
-}
-
 fn floating_action_button() -> impl IntoView {
-    "Browse Cities"
+    "Quick Jump"
         .button()
         .action(|| current_router().toggle_quick_actions())
         .class(ButtonClass)
@@ -757,9 +799,18 @@ fn quick_action_sheet(button_id: ViewId) -> impl IntoView {
         .debug_name("bergen");
     let kyoto =
         quick_action_button("Kyoto", || current_router().push_detail(SPOTS[2])).debug_name("kyoto");
+    let home = quick_action_button((svg(HOME_SVG).style(|s| s.size(24, 24)), "Home"), || {
+        current_router().nav_to_home()
+    })
+    .debug_name("home");
 
-    let sheet = (title, palm_springs, bergen, kyoto)
-        .v_stack()
+    let last = current_router().path.with(|p| p.last().copied());
+    let options = match last {
+        Some(route) if route != Route::Home => (title, home, palm_springs, bergen, kyoto).v_stack(),
+        _ => (title, palm_springs, bergen, kyoto).v_stack(),
+    };
+
+    let sheet = options
         .style(move |s| {
             s.absolute()
                 .inset_bottom(28.0 + button_height + button_gap)
@@ -852,9 +903,11 @@ fn secondary_button(label: &'static str, action: impl Fn() + 'static) -> impl In
         .debug_name("secondary_button")
 }
 
-fn quick_action_button(label: &'static str, action: impl Fn() + 'static) -> impl IntoView {
-    label
-        .button()
+fn quick_action_button(
+    view: impl IntoView + 'static,
+    action: impl Fn() + 'static,
+) -> impl IntoView {
+    view.button()
         .action(action)
         .class(ButtonClass)
         .style(|s| {
@@ -885,9 +938,8 @@ fn booking_row(label: &'static str, value: &'static str) -> impl IntoView {
 }
 
 fn booking_total(value: &'static str) -> impl IntoView {
-    let label = "Total"
-        .style(|s| s.font_size(16.0).font_bold())
-        .debug_name("label");
+    let label = "Total".style(|s| s.font_size(16.0).font_bold());
+
     let value = value
         .style(|s| s.font_size(20.0).font_bold())
         .debug_name("value");
@@ -904,7 +956,7 @@ fn booking_total(value: &'static str) -> impl IntoView {
 }
 
 fn amenity_row() -> impl IntoView {
-    (pill("Breakfast"), pill("Sauna"), pill("Late checkout"))
+    (Pill("Breakfast"), Pill("Sauna"), Pill("Late checkout"))
         .h_stack()
         .style(|s| {
             s.width_full()
@@ -915,14 +967,13 @@ fn amenity_row() -> impl IntoView {
 }
 
 fn feature_dots(accent: Color) -> impl IntoView {
-    (
+    Stack::horizontal((
         dot(accent),
         dot(accent.with_alpha(0.7)),
         dot(accent.with_alpha(0.45)),
-    )
-        .h_stack()
-        .style(|s| s.col_gap(6.0))
-        .debug_name("feature_dots")
+    ))
+    .style(|s| s.col_gap(6.0))
+    .debug_name("feature_dots")
 }
 
 fn dot(color: Color) -> impl IntoView {
@@ -931,28 +982,27 @@ fn dot(color: Color) -> impl IntoView {
         .debug_name("dot")
 }
 
-fn pill(label: &'static str) -> impl IntoView {
-    label
-        .style(|s| {
-            s.padding_horiz(12.0)
-                .padding_vert(8.0)
-                .border_radius(999.0)
-                .background(Color::WHITE.with_alpha(0.18))
-                .color(Color::WHITE)
-        })
-        .debug_name("pill")
-}
+pub struct Pill(&'static str);
+impl IntoView for Pill {
+    type V = Label;
 
-fn button_circle_style(
-    background: Color,
-    text: Color,
-) -> impl Fn(floem::style::Style) -> floem::style::Style {
-    move |s| {
-        s.size(44.0, 44.0)
-            .border_radius(999.0)
-            .background(background)
-            .color(text)
-            .font_size(18.0)
-            .font_bold()
+    type Intermediate = LazyView<&'static str>;
+
+    fn into_intermediate(self) -> Self::Intermediate {
+        LazyView::new(self.0)
+    }
+
+    fn into_view(self) -> Self::V {
+        self.0
+            .style(|s| {
+                s.padding_horiz(12.0)
+                    .padding_vert(8.0)
+                    .border_radius(999.0)
+                    .background(Color::WHITE.with_alpha(0.18))
+                    .color(Color::WHITE)
+                    .selectable(false)
+            })
+            .debug_name("pill")
+            .into_view()
     }
 }

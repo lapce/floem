@@ -18,13 +18,13 @@
 //! # use floem::prelude::*;
 //! # use floem::views::NavigationStack;
 //! # #[derive(Clone, Hash, Eq, PartialEq)]
-//! # struct Route;
+//! # struct Route(String);
 //! # impl IntoView for Route {
-//! #     type V = floem::AnyView;
-//! #     type Intermediate = floem::view::LazyView<Route>;
-//! #     fn into_intermediate(self) -> Self::Intermediate { floem::view::LazyView::new(self) }
+//! #     type V = floem::views::Label;
+//! #     type Intermediate = floem::view::LazyView<String>;
+//! #     fn into_intermediate(self) -> Self::Intermediate { floem::view::LazyView::new(self.0) }
 //! # }
-//! let path = RwSignal::new(vec![Route]);
+//! let path = RwSignal::new(vec![Route("Home".to_string())]);
 //!
 //! let stack = NavigationStack::new(path);
 //! ```
@@ -416,15 +416,15 @@ where
 /// # use floem::prelude::*;
 /// # use floem::views::NavigationStack;
 /// # #[derive(Clone, Eq, PartialEq, Hash)]
-/// # struct Route;
+/// # struct Route(String);
 /// # impl IntoView for Route {
-/// #     type V = floem::AnyView;
-/// #     type Intermediate = floem::view::LazyView<Route>;
+/// #     type V = floem::views::Label;
+/// #     type Intermediate = floem::view::LazyView<String>;
 /// #     fn into_intermediate(self) -> Self::Intermediate {
-/// #         floem::view::LazyView::new(self)
+/// #         floem::view::LazyView::new(self.0)
 /// #     }
 /// # }
-/// let path = RwSignal::new(vec![Route]);
+/// let path = RwSignal::new(vec![Route("Home".to_string())]);
 ///
 /// let stack = NavigationStack::new(path);
 /// ```
@@ -445,7 +445,7 @@ where
 ///         Route::Detail(id) => format!("detail:{id}"),
 ///     })
 ///     .view(|route| match route {
-///         Route::Home => "Home",
+///         Route::Home => "Home".to_string(),
 ///         Route::Detail(id) => format!("Detail {id}"),
 ///     });
 /// ```
@@ -495,15 +495,15 @@ where
     /// # use floem::prelude::*;
     /// # use floem::views::NavigationStack;
     /// # #[derive(Clone, Eq, PartialEq, Hash)]
-    /// # struct Route;
+    /// # struct Route(String);
     /// # impl IntoView for Route {
-    /// #     type V = floem::AnyView;
-    /// #     type Intermediate = floem::view::LazyView<Route>;
+    /// #     type V = floem::views::Label;
+    /// #     type Intermediate = floem::view::LazyView<String>;
     /// #     fn into_intermediate(self) -> Self::Intermediate {
-    /// #         floem::view::LazyView::new(self)
+    /// #         floem::view::LazyView::new(self.0)
     /// #     }
     /// # }
-    /// let path = RwSignal::new(vec![Route]);
+    /// let path = RwSignal::new(vec![Route("Home".to_string())]);
     ///
     /// let stack = NavigationStack::new(path);
     /// ```
@@ -523,7 +523,7 @@ where
     ///         Route::Detail(id) => format!("detail:{id}"),
     ///     })
     ///     .view(|route| match route {
-    ///         Route::Home => "Home",
+    ///         Route::Home => "Home".to_string(),
     ///         Route::Detail(id) => format!("Detail {id}"),
     ///     });
     /// ```

@@ -116,7 +116,7 @@ pub struct WindowState {
     pub(crate) drag_tracker: DragTracker,
     pub(crate) screen_size_bp: ScreenSizeBp,
     pub(crate) grid_bps: GridBreakpoints,
-    pub(crate) click_state: ClickState<Rc<[ElementId]>>,
+    pub(crate) click_state: ClickState<SmallVec<[ElementId; 64]>>,
     // TODO: Track hover state per pointer
     pub(crate) hover_state: HoverState<ElementId>,
     pub(crate) key_trigger_state: bool,
