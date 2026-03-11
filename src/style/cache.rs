@@ -482,8 +482,11 @@ impl Style {
         // Hash the number of entries
         self.map.len().hash(&mut hasher);
 
+        let mut entries: Vec<_> = self.map.iter().collect();
+        entries.sort_unstable_by_key(|(key, _)| key.info as *const _ as usize);
+
         // Hash each key and value based on content
-        for (key, value) in self.map.iter() {
+        for (key, value) in entries {
             // Hash the key's info pointer as identity
             std::ptr::hash(key.info, &mut hasher);
 

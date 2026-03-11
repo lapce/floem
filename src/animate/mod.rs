@@ -937,7 +937,7 @@ impl Animation {
             }
             AnimStateCommand::Start => {
                 self.reverse_once.set(false);
-                self.folded_style.map.clear();
+                Rc::make_mut(&mut self.folded_style.map).clear();
                 self.repeat_count = 0;
                 self.state = AnimState::PassInProgress {
                     started_on: Instant::now(),
@@ -946,7 +946,7 @@ impl Animation {
             }
             AnimStateCommand::Reverse => {
                 self.reverse_once.set(true);
-                self.folded_style.map.clear();
+                Rc::make_mut(&mut self.folded_style.map).clear();
                 self.repeat_count = 0;
                 self.state = AnimState::PassInProgress {
                     started_on: Instant::now(),
@@ -1109,7 +1109,7 @@ impl Animation {
             if let Some(interpolated) =
                 (ext_prop.info().interpolate)(&*l.val.clone(), &*u.val.clone(), eased_time)
             {
-                self.folded_style.map.insert(ext_prop.key, interpolated);
+                Rc::make_mut(&mut self.folded_style.map).insert(ext_prop.key, interpolated);
             }
         }
 
@@ -1141,7 +1141,7 @@ impl Animation {
             if let Some(interpolated) =
                 (prop.info().interpolate)(&*prev.val.clone(), &*target.val.clone(), eased_time)
             {
-                self.folded_style.map.insert(prop.key, interpolated);
+                Rc::make_mut(&mut self.folded_style.map).insert(prop.key, interpolated);
             }
         }
 

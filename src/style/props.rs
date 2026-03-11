@@ -10,12 +10,9 @@
 
 use std::any::{Any, type_name};
 use std::fmt::{self, Debug};
-use std::hash::{BuildHasherDefault, Hash, Hasher};
+use std::hash::{Hash, Hasher};
 use std::ptr;
 use std::rc::Rc;
-
-use imbl::shared_ptr::DefaultSharedPtr;
-use rustc_hash::FxHasher;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
@@ -687,10 +684,3 @@ impl Debug for StyleKey {
         }
     }
 }
-
-// ============================================================================
-// ImHashMap
-// ============================================================================
-
-pub(crate) type ImHashMap<K, V> =
-    imbl::GenericHashMap<K, V, BuildHasherDefault<FxHasher>, DefaultSharedPtr>;

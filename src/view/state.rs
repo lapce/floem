@@ -482,7 +482,9 @@ impl ViewState {
         let base_selectors = base_style.selectors() | class_context.selectors();
 
         // Build the full class list: view's classes + view type class
-        let mut all_classes = self.classes.clone();
+        let mut all_classes =
+            Vec::with_capacity(self.classes.len() + usize::from(view_class.is_some()));
+        all_classes.extend(self.classes.iter().copied());
         if let Some(vc) = view_class {
             all_classes.push(vc);
         }
