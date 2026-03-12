@@ -200,6 +200,7 @@ struct Layer {
     pixmap: Pixmap,
     /// clip is stored with the transform at the time clip is called
     clip: Option<Rect>,
+    draw_bounds: Option<Rect>,
     mask: Mask,
     /// this transform should generally only be used when making a draw call to skia
     transform: Affine,
@@ -208,6 +209,23 @@ struct Layer {
     cache_color: CacheColor,
 }
 impl Layer {
+    fn mark_drawn_device_rect(&mut self, rect: Rect) {
+        let mut device_rect = rect;
+        if let Some(clip) = self.clip {
+            device_rect = device_rect.intersect(clip);
+        }
+
+        if device_rect.is_zero_area() {
+            return;
+        }
+
+        self.draw_bounds = Some(
+            self.draw_bounds
+                .map(|bounds| bounds.union(device_rect))
+                .unwrap_or(device_rect),
+        );
+    }
+
     fn device_transform(&self) -> Affine {
         self.transform
     }
@@ -258,6 +276,24 @@ impl Layer {
             .unwrap_or(true)
     }
 
+    fn mark_drawn_rect_inflated(&mut self, rect: Rect, transform: Affine, pad: f64) {
+        self.mark_drawn_device_rect(transform.transform_rect_bbox(rect).inset(-pad));
+    }
+
+    fn mark_stroke_bounds(&mut self, shape: &impl Shape, stroke: &peniko::kurbo::Stroke) {
+        if let Some(clip) = self.clip {
+            self.mark_drawn_device_rect(clip);
+            return;
+        }
+
+        let stroke_pad = stroke.width as f64 + stroke.miter_limit.max(1.0) + 4.0;
+        self.mark_drawn_rect_inflated(
+            shape.bounding_box().inset(-stroke_pad),
+            self.device_transform(),
+            4.0,
+        );
+    }
+
     /// Renders the pixmap at the position and transforms it with the given transform.
     /// x and y should have already been scaled by the window scale
     fn render_pixmap_direct(&mut self, img_pixmap: &Pixmap, x: f32, y: f32, transform: Affine) {
@@ -268,6 +304,7 @@ impl Layer {
         if !self.intersects_clip(img_rect, transform) {
             return;
         }
+        self.mark_drawn_rect_inflated(img_rect, transform, 2.0);
         let paint = Paint {
             shader: Pattern::new(
                 img_pixmap.as_ref(),
@@ -303,6 +340,7 @@ impl Layer {
         if !self.intersects_clip(rect, transform) {
             return;
         }
+        self.mark_drawn_rect_inflated(rect, transform, 2.0);
         let Some(rect) = to_skia_rect(rect) else {
             return;
         };
@@ -385,6 +423,7 @@ impl Layer {
             pixmap: Pixmap::new(width, height).ok_or_else(|| anyhow!("unable to create pixmap"))?,
             mask,
             clip: Some(transform.transform_rect_bbox(clip.bounding_box())),
+            draw_bounds: None,
             transform,
             blend_mode: blend.into(),
             alpha,
@@ -419,6 +458,7 @@ impl Layer {
     ) {
         let paint = try_ret!(brush_to_paint(brush));
         let path = try_ret!(shape_to_path(shape));
+        self.mark_stroke_bounds(shape, stroke);
         let line_cap = match stroke.end_cap {
             peniko::kurbo::Cap::Butt => LineCap::Butt,
             peniko::kurbo::Cap::Square => LineCap::Square,
@@ -454,6 +494,7 @@ impl Layer {
         // FIXME: Handle _blur_radius
 
         let paint = try_ret!(brush_to_paint(brush));
+        self.mark_drawn_rect_inflated(shape.bounding_box(), self.device_transform(), 2.0);
         if let Some(rect) = shape.as_rect() {
             let rect = try_ret!(to_skia_rect(rect));
             self.pixmap.fill_rect(
@@ -669,6 +710,7 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
             pixmap,
             mask,
             clip: None,
+            draw_bounds: None,
             alpha: 1.,
             transform: Affine::IDENTITY,
             blend_mode: Mix::Normal.into(),
@@ -731,6 +773,7 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
         let first_layer = self.layers.last_mut().unwrap();
         first_layer.pixmap.fill(tiny_skia::Color::TRANSPARENT);
         first_layer.clip = None;
+        first_layer.draw_bounds = None;
         first_layer.transform = Affine::IDENTITY;
     }
 
@@ -1027,6 +1070,12 @@ fn layer_composite_rect(layer: &Layer, parent: &Layer) -> Option<IntRect> {
         Size::new(layer.pixmap.width() as f64, layer.pixmap.height() as f64),
     );
 
+    if let Some(draw_bounds) = layer.draw_bounds {
+        rect = rect.intersect(draw_bounds);
+    } else {
+        return None;
+    }
+
     if let Some(layer_clip) = layer.clip {
         rect = rect.intersect(layer_clip);
     }
@@ -1155,6 +1204,7 @@ mod tests {
         Layer {
             pixmap: Pixmap::new(width, height).expect("failed to create pixmap"),
             clip: None,
+            draw_bounds: None,
             mask: Mask::new(width, height).expect("failed to create mask"),
             transform: Affine::IDENTITY,
             blend_mode: Mix::Normal.into(),
