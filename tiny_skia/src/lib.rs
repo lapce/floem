@@ -193,11 +193,18 @@ struct Glyph {
     top: f32,
 }
 
+#[derive(Clone)]
+struct ClipPath {
+    path: Path,
+    rect: Rect,
+}
+
 #[derive(PartialEq, Clone, Copy)]
 struct CacheColor(bool);
 
 struct Layer {
     pixmap: Pixmap,
+    base_clip: Option<ClipPath>,
     /// clip is stored with the transform at the time clip is called
     clip: Option<Rect>,
     draw_bounds: Option<Rect>,
@@ -209,6 +216,37 @@ struct Layer {
     cache_color: CacheColor,
 }
 impl Layer {
+    fn rebuild_clip_mask(&mut self, clip_stack: &[ClipPath]) {
+        self.mask.clear();
+
+        let mut clips = self.base_clip.iter().chain(clip_stack.iter());
+        let Some(first) = clips.next() else {
+            self.clip = None;
+            return;
+        };
+
+        let mut clip_rect = first.rect;
+        self.mask
+            .fill_path(&first.path, FillRule::Winding, false, Transform::identity());
+
+        for clip in clips {
+            clip_rect = clip_rect.intersect(clip.rect);
+            self.mask
+                .intersect_path(&clip.path, FillRule::Winding, false, Transform::identity());
+        }
+
+        self.clip = (!clip_rect.is_zero_area()).then_some(clip_rect);
+        if self.clip.is_none() {
+            self.mask.clear();
+        }
+    }
+
+    #[cfg(test)]
+    fn set_base_clip(&mut self, clip: Option<ClipPath>) {
+        self.base_clip = clip;
+        self.rebuild_clip_mask(&[]);
+    }
+
     fn mark_drawn_device_rect(&mut self, rect: Rect) {
         let mut device_rect = rect;
         if let Some(clip) = self.clip {
@@ -459,14 +497,17 @@ impl Layer {
         cache_color: CacheColor,
     ) -> Result<Self, anyhow::Error> {
         let mut mask = Mask::new(width, height).ok_or_else(|| anyhow!("unable to create mask"))?;
-        mask.fill_path(
-            &shape_to_path(clip).ok_or_else(|| anyhow!("unable to create clip shape"))?,
-            FillRule::Winding,
-            false,
-            affine_to_skia(transform),
-        );
+        let base_path = shape_to_path(clip)
+            .ok_or_else(|| anyhow!("unable to create clip shape"))?
+            .transform(affine_to_skia(transform))
+            .ok_or_else(|| anyhow!("unable to transform clip shape"))?;
+        mask.fill_path(&base_path, FillRule::Winding, false, Transform::identity());
         Ok(Self {
             pixmap: Pixmap::new(width, height).ok_or_else(|| anyhow!("unable to create pixmap"))?,
+            base_clip: Some(ClipPath {
+                path: base_path,
+                rect: transform.transform_rect_bbox(clip.bounding_box()),
+            }),
             mask,
             clip: Some(transform.transform_rect_bbox(clip.bounding_box())),
             draw_bounds: None,
@@ -481,21 +522,16 @@ impl Layer {
         self.transform *= transform;
     }
 
+    #[cfg(test)]
     fn clip(&mut self, shape: &impl Shape) {
-        self.clip = Some(
-            self.device_transform()
+        let path = try_ret!(shape_to_path(shape).and_then(|path| path.transform(self.skia_transform())));
+        self.set_base_clip(Some(ClipPath {
+            path,
+            rect: self
+                .device_transform()
                 .transform_rect_bbox(shape.bounding_box()),
-        );
-        let path = try_ret!(shape_to_path(shape));
-        self.mask.clear();
-        self.mask
-            .fill_path(&path, FillRule::Winding, false, self.skia_transform());
+        }));
     }
-
-    fn clear_clip(&mut self) {
-        self.clip = None;
-    }
-
     fn stroke<'b, 's>(
         &mut self,
         shape: &impl Shape,
@@ -731,6 +767,7 @@ pub struct TinySkiaRenderer<W> {
     surface: Surface<W, W>,
     cache_color: CacheColor,
     transform: Affine,
+    clip_stack: Vec<ClipPath>,
     window_scale: f64,
     capture: bool,
     layers: Vec<Layer>,
@@ -741,6 +778,20 @@ pub struct TinySkiaRenderer<W> {
 impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle>
     TinySkiaRenderer<W>
 {
+    fn sync_current_layer_clip(&mut self) {
+        if let Some(layer) = self.layers.last_mut() {
+            layer.rebuild_clip_mask(&self.clip_stack);
+        }
+    }
+
+    fn current_clip_path(&self, shape: &impl Shape) -> Option<ClipPath> {
+        let path = shape_to_path(shape)?.transform(affine_to_skia(self.transform))?;
+        Some(ClipPath {
+            path,
+            rect: self.transform.transform_rect_bbox(shape.bounding_box()),
+        })
+    }
+
     pub fn new(window: W, width: u32, height: u32, scale: f64, font_embolden: f32) -> Result<Self>
     where
         W: Clone,
@@ -763,6 +814,7 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
 
         let main_layer = Layer {
             pixmap,
+            base_clip: None,
             mask,
             clip: None,
             draw_bounds: None,
@@ -775,6 +827,7 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
             context,
             surface,
             transform: Affine::IDENTITY,
+            clip_stack: Vec::new(),
             window_scale: scale,
             capture: false,
             cache_color: CacheColor(false),
@@ -827,11 +880,14 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
         self.capture = capture;
         assert!(self.layers.len() == 1);
         self.transform = Affine::IDENTITY;
+        self.clip_stack.clear();
         let first_layer = self.layers.last_mut().unwrap();
         first_layer.pixmap.fill(tiny_skia::Color::TRANSPARENT);
+        first_layer.base_clip = None;
         first_layer.clip = None;
         first_layer.draw_bounds = None;
         first_layer.transform = Affine::IDENTITY;
+        first_layer.mask.clear();
     }
 
     fn stroke<'b, 's>(
@@ -886,11 +942,15 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
     }
 
     fn clip(&mut self, shape: &impl Shape) {
-        self.layers.iter_mut().for_each(|l| l.clip(shape));
+        if let Some(clip) = self.current_clip_path(shape) {
+            self.clip_stack.push(clip);
+            self.sync_current_layer_clip();
+        }
     }
 
     fn clear_clip(&mut self) {
-        self.layers.iter_mut().for_each(|l| l.clear_clip());
+        self.clip_stack.pop();
+        self.sync_current_layer_clip();
     }
 
     fn finish(&mut self) -> Option<peniko::ImageBrush> {
@@ -1001,6 +1061,7 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
             self.cache_color,
         ) {
             self.layers.push(res);
+            self.sync_current_layer_clip();
         }
     }
 
@@ -1012,6 +1073,7 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
 
         let layer = self.layers.pop().unwrap();
         let parent = self.layers.last_mut().unwrap();
+        parent.rebuild_clip_mask(&self.clip_stack);
 
         apply_layer(&layer, parent);
     }
@@ -1317,6 +1379,7 @@ mod tests {
     fn make_layer(width: u32, height: u32) -> Layer {
         Layer {
             pixmap: Pixmap::new(width, height).expect("failed to create pixmap"),
+            base_clip: None,
             clip: None,
             draw_bounds: None,
             mask: Mask::new(width, height).expect("failed to create mask"),

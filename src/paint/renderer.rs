@@ -91,7 +91,7 @@ impl Renderer {
             Renderer::Vello(_) => true,
             #[cfg(not(feature = "vello"))]
             Renderer::Vger(_) => false,
-            Renderer::TinySkia(_) => true,
+            Renderer::TinySkia(_) => false,
             Renderer::Uninitialized { .. } => false,
         }
     }
