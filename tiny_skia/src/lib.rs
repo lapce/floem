@@ -4,7 +4,7 @@ use floem_renderer::Renderer;
 use floem_renderer::text::{Glyph as ParleyGlyph, GlyphRunProps};
 use floem_renderer::tiny_skia::{
     self, FillRule, FilterQuality, GradientStop, IntRect, LinearGradient, Mask, MaskType, Paint,
-    Path, PathBuilder, Pattern, Pixmap, PixmapPaint, RadialGradient, Shader, SpreadMode, Stroke,
+    Path, PathBuilder, Pixmap, PixmapPaint, RadialGradient, Shader, SpreadMode, Stroke,
     Transform,
 };
 use peniko::kurbo::{PathEl, Size};
@@ -197,6 +197,7 @@ struct Glyph {
 struct ClipPath {
     path: Path,
     rect: Rect,
+    simple_rect: Option<Rect>,
 }
 
 #[derive(PartialEq, Clone, Copy)]
@@ -207,6 +208,7 @@ struct Layer {
     base_clip: Option<ClipPath>,
     /// clip is stored with the transform at the time clip is called
     clip: Option<Rect>,
+    simple_clip: Option<Rect>,
     draw_bounds: Option<Rect>,
     mask: Mask,
     /// this transform should generally only be used when making a draw call to skia
@@ -216,26 +218,68 @@ struct Layer {
     cache_color: CacheColor,
 }
 impl Layer {
+    fn intersect_clip_path(&mut self, clip: &ClipPath) {
+        let prior_simple_clip = self
+            .simple_clip
+            .or(self.base_clip.as_ref().and_then(|clip| clip.simple_rect));
+        let clip_rect = self.clip.map(|rect| rect.intersect(clip.rect)).unwrap_or(clip.rect);
+        if clip_rect.is_zero_area() {
+            self.clip = None;
+            self.simple_clip = None;
+            self.mask.clear();
+            return;
+        }
+
+        if self.clip.is_some() {
+            self.mask
+                .intersect_path(&clip.path, FillRule::Winding, false, Transform::identity());
+        } else {
+            self.mask.clear();
+            self.mask
+                .fill_path(&clip.path, FillRule::Winding, false, Transform::identity());
+        }
+
+        self.clip = Some(clip_rect);
+        self.simple_clip = match (prior_simple_clip, clip.simple_rect) {
+            (Some(current), Some(next)) => {
+                let clipped = current.intersect(next);
+                (!clipped.is_zero_area()).then_some(clipped)
+            }
+            (None, Some(next)) if self.base_clip.is_none() && self.clip == Some(clip_rect) => Some(next),
+            _ => None,
+        };
+    }
+
     fn rebuild_clip_mask(&mut self, clip_stack: &[ClipPath]) {
         self.mask.clear();
 
         let mut clips = self.base_clip.iter().chain(clip_stack.iter());
         let Some(first) = clips.next() else {
             self.clip = None;
+            self.simple_clip = None;
             return;
         };
 
         let mut clip_rect = first.rect;
+        let mut simple_clip = first.simple_rect;
         self.mask
             .fill_path(&first.path, FillRule::Winding, false, Transform::identity());
 
         for clip in clips {
             clip_rect = clip_rect.intersect(clip.rect);
+            simple_clip = match (simple_clip, clip.simple_rect) {
+                (Some(current), Some(next)) => {
+                    let clipped = current.intersect(next);
+                    (!clipped.is_zero_area()).then_some(clipped)
+                }
+                _ => None,
+            };
             self.mask
                 .intersect_path(&clip.path, FillRule::Winding, false, Transform::identity());
         }
 
         self.clip = (!clip_rect.is_zero_area()).then_some(clip_rect);
+        self.simple_clip = self.clip.and(simple_clip);
         if self.clip.is_none() {
             self.mask.clear();
         }
@@ -265,7 +309,7 @@ impl Layer {
     }
 
     fn try_fill_solid_rect_fast(&mut self, rect: Rect, color: Color) -> bool {
-        if self.clip.is_some() {
+        if self.clip.is_some() && self.simple_clip.is_none() {
             return false;
         }
 
@@ -279,16 +323,27 @@ impl Layer {
             return false;
         }
 
-        let Some(device_rect) = rect_to_int_rect(self.device_transform().transform_rect_bbox(rect))
-        else {
+        let Some(device_rect) = rect_to_int_rect(self.device_transform().transform_rect_bbox(rect)) else {
             return false;
         };
 
-        let x0 = device_rect.x().max(0) as u32;
-        let y0 = device_rect.y().max(0) as u32;
-        let x1 = (device_rect.x() + device_rect.width() as i32).min(self.pixmap.width() as i32) as u32;
-        let y1 =
-            (device_rect.y() + device_rect.height() as i32).min(self.pixmap.height() as i32) as u32;
+        let mut device_rect = Rect::new(
+            device_rect.x() as f64,
+            device_rect.y() as f64,
+            (device_rect.x() + device_rect.width() as i32) as f64,
+            (device_rect.y() + device_rect.height() as i32) as f64,
+        );
+        if let Some(simple_clip) = self.simple_clip {
+            device_rect = device_rect.intersect(simple_clip);
+            if device_rect.is_zero_area() {
+                return true;
+            }
+        }
+
+        let x0 = device_rect.x0.max(0.0) as u32;
+        let y0 = device_rect.y0.max(0.0) as u32;
+        let x1 = device_rect.x1.min(self.pixmap.width() as f64) as u32;
+        let y1 = device_rect.y1.min(self.pixmap.height() as f64) as u32;
 
         if x0 >= x1 || y0 >= y1 {
             return true;
@@ -389,31 +444,16 @@ impl Layer {
             return;
         }
         self.mark_drawn_rect_inflated(img_rect, transform, 2.0);
-        let paint = Paint {
-            shader: Pattern::new(
-                img_pixmap.as_ref(),
-                SpreadMode::Pad,
-                FilterQuality::Nearest,
-                1.0,
-                Transform::from_translate(x, y),
-            ),
-            ..Default::default()
+        let paint = PixmapPaint {
+            opacity: 1.0,
+            blend_mode: tiny_skia::BlendMode::SourceOver,
+            quality: FilterQuality::Nearest,
         };
-
-        let transform = transform.as_coeffs();
-        let transform = Transform::from_row(
-            transform[0] as f32,
-            transform[1] as f32,
-            transform[2] as f32,
-            transform[3] as f32,
-            transform[4] as f32,
-            transform[5] as f32,
-        );
-        let Some(rect) = to_skia_rect(img_rect) else {
-            return;
-        };
-        self.pixmap.fill_rect(
-            rect,
+        let transform = affine_to_skia(transform * Affine::translate((x as f64, y as f64)));
+        self.pixmap.draw_pixmap(
+            0,
+            0,
+            img_pixmap.as_ref(),
             &paint,
             transform,
             self.clip.is_some().then_some(&self.mask),
@@ -425,27 +465,22 @@ impl Layer {
             return;
         }
         self.mark_drawn_rect_inflated(rect, transform, 2.0);
-        let Some(rect) = to_skia_rect(rect) else {
-            return;
+        let paint = PixmapPaint {
+            opacity: 1.0,
+            blend_mode: tiny_skia::BlendMode::SourceOver,
+            quality: FilterQuality::Bilinear,
         };
-        let paint = Paint {
-            shader: Pattern::new(
-                pixmap.as_ref(),
-                SpreadMode::Pad,
-                FilterQuality::Bilinear,
-                1.0,
-                Transform::from_scale(
-                    rect.width() / pixmap.width() as f32,
-                    rect.height() / pixmap.height() as f32,
-                ),
-            ),
-            ..Default::default()
-        };
+        let local_transform = Affine::translate((rect.x0, rect.y0)).then_scale_non_uniform(
+            rect.width() / pixmap.width() as f64,
+            rect.height() / pixmap.height() as f64,
+        );
 
-        self.pixmap.fill_rect(
-            rect,
+        self.pixmap.draw_pixmap(
+            0,
+            0,
+            pixmap.as_ref(),
             &paint,
-            affine_to_skia(transform),
+            affine_to_skia(transform * local_transform),
             self.clip.is_some().then_some(&self.mask),
         );
     }
@@ -507,9 +542,11 @@ impl Layer {
             base_clip: Some(ClipPath {
                 path: base_path,
                 rect: transform.transform_rect_bbox(clip.bounding_box()),
+                simple_rect: transformed_axis_aligned_rect(clip, transform),
             }),
             mask,
             clip: Some(transform.transform_rect_bbox(clip.bounding_box())),
+            simple_clip: transformed_axis_aligned_rect(clip, transform),
             draw_bounds: None,
             transform,
             blend_mode: blend.into(),
@@ -530,6 +567,7 @@ impl Layer {
             rect: self
                 .device_transform()
                 .transform_rect_bbox(shape.bounding_box()),
+            simple_rect: transformed_axis_aligned_rect(shape, self.device_transform()),
         }));
     }
     fn stroke<'b, 's>(
@@ -789,6 +827,7 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
         Some(ClipPath {
             path,
             rect: self.transform.transform_rect_bbox(shape.bounding_box()),
+            simple_rect: transformed_axis_aligned_rect(shape, self.transform),
         })
     }
 
@@ -817,6 +856,7 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
             base_clip: None,
             mask,
             clip: None,
+            simple_clip: None,
             draw_bounds: None,
             alpha: 1.,
             transform: Affine::IDENTITY,
@@ -873,6 +913,16 @@ fn to_point(point: Point) -> tiny_skia::Point {
     tiny_skia::Point::from_xy(point.x as f32, point.y as f32)
 }
 
+fn is_axis_aligned(transform: Affine) -> bool {
+    let coeffs = transform.as_coeffs();
+    coeffs[1] == 0.0 && coeffs[2] == 0.0
+}
+
+fn transformed_axis_aligned_rect(shape: &impl Shape, transform: Affine) -> Option<Rect> {
+    let rect = shape.as_rect()?;
+    is_axis_aligned(transform).then(|| transform.transform_rect_bbox(rect))
+}
+
 impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle> Renderer
     for TinySkiaRenderer<W>
 {
@@ -885,6 +935,7 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
         first_layer.pixmap.fill(tiny_skia::Color::TRANSPARENT);
         first_layer.base_clip = None;
         first_layer.clip = None;
+        first_layer.simple_clip = None;
         first_layer.draw_bounds = None;
         first_layer.transform = Affine::IDENTITY;
         first_layer.mask.clear();
@@ -944,7 +995,10 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
     fn clip(&mut self, shape: &impl Shape) {
         if let Some(clip) = self.current_clip_path(shape) {
             self.clip_stack.push(clip);
-            self.sync_current_layer_clip();
+            if let Some(layer) = self.layers.last_mut() {
+                let clip = self.clip_stack.last().unwrap().clone();
+                layer.intersect_clip_path(&clip);
+            }
         }
     }
 
@@ -1381,6 +1435,7 @@ mod tests {
             pixmap: Pixmap::new(width, height).expect("failed to create pixmap"),
             base_clip: None,
             clip: None,
+            simple_clip: None,
             draw_bounds: None,
             mask: Mask::new(width, height).expect("failed to create mask"),
             transform: Affine::IDENTITY,
