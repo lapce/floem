@@ -947,6 +947,15 @@ fn to_skia_rect(rect: Rect) -> Option<tiny_skia::Rect> {
     )
 }
 
+fn rect_to_int_rect(rect: Rect) -> Option<IntRect> {
+    IntRect::from_ltrb(
+        rect.x0.floor() as i32,
+        rect.y0.floor() as i32,
+        rect.x1.ceil() as i32,
+        rect.y1.ceil() as i32,
+    )
+}
+
 type TinyBlendMode = tiny_skia::BlendMode;
 
 enum BlendStrategy {
@@ -1030,12 +1039,7 @@ fn layer_composite_rect(layer: &Layer, parent: &Layer) -> Option<IntRect> {
         return None;
     }
 
-    IntRect::from_ltrb(
-        rect.x0.floor().max(0.0) as i32,
-        rect.y0.floor().max(0.0) as i32,
-        rect.x1.ceil().min(layer.pixmap.width() as f64) as i32,
-        rect.y1.ceil().min(layer.pixmap.height() as f64) as i32,
-    )
+    rect_to_int_rect(rect)
 }
 
 fn draw_layer_pixmap(
