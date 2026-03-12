@@ -218,6 +218,50 @@ struct Layer {
     cache_color: CacheColor,
 }
 impl Layer {
+    fn clip_rect_to_mask_bounds(&self, rect: Rect) -> Option<(usize, usize, usize, usize)> {
+        let rect = rect_to_int_rect(rect)?;
+        let x0 = rect.x().max(0) as usize;
+        let y0 = rect.y().max(0) as usize;
+        let x1 = (rect.x() + rect.width() as i32).min(self.mask.width() as i32) as usize;
+        let y1 = (rect.y() + rect.height() as i32).min(self.mask.height() as i32) as usize;
+        (x0 < x1 && y0 < y1).then_some((x0, y0, x1, y1))
+    }
+
+    fn fill_mask_rect(&mut self, rect: Rect) {
+        self.mask.clear();
+        let Some((x0, y0, x1, y1)) = self.clip_rect_to_mask_bounds(rect) else {
+            return;
+        };
+
+        let width = self.mask.width() as usize;
+        let data = self.mask.data_mut();
+        for y in y0..y1 {
+            let row = y * width;
+            data[row + x0..row + x1].fill(255);
+        }
+    }
+
+    fn intersect_mask_rect(&mut self, rect: Rect) {
+        let Some((x0, y0, x1, y1)) = self.clip_rect_to_mask_bounds(rect) else {
+            self.mask.clear();
+            return;
+        };
+
+        let width = self.mask.width() as usize;
+        let height = self.mask.height() as usize;
+        let data = self.mask.data_mut();
+        for y in 0..height {
+            let row = y * width;
+            if y < y0 || y >= y1 {
+                data[row..row + width].fill(0);
+                continue;
+            }
+
+            data[row..row + x0].fill(0);
+            data[row + x1..row + width].fill(0);
+        }
+    }
+
     fn intersect_clip_path(&mut self, clip: &ClipPath) {
         let prior_simple_clip = self
             .simple_clip
@@ -231,12 +275,20 @@ impl Layer {
         }
 
         if self.clip.is_some() {
-            self.mask
-                .intersect_path(&clip.path, FillRule::Winding, false, Transform::identity());
+            if clip.simple_rect.is_some() {
+                self.intersect_mask_rect(clip.rect);
+            } else {
+                self.mask
+                    .intersect_path(&clip.path, FillRule::Winding, false, Transform::identity());
+            }
         } else {
-            self.mask.clear();
-            self.mask
-                .fill_path(&clip.path, FillRule::Winding, false, Transform::identity());
+            if clip.simple_rect.is_some() {
+                self.fill_mask_rect(clip.rect);
+            } else {
+                self.mask.clear();
+                self.mask
+                    .fill_path(&clip.path, FillRule::Winding, false, Transform::identity());
+            }
         }
 
         self.clip = Some(clip_rect);
@@ -253,8 +305,13 @@ impl Layer {
     fn rebuild_clip_mask(&mut self, clip_stack: &[ClipPath]) {
         self.mask.clear();
 
-        let mut clips = self.base_clip.iter().chain(clip_stack.iter());
-        let Some(first) = clips.next() else {
+        let clips: Vec<ClipPath> = self
+            .base_clip
+            .iter()
+            .cloned()
+            .chain(clip_stack.iter().cloned())
+            .collect();
+        let Some(first) = clips.first() else {
             self.clip = None;
             self.simple_clip = None;
             return;
@@ -262,10 +319,14 @@ impl Layer {
 
         let mut clip_rect = first.rect;
         let mut simple_clip = first.simple_rect;
-        self.mask
-            .fill_path(&first.path, FillRule::Winding, false, Transform::identity());
+        if first.simple_rect.is_some() {
+            self.fill_mask_rect(first.rect);
+        } else {
+            self.mask
+                .fill_path(&first.path, FillRule::Winding, false, Transform::identity());
+        }
 
-        for clip in clips {
+        for clip in clips.iter().skip(1) {
             clip_rect = clip_rect.intersect(clip.rect);
             simple_clip = match (simple_clip, clip.simple_rect) {
                 (Some(current), Some(next)) => {
@@ -274,8 +335,12 @@ impl Layer {
                 }
                 _ => None,
             };
-            self.mask
-                .intersect_path(&clip.path, FillRule::Winding, false, Transform::identity());
+            if clip.simple_rect.is_some() {
+                self.intersect_mask_rect(clip.rect);
+            } else {
+                self.mask
+                    .intersect_path(&clip.path, FillRule::Winding, false, Transform::identity());
+            }
         }
 
         self.clip = (!clip_rect.is_zero_area()).then_some(clip_rect);
@@ -433,9 +498,64 @@ impl Layer {
         );
     }
 
+    fn try_draw_pixmap_translate_only(
+        &mut self,
+        pixmap: &Pixmap,
+        x: f64,
+        y: f64,
+        transform: Affine,
+        quality: FilterQuality,
+    ) -> bool {
+        let coeffs = transform.as_coeffs();
+        if coeffs[0] != 1.0 || coeffs[1] != 0.0 || coeffs[2] != 0.0 || coeffs[3] != 1.0 {
+            return false;
+        }
+
+        let Some(draw_x) = nearly_integral(x + coeffs[4]) else {
+            return false;
+        };
+        let Some(draw_y) = nearly_integral(y + coeffs[5]) else {
+            return false;
+        };
+
+        let rect = Rect::from_origin_size(
+            (draw_x as f64, draw_y as f64),
+            (pixmap.width() as f64, pixmap.height() as f64),
+        );
+        if !self.intersects_clip(rect, Affine::IDENTITY) {
+            return true;
+        }
+
+        self.mark_drawn_rect_inflated(rect, Affine::IDENTITY, 2.0);
+        let paint = PixmapPaint {
+            opacity: 1.0,
+            blend_mode: tiny_skia::BlendMode::SourceOver,
+            quality,
+        };
+        self.pixmap.draw_pixmap(
+            draw_x,
+            draw_y,
+            pixmap.as_ref(),
+            &paint,
+            Transform::identity(),
+            self.clip.is_some().then_some(&self.mask),
+        );
+        true
+    }
+
     /// Renders the pixmap at the position and transforms it with the given transform.
     /// x and y should have already been scaled by the window scale
     fn render_pixmap_direct(&mut self, img_pixmap: &Pixmap, x: f32, y: f32, transform: Affine) {
+        if self.try_draw_pixmap_translate_only(
+            img_pixmap,
+            x as f64,
+            y as f64,
+            transform,
+            FilterQuality::Nearest,
+        ) {
+            return;
+        }
+
         let img_rect = Rect::from_origin_size(
             (x, y),
             (img_pixmap.width() as f64, img_pixmap.height() as f64),
@@ -461,6 +581,19 @@ impl Layer {
     }
 
     fn render_pixmap_rect(&mut self, pixmap: &Pixmap, rect: Rect, transform: Affine) {
+        if rect.width() == pixmap.width() as f64
+            && rect.height() == pixmap.height() as f64
+            && self.try_draw_pixmap_translate_only(
+                pixmap,
+                rect.x0,
+                rect.y0,
+                transform,
+                FilterQuality::Nearest,
+            )
+        {
+            return;
+        }
+
         if !self.intersects_clip(rect, transform) {
             return;
         }
@@ -921,6 +1054,11 @@ fn is_axis_aligned(transform: Affine) -> bool {
 fn transformed_axis_aligned_rect(shape: &impl Shape, transform: Affine) -> Option<Rect> {
     let rect = shape.as_rect()?;
     is_axis_aligned(transform).then(|| transform.transform_rect_bbox(rect))
+}
+
+fn nearly_integral(value: f64) -> Option<i32> {
+    let rounded = value.round();
+    ((value - rounded).abs() <= 1e-6).then_some(rounded as i32)
 }
 
 impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle> Renderer
