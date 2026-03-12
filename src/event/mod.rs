@@ -1877,6 +1877,7 @@ impl Event {
             Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. }))
             | Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. }))
             | Event::Pointer(PointerEvent::Move(PointerUpdate { current: state, .. }))
+            | Event::Pointer(PointerEvent::Gesture(PointerGestureEvent { state, .. }))
             | Event::Pointer(PointerEvent::Scroll(PointerScrollEvent { state, .. })) => {
                 Some(state.logical_point())
             }

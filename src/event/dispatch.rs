@@ -137,6 +137,26 @@ fn build_ancestor_chain(target: ElementId, box_tree: &BoxTree) -> SmallVec<[Elem
     path
 }
 
+fn hit_path_to_dispatch_path_from_chain(
+    hit_path: &[ElementId],
+    mut ancestor_chain: SmallVec<[ElementId; 64]>,
+) -> SmallVec<[ElementId; 64]> {
+    ancestor_chain.retain(|id| hit_path.contains(id));
+    ancestor_chain.reverse();
+    ancestor_chain
+}
+
+fn hit_path_to_dispatch_path(
+    hit_path: &[ElementId],
+    box_tree: &BoxTree,
+) -> SmallVec<[ElementId; 64]> {
+    let Some(&leaf) = hit_path.last() else {
+        return SmallVec::new();
+    };
+
+    hit_path_to_dispatch_path_from_chain(hit_path, build_ancestor_chain(leaf, box_tree))
+}
+
 /// Iterator that yields `Dispatch` items for capture/target/bubble phases.
 struct DispatchSequenceIter {
     ancestor_chain: SmallVec<[ElementId; 64]>,
@@ -675,7 +695,7 @@ impl RouteCx<'_, '_> {
                     | Event::FileDrag(FileDragEvent::Enter(_) | FileDragEvent::Leave(_))
             );
             if (self.event.is_pointer() || self.event.is_file_drag()) && !is_hover_notification {
-                self.update_hover_from_path(path);
+                self.update_hover_from_point(self.event.point().unwrap());
             }
             if self.event.is_pointer_down()
                 && let Some(hit) = path.last().copied()
@@ -1912,10 +1932,15 @@ impl RouteCx<'_, '_> {
 
 impl RouteCx<'_, '_> {
     pub(crate) fn update_hover_from_point(&mut self, point: Point) {
-        let path = hit_test(self.gcx.window_state.root_view_id, point);
-        if let Some(path) = path {
-            self.update_hover_from_path(&path);
-        }
+        let path = match hit_test(self.gcx.window_state.root_view_id, point) {
+            Some(p) => p,
+            None => return,
+        };
+
+        let chain =
+            hit_path_to_dispatch_path(path.as_ref(), &self.gcx.window_state.box_tree.borrow());
+
+        self.update_hover_from_path(&chain);
     }
 
     pub(crate) fn update_hover_from_path(&mut self, path: &[ElementId]) {
@@ -2088,7 +2113,12 @@ impl RouteCx<'_, '_> {
             PointerEvent::Down(PointerButtonEvent {
                 button, pointer, ..
             }) => {
-                for hit in path.iter() {
+                let click_path = {
+                    let box_tree = self.gcx.window_state.box_tree.borrow();
+                    hit_path_to_dispatch_path(path.as_ref(), &box_tree)
+                };
+
+                for hit in click_path.iter() {
                     self.gcx
                         .window_state
                         .mark_style_dirty_selector(*hit, StyleSelector::Active);
@@ -2096,7 +2126,7 @@ impl RouteCx<'_, '_> {
                 self.gcx.window_state.click_state.on_down(
                     pointer.pointer_id.map(|p| p.get_inner()),
                     button.map(|b| b as u8),
-                    path.clone(),
+                    click_path,
                     point,
                     Instant::now().duration_since(*START_TIME).as_millis() as u64,
                 );
@@ -2158,17 +2188,21 @@ impl RouteCx<'_, '_> {
 
     fn handle_click_events(
         &mut self,
-        new_path: &Rc<[ElementId]>,
+        new_path: &[ElementId],
         point: Point,
         pointer_id: Option<PointerId>,
         button: Option<PointerButton>,
         count: u8,
     ) {
+        let new_path = {
+            let box_tree = self.gcx.window_state.box_tree.borrow();
+            hit_path_to_dispatch_path(new_path, &box_tree)
+        };
         let hit_path_len = new_path.len();
         let res = self.gcx.window_state.click_state.on_up(
             pointer_id.map(|p| p.get_inner()),
             button.map(|b| b as u8),
-            new_path,
+            &new_path,
             point,
             Instant::now().duration_since(*START_TIME).as_millis() as u64,
         );
@@ -2327,5 +2361,27 @@ impl PointerButtonExt for PointerEvent {
             }
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::hit_path_to_dispatch_path_from_chain;
+    use crate::ViewId;
+    use smallvec::smallvec;
+
+    #[test]
+    fn intersection_removes_non_ancestors_from_hit_path() {
+        let root = ViewId::new().get_element_id();
+        let container = ViewId::new().get_element_id();
+        let sibling = ViewId::new().get_element_id();
+        let target = ViewId::new().get_element_id();
+
+        let hit_path = [root, container, sibling, target];
+        let ancestor_chain = smallvec![target, container, root];
+
+        let result = hit_path_to_dispatch_path_from_chain(&hit_path, ancestor_chain);
+
+        assert_eq!(result.as_slice(), &[root, container, target]);
     }
 }

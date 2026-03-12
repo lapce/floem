@@ -28,6 +28,7 @@ use peniko::{
 };
 use std::collections::HashMap;
 use std::rc::Rc;
+use taffy::AlignItems;
 use understory_box_tree::NodeFlags;
 use winit::window::WindowId;
 
@@ -217,6 +218,37 @@ fn capture_view(
         })
     });
 
+    let make_toggle_button = |signal: RwSignal<bool>, label: &'static str| {
+        Stack::new((
+            svg(move || {
+                if !signal.get() {
+                    r#"<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="18" height="8"/>
+                        <line x1="3" y1="12" x2="21" y2="12"/>
+                        <rect x="3" y="13" width="18" height="8"/>
+                   </svg>"#
+                } else {
+                    r#"<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="8" height="18"/>
+                        <line x1="12" y1="3" x2="12" y2="21"/>
+                        <rect x="13" y="3" width="8" height="18"/>
+                   </svg>"#
+                }
+            })
+            .style(|s| s.size(12, 12)),
+            Label::new(label),
+        ))
+        .style(|s| s.items_center().gap(3))
+        .button()
+        .action(move || signal.update(|s| *s = !*s))
+    };
+
+    let view_tree_horizontal_split = RwSignal::new(false);
+    let selected_view_horizontal_split = RwSignal::new(image_height <= image_width);
+
+    let tree_button = make_toggle_button(view_tree_horizontal_split, "Tree");
+    let selected_button = make_toggle_button(selected_view_horizontal_split, "Selected");
+
     let active_tab = RwSignal::new(0);
     let capture_sig = RwSignal::new(capture.clone());
 
@@ -254,6 +286,8 @@ fn capture_view(
     let tabs = Stack::vertical((
         Stack::horizontal((
             recapture,
+            tree_button,
+            selected_button,
             clear,
             "selected"
                 .style(move |s| {
@@ -278,13 +312,21 @@ fn capture_view(
     let left = Stack::vertical((
         header("Captured Window"),
         Resizable::new((
-            image_view
-                .scroll()
-                .style(|s| s.min_size(0, 0).flex_grow(1.)),
+            image_view.scroll().style(|s| {
+                s.min_size(0, 0)
+                    .flex_grow(1.)
+                    .grid()
+                    .items_center()
+                    .justify_items(AlignItems::Center)
+            }),
             tabs,
         ))
         .custom_sizes(move || vec![(0, size.height.min(500.))])
-        .style(|s| s.size_full().flex_col().min_size(0., 0.)),
+        .style(move |s| {
+            s.size_full()
+                .apply_if(selected_view_horizontal_split.get(), |s| s.flex_col())
+                .min_size(0., 0.)
+        }),
     ))
     .style(|s| s.min_size(0., 0.).flex_grow(1.));
 
@@ -358,8 +400,25 @@ fn capture_view(
     let tree = tree.style(|s| s.height_full().min_width(0).flex_basis(0).flex_grow(1.0));
 
     Resizable::new((left, tree))
-        .style(|s| s.size_full().max_width_full())
+        .style(move |s| {
+            s.size_full()
+                .max_width_full()
+                .apply_if(view_tree_horizontal_split.get(), |s| s.flex_col())
+        })
         .custom_sizes(move || vec![(0, size.width.min(800.))])
+        .on_event_stop(
+            el::KeyUp,
+            move |_, KeyboardEvent { key, modifiers, .. }| {
+                if *key == Key::Named(NamedKey::F5)
+                    || (*key == Key::Character("r".to_string()) && modifiers.contains(OS_MOD))
+                {
+                    add_app_update_event(AppUpdateEvent::CaptureWindow {
+                        window_id,
+                        capture: capture_s.write_only(),
+                    });
+                }
+            },
+        )
 }
 
 fn view_tree(
