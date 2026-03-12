@@ -6,7 +6,8 @@ use floem_renderer::Renderer;
 use floem_renderer::text::{Glyph as ParleyGlyph, GlyphRunProps};
 use floem_renderer::tiny_skia::{
     self, FillRule, FilterQuality, GradientStop, IntRect, LinearGradient, Mask, MaskType, Paint,
-    Path, PathBuilder, Pixmap, PixmapPaint, RadialGradient, Shader, SpreadMode, Stroke, Transform,
+    Path, PathBuilder, Pixmap, PixmapPaint, PremultipliedColorU8, RadialGradient, Shader,
+    SpreadMode, Stroke, Transform,
 };
 use peniko::kurbo::{PathEl, Size};
 use peniko::{BlendMode, Blob, Compose, ImageAlphaType, ImageData, Mix, RadialGradientPosition};
@@ -517,15 +518,7 @@ impl Layer {
         transform: Affine,
         quality: FilterQuality,
     ) -> bool {
-        let coeffs = transform.as_coeffs();
-        if coeffs[0] != 1.0 || coeffs[1] != 0.0 || coeffs[2] != 0.0 || coeffs[3] != 1.0 {
-            return false;
-        }
-
-        let Some(draw_x) = nearly_integral(x + coeffs[4]) else {
-            return false;
-        };
-        let Some(draw_y) = nearly_integral(y + coeffs[5]) else {
+        let Some((draw_x, draw_y)) = integer_translation(transform, x, y) else {
             return false;
         };
 
@@ -538,6 +531,11 @@ impl Layer {
         }
 
         self.mark_drawn_rect_inflated(rect, Affine::IDENTITY, 2.0);
+        if quality == FilterQuality::Nearest && self.blit_pixmap_source_over(pixmap, draw_x, draw_y)
+        {
+            return true;
+        }
+
         let paint = PixmapPaint {
             opacity: 1.0,
             blend_mode: tiny_skia::BlendMode::SourceOver,
@@ -552,6 +550,63 @@ impl Layer {
             self.clip.is_some().then_some(&self.mask),
         );
         true
+    }
+
+    fn blit_pixmap_source_over(&mut self, pixmap: &Pixmap, draw_x: i32, draw_y: i32) -> bool {
+        let Some((x0, y0, x1, y1)) = self.blit_bounds(pixmap, draw_x, draw_y) else {
+            return true;
+        };
+
+        let src_width = pixmap.width() as usize;
+        let dst_width = self.pixmap.width() as usize;
+        let mask_width = self.mask.width() as usize;
+        let src_pixels = pixmap.pixels();
+        let mask = self.clip.is_some().then_some(self.mask.data());
+        let dst_pixels = self.pixmap.pixels_mut();
+
+        for dst_y in y0 as usize..y1 as usize {
+            let src_y = (dst_y as i32 - draw_y) as usize;
+            let dst_row = dst_y * dst_width;
+            let src_row = src_y * src_width;
+            let mask_row = dst_y * mask_width;
+
+            for dst_x in x0 as usize..x1 as usize {
+                let src_x = (dst_x as i32 - draw_x) as usize;
+                let src = src_pixels[src_row + src_x];
+                let coverage = mask.map_or(255, |mask| mask[mask_row + dst_x]);
+                if coverage == 0 || src.alpha() == 0 {
+                    continue;
+                }
+
+                let src = scale_premultiplied_color(src, coverage);
+                let dst = dst_pixels[dst_row + dst_x];
+                dst_pixels[dst_row + dst_x] = blend_source_over(src, dst);
+            }
+        }
+
+        true
+    }
+
+    fn blit_bounds(
+        &self,
+        pixmap: &Pixmap,
+        draw_x: i32,
+        draw_y: i32,
+    ) -> Option<(i32, i32, i32, i32)> {
+        let mut x0 = draw_x.max(0);
+        let mut y0 = draw_y.max(0);
+        let mut x1 = (draw_x + pixmap.width() as i32).min(self.pixmap.width() as i32);
+        let mut y1 = (draw_y + pixmap.height() as i32).min(self.pixmap.height() as i32);
+
+        if let Some(simple_clip) = self.simple_clip {
+            let clip_rect = rect_to_int_rect(simple_clip)?;
+            x0 = x0.max(clip_rect.x());
+            y0 = y0.max(clip_rect.y());
+            x1 = x1.min(clip_rect.x() + clip_rect.width() as i32);
+            y1 = y1.min(clip_rect.y() + clip_rect.height() as i32);
+        }
+
+        (x0 < x1 && y0 < y1).then_some((x0, y0, x1, y1))
     }
 
     fn try_fill_rect_with_paint_fast(&mut self, rect: Rect, paint: &Paint<'static>) -> bool {
@@ -1035,6 +1090,53 @@ fn nearly_integral(value: f64) -> Option<i32> {
     ((value - rounded).abs() <= 1e-6).then_some(rounded as i32)
 }
 
+fn integer_translation(transform: Affine, x: f64, y: f64) -> Option<(i32, i32)> {
+    let coeffs = transform.as_coeffs();
+    (coeffs[0] == 1.0 && coeffs[1] == 0.0 && coeffs[2] == 0.0 && coeffs[3] == 1.0).then_some((
+        nearly_integral(x + coeffs[4])?,
+        nearly_integral(y + coeffs[5])?,
+    ))
+}
+
+fn mul_div_255(value: u8, factor: u8) -> u8 {
+    (((value as u16 * factor as u16) + 127) / 255) as u8
+}
+
+fn scale_premultiplied_color(color: PremultipliedColorU8, alpha: u8) -> PremultipliedColorU8 {
+    if alpha == 255 {
+        return color;
+    }
+
+    PremultipliedColorU8::from_rgba(
+        mul_div_255(color.red(), alpha),
+        mul_div_255(color.green(), alpha),
+        mul_div_255(color.blue(), alpha),
+        mul_div_255(color.alpha(), alpha),
+    )
+    .expect("scaled premultiplied color must remain premultiplied")
+}
+
+fn blend_source_over(src: PremultipliedColorU8, dst: PremultipliedColorU8) -> PremultipliedColorU8 {
+    if src.alpha() == 255 {
+        return src;
+    }
+    if src.alpha() == 0 {
+        return dst;
+    }
+
+    let inv_alpha = 255 - src.alpha();
+    PremultipliedColorU8::from_rgba(
+        src.red().saturating_add(mul_div_255(dst.red(), inv_alpha)),
+        src.green()
+            .saturating_add(mul_div_255(dst.green(), inv_alpha)),
+        src.blue()
+            .saturating_add(mul_div_255(dst.blue(), inv_alpha)),
+        src.alpha()
+            .saturating_add(mul_div_255(dst.alpha(), inv_alpha)),
+    )
+    .expect("source-over premultiplied blend must remain premultiplied")
+}
+
 impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle> Renderer
     for TinySkiaRenderer<W>
 {
@@ -1094,7 +1196,8 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
         let font = &props.font;
         let text_transform = self.transform * props.transform;
         let (_, _, raster_scale) = affine_scale_components(text_transform);
-        let transform = normalize_affine(text_transform, true);
+        let transform = normalize_affine(text_transform, false);
+        let raster_origin = transform.inverse() * (text_transform * origin);
         let brush_color = match &props.brush {
             peniko::Brush::Solid(color) => Color::from(*color),
             _ => return,
@@ -1109,8 +1212,8 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
             .map(|transform| transform.as_coeffs()[0].atan().to_degrees() as f32);
 
         for glyph in glyphs {
-            let glyph_x = ((origin.x + glyph.x as f64) * raster_scale) as f32;
-            let glyph_y = ((origin.y + glyph.y as f64) * raster_scale) as f32;
+            let glyph_x = (raster_origin.x + glyph.x as f64 * raster_scale) as f32;
+            let glyph_y = (raster_origin.y + glyph.y as f64 * raster_scale) as f32;
             let scaled_font_size = props.font_size * raster_scale as f32;
             let (cache_key, new_x, new_y) = GlyphCacheKey::new(
                 font_blob_id,
@@ -1725,6 +1828,21 @@ mod tests {
 
         apply_layer(&parent, &mut root);
         assert_eq!(pixel_rgba(&root, 3, 3), (255, 0, 0, 255));
+    }
+
+    #[test]
+    fn render_pixmap_direct_blends_premultiplied_pixels() {
+        let mut layer = make_layer(4, 4);
+        layer
+            .pixmap
+            .fill(tiny_skia::Color::from_rgba8(0, 0, 255, 255));
+
+        let mut src = Pixmap::new(1, 1).expect("failed to create src pixmap");
+        src.fill(tiny_skia::Color::from_rgba8(255, 0, 0, 128));
+
+        layer.render_pixmap_direct(&src, 1.0, 1.0, Affine::IDENTITY);
+
+        assert_eq!(pixel_rgba(&layer, 1, 1), (128, 0, 127, 255));
     }
 
     #[test]
