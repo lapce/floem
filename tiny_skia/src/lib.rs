@@ -11,8 +11,7 @@ use floem_renderer::tiny_skia::{
 };
 use peniko::kurbo::{PathEl, Size};
 use peniko::{
-    BlendMode, Blob, Compose, ImageAlphaType, ImageData, ImageQuality, Mix,
-    RadialGradientPosition,
+    BlendMode, Blob, Compose, ImageAlphaType, ImageData, ImageQuality, Mix, RadialGradientPosition,
 };
 use peniko::{
     BrushRef, Color, GradientKind,
@@ -90,6 +89,8 @@ impl GlyphCacheKey {
 thread_local! {
     #[allow(clippy::type_complexity)]
     static IMAGE_CACHE: RefCell<FxHashMap<Vec<u8>, (CacheColor, Arc<Pixmap>)>> = RefCell::new(FxHashMap::default());
+    #[allow(clippy::type_complexity)]
+    static SCALED_IMAGE_CACHE: RefCell<FxHashMap<ScaledImageCacheKey, (CacheColor, Arc<Pixmap>)>> = RefCell::new(FxHashMap::default());
     #[allow(clippy::type_complexity)]
     // The `u32` is a color encoded as a u32 so that it is hashable and eq.
     static GLYPH_CACHE: RefCell<FxHashMap<(GlyphCacheKey, u32), (CacheColor, Option<Arc<Glyph>>)>> = RefCell::new(FxHashMap::default());
@@ -211,6 +212,14 @@ pub(crate) struct ClipPath {
 
 #[derive(PartialEq, Clone, Copy)]
 struct CacheColor(bool);
+
+#[derive(Hash, PartialEq, Eq)]
+struct ScaledImageCacheKey {
+    image_id: u64,
+    width: u32,
+    height: u32,
+    quality: u8,
+}
 
 struct Layer {
     pixmap: Pixmap,
@@ -639,14 +648,15 @@ impl Layer {
 
     /// Renders the pixmap at the position and transforms it with the given transform.
     /// x and y should have already been scaled by the window scale
-    fn render_pixmap_direct(&mut self, img_pixmap: &Pixmap, x: f32, y: f32, transform: Affine) {
-        if self.try_draw_pixmap_translate_only(
-            img_pixmap,
-            x as f64,
-            y as f64,
-            transform,
-            FilterQuality::Nearest,
-        ) {
+    fn render_pixmap_direct(
+        &mut self,
+        img_pixmap: &Pixmap,
+        x: f32,
+        y: f32,
+        transform: Affine,
+        quality: FilterQuality,
+    ) {
+        if self.try_draw_pixmap_translate_only(img_pixmap, x as f64, y as f64, transform, quality) {
             return;
         }
 
@@ -661,7 +671,7 @@ impl Layer {
         let paint = PixmapPaint {
             opacity: 1.0,
             blend_mode: tiny_skia::BlendMode::SourceOver,
-            quality: FilterQuality::Nearest,
+            quality,
         };
         let transform = affine_to_skia(transform * Affine::translate((x as f64, y as f64)));
         self.pixmap.draw_pixmap(
@@ -946,8 +956,9 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
                     x,
                     y,
                     transform,
+                    quality,
                 } => {
-                    raster.render_pixmap_direct(pixmap, *x, *y, *transform);
+                    raster.render_pixmap_direct(pixmap, *x, *y, *transform, *quality);
                 }
                 RecordedCommand::DrawPixmapRect {
                     pixmap,
@@ -1119,6 +1130,56 @@ fn image_quality_to_filter_quality(quality: ImageQuality) -> FilterQuality {
     }
 }
 
+fn axis_aligned_device_placement(rect: Rect, transform: Affine) -> Option<(f32, f32, u32, u32)> {
+    if !is_axis_aligned(transform) {
+        return None;
+    }
+
+    let device_rect = transform.transform_rect_bbox(rect);
+    let width = nearly_integral(device_rect.width())?;
+    let height = nearly_integral(device_rect.height())?;
+    (width > 0 && height > 0).then_some((
+        device_rect.x0 as f32,
+        device_rect.y0 as f32,
+        width as u32,
+        height as u32,
+    ))
+}
+
+fn cache_scaled_pixmap(
+    cache_color: CacheColor,
+    cache_key: ScaledImageCacheKey,
+    pixmap: &Pixmap,
+    quality: ImageQuality,
+) -> Option<Arc<Pixmap>> {
+    if let Some(cached) = SCALED_IMAGE_CACHE.with_borrow_mut(|cache| {
+        cache.get_mut(&cache_key).map(|(color, pixmap)| {
+            *color = cache_color;
+            pixmap.clone()
+        })
+    }) {
+        return Some(cached);
+    }
+
+    let mut scaled = Pixmap::new(cache_key.width, cache_key.height)?;
+    let paint = PixmapPaint {
+        opacity: 1.0,
+        blend_mode: tiny_skia::BlendMode::SourceOver,
+        quality: image_quality_to_filter_quality(quality),
+    };
+    let transform = Transform::from_scale(
+        cache_key.width as f32 / pixmap.width() as f32,
+        cache_key.height as f32 / pixmap.height() as f32,
+    );
+    scaled.draw_pixmap(0, 0, pixmap.as_ref(), &paint, transform, None);
+
+    let scaled = Arc::new(scaled);
+    SCALED_IMAGE_CACHE.with_borrow_mut(|cache| {
+        cache.insert(cache_key, (cache_color, scaled.clone()));
+    });
+    Some(scaled)
+}
+
 fn mul_div_255(value: u8, factor: u8) -> u8 {
     (((value as u16 * factor as u16) + 127) / 255) as u8
 }
@@ -1268,6 +1329,7 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
                     new_x.floor() + cached.left,
                     new_y.floor() - cached.top,
                     transform,
+                    FilterQuality::Nearest,
                 );
             }
         }
@@ -1275,35 +1337,66 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
 
     fn draw_img(&mut self, img: Img<'_>, rect: Rect) {
         let transform = self.transform;
-        if let Some(pixmap) = IMAGE_CACHE.with_borrow_mut(|ic| {
+        let pixmap = if let Some(pixmap) = IMAGE_CACHE.with_borrow_mut(|ic| {
             ic.get_mut(img.hash).map(|(color, pixmap)| {
                 *color = self.cache_color;
                 pixmap.clone()
             })
         }) {
-            self.recording
-                .draw_pixmap_rect(pixmap, rect, transform, img.img.sampler.quality);
+            pixmap
+        } else {
+            let image_data = img.img.image.data.data();
+            let mut pixmap = try_ret!(Pixmap::new(img.img.image.width, img.img.image.height));
+            for (a, b) in pixmap
+                .pixels_mut()
+                .iter_mut()
+                .zip(image_data.chunks_exact(4))
+            {
+                *a = tiny_skia::Color::from_rgba8(b[0], b[1], b[2], b[3])
+                    .premultiply()
+                    .to_color_u8();
+            }
+
+            let pixmap = Arc::new(pixmap);
+            IMAGE_CACHE.with_borrow_mut(|ic| {
+                ic.insert(img.hash.to_owned(), (self.cache_color, pixmap.clone()));
+            });
+            pixmap
+        };
+
+        let quality = img.img.sampler.quality;
+        if let Some((draw_x, draw_y, width, height)) =
+            axis_aligned_device_placement(rect, transform)
+        {
+            let filter_quality = image_quality_to_filter_quality(quality);
+            let device_pixmap = if width == pixmap.width() && height == pixmap.height() {
+                pixmap.clone()
+            } else {
+                let cache_key = ScaledImageCacheKey {
+                    image_id: img.img.image.data.id(),
+                    width,
+                    height,
+                    quality: quality as u8,
+                };
+                try_ret!(cache_scaled_pixmap(
+                    self.cache_color,
+                    cache_key,
+                    &pixmap,
+                    quality
+                ))
+            };
+            self.recording.draw_pixmap_direct(
+                device_pixmap,
+                draw_x,
+                draw_y,
+                Affine::IDENTITY,
+                filter_quality,
+            );
             return;
         }
 
-        let image_data = img.img.image.data.data();
-        let mut pixmap = try_ret!(Pixmap::new(img.img.image.width, img.img.image.height));
-        for (a, b) in pixmap
-            .pixels_mut()
-            .iter_mut()
-            .zip(image_data.chunks_exact(4))
-        {
-            *a = tiny_skia::Color::from_rgba8(b[0], b[1], b[2], b[3])
-                .premultiply()
-                .to_color_u8();
-        }
-
-        let pixmap = Arc::new(pixmap);
         self.recording
-            .draw_pixmap_rect(pixmap.clone(), rect, transform, img.img.sampler.quality);
-        IMAGE_CACHE.with_borrow_mut(|ic| {
-            ic.insert(img.hash.to_owned(), (self.cache_color, pixmap));
-        });
+            .draw_pixmap_rect(pixmap, rect, transform, quality);
     }
 
     fn draw_svg<'b>(
@@ -1371,6 +1464,7 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
     fn finish(&mut self) -> Option<peniko::ImageBrush> {
         // Remove cache entries which were not accessed.
         IMAGE_CACHE.with_borrow_mut(|ic| ic.retain(|_, (c, _)| *c == self.cache_color));
+        SCALED_IMAGE_CACHE.with_borrow_mut(|ic| ic.retain(|_, (c, _)| *c == self.cache_color));
         GLYPH_CACHE.with_borrow_mut(|gc| gc.retain(|_, (c, _)| *c == self.cache_color));
 
         // Swap the cache color.
@@ -1897,7 +1991,7 @@ mod tests {
         let mut src = Pixmap::new(1, 1).expect("failed to create src pixmap");
         src.fill(tiny_skia::Color::from_rgba8(255, 0, 0, 128));
 
-        layer.render_pixmap_direct(&src, 1.0, 1.0, Affine::IDENTITY);
+        layer.render_pixmap_direct(&src, 1.0, 1.0, Affine::IDENTITY, FilterQuality::Nearest);
 
         assert_eq!(pixel_rgba(&layer, 1, 1), (128, 0, 127, 255));
     }
