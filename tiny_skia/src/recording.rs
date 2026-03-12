@@ -38,7 +38,13 @@ impl Recording {
             .push(RecordedCommand::PopClip);
     }
 
-    pub(crate) fn fill_rect(&mut self, rect: Rect, brush: Brush, transform: Affine, blur_radius: f64) {
+    pub(crate) fn fill_rect(
+        &mut self,
+        rect: Rect,
+        brush: Brush,
+        transform: Affine,
+        blur_radius: f64,
+    ) {
         self.current_layer_mut()
             .commands
             .push(RecordedCommand::FillRect {
