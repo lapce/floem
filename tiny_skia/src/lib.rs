@@ -543,6 +543,27 @@ impl Layer {
         true
     }
 
+    fn try_fill_rect_with_paint_fast(&mut self, rect: Rect, paint: &Paint<'static>) -> bool {
+        if !is_axis_aligned(self.device_transform()) {
+            return false;
+        }
+
+        let Some(device_rect) = to_skia_rect(self.device_transform().transform_rect_bbox(rect))
+        else {
+            return false;
+        };
+
+        let mut paint = paint.clone();
+        paint.shader.transform(self.skia_transform());
+        self.pixmap.fill_rect(
+            device_rect,
+            &paint,
+            Transform::identity(),
+            self.clip.is_some().then_some(&self.mask),
+        );
+        true
+    }
+
     /// Renders the pixmap at the position and transforms it with the given transform.
     /// x and y should have already been scaled by the window scale
     fn render_pixmap_direct(&mut self, img_pixmap: &Pixmap, x: f32, y: f32, transform: Affine) {
@@ -757,13 +778,15 @@ impl Layer {
         let paint = try_ret!(brush_to_paint(brush));
         self.mark_drawn_rect_inflated(shape.bounding_box(), self.device_transform(), 2.0);
         if let Some(rect) = shape.as_rect() {
-            let rect = try_ret!(to_skia_rect(rect));
-            self.pixmap.fill_rect(
-                rect,
-                &paint,
-                self.skia_transform(),
-                self.clip.is_some().then_some(&self.mask),
-            );
+            if !self.try_fill_rect_with_paint_fast(rect, &paint) {
+                let rect = try_ret!(to_skia_rect(rect));
+                self.pixmap.fill_rect(
+                    rect,
+                    &paint,
+                    self.skia_transform(),
+                    self.clip.is_some().then_some(&self.mask),
+                );
+            }
         } else {
             let path = try_ret!(shape_to_path(shape));
             self.pixmap.fill_path(
