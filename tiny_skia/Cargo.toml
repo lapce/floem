@@ -12,6 +12,7 @@ resvg = { workspace = true }
 raw-window-handle = { workspace = true }
 parley = { workspace = true }
 swash = { workspace = true }
+rustc-hash.workspace = true
 
 anyhow = "1.0"
 floem_renderer = { path = "../renderer", version = "0.2.0" }

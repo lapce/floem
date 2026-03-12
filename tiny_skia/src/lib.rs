@@ -17,9 +17,9 @@ use peniko::{
 };
 use recording::{RecordedCommand, RecordedLayer, Recording};
 use resvg::tiny_skia::StrokeDash;
+use rustc_hash::FxHashMap;
 use softbuffer::{Context, Surface};
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 use swash::FontRef;
@@ -38,6 +38,7 @@ struct GlyphCacheKey {
     font_size_bits: u32,
     x_bin: u8,
     y_bin: u8,
+    hint: bool,
     embolden: bool,
     skew_bits: u32,
 }
@@ -51,6 +52,7 @@ impl GlyphCacheKey {
         font_size: f32,
         x: f32,
         y: f32,
+        hint: bool,
         embolden: bool,
         skew: Option<f32>,
     ) -> (Self, f32, f32) {
@@ -72,6 +74,7 @@ impl GlyphCacheKey {
                 font_size_bits,
                 x_bin,
                 y_bin,
+                hint,
                 embolden,
                 skew_bits,
             },
@@ -83,10 +86,10 @@ impl GlyphCacheKey {
 
 thread_local! {
     #[allow(clippy::type_complexity)]
-    static IMAGE_CACHE: RefCell<HashMap<Vec<u8>, (CacheColor, Arc<Pixmap>)>> = RefCell::new(HashMap::new());
+    static IMAGE_CACHE: RefCell<FxHashMap<Vec<u8>, (CacheColor, Arc<Pixmap>)>> = RefCell::new(FxHashMap::default());
     #[allow(clippy::type_complexity)]
     // The `u32` is a color encoded as a u32 so that it is hashable and eq.
-    static GLYPH_CACHE: RefCell<HashMap<(GlyphCacheKey, u32), (CacheColor, Option<Arc<Glyph>>)>> = RefCell::new(HashMap::new());
+    static GLYPH_CACHE: RefCell<FxHashMap<(GlyphCacheKey, u32), (CacheColor, Option<Arc<Glyph>>)>> = RefCell::new(FxHashMap::default());
     static SCALE_CONTEXT: RefCell<ScaleContext> = RefCell::new(ScaleContext::new());
 }
 
@@ -97,6 +100,7 @@ fn cache_glyph(
     color: Color,
     font_ref: &FontRef<'_>,
     font_size: f32,
+    hint: bool,
     normalized_coords: &[i16],
     embolden_strength: f32,
     skew: Option<f32>,
@@ -120,7 +124,7 @@ fn cache_glyph(
         let mut scaler = context
             .builder(*font_ref)
             .size(font_size)
-            .hint(true)
+            .hint(hint)
             .normalized_coords(normalized_coords)
             .build();
 
@@ -1222,6 +1226,7 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
                 scaled_font_size,
                 glyph_x,
                 glyph_y,
+                props.hint,
                 false,
                 skew,
             );
@@ -1232,6 +1237,7 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
                 brush_color,
                 &font_ref,
                 scaled_font_size,
+                props.hint,
                 props.normalized_coords,
                 self.font_embolden,
                 skew,

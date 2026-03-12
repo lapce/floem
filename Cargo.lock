@@ -1708,6 +1708,7 @@ dependencies = [
  "peniko",
  "raw-window-handle",
  "resvg",
+ "rustc-hash 2.1.1",
  "softbuffer",
  "swash",
 ]

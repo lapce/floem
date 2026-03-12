@@ -64,13 +64,14 @@ winit = { git = "https://github.com/lapce/winit", rev = "133268de675a4fda70816d7
 ui-events = { version = "0.3", features = ["kurbo"] }
 ui-events-winit = { path = "./ui-events-winit", package = "ui-events-floem-winit" }
 dpi = { version = "0.1.2", default-features = false }
+rustc-hash = "2.1"
 
 [dependencies]
 slotmap = "1.0"
 sha2 = "0.10"
 bitflags = "2.9"
 indexmap = "2"
-rustc-hash = "2.1"
+rustc-hash.workspace = true
 smallvec = "1.15"
 educe = "0.6"
 taffy = { version = "0.9.2", features = ["grid"] }
