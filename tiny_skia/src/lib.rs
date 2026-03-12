@@ -10,7 +10,10 @@ use floem_renderer::tiny_skia::{
     SpreadMode, Stroke, Transform,
 };
 use peniko::kurbo::{PathEl, Size};
-use peniko::{BlendMode, Blob, Compose, ImageAlphaType, ImageData, Mix, RadialGradientPosition};
+use peniko::{
+    BlendMode, Blob, Compose, ImageAlphaType, ImageData, ImageQuality, Mix,
+    RadialGradientPosition,
+};
 use peniko::{
     BrushRef, Color, GradientKind,
     kurbo::{Affine, Point, Rect, Shape},
@@ -671,17 +674,27 @@ impl Layer {
         );
     }
 
-    fn render_pixmap_rect(&mut self, pixmap: &Pixmap, rect: Rect, transform: Affine) {
-        if rect.width() == pixmap.width() as f64
-            && rect.height() == pixmap.height() as f64
-            && self.try_draw_pixmap_translate_only(
-                pixmap,
-                rect.x0,
-                rect.y0,
-                transform,
-                FilterQuality::Nearest,
-            )
-        {
+    fn render_pixmap_rect(
+        &mut self,
+        pixmap: &Pixmap,
+        rect: Rect,
+        transform: Affine,
+        quality: ImageQuality,
+    ) {
+        let filter_quality = image_quality_to_filter_quality(quality);
+        let local_transform = Affine::translate((rect.x0, rect.y0)).then_scale_non_uniform(
+            rect.width() / pixmap.width() as f64,
+            rect.height() / pixmap.height() as f64,
+        );
+        let composite_transform = transform * local_transform;
+
+        if self.try_draw_pixmap_translate_only(
+            pixmap,
+            0.0,
+            0.0,
+            composite_transform,
+            filter_quality,
+        ) {
             return;
         }
 
@@ -692,19 +705,15 @@ impl Layer {
         let paint = PixmapPaint {
             opacity: 1.0,
             blend_mode: tiny_skia::BlendMode::SourceOver,
-            quality: FilterQuality::Bilinear,
+            quality: filter_quality,
         };
-        let local_transform = Affine::translate((rect.x0, rect.y0)).then_scale_non_uniform(
-            rect.width() / pixmap.width() as f64,
-            rect.height() / pixmap.height() as f64,
-        );
 
         self.pixmap.draw_pixmap(
             0,
             0,
             pixmap.as_ref(),
             &paint,
-            affine_to_skia(transform * local_transform),
+            affine_to_skia(composite_transform),
             self.clip.is_some().then_some(&self.mask),
         );
     }
@@ -944,8 +953,9 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
                     pixmap,
                     rect,
                     transform,
+                    quality,
                 } => {
-                    raster.render_pixmap_rect(pixmap, *rect, *transform);
+                    raster.render_pixmap_rect(pixmap, *rect, *transform, *quality);
                 }
                 RecordedCommand::Layer(layer) => {
                     let Some(clip) = layer.clip.clone() else {
@@ -1100,6 +1110,13 @@ fn integer_translation(transform: Affine, x: f64, y: f64) -> Option<(i32, i32)> 
         nearly_integral(x + coeffs[4])?,
         nearly_integral(y + coeffs[5])?,
     ))
+}
+
+fn image_quality_to_filter_quality(quality: ImageQuality) -> FilterQuality {
+    match quality {
+        ImageQuality::Low => FilterQuality::Nearest,
+        ImageQuality::Medium | ImageQuality::High => FilterQuality::Bilinear,
+    }
 }
 
 fn mul_div_255(value: u8, factor: u8) -> u8 {
@@ -1264,7 +1281,8 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
                 pixmap.clone()
             })
         }) {
-            self.recording.draw_pixmap_rect(pixmap, rect, transform);
+            self.recording
+                .draw_pixmap_rect(pixmap, rect, transform, img.img.sampler.quality);
             return;
         }
 
@@ -1282,7 +1300,7 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
 
         let pixmap = Arc::new(pixmap);
         self.recording
-            .draw_pixmap_rect(pixmap.clone(), rect, transform);
+            .draw_pixmap_rect(pixmap.clone(), rect, transform, img.img.sampler.quality);
         IMAGE_CACHE.with_borrow_mut(|ic| {
             ic.insert(img.hash.to_owned(), (self.cache_color, pixmap));
         });
@@ -1309,7 +1327,7 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
         }) {
             let final_pixmap = self.colorize_pixmap(&pixmap, brush).unwrap_or(pixmap);
             self.recording
-                .draw_pixmap_rect(final_pixmap, rect, transform);
+                .draw_pixmap_rect(final_pixmap, rect, transform, ImageQuality::High);
             return;
         }
 
@@ -1325,7 +1343,7 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
             .colorize_pixmap(&non_colored_svg, brush)
             .unwrap_or_else(|| non_colored_svg.clone());
         self.recording
-            .draw_pixmap_rect(final_pixmap, rect, transform);
+            .draw_pixmap_rect(final_pixmap, rect, transform, ImageQuality::High);
 
         IMAGE_CACHE.with_borrow_mut(|ic| {
             ic.insert(svg.hash.to_owned(), (self.cache_color, non_colored_svg));
@@ -1807,6 +1825,7 @@ mod tests {
             &src,
             Rect::new(0.0, 0.0, 4.0, 4.0),
             layer.device_transform(),
+            ImageQuality::Medium,
         );
 
         assert_eq!(pixel_rgba(&layer, 3, 1), (0, 0, 0, 0));
@@ -1815,6 +1834,38 @@ mod tests {
         assert_eq!(pixel_rgba(&layer, 6, 1), (255, 0, 0, 255));
         assert_eq!(pixel_rgba(&layer, 7, 1), (0, 0, 0, 0));
         assert_eq!(pixel_rgba(&layer, 8, 1), (0, 0, 0, 0));
+    }
+
+    #[test]
+    fn render_pixmap_rect_detects_exact_device_blit_when_scale_cancels() {
+        let rect = Rect::new(1.0, 2.0, 2.0, 3.0);
+        let pixmap = Pixmap::new(2, 2).expect("failed to create src pixmap");
+        let local_transform = Affine::translate((rect.x0, rect.y0)).then_scale_non_uniform(
+            rect.width() / pixmap.width() as f64,
+            rect.height() / pixmap.height() as f64,
+        );
+        let composite_transform = Affine::scale(2.0) * local_transform;
+
+        assert_eq!(
+            integer_translation(composite_transform, 0.0, 0.0),
+            Some((1, 2))
+        );
+    }
+
+    #[test]
+    fn image_quality_low_maps_to_nearest_filtering() {
+        assert_eq!(
+            image_quality_to_filter_quality(ImageQuality::Low),
+            FilterQuality::Nearest
+        );
+        assert_eq!(
+            image_quality_to_filter_quality(ImageQuality::Medium),
+            FilterQuality::Bilinear
+        );
+        assert_eq!(
+            image_quality_to_filter_quality(ImageQuality::High),
+            FilterQuality::Bilinear
+        );
     }
 
     #[test]

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use floem_renderer::tiny_skia::{Path, Pixmap};
 use peniko::{
-    BlendMode, Brush,
+    BlendMode, Brush, ImageQuality,
     kurbo::{Affine, Rect, Stroke},
 };
 
@@ -110,13 +110,20 @@ impl Recording {
             });
     }
 
-    pub(crate) fn draw_pixmap_rect(&mut self, pixmap: Arc<Pixmap>, rect: Rect, transform: Affine) {
+    pub(crate) fn draw_pixmap_rect(
+        &mut self,
+        pixmap: Arc<Pixmap>,
+        rect: Rect,
+        transform: Affine,
+        quality: ImageQuality,
+    ) {
         self.current_layer_mut()
             .commands
             .push(RecordedCommand::DrawPixmapRect {
                 pixmap,
                 rect,
                 transform,
+                quality,
             });
     }
 
@@ -203,6 +210,7 @@ pub(crate) enum RecordedCommand {
         pixmap: Arc<Pixmap>,
         rect: Rect,
         transform: Affine,
+        quality: ImageQuality,
     },
     Layer(Box<RecordedLayer>),
 }
