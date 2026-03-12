@@ -3,8 +3,9 @@ use floem_renderer::Img;
 use floem_renderer::Renderer;
 use floem_renderer::text::{Glyph as ParleyGlyph, GlyphRunProps};
 use floem_renderer::tiny_skia::{
-    self, FillRule, FilterQuality, GradientStop, LinearGradient, Mask, MaskType, Paint, Path,
-    PathBuilder, Pattern, Pixmap, RadialGradient, Shader, SpreadMode, Stroke, Transform,
+    self, FillRule, FilterQuality, GradientStop, IntRect, LinearGradient, Mask, MaskType, Paint,
+    Path, PathBuilder, Pattern, Pixmap, PixmapPaint, RadialGradient, Shader, SpreadMode, Stroke,
+    Transform,
 };
 use peniko::kurbo::{PathEl, Size};
 use peniko::{BlendMode, Blob, Compose, ImageAlphaType, ImageData, Mix, RadialGradientPosition};
@@ -1011,104 +1012,117 @@ fn mix_to_tiny_blend_mode(mix: Mix) -> TinyBlendMode {
     }
 }
 
+fn layer_composite_rect(layer: &Layer, parent: &Layer) -> Option<IntRect> {
+    let mut rect = Rect::from_origin_size(
+        Point::ZERO,
+        Size::new(layer.pixmap.width() as f64, layer.pixmap.height() as f64),
+    );
+
+    if let Some(layer_clip) = layer.clip {
+        rect = rect.intersect(layer_clip);
+    }
+
+    if let Some(parent_clip) = parent.clip {
+        rect = rect.intersect(parent_clip);
+    }
+
+    if rect.is_zero_area() {
+        return None;
+    }
+
+    IntRect::from_ltrb(
+        rect.x0.floor().max(0.0) as i32,
+        rect.y0.floor().max(0.0) as i32,
+        rect.x1.ceil().min(layer.pixmap.width() as f64) as i32,
+        rect.y1.ceil().min(layer.pixmap.height() as f64) as i32,
+    )
+}
+
+fn draw_layer_pixmap(
+    pixmap: &Pixmap,
+    x: i32,
+    y: i32,
+    parent: &mut Layer,
+    blend_mode: TinyBlendMode,
+    alpha: f32,
+) {
+    let paint = PixmapPaint {
+        opacity: alpha,
+        blend_mode,
+        quality: FilterQuality::Nearest,
+    };
+
+    parent.pixmap.draw_pixmap(
+        x,
+        y,
+        pixmap.as_ref(),
+        &paint,
+        Transform::identity(),
+        parent.clip.is_some().then_some(&parent.mask),
+    );
+}
+
+fn draw_layer_region(
+    parent: &mut Layer,
+    pixmap: &Pixmap,
+    composite_rect: IntRect,
+    blend_mode: TinyBlendMode,
+    alpha: f32,
+) {
+    let Some(cropped) = pixmap.clone_rect(composite_rect) else {
+        return;
+    };
+
+    draw_layer_pixmap(
+        &cropped,
+        composite_rect.x(),
+        composite_rect.y(),
+        parent,
+        blend_mode,
+        alpha,
+    );
+}
+
 fn apply_layer(layer: &Layer, parent: &mut Layer) {
+    let Some(composite_rect) = layer_composite_rect(layer, parent) else {
+        return;
+    };
+
     match determine_blend_strategy(&layer.blend_mode) {
         BlendStrategy::SinglePass(blend_mode) => {
-            let mut paint = Paint {
-                blend_mode,
-                anti_alias: true,
-                ..Default::default()
-            };
-
-            let transform = Transform::identity();
-
-            let layer_pattern = Pattern::new(
-                layer.pixmap.as_ref(),
-                SpreadMode::Pad,
-                FilterQuality::Bilinear,
-                layer.alpha,
-                Transform::identity(),
-            );
-
-            paint.shader = layer_pattern;
-
-            let layer_rect = try_ret!(tiny_skia::Rect::from_xywh(
-                0.0,
-                0.0,
-                layer.pixmap.width() as f32,
-                layer.pixmap.height() as f32,
-            ));
-
-            parent.pixmap.fill_rect(
-                layer_rect,
-                &paint,
-                transform,
-                parent.clip.is_some().then_some(&parent.mask),
-            );
+            draw_layer_region(parent, &layer.pixmap, composite_rect, blend_mode, layer.alpha);
         }
         BlendStrategy::MultiPass {
             first_pass,
             second_pass,
         } => {
-            let original_parent = parent.pixmap.clone();
-
-            let mut paint = Paint {
-                blend_mode: first_pass,
-                anti_alias: true,
-                ..Default::default()
+            let Some(original_parent) = parent.pixmap.clone_rect(composite_rect) else {
+                return;
             };
 
-            let transform = Transform::identity();
-            let layer_pattern = Pattern::new(
-                layer.pixmap.as_ref(),
-                SpreadMode::Pad,
-                FilterQuality::Bilinear,
-                1.0,
-                Transform::identity(),
-            );
+            draw_layer_region(parent, &layer.pixmap, composite_rect, first_pass, 1.0);
 
-            paint.shader = layer_pattern;
-
-            let layer_rect = try_ret!(tiny_skia::Rect::from_xywh(
-                0.0,
-                0.0,
-                layer.pixmap.width() as f32,
-                layer.pixmap.height() as f32,
-            ));
-
-            parent.pixmap.fill_rect(
-                layer_rect,
-                &paint,
-                transform,
-                parent.clip.is_some().then_some(&parent.mask),
-            );
-
-            let intermediate = parent.pixmap.clone();
-
-            parent.pixmap = original_parent;
-
-            let mut paint = Paint {
-                blend_mode: second_pass,
-                anti_alias: true,
-                ..Default::default()
+            let Some(intermediate) = parent.pixmap.clone_rect(composite_rect) else {
+                return;
             };
 
-            let intermediate_pattern = Pattern::new(
-                intermediate.as_ref(),
-                SpreadMode::Pad,
-                FilterQuality::Bilinear,
+            draw_layer_pixmap(
+                &original_parent,
+                composite_rect.x(),
+                composite_rect.y(),
+                parent,
+                TinyBlendMode::Source,
                 1.0,
-                Transform::identity(),
             );
 
-            paint.shader = intermediate_pattern;
-
-            parent.pixmap.fill_rect(
-                layer_rect,
-                &paint,
-                transform,
-                parent.clip.is_some().then_some(&parent.mask),
-            )
+            draw_layer_pixmap(
+                &intermediate,
+                composite_rect.x(),
+                composite_rect.y(),
+                parent,
+                second_pass,
+                1.0,
+            );
         }
     }
 }
