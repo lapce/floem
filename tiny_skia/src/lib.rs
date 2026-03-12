@@ -226,6 +226,52 @@ impl Layer {
         );
     }
 
+    fn try_fill_solid_rect_fast(&mut self, rect: Rect, color: Color) -> bool {
+        if self.clip.is_some() {
+            return false;
+        }
+
+        let coeffs = self.device_transform().as_coeffs();
+        if coeffs[0] != 1.0 || coeffs[1] != 0.0 || coeffs[2] != 0.0 || coeffs[3] != 1.0 {
+            return false;
+        }
+
+        let c = color.to_rgba8();
+        if c.a != 255 {
+            return false;
+        }
+
+        let Some(device_rect) = rect_to_int_rect(self.device_transform().transform_rect_bbox(rect))
+        else {
+            return false;
+        };
+
+        let x0 = device_rect.x().max(0) as u32;
+        let y0 = device_rect.y().max(0) as u32;
+        let x1 = (device_rect.x() + device_rect.width() as i32).min(self.pixmap.width() as i32) as u32;
+        let y1 =
+            (device_rect.y() + device_rect.height() as i32).min(self.pixmap.height() as i32) as u32;
+
+        if x0 >= x1 || y0 >= y1 {
+            return true;
+        }
+
+        self.mark_drawn_device_rect(Rect::new(x0 as f64, y0 as f64, x1 as f64, y1 as f64));
+
+        let fill = tiny_skia::Color::from_rgba8(c.r, c.g, c.b, c.a)
+            .premultiply()
+            .to_color_u8();
+        let width = self.pixmap.width() as usize;
+        let pixels = self.pixmap.pixels_mut();
+        for y in y0 as usize..y1 as usize {
+            let start = y * width + x0 as usize;
+            let end = y * width + x1 as usize;
+            pixels[start..end].fill(fill);
+        }
+
+        true
+    }
+
     fn device_transform(&self) -> Affine {
         self.transform
     }
@@ -493,6 +539,14 @@ impl Layer {
     fn fill<'b>(&mut self, shape: &impl Shape, brush: impl Into<BrushRef<'b>>, _blur_radius: f64) {
         // FIXME: Handle _blur_radius
 
+        let brush = brush.into();
+        if let Some(rect) = shape.as_rect()
+            && let BrushRef::Solid(color) = brush
+            && self.try_fill_solid_rect_fast(rect, color)
+        {
+            return;
+        }
+
         let paint = try_ret!(brush_to_paint(brush));
         self.mark_drawn_rect_inflated(shape.bounding_box(), self.device_transform(), 2.0);
         if let Some(rect) = shape.as_rect() {
@@ -680,6 +734,7 @@ pub struct TinySkiaRenderer<W> {
     window_scale: f64,
     capture: bool,
     layers: Vec<Layer>,
+    last_presented_bounds: Option<Rect>,
     font_embolden: f32,
 }
 
@@ -724,6 +779,7 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
             capture: false,
             cache_color: CacheColor(false),
             layers: vec![main_layer],
+            last_presented_bounds: None,
             font_embolden,
         })
     }
@@ -738,6 +794,7 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
                 .expect("failed to resize surface");
             self.layers[0].pixmap = Pixmap::new(width, height).expect("unable to create pixmap");
             self.layers[0].mask = Mask::new(width, height).expect("unable to create mask");
+            self.last_presented_bounds = None;
         }
         self.window_scale = scale;
     }
@@ -861,18 +918,68 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
             .buffer_mut()
             .expect("failed to get the surface buffer");
 
-        // Copy from `tiny_skia::Pixmap` to the format specified by `softbuffer::Buffer`.
-        for (out_pixel, pixel) in
-            (buffer.iter_mut()).zip(self.layers.last().unwrap().pixmap.pixels().iter())
-        {
-            *out_pixel = ((pixel.red() as u32) << 16)
-                | ((pixel.green() as u32) << 8)
-                | (pixel.blue() as u32);
+        let current_bounds = self.layers.last().unwrap().draw_bounds;
+        let full_bounds = Rect::new(
+            0.0,
+            0.0,
+            self.layers.last().unwrap().pixmap.width() as f64,
+            self.layers.last().unwrap().pixmap.height() as f64,
+        );
+        let copy_bounds = if buffer.age() == 0 {
+            Some(full_bounds)
+        } else {
+            match (current_bounds, self.last_presented_bounds) {
+                (Some(current), Some(previous)) => Some(current.union(previous)),
+                (Some(current), None) => Some(current),
+                (None, Some(previous)) => Some(previous),
+                (None, None) => None,
+            }
+        };
+
+        if let Some(copy_bounds) = copy_bounds.and_then(rect_to_int_rect) {
+            let x0 = copy_bounds.x().max(0) as u32;
+            let y0 = copy_bounds.y().max(0) as u32;
+            let x1 = (copy_bounds.x() + copy_bounds.width() as i32)
+                .min(self.layers.last().unwrap().pixmap.width() as i32) as u32;
+            let y1 = (copy_bounds.y() + copy_bounds.height() as i32)
+                .min(self.layers.last().unwrap().pixmap.height() as i32) as u32;
+
+            if x0 < x1 && y0 < y1 {
+                let pixmap = &self.layers.last().unwrap().pixmap;
+                let width = pixmap.width() as usize;
+                for y in y0 as usize..y1 as usize {
+                    let row_start = y * width;
+                    let src = &pixmap.pixels()[row_start + x0 as usize..row_start + x1 as usize];
+                    let dst =
+                        &mut buffer[row_start + x0 as usize..row_start + x1 as usize];
+                    for (out_pixel, pixel) in dst.iter_mut().zip(src.iter()) {
+                        *out_pixel = ((pixel.red() as u32) << 16)
+                            | ((pixel.green() as u32) << 8)
+                            | (pixel.blue() as u32);
+                    }
+                }
+
+                let damage = [softbuffer::Rect {
+                    x: x0,
+                    y: y0,
+                    width: NonZeroU32::new(x1 - x0).unwrap(),
+                    height: NonZeroU32::new(y1 - y0).unwrap(),
+                }];
+                buffer
+                    .present_with_damage(&damage)
+                    .expect("failed to present the surface buffer");
+            } else {
+                buffer
+                    .present()
+                    .expect("failed to present the surface buffer");
+            }
+        } else {
+            buffer
+                .present()
+                .expect("failed to present the surface buffer");
         }
 
-        buffer
-            .present()
-            .expect("failed to present the surface buffer");
+        self.last_presented_bounds = current_bounds;
 
         None
     }
@@ -1099,6 +1206,13 @@ fn draw_layer_pixmap(
     blend_mode: TinyBlendMode,
     alpha: f32,
 ) {
+    parent.mark_drawn_device_rect(Rect::new(
+        x as f64,
+        y as f64,
+        (x + pixmap.width() as i32) as f64,
+        (y + pixmap.height() as i32) as f64,
+    ));
+
     let paint = PixmapPaint {
         opacity: alpha,
         blend_mode,
@@ -1240,5 +1354,24 @@ mod tests {
         assert_eq!(pixel_rgba(&layer, 6, 1), (255, 0, 0, 255));
         assert_eq!(pixel_rgba(&layer, 7, 1), (0, 0, 0, 0));
         assert_eq!(pixel_rgba(&layer, 8, 1), (0, 0, 0, 0));
+    }
+
+    #[test]
+    fn nested_layer_marks_parent_draw_bounds() {
+        let mut root = make_layer(8, 8);
+        let mut parent = make_layer(8, 8);
+        let mut child = make_layer(8, 8);
+
+        child.fill(
+            &Rect::new(2.0, 2.0, 4.0, 4.0),
+            Color::from_rgb8(255, 0, 0),
+            0.0,
+        );
+
+        apply_layer(&child, &mut parent);
+        assert!(parent.draw_bounds.is_some());
+
+        apply_layer(&parent, &mut root);
+        assert_eq!(pixel_rgba(&root, 3, 3), (255, 0, 0, 255));
     }
 }
