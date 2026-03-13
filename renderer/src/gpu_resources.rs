@@ -85,25 +85,47 @@ impl GpuResources {
                 };
 
                 tx.send(
-                    adapter
+                    match adapter
                         .request_device(
                             &wgpu::DeviceDescriptor {
                                 label: None,
                                 required_features,
-                                required_limits: wgpu::Limits::downlevel_defaults(),
+                                required_limits: Limits::default(),
                                 ..Default::default()
                             },
                             None,
                         )
                         .await
-                        .map_err(GpuResourceError::DeviceRequestError)
-                        .map(|(device, queue)| Self {
-                            adapter,
-                            device,
-                            queue,
-                            instance,
-                        })
-                        .map(|res| (res, surface)),
+                    {
+                        Ok((device, queue)) => {
+                            let gpu_res = Self {
+                                adapter,
+                                device,
+                                queue,
+                                instance,
+                            };
+                            Ok((gpu_res, surface))
+                        }
+                        Err(_e) => adapter
+                            .request_device(
+                                &wgpu::DeviceDescriptor {
+                                    label: None,
+                                    required_features,
+                                    required_limits: Limits::downlevel_defaults(),
+                                    ..Default::default()
+                                },
+                                None,
+                            )
+                            .await
+                            .map_err(GpuResourceError::DeviceRequestError)
+                            .map(|(device, queue)| Self {
+                                adapter,
+                                device,
+                                queue,
+                                instance,
+                            })
+                            .map(|res| (res, surface)),
+                    },
                 )
                 .unwrap();
                 on_result(window.id());
