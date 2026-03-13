@@ -226,7 +226,7 @@ impl<P: StyleProp> ContextRef<P> {
     ///
     /// The closure is evaluated when the target property is read. It only computes one
     /// value and does not participate in nested-map resolution.
-    pub fn map<T>(self, f: impl Fn(P::Type) -> T + 'static) -> ContextValue<T>
+    pub fn def<T>(self, f: impl Fn(P::Type) -> T + 'static) -> ContextValue<T>
     where
         P::Type: 'static,
         T: 'static,
@@ -981,10 +981,7 @@ impl Style {
     /// The closure runs immediately and must produce an ordinary style map. Any deferred
     /// context work is captured at the individual property-value level through
     /// [`ContextRef::map`].
-    pub fn with_context_expr<P: StyleProp>(
-        self,
-        f: impl FnOnce(Self, ContextRef<P>) -> Self,
-    ) -> Self {
+    pub fn with<P: StyleProp>(self, f: impl FnOnce(Self, ContextRef<P>) -> Self) -> Self {
         f(self, ContextRef::default())
     }
 
@@ -2232,20 +2229,47 @@ impl Style {
         self.set_style_map_value(prop, StyleMapValue::Context(value.map(StyleMapValue::Val)))
     }
 
+    pub fn set_from_context<C: StyleProp, P: StyleProp>(
+        self,
+        prop: P,
+        context: ContextRef<C>,
+        f: impl Fn(C::Type) -> P::Type + 'static,
+    ) -> Self
+    where
+        C::Type: 'static,
+        P::Type: 'static,
+    {
+        self.set_context(prop, context.def(f))
+    }
+
     /// Sets a property to a deferred optional context-derived value.
     ///
     /// `None` resolves to an unset property, allowing the base/fallback style to win.
-    pub fn set_context_opt<P: StyleProp>(
+    pub fn set_context_opt<P: StyleProp<Type = Option<T>>, T: 'static>(
         self,
         prop: P,
-        value: ContextValue<Option<P::Type>>,
+        value: ContextValue<Option<T>>,
     ) -> Self {
         self.set_style_map_value(
             prop,
-            StyleMapValue::Context(
-                value.map(|value| value.map(StyleMapValue::Val).unwrap_or(StyleMapValue::Unset)),
-            ),
+            StyleMapValue::Context(value.map(|value| {
+                value
+                    .map(|value| StyleMapValue::Val(Some(value)))
+                    .unwrap_or(StyleMapValue::Unset)
+            })),
         )
+    }
+
+    pub fn set_from_context_opt<C: StyleProp, P: StyleProp<Type = Option<T>>, T: 'static>(
+        self,
+        prop: P,
+        context: ContextRef<C>,
+        f: impl Fn(C::Type) -> Option<T> + 'static,
+    ) -> Self
+    where
+        C::Type: 'static,
+    {
+        self.set_context_opt(prop, context.def(f))
     }
 
     pub fn set_style_value<P: StyleProp>(mut self, _prop: P, value: StyleValue<P::Type>) -> Self {
@@ -2256,6 +2280,7 @@ impl Style {
             return self;
         }
         let map_value = match value {
+            StyleValue::Context(value) => StyleMapValue::Context(value.map(StyleMapValue::Val)),
             StyleValue::Val(value) => StyleMapValue::Val(value),
             StyleValue::Animated(value) => StyleMapValue::Animated(value),
             StyleValue::Unset => StyleMapValue::Unset,
@@ -2264,7 +2289,11 @@ impl Style {
         self.set_style_map_value(_prop, map_value)
     }
 
-    fn set_style_map_value<P: StyleProp>(mut self, _prop: P, value: StyleMapValue<P::Type>) -> Self {
+    fn set_style_map_value<P: StyleProp>(
+        mut self,
+        _prop: P,
+        value: StyleMapValue<P::Type>,
+    ) -> Self {
         let insert = match value {
             StyleMapValue::Val(value) => StyleMapValue::Val(value),
             StyleMapValue::Animated(value) => StyleMapValue::Animated(value),

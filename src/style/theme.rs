@@ -5,9 +5,9 @@ use super::{
     Background, Border, BorderBottom, BorderBottomColor, BorderBottomLeftRadius,
     BorderBottomRightRadius, BorderColor, BorderLeft, BorderLeftColor, BorderRadius, BorderRight,
     BorderRightColor, BorderTop, BorderTopColor, BorderTopLeftRadius, BorderTopRightRadius,
-    BoxShadow, CursorStyle, CustomStyle, FontSize, Foreground, Height, Margin, MarginBottom, MarginLeft,
-    MarginRight, MarginTop, Padding, PaddingBottom, PaddingLeft, PaddingRight, PaddingTop, Style,
-    StylePropValue, Transition,
+    BoxShadow, ColGap, Cursor, CursorStyle, CustomStyle, FontSize, Foreground, Height, Margin,
+    MarginBottom, MarginLeft, MarginRight, MarginTop, Padding, PaddingBottom, PaddingLeft,
+    PaddingRight, PaddingTop, RowGap, Style, StylePropValue, Transition, Width,
 };
 use crate::style::Selectable;
 use crate::view::View;
@@ -398,7 +398,7 @@ impl StyleThemeExt for Style {
 }
 
 pub fn hover_style() -> Style {
-    Style::new().hover(|s| s.apply(Style::new().with_theme(|s, t| s.background(t.bg_elevated()))))
+    Style::new().hover(|s| s.with::<Theme>(|s, t| s.background(t.def(|theme| theme.bg_elevated()))))
 }
 
 pub fn focus_style() -> Style {
@@ -481,14 +481,20 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
                 })
                 .hover(|s| s.background(t.bg_overlay()))
                 .active(move |s| {
-                    s.with_context_opt::<Background, _>(move |s, b| {
+                    s.with::<Background>(move |s, b| {
                         let adjustment = if is_dark { 0.1 } else { -0.2 };
-                        let color = if let Brush::Solid(c) = b {
-                            Some(c.map_lightness(|l| l + adjustment))
-                        } else {
-                            None
-                        };
-                        s.apply_opt(color, |s, c| s.background(c))
+                        s.set_context_opt(
+                            Background,
+                            b.def(move |b| {
+                                b.and_then(|b| {
+                                    if let Brush::Solid(c) = b {
+                                        Some(Brush::Solid(c.map_lightness(|l| l + adjustment)))
+                                    } else {
+                                        None
+                                    }
+                                })
+                            }),
+                        )
                     })
                 })
         })
@@ -608,10 +614,11 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
     let toggle_button_style = Style::new()
         .with_theme(|s, t| {
             s.background(t.bg_elevated())
-                .with_context_expr::<FontSize>(|s, fs| {
-                    s.set_context_opt(
+                .with::<FontSize>(|s, fs| {
+                    s.set_context(
                         Height,
-                        fs.map(|fs| fs.map(|fs| ((fs * 1.75) as f64).into())),
+                        fs.def(|fs| fs.unwrap_or(14.0))
+                            .map(|fs| ((fs * 1.75) as f64).into()),
                     )
                 })
                 .padding(t.padding())
@@ -708,8 +715,17 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
             s.with_theme(|s, t| {
                 s.custom(|s: LabelCustomStyle| s.selection_color(t.primary_muted().with_alpha(0.5)))
             })
-            .with_context::<Selectable>(|s, selectable| {
-                s.apply_if(*selectable, |s| s.cursor(CursorStyle::Text))
+            .with::<Selectable>(|s, selectable| {
+                s.set_context_opt(
+                    Cursor,
+                    selectable.def(|selectable| {
+                        if selectable {
+                            Some(CursorStyle::Text)
+                        } else {
+                            None
+                        }
+                    }),
+                )
             })
             .focusable()
         })
@@ -782,16 +798,24 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
                 .apply(border_style(true))
                 .selectable(false)
                 .class(dropdown::DropdownPreviewClass, |s| {
-                    s.with_context_opt::<FontSize, _>(|s, fs| s.gap(fs * 0.75))
-                        .class(SvgClass, |s| {
-                            s.with_theme(|s, t| {
-                                s.hover(|s| s.background(t.bg_elevated()))
-                                    .padding(5.)
-                                    .border_radius(t.border_radius())
-                                    .color(t.text())
-                            })
-                            .with_context_opt::<FontSize, _>(|s, fs| s.size(fs, fs))
+                    s.with::<FontSize>(|s, fs| {
+                        let gap = fs
+                            .def(|fs| fs.unwrap_or(14.0))
+                            .map(|fs| ((fs * 0.75) as f64).into());
+                        s.set_context(ColGap, gap.clone()).set_context(RowGap, gap)
+                    })
+                    .class(SvgClass, |s| {
+                        s.with_theme(|s, t| {
+                            s.hover(|s| s.background(t.bg_elevated()))
+                                .padding(5.)
+                                .border_radius(t.border_radius())
+                                .color(t.text())
                         })
+                        .with::<FontSize>(|s, fs| {
+                            let size = fs.def(|fs| fs.unwrap_or(14.0)).map(|fs| (fs as f64).into());
+                            s.set_context(Width, size.clone()).set_context(Height, size)
+                        })
+                    })
                 })
                 .class(scroll::ScrollClass, move |s| {
                     s.width_full()

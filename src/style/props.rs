@@ -361,6 +361,7 @@ impl<P: StyleProp> StylePropReader for P {
         let style_value = style.get_prop_style_value::<P>();
         let mut prop_animated = false;
         let new = match style_value {
+            StyleValue::Context(_) => unreachable!("context values should resolve during property reads"),
             StyleValue::Animated(val) => {
                 *request_transition = true;
                 prop_animated = true;

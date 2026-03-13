@@ -364,7 +364,9 @@ where
                 .border_radius(5.0)
                 .margin_left(6.0)
                 .with_theme(|s, t| s.color(t.text()).border_color(t.border()))
-                .with_context_opt::<FontSize, _>(|s, fs| s.font_size(fs * 0.85))
+                .with::<FontSize>(|s, fs| {
+                    s.set_context_opt(FontSize, fs.def(|fs| fs.map(|fs| fs * 0.85)))
+                })
         });
 
         // Clone items for the tooltip view
@@ -482,7 +484,9 @@ impl<T: StylePropValue + 'static> StylePropValue for Vec<T> {
                 .border_radius(5.0)
                 .margin_left(6.0)
                 .with_theme(|s, t| s.color(t.text()).border_color(t.border()))
-                .with_context_opt::<FontSize, _>(|s, fs| s.font_size(fs * 0.85))
+                .with::<FontSize>(|s, fs| {
+                    s.set_context_opt(FontSize, fs.def(|fs| fs.map(|fs| fs * 0.85)))
+                })
         });
 
         let items = self.clone();
@@ -1362,6 +1366,8 @@ impl<T> StyleMapValue<T> {
 /// states like `Base` that indicate inheritance from parent styles.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum StyleValue<T> {
+    /// Value resolved from inherited context when the property is read.
+    Context(ContextValue<T>),
     /// Value inserted by animation interpolation
     Animated(T),
     /// Value set directly
@@ -1374,9 +1380,10 @@ pub enum StyleValue<T> {
     Base,
 }
 
-impl<T> StyleValue<T> {
-    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> StyleValue<U> {
+impl<T: 'static> StyleValue<T> {
+    pub fn map<U>(self, f: impl Fn(T) -> U + 'static) -> StyleValue<U> {
         match self {
+            Self::Context(x) => StyleValue::Context(x.map(f)),
             Self::Val(x) => StyleValue::Val(f(x)),
             Self::Animated(x) => StyleValue::Animated(f(x)),
             Self::Unset => StyleValue::Unset,
@@ -1386,6 +1393,7 @@ impl<T> StyleValue<T> {
 
     pub fn unwrap_or(self, default: T) -> T {
         match self {
+            Self::Context(_) => default,
             Self::Val(x) => x,
             Self::Animated(x) => x,
             Self::Unset => default,
@@ -1395,6 +1403,7 @@ impl<T> StyleValue<T> {
 
     pub fn unwrap_or_else(self, f: impl FnOnce() -> T) -> T {
         match self {
+            Self::Context(_) => f(),
             Self::Val(x) => x,
             Self::Animated(x) => x,
             Self::Unset => f(),
@@ -1404,6 +1413,7 @@ impl<T> StyleValue<T> {
 
     pub fn as_mut(&mut self) -> Option<&mut T> {
         match self {
+            Self::Context(_) => None,
             Self::Val(x) => Some(x),
             Self::Animated(x) => Some(x),
             Self::Unset => None,
@@ -1418,6 +1428,11 @@ impl<T> From<T> for StyleValue<T> {
     }
 }
 
+impl<T> From<ContextValue<T>> for StyleValue<T> {
+    fn from(x: ContextValue<T>) -> Self {
+        Self::Context(x)
+    }
+}
 
 fn short_style_name(name: &str) -> String {
     name.strip_prefix("floem::style::")
@@ -1553,7 +1568,9 @@ fn debug_name_cell(name: String, is_direct: bool, indent: usize) -> AnyView {
                             .border_color(t.border())
                             .padding_horiz(4.0)
                     })
-                    .with_context_opt::<FontSize, _>(|s, fs| s.font_size(fs * 0.8))
+                    .with::<FontSize>(|s, fs| {
+                        s.set_context_opt(FontSize, fs.def(|fs| fs.map(|fs| fs * 0.8)))
+                    })
             }),
             Label::new(name),
         ))
@@ -1601,7 +1618,9 @@ fn style_debug_prop_row(
                                 .border_radius(5.0)
                                 .padding_horiz(4.0)
                                 .with_theme(|s, t| s.color(t.text_muted()).border_color(t.border()))
-                                .with_context_opt::<FontSize, _>(|s, fs| s.font_size(fs * 0.8))
+                                .with::<FontSize>(|s, fs| {
+                                    s.set_context_opt(FontSize, fs.def(|fs| fs.map(|fs| fs * 0.8)))
+                                })
                         }),
                         transition.debug_view(),
                     ))
@@ -1676,7 +1695,9 @@ fn style_debug_section(title: String, child: StyleDebugRow, indent: usize) -> St
                                 .border(1.)
                                 .border_radius(999.0)
                                 .with_theme(|s, t| s.color(t.text_muted()).border_color(t.border()))
-                                .with_context_opt::<FontSize, _>(|s, fs| s.font_size(fs * 0.75))
+                                .with::<FontSize>(|s, fs| {
+                                    s.set_context_opt(FontSize, fs.def(|fs| fs.map(|fs| fs * 0.75)))
+                                })
                         })
                         .style(move |s| s.apply_if(!child_is_empty, |s| s.hide())),
                 ))

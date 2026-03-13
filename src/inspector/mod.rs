@@ -19,7 +19,7 @@ use crate::{
     prelude::*,
     style::{
         Background, BorderRadius, OverflowX, OverflowY, PxPct, PxPctAuto, StrokeWrap, Style,
-        StyleCx, StyleThemeExt,
+        StyleCx, StyleThemeExt, TextColor,
     },
 };
 
@@ -219,18 +219,20 @@ fn box_model_label(
             } else {
                 FontWeight::NORMAL
             })
-            .with_context_opt::<Background, _>(move |s, b| {
-                let color = if let Brush::Solid(c) = b {
-                    let l = c.convert::<Oklab>().components[0];
-                    if l < 0.5 {
-                        Some(css::WHITE)
-                    } else {
-                        Some(css::BLACK)
-                    }
-                } else {
-                    None
-                };
-                s.apply_opt(color, |s, c| s.color(c))
+            .with::<Background>(move |s, b| {
+                s.set_context_opt(
+                    TextColor,
+                    b.def(|b| {
+                        b.and_then(|b| {
+                            if let Brush::Solid(c) = b {
+                                let l = c.convert::<Oklab>().components[0];
+                                Some(if l < 0.5 { css::WHITE } else { css::BLACK })
+                            } else {
+                                None
+                            }
+                        })
+                    }),
+                )
             })
     })
 }
@@ -348,18 +350,20 @@ fn box_model_view(data: BoxModelViewData) -> impl View {
             } else {
                 FontWeight::NORMAL
             })
-            .with_context_opt::<Background, _>(move |s, b| {
-                let color = if let Brush::Solid(c) = b {
-                    let l = c.convert::<Oklab>().components[0];
-                    if l < 0.5 {
-                        Some(css::WHITE)
-                    } else {
-                        Some(css::BLACK)
-                    }
-                } else {
-                    None
-                };
-                s.apply_opt(color, |s, c| s.color(c))
+            .with::<Background>(move |s, b| {
+                s.set_context_opt(
+                    TextColor,
+                    b.def(|b| {
+                        b.and_then(|b| {
+                            if let Brush::Solid(c) = b {
+                                let l = c.convert::<Oklab>().components[0];
+                                Some(if l < 0.5 { css::WHITE } else { css::BLACK })
+                            } else {
+                                None
+                            }
+                        })
+                    }),
+                )
             })
     })
     .container()
