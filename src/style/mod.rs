@@ -191,7 +191,10 @@ pub use selectors::{NthChild, StructuralSelector, StyleSelector, StyleSelectors}
 pub use theme::{DesignSystem, StyleThemeExt};
 pub use transition::{DirectTransition, Transition, TransitionState};
 pub use unit::{
-    AnchorAbout, Angle, Auto, DurationUnitExt, LineHeightValue, Pct, Px, PxPct, PxPctAuto, UnitExt,
+    
+    AnchorAbout, Angle, Auto, DurationUnitExt, LineHeightValue, Length, LengthAuto, Pct, Pt, Px, PxPct,
+    PxPctAuto, UnitExt,
+,
 };
 pub use values::{ContextValue, ObjectFit, StrokeWrap, StyleMapValue, StylePropValue, StyleValue};
 
@@ -369,7 +372,7 @@ impl ExprStyle {
     /// Sets the font size for text content.
     pub fn font_size<T>(self, size: ContextValue<T>) -> Self
     where
-        T: Into<Px> + 'static,
+        T: Into<Pt> + 'static,
     {
         let px = size.map(|s| s.into().0 as f32);
         self.set_context(FontSize, px)
@@ -1602,32 +1605,32 @@ define_builtin_props!(
     /// Sets the width of the view.
     ///
     /// Can be specified in pixels, percentages, or auto.
-    Width width {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    Width width {tr}: LengthAuto {} = LengthAuto::Auto,
 
     /// Sets the height of the view.
     ///
     /// Can be specified in pixels, percentages, or auto.
-    Height height {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    Height height {tr}: LengthAuto {} = LengthAuto::Auto,
 
     /// Sets the minimum width of the view.
     ///
     /// The view will not shrink below this width.
-    MinWidth min_width {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    MinWidth min_width {tr}: LengthAuto {} = LengthAuto::Auto,
 
     /// Sets the minimum height of the view.
     ///
     /// The view will not shrink below this height.
-    MinHeight min_height {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    MinHeight min_height {tr}: LengthAuto {} = LengthAuto::Auto,
 
     /// Sets the maximum width of the view.
     ///
     /// The view will not grow beyond this width.
-    MaxWidth max_width {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    MaxWidth max_width {tr}: LengthAuto {} = LengthAuto::Auto,
 
     /// Sets the maximum height of the view.
     ///
     /// The view will not grow beyond this height.
-    MaxHeight max_height {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    MaxHeight max_height {tr}: LengthAuto {} = LengthAuto::Auto,
 
     /// Sets the direction of the main axis for flex items.
     ///
@@ -1652,7 +1655,7 @@ define_builtin_props!(
     /// Sets the initial main size of a flex item.
     ///
     /// This is the size of the item before free space is distributed.
-    FlexBasis flex_basis {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    FlexBasis flex_basis {tr}: LengthAuto {} = LengthAuto::Auto,
 
     /// Controls alignment of flex items along the main axis.
     ///
@@ -1763,43 +1766,43 @@ define_builtin_props!(
     BorderBottomColor border_bottom_color { tr }: Option<Brush> [Brush] {} = None,
 
     /// Sets the top-left border radius.
-    BorderTopLeftRadius border_top_left_radius { tr }: PxPct {} = PxPct::Px(0.),
+    BorderTopLeftRadius border_top_left_radius { tr }: Length {} = Length::Pt(0.),
     /// Sets the top-right border radius.
-    BorderTopRightRadius border_top_right_radius { tr }: PxPct {} = PxPct::Px(0.),
+    BorderTopRightRadius border_top_right_radius { tr }: Length {} = Length::Pt(0.),
     /// Sets the bottom-left border radius.
-    BorderBottomLeftRadius border_bottom_left_radius { tr }: PxPct {} = PxPct::Px(0.),
+    BorderBottomLeftRadius border_bottom_left_radius { tr }: Length {} = Length::Pt(0.),
     /// Sets the bottom-right border radius.
-    BorderBottomRightRadius border_bottom_right_radius { tr }: PxPct {} = PxPct::Px(0.),
+    BorderBottomRightRadius border_bottom_right_radius { tr }: Length {} = Length::Pt(0.),
 
     /// Sets the left padding.
-    PaddingLeft padding_left { tr }: PxPct {} = PxPct::Px(0.),
+    PaddingLeft padding_left { tr }: Length {} = Length::Pt(0.),
     /// Sets the top padding.
-    PaddingTop padding_top { tr }: PxPct {} = PxPct::Px(0.),
+    PaddingTop padding_top { tr }: Length {} = Length::Pt(0.),
     /// Sets the right padding.
-    PaddingRight padding_right { tr }: PxPct {} = PxPct::Px(0.),
+    PaddingRight padding_right { tr }: Length {} = Length::Pt(0.),
     /// Sets the bottom padding.
-    PaddingBottom padding_bottom { tr }: PxPct {} = PxPct::Px(0.),
+    PaddingBottom padding_bottom { tr }: Length {} = Length::Pt(0.),
 
     /// Sets the left margin.
-    MarginLeft margin_left { tr }: PxPctAuto {} = PxPctAuto::Px(0.),
+    MarginLeft margin_left { tr }: LengthAuto {} = LengthAuto::Pt(0.),
     /// Sets the top margin.
-    MarginTop margin_top { tr }: PxPctAuto {} = PxPctAuto::Px(0.),
+    MarginTop margin_top { tr }: LengthAuto {} = LengthAuto::Pt(0.),
     /// Sets the right margin.
-    MarginRight margin_right { tr }: PxPctAuto {} = PxPctAuto::Px(0.),
+    MarginRight margin_right { tr }: LengthAuto {} = LengthAuto::Pt(0.),
     /// Sets the bottom margin.
-    MarginBottom margin_bottom { tr }: PxPctAuto {} = PxPctAuto::Px(0.),
+    MarginBottom margin_bottom { tr }: LengthAuto {} = LengthAuto::Pt(0.),
 
     /// Sets the left offset for positioned views.
-    InsetLeft inset_left {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    InsetLeft inset_left {tr}: LengthAuto {} = LengthAuto::Auto,
 
     /// Sets the top offset for positioned views.
-    InsetTop inset_top {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    InsetTop inset_top {tr}: LengthAuto {} = LengthAuto::Auto,
 
     /// Sets the right offset for positioned views.
-    InsetRight inset_right {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    InsetRight inset_right {tr}: LengthAuto {} = LengthAuto::Auto,
 
     /// Sets the bottom offset for positioned views.
-    InsetBottom inset_bottom {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    InsetBottom inset_bottom {tr}: LengthAuto {} = LengthAuto::Auto,
 
     /// Controls whether the view can be the target of mouse events.
     ///
@@ -1905,12 +1908,12 @@ define_builtin_props!(
     /// Sets the gap between columns in grid or flex layouts.
     ///
     /// Creates space between items in the horizontal direction.
-    ColGap col_gap { tr }: PxPct {} = PxPct::Px(0.),
+    ColGap col_gap { tr }: Length {} = Length::Pt(0.),
 
     /// Sets the gap between rows in grid or flex layouts.
     ///
     /// Creates space between items in the vertical direction.
-    RowGap row_gap { tr }: PxPct {} = PxPct::Px(0.),
+    RowGap row_gap { tr }: Length {} = Length::Pt(0.),
 
     /// Width of the scrollbar track in pixels.
     ///
@@ -1933,7 +1936,7 @@ define_builtin_props!(
     /// ```
     ///
     /// **Default:** `8px`
-    ScrollbarWidth scrollbar_width {tr}: Px {} = Px(8.),
+    ScrollbarWidth scrollbar_width {tr}: Pt {} = Pt(8.),
 
     /// How children overflowing their container in X axis should affect layout
     OverflowX overflow_x {}: Overflow {} = Overflow::default(),
@@ -1963,7 +1966,7 @@ define_builtin_props!(
     /// Translation is applied first in the transform sequence, in the element's local coordinate space.
     /// This matches CSS individual transform properties behavior.
     /// Transform order: translate → rotate → scale.
-    TranslateX translate_x {tr}: PxPct {} = PxPct::Px(0.),
+    TranslateX translate_x {tr}: Length {} = Length::Pt(0.),
 
     /// Sets the vertical translation transform.
     ///
@@ -1971,7 +1974,7 @@ define_builtin_props!(
     /// Translation is applied first in the transform sequence, in the element's local coordinate space.
     /// This matches CSS individual transform properties behavior.
     /// Transform order: translate → rotate → scale.
-    TranslateY translate_y {tr}: PxPct {} = PxPct::Px(0.),
+    TranslateY translate_y {tr}: Length {} = Length::Pt(0.),
 
     /// Sets the rotation transform angle.
     ///
@@ -2134,12 +2137,12 @@ impl TransformProps {
 
         // 1. Translate
         let transform_x = match self.translate_x() {
-            crate::unit::PxPct::Px(px) => px,
-            crate::unit::PxPct::Pct(pct) => (pct / 100.) * size.width,
+            crate::unit::Length::Pt(pt) => pt,
+            crate::unit::Length::Pct(pct) => (pct / 100.) * size.width,
         };
         let transform_y = match self.translate_y() {
-            crate::unit::PxPct::Px(px) => px,
-            crate::unit::PxPct::Pct(pct) => (pct / 100.) * size.height,
+            crate::unit::Length::Pt(pt) => pt,
+            crate::unit::Length::Pct(pct) => (pct / 100.) * size.height,
         };
         result *= Affine::translate(Vec2 {
             x: transform_x,
@@ -2486,37 +2489,37 @@ impl Style {
     /// Applies styles when window width is at least `min`.
     pub fn min_window_width(
         mut self,
-        min: impl Into<Px>,
+        min: impl Into<Pt>,
         style: impl FnOnce(Style) -> Style,
     ) -> Self {
         let over = style(Style::default());
-        self.set_responsive_selector(ResponsiveSelector::MinWidth(min.into()), over);
+        self.set_responsive_selector(ResponsiveSelector::MinWidth(min.into().into()), over);
         self
     }
 
     /// Applies styles when window width is at most `max`.
     pub fn max_window_width(
         mut self,
-        max: impl Into<Px>,
+        max: impl Into<Pt>,
         style: impl FnOnce(Style) -> Style,
     ) -> Self {
         let over = style(Style::default());
-        self.set_responsive_selector(ResponsiveSelector::MaxWidth(max.into()), over);
+        self.set_responsive_selector(ResponsiveSelector::MaxWidth(max.into().into()), over);
         self
     }
 
     /// Applies styles when window width is within `[min, max]` (inclusive).
     pub fn window_width_range(
         mut self,
-        min: impl Into<Px>,
-        max: impl Into<Px>,
+        min: impl Into<Pt>,
+        max: impl Into<Pt>,
         style: impl FnOnce(Style) -> Style,
     ) -> Self {
         let over = style(Style::default());
         self.set_responsive_selector(
             ResponsiveSelector::WidthRange {
-                min: min.into(),
-                max: max.into(),
+                min: min.into().into(),
+                max: max.into().into(),
             },
             over,
         );
@@ -2615,18 +2618,18 @@ impl Style {
     }
 
     /// Sets different gaps for rows and columns in grid or flex layouts.
-    pub fn row_col_gap(self, width: impl Into<PxPct>, height: impl Into<PxPct>) -> Self {
+    pub fn row_col_gap(self, width: impl Into<Length>, height: impl Into<Length>) -> Self {
         self.col_gap(width).row_gap(height)
     }
 
     /// Sets the same gap for both rows and columns in grid or flex layouts.
-    pub fn gap(self, gap: impl Into<PxPct>) -> Self {
+    pub fn gap(self, gap: impl Into<Length>) -> Self {
         let gap = gap.into();
         self.col_gap(gap).row_gap(gap)
     }
 
     /// Sets both width and height of the view.
-    pub fn size(self, width: impl Into<PxPctAuto>, height: impl Into<PxPctAuto>) -> Self {
+    pub fn size(self, width: impl Into<LengthAuto>, height: impl Into<LengthAuto>) -> Self {
         self.width(width).height(height)
     }
 
@@ -2668,8 +2671,8 @@ impl Style {
     /// Sets both minimum width and height of the view.
     pub fn min_size(
         self,
-        min_width: impl Into<PxPctAuto>,
-        min_height: impl Into<PxPctAuto>,
+        min_width: impl Into<LengthAuto>,
+        min_height: impl Into<LengthAuto>,
     ) -> Self {
         self.min_width(min_width).min_height(min_height)
     }
@@ -2702,8 +2705,8 @@ impl Style {
     /// Sets both maximum width and height of the view.
     pub fn max_size(
         self,
-        max_width: impl Into<PxPctAuto>,
-        max_height: impl Into<PxPctAuto>,
+        max_width: impl Into<LengthAuto>,
+        max_height: impl Into<LengthAuto>,
     ) -> Self {
         self.max_width(max_width).max_height(max_height)
     }
@@ -2796,7 +2799,7 @@ impl Style {
     }
 
     /// Set padding on all directions
-    pub fn padding(self, padding: impl Into<PxPct>) -> Self {
+    pub fn padding(self, padding: impl Into<Length>) -> Self {
         let padding = padding.into();
         self.set(PaddingLeft, padding)
             .set(PaddingTop, padding)
@@ -2810,7 +2813,7 @@ impl Style {
     }
 
     /// Sets `padding_left` and `padding_right` to `padding`
-    pub fn padding_horiz(self, padding: impl Into<PxPct>) -> Self {
+    pub fn padding_horiz(self, padding: impl Into<Length>) -> Self {
         let padding = padding.into();
         self.set(PaddingLeft, padding).set(PaddingRight, padding)
     }
@@ -2821,7 +2824,7 @@ impl Style {
     }
 
     /// Sets `padding_top` and `padding_bottom` to `padding`
-    pub fn padding_vert(self, padding: impl Into<PxPct>) -> Self {
+    pub fn padding_vert(self, padding: impl Into<Length>) -> Self {
         let padding = padding.into();
         self.set(PaddingTop, padding).set(PaddingBottom, padding)
     }
@@ -2852,7 +2855,7 @@ impl Style {
     }
 
     /// Sets margin on all sides of the view.
-    pub fn margin(self, margin: impl Into<PxPctAuto>) -> Self {
+    pub fn margin(self, margin: impl Into<LengthAuto>) -> Self {
         let margin = margin.into();
         self.set(MarginLeft, margin)
             .set(MarginTop, margin)
@@ -2866,7 +2869,7 @@ impl Style {
     }
 
     /// Sets `margin_left` and `margin_right` to `margin`
-    pub fn margin_horiz(self, margin: impl Into<PxPctAuto>) -> Self {
+    pub fn margin_horiz(self, margin: impl Into<LengthAuto>) -> Self {
         let margin = margin.into();
         self.set(MarginLeft, margin).set(MarginRight, margin)
     }
@@ -2877,7 +2880,7 @@ impl Style {
     }
 
     /// Sets `margin_top` and `margin_bottom` to `margin`
-    pub fn margin_vert(self, margin: impl Into<PxPctAuto>) -> Self {
+    pub fn margin_vert(self, margin: impl Into<LengthAuto>) -> Self {
         let margin = margin.into();
         self.set(MarginTop, margin).set(MarginBottom, margin)
     }
@@ -2923,7 +2926,7 @@ impl Style {
     }
 
     /// Sets the border radius for all corners of the view.
-    pub fn border_radius(self, radius: impl Into<PxPct>) -> Self {
+    pub fn border_radius(self, radius: impl Into<Length>) -> Self {
         let radius = radius.into();
         self.set(BorderTopLeftRadius, radius)
             .set(BorderTopRightRadius, radius)
@@ -3004,7 +3007,7 @@ impl Style {
     }
 
     /// Sets all insets (left, top, right, bottom) to the same value.
-    pub fn inset(self, inset: impl Into<PxPctAuto>) -> Self {
+    pub fn inset(self, inset: impl Into<LengthAuto>) -> Self {
         let inset = inset.into();
         self.inset_left(inset)
             .inset_top(inset)
@@ -3023,7 +3026,7 @@ impl Style {
 
     /// Specifies shadow blur. The larger this value, the bigger the blur,
     /// so the shadow becomes bigger and lighter.
-    pub fn box_shadow_blur(self, blur_radius: impl Into<PxPct>) -> Self {
+    pub fn box_shadow_blur(self, blur_radius: impl Into<Length>) -> Self {
         let mut value = self.get(BoxShadowProp);
         if let Some(v) = value.first_mut() {
             v.blur_radius = blur_radius.into();
@@ -3052,7 +3055,7 @@ impl Style {
 
     /// Specifies shadow blur spread. Positive values will cause the shadow
     /// to expand and grow bigger, negative values will cause the shadow to shrink.
-    pub fn box_shadow_spread(self, spread: impl Into<PxPct>) -> Self {
+    pub fn box_shadow_spread(self, spread: impl Into<Length>) -> Self {
         let mut value = self.get(BoxShadowProp);
         if let Some(v) = value.first_mut() {
             v.spread = spread.into();
@@ -3103,7 +3106,7 @@ impl Style {
 
     /// Specifies the offset on horizontal axis.
     /// Negative offset value places the shadow to the left of the view.
-    pub fn box_shadow_h_offset(self, h_offset: impl Into<PxPct>) -> Self {
+    pub fn box_shadow_h_offset(self, h_offset: impl Into<Length>) -> Self {
         let mut value = self.get(BoxShadowProp);
         let offset = h_offset.into();
         if let Some(v) = value.first_mut() {
@@ -3121,7 +3124,7 @@ impl Style {
 
     /// Specifies the offset on vertical axis.
     /// Negative offset value places the shadow above the view.
-    pub fn box_shadow_v_offset(self, v_offset: impl Into<PxPct>) -> Self {
+    pub fn box_shadow_v_offset(self, v_offset: impl Into<Length>) -> Self {
         let mut value = self.get(BoxShadowProp);
         let offset = v_offset.into();
         if let Some(v) = value.first_mut() {
@@ -3138,7 +3141,7 @@ impl Style {
     }
 
     /// Specifies the offset of the left edge.
-    pub fn box_shadow_left_offset(self, left_offset: impl Into<PxPct>) -> Self {
+    pub fn box_shadow_left_offset(self, left_offset: impl Into<Length>) -> Self {
         let mut value = self.get(BoxShadowProp);
         if let Some(v) = value.first_mut() {
             v.left_offset = left_offset.into();
@@ -3152,7 +3155,7 @@ impl Style {
     }
 
     /// Specifies the offset of the right edge.
-    pub fn box_shadow_right_offset(self, right_offset: impl Into<PxPct>) -> Self {
+    pub fn box_shadow_right_offset(self, right_offset: impl Into<Length>) -> Self {
         let mut value = self.get(BoxShadowProp);
         if let Some(v) = value.first_mut() {
             v.right_offset = right_offset.into();
@@ -3166,7 +3169,7 @@ impl Style {
     }
 
     /// Specifies the offset of the top edge.
-    pub fn box_shadow_top_offset(self, top_offset: impl Into<PxPct>) -> Self {
+    pub fn box_shadow_top_offset(self, top_offset: impl Into<Length>) -> Self {
         let mut value = self.get(BoxShadowProp);
         if let Some(v) = value.first_mut() {
             v.top_offset = top_offset.into();
@@ -3180,7 +3183,7 @@ impl Style {
     }
 
     /// Specifies the offset of the bottom edge.
-    pub fn box_shadow_bottom_offset(self, bottom_offset: impl Into<PxPct>) -> Self {
+    pub fn box_shadow_bottom_offset(self, bottom_offset: impl Into<Length>) -> Self {
         let mut value = self.get(BoxShadowProp);
         if let Some(v) = value.first_mut() {
             v.bottom_offset = bottom_offset.into();

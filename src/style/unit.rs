@@ -3,7 +3,11 @@ use std::{ops::Neg, time::Duration};
 pub use floem_renderer::text::LineHeightValue;
 use taffy::style::{Dimension, LengthPercentage, LengthPercentageAuto};
 
-/// A pixel value
+/// An absolute length value in Floem layout points.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Pt(pub f64);
+
+#[deprecated(note = "use Pt instead")]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Px(pub f64);
 
@@ -251,15 +255,33 @@ impl From<f64> for Angle {
     }
 }
 
+impl From<f64> for Pt {
+    fn from(value: f64) -> Self {
+        Pt(value)
+    }
+}
+
 impl From<f64> for Px {
     fn from(value: f64) -> Self {
         Px(value)
     }
 }
 
+impl From<f32> for Pt {
+    fn from(value: f32) -> Self {
+        Pt(value as f64)
+    }
+}
+
 impl From<f32> for Px {
     fn from(value: f32) -> Self {
         Px(value as f64)
+    }
+}
+
+impl From<i32> for Pt {
+    fn from(value: i32) -> Self {
+        Pt(value as f64)
     }
 }
 
@@ -275,6 +297,46 @@ impl From<Px> for LineHeightValue {
     }
 }
 
+impl From<Pt> for LineHeightValue {
+    fn from(value: Px) -> Self {
+        LineHeightValue::Px(value.0 as f32)
+    }
+}
+
+impl From<Px> for Pt {
+    fn from(value: Px) -> Self {
+        Pt(value.0)
+    }
+}
+
+impl From<Pt> for Px {
+    fn from(value: Pt) -> Self {
+        Px(value.0)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Length {
+    Pt(f64),
+    Pct(f64),
+}
+
+impl From<Pct> for Length {
+    fn from(value: Pct) -> Self {
+        Length::Pct(value.0)
+    }
+}
+
+impl<T> From<T> for Length
+where
+    T: Into<Pt>,
+{
+    fn from(value: T) -> Self {
+        Length::Pt(value.into().0)
+    }
+}
+
+#[deprecated(note = "use Length instead")]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PxPct {
     Px(f64),
@@ -289,13 +351,97 @@ impl From<Pct> for PxPct {
 
 impl<T> From<T> for PxPct
 where
-    T: Into<Px>,
+    T: Into<Pt>,
 {
     fn from(value: T) -> Self {
         PxPct::Px(value.into().0)
     }
 }
 
+impl From<PxPct> for Length {
+    fn from(value: PxPct) -> Self {
+        match value {
+            PxPct::Px(v) => Length::Pt(v),
+            PxPct::Pct(v) => Length::Pct(v),
+        }
+    }
+}
+
+impl From<Length> for PxPct {
+    fn from(value: Length) -> Self {
+        match value {
+            Length::Pt(v) => PxPct::Px(v),
+            Length::Pct(v) => PxPct::Pct(v),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LengthAuto {
+    Pt(f64),
+    Pct(f64),
+    Auto,
+}
+
+impl LengthAuto {
+    pub fn as_pt(&self) -> Option<f64> {
+        match self {
+            LengthAuto::Pt(v) => Some(*v),
+            _ => None,
+        }
+    }
+
+    pub fn resolve(&self, reference: f64) -> Option<f64> {
+        match self {
+            LengthAuto::Pt(v) => Some(*v),
+            LengthAuto::Pct(v) => Some(reference * v / 100.0),
+            LengthAuto::Auto => None,
+        }
+    }
+}
+
+impl From<Pct> for LengthAuto {
+    fn from(value: Pct) -> Self {
+        LengthAuto::Pct(value.0)
+    }
+}
+
+impl From<Auto> for LengthAuto {
+    fn from(_: Auto) -> Self {
+        LengthAuto::Auto
+    }
+}
+
+impl Neg for Length {
+    type Output = Self;
+
+    fn neg(self) -> Self::Output {
+        match self {
+            Length::Pt(pt) => Length::Pt(-pt),
+            Length::Pct(pct) => Length::Pct(-pct),
+        }
+    }
+}
+
+impl<T> From<T> for LengthAuto
+where
+    T: Into<Pt>,
+{
+    fn from(value: T) -> Self {
+        LengthAuto::Pt(value.into().0)
+    }
+}
+
+impl From<Length> for LengthAuto {
+    fn from(value: Length) -> Self {
+        match value {
+            Length::Pct(pct) => LengthAuto::Pct(pct),
+            Length::Pt(pt) => LengthAuto::Pt(pt),
+        }
+    }
+}
+
+#[deprecated(note = "use LengthAuto instead")]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PxPctAuto {
     Px(f64),
@@ -345,7 +491,7 @@ impl Neg for PxPct {
 
 impl<T> From<T> for PxPctAuto
 where
-    T: Into<Px>,
+    T: Into<Pt>,
 {
     fn from(value: T) -> Self {
         PxPctAuto::Px(value.into().0)
@@ -357,6 +503,26 @@ impl From<PxPct> for PxPctAuto {
         match value {
             PxPct::Pct(pct) => PxPctAuto::Pct(pct),
             PxPct::Px(px) => PxPctAuto::Px(px),
+        }
+    }
+}
+
+impl From<PxPctAuto> for LengthAuto {
+    fn from(value: PxPctAuto) -> Self {
+        match value {
+            PxPctAuto::Px(v) => LengthAuto::Pt(v),
+            PxPctAuto::Pct(v) => LengthAuto::Pct(v),
+            PxPctAuto::Auto => LengthAuto::Auto,
+        }
+    }
+}
+
+impl From<LengthAuto> for PxPctAuto {
+    fn from(value: LengthAuto) -> Self {
+        match value {
+            LengthAuto::Pt(v) => PxPctAuto::Px(v),
+            LengthAuto::Pct(v) => PxPctAuto::Pct(v),
+            LengthAuto::Auto => PxPctAuto::Auto,
         }
     }
 }
@@ -392,7 +558,9 @@ impl DurationUnitExt for u64 {
 
 pub trait UnitExt {
     fn pct(self) -> Pct;
-    fn px(self) -> Px;
+    fn pt(self) -> Pt;
+    #[deprecated(note = "use .pt() instead")]
+    fn px(self) -> Pt;
     fn deg(self) -> Angle;
     fn rad(self) -> Angle;
 }
@@ -402,8 +570,12 @@ impl UnitExt for f64 {
         Pct(self)
     }
 
-    fn px(self) -> Px {
-        Px(self)
+    fn pt(self) -> Pt {
+        Pt(self)
+    }
+
+    fn px(self) -> Pt {
+        Pt(self)
     }
 
     fn deg(self) -> Angle {
@@ -420,8 +592,12 @@ impl UnitExt for i32 {
         Pct(self as f64)
     }
 
-    fn px(self) -> Px {
-        Px(self as f64)
+    fn pt(self) -> Pt {
+        Pt(self as f64)
+    }
+
+    fn px(self) -> Pt {
+        Pt(self as f64)
     }
 
     fn deg(self) -> Angle {
@@ -433,32 +609,50 @@ impl UnitExt for i32 {
     }
 }
 
+impl From<LengthAuto> for Dimension {
+    fn from(value: LengthAuto) -> Self {
+        match value {
+            LengthAuto::Pt(v) => Dimension::length(v as f32),
+            LengthAuto::Pct(v) => Dimension::percent(v as f32 / 100.0),
+            LengthAuto::Auto => Dimension::auto(),
+        }
+    }
+}
+
 impl From<PxPctAuto> for Dimension {
     fn from(value: PxPctAuto) -> Self {
+        LengthAuto::from(value).into()
+    }
+}
+
+impl From<Length> for LengthPercentage {
+    fn from(value: Length) -> Self {
         match value {
-            PxPctAuto::Px(v) => Dimension::length(v as f32),
-            PxPctAuto::Pct(v) => Dimension::percent(v as f32 / 100.0),
-            PxPctAuto::Auto => Dimension::auto(),
+            Length::Pt(v) => LengthPercentage::length(v as f32),
+            Length::Pct(v) => LengthPercentage::percent(v as f32 / 100.0),
         }
     }
 }
 
 impl From<PxPct> for LengthPercentage {
     fn from(value: PxPct) -> Self {
+        Length::from(value).into()
+    }
+}
+
+impl From<LengthAuto> for LengthPercentageAuto {
+    fn from(value: LengthAuto) -> Self {
         match value {
-            PxPct::Px(v) => LengthPercentage::length(v as f32),
-            PxPct::Pct(v) => LengthPercentage::percent(v as f32 / 100.0),
+            LengthAuto::Pt(v) => LengthPercentageAuto::length(v as f32),
+            LengthAuto::Pct(v) => LengthPercentageAuto::percent(v as f32 / 100.0),
+            LengthAuto::Auto => LengthPercentageAuto::auto(),
         }
     }
 }
 
 impl From<PxPctAuto> for LengthPercentageAuto {
     fn from(value: PxPctAuto) -> Self {
-        match value {
-            PxPctAuto::Px(v) => LengthPercentageAuto::length(v as f32),
-            PxPctAuto::Pct(v) => LengthPercentageAuto::percent(v as f32 / 100.0),
-            PxPctAuto::Auto => LengthPercentageAuto::auto(),
-        }
+        LengthAuto::from(value).into()
     }
 }
 

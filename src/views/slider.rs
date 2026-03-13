@@ -23,7 +23,7 @@ use crate::{
         Height, Style,
     },
     style_class,
-    unit::{Pct, PxPct, PxPctAuto},
+    unit::{Length, LengthAuto, Pct},
     view::{View, ViewId},
     views::Decorators,
 };
@@ -39,7 +39,7 @@ enum SliderUpdate {
 }
 
 prop!(pub EdgeAlign: bool {} = false);
-prop!(pub HandleRadius: PxPct {} = PxPct::Pct(98.));
+prop!(pub HandleRadius: Length {} = Length::Pct(98.));
 
 prop_extractor! {
     SliderStyle {
@@ -79,19 +79,19 @@ fn border_radius(style: &BarStyle, size: f64) -> RoundedRectRadii {
     let border_radius = style.border_radius();
     RoundedRectRadii {
         top_left: crate::view::border_radius(
-            border_radius.top_left.unwrap_or(PxPct::Px(0.0)),
+            border_radius.top_left.unwrap_or(Length::Pt(0.0)),
             size,
         ),
         top_right: crate::view::border_radius(
-            border_radius.top_right.unwrap_or(PxPct::Px(0.0)),
+            border_radius.top_right.unwrap_or(Length::Pt(0.0)),
             size,
         ),
         bottom_left: crate::view::border_radius(
-            border_radius.bottom_left.unwrap_or(PxPct::Px(0.0)),
+            border_radius.bottom_left.unwrap_or(Length::Pt(0.0)),
             size,
         ),
         bottom_right: crate::view::border_radius(
-            border_radius.bottom_right.unwrap_or(PxPct::Px(0.0)),
+            border_radius.bottom_right.unwrap_or(Length::Pt(0.0)),
             size,
         ),
     }
@@ -594,14 +594,14 @@ impl Slider {
         self.handle = crate::kurbo::Circle::new(circle_point, circle_radius);
 
         let base_bar_height = match self.base_bar_style.height() {
-            PxPctAuto::Px(px) => px,
-            PxPctAuto::Pct(pct) => size.height * (pct / 100.),
-            PxPctAuto::Auto => size.height,
+            LengthAuto::Pt(pt) => pt,
+            LengthAuto::Pct(pct) => size.height * (pct / 100.),
+            LengthAuto::Auto => size.height,
         };
         let accent_bar_height = match self.accent_bar_style.height() {
-            PxPctAuto::Px(px) => px,
-            PxPctAuto::Pct(pct) => size.height * (pct / 100.),
-            PxPctAuto::Auto => size.height,
+            LengthAuto::Pt(pt) => pt,
+            LengthAuto::Pct(pct) => size.height * (pct / 100.),
+            LengthAuto::Auto => size.height,
         };
 
         let base_bar_radii = border_radius(&self.base_bar_style, base_bar_height / 2.);
@@ -643,8 +643,8 @@ impl Slider {
     /// Calculate the handle radius based on current size and style
     fn calculate_handle_radius(&self) -> f64 {
         match self.style.handle_radius() {
-            PxPct::Px(px) => px,
-            PxPct::Pct(pct) => {
+            Length::Pt(pt) => pt,
+            Length::Pct(pct) => {
                 let size = self.layout.new_box.size();
                 size.width.min(size.height) / 2. * (pct / 100.)
             }
@@ -736,7 +736,7 @@ impl SliderCustomStyle {
     ///
     /// # Arguments
     /// * `radius` - A `PxPct` value that sets the handle's radius. This can be a pixel value or a percent value relative to the main height of the view.
-    pub fn handle_radius(mut self, radius: impl Into<PxPct>) -> Self {
+    pub fn handle_radius(mut self, radius: impl Into<Length>) -> Self {
         self = SliderCustomStyle(self.0.set(HandleRadius, radius));
         self
     }
@@ -758,7 +758,7 @@ impl SliderCustomStyle {
     ///
     /// # Arguments
     /// * `radius` - A `PxPct` value that sets the bar's border radius. This can be a pixel value or a percent value relative to the bar's height.
-    pub fn bar_radius(mut self, radius: impl Into<PxPct>) -> Self {
+    pub fn bar_radius(mut self, radius: impl Into<Length>) -> Self {
         self = SliderCustomStyle(self.0.class(BarClass, |s| s.border_radius(radius)));
         self
     }
@@ -767,7 +767,7 @@ impl SliderCustomStyle {
     ///
     /// # Arguments
     /// * `height` - A `PxPctAuto` value that sets the bar's height. This can be a pixel value, a percent value relative to the view's height, or `Auto` to use the view's height.
-    pub fn bar_height(mut self, height: impl Into<PxPctAuto>) -> Self {
+    pub fn bar_height(mut self, height: impl Into<LengthAuto>) -> Self {
         self = SliderCustomStyle(self.0.class(BarClass, |s| s.height(height)));
         self
     }
@@ -789,7 +789,7 @@ impl SliderCustomStyle {
     ///
     /// # Arguments
     /// * `radius` - A `PxPct` value that sets the accent bar's border radius. This can be a pixel value or a percent value relative to the accent bar's height.
-    pub fn accent_bar_radius(mut self, radius: impl Into<PxPct>) -> Self {
+    pub fn accent_bar_radius(mut self, radius: impl Into<Length>) -> Self {
         self = SliderCustomStyle(self.0.class(AccentBarClass, |s| s.border_radius(radius)));
         self
     }
@@ -798,7 +798,7 @@ impl SliderCustomStyle {
     ///
     /// # Arguments
     /// * `height` - A `PxPctAuto` value that sets the accent bar's height. This can be a pixel value, a percent value relative to the view's height, or `Auto` to use the view's height.
-    pub fn accent_bar_height(mut self, height: impl Into<PxPctAuto>) -> Self {
+    pub fn accent_bar_height(mut self, height: impl Into<LengthAuto>) -> Self {
         self = SliderCustomStyle(self.0.class(AccentBarClass, |s| s.height(height)));
         self
     }

@@ -23,14 +23,14 @@ use crate::{
     prop, prop_extractor,
     style::{Foreground, Style},
     style_class,
-    unit::PxPct,
+    unit::Length,
     view::View,
     view::ViewId,
     views::Decorators,
 };
 
-prop!(pub ToggleButtonInset: PxPct {} = PxPct::Px(0.));
-prop!(pub ToggleButtonCircleRad: PxPct {} = PxPct::Pct(95.));
+prop!(pub ToggleButtonInset: Length {} = Length::Pt(0.));
+prop!(pub ToggleButtonCircleRad: Length {} = Length::Pct(95.));
 
 prop_extractor! {
     ToggleStyle {
@@ -192,15 +192,15 @@ pub fn toggle_button(state: impl Fn() -> bool + 'static) -> ToggleButton {
 impl ToggleButton {
     fn circle_radius(&self, size: Size) -> f64 {
         match self.style.circle_rad() {
-            PxPct::Px(px) => px,
-            PxPct::Pct(pct) => size.width.min(size.height) / 2. * (pct / 100.),
+            Length::Pt(pt) => pt,
+            Length::Pct(pct) => size.width.min(size.height) / 2. * (pct / 100.),
         }
     }
 
     fn inset(&self, width: f64) -> f64 {
         match self.style.inset() {
-            PxPct::Px(px) => px,
-            PxPct::Pct(pct) => (width * (pct / 100.)).min(width / 2.),
+            Length::Pt(pt) => pt,
+            Length::Pct(pct) => (width * (pct / 100.)).min(width / 2.),
         }
     }
 
@@ -426,13 +426,13 @@ impl ToggleButtonCustomStyle {
     }
 
     /// Sets the inset of the toggle handle from the edge.
-    pub fn handle_inset(mut self, inset: impl Into<PxPct>) -> Self {
+    pub fn handle_inset(mut self, inset: impl Into<Length>) -> Self {
         self = Self(self.0.set(ToggleButtonInset, inset));
         self
     }
 
     /// Sets the radius of the toggle circle.
-    pub fn circle_rad(mut self, rad: impl Into<PxPct>) -> Self {
+    pub fn circle_rad(mut self, rad: impl Into<Length>) -> Self {
         self = Self(self.0.set(ToggleButtonCircleRad, rad));
         self
     }

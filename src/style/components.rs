@@ -10,7 +10,7 @@ use peniko::kurbo::Stroke;
 use peniko::{Brush, Color};
 
 use crate::theme::StyleThemeExt;
-use crate::unit::{PxPct, PxPctAuto};
+use crate::unit::{Length, LengthAuto};
 use crate::view::{IntoView, View};
 use crate::views::{ContainerExt, Decorators, Stack, TooltipExt};
 
@@ -69,14 +69,14 @@ pub enum CursorStyle {
 /// Structure holding data about the shadow.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BoxShadow {
-    pub blur_radius: PxPct,
+    pub blur_radius: Length,
     pub color: Color,
-    pub spread: PxPct,
+    pub spread: Length,
 
-    pub left_offset: PxPct,
-    pub right_offset: PxPct,
-    pub top_offset: PxPct,
-    pub bottom_offset: PxPct,
+    pub left_offset: Length,
+    pub right_offset: Length,
+    pub top_offset: Length,
+    pub bottom_offset: Length,
 }
 
 impl BoxShadow {
@@ -87,14 +87,14 @@ impl BoxShadow {
 
     /// Specifies shadow blur. The larger this value, the bigger the blur,
     /// so the shadow becomes bigger and lighter.
-    pub fn blur_radius(mut self, radius: impl Into<PxPct>) -> Self {
+    pub fn blur_radius(mut self, radius: impl Into<Length>) -> Self {
         self.blur_radius = radius.into();
         self
     }
 
     /// Specifies shadow blur spread. Positive values will cause the shadow
     /// to expand and grow bigger, negative values will cause the shadow to shrink.
-    pub fn spread(mut self, spread: impl Into<PxPct>) -> Self {
+    pub fn spread(mut self, spread: impl Into<Length>) -> Self {
         self.spread = spread.into();
         self
     }
@@ -106,32 +106,32 @@ impl BoxShadow {
     }
 
     /// Specifies the offset of the left edge.
-    pub fn left_offset(mut self, left_offset: impl Into<PxPct>) -> Self {
+    pub fn left_offset(mut self, left_offset: impl Into<Length>) -> Self {
         self.left_offset = left_offset.into();
         self
     }
 
     /// Specifies the offset of the right edge.
-    pub fn right_offset(mut self, right_offset: impl Into<PxPct>) -> Self {
+    pub fn right_offset(mut self, right_offset: impl Into<Length>) -> Self {
         self.right_offset = right_offset.into();
         self
     }
 
     /// Specifies the offset of the top edge.
-    pub fn top_offset(mut self, top_offset: impl Into<PxPct>) -> Self {
+    pub fn top_offset(mut self, top_offset: impl Into<Length>) -> Self {
         self.top_offset = top_offset.into();
         self
     }
 
     /// Specifies the offset of the bottom edge.
-    pub fn bottom_offset(mut self, bottom_offset: impl Into<PxPct>) -> Self {
+    pub fn bottom_offset(mut self, bottom_offset: impl Into<Length>) -> Self {
         self.bottom_offset = bottom_offset.into();
         self
     }
 
     /// Specifies the offset on vertical axis.
     /// Negative offset value places the shadow above the element.
-    pub fn v_offset(mut self, v_offset: impl Into<PxPct>) -> Self {
+    pub fn v_offset(mut self, v_offset: impl Into<Length>) -> Self {
         let offset = v_offset.into();
         self.top_offset = -offset;
         self.bottom_offset = offset;
@@ -140,7 +140,7 @@ impl BoxShadow {
 
     /// Specifies the offset on horizontal axis.
     /// Negative offset value places the shadow to the left of the element.
-    pub fn h_offset(mut self, h_offset: impl Into<PxPct>) -> Self {
+    pub fn h_offset(mut self, h_offset: impl Into<Length>) -> Self {
         let offset = h_offset.into();
         self.left_offset = -offset;
         self.right_offset = offset;
@@ -151,13 +151,13 @@ impl BoxShadow {
 impl Default for BoxShadow {
     fn default() -> Self {
         Self {
-            blur_radius: PxPct::Px(0.),
+            blur_radius: Length::Pt(0.),
             color: palette::css::BLACK,
-            spread: PxPct::Px(0.),
-            left_offset: PxPct::Px(0.),
-            right_offset: PxPct::Px(0.),
-            top_offset: PxPct::Px(0.),
-            bottom_offset: PxPct::Px(0.),
+            spread: Length::Pt(0.),
+            left_offset: Length::Pt(0.),
+            right_offset: Length::Pt(0.),
+            top_offset: Length::Pt(0.),
+            bottom_offset: Length::Pt(0.),
         }
     }
 }
@@ -360,10 +360,10 @@ impl StylePropValue for BorderColor {
 /// Structure holding border radius for all four corners
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct BorderRadius {
-    pub top_left: Option<PxPct>,
-    pub top_right: Option<PxPct>,
-    pub bottom_left: Option<PxPct>,
-    pub bottom_right: Option<PxPct>,
+    pub top_left: Option<Length>,
+    pub top_right: Option<Length>,
+    pub bottom_left: Option<Length>,
+    pub bottom_right: Option<Length>,
 }
 
 impl BorderRadius {
@@ -371,7 +371,7 @@ impl BorderRadius {
         Self::default()
     }
 
-    pub fn all(radius: impl Into<PxPct>) -> Self {
+    pub fn all(radius: impl Into<Length>) -> Self {
         let radius = radius.into();
         Self {
             top_left: Some(radius),
@@ -381,48 +381,48 @@ impl BorderRadius {
         }
     }
 
-    pub fn top_left(mut self, radius: impl Into<PxPct>) -> Self {
+    pub fn top_left(mut self, radius: impl Into<Length>) -> Self {
         self.top_left = Some(radius.into());
         self
     }
 
-    pub fn top_right(mut self, radius: impl Into<PxPct>) -> Self {
+    pub fn top_right(mut self, radius: impl Into<Length>) -> Self {
         self.top_right = Some(radius.into());
         self
     }
 
-    pub fn bottom_left(mut self, radius: impl Into<PxPct>) -> Self {
+    pub fn bottom_left(mut self, radius: impl Into<Length>) -> Self {
         self.bottom_left = Some(radius.into());
         self
     }
 
-    pub fn bottom_right(mut self, radius: impl Into<PxPct>) -> Self {
+    pub fn bottom_right(mut self, radius: impl Into<Length>) -> Self {
         self.bottom_right = Some(radius.into());
         self
     }
 
-    pub fn top(mut self, radius: impl Into<PxPct>) -> Self {
+    pub fn top(mut self, radius: impl Into<Length>) -> Self {
         let radius = radius.into();
         self.top_left = Some(radius);
         self.top_right = Some(radius);
         self
     }
 
-    pub fn bottom(mut self, radius: impl Into<PxPct>) -> Self {
+    pub fn bottom(mut self, radius: impl Into<Length>) -> Self {
         let radius = radius.into();
         self.bottom_left = Some(radius);
         self.bottom_right = Some(radius);
         self
     }
 
-    pub fn left(mut self, radius: impl Into<PxPct>) -> Self {
+    pub fn left(mut self, radius: impl Into<Length>) -> Self {
         let radius = radius.into();
         self.top_left = Some(radius);
         self.bottom_left = Some(radius);
         self
     }
 
-    pub fn right(mut self, radius: impl Into<PxPct>) -> Self {
+    pub fn right(mut self, radius: impl Into<Length>) -> Self {
         let radius = radius.into();
         self.top_right = Some(radius);
         self.bottom_right = Some(radius);
@@ -432,10 +432,10 @@ impl BorderRadius {
     /// Resolve border radii to absolute pixels given the min side of the element.
     /// Percentage values are resolved relative to the min side.
     pub fn resolve_border_radii(&self, min_side: f64) -> peniko::kurbo::RoundedRectRadii {
-        fn resolve(val: Option<PxPct>, min_side: f64) -> f64 {
+        fn resolve(val: Option<Length>, min_side: f64) -> f64 {
             match val {
-                Some(PxPct::Px(px)) => px,
-                Some(PxPct::Pct(pct)) => min_side * pct / 100.0,
+                Some(Length::Pt(pt)) => pt,
+                Some(Length::Pct(pct)) => min_side * pct / 100.0,
                 None => 0.0,
             }
         }
@@ -489,10 +489,10 @@ impl StylePropValue for BorderRadius {
 /// Structure holding padding values for all four sides
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Padding {
-    pub left: Option<PxPct>,
-    pub top: Option<PxPct>,
-    pub right: Option<PxPct>,
-    pub bottom: Option<PxPct>,
+    pub left: Option<Length>,
+    pub top: Option<Length>,
+    pub right: Option<Length>,
+    pub bottom: Option<Length>,
 }
 
 impl Padding {
@@ -500,7 +500,7 @@ impl Padding {
         Self::default()
     }
 
-    pub fn all(padding: impl Into<PxPct>) -> Self {
+    pub fn all(padding: impl Into<Length>) -> Self {
         let padding = padding.into();
         Self {
             left: Some(padding),
@@ -510,34 +510,34 @@ impl Padding {
         }
     }
 
-    pub fn left(mut self, padding: impl Into<PxPct>) -> Self {
+    pub fn left(mut self, padding: impl Into<Length>) -> Self {
         self.left = Some(padding.into());
         self
     }
 
-    pub fn top(mut self, padding: impl Into<PxPct>) -> Self {
+    pub fn top(mut self, padding: impl Into<Length>) -> Self {
         self.top = Some(padding.into());
         self
     }
 
-    pub fn right(mut self, padding: impl Into<PxPct>) -> Self {
+    pub fn right(mut self, padding: impl Into<Length>) -> Self {
         self.right = Some(padding.into());
         self
     }
 
-    pub fn bottom(mut self, padding: impl Into<PxPct>) -> Self {
+    pub fn bottom(mut self, padding: impl Into<Length>) -> Self {
         self.bottom = Some(padding.into());
         self
     }
 
-    pub fn horiz(mut self, padding: impl Into<PxPct>) -> Self {
+    pub fn horiz(mut self, padding: impl Into<Length>) -> Self {
         let padding = padding.into();
         self.left = Some(padding);
         self.right = Some(padding);
         self
     }
 
-    pub fn vert(mut self, padding: impl Into<PxPct>) -> Self {
+    pub fn vert(mut self, padding: impl Into<Length>) -> Self {
         let padding = padding.into();
         self.top = Some(padding);
         self.bottom = Some(padding);
@@ -586,10 +586,10 @@ impl StylePropValue for Padding {
 /// Structure holding margin values for all four sides
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Margin {
-    pub left: Option<PxPctAuto>,
-    pub top: Option<PxPctAuto>,
-    pub right: Option<PxPctAuto>,
-    pub bottom: Option<PxPctAuto>,
+    pub left: Option<LengthAuto>,
+    pub top: Option<LengthAuto>,
+    pub right: Option<LengthAuto>,
+    pub bottom: Option<LengthAuto>,
 }
 
 impl Margin {
@@ -597,7 +597,7 @@ impl Margin {
         Self::default()
     }
 
-    pub fn all(margin: impl Into<PxPctAuto>) -> Self {
+    pub fn all(margin: impl Into<LengthAuto>) -> Self {
         let margin = margin.into();
         Self {
             left: Some(margin),
@@ -607,34 +607,34 @@ impl Margin {
         }
     }
 
-    pub fn left(mut self, margin: impl Into<PxPctAuto>) -> Self {
+    pub fn left(mut self, margin: impl Into<LengthAuto>) -> Self {
         self.left = Some(margin.into());
         self
     }
 
-    pub fn top(mut self, margin: impl Into<PxPctAuto>) -> Self {
+    pub fn top(mut self, margin: impl Into<LengthAuto>) -> Self {
         self.top = Some(margin.into());
         self
     }
 
-    pub fn right(mut self, margin: impl Into<PxPctAuto>) -> Self {
+    pub fn right(mut self, margin: impl Into<LengthAuto>) -> Self {
         self.right = Some(margin.into());
         self
     }
 
-    pub fn bottom(mut self, margin: impl Into<PxPctAuto>) -> Self {
+    pub fn bottom(mut self, margin: impl Into<LengthAuto>) -> Self {
         self.bottom = Some(margin.into());
         self
     }
 
-    pub fn horiz(mut self, margin: impl Into<PxPctAuto>) -> Self {
+    pub fn horiz(mut self, margin: impl Into<LengthAuto>) -> Self {
         let margin = margin.into();
         self.left = Some(margin);
         self.right = Some(margin);
         self
     }
 
-    pub fn vert(mut self, margin: impl Into<PxPctAuto>) -> Self {
+    pub fn vert(mut self, margin: impl Into<LengthAuto>) -> Self {
         let margin = margin.into();
         self.top = Some(margin);
         self.bottom = Some(margin);

@@ -18,7 +18,7 @@ use crate::{
     platform::{Duration, Instant},
     prelude::*,
     style::{
-        BorderRadius, OverflowX, OverflowY, PxPct, PxPctAuto, StrokeWrap, Style, StyleCx,
+        BorderRadius, Length, LengthAuto, OverflowX, OverflowY, StrokeWrap, Style, StyleCx,
         StyleThemeExt, TextColor,
     },
 };
@@ -41,11 +41,11 @@ enum BoxModelRegion {
 
 #[derive(Clone)]
 struct BoxModelViewData {
-    position: [PxPctAuto; 4],
-    margin: [PxPctAuto; 4],
+    position: [LengthAuto; 4],
+    margin: [LengthAuto; 4],
     border: [StrokeWrap; 4],
     border_radius: BorderRadius,
-    padding: [PxPct; 4],
+    padding: [Length; 4],
     content_width: f64,
     content_height: f64,
 }
@@ -67,29 +67,29 @@ fn format_float(value: f64) -> String {
     }
 }
 
-fn format_px_pct(value: PxPct) -> String {
+fn format_px_pct(value: Length) -> String {
     match value {
-        PxPct::Px(px) if px.abs() < 0.01 => "-".to_string(),
-        PxPct::Pct(pct) if pct.abs() < 0.01 => "-".to_string(),
-        PxPct::Px(px) => format!("{}px", format_float(px)),
-        PxPct::Pct(pct) => format!("{}%", format_float(pct)),
+        Length::Pt(pt) if pt.abs() < 0.01 => "-".to_string(),
+        Length::Pct(pct) if pct.abs() < 0.01 => "-".to_string(),
+        Length::Pt(pt) => format!("{}pt", format_float(pt)),
+        Length::Pct(pct) => format!("{}%", format_float(pct)),
     }
 }
 
-fn format_px_pct_auto(value: PxPctAuto) -> String {
+fn format_px_pct_auto(value: LengthAuto) -> String {
     match value {
-        PxPctAuto::Px(px) if px.abs() < 0.01 => "-".to_string(),
-        PxPctAuto::Pct(pct) if pct.abs() < 0.01 => "-".to_string(),
-        PxPctAuto::Px(px) => format!("{}px", format_float(px)),
-        PxPctAuto::Pct(pct) => format!("{}%", format_float(pct)),
-        PxPctAuto::Auto => "-".to_string(),
+        LengthAuto::Pt(pt) if pt.abs() < 0.01 => "-".to_string(),
+        LengthAuto::Pct(pct) if pct.abs() < 0.01 => "-".to_string(),
+        LengthAuto::Pt(pt) => format!("{}pt", format_float(pt)),
+        LengthAuto::Pct(pct) => format!("{}%", format_float(pct)),
+        LengthAuto::Auto => "-".to_string(),
     }
 }
 
-fn resolve_px_pct(value: PxPct, basis: f64) -> f64 {
+fn resolve_px_pct(value: Length, basis: f64) -> f64 {
     match value {
-        PxPct::Px(px) => px,
-        PxPct::Pct(pct) => basis * (pct / 100.0),
+        Length::Pt(pt) => pt,
+        Length::Pct(pct) => basis * (pct / 100.0),
     }
 }
 
@@ -151,7 +151,7 @@ fn box_model_data(style: &Style, bounds: Rect) -> BoxModelViewData {
     }
 }
 
-fn format_border_radius(value: Option<PxPct>) -> String {
+fn format_border_radius(value: Option<Length>) -> String {
     value.map(format_px_pct).unwrap_or_else(|| "-".to_string())
 }
 

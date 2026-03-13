@@ -69,7 +69,7 @@ use crate::{
     context::{EventCx, PaintCx, StyleCx, UpdateCx},
     event::EventPropagation,
     style::{LayoutProps, Style, StyleClassRef},
-    unit::PxPct,
+    unit::Length,
     views::{
         DynamicView,
         dyn_stack::{FxIndexSet, HashRun, diff},
@@ -1133,10 +1133,10 @@ impl View for Box<dyn View> {
     }
 }
 
-pub(crate) fn border_radius(radius: crate::unit::PxPct, size: f64) -> f64 {
+pub(crate) fn border_radius(radius: crate::unit::Length, size: f64) -> f64 {
     match radius {
-        crate::unit::PxPct::Px(px) => px,
-        crate::unit::PxPct::Pct(pct) => size * (pct / 100.),
+        crate::unit::Length::Pt(pt) => pt,
+        crate::unit::Length::Pct(pct) => size * (pct / 100.),
     }
 }
 
@@ -1144,19 +1144,19 @@ fn border_to_radii_view(style: &ViewStyleProps, size: Size) -> RoundedRectRadii 
     let border_radii = style.border_radius();
     RoundedRectRadii {
         top_left: border_radius(
-            border_radii.top_left.unwrap_or(PxPct::Px(0.0)),
+            border_radii.top_left.unwrap_or(Length::Pt(0.0)),
             size.min_side(),
         ),
         top_right: border_radius(
-            border_radii.top_right.unwrap_or(PxPct::Px(0.0)),
+            border_radii.top_right.unwrap_or(Length::Pt(0.0)),
             size.min_side(),
         ),
         bottom_left: border_radius(
-            border_radii.bottom_left.unwrap_or(PxPct::Px(0.0)),
+            border_radii.bottom_left.unwrap_or(Length::Pt(0.0)),
             size.min_side(),
         ),
         bottom_right: border_radius(
-            border_radii.bottom_right.unwrap_or(PxPct::Px(0.0)),
+            border_radii.bottom_right.unwrap_or(Length::Pt(0.0)),
             size.min_side(),
         ),
     }
@@ -1191,28 +1191,28 @@ fn paint_box_shadow(
     for shadow in &style.shadow() {
         let min = rect.size().min_side();
         let left_offset = match shadow.left_offset {
-            crate::unit::PxPct::Px(px) => px,
-            crate::unit::PxPct::Pct(pct) => min * (pct / 100.),
+            crate::unit::Length::Pt(pt) => pt,
+            crate::unit::Length::Pct(pct) => min * (pct / 100.),
         };
         let right_offset = match shadow.right_offset {
-            crate::unit::PxPct::Px(px) => px,
-            crate::unit::PxPct::Pct(pct) => min * (pct / 100.),
+            crate::unit::Length::Pt(pt) => pt,
+            crate::unit::Length::Pct(pct) => min * (pct / 100.),
         };
         let top_offset = match shadow.top_offset {
-            crate::unit::PxPct::Px(px) => px,
-            crate::unit::PxPct::Pct(pct) => min * (pct / 100.),
+            crate::unit::Length::Pt(pt) => pt,
+            crate::unit::Length::Pct(pct) => min * (pct / 100.),
         };
         let bottom_offset = match shadow.bottom_offset {
-            crate::unit::PxPct::Px(px) => px,
-            crate::unit::PxPct::Pct(pct) => min * (pct / 100.),
+            crate::unit::Length::Pt(pt) => pt,
+            crate::unit::Length::Pct(pct) => min * (pct / 100.),
         };
         let spread = match shadow.spread {
-            crate::unit::PxPct::Px(px) => px,
-            crate::unit::PxPct::Pct(pct) => min * (pct / 100.),
+            crate::unit::Length::Pt(pt) => pt,
+            crate::unit::Length::Pct(pct) => min * (pct / 100.),
         };
         let blur_radius = match shadow.blur_radius {
-            crate::unit::PxPct::Px(px) => px,
-            crate::unit::PxPct::Pct(pct) => min * (pct / 100.),
+            crate::unit::Length::Pt(pt) => pt,
+            crate::unit::Length::Pct(pct) => min * (pct / 100.),
         };
         let inset = Insets::new(
             left_offset / 2.0,
