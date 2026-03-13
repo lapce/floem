@@ -137,6 +137,7 @@ use smallvec::SmallVec;
 use std::any::Any;
 use std::collections::HashMap;
 use std::fmt::{self, Debug};
+use std::marker::PhantomData;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use taffy::GridTemplateComponent;
@@ -191,7 +192,7 @@ pub use selectors::{NthChild, StructuralSelector, StyleSelector, StyleSelectors}
 pub use theme::{DesignSystem, StyleThemeExt};
 pub use transition::{DirectTransition, Transition, TransitionState};
 pub use unit::{AnchorAbout, Angle, Auto, DurationUnitExt, Pct, Px, PxPct, PxPctAuto, UnitExt};
-pub use values::{ObjectFit, StrokeWrap, StyleMapValue, StylePropValue, StyleValue};
+pub use values::{ContextValue, ObjectFit, StrokeWrap, StyleMapValue, StylePropValue, StyleValue};
 
 pub use cache::{StyleCache, StyleCacheKey};
 
@@ -214,6 +215,28 @@ fn combine_merge_ids(a: u64, b: u64) -> u64 {
 type ContextMapFn = Rc<dyn Fn(Style, Box<dyn Fn(StyleKey) -> Option<Rc<dyn Any>>>) -> Style>;
 type StructuralSelectorRules = SmallVec<[(StructuralSelector, Rc<Style>); 2]>;
 type ResponsiveSelectorRules = SmallVec<[(ResponsiveSelector, Rc<Style>); 2]>;
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ContextRef<P: StyleProp> {
+    _marker: PhantomData<P>,
+}
+
+impl<P: StyleProp> ContextRef<P> {
+    /// Create a deferred value by mapping the current context prop to a single property value.
+    ///
+    /// The closure is evaluated when the target property is read. It only computes one
+    /// value and does not participate in nested-map resolution.
+    pub fn map<T>(self, f: impl Fn(P::Type) -> T + 'static) -> ContextValue<T>
+    where
+        P::Type: 'static,
+        T: 'static,
+    {
+        ContextValue::new(move |style| {
+            let value = style.get_prop::<P>().unwrap_or_else(P::default_value);
+            f(value)
+        })
+    }
+}
 
 fn fx_hash_map_with_capacity<K, V>(capacity: usize) -> FxHashMap<K, V> {
     FxHashMap::with_capacity_and_hasher(capacity, Default::default())
@@ -803,10 +826,15 @@ impl Style {
 
     pub(crate) fn get_prop<P: StyleProp>(&self) -> Option<P::Type> {
         self.map.get(&P::key()).and_then(|v| {
-            v.downcast_ref::<StyleMapValue<P::Type>>()
-                .unwrap()
-                .as_ref()
-                .cloned()
+            match v.downcast_ref::<StyleMapValue<P::Type>>().unwrap() {
+                StyleMapValue::Val(v) | StyleMapValue::Animated(v) => Some(v.clone()),
+                StyleMapValue::Context(expr) => match expr.resolve(self) {
+                    StyleMapValue::Val(v) | StyleMapValue::Animated(v) => Some(v),
+                    StyleMapValue::Unset => None,
+                    StyleMapValue::Context(_) => unreachable!(),
+                },
+                StyleMapValue::Unset => None,
+            }
         })
     }
 
@@ -817,6 +845,12 @@ impl Style {
                 |v| match v.downcast_ref::<StyleMapValue<P::Type>>().unwrap() {
                     StyleMapValue::Val(v) => StyleValue::Val(v.clone()),
                     StyleMapValue::Animated(v) => StyleValue::Animated(v.clone()),
+                    StyleMapValue::Context(v) => match v.resolve(self) {
+                        StyleMapValue::Val(v) => StyleValue::Val(v),
+                        StyleMapValue::Animated(v) => StyleValue::Animated(v),
+                        StyleMapValue::Unset => StyleValue::Unset,
+                        StyleMapValue::Context(_) => unreachable!(),
+                    },
                     StyleMapValue::Unset => StyleValue::Unset,
                 },
             )
@@ -940,6 +974,18 @@ impl Style {
         final_result.merge_id = next_style_merge_id();
         final_result.context_selectors |= result_selectors;
         final_result
+    }
+
+    /// Build style values from a context prop without introducing a deferred style map pass.
+    ///
+    /// The closure runs immediately and must produce an ordinary style map. Any deferred
+    /// context work is captured at the individual property-value level through
+    /// [`ContextRef::map`].
+    pub fn with_context_expr<P: StyleProp>(
+        self,
+        f: impl FnOnce(Self, ContextRef<P>) -> Self,
+    ) -> Self {
+        f(self, ContextRef::default())
     }
 
     /// Apply a context-based style transformation for optional props.
@@ -2181,17 +2227,49 @@ impl Style {
         self.set_style_value(prop, StyleValue::Val(value.into()))
     }
 
+    /// Sets a property to a deferred context-derived value.
+    pub fn set_context<P: StyleProp>(self, prop: P, value: ContextValue<P::Type>) -> Self {
+        self.set_style_map_value(prop, StyleMapValue::Context(value.map(StyleMapValue::Val)))
+    }
+
+    /// Sets a property to a deferred optional context-derived value.
+    ///
+    /// `None` resolves to an unset property, allowing the base/fallback style to win.
+    pub fn set_context_opt<P: StyleProp>(
+        self,
+        prop: P,
+        value: ContextValue<Option<P::Type>>,
+    ) -> Self {
+        self.set_style_map_value(
+            prop,
+            StyleMapValue::Context(
+                value.map(|value| value.map(StyleMapValue::Val).unwrap_or(StyleMapValue::Unset)),
+            ),
+        )
+    }
+
     pub fn set_style_value<P: StyleProp>(mut self, _prop: P, value: StyleValue<P::Type>) -> Self {
-        let insert = match value {
+        if matches!(value, StyleValue::Base) {
+            if self.map_mut().remove(&P::key()).is_some() {
+                self.merge_id = next_style_merge_id();
+            }
+            return self;
+        }
+        let map_value = match value {
             StyleValue::Val(value) => StyleMapValue::Val(value),
             StyleValue::Animated(value) => StyleMapValue::Animated(value),
             StyleValue::Unset => StyleMapValue::Unset,
-            StyleValue::Base => {
-                if self.map_mut().remove(&P::key()).is_some() {
-                    self.merge_id = next_style_merge_id();
-                }
-                return self;
-            }
+            StyleValue::Base => unreachable!(),
+        };
+        self.set_style_map_value(_prop, map_value)
+    }
+
+    fn set_style_map_value<P: StyleProp>(mut self, _prop: P, value: StyleMapValue<P::Type>) -> Self {
+        let insert = match value {
+            StyleMapValue::Val(value) => StyleMapValue::Val(value),
+            StyleMapValue::Animated(value) => StyleMapValue::Animated(value),
+            StyleMapValue::Context(value) => StyleMapValue::Context(value),
+            StyleMapValue::Unset => StyleMapValue::Unset,
         };
         // Track inherited props for O(1) early-exit in apply_only_inherited
         if P::prop_ref().info().inherited {

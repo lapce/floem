@@ -48,6 +48,45 @@ use super::{
     StylePropRef, Transition,
 };
 
+#[derive(Clone)]
+pub struct ContextValue<T> {
+    pub(crate) eval: Rc<dyn Fn(&Style) -> T>,
+}
+
+impl<T> std::fmt::Debug for ContextValue<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ContextValue(..)")
+    }
+}
+
+impl<T> PartialEq for ContextValue<T> {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.eval, &other.eval)
+    }
+}
+
+impl<T> Eq for ContextValue<T> {}
+
+impl<T> ContextValue<T> {
+    pub fn new(eval: impl Fn(&Style) -> T + 'static) -> Self {
+        Self {
+            eval: Rc::new(eval),
+        }
+    }
+
+    pub fn resolve(&self, style: &Style) -> T {
+        (self.eval)(style)
+    }
+
+    pub fn map<U>(self, f: impl Fn(T) -> U + 'static) -> ContextValue<U>
+    where
+        T: 'static,
+    {
+        let eval = self.eval;
+        ContextValue::new(move |style| f(eval(style)))
+    }
+}
+
 pub trait StylePropValue: Clone + PartialEq + Debug {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         None
@@ -1294,12 +1333,14 @@ mod affine_lerp_tests {
 ///
 /// Unlike `StyleValue<T>` which is used in the public API, `StyleMapValue<T>`
 /// is the internal representation stored in the style hashmap.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StyleMapValue<T> {
     /// Value inserted by animation interpolation
     Animated(T),
     /// Value set directly
     Val(T),
+    /// Value resolved from inherited context when the property is read.
+    Context(ContextValue<StyleMapValue<T>>),
     /// Use the default value for the style, typically from the underlying `ComputedStyle`
     Unset,
 }
@@ -1309,6 +1350,7 @@ impl<T> StyleMapValue<T> {
         match self {
             Self::Val(v) => Some(v),
             Self::Animated(v) => Some(v),
+            Self::Context(_) => None,
             Self::Unset => None,
         }
     }
@@ -1318,7 +1360,7 @@ impl<T> StyleMapValue<T> {
 ///
 /// This represents the result of reading a style property, with additional
 /// states like `Base` that indicate inheritance from parent styles.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum StyleValue<T> {
     /// Value inserted by animation interpolation
     Animated(T),
@@ -1375,6 +1417,7 @@ impl<T> From<T> for StyleValue<T> {
         Self::Val(x)
     }
 }
+
 
 fn short_style_name(name: &str) -> String {
     name.strip_prefix("floem::style::")

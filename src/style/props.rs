@@ -211,7 +211,7 @@ impl StylePropInfo {
                 if let Some(v) = val.downcast_ref::<StyleMapValue<T>>() {
                     match v {
                         StyleMapValue::Val(v) | StyleMapValue::Animated(v) => format!("{v:?}"),
-
+                        StyleMapValue::Context(_) => "Context(..)".to_owned(),
                         StyleMapValue::Unset => "Unset".to_owned(),
                     }
                 } else {
@@ -251,7 +251,7 @@ impl StylePropInfo {
                 if let Some(v) = val.downcast_ref::<StyleMapValue<T>>() {
                     match v {
                         StyleMapValue::Val(v) | StyleMapValue::Animated(v) => v.debug_view(),
-
+                        StyleMapValue::Context(_) => Some(Label::new("Context(..)").into_any()),
                         StyleMapValue::Unset => Some(Label::new("Unset").into_any()),
                     }
                 } else {
@@ -267,6 +267,7 @@ impl StylePropInfo {
                 if let Some(v) = val.downcast_ref::<StyleMapValue<T>>() {
                     match v {
                         StyleMapValue::Val(v) | StyleMapValue::Animated(v) => v.content_hash(),
+                        StyleMapValue::Context(_) => 1,
                         StyleMapValue::Unset => 0, // Stable hash for unset
                     }
                 } else {

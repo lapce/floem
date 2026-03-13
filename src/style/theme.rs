@@ -5,7 +5,7 @@ use super::{
     Background, Border, BorderBottom, BorderBottomColor, BorderBottomLeftRadius,
     BorderBottomRightRadius, BorderColor, BorderLeft, BorderLeftColor, BorderRadius, BorderRight,
     BorderRightColor, BorderTop, BorderTopColor, BorderTopLeftRadius, BorderTopRightRadius,
-    BoxShadow, CursorStyle, CustomStyle, FontSize, Foreground, Margin, MarginBottom, MarginLeft,
+    BoxShadow, CursorStyle, CustomStyle, FontSize, Foreground, Height, Margin, MarginBottom, MarginLeft,
     MarginRight, MarginTop, Padding, PaddingBottom, PaddingLeft, PaddingRight, PaddingTop, Style,
     StylePropValue, Transition,
 };
@@ -608,7 +608,12 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
     let toggle_button_style = Style::new()
         .with_theme(|s, t| {
             s.background(t.bg_elevated())
-                .with_context::<FontSize>(|s, fs| s.apply_opt(*fs, |s, fs| s.height(fs * 1.75)))
+                .with_context_expr::<FontSize>(|s, fs| {
+                    s.set_context_opt(
+                        Height,
+                        fs.map(|fs| fs.map(|fs| ((fs * 1.75) as f64).into())),
+                    )
+                })
                 .padding(t.padding())
                 .set(Foreground, Brush::Solid(t.text_muted()))
                 .active(|s| {
