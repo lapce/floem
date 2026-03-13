@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use floem::action::inspect;
+use floem::peniko::Brush;
 use floem::prelude::*;
 use floem::reactive::{DerivedRwSignal, Memo};
 use floem::receiver_signal::StreamSignal;
@@ -105,7 +106,9 @@ fn gauge(fill_percent: impl SignalGet<Pct> + 'static + Copy) -> slider::Slider {
             let fill_percent = fill_percent.get().0;
             s.width(200).set_disabled(true).with_theme(move |s, t| {
                 s.apply_if(fill_percent == 100., |s| {
-                    s.custom(|s: SliderCustomStyle| s.accent_bar_color(t.success()))
+                    s.custom(|s: SliderCustomStyle| {
+                        s.accent_bar_color(t.def(|t| Some(Brush::Solid(t.success()))))
+                    })
                 })
             })
         })

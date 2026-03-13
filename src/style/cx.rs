@@ -313,9 +313,9 @@ impl<'a> StyleCx<'a> {
         self.window_state
             .update_selector_interest(view_id, view_state.borrow().has_style_selectors);
 
-        let (old_interact_state, old_taffy_style) = {
+        let old_interact_state = {
             let vs = view_state.borrow();
-            (vs.style_interaction_cx, vs.taffy_style.clone())
+            vs.style_interaction_cx
         };
 
         let mut need_paint = false;
@@ -412,10 +412,11 @@ impl<'a> StyleCx<'a> {
 
                 // Layout properties (padding, margin, size, etc.)
                 vs.layout_props
-                    .read_explicit(&computed, &computed, &self.now, &mut transitioning);
+                    .read_explicit(&computed, &computed, &computed, &self.now, &mut transitioning);
 
                 // View style properties (background, border, etc.)
                 need_paint |= vs.view_style_props.read_explicit(
+                    &computed,
                     &computed,
                     &computed,
                     &self.now,
@@ -425,6 +426,7 @@ impl<'a> StyleCx<'a> {
                 // Transform properties (translate, scale, rotation)
                 let mut box_tree_changed = false;
                 box_tree_changed |= vs.view_transform_props.read_explicit(
+                    &computed,
                     &computed,
                     &computed,
                     &self.now,
@@ -527,7 +529,7 @@ impl<'a> StyleCx<'a> {
                     taffy_style.display = display_override;
                 }
 
-                if taffy_style != old_taffy_style {
+                if taffy_style != vs.taffy_style {
                     let taffy_node = vs.layout_id;
                     vs.taffy_style = taffy_style.clone();
                     view_id

@@ -3,7 +3,7 @@ use floem::{
     event::DragConfig,
     peniko::{Brush, color::Oklab},
     prelude::{palette::css, *},
-    style::{Background, CursorStyle},
+    style::{Background, CursorStyle, TextColor},
     style_class,
     theme::StyleThemeExt,
 };
@@ -160,18 +160,20 @@ pub fn draggable_view() -> impl IntoView {
             .padding(10)
             .max_width(300.)
             .class(DraggableItem, |s| {
-                s.with_context_opt::<Background, _>(move |s, b| {
-                    let color = if let Brush::Solid(c) = b {
-                        let l = c.convert::<Oklab>().components[0];
-                        if l < 0.5 {
-                            Some(css::WHITE)
-                        } else {
-                            Some(css::BLACK)
-                        }
-                    } else {
-                        None
-                    };
-                    s.apply_opt(color, |s, c| s.color(c))
+                s.with::<Background>(move |s, b| {
+                    s.set_context_opt(
+                        TextColor,
+                        b.def(|b| {
+                            b.and_then(|b| {
+                                if let Brush::Solid(c) = b {
+                                    let l = c.convert::<Oklab>().components[0];
+                                    Some(if l < 0.5 { css::WHITE } else { css::BLACK })
+                                } else {
+                                    None
+                                }
+                            })
+                        }),
+                    )
                 })
             })
     });

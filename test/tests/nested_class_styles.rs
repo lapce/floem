@@ -294,16 +294,16 @@ fn test_context_mappings_from_multiple_paths() {
         s.size(300.0, 300.0)
             .class(OuterClass, |s| {
                 s.class(ItemClass, |s| {
-                    s.with_context::<floem::style::FontSize>(|s, fs| {
-                        s.apply_opt(*fs, |s, fs| s.height(fs * 2.0))
+                    s.with::<floem::style::FontSize>(|s, fs| {
+                        s.height(fs.def(|fs| fs.unwrap_or(0.0) * 2.0))
                     })
                 })
             })
             .class(OuterClass, |s| {
                 s.class(InnerClass, |s| {
                     s.class(ItemClass, |s| {
-                        s.with_context::<floem::style::FontSize>(|s, fs| {
-                            s.apply_opt(*fs, |s, fs| s.height(fs * 1.0))
+                        s.with::<floem::style::FontSize>(|s, fs| {
+                            s.height(fs.def(|fs| fs.unwrap_or(0.0) * 1.0))
                         })
                     })
                 })
@@ -483,10 +483,12 @@ fn test_with_context_from_multiple_class_paths() {
                 let list_path_clone = list_path_clone.clone();
                 s.class(ListItemClass, move |s| {
                     let list_path_clone = list_path_clone.clone();
-                    s.with_context::<floem::style::FontSize>(move |s, fs| {
-                        list_path_clone.set(true);
+                    s.with::<floem::style::FontSize>(move |s, fs| {
                         // Apply height based on font_size from LIST path
-                        s.apply_opt(*fs, |s, fs| s.height(fs * 1.5)) // 20 * 1.5 = 30
+                        s.height(fs.def(move |fs| {
+                            list_path_clone.set(true);
+                            fs.unwrap_or(0.0) * 1.5
+                        }))
                     })
                 })
             })
@@ -497,10 +499,12 @@ fn test_with_context_from_multiple_class_paths() {
                     let dropdown_path_clone = dropdown_path_clone.clone();
                     s.class(ListItemClass, move |s| {
                         let dropdown_path_clone = dropdown_path_clone.clone();
-                        s.with_context::<floem::style::FontSize>(move |s, fs| {
-                            dropdown_path_clone.set(true);
+                        s.with::<floem::style::FontSize>(move |s, fs| {
                             // Apply height based on font_size from DROPDOWN path
-                            s.apply_opt(*fs, |s, fs| s.height(fs * 1.0)) // 20 * 1.0 = 20
+                            s.height(fs.def(move |fs| {
+                                dropdown_path_clone.set(true);
+                                fs.unwrap_or(0.0) * 1.0
+                            }))
                         })
                     })
                 })
@@ -601,9 +605,11 @@ fn test_css_like_different_properties_accumulate() {
                 let list_ran_clone = list_ran_clone.clone();
                 s.class(ListItemClass, move |s| {
                     let list_ran_clone = list_ran_clone.clone();
-                    s.with_context::<floem::style::FontSize>(move |s, fs| {
-                        list_ran_clone.set(true);
-                        s.apply_opt(*fs, |s, fs| s.padding_left(fs)) // padding_left = 10
+                    s.with::<floem::style::FontSize>(move |s, fs| {
+                        s.padding_left(fs.def(move |fs| {
+                            list_ran_clone.set(true);
+                            fs.unwrap_or(0.0)
+                        }))
                     })
                 })
             })
@@ -614,9 +620,11 @@ fn test_css_like_different_properties_accumulate() {
                     let dropdown_ran_clone = dropdown_ran_clone.clone();
                     s.class(ListItemClass, move |s| {
                         let dropdown_ran_clone = dropdown_ran_clone.clone();
-                        s.with_context::<floem::style::FontSize>(move |s, fs| {
-                            dropdown_ran_clone.set(true);
-                            s.apply_opt(*fs, |s, fs| s.padding_top(fs * 2.0)) // padding_top = 20
+                        s.with::<floem::style::FontSize>(move |s, fs| {
+                            s.padding_top(fs.def(move |fs| {
+                                dropdown_ran_clone.set(true);
+                                fs.unwrap_or(0.0) * 2.0
+                            }))
                         })
                     })
                 })

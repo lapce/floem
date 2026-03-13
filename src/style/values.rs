@@ -68,14 +68,20 @@ impl<T> PartialEq for ContextValue<T> {
 impl<T> Eq for ContextValue<T> {}
 
 impl<T> ContextValue<T> {
-    pub fn new(eval: impl Fn(&Style) -> T + 'static) -> Self {
+    pub(crate) fn new(eval: impl Fn(&Style) -> T + 'static) -> Self {
         Self {
             eval: Rc::new(eval),
         }
     }
 
     pub fn resolve(&self, style: &Style) -> T {
-        (self.eval)(style)
+        let saved_effect = floem_reactive::Runtime::get_current_effect();
+        if let Some(effect) = &style.effect_context {
+            floem_reactive::Runtime::set_current_effect(Some(effect.clone()));
+        }
+        let result = (self.eval)(style);
+        floem_reactive::Runtime::set_current_effect(saved_effect);
+        result
     }
 
     pub fn map<U>(self, f: impl Fn(T) -> U + 'static) -> ContextValue<U>
@@ -86,6 +92,7 @@ impl<T> ContextValue<T> {
         ContextValue::new(move |style| f(eval(style)))
     }
 }
+
 
 pub trait StylePropValue: Clone + PartialEq + Debug {
     fn debug_view(&self) -> Option<Box<dyn View>> {
@@ -283,8 +290,6 @@ impl StylePropValue for ObjectFit {
                 .border(1.)
                 .border_radius(5.0)
                 .with_theme(move |s, t| {
-                    container_color.set(t.text_muted());
-                    image_color.set(t.primary());
                     s.border_color(t.border())
                 })
         });
@@ -794,7 +799,6 @@ impl StylePropValue for Stroke {
         .container()
         .style(move |s| {
             s.with_theme(move |s, t| {
-                color.set(t.primary());
                 s.border_color(t.border())
             })
             .padding(4.0)
@@ -1109,7 +1113,7 @@ impl StylePropValue for Affine {
                         .border(1.)
                         .border_radius(4.0)
                         .with_theme(|s, t| {
-                            s.background(t.primary().with_alpha(0.5))
+                            s.background(t.def(|t| t.primary().with_alpha(0.5)))
                                 .border_color(t.border())
                         })
                 });
@@ -1349,17 +1353,6 @@ pub enum StyleMapValue<T> {
     Unset,
 }
 
-impl<T> StyleMapValue<T> {
-    pub(crate) fn as_ref(&self) -> Option<&T> {
-        match self {
-            Self::Val(v) => Some(v),
-            Self::Animated(v) => Some(v),
-            Self::Context(_) => None,
-            Self::Unset => None,
-        }
-    }
-}
-
 /// The value for a [`Style`] property in the public API.
 ///
 /// This represents the result of reading a style property, with additional
@@ -1566,7 +1559,7 @@ fn debug_name_cell(name: String, is_direct: bool, indent: usize) -> AnyView {
                     .with_theme(|s, t| {
                         s.color(t.text_muted())
                             .border_color(t.border())
-                            .padding_horiz(4.0)
+                            .apply(Style::new().padding_horiz(4.0))
                     })
                     .with::<FontSize>(|s, fs| {
                         s.set_context_opt(FontSize, fs.def(|fs| fs.map(|fs| fs * 0.8)))

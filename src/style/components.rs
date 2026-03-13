@@ -695,14 +695,13 @@ impl StylePropValue for BoxShadow {
             ().style(move |s| s.width(50.0).height(50.0))
                 .container()
                 .style(move |s| {
-                    s.with_theme(|s, t| {
-                        s.background(Color::TRANSPARENT)
-                            .border_color(t.border())
-                            .border(1.)
-                            .border_radius(t.border_radius())
-                    })
-                    .apply_box_shadows(vec![shadow])
-                    .margin(10.0)
+                    s.background(Color::TRANSPARENT)
+                        .border(1.)
+                        .apply_box_shadows(vec![shadow])
+                        .margin(10.0)
+                        .with_theme(|s, t| {
+                            s.border_color(t.border()).border_radius(t.border_radius())
+                        })
                 });
 
         // Create a details section showing the shadow properties

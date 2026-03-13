@@ -716,8 +716,13 @@ impl SliderCustomStyle {
     ///
     /// # Arguments
     /// * `color` - An optional `Color` that sets the handle's color. If `None` is provided, the handle color is not set.
-    pub fn handle_color(mut self, color: impl Into<Option<Brush>>) -> Self {
-        self = SliderCustomStyle(self.0.set(Foreground, color));
+    pub fn handle_color(
+        mut self,
+        color: impl Into<crate::style::StyleValue<Option<Brush>>>,
+    ) -> Self {
+        self = SliderCustomStyle(
+            self.0.set_style_value(Foreground, color.into()),
+        );
         self
     }
 
@@ -743,8 +748,14 @@ impl SliderCustomStyle {
     ///
     /// # Arguments
     /// * `color` - A `StyleValue<Color>` that sets the bar's background color.
-    pub fn bar_color(mut self, color: impl Into<Brush>) -> Self {
-        self = SliderCustomStyle(self.0.class(BarClass, |s| s.background(color)));
+    pub fn bar_color(
+        mut self,
+        color: impl Into<crate::style::StyleValue<Option<Brush>>>,
+    ) -> Self {
+        let color = color.into();
+        self = SliderCustomStyle(self.0.class(BarClass, move |s| {
+            s.set_style_value(Background, color.clone())
+        }));
         self
     }
 
@@ -770,8 +781,14 @@ impl SliderCustomStyle {
     ///
     /// # Arguments
     /// * `color` - A `StyleValue<Color>` that sets the accent bar's background color.
-    pub fn accent_bar_color(mut self, color: impl Into<Brush>) -> Self {
-        self = SliderCustomStyle(self.0.class(AccentBarClass, |s| s.background(color)));
+    pub fn accent_bar_color(
+        mut self,
+        color: impl Into<crate::style::StyleValue<Option<Brush>>>,
+    ) -> Self {
+        let color = color.into();
+        self = SliderCustomStyle(self.0.class(AccentBarClass, move |s| {
+            s.set_style_value(Background, color.clone())
+        }));
         self
     }
 

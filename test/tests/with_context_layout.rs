@@ -10,7 +10,7 @@
 use floem::peniko::Color;
 use floem::prelude::*;
 use floem::prop;
-use floem::style::Style;
+use floem::style::{ContextRef, ExprStyle, Style};
 use floem_test::prelude::*;
 use serial_test::serial;
 
@@ -42,14 +42,20 @@ impl floem::style::StylePropValue for TestTheme {
 
 /// Helper extension trait for using the test theme
 trait TestThemeExt {
-    fn with_test_theme(self, f: impl Fn(Self, &TestTheme) -> Self + 'static) -> Self
+    fn with_test_theme(
+        self,
+        f: impl Fn(ExprStyle, ContextRef<TestThemeProp>) -> ExprStyle + 'static,
+    ) -> Self
     where
         Self: Sized;
 }
 
 impl TestThemeExt for Style {
-    fn with_test_theme(self, f: impl Fn(Self, &TestTheme) -> Self + 'static) -> Self {
-        self.with_context::<TestThemeProp>(f)
+    fn with_test_theme(
+        self,
+        f: impl Fn(ExprStyle, ContextRef<TestThemeProp>) -> ExprStyle + 'static,
+    ) -> Self {
+        self.with::<TestThemeProp>(f)
     }
 }
 
@@ -338,7 +344,7 @@ fn test_layout_outside_color_inside_with_context() {
     let view = Empty::new().style(move |s| {
         s.size(100.0, 50.0)
             .set(TestThemeProp, theme)
-            .with_test_theme(|s, t| s.background(t.primary))
+            .with_test_theme(|s, t| s.background(t.def(|t| t.primary)))
     });
     let id = view.view_id();
 
@@ -424,7 +430,10 @@ fn test_theme_value_for_size() {
     };
     let view = Empty::new().style(move |s| {
         s.set(TestThemeProp, theme)
-            .with_test_theme(|s, t| s.size(t.size, t.size / 2.0))
+            .with_test_theme(|s, t| {
+                s.width(t.def(|t| t.size))
+                    .height(t.def(|t| t.size / 2.0))
+            })
     });
     let id = view.view_id();
 

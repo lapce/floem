@@ -337,6 +337,7 @@ pub trait StylePropReader {
         state: &mut Self::State,
         style: &Style,
         fallback: &Style,
+        context_style: &Style,
         now: &Instant,
         request_transition: &mut bool,
     ) -> bool;
@@ -354,14 +355,17 @@ impl<P: StyleProp> StylePropReader for P {
         state: &mut Self::State,
         style: &Style,
         fallback: &Style,
+        context_style: &Style,
         now: &Instant,
         request_transition: &mut bool,
     ) -> bool {
         // get the style property
-        let style_value = style.get_prop_style_value::<P>();
+        let style_value = style.get_prop_style_value_in_context::<P>(context_style);
         let mut prop_animated = false;
         let new = match style_value {
-            StyleValue::Context(_) => unreachable!("context values should resolve during property reads"),
+            StyleValue::Context(_) => {
+                unreachable!("context values should resolve during property reads")
+            }
             StyleValue::Animated(val) => {
                 *request_transition = true;
                 prop_animated = true;
@@ -369,7 +373,7 @@ impl<P: StyleProp> StylePropReader for P {
             }
             StyleValue::Val(val) => val,
             StyleValue::Unset | StyleValue::Base => fallback
-                .get_prop::<P>()
+                .get_prop_in_context::<P>(context_style)
                 .unwrap_or_else(|| P::default_value()),
         };
         // set the transition state to the transition if one is found
@@ -407,10 +411,13 @@ impl<P: StyleProp> StylePropReader for Option<P> {
         state: &mut Self::State,
         style: &Style,
         fallback: &Style,
+        context_style: &Style,
         _now: &Instant,
         _transition: &mut bool,
     ) -> bool {
-        let new = style.get_prop::<P>().or_else(|| fallback.get_prop::<P>());
+        let new = style
+            .get_prop_in_context::<P>(context_style)
+            .or_else(|| fallback.get_prop_in_context::<P>(context_style));
         let changed = new != *state;
         *state = new;
         changed
@@ -443,10 +450,18 @@ impl<R: StylePropReader> ExtractorField<R> {
         &mut self,
         style: &Style,
         fallback: &Style,
+        context_style: &Style,
         now: &Instant,
         request_transition: &mut bool,
     ) -> bool {
-        R::read(&mut self.state, style, fallback, now, request_transition)
+        R::read(
+            &mut self.state,
+            style,
+            fallback,
+            context_style,
+            now,
+            request_transition,
+        )
     }
     pub fn get(&self) -> R::Type {
         R::get(&self.state)
@@ -543,7 +558,10 @@ macro_rules! prop_extractor {
                 target: impl Into<$crate::ElementId>,
             ) -> bool {
                 let mut transition = false;
-                let changed = false $(| self.$prop.read(style, style, &cx.now(), &mut transition))*;
+                let context_style = cx.style();
+                let changed = false $(
+                    | self.$prop.read(style, &context_style, &context_style, &cx.now(), &mut transition)
+                )*;
                 if transition {
                     cx.request_transition_for(target);
                 }
@@ -562,7 +580,14 @@ macro_rules! prop_extractor {
                 target: impl Into<$crate::ElementId>,
             ) -> bool {
                 let mut transition = false;
-                let changed = self.read_explicit(&cx.direct_style(), &cx.indirect_style(), &cx.now(), &mut transition);
+                let context_style = cx.style();
+                let changed = self.read_explicit(
+                    &cx.direct_style(),
+                    &cx.indirect_style(),
+                    &context_style,
+                    &cx.now(),
+                    &mut transition,
+                );
                 if transition {
                     cx.request_transition_for(target);
                 }
@@ -574,13 +599,14 @@ macro_rules! prop_extractor {
                 &mut self,
                 style: &$crate::style::Style,
                 fallback: &$crate::style::Style,
+                context_style: &$crate::style::Style,
                 #[cfg(not(target_arch = "wasm32"))]
                 now: &std::time::Instant,
                 #[cfg(target_arch = "wasm32")]
                 now: &web_time::Instant,
                 request_transition: &mut bool
             ) -> bool {
-                false $(| self.$prop.read(style, fallback, now, request_transition))*
+                false $(| self.$prop.read(style, fallback, context_style, now, request_transition))*
             }
 
             $($prop_vis fn $prop(&self) -> <$reader as $crate::style::StylePropReader>::Type
@@ -612,15 +638,12 @@ pub enum StyleKeyInfo {
     Selector(StyleSelectors),
     Class(StyleClassInfo),
     DebugGroup(StyleDebugGroupInfo),
-    /// Storage for context mapping closures.
-    ContextMappings,
     /// Storage for parameterized structural selectors (`:first-child`, `:nth-child(...)`, etc.).
     StructuralSelectors,
     /// Storage for parameterized responsive selectors (`min/max/range` window width).
     ResponsiveSelectors,
 }
 
-pub(crate) static CONTEXT_MAPPINGS_INFO: StyleKeyInfo = StyleKeyInfo::ContextMappings;
 pub(crate) static STRUCTURAL_SELECTORS_INFO: StyleKeyInfo = StyleKeyInfo::StructuralSelectors;
 pub(crate) static RESPONSIVE_SELECTORS_INFO: StyleKeyInfo = StyleKeyInfo::ResponsiveSelectors;
 
@@ -635,7 +658,6 @@ impl StyleKey {
             StyleKeyInfo::Selector(selectors) => selectors.debug_string(),
             StyleKeyInfo::Transition
             | StyleKeyInfo::DebugGroup(_)
-            | StyleKeyInfo::ContextMappings
             | StyleKeyInfo::StructuralSelectors
             | StyleKeyInfo::ResponsiveSelectors => String::new(),
             StyleKeyInfo::Class(info) => (info.name)().to_string(),
@@ -646,7 +668,6 @@ impl StyleKey {
         match self.info {
             StyleKeyInfo::Selector(..)
             | StyleKeyInfo::Transition
-            | StyleKeyInfo::ContextMappings
             | StyleKeyInfo::StructuralSelectors
             | StyleKeyInfo::ResponsiveSelectors => false,
             StyleKeyInfo::Class(..) => true,
@@ -677,7 +698,6 @@ impl Debug for StyleKey {
                 write!(f, "selectors: {}", selectors.debug_string())
             }
             StyleKeyInfo::Transition => write!(f, "transition"),
-            StyleKeyInfo::ContextMappings => write!(f, "ContextMappings"),
             StyleKeyInfo::StructuralSelectors => write!(f, "StructuralSelectors"),
             StyleKeyInfo::ResponsiveSelectors => write!(f, "ResponsiveSelectors"),
             StyleKeyInfo::Class(v) => write!(f, "{}", (v.name)()),

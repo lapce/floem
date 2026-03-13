@@ -386,7 +386,7 @@ fn capture_view(
     let tree = if capture.root.warnings() {
         Stack::vertical((
             header("Warnings")
-                .style(|s| s.with_theme(|s, t| s.color(t.warning_base)))
+                .style(|s| s.with_theme(|s, t| s.color(t.warning_base())))
                 .tooltip(|| "requested changes is not empty"),
             header("View Tree"),
             search,

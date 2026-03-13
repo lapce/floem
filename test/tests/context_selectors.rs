@@ -13,7 +13,7 @@
 use floem::peniko::{Brush, Color};
 use floem::prelude::*;
 use floem::prop;
-use floem::style::{Background, Style, StyleSelector};
+use floem::style::{Background, ContextRef, ContextValue, ExprStyle, Style, StyleSelector};
 use floem_test::prelude::*;
 use serial_test::serial;
 
@@ -47,14 +47,49 @@ impl floem::style::StylePropValue for TestTheme {
 
 /// Helper extension trait for using the test theme
 trait TestThemeExt {
-    fn with_test_theme(self, f: impl Fn(Self, &TestTheme) -> Self + 'static) -> Self
+    fn with_test_theme(
+        self,
+        f: impl Fn(ExprStyle, ContextRef<TestThemeProp>) -> ExprStyle + 'static,
+    ) -> Self
     where
         Self: Sized;
 }
 
 impl TestThemeExt for Style {
-    fn with_test_theme(self, f: impl Fn(Self, &TestTheme) -> Self + 'static) -> Self {
-        self.with_context::<TestThemeProp>(f)
+    fn with_test_theme(
+        self,
+        f: impl Fn(ExprStyle, ContextRef<TestThemeProp>) -> ExprStyle + 'static,
+    ) -> Self {
+        self.with::<TestThemeProp>(f)
+    }
+}
+
+impl TestThemeExt for ExprStyle {
+    fn with_test_theme(
+        self,
+        f: impl Fn(ExprStyle, ContextRef<TestThemeProp>) -> ExprStyle + 'static,
+    ) -> Self {
+        self.with::<TestThemeProp>(f)
+    }
+}
+
+trait TestThemeRefExt {
+    fn primary(self) -> ContextValue<Color>;
+    fn hover(self) -> ContextValue<Color>;
+    fn active(self) -> ContextValue<Color>;
+}
+
+impl TestThemeRefExt for ContextRef<TestThemeProp> {
+    fn primary(self) -> ContextValue<Color> {
+        self.def(|theme| theme.primary)
+    }
+
+    fn hover(self) -> ContextValue<Color> {
+        self.def(|theme| theme.hover)
+    }
+
+    fn active(self) -> ContextValue<Color> {
+        self.def(|theme| theme.active)
     }
 }
 
@@ -65,7 +100,7 @@ fn test_active_selector_detected_inside_with_context() {
     let root = TestRoot::new();
     let view = Empty::new().style(|s| {
         s.size(100.0, 100.0).with_test_theme(|s, t| {
-            s.background(t.primary)
+            s.background(t.primary())
                 .active(|s| s.background(palette::css::RED))
         })
     });
@@ -87,7 +122,7 @@ fn test_hover_selector_detected_inside_with_context() {
     let root = TestRoot::new();
     let view = Empty::new().style(|s| {
         s.size(100.0, 100.0).with_test_theme(|s, t| {
-            s.background(t.primary)
+            s.background(t.primary())
                 .hover(|s| s.background(palette::css::GREEN))
         })
     });
@@ -275,8 +310,8 @@ fn test_active_style_uses_theme_values() {
         s.size(100.0, 100.0)
             .set(TestThemeProp, theme)
             .with_test_theme(|s, t| {
-                let active_color = t.active;
-                s.background(t.primary)
+                let active_color = t.active();
+                s.background(t.primary())
                     .active(move |s| s.background(active_color))
             })
     });

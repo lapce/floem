@@ -25,14 +25,14 @@ prop!(
 
 // Helper to use inherited color in styles.
 trait TestColorExt {
-    fn with_test_color(self, f: impl Fn(Self, &Color) -> Self + 'static) -> Self
+    fn with_test_color(self) -> Self
     where
         Self: Sized;
 }
 
 impl TestColorExt for Style {
-    fn with_test_color(self, f: impl Fn(Self, &Color) -> Self + 'static) -> Self {
-        self.with_context::<TestInheritedColor>(f)
+    fn with_test_color(self) -> Self {
+        self.with::<TestInheritedColor>(|s, color| s.background(color.def(|color| color)))
     }
 }
 
@@ -54,8 +54,7 @@ fn test_inherited_prop_propagates_to_deep_children() {
 
     // Create a deep hierarchy where only the leaf uses the inherited color
     let leaf = Empty::new().style(|s| {
-        s.size(20.0, 20.0)
-            .with_test_color(|s, color| s.background(*color))
+        s.size(20.0, 20.0).with_test_color()
     });
     let leaf_id = leaf.view_id();
 
@@ -105,8 +104,7 @@ fn test_inherited_prop_propagates_to_siblings() {
 
     for _ in 0..5 {
         let child = Empty::new().style(move |s| {
-            s.size(20.0, 20.0)
-                .with_test_color(|s, color| s.background(*color))
+            s.size(20.0, 20.0).with_test_color()
         });
         child_ids.push(child.view_id());
         children.push(child);
@@ -202,8 +200,7 @@ fn test_child_with_selectors_receives_inherited_updates() {
     // Child has hover selector, making it ineligible for inherited-only fast path
     // But it uses inherited color for base, and a different prop (border) for hover
     let child = Empty::new().style(|s| {
-        s.size(50.0, 50.0)
-            .with_test_color(|s, color| s.background(*color))
+        s.size(50.0, 50.0).with_test_color()
             .hover(|s| s.border(2.0).border_color(palette::css::WHITE))
     });
     let child_id = child.view_id();
@@ -413,7 +410,7 @@ fn test_combined_inherited_and_local_changes() {
     let child = Empty::new().style(move |s| {
         s.size(50.0, 50.0)
             .padding(local_padding.get())
-            .with_test_color(|s, color| s.background(*color))
+            .with_test_color()
     });
     let child_id = child.view_id();
 
@@ -471,7 +468,7 @@ fn test_very_deep_nesting_propagation() {
     fn create_deep_hierarchy(depth: usize, _color_signal: RwSignal<Color>) -> Container {
         if depth == 0 {
             Container::new(
-                Empty::new().style(|s| s.size(10.0, 10.0).with_test_color(|s, c| s.background(*c))),
+                Empty::new().style(|s| s.size(10.0, 10.0).with_test_color()),
             )
             .style(|s| s.size(20.0, 20.0))
         } else {

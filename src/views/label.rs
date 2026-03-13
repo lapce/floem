@@ -560,8 +560,8 @@ impl LabelCustomStyle {
         self
     }
 
-    pub fn selection_color(mut self, color: impl Into<Brush>) -> Self {
-        self = Self(self.0.set(SelectionColor, color));
+    pub fn selection_color(mut self, color: impl Into<crate::style::StyleValue<Brush>>) -> Self {
+        self = Self(self.0.set_style_value(SelectionColor, color.into()));
         self
     }
 }

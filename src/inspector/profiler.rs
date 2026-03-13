@@ -158,11 +158,8 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
                 .with_theme(|s, t| s.background(t.bg_base()))
         }),
         header("Event").style(|s| {
-            s.with_theme(|s, t| {
-                s.border_top(1)
-                    .border_top_color(t.border())
-                    .color(t.primary())
-            })
+            s.border_top(1)
+                .with_theme(|s, t| s.border_top_color(t.border()).color(t.primary()))
         }),
         event_tooltip,
     ))
@@ -204,7 +201,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
                             .with_theme(|s, t| {
                                 s.border_color(t.border())
                                     .background(t.primary_muted())
-                                    .hover(|s| s.background(t.primary().with_alpha(0.5)))
+                                    .hover(|s| s.background(t.def(|t| t.primary().with_alpha(0.5))))
                             })
                     })
                     .on_event_cont(listener::PointerEnter, move |_, _| {

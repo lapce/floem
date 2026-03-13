@@ -503,8 +503,7 @@ impl Style {
                         nested_style.content_hash().hash(&mut hasher);
                     }
                 }
-                StyleKeyInfo::ContextMappings
-                | StyleKeyInfo::StructuralSelectors
+                StyleKeyInfo::StructuralSelectors
                 | StyleKeyInfo::ResponsiveSelectors
                 | StyleKeyInfo::DebugGroup(_)
                 | StyleKeyInfo::Transition => {

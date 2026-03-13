@@ -1,13 +1,14 @@
 use std::time::Duration;
 
-use super::unit::{DurationUnitExt, UnitExt};
+use super::unit::{DurationUnitExt, PxPct, UnitExt};
 use super::{
     Background, Border, BorderBottom, BorderBottomColor, BorderBottomLeftRadius,
     BorderBottomRightRadius, BorderColor, BorderLeft, BorderLeftColor, BorderRadius, BorderRight,
     BorderRightColor, BorderTop, BorderTopColor, BorderTopLeftRadius, BorderTopRightRadius,
-    BoxShadow, ColGap, Cursor, CursorStyle, CustomStyle, FontSize, Foreground, Height, Margin,
-    MarginBottom, MarginLeft, MarginRight, MarginTop, Padding, PaddingBottom, PaddingLeft,
-    PaddingRight, PaddingTop, RowGap, Style, StylePropValue, Transition, Width,
+    BoxShadow, BoxShadowProp, ColGap, ContextRef, ContextValue, Cursor, CursorStyle, CustomStyle,
+    ExprStyle, FontSize, Foreground, Height, Margin, MarginBottom, MarginLeft, MarginRight,
+    MarginTop, Padding, PaddingBottom, PaddingLeft, PaddingRight, PaddingTop, RowGap, Style,
+    StylePropValue, Transition, Width,
 };
 use crate::style::Selectable;
 use crate::view::View;
@@ -381,9 +382,80 @@ impl StylePropValue for DesignSystem {
 prop!(
     pub Theme: DesignSystem { inherited } = DesignSystem::light()
 );
+
+#[derive(Clone, Copy)]
+pub struct ThemeExpr(pub(crate) ContextRef<Theme>);
+
+impl ThemeExpr {
+    pub fn def<T>(self, f: impl Fn(DesignSystem) -> T + 'static) -> ContextValue<T>
+    where
+        T: 'static,
+    {
+        self.0.def(f)
+    }
+
+    pub fn bg_base(self) -> ContextValue<Color> {
+        self.def(|t| t.bg_base())
+    }
+    pub fn bg_elevated(self) -> ContextValue<Color> {
+        self.def(|t| t.bg_elevated())
+    }
+    pub fn bg_overlay(self) -> ContextValue<Color> {
+        self.def(|t| t.bg_overlay())
+    }
+    pub fn bg_disabled(self) -> ContextValue<Color> {
+        self.def(|t| t.bg_disabled())
+    }
+    pub fn border(self) -> ContextValue<Color> {
+        self.def(|t| t.border())
+    }
+    pub fn border_muted(self) -> ContextValue<Color> {
+        self.def(|t| t.border_muted())
+    }
+    pub fn text(self) -> ContextValue<Color> {
+        self.def(|t| t.text())
+    }
+    pub fn text_muted(self) -> ContextValue<Color> {
+        self.def(|t| t.text_muted())
+    }
+    pub fn primary(self) -> ContextValue<Color> {
+        self.def(|t| t.primary())
+    }
+    pub fn primary_muted(self) -> ContextValue<Color> {
+        self.def(|t| t.primary_muted())
+    }
+    pub fn success(self) -> ContextValue<Color> {
+        self.def(|t| t.success())
+    }
+    pub fn warning(self) -> ContextValue<Color> {
+        self.def(|t| t.warning())
+    }
+    pub fn danger(self) -> ContextValue<Color> {
+        self.def(|t| t.danger())
+    }
+    pub fn info(self) -> ContextValue<Color> {
+        self.def(|t| t.info())
+    }
+    pub fn padding(self) -> ContextValue<PxPct> {
+        self.def(|t| t.padding().into())
+    }
+    pub fn border_radius(self) -> ContextValue<PxPct> {
+        self.def(|t| t.border_radius().into())
+    }
+    pub fn font_size(self) -> ContextValue<f32> {
+        self.def(|t| t.font_size())
+    }
+    pub fn is_dark(self) -> ContextValue<bool> {
+        self.def(|t| t.is_dark)
+    }
+    pub fn warning_base(self) -> ContextValue<Color> {
+        self.def(|t| t.warning_base)
+    }
+}
+
 pub trait StyleThemeExt {
     fn theme(self, theme: DesignSystem) -> Self;
-    fn with_theme(self, f: impl Fn(Self, &DesignSystem) -> Self + 'static) -> Self
+    fn with_theme(self, f: impl Fn(ExprStyle, ThemeExpr) -> ExprStyle + 'static) -> Self
     where
         Self: std::marker::Sized;
 }
@@ -392,13 +464,25 @@ impl StyleThemeExt for Style {
     fn theme(self, theme: DesignSystem) -> Self {
         self.set(Theme, theme)
     }
-    fn with_theme(self, f: impl Fn(Self, &DesignSystem) -> Self + 'static) -> Self {
-        self.with_context::<Theme>(f)
+    fn with_theme(self, f: impl Fn(ExprStyle, ThemeExpr) -> ExprStyle + 'static) -> Self {
+        self.with::<Theme>(|s, t| f(s, ThemeExpr(t)))
     }
 }
 
+impl StyleThemeExt for ExprStyle {
+    fn theme(self, theme: DesignSystem) -> Self {
+        self.set(Theme, theme)
+    }
+    fn with_theme(self, f: impl Fn(ExprStyle, ThemeExpr) -> ExprStyle + 'static) -> Self {
+        self.with::<Theme>(|s, t| f(s, ThemeExpr(t)))
+    }
+}
+
+// pub fn hover_style() -> Style {
+//     Style::new().hover(|s| s.with::<Theme>(|s, t| s.translate_x(t.def(|t| t.padding))))
+// }
 pub fn hover_style() -> Style {
-    Style::new().hover(|s| s.with::<Theme>(|s, t| s.background(t.def(|theme| theme.bg_elevated()))))
+    Style::new().hover(|s| s.with_theme(|s, t| s.background(t.def(|t| t.bg_elevated()))))
 }
 
 pub fn focus_style() -> Style {
@@ -406,7 +490,7 @@ pub fn focus_style() -> Style {
 
     Style::new()
         .keyboard_navigable()
-        .with_theme(|s, t| s.outline_color(t.primary().with_alpha(0.5)))
+        .with::<Theme>(|s, t| s.outline_color(t.def(|t| t.primary().with_alpha(0.5))))
         .focus_visible(|_| focus_visible_applied_style.clone())
 }
 
@@ -436,33 +520,34 @@ pub fn overlay_style() -> Style {
     Style::new()
         .with_theme(|s, t| {
             let shadow_color = Color::from_rgb8(0, 0, 0);
-            let base_opacity = if t.is_dark { 0.7 } else { 0.18 };
-
             s.border_color(t.border())
                 .border_radius(t.border_radius())
                 .padding(t.padding())
                 .color(t.text())
                 .background(t.bg_overlay())
-                .apply_box_shadows(smallvec![
-                    // Small, tight shadow for definition at the edge
-                    BoxShadow::new()
-                        .color(shadow_color.with_alpha(base_opacity * 1.2))
-                        .v_offset(1.)
-                        .blur_radius(2.)
-                        .spread(0.),
-                    // Medium shadow for perceived elevation
-                    BoxShadow::new()
-                        .color(shadow_color.with_alpha(base_opacity * 0.8))
-                        .v_offset(4.)
-                        .blur_radius(8.)
-                        .spread(-1.),
-                    // Large, soft shadow for ambient depth
-                    BoxShadow::new()
-                        .color(shadow_color.with_alpha(base_opacity * 0.5))
-                        .v_offset(12.)
-                        .blur_radius(24.)
-                        .spread(-4.),
-                ])
+                .set_context(
+                    BoxShadowProp,
+                    t.def(move |theme| {
+                        let base_opacity = if theme.is_dark { 0.7 } else { 0.18 };
+                        smallvec![
+                            BoxShadow::new()
+                                .color(shadow_color.with_alpha(base_opacity * 1.2))
+                                .v_offset(1.)
+                                .blur_radius(2.)
+                                .spread(0.),
+                            BoxShadow::new()
+                                .color(shadow_color.with_alpha(base_opacity * 0.8))
+                                .v_offset(4.)
+                                .blur_radius(8.)
+                                .spread(-1.),
+                            BoxShadow::new()
+                                .color(shadow_color.with_alpha(base_opacity * 0.5))
+                                .v_offset(12.)
+                                .blur_radius(24.)
+                                .spread(-4.),
+                        ]
+                    }),
+                )
         })
         .dark_mode(|s| s.border(1).border_top(2.))
 }
@@ -471,7 +556,6 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
     let button_style = Style::new()
         .selectable(false)
         .with_theme(|s, t| {
-            let is_dark = t.is_dark;
             s.background(t.bg_elevated())
                 .padding(t.padding())
                 .disabled(|s| {
@@ -481,21 +565,10 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
                 })
                 .hover(|s| s.background(t.bg_overlay()))
                 .active(move |s| {
-                    s.with::<Background>(move |s, b| {
-                        let adjustment = if is_dark { 0.1 } else { -0.2 };
-                        s.set_context_opt(
-                            Background,
-                            b.def(move |b| {
-                                b.and_then(|b| {
-                                    if let Brush::Solid(c) = b {
-                                        Some(Brush::Solid(c.map_lightness(|l| l + adjustment)))
-                                    } else {
-                                        None
-                                    }
-                                })
-                            }),
-                        )
-                    })
+                    s.background(t.def(|theme| {
+                        let adjustment = if theme.is_dark { 0.1 } else { -0.2 };
+                        Brush::Solid(theme.bg_overlay().map_lightness(|l| l + adjustment))
+                    }))
                 })
         })
         .transition(Background, Transition::linear(100.millis()))
@@ -511,7 +584,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
             s.background(t.bg_base())
                 .active(|s| s.background(t.bg_elevated()))
                 .disabled(|s| {
-                    s.background(t.bg_elevated().with_alpha(0.3))
+                    s.background(t.def(|t| t.bg_elevated().with_alpha(0.3)))
                         .color(t.text_muted())
                         .unset_cursor()
                 })
@@ -525,7 +598,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
 
     let labeled_checkbox_style = Style::new()
         .with_theme(|s, t| {
-            s.hover(|s| s.background(t.primary_muted().with_alpha(0.7)))
+            s.hover(|s| s.background(t.def(|t| t.primary_muted().with_alpha(0.7))))
                 .col_gap(t.padding())
                 .padding(t.padding())
                 .border_radius(t.border_radius())
@@ -539,7 +612,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
                         .class(CheckboxClass, |s| {
                             s.background(t.bg_disabled())
                                 .color(t.text_muted())
-                                .hover(|s| s.background(t.bg_elevated().with_alpha(0.3)))
+                                .hover(|s| s.background(t.def(|t| t.bg_elevated().with_alpha(0.3))))
                         })
                 })
         })
@@ -592,9 +665,9 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
         .with_theme(move |s, t| {
             s.col_gap(t.padding())
                 .padding(t.padding())
-                .selectable(false)
+                .set(Selectable, false)
                 .border_radius(t.border_radius())
-                .hover(|s| s.background(t.primary_muted().with_alpha(0.7)))
+                .hover(|s| s.background(t.def(|t| t.primary_muted().with_alpha(0.7))))
                 .active(|s| {
                     s.class(RadioButtonClass, |s| {
                         s.apply(Style::new().with_theme(|s, t| s.background(t.bg_elevated())))
@@ -607,7 +680,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
         .class(RadioButtonClass, |s| s.focus_none())
         .transition(Background, Transition::linear(100.millis()))
         .focus(|s| {
-            s.with_theme(|s, t| s.hover(|s| s.background(t.primary().with_alpha(0.7))))
+            s.with_theme(|s, t| s.hover(|s| s.background(t.def(|t| t.primary().with_alpha(0.7)))))
                 .apply(focus_style())
         });
 
@@ -622,11 +695,11 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
                     )
                 })
                 .padding(t.padding())
-                .set(Foreground, Brush::Solid(t.text_muted()))
+                .set_context_opt(Foreground, t.def(|t| Some(Brush::Solid(t.text_muted()))))
                 .active(|s| {
                     s.background(t.primary())
                         .color(t.bg_base())
-                        .set(Foreground, Brush::Solid(t.bg_base()))
+                        .set_context_opt(Foreground, t.def(|t| Some(Brush::Solid(t.bg_base()))))
                 })
                 .hover(|s| s.background(t.bg_overlay()))
         })
@@ -642,7 +715,10 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
         .with_theme(|s, t| {
             s.background(t.bg_base())
                 .padding(t.padding())
-                .set(SelectionColor, t.primary_muted().with_alpha(0.5))
+                .set_context(
+                    SelectionColor,
+                    t.def(|t| Brush::Solid(t.primary_muted().with_alpha(0.5))),
+                )
                 .cursor_color(t.primary_muted())
                 .hover(|s| s.background(t.bg_elevated()))
                 .disabled(|s| {
@@ -663,7 +739,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
                 .padding(t.padding())
                 .color(t.text_muted())
                 .border_bottom(2.)
-                .border_color(Color::TRANSPARENT)
+                .apply(Style::new().border_color(Color::TRANSPARENT))
                 .disabled(|s| s.background(t.bg_disabled()).color(t.text_muted()))
                 .selected(|s| {
                     s.background(t.bg_elevated())
@@ -713,7 +789,9 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
         .line_height(1.2)
         .class(LabelClass, |s| {
             s.with_theme(|s, t| {
-                s.custom(|s: LabelCustomStyle| s.selection_color(t.primary_muted().with_alpha(0.5)))
+                s.custom(|s: LabelCustomStyle| {
+                    s.selection_color(t.def(|t| Brush::Solid(t.primary_muted().with_alpha(0.5))))
+                })
             })
             .with::<Selectable>(|s, selectable| {
                 s.set_context_opt(
@@ -765,7 +843,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
             .transition_background(Transition::ease_in_out(Duration::from_millis(300)))
         })
         .class(scroll::Track, |s| {
-            s.with_theme(|s, t| s.hover(|s| s.background(t.border().with_alpha(0.3))))
+            s.with_theme(|s, t| s.hover(|s| s.background(t.def(|t| t.border().with_alpha(0.3)))))
                 .background(css::TRANSPARENT)
                 .transition_background(Transition::ease_in_out(Duration::from_millis(300)))
         })
@@ -777,17 +855,17 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
                         .accent_bar_radius(100.pct())
                         .handle_radius(100.pct())
                         .edge_align(true)
-                        .bar_color(t.border())
-                        .accent_bar_color(t.primary())
-                        .handle_color(Brush::Solid(t.text()))
+                        .bar_color(t.def(|t| Some(Brush::Solid(t.border()))))
+                        .accent_bar_color(t.def(|t| Some(Brush::Solid(t.primary()))))
+                        .handle_color(t.def(|t| Some(Brush::Solid(t.text()))))
                 })
             })
         })
         .class(PlaceholderTextClass, |s| {
             s.with_theme(|s, t| {
                 s.color(t.text_muted()).disabled(|s| {
-                    s.color(t.text_muted().with_alpha(0.5))
-                        .background(css::BLACK)
+                    s.color(t.def(|t| t.text_muted().with_alpha(0.5)))
+                        .apply(Style::new().background(css::BLACK))
                 })
             })
         })
@@ -807,7 +885,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
                     .class(SvgClass, |s| {
                         s.with_theme(|s, t| {
                             s.hover(|s| s.background(t.bg_elevated()))
-                                .padding(5.)
+                                .apply(Style::new().padding(5.))
                                 .border_radius(t.border_radius())
                                 .color(t.text())
                         })
@@ -838,8 +916,8 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
             s.with_theme(|s, t| {
                 s.custom(|cs: ResizableCustomStyle| {
                     cs.handle_thickness(3.)
-                        .handle_color(t.primary_muted().with_alpha(0.5))
-                        .hover(|s| s.handle_color(t.primary()))
+                        .handle_color(t.def(|t| Brush::Solid(t.primary_muted().with_alpha(0.5))))
+                        .hover(|s| s.handle_color(t.def(|t| Brush::Solid(t.primary()))))
                 })
             })
         })

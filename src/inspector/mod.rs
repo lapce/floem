@@ -5,7 +5,7 @@ use floem_reactive::{Effect, Scope};
 use floem_renderer::text::FontWeight;
 use peniko::kurbo::{Rect, Size};
 use peniko::{
-    Brush, Color,
+    Color,
     color::{HueDirection, Oklab, palette::css},
 };
 use slotmap::Key as _;
@@ -18,8 +18,8 @@ use crate::{
     platform::{Duration, Instant},
     prelude::*,
     style::{
-        Background, BorderRadius, OverflowX, OverflowY, PxPct, PxPctAuto, StrokeWrap, Style,
-        StyleCx, StyleThemeExt, TextColor,
+        BorderRadius, OverflowX, OverflowY, PxPct, PxPctAuto, StrokeWrap, Style, StyleCx,
+        StyleThemeExt, TextColor,
     },
 };
 
@@ -211,28 +211,32 @@ fn box_model_label(
     text: String,
     region: BoxModelRegion,
     hovered: RwSignal<Option<BoxModelRegion>>,
+    fill_color: Option<Color>,
 ) -> impl View {
     Label::new(text).style(move |s| {
+        let highlighted = hovered.get() == Some(region);
+        let any_hovered = hovered.get().is_some();
         s.font_size(11.0)
             .font_weight(if hovered.get() == Some(region) {
                 FontWeight::SEMI_BOLD
             } else {
                 FontWeight::NORMAL
             })
-            .with::<Background>(move |s, b| {
-                s.set_context_opt(
-                    TextColor,
-                    b.def(|b| {
-                        b.and_then(|b| {
-                            if let Brush::Solid(c) = b {
-                                let l = c.convert::<Oklab>().components[0];
-                                Some(if l < 0.5 { css::WHITE } else { css::BLACK })
-                            } else {
-                                None
-                            }
-                        })
-                    }),
-                )
+            .apply_if(fill_color.is_some(), move |s| {
+                let fill_color = fill_color.unwrap();
+                s.with_theme(move |s, t| {
+                    s.color(t.def(move |t| {
+                        let fill = if highlighted {
+                            blend_box_model_color(fill_color, t.bg_base(), true)
+                        } else if any_hovered {
+                            t.bg_base()
+                        } else {
+                            blend_box_model_color(fill_color, t.bg_base(), false)
+                        };
+                        let l = fill.convert::<Oklab>().components[0];
+                        if l < 0.5 { css::WHITE } else { css::BLACK }
+                    }))
+                })
             })
     })
 }
@@ -257,21 +261,21 @@ fn box_model_layer(
     } else {
         10.0
     };
-    let top = box_model_label(values[0].clone(), region, hovered)
+    let top = box_model_label(values[0].clone(), region, hovered, color)
         .container()
         .style(|s| s.justify_center());
-    let left = box_model_label(values[3].clone(), region, hovered)
+    let left = box_model_label(values[3].clone(), region, hovered, color)
         .container()
         .style(|s| s.justify_end().padding_right(2.0));
-    let right = box_model_label(values[1].clone(), region, hovered)
+    let right = box_model_label(values[1].clone(), region, hovered, color)
         .container()
         .style(|s| s.justify_start().padding_left(2.0));
-    let bottom = box_model_label(values[2].clone(), region, hovered)
+    let bottom = box_model_label(values[2].clone(), region, hovered, color)
         .container()
         .style(|s| s.justify_center());
     Stack::vertical((
         Stack::new((
-            box_model_label(region_name.to_string(), region, hovered)
+            box_model_label(region_name.to_string(), region, hovered, color)
                 .container()
                 .style(|s| s.justify_start()),
             top,
@@ -305,13 +309,15 @@ fn box_model_layer(
                 .apply_if(color.is_some(), move |s| {
                     let fill_color = color.unwrap();
                     s.with_theme(move |s, t| {
-                        s.background(if highlighted {
-                            blend_box_model_color(fill_color, t.bg_base(), true)
-                        } else if any_hovered {
-                            t.bg_base()
-                        } else {
-                            blend_box_model_color(fill_color, t.bg_base(), false)
-                        })
+                        s.background(t.def(move |t| {
+                            if highlighted {
+                                blend_box_model_color(fill_color, t.bg_base(), true)
+                            } else if any_hovered {
+                                t.bg_base()
+                            } else {
+                                blend_box_model_color(fill_color, t.bg_base(), false)
+                            }
+                        }))
                     })
                 });
         if let Some(border) = border.as_ref() {
@@ -338,30 +344,34 @@ fn box_model_layer(
 fn box_model_view(data: BoxModelViewData) -> impl View {
     let hovered = RwSignal::new(None);
     let content_radius = data.border_radius;
+    let content_fill = Color::from_rgb8(111, 168, 220);
     let content = Label::new(format!(
         "{} x {}",
         format_float(data.content_width),
         format_float(data.content_height)
     ))
     .style(move |s| {
+        let highlighted = hovered.get() == Some(BoxModelRegion::Content);
+        let any_hovered = hovered.get().is_some();
         s.font_size(12.0)
             .font_weight(if hovered.get() == Some(BoxModelRegion::Content) {
                 FontWeight::SEMI_BOLD
             } else {
                 FontWeight::NORMAL
             })
-            .with::<Background>(move |s, b| {
-                s.set_context_opt(
+            .with_theme(move |s, t| {
+                s.set_context(
                     TextColor,
-                    b.def(|b| {
-                        b.and_then(|b| {
-                            if let Brush::Solid(c) = b {
-                                let l = c.convert::<Oklab>().components[0];
-                                Some(if l < 0.5 { css::WHITE } else { css::BLACK })
-                            } else {
-                                None
-                            }
-                        })
+                    t.def(move |t| {
+                        let fill = if highlighted {
+                            blend_box_model_color(content_fill, t.bg_base(), true)
+                        } else if any_hovered {
+                            t.bg_base()
+                        } else {
+                            blend_box_model_color(content_fill, t.bg_base(), false)
+                        };
+                        let l = fill.convert::<Oklab>().components[0];
+                        Some(if l < 0.5 { css::WHITE } else { css::BLACK })
                     }),
                 )
             })
@@ -370,26 +380,28 @@ fn box_model_view(data: BoxModelViewData) -> impl View {
     .style(move |s| {
         let highlighted = hovered.get() == Some(BoxModelRegion::Content);
         let any_hovered = hovered.get().is_some();
-        s.with_theme(move |s, t| {
-            s.items_center()
-                .justify_center()
-                .gap(4.0)
-                .padding_vert(6.)
-                .padding_horiz(12.0)
-                .apply_border_radius(content_radius)
-                .border(1.)
-                .border_color(Color::WHITE.with_alpha(0.45))
-                .apply_if(highlighted, |s| {
-                    s.border_color(Color::BLACK.with_alpha(0.55))
-                })
-                .background(if highlighted {
-                    blend_box_model_color(Color::from_rgb8(111, 168, 220), t.bg_base(), true)
-                } else if any_hovered {
-                    t.bg_base()
-                } else {
-                    blend_box_model_color(Color::from_rgb8(111, 168, 220), t.bg_base(), false)
-                })
-        })
+        s.items_center()
+            .justify_center()
+            .gap(4.0)
+            .padding_vert(6.)
+            .padding_horiz(12.0)
+            .apply_border_radius(content_radius)
+            .border(1.)
+            .border_color(Color::WHITE.with_alpha(0.45))
+            .apply_if(highlighted, |s| {
+                s.border_color(Color::BLACK.with_alpha(0.55))
+            })
+            .with_theme(move |s, t| {
+                s.background(t.def(move |t| {
+                    if highlighted {
+                        blend_box_model_color(content_fill, t.bg_base(), true)
+                    } else if any_hovered {
+                        t.bg_base()
+                    } else {
+                        blend_box_model_color(content_fill, t.bg_base(), false)
+                    }
+                }))
+            })
     })
     .into_any();
     let content_id = content.view_id().get_element_id();
@@ -463,11 +475,10 @@ fn box_model_view(data: BoxModelViewData) -> impl View {
         )),
     ))
     .style(|s| {
-        s.padding(10.0).border_radius(8.0).with_theme(|s, t| {
-            s.background(t.bg_base())
-                .border(1.)
-                .border_color(t.border())
-        })
+        s.padding(10.0)
+            .border_radius(8.0)
+            .border(1.)
+            .with_theme(|s, t| s.background(t.bg_base()).border_color(t.border()))
     })
     .on_event_cont(crate::event::listener::PointerMove, move |cx, _| {
         hovered.set(hovered_box_model_region(cx.hit_path.as_deref(), region_ids));
