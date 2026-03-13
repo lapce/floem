@@ -508,7 +508,6 @@ impl Renderer for VgerRenderer {
         let (_, _, scale) = self.scale_components();
 
         let clip = self.clip;
-        let font_embolden = self.font_embolden;
         let Some(font_ref) = FontRef::from_index(font.data.data(), font.index as usize) else {
             return;
         };
@@ -523,7 +522,7 @@ impl Renderer for VgerRenderer {
         let skew = props
             .glyph_transform
             .map(|transform| transform.as_coeffs()[0].atan().to_degrees() as f32);
-        let embolden = font_embolden;
+        let embolden = scaled_embolden_strength(self.font_embolden, scale);
 
         for glyph in glyphs {
             let glyph_x = pos.x as f32 + glyph.x * scale as f32;
@@ -766,5 +765,20 @@ fn vger_color(color: Color) -> floem_vger_rs::Color {
         g: color.components[1],
         b: color.components[2],
         a: color.components[3],
+    }
+}
+
+fn scaled_embolden_strength(font_embolden: f32, scale: f64) -> f32 {
+    font_embolden * scale as f32
+}
+
+#[cfg(test)]
+mod tests {
+    use super::scaled_embolden_strength;
+
+    #[test]
+    fn embolden_strength_scales_with_raster_scale() {
+        assert!((scaled_embolden_strength(0.2, 1.5) - 0.3).abs() < f32::EPSILON);
+        assert_eq!(scaled_embolden_strength(0.2, 0.0), 0.0);
     }
 }

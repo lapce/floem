@@ -75,7 +75,7 @@ impl Default for WindowConfig {
             window_level: WindowLevel::Normal,
             theme_override: None,
             apply_default_theme: true,
-            font_embolden: if cfg!(target_os = "macos") { 0.2 } else { 0. },
+            font_embolden: if cfg!(target_os = "macos") { 0.1 } else { 0. },
             mac_os_config: None,
             win_os_config: None,
             web_config: None,

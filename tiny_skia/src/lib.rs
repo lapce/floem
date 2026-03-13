@@ -1074,6 +1074,10 @@ fn affine_scale_components(transform: Affine) -> (f64, f64, f64) {
     (scale_x, scale_y, uniform)
 }
 
+fn scaled_embolden_strength(font_embolden: f32, raster_scale: f64) -> f32 {
+    font_embolden * raster_scale as f32
+}
+
 fn normalize_affine(transform: Affine, include_translation: bool) -> Affine {
     let coeffs = transform.as_coeffs();
     let (scale_x, scale_y, _) = affine_scale_components(transform);
@@ -1297,6 +1301,7 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
             let glyph_x = (raster_origin.x + glyph.x as f64 * raster_scale) as f32;
             let glyph_y = (raster_origin.y + glyph.y as f64 * raster_scale) as f32;
             let scaled_font_size = props.font_size * raster_scale as f32;
+            let scaled_embolden = scaled_embolden_strength(self.font_embolden, raster_scale);
             let (cache_key, new_x, new_y) = GlyphCacheKey::new(
                 font_blob_id,
                 font.index,
@@ -1317,7 +1322,7 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
                 scaled_font_size,
                 props.hint,
                 props.normalized_coords,
-                self.font_embolden,
+                scaled_embolden,
                 skew,
                 new_x,
                 new_y,
@@ -2008,5 +2013,11 @@ mod tests {
 
         assert!((device_origin.x - 30.0).abs() < 1e-6);
         assert!((device_origin.y - 30.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn embolden_strength_scales_with_raster_scale() {
+        assert!((scaled_embolden_strength(0.2, 1.5) - 0.3).abs() < f32::EPSILON);
+        assert_eq!(scaled_embolden_strength(0.2, 0.0), 0.0);
     }
 }
