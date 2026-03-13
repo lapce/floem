@@ -1372,7 +1372,7 @@ impl TextLayoutProvider for Editor {
             .color(self.es.with(|s| s.ed_text_color()))
             .family(&family)
             .font_size(font_size as f32)
-            .line_height(LineHeightValue::Px(style.line_height(edid, line)));
+            .line_height(LineHeightValue::Pt(style.line_height(edid, line)));
         let mut attrs_list = AttrsList::new(attrs.clone());
 
         self.es.with_untracked(|es| {

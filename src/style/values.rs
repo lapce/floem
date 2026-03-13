@@ -34,7 +34,7 @@ use crate::AnyView;
 use crate::prelude::ViewTuple;
 use crate::style::CursorStyle;
 use crate::theme::StyleThemeExt;
-use crate::unit::{Length, LengthAuto, Pct, Pt, Px, PxPct, PxPctAuto};
+use crate::unit::{Length, LengthAuto, Pct, Pt};
 use crate::view::ViewTupleFlat;
 use crate::view::{IntoView, View};
 use crate::views::{
@@ -452,8 +452,8 @@ impl StylePropValue for LineHeightValue {
             (LineHeightValue::Normal(v1), LineHeightValue::Normal(v2)) => {
                 v1.interpolate(v2, value).map(LineHeightValue::Normal)
             }
-            (LineHeightValue::Px(v1), LineHeightValue::Px(v2)) => {
-                v1.interpolate(v2, value).map(LineHeightValue::Px)
+            (LineHeightValue::Pt(v1), LineHeightValue::Pt(v2)) => {
+                v1.interpolate(v2, value).map(LineHeightValue::Pt)
             }
             _ => None,
         }
@@ -541,13 +541,14 @@ impl StylePropValue for Pt {
         self.0.interpolate(&other.0, value).map(Pt)
     }
 }
-impl StylePropValue for Px {
+#[allow(deprecated)]
+impl StylePropValue for super::unit::Px {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         Pt(self.0).debug_view()
     }
 
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
-        self.0.interpolate(&other.0, value).map(Px)
+        self.0.interpolate(&other.0, value).map(super::unit::Px)
     }
 }
 impl StylePropValue for Pct {
@@ -563,6 +564,8 @@ impl StylePropValue for LengthAuto {
         let label = match self {
             Self::Pt(v) => format!("{v} pt"),
             Self::Pct(v) => format!("{v}%"),
+            Self::Em(v) => format!("{v} em"),
+            Self::Lh(v) => format!("{v} lh"),
             Self::Auto => "auto".to_string(),
         };
         Some(Label::new(label).into_any())
@@ -571,13 +574,16 @@ impl StylePropValue for LengthAuto {
         match (self, other) {
             (Self::Pt(v1), Self::Pt(v2)) => Some(Self::Pt(v1 + (v2 - v1) * value)),
             (Self::Pct(v1), Self::Pct(v2)) => Some(Self::Pct(v1 + (v2 - v1) * value)),
+            (Self::Em(v1), Self::Em(v2)) => Some(Self::Em(v1 + (v2 - v1) * value)),
+            (Self::Lh(v1), Self::Lh(v2)) => Some(Self::Lh(v1 + (v2 - v1) * value)),
             (Self::Auto, Self::Auto) => Some(Self::Auto),
             // TODO: Figure out some way to get in the relevant layout information in order to interpolate between pixels and percent
             _ => None,
         }
     }
 }
-impl StylePropValue for PxPctAuto {
+#[allow(deprecated)]
+impl StylePropValue for super::unit::PxPctAuto {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         LengthAuto::from(*self).debug_view()
     }
@@ -593,6 +599,8 @@ impl StylePropValue for Length {
         let label = match self {
             Self::Pt(v) => format!("{v} pt"),
             Self::Pct(v) => format!("{v}%"),
+            Self::Em(v) => format!("{v} em"),
+            Self::Lh(v) => format!("{v} lh"),
         };
         Some(Label::new(label).into_any())
     }
@@ -601,12 +609,15 @@ impl StylePropValue for Length {
         match (self, other) {
             (Self::Pt(v1), Self::Pt(v2)) => Some(Self::Pt(v1 + (v2 - v1) * value)),
             (Self::Pct(v1), Self::Pct(v2)) => Some(Self::Pct(v1 + (v2 - v1) * value)),
+            (Self::Em(v1), Self::Em(v2)) => Some(Self::Em(v1 + (v2 - v1) * value)),
+            (Self::Lh(v1), Self::Lh(v2)) => Some(Self::Lh(v1 + (v2 - v1) * value)),
             // TODO: Figure out some way to get in the relevant layout information in order to interpolate between pixels and percent
             _ => None,
         }
     }
 }
-impl StylePropValue for PxPct {
+#[allow(deprecated)]
+impl StylePropValue for super::unit::PxPct {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         Length::from(*self).debug_view()
     }

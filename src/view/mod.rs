@@ -1133,37 +1133,46 @@ impl View for Box<dyn View> {
     }
 }
 
-pub(crate) fn border_radius(radius: crate::unit::Length, size: f64) -> f64 {
-    match radius {
-        crate::unit::Length::Pt(pt) => pt,
-        crate::unit::Length::Pct(pct) => size * (pct / 100.),
-    }
+pub(crate) fn border_radius(
+    radius: crate::unit::Length,
+    size: f64,
+    resolve_cx: &crate::unit::FontSizeCx,
+) -> f64 {
+    radius.resolve(size, resolve_cx)
 }
 
-fn border_to_radii_view(style: &ViewStyleProps, size: Size) -> RoundedRectRadii {
+fn border_to_radii_view(
+    style: &ViewStyleProps,
+    size: Size,
+    resolve_cx: &crate::unit::FontSizeCx,
+) -> RoundedRectRadii {
     let border_radii = style.border_radius();
     RoundedRectRadii {
         top_left: border_radius(
             border_radii.top_left.unwrap_or(Length::Pt(0.0)),
             size.min_side(),
+            resolve_cx,
         ),
         top_right: border_radius(
             border_radii.top_right.unwrap_or(Length::Pt(0.0)),
             size.min_side(),
+            resolve_cx,
         ),
         bottom_left: border_radius(
             border_radii.bottom_left.unwrap_or(Length::Pt(0.0)),
             size.min_side(),
+            resolve_cx,
         ),
         bottom_right: border_radius(
             border_radii.bottom_right.unwrap_or(Length::Pt(0.0)),
             size.min_side(),
+            resolve_cx,
         ),
     }
 }
 
 pub(crate) fn paint_bg(cx: &mut PaintCx, style: &ViewStyleProps, rect: Rect) {
-    let radii = border_to_radii_view(style, rect.size());
+    let radii = border_to_radii_view(style, rect.size(), &cx.font_size_cx);
     if radii_max(radii) > 0.0 {
         paint_box_shadow(cx, style, rect, Some(radii));
         let bg = match style.background() {
@@ -1190,30 +1199,12 @@ fn paint_box_shadow(
 ) {
     for shadow in &style.shadow() {
         let min = rect.size().min_side();
-        let left_offset = match shadow.left_offset {
-            crate::unit::Length::Pt(pt) => pt,
-            crate::unit::Length::Pct(pct) => min * (pct / 100.),
-        };
-        let right_offset = match shadow.right_offset {
-            crate::unit::Length::Pt(pt) => pt,
-            crate::unit::Length::Pct(pct) => min * (pct / 100.),
-        };
-        let top_offset = match shadow.top_offset {
-            crate::unit::Length::Pt(pt) => pt,
-            crate::unit::Length::Pct(pct) => min * (pct / 100.),
-        };
-        let bottom_offset = match shadow.bottom_offset {
-            crate::unit::Length::Pt(pt) => pt,
-            crate::unit::Length::Pct(pct) => min * (pct / 100.),
-        };
-        let spread = match shadow.spread {
-            crate::unit::Length::Pt(pt) => pt,
-            crate::unit::Length::Pct(pct) => min * (pct / 100.),
-        };
-        let blur_radius = match shadow.blur_radius {
-            crate::unit::Length::Pt(pt) => pt,
-            crate::unit::Length::Pct(pct) => min * (pct / 100.),
-        };
+        let left_offset = shadow.left_offset.resolve(min, &cx.font_size_cx);
+        let right_offset = shadow.right_offset.resolve(min, &cx.font_size_cx);
+        let top_offset = shadow.top_offset.resolve(min, &cx.font_size_cx);
+        let bottom_offset = shadow.bottom_offset.resolve(min, &cx.font_size_cx);
+        let spread = shadow.spread.resolve(min, &cx.font_size_cx);
+        let blur_radius = shadow.blur_radius.resolve(min, &cx.font_size_cx);
         let inset = Insets::new(
             left_offset / 2.0,
             top_offset / 2.0,
@@ -1237,7 +1228,7 @@ pub(crate) fn paint_outline(cx: &mut PaintCx, style: &ViewStyleProps, rect: Rect
         }
         let half = outline.width / 2.0;
         let rect = rect.inflate(half, half);
-        let border_radii = border_to_radii_view(style, rect.size());
+        let border_radii = border_to_radii_view(style, rect.size(), &cx.font_size_cx);
         cx.stroke(
             &rect.to_rounded_rect(radii_add(border_radii, half)),
             &style.outline_color(),
@@ -1269,9 +1260,10 @@ pub(crate) fn paint_outline(cx: &mut PaintCx, style: &ViewStyleProps, rect: Rect
     let half_width = outlines[0].0.width / 2.0;
     let rect = rect.inflate(half_width, half_width);
 
-    let radii = radii_map(border_to_radii_view(style, rect.size()), |r| {
-        (r + half_width).max(0.0)
-    });
+    let radii = radii_map(
+        border_to_radii_view(style, rect.size(), &cx.font_size_cx),
+        |r| (r + half_width).max(0.0),
+    );
 
     let mut outline_path = BorderPath::new(rect, radii);
 
@@ -1325,7 +1317,7 @@ pub(crate) fn paint_border(
         {
             let half = left.width / 2.0;
             let rect = rect.inflate(-half, -half);
-            let radii = border_to_radii_view(style, rect.size());
+            let radii = border_to_radii_view(style, rect.size(), &cx.font_size_cx);
             if let Some(color) = style.border_color().left {
                 if radii_max(radii) > 0.0 {
                     let radii = radii_map(radii, |r| (r - half).max(0.0));
@@ -1420,9 +1412,10 @@ pub(crate) fn paint_border(
     let half_width = borders[0].0.width / 2.0;
     let rect = rect.inflate(-half_width, -half_width);
 
-    let radii = radii_map(border_to_radii_view(style, rect.size()), |r| {
-        (r - half_width).max(0.0)
-    });
+    let radii = radii_map(
+        border_to_radii_view(style, rect.size(), &cx.font_size_cx),
+        |r| (r - half_width).max(0.0),
+    );
 
     let mut border_path = BorderPath::new(rect, radii);
 

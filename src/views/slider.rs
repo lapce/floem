@@ -11,6 +11,7 @@ use ui_events::pointer::{PointerButtonEvent, PointerEvent};
 
 use crate::custom_event;
 use crate::event::CustomEvent;
+use crate::unit::FontSizeCx;
 use crate::{
     Renderer,
     context::{LayoutChanged, LayoutChangedListener},
@@ -19,8 +20,8 @@ use crate::{
     prop, prop_extractor,
     style::{
         Background, BorderBottomLeftRadius, BorderBottomRightRadius, BorderTopLeftRadius,
-        BorderTopRightRadius, ContextValue, CustomStylable, CustomStyle, ExprStyle, Foreground,
-        Height, Style,
+        BorderTopRightRadius, ContextValue, CustomStylable, CustomStyle, ExprStyle, FontSize,
+        Foreground, Height, LineHeight, Style,
     },
     style_class,
     unit::{Length, LengthAuto, Pct},
@@ -46,6 +47,8 @@ prop_extractor! {
         foreground: Foreground,
         handle_radius: HandleRadius,
         edge_align: EdgeAlign,
+        font_size: FontSize,
+        line_height: LineHeight,
     }
 }
 style_class!(pub SliderClass);
@@ -75,24 +78,39 @@ impl BarStyle {
     }
 }
 
-fn border_radius(style: &BarStyle, size: f64) -> RoundedRectRadii {
+impl SliderStyle {
+    fn length_resolve_cx(&self) -> FontSizeCx {
+        let font_size = self.font_size();
+        let line_height = match self.line_height() {
+            crate::text::LineHeightValue::Pt(value) => f64::from(value),
+            crate::text::LineHeightValue::Normal(multiplier) => font_size * f64::from(multiplier),
+        };
+        FontSizeCx::new(font_size, line_height)
+    }
+}
+
+fn border_radius(style: &BarStyle, size: f64, resolve_cx: &FontSizeCx) -> RoundedRectRadii {
     let border_radius = style.border_radius();
     RoundedRectRadii {
         top_left: crate::view::border_radius(
             border_radius.top_left.unwrap_or(Length::Pt(0.0)),
             size,
+            resolve_cx,
         ),
         top_right: crate::view::border_radius(
             border_radius.top_right.unwrap_or(Length::Pt(0.0)),
             size,
+            resolve_cx,
         ),
         bottom_left: crate::view::border_radius(
             border_radius.bottom_left.unwrap_or(Length::Pt(0.0)),
             size,
+            resolve_cx,
         ),
         bottom_right: crate::view::border_radius(
             border_radius.bottom_right.unwrap_or(Length::Pt(0.0)),
             size,
+            resolve_cx,
         ),
     }
 }
@@ -436,6 +454,10 @@ impl Slider {
                 new_box: Default::default(),
                 new_content_box: Default::default(),
                 new_window_origin: Default::default(),
+                // Before first layout, the slider has no view-specific extracted layout state yet.
+                // Using the widget extractor defaults here is stable because they match the style
+                // system defaults for inherited font-size/line-height until the first LayoutChanged.
+                resolve_cx: SliderStyle::default().length_resolve_cx(),
             },
             style: Default::default(),
             range: 0.0..=100.0,
@@ -527,6 +549,10 @@ impl Slider {
                 new_box: Default::default(),
                 new_content_box: Default::default(),
                 new_window_origin: Default::default(),
+                // Before first layout, the slider has no view-specific extracted layout state yet.
+                // Using the widget extractor defaults here is stable because they match the style
+                // system defaults for inherited font-size/line-height until the first LayoutChanged.
+                resolve_cx: SliderStyle::default().length_resolve_cx(),
             },
             style: Default::default(),
             range: cloned_range,
@@ -586,6 +612,7 @@ impl Slider {
     fn update_shapes(&mut self) {
         self.clamp_percent();
         let size = self.layout.box_local().size();
+        let resolve_cx = self.style.length_resolve_cx();
 
         let circle_radius = self.calculate_handle_radius();
         let width = size.width - circle_radius * 2.;
@@ -593,19 +620,20 @@ impl Slider {
         let circle_point = Point::new(center, size.height / 2.);
         self.handle = crate::kurbo::Circle::new(circle_point, circle_radius);
 
-        let base_bar_height = match self.base_bar_style.height() {
-            LengthAuto::Pt(pt) => pt,
-            LengthAuto::Pct(pct) => size.height * (pct / 100.),
-            LengthAuto::Auto => size.height,
-        };
-        let accent_bar_height = match self.accent_bar_style.height() {
-            LengthAuto::Pt(pt) => pt,
-            LengthAuto::Pct(pct) => size.height * (pct / 100.),
-            LengthAuto::Auto => size.height,
-        };
+        let base_bar_height = self
+            .base_bar_style
+            .height()
+            .resolve_with_ctx(size.height, &resolve_cx)
+            .unwrap_or(size.height);
+        let accent_bar_height = self
+            .accent_bar_style
+            .height()
+            .resolve_with_ctx(size.height, &resolve_cx)
+            .unwrap_or(size.height);
 
-        let base_bar_radii = border_radius(&self.base_bar_style, base_bar_height / 2.);
-        let accent_bar_radii = border_radius(&self.accent_bar_style, accent_bar_height / 2.);
+        let base_bar_radii = border_radius(&self.base_bar_style, base_bar_height / 2., &resolve_cx);
+        let accent_bar_radii =
+            border_radius(&self.accent_bar_style, accent_bar_height / 2., &resolve_cx);
 
         let mut base_bar_length = size.width;
         if !self.style.edge_align() {
@@ -642,13 +670,12 @@ impl Slider {
 
     /// Calculate the handle radius based on current size and style
     fn calculate_handle_radius(&self) -> f64 {
-        match self.style.handle_radius() {
-            Length::Pt(pt) => pt,
-            Length::Pct(pct) => {
-                let size = self.layout.new_box.size();
-                size.width.min(size.height) / 2. * (pct / 100.)
-            }
-        }
+        let size = self.layout.new_box.size();
+        let basis = size.width.min(size.height) / 2.0;
+        self.style.handle_radius().resolve(
+            basis,
+            &self.style.length_resolve_cx(),
+        )
     }
 
     /// Convert mouse x position to percentage, taking handle radius into account
@@ -847,7 +874,7 @@ impl SliderCustomExprStyle {
 
     pub fn handle_radius<T>(mut self, radius: ContextValue<T>) -> Self
     where
-        T: Into<PxPct> + 'static,
+        T: Into<Length> + 'static,
     {
         self = SliderCustomExprStyle(
             ExprStyle::from(self.0)
@@ -872,7 +899,7 @@ impl SliderCustomExprStyle {
 
     pub fn bar_radius<T>(mut self, radius: ContextValue<T>) -> Self
     where
-        T: Into<PxPct> + 'static,
+        T: Into<Length> + 'static,
     {
         self = SliderCustomExprStyle(self.0.class(BarClass, move |s| {
             ExprStyle::from(s).border_radius(radius.clone()).into()
@@ -882,7 +909,7 @@ impl SliderCustomExprStyle {
 
     pub fn bar_height<T>(mut self, height: ContextValue<T>) -> Self
     where
-        T: Into<PxPctAuto> + 'static,
+        T: Into<LengthAuto> + 'static,
     {
         self = SliderCustomExprStyle(self.0.class(BarClass, move |s| {
             ExprStyle::from(s).height(height.clone()).into()
@@ -905,7 +932,7 @@ impl SliderCustomExprStyle {
 
     pub fn accent_bar_radius<T>(mut self, radius: ContextValue<T>) -> Self
     where
-        T: Into<PxPct> + 'static,
+        T: Into<Length> + 'static,
     {
         self = SliderCustomExprStyle(self.0.class(AccentBarClass, move |s| {
             ExprStyle::from(s).border_radius(radius.clone()).into()
@@ -915,7 +942,7 @@ impl SliderCustomExprStyle {
 
     pub fn accent_bar_height<T>(mut self, height: ContextValue<T>) -> Self
     where
-        T: Into<PxPctAuto> + 'static,
+        T: Into<LengthAuto> + 'static,
     {
         self = SliderCustomExprStyle(self.0.class(AccentBarClass, move |s| {
             ExprStyle::from(s).height(height.clone()).into()

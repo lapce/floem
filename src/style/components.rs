@@ -10,7 +10,7 @@ use peniko::kurbo::Stroke;
 use peniko::{Brush, Color};
 
 use crate::theme::StyleThemeExt;
-use crate::unit::{Length, LengthAuto};
+use crate::unit::{FontSizeCx, Length, LengthAuto};
 use crate::view::{IntoView, View};
 use crate::views::{ContainerExt, Decorators, Stack, TooltipExt};
 
@@ -431,19 +431,20 @@ impl BorderRadius {
 
     /// Resolve border radii to absolute pixels given the min side of the element.
     /// Percentage values are resolved relative to the min side.
-    pub fn resolve_border_radii(&self, min_side: f64) -> peniko::kurbo::RoundedRectRadii {
-        fn resolve(val: Option<Length>, min_side: f64) -> f64 {
-            match val {
-                Some(Length::Pt(pt)) => pt,
-                Some(Length::Pct(pct)) => min_side * pct / 100.0,
-                None => 0.0,
-            }
+    pub fn resolve_border_radii(
+        &self,
+        min_side: f64,
+        resolve_cx: &FontSizeCx,
+    ) -> peniko::kurbo::RoundedRectRadii {
+        fn resolve(val: Option<Length>, min_side: f64, resolve_cx: &FontSizeCx) -> f64 {
+            val.map(|length| length.resolve(min_side, resolve_cx))
+                .unwrap_or(0.0)
         }
         peniko::kurbo::RoundedRectRadii {
-            top_left: resolve(self.top_left, min_side),
-            top_right: resolve(self.top_right, min_side),
-            bottom_right: resolve(self.bottom_right, min_side),
-            bottom_left: resolve(self.bottom_left, min_side),
+            top_left: resolve(self.top_left, min_side, resolve_cx),
+            top_right: resolve(self.top_right, min_side, resolve_cx),
+            bottom_right: resolve(self.bottom_right, min_side, resolve_cx),
+            bottom_left: resolve(self.bottom_left, min_side, resolve_cx),
         }
     }
 }

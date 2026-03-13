@@ -71,8 +71,12 @@ fn format_px_pct(value: Length) -> String {
     match value {
         Length::Pt(pt) if pt.abs() < 0.01 => "-".to_string(),
         Length::Pct(pct) if pct.abs() < 0.01 => "-".to_string(),
+        Length::Em(em) if em.abs() < 0.01 => "-".to_string(),
+        Length::Lh(lh) if lh.abs() < 0.01 => "-".to_string(),
         Length::Pt(pt) => format!("{}pt", format_float(pt)),
         Length::Pct(pct) => format!("{}%", format_float(pct)),
+        Length::Em(em) => format!("{}em", format_float(em)),
+        Length::Lh(lh) => format!("{}lh", format_float(lh)),
     }
 }
 
@@ -80,8 +84,12 @@ fn format_px_pct_auto(value: LengthAuto) -> String {
     match value {
         LengthAuto::Pt(pt) if pt.abs() < 0.01 => "-".to_string(),
         LengthAuto::Pct(pct) if pct.abs() < 0.01 => "-".to_string(),
+        LengthAuto::Em(em) if em.abs() < 0.01 => "-".to_string(),
+        LengthAuto::Lh(lh) if lh.abs() < 0.01 => "-".to_string(),
         LengthAuto::Pt(pt) => format!("{}pt", format_float(pt)),
         LengthAuto::Pct(pct) => format!("{}%", format_float(pct)),
+        LengthAuto::Em(em) => format!("{}em", format_float(em)),
+        LengthAuto::Lh(lh) => format!("{}lh", format_float(lh)),
         LengthAuto::Auto => "-".to_string(),
     }
 }
@@ -90,6 +98,8 @@ fn resolve_px_pct(value: Length, basis: f64) -> f64 {
     match value {
         Length::Pt(pt) => pt,
         Length::Pct(pct) => basis * (pct / 100.0),
+        Length::Em(em) => em, // FIXME
+        Length::Lh(lh) => lh, // FIXME
     }
 }
 

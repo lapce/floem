@@ -656,6 +656,7 @@ impl WindowHandle {
                     new_box,
                     new_content_box,
                     new_window_origin: window_origin,
+                    resolve_cx: id.state().borrow().resolve_font_props.length_resolve_cx(),
                 };
                 let (old_layout, element_id) = {
                     let state = id.state();

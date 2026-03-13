@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use super::unit::{DurationUnitExt, PxPct, UnitExt};
+use super::unit::{DurationUnitExt, UnitExt};
 use super::*;
 use crate::style::Selectable;
 use crate::view::View;
@@ -118,7 +118,7 @@ pub struct DesignSystem {
     pub is_dark: bool,
     pub padding: f32,
     pub border_radius: f32,
-    pub font_size: f32,
+    pub font_size: f64,
 }
 // const BORDER_RADIUS: f32 = 5.0;
 // const FONT_SIZE: f32 = 12.0;
@@ -242,7 +242,7 @@ impl DesignSystem {
         self.border_radius
     }
 
-    pub fn font_size(&self) -> f32 {
+    pub fn font_size(&self) -> f64 {
         self.font_size
     }
 }
@@ -263,7 +263,7 @@ impl StylePropValue for DesignSystem {
             .style(|s| s.flex_row().items_center().gap(8.0).padding_vert(2.0))
         };
 
-        let scalar_field = |label: &str, value: f32| {
+        let scalar_field = |label: &str, value: f64| {
             Stack::new((
                 label.to_string().style(|s| s.width(120.0).font_size(12.0)),
                 format!("{:.2}", value).style(|s| s.font_size(12.0)),
@@ -310,9 +310,9 @@ impl StylePropValue for DesignSystem {
                 color_swatch("success_base", design_system.success_base),
                 color_swatch("warning_base", design_system.warning_base),
                 color_swatch("danger_base", design_system.danger_base),
-                scalar_field("text_lightness", design_system.text_lightness),
-                scalar_field("padding", design_system.padding),
-                scalar_field("border_radius", design_system.border_radius),
+                scalar_field("text_lightness", f64::from(design_system.text_lightness)),
+                scalar_field("padding", f64::from(design_system.padding)),
+                scalar_field("border_radius", f64::from(design_system.border_radius)),
                 scalar_field("font_size", design_system.font_size),
                 format!("is_dark: {}", design_system.is_dark).style(|s| s.font_size(12.0)),
             ))
@@ -345,6 +345,8 @@ impl StylePropValue for DesignSystem {
         use peniko::color::HueDirection;
         let t = value as f32;
         let inv_t = 1.0 - t;
+        let t64 = value;
+        let inv_t64 = 1.0 - t64;
 
         Some(DesignSystem {
             bg_base: self.bg_base.lerp(other.bg_base, t, HueDirection::default()),
@@ -367,7 +369,7 @@ impl StylePropValue for DesignSystem {
             is_dark: if t < 0.5 { self.is_dark } else { other.is_dark },
             padding: self.padding * inv_t + other.padding * t,
             border_radius: self.border_radius * inv_t + other.border_radius * t,
-            font_size: self.font_size * inv_t + other.font_size * t,
+            font_size: self.font_size * inv_t64 + other.font_size * t64,
         })
     }
 }
@@ -429,13 +431,13 @@ impl ThemeExpr {
     pub fn info(self) -> ContextValue<Color> {
         self.def(|t| t.info())
     }
-    pub fn padding(self) -> ContextValue<PxPct> {
+    pub fn padding(self) -> ContextValue<Length> {
         self.def(|t| t.padding().into())
     }
-    pub fn border_radius(self) -> ContextValue<PxPct> {
+    pub fn border_radius(self) -> ContextValue<Length> {
         self.def(|t| t.border_radius().into())
     }
-    pub fn font_size(self) -> ContextValue<f32> {
+    pub fn font_size(self) -> ContextValue<f64> {
         self.def(|t| t.font_size())
     }
     pub fn is_dark(self) -> ContextValue<bool> {
@@ -680,7 +682,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
     let toggle_button_style = Style::new()
         .with_theme(|s, t| {
             s.background(t.bg_elevated())
-                .with::<FontSize>(|s, fs| s.height(fs.def(|fs| (fs * 1.75) as f64)))
+                .with::<FontSize>(|s, fs| s.height(fs.def(|fs| fs * 1.75)))
                 .padding(t.padding())
                 .set_context_opt(Foreground, t.def(|t| Some(Brush::Solid(t.text_muted()))))
                 .active(|s| {
@@ -866,21 +868,14 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
                 .apply(border_style(true))
                 .selectable(false)
                 .class(dropdown::DropdownPreviewClass, |s| {
-                    s.with::<FontSize>(|s, fs| {
-                        let gap = fs.def(|fs| ((fs * 0.75) as f64).px());
-                        s.col_gap(gap.clone()).row_gap(gap)
-                    })
-                    .class(SvgClass, |s| {
+                    s.gap(0.75.em()).class(SvgClass, |s| {
                         s.with_theme(|s, t| {
                             s.hover(|s| s.background(t.bg_elevated()))
-                                .apply(Style::new().padding(5.))
                                 .border_radius(t.border_radius())
                                 .color(t.text())
                         })
-                        .with::<FontSize>(|s, fs| {
-                            let size = fs.def(|fs| (fs as f64).px());
-                            s.width(size.clone()).height(size)
-                        })
+                        .padding(5.)
+                        .size(1.em(), 1.em())
                     })
                 })
                 .class(scroll::ScrollClass, move |s| {

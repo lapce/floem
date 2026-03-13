@@ -191,10 +191,8 @@ pub use selectors::{NthChild, StructuralSelector, StyleSelector, StyleSelectors}
 pub use theme::{DesignSystem, StyleThemeExt};
 pub use transition::{DirectTransition, Transition, TransitionState};
 pub use unit::{
-    
-    AnchorAbout, Angle, Auto, DurationUnitExt, LineHeightValue, Length, LengthAuto, Pct, Pt, Px, PxPct,
-    PxPctAuto, UnitExt,
-,
+    AnchorAbout, Angle, Auto, DurationUnitExt, Em, FontSizeCx, Length, LengthAuto, Lh,
+    LineHeightValue, Pct, Pt, UnitExt,
 };
 pub use values::{ContextValue, ObjectFit, StrokeWrap, StyleMapValue, StylePropValue, StyleValue};
 
@@ -215,6 +213,14 @@ fn combine_merge_ids(a: u64, b: u64) -> u64 {
 
 type StructuralSelectorRules = SmallVec<[(StructuralSelector, Rc<Style>); 2]>;
 type ResponsiveSelectorRules = SmallVec<[(ResponsiveSelector, Rc<Style>); 2]>;
+
+pub(crate) fn merged_length_resolve_cx(font_size: f64, line_height: LineHeightValue) -> FontSizeCx {
+    let line_height = match line_height {
+        LineHeightValue::Pt(value) => f64::from(value),
+        LineHeightValue::Normal(multiplier) => font_size * f64::from(multiplier),
+    };
+    FontSizeCx::new(font_size, line_height)
+}
 
 #[derive(Clone, Default, Debug)]
 pub struct ExprStyle {
@@ -374,14 +380,14 @@ impl ExprStyle {
     where
         T: Into<Pt> + 'static,
     {
-        let px = size.map(|s| s.into().0 as f32);
+        let px = size.map(|s| s.into().0);
         self.set_context(FontSize, px)
     }
 
     pub fn size<W, H>(self, width: ContextValue<W>, height: ContextValue<H>) -> Self
     where
-        W: Into<PxPctAuto> + 'static,
-        H: Into<PxPctAuto> + 'static,
+        W: Into<LengthAuto> + 'static,
+        H: Into<LengthAuto> + 'static,
     {
         self.width(width).height(height)
     }
@@ -396,7 +402,7 @@ impl ExprStyle {
 
     pub fn margin<T>(self, margin: ContextValue<T>) -> Self
     where
-        T: Into<PxPctAuto> + 'static,
+        T: Into<LengthAuto> + 'static,
     {
         let margin = margin.map(Into::into);
         self.set(MarginLeft, margin.clone())
@@ -418,7 +424,7 @@ impl ExprStyle {
 
     pub fn border_radius<T>(self, radius: ContextValue<T>) -> Self
     where
-        T: Into<PxPct> + 'static,
+        T: Into<Length> + 'static,
     {
         let radius = radius.map(Into::into);
         self.set(BorderTopLeftRadius, radius.clone())
@@ -429,7 +435,7 @@ impl ExprStyle {
 
     pub fn border<T>(self, width: ContextValue<T>) -> Self
     where
-        T: Into<Px> + 'static,
+        T: Into<Pt> + 'static,
     {
         let stroke = width.map(|width| Stroke::new(width.into().0));
         self.set(BorderLeft, stroke.clone())
@@ -440,7 +446,7 @@ impl ExprStyle {
 
     pub fn border_top<T>(self, width: ContextValue<T>) -> Self
     where
-        T: Into<Px> + 'static,
+        T: Into<Pt> + 'static,
     {
         self.set(BorderTop, width.map(|width| Stroke::new(width.into().0)))
     }
@@ -470,7 +476,7 @@ impl ExprStyle {
 
     pub fn padding<T>(self, padding: ContextValue<T>) -> Self
     where
-        T: Into<PxPct> + 'static,
+        T: Into<Length> + 'static,
     {
         let padding = padding.map(Into::into);
         self.set(PaddingLeft, padding.clone())
@@ -481,7 +487,7 @@ impl ExprStyle {
 
     pub fn padding_horiz<T>(self, padding: ContextValue<T>) -> Self
     where
-        T: Into<PxPct> + 'static,
+        T: Into<Length> + 'static,
     {
         let padding = padding.map(Into::into);
         self.set(PaddingLeft, padding.clone())
@@ -490,7 +496,7 @@ impl ExprStyle {
 
     pub fn padding_vert<T>(self, padding: ContextValue<T>) -> Self
     where
-        T: Into<PxPct> + 'static,
+        T: Into<Length> + 'static,
     {
         let padding = padding.map(Into::into);
         self.set(PaddingTop, padding.clone())
@@ -499,7 +505,7 @@ impl ExprStyle {
 
     pub fn gap<T>(self, gap: ContextValue<T>) -> Self
     where
-        T: Into<PxPct> + 'static,
+        T: Into<Length> + 'static,
     {
         let gap = gap.map(Into::into);
         self.set(ColGap, gap.clone()).set(RowGap, gap)
@@ -524,11 +530,11 @@ impl ExprStyle {
         self.apply(Style::new().transition_background(transition))
     }
 
-    pub fn border_bottom(self, width: impl Into<Px>) -> Self {
+    pub fn border_bottom(self, width: impl Into<Pt>) -> Self {
         self.set(BorderBottom, Stroke::new(width.into().0))
     }
 
-    pub fn outline(self, width: impl Into<Px>) -> Self {
+    pub fn outline(self, width: impl Into<Pt>) -> Self {
         self.set(Outline, Stroke::new(width.into().0))
     }
 }
@@ -552,9 +558,9 @@ struct ResponsiveSelectors(ResponsiveSelectorRules);
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum ResponsiveSelector {
     ScreenSize(ScreenSize),
-    MinWidth(Px),
-    MaxWidth(Px),
-    WidthRange { min: Px, max: Px },
+    MinWidth(Pt),
+    MaxWidth(Pt),
+    WidthRange { min: Pt, max: Pt },
 }
 
 impl ResponsiveSelector {
@@ -1845,7 +1851,7 @@ define_builtin_props!(
     /// Sets the font size for text content.
     ///
     /// This property is inherited by child views.
-    FontSize font_size { nocb, tr }: f32 { inherited } = 14.,
+    FontSize font_size { nocb, tr }: f64 { inherited } = 14.,
 
     /// Sets the font family for text content.
     ///
@@ -1891,7 +1897,7 @@ define_builtin_props!(
     /// Sets the line height for text content.
     ///
     /// This property is inherited by child views.
-    LineHeight line_height { tr }: Option<LineHeightValue> [LineHeightValue] { inherited } = None,
+    LineHeight line_height { tr }: LineHeightValue { inherited } = LineHeightValue::Normal(1.),
 
     /// Sets the preferred aspect ratio for the view.
     ///
@@ -2057,6 +2063,19 @@ prop_extractor! {
 }
 
 prop_extractor! {
+    pub(crate) ResolveFontProps {
+        pub font_size: FontSize,
+        pub line_height: LineHeight,
+    }
+}
+
+impl ResolveFontProps {
+    pub(crate) fn length_resolve_cx(&self) -> FontSizeCx {
+        merged_length_resolve_cx(self.font_size(), self.line_height())
+    }
+}
+
+prop_extractor! {
     pub(crate) LayoutProps {
         // display is used here to just to properly trigger transitions on layout change. it is not transitioned here
         pub border_left: BorderLeft,
@@ -2130,20 +2149,14 @@ impl TransformProps {
         }
     }
 
-    pub fn affine(&self, size: kurbo::Size) -> Affine {
+    pub fn affine(&self, size: kurbo::Size, resolve_cx: &FontSizeCx) -> Affine {
         let mut result = Affine::IDENTITY;
         // CANONICAL ORDER (matches CSS individual properties):
         // 1. translate → 2. rotate → 3. scale → 4. transform property
 
         // 1. Translate
-        let transform_x = match self.translate_x() {
-            crate::unit::Length::Pt(pt) => pt,
-            crate::unit::Length::Pct(pct) => (pct / 100.) * size.width,
-        };
-        let transform_y = match self.translate_y() {
-            crate::unit::Length::Pt(pt) => pt,
-            crate::unit::Length::Pct(pct) => (pct / 100.) * size.height,
-        };
+        let transform_x = self.translate_x().resolve(size.width, resolve_cx);
+        let transform_y = self.translate_y().resolve(size.height, resolve_cx);
         result *= Affine::translate(Vec2 {
             x: transform_x,
             y: transform_y,
@@ -2183,7 +2196,11 @@ impl TransformProps {
         result
     }
 
-    pub fn clip_rect(&self, mut local_rect: kurbo::Rect) -> Option<RoundedRect> {
+    pub fn clip_rect(
+        &self,
+        mut local_rect: kurbo::Rect,
+        resolve_cx: &FontSizeCx,
+    ) -> Option<RoundedRect> {
         use Overflow::*;
 
         let (overflow_x, overflow_y) = (self.overflow_x(), self.overflow_y());
@@ -2195,7 +2212,7 @@ impl TransformProps {
 
         let border_radius = self
             .border_radius()
-            .resolve_border_radii(local_rect.size().min_side());
+            .resolve_border_radii(local_rect.size().min_side(), resolve_cx);
 
         // Extend to infinity on visible axes
         if overflow_x == Visible {
@@ -2221,22 +2238,22 @@ impl LayoutProps {
         }
     }
 
-    pub fn apply_to_taffy_style(&self, style: &mut TaffyStyle) {
+    pub fn apply_to_taffy_style(&self, style: &mut TaffyStyle, resolve_cx: &FontSizeCx) {
         style.size = taffy::prelude::Size {
-            width: self.width().into(),
-            height: self.height().into(),
+            width: self.width().to_taffy_dim(resolve_cx),
+            height: self.height().to_taffy_dim(resolve_cx),
         };
         style.min_size = taffy::prelude::Size {
-            width: self.min_width().into(),
-            height: self.min_height().into(),
+            width: self.min_width().to_taffy_dim(resolve_cx),
+            height: self.min_height().to_taffy_dim(resolve_cx),
         };
         style.max_size = taffy::prelude::Size {
-            width: self.max_width().into(),
-            height: self.max_height().into(),
+            width: self.max_width().to_taffy_dim(resolve_cx),
+            height: self.max_height().to_taffy_dim(resolve_cx),
         };
         style.flex_grow = self.flex_grow();
         style.flex_shrink = self.flex_shrink();
-        style.flex_basis = self.flex_basis().into();
+        style.flex_basis = self.flex_basis().to_taffy_dim(resolve_cx);
         style.border = Rect {
             left: LengthPercentage::length(self.border_left().width as f32),
             top: LengthPercentage::length(self.border_top().width as f32),
@@ -2244,26 +2261,26 @@ impl LayoutProps {
             bottom: LengthPercentage::length(self.border_bottom().width as f32),
         };
         style.padding = Rect {
-            left: self.padding_left().into(),
-            top: self.padding_top().into(),
-            right: self.padding_right().into(),
-            bottom: self.padding_bottom().into(),
+            left: self.padding_left().to_taffy(resolve_cx),
+            top: self.padding_top().to_taffy(resolve_cx),
+            right: self.padding_right().to_taffy(resolve_cx),
+            bottom: self.padding_bottom().to_taffy(resolve_cx),
         };
         style.margin = Rect {
-            left: self.margin_left().into(),
-            top: self.margin_top().into(),
-            right: self.margin_right().into(),
-            bottom: self.margin_bottom().into(),
+            left: self.margin_left().to_taffy_len_perc_auto(resolve_cx),
+            top: self.margin_top().to_taffy_len_perc_auto(resolve_cx),
+            right: self.margin_right().to_taffy_len_perc_auto(resolve_cx),
+            bottom: self.margin_bottom().to_taffy_len_perc_auto(resolve_cx),
         };
         style.inset = Rect {
-            left: self.inset_left().into(),
-            top: self.inset_top().into(),
-            right: self.inset_right().into(),
-            bottom: self.inset_bottom().into(),
+            left: self.inset_left().to_taffy_len_perc_auto(resolve_cx),
+            top: self.inset_top().to_taffy_len_perc_auto(resolve_cx),
+            right: self.inset_right().to_taffy_len_perc_auto(resolve_cx),
+            bottom: self.inset_bottom().to_taffy_len_perc_auto(resolve_cx),
         };
         style.gap = Size {
-            width: self.col_gap().into(),
-            height: self.row_gap().into(),
+            width: self.col_gap().to_taffy(resolve_cx),
+            height: self.row_gap().to_taffy(resolve_cx),
         };
     }
 }
@@ -2341,6 +2358,7 @@ impl Style {
                 let previous_value = previous_value.clone();
                 StyleMapValue::Context(ContextValue::new(move |style| {
                     let mut base_style = style.clone();
+                    base_style.map_mut().remove(&P::key());
                     // A deferred value for property `P` is allowed to read `P` from context,
                     // e.g. `FontSize := FontSize * 0.8`. If we resolved against the current
                     // style as-is, that lookup would see the context expression we are
@@ -2351,13 +2369,27 @@ impl Style {
                     // inherited fallback carried by `Style`.
                     match previous_value.clone() {
                         Some(previous_value) => {
-                            base_style.map_mut().insert(P::key(), previous_value);
+                            let previous_value = match previous_value
+                                .downcast_ref::<StyleMapValue<P::Type>>()
+                                .unwrap()
+                            {
+                                StyleMapValue::Val(value) | StyleMapValue::Animated(value) => {
+                                    Some(value.clone())
+                                }
+                                StyleMapValue::Context(context_value) => {
+                                    Some(context_value.resolve(&base_style))
+                                }
+                                StyleMapValue::Unset => None,
+                            };
+
+                            if let Some(previous_value) = previous_value {
+                                base_style.map_mut().insert(
+                                    P::key(),
+                                    Rc::new(StyleMapValue::Val(previous_value)),
+                                );
+                            }
                         }
-                        None => {
-                            // Removing the local entry exposes the inherited context fallback
-                            // on `base_style`, if one exists.
-                            base_style.map_mut().remove(&P::key());
-                        }
+                        None => {}
                     }
                     value.resolve(&base_style)
                 }))
@@ -2493,7 +2525,7 @@ impl Style {
         style: impl FnOnce(Style) -> Style,
     ) -> Self {
         let over = style(Style::default());
-        self.set_responsive_selector(ResponsiveSelector::MinWidth(min.into().into()), over);
+        self.set_responsive_selector(ResponsiveSelector::MinWidth(min.into()), over);
         self
     }
 
@@ -2504,7 +2536,7 @@ impl Style {
         style: impl FnOnce(Style) -> Style,
     ) -> Self {
         let over = style(Style::default());
-        self.set_responsive_selector(ResponsiveSelector::MaxWidth(max.into().into()), over);
+        self.set_responsive_selector(ResponsiveSelector::MaxWidth(max.into()), over);
         self
     }
 
@@ -2518,8 +2550,8 @@ impl Style {
         let over = style(Style::default());
         self.set_responsive_selector(
             ResponsiveSelector::WidthRange {
-                min: min.into().into(),
-                max: max.into().into(),
+                min: min.into(),
+                max: max.into(),
             },
             over,
         );
@@ -2602,9 +2634,9 @@ impl Style {
     }
 
     /// Sets the font size for text content.
-    pub fn font_size(self, size: impl Into<Px>) -> Self {
+    pub fn font_size(self, size: impl Into<Pt>) -> Self {
         let px = size.into();
-        self.set_style_value(FontSize, StyleValue::Val(px.0 as f32))
+        self.set_style_value(FontSize, StyleValue::Val(px.0))
     }
 
     /// Makes the view non-focusable through any means.
@@ -3395,8 +3427,14 @@ impl Style {
 }
 
 impl Style {
+    pub(crate) fn length_resolve_cx(&self) -> FontSizeCx {
+        let builtin = self.builtin();
+        merged_length_resolve_cx(builtin.font_size(), builtin.line_height())
+    }
+
     pub fn to_taffy_style(&self) -> TaffyStyle {
         let style = self.builtin();
+        let resolve_cx = self.length_resolve_cx();
         TaffyStyle {
             display: style.display(),
             overflow: taffy::Point {
@@ -3405,21 +3443,21 @@ impl Style {
             },
             position: style.position(),
             size: taffy::prelude::Size {
-                width: style.width().into(),
-                height: style.height().into(),
+                width: style.width().to_taffy_dim(&resolve_cx),
+                height: style.height().to_taffy_dim(&resolve_cx),
             },
             min_size: taffy::prelude::Size {
-                width: style.min_width().into(),
-                height: style.min_height().into(),
+                width: style.min_width().to_taffy_dim(&resolve_cx),
+                height: style.min_height().to_taffy_dim(&resolve_cx),
             },
             max_size: taffy::prelude::Size {
-                width: style.max_width().into(),
-                height: style.max_height().into(),
+                width: style.max_width().to_taffy_dim(&resolve_cx),
+                height: style.max_height().to_taffy_dim(&resolve_cx),
             },
             flex_direction: style.flex_direction(),
             flex_grow: style.flex_grow(),
             flex_shrink: style.flex_shrink(),
-            flex_basis: style.flex_basis().into(),
+            flex_basis: style.flex_basis().to_taffy_dim(&resolve_cx),
             flex_wrap: style.flex_wrap(),
             justify_content: style.justify_content(),
             justify_self: style.justify_self(),
@@ -3438,29 +3476,29 @@ impl Style {
             },
             padding: {
                 Rect {
-                    left: style.padding_left().into(),
-                    top: style.padding_top().into(),
-                    right: style.padding_right().into(),
-                    bottom: style.padding_bottom().into(),
+                    left: style.padding_left().to_taffy(&resolve_cx),
+                    top: style.padding_top().to_taffy(&resolve_cx),
+                    right: style.padding_right().to_taffy(&resolve_cx),
+                    bottom: style.padding_bottom().to_taffy(&resolve_cx),
                 }
             },
             margin: {
                 Rect {
-                    left: style.margin_left().into(),
-                    top: style.margin_top().into(),
-                    right: style.margin_right().into(),
-                    bottom: style.margin_bottom().into(),
+                    left: style.margin_left().to_taffy_len_perc_auto(&resolve_cx),
+                    top: style.margin_top().to_taffy_len_perc_auto(&resolve_cx),
+                    right: style.margin_right().to_taffy_len_perc_auto(&resolve_cx),
+                    bottom: style.margin_bottom().to_taffy_len_perc_auto(&resolve_cx),
                 }
             },
             inset: Rect {
-                left: style.inset_left().into(),
-                top: style.inset_top().into(),
-                right: style.inset_right().into(),
-                bottom: style.inset_bottom().into(),
+                left: style.inset_left().to_taffy_len_perc_auto(&resolve_cx),
+                top: style.inset_top().to_taffy_len_perc_auto(&resolve_cx),
+                right: style.inset_right().to_taffy_len_perc_auto(&resolve_cx),
+                bottom: style.inset_bottom().to_taffy_len_perc_auto(&resolve_cx),
             },
             gap: Size {
-                width: style.col_gap().into(),
-                height: style.row_gap().into(),
+                width: style.col_gap().to_taffy(&resolve_cx),
+                height: style.row_gap().to_taffy(&resolve_cx),
             },
             grid_template_rows: style.grid_template_rows(),
             grid_template_columns: style.grid_template_columns(),

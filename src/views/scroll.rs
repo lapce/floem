@@ -265,18 +265,22 @@ impl ScrollHandle {
                 top_left: crate::view::border_radius(
                     border_radius.top_left.unwrap_or(Length::Pt(0.)),
                     size,
+                    &cx.font_size_cx,
                 ),
                 top_right: crate::view::border_radius(
                     border_radius.top_right.unwrap_or(Length::Pt(0.)),
                     size,
+                    &cx.font_size_cx,
                 ),
                 bottom_left: crate::view::border_radius(
                     border_radius.bottom_left.unwrap_or(Length::Pt(0.)),
                     size,
+                    &cx.font_size_cx,
                 ),
                 bottom_right: crate::view::border_radius(
                     border_radius.bottom_right.unwrap_or(Length::Pt(0.)),
                     size,
+                    &cx.font_size_cx,
                 ),
             }
         };

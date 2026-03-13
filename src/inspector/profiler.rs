@@ -191,7 +191,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
                     )
                     .style(move |s| {
                         s.min_width(0)
-                            .min_height(50.px())
+                            .min_height(50.pt())
                             .width_pct(width * 100.0)
                             .absolute()
                             .inset_left_pct(left * 100.0)

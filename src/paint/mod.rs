@@ -25,6 +25,7 @@ use crossbeam::channel::Receiver;
 use std::sync::mpsc::Receiver;
 
 use crate::ElementId;
+use crate::style::FontSizeCx;
 use crate::view::ViewId;
 use crate::view::stacking::{StackingContextItem, collect_stacking_context_items_into};
 use crate::view::{paint_bg, paint_border, paint_outline};
@@ -133,6 +134,7 @@ pub struct PaintCx<'a> {
     pub layout_rect_local: peniko::kurbo::Rect,
     /// Optional clip for this visual node (from box tree)
     pub clip: Option<RoundedRect>,
+    pub font_size_cx: FontSizeCx,
 }
 
 pub(crate) enum PaintOrPost {
@@ -290,7 +292,7 @@ impl GlobalPaintCx<'_> {
         let layout_rect = layout_rect_local;
         let view_id = element_id.owning_id();
         let view = view_id.view();
-        let view_state = element_id.is_view().then(|| view_id.state());
+        let view_state = view_id.state();
 
         // Create per-target PaintCx
         let mut cx = PaintCx {
@@ -300,19 +302,19 @@ impl GlobalPaintCx<'_> {
             world_transform,
             layout_rect_local,
             clip,
+            font_size_cx: view_state.borrow().resolve_font_props.length_resolve_cx(),
         };
 
         if !is_post {
-            if let Some(view_state) = view_state.as_ref() {
-                let state = view_state.borrow();
-                paint_bg(&mut cx, &state.view_style_props, layout_rect);
-                paint_border(
-                    &mut cx,
-                    &state.layout_props,
-                    &state.view_style_props,
-                    layout_rect,
-                );
-            }
+            let state = view_state.borrow();
+            paint_bg(&mut cx, &state.view_style_props, layout_rect);
+            paint_border(
+                &mut cx,
+                &state.layout_props,
+                &state.view_style_props,
+                layout_rect,
+            );
+            drop(state);
             // Apply overflow clip (stays active through children)
             if let Some(clip_shape) = clip {
                 cx.clip(&clip_shape);
@@ -323,10 +325,8 @@ impl GlobalPaintCx<'_> {
                 cx.clear_clip();
             }
             view.borrow_mut().post_paint(&mut cx);
-            if let Some(view_state) = view_state.as_ref() {
-                let state = view_state.borrow();
-                paint_outline(&mut cx, &state.view_style_props, layout_rect);
-            }
+            let state = view_state.borrow();
+            paint_outline(&mut cx, &state.view_style_props, layout_rect);
         }
     }
 }

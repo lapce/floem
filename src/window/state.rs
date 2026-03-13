@@ -1054,6 +1054,7 @@ impl WindowState {
                         let overlay_element_id = overlay_state_borrow.element_id;
                         let overlay_layout_id = overlay_state_borrow.layout_id;
                         let overlay_transform = overlay_state_borrow.transform;
+                        let resolve_cx = overlay_state_borrow.resolve_font_props.length_resolve_cx();
                         let style_transform_props =
                             overlay_state_borrow.view_transform_props.clone();
                         drop(overlay_state_borrow);
@@ -1075,7 +1076,7 @@ impl WindowState {
                         let local_pos =
                             Point::new(layout.location.x as f64, layout.location.y as f64);
 
-                        let style_transform = style_transform_props.affine(size);
+                        let style_transform = style_transform_props.affine(size, &resolve_cx);
                         let view_local_transform = style_transform * overlay_transform;
                         let base_local_transform = Affine::translate(-parent_scroll)
                             * Affine::translate(local_pos.to_vec2())
@@ -1117,7 +1118,6 @@ impl WindowState {
                 .filter_map(|&view_id| {
                     let state = s.states.get(view_id)?;
                     let state_borrow = state.borrow();
-                    let builtin = state_borrow.combined_style.builtin();
                     let element_id = state_borrow.element_id;
                     let local_bounds = self
                         .box_tree
@@ -1126,26 +1126,48 @@ impl WindowState {
                         .unwrap_or_default();
 
                     let mut pos = Point::new(0.0, 0.0);
+                    let resolve_cx = state_borrow.resolve_font_props.length_resolve_cx();
+                    let layout_props = &state_borrow.layout_props;
 
                     if let (Some(left), Some(_)) = (
-                        builtin.inset_left().resolve(root_size.width),
-                        builtin.inset_right().resolve(root_size.width),
+                        layout_props
+                            .inset_left()
+                            .resolve_with_ctx(root_size.width, &resolve_cx),
+                        layout_props
+                            .inset_right()
+                            .resolve_with_ctx(root_size.width, &resolve_cx),
                     ) {
                         pos.x = left;
-                    } else if let Some(left) = builtin.inset_left().resolve(root_size.width) {
+                    } else if let Some(left) = layout_props
+                        .inset_left()
+                        .resolve_with_ctx(root_size.width, &resolve_cx)
+                    {
                         pos.x = left;
-                    } else if let Some(right) = builtin.inset_right().resolve(root_size.width) {
+                    } else if let Some(right) = layout_props
+                        .inset_right()
+                        .resolve_with_ctx(root_size.width, &resolve_cx)
+                    {
                         pos.x = root_size.width - right - local_bounds.width();
                     }
 
                     if let (Some(top), Some(_)) = (
-                        builtin.inset_top().resolve(root_size.height),
-                        builtin.inset_bottom().resolve(root_size.height),
+                        layout_props
+                            .inset_top()
+                            .resolve_with_ctx(root_size.height, &resolve_cx),
+                        layout_props
+                            .inset_bottom()
+                            .resolve_with_ctx(root_size.height, &resolve_cx),
                     ) {
                         pos.y = top;
-                    } else if let Some(top) = builtin.inset_top().resolve(root_size.height) {
+                    } else if let Some(top) = layout_props
+                        .inset_top()
+                        .resolve_with_ctx(root_size.height, &resolve_cx)
+                    {
                         pos.y = top;
-                    } else if let Some(bottom) = builtin.inset_bottom().resolve(root_size.height) {
+                    } else if let Some(bottom) = layout_props
+                        .inset_bottom()
+                        .resolve_with_ctx(root_size.height, &resolve_cx)
+                    {
                         pos.y = root_size.height - bottom - local_bounds.height();
                     }
 
@@ -1388,10 +1410,13 @@ fn compute_view_box_properties(
     let state = s.states.get(view_id).unwrap();
     let state_borrow = state.borrow();
 
-    let style_transform = state_borrow.view_transform_props.affine(size);
+    let resolve_cx = state_borrow.resolve_font_props.length_resolve_cx();
+    let style_transform = state_borrow.view_transform_props.affine(size, &resolve_cx);
     let view_local_transform = style_transform * state_borrow.transform;
     let scroll_offset = state_borrow.child_translation;
-    let clip = state_borrow.view_transform_props.clip_rect(local_rect);
+    let clip = state_borrow
+        .view_transform_props
+        .clip_rect(local_rect, &resolve_cx);
     let element_id = state_borrow.element_id;
 
     drop(state_borrow);

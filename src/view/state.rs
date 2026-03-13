@@ -13,7 +13,7 @@ use crate::{
         Background, BorderBottomColor, BorderBottomLeftRadius, BorderBottomRightRadius,
         BorderLeftColor, BorderRightColor, BorderTopColor, BorderTopLeftRadius,
         BorderTopRightRadius, BoxShadowProp, CursorStyle, InheritedInteractionCx, LayoutProps,
-        Outline, OutlineColor, Style, StyleClassRef, StyleSelectors, TransformProps,
+        Outline, OutlineColor, ResolveFontProps, Style, StyleClassRef, StyleSelectors, TransformProps,
         recalc::StyleReason,
     },
     view::LayoutTree,
@@ -305,6 +305,7 @@ pub struct ViewState {
     pub(crate) layout_props: LayoutProps,
     pub(crate) view_style_props: ViewStyleProps,
     pub(crate) view_transform_props: TransformProps,
+    pub(crate) resolve_font_props: ResolveFontProps,
     pub(crate) animations: Stack<Animation>,
     pub(crate) classes: SmallVec<[StyleClassRef; 4]>,
     pub(crate) dragging_style: Option<Style>,
@@ -325,6 +326,8 @@ pub struct ViewState {
     /// - Visual properties (background, border, transform)
     /// - Anything that affects what gets rendered
     /// - Converting to taffy style for layout engine
+    ///
+    /// This DOES NOT have final interpolated values and it DOES NOT resolve properties into points.
     pub(crate) computed_style: Style,
     /// this can be used to make it so that a view will pull it's style context from a different parent.
     /// This is useful for overlays that are children of the window root but should pull their style cx from the creating view
@@ -412,6 +415,7 @@ impl ViewState {
             view_style_offset,
             layout_props: Default::default(),
             view_style_props: Default::default(),
+            resolve_font_props: Default::default(),
             has_style_selectors: None,
             animations: Default::default(),
             classes: SmallVec::new(),

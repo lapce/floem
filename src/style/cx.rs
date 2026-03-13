@@ -411,6 +411,11 @@ impl<'a> StyleCx<'a> {
                 // borrow needed for the extractors. This includes animated values.
                 let computed = vs.computed_style.clone();
 
+                // Resolution context properties must be extracted first because layout and
+                // transform resolution of em/lh units depends on the interpolated values.
+                vs.resolve_font_props
+                    .read_explicit(&computed, &self.now, &mut transitioning);
+
                 // Layout properties (padding, margin, size, etc.)
                 vs.layout_props
                     .read_explicit(&computed, &self.now, &mut transitioning);
@@ -517,7 +522,9 @@ impl<'a> StyleCx<'a> {
                 let is_hidden_final = self.view_interact_state.is_hidden
                     || display_override.is_some_and(|d| d == taffy::Display::None);
                 let mut taffy_style = vs.combined_style.to_taffy_style();
-                vs.layout_props.apply_to_taffy_style(&mut taffy_style);
+                let resolve_cx = vs.resolve_font_props.length_resolve_cx();
+                vs.layout_props
+                    .apply_to_taffy_style(&mut taffy_style, &resolve_cx);
                 if let Some(display_override) = display_override {
                     taffy_style.display = display_override;
                 }
