@@ -24,6 +24,7 @@ use softbuffer::{Context, Surface};
 use std::cell::RefCell;
 use std::num::NonZeroU32;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use swash::FontRef;
 use swash::scale::image::Content;
 use swash::scale::{Render, ScaleContext, Source, StrikeWith};
@@ -93,7 +94,7 @@ thread_local! {
     static SCALED_IMAGE_CACHE: RefCell<FxHashMap<ScaledImageCacheKey, (CacheColor, Arc<Pixmap>)>> = RefCell::new(FxHashMap::default());
     #[allow(clippy::type_complexity)]
     // The `u32` is a color encoded as a u32 so that it is hashable and eq.
-    static GLYPH_CACHE: RefCell<FxHashMap<(GlyphCacheKey, u32), (CacheColor, Option<Arc<Glyph>>)>> = RefCell::new(FxHashMap::default());
+    static GLYPH_CACHE: RefCell<FxHashMap<(GlyphCacheKey, u32), GlyphCacheEntry>> = RefCell::new(FxHashMap::default());
     static SCALE_CONTEXT: RefCell<ScaleContext> = RefCell::new(ScaleContext::new());
 }
 
@@ -112,11 +113,13 @@ fn cache_glyph(
     offset_y: f32,
 ) -> Option<Arc<Glyph>> {
     let c = color.to_rgba8();
+    let now = Instant::now();
 
     if let Some(opt_glyph) = GLYPH_CACHE.with_borrow_mut(|gc| {
-        if let Some((color, glyph)) = gc.get_mut(&(cache_key, c.to_u32())) {
-            *color = cache_color;
-            Some(glyph.clone())
+        if let Some(entry) = gc.get_mut(&(cache_key, c.to_u32())) {
+            entry.cache_color = cache_color;
+            entry.last_touched = now;
+            Some(entry.glyph.clone())
         } else {
             None
         }
@@ -181,8 +184,16 @@ fn cache_glyph(
         }))
     };
 
-    GLYPH_CACHE
-        .with_borrow_mut(|gc| gc.insert((cache_key, c.to_u32()), (cache_color, result.clone())));
+    GLYPH_CACHE.with_borrow_mut(|gc| {
+        gc.insert(
+            (cache_key, c.to_u32()),
+            GlyphCacheEntry {
+                cache_color,
+                glyph: result.clone(),
+                last_touched: now,
+            },
+        )
+    });
 
     result
 }
@@ -212,6 +223,22 @@ pub(crate) struct ClipPath {
 
 #[derive(PartialEq, Clone, Copy)]
 struct CacheColor(bool);
+
+const GLYPH_CACHE_MIN_TTL: Duration = Duration::from_millis(100);
+
+struct GlyphCacheEntry {
+    cache_color: CacheColor,
+    glyph: Option<Arc<Glyph>>,
+    last_touched: Instant,
+}
+
+fn should_retain_glyph_entry(
+    entry: &GlyphCacheEntry,
+    cache_color: CacheColor,
+    now: Instant,
+) -> bool {
+    entry.cache_color == cache_color || now.duration_since(entry.last_touched) < GLYPH_CACHE_MIN_TTL
+}
 
 #[derive(Hash, PartialEq, Eq)]
 struct ScaledImageCacheKey {
@@ -1470,7 +1497,10 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
         // Remove cache entries which were not accessed.
         IMAGE_CACHE.with_borrow_mut(|ic| ic.retain(|_, (c, _)| *c == self.cache_color));
         SCALED_IMAGE_CACHE.with_borrow_mut(|ic| ic.retain(|_, (c, _)| *c == self.cache_color));
-        GLYPH_CACHE.with_borrow_mut(|gc| gc.retain(|_, (c, _)| *c == self.cache_color));
+        let now = Instant::now();
+        GLYPH_CACHE.with_borrow_mut(|gc| {
+            gc.retain(|_, entry| should_retain_glyph_entry(entry, self.cache_color, now))
+        });
 
         // Swap the cache color.
         self.cache_color = CacheColor(!self.cache_color.0);
@@ -2019,5 +2049,36 @@ mod tests {
     fn embolden_strength_scales_with_raster_scale() {
         assert!((scaled_embolden_strength(0.2, 1.5) - 0.3).abs() < f32::EPSILON);
         assert_eq!(scaled_embolden_strength(0.2, 0.0), 0.0);
+    }
+
+    #[test]
+    fn glyph_cache_entries_get_a_minimum_ttl() {
+        let now = Instant::now();
+        let stale_but_recent = GlyphCacheEntry {
+            cache_color: CacheColor(true),
+            glyph: None,
+            last_touched: now - Duration::from_millis(50),
+        };
+        let stale_and_old = GlyphCacheEntry {
+            cache_color: CacheColor(true),
+            glyph: None,
+            last_touched: now - Duration::from_millis(150),
+        };
+
+        assert!(should_retain_glyph_entry(
+            &stale_but_recent,
+            CacheColor(false),
+            now
+        ));
+        assert!(!should_retain_glyph_entry(
+            &stale_and_old,
+            CacheColor(false),
+            now
+        ));
+        assert!(should_retain_glyph_entry(
+            &stale_and_old,
+            CacheColor(true),
+            now
+        ));
     }
 }
