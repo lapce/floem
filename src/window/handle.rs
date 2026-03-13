@@ -160,35 +160,15 @@ impl WindowHandle {
         let window: Arc<dyn Window> = window.into();
         store_window_id_mapping(id, window_id, &window);
 
-        let paint_state = if let Some(resources) = gpu_resources.clone() {
-            let surface = resources
-                .instance
-                .create_surface(Arc::clone(&window))
-                .expect("can create second window");
-            PaintState::new(
-                window.clone(),
-                surface,
-                resources,
-                os_scale,
-                size.get_untracked() * os_scale,
-                font_embolden,
-            )
-        } else {
-            let gpu_resources_rx = GpuResources::request(
-                move |window_id| {
-                    Application::send_proxy_event(UserEvent::GpuResourcesUpdate { window_id });
-                },
-                required_features,
-                backends,
-                window.clone(),
-            );
-            PaintState::new_pending(
-                window.clone(),
-                gpu_resources_rx,
-                size.get_untracked() * os_scale,
-                font_embolden,
-            )
-        };
+        let paint_state = Self::new_paint_state(
+            window.clone(),
+            gpu_resources.clone(),
+            os_scale,
+            size.get_untracked() * os_scale,
+            font_embolden,
+            required_features,
+            backends,
+        );
 
         let paint_state_initialized = matches!(paint_state, PaintState::Initialized { .. });
 
@@ -245,6 +225,48 @@ impl WindowHandle {
             .mark_style_dirty_selector(window_handle.id.get_element_id(), StyleSelector::DarkMode);
         window_handle.size(size.get_untracked());
         window_handle
+    }
+
+    #[cfg(feature = "skia")]
+    fn new_paint_state(
+        window: Arc<dyn Window>,
+        _gpu_resources: Option<GpuResources>,
+        os_scale: f64,
+        size: Size,
+        font_embolden: f32,
+        _required_features: wgpu::Features,
+        _backends: Option<wgpu::Backends>,
+    ) -> PaintState {
+        PaintState::new_skia(window, os_scale, size, font_embolden)
+    }
+
+    #[cfg(not(feature = "skia"))]
+    fn new_paint_state(
+        window: Arc<dyn Window>,
+        gpu_resources: Option<GpuResources>,
+        os_scale: f64,
+        size: Size,
+        font_embolden: f32,
+        required_features: wgpu::Features,
+        backends: Option<wgpu::Backends>,
+    ) -> PaintState {
+        if let Some(resources) = gpu_resources {
+            let surface = resources
+                .instance
+                .create_surface(Arc::clone(&window))
+                .expect("can create second window");
+            PaintState::new(window, surface, resources, os_scale, size, font_embolden)
+        } else {
+            let gpu_resources_rx = GpuResources::request(
+                move |window_id| {
+                    Application::send_proxy_event(UserEvent::GpuResourcesUpdate { window_id });
+                },
+                required_features,
+                backends,
+                window.clone(),
+            );
+            PaintState::new_pending(window, gpu_resources_rx, size, font_embolden)
+        }
     }
 
     /// Creates a headless WindowHandle for testing purposes.

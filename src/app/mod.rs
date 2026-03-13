@@ -124,6 +124,7 @@ pub(crate) enum UserEvent {
     Reopen {
         has_visible_windows: bool,
     },
+    #[cfg(not(feature = "skia"))]
     GpuResourcesUpdate {
         window_id: WindowId,
     },
