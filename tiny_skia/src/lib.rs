@@ -9,12 +9,13 @@ use floem_renderer::tiny_skia::{
     Path, PathBuilder, Pixmap, PixmapPaint, PremultipliedColorU8, RadialGradient, Shader,
     SpreadMode, Stroke, Transform,
 };
+use peniko::color::{self, ColorSpaceTag, DynamicColor, HueDirection, Srgb};
 use peniko::kurbo::{PathEl, Size};
 use peniko::{
     BlendMode, Blob, Compose, ImageAlphaType, ImageData, ImageQuality, Mix, RadialGradientPosition,
 };
 use peniko::{
-    BrushRef, Color, GradientKind,
+    BrushRef, Color, Extend, Gradient, GradientKind,
     kurbo::{Affine, Point, Rect, Shape},
 };
 use recording::{RecordedCommand, RecordedLayer, Recording};
@@ -1649,17 +1650,14 @@ fn brush_to_paint<'b>(brush: impl Into<BrushRef<'b>>) -> Option<Paint<'static>> 
     let shader = match brush.into() {
         BrushRef::Solid(c) => Shader::SolidColor(to_color(c)),
         BrushRef::Gradient(g) => {
-            let stops = g
-                .stops
-                .iter()
-                .map(|s| GradientStop::new(s.offset, to_color(s.color.to_alpha_color())))
-                .collect();
+            let stops = expand_gradient_stops(g);
+            let spread_mode = to_spread_mode(g.extend);
             match g.kind {
                 GradientKind::Linear(linear) => LinearGradient::new(
                     to_point(linear.start),
                     to_point(linear.end),
                     stops,
-                    SpreadMode::Pad,
+                    spread_mode,
                     Transform::identity(),
                 )?,
                 GradientKind::Radial(RadialGradientPosition {
@@ -1674,7 +1672,7 @@ fn brush_to_paint<'b>(brush: impl Into<BrushRef<'b>>) -> Option<Paint<'static>> 
                         to_point(end_center),
                         end_radius,
                         stops,
-                        SpreadMode::Pad,
+                        spread_mode,
                         Transform::identity(),
                     )?
                 }
@@ -1687,6 +1685,115 @@ fn brush_to_paint<'b>(brush: impl Into<BrushRef<'b>>) -> Option<Paint<'static>> 
         shader,
         ..Default::default()
     })
+}
+
+const GRADIENT_TOLERANCE: f32 = 0.01;
+
+fn expand_gradient_stops(gradient: &Gradient) -> Vec<GradientStop> {
+    if gradient.stops.is_empty() {
+        return Vec::new();
+    }
+
+    if gradient.stops.len() == 1 {
+        let stop = &gradient.stops[0];
+        let color = stop
+            .color
+            .to_alpha_color::<Srgb>()
+            .convert::<peniko::color::Srgb>();
+        return vec![GradientStop::new(
+            stop.offset,
+            alpha_color_to_tiny_skia(color),
+        )];
+    }
+
+    let mut expanded = Vec::new();
+    for segment in gradient.stops.windows(2) {
+        let start = segment[0];
+        let end = segment[1];
+        if start.offset == end.offset {
+            push_gradient_stop(
+                &mut expanded,
+                start.offset,
+                start.color.to_alpha_color::<Srgb>(),
+            );
+            push_gradient_stop(
+                &mut expanded,
+                end.offset,
+                end.color.to_alpha_color::<Srgb>(),
+            );
+            continue;
+        }
+
+        expand_gradient_segment(
+            &mut expanded,
+            start.offset,
+            start.color,
+            end.offset,
+            end.color,
+            gradient.interpolation_cs,
+            gradient.hue_direction,
+        );
+    }
+
+    expanded
+}
+
+fn expand_gradient_segment(
+    expanded: &mut Vec<GradientStop>,
+    start_offset: f32,
+    start_color: DynamicColor,
+    end_offset: f32,
+    end_color: DynamicColor,
+    interpolation_cs: ColorSpaceTag,
+    hue_direction: HueDirection,
+) {
+    let push_sample =
+        |expanded: &mut Vec<GradientStop>, t: f32, color: peniko::color::AlphaColor<Srgb>| {
+            let offset = start_offset + (end_offset - start_offset) * t;
+            push_gradient_stop(expanded, offset, color);
+        };
+
+    for (i, (t, color)) in color::gradient::<Srgb>(
+        start_color,
+        end_color,
+        interpolation_cs,
+        hue_direction,
+        GRADIENT_TOLERANCE,
+    )
+    .enumerate()
+    {
+        if !expanded.is_empty() && i == 0 {
+            continue;
+        }
+        push_sample(expanded, t, color.un_premultiply());
+    }
+}
+
+fn push_gradient_stop(
+    expanded: &mut Vec<GradientStop>,
+    offset: f32,
+    color: peniko::color::AlphaColor<Srgb>,
+) {
+    let tiny_color = alpha_color_to_tiny_skia(color);
+    if let Some(previous) = expanded.last()
+        && previous == &GradientStop::new(offset, tiny_color)
+    {
+        return;
+    }
+    expanded.push(GradientStop::new(offset, tiny_color));
+}
+
+fn alpha_color_to_tiny_skia(color: peniko::color::AlphaColor<Srgb>) -> tiny_skia::Color {
+    let color = color.to_rgba8();
+    tiny_skia::Color::from_rgba8(color.r, color.g, color.b, color.a)
+}
+
+fn to_spread_mode(extend: Extend) -> SpreadMode {
+    match extend {
+        Extend::Pad => SpreadMode::Pad,
+        Extend::Repeat => SpreadMode::Repeat,
+        Extend::Reflect => SpreadMode::Reflect,
+    }
 }
 
 fn to_skia_rect(rect: Rect) -> Option<tiny_skia::Rect> {
@@ -1920,6 +2027,8 @@ fn skia_transform(affine: Affine) -> Transform {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use peniko::color::{ColorSpaceTag, HueDirection, palette::css};
+
     /// Creates a `Layer` directly without a window, for offscreen rendering.
     fn make_layer(width: u32, height: u32) -> Layer {
         Layer {
@@ -1939,6 +2048,27 @@ mod tests {
         let idx = (y * layer.pixmap.width() + x) as usize;
         let pixel = layer.pixmap.pixels()[idx];
         (pixel.red(), pixel.green(), pixel.blue(), pixel.alpha())
+    }
+
+    fn rgba_distance(a: (u8, u8, u8, u8), b: (u8, u8, u8, u8)) -> u32 {
+        a.0.abs_diff(b.0) as u32
+            + a.1.abs_diff(b.1) as u32
+            + a.2.abs_diff(b.2) as u32
+            + a.3.abs_diff(b.3) as u32
+    }
+
+    fn interpolated_midpoint(
+        start: peniko::color::DynamicColor,
+        end: peniko::color::DynamicColor,
+        color_space: ColorSpaceTag,
+        hue_direction: HueDirection,
+    ) -> (u8, u8, u8, u8) {
+        let color = start
+            .interpolate(end, color_space, hue_direction)
+            .eval(0.5)
+            .to_alpha_color::<Srgb>()
+            .to_rgba8();
+        (color.r, color.g, color.b, color.a)
     }
 
     #[test]
@@ -2080,5 +2210,60 @@ mod tests {
             CacheColor(true),
             now
         ));
+    }
+
+    #[test]
+    fn linear_gradient_honors_interpolation_color_space() {
+        let mut layer = make_layer(101, 1);
+        let gradient = Gradient::new_linear(Point::new(0.0, 0.0), Point::new(101.0, 0.0))
+            .with_interpolation_cs(ColorSpaceTag::Oklab)
+            .with_stops([(0.0, css::RED), (1.0, css::BLUE)]);
+
+        layer.fill(&Rect::new(0.0, 0.0, 101.0, 1.0), &gradient, 0.0);
+
+        let rendered = pixel_rgba(&layer, 50, 0);
+        let expected_oklab = interpolated_midpoint(
+            css::RED.into(),
+            css::BLUE.into(),
+            ColorSpaceTag::Oklab,
+            HueDirection::Shorter,
+        );
+        let expected_srgb = interpolated_midpoint(
+            css::RED.into(),
+            css::BLUE.into(),
+            ColorSpaceTag::Srgb,
+            HueDirection::Shorter,
+        );
+
+        assert!(rgba_distance(rendered, expected_oklab) <= 10);
+        assert!(rgba_distance(rendered, expected_srgb) >= 30);
+    }
+
+    #[test]
+    fn linear_gradient_honors_hue_direction() {
+        let mut layer = make_layer(101, 1);
+        let gradient = Gradient::new_linear(Point::new(0.0, 0.0), Point::new(101.0, 0.0))
+            .with_interpolation_cs(ColorSpaceTag::Oklch)
+            .with_hue_direction(HueDirection::Longer)
+            .with_stops([(0.0, css::RED), (1.0, css::BLUE)]);
+
+        layer.fill(&Rect::new(0.0, 0.0, 101.0, 1.0), &gradient, 0.0);
+
+        let rendered = pixel_rgba(&layer, 50, 0);
+        let expected_longer = interpolated_midpoint(
+            css::RED.into(),
+            css::BLUE.into(),
+            ColorSpaceTag::Oklch,
+            HueDirection::Longer,
+        );
+        let expected_shorter = interpolated_midpoint(
+            css::RED.into(),
+            css::BLUE.into(),
+            ColorSpaceTag::Oklch,
+            HueDirection::Shorter,
+        );
+
+        assert!(rgba_distance(rendered, expected_longer) <= 10);
+        assert!(rgba_distance(rendered, expected_shorter) >= 40);
     }
 }

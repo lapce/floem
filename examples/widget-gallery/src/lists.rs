@@ -42,7 +42,7 @@ fn simple_list() -> impl IntoView {
 
 fn enhanced_list() -> impl IntoView {
     let long_list: Vec<(usize, (bool, i32))> =
-        (0..1000000).map(|v| (v as usize, (true, v))).collect();
+        (0..=100000).map(|v| (v as usize, (true, v))).collect();
     let long_list = RwSignal::new(long_list);
 
     let list_width = 180.0;

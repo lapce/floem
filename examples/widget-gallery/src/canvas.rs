@@ -8,7 +8,11 @@ use floem::{
     kurbo::{Affine, Circle, Point, Rect, Shape, Size, Stroke},
     peniko::{
         Gradient, Mix,
-        color::{AlphaColor, ColorSpaceTag::LinearSrgb, Hsl},
+        color::{
+            AlphaColor,
+            ColorSpaceTag::{self, LinearSrgb},
+            Hsl, Hwb, Srgb,
+        },
     },
     prelude::*,
     reactive::{Effect, UpdaterEffect},
@@ -144,8 +148,9 @@ fn draw_transparency_checkerboard(cx: &mut PaintCx, size: Size, clip_path: &impl
 pub struct SatValuePicker {
     id: ViewId,
     size: Size,
-    current_color: AlphaColor<Hsl>,
+    current_color: AlphaColor<Hwb>,
     on_change: Option<Box<dyn Fn(Color)>>,
+    point: Point,
     track: bool,
 }
 impl SatValuePicker {
@@ -158,22 +163,29 @@ impl SatValuePicker {
             size: Size::ZERO,
             current_color: color.convert(),
             on_change: None,
+            point: Point::ZERO,
             track: false,
         }
     }
 
-    fn position_to_hsl(&self, pos: Point) -> AlphaColor<Hsl> {
+    fn position_to_hwb(&self, pos: Point) -> AlphaColor<Hwb> {
         let hue = self.current_color.components[0];
 
-        let saturation =
-            (pos.x / self.size.width * 100.).clamp(0.0 + f64::EPSILON, 100.0 - f64::EPSILON);
+        let s = (pos.x / self.size.width).clamp(f64::EPSILON, 1.0 - f64::EPSILON);
 
-        let value = ((1.0 - (pos.y / self.size.height)) * 100.)
-            .clamp(0.0 + f64::EPSILON, 100.0 - f64::EPSILON);
+        let v = (1.0 - pos.y / self.size.height).clamp(f64::EPSILON, 1.0 - f64::EPSILON);
+
+        let whiteness = (1.0 - s) * v;
+        let blackness = 1.0 - v;
 
         let alpha = self.current_color.components[3];
 
-        AlphaColor::<Hsl>::new([hue, saturation as f32, value as f32, alpha])
+        AlphaColor::<Hwb>::new([
+            hue,
+            (whiteness * 100.0) as f32,
+            (blackness * 100.0) as f32,
+            alpha,
+        ])
     }
 
     pub fn on_change(mut self, on_change: impl Fn(Color) + 'static) -> Self {
@@ -205,7 +217,8 @@ impl View for SatValuePicker {
                 Event::Pointer(PointerEvent::Down(PointerButtonEvent {
                     state, pointer, ..
                 })) => {
-                    self.current_color = self.position_to_hsl(state.logical_point());
+                    self.current_color = self.position_to_hwb(state.logical_point());
+                    self.point = state.logical_point();
                     on_change(self.current_color.convert());
                     self.track = true;
                     if let Some(pointer_id) = pointer.pointer_id {
@@ -213,13 +226,15 @@ impl View for SatValuePicker {
                     }
                 }
                 Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. })) => {
-                    self.current_color = self.position_to_hsl(state.logical_point());
+                    self.current_color = self.position_to_hwb(state.logical_point());
+                    self.point = state.logical_point();
                     on_change(self.current_color.convert());
                     self.track = false;
                 }
                 Event::Pointer(PointerEvent::Move(pu)) => {
                     if self.track {
-                        self.current_color = self.position_to_hsl(pu.current.logical_point());
+                        self.current_color = self.position_to_hwb(pu.current.logical_point());
+                        self.point = pu.current.logical_point();
                         on_change(self.current_color.convert());
                     }
                 }
@@ -236,37 +251,50 @@ impl View for SatValuePicker {
         let rect_path = Rect::ZERO.with_size(size).to_rounded_rect(8.);
         let hue = self.current_color.components[0];
 
-        let lightness_gradient = Gradient::new_linear(Point::ZERO, Point::new(0.0, size.height))
-            .with_stops([(0.0, css::WHITE), (1.0, css::BLACK)]);
-        cx.fill(&rect_path, &lightness_gradient, 0.);
+        // base
+        cx.fill(&rect_path, css::WHITE, 0.);
 
-        cx.push_layer(Mix::Color, 1.0, Affine::IDENTITY, &rect_path);
-
-        let saturation_gradient = Gradient::new_linear(Point::ZERO, Point::new(size.width, 0.0))
+        // saturation gradient
+        let sat_gradient = Gradient::new_linear(Point::ZERO, Point::new(size.width, 0.0))
             .with_stops([
-                (0.0, AlphaColor::<Hsl>::new([hue, 0., 50., 1.])),
-                (1.0, AlphaColor::<Hsl>::new([hue, 100., 50., 1.])),
-            ]);
-        cx.fill(&rect_path, &saturation_gradient, 0.);
+                (0.0, css::WHITE),
+                (1.0, AlphaColor::<Hsl>::new([hue, 100., 50., 1.]).convert()),
+            ])
+            .with_interpolation_cs(ColorSpaceTag::LinearSrgb);
+
+        cx.fill(&rect_path, &sat_gradient, 0.);
+
+        // value gradient
+        cx.push_layer(Mix::Multiply, 1.0, Affine::IDENTITY, &rect_path);
+
+        let val_gradient = Gradient::new_linear(Point::ZERO, Point::new(0.0, size.height))
+            .with_stops([(0.0, Color::from_rgba8(0, 0, 0, 0)), (1.0, css::BLACK)])
+            .with_interpolation_cs(ColorSpaceTag::LinearSrgb);
+
+        cx.fill(&rect_path, &val_gradient, 0.);
 
         cx.pop_layer();
+
         cx.clip(&rect_path);
 
         if size.width > 0.0 && size.height > 0.0 {
-            let saturation = self.current_color.components[1];
-            let value = self.current_color.components[2];
+            // Larger indicator
+            let outer_radius = 8.0;
+            let inner_radius = 5.5;
 
-            let x_pos = saturation as f64 / 100.0 * size.width;
-            let y_pos = (1.0 - value as f64 / 100.0) * size.height;
+            let outer = Circle::new(self.point, outer_radius);
+            let inner = Circle::new(self.point, inner_radius);
 
-            let indicator_radius = 6.0;
-            let indicator_circle = Circle::new(Point::new(x_pos, y_pos), indicator_radius);
-            let inner_indicator_circle =
-                Circle::new(Point::new(x_pos, y_pos), indicator_radius - 2.);
+            // fill center with the selected color
+            cx.fill(&inner, self.current_color.convert::<Srgb>(), 0.);
 
-            cx.stroke(&indicator_circle, css::WHITE, &Stroke::new(2.0));
-            cx.stroke(&inner_indicator_circle, css::BLACK, &Stroke::new(2.0));
+            // white outline for contrast
+            cx.stroke(&outer, css::WHITE, &Stroke::new(2.0));
+
+            // subtle black inner stroke so it works on light backgrounds
+            cx.stroke(&inner, css::BLACK, &Stroke::new(1.0));
         }
+
         cx.clear_clip();
     }
 }
@@ -367,18 +395,11 @@ impl View for HuePicker {
             Point::new(size.width, size.height / 2.0),
         )
         .with_stops([
-            (0.0, Color::from_rgba8(255, 0, 0, 255)),
-            (0.1, Color::from_rgba8(255, 154, 0, 255)),
-            (0.2, Color::from_rgba8(208, 222, 33, 255)),
-            (0.3, Color::from_rgba8(79, 220, 74, 255)),
-            (0.4, Color::from_rgba8(63, 218, 216, 255)),
-            (0.5, Color::from_rgba8(47, 201, 226, 255)),
-            (0.6, Color::from_rgba8(28, 127, 238, 255)),
-            (0.7, Color::from_rgba8(95, 21, 242, 255)),
-            (0.8, Color::from_rgba8(186, 12, 248, 255)),
-            (0.9, Color::from_rgba8(251, 7, 217, 255)),
-            (1.0, Color::from_rgba8(255, 0, 0, 255)),
-        ]);
+            (0.0, AlphaColor::<Hsl>::new([0.0, 100.0, 50.0, 1.0])),
+            (1.0, AlphaColor::<Hsl>::new([360.0, 100.0, 50.0, 1.0])),
+        ])
+        .with_hue_direction(floem::peniko::color::HueDirection::Longer)
+        .with_interpolation_cs(ColorSpaceTag::Hsl);
 
         cx.fill(&rect_path, &hue_gradient, 0.);
         if size.width > 0.0 {

@@ -428,6 +428,12 @@ impl PaintState {
         Self::Initialized { renderer }
     }
 
+    #[cfg(feature = "skia")]
+    pub fn new_skia(window: Arc<dyn Window>, scale: f64, size: Size, font_embolden: f32) -> Self {
+        let renderer = Renderer::new_skia(window.clone(), scale, size, font_embolden);
+        Self::Initialized { renderer }
+    }
+
     pub(crate) fn renderer(&self) -> &Renderer {
         match self {
             PaintState::PendingGpuResources { renderer, .. } => renderer,
