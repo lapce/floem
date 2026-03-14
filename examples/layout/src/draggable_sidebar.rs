@@ -1,6 +1,7 @@
 use floem::{
     prelude::*,
     style::{CustomStylable, CustomStyle},
+    peniko::Brush,
     views::resizable::Resizable,
 };
 
@@ -52,8 +53,8 @@ pub fn draggable_sidebar_view() -> impl IntoView {
     Resizable::new((side_bar, main_window))
         .style(|s| s.width_full().height_full())
         .custom_style(move |s| {
-            s.handle_color(dragger_color)
-                .active(|s| s.handle_color(active_dragger_color))
+            s.handle_color(Brush::Solid(dragger_color))
+                .active(|s| s.handle_color(Brush::Solid(active_dragger_color)))
         })
         .on_event_stop(el::KeyUp, move |_cx, KeyboardEvent { key, .. }| {
             if let Key::Named(NamedKey::F11) = key {

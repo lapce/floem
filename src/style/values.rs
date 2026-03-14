@@ -79,6 +79,7 @@ impl<T> ContextValue<T> {
         if let Some(effect) = &style.effect_context {
             floem_reactive::Runtime::set_current_effect(Some(effect.clone()));
         }
+        // todo use context
         let result = (self.eval)(style);
         floem_reactive::Runtime::set_current_effect(saved_effect);
         result
@@ -92,7 +93,6 @@ impl<T> ContextValue<T> {
         ContextValue::new(move |style| f(eval(style)))
     }
 }
-
 
 pub trait StylePropValue: Clone + PartialEq + Debug {
     fn debug_view(&self) -> Option<Box<dyn View>> {
@@ -289,9 +289,7 @@ impl StylePropValue for ObjectFit {
             s.padding(4.0)
                 .border(1.)
                 .border_radius(5.0)
-                .with_theme(move |s, t| {
-                    s.border_color(t.border())
-                })
+                .with_theme(move |s, t| s.border_color(t.border()))
         });
 
         let label_text = match object_fit {
@@ -798,10 +796,8 @@ impl StylePropValue for Stroke {
         .style(move |s| s.width(80.0).height(20.0))
         .container()
         .style(move |s| {
-            s.with_theme(move |s, t| {
-                s.border_color(t.border())
-            })
-            .padding(4.0)
+            s.with_theme(move |s, t| s.border_color(t.border()))
+                .padding(4.0)
         });
 
         let tooltip_view = move || {
@@ -1348,7 +1344,7 @@ pub enum StyleMapValue<T> {
     /// Value set directly
     Val(T),
     /// Value resolved from inherited context when the property is read.
-    Context(ContextValue<StyleMapValue<T>>),
+    Context(ContextValue<T>),
     /// Use the default value for the style, typically from the underlying `ComputedStyle`
     Unset,
 }

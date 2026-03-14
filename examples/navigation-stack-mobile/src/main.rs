@@ -6,6 +6,7 @@ use floem::{
     new_window,
     peniko::Color,
     prelude::*,
+    style::Style,
     text::Alignment,
     theme::StyleThemeExt,
     view::ViewId,
@@ -101,11 +102,11 @@ impl Spot {
                 s.width_full()
                     .padding(18.0)
                     .row_gap(10.0)
+                    .border_color(self.accent.with_alpha(0.25))
+                    .border(1.0)
                     .with_theme(move |s, t| {
                         s.border_radius(t.border_radius())
                             .background(t.bg_elevated())
-                            .border_color(self.accent.with_alpha(0.25))
-                            .border(1.0)
                     })
             })
             .debug_name("content");
@@ -220,7 +221,7 @@ impl Spot {
                     .with_theme(|s, t| {
                         s.border_radius(t.border_radius())
                             .background(t.bg_elevated())
-                            .border(1.0)
+                            .apply(Style::new().border(1.0))
                             .border_color(t.border())
                     })
             })
@@ -279,11 +280,11 @@ impl Spot {
                     .padding(22.0)
                     .max_width(400)
                     .with_theme(move |s, t| {
-                        let semantic = result.color(t);
+                        let semantic = t.def(move |theme| result.color(&theme));
                         s.border_radius(t.border_radius())
                             .background(t.bg_elevated())
-                            .border(1.0)
-                            .border_color(semantic.with_alpha(0.3))
+                            .apply(Style::new().border(1.0))
+                            .border_color(semantic.map(|color| color.with_alpha(0.3)))
                     })
             })
             .debug_name("result_body");
@@ -724,7 +725,7 @@ fn home_screen() -> impl IntoView {
             s.padding(22.0).row_gap(10.0).with_theme(|s, t| {
                 s.border_radius(t.border_radius())
                     .background(t.bg_elevated())
-                    .border(1.0)
+                    .apply(Style::new().border(1.0))
                     .border_color(t.border())
             })
         })
@@ -763,9 +764,9 @@ fn floating_action_button() -> impl IntoView {
                 .font_bold()
                 .justify_center()
                 .with_theme(|s, t| {
-                    s.border_radius(999.0)
-                        .background(t.bg_elevated().with_alpha(0.96))
-                        .border(1.0)
+                    s.apply(Style::new().border_radius(999.0))
+                        .background(t.def(|theme| theme.bg_elevated().with_alpha(0.96)))
+                        .apply(Style::new().border(1.0))
                         .border_color(t.border())
                         .color(t.primary())
                 })
@@ -785,7 +786,7 @@ fn quick_action_sheet(button_id: ViewId) -> impl IntoView {
         .style(move |s| {
             s.absolute()
                 .inset(0.0)
-                .with_theme(|s, t| s.background(t.text().with_alpha(0.18)))
+                .with_theme(|s, t| s.background(t.def(|theme| theme.text().with_alpha(0.18))))
         })
         .debug_name("backdrop");
 
@@ -821,7 +822,7 @@ fn quick_action_sheet(button_id: ViewId) -> impl IntoView {
                 .with_theme(|s, t| {
                     s.border_radius(t.border_radius())
                         .background(t.bg_elevated())
-                        .border(1.0)
+                        .apply(Style::new().border(1.0))
                         .border_color(t.border())
                 })
         })
@@ -858,8 +859,9 @@ fn payment_badge(result: PaymentResult) -> impl IntoView {
                 .border_radius(999.0)
                 .font_bold()
                 .with_theme(move |s, t| {
-                    let semantic = result.color(t);
-                    s.background(semantic.with_alpha(0.14)).color(semantic)
+                    let semantic = t.def(move |theme| result.color(&theme));
+                    s.background(semantic.clone().map(|color| color.with_alpha(0.14)))
+                        .color(semantic)
                 })
         })
         .debug_name("payment_badge")

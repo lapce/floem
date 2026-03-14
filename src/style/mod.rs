@@ -216,16 +216,6 @@ pub struct ExprStyle {
     style: Style,
 }
 
-pub trait IntoExprValue<T> {
-    fn into_expr_value(self) -> ContextValue<T>;
-}
-
-impl<T> IntoExprValue<T> for ContextValue<T> {
-    fn into_expr_value(self) -> ContextValue<T> {
-        self
-    }
-}
-
 impl From<Style> for ExprStyle {
     fn from(style: Style) -> Self {
         Self { style }
@@ -374,10 +364,10 @@ impl ExprStyle {
         self.apply(Style::default().class(class, |s| style(s.into()).into()))
     }
 
-    pub fn size<W, H>(self, width: W, height: H) -> Self
+    pub fn size<W, H>(self, width: ContextValue<W>, height: ContextValue<H>) -> Self
     where
-        W: IntoExprValue<W> + Into<PxPctAuto> + 'static,
-        H: IntoExprValue<H> + Into<PxPctAuto> + 'static,
+        W: Into<PxPctAuto> + 'static,
+        H: Into<PxPctAuto> + 'static,
     {
         self.width(width).height(height)
     }
@@ -390,11 +380,10 @@ impl ExprStyle {
         self.set(FlexDirectionProp, FlexDirection::Row)
     }
 
-    pub fn margin<T>(self, margin: impl IntoExprValue<T>) -> Self
+    pub fn margin<T>(self, margin: ContextValue<T>) -> Self
     where
         T: Into<PxPctAuto> + 'static,
     {
-        let margin = margin.into_expr_value();
         let margin = margin.map(Into::into);
         self.set(MarginLeft, margin.clone())
             .set(MarginTop, margin.clone())
@@ -402,19 +391,17 @@ impl ExprStyle {
             .set(MarginBottom, margin)
     }
 
-    pub fn font_weight<T>(self, weight: impl IntoExprValue<T>) -> Self
+    pub fn font_weight<T>(self, weight: ContextValue<T>) -> Self
     where
         T: Into<FontWeightProp> + 'static,
     {
-        let weight = weight.into_expr_value();
         self.set(FontWeight, weight.map(|weight| Some(weight.into())))
     }
 
-    pub fn background<T>(self, color: impl IntoExprValue<T>) -> Self
+    pub fn background<T>(self, color: ContextValue<T>) -> Self
     where
         T: Into<Brush> + 'static,
     {
-        let color = color.into_expr_value();
         self.set(
             Background,
             color.map(|color| {
@@ -424,19 +411,28 @@ impl ExprStyle {
         )
     }
 
-    pub fn color<T>(self, color: impl IntoExprValue<T>) -> Self
+    /// Sets the font size for text content.
+    pub fn font_size<T: Into<Px> + 'static>(self, size: ContextValue<T>) -> Self {
+        self.set(
+            FontSize,
+            size.map(|size| {
+                let size = size.into().0;
+                Some(size as f32)
+            }),
+        )
+    }
+
+    pub fn color<T>(self, color: ContextValue<T>) -> Self
     where
         T: Into<Color> + 'static,
     {
-        let color = color.into_expr_value();
         self.set(TextColor, color.map(|color| Some(color.into())))
     }
 
-    pub fn border_color<T>(self, color: impl IntoExprValue<T>) -> Self
+    pub fn border_color<T>(self, color: ContextValue<T>) -> Self
     where
         T: Into<Brush> + 'static,
     {
-        let color = color.into_expr_value();
         let color = color.map(|color| Some(color.into()));
         self.set(BorderLeftColor, color.clone())
             .set(BorderTopColor, color.clone())
@@ -444,11 +440,10 @@ impl ExprStyle {
             .set(BorderBottomColor, color)
     }
 
-    pub fn border_radius<T>(self, radius: impl IntoExprValue<T>) -> Self
+    pub fn border_radius<T>(self, radius: ContextValue<T>) -> Self
     where
         T: Into<PxPct> + 'static,
     {
-        let radius = radius.into_expr_value();
         let radius = radius.map(Into::into);
         self.set(BorderTopLeftRadius, radius.clone())
             .set(BorderTopRightRadius, radius.clone())
@@ -456,11 +451,10 @@ impl ExprStyle {
             .set(BorderBottomRightRadius, radius)
     }
 
-    pub fn border<T>(self, width: impl IntoExprValue<T>) -> Self
+    pub fn border<T>(self, width: ContextValue<T>) -> Self
     where
         T: Into<Px> + 'static,
     {
-        let width = width.into_expr_value();
         let stroke = width.map(|width| Stroke::new(width.into().0));
         self.set(BorderLeft, stroke.clone())
             .set(BorderTop, stroke.clone())
@@ -468,11 +462,10 @@ impl ExprStyle {
             .set(BorderBottom, stroke)
     }
 
-    pub fn border_top<T>(self, width: impl IntoExprValue<T>) -> Self
+    pub fn border_top<T>(self, width: ContextValue<T>) -> Self
     where
         T: Into<Px> + 'static,
     {
-        let width = width.into_expr_value();
         self.set(BorderTop, width.map(|width| Stroke::new(width.into().0)))
     }
 
@@ -491,15 +484,18 @@ impl ExprStyle {
         self.apply(Style::default().selected(|s| style(s.into()).into()))
     }
 
+    pub fn drag(self, style: impl FnOnce(ExprStyle) -> ExprStyle) -> Self {
+        self.apply(Style::default().drag(|s| style(s.into()).into()))
+    }
+
     pub fn file_hover(self, style: impl FnOnce(ExprStyle) -> ExprStyle) -> Self {
         self.apply(Style::default().file_hover(|s| style(s.into()).into()))
     }
 
-    pub fn padding<T>(self, padding: impl IntoExprValue<T>) -> Self
+    pub fn padding<T>(self, padding: ContextValue<T>) -> Self
     where
         T: Into<PxPct> + 'static,
     {
-        let padding = padding.into_expr_value();
         let padding = padding.map(Into::into);
         self.set(PaddingLeft, padding.clone())
             .set(PaddingTop, padding.clone())
@@ -507,48 +503,43 @@ impl ExprStyle {
             .set(PaddingBottom, padding)
     }
 
-    pub fn padding_horiz<T>(self, padding: impl IntoExprValue<T>) -> Self
+    pub fn padding_horiz<T>(self, padding: ContextValue<T>) -> Self
     where
         T: Into<PxPct> + 'static,
     {
-        let padding = padding.into_expr_value();
         let padding = padding.map(Into::into);
         self.set(PaddingLeft, padding.clone())
             .set(PaddingRight, padding)
     }
 
-    pub fn padding_vert<T>(self, padding: impl IntoExprValue<T>) -> Self
+    pub fn padding_vert<T>(self, padding: ContextValue<T>) -> Self
     where
         T: Into<PxPct> + 'static,
     {
-        let padding = padding.into_expr_value();
         let padding = padding.map(Into::into);
         self.set(PaddingTop, padding.clone())
             .set(PaddingBottom, padding)
     }
 
-    pub fn col_gap<T>(self, gap: impl IntoExprValue<T>) -> Self
+    pub fn col_gap<T>(self, gap: ContextValue<T>) -> Self
     where
         T: Into<PxPct> + 'static,
     {
-        let gap = gap.into_expr_value();
         self.set(ColGap, gap.map(Into::into))
     }
 
-    pub fn gap<T>(self, gap: impl IntoExprValue<T>) -> Self
+    pub fn gap<T>(self, gap: ContextValue<T>) -> Self
     where
         T: Into<PxPct> + 'static,
     {
-        let gap = gap.into_expr_value();
         let gap = gap.map(Into::into);
         self.set(ColGap, gap.clone()).set(RowGap, gap)
     }
 
-    pub fn border_top_color<T>(self, color: impl IntoExprValue<T>) -> Self
+    pub fn border_top_color<T>(self, color: ContextValue<T>) -> Self
     where
         T: Into<Brush> + 'static,
     {
-        let color = color.into_expr_value();
         self.set(BorderTopColor, color.map(|color| Some(color.into())))
     }
 
@@ -572,11 +563,10 @@ impl ExprStyle {
         self.set(Cursor, cursor.into().map(Some))
     }
 
-    pub fn cursor_color<T>(self, color: impl IntoExprValue<T>) -> Self
+    pub fn cursor_color<T>(self, color: ContextValue<T>) -> Self
     where
         T: Into<Brush> + 'static,
     {
-        let color = color.into_expr_value();
         self.set(CursorColor, color.map(Into::into))
     }
 
@@ -1024,46 +1014,24 @@ impl Style {
     }
 
     pub(crate) fn get_prop<P: StyleProp>(&self) -> Option<P::Type> {
-        self.get_prop_in_context::<P>(self)
-    }
-
-    pub(crate) fn get_prop_in_context<P: StyleProp>(
-        &self,
-        context_style: &Style,
-    ) -> Option<P::Type> {
         self.map.get(&P::key()).and_then(|v| {
             match v.downcast_ref::<StyleMapValue<P::Type>>().unwrap() {
-                StyleMapValue::Val(v) | StyleMapValue::Animated(v) => Some(v.clone()),
-                StyleMapValue::Context(expr) => match expr.resolve(context_style) {
-                    StyleMapValue::Val(v) | StyleMapValue::Animated(v) => Some(v),
-                    StyleMapValue::Unset => None,
-                    StyleMapValue::Context(_) => unreachable!(),
-                },
+                StyleMapValue::Animated(v) | StyleMapValue::Val(v) => Some(v.clone()),
+                StyleMapValue::Context(context_value) => Some(context_value.resolve(self)),
                 StyleMapValue::Unset => None,
             }
         })
     }
 
     pub(crate) fn get_prop_style_value<P: StyleProp>(&self) -> StyleValue<P::Type> {
-        self.get_prop_style_value_in_context::<P>(self)
-    }
-
-    pub(crate) fn get_prop_style_value_in_context<P: StyleProp>(
-        &self,
-        context_style: &Style,
-    ) -> StyleValue<P::Type> {
         self.map
             .get(&P::key())
             .map(
                 |v| match v.downcast_ref::<StyleMapValue<P::Type>>().unwrap() {
-                    StyleMapValue::Val(v) => StyleValue::Val(v.clone()),
-                    StyleMapValue::Animated(v) => StyleValue::Animated(v.clone()),
-                    StyleMapValue::Context(v) => match v.resolve(context_style) {
-                        StyleMapValue::Val(v) => StyleValue::Val(v),
-                        StyleMapValue::Animated(v) => StyleValue::Animated(v),
-                        StyleMapValue::Unset => StyleValue::Unset,
-                        StyleMapValue::Context(_) => unreachable!(),
-                    },
+                    StyleMapValue::Val(v) | StyleMapValue::Animated(v) => {
+                        StyleValue::Animated(v.clone())
+                    }
+                    StyleMapValue::Context(v) => StyleValue::Context(v.clone()),
                     StyleMapValue::Unset => StyleValue::Unset,
                 },
             )
@@ -1094,6 +1062,7 @@ impl Style {
                     }
                 }
                 StyleKeyInfo::ResponsiveSelectors => {
+                    result = result.responsive();
                     let rules = &v.downcast_ref::<ResponsiveSelectors>().unwrap().0;
                     for (_, nested_style) in rules {
                         result = result.union(nested_style.as_ref().selectors());
@@ -1482,11 +1451,12 @@ macro_rules! define_builtin_props {
 
     (expr_decl: $(#[$meta:meta])* $type_name:ident $name:ident: $typ:ty = $val:expr) => {
         $(#[$meta])*
-        pub fn $name<T>(self, v: impl $crate::style::IntoExprValue<T>) -> Self
+        // NOTE: ExprStyle setters intentionally take ContextValue<T> directly.
+        // If you think adding an IntoExprValue here is the solution, you are being an idiot!!
+        pub fn $name<T>(self, v: $crate::style::ContextValue<T>) -> Self
         where
             T: Into<$typ> + 'static,
         {
-            let v = v.into_expr_value();
             self.set($type_name, v.map(Into::into))
         }
     };
@@ -1510,11 +1480,12 @@ macro_rules! define_builtin_props {
     };
     (@check_nocb_expr $(#[$meta:meta])* $type_name:ident $name:ident []: $typ:ty) => {
         $(#[$meta])*
-        pub fn $name<T>(self, v: impl $crate::style::IntoExprValue<T>) -> Self
+        // NOTE: ExprStyle setters intentionally take ContextValue<T> directly.
+        // If you think adding an IntoExprValue here is the solution, you are being an idiot!!
+        pub fn $name<T>(self, v: $crate::style::ContextValue<T>) -> Self
         where
             T: Into<$typ> + 'static,
         {
-            let v = v.into_expr_value();
             self.set($type_name, v.map(Into::into))
         }
     };
@@ -2281,7 +2252,7 @@ impl Style {
 
     /// Sets a property to a deferred context-derived value.
     pub fn set_context<P: StyleProp>(self, prop: P, value: ContextValue<P::Type>) -> Self {
-        self.set_style_map_value(prop, StyleMapValue::Context(value.map(StyleMapValue::Val)))
+        self.set_style_value(prop, StyleValue::Context(value))
     }
 
     pub fn set_from_context<C: StyleProp, P: StyleProp>(
@@ -2305,14 +2276,7 @@ impl Style {
         prop: P,
         value: ContextValue<Option<T>>,
     ) -> Self {
-        self.set_style_map_value(
-            prop,
-            StyleMapValue::Context(value.map(|value| {
-                value
-                    .map(|value| StyleMapValue::Val(Some(value)))
-                    .unwrap_or(StyleMapValue::Unset)
-            })),
-        )
+        self.set_style_value(prop, StyleValue::Context(value))
     }
 
     pub fn set_from_context_opt<C: StyleProp, P: StyleProp<Type = Option<T>>, T: 'static>(
@@ -2328,49 +2292,17 @@ impl Style {
     }
 
     pub fn set_style_value<P: StyleProp>(mut self, _prop: P, value: StyleValue<P::Type>) -> Self {
-        if matches!(value, StyleValue::Base) {
-            if self.map_mut().remove(&P::key()).is_some() {
-                self.merge_id = next_style_merge_id();
-            }
-            return self;
-        }
-        let map_value = match value {
-            StyleValue::Context(value) => StyleMapValue::Context(value.map(StyleMapValue::Val)),
+        let insert = match value {
             StyleValue::Val(value) => StyleMapValue::Val(value),
             StyleValue::Animated(value) => StyleMapValue::Animated(value),
+            StyleValue::Context(value) => StyleMapValue::Context(value),
             StyleValue::Unset => StyleMapValue::Unset,
-            StyleValue::Base => unreachable!(),
-        };
-        self.set_style_map_value(_prop, map_value)
-    }
-
-    fn set_style_map_value<P: StyleProp>(
-        mut self,
-        _prop: P,
-        value: StyleMapValue<P::Type>,
-    ) -> Self {
-        let previous_value = self.map.get(&P::key()).cloned();
-        let insert = match value {
-            StyleMapValue::Val(value) => StyleMapValue::Val(value),
-            StyleMapValue::Animated(value) => StyleMapValue::Animated(value),
-            StyleMapValue::Context(value) => {
-                // Same-prop deferred values should resolve against the previous value of this
-                // property, not against the context expression being installed now.
-                let previous_value = previous_value.clone();
-                StyleMapValue::Context(ContextValue::new(move |style| {
-                    let mut base_style = style.clone();
-                    match previous_value.clone() {
-                        Some(previous_value) => {
-                            base_style.map_mut().insert(P::key(), previous_value);
-                        }
-                        None => {
-                            base_style.map_mut().remove(&P::key());
-                        }
-                    }
-                    value.resolve(&base_style)
-                }))
+            StyleValue::Base => {
+                if self.map_mut().remove(&P::key()).is_some() {
+                    self.merge_id = next_style_merge_id();
+                }
+                return self;
             }
-            StyleMapValue::Unset => StyleMapValue::Unset,
         };
         // Track inherited props for O(1) early-exit in apply_only_inherited
         if P::prop_ref().info().inherited {

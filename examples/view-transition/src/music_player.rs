@@ -112,9 +112,9 @@ pub fn music_player() -> impl IntoView {
             .slider_style(|s| {
                 s.bar_height(3)
                     .accent_bar_height(3.)
-                    .bar_color(SLIDER)
-                    .accent_bar_color(ICON)
-                    .handle_color(Brush::Solid(palette::css::TRANSPARENT))
+                    .bar_color(Some(Brush::Solid(SLIDER)))
+                    .accent_bar_color(Some(Brush::Solid(ICON)))
+                    .handle_color(Some(Brush::Solid(palette::css::TRANSPARENT)))
                     .handle_radius(0)
             }),
         media_buttons,

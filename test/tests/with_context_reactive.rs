@@ -109,11 +109,11 @@ fn test_signal_outside_with_context_is_tracked() {
             if active {
                 s.background(theme.primary_bg())
                     .color(theme.primary_color())
-                    .font_weight(Weight::BOLD)
+                    .font_weight(theme.def(|_| Weight::BOLD))
             } else {
                 s.background(theme.secondary_bg())
                     .color(theme.secondary_color())
-                    .font_weight(Weight::NORMAL)
+                    .font_weight(theme.def(|_| Weight::NORMAL))
             }
         })
     });
@@ -183,11 +183,11 @@ fn test_signal_inside_with_context_is_tracked() {
             if active {
                 s.background(theme.primary_bg())
                     .color(theme.primary_color())
-                    .font_weight(Weight::BOLD)
+                    .font_weight(theme.def(|_| Weight::BOLD))
             } else {
                 s.background(theme.secondary_bg())
                     .color(theme.secondary_color())
-                    .font_weight(Weight::NORMAL)
+                    .font_weight(theme.def(|_| Weight::NORMAL))
             }
         })
     });
@@ -270,11 +270,11 @@ fn test_closure_signal_inside_with_context() {
             if active {
                 s.background(theme.primary_bg())
                     .color(theme.primary_color())
-                    .font_weight(Weight::BOLD)
+                    .font_weight(theme.def(|_| Weight::BOLD))
             } else {
                 s.background(theme.secondary_bg())
                     .color(theme.secondary_color())
-                    .font_weight(Weight::NORMAL)
+                    .font_weight(theme.def(|_| Weight::NORMAL))
             }
         })
     });
@@ -316,9 +316,11 @@ fn test_multiple_views_with_signals_inside_with_context() {
     let view0 = Empty::new().style(move |s| {
         s.size(50.0, 50.0).with_test_theme(move |s, theme| {
             if active_index.get() == 0 {
-                s.background(theme.primary_bg()).font_weight(Weight::BOLD)
+                s.background(theme.primary_bg())
+                    .font_weight(theme.def(|_| Weight::BOLD))
             } else {
-                s.background(theme.secondary_bg()).font_weight(Weight::NORMAL)
+                s.background(theme.secondary_bg())
+                    .font_weight(theme.def(|_| Weight::NORMAL))
             }
         })
     });
@@ -327,9 +329,11 @@ fn test_multiple_views_with_signals_inside_with_context() {
     let view1 = Empty::new().style(move |s| {
         s.size(50.0, 50.0).with_test_theme(move |s, theme| {
             if active_index.get() == 1 {
-                s.background(theme.primary_bg()).font_weight(Weight::BOLD)
+                s.background(theme.primary_bg())
+                    .font_weight(theme.def(|_| Weight::BOLD))
             } else {
-                s.background(theme.secondary_bg()).font_weight(Weight::NORMAL)
+                s.background(theme.secondary_bg())
+                    .font_weight(theme.def(|_| Weight::NORMAL))
             }
         })
     });
@@ -386,11 +390,11 @@ fn test_click_changes_signal_inside_with_context() {
                 if is_active.get() {
                     s.background(theme.primary_bg())
                         .color(theme.primary_color())
-                        .font_weight(Weight::BOLD)
+                        .font_weight(theme.def(|_| Weight::BOLD))
                 } else {
                     s.background(theme.secondary_bg())
                         .color(theme.secondary_color())
-                        .font_weight(Weight::NORMAL)
+                        .font_weight(theme.def(|_| Weight::NORMAL))
                 }
             })
         })
@@ -447,9 +451,9 @@ fn test_child_label_inherits_font_weight_from_parent() {
     let container = Stack::new((label,)).style(move |s| {
         s.size(100.0, 50.0).with_test_theme(move |s, _theme| {
             if is_active.get() {
-                s.font_weight(Weight::BOLD)
+                s.font_weight(_theme.def(|_| Weight::BOLD))
             } else {
-                s.font_weight(Weight::NORMAL)
+                s.font_weight(_theme.def(|_| Weight::NORMAL))
             }
         })
     });
