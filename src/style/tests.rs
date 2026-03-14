@@ -49,9 +49,7 @@ fn style_override() {
 fn context_value_resolves_at_property_read() {
     let style = Style::new()
         .set(TextColor, Some(css::RED))
-        .with::<TextColor>(|s, t| {
-            s.set_context(Background, t.map(|tc| tc.map(Brush::Solid)))
-        });
+        .with::<TextColor>(|s, t| s.set_context(Background, t.map(|tc| tc.map(Brush::Solid))));
 
     assert_eq!(style.get(Background), Some(Brush::Solid(css::RED)));
 }

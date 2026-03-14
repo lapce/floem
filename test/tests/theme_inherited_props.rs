@@ -366,7 +366,7 @@ fn test_with_context_works_when_font_size_is_explicit() {
     let received_font_size: Rc<Cell<Option<f32>>> = Rc::new(Cell::new(None));
     let captured = received_font_size.clone();
 
-    let child = Empty::new().style(move |s| {
+    let child = Label::new("Test").style(move |s| {
         let captured = captured.clone();
         s.size(50.0, 50.0).with::<FontSize>(move |s, fs| {
             s.font_size(fs.def(move |fs| {

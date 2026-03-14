@@ -33,9 +33,7 @@ impl InheritedColorExt for Style {
 #[test]
 fn test_inherited_prop_flows_to_child() {
     let root = TestRoot::new();
-    let child = Empty::new().style(|s| {
-        s.size(50.0, 50.0).with_inherited_color()
-    });
+    let child = Empty::new().style(|s| s.size(50.0, 50.0).with_inherited_color());
     let child_id = child.view_id();
 
     let parent = Container::new(child).style(|s| {
@@ -88,9 +86,7 @@ fn test_child_can_override_inherited_prop() {
 #[test]
 fn test_deeply_nested_inheritance() {
     let root = TestRoot::new();
-    let grandchild = Empty::new().style(|s| {
-        s.size(25.0, 25.0).with_inherited_color()
-    });
+    let grandchild = Empty::new().style(|s| s.size(25.0, 25.0).with_inherited_color());
     let grandchild_id = grandchild.view_id();
 
     let child = Container::new(grandchild).style(|s| s.size(50.0, 50.0));
@@ -118,9 +114,7 @@ fn test_inherited_prop_updates_propagate() {
     let root = TestRoot::new();
     let color_signal = RwSignal::new(palette::css::RED);
 
-    let child = Empty::new().style(|s| {
-        s.size(50.0, 50.0).with_inherited_color()
-    });
+    let child = Empty::new().style(|s| s.size(50.0, 50.0).with_inherited_color());
     let child_id = child.view_id();
 
     let parent = Container::new(child).style(move |s| {

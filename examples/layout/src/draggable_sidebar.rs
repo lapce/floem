@@ -1,7 +1,7 @@
 use floem::{
+    peniko::Brush,
     prelude::*,
     style::{CustomStylable, CustomStyle},
-    peniko::Brush,
     views::resizable::Resizable,
 };
 

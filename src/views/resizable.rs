@@ -567,14 +567,9 @@ impl ResizableCustomStyle {
     /// Sets the color of the handle handle.
     ///
     /// # Arguments
-    /// * `color` - An optional `Brush` that sets the handle's color. If `None` is provided, the handle color is not set.
-    pub fn handle_color(
-        mut self,
-        color: impl Into<crate::style::StyleValue<Brush>>,
-    ) -> Self {
-        self = ResizableCustomStyle(
-            self.0.set_style_value(HandleColor, color.into()),
-        );
+    /// * `color` - A `Brush` that sets the handle's color.
+    pub fn handle_color(mut self, color: impl Into<Brush>) -> Self {
+        self = ResizableCustomStyle(self.0.set(HandleColor, color));
         self
     }
 

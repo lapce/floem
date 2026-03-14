@@ -121,12 +121,10 @@ fn test_cache_miss_for_different_styles() {
 fn test_cache_miss_for_different_parent_inherited() {
     let root = TestRoot::new();
     // Two parent containers with different inherited colors
-    let child1 =
-        Empty::new().style(|s| s.size(30.0, 30.0).with_cache_color());
+    let child1 = Empty::new().style(|s| s.size(30.0, 30.0).with_cache_color());
     let child1_id = child1.view_id();
 
-    let child2 =
-        Empty::new().style(|s| s.size(30.0, 30.0).with_cache_color());
+    let child2 = Empty::new().style(|s| s.size(30.0, 30.0).with_cache_color());
     let child2_id = child2.view_id();
 
     let parent1 =
@@ -164,8 +162,7 @@ fn test_cache_invalidation_on_inherited_change() {
     let root = TestRoot::new();
     let color_signal = RwSignal::new(palette::css::RED);
 
-    let child =
-        Empty::new().style(|s| s.size(50.0, 50.0).with_cache_color());
+    let child = Empty::new().style(|s| s.size(50.0, 50.0).with_cache_color());
     let child_id = child.view_id();
 
     let parent = Container::new(child)

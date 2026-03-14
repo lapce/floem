@@ -336,8 +336,6 @@ pub trait StylePropReader {
     fn read(
         state: &mut Self::State,
         style: &Style,
-        fallback: &Style,
-        context_style: &Style,
         now: &Instant,
         request_transition: &mut bool,
     ) -> bool;
@@ -354,13 +352,11 @@ impl<P: StyleProp> StylePropReader for P {
     fn read(
         state: &mut Self::State,
         style: &Style,
-        fallback: &Style,
-        context_style: &Style,
         now: &Instant,
         request_transition: &mut bool,
     ) -> bool {
         // get the style property
-        let style_value = style.get_prop_style_value_in_context::<P>(context_style);
+        let style_value = style.get_prop_style_value::<P>();
         let mut prop_animated = false;
         let new = match style_value {
             StyleValue::Context(_) => {
@@ -372,16 +368,10 @@ impl<P: StyleProp> StylePropReader for P {
                 val
             }
             StyleValue::Val(val) => val,
-            StyleValue::Unset | StyleValue::Base => fallback
-                .get_prop_in_context::<P>(context_style)
-                .unwrap_or_else(|| P::default_value()),
+            StyleValue::Unset | StyleValue::Base => P::default_value(),
         };
         // set the transition state to the transition if one is found
-        state.1.read(
-            style
-                .get_transition::<P>()
-                .or_else(|| fallback.get_transition::<P>()),
-        );
+        state.1.read(style.get_transition::<P>());
 
         // there is a previously stored value in state.0. if the values are different, a transition should be started if there is one
         let changed = new != state.0;
@@ -410,14 +400,10 @@ impl<P: StyleProp> StylePropReader for Option<P> {
     fn read(
         state: &mut Self::State,
         style: &Style,
-        fallback: &Style,
-        context_style: &Style,
         _now: &Instant,
         _transition: &mut bool,
     ) -> bool {
-        let new = style
-            .get_prop_in_context::<P>(context_style)
-            .or_else(|| fallback.get_prop_in_context::<P>(context_style));
+        let new = style.get_prop::<P>();
         let changed = new != *state;
         *state = new;
         changed
@@ -446,22 +432,8 @@ impl<R: StylePropReader> Debug for ExtractorField<R> {
 }
 
 impl<R: StylePropReader> ExtractorField<R> {
-    pub fn read(
-        &mut self,
-        style: &Style,
-        fallback: &Style,
-        context_style: &Style,
-        now: &Instant,
-        request_transition: &mut bool,
-    ) -> bool {
-        R::read(
-            &mut self.state,
-            style,
-            fallback,
-            context_style,
-            now,
-            request_transition,
-        )
+    pub fn read(&mut self, style: &Style, now: &Instant, request_transition: &mut bool) -> bool {
+        R::read(&mut self.state, style, now, request_transition)
     }
     pub fn get(&self) -> R::Type {
         R::get(&self.state)
@@ -558,9 +530,8 @@ macro_rules! prop_extractor {
                 target: impl Into<$crate::ElementId>,
             ) -> bool {
                 let mut transition = false;
-                let context_style = cx.style();
                 let changed = false $(
-                    | self.$prop.read(style, &context_style, &context_style, &cx.now(), &mut transition)
+                    | self.$prop.read(style, &cx.now(), &mut transition)
                 )*;
                 if transition {
                     cx.request_transition_for(target);
@@ -580,11 +551,8 @@ macro_rules! prop_extractor {
                 target: impl Into<$crate::ElementId>,
             ) -> bool {
                 let mut transition = false;
-                let context_style = cx.style();
                 let changed = self.read_explicit(
                     &cx.direct_style(),
-                    &cx.indirect_style(),
-                    &context_style,
                     &cx.now(),
                     &mut transition,
                 );
@@ -598,15 +566,13 @@ macro_rules! prop_extractor {
             $vis fn read_explicit(
                 &mut self,
                 style: &$crate::style::Style,
-                fallback: &$crate::style::Style,
-                context_style: &$crate::style::Style,
                 #[cfg(not(target_arch = "wasm32"))]
                 now: &std::time::Instant,
                 #[cfg(target_arch = "wasm32")]
                 now: &web_time::Instant,
                 request_transition: &mut bool
             ) -> bool {
-                false $(| self.$prop.read(style, fallback, context_style, now, request_transition))*
+                false $(| self.$prop.read(style, now, request_transition))*
             }
 
             $($prop_vis fn $prop(&self) -> <$reader as $crate::style::StylePropReader>::Type

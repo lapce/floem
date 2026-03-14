@@ -671,9 +671,10 @@ pub fn resolve_nested_maps(
     );
     selectors |= class_style.selectors();
     let view_style = resolve_style(style, interact_state, screen_size_bp, &mut selectors);
-    let result = class_style.apply(view_style);
+    let result = class_style
+        .apply(view_style)
+        .with_inherited_context(inherited_context);
     let _ = effect_context;
-    let _ = inherited_context;
     (result, selectors)
 }
 
@@ -856,6 +857,7 @@ fn extract_responsive_selectors(style: &mut Style) -> Option<ResponsiveSelectorR
 #[derive(Clone)]
 pub struct Style {
     pub(crate) map: Rc<FxHashMap<StyleKey, Rc<dyn Any>>>,
+    inherited_context: Option<Rc<FxHashMap<StyleKey, Rc<dyn Any>>>>,
     /// Deterministic identity for style merges.
     merge_id: u64,
     /// Cached flag indicating whether this style contains any class maps.
@@ -884,6 +886,7 @@ impl Style {
         Self {
             merge_id: next_style_merge_id(),
             map,
+            inherited_context: None,
             has_class_maps: false,
             has_inherited: false,
             effect_context,
@@ -896,6 +899,11 @@ impl Style {
 
     pub fn new() -> Self {
         Self::with_capacity(0)
+    }
+
+    pub(crate) fn with_inherited_context(mut self, inherited: &Style) -> Self {
+        self.inherited_context = Some(inherited.map.clone());
+        self
     }
 
     /// Apply only inherited properties from `from` style to `to` style.
@@ -1009,32 +1017,52 @@ impl Style {
             .map(|v| v.downcast_ref::<Transition>().unwrap().clone())
     }
 
+    fn get_prop_from_map<P: StyleProp>(
+        map: &FxHashMap<StyleKey, Rc<dyn Any>>,
+        context_style: &Style,
+    ) -> Option<P::Type> {
+        map.get(&P::key()).and_then(
+            |v| match v.downcast_ref::<StyleMapValue<P::Type>>().unwrap() {
+                StyleMapValue::Animated(v) | StyleMapValue::Val(v) => Some(v.clone()),
+                StyleMapValue::Context(context_value) => Some(context_value.resolve(context_style)),
+                StyleMapValue::Unset => None,
+            },
+        )
+    }
+
+    fn get_style_value_from_map<P: StyleProp>(
+        map: &FxHashMap<StyleKey, Rc<dyn Any>>,
+        context_style: &Style,
+    ) -> Option<StyleValue<P::Type>> {
+        map.get(&P::key()).map(
+            |v| match v.downcast_ref::<StyleMapValue<P::Type>>().unwrap() {
+                StyleMapValue::Val(v) => StyleValue::Val(v.clone()),
+                StyleMapValue::Animated(v) => StyleValue::Animated(v.clone()),
+                StyleMapValue::Context(v) => StyleValue::Val(v.resolve(context_style)),
+                StyleMapValue::Unset => StyleValue::Unset,
+            },
+        )
+    }
+
     pub(crate) fn get_prop_or_default<P: StyleProp>(&self) -> P::Type {
         self.get_prop::<P>().unwrap_or_else(|| P::default_value())
     }
 
     pub(crate) fn get_prop<P: StyleProp>(&self) -> Option<P::Type> {
-        self.map.get(&P::key()).and_then(|v| {
-            match v.downcast_ref::<StyleMapValue<P::Type>>().unwrap() {
-                StyleMapValue::Animated(v) | StyleMapValue::Val(v) => Some(v.clone()),
-                StyleMapValue::Context(context_value) => Some(context_value.resolve(self)),
-                StyleMapValue::Unset => None,
-            }
+        Self::get_prop_from_map::<P>(&self.map, self).or_else(|| {
+            self.inherited_context
+                .as_ref()
+                .and_then(|map| Self::get_prop_from_map::<P>(map, self))
         })
     }
 
     pub(crate) fn get_prop_style_value<P: StyleProp>(&self) -> StyleValue<P::Type> {
-        self.map
-            .get(&P::key())
-            .map(
-                |v| match v.downcast_ref::<StyleMapValue<P::Type>>().unwrap() {
-                    StyleMapValue::Val(v) | StyleMapValue::Animated(v) => {
-                        StyleValue::Animated(v.clone())
-                    }
-                    StyleMapValue::Context(v) => StyleValue::Context(v.clone()),
-                    StyleMapValue::Unset => StyleValue::Unset,
-                },
-            )
+        Self::get_style_value_from_map::<P>(&self.map, self)
+            .or_else(|| {
+                self.inherited_context
+                    .as_ref()
+                    .and_then(|map| Self::get_style_value_from_map::<P>(map, self))
+            })
             .unwrap_or(StyleValue::Base)
     }
 
@@ -1452,7 +1480,6 @@ macro_rules! define_builtin_props {
     (expr_decl: $(#[$meta:meta])* $type_name:ident $name:ident: $typ:ty = $val:expr) => {
         $(#[$meta])*
         // NOTE: ExprStyle setters intentionally take ContextValue<T> directly.
-        // If you think adding an IntoExprValue here is the solution, you are being an idiot!!
         pub fn $name<T>(self, v: $crate::style::ContextValue<T>) -> Self
         where
             T: Into<$typ> + 'static,
@@ -1481,7 +1508,6 @@ macro_rules! define_builtin_props {
     (@check_nocb_expr $(#[$meta:meta])* $type_name:ident $name:ident []: $typ:ty) => {
         $(#[$meta])*
         // NOTE: ExprStyle setters intentionally take ContextValue<T> directly.
-        // If you think adding an IntoExprValue here is the solution, you are being an idiot!!
         pub fn $name<T>(self, v: $crate::style::ContextValue<T>) -> Self
         where
             T: Into<$typ> + 'static,
@@ -2292,10 +2318,35 @@ impl Style {
     }
 
     pub fn set_style_value<P: StyleProp>(mut self, _prop: P, value: StyleValue<P::Type>) -> Self {
+        let previous_value = self.map.get(&P::key()).cloned();
         let insert = match value {
             StyleValue::Val(value) => StyleMapValue::Val(value),
             StyleValue::Animated(value) => StyleMapValue::Animated(value),
-            StyleValue::Context(value) => StyleMapValue::Context(value),
+            StyleValue::Context(value) => {
+                let previous_value = previous_value.clone();
+                StyleMapValue::Context(ContextValue::new(move |style| {
+                    let mut base_style = style.clone();
+                    // A deferred value for property `P` is allowed to read `P` from context,
+                    // e.g. `FontSize := FontSize * 0.8`. If we resolved against the current
+                    // style as-is, that lookup would see the context expression we are
+                    // installing right now and recurse forever.
+                    //
+                    // Instead, same-prop context reads resolve against the previous effective
+                    // value for `P`: the previous local value if there was one, otherwise the
+                    // inherited fallback carried by `Style`.
+                    match previous_value.clone() {
+                        Some(previous_value) => {
+                            base_style.map_mut().insert(P::key(), previous_value);
+                        }
+                        None => {
+                            // Removing the local entry exposes the inherited context fallback
+                            // on `base_style`, if one exists.
+                            base_style.map_mut().remove(&P::key());
+                        }
+                    }
+                    value.resolve(&base_style)
+                }))
+            }
             StyleValue::Unset => StyleMapValue::Unset,
             StyleValue::Base => {
                 if self.map_mut().remove(&P::key()).is_some() {

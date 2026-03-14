@@ -187,9 +187,7 @@ impl Transition {
             s.padding(4.0)
                 .border(1.)
                 .border_radius(5.0)
-                .with_theme(move |s, t| {
-                    s.border_color(t.border())
-                })
+                .with_theme(move |s, t| s.border_color(t.border()))
         });
 
         let tooltip_view = move || {

@@ -130,7 +130,10 @@ fn test_absolute_positioning_directly() {
 #[serial]
 fn test_size_inside_with_context() {
     let theme = TestTheme::default();
-    let view = Empty::new().style(move |s| s.set(TestThemeProp, theme));
+    let view = Empty::new().style(move |s| {
+        s.set(TestThemeProp, theme)
+            .with_test_theme(|s, t| s.size(t.def(|t| t.size), t.def(|t| t.size / 2.)))
+    });
     let id = view.view_id();
 
     let root = TestRoot::new();
