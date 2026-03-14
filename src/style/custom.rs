@@ -14,8 +14,7 @@ use crate::layout::responsive::ScreenSize;
 use crate::view::{IntoView, View};
 
 use super::{
-    ExprStyle, NthChild, StructuralSelector, Style, StyleClass, StyleProp, StyleSelector,
-    Transition,
+    NthChild, StructuralSelector, Style, StyleClass, StyleProp, StyleSelector, Transition,
 };
 
 /// A trait for custom styling of specific view types.
@@ -336,38 +335,6 @@ pub trait CustomStyle: Default + Clone + Into<Style> + From<Style> {
             .map_mut()
             .insert(P::prop_ref().info().transition_key, Rc::new(transition));
         self_style.into()
-    }
-}
-
-/// Expr-aware counterpart to [`CustomStyle`].
-///
-/// This keeps the concrete custom-style API unchanged while allowing `ExprStyle::custom(...)`
-/// to hand out wrappers whose property setters accept deferred context values.
-pub trait ExprCustomStyle: Default + Clone + Into<Style> + From<Style> {
-    type StyleClass: StyleClass;
-
-    fn style(self, style: impl FnOnce(ExprStyle) -> ExprStyle) -> Self {
-        let self_style = self.into();
-        let new: Style = style(self_style.into()).into();
-        new.into()
-    }
-
-    fn hover(self, style: impl FnOnce(Self) -> Self) -> Self {
-        let self_style: Style = self.into();
-        let new = self_style.selector(StyleSelector::Hover, |_| style(Self::default()).into());
-        new.into()
-    }
-
-    fn active(self, style: impl FnOnce(Self) -> Self) -> Self {
-        let self_style: Style = self.into();
-        let new = self_style.selector(StyleSelector::Active, |_| style(Self::default()).into());
-        new.into()
-    }
-
-    fn focus(self, style: impl FnOnce(Self) -> Self) -> Self {
-        let self_style: Style = self.into();
-        let new = self_style.selector(StyleSelector::Focus, |_| style(Self::default()).into());
-        new.into()
     }
 }
 

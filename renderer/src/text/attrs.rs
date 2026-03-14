@@ -127,6 +127,24 @@ pub enum LineHeightValue {
     Px(f32),
 }
 
+impl From<f32> for LineHeightValue {
+    fn from(value: f32) -> Self {
+        LineHeightValue::Normal(value)
+    }
+}
+
+impl From<f64> for LineHeightValue {
+    fn from(value: f64) -> Self {
+        LineHeightValue::Normal(value as f32)
+    }
+}
+
+impl From<i32> for LineHeightValue {
+    fn from(value: i32) -> Self {
+        LineHeightValue::Normal(value as f32)
+    }
+}
+
 /// Text styling attributes used to configure font properties, color, and layout.
 ///
 /// `Attrs` uses a builder pattern where each setter consumes and returns `self`,

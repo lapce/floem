@@ -11,8 +11,8 @@ use crate::{
     prelude::*,
     prop, prop_extractor,
     style::{
-        ContextValue, CursorStyle, CustomStylable, CustomStyle, ExprCustomStyle, ExprStyle,
-        FlexDirectionProp, Style, StyleClass,
+        ContextValue, CursorStyle, CustomStylable, CustomStyle, ExprStyle, FlexDirectionProp,
+        Style, StyleClass,
         recalc::{StyleReason, StyleReasonFlags},
     },
     style_class,
@@ -606,13 +606,19 @@ impl From<Style> for ResizableCustomExprStyle {
         Self(val)
     }
 }
-impl ExprCustomStyle for ResizableCustomExprStyle {
-    type StyleClass = ResizableHandleClass;
-}
-
 impl ResizableCustomExprStyle {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn style(self, style: impl FnOnce(ExprStyle) -> ExprStyle) -> Self {
+        let new: Style = style(self.0.into()).into();
+        new.into()
+    }
+
+    pub fn hover(self, style: impl FnOnce(Self) -> Self) -> Self {
+        let new = self.0.hover(|_| style(Self::default()).into());
+        new.into()
     }
 
     pub fn handle_color<T>(mut self, color: ContextValue<T>) -> Self

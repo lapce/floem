@@ -539,9 +539,7 @@ fn tree_node_name(view: &CapturedData, marge_left: f64) -> impl IntoView {
                     .background(Color::from_rgb8(63, 81, 101).with_alpha(0.6))
                     .border_radius(5.0)
                     .padding(1.0)
-                    .with::<FontSize>(|s, fs| {
-                        s.set_context_opt(FontSize, fs.def(|fs| fs.map(|fs| fs * 0.8)))
-                    })
+                    .with::<FontSize>(|s, fs| s.set_context(FontSize, fs.def(|fs| fs * 0.8)))
                     .color(palette::css::WHITE.with_alpha(0.8))
             })
             .into_any()

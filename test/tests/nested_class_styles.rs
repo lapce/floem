@@ -295,13 +295,13 @@ fn test_context_mappings_from_multiple_paths() {
         s.size(300.0, 300.0)
             .class(OuterClass, |s| {
                 s.class(ItemClass, |s| {
-                    s.with::<FontSize>(|s, fs| s.height(fs.def(|fs| fs.unwrap_or(0.0) * 2.0)))
+                    s.with::<FontSize>(|s, fs| s.height(fs.def(|fs| fs * 2.0)))
                 })
             })
             .class(OuterClass, |s| {
                 s.class(InnerClass, |s| {
                     s.class(ItemClass, |s| {
-                        s.with::<FontSize>(|s, fs| s.height(fs.def(|fs| fs.unwrap_or(0.0) * 1.0)))
+                        s.with::<FontSize>(|s, fs| s.height(fs.def(|fs| fs * 1.0)))
                     })
                 })
             })
@@ -467,7 +467,7 @@ fn test_css_like_different_properties_accumulate() {
                     s.with::<FontSize>(move |s, fs| {
                         s.padding_left(fs.def(move |fs| {
                             list_ran_clone.set(true);
-                            fs.unwrap_or(0.0)
+                            fs
                         }))
                     })
                 })
@@ -482,7 +482,7 @@ fn test_css_like_different_properties_accumulate() {
                         s.with::<FontSize>(move |s, fs| {
                             s.padding_top(fs.def(move |fs| {
                                 dropdown_ran_clone.set(true);
-                                fs.unwrap_or(0.0) * 2.0
+                                fs * 2.0
                             }))
                         })
                     })

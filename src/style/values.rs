@@ -374,9 +374,7 @@ where
                 .border_radius(5.0)
                 .margin_left(6.0)
                 .with_theme(|s, t| s.color(t.text()).border_color(t.border()))
-                .with::<FontSize>(|s, fs| {
-                    s.set_context_opt(FontSize, fs.def(|fs| fs.map(|fs| fs * 0.85)))
-                })
+                .with::<FontSize>(|s, fs| s.font_size(fs.def(|fs| fs * 0.85)))
         });
 
         // Clone items for the tooltip view
@@ -494,9 +492,7 @@ impl<T: StylePropValue + 'static> StylePropValue for Vec<T> {
                 .border_radius(5.0)
                 .margin_left(6.0)
                 .with_theme(|s, t| s.color(t.text()).border_color(t.border()))
-                .with::<FontSize>(|s, fs| {
-                    s.set_context_opt(FontSize, fs.def(|fs| fs.map(|fs| fs * 0.85)))
-                })
+                .with::<FontSize>(|s, fs| s.font_size(fs.def(|fs| fs * 0.85)))
         });
 
         let items = self.clone();
@@ -1564,9 +1560,7 @@ fn debug_name_cell(name: String, is_direct: bool, indent: usize) -> AnyView {
                             .border_color(t.border())
                             .apply(Style::new().padding_horiz(4.0))
                     })
-                    .with::<FontSize>(|s, fs| {
-                        s.set_context_opt(FontSize, fs.def(|fs| fs.map(|fs| fs * 0.8)))
-                    })
+                    .with::<FontSize>(|s, fs| s.font_size(fs.def(|fs| fs * 0.8)))
             }),
             Label::new(name),
         ))
@@ -1614,9 +1608,7 @@ fn style_debug_prop_row(
                                 .border_radius(5.0)
                                 .padding_horiz(4.0)
                                 .with_theme(|s, t| s.color(t.text_muted()).border_color(t.border()))
-                                .with::<FontSize>(|s, fs| {
-                                    s.set_context_opt(FontSize, fs.def(|fs| fs.map(|fs| fs * 0.8)))
-                                })
+                                .with::<FontSize>(|s, fs| s.font_size(fs.def(|fs| fs * 0.8)))
                         }),
                         transition.debug_view(),
                     ))
@@ -1691,9 +1683,7 @@ fn style_debug_section(title: String, child: StyleDebugRow, indent: usize) -> St
                                 .border(1.)
                                 .border_radius(999.0)
                                 .with_theme(|s, t| s.color(t.text_muted()).border_color(t.border()))
-                                .with::<FontSize>(|s, fs| {
-                                    s.set_context_opt(FontSize, fs.def(|fs| fs.map(|fs| fs * 0.75)))
-                                })
+                                .with::<FontSize>(|s, fs| s.font_size(fs.def(|fs| fs * 0.75)))
                         })
                         .style(move |s| s.apply_if(!child_is_empty, |s| s.hide())),
                 ))

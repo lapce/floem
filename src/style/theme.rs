@@ -1,15 +1,7 @@
 use std::time::Duration;
 
 use super::unit::{DurationUnitExt, PxPct, UnitExt};
-use super::{
-    Background, Border, BorderBottom, BorderBottomColor, BorderBottomLeftRadius,
-    BorderBottomRightRadius, BorderColor, BorderLeft, BorderLeftColor, BorderRadius, BorderRight,
-    BorderRightColor, BorderTop, BorderTopColor, BorderTopLeftRadius, BorderTopRightRadius,
-    BoxShadow, BoxShadowProp, ColGap, ContextRef, ContextValue, Cursor, CursorStyle, CustomStyle,
-    ExprCustomStyle, ExprStyle, FontSize, Foreground, Height, Margin, MarginBottom, MarginLeft, MarginRight,
-    MarginTop, Padding, PaddingBottom, PaddingLeft, PaddingRight, PaddingTop, RowGap, Style,
-    StylePropValue, Transition, Width,
-};
+use super::*;
 use crate::style::Selectable;
 use crate::view::View;
 use crate::views::editor::SelectionColor;
@@ -18,10 +10,10 @@ use crate::{
     AnyView, prop, style_class, style_debug_group,
     views::{
         ButtonClass, CheckboxClass, LabelClass, LabelCustomExprStyle, LabelCustomStyle,
-        LabeledCheckboxClass,
-        LabeledRadioButtonClass, ListClass, ListItemClass, PlaceholderTextClass, RadioButtonClass,
-        RadioButtonDotClass, SvgClass, TabSelectorClass, TextInputClass, ToggleButtonCircleRad,
-        ToggleButtonClass, ToggleButtonInset, TooltipClass, dropdown,
+        LabeledCheckboxClass, LabeledRadioButtonClass, ListClass, ListItemClass,
+        PlaceholderTextClass, RadioButtonClass, RadioButtonDotClass, SvgClass, TabSelectorClass,
+        TextInputClass, ToggleButtonCircleRad, ToggleButtonClass, ToggleButtonInset, TooltipClass,
+        dropdown,
         resizable::{ResizableCustomExprStyle, ResizableCustomStyle},
         scroll,
         slider::{SliderClass, SliderCustomExprStyle, SliderCustomStyle},
@@ -688,13 +680,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
     let toggle_button_style = Style::new()
         .with_theme(|s, t| {
             s.background(t.bg_elevated())
-                .with::<FontSize>(|s, fs| {
-                    s.set_context(
-                        Height,
-                        fs.def(|fs| fs.unwrap_or(14.0))
-                            .map(|fs| ((fs * 1.75) as f64).into()),
-                    )
-                })
+                .with::<FontSize>(|s, fs| s.height(fs.def(|fs| (fs * 1.75) as f64)))
                 .padding(t.padding())
                 .set_context_opt(Foreground, t.def(|t| Some(Brush::Solid(t.text_muted()))))
                 .active(|s| {
@@ -881,10 +867,8 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
                 .selectable(false)
                 .class(dropdown::DropdownPreviewClass, |s| {
                     s.with::<FontSize>(|s, fs| {
-                        let gap = fs
-                            .def(|fs| fs.unwrap_or(14.0))
-                            .map(|fs| ((fs * 0.75) as f64).into());
-                        s.set_context(ColGap, gap.clone()).set_context(RowGap, gap)
+                        let gap = fs.def(|fs| ((fs * 0.75) as f64).px());
+                        s.col_gap(gap.clone()).row_gap(gap)
                     })
                     .class(SvgClass, |s| {
                         s.with_theme(|s, t| {
@@ -894,8 +878,8 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
                                 .color(t.text())
                         })
                         .with::<FontSize>(|s, fs| {
-                            let size = fs.def(|fs| fs.unwrap_or(14.0)).map(|fs| (fs as f64).into());
-                            s.set_context(Width, size.clone()).set_context(Height, size)
+                            let size = fs.def(|fs| (fs as f64).px());
+                            s.width(size.clone()).height(size)
                         })
                     })
                 })
@@ -919,21 +903,21 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
         .class(ResizableHandleClass, |s| {
             s.custom(|cs: ResizableCustomStyle| cs.handle_thickness(3.))
                 .with_theme(|s, t| {
-                s.custom(|cs: ResizableCustomExprStyle| {
-                    cs.handle_color(t.def(|t| Brush::Solid(t.primary_muted().with_alpha(0.5))))
-                        .hover(|s| s.handle_color(t.def(|t| Brush::Solid(t.primary()))))
+                    s.custom(|cs: ResizableCustomExprStyle| {
+                        cs.handle_color(t.def(|t| Brush::Solid(t.primary_muted().with_alpha(0.5))))
+                            .hover(|s| s.handle_color(t.def(|t| Brush::Solid(t.primary()))))
+                    })
                 })
-            })
         })
         .class(HoverTargetClass, |s| {
             s.with_theme(|s, t| {
                 s.padding(t.padding())
                     .border_radius(t.border_radius())
-                    .cursor(CursorStyle::Pointer)
                     .background(t.bg_elevated())
                     .outline(3)
                     .file_hover(|s| s.background(t.bg_overlay()).outline_color(t.primary()))
             })
+            .cursor(CursorStyle::Pointer)
             .transition(Background, Transition::linear(100.millis()))
         })
 }

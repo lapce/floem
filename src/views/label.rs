@@ -7,9 +7,9 @@ use crate::{
     prelude::EventListenerTrait,
     prop_extractor,
     style::{
-        ContextValue, CustomStylable, CustomStyle, ExprCustomStyle, ExprStyle, FontProps, LineHeight,
-        Selectable, SelectionCornerRadius,
-        SelectionStyle, Style, TextAlignProp, TextColor, TextOverflow, TextOverflowProp,
+        ContextValue, CustomStylable, CustomStyle, ExprStyle, FontProps, LineHeight, Selectable,
+        SelectionCornerRadius, SelectionStyle, Style, TextAlignProp, TextColor, TextOverflow,
+        TextOverflowProp,
     },
     style_class,
     text::{
@@ -220,9 +220,9 @@ impl Label {
 
     fn get_attrs_list(&self) -> AttrsList {
         let mut attrs = Attrs::new().color(self.label_props.color().unwrap_or(palette::css::BLACK));
-        if let Some(font_size) = self.font_props.size() {
-            attrs = attrs.font_size(font_size);
-        }
+        let font_size = self.font_props.size();
+        attrs = attrs.font_size(font_size);
+
         if let Some(font_style) = self.font_props.style() {
             attrs = attrs.font_style(font_style);
         }
@@ -561,8 +561,8 @@ impl LabelCustomStyle {
         self
     }
 
-    pub fn selection_color(mut self, color: impl Into<crate::style::StyleValue<Brush>>) -> Self {
-        self = Self(self.0.set_style_value(SelectionColor, color.into()));
+    pub fn selection_color(mut self, color: impl Into<Brush>) -> Self {
+        self = Self(self.0.set(SelectionColor, color.into()));
         self
     }
 }
@@ -584,10 +584,6 @@ impl From<Style> for LabelCustomExprStyle {
         Self(value)
     }
 }
-impl ExprCustomStyle for LabelCustomExprStyle {
-    type StyleClass = LabelClass;
-}
-
 impl LabelCustomExprStyle {
     pub fn new() -> Self {
         Self(Style::new())
@@ -597,7 +593,11 @@ impl LabelCustomExprStyle {
     where
         T: Into<bool> + 'static,
     {
-        self = Self(ExprStyle::from(self.0).set_context(Selectable, selectable.map(Into::into)).into());
+        self = Self(
+            ExprStyle::from(self.0)
+                .set_context(Selectable, selectable.map(Into::into))
+                .into(),
+        );
         self
     }
 

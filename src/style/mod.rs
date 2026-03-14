@@ -127,7 +127,7 @@
 //!
 //! You can create custom extractors and embed them in your custom views so that you can get out any built in prop, or any of your custom props from the final combined style that is applied to your `View`.
 
-use floem_renderer::text::{FontWeight as FontWeightProp, LineHeightValue};
+use floem_renderer::text::FontWeight as FontWeightProp;
 use peniko::color::palette;
 use peniko::kurbo::{self, Affine, RoundedRect, Stroke, Vec2};
 use peniko::{Brush, Color};
@@ -180,7 +180,7 @@ pub use components::{
     Border, BorderColor, BorderRadius, BoxShadow, CursorStyle, Margin, NoWrapOverflow, Padding,
     PointerEvents, TextOverflow,
 };
-pub use custom::{CustomStylable, CustomStyle, ExprCustomStyle};
+pub use custom::{CustomStylable, CustomStyle};
 pub use cx::{InheritedInteractionCx, InteractionState, StyleCx};
 pub use props::{
     ExtractorField, StyleClass, StyleClassInfo, StyleClassRef, StyleDebugGroup,
@@ -190,7 +190,9 @@ pub use props::{
 pub use selectors::{NthChild, StructuralSelector, StyleSelector, StyleSelectors};
 pub use theme::{DesignSystem, StyleThemeExt};
 pub use transition::{DirectTransition, Transition, TransitionState};
-pub use unit::{AnchorAbout, Angle, Auto, DurationUnitExt, Pct, Px, PxPct, PxPctAuto, UnitExt};
+pub use unit::{
+    AnchorAbout, Angle, Auto, DurationUnitExt, LineHeightValue, Pct, Px, PxPct, PxPctAuto, UnitExt,
+};
 pub use values::{ContextValue, ObjectFit, StrokeWrap, StyleMapValue, StylePropValue, StyleValue};
 
 pub use cache::{StyleCache, StyleCacheKey};
@@ -364,6 +366,15 @@ impl ExprStyle {
         self.apply(Style::default().class(class, |s| style(s.into()).into()))
     }
 
+    /// Sets the font size for text content.
+    pub fn font_size<T>(self, size: ContextValue<T>) -> Self
+    where
+        T: Into<Px> + 'static,
+    {
+        let px = size.map(|s| s.into().0 as f32);
+        self.set_context(FontSize, px)
+    }
+
     pub fn size<W, H>(self, width: ContextValue<W>, height: ContextValue<H>) -> Self
     where
         W: Into<PxPctAuto> + 'static,
@@ -389,44 +400,6 @@ impl ExprStyle {
             .set(MarginTop, margin.clone())
             .set(MarginRight, margin.clone())
             .set(MarginBottom, margin)
-    }
-
-    pub fn font_weight<T>(self, weight: ContextValue<T>) -> Self
-    where
-        T: Into<FontWeightProp> + 'static,
-    {
-        self.set(FontWeight, weight.map(|weight| Some(weight.into())))
-    }
-
-    pub fn background<T>(self, color: ContextValue<T>) -> Self
-    where
-        T: Into<Brush> + 'static,
-    {
-        self.set(
-            Background,
-            color.map(|color| {
-                let brush = color.into();
-                Some(brush)
-            }),
-        )
-    }
-
-    /// Sets the font size for text content.
-    pub fn font_size<T: Into<Px> + 'static>(self, size: ContextValue<T>) -> Self {
-        self.set(
-            FontSize,
-            size.map(|size| {
-                let size = size.into().0;
-                Some(size as f32)
-            }),
-        )
-    }
-
-    pub fn color<T>(self, color: ContextValue<T>) -> Self
-    where
-        T: Into<Color> + 'static,
-    {
-        self.set(TextColor, color.map(|color| Some(color.into())))
     }
 
     pub fn border_color<T>(self, color: ContextValue<T>) -> Self
@@ -521,13 +494,6 @@ impl ExprStyle {
             .set(PaddingBottom, padding)
     }
 
-    pub fn col_gap<T>(self, gap: ContextValue<T>) -> Self
-    where
-        T: Into<PxPct> + 'static,
-    {
-        self.set(ColGap, gap.map(Into::into))
-    }
-
     pub fn gap<T>(self, gap: ContextValue<T>) -> Self
     where
         T: Into<PxPct> + 'static,
@@ -536,14 +502,10 @@ impl ExprStyle {
         self.set(ColGap, gap.clone()).set(RowGap, gap)
     }
 
-    pub fn border_top_color<T>(self, color: ContextValue<T>) -> Self
+    pub fn custom<CS>(self, custom: impl FnOnce(CS) -> CS) -> Self
     where
-        T: Into<Brush> + 'static,
+        CS: Default + Clone + Into<Style> + From<Style>,
     {
-        self.set(BorderTopColor, color.map(|color| Some(color.into())))
-    }
-
-    pub fn custom<CS: ExprCustomStyle>(self, custom: impl FnOnce(CS) -> CS) -> Self {
         self.apply(custom(CS::default()).into())
     }
 
@@ -557,17 +519,6 @@ impl ExprStyle {
 
     pub fn transition_background(self, transition: Transition) -> Self {
         self.apply(Style::new().transition_background(transition))
-    }
-
-    pub fn cursor(self, cursor: impl Into<StyleValue<CursorStyle>>) -> Self {
-        self.set(Cursor, cursor.into().map(Some))
-    }
-
-    pub fn cursor_color<T>(self, color: ContextValue<T>) -> Self
-    where
-        T: Into<Brush> + 'static,
-    {
-        self.set(CursorColor, color.map(Into::into))
     }
 
     pub fn border_bottom(self, width: impl Into<Px>) -> Self {
@@ -1414,7 +1365,22 @@ impl StyleSelector {
 /// - `nocb` (no callback/no chain builder) - no fluent builder method generated
 /// - `tr` (transition) - generates a `transition_property_name()` method
 ///
-/// Examples: `name: Type {}`, `name {nocb}: Type {}`, `name {tr}: Type {}`, `name {nocb, tr}: Type {}`
+/// For `Option<T>` properties, specify the inner type in brackets after the full type:
+///
+/// ```text
+/// Color color { tr }: Option<Color> [Color] { inherited } = None,
+/// ```
+///
+/// This generates a setter that accepts `impl Into<Color>` and wraps in `Some`,
+/// rather than the confusing `impl Into<Option<Color>>`. Use `unset_*()` to clear.
+///
+/// Examples:
+/// - `name: Type {}`                           plain prop, setter takes Into<Type>
+/// - `name {nocb}: Type {}`                    no setter generated
+/// - `name {tr}: Type {}`                      setter + transition_name() generated
+/// - `name {nocb, tr}: Type {}`                no setter, but transition_name() generated
+/// - `name {tr}: Option<Type> [Type] {}`       setter takes Into<Type>, wraps in Some
+/// - `name {nocb}: Option<Type> [Type] {}`     no setter generated
 ///
 /// All properties get:
 /// - A getter method in `BuiltinStyle`
@@ -1424,7 +1390,7 @@ macro_rules! define_builtin_props {
         $(
             $(#[$meta:meta])*
             $type_name:ident $name:ident $({ $($flags:ident),* })? :
-            $typ:ty { $($options:tt)* } = $val:expr
+            $typ:ty $( [$inner:ty] )? { $($options:tt)* } = $val:expr
         ),*
         $(,)?
     ) => {
@@ -1433,7 +1399,7 @@ macro_rules! define_builtin_props {
         )*
         impl Style {
             $(
-                define_builtin_props!(decl: $(#[$meta])* $type_name $name $({ $($flags),* })?: $typ = $val);
+                define_builtin_props!(decl: $(#[$meta])* $type_name $name $({ $($flags),* })? : $typ $( [$inner] )? = $val);
             )*
             $(
                 define_builtin_props!(unset: $(#[$meta])* $type_name $name);
@@ -1452,7 +1418,7 @@ macro_rules! define_builtin_props {
         }
         impl ExprStyle {
             $(
-                define_builtin_props!(expr_decl: $(#[$meta])* $type_name $name $({ $($flags),* })?: $typ = $val);
+                define_builtin_props!(expr_decl: $(#[$meta])* $type_name $name $({ $($flags),* })? : $typ $( [$inner] )? = $val);
             )*
             $(
                 define_builtin_props!(expr_unset: $(#[$meta])* $type_name $name);
@@ -1460,26 +1426,43 @@ macro_rules! define_builtin_props {
         }
     };
 
-    // With flags - check if nocb is present
-    (decl: $(#[$meta:meta])* $type_name:ident $name:ident { $($flags:ident),* }: $typ:ty = $val:expr) => {
+    // Built-in setters for `Option<T> [T]` take `Into<T>` and wrap in `Some`.
+    (decl: $(#[$meta:meta])* $type_name:ident $name:ident { $($flags:ident),* } : $typ:ty [$inner:ty] = $val:expr) => {
+        define_builtin_props!(@opt_check_nocb $(#[$meta])* $type_name $name [$($flags)*]: $inner);
+    };
+    (decl: $(#[$meta:meta])* $type_name:ident $name:ident : $typ:ty [$inner:ty] = $val:expr) => {
+        $(#[$meta])*
+        pub fn $name(self, v: impl Into<$inner>) -> Self {
+            self.set($type_name, Some(v.into()))
+        }
+    };
+    (decl: $(#[$meta:meta])* $type_name:ident $name:ident { $($flags:ident),* } : $typ:ty = $val:expr) => {
         define_builtin_props!(@check_nocb $(#[$meta])* $type_name $name [$($flags)*]: $typ);
     };
-
-    (expr_decl: $(#[$meta:meta])* $type_name:ident $name:ident { $($flags:ident),* }: $typ:ty = $val:expr) => {
-        define_builtin_props!(@check_nocb_expr $(#[$meta])* $type_name $name [$($flags)*]: $typ);
-    };
-
-    // Without flags - always generate setter
-    (decl: $(#[$meta:meta])* $type_name:ident $name:ident: $typ:ty = $val:expr) => {
+    (decl: $(#[$meta:meta])* $type_name:ident $name:ident : $typ:ty = $val:expr) => {
         $(#[$meta])*
         pub fn $name(self, v: impl Into<$typ>) -> Self {
             self.set($type_name, v.into())
         }
     };
 
-    (expr_decl: $(#[$meta:meta])* $type_name:ident $name:ident: $typ:ty = $val:expr) => {
+    (expr_decl: $(#[$meta:meta])* $type_name:ident $name:ident { $($flags:ident),* } : $typ:ty [$inner:ty] = $val:expr) => {
+        define_builtin_props!(@opt_check_nocb_expr $(#[$meta])* $type_name $name [$($flags)*]: $inner);
+    };
+    (expr_decl: $(#[$meta:meta])* $type_name:ident $name:ident : $typ:ty [$inner:ty] = $val:expr) => {
         $(#[$meta])*
-        // NOTE: ExprStyle setters intentionally take ContextValue<T> directly.
+        pub fn $name<T>(self, v: $crate::style::ContextValue<T>) -> Self
+        where
+            T: Into<$inner> + 'static,
+        {
+            self.set($type_name, v.map(|x| Some(x.into())))
+        }
+    };
+    (expr_decl: $(#[$meta:meta])* $type_name:ident $name:ident { $($flags:ident),* } : $typ:ty = $val:expr) => {
+        define_builtin_props!(@check_nocb_expr $(#[$meta])* $type_name $name [$($flags)*]: $typ);
+    };
+    (expr_decl: $(#[$meta:meta])* $type_name:ident $name:ident : $typ:ty = $val:expr) => {
+        $(#[$meta])*
         pub fn $name<T>(self, v: $crate::style::ContextValue<T>) -> Self
         where
             T: Into<$typ> + 'static,
@@ -1488,13 +1471,40 @@ macro_rules! define_builtin_props {
         }
     };
 
-    // Helper: if nocb found, don't generate setter
+    (@opt_check_nocb $(#[$meta:meta])* $type_name:ident $name:ident [nocb $($rest:ident)*]: $inner:ty) => {};
+    (@opt_check_nocb $(#[$meta:meta])* $type_name:ident $name:ident [$first:ident $($rest:ident)*]: $inner:ty) => {
+        define_builtin_props!(@opt_check_nocb $(#[$meta])* $type_name $name [$($rest)*]: $inner);
+    };
+    (@opt_check_nocb $(#[$meta:meta])* $type_name:ident $name:ident []: $inner:ty) => {
+        $(#[$meta])*
+        pub fn $name(self, v: impl Into<$inner>) -> Self {
+            self.set($type_name, Some(v.into()))
+        }
+    };
+
+    (@opt_check_nocb_expr $(#[$meta:meta])* $type_name:ident $name:ident [nocb $($rest:ident)*]: $inner:ty) => {};
+    (@opt_check_nocb_expr $(#[$meta:meta])* $type_name:ident $name:ident [$first:ident $($rest:ident)*]: $inner:ty) => {
+        define_builtin_props!(@opt_check_nocb_expr $(#[$meta])* $type_name $name [$($rest)*]: $inner);
+    };
+    (@opt_check_nocb_expr $(#[$meta:meta])* $type_name:ident $name:ident []: $inner:ty) => {
+        $(#[$meta])*
+        pub fn $name<T>(self, v: $crate::style::ContextValue<T>) -> Self
+        where
+            T: Into<$inner> + 'static,
+        {
+            self.set($type_name, v.map(|x| Some(x.into())))
+        }
+    };
+
+    // -------------------------------------------------------------------------
+    // @check_nocb — plain (non-Option) setter, respects nocb flag
+    // -------------------------------------------------------------------------
+
     (@check_nocb $(#[$meta:meta])* $type_name:ident $name:ident [nocb $($rest:ident)*]: $typ:ty) => {};
     (@check_nocb $(#[$meta:meta])* $type_name:ident $name:ident [$first:ident $($rest:ident)*]: $typ:ty) => {
         define_builtin_props!(@check_nocb $(#[$meta])* $type_name $name [$($rest)*]: $typ);
     };
     (@check_nocb $(#[$meta:meta])* $type_name:ident $name:ident []: $typ:ty) => {
-        // No nocb found, generate the setter
         $(#[$meta])*
         pub fn $name(self, v: impl Into<$typ>) -> Self {
             self.set($type_name, v.into())
@@ -1507,7 +1517,6 @@ macro_rules! define_builtin_props {
     };
     (@check_nocb_expr $(#[$meta:meta])* $type_name:ident $name:ident []: $typ:ty) => {
         $(#[$meta])*
-        // NOTE: ExprStyle setters intentionally take ContextValue<T> directly.
         pub fn $name<T>(self, v: $crate::style::ContextValue<T>) -> Self
         where
             T: Into<$typ> + 'static,
@@ -1516,7 +1525,10 @@ macro_rules! define_builtin_props {
         }
     };
 
-    // Unset method - generated for all properties
+    // -------------------------------------------------------------------------
+    // unset — generated for all properties
+    // -------------------------------------------------------------------------
+
     (unset: $(#[$meta:meta])* $type_name:ident $name:ident) => {
         paste::paste! {
             #[doc = "Unsets the `" $name "` property."]
@@ -1535,15 +1547,17 @@ macro_rules! define_builtin_props {
         }
     };
 
-    // Transition method - with flags, check if 'tr' is present
+    // -------------------------------------------------------------------------
+    // transition — generated when `tr` flag is present
+    // -------------------------------------------------------------------------
+
+    // With flags — check for tr
     (transition: $(#[$meta:meta])* $type_name:ident $name:ident { $($flags:ident),* }) => {
         define_builtin_props!(@check_tr $(#[$meta])* $type_name $name [$($flags)*]);
     };
-
-    // Transition method - without flags, don't generate
+    // Without flags — never generate
     (transition: $(#[$meta:meta])* $type_name:ident $name:ident) => {};
 
-    // Helper: if tr found, generate transition method
     (@check_tr $(#[$meta:meta])* $type_name:ident $name:ident [tr $($rest:ident)*]) => {
         paste::paste! {
             #[doc = "Sets a transition for the `" $name "` property."]
@@ -1556,9 +1570,7 @@ macro_rules! define_builtin_props {
     (@check_tr $(#[$meta:meta])* $type_name:ident $name:ident [$first:ident $($rest:ident)*]) => {
         define_builtin_props!(@check_tr $(#[$meta])* $type_name $name [$($rest)*]);
     };
-    (@check_tr $(#[$meta:meta])* $type_name:ident $name:ident []) => {
-        // No tr flag found, don't generate transition method
-    };
+    (@check_tr $(#[$meta:meta])* $type_name:ident $name:ident []) => {};
 }
 
 pub struct BuiltinStyle<'a> {
@@ -1645,32 +1657,32 @@ define_builtin_props!(
     /// Controls alignment of flex items along the main axis.
     ///
     /// Determines how extra space is distributed between and around items.
-    JustifyContentProp justify_content {}: Option<JustifyContent> {} = None,
+    JustifyContentProp justify_content {}: Option<JustifyContent> [JustifyContent] {} = None,
 
     /// Controls default alignment of grid items along the inline axis.
     ///
     /// Sets the default justify-self value for all items in the container.
-    JustifyItemsProp justify_items {}: Option<JustifyItems> {} = None,
+    JustifyItemsProp justify_items {}: Option<JustifyItems> [JustifyItems] {} = None,
 
     /// Controls how the total width and height are calculated.
     ///
     /// Determines whether borders and padding are included in the view's size.
-    BoxSizingProp box_sizing {}: Option<BoxSizing> {} = None,
+    BoxSizingProp box_sizing {}: Option<BoxSizing> [BoxSizing] {} = None,
 
     /// Controls individual alignment along the inline axis.
     ///
     /// Overrides the container's justify-items value for this specific item.
-    JustifySelf justify_self {}: Option<AlignItems> {} = None,
+    JustifySelf justify_self {}: Option<AlignItems> [AlignItems] {} = None,
 
     /// Controls alignment of flex items along the cross axis.
     ///
     /// Determines how items are aligned when they don't fill the container's cross axis.
-    AlignItemsProp align_items {}: Option<AlignItems> {} = None,
+    AlignItemsProp align_items {}: Option<AlignItems> [AlignItems] {} = None,
 
     /// Controls alignment of wrapped flex lines.
     ///
     /// Only has an effect when flex-wrap is enabled and there are multiple lines.
-    AlignContentProp align_content {}: Option<AlignContent> {} = None,
+    AlignContentProp align_content {}: Option<AlignContent> [AlignContent] {} = None,
 
     /// Defines the line names and track sizing functions of the grid rows.
     ///
@@ -1710,7 +1722,7 @@ define_builtin_props!(
     /// Controls individual alignment along the cross axis.
     ///
     /// Overrides the container's align-items value for this specific item.
-    AlignSelf align_self {}: Option<AlignItems> {} = None,
+    AlignSelf align_self {}: Option<AlignItems> [AlignItems] {} = None,
 
     /// Sets the color of the view's outline.
     ///
@@ -1742,13 +1754,13 @@ define_builtin_props!(
     BorderBottom border_bottom {nocb, tr}: Stroke {} = Stroke::new(0.),
 
     /// Sets the left border color.
-    BorderLeftColor border_left_color { nocb, tr }: Option<Brush> {} = None,
+    BorderLeftColor border_left_color { tr }: Option<Brush> [Brush] {} = None,
     /// Sets the top border color.
-    BorderTopColor border_top_color { nocb, tr }: Option<Brush> {} = None,
+    BorderTopColor border_top_color {  tr }: Option<Brush> [Brush] {} = None,
     /// Sets the right border color.
-    BorderRightColor border_right_color { nocb, tr }: Option<Brush> {} = None,
+    BorderRightColor border_right_color { tr }: Option<Brush> [Brush] {} = None,
     /// Sets the bottom border color.
-    BorderBottomColor border_bottom_color { nocb, tr }: Option<Brush> {} = None,
+    BorderBottomColor border_bottom_color { tr }: Option<Brush> [Brush] {} = None,
 
     /// Sets the top-left border radius.
     BorderTopLeftRadius border_top_left_radius { tr }: PxPct {} = PxPct::Px(0.),
@@ -1792,7 +1804,7 @@ define_builtin_props!(
     /// Controls whether the view can be the target of mouse events.
     ///
     /// When disabled, mouse events pass through to views behind.
-    PointerEventsProp pointer_events {}: Option<PointerEvents> { inherited } = None,
+    PointerEventsProp pointer_events {}: Option<PointerEvents> [PointerEvents] { inherited } = None,
 
     /// Controls the stack order of positioned views.
     ///
@@ -1800,57 +1812,57 @@ define_builtin_props!(
     /// If you want a view positioned above others, use an overlay.
     ///
     /// Higher values appear in front of lower values.
-    ZIndex z_index { nocb, tr }: Option<i32> {} = None,
+    ZIndex z_index {  tr }: Option<i32> [i32] {} = None,
 
     /// Sets the cursor style when hovering over the view.
     ///
     /// Changes the appearance of the mouse cursor.
-    Cursor cursor { nocb }: Option<CursorStyle> {} = None,
+    Cursor cursor { }: Option<CursorStyle> [CursorStyle] {} = None,
 
     /// Sets the text color.
     ///
     /// This property is inherited by child views.
-    TextColor color { nocb, tr }: Option<Color> { inherited } = None,
+    TextColor color { tr }: Option<Color> [Color] { inherited } = None,
 
     /// Sets the background color or image.
     ///
     /// Can be a solid color, gradient, or image.
-    Background background { nocb, tr }: Option<Brush> {} = None,
+    Background background { tr }: Option<Brush> [Brush] {} = None,
 
     /// Sets the foreground color or pattern.
     ///
     /// Used for drawing content like icons or shapes.
-    Foreground foreground { nocb, tr }: Option<Brush> {} = None,
+    Foreground foreground { tr }: Option<Brush> [Brush] {} = None,
 
     /// Adds one or more drop shadows to the view.
     ///
     /// Can create depth and visual separation effects.
-    BoxShadowProp box_shadow { nocb, tr }: SmallVec<[BoxShadow; 3]> {} = SmallVec::new(),
+    BoxShadowProp box_shadow {  tr }: SmallVec<[BoxShadow; 3]> {} = SmallVec::new(),
 
     /// Sets the font size for text content.
     ///
     /// This property is inherited by child views.
-    FontSize font_size { nocb, tr }: Option<f32> { inherited } = None,
+    FontSize font_size { nocb, tr }: f32 { inherited } = 14.,
 
     /// Sets the font family for text content.
     ///
     /// This property is inherited by child views.
-    FontFamily font_family { nocb }: Option<String> { inherited } = None,
+    FontFamily font_family { }: Option<String> [String] { inherited } = None,
 
     /// Sets the font weight (boldness) for text content.
     ///
     /// This property is inherited by child views.
-    FontWeight font_weight { nocb }: Option<FontWeightProp> { inherited } = None,
+    FontWeight font_weight { }: Option<FontWeightProp> [FontWeightProp] { inherited } = None,
 
     /// Sets the font style (italic, normal) for text content.
     ///
     /// This property is inherited by child views.
-    FontStyle font_style { nocb }: Option<crate::text::FontStyle> { inherited } = None,
+    FontStyle font_style { }: Option<crate::text::FontStyle> [crate::text::FontStyle] { inherited } = None,
 
     /// Sets the color of the text cursor.
     ///
     /// Visible when text input views have focus.
-    CursorColor cursor_color { nocb, tr }: Brush {} = Brush::Solid(palette::css::BLACK.with_alpha(0.3)),
+    CursorColor cursor_color { tr }: Brush {} = Brush::Solid(palette::css::BLACK.with_alpha(0.3)),
 
     /// Sets the corner radius of text selections.
     ///
@@ -1871,17 +1883,17 @@ define_builtin_props!(
     /// Sets text alignment within the view.
     ///
     /// Controls horizontal alignment of text content.
-    TextAlignProp text_align {}: Option<crate::text::Alignment> {} = None,
+    TextAlignProp text_align {}: Option<crate::text::Alignment> [crate::text::Alignment] {} = None,
 
     /// Sets the line height for text content.
     ///
     /// This property is inherited by child views.
-    LineHeight line_height { nocb, tr }: Option<LineHeightValue> { inherited } = None,
+    LineHeight line_height { tr }: Option<LineHeightValue> [LineHeightValue] { inherited } = None,
 
     /// Sets the preferred aspect ratio for the view.
     ///
     /// Maintains width-to-height proportions during layout.
-    AspectRatio aspect_ratio {tr}: Option<f32> {} = None,
+    AspectRatio aspect_ratio {tr}: Option<f32> [f32] {} = None,
 
     /// Controls how replaced content (like images) should be resized to fit its container.
     ///
@@ -1893,12 +1905,12 @@ define_builtin_props!(
     /// Sets the gap between columns in grid or flex layouts.
     ///
     /// Creates space between items in the horizontal direction.
-    ColGap col_gap { nocb, tr }: PxPct {} = PxPct::Px(0.),
+    ColGap col_gap { tr }: PxPct {} = PxPct::Px(0.),
 
     /// Sets the gap between rows in grid or flex layouts.
     ///
     /// Creates space between items in the vertical direction.
-    RowGap row_gap { nocb, tr }: PxPct {} = PxPct::Px(0.),
+    RowGap row_gap { tr }: PxPct {} = PxPct::Px(0.),
 
     /// Width of the scrollbar track in pixels.
     ///
@@ -2586,6 +2598,12 @@ impl Style {
         self.set(Focusable, Focus::PointerAndProgrammatic)
     }
 
+    /// Sets the font size for text content.
+    pub fn font_size(self, size: impl Into<Px>) -> Self {
+        let px = size.into();
+        self.set_style_value(FontSize, StyleValue::Val(px.0 as f32))
+    }
+
     /// Makes the view non-focusable through any means.
     ///
     /// The view cannot receive focus via keyboard, pointer, or programmatic calls.
@@ -2594,16 +2612,6 @@ impl Style {
     /// Equivalent to `focus(Focus::None)`.
     pub fn focus_none(self) -> Self {
         self.set(Focusable, Focus::None)
-    }
-
-    /// Sets the gap between columns in grid or flex layouts.
-    pub fn col_gap(self, width: impl Into<PxPct>) -> Self {
-        self.set(ColGap, width.into())
-    }
-
-    /// Sets the gap between rows in grid or flex layouts.
-    pub fn row_gap(self, height: impl Into<PxPct>) -> Self {
-        self.set(RowGap, height.into())
     }
 
     /// Sets different gaps for rows and columns in grid or flex layouts.
@@ -2923,23 +2931,6 @@ impl Style {
             .set(BorderBottomRightRadius, radius)
     }
 
-    /// Sets the left border color of the view.
-    pub fn border_left_color(self, color: impl Into<Brush>) -> Self {
-        self.set(BorderLeftColor, Some(color.into()))
-    }
-    /// Sets the right border color of the view.
-    pub fn border_right_color(self, color: impl Into<Brush>) -> Self {
-        self.set(BorderRightColor, Some(color.into()))
-    }
-    /// Sets the top border color of the view.
-    pub fn border_top_color(self, color: impl Into<Brush>) -> Self {
-        self.set(BorderTopColor, Some(color.into()))
-    }
-    /// Sets the bottom border color of the view.
-    pub fn border_bottom_color(self, color: impl Into<Brush>) -> Self {
-        self.set(BorderBottomColor, Some(color.into()))
-    }
-
     /// Applies a complete border configuration to the view.
     pub fn apply_border(self, border: Border) -> Self {
         let mut style = self;
@@ -3028,22 +3019,6 @@ impl Style {
             .inset_top(inset)
             .inset_right(inset)
             .inset_bottom(inset)
-    }
-
-    /// Sets the cursor style when hovering over the view.
-    pub fn cursor(self, cursor: impl Into<StyleValue<CursorStyle>>) -> Self {
-        self.set_style_value(Cursor, cursor.into().map(Some))
-    }
-
-    /// Specifies text color for the view.
-    pub fn color(self, color: impl Into<StyleValue<Color>>) -> Self {
-        self.set_style_value(TextColor, color.into().map(Some))
-    }
-
-    /// Sets the background color or pattern of the view.
-    pub fn background(self, color: impl Into<Brush>) -> Self {
-        let brush = StyleValue::Val(Some(color.into()));
-        self.set_style_value(Background, brush)
     }
 
     /// Specifies shadow blur. The larger this value, the bigger the blur,
@@ -3218,42 +3193,9 @@ impl Style {
         self.set(BoxShadowProp, value)
     }
 
-    /// Sets the font size for text content.
-    pub fn font_size(self, size: impl Into<Px>) -> Self {
-        let px = size.into();
-        self.set_style_value(FontSize, StyleValue::Val(Some(px.0 as f32)))
-    }
-
-    /// Sets the font family for text content.
-    pub fn font_family(self, family: impl Into<String>) -> Self {
-        let family = family.into();
-        self.set_style_value(FontFamily, StyleValue::Val(family).map(Some))
-    }
-
-    /// Sets the font weight (boldness) for text content.
-    pub fn font_weight(self, weight: impl Into<StyleValue<FontWeightProp>>) -> Self {
-        self.set_style_value(FontWeight, weight.into().map(Some))
-    }
-
     /// Sets the font weight to bold.
     pub fn font_bold(self) -> Self {
         self.font_weight(FontWeightProp::BOLD)
-    }
-
-    /// Sets the font style (italic, normal) for text content.
-    pub fn font_style(self, style: impl Into<StyleValue<crate::text::FontStyle>>) -> Self {
-        self.set_style_value(FontStyle, style.into().map(Some))
-    }
-
-    /// Sets the color of the text cursor.
-    pub fn cursor_color(self, color: impl Into<Brush>) -> Self {
-        let brush = StyleValue::Val(color.into());
-        self.set_style_value(CursorColor, brush)
-    }
-
-    /// Sets the line height for text content.
-    pub fn line_height(self, normal: f32) -> Self {
-        self.set(LineHeight, Some(LineHeightValue::Normal(normal)))
     }
 
     /// Enables pointer events for the view (allows mouse interaction).
@@ -3311,57 +3253,57 @@ impl Style {
 
     /// Aligns flex items to stretch and fill the cross axis.
     pub fn items_stretch(self) -> Self {
-        self.align_items(Some(taffy::style::AlignItems::Stretch))
+        self.align_items(taffy::style::AlignItems::Stretch)
     }
 
     /// Aligns flex items to the start of the cross axis.
     pub fn items_start(self) -> Self {
-        self.align_items(Some(taffy::style::AlignItems::FlexStart))
+        self.align_items(taffy::style::AlignItems::FlexStart)
     }
 
     /// Defines the alignment along the cross axis as Centered
     pub fn items_center(self) -> Self {
-        self.align_items(Some(taffy::style::AlignItems::Center))
+        self.align_items(taffy::style::AlignItems::Center)
     }
 
     /// Aligns flex items to the end of the cross axis.
     pub fn items_end(self) -> Self {
-        self.align_items(Some(taffy::style::AlignItems::FlexEnd))
+        self.align_items(taffy::style::AlignItems::FlexEnd)
     }
 
     /// Aligns flex items along their baselines.
     pub fn items_baseline(self) -> Self {
-        self.align_items(Some(taffy::style::AlignItems::Baseline))
+        self.align_items(taffy::style::AlignItems::Baseline)
     }
 
     /// Aligns flex items to the start of the main axis.
     pub fn justify_start(self) -> Self {
-        self.justify_content(Some(taffy::style::JustifyContent::FlexStart))
+        self.justify_content(taffy::style::JustifyContent::FlexStart)
     }
 
     /// Aligns flex items to the end of the main axis.
     pub fn justify_end(self) -> Self {
-        self.justify_content(Some(taffy::style::JustifyContent::FlexEnd))
+        self.justify_content(taffy::style::JustifyContent::FlexEnd)
     }
 
     /// Defines the alignment along the main axis as Centered
     pub fn justify_center(self) -> Self {
-        self.justify_content(Some(taffy::style::JustifyContent::Center))
+        self.justify_content(taffy::style::JustifyContent::Center)
     }
 
     /// Distributes flex items with space between them.
     pub fn justify_between(self) -> Self {
-        self.justify_content(Some(taffy::style::JustifyContent::SpaceBetween))
+        self.justify_content(taffy::style::JustifyContent::SpaceBetween)
     }
 
     /// Distributes flex items with space around them.
     pub fn justify_around(self) -> Self {
-        self.justify_content(Some(taffy::style::JustifyContent::SpaceAround))
+        self.justify_content(taffy::style::JustifyContent::SpaceAround)
     }
 
     /// Distributes flex items with equal space around them.
     pub fn justify_evenly(self) -> Self {
-        self.justify_content(Some(taffy::style::JustifyContent::SpaceEvenly))
+        self.justify_content(taffy::style::JustifyContent::SpaceEvenly)
     }
 
     /// Hides the view from view and layout.
@@ -3387,11 +3329,6 @@ impl Style {
     /// Sets flex direction to column (vertical).
     pub fn flex_col(self) -> Self {
         self.flex_direction(taffy::style::FlexDirection::Column)
-    }
-
-    /// Sets the stack order of the view.
-    pub fn z_index(self, z_index: i32) -> Self {
-        self.set(ZIndex, Some(z_index))
     }
 
     /// Sets uniform scaling for both X and Y axes.

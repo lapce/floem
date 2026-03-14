@@ -1,14 +1,10 @@
 use floem::{
     animate::Animation,
-    peniko::{color::palette, Brush, Color},
-    reactive::{RwSignal, SignalGet, SignalUpdate},
+    prelude::*,
     style::{ScaleX, ScaleY, Style, Transition},
     text::FontWeight,
-    unit::{DurationUnitExt, UnitExt},
-    views::{
-        dyn_container, slider::Slider, svg, ButtonClass, Container, Decorators, Stack, SvgClass,
-    },
-    AnyView, IntoView,
+    views::slider::Slider,
+    AnyView,
 };
 
 use crate::box_shadow;
@@ -98,7 +94,7 @@ pub fn music_player() -> impl IntoView {
         Container::new(svg(svg::FORWARD)).class(ButtonClass),
     ))
     .style(|s| {
-        s.align_self(Some(floem::taffy::AlignItems::Center))
+        s.align_self(floem::taffy::AlignItems::Center)
             .items_center()
             .gap(20)
             .class(SvgClass, |s| s.color(MUSIC_ICON))
@@ -112,9 +108,9 @@ pub fn music_player() -> impl IntoView {
             .slider_style(|s| {
                 s.bar_height(3)
                     .accent_bar_height(3.)
-                    .bar_color(Some(Brush::Solid(SLIDER)))
-                    .accent_bar_color(Some(Brush::Solid(ICON)))
-                    .handle_color(Some(Brush::Solid(palette::css::TRANSPARENT)))
+                    .bar_color(SLIDER)
+                    .accent_bar_color(ICON)
+                    .handle_color(css::TRANSPARENT)
                     .handle_radius(0)
             }),
         media_buttons,

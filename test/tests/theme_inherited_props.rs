@@ -41,7 +41,7 @@ fn test_font_size_from_default_theme() {
     // View that uses font_size from context to set its height
     let view = Empty::new().style(|s| {
         s.width(100.0)
-            .with::<FontSize>(|s, fs| s.height(fs.def(|fs| fs.unwrap_or(14.0) * 2.0)))
+            .with::<FontSize>(|s, fs| s.height(fs.def(|fs| fs * 2.0)))
     });
     let id = view.view_id();
 
@@ -84,7 +84,7 @@ fn test_font_size_from_explicit_parent() {
     // Child uses font_size from context
     let child = Empty::new().style(|s| {
         s.width(50.0)
-            .with::<FontSize>(|s, fs| s.height(fs.def(|fs| fs.unwrap_or(14.0) * 2.0)))
+            .with::<FontSize>(|s, fs| s.height(fs.def(|fs| fs * 2.0)))
     });
     let child_id = child.view_id();
 
@@ -117,7 +117,7 @@ fn test_font_size_deeply_nested() {
     // Grandchild uses font_size from context
     let grandchild = Empty::new().style(|s| {
         s.width(25.0)
-            .with::<FontSize>(|s, fs| s.height(fs.def(|fs| fs.unwrap_or(14.0) * 1.5)))
+            .with::<FontSize>(|s, fs| s.height(fs.def(|fs| fs * 1.5)))
     });
     let grandchild_id = grandchild.view_id();
 
@@ -328,8 +328,8 @@ fn test_inherited_context_contents() {
         let captured = captured.clone();
         s.size(100.0, 100.0).with::<FontSize>(move |s, fs| {
             s.font_size(fs.def(move |fs| {
-                captured.set(fs);
-                fs.unwrap_or(14.0)
+                captured.set(Some(fs));
+                fs
             }))
         })
     });
@@ -370,8 +370,8 @@ fn test_with_context_works_when_font_size_is_explicit() {
         let captured = captured.clone();
         s.size(50.0, 50.0).with::<FontSize>(move |s, fs| {
             s.font_size(fs.def(move |fs| {
-                captured.set(fs);
-                fs.unwrap_or(18.0)
+                captured.set(Some(fs));
+                fs
             }))
         })
     });
@@ -434,7 +434,7 @@ fn test_class_style_context_mappings_stripped() {
             .font_size(20.0) // Set font_size in context
             .class(TestContextClass, |s| {
                 // This with_context should set height based on font_size
-                s.with::<FontSize>(|s, fs| s.height(fs.def(|fs| fs.unwrap_or(20.0) * 2.0)))
+                s.with::<FontSize>(|s, fs| s.height(fs.def(|fs| fs * 2.0)))
             })
     });
 
@@ -468,7 +468,7 @@ fn test_view_own_context_mappings_work() {
     // View with its own with_context (not from a class)
     let child = Empty::new().style(|s| {
         s.width(100.0)
-            .with::<FontSize>(|s, fs| s.height(fs.def(|fs| fs.unwrap_or(20.0) * 2.0)))
+            .with::<FontSize>(|s, fs| s.height(fs.def(|fs| fs * 2.0)))
     });
     let child_id = child.view_id();
 

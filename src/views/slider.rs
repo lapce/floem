@@ -19,8 +19,8 @@ use crate::{
     prop, prop_extractor,
     style::{
         Background, BorderBottomLeftRadius, BorderBottomRightRadius, BorderTopLeftRadius,
-        BorderTopRightRadius, ContextValue, CustomStylable, CustomStyle, ExprCustomStyle,
-        ExprStyle, Foreground, Height, Style,
+        BorderTopRightRadius, ContextValue, CustomStylable, CustomStyle, ExprStyle, Foreground,
+        Height, Style,
     },
     style_class,
     unit::{Pct, PxPct, PxPctAuto},
@@ -717,8 +717,9 @@ impl SliderCustomStyle {
     ///
     /// # Arguments
     /// * `color` - An optional `Brush` that sets the handle's color.
-    pub fn handle_color(mut self, color: impl Into<Option<Brush>>) -> Self {
-        self = SliderCustomStyle(self.0.set(Foreground, color));
+    pub fn handle_color(mut self, color: impl Into<Brush>) -> Self {
+        let color = color.into();
+        self = SliderCustomStyle(self.0.set(Foreground, Some(color)));
         self
     }
 
@@ -744,11 +745,12 @@ impl SliderCustomStyle {
     ///
     /// # Arguments
     /// * `color` - An optional `Brush` that sets the bar's background color.
-    pub fn bar_color(mut self, color: impl Into<Option<Brush>>) -> Self {
+    pub fn bar_color(mut self, color: impl Into<Brush>) -> Self {
         let color = color.into();
-        self = SliderCustomStyle(self.0.class(BarClass, move |s| {
-            s.set(Background, color.clone())
-        }));
+        self = SliderCustomStyle(
+            self.0
+                .class(BarClass, move |s| s.set(Background, Some(color).clone())),
+        );
         self
     }
 
@@ -776,9 +778,10 @@ impl SliderCustomStyle {
     /// * `color` - A `Brush` that sets the accent bar's background color.
     pub fn accent_bar_color(mut self, color: impl Into<Brush>) -> Self {
         let color = Some(color.into());
-        self = SliderCustomStyle(self.0.class(AccentBarClass, move |s| {
-            s.set(Background, color.clone())
-        }));
+        self = SliderCustomStyle(
+            self.0
+                .class(AccentBarClass, move |s| s.set(Background, color.clone())),
+        );
         self
     }
 
@@ -813,10 +816,6 @@ impl From<Style> for SliderCustomExprStyle {
         Self(val)
     }
 }
-impl ExprCustomStyle for SliderCustomExprStyle {
-    type StyleClass = SliderClass;
-}
-
 impl SliderCustomExprStyle {
     pub fn new() -> Self {
         Self::default()
@@ -864,7 +863,9 @@ impl SliderCustomExprStyle {
     {
         let color = color.map(Into::into);
         self = SliderCustomExprStyle(self.0.class(BarClass, move |s| {
-            ExprStyle::from(s).set_context_opt(Background, color.clone()).into()
+            ExprStyle::from(s)
+                .set_context_opt(Background, color.clone())
+                .into()
         }));
         self
     }
@@ -895,7 +896,9 @@ impl SliderCustomExprStyle {
     {
         let color = color.map(|color| Some(color.into()));
         self = SliderCustomExprStyle(self.0.class(AccentBarClass, move |s| {
-            ExprStyle::from(s).set_context_opt(Background, color.clone()).into()
+            ExprStyle::from(s)
+                .set_context_opt(Background, color.clone())
+                .into()
         }));
         self
     }
