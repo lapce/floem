@@ -7,7 +7,8 @@ use crate::{
     prelude::EventListenerTrait,
     prop_extractor,
     style::{
-        CustomStylable, CustomStyle, FontProps, LineHeight, Selectable, SelectionCornerRadius,
+        ContextValue, CustomStylable, CustomStyle, ExprCustomStyle, ExprStyle, FontProps, LineHeight,
+        Selectable, SelectionCornerRadius,
         SelectionStyle, Style, TextAlignProp, TextColor, TextOverflow, TextOverflowProp,
     },
     style_class,
@@ -568,5 +569,59 @@ impl LabelCustomStyle {
 impl Default for LabelCustomStyle {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct LabelCustomExprStyle(Style);
+impl From<LabelCustomExprStyle> for Style {
+    fn from(value: LabelCustomExprStyle) -> Self {
+        value.0
+    }
+}
+impl From<Style> for LabelCustomExprStyle {
+    fn from(value: Style) -> Self {
+        Self(value)
+    }
+}
+impl ExprCustomStyle for LabelCustomExprStyle {
+    type StyleClass = LabelClass;
+}
+
+impl LabelCustomExprStyle {
+    pub fn new() -> Self {
+        Self(Style::new())
+    }
+
+    pub fn selectable<T>(mut self, selectable: ContextValue<T>) -> Self
+    where
+        T: Into<bool> + 'static,
+    {
+        self = Self(ExprStyle::from(self.0).set_context(Selectable, selectable.map(Into::into)).into());
+        self
+    }
+
+    pub fn selection_corner_radius<T>(mut self, corner_radius: ContextValue<T>) -> Self
+    where
+        T: Into<f64> + 'static,
+    {
+        self = Self(
+            ExprStyle::from(self.0)
+                .set_context(SelectionCornerRadius, corner_radius.map(Into::into))
+                .into(),
+        );
+        self
+    }
+
+    pub fn selection_color<T>(mut self, color: ContextValue<T>) -> Self
+    where
+        T: Into<Brush> + 'static,
+    {
+        self = Self(
+            ExprStyle::from(self.0)
+                .set_context(SelectionColor, color.map(Into::into))
+                .into(),
+        );
+        self
     }
 }

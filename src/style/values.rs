@@ -48,9 +48,16 @@ use super::{
     StylePropRef, Transition,
 };
 
-#[derive(Clone)]
 pub struct ContextValue<T> {
     pub(crate) eval: Rc<dyn Fn(&Style) -> T>,
+}
+
+impl<T> Clone for ContextValue<T> {
+    fn clone(&self) -> Self {
+        Self {
+            eval: self.eval.clone(),
+        }
+    }
 }
 
 impl<T> std::fmt::Debug for ContextValue<T> {

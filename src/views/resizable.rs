@@ -11,7 +11,8 @@ use crate::{
     prelude::*,
     prop, prop_extractor,
     style::{
-        CursorStyle, CustomStylable, CustomStyle, FlexDirectionProp, Style, StyleClass,
+        ContextValue, CursorStyle, CustomStylable, CustomStyle, ExprCustomStyle, ExprStyle,
+        FlexDirectionProp, Style, StyleClass,
         recalc::{StyleReason, StyleReasonFlags},
     },
     style_class,
@@ -589,6 +590,64 @@ impl ResizableCustomStyle {
     ///   If `None` is provided, default automatic cursor style is used.
     pub fn handle_cursor_style(mut self, cursor_style: impl Into<Option<CursorStyle>>) -> Self {
         self = ResizableCustomStyle(self.0.set(HandleCursorStyle, cursor_style));
+        self
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct ResizableCustomExprStyle(Style);
+impl From<ResizableCustomExprStyle> for Style {
+    fn from(val: ResizableCustomExprStyle) -> Self {
+        val.0
+    }
+}
+impl From<Style> for ResizableCustomExprStyle {
+    fn from(val: Style) -> Self {
+        Self(val)
+    }
+}
+impl ExprCustomStyle for ResizableCustomExprStyle {
+    type StyleClass = ResizableHandleClass;
+}
+
+impl ResizableCustomExprStyle {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn handle_color<T>(mut self, color: ContextValue<T>) -> Self
+    where
+        T: Into<Brush> + 'static,
+    {
+        self = ResizableCustomExprStyle(
+            ExprStyle::from(self.0)
+                .set_context(HandleColor, color.map(Into::into))
+                .into(),
+        );
+        self
+    }
+
+    pub fn handle_thickness<T>(mut self, width: ContextValue<T>) -> Self
+    where
+        T: Into<Px> + 'static,
+    {
+        self = ResizableCustomExprStyle(
+            ExprStyle::from(self.0)
+                .set_context(HandleThickness, width.map(Into::into))
+                .into(),
+        );
+        self
+    }
+
+    pub fn handle_cursor_style<T>(mut self, cursor_style: ContextValue<T>) -> Self
+    where
+        T: Into<Option<CursorStyle>> + 'static,
+    {
+        self = ResizableCustomExprStyle(
+            ExprStyle::from(self.0)
+                .set_context_opt(HandleCursorStyle, cursor_style.map(Into::into))
+                .into(),
+        );
         self
     }
 }

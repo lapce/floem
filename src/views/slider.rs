@@ -19,7 +19,8 @@ use crate::{
     prop, prop_extractor,
     style::{
         Background, BorderBottomLeftRadius, BorderBottomRightRadius, BorderTopLeftRadius,
-        BorderTopRightRadius, CustomStylable, CustomStyle, Foreground, Height, Style,
+        BorderTopRightRadius, ContextValue, CustomStylable, CustomStyle, ExprCustomStyle,
+        ExprStyle, Foreground, Height, Style,
     },
     style_class,
     unit::{Pct, PxPct, PxPctAuto},
@@ -796,6 +797,126 @@ impl SliderCustomStyle {
     /// * `height` - A `PxPctAuto` value that sets the accent bar's height. This can be a pixel value, a percent value relative to the view's height, or `Auto` to use the view's height.
     pub fn accent_bar_height(mut self, height: impl Into<PxPctAuto>) -> Self {
         self = SliderCustomStyle(self.0.class(AccentBarClass, |s| s.height(height)));
+        self
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct SliderCustomExprStyle(Style);
+impl From<SliderCustomExprStyle> for Style {
+    fn from(val: SliderCustomExprStyle) -> Self {
+        val.0
+    }
+}
+impl From<Style> for SliderCustomExprStyle {
+    fn from(val: Style) -> Self {
+        Self(val)
+    }
+}
+impl ExprCustomStyle for SliderCustomExprStyle {
+    type StyleClass = SliderClass;
+}
+
+impl SliderCustomExprStyle {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn handle_color<T>(mut self, color: ContextValue<T>) -> Self
+    where
+        T: Into<Option<Brush>> + 'static,
+    {
+        self = SliderCustomExprStyle(
+            ExprStyle::from(self.0)
+                .set_context_opt(Foreground, color.map(Into::into))
+                .into(),
+        );
+        self
+    }
+
+    pub fn edge_align<T>(mut self, align: ContextValue<T>) -> Self
+    where
+        T: Into<bool> + 'static,
+    {
+        self = SliderCustomExprStyle(
+            ExprStyle::from(self.0)
+                .set_context(EdgeAlign, align.map(Into::into))
+                .into(),
+        );
+        self
+    }
+
+    pub fn handle_radius<T>(mut self, radius: ContextValue<T>) -> Self
+    where
+        T: Into<PxPct> + 'static,
+    {
+        self = SliderCustomExprStyle(
+            ExprStyle::from(self.0)
+                .set_context(HandleRadius, radius.map(Into::into))
+                .into(),
+        );
+        self
+    }
+
+    pub fn bar_color<T>(mut self, color: ContextValue<T>) -> Self
+    where
+        T: Into<Option<Brush>> + 'static,
+    {
+        let color = color.map(Into::into);
+        self = SliderCustomExprStyle(self.0.class(BarClass, move |s| {
+            ExprStyle::from(s).set_context_opt(Background, color.clone()).into()
+        }));
+        self
+    }
+
+    pub fn bar_radius<T>(mut self, radius: ContextValue<T>) -> Self
+    where
+        T: Into<PxPct> + 'static,
+    {
+        self = SliderCustomExprStyle(self.0.class(BarClass, move |s| {
+            ExprStyle::from(s).border_radius(radius.clone()).into()
+        }));
+        self
+    }
+
+    pub fn bar_height<T>(mut self, height: ContextValue<T>) -> Self
+    where
+        T: Into<PxPctAuto> + 'static,
+    {
+        self = SliderCustomExprStyle(self.0.class(BarClass, move |s| {
+            ExprStyle::from(s).height(height.clone()).into()
+        }));
+        self
+    }
+
+    pub fn accent_bar_color<T>(mut self, color: ContextValue<T>) -> Self
+    where
+        T: Into<Brush> + 'static,
+    {
+        let color = color.map(|color| Some(color.into()));
+        self = SliderCustomExprStyle(self.0.class(AccentBarClass, move |s| {
+            ExprStyle::from(s).set_context_opt(Background, color.clone()).into()
+        }));
+        self
+    }
+
+    pub fn accent_bar_radius<T>(mut self, radius: ContextValue<T>) -> Self
+    where
+        T: Into<PxPct> + 'static,
+    {
+        self = SliderCustomExprStyle(self.0.class(AccentBarClass, move |s| {
+            ExprStyle::from(s).border_radius(radius.clone()).into()
+        }));
+        self
+    }
+
+    pub fn accent_bar_height<T>(mut self, height: ContextValue<T>) -> Self
+    where
+        T: Into<PxPctAuto> + 'static,
+    {
+        self = SliderCustomExprStyle(self.0.class(AccentBarClass, move |s| {
+            ExprStyle::from(s).height(height.clone()).into()
+        }));
         self
     }
 }

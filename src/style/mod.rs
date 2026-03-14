@@ -180,7 +180,7 @@ pub use components::{
     Border, BorderColor, BorderRadius, BoxShadow, CursorStyle, Margin, NoWrapOverflow, Padding,
     PointerEvents, TextOverflow,
 };
-pub use custom::{CustomStylable, CustomStyle};
+pub use custom::{CustomStylable, CustomStyle, ExprCustomStyle};
 pub use cx::{InheritedInteractionCx, InteractionState, StyleCx};
 pub use props::{
     ExtractorField, StyleClass, StyleClassInfo, StyleClassRef, StyleDebugGroup,
@@ -543,7 +543,7 @@ impl ExprStyle {
         self.set(BorderTopColor, color.map(|color| Some(color.into())))
     }
 
-    pub fn custom<CS: CustomStyle>(self, custom: impl FnOnce(CS) -> CS) -> Self {
+    pub fn custom<CS: ExprCustomStyle>(self, custom: impl FnOnce(CS) -> CS) -> Self {
         self.apply(custom(CS::default()).into())
     }
 

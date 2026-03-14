@@ -6,7 +6,7 @@ use super::{
     BorderBottomRightRadius, BorderColor, BorderLeft, BorderLeftColor, BorderRadius, BorderRight,
     BorderRightColor, BorderTop, BorderTopColor, BorderTopLeftRadius, BorderTopRightRadius,
     BoxShadow, BoxShadowProp, ColGap, ContextRef, ContextValue, Cursor, CursorStyle, CustomStyle,
-    ExprStyle, FontSize, Foreground, Height, Margin, MarginBottom, MarginLeft, MarginRight,
+    ExprCustomStyle, ExprStyle, FontSize, Foreground, Height, Margin, MarginBottom, MarginLeft, MarginRight,
     MarginTop, Padding, PaddingBottom, PaddingLeft, PaddingRight, PaddingTop, RowGap, Style,
     StylePropValue, Transition, Width,
 };
@@ -17,13 +17,14 @@ use crate::views::resizable::ResizableHandleClass;
 use crate::{
     AnyView, prop, style_class, style_debug_group,
     views::{
-        ButtonClass, CheckboxClass, LabelClass, LabelCustomStyle, LabeledCheckboxClass,
+        ButtonClass, CheckboxClass, LabelClass, LabelCustomExprStyle, LabelCustomStyle,
+        LabeledCheckboxClass,
         LabeledRadioButtonClass, ListClass, ListItemClass, PlaceholderTextClass, RadioButtonClass,
         RadioButtonDotClass, SvgClass, TabSelectorClass, TextInputClass, ToggleButtonCircleRad,
         ToggleButtonClass, ToggleButtonInset, TooltipClass, dropdown,
-        resizable::ResizableCustomStyle,
+        resizable::{ResizableCustomExprStyle, ResizableCustomStyle},
         scroll,
-        slider::{SliderClass, SliderCustomStyle},
+        slider::{SliderClass, SliderCustomExprStyle, SliderCustomStyle},
     },
 };
 use floem_renderer::text::FontWeight;
@@ -789,7 +790,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
         .line_height(1.2)
         .class(LabelClass, |s| {
             s.with_theme(|s, t| {
-                s.custom(|s: LabelCustomStyle| {
+                s.custom(|s: LabelCustomExprStyle| {
                     s.selection_color(t.def(|t| Brush::Solid(t.primary_muted().with_alpha(0.5))))
                 })
             })
@@ -849,17 +850,20 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
         })
         .class(ToggleButtonClass, |_| toggle_button_style)
         .class(SliderClass, |s| {
-            s.apply(focus_style()).with_theme(|s, t| {
-                s.custom(|cs: SliderCustomStyle| {
+            s.apply(focus_style())
+                .custom(|cs: SliderCustomStyle| {
                     cs.bar_radius(100.pct())
                         .accent_bar_radius(100.pct())
                         .handle_radius(100.pct())
                         .edge_align(true)
-                        .bar_color(t.def(|t| Some(Brush::Solid(t.border()))))
-                        .accent_bar_color(t.def(|t| Some(Brush::Solid(t.primary()))))
-                        .handle_color(t.def(|t| Some(Brush::Solid(t.text()))))
                 })
-            })
+                .with_theme(|s, t| {
+                    s.custom(|cs: SliderCustomExprStyle| {
+                        cs.bar_color(t.def(|t| Some(Brush::Solid(t.border()))))
+                            .accent_bar_color(t.def(|t| Brush::Solid(t.primary())))
+                            .handle_color(t.def(|t| Some(Brush::Solid(t.text()))))
+                    })
+                })
         })
         .class(PlaceholderTextClass, |s| {
             s.with_theme(|s, t| {
@@ -913,10 +917,10 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
                 })
         })
         .class(ResizableHandleClass, |s| {
-            s.with_theme(|s, t| {
-                s.custom(|cs: ResizableCustomStyle| {
-                    cs.handle_thickness(3.)
-                        .handle_color(t.def(|t| Brush::Solid(t.primary_muted().with_alpha(0.5))))
+            s.custom(|cs: ResizableCustomStyle| cs.handle_thickness(3.))
+                .with_theme(|s, t| {
+                s.custom(|cs: ResizableCustomExprStyle| {
+                    cs.handle_color(t.def(|t| Brush::Solid(t.primary_muted().with_alpha(0.5))))
                         .hover(|s| s.handle_color(t.def(|t| Brush::Solid(t.primary()))))
                 })
             })
