@@ -14,7 +14,7 @@ use floem::peniko::{Brush, Color};
 use floem::prelude::*;
 use floem::prop;
 use floem::reactive::RwSignal;
-use floem::style::{Background, FontWeight, Style, TextColor};
+use floem::style::{Background, ContextRef, ContextValue, ExprStyle, FontWeight, Style, TextColor};
 use floem::text::FontWeight as Weight;
 use floem_test::prelude::*;
 use serial_test::serial;
@@ -51,14 +51,45 @@ impl floem::style::StylePropValue for TestTheme {
 
 /// Helper extension trait for using the test theme
 trait TestThemeExt {
-    fn with_test_theme(self, f: impl Fn(Self, &TestTheme) -> Self + 'static) -> Self
+    fn with_test_theme(
+        self,
+        f: impl Fn(ExprStyle, ContextRef<TestThemeProp>) -> ExprStyle + 'static,
+    ) -> Self
     where
         Self: Sized;
 }
 
 impl TestThemeExt for Style {
-    fn with_test_theme(self, f: impl Fn(Self, &TestTheme) -> Self + 'static) -> Self {
-        self.with_context::<TestThemeProp>(f)
+    fn with_test_theme(
+        self,
+        f: impl Fn(ExprStyle, ContextRef<TestThemeProp>) -> ExprStyle + 'static,
+    ) -> Self {
+        self.with::<TestThemeProp>(f)
+    }
+}
+
+trait TestThemeRefExt {
+    fn primary_bg(self) -> ContextValue<Color>;
+    fn secondary_bg(self) -> ContextValue<Color>;
+    fn primary_color(self) -> ContextValue<Color>;
+    fn secondary_color(self) -> ContextValue<Color>;
+}
+
+impl TestThemeRefExt for ContextRef<TestThemeProp> {
+    fn primary_bg(self) -> ContextValue<Color> {
+        self.def(|theme| theme.primary_bg)
+    }
+
+    fn secondary_bg(self) -> ContextValue<Color> {
+        self.def(|theme| theme.secondary_bg)
+    }
+
+    fn primary_color(self) -> ContextValue<Color> {
+        self.def(|theme| theme.primary_color)
+    }
+
+    fn secondary_color(self) -> ContextValue<Color> {
+        self.def(|theme| theme.secondary_color)
     }
 }
 
@@ -76,13 +107,13 @@ fn test_signal_outside_with_context_is_tracked() {
         s.size(100.0, 100.0).with_test_theme(move |s, theme| {
             // Use the captured `active` value
             if active {
-                s.background(theme.primary_bg)
-                    .color(theme.primary_color)
-                    .font_weight(Weight::BOLD)
+                s.background(theme.primary_bg())
+                    .color(theme.primary_color())
+                    .font_weight(theme.def(|_| Weight::BOLD))
             } else {
-                s.background(theme.secondary_bg)
-                    .color(theme.secondary_color)
-                    .font_weight(Weight::NORMAL)
+                s.background(theme.secondary_bg())
+                    .color(theme.secondary_color())
+                    .font_weight(theme.def(|_| Weight::NORMAL))
             }
         })
     });
@@ -150,13 +181,13 @@ fn test_signal_inside_with_context_is_tracked() {
             // Signal accessed INSIDE with_context - tracked via probing
             let active = is_active.get();
             if active {
-                s.background(theme.primary_bg)
-                    .color(theme.primary_color)
-                    .font_weight(Weight::BOLD)
+                s.background(theme.primary_bg())
+                    .color(theme.primary_color())
+                    .font_weight(theme.def(|_| Weight::BOLD))
             } else {
-                s.background(theme.secondary_bg)
-                    .color(theme.secondary_color)
-                    .font_weight(Weight::NORMAL)
+                s.background(theme.secondary_bg())
+                    .color(theme.secondary_color())
+                    .font_weight(theme.def(|_| Weight::NORMAL))
             }
         })
     });
@@ -237,13 +268,13 @@ fn test_closure_signal_inside_with_context() {
             // Call the is_active closure inside with_context
             let active = is_active();
             if active {
-                s.background(theme.primary_bg)
-                    .color(theme.primary_color)
-                    .font_weight(Weight::BOLD)
+                s.background(theme.primary_bg())
+                    .color(theme.primary_color())
+                    .font_weight(theme.def(|_| Weight::BOLD))
             } else {
-                s.background(theme.secondary_bg)
-                    .color(theme.secondary_color)
-                    .font_weight(Weight::NORMAL)
+                s.background(theme.secondary_bg())
+                    .color(theme.secondary_color())
+                    .font_weight(theme.def(|_| Weight::NORMAL))
             }
         })
     });
@@ -285,9 +316,11 @@ fn test_multiple_views_with_signals_inside_with_context() {
     let view0 = Empty::new().style(move |s| {
         s.size(50.0, 50.0).with_test_theme(move |s, theme| {
             if active_index.get() == 0 {
-                s.background(theme.primary_bg).font_weight(Weight::BOLD)
+                s.background(theme.primary_bg())
+                    .font_weight(theme.def(|_| Weight::BOLD))
             } else {
-                s.background(theme.secondary_bg).font_weight(Weight::NORMAL)
+                s.background(theme.secondary_bg())
+                    .font_weight(theme.def(|_| Weight::NORMAL))
             }
         })
     });
@@ -296,9 +329,11 @@ fn test_multiple_views_with_signals_inside_with_context() {
     let view1 = Empty::new().style(move |s| {
         s.size(50.0, 50.0).with_test_theme(move |s, theme| {
             if active_index.get() == 1 {
-                s.background(theme.primary_bg).font_weight(Weight::BOLD)
+                s.background(theme.primary_bg())
+                    .font_weight(theme.def(|_| Weight::BOLD))
             } else {
-                s.background(theme.secondary_bg).font_weight(Weight::NORMAL)
+                s.background(theme.secondary_bg())
+                    .font_weight(theme.def(|_| Weight::NORMAL))
             }
         })
     });
@@ -353,13 +388,13 @@ fn test_click_changes_signal_inside_with_context() {
         .style(move |s| {
             s.size(100.0, 50.0).with_test_theme(move |s, theme| {
                 if is_active.get() {
-                    s.background(theme.primary_bg)
-                        .color(theme.primary_color)
-                        .font_weight(Weight::BOLD)
+                    s.background(theme.primary_bg())
+                        .color(theme.primary_color())
+                        .font_weight(theme.def(|_| Weight::BOLD))
                 } else {
-                    s.background(theme.secondary_bg)
-                        .color(theme.secondary_color)
-                        .font_weight(Weight::NORMAL)
+                    s.background(theme.secondary_bg())
+                        .color(theme.secondary_color())
+                        .font_weight(theme.def(|_| Weight::NORMAL))
                 }
             })
         })
@@ -416,9 +451,9 @@ fn test_child_label_inherits_font_weight_from_parent() {
     let container = Stack::new((label,)).style(move |s| {
         s.size(100.0, 50.0).with_test_theme(move |s, _theme| {
             if is_active.get() {
-                s.font_weight(Weight::BOLD)
+                s.font_weight(_theme.def(|_| Weight::BOLD))
             } else {
-                s.font_weight(Weight::NORMAL)
+                s.font_weight(_theme.def(|_| Weight::NORMAL))
             }
         })
     });
@@ -469,8 +504,8 @@ fn test_hover_selector_with_parent_theme_colors() {
     // Child uses hover with theme colors
     let child = Empty::new().style(|s| {
         s.size(50.0, 50.0).with_test_theme(|s, theme| {
-            s.background(theme.secondary_bg)
-                .hover(|s| s.background(theme.primary_bg))
+            s.background(theme.secondary_bg())
+                .hover(|s| s.background(theme.primary_bg()))
         })
     });
     let child_id = child.view_id();
@@ -517,8 +552,8 @@ fn test_active_selector_with_parent_theme_colors() {
 
     let child = Empty::new().style(|s| {
         s.size(50.0, 50.0).with_test_theme(|s, theme| {
-            s.background(theme.secondary_bg)
-                .active(|s| s.background(theme.primary_bg))
+            s.background(theme.secondary_bg())
+                .active(|s| s.background(theme.primary_bg()))
         })
     });
     let child_id = child.view_id();
@@ -564,9 +599,9 @@ fn test_multiple_selectors_with_parent_theme_colors() {
 
     let child = Empty::new().style(|s| {
         s.size(50.0, 50.0).with_test_theme(|s, theme| {
-            s.background(theme.secondary_bg) // GREEN
-                .hover(|s| s.background(theme.primary_bg)) // RED on hover
-                .active(|s| s.background(theme.primary_color)) // BLUE on active
+            s.background(theme.secondary_bg()) // GREEN
+                .hover(|s| s.background(theme.primary_bg())) // RED on hover
+                .active(|s| s.background(theme.primary_color())) // BLUE on active
         })
     });
     let child_id = child.view_id();
@@ -617,8 +652,8 @@ fn test_selector_updates_when_parent_theme_changes() {
 
     let child = Empty::new().style(|s| {
         s.size(50.0, 50.0).with_test_theme(|s, theme| {
-            s.background(theme.secondary_bg)
-                .hover(|s| s.background(theme.primary_bg))
+            s.background(theme.secondary_bg())
+                .hover(|s| s.background(theme.primary_bg()))
         })
     });
     let child_id = child.view_id();
@@ -671,10 +706,10 @@ fn test_nested_selectors_with_parent_theme_colors() {
 
     let child = Empty::new().style(|s| s.keyboard_navigable()).style(|s| {
         s.size(50.0, 50.0).with_test_theme(|s, theme| {
-            s.background(theme.secondary_bg) // GREEN
+            s.background(theme.secondary_bg()) // GREEN
                 .hover(|s| {
-                    s.background(theme.primary_bg) // RED on hover
-                        .focus_visible(|s| s.background(theme.primary_color)) // BLUE when focused while hovering
+                    s.background(theme.primary_bg()) // RED on hover
+                        .focus_visible(|s| s.background(theme.primary_color())) // BLUE when focused while hovering
                 })
         })
     });
@@ -720,12 +755,12 @@ fn test_selector_with_conditional_theme_and_signal() {
     let child = Empty::new().style(move |s| {
         s.size(50.0, 50.0).with_test_theme(move |s, theme| {
             let base = if is_active.get() {
-                s.background(theme.primary_bg) // RED when active
+                s.background(theme.primary_bg()) // RED when active
             } else {
-                s.background(theme.secondary_bg) // GREEN when inactive
+                s.background(theme.secondary_bg()) // GREEN when inactive
             };
             // Hover always uses primary_color (BLUE)
-            base.hover(|s| s.background(theme.primary_color))
+            base.hover(|s| s.background(theme.primary_color()))
         })
     });
     let child_id = child.view_id();
@@ -790,8 +825,8 @@ fn test_deep_nesting_with_theme_selectors() {
     // Create a deep hierarchy where the leaf uses theme in hover
     let leaf = Empty::new().style(|s| {
         s.size(20.0, 20.0).with_test_theme(|s, theme| {
-            s.background(theme.secondary_bg)
-                .hover(|s| s.background(theme.primary_bg))
+            s.background(theme.secondary_bg())
+                .hover(|s| s.background(theme.primary_bg()))
         })
     });
     let leaf_id = leaf.view_id();
@@ -838,16 +873,16 @@ fn test_siblings_with_theme_selectors() {
 
     let child1 = Empty::new().style(|s| {
         s.size(40.0, 40.0).with_test_theme(|s, theme| {
-            s.background(theme.secondary_bg) // GREEN
-                .hover(|s| s.background(theme.primary_bg)) // RED
+            s.background(theme.secondary_bg()) // GREEN
+                .hover(|s| s.background(theme.primary_bg())) // RED
         })
     });
     let child1_id = child1.view_id();
 
     let child2 = Empty::new().style(|s| {
         s.size(40.0, 40.0).with_test_theme(|s, theme| {
-            s.background(theme.secondary_color) // YELLOW
-                .hover(|s| s.background(theme.primary_color)) // BLUE
+            s.background(theme.secondary_color()) // YELLOW
+                .hover(|s| s.background(theme.primary_color())) // BLUE
         })
     });
     let child2_id = child2.view_id();

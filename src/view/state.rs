@@ -475,7 +475,7 @@ impl ViewState {
         class_context: &Style,
     ) {
         // Start with the combined stacked styles
-        let base_style = self.style();
+        let base_style = self.style().with_inherited_context(inherited_context);
         interact_state.is_disabled |= base_style.builtin().set_disabled();
         interact_state.is_selected |= base_style.builtin().set_selected();
         interact_state.is_hidden |= base_style.builtin().display() == taffy::Display::None;
@@ -490,15 +490,13 @@ impl ViewState {
         }
 
         // Create mutable contexts - inherited for with_context evaluation
-        let inherited_ctx = inherited_context.clone();
-
         // Resolve all nested maps: selectors, responsive styles, and classes
         let (combined, selectors) = crate::style::resolve_nested_maps(
             base_style,
             interact_state,
             screen_size_bp,
             &all_classes,
-            &inherited_ctx,
+            inherited_context,
             class_context,
         );
 

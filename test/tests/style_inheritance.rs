@@ -18,14 +18,14 @@ prop!(
 
 /// Helper to access inherited color in styles
 trait InheritedColorExt {
-    fn with_inherited_color(self, f: impl Fn(Self, &Color) -> Self + 'static) -> Self
+    fn with_inherited_color(self) -> Self
     where
         Self: Sized;
 }
 
 impl InheritedColorExt for Style {
-    fn with_inherited_color(self, f: impl Fn(Self, &Color) -> Self + 'static) -> Self {
-        self.with_context::<InheritedColorProp>(f)
+    fn with_inherited_color(self) -> Self {
+        self.with::<InheritedColorProp>(|s, color| s.background(color.def(|color| color)))
     }
 }
 
@@ -33,10 +33,7 @@ impl InheritedColorExt for Style {
 #[test]
 fn test_inherited_prop_flows_to_child() {
     let root = TestRoot::new();
-    let child = Empty::new().style(|s| {
-        s.size(50.0, 50.0)
-            .with_inherited_color(|s, color| s.background(*color))
-    });
+    let child = Empty::new().style(|s| s.size(50.0, 50.0).with_inherited_color());
     let child_id = child.view_id();
 
     let parent = Container::new(child).style(|s| {
@@ -64,7 +61,7 @@ fn test_child_can_override_inherited_prop() {
         s.size(50.0, 50.0)
             // Override the inherited prop
             .set(InheritedColorProp, palette::css::BLUE)
-            .with_inherited_color(|s, color| s.background(*color))
+            .with_inherited_color()
     });
     let child_id = child.view_id();
 
@@ -89,10 +86,7 @@ fn test_child_can_override_inherited_prop() {
 #[test]
 fn test_deeply_nested_inheritance() {
     let root = TestRoot::new();
-    let grandchild = Empty::new().style(|s| {
-        s.size(25.0, 25.0)
-            .with_inherited_color(|s, color| s.background(*color))
-    });
+    let grandchild = Empty::new().style(|s| s.size(25.0, 25.0).with_inherited_color());
     let grandchild_id = grandchild.view_id();
 
     let child = Container::new(grandchild).style(|s| s.size(50.0, 50.0));
@@ -120,10 +114,7 @@ fn test_inherited_prop_updates_propagate() {
     let root = TestRoot::new();
     let color_signal = RwSignal::new(palette::css::RED);
 
-    let child = Empty::new().style(|s| {
-        s.size(50.0, 50.0)
-            .with_inherited_color(|s, color| s.background(*color))
-    });
+    let child = Empty::new().style(|s| s.size(50.0, 50.0).with_inherited_color());
     let child_id = child.view_id();
 
     let parent = Container::new(child).style(move |s| {

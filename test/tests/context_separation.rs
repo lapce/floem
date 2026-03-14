@@ -25,14 +25,14 @@ prop!(
 
 // Helper trait for inherited color.
 trait TestColorExt {
-    fn with_test_color(self, f: impl Fn(Self, &Color) -> Self + 'static) -> Self
+    fn with_test_color(self) -> Self
     where
         Self: Sized;
 }
 
 impl TestColorExt for Style {
-    fn with_test_color(self, f: impl Fn(Self, &Color) -> Self + 'static) -> Self {
-        self.with_context::<TestInheritedColor>(f)
+    fn with_test_color(self) -> Self {
+        self.with::<TestInheritedColor>(|s, color| s.background(color.def(|color| color)))
     }
 }
 
@@ -51,10 +51,7 @@ fn test_class_styling_doesnt_break_inherited_props() {
     // Child uses inherited color (not class)
     // Child should get the inherited color, not be affected by class
 
-    let child = Empty::new().style(|s| {
-        s.size(50.0, 50.0)
-            .with_test_color(|s, color| s.background(*color))
-    });
+    let child = Empty::new().style(|s| s.size(50.0, 50.0).with_test_color());
     let child_id = child.view_id();
 
     let parent = Container::new(child).style(|s| {
@@ -86,10 +83,7 @@ fn test_class_on_sibling_doesnt_affect_inherited() {
     let class_child = Empty::new().class(TestClass).style(|s| s.size(50.0, 50.0));
     let class_child_id = class_child.view_id();
 
-    let inherited_child = Empty::new().style(|s| {
-        s.size(50.0, 50.0)
-            .with_test_color(|s, color| s.background(*color))
-    });
+    let inherited_child = Empty::new().style(|s| s.size(50.0, 50.0).with_test_color());
     let inherited_child_id = inherited_child.view_id();
 
     let parent = Stack::new((class_child, inherited_child)).style(|s| {
@@ -176,10 +170,7 @@ fn test_both_inherited_and_class_change_together() {
     let use_class = RwSignal::new(false);
 
     // Child uses inherited color
-    let inherited_child = Empty::new().style(|s| {
-        s.size(50.0, 50.0)
-            .with_test_color(|s, color| s.background(*color))
-    });
+    let inherited_child = Empty::new().style(|s| s.size(50.0, 50.0).with_test_color());
     let inherited_child_id = inherited_child.view_id();
 
     // Child uses class
@@ -261,10 +252,7 @@ fn test_class_child_no_parent_class_styling() {
 #[test]
 fn test_inherited_only_no_class() {
     let root = TestRoot::new();
-    let child = Empty::new().style(|s| {
-        s.size(50.0, 50.0)
-            .with_test_color(|s, color| s.background(*color))
-    });
+    let child = Empty::new().style(|s| s.size(50.0, 50.0).with_test_color());
     let child_id = child.view_id();
 
     let parent = Container::new(child).style(|s| {
@@ -319,10 +307,7 @@ fn test_deep_nesting_mixed_inherited_and_class() {
     //       -> InheritedLeaf (uses inherited)
     //       -> ClassLeaf (uses class)
 
-    let inherited_leaf = Empty::new().style(|s| {
-        s.size(20.0, 20.0)
-            .with_test_color(|s, color| s.background(*color))
-    });
+    let inherited_leaf = Empty::new().style(|s| s.size(20.0, 20.0).with_test_color());
     let inherited_leaf_id = inherited_leaf.view_id();
 
     let class_leaf = Empty::new().class(TestClass).style(|s| s.size(20.0, 20.0));
@@ -367,7 +352,8 @@ fn test_view_uses_both_inherited_and_class() {
     let child = Empty::new().class(TestClass).style(|s| {
         s.size(50.0, 50.0)
             // Use inherited color for border
-            .with_test_color(|s, color| s.border_color(*color).border(2.0))
+            .with::<TestInheritedColor>(|s, color| s.border_color(color.def(|color| color)))
+            .border(2.0)
     });
     let child_id = child.view_id();
 

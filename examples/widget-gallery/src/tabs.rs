@@ -1,7 +1,8 @@
+use floem::peniko::Brush;
 use floem::prelude::palette::css;
 use floem::prelude::*;
 use floem::reactive::Effect;
-use floem::style::{BoxShadow, CustomStylable};
+use floem::style::{BorderTopColor, BoxShadow, CustomStylable};
 use floem::taffy::AlignContent;
 use floem::theme::StyleThemeExt;
 
@@ -128,9 +129,16 @@ fn show_tab_content(tab: TabContent) -> impl IntoView {
             .border_radius(7.)
             .border_top(0.6)
             .with_theme(|s, t| {
-                s.background(t.bg_elevated())
-                    .border_top_color(css::WHITE)
-                    .apply_if(t.is_dark, |s| s.border_top_color(t.border()))
+                s.background(t.bg_elevated()).set_context_opt(
+                    BorderTopColor,
+                    t.def(|t| {
+                        Some(if t.is_dark {
+                            Brush::Solid(t.border())
+                        } else {
+                            Brush::Solid(css::WHITE)
+                        })
+                    }),
+                )
             })
             .border_bottom_color(css::BLACK.multiply_alpha(0.7))
             .apply_box_shadows(vec![

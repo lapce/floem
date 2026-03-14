@@ -5,7 +5,7 @@
 //! - [`TransitionState`] - Internal state for tracking active transitions
 //! - [`DirectTransition`] - Standalone transition controller
 
-use floem_reactive::{RwSignal, SignalGet, SignalUpdate as _};
+use floem_reactive::{RwSignal, SignalGet};
 use floem_renderer::Renderer;
 use peniko::color::palette;
 use peniko::kurbo::{self, Point, Stroke};
@@ -187,11 +187,7 @@ impl Transition {
             s.padding(4.0)
                 .border(1.)
                 .border_radius(5.0)
-                .with_theme(move |s, t| {
-                    curve_color.set(t.primary());
-                    axis_color.set(t.text_muted());
-                    s.border_color(t.border())
-                })
+                .with_theme(move |s, t| s.border_color(t.border()))
         });
 
         let tooltip_view = move || {

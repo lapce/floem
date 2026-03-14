@@ -11,7 +11,8 @@ use crate::{
     prelude::*,
     prop, prop_extractor,
     style::{
-        CursorStyle, CustomStylable, CustomStyle, FlexDirectionProp, Style, StyleClass,
+        ContextValue, CursorStyle, CustomStylable, CustomStyle, ExprStyle, FlexDirectionProp,
+        Style, StyleClass,
         recalc::{StyleReason, StyleReasonFlags},
     },
     style_class,
@@ -567,9 +568,8 @@ impl ResizableCustomStyle {
     /// Sets the color of the handle handle.
     ///
     /// # Arguments
-    /// * `color` - An optional `Brush` that sets the handle's color. If `None` is provided, the handle color is not set.
+    /// * `color` - A `Brush` that sets the handle's color.
     pub fn handle_color(mut self, color: impl Into<Brush>) -> Self {
-        let color = color.into();
         self = ResizableCustomStyle(self.0.set(HandleColor, color));
         self
     }
@@ -590,6 +590,70 @@ impl ResizableCustomStyle {
     ///   If `None` is provided, default automatic cursor style is used.
     pub fn handle_cursor_style(mut self, cursor_style: impl Into<Option<CursorStyle>>) -> Self {
         self = ResizableCustomStyle(self.0.set(HandleCursorStyle, cursor_style));
+        self
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct ResizableCustomExprStyle(Style);
+impl From<ResizableCustomExprStyle> for Style {
+    fn from(val: ResizableCustomExprStyle) -> Self {
+        val.0
+    }
+}
+impl From<Style> for ResizableCustomExprStyle {
+    fn from(val: Style) -> Self {
+        Self(val)
+    }
+}
+impl ResizableCustomExprStyle {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn style(self, style: impl FnOnce(ExprStyle) -> ExprStyle) -> Self {
+        let new: Style = style(self.0.into()).into();
+        new.into()
+    }
+
+    pub fn hover(self, style: impl FnOnce(Self) -> Self) -> Self {
+        let new = self.0.hover(|_| style(Self::default()).into());
+        new.into()
+    }
+
+    pub fn handle_color<T>(mut self, color: ContextValue<T>) -> Self
+    where
+        T: Into<Brush> + 'static,
+    {
+        self = ResizableCustomExprStyle(
+            ExprStyle::from(self.0)
+                .set_context(HandleColor, color.map(Into::into))
+                .into(),
+        );
+        self
+    }
+
+    pub fn handle_thickness<T>(mut self, width: ContextValue<T>) -> Self
+    where
+        T: Into<Px> + 'static,
+    {
+        self = ResizableCustomExprStyle(
+            ExprStyle::from(self.0)
+                .set_context(HandleThickness, width.map(Into::into))
+                .into(),
+        );
+        self
+    }
+
+    pub fn handle_cursor_style<T>(mut self, cursor_style: ContextValue<T>) -> Self
+    where
+        T: Into<Option<CursorStyle>> + 'static,
+    {
+        self = ResizableCustomExprStyle(
+            ExprStyle::from(self.0)
+                .set_context_opt(HandleCursorStyle, cursor_style.map(Into::into))
+                .into(),
+        );
         self
     }
 }

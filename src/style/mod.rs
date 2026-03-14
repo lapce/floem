@@ -19,7 +19,6 @@
 //! - Prop(StylePropInfo),
 //! - Selector(StyleSelectors),
 //! - Class(StyleClassInfo),
-//! - ContextMappings,
 //!
 //! Transitions and context mappings don't hold any extra information, they are just used to know how to downcast the `Rc<dyn Any>`.
 //!
@@ -128,7 +127,7 @@
 //!
 //! You can create custom extractors and embed them in your custom views so that you can get out any built in prop, or any of your custom props from the final combined style that is applied to your `View`.
 
-use floem_renderer::text::{FontWeight as FontWeightProp, LineHeightValue};
+use floem_renderer::text::FontWeight as FontWeightProp;
 use peniko::color::palette;
 use peniko::kurbo::{self, Affine, RoundedRect, Stroke, Vec2};
 use peniko::{Brush, Color};
@@ -137,6 +136,7 @@ use smallvec::SmallVec;
 use std::any::Any;
 use std::collections::HashMap;
 use std::fmt::{self, Debug};
+use std::marker::PhantomData;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use taffy::GridTemplateComponent;
@@ -190,14 +190,14 @@ pub use props::{
 pub use selectors::{NthChild, StructuralSelector, StyleSelector, StyleSelectors};
 pub use theme::{DesignSystem, StyleThemeExt};
 pub use transition::{DirectTransition, Transition, TransitionState};
-pub use unit::{AnchorAbout, Angle, Auto, DurationUnitExt, Pct, Px, PxPct, PxPctAuto, UnitExt};
-pub use values::{ObjectFit, StrokeWrap, StyleMapValue, StylePropValue, StyleValue};
+pub use unit::{
+    AnchorAbout, Angle, Auto, DurationUnitExt, LineHeightValue, Pct, Px, PxPct, PxPctAuto, UnitExt,
+};
+pub use values::{ContextValue, ObjectFit, StrokeWrap, StyleMapValue, StylePropValue, StyleValue};
 
 pub use cache::{StyleCache, StyleCacheKey};
 
-pub(crate) use props::{
-    CONTEXT_MAPPINGS_INFO, RESPONSIVE_SELECTORS_INFO, STRUCTURAL_SELECTORS_INFO, style_key_selector,
-};
+pub(crate) use props::{RESPONSIVE_SELECTORS_INFO, STRUCTURAL_SELECTORS_INFO, style_key_selector};
 
 static NEXT_STYLE_MERGE_ID: AtomicU64 = AtomicU64::new(1);
 const MERGE_MIX_CONST: u64 = 0x9E3779B97F4A7C15;
@@ -210,10 +210,325 @@ fn combine_merge_ids(a: u64, b: u64) -> u64 {
     a.rotate_left(13) ^ b.wrapping_mul(MERGE_MIX_CONST)
 }
 
-/// A closure that maps context values to style properties.
-type ContextMapFn = Rc<dyn Fn(Style, Box<dyn Fn(StyleKey) -> Option<Rc<dyn Any>>>) -> Style>;
 type StructuralSelectorRules = SmallVec<[(StructuralSelector, Rc<Style>); 2]>;
 type ResponsiveSelectorRules = SmallVec<[(ResponsiveSelector, Rc<Style>); 2]>;
+
+#[derive(Clone, Default, Debug)]
+pub struct ExprStyle {
+    style: Style,
+}
+
+impl From<Style> for ExprStyle {
+    fn from(style: Style) -> Self {
+        Self { style }
+    }
+}
+
+impl From<ExprStyle> for Style {
+    fn from(style: ExprStyle) -> Self {
+        style.style
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ContextRef<P: StyleProp> {
+    _marker: PhantomData<P>,
+}
+
+impl<P: StyleProp> ContextRef<P> {
+    /// Create a deferred value by mapping the current context prop to a single property value.
+    ///
+    /// The closure is evaluated when the target property is read. It only computes one
+    /// value and does not participate in nested-map resolution.
+    pub fn def<T>(self, f: impl Fn(P::Type) -> T + 'static) -> ContextValue<T>
+    where
+        P::Type: 'static,
+        T: 'static,
+    {
+        ContextValue::new(move |style| {
+            let value = style.get_prop::<P>().unwrap_or_else(P::default_value);
+            f(value)
+        })
+    }
+
+    pub fn map<T>(self, f: impl Fn(P::Type) -> T + 'static) -> ContextValue<T>
+    where
+        P::Type: 'static,
+        T: 'static,
+    {
+        self.def(f)
+    }
+}
+
+impl ExprStyle {
+    pub fn new() -> Self {
+        Self {
+            style: Style::new(),
+        }
+    }
+
+    pub fn build(self) -> Style {
+        self.style
+    }
+
+    pub fn map(self, over: impl FnOnce(Self) -> Self) -> Self {
+        over(self)
+    }
+
+    pub fn apply(mut self, over: Style) -> Self {
+        self.style.apply_mut(over);
+        self
+    }
+
+    pub fn apply_if(self, cond: bool, f: impl FnOnce(Self) -> Self) -> Self {
+        if cond { f(self) } else { self }
+    }
+
+    pub fn set<P: StyleProp>(mut self, prop: P, value: impl Into<StyleValue<P::Type>>) -> Self {
+        self.style = self.style.set_style_value(prop, value.into());
+        self
+    }
+
+    pub fn set_context<P: StyleProp>(mut self, prop: P, value: ContextValue<P::Type>) -> Self {
+        self.style = self.style.set_context(prop, value);
+        self
+    }
+
+    pub fn set_from_context<C: StyleProp, P: StyleProp>(
+        mut self,
+        prop: P,
+        context: ContextRef<C>,
+        f: impl Fn(C::Type) -> P::Type + 'static,
+    ) -> Self
+    where
+        C::Type: 'static,
+        P::Type: 'static,
+    {
+        self.style = self.style.set_from_context(prop, context, f);
+        self
+    }
+
+    pub fn set_context_opt<P: StyleProp<Type = Option<T>>, T: 'static>(
+        mut self,
+        prop: P,
+        value: ContextValue<Option<T>>,
+    ) -> Self {
+        self.style = self.style.set_context_opt(prop, value);
+        self
+    }
+
+    pub fn set_from_context_opt<C: StyleProp, P: StyleProp<Type = Option<T>>, T: 'static>(
+        mut self,
+        prop: P,
+        context: ContextRef<C>,
+        f: impl Fn(C::Type) -> Option<T> + 'static,
+    ) -> Self
+    where
+        C::Type: 'static,
+    {
+        self.style = self.style.set_from_context_opt(prop, context, f);
+        self
+    }
+
+    pub fn with<P: StyleProp>(self, f: impl FnOnce(ExprStyle, ContextRef<P>) -> ExprStyle) -> Self {
+        f(self, ContextRef::default())
+    }
+
+    pub fn hover(self, style: impl FnOnce(ExprStyle) -> ExprStyle) -> Self {
+        self.apply(Style::default().hover(|s| style(s.into()).into()))
+    }
+
+    pub fn focus(self, style: impl FnOnce(ExprStyle) -> ExprStyle) -> Self {
+        self.apply(Style::default().focus(|s| style(s.into()).into()))
+    }
+
+    pub fn focus_visible(self, style: impl FnOnce(ExprStyle) -> ExprStyle) -> Self {
+        self.apply(Style::default().focus_visible(|s| style(s.into()).into()))
+    }
+
+    pub fn focus_within(self, style: impl FnOnce(ExprStyle) -> ExprStyle) -> Self {
+        self.apply(Style::default().focus_within(|s| style(s.into()).into()))
+    }
+
+    pub fn active(self, style: impl FnOnce(ExprStyle) -> ExprStyle) -> Self {
+        self.apply(Style::default().active(|s| style(s.into()).into()))
+    }
+
+    pub fn disabled(self, style: impl FnOnce(ExprStyle) -> ExprStyle) -> Self {
+        self.apply(Style::default().disabled(|s| style(s.into()).into()))
+    }
+
+    pub fn class<C: StyleClass>(
+        self,
+        class: C,
+        style: impl FnOnce(ExprStyle) -> ExprStyle,
+    ) -> Self {
+        self.apply(Style::default().class(class, |s| style(s.into()).into()))
+    }
+
+    /// Sets the font size for text content.
+    pub fn font_size<T>(self, size: ContextValue<T>) -> Self
+    where
+        T: Into<Px> + 'static,
+    {
+        let px = size.map(|s| s.into().0 as f32);
+        self.set_context(FontSize, px)
+    }
+
+    pub fn size<W, H>(self, width: ContextValue<W>, height: ContextValue<H>) -> Self
+    where
+        W: Into<PxPctAuto> + 'static,
+        H: Into<PxPctAuto> + 'static,
+    {
+        self.width(width).height(height)
+    }
+
+    pub fn absolute(self) -> Self {
+        self.set(PositionProp, Position::Absolute)
+    }
+
+    pub fn flex_row(self) -> Self {
+        self.set(FlexDirectionProp, FlexDirection::Row)
+    }
+
+    pub fn margin<T>(self, margin: ContextValue<T>) -> Self
+    where
+        T: Into<PxPctAuto> + 'static,
+    {
+        let margin = margin.map(Into::into);
+        self.set(MarginLeft, margin.clone())
+            .set(MarginTop, margin.clone())
+            .set(MarginRight, margin.clone())
+            .set(MarginBottom, margin)
+    }
+
+    pub fn border_color<T>(self, color: ContextValue<T>) -> Self
+    where
+        T: Into<Brush> + 'static,
+    {
+        let color = color.map(|color| Some(color.into()));
+        self.set(BorderLeftColor, color.clone())
+            .set(BorderTopColor, color.clone())
+            .set(BorderRightColor, color.clone())
+            .set(BorderBottomColor, color)
+    }
+
+    pub fn border_radius<T>(self, radius: ContextValue<T>) -> Self
+    where
+        T: Into<PxPct> + 'static,
+    {
+        let radius = radius.map(Into::into);
+        self.set(BorderTopLeftRadius, radius.clone())
+            .set(BorderTopRightRadius, radius.clone())
+            .set(BorderBottomLeftRadius, radius.clone())
+            .set(BorderBottomRightRadius, radius)
+    }
+
+    pub fn border<T>(self, width: ContextValue<T>) -> Self
+    where
+        T: Into<Px> + 'static,
+    {
+        let stroke = width.map(|width| Stroke::new(width.into().0));
+        self.set(BorderLeft, stroke.clone())
+            .set(BorderTop, stroke.clone())
+            .set(BorderRight, stroke.clone())
+            .set(BorderBottom, stroke)
+    }
+
+    pub fn border_top<T>(self, width: ContextValue<T>) -> Self
+    where
+        T: Into<Px> + 'static,
+    {
+        self.set(BorderTop, width.map(|width| Stroke::new(width.into().0)))
+    }
+
+    pub fn items_center(self) -> Self {
+        self.set(AlignItemsProp, Some(AlignItems::Center))
+    }
+
+    pub fn justify_center(self) -> Self {
+        self.set(
+            JustifyContentProp,
+            Some(taffy::style::JustifyContent::Center),
+        )
+    }
+
+    pub fn selected(self, style: impl FnOnce(ExprStyle) -> ExprStyle) -> Self {
+        self.apply(Style::default().selected(|s| style(s.into()).into()))
+    }
+
+    pub fn drag(self, style: impl FnOnce(ExprStyle) -> ExprStyle) -> Self {
+        self.apply(Style::default().drag(|s| style(s.into()).into()))
+    }
+
+    pub fn file_hover(self, style: impl FnOnce(ExprStyle) -> ExprStyle) -> Self {
+        self.apply(Style::default().file_hover(|s| style(s.into()).into()))
+    }
+
+    pub fn padding<T>(self, padding: ContextValue<T>) -> Self
+    where
+        T: Into<PxPct> + 'static,
+    {
+        let padding = padding.map(Into::into);
+        self.set(PaddingLeft, padding.clone())
+            .set(PaddingTop, padding.clone())
+            .set(PaddingRight, padding.clone())
+            .set(PaddingBottom, padding)
+    }
+
+    pub fn padding_horiz<T>(self, padding: ContextValue<T>) -> Self
+    where
+        T: Into<PxPct> + 'static,
+    {
+        let padding = padding.map(Into::into);
+        self.set(PaddingLeft, padding.clone())
+            .set(PaddingRight, padding)
+    }
+
+    pub fn padding_vert<T>(self, padding: ContextValue<T>) -> Self
+    where
+        T: Into<PxPct> + 'static,
+    {
+        let padding = padding.map(Into::into);
+        self.set(PaddingTop, padding.clone())
+            .set(PaddingBottom, padding)
+    }
+
+    pub fn gap<T>(self, gap: ContextValue<T>) -> Self
+    where
+        T: Into<PxPct> + 'static,
+    {
+        let gap = gap.map(Into::into);
+        self.set(ColGap, gap.clone()).set(RowGap, gap)
+    }
+
+    pub fn custom<CS>(self, custom: impl FnOnce(CS) -> CS) -> Self
+    where
+        CS: Default + Clone + Into<Style> + From<Style>,
+    {
+        self.apply(custom(CS::default()).into())
+    }
+
+    pub fn apply_border_radius(self, border_radius: BorderRadius) -> Self {
+        self.apply(Style::new().apply_border_radius(border_radius))
+    }
+
+    pub fn apply_box_shadows(self, shadow: impl Into<SmallVec<[BoxShadow; 3]>>) -> Self {
+        self.set(BoxShadowProp, shadow.into())
+    }
+
+    pub fn transition_background(self, transition: Transition) -> Self {
+        self.apply(Style::new().transition_background(transition))
+    }
+
+    pub fn border_bottom(self, width: impl Into<Px>) -> Self {
+        self.set(BorderBottom, Stroke::new(width.into().0))
+    }
+
+    pub fn outline(self, width: impl Into<Px>) -> Self {
+        self.set(Outline, Stroke::new(width.into().0))
+    }
+}
 
 fn fx_hash_map_with_capacity<K, V>(capacity: usize) -> FxHashMap<K, V> {
     FxHashMap::with_capacity_and_hasher(capacity, Default::default())
@@ -253,14 +568,6 @@ impl ResponsiveSelector {
     }
 }
 
-/// Simple storage for context mapping closures.
-/// Unlike the old ContextMappings, this only stores the closures themselves -
-/// selector and inherited prop discovery happens via immediate evaluation.
-///
-/// Uses `Rc<Vec>` for O(1) clone - avoids copying the entire Vec when reading.
-#[derive(Clone)]
-pub(crate) struct ContextMappings(pub Rc<Vec<ContextMapFn>>);
-
 style_key_selector!(selector_xs, StyleSelectors::empty().responsive());
 style_key_selector!(selector_sm, StyleSelectors::empty().responsive());
 style_key_selector!(selector_md, StyleSelectors::empty().responsive());
@@ -276,12 +583,6 @@ pub(crate) fn screen_size_bp_to_key(breakpoint: ScreenSizeBp) -> StyleKey {
         ScreenSizeBp::Lg => selector_lg(),
         ScreenSizeBp::Xl => selector_xl(),
         ScreenSizeBp::Xxl => selector_xxl(),
-    }
-}
-
-fn context_mappings_key() -> StyleKey {
-    StyleKey {
-        info: &CONTEXT_MAPPINGS_INFO,
     }
 }
 
@@ -312,8 +613,7 @@ pub fn resolve_nested_maps(
 
     let effect_context = style.effect_context.clone();
 
-    // Phase 1: Resolve class styles (with selectors, collecting context mappings)
-    let (class_style, mut class_context_mappings) = resolve_classes_collecting_mappings(
+    let class_style = resolve_classes(
         classes,
         interact_state,
         screen_size_bp,
@@ -321,160 +621,52 @@ pub fn resolve_nested_maps(
         &mut selectors,
     );
     selectors |= class_style.selectors();
-
-    // Phase 2: Resolve view's inline style (with selectors, collecting context mappings)
-    let (view_style, mut view_context_mappings) =
-        resolve_style_collecting_mappings(style, interact_state, screen_size_bp, &mut selectors);
-
-    // Phase 3: Apply class context mappings (with recursive resolution)
-    // Use class_style as the base, context includes class_style + view_style
-    let mut context_result = class_style.clone();
-    let mut i = 0;
-    while i < class_context_mappings.len() {
-        let mapping = class_context_mappings[i].clone();
-
-        let saved_effect = floem_reactive::Runtime::get_current_effect();
-        if let Some(effect) = &effect_context {
-            floem_reactive::Runtime::set_current_effect(Some(effect.clone()));
-        }
-
-        let mapped = mapping(
-            context_result.clone(),
-            Box::new({
-                let view_style = view_style.clone();
-                let context_result = context_result.clone();
-                let inherited_context = inherited_context.clone();
-                move |k| {
-                    view_style
-                        .map
-                        .get(&k)
-                        .or_else(|| {
-                            context_result
-                                .map
-                                .get(&k)
-                                .or_else(|| inherited_context.map.get(&k))
-                        })
-                        .cloned()
-                }
-            }),
-        );
-
-        let (resolved, new_mappings) = resolve_style_collecting_mappings(
-            mapped,
-            interact_state,
-            screen_size_bp,
-            &mut selectors,
-        );
-        floem_reactive::Runtime::set_current_effect(saved_effect);
-        context_result.apply_mut_no_mappings(resolved);
-        class_context_mappings.splice(i + 1..i + 1, new_mappings);
-        i += 1;
-    }
-
-    // Apply view style over the context result (view style wins)
-    let mut result = context_result.apply(view_style);
-
-    // Phase 4: Apply view context mappings over result (with recursive resolution)
-    let mut i = 0;
-    let mut combined_context = inherited_context.clone();
-    while i < view_context_mappings.len() {
-        let mapping = view_context_mappings[i].clone();
-        combined_context.apply_mut_no_mappings(result.clone());
-
-        let saved_effect = floem_reactive::Runtime::get_current_effect();
-        if let Some(effect) = &effect_context {
-            floem_reactive::Runtime::set_current_effect(Some(effect.clone()));
-        }
-
-        let mapped = mapping(
-            result.clone(),
-            Box::new({
-                let result = result.clone();
-                let inherited_context = inherited_context.clone();
-                move |k| {
-                    result
-                        .clone()
-                        .map
-                        .get(&k)
-                        .or_else(|| inherited_context.map.get(&k))
-                        .cloned()
-                }
-            }),
-        );
-
-        let (resolved, new_mappings) = resolve_style_collecting_mappings(
-            mapped,
-            interact_state,
-            screen_size_bp,
-            &mut selectors,
-        );
-        floem_reactive::Runtime::set_current_effect(saved_effect);
-        result.apply_mut_no_mappings(resolved);
-        view_context_mappings.splice(i + 1..i + 1, new_mappings);
-        i += 1;
-    }
-
+    let view_style = resolve_style(style, interact_state, screen_size_bp, &mut selectors);
+    let result = class_style
+        .apply(view_style)
+        .with_inherited_context(inherited_context);
+    let _ = effect_context;
     (result, selectors)
 }
 
-fn resolve_classes_collecting_mappings(
+fn resolve_classes(
     classes: &[StyleClassRef],
     interact_state: &InteractionState,
     screen_size_bp: ScreenSizeBp,
     class_context: &Style,
     selectors: &mut StyleSelectors,
-) -> (Style, Vec<ContextMapFn>) {
+) -> Style {
     let mut result = Style::with_capacity(classes.len());
-    let mut mappings = Vec::with_capacity(classes.len());
 
     for class in classes {
         if let Some(map) = class_context.get_nested_map(class.key) {
-            let (resolved, class_mappings) = resolve_style_collecting_mappings(
-                map.clone(),
-                interact_state,
-                screen_size_bp,
-                selectors,
-            );
-            result.apply_mut_no_mappings(resolved);
-            mappings.extend(class_mappings);
+            let resolved = resolve_style(map.clone(), interact_state, screen_size_bp, selectors);
+            result.apply_mut(resolved);
         }
     }
 
-    (result, mappings)
+    result
 }
 
-fn resolve_style_collecting_mappings(
+fn resolve_style(
+    style: Style,
+    interact_state: &InteractionState,
+    screen_size_bp: ScreenSizeBp,
+    selectors: &mut StyleSelectors,
+) -> Style {
+    resolve_selectors(style, interact_state, screen_size_bp, selectors)
+}
+
+fn resolve_selectors(
     mut style: Style,
     interact_state: &InteractionState,
     screen_size_bp: ScreenSizeBp,
     selectors: &mut StyleSelectors,
-) -> (Style, Vec<ContextMapFn>) {
-    let mut mappings = Vec::with_capacity(1);
-
-    // Extract context mappings from style before resolving
-    if let Some(style_mappings) = extract_context_mappings(&mut style) {
-        mappings.extend(style_mappings);
-    }
-
-    // Resolve all selectors (and collect any new mappings found)
-    let (resolved, selector_mappings) =
-        resolve_selectors_collecting_mappings(style, interact_state, screen_size_bp, selectors);
-    mappings.extend(selector_mappings);
-
-    (resolved, mappings)
-}
-
-fn resolve_selectors_collecting_mappings(
-    mut style: Style,
-    interact_state: &InteractionState,
-    screen_size_bp: ScreenSizeBp,
-    selectors: &mut StyleSelectors,
-) -> (Style, Vec<ContextMapFn>) {
+) -> Style {
     *selectors |= style.selectors();
 
     const MAX_DEPTH: u32 = 20;
     let mut depth = 0;
-    let mut all_mappings = Vec::with_capacity(style.map.len());
 
     loop {
         if depth >= MAX_DEPTH {
@@ -490,11 +682,8 @@ fn resolve_selectors_collecting_mappings(
         if let Some(structural_rules) = extract_structural_selectors(&mut style) {
             for (selector, map) in structural_rules {
                 if selector.matches(interact_state.child_index, interact_state.sibling_count) {
-                    let mut map = map.as_ref().clone();
-                    if let Some(mappings) = extract_context_mappings(&mut map) {
-                        all_mappings.extend(mappings);
-                    }
-                    style.apply_mut_no_mappings(map);
+                    let map = map.as_ref().clone();
+                    style.apply_mut(map);
                     changed = true;
                 }
             }
@@ -504,25 +693,17 @@ fn resolve_selectors_collecting_mappings(
         if let Some(responsive_rules) = extract_responsive_selectors(&mut style) {
             for (selector, map) in responsive_rules {
                 if selector.matches(interact_state.window_width) {
-                    let mut map = map.as_ref().clone();
-                    if let Some(mappings) = extract_context_mappings(&mut map) {
-                        all_mappings.extend(mappings);
-                    }
-                    style.apply_mut_no_mappings(map);
+                    let map = map.as_ref().clone();
+                    style.apply_mut(map);
                     changed = true;
                 }
             }
         }
 
         // Helper to apply a nested map and collect any context mappings from it
-        let mut apply_nested = |style: &mut Style, key: StyleKey| -> bool {
-            if let Some(mut map) = style.get_nested_map(key) {
-                // Extract mappings before applying
-
-                if let Some(mappings) = extract_context_mappings(&mut map) {
-                    all_mappings.extend(mappings);
-                }
-                style.apply_mut_no_mappings(map);
+        let apply_nested = |style: &mut Style, key: StyleKey| -> bool {
+            if let Some(map) = style.get_nested_map(key) {
+                style.apply_mut(map);
                 style.remove_nested_map(key);
                 true
             } else {
@@ -605,17 +786,7 @@ fn resolve_selectors_collecting_mappings(
         }
     }
 
-    (style, all_mappings)
-}
-
-fn extract_context_mappings(style: &mut Style) -> Option<Vec<ContextMapFn>> {
-    let key = context_mappings_key();
-    style.map_mut().remove(&key).map(|rc| {
-        let mappings: ContextMappings = take_any(rc);
-        let mut extracted = Vec::with_capacity(mappings.0.len());
-        extracted.extend(mappings.0.iter().cloned());
-        extracted
-    })
+    style
 }
 
 fn extract_structural_selectors(style: &mut Style) -> Option<StructuralSelectorRules> {
@@ -637,6 +808,7 @@ fn extract_responsive_selectors(style: &mut Style) -> Option<ResponsiveSelectorR
 #[derive(Clone)]
 pub struct Style {
     pub(crate) map: Rc<FxHashMap<StyleKey, Rc<dyn Any>>>,
+    inherited_context: Option<Rc<FxHashMap<StyleKey, Rc<dyn Any>>>>,
     /// Deterministic identity for style merges.
     merge_id: u64,
     /// Cached flag indicating whether this style contains any class maps.
@@ -651,8 +823,6 @@ pub struct Style {
     /// This is restored when evaluating context mappings and selectors to ensure
     /// reactive dependencies are tracked correctly.
     effect_context: Option<Rc<dyn floem_reactive::EffectTrait>>,
-
-    context_selectors: StyleSelectors,
 }
 impl Default for Style {
     fn default() -> Self {
@@ -667,10 +837,10 @@ impl Style {
         Self {
             merge_id: next_style_merge_id(),
             map,
+            inherited_context: None,
             has_class_maps: false,
             has_inherited: false,
             effect_context,
-            context_selectors: StyleSelectors::empty(),
         }
     }
 
@@ -680,6 +850,11 @@ impl Style {
 
     pub fn new() -> Self {
         Self::with_capacity(0)
+    }
+
+    pub(crate) fn with_inherited_context(mut self, inherited: &Style) -> Self {
+        self.inherited_context = Some(inherited.map.clone());
+        self
     }
 
     /// Apply only inherited properties from `from` style to `to` style.
@@ -693,7 +868,6 @@ impl Style {
             let inherited = from.map.iter().filter(|(p, _)| p.inherited());
             to.apply_iter(inherited, None);
             to.merge_id = combine_merge_ids(to.merge_id, from.merge_id);
-            to.context_selectors |= from.context_selectors;
         }
     }
 
@@ -715,7 +889,6 @@ impl Style {
                 let inherited = from.map.iter().filter(|(p, _)| p.inherited());
                 new_style.apply_iter(inherited, None);
                 new_style.merge_id = combine_merge_ids(new_style.merge_id, from.merge_id);
-                new_style.context_selectors |= from.context_selectors;
             }
 
             // Apply class nested maps so they flow to descendants
@@ -726,7 +899,6 @@ impl Style {
                     .filter(|(k, _)| matches!(k.info, StyleKeyInfo::Class(..)));
                 new_style.apply_iter(class_maps, None);
                 new_style.merge_id = combine_merge_ids(new_style.merge_id, from.merge_id);
-                new_style.context_selectors |= from.context_selectors;
             }
 
             *to = Rc::new(new_style);
@@ -747,7 +919,6 @@ impl Style {
             .filter(|(k, _)| matches!(k.info, StyleKeyInfo::Class(..)));
         to.apply_iter(class_maps, None);
         to.merge_id = combine_merge_ids(to.merge_id, from.merge_id);
-        to.context_selectors |= from.context_selectors;
     }
 
     pub(crate) fn merge_id(&self) -> u64 {
@@ -797,29 +968,52 @@ impl Style {
             .map(|v| v.downcast_ref::<Transition>().unwrap().clone())
     }
 
+    fn get_prop_from_map<P: StyleProp>(
+        map: &FxHashMap<StyleKey, Rc<dyn Any>>,
+        context_style: &Style,
+    ) -> Option<P::Type> {
+        map.get(&P::key()).and_then(
+            |v| match v.downcast_ref::<StyleMapValue<P::Type>>().unwrap() {
+                StyleMapValue::Animated(v) | StyleMapValue::Val(v) => Some(v.clone()),
+                StyleMapValue::Context(context_value) => Some(context_value.resolve(context_style)),
+                StyleMapValue::Unset => None,
+            },
+        )
+    }
+
+    fn get_style_value_from_map<P: StyleProp>(
+        map: &FxHashMap<StyleKey, Rc<dyn Any>>,
+        context_style: &Style,
+    ) -> Option<StyleValue<P::Type>> {
+        map.get(&P::key()).map(
+            |v| match v.downcast_ref::<StyleMapValue<P::Type>>().unwrap() {
+                StyleMapValue::Val(v) => StyleValue::Val(v.clone()),
+                StyleMapValue::Animated(v) => StyleValue::Animated(v.clone()),
+                StyleMapValue::Context(v) => StyleValue::Val(v.resolve(context_style)),
+                StyleMapValue::Unset => StyleValue::Unset,
+            },
+        )
+    }
+
     pub(crate) fn get_prop_or_default<P: StyleProp>(&self) -> P::Type {
         self.get_prop::<P>().unwrap_or_else(|| P::default_value())
     }
 
     pub(crate) fn get_prop<P: StyleProp>(&self) -> Option<P::Type> {
-        self.map.get(&P::key()).and_then(|v| {
-            v.downcast_ref::<StyleMapValue<P::Type>>()
-                .unwrap()
+        Self::get_prop_from_map::<P>(&self.map, self).or_else(|| {
+            self.inherited_context
                 .as_ref()
-                .cloned()
+                .and_then(|map| Self::get_prop_from_map::<P>(map, self))
         })
     }
 
     pub(crate) fn get_prop_style_value<P: StyleProp>(&self) -> StyleValue<P::Type> {
-        self.map
-            .get(&P::key())
-            .map(
-                |v| match v.downcast_ref::<StyleMapValue<P::Type>>().unwrap() {
-                    StyleMapValue::Val(v) => StyleValue::Val(v.clone()),
-                    StyleMapValue::Animated(v) => StyleValue::Animated(v.clone()),
-                    StyleMapValue::Unset => StyleValue::Unset,
-                },
-            )
+        Self::get_style_value_from_map::<P>(&self.map, self)
+            .or_else(|| {
+                self.inherited_context
+                    .as_ref()
+                    .and_then(|map| Self::get_style_value_from_map::<P>(map, self))
+            })
             .unwrap_or(StyleValue::Base)
     }
 
@@ -831,7 +1025,7 @@ impl Style {
     }
 
     pub(crate) fn selectors(&self) -> StyleSelectors {
-        let mut result = self.context_selectors;
+        let mut result = StyleSelectors::empty();
 
         for (k, v) in self.map.iter() {
             match k.info {
@@ -847,6 +1041,7 @@ impl Style {
                     }
                 }
                 StyleKeyInfo::ResponsiveSelectors => {
+                    result = result.responsive();
                     let rules = &v.downcast_ref::<ResponsiveSelectors>().unwrap().0;
                     for (_, nested_style) in rules {
                         result = result.union(nested_style.as_ref().selectors());
@@ -881,120 +1076,13 @@ impl Style {
         self
     }
 
-    /// Apply a context-based style transformation.
+    /// Build style values from a context prop without introducing a deferred style map pass.
     ///
-    /// This evaluates the closure immediately with the context prop's default value
-    /// (for selector and inherited prop discovery), and also stores the closure to
-    /// be re-evaluated with actual ancestor context values during style resolution.
-    ///
-    /// Signal reactivity works because the outer style closure re-runs when signals change.
-    pub fn with_context<P: StyleProp>(self, f: impl Fn(Self, &P::Type) -> Self + 'static) -> Self {
-        let default_value = P::default_value();
-        let result = f(self.clone(), &default_value);
-        let result_selectors = result.selectors();
-
-        // Create a closure for context-aware re-evaluation during style resolution.
-        // Cache default_value inside closure to avoid repeated allocations.
-        let mapper: ContextMapFn = Rc::new(
-            move |style: Style, context: Box<dyn Fn(StyleKey) -> Option<Rc<dyn Any>>>| {
-                // Try getting the property from style first, then from context if not found
-                let value = context(P::key()).and_then(|v| {
-                    v.downcast_ref::<StyleMapValue<P::Type>>()
-                        .unwrap()
-                        .as_ref()
-                        .cloned()
-                });
-
-                if let Some(value) = value {
-                    f(style, &value)
-                } else {
-                    f(style, &P::default_value())
-                }
-            },
-        );
-
-        // Store the closure for later context resolution
-        let key = context_mappings_key();
-
-        let existing_mappings = self
-            .map
-            .get(&key)
-            .and_then(|v| v.downcast_ref::<ContextMappings>())
-            .map(|cm| cm.0.clone());
-        let mut mappings_vec = Vec::with_capacity(
-            existing_mappings
-                .as_ref()
-                .map_or(1, |mappings| mappings.len() + 1),
-        );
-        if let Some(existing_mappings) = existing_mappings {
-            mappings_vec.extend(existing_mappings.iter().cloned());
-        }
-        mappings_vec.push(mapper);
-
-        // Start with the immediate result (has selectors/inherited props)
-        // but add our closure storage
-        let mut final_result = self;
-        final_result
-            .map_mut()
-            .insert(key, Rc::new(ContextMappings(Rc::new(mappings_vec))));
-        final_result.merge_id = next_style_merge_id();
-        final_result.context_selectors |= result_selectors;
-        final_result
-    }
-
-    /// Apply a context-based style transformation for optional props.
-    ///
-    /// Like `with_context`, this evaluates immediately with defaults for discovery,
-    /// and stores the closure for context-aware re-evaluation.
-    pub fn with_context_opt<P: StyleProp<Type = Option<T>>, T: 'static + Default + Clone>(
-        self,
-        f: impl Fn(Self, T) -> Self + 'static,
-    ) -> Self {
-        let result = f(self.clone(), T::default());
-        let result_selectors = result.selectors();
-        // Create a closure for context-aware re-evaluation
-        let mapper: ContextMapFn = Rc::new(
-            move |style: Style, context: Box<dyn Fn(StyleKey) -> Option<Rc<dyn Any>>>| {
-                // Try getting the property from style first, then from context if not found
-                let value = context(P::key()).and_then(|v| {
-                    v.downcast_ref::<StyleMapValue<P::Type>>()
-                        .unwrap()
-                        .as_ref()
-                        .cloned()
-                });
-
-                match value {
-                    Some(Some(value)) => f(style, value),
-                    _ => style,
-                }
-            },
-        );
-
-        // Store the closure
-        let key = context_mappings_key();
-
-        let existing_mappings = self
-            .map
-            .get(&key)
-            .and_then(|v| v.downcast_ref::<ContextMappings>())
-            .map(|cm| cm.0.clone());
-        let mut mappings_vec = Vec::with_capacity(
-            existing_mappings
-                .as_ref()
-                .map_or(1, |mappings| mappings.len() + 1),
-        );
-        if let Some(existing_mappings) = existing_mappings {
-            mappings_vec.extend(existing_mappings.iter().cloned());
-        }
-        mappings_vec.push(mapper);
-
-        let mut final_result = self;
-        final_result
-            .map_mut()
-            .insert(key, Rc::new(ContextMappings(Rc::new(mappings_vec))));
-        final_result.merge_id = next_style_merge_id();
-        final_result.context_selectors |= result_selectors;
-        final_result
+    /// The closure runs immediately and must produce an ordinary style map. Any deferred
+    /// context work is captured at the individual property-value level through
+    /// [`ContextRef::map`].
+    pub fn with<P: StyleProp>(self, f: impl FnOnce(ExprStyle, ContextRef<P>) -> ExprStyle) -> Self {
+        f(ExprStyle { style: self }, ContextRef::default()).style
     }
 
     pub(crate) fn get_nested_map(&self, key: StyleKey) -> Option<Style> {
@@ -1032,7 +1120,6 @@ impl Style {
 
             new.apply_iter(inherited, None);
             new.merge_id = combine_merge_ids(new.merge_id, self.merge_id);
-            new.context_selectors |= self.context_selectors;
         }
         new
     }
@@ -1064,7 +1151,6 @@ impl Style {
         rules.push((selector, Rc::new(map)));
         self.map_mut()
             .insert(key, Rc::new(ResponsiveSelectors(rules)));
-        self.context_selectors |= StyleSelectors::empty().responsive();
         self.merge_id = next_style_merge_id();
     }
 
@@ -1129,18 +1215,6 @@ impl Style {
                         self.map_mut().insert(*k, v.clone());
                     }
                 }
-                StyleKeyInfo::ContextMappings => {
-                    let merged = if let Some(current) = self.map_mut().remove(k) {
-                        let new_ctx = v.downcast_ref::<ContextMappings>().unwrap();
-                        let current: ContextMappings = take_any(current);
-                        let mut merged: Vec<_> = (*current.0).clone();
-                        merged.extend(new_ctx.0.iter().cloned());
-                        Rc::new(ContextMappings(Rc::new(merged)))
-                    } else {
-                        v.clone()
-                    };
-                    self.map_mut().insert(*k, merged);
-                }
                 StyleKeyInfo::StructuralSelectors => {
                     let merged = if let Some(current) = self.map_mut().remove(k) {
                         let new_rules = &v.downcast_ref::<StructuralSelectors>().unwrap().0;
@@ -1175,68 +1249,6 @@ impl Style {
                     }
                     self.map_mut().insert(*k, v.clone());
                 }
-            }
-        }
-    }
-
-    pub(crate) fn apply_iter_no_mappings<'a>(
-        &mut self,
-        iter: impl Iterator<Item = (&'a StyleKey, &'a Rc<dyn Any>)>,
-        source_effect_context: Option<Rc<dyn floem_reactive::EffectTrait>>,
-    ) {
-        if self.effect_context.is_none() && source_effect_context.is_some() {
-            self.effect_context = source_effect_context;
-        }
-        for (k, v) in iter {
-            match k.info {
-                StyleKeyInfo::Class(..) | StyleKeyInfo::Selector(..) => {
-                    // Track class maps for O(1) early-exit in apply_only_class_maps
-                    if matches!(k.info, StyleKeyInfo::Class(..)) {
-                        self.has_class_maps = true;
-                    }
-                    if let Some(current) = self.map_mut().remove(k) {
-                        let mut current: Style = take_any(current);
-                        current.apply_mut_no_mappings(v.downcast_ref::<Style>().unwrap().clone());
-                        self.map_mut().insert(*k, Rc::new(current));
-                    } else {
-                        self.map_mut().insert(*k, v.clone());
-                    }
-                }
-                StyleKeyInfo::Transition | StyleKeyInfo::DebugGroup(..) => {
-                    self.map_mut().insert(*k, v.clone());
-                }
-                StyleKeyInfo::StructuralSelectors => {
-                    let merged = if let Some(current) = self.map_mut().remove(k) {
-                        let new_rules = &v.downcast_ref::<StructuralSelectors>().unwrap().0;
-                        let current: StructuralSelectors = take_any(current);
-                        let mut merged: StructuralSelectorRules = current.0;
-                        merged.extend(new_rules.iter().cloned());
-                        Rc::new(StructuralSelectors(merged))
-                    } else {
-                        v.clone()
-                    };
-                    self.map_mut().insert(*k, merged);
-                }
-                StyleKeyInfo::ResponsiveSelectors => {
-                    let merged = if let Some(current) = self.map_mut().remove(k) {
-                        let new_rules = &v.downcast_ref::<ResponsiveSelectors>().unwrap().0;
-                        let current: ResponsiveSelectors = take_any(current);
-                        let mut merged: ResponsiveSelectorRules = current.0;
-                        merged.extend(new_rules.iter().cloned());
-                        Rc::new(ResponsiveSelectors(merged))
-                    } else {
-                        v.clone()
-                    };
-                    self.map_mut().insert(*k, merged);
-                }
-                StyleKeyInfo::Prop(info) => {
-                    // Track inherited props for O(1) early-exit in apply_only_inherited
-                    if info.inherited {
-                        self.has_inherited = true;
-                    }
-                    self.map_mut().insert(*k, v.clone());
-                }
-                _ => {}
             }
         }
     }
@@ -1250,19 +1262,6 @@ impl Style {
         let effect_context = over.effect_context.clone();
         self.apply_iter(over.map.iter(), effect_context);
         self.merge_id = combine_merge_ids(self.merge_id, over_merge_id);
-        self.context_selectors |= over.context_selectors;
-    }
-
-    pub(crate) fn apply_mut_no_mappings(&mut self, over: Style) {
-        // FAST PATH: identical semantic payload identity
-        if self.merge_id == over.merge_id {
-            return;
-        }
-        let over_merge_id = over.merge_id;
-        let effect_context = over.effect_context.clone();
-        self.apply_iter_no_mappings(over.map.iter(), effect_context);
-        self.merge_id = combine_merge_ids(self.merge_id, over_merge_id);
-        self.context_selectors |= over.context_selectors;
     }
 
     /// Apply another `Style` to this style, returning a new `Style` with the overrides
@@ -1366,7 +1365,22 @@ impl StyleSelector {
 /// - `nocb` (no callback/no chain builder) - no fluent builder method generated
 /// - `tr` (transition) - generates a `transition_property_name()` method
 ///
-/// Examples: `name: Type {}`, `name {nocb}: Type {}`, `name {tr}: Type {}`, `name {nocb, tr}: Type {}`
+/// For `Option<T>` properties, specify the inner type in brackets after the full type:
+///
+/// ```text
+/// Color color { tr }: Option<Color> [Color] { inherited } = None,
+/// ```
+///
+/// This generates a setter that accepts `impl Into<Color>` and wraps in `Some`,
+/// rather than the confusing `impl Into<Option<Color>>`. Use `unset_*()` to clear.
+///
+/// Examples:
+/// - `name: Type {}`                           plain prop, setter takes Into<Type>
+/// - `name {nocb}: Type {}`                    no setter generated
+/// - `name {tr}: Type {}`                      setter + transition_name() generated
+/// - `name {nocb, tr}: Type {}`                no setter, but transition_name() generated
+/// - `name {tr}: Option<Type> [Type] {}`       setter takes Into<Type>, wraps in Some
+/// - `name {nocb}: Option<Type> [Type] {}`     no setter generated
 ///
 /// All properties get:
 /// - A getter method in `BuiltinStyle`
@@ -1376,7 +1390,7 @@ macro_rules! define_builtin_props {
         $(
             $(#[$meta:meta])*
             $type_name:ident $name:ident $({ $($flags:ident),* })? :
-            $typ:ty { $($options:tt)* } = $val:expr
+            $typ:ty $( [$inner:ty] )? { $($options:tt)* } = $val:expr
         ),*
         $(,)?
     ) => {
@@ -1385,7 +1399,7 @@ macro_rules! define_builtin_props {
         )*
         impl Style {
             $(
-                define_builtin_props!(decl: $(#[$meta])* $type_name $name $({ $($flags),* })?: $typ = $val);
+                define_builtin_props!(decl: $(#[$meta])* $type_name $name $({ $($flags),* })? : $typ $( [$inner] )? = $val);
             )*
             $(
                 define_builtin_props!(unset: $(#[$meta])* $type_name $name);
@@ -1402,35 +1416,119 @@ macro_rules! define_builtin_props {
                 }
             )*
         }
+        impl ExprStyle {
+            $(
+                define_builtin_props!(expr_decl: $(#[$meta])* $type_name $name $({ $($flags),* })? : $typ $( [$inner] )? = $val);
+            )*
+            $(
+                define_builtin_props!(expr_unset: $(#[$meta])* $type_name $name);
+            )*
+        }
     };
 
-    // With flags - check if nocb is present
-    (decl: $(#[$meta:meta])* $type_name:ident $name:ident { $($flags:ident),* }: $typ:ty = $val:expr) => {
+    // Built-in setters for `Option<T> [T]` take `Into<T>` and wrap in `Some`.
+    (decl: $(#[$meta:meta])* $type_name:ident $name:ident { $($flags:ident),* } : $typ:ty [$inner:ty] = $val:expr) => {
+        define_builtin_props!(@opt_check_nocb $(#[$meta])* $type_name $name [$($flags)*]: $inner);
+    };
+    (decl: $(#[$meta:meta])* $type_name:ident $name:ident : $typ:ty [$inner:ty] = $val:expr) => {
+        $(#[$meta])*
+        pub fn $name(self, v: impl Into<$inner>) -> Self {
+            self.set($type_name, Some(v.into()))
+        }
+    };
+    (decl: $(#[$meta:meta])* $type_name:ident $name:ident { $($flags:ident),* } : $typ:ty = $val:expr) => {
         define_builtin_props!(@check_nocb $(#[$meta])* $type_name $name [$($flags)*]: $typ);
     };
-
-    // Without flags - always generate setter
-    (decl: $(#[$meta:meta])* $type_name:ident $name:ident: $typ:ty = $val:expr) => {
+    (decl: $(#[$meta:meta])* $type_name:ident $name:ident : $typ:ty = $val:expr) => {
         $(#[$meta])*
         pub fn $name(self, v: impl Into<$typ>) -> Self {
             self.set($type_name, v.into())
         }
     };
 
-    // Helper: if nocb found, don't generate setter
+    (expr_decl: $(#[$meta:meta])* $type_name:ident $name:ident { $($flags:ident),* } : $typ:ty [$inner:ty] = $val:expr) => {
+        define_builtin_props!(@opt_check_nocb_expr $(#[$meta])* $type_name $name [$($flags)*]: $inner);
+    };
+    (expr_decl: $(#[$meta:meta])* $type_name:ident $name:ident : $typ:ty [$inner:ty] = $val:expr) => {
+        $(#[$meta])*
+        pub fn $name<T>(self, v: $crate::style::ContextValue<T>) -> Self
+        where
+            T: Into<$inner> + 'static,
+        {
+            self.set($type_name, v.map(|x| Some(x.into())))
+        }
+    };
+    (expr_decl: $(#[$meta:meta])* $type_name:ident $name:ident { $($flags:ident),* } : $typ:ty = $val:expr) => {
+        define_builtin_props!(@check_nocb_expr $(#[$meta])* $type_name $name [$($flags)*]: $typ);
+    };
+    (expr_decl: $(#[$meta:meta])* $type_name:ident $name:ident : $typ:ty = $val:expr) => {
+        $(#[$meta])*
+        pub fn $name<T>(self, v: $crate::style::ContextValue<T>) -> Self
+        where
+            T: Into<$typ> + 'static,
+        {
+            self.set($type_name, v.map(Into::into))
+        }
+    };
+
+    (@opt_check_nocb $(#[$meta:meta])* $type_name:ident $name:ident [nocb $($rest:ident)*]: $inner:ty) => {};
+    (@opt_check_nocb $(#[$meta:meta])* $type_name:ident $name:ident [$first:ident $($rest:ident)*]: $inner:ty) => {
+        define_builtin_props!(@opt_check_nocb $(#[$meta])* $type_name $name [$($rest)*]: $inner);
+    };
+    (@opt_check_nocb $(#[$meta:meta])* $type_name:ident $name:ident []: $inner:ty) => {
+        $(#[$meta])*
+        pub fn $name(self, v: impl Into<$inner>) -> Self {
+            self.set($type_name, Some(v.into()))
+        }
+    };
+
+    (@opt_check_nocb_expr $(#[$meta:meta])* $type_name:ident $name:ident [nocb $($rest:ident)*]: $inner:ty) => {};
+    (@opt_check_nocb_expr $(#[$meta:meta])* $type_name:ident $name:ident [$first:ident $($rest:ident)*]: $inner:ty) => {
+        define_builtin_props!(@opt_check_nocb_expr $(#[$meta])* $type_name $name [$($rest)*]: $inner);
+    };
+    (@opt_check_nocb_expr $(#[$meta:meta])* $type_name:ident $name:ident []: $inner:ty) => {
+        $(#[$meta])*
+        pub fn $name<T>(self, v: $crate::style::ContextValue<T>) -> Self
+        where
+            T: Into<$inner> + 'static,
+        {
+            self.set($type_name, v.map(|x| Some(x.into())))
+        }
+    };
+
+    // -------------------------------------------------------------------------
+    // @check_nocb — plain (non-Option) setter, respects nocb flag
+    // -------------------------------------------------------------------------
+
     (@check_nocb $(#[$meta:meta])* $type_name:ident $name:ident [nocb $($rest:ident)*]: $typ:ty) => {};
     (@check_nocb $(#[$meta:meta])* $type_name:ident $name:ident [$first:ident $($rest:ident)*]: $typ:ty) => {
         define_builtin_props!(@check_nocb $(#[$meta])* $type_name $name [$($rest)*]: $typ);
     };
     (@check_nocb $(#[$meta:meta])* $type_name:ident $name:ident []: $typ:ty) => {
-        // No nocb found, generate the setter
         $(#[$meta])*
         pub fn $name(self, v: impl Into<$typ>) -> Self {
             self.set($type_name, v.into())
         }
     };
 
-    // Unset method - generated for all properties
+    (@check_nocb_expr $(#[$meta:meta])* $type_name:ident $name:ident [nocb $($rest:ident)*]: $typ:ty) => {};
+    (@check_nocb_expr $(#[$meta:meta])* $type_name:ident $name:ident [$first:ident $($rest:ident)*]: $typ:ty) => {
+        define_builtin_props!(@check_nocb_expr $(#[$meta])* $type_name $name [$($rest)*]: $typ);
+    };
+    (@check_nocb_expr $(#[$meta:meta])* $type_name:ident $name:ident []: $typ:ty) => {
+        $(#[$meta])*
+        pub fn $name<T>(self, v: $crate::style::ContextValue<T>) -> Self
+        where
+            T: Into<$typ> + 'static,
+        {
+            self.set($type_name, v.map(Into::into))
+        }
+    };
+
+    // -------------------------------------------------------------------------
+    // unset — generated for all properties
+    // -------------------------------------------------------------------------
+
     (unset: $(#[$meta:meta])* $type_name:ident $name:ident) => {
         paste::paste! {
             #[doc = "Unsets the `" $name "` property."]
@@ -1440,15 +1538,26 @@ macro_rules! define_builtin_props {
         }
     };
 
-    // Transition method - with flags, check if 'tr' is present
+    (expr_unset: $(#[$meta:meta])* $type_name:ident $name:ident) => {
+        paste::paste! {
+            #[doc = "Unsets the `" $name "` property."]
+            pub fn [<unset_ $name>](self) -> Self {
+                self.set($type_name, $crate::style::StyleValue::Unset)
+            }
+        }
+    };
+
+    // -------------------------------------------------------------------------
+    // transition — generated when `tr` flag is present
+    // -------------------------------------------------------------------------
+
+    // With flags — check for tr
     (transition: $(#[$meta:meta])* $type_name:ident $name:ident { $($flags:ident),* }) => {
         define_builtin_props!(@check_tr $(#[$meta])* $type_name $name [$($flags)*]);
     };
-
-    // Transition method - without flags, don't generate
+    // Without flags — never generate
     (transition: $(#[$meta:meta])* $type_name:ident $name:ident) => {};
 
-    // Helper: if tr found, generate transition method
     (@check_tr $(#[$meta:meta])* $type_name:ident $name:ident [tr $($rest:ident)*]) => {
         paste::paste! {
             #[doc = "Sets a transition for the `" $name "` property."]
@@ -1461,9 +1570,7 @@ macro_rules! define_builtin_props {
     (@check_tr $(#[$meta:meta])* $type_name:ident $name:ident [$first:ident $($rest:ident)*]) => {
         define_builtin_props!(@check_tr $(#[$meta])* $type_name $name [$($rest)*]);
     };
-    (@check_tr $(#[$meta:meta])* $type_name:ident $name:ident []) => {
-        // No tr flag found, don't generate transition method
-    };
+    (@check_tr $(#[$meta:meta])* $type_name:ident $name:ident []) => {};
 }
 
 pub struct BuiltinStyle<'a> {
@@ -1550,32 +1657,32 @@ define_builtin_props!(
     /// Controls alignment of flex items along the main axis.
     ///
     /// Determines how extra space is distributed between and around items.
-    JustifyContentProp justify_content {}: Option<JustifyContent> {} = None,
+    JustifyContentProp justify_content {}: Option<JustifyContent> [JustifyContent] {} = None,
 
     /// Controls default alignment of grid items along the inline axis.
     ///
     /// Sets the default justify-self value for all items in the container.
-    JustifyItemsProp justify_items {}: Option<JustifyItems> {} = None,
+    JustifyItemsProp justify_items {}: Option<JustifyItems> [JustifyItems] {} = None,
 
     /// Controls how the total width and height are calculated.
     ///
     /// Determines whether borders and padding are included in the view's size.
-    BoxSizingProp box_sizing {}: Option<BoxSizing> {} = None,
+    BoxSizingProp box_sizing {}: Option<BoxSizing> [BoxSizing] {} = None,
 
     /// Controls individual alignment along the inline axis.
     ///
     /// Overrides the container's justify-items value for this specific item.
-    JustifySelf justify_self {}: Option<AlignItems> {} = None,
+    JustifySelf justify_self {}: Option<AlignItems> [AlignItems] {} = None,
 
     /// Controls alignment of flex items along the cross axis.
     ///
     /// Determines how items are aligned when they don't fill the container's cross axis.
-    AlignItemsProp align_items {}: Option<AlignItems> {} = None,
+    AlignItemsProp align_items {}: Option<AlignItems> [AlignItems] {} = None,
 
     /// Controls alignment of wrapped flex lines.
     ///
     /// Only has an effect when flex-wrap is enabled and there are multiple lines.
-    AlignContentProp align_content {}: Option<AlignContent> {} = None,
+    AlignContentProp align_content {}: Option<AlignContent> [AlignContent] {} = None,
 
     /// Defines the line names and track sizing functions of the grid rows.
     ///
@@ -1615,7 +1722,7 @@ define_builtin_props!(
     /// Controls individual alignment along the cross axis.
     ///
     /// Overrides the container's align-items value for this specific item.
-    AlignSelf align_self {}: Option<AlignItems> {} = None,
+    AlignSelf align_self {}: Option<AlignItems> [AlignItems] {} = None,
 
     /// Sets the color of the view's outline.
     ///
@@ -1647,13 +1754,13 @@ define_builtin_props!(
     BorderBottom border_bottom {nocb, tr}: Stroke {} = Stroke::new(0.),
 
     /// Sets the left border color.
-    BorderLeftColor border_left_color { nocb, tr }: Option<Brush> {} = None,
+    BorderLeftColor border_left_color { tr }: Option<Brush> [Brush] {} = None,
     /// Sets the top border color.
-    BorderTopColor border_top_color { nocb, tr }: Option<Brush> {} = None,
+    BorderTopColor border_top_color {  tr }: Option<Brush> [Brush] {} = None,
     /// Sets the right border color.
-    BorderRightColor border_right_color { nocb, tr }: Option<Brush> {} = None,
+    BorderRightColor border_right_color { tr }: Option<Brush> [Brush] {} = None,
     /// Sets the bottom border color.
-    BorderBottomColor border_bottom_color { nocb, tr }: Option<Brush> {} = None,
+    BorderBottomColor border_bottom_color { tr }: Option<Brush> [Brush] {} = None,
 
     /// Sets the top-left border radius.
     BorderTopLeftRadius border_top_left_radius { tr }: PxPct {} = PxPct::Px(0.),
@@ -1697,7 +1804,7 @@ define_builtin_props!(
     /// Controls whether the view can be the target of mouse events.
     ///
     /// When disabled, mouse events pass through to views behind.
-    PointerEventsProp pointer_events {}: Option<PointerEvents> { inherited } = None,
+    PointerEventsProp pointer_events {}: Option<PointerEvents> [PointerEvents] { inherited } = None,
 
     /// Controls the stack order of positioned views.
     ///
@@ -1705,57 +1812,57 @@ define_builtin_props!(
     /// If you want a view positioned above others, use an overlay.
     ///
     /// Higher values appear in front of lower values.
-    ZIndex z_index { nocb, tr }: Option<i32> {} = None,
+    ZIndex z_index {  tr }: Option<i32> [i32] {} = None,
 
     /// Sets the cursor style when hovering over the view.
     ///
     /// Changes the appearance of the mouse cursor.
-    Cursor cursor { nocb }: Option<CursorStyle> {} = None,
+    Cursor cursor { }: Option<CursorStyle> [CursorStyle] {} = None,
 
     /// Sets the text color.
     ///
     /// This property is inherited by child views.
-    TextColor color { nocb, tr }: Option<Color> { inherited } = None,
+    TextColor color { tr }: Option<Color> [Color] { inherited } = None,
 
     /// Sets the background color or image.
     ///
     /// Can be a solid color, gradient, or image.
-    Background background { nocb, tr }: Option<Brush> {} = None,
+    Background background { tr }: Option<Brush> [Brush] {} = None,
 
     /// Sets the foreground color or pattern.
     ///
     /// Used for drawing content like icons or shapes.
-    Foreground foreground { nocb, tr }: Option<Brush> {} = None,
+    Foreground foreground { tr }: Option<Brush> [Brush] {} = None,
 
     /// Adds one or more drop shadows to the view.
     ///
     /// Can create depth and visual separation effects.
-    BoxShadowProp box_shadow { nocb, tr }: SmallVec<[BoxShadow; 3]> {} = SmallVec::new(),
+    BoxShadowProp box_shadow {  tr }: SmallVec<[BoxShadow; 3]> {} = SmallVec::new(),
 
     /// Sets the font size for text content.
     ///
     /// This property is inherited by child views.
-    FontSize font_size { nocb, tr }: Option<f32> { inherited } = None,
+    FontSize font_size { nocb, tr }: f32 { inherited } = 14.,
 
     /// Sets the font family for text content.
     ///
     /// This property is inherited by child views.
-    FontFamily font_family { nocb }: Option<String> { inherited } = None,
+    FontFamily font_family { }: Option<String> [String] { inherited } = None,
 
     /// Sets the font weight (boldness) for text content.
     ///
     /// This property is inherited by child views.
-    FontWeight font_weight { nocb }: Option<FontWeightProp> { inherited } = None,
+    FontWeight font_weight { }: Option<FontWeightProp> [FontWeightProp] { inherited } = None,
 
     /// Sets the font style (italic, normal) for text content.
     ///
     /// This property is inherited by child views.
-    FontStyle font_style { nocb }: Option<crate::text::FontStyle> { inherited } = None,
+    FontStyle font_style { }: Option<crate::text::FontStyle> [crate::text::FontStyle] { inherited } = None,
 
     /// Sets the color of the text cursor.
     ///
     /// Visible when text input views have focus.
-    CursorColor cursor_color { nocb, tr }: Brush {} = Brush::Solid(palette::css::BLACK.with_alpha(0.3)),
+    CursorColor cursor_color { tr }: Brush {} = Brush::Solid(palette::css::BLACK.with_alpha(0.3)),
 
     /// Sets the corner radius of text selections.
     ///
@@ -1776,17 +1883,17 @@ define_builtin_props!(
     /// Sets text alignment within the view.
     ///
     /// Controls horizontal alignment of text content.
-    TextAlignProp text_align {}: Option<crate::text::Alignment> {} = None,
+    TextAlignProp text_align {}: Option<crate::text::Alignment> [crate::text::Alignment] {} = None,
 
     /// Sets the line height for text content.
     ///
     /// This property is inherited by child views.
-    LineHeight line_height { nocb, tr }: Option<LineHeightValue> { inherited } = None,
+    LineHeight line_height { tr }: Option<LineHeightValue> [LineHeightValue] { inherited } = None,
 
     /// Sets the preferred aspect ratio for the view.
     ///
     /// Maintains width-to-height proportions during layout.
-    AspectRatio aspect_ratio {tr}: Option<f32> {} = None,
+    AspectRatio aspect_ratio {tr}: Option<f32> [f32] {} = None,
 
     /// Controls how replaced content (like images) should be resized to fit its container.
     ///
@@ -1798,12 +1905,12 @@ define_builtin_props!(
     /// Sets the gap between columns in grid or flex layouts.
     ///
     /// Creates space between items in the horizontal direction.
-    ColGap col_gap { nocb, tr }: PxPct {} = PxPct::Px(0.),
+    ColGap col_gap { tr }: PxPct {} = PxPct::Px(0.),
 
     /// Sets the gap between rows in grid or flex layouts.
     ///
     /// Creates space between items in the vertical direction.
-    RowGap row_gap { nocb, tr }: PxPct {} = PxPct::Px(0.),
+    RowGap row_gap { tr }: PxPct {} = PxPct::Px(0.),
 
     /// Width of the scrollbar track in pixels.
     ///
@@ -2181,10 +2288,77 @@ impl Style {
         self.set_style_value(prop, StyleValue::Val(value.into()))
     }
 
+    /// Sets a property to a deferred context-derived value.
+    pub fn set_context<P: StyleProp>(self, prop: P, value: ContextValue<P::Type>) -> Self {
+        self.set_style_value(prop, StyleValue::Context(value))
+    }
+
+    pub fn set_from_context<C: StyleProp, P: StyleProp>(
+        self,
+        prop: P,
+        context: ContextRef<C>,
+        f: impl Fn(C::Type) -> P::Type + 'static,
+    ) -> Self
+    where
+        C::Type: 'static,
+        P::Type: 'static,
+    {
+        self.set_context(prop, context.def(f))
+    }
+
+    /// Sets a property to a deferred optional context-derived value.
+    ///
+    /// `None` resolves to an unset property, allowing the base/fallback style to win.
+    pub fn set_context_opt<P: StyleProp<Type = Option<T>>, T: 'static>(
+        self,
+        prop: P,
+        value: ContextValue<Option<T>>,
+    ) -> Self {
+        self.set_style_value(prop, StyleValue::Context(value))
+    }
+
+    pub fn set_from_context_opt<C: StyleProp, P: StyleProp<Type = Option<T>>, T: 'static>(
+        self,
+        prop: P,
+        context: ContextRef<C>,
+        f: impl Fn(C::Type) -> Option<T> + 'static,
+    ) -> Self
+    where
+        C::Type: 'static,
+    {
+        self.set_context_opt(prop, context.def(f))
+    }
+
     pub fn set_style_value<P: StyleProp>(mut self, _prop: P, value: StyleValue<P::Type>) -> Self {
+        let previous_value = self.map.get(&P::key()).cloned();
         let insert = match value {
             StyleValue::Val(value) => StyleMapValue::Val(value),
             StyleValue::Animated(value) => StyleMapValue::Animated(value),
+            StyleValue::Context(value) => {
+                let previous_value = previous_value.clone();
+                StyleMapValue::Context(ContextValue::new(move |style| {
+                    let mut base_style = style.clone();
+                    // A deferred value for property `P` is allowed to read `P` from context,
+                    // e.g. `FontSize := FontSize * 0.8`. If we resolved against the current
+                    // style as-is, that lookup would see the context expression we are
+                    // installing right now and recurse forever.
+                    //
+                    // Instead, same-prop context reads resolve against the previous effective
+                    // value for `P`: the previous local value if there was one, otherwise the
+                    // inherited fallback carried by `Style`.
+                    match previous_value.clone() {
+                        Some(previous_value) => {
+                            base_style.map_mut().insert(P::key(), previous_value);
+                        }
+                        None => {
+                            // Removing the local entry exposes the inherited context fallback
+                            // on `base_style`, if one exists.
+                            base_style.map_mut().remove(&P::key());
+                        }
+                    }
+                    value.resolve(&base_style)
+                }))
+            }
             StyleValue::Unset => StyleMapValue::Unset,
             StyleValue::Base => {
                 if self.map_mut().remove(&P::key()).is_some() {
@@ -2424,6 +2598,12 @@ impl Style {
         self.set(Focusable, Focus::PointerAndProgrammatic)
     }
 
+    /// Sets the font size for text content.
+    pub fn font_size(self, size: impl Into<Px>) -> Self {
+        let px = size.into();
+        self.set_style_value(FontSize, StyleValue::Val(px.0 as f32))
+    }
+
     /// Makes the view non-focusable through any means.
     ///
     /// The view cannot receive focus via keyboard, pointer, or programmatic calls.
@@ -2432,16 +2612,6 @@ impl Style {
     /// Equivalent to `focus(Focus::None)`.
     pub fn focus_none(self) -> Self {
         self.set(Focusable, Focus::None)
-    }
-
-    /// Sets the gap between columns in grid or flex layouts.
-    pub fn col_gap(self, width: impl Into<PxPct>) -> Self {
-        self.set(ColGap, width.into())
-    }
-
-    /// Sets the gap between rows in grid or flex layouts.
-    pub fn row_gap(self, height: impl Into<PxPct>) -> Self {
-        self.set(RowGap, height.into())
     }
 
     /// Sets different gaps for rows and columns in grid or flex layouts.
@@ -2761,23 +2931,6 @@ impl Style {
             .set(BorderBottomRightRadius, radius)
     }
 
-    /// Sets the left border color of the view.
-    pub fn border_left_color(self, color: impl Into<Brush>) -> Self {
-        self.set(BorderLeftColor, Some(color.into()))
-    }
-    /// Sets the right border color of the view.
-    pub fn border_right_color(self, color: impl Into<Brush>) -> Self {
-        self.set(BorderRightColor, Some(color.into()))
-    }
-    /// Sets the top border color of the view.
-    pub fn border_top_color(self, color: impl Into<Brush>) -> Self {
-        self.set(BorderTopColor, Some(color.into()))
-    }
-    /// Sets the bottom border color of the view.
-    pub fn border_bottom_color(self, color: impl Into<Brush>) -> Self {
-        self.set(BorderBottomColor, Some(color.into()))
-    }
-
     /// Applies a complete border configuration to the view.
     pub fn apply_border(self, border: Border) -> Self {
         let mut style = self;
@@ -2866,22 +3019,6 @@ impl Style {
             .inset_top(inset)
             .inset_right(inset)
             .inset_bottom(inset)
-    }
-
-    /// Sets the cursor style when hovering over the view.
-    pub fn cursor(self, cursor: impl Into<StyleValue<CursorStyle>>) -> Self {
-        self.set_style_value(Cursor, cursor.into().map(Some))
-    }
-
-    /// Specifies text color for the view.
-    pub fn color(self, color: impl Into<StyleValue<Color>>) -> Self {
-        self.set_style_value(TextColor, color.into().map(Some))
-    }
-
-    /// Sets the background color or pattern of the view.
-    pub fn background(self, color: impl Into<Brush>) -> Self {
-        let brush = StyleValue::Val(Some(color.into()));
-        self.set_style_value(Background, brush)
     }
 
     /// Specifies shadow blur. The larger this value, the bigger the blur,
@@ -3056,42 +3193,9 @@ impl Style {
         self.set(BoxShadowProp, value)
     }
 
-    /// Sets the font size for text content.
-    pub fn font_size(self, size: impl Into<Px>) -> Self {
-        let px = size.into();
-        self.set_style_value(FontSize, StyleValue::Val(Some(px.0 as f32)))
-    }
-
-    /// Sets the font family for text content.
-    pub fn font_family(self, family: impl Into<String>) -> Self {
-        let family = family.into();
-        self.set_style_value(FontFamily, StyleValue::Val(family).map(Some))
-    }
-
-    /// Sets the font weight (boldness) for text content.
-    pub fn font_weight(self, weight: impl Into<StyleValue<FontWeightProp>>) -> Self {
-        self.set_style_value(FontWeight, weight.into().map(Some))
-    }
-
     /// Sets the font weight to bold.
     pub fn font_bold(self) -> Self {
         self.font_weight(FontWeightProp::BOLD)
-    }
-
-    /// Sets the font style (italic, normal) for text content.
-    pub fn font_style(self, style: impl Into<StyleValue<crate::text::FontStyle>>) -> Self {
-        self.set_style_value(FontStyle, style.into().map(Some))
-    }
-
-    /// Sets the color of the text cursor.
-    pub fn cursor_color(self, color: impl Into<Brush>) -> Self {
-        let brush = StyleValue::Val(color.into());
-        self.set_style_value(CursorColor, brush)
-    }
-
-    /// Sets the line height for text content.
-    pub fn line_height(self, normal: f32) -> Self {
-        self.set(LineHeight, Some(LineHeightValue::Normal(normal)))
     }
 
     /// Enables pointer events for the view (allows mouse interaction).
@@ -3149,57 +3253,57 @@ impl Style {
 
     /// Aligns flex items to stretch and fill the cross axis.
     pub fn items_stretch(self) -> Self {
-        self.align_items(Some(taffy::style::AlignItems::Stretch))
+        self.align_items(taffy::style::AlignItems::Stretch)
     }
 
     /// Aligns flex items to the start of the cross axis.
     pub fn items_start(self) -> Self {
-        self.align_items(Some(taffy::style::AlignItems::FlexStart))
+        self.align_items(taffy::style::AlignItems::FlexStart)
     }
 
     /// Defines the alignment along the cross axis as Centered
     pub fn items_center(self) -> Self {
-        self.align_items(Some(taffy::style::AlignItems::Center))
+        self.align_items(taffy::style::AlignItems::Center)
     }
 
     /// Aligns flex items to the end of the cross axis.
     pub fn items_end(self) -> Self {
-        self.align_items(Some(taffy::style::AlignItems::FlexEnd))
+        self.align_items(taffy::style::AlignItems::FlexEnd)
     }
 
     /// Aligns flex items along their baselines.
     pub fn items_baseline(self) -> Self {
-        self.align_items(Some(taffy::style::AlignItems::Baseline))
+        self.align_items(taffy::style::AlignItems::Baseline)
     }
 
     /// Aligns flex items to the start of the main axis.
     pub fn justify_start(self) -> Self {
-        self.justify_content(Some(taffy::style::JustifyContent::FlexStart))
+        self.justify_content(taffy::style::JustifyContent::FlexStart)
     }
 
     /// Aligns flex items to the end of the main axis.
     pub fn justify_end(self) -> Self {
-        self.justify_content(Some(taffy::style::JustifyContent::FlexEnd))
+        self.justify_content(taffy::style::JustifyContent::FlexEnd)
     }
 
     /// Defines the alignment along the main axis as Centered
     pub fn justify_center(self) -> Self {
-        self.justify_content(Some(taffy::style::JustifyContent::Center))
+        self.justify_content(taffy::style::JustifyContent::Center)
     }
 
     /// Distributes flex items with space between them.
     pub fn justify_between(self) -> Self {
-        self.justify_content(Some(taffy::style::JustifyContent::SpaceBetween))
+        self.justify_content(taffy::style::JustifyContent::SpaceBetween)
     }
 
     /// Distributes flex items with space around them.
     pub fn justify_around(self) -> Self {
-        self.justify_content(Some(taffy::style::JustifyContent::SpaceAround))
+        self.justify_content(taffy::style::JustifyContent::SpaceAround)
     }
 
     /// Distributes flex items with equal space around them.
     pub fn justify_evenly(self) -> Self {
-        self.justify_content(Some(taffy::style::JustifyContent::SpaceEvenly))
+        self.justify_content(taffy::style::JustifyContent::SpaceEvenly)
     }
 
     /// Hides the view from view and layout.
@@ -3225,11 +3329,6 @@ impl Style {
     /// Sets flex direction to column (vertical).
     pub fn flex_col(self) -> Self {
         self.flex_direction(taffy::style::FlexDirection::Column)
-    }
-
-    /// Sets the stack order of the view.
-    pub fn z_index(self, z_index: i32) -> Self {
-        self.set(ZIndex, Some(z_index))
     }
 
     /// Sets uniform scaling for both X and Y axes.

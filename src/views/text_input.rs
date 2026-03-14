@@ -281,7 +281,6 @@ fn get_word_based_motion(event: &KeyboardEvent) -> Option<Movement> {
             .then_some(Movement::Line));
 }
 
-const DEFAULT_FONT_SIZE: f32 = 14.0;
 const CURSOR_BLINK_INTERVAL_MS: u64 = 500;
 
 impl TextInput {
@@ -725,7 +724,7 @@ impl TextInput {
     }
 
     fn font_size(&self) -> f32 {
-        self.font.size().unwrap_or(DEFAULT_FONT_SIZE)
+        self.font.size()
     }
 
     /// Retrieve attributes for the placeholder text.

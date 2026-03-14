@@ -1,7 +1,8 @@
 //! Unit tests for the style system.
 
-use super::{Padding, PaddingBottom, PaddingLeft, PaddingRight, Style};
+use super::{Background, Padding, PaddingBottom, PaddingLeft, PaddingRight, Style, TextColor};
 use crate::unit::PxPct;
+use peniko::{Brush, color::palette::css};
 
 #[test]
 fn style_override() {
@@ -42,4 +43,13 @@ fn style_override() {
 
     assert_eq!(style1.get(PaddingLeft), PxPct::Px(100.0));
     assert_eq!(style1.get(PaddingRight), PxPct::Px(200.0));
+}
+
+#[test]
+fn context_value_resolves_at_property_read() {
+    let style = Style::new()
+        .set(TextColor, Some(css::RED))
+        .with::<TextColor>(|s, t| s.set_context(Background, t.map(|tc| tc.map(Brush::Solid))));
+
+    assert_eq!(style.get(Background), Some(Brush::Solid(css::RED)));
 }

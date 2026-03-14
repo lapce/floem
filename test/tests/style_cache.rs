@@ -26,14 +26,14 @@ prop!(
 
 // Helper to use inherited color in styles.
 trait CacheColorExt {
-    fn with_cache_color(self, f: impl Fn(Self, &Color) -> Self + 'static) -> Self
+    fn with_cache_color(self) -> Self
     where
         Self: Sized;
 }
 
 impl CacheColorExt for Style {
-    fn with_cache_color(self, f: impl Fn(Self, &Color) -> Self + 'static) -> Self {
-        self.with_context::<CacheTestColor>(f)
+    fn with_cache_color(self) -> Self {
+        self.with::<CacheTestColor>(|s, color| s.background(color.def(|color| color)))
     }
 }
 
@@ -121,12 +121,10 @@ fn test_cache_miss_for_different_styles() {
 fn test_cache_miss_for_different_parent_inherited() {
     let root = TestRoot::new();
     // Two parent containers with different inherited colors
-    let child1 =
-        Empty::new().style(|s| s.size(30.0, 30.0).with_cache_color(|s, c| s.background(*c)));
+    let child1 = Empty::new().style(|s| s.size(30.0, 30.0).with_cache_color());
     let child1_id = child1.view_id();
 
-    let child2 =
-        Empty::new().style(|s| s.size(30.0, 30.0).with_cache_color(|s, c| s.background(*c)));
+    let child2 = Empty::new().style(|s| s.size(30.0, 30.0).with_cache_color());
     let child2_id = child2.view_id();
 
     let parent1 =
@@ -164,8 +162,7 @@ fn test_cache_invalidation_on_inherited_change() {
     let root = TestRoot::new();
     let color_signal = RwSignal::new(palette::css::RED);
 
-    let child =
-        Empty::new().style(|s| s.size(50.0, 50.0).with_cache_color(|s, c| s.background(*c)));
+    let child = Empty::new().style(|s| s.size(50.0, 50.0).with_cache_color());
     let child_id = child.view_id();
 
     let parent = Container::new(child)
@@ -464,7 +461,7 @@ fn test_cache_combined_inherited_and_local() {
     let child = Empty::new().style(move |s| {
         s.size(50.0, 50.0)
             .padding(local_padding.get())
-            .with_cache_color(|s, c| s.background(*c))
+            .with_cache_color()
     });
     let child_id = child.view_id();
 

@@ -313,9 +313,9 @@ impl<'a> StyleCx<'a> {
         self.window_state
             .update_selector_interest(view_id, view_state.borrow().has_style_selectors);
 
-        let (old_interact_state, old_taffy_style) = {
+        let old_interact_state = {
             let vs = view_state.borrow();
-            (vs.style_interaction_cx, vs.taffy_style.clone())
+            vs.style_interaction_cx
         };
 
         let mut need_paint = false;
@@ -359,6 +359,7 @@ impl<'a> StyleCx<'a> {
             // Compute the final style by merging inherited context with direct style
             let mut computed_style = self.inherited.clone();
             computed_style.apply_mut(self.direct.clone());
+            computed_style = computed_style.with_inherited_context(&self.inherited);
 
             // ─────────────────────────────────────────────────────────────────────
             // Phase 6: Update window and view state.
@@ -412,24 +413,18 @@ impl<'a> StyleCx<'a> {
 
                 // Layout properties (padding, margin, size, etc.)
                 vs.layout_props
-                    .read_explicit(&computed, &computed, &self.now, &mut transitioning);
+                    .read_explicit(&computed, &self.now, &mut transitioning);
 
                 // View style properties (background, border, etc.)
-                need_paint |= vs.view_style_props.read_explicit(
-                    &computed,
-                    &computed,
-                    &self.now,
-                    &mut transitioning,
-                );
+                need_paint |=
+                    vs.view_style_props
+                        .read_explicit(&computed, &self.now, &mut transitioning);
 
                 // Transform properties (translate, scale, rotation)
                 let mut box_tree_changed = false;
-                box_tree_changed |= vs.view_transform_props.read_explicit(
-                    &computed,
-                    &computed,
-                    &self.now,
-                    &mut transitioning,
-                );
+                box_tree_changed |=
+                    vs.view_transform_props
+                        .read_explicit(&computed, &self.now, &mut transitioning);
                 if box_tree_changed {
                     view_id.request_box_tree_update_for_view();
                 }
@@ -527,7 +522,7 @@ impl<'a> StyleCx<'a> {
                     taffy_style.display = display_override;
                 }
 
-                if taffy_style != old_taffy_style {
+                if taffy_style != vs.taffy_style {
                     let taffy_node = vs.layout_id;
                     vs.taffy_style = taffy_style.clone();
                     view_id
@@ -661,13 +656,14 @@ impl<'a> StyleCx<'a> {
     }
 
     pub fn get_prop<P: StyleProp>(&self, _prop: P) -> Option<P::Type> {
-        self.direct
-            .get_prop::<P>()
-            .or_else(|| self.inherited.get_prop::<P>())
+        self.style().get_prop::<P>()
     }
 
     pub fn style(&self) -> Style {
-        self.inherited.clone().apply(self.direct.clone())
+        self.inherited
+            .clone()
+            .apply(self.direct.clone())
+            .with_inherited_context(&self.inherited)
     }
 
     pub fn direct_style(&self) -> &Style {

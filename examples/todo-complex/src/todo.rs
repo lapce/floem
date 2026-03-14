@@ -205,7 +205,7 @@ impl IntoView for TodoState {
                     AppCommand::SetSelected(self).execute();
                 }
             })
-            .style(|s| s.width_full().align_items(Some(AlignItems::FlexStart)));
+            .style(|s| s.width_full().align_items(AlignItems::FlexStart));
 
         let container = main_controls.container();
         let final_view_id = container.id();

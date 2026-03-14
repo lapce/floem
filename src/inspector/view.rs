@@ -386,7 +386,7 @@ fn capture_view(
     let tree = if capture.root.warnings() {
         Stack::vertical((
             header("Warnings")
-                .style(|s| s.with_theme(|s, t| s.color(t.warning_base)))
+                .style(|s| s.with_theme(|s, t| s.color(t.warning_base())))
                 .tooltip(|| "requested changes is not empty"),
             header("View Tree"),
             search,
@@ -528,8 +528,8 @@ fn tree_node_name(view: &CapturedData, marge_left: f64) -> impl IntoView {
             .padding_top(0.0)
             .padding_bottom(0.0)
             .font_size(12.0)
-            .with_context::<TextColor>(|s, tc| {
-                s.apply_opt(*tc, |s, tc| s.color(tc.with_alpha(0.6)))
+            .with::<TextColor>(|s, tc| {
+                s.set_context_opt(TextColor, tc.def(|tc| tc.map(|tc| tc.with_alpha(0.6))))
             })
     });
     let tab = if view.view_conf.focused {
@@ -539,7 +539,7 @@ fn tree_node_name(view: &CapturedData, marge_left: f64) -> impl IntoView {
                     .background(Color::from_rgb8(63, 81, 101).with_alpha(0.6))
                     .border_radius(5.0)
                     .padding(1.0)
-                    .with_context_opt::<FontSize, _>(|s, fs| s.font_size(fs * 0.8))
+                    .with::<FontSize>(|s, fs| s.set_context(FontSize, fs.def(|fs| fs * 0.8)))
                     .color(palette::css::WHITE.with_alpha(0.8))
             })
             .into_any()

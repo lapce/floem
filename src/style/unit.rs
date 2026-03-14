@@ -1,10 +1,57 @@
 use std::{ops::Neg, time::Duration};
 
+pub use floem_renderer::text::LineHeightValue;
 use taffy::style::{Dimension, LengthPercentage, LengthPercentageAuto};
 
 /// A pixel value
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Px(pub f64);
+
+impl std::ops::Add for Px {
+    type Output = Px;
+
+    fn add(self, rhs: Px) -> Px {
+        Px(self.0 + rhs.0)
+    }
+}
+
+impl std::ops::AddAssign for Px {
+    fn add_assign(&mut self, rhs: Px) {
+        *self = *self + rhs;
+    }
+}
+
+impl std::ops::Mul<f64> for Px {
+    type Output = Px;
+
+    fn mul(self, rhs: f64) -> Px {
+        Px(self.0 * rhs)
+    }
+}
+
+impl std::ops::Mul<f32> for Px {
+    type Output = Px;
+
+    fn mul(self, rhs: f32) -> Px {
+        Px(self.0 * rhs as f64)
+    }
+}
+
+impl std::ops::Mul<Px> for f64 {
+    type Output = Px;
+
+    fn mul(self, rhs: Px) -> Px {
+        Px(self * rhs.0)
+    }
+}
+
+impl std::ops::Mul<Px> for f32 {
+    type Output = Px;
+
+    fn mul(self, rhs: Px) -> Px {
+        Px(self as f64 * rhs.0)
+    }
+}
 
 /// A percent value
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -219,6 +266,12 @@ impl From<f32> for Px {
 impl From<i32> for Px {
     fn from(value: i32) -> Self {
         Px(value as f64)
+    }
+}
+
+impl From<Px> for LineHeightValue {
+    fn from(value: Px) -> Self {
+        LineHeightValue::Px(value.0 as f32)
     }
 }
 

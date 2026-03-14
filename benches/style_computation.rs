@@ -403,14 +403,14 @@ fn bench_inherited_with_selectors(c: &mut Criterion) {
     );
 
     trait BenchColorExt2 {
-        fn with_bench_color2(self, f: impl Fn(Self, &Color) -> Self + 'static) -> Self
+        fn with_bench_color2(self) -> Self
         where
             Self: Sized;
     }
 
     impl BenchColorExt2 for Style {
-        fn with_bench_color2(self, f: impl Fn(Self, &Color) -> Self + 'static) -> Self {
-            self.with_context::<BenchInheritedColor2>(f)
+        fn with_bench_color2(self) -> Self {
+            self.with::<BenchInheritedColor2>(|s, c| s.background(c.def(|c| c)))
         }
     }
 
@@ -428,7 +428,7 @@ fn bench_inherited_with_selectors(c: &mut Criterion) {
                     .map(|_| {
                         Empty::new().style(|s| {
                             s.size(20.0, 20.0)
-                                .with_bench_color2(|s, c| s.background(*c))
+                                .with_bench_color2()
                                 .hover(|s| s.border(1.0))
                         })
                     })

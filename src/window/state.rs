@@ -206,7 +206,7 @@ impl WindowState {
             needs_cursor_resolution: false,
             last_cursor_icon: CursorIcon::Default,
             last_pointer: (
-                Point::ZERO,
+                Point::new(-1., -1.),
                 PointerInfo {
                     pointer_id: None,
                     persistent_device_id: None,

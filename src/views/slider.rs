@@ -19,7 +19,8 @@ use crate::{
     prop, prop_extractor,
     style::{
         Background, BorderBottomLeftRadius, BorderBottomRightRadius, BorderTopLeftRadius,
-        BorderTopRightRadius, CustomStylable, CustomStyle, Foreground, Height, Style,
+        BorderTopRightRadius, ContextValue, CustomStylable, CustomStyle, ExprStyle, Foreground,
+        Height, Style,
     },
     style_class,
     unit::{Pct, PxPct, PxPctAuto},
@@ -715,9 +716,10 @@ impl SliderCustomStyle {
     /// Sets the color of the slider handle.
     ///
     /// # Arguments
-    /// * `color` - An optional `Color` that sets the handle's color. If `None` is provided, the handle color is not set.
-    pub fn handle_color(mut self, color: impl Into<Option<Brush>>) -> Self {
-        self = SliderCustomStyle(self.0.set(Foreground, color));
+    /// * `color` - An optional `Brush` that sets the handle's color.
+    pub fn handle_color(mut self, color: impl Into<Brush>) -> Self {
+        let color = color.into();
+        self = SliderCustomStyle(self.0.set(Foreground, Some(color)));
         self
     }
 
@@ -742,9 +744,13 @@ impl SliderCustomStyle {
     /// Sets the color of the slider's bar.
     ///
     /// # Arguments
-    /// * `color` - A `StyleValue<Color>` that sets the bar's background color.
+    /// * `color` - An optional `Brush` that sets the bar's background color.
     pub fn bar_color(mut self, color: impl Into<Brush>) -> Self {
-        self = SliderCustomStyle(self.0.class(BarClass, |s| s.background(color)));
+        let color = color.into();
+        self = SliderCustomStyle(
+            self.0
+                .class(BarClass, move |s| s.set(Background, Some(color).clone())),
+        );
         self
     }
 
@@ -769,9 +775,13 @@ impl SliderCustomStyle {
     /// Sets the color of the slider's accent bar.
     ///
     /// # Arguments
-    /// * `color` - A `StyleValue<Color>` that sets the accent bar's background color.
+    /// * `color` - A `Brush` that sets the accent bar's background color.
     pub fn accent_bar_color(mut self, color: impl Into<Brush>) -> Self {
-        self = SliderCustomStyle(self.0.class(AccentBarClass, |s| s.background(color)));
+        let color = Some(color.into());
+        self = SliderCustomStyle(
+            self.0
+                .class(AccentBarClass, move |s| s.set(Background, color.clone())),
+        );
         self
     }
 
@@ -790,6 +800,126 @@ impl SliderCustomStyle {
     /// * `height` - A `PxPctAuto` value that sets the accent bar's height. This can be a pixel value, a percent value relative to the view's height, or `Auto` to use the view's height.
     pub fn accent_bar_height(mut self, height: impl Into<PxPctAuto>) -> Self {
         self = SliderCustomStyle(self.0.class(AccentBarClass, |s| s.height(height)));
+        self
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct SliderCustomExprStyle(Style);
+impl From<SliderCustomExprStyle> for Style {
+    fn from(val: SliderCustomExprStyle) -> Self {
+        val.0
+    }
+}
+impl From<Style> for SliderCustomExprStyle {
+    fn from(val: Style) -> Self {
+        Self(val)
+    }
+}
+impl SliderCustomExprStyle {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn handle_color<T>(mut self, color: ContextValue<T>) -> Self
+    where
+        T: Into<Option<Brush>> + 'static,
+    {
+        self = SliderCustomExprStyle(
+            ExprStyle::from(self.0)
+                .set_context_opt(Foreground, color.map(Into::into))
+                .into(),
+        );
+        self
+    }
+
+    pub fn edge_align<T>(mut self, align: ContextValue<T>) -> Self
+    where
+        T: Into<bool> + 'static,
+    {
+        self = SliderCustomExprStyle(
+            ExprStyle::from(self.0)
+                .set_context(EdgeAlign, align.map(Into::into))
+                .into(),
+        );
+        self
+    }
+
+    pub fn handle_radius<T>(mut self, radius: ContextValue<T>) -> Self
+    where
+        T: Into<PxPct> + 'static,
+    {
+        self = SliderCustomExprStyle(
+            ExprStyle::from(self.0)
+                .set_context(HandleRadius, radius.map(Into::into))
+                .into(),
+        );
+        self
+    }
+
+    pub fn bar_color<T>(mut self, color: ContextValue<T>) -> Self
+    where
+        T: Into<Option<Brush>> + 'static,
+    {
+        let color = color.map(Into::into);
+        self = SliderCustomExprStyle(self.0.class(BarClass, move |s| {
+            ExprStyle::from(s)
+                .set_context_opt(Background, color.clone())
+                .into()
+        }));
+        self
+    }
+
+    pub fn bar_radius<T>(mut self, radius: ContextValue<T>) -> Self
+    where
+        T: Into<PxPct> + 'static,
+    {
+        self = SliderCustomExprStyle(self.0.class(BarClass, move |s| {
+            ExprStyle::from(s).border_radius(radius.clone()).into()
+        }));
+        self
+    }
+
+    pub fn bar_height<T>(mut self, height: ContextValue<T>) -> Self
+    where
+        T: Into<PxPctAuto> + 'static,
+    {
+        self = SliderCustomExprStyle(self.0.class(BarClass, move |s| {
+            ExprStyle::from(s).height(height.clone()).into()
+        }));
+        self
+    }
+
+    pub fn accent_bar_color<T>(mut self, color: ContextValue<T>) -> Self
+    where
+        T: Into<Brush> + 'static,
+    {
+        let color = color.map(|color| Some(color.into()));
+        self = SliderCustomExprStyle(self.0.class(AccentBarClass, move |s| {
+            ExprStyle::from(s)
+                .set_context_opt(Background, color.clone())
+                .into()
+        }));
+        self
+    }
+
+    pub fn accent_bar_radius<T>(mut self, radius: ContextValue<T>) -> Self
+    where
+        T: Into<PxPct> + 'static,
+    {
+        self = SliderCustomExprStyle(self.0.class(AccentBarClass, move |s| {
+            ExprStyle::from(s).border_radius(radius.clone()).into()
+        }));
+        self
+    }
+
+    pub fn accent_bar_height<T>(mut self, height: ContextValue<T>) -> Self
+    where
+        T: Into<PxPctAuto> + 'static,
+    {
+        self = SliderCustomExprStyle(self.0.class(AccentBarClass, move |s| {
+            ExprStyle::from(s).height(height.clone()).into()
+        }));
         self
     }
 }
