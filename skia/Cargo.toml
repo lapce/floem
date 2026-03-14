@@ -1,0 +1,19 @@
+[package]
+name = "floem_skia_renderer"
+version.workspace = true
+edition.workspace = true
+repository = "https://github.com/lapce/floem"
+description = "A native Rust UI library with fine-grained reactivity"
+license.workspace = true
+
+[dependencies]
+anyhow = "1.0"
+anyrender = { git = "https://github.com/jrmoulton/anyrender", rev = "9f09d1d9aebf714b51697267fa8b1135a3b66f03" }
+anyrender_skia = { git = "https://github.com/jrmoulton/anyrender", rev = "9f09d1d9aebf714b51697267fa8b1135a3b66f03" }
+floem_renderer = { path = "../renderer", version = "0.2.0" }
+kurbo = "0.13"
+parley = { workspace = true }
+peniko = { workspace = true }
+raw-window-handle = { workspace = true }
+resvg = { workspace = true }
+winit = { workspace = true }

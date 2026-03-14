@@ -8,7 +8,11 @@ use floem::{
     kurbo::{Affine, Circle, Point, Rect, Shape, Size, Stroke},
     peniko::{
         Gradient, Mix,
-        color::{AlphaColor, ColorSpaceTag::LinearSrgb, Hsl},
+        color::{
+            AlphaColor,
+            ColorSpaceTag::{self, LinearSrgb},
+            Hsl, Srgb,
+        },
     },
     prelude::*,
     reactive::{Effect, UpdaterEffect},
@@ -236,20 +240,30 @@ impl View for SatValuePicker {
         let rect_path = Rect::ZERO.with_size(size).to_rounded_rect(8.);
         let hue = self.current_color.components[0];
 
-        let lightness_gradient = Gradient::new_linear(Point::ZERO, Point::new(0.0, size.height))
-            .with_stops([(0.0, css::WHITE), (1.0, css::BLACK)]);
-        cx.fill(&rect_path, &lightness_gradient, 0.);
+        // base
+        cx.fill(&rect_path, css::WHITE, 0.);
 
-        cx.push_layer(Mix::Color, 1.0, Affine::IDENTITY, &rect_path);
-
-        let saturation_gradient = Gradient::new_linear(Point::ZERO, Point::new(size.width, 0.0))
+        // saturation gradient
+        let sat_gradient = Gradient::new_linear(Point::ZERO, Point::new(size.width, 0.0))
             .with_stops([
-                (0.0, AlphaColor::<Hsl>::new([hue, 0., 50., 1.])),
-                (1.0, AlphaColor::<Hsl>::new([hue, 100., 50., 1.])),
-            ]);
-        cx.fill(&rect_path, &saturation_gradient, 0.);
+                (0.0, css::WHITE),
+                (1.0, AlphaColor::<Hsl>::new([hue, 100., 50., 1.]).convert()),
+            ])
+            .with_interpolation_cs(ColorSpaceTag::LinearSrgb);
+
+        cx.fill(&rect_path, &sat_gradient, 0.);
+
+        // value gradient
+        cx.push_layer(Mix::Multiply, 1.0, Affine::IDENTITY, &rect_path);
+
+        let val_gradient = Gradient::new_linear(Point::ZERO, Point::new(0.0, size.height))
+            .with_stops([(0.0, Color::from_rgba8(0, 0, 0, 0)), (1.0, css::BLACK)])
+            .with_interpolation_cs(ColorSpaceTag::LinearSrgb);
+
+        cx.fill(&rect_path, &val_gradient, 0.);
 
         cx.pop_layer();
+
         cx.clip(&rect_path);
 
         if size.width > 0.0 && size.height > 0.0 {
@@ -259,14 +273,25 @@ impl View for SatValuePicker {
             let x_pos = saturation as f64 / 100.0 * size.width;
             let y_pos = (1.0 - value as f64 / 100.0) * size.height;
 
-            let indicator_radius = 6.0;
-            let indicator_circle = Circle::new(Point::new(x_pos, y_pos), indicator_radius);
-            let inner_indicator_circle =
-                Circle::new(Point::new(x_pos, y_pos), indicator_radius - 2.);
+            let center = Point::new(x_pos, y_pos);
 
-            cx.stroke(&indicator_circle, css::WHITE, &Stroke::new(2.0));
-            cx.stroke(&inner_indicator_circle, css::BLACK, &Stroke::new(2.0));
+            // Larger indicator
+            let outer_radius = 8.0;
+            let inner_radius = 5.5;
+
+            let outer = Circle::new(center, outer_radius);
+            let inner = Circle::new(center, inner_radius);
+
+            // fill center with the selected color
+            cx.fill(&inner, self.current_color.convert::<Srgb>(), 0.);
+
+            // white outline for contrast
+            cx.stroke(&outer, css::WHITE, &Stroke::new(2.0));
+
+            // subtle black inner stroke so it works on light backgrounds
+            cx.stroke(&inner, css::BLACK, &Stroke::new(1.0));
         }
+
         cx.clear_clip();
     }
 }

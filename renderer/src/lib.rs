@@ -5,6 +5,7 @@
 //! Floem ships with three backend implementations:
 //!
 //! - **Vello** (`floem_vello_renderer`) — GPU-accelerated renderer using the Vello scene graph (default).
+//! - **Skia** (`floem_skia_renderer`) — GPU-accelerated renderer using AnyRender's Skia backend.
 //! - **Vger** (`floem_vger_renderer`) — GPU-accelerated renderer using the Vger library.
 //! - **tiny-skia** (`floem_tiny_skia_renderer`) — CPU software renderer using tiny-skia.
 //!
