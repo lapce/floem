@@ -585,9 +585,12 @@ impl StylePropValue for super::unit::PxPctAuto {
     }
 
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
-        LengthAuto::from(*self)
-            .interpolate(&LengthAuto::from(*other), value)
-            .map(Into::into)
+        match (self, other) {
+            (Self::Px(v1), Self::Px(v2)) => Some(Self::Px(v1 + (v2 - v1) * value)),
+            (Self::Pct(v1), Self::Pct(v2)) => Some(Self::Pct(v1 + (v2 - v1) * value)),
+            (Self::Auto, Self::Auto) => Some(Self::Auto),
+            _ => None,
+        }
     }
 }
 impl StylePropValue for Length {
@@ -619,9 +622,11 @@ impl StylePropValue for super::unit::PxPct {
     }
 
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
-        Length::from(*self)
-            .interpolate(&Length::from(*other), value)
-            .map(Into::into)
+        match (self, other) {
+            (Self::Px(v1), Self::Px(v2)) => Some(Self::Px(v1 + (v2 - v1) * value)),
+            (Self::Pct(v1), Self::Pct(v2)) => Some(Self::Pct(v1 + (v2 - v1) * value)),
+            _ => None,
+        }
     }
 }
 

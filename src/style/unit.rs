@@ -478,17 +478,6 @@ impl From<PxPct> for Length {
     }
 }
 
-impl From<Length> for PxPct {
-    fn from(value: Length) -> Self {
-        match value {
-            Length::Pt(v) => PxPct::Px(v),
-            Length::Pct(v) => PxPct::Pct(v),
-            Length::Em(v) => PxPct::Px(v * 14.),
-            Length::Lh(v) => PxPct::Px(v * 14.),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LengthAuto {
     Pt(f64),
@@ -668,18 +657,6 @@ impl From<PxPctAuto> for LengthAuto {
             PxPctAuto::Px(v) => LengthAuto::Pt(v),
             PxPctAuto::Pct(v) => LengthAuto::Pct(v),
             PxPctAuto::Auto => LengthAuto::Auto,
-        }
-    }
-}
-
-impl From<LengthAuto> for PxPctAuto {
-    fn from(value: LengthAuto) -> Self {
-        match value {
-            LengthAuto::Pt(v) => PxPctAuto::Px(v),
-            LengthAuto::Pct(v) => PxPctAuto::Pct(v),
-            LengthAuto::Em(v) => PxPctAuto::Px(v * 14.),
-            LengthAuto::Lh(v) => PxPctAuto::Px(v * 14.),
-            LengthAuto::Auto => PxPctAuto::Auto,
         }
     }
 }

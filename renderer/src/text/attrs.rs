@@ -116,8 +116,8 @@ impl FamilyOwned {
 /// // 1.5x the font size (e.g. 24px for a 16px font).
 /// let attrs = Attrs::new().line_height(LineHeightValue::Normal(1.5));
 ///
-/// // Fixed 20-pixel line height regardless of font size.
-/// let attrs = Attrs::new().line_height(LineHeightValue::Px(20.0));
+/// // Fixed 20-point line height regardless of font size.
+/// let attrs = Attrs::new().line_height(LineHeightValue::Pt(20.0));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LineHeightValue {
@@ -190,7 +190,7 @@ impl From<i32> for LineHeightValue {
 pub struct Attrs<'a> {
     /// Font size in pixels.
     pub font_size: f32,
-    /// Line height mode — either a multiplier of `font_size` or an absolute pixel value.
+    /// Line height mode — either a multiplier of `font_size` or an absolute point value.
     line_height: LineHeightValue,
     /// Text color, or `None` to inherit from the rendering context.
     color: Option<Color>,
@@ -336,7 +336,7 @@ impl<'a> Attrs<'a> {
     /// Computes the effective line height in pixels.
     ///
     /// For [`LineHeightValue::Normal`], this multiplies the font size by the factor.
-    /// For [`LineHeightValue::Px`], the pixel value is returned directly.
+    /// For [`LineHeightValue::Pt`], the point value is returned directly.
     pub fn effective_line_height(&self) -> f32 {
         match self.line_height {
             LineHeightValue::Normal(n) => self.font_size * n,
