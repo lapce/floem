@@ -550,11 +550,6 @@ impl ViewId {
         parent_id.get_size()
     }
 
-    /// Get the total scroll offset for this view
-    pub fn get_scroll_cx(&self) -> peniko::kurbo::Vec2 {
-        self.state().borrow().scroll_cx
-    }
-
     /// This gets the Taffy Layout and adjusts it to be relative to the parent `View`.
     pub fn get_layout(&self) -> Option<Layout> {
         let widget_parent = self.parent().map(|id| id.state().borrow().layout_id);
@@ -1363,7 +1358,14 @@ impl ViewId {
     }
 
     pub(crate) fn get_layout_window_origin(&self) -> Point {
-        self.state().borrow().layout_window_origin
+        let element_id = self.get_element_id();
+        VIEW_STORAGE.with_borrow_mut(|s| {
+            s.box_tree(*self)
+                .borrow_mut()
+                .get_or_compute_world_transform(element_id.0)
+                .unwrap_or_default()
+                * Point::ZERO
+        })
     }
 
     /// Dispatch an event to this view using the specified routing strategy.
@@ -1380,9 +1382,9 @@ impl ViewId {
     ///     - Use `Phases::TARGET` for direct dispatch only
     ///     - Use `Phases::BUBBLE` for bubble-only dispatch
     ///   - `DispatchKind::Spatial { point, phases }` - Routes based on hit testing at a point
-    ///   - `DispatchKind::Subtree { target, respect_propagation }` - Routes to target and all descendants
+    ///   - `DispatchKind::Subtree { target, stop }` - Routes to target and all descendants
     ///   - `DispatchKind::Focused { phases }` - Routes to currently focused view
-    ///   - `DispatchKind::Global { respect_propagation }` - Broadcasts to all views
+    ///   - `DispatchKind::Global { stop }` - Broadcasts to all views
     ///
     /// # Examples
     ///

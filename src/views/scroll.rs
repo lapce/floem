@@ -198,8 +198,8 @@ impl ScrollHandle {
         let content_size_val = content_size.get_coord(self.axis);
         let full_rect_size = full_rect.size().get_coord(self.axis);
 
-        // No scrollbar if content fits in viewport
-        if viewport_size >= (content_size_val - f64::EPSILON) {
+        // Hide the scrollbar unless content exceeds the viewport by more than 1px.
+        if content_size_val <= viewport_size + 1.0 {
             // Hide the handle
             self.box_tree
                 .borrow_mut()
@@ -402,8 +402,8 @@ impl ScrollTrack {
         let viewport_size = viewport.size().get_coord(self.axis);
         let content_size_val = content_size.get_coord(self.axis);
 
-        // No scrollbar if content fits in viewport
-        if viewport_size >= (content_size_val - f64::EPSILON) {
+        // Hide the scrollbar unless content exceeds the viewport by more than 1px.
+        if content_size_val <= viewport_size + 1.0 {
             // Hide the track
             self.box_tree
                 .borrow_mut()

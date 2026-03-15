@@ -4,7 +4,10 @@ use crate::{
     Renderer,
     action::{set_ime_allowed, set_ime_cursor_area},
     context::{LayoutChanged, LayoutChangedListener, PaintCx, UpdateCx, VisualChanged},
-    event::{CustomEvent, Event, EventPropagation, ImeEvent, PointerScrollEventExt, listener},
+    event::{
+        CustomEvent, Event, EventPropagation, ImeEvent, PointerScrollEventExt, listener,
+        listener::UpdatePhaseBoxTreeCommit,
+    },
     kurbo::{BezPath, Line, Point, Rect, Size, Vec2},
     peniko::Color,
     prelude::EventListenerTrait,
@@ -23,6 +26,7 @@ use floem_editor_core::{
 };
 use floem_reactive::{SignalGet, SignalTrack, SignalUpdate, SignalWith};
 use peniko::Brush;
+use taffy::Overflow;
 use ui_events::{
     keyboard::{Key, KeyboardEvent, Modifiers},
     pointer::{PointerButton, PointerButtonEvent},
@@ -418,20 +422,8 @@ impl EditorView {
     }
 
     pub fn create_editor_finalize_fn(editor: RwSignal<Editor>, view_id: ViewId) -> Box<FinalizeFn> {
-        Box::new(move |_node_id, layout| {
+        Box::new(move |_node_id, _layout| {
             let editor = editor.get_untracked();
-            let viewport = Rect::from_origin_size(
-                Point::new(layout.content_box_x() as f64, layout.content_box_y() as f64),
-                Size::new(
-                    layout.content_box_width() as f64,
-                    layout.content_box_height() as f64,
-                ),
-            );
-
-            if editor.viewport.with_untracked(|v| v != &viewport) {
-                editor.viewport.set(viewport);
-            }
-
             // Get parent size
             if let Some(parent) = view_id.parent() {
                 let parent_size = parent.get_layout_rect();
@@ -1028,13 +1020,23 @@ impl View for EditorView {
     }
 
     fn event(&mut self, cx: &mut crate::event::EventCx) -> EventPropagation {
-        if let Some(new_layout) = LayoutChangedListener::extract(&cx.event) {
+        if UpdatePhaseBoxTreeCommit::extract(&cx.event).is_some() {
             let editor = self.editor.get_untracked();
-            let viewport = new_layout.new_content_box;
+            let visual_rect = self.id.get_visual_rect();
+            let layout_rect = self.id.get_visual_rect_no_clip();
+            let viewport = Rect::from_origin_size(
+                (
+                    (visual_rect.x0 - layout_rect.x0).max(0.0),
+                    (visual_rect.y0 - layout_rect.y0).max(0.0),
+                ),
+                visual_rect.size(),
+            );
             if editor.viewport.with_untracked(|v| v != &viewport) {
                 editor.viewport.set(viewport);
             }
-
+        }
+        if LayoutChangedListener::extract(&cx.event).is_some() {
+            let editor = self.editor.get_untracked();
             // Get parent size
             if let Some(parent) = self.id.parent() {
                 let parent_size = parent.get_layout_rect();
@@ -1082,6 +1084,7 @@ pub fn editor_view(
     is_active: impl Fn(bool) -> bool + 'static + Copy,
 ) -> EditorView {
     let id = ViewId::new();
+    id.register_listener(UpdatePhaseBoxTreeCommit::listener_key());
     let is_active = Scope::current().create_memo(move |_| is_active(true));
 
     let ed = editor.get_untracked();
@@ -1320,7 +1323,12 @@ pub fn editor_container_view(
         editor_gutter(editor),
         editor_content(editor, is_active, handle_key_event),
     ))
-    .style(|s| s.absolute().size_pct(100.0, 100.0))
+    .style(|s| {
+        s.absolute()
+            .size_pct(100.0, 100.0)
+            .overflow_x(Overflow::Clip)
+            .overflow_y(Overflow::Clip)
+    })
     .on_cleanup(move || {
         // TODO: should we have some way for doc to tell us if we're allowed to cleanup the editor?
         let editor = editor.get_untracked();

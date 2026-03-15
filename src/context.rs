@@ -153,7 +153,8 @@ pub struct LayoutChanged {
     pub new_content_box: Rect,
     /// The position of the layout box's origin in window coordinates (box layout position, NOT visual position)
     ///
-    /// **WARNING**: This does not include transforms. Use `VisualChanged` for actual rendered position.
+    /// **WARNING**: This does point is not the final vistual position of the view because it intentionally does not include transforms.
+    /// Use `VisualChanged` for actual rendered position.
     pub new_window_origin: Point,
 }
 custom_event!(LayoutChanged, allow_disabled = |_event| true);

@@ -853,7 +853,6 @@ impl WindowState {
                 box_tree,
                 self.root_layout_node,
                 Vec2::ZERO, // parent_scroll - root has no parent scroll
-                Vec2::ZERO, // parent_scroll_ctx - root has no accumulated scroll
             );
         });
         // Clear pending individual updates since the full tree walk handled everything
@@ -877,26 +876,20 @@ impl WindowState {
 
                 if let Some(layout) = layout {
                     // Get parent's scroll offset and scroll_ctx
-                    let (parent_scroll, parent_scroll_ctx) =
+                    let parent_scroll =
                         if let Some(parent_id) = s.parent.get(view_id).and_then(|p| *p) {
                             s.states
                                 .get(parent_id)
                                 .map(|p| {
                                     let p = p.borrow();
-                                    (p.child_translation, p.scroll_cx)
+                                    p.child_translation
                                 })
-                                .unwrap_or((Vec2::ZERO, Vec2::ZERO))
+                                .unwrap_or(Vec2::ZERO)
                         } else {
-                            (Vec2::ZERO, Vec2::ZERO)
+                            Vec2::ZERO
                         };
 
-                    let props = compute_view_box_properties(
-                        s,
-                        view_id,
-                        layout,
-                        parent_scroll,
-                        parent_scroll_ctx,
-                    );
+                    let props = compute_view_box_properties(s, view_id, layout, parent_scroll);
 
                     // Update box tree
                     let mut box_tree = self.box_tree.borrow_mut();
@@ -1002,6 +995,7 @@ impl WindowState {
         self.apply_fixed_positioning_transforms();
 
         let damage = self.box_tree.borrow_mut().commit();
+
         let pointer = self.last_pointer;
         for damage_rect in &damage.dirty_rects {
             if damage_rect.contains(pointer.0) {
@@ -1391,7 +1385,6 @@ struct ViewBoxProperties {
     local_rect: Rect,
     local_transform: Affine,
     scroll_offset: Vec2,
-    scroll_ctx: Vec2,
     clip: Option<RoundedRect>,
 }
 
@@ -1401,7 +1394,6 @@ fn compute_view_box_properties(
     view_id: ViewId,
     layout: taffy::Layout,
     parent_scroll: Vec2,
-    parent_scroll_ctx: Vec2,
 ) -> ViewBoxProperties {
     let size = Size::new(layout.size.width as f64, layout.size.height as f64);
     let local_rect = Rect::from_origin_size(Point::ZERO, size);
@@ -1423,33 +1415,17 @@ fn compute_view_box_properties(
 
     drop(state_borrow);
 
-    // Compute scroll context
-    let scroll_ctx = if parent_scroll != Vec2::ZERO {
-        parent_scroll_ctx + parent_scroll
-    } else {
-        parent_scroll_ctx
-    };
-
     // Compute local transform
     let parent_transform_for_children = Affine::translate(-parent_scroll);
     let local_transform = parent_transform_for_children
         * Affine::translate(local_pos.to_vec2())
         * view_local_transform;
 
-    // Compute layout window origin (position in window coordinates after scrolling)
-    let layout_window_origin = Point::new(local_pos.x - scroll_ctx.x, local_pos.y - scroll_ctx.y);
-
-    // Update state
-    let mut state_mut = state.borrow_mut();
-    state_mut.scroll_cx = scroll_ctx;
-    state_mut.layout_window_origin = layout_window_origin;
-
     ViewBoxProperties {
         element_id,
         local_rect,
         local_transform,
         scroll_offset,
-        scroll_ctx,
         clip,
     }
 }
@@ -1460,7 +1436,6 @@ fn compute_absolute_transforms_and_boxes(
     box_tree: Rc<RefCell<BoxTree>>,
     node: NodeId,
     parent_scroll: Vec2,
-    parent_scroll_ctx: Vec2,
 ) {
     let taffy = layout_tree.borrow();
     let layout = *taffy.layout(node).unwrap();
@@ -1468,8 +1443,7 @@ fn compute_absolute_transforms_and_boxes(
     drop(taffy);
 
     if let Some(&view_id) = s.taffy_to_view.get(&node) {
-        let props =
-            compute_view_box_properties(s, view_id, layout, parent_scroll, parent_scroll_ctx);
+        let props = compute_view_box_properties(s, view_id, layout, parent_scroll);
 
         // Update box tree
         {
@@ -1488,7 +1462,6 @@ fn compute_absolute_transforms_and_boxes(
                     box_tree.clone(),
                     child,
                     props.scroll_offset,
-                    props.scroll_ctx,
                 );
             }
         }
@@ -1502,7 +1475,6 @@ fn compute_absolute_transforms_and_boxes(
                     box_tree.clone(),
                     child,
                     parent_scroll,
-                    parent_scroll_ctx,
                 );
             }
         }

@@ -1,4 +1,4 @@
-use floem::{prelude::*, style::ObjectFit};
+use floem::prelude::*;
 
 use crate::form::{form, form_item};
 
@@ -30,11 +30,7 @@ pub fn img_view() -> impl IntoView {
         form_item("JPG:", img(move || sunflower.to_vec())),
         form_item(
             "JPG(resized):",
-            img(move || sunflower.to_vec()).style(|s| {
-                s.width(320.pt())
-                    .height(490.pt())
-                    .object_fit(ObjectFit::Contain)
-            }),
+            img(move || sunflower.to_vec()).style(|s| s.width(320.pt()).height(490.pt())),
         ),
         //TODO: support percentages for width/height
         //     img(move || ferris_png.to_vec()).style(|s| s.width(90.pct()).height(90.pct()))

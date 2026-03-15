@@ -11,8 +11,8 @@ pub fn form<VTF: ViewTupleFlat + 'static>(children: VTF) -> impl IntoView {
         .style(|s| {
             s.grid()
                 .grid_template_columns([auto(), fr(1.)])
-                .justify_center()
-                .items_center()
+                // .justify_center()
+                // .items_center()
                 .row_gap(20)
                 .col_gap(10)
                 .padding(30)

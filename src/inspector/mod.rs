@@ -18,8 +18,8 @@ use crate::{
     platform::{Duration, Instant},
     prelude::*,
     style::{
-        BorderRadius, Length, LengthAuto, OverflowX, OverflowY, StrokeWrap, Style, StyleCx,
-        StyleThemeExt, TextColor,
+        BorderRadius, FontSizeCx, Length, LengthAuto, OverflowX, OverflowY, StrokeWrap, Style,
+        StyleCx, StyleThemeExt, TextColor,
     },
 };
 
@@ -94,13 +94,8 @@ fn format_px_pct_auto(value: LengthAuto) -> String {
     }
 }
 
-fn resolve_px_pct(value: Length, basis: f64) -> f64 {
-    match value {
-        Length::Pt(pt) => pt,
-        Length::Pct(pct) => basis * (pct / 100.0),
-        Length::Em(em) => em, // FIXME
-        Length::Lh(lh) => lh, // FIXME
-    }
+fn resolve_length(value: Length, basis: f64, font_size_cx: &FontSizeCx) -> f64 {
+    value.resolve(basis, font_size_cx)
 }
 
 fn box_model_data(style: &Style, bounds: Rect) -> BoxModelViewData {
@@ -135,19 +130,22 @@ fn box_model_data(style: &Style, bounds: Rect) -> BoxModelViewData {
         bottom_left: Some(builtin.border_bottom_left_radius()),
         bottom_right: Some(builtin.border_bottom_right_radius()),
     };
+    let font_size = builtin.font_size();
+    let line_height = builtin.line_height().resolve(font_size as f32) as f64;
+    let font_size_cx = FontSizeCx::new(font_size, line_height);
 
     let horizontal_basis = bounds.width().max(0.0);
     let content_width = (bounds.width()
         - border[1].width
         - border[3].width
-        - resolve_px_pct(padding[1], horizontal_basis)
-        - resolve_px_pct(padding[3], horizontal_basis))
+        - resolve_length(padding[1], horizontal_basis, &font_size_cx)
+        - resolve_length(padding[3], horizontal_basis, &font_size_cx))
     .max(0.0);
     let content_height = (bounds.height()
         - border[0].width
         - border[2].width
-        - resolve_px_pct(padding[0], horizontal_basis)
-        - resolve_px_pct(padding[2], horizontal_basis))
+        - resolve_length(padding[0], horizontal_basis, &font_size_cx)
+        - resolve_length(padding[2], horizontal_basis, &font_size_cx))
     .max(0.0);
 
     BoxModelViewData {
@@ -1024,5 +1022,43 @@ impl RelativeViewId {
             next_brother_id,
             child_id,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{box_model_data, resolve_length};
+    use crate::{
+        style::{FontSizeCx, Style},
+        unit::UnitExt,
+    };
+    use peniko::kurbo::Rect;
+
+    #[test]
+    fn resolve_length_uses_font_metrics_for_relative_units() {
+        let font_size_cx = FontSizeCx::new(16.0, 24.0);
+
+        assert_eq!(resolve_length(2.0.em().into(), 200.0, &font_size_cx), 32.0);
+        assert_eq!(resolve_length(1.5.lh().into(), 200.0, &font_size_cx), 36.0);
+        assert_eq!(
+            resolve_length(25.0.pct().into(), 200.0, &font_size_cx),
+            50.0
+        );
+    }
+
+    #[test]
+    fn box_model_data_resolves_relative_padding_consistently() {
+        let style = Style::new()
+            .font_size(16.0)
+            .line_height(1.5)
+            .padding_left(1.0.em())
+            .padding_right(50.0.pct())
+            .padding_top(1.0.lh())
+            .padding_bottom(8.0);
+
+        let data = box_model_data(&style, Rect::new(0.0, 0.0, 200.0, 100.0));
+
+        assert_eq!(data.content_width, 84.0);
+        assert_eq!(data.content_height, 68.0);
     }
 }
