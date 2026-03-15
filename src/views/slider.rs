@@ -454,10 +454,6 @@ impl Slider {
                 new_box: Default::default(),
                 new_content_box: Default::default(),
                 new_window_origin: Default::default(),
-                // Before first layout, the slider has no view-specific extracted layout state yet.
-                // Using the widget extractor defaults here is stable because they match the style
-                // system defaults for inherited font-size/line-height until the first LayoutChanged.
-                resolve_cx: SliderStyle::default().length_resolve_cx(),
             },
             style: Default::default(),
             range: 0.0..=100.0,
@@ -549,10 +545,6 @@ impl Slider {
                 new_box: Default::default(),
                 new_content_box: Default::default(),
                 new_window_origin: Default::default(),
-                // Before first layout, the slider has no view-specific extracted layout state yet.
-                // Using the widget extractor defaults here is stable because they match the style
-                // system defaults for inherited font-size/line-height until the first LayoutChanged.
-                resolve_cx: SliderStyle::default().length_resolve_cx(),
             },
             style: Default::default(),
             range: cloned_range,
@@ -623,12 +615,12 @@ impl Slider {
         let base_bar_height = self
             .base_bar_style
             .height()
-            .resolve_with_ctx(size.height, &resolve_cx)
+            .resolve(size.height, &resolve_cx)
             .unwrap_or(size.height);
         let accent_bar_height = self
             .accent_bar_style
             .height()
-            .resolve_with_ctx(size.height, &resolve_cx)
+            .resolve(size.height, &resolve_cx)
             .unwrap_or(size.height);
 
         let base_bar_radii = border_radius(&self.base_bar_style, base_bar_height / 2., &resolve_cx);
@@ -672,10 +664,9 @@ impl Slider {
     fn calculate_handle_radius(&self) -> f64 {
         let size = self.layout.new_box.size();
         let basis = size.width.min(size.height) / 2.0;
-        self.style.handle_radius().resolve(
-            basis,
-            &self.style.length_resolve_cx(),
-        )
+        self.style
+            .handle_radius()
+            .resolve(basis, &self.style.length_resolve_cx())
     }
 
     /// Convert mouse x position to percentage, taking handle radius into account

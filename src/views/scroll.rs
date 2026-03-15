@@ -291,7 +291,7 @@ impl ScrollHandle {
 
         cx.fill(
             &rounded_rect,
-            &self.style.color().unwrap_or(HANDLE_COLOR),
+            &self.style.background().unwrap_or(HANDLE_COLOR),
             0.0,
         );
 
@@ -440,7 +440,7 @@ impl ScrollTrack {
         let box_tree = self.box_tree.borrow();
         let rect = box_tree.local_bounds(self.element_id.0).unwrap_or_default();
 
-        if let Some(color) = self.style.color() {
+        if let Some(color) = self.style.background() {
             cx.fill(&rect, &color, 0.0);
         }
     }
@@ -466,7 +466,7 @@ prop!(
 
 prop_extractor! {
     ScrollTrackStyle {
-        color: Background,
+        background: Background,
         border_top_left_radius: BorderTopLeftRadius,
         border_top_right_radius: BorderTopRightRadius,
         border_bottom_left_radius: BorderBottomLeftRadius,

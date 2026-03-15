@@ -2,12 +2,13 @@ use peniko::kurbo::{Affine, Point, Rect};
 use smallvec::SmallVec;
 use std::{cell::RefCell, rc::Rc};
 
-use crate::event::Phase;
-use crate::platform::menu::Menu;
-use crate::style::FontSizeCx;
-use crate::style::recalc::StyleReason;
-use crate::{ElementId, custom_event};
-use crate::{event::EventPropagation, view::ViewId};
+use crate::{
+    ElementId, custom_event,
+    event::{EventPropagation, Phase},
+    platform::menu::Menu,
+    style::recalc::StyleReason,
+    view::ViewId,
+};
 
 pub type EventCallback = dyn FnMut(&mut EventCx) -> EventPropagation;
 pub type ResizeCallback = dyn Fn(Rect);
@@ -154,8 +155,6 @@ pub struct LayoutChanged {
     ///
     /// **WARNING**: This does not include transforms. Use `VisualChanged` for actual rendered position.
     pub new_window_origin: Point,
-    /// The current length resolution context for this view.
-    pub resolve_cx: FontSizeCx,
 }
 custom_event!(LayoutChanged, allow_disabled = |_event| true);
 
@@ -187,10 +186,6 @@ impl LayoutChanged {
         let content_offset = self.new_content_box.origin() - self.new_box.origin();
         self.new_content_box
             .with_origin(self.new_window_origin + content_offset)
-    }
-
-    pub fn length_resolve_cx(&self) -> FontSizeCx {
-        self.resolve_cx
     }
 }
 

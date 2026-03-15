@@ -224,4 +224,19 @@ impl Runtime {
     pub fn set_current_effect(effect: Option<Rc<dyn EffectTrait>>) {
         RUNTIME.with(|rt| *rt.current_effect.borrow_mut() = effect);
     }
+
+    pub fn with_effect<T>(effect: Option<Rc<dyn EffectTrait>>, f: impl FnOnce() -> T) -> T {
+        struct EffectRestoreGuard(Option<Rc<dyn EffectTrait>>);
+
+        impl Drop for EffectRestoreGuard {
+            fn drop(&mut self) {
+                Runtime::set_current_effect(self.0.clone());
+            }
+        }
+
+        let saved_effect = Runtime::get_current_effect();
+        let _restore = EffectRestoreGuard(saved_effect);
+        Runtime::set_current_effect(effect);
+        f()
+    }
 }

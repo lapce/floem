@@ -34,6 +34,7 @@ use crate::AnyView;
 use crate::prelude::ViewTuple;
 use crate::style::CursorStyle;
 use crate::theme::StyleThemeExt;
+use crate::theme::Theme;
 use crate::unit::{Length, LengthAuto, Pct, Pt};
 use crate::view::ViewTupleFlat;
 use crate::view::{IntoView, View};
@@ -42,10 +43,9 @@ use crate::views::{
     TooltipExt, canvas, dyn_view, svg, tab,
 };
 
-use super::FontSize;
 use super::{
-    ResponsiveSelectors, StructuralSelectors, Style, StyleDebugGroupInfo, StyleKey, StyleKeyInfo,
-    StylePropRef, Transition,
+    FontSize, ResponsiveSelectors, StructuralSelectors, Style, StyleDebugGroupInfo, StyleKey,
+    StyleKeyInfo, StylePropRef, Transition,
 };
 
 pub struct ContextValue<T> {
@@ -82,14 +82,10 @@ impl<T> ContextValue<T> {
     }
 
     pub fn resolve(&self, style: &Style) -> T {
-        let saved_effect = floem_reactive::Runtime::get_current_effect();
-        if let Some(effect) = &style.effect_context {
-            floem_reactive::Runtime::set_current_effect(Some(effect.clone()));
-        }
-        // todo use context
-        let result = (self.eval)(style);
-        floem_reactive::Runtime::set_current_effect(saved_effect);
-        result
+        floem_reactive::Runtime::with_effect(style.effect_context.clone(), || {
+            // todo use context
+            (self.eval)(style)
+        })
     }
 
     pub fn map<U>(self, f: impl Fn(T) -> U + 'static) -> ContextValue<U>
@@ -842,6 +838,7 @@ impl StylePropValue for Stroke {
         .container()
         .style(move |s| {
             s.with_theme(move |s, t| s.border_color(t.border()))
+                .defer::<Theme>(move |t| color.set(t.primary()))
                 .padding(4.0)
         });
 
@@ -1597,11 +1594,8 @@ fn debug_name_cell(name: String, is_direct: bool, indent: usize) -> AnyView {
                 s.margin_right(5.0)
                     .border(1.)
                     .border_radius(5.0)
-                    .with_theme(|s, t| {
-                        s.color(t.text_muted())
-                            .border_color(t.border())
-                            .apply(Style::new().padding_horiz(4.0))
-                    })
+                    .with_theme(|s, t| s.color(t.text_muted()).border_color(t.border()))
+                    .padding_horiz(4.0)
                     .with::<FontSize>(|s, fs| s.font_size(fs.def(|fs| fs * 0.8)))
             }),
             Label::new(name),

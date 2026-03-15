@@ -486,6 +486,7 @@ impl View for Label {
             self.layout_data.borrow_mut().clear_overflow_state();
             self.set_text_layout();
             self.id.request_layout();
+            self.id.request_paint();
         }
         if self.selection_style.read(cx) {
             cx.window_state.request_paint(self.id);

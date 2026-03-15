@@ -202,6 +202,10 @@ pub(crate) use props::{RESPONSIVE_SELECTORS_INFO, STRUCTURAL_SELECTORS_INFO, sty
 
 static NEXT_STYLE_MERGE_ID: AtomicU64 = AtomicU64::new(1);
 const MERGE_MIX_CONST: u64 = 0x9E3779B97F4A7C15;
+static DEFERRED_EFFECTS_INFO: StyleKeyInfo = StyleKeyInfo::DeferredEffects;
+const DEFERRED_EFFECTS_KEY: StyleKey = StyleKey {
+    info: &DEFERRED_EFFECTS_INFO,
+};
 
 fn next_style_merge_id() -> u64 {
     NEXT_STYLE_MERGE_ID.fetch_add(1, Ordering::Relaxed)
@@ -214,12 +218,19 @@ fn combine_merge_ids(a: u64, b: u64) -> u64 {
 type StructuralSelectorRules = SmallVec<[(StructuralSelector, Rc<Style>); 2]>;
 type ResponsiveSelectorRules = SmallVec<[(ResponsiveSelector, Rc<Style>); 2]>;
 
-pub(crate) fn merged_length_resolve_cx(font_size: f64, line_height: LineHeightValue) -> FontSizeCx {
-    let line_height = match line_height {
-        LineHeightValue::Pt(value) => f64::from(value),
-        LineHeightValue::Normal(multiplier) => font_size * f64::from(multiplier),
-    };
-    FontSizeCx::new(font_size, line_height)
+#[derive(Clone)]
+pub(crate) struct DeferredStyleEffect {
+    run: Rc<dyn Fn(&Style)>,
+}
+
+impl DeferredStyleEffect {
+    fn new(run: impl Fn(&Style) + 'static) -> Self {
+        Self { run: Rc::new(run) }
+    }
+
+    fn run(&self, style: &Style) {
+        (self.run)(style);
+    }
 }
 
 #[derive(Clone, Default, Debug)]
@@ -245,10 +256,19 @@ pub struct ContextRef<P: StyleProp> {
 }
 
 impl<P: StyleProp> ContextRef<P> {
-    /// Create a deferred value by mapping the current context prop to a single property value.
+    /// Create a deferred value from the current context prop.
     ///
-    /// The closure is evaluated when the target property is read. It only computes one
-    /// value and does not participate in nested-map resolution.
+    /// This is for producing another style value from context, such as
+    /// `font_size(fs.def(|fs| fs * 0.85))` or `background(t.def(|t| t.bg_base()))`.
+    ///
+    /// You can read `def` either as "function definition" or as shorthand for
+    /// "defer": it packages a closure that will be evaluated later when the
+    /// resulting value is needed.
+    ///
+    /// The closure is evaluated only if the property using the returned [`ContextValue`]
+    /// is actually read later. It does not run eagerly during `resolve_nested_maps`, so
+    /// it should not be used for side effects that must always happen during style
+    /// resolution. Use [`Style::defer`] for that.
     pub fn def<T>(self, f: impl Fn(P::Type) -> T + 'static) -> ContextValue<T>
     where
         P::Type: 'static,
@@ -267,6 +287,18 @@ impl<P: StyleProp> ContextRef<P> {
     {
         self.def(f)
     }
+
+    pub(crate) fn into_deferred(self, f: impl Fn(P::Type) + 'static) -> DeferredStyleEffect
+    where
+        P::Type: 'static,
+    {
+        let effect = self.def(move |value| {
+            f(value);
+        });
+        DeferredStyleEffect::new(move |style| {
+            effect.resolve(style);
+        })
+    }
 }
 
 impl ExprStyle {
@@ -284,7 +316,7 @@ impl ExprStyle {
         over(self)
     }
 
-    pub fn apply(mut self, over: Style) -> Self {
+    fn merge(mut self, over: Style) -> Self {
         self.style.apply_mut(over);
         self
     }
@@ -344,27 +376,27 @@ impl ExprStyle {
     }
 
     pub fn hover(self, style: impl FnOnce(ExprStyle) -> ExprStyle) -> Self {
-        self.apply(Style::default().hover(|s| style(s.into()).into()))
+        self.merge(Style::default().hover(|s| style(s.into()).into()))
     }
 
     pub fn focus(self, style: impl FnOnce(ExprStyle) -> ExprStyle) -> Self {
-        self.apply(Style::default().focus(|s| style(s.into()).into()))
+        self.merge(Style::default().focus(|s| style(s.into()).into()))
     }
 
     pub fn focus_visible(self, style: impl FnOnce(ExprStyle) -> ExprStyle) -> Self {
-        self.apply(Style::default().focus_visible(|s| style(s.into()).into()))
+        self.merge(Style::default().focus_visible(|s| style(s.into()).into()))
     }
 
     pub fn focus_within(self, style: impl FnOnce(ExprStyle) -> ExprStyle) -> Self {
-        self.apply(Style::default().focus_within(|s| style(s.into()).into()))
+        self.merge(Style::default().focus_within(|s| style(s.into()).into()))
     }
 
     pub fn active(self, style: impl FnOnce(ExprStyle) -> ExprStyle) -> Self {
-        self.apply(Style::default().active(|s| style(s.into()).into()))
+        self.merge(Style::default().active(|s| style(s.into()).into()))
     }
 
     pub fn disabled(self, style: impl FnOnce(ExprStyle) -> ExprStyle) -> Self {
-        self.apply(Style::default().disabled(|s| style(s.into()).into()))
+        self.merge(Style::default().disabled(|s| style(s.into()).into()))
     }
 
     pub fn class<C: StyleClass>(
@@ -372,7 +404,7 @@ impl ExprStyle {
         class: C,
         style: impl FnOnce(ExprStyle) -> ExprStyle,
     ) -> Self {
-        self.apply(Style::default().class(class, |s| style(s.into()).into()))
+        self.merge(Style::default().class(class, |s| style(s.into()).into()))
     }
 
     /// Sets the font size for text content.
@@ -463,15 +495,15 @@ impl ExprStyle {
     }
 
     pub fn selected(self, style: impl FnOnce(ExprStyle) -> ExprStyle) -> Self {
-        self.apply(Style::default().selected(|s| style(s.into()).into()))
+        self.merge(Style::default().selected(|s| style(s.into()).into()))
     }
 
     pub fn drag(self, style: impl FnOnce(ExprStyle) -> ExprStyle) -> Self {
-        self.apply(Style::default().drag(|s| style(s.into()).into()))
+        self.merge(Style::default().drag(|s| style(s.into()).into()))
     }
 
     pub fn file_hover(self, style: impl FnOnce(ExprStyle) -> ExprStyle) -> Self {
-        self.apply(Style::default().file_hover(|s| style(s.into()).into()))
+        self.merge(Style::default().file_hover(|s| style(s.into()).into()))
     }
 
     pub fn padding<T>(self, padding: ContextValue<T>) -> Self
@@ -515,11 +547,11 @@ impl ExprStyle {
     where
         CS: Default + Clone + Into<Style> + From<Style>,
     {
-        self.apply(custom(CS::default()).into())
+        self.merge(custom(CS::default()).into())
     }
 
     pub fn apply_border_radius(self, border_radius: BorderRadius) -> Self {
-        self.apply(Style::new().apply_border_radius(border_radius))
+        self.merge(Style::new().apply_border_radius(border_radius))
     }
 
     pub fn apply_box_shadows(self, shadow: impl Into<SmallVec<[BoxShadow; 3]>>) -> Self {
@@ -527,7 +559,7 @@ impl ExprStyle {
     }
 
     pub fn transition_background(self, transition: Transition) -> Self {
-        self.apply(Style::new().transition_background(transition))
+        self.merge(Style::new().transition_background(transition))
     }
 
     pub fn border_bottom(self, width: impl Into<Pt>) -> Self {
@@ -634,6 +666,7 @@ pub fn resolve_nested_maps(
     let result = class_style
         .apply(view_style)
         .with_inherited_context(inherited_context);
+    result.run_deferred_effects();
     let _ = effect_context;
     (result, selectors)
 }
@@ -874,8 +907,14 @@ impl Style {
     /// inherited properties like font-size, color, etc.
     pub fn apply_only_inherited(to: &mut Style, from: &Style) {
         if from.any_inherited() {
-            let inherited = from.map.iter().filter(|(p, _)| p.inherited());
-            to.apply_iter(inherited, None);
+            for (k, v) in from.map.iter().filter(|(p, _)| p.inherited()) {
+                let StyleKeyInfo::Prop(info) = k.info else {
+                    continue;
+                };
+                to.map_mut()
+                    .insert(*k, (info.resolve_inherited_any)(&**v, from));
+                to.has_inherited = true;
+            }
             to.merge_id = combine_merge_ids(to.merge_id, from.merge_id);
         }
     }
@@ -895,8 +934,15 @@ impl Style {
 
             // Apply inherited properties
             if has_inherited {
-                let inherited = from.map.iter().filter(|(p, _)| p.inherited());
-                new_style.apply_iter(inherited, None);
+                for (k, v) in from.map.iter().filter(|(p, _)| p.inherited()) {
+                    let StyleKeyInfo::Prop(info) = k.info else {
+                        continue;
+                    };
+                    new_style
+                        .map_mut()
+                        .insert(*k, (info.resolve_inherited_any)(&**v, from));
+                    new_style.has_inherited = true;
+                }
                 new_style.merge_id = combine_merge_ids(new_style.merge_id, from.merge_id);
             }
 
@@ -1243,6 +1289,21 @@ impl Style {
                         let mut merged: ResponsiveSelectorRules = current.0;
                         merged.extend(new_rules.iter().cloned());
                         Rc::new(ResponsiveSelectors(merged))
+                    } else {
+                        v.clone()
+                    };
+                    self.map_mut().insert(*k, merged);
+                }
+                StyleKeyInfo::DeferredEffects => {
+                    let merged = if let Some(current) = self.map_mut().remove(k) {
+                        let mut current: Vec<DeferredStyleEffect> = take_any(current);
+                        current.extend(
+                            v.downcast_ref::<Vec<DeferredStyleEffect>>()
+                                .unwrap()
+                                .iter()
+                                .cloned(),
+                        );
+                        Rc::new(current)
                     } else {
                         v.clone()
                     };
@@ -2063,19 +2124,6 @@ prop_extractor! {
 }
 
 prop_extractor! {
-    pub(crate) ResolveFontProps {
-        pub font_size: FontSize,
-        pub line_height: LineHeight,
-    }
-}
-
-impl ResolveFontProps {
-    pub(crate) fn length_resolve_cx(&self) -> FontSizeCx {
-        merged_length_resolve_cx(self.font_size(), self.line_height())
-    }
-}
-
-prop_extractor! {
     pub(crate) LayoutProps {
         // display is used here to just to properly trigger transitions on layout change. it is not transitioned here
         pub border_left: BorderLeft,
@@ -2113,6 +2161,10 @@ prop_extractor! {
 
         pub row_gap: RowGap,
         pub col_gap: ColGap,
+
+        // these are part of layout props because of em/lh units
+        pub font_size: FontSize,
+        pub line_height: LineHeight,
     }
 }
 
@@ -2238,7 +2290,17 @@ impl LayoutProps {
         }
     }
 
-    pub fn apply_to_taffy_style(&self, style: &mut TaffyStyle, resolve_cx: &FontSizeCx) {
+    pub fn font_size_cx(&self) -> FontSizeCx {
+        {
+            let font_size = self.font_size();
+            let line_height = self.line_height();
+            let line_height = line_height.resolve(font_size as f32);
+            FontSizeCx::new(font_size, line_height as f64)
+        }
+    }
+
+    pub fn apply_to_taffy_style(&self, style: &mut TaffyStyle) {
+        let resolve_cx = &self.font_size_cx();
         style.size = taffy::prelude::Size {
             width: self.width().to_taffy_dim(resolve_cx),
             height: self.height().to_taffy_dim(resolve_cx),
@@ -2293,6 +2355,38 @@ prop_extractor! {
 }
 
 impl Style {
+    fn deferred_effects(&self) -> impl Iterator<Item = &DeferredStyleEffect> {
+        self.map
+            .get(&DEFERRED_EFFECTS_KEY)
+            .into_iter()
+            .flat_map(|effects| {
+                effects
+                    .downcast_ref::<Vec<DeferredStyleEffect>>()
+                    .into_iter()
+                    .flat_map(|effects| effects.iter())
+            })
+    }
+
+    fn run_deferred_effects(&self) {
+        for effect in self.deferred_effects() {
+            effect.run(self);
+        }
+    }
+
+    fn push_deferred_effect(mut self, effect: DeferredStyleEffect) -> Self {
+        let mut effects = self
+            .map
+            .get(&DEFERRED_EFFECTS_KEY)
+            .and_then(|effects| effects.downcast_ref::<Vec<DeferredStyleEffect>>())
+            .cloned()
+            .unwrap_or_default();
+        effects.push(effect);
+        self.map_mut()
+            .insert(DEFERRED_EFFECTS_KEY, Rc::new(effects));
+        self.merge_id = next_style_merge_id();
+        self
+    }
+
     /// Gets the value of a style property, returning the default if not set.
     pub fn get<P: StyleProp>(&self, _prop: P) -> P::Type {
         self.get_prop_or_default::<P>()
@@ -2311,6 +2405,21 @@ impl Style {
     /// Sets a property to a deferred context-derived value.
     pub fn set_context<P: StyleProp>(self, prop: P, value: ContextValue<P::Type>) -> Self {
         self.set_style_value(prop, StyleValue::Context(value))
+    }
+
+    /// Register a deferred side effect for a context prop.
+    ///
+    /// Unlike [`ContextRef::def`], this does not produce a property value. The closure is
+    /// guaranteed to run during nested-style resolution after inherited context has been
+    /// attached, even if no property later reads the context value.
+    ///
+    /// Use this for debug-view setup and similar side effects:
+    /// `Style::new().defer::<Theme>(|t| color.set(t.primary()))`.
+    pub fn defer<P: StyleProp>(self, f: impl Fn(P::Type) + 'static) -> Self
+    where
+        P::Type: 'static,
+    {
+        self.push_deferred_effect(ContextRef::<P>::default().into_deferred(f))
     }
 
     pub fn set_from_context<C: StyleProp, P: StyleProp>(
@@ -2367,29 +2476,25 @@ impl Style {
                     // Instead, same-prop context reads resolve against the previous effective
                     // value for `P`: the previous local value if there was one, otherwise the
                     // inherited fallback carried by `Style`.
-                    match previous_value.clone() {
-                        Some(previous_value) => {
-                            let previous_value = match previous_value
-                                .downcast_ref::<StyleMapValue<P::Type>>()
-                                .unwrap()
-                            {
-                                StyleMapValue::Val(value) | StyleMapValue::Animated(value) => {
-                                    Some(value.clone())
-                                }
-                                StyleMapValue::Context(context_value) => {
-                                    Some(context_value.resolve(&base_style))
-                                }
-                                StyleMapValue::Unset => None,
-                            };
-
-                            if let Some(previous_value) = previous_value {
-                                base_style.map_mut().insert(
-                                    P::key(),
-                                    Rc::new(StyleMapValue::Val(previous_value)),
-                                );
+                    if let Some(previous_value) = previous_value.clone() {
+                        let previous_value = match previous_value
+                            .downcast_ref::<StyleMapValue<P::Type>>()
+                            .unwrap()
+                        {
+                            StyleMapValue::Val(value) | StyleMapValue::Animated(value) => {
+                                Some(value.clone())
                             }
+                            StyleMapValue::Context(context_value) => {
+                                Some(context_value.resolve(&base_style))
+                            }
+                            StyleMapValue::Unset => None,
+                        };
+
+                        if let Some(previous_value) = previous_value {
+                            base_style
+                                .map_mut()
+                                .insert(P::key(), Rc::new(StyleMapValue::Val(previous_value)));
                         }
-                        None => {}
                     }
                     value.resolve(&base_style)
                 }))
@@ -3427,14 +3532,17 @@ impl Style {
 }
 
 impl Style {
-    pub(crate) fn length_resolve_cx(&self) -> FontSizeCx {
+    pub(crate) fn font_size_cx(&self) -> FontSizeCx {
         let builtin = self.builtin();
-        merged_length_resolve_cx(builtin.font_size(), builtin.line_height())
+        let font_size = builtin.font_size();
+        let line_height = builtin.line_height();
+        let line_height = line_height.resolve(font_size as f32);
+        FontSizeCx::new(font_size, line_height as f64)
     }
 
     pub fn to_taffy_style(&self) -> TaffyStyle {
         let style = self.builtin();
-        let resolve_cx = self.length_resolve_cx();
+        let font_size_cx = self.font_size_cx();
         TaffyStyle {
             display: style.display(),
             overflow: taffy::Point {
@@ -3443,21 +3551,21 @@ impl Style {
             },
             position: style.position(),
             size: taffy::prelude::Size {
-                width: style.width().to_taffy_dim(&resolve_cx),
-                height: style.height().to_taffy_dim(&resolve_cx),
+                width: style.width().to_taffy_dim(&font_size_cx),
+                height: style.height().to_taffy_dim(&font_size_cx),
             },
             min_size: taffy::prelude::Size {
-                width: style.min_width().to_taffy_dim(&resolve_cx),
-                height: style.min_height().to_taffy_dim(&resolve_cx),
+                width: style.min_width().to_taffy_dim(&font_size_cx),
+                height: style.min_height().to_taffy_dim(&font_size_cx),
             },
             max_size: taffy::prelude::Size {
-                width: style.max_width().to_taffy_dim(&resolve_cx),
-                height: style.max_height().to_taffy_dim(&resolve_cx),
+                width: style.max_width().to_taffy_dim(&font_size_cx),
+                height: style.max_height().to_taffy_dim(&font_size_cx),
             },
             flex_direction: style.flex_direction(),
             flex_grow: style.flex_grow(),
             flex_shrink: style.flex_shrink(),
-            flex_basis: style.flex_basis().to_taffy_dim(&resolve_cx),
+            flex_basis: style.flex_basis().to_taffy_dim(&font_size_cx),
             flex_wrap: style.flex_wrap(),
             justify_content: style.justify_content(),
             justify_self: style.justify_self(),
@@ -3476,29 +3584,29 @@ impl Style {
             },
             padding: {
                 Rect {
-                    left: style.padding_left().to_taffy(&resolve_cx),
-                    top: style.padding_top().to_taffy(&resolve_cx),
-                    right: style.padding_right().to_taffy(&resolve_cx),
-                    bottom: style.padding_bottom().to_taffy(&resolve_cx),
+                    left: style.padding_left().to_taffy(&font_size_cx),
+                    top: style.padding_top().to_taffy(&font_size_cx),
+                    right: style.padding_right().to_taffy(&font_size_cx),
+                    bottom: style.padding_bottom().to_taffy(&font_size_cx),
                 }
             },
             margin: {
                 Rect {
-                    left: style.margin_left().to_taffy_len_perc_auto(&resolve_cx),
-                    top: style.margin_top().to_taffy_len_perc_auto(&resolve_cx),
-                    right: style.margin_right().to_taffy_len_perc_auto(&resolve_cx),
-                    bottom: style.margin_bottom().to_taffy_len_perc_auto(&resolve_cx),
+                    left: style.margin_left().to_taffy_len_perc_auto(&font_size_cx),
+                    top: style.margin_top().to_taffy_len_perc_auto(&font_size_cx),
+                    right: style.margin_right().to_taffy_len_perc_auto(&font_size_cx),
+                    bottom: style.margin_bottom().to_taffy_len_perc_auto(&font_size_cx),
                 }
             },
             inset: Rect {
-                left: style.inset_left().to_taffy_len_perc_auto(&resolve_cx),
-                top: style.inset_top().to_taffy_len_perc_auto(&resolve_cx),
-                right: style.inset_right().to_taffy_len_perc_auto(&resolve_cx),
-                bottom: style.inset_bottom().to_taffy_len_perc_auto(&resolve_cx),
+                left: style.inset_left().to_taffy_len_perc_auto(&font_size_cx),
+                top: style.inset_top().to_taffy_len_perc_auto(&font_size_cx),
+                right: style.inset_right().to_taffy_len_perc_auto(&font_size_cx),
+                bottom: style.inset_bottom().to_taffy_len_perc_auto(&font_size_cx),
             },
             gap: Size {
-                width: style.col_gap().to_taffy(&resolve_cx),
-                height: style.row_gap().to_taffy(&resolve_cx),
+                width: style.col_gap().to_taffy(&font_size_cx),
+                height: style.row_gap().to_taffy(&font_size_cx),
             },
             grid_template_rows: style.grid_template_rows(),
             grid_template_columns: style.grid_template_columns(),

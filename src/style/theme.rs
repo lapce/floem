@@ -5,7 +5,7 @@ use super::*;
 use crate::style::Selectable;
 use crate::view::View;
 use crate::views::editor::SelectionColor;
-use crate::views::resizable::ResizableHandleClass;
+use crate::views::resizable::{ResizableClass, ResizableHandleClass};
 use crate::{
     AnyView, prop, style_class, style_debug_group,
     views::{
@@ -663,11 +663,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
                 .set(Selectable, false)
                 .border_radius(t.border_radius())
                 .hover(|s| s.background(t.def(|t| t.primary_muted().with_alpha(0.7))))
-                .active(|s| {
-                    s.class(RadioButtonClass, |s| {
-                        s.apply(Style::new().with_theme(|s, t| s.background(t.bg_elevated())))
-                    })
-                })
+                .active(|s| s.class(RadioButtonClass, |s| s.background(t.bg_elevated())))
                 .selected(|s| s.disabled(|s| s.color(t.bg_elevated())))
                 .disabled(|s| s.color(t.text_muted()).unset_cursor())
         })
@@ -676,13 +672,12 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
         .transition(Background, Transition::linear(100.millis()))
         .focus(|s| {
             s.with_theme(|s, t| s.hover(|s| s.background(t.def(|t| t.primary().with_alpha(0.7)))))
-                .apply(focus_style())
         });
 
     let toggle_button_style = Style::new()
+        .height(1.75.em())
         .with_theme(|s, t| {
             s.background(t.bg_elevated())
-                .with::<FontSize>(|s, fs| s.height(fs.def(|fs| fs * 1.75)))
                 .padding(t.padding())
                 .set_context_opt(Foreground, t.def(|t| Some(Brush::Solid(t.text_muted()))))
                 .active(|s| {
@@ -728,7 +723,6 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
                 .padding(t.padding())
                 .color(t.text_muted())
                 .border_bottom(2.)
-                .apply(Style::new().border_color(Color::TRANSPARENT))
                 .disabled(|s| s.background(t.bg_disabled()).color(t.text_muted()))
                 .selected(|s| {
                     s.background(t.bg_elevated())
@@ -737,6 +731,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
                 })
                 .hover(|s| s.background(t.bg_elevated()).color(t.text()))
         })
+        .border_color(Color::TRANSPARENT)
         .transition(Background, Transition::linear(100.millis()))
         .transition(Foreground, Transition::linear(100.millis()))
         .justify_center()
@@ -857,7 +852,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
             s.with_theme(|s, t| {
                 s.color(t.text_muted()).disabled(|s| {
                     s.color(t.def(|t| t.text_muted().with_alpha(0.5)))
-                        .apply(Style::new().background(css::BLACK))
+                        .set(Background, Some(Brush::Solid(css::BLACK)))
                 })
             })
         })
@@ -895,6 +890,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
                         })
                 })
         })
+        .class(ResizableClass, |s| s.padding_right(3))
         .class(ResizableHandleClass, |s| {
             s.custom(|cs: ResizableCustomStyle| cs.handle_thickness(3.))
                 .with_theme(|s, t| {

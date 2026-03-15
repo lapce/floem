@@ -506,7 +506,7 @@ impl LengthAuto {
         }
     }
 
-    pub fn resolve_with_ctx(&self, reference: f64, cx: &FontSizeCx) -> Option<f64> {
+    pub fn resolve(&self, reference: f64, cx: &FontSizeCx) -> Option<f64> {
         match self {
             LengthAuto::Pt(v) => Some(*v),
             LengthAuto::Pct(v) => Some(reference * v / 100.0),
@@ -521,7 +521,7 @@ impl LengthAuto {
             LengthAuto::Pt(v) => Dimension::length(*v as f32),
             LengthAuto::Pct(v) => Dimension::percent(*v as f32 / 100.0),
             LengthAuto::Em(_) | LengthAuto::Lh(_) => {
-                Dimension::length(self.resolve_with_ctx(0.0, cx).unwrap_or_default() as f32)
+                Dimension::length(self.resolve(0.0, cx).unwrap_or_default() as f32)
             }
             LengthAuto::Auto => Dimension::auto(),
         }
@@ -531,9 +531,9 @@ impl LengthAuto {
         match self {
             LengthAuto::Pt(v) => LengthPercentageAuto::length(*v as f32),
             LengthAuto::Pct(v) => LengthPercentageAuto::percent(*v as f32 / 100.0),
-            LengthAuto::Em(_) | LengthAuto::Lh(_) => LengthPercentageAuto::length(
-                self.resolve_with_ctx(0.0, cx).unwrap_or_default() as f32,
-            ),
+            LengthAuto::Em(_) | LengthAuto::Lh(_) => {
+                LengthPercentageAuto::length(self.resolve(0.0, cx).unwrap_or_default() as f32)
+            }
             LengthAuto::Auto => LengthPercentageAuto::auto(),
         }
     }

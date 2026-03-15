@@ -302,31 +302,35 @@ impl GlobalPaintCx<'_> {
             world_transform,
             layout_rect_local,
             clip,
-            font_size_cx: view_state.borrow().resolve_font_props.length_resolve_cx(),
+            font_size_cx: view_state.borrow().layout_props.font_size_cx(),
         };
 
         if !is_post {
-            let state = view_state.borrow();
-            paint_bg(&mut cx, &state.view_style_props, layout_rect);
-            paint_border(
-                &mut cx,
-                &state.layout_props,
-                &state.view_style_props,
-                layout_rect,
-            );
-            drop(state);
-            // Apply overflow clip (stays active through children)
-            if let Some(clip_shape) = clip {
-                cx.clip(&clip_shape);
+            if element_id.is_view() {
+                let state = view_state.borrow();
+                paint_bg(&mut cx, &state.view_style_props, layout_rect);
+                paint_border(
+                    &mut cx,
+                    &state.layout_props,
+                    &state.view_style_props,
+                    layout_rect,
+                );
+                drop(state);
+                // Apply overflow clip (stays active through children)
+                if let Some(clip_shape) = clip {
+                    cx.clip(&clip_shape);
+                }
             }
             view.borrow_mut().paint(&mut cx);
         } else {
-            if clip.is_some() {
+            if element_id.is_view() && clip.is_some() {
                 cx.clear_clip();
             }
             view.borrow_mut().post_paint(&mut cx);
-            let state = view_state.borrow();
-            paint_outline(&mut cx, &state.view_style_props, layout_rect);
+            if element_id.is_view() {
+                let state = view_state.borrow();
+                paint_outline(&mut cx, &state.view_style_props, layout_rect);
+            }
         }
     }
 }
