@@ -16,7 +16,7 @@ use crate::{
         recalc::{StyleReason, StyleReasonFlags},
     },
     style_class,
-    unit::{Pct, Px},
+    unit::{Pct, Pt},
 };
 use floem_reactive::Effect;
 use peniko::{
@@ -89,11 +89,11 @@ prop!(
 );
 prop!(
     /// The width of the handle
-    pub HandleThickness: Px {} = Px(6.)
+    pub HandleThickness: Pt {} = Pt(6.)
 );
 prop!(
     /// The width of the handle that is used for hit testing.
-    pub HandleHitTestThickness: Px {} = Px(10.)
+    pub HandleHitTestThickness: Pt {} = Pt(10.)
 );
 prop!(
     /// The cursor style over the handle.
@@ -578,7 +578,7 @@ impl ResizableCustomStyle {
     ///
     /// # Arguments
     /// * `Thickness` - A `Px` value that sets the handle's thickness.
-    pub fn handle_thickness(mut self, width: impl Into<Px>) -> Self {
+    pub fn handle_thickness(mut self, width: impl Into<Pt>) -> Self {
         self = ResizableCustomStyle(self.0.set(HandleThickness, width));
         self
     }
@@ -635,7 +635,7 @@ impl ResizableCustomExprStyle {
 
     pub fn handle_thickness<T>(mut self, width: ContextValue<T>) -> Self
     where
-        T: Into<Px> + 'static,
+        T: Into<Pt> + 'static,
     {
         self = ResizableCustomExprStyle(
             ExprStyle::from(self.0)

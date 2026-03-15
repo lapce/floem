@@ -551,22 +551,20 @@ impl<T> View for VirtualStack<T> {
     fn event(&mut self, cx: &mut crate::context::EventCx) -> crate::event::EventPropagation {
         if UpdatePhaseBoxTreeCommit::extract(&cx.event).is_some() {
             // Read scroll offset and viewport size from parent scroll view.
-            let translation = self.id.get_scroll_cx();
             let dir = self.direction.get_untracked();
-            let new_scroll = match dir {
-                FlexDirection::Row | FlexDirection::RowReverse => translation.x,
-                FlexDirection::Column | FlexDirection::ColumnReverse => translation.y,
-            }
-            .max(0.0);
 
-            let parent_rect = self
-                .id
-                .parent()
-                .map(|id| id.get_content_rect_local())
-                .unwrap_or_default();
-            let new_viewport = match dir {
-                FlexDirection::Row | FlexDirection::RowReverse => parent_rect.width(),
-                FlexDirection::Column | FlexDirection::ColumnReverse => parent_rect.height(),
+            let visual_rect = self.id.get_visual_rect(); // clipped, world space
+            let layout_rect = self.id.get_visual_rect_no_clip(); // unclipped, world space
+
+            let (new_scroll, new_viewport) = match dir {
+                FlexDirection::Row | FlexDirection::RowReverse => (
+                    (visual_rect.x0 - layout_rect.x0).max(0.0),
+                    visual_rect.width(),
+                ),
+                FlexDirection::Column | FlexDirection::ColumnReverse => (
+                    (visual_rect.y0 - layout_rect.y0).max(0.0),
+                    visual_rect.height(),
+                ),
             };
 
             if new_scroll != self.scroll_offset.get_untracked() {

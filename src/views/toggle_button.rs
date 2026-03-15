@@ -21,22 +21,24 @@ use crate::{
         PointerCaptureEvent, listener::UpdatePhaseLayout,
     },
     prop, prop_extractor,
-    style::{Foreground, Style},
+    style::{FontSize, Foreground, LineHeight, Style},
     style_class,
-    unit::PxPct,
+    unit::Length,
     view::View,
     view::ViewId,
     views::Decorators,
 };
 
-prop!(pub ToggleButtonInset: PxPct {} = PxPct::Px(0.));
-prop!(pub ToggleButtonCircleRad: PxPct {} = PxPct::Pct(95.));
+prop!(pub ToggleButtonInset: Length {} = Length::Pt(0.));
+prop!(pub ToggleButtonCircleRad: Length {} = Length::Pct(95.));
 
 prop_extractor! {
     ToggleStyle {
         foreground: Foreground,
         inset: ToggleButtonInset,
         circle_rad: ToggleButtonCircleRad,
+        font_size: FontSize,
+        line_height: LineHeight,
     }
 }
 
@@ -190,18 +192,26 @@ pub fn toggle_button(state: impl Fn() -> bool + 'static) -> ToggleButton {
 }
 
 impl ToggleButton {
+    fn length_resolve_cx(&self) -> crate::style::FontSizeCx {
+        let font_size = self.style.font_size();
+        let line_height = match self.style.line_height() {
+            crate::text::LineHeightValue::Pt(value) => f64::from(value),
+            crate::text::LineHeightValue::Normal(value) => font_size * f64::from(value),
+        };
+        crate::style::FontSizeCx::new(font_size, line_height)
+    }
+
     fn circle_radius(&self, size: Size) -> f64 {
-        match self.style.circle_rad() {
-            PxPct::Px(px) => px,
-            PxPct::Pct(pct) => size.width.min(size.height) / 2. * (pct / 100.),
-        }
+        self.style
+            .circle_rad()
+            .resolve(size.width.min(size.height) / 2.0, &self.length_resolve_cx())
     }
 
     fn inset(&self, width: f64) -> f64 {
-        match self.style.inset() {
-            PxPct::Px(px) => px,
-            PxPct::Pct(pct) => (width * (pct / 100.)).min(width / 2.),
-        }
+        self.style
+            .inset()
+            .resolve(width, &self.length_resolve_cx())
+            .min(width / 2.0)
     }
 
     fn post_layout(&mut self) {
@@ -426,13 +436,13 @@ impl ToggleButtonCustomStyle {
     }
 
     /// Sets the inset of the toggle handle from the edge.
-    pub fn handle_inset(mut self, inset: impl Into<PxPct>) -> Self {
+    pub fn handle_inset(mut self, inset: impl Into<Length>) -> Self {
         self = Self(self.0.set(ToggleButtonInset, inset));
         self
     }
 
     /// Sets the radius of the toggle circle.
-    pub fn circle_rad(mut self, rad: impl Into<PxPct>) -> Self {
+    pub fn circle_rad(mut self, rad: impl Into<Length>) -> Self {
         self = Self(self.0.set(ToggleButtonCircleRad, rad));
         self
     }

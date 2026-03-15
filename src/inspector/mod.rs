@@ -18,8 +18,8 @@ use crate::{
     platform::{Duration, Instant},
     prelude::*,
     style::{
-        BorderRadius, OverflowX, OverflowY, PxPct, PxPctAuto, StrokeWrap, Style, StyleCx,
-        StyleThemeExt, TextColor,
+        BorderRadius, FontSizeCx, Length, LengthAuto, OverflowX, OverflowY, StrokeWrap, Style,
+        StyleCx, StyleThemeExt, TextColor,
     },
 };
 
@@ -41,11 +41,11 @@ enum BoxModelRegion {
 
 #[derive(Clone)]
 struct BoxModelViewData {
-    position: [PxPctAuto; 4],
-    margin: [PxPctAuto; 4],
+    position: [LengthAuto; 4],
+    margin: [LengthAuto; 4],
     border: [StrokeWrap; 4],
     border_radius: BorderRadius,
-    padding: [PxPct; 4],
+    padding: [Length; 4],
     content_width: f64,
     content_height: f64,
 }
@@ -67,30 +67,35 @@ fn format_float(value: f64) -> String {
     }
 }
 
-fn format_px_pct(value: PxPct) -> String {
+fn format_px_pct(value: Length) -> String {
     match value {
-        PxPct::Px(px) if px.abs() < 0.01 => "-".to_string(),
-        PxPct::Pct(pct) if pct.abs() < 0.01 => "-".to_string(),
-        PxPct::Px(px) => format!("{}px", format_float(px)),
-        PxPct::Pct(pct) => format!("{}%", format_float(pct)),
+        Length::Pt(pt) if pt.abs() < 0.01 => "-".to_string(),
+        Length::Pct(pct) if pct.abs() < 0.01 => "-".to_string(),
+        Length::Em(em) if em.abs() < 0.01 => "-".to_string(),
+        Length::Lh(lh) if lh.abs() < 0.01 => "-".to_string(),
+        Length::Pt(pt) => format!("{}pt", format_float(pt)),
+        Length::Pct(pct) => format!("{}%", format_float(pct)),
+        Length::Em(em) => format!("{}em", format_float(em)),
+        Length::Lh(lh) => format!("{}lh", format_float(lh)),
     }
 }
 
-fn format_px_pct_auto(value: PxPctAuto) -> String {
+fn format_px_pct_auto(value: LengthAuto) -> String {
     match value {
-        PxPctAuto::Px(px) if px.abs() < 0.01 => "-".to_string(),
-        PxPctAuto::Pct(pct) if pct.abs() < 0.01 => "-".to_string(),
-        PxPctAuto::Px(px) => format!("{}px", format_float(px)),
-        PxPctAuto::Pct(pct) => format!("{}%", format_float(pct)),
-        PxPctAuto::Auto => "-".to_string(),
+        LengthAuto::Pt(pt) if pt.abs() < 0.01 => "-".to_string(),
+        LengthAuto::Pct(pct) if pct.abs() < 0.01 => "-".to_string(),
+        LengthAuto::Em(em) if em.abs() < 0.01 => "-".to_string(),
+        LengthAuto::Lh(lh) if lh.abs() < 0.01 => "-".to_string(),
+        LengthAuto::Pt(pt) => format!("{}pt", format_float(pt)),
+        LengthAuto::Pct(pct) => format!("{}%", format_float(pct)),
+        LengthAuto::Em(em) => format!("{}em", format_float(em)),
+        LengthAuto::Lh(lh) => format!("{}lh", format_float(lh)),
+        LengthAuto::Auto => "-".to_string(),
     }
 }
 
-fn resolve_px_pct(value: PxPct, basis: f64) -> f64 {
-    match value {
-        PxPct::Px(px) => px,
-        PxPct::Pct(pct) => basis * (pct / 100.0),
-    }
+fn resolve_length(value: Length, basis: f64, font_size_cx: &FontSizeCx) -> f64 {
+    value.resolve(basis, font_size_cx)
 }
 
 fn box_model_data(style: &Style, bounds: Rect) -> BoxModelViewData {
@@ -125,19 +130,22 @@ fn box_model_data(style: &Style, bounds: Rect) -> BoxModelViewData {
         bottom_left: Some(builtin.border_bottom_left_radius()),
         bottom_right: Some(builtin.border_bottom_right_radius()),
     };
+    let font_size = builtin.font_size();
+    let line_height = builtin.line_height().resolve(font_size as f32) as f64;
+    let font_size_cx = FontSizeCx::new(font_size, line_height);
 
     let horizontal_basis = bounds.width().max(0.0);
     let content_width = (bounds.width()
         - border[1].width
         - border[3].width
-        - resolve_px_pct(padding[1], horizontal_basis)
-        - resolve_px_pct(padding[3], horizontal_basis))
+        - resolve_length(padding[1], horizontal_basis, &font_size_cx)
+        - resolve_length(padding[3], horizontal_basis, &font_size_cx))
     .max(0.0);
     let content_height = (bounds.height()
         - border[0].width
         - border[2].width
-        - resolve_px_pct(padding[0], horizontal_basis)
-        - resolve_px_pct(padding[2], horizontal_basis))
+        - resolve_length(padding[0], horizontal_basis, &font_size_cx)
+        - resolve_length(padding[2], horizontal_basis, &font_size_cx))
     .max(0.0);
 
     BoxModelViewData {
@@ -151,7 +159,7 @@ fn box_model_data(style: &Style, bounds: Rect) -> BoxModelViewData {
     }
 }
 
-fn format_border_radius(value: Option<PxPct>) -> String {
+fn format_border_radius(value: Option<Length>) -> String {
     value.map(format_px_pct).unwrap_or_else(|| "-".to_string())
 }
 
@@ -1014,5 +1022,43 @@ impl RelativeViewId {
             next_brother_id,
             child_id,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{box_model_data, resolve_length};
+    use crate::{
+        style::{FontSizeCx, Style},
+        unit::UnitExt,
+    };
+    use peniko::kurbo::Rect;
+
+    #[test]
+    fn resolve_length_uses_font_metrics_for_relative_units() {
+        let font_size_cx = FontSizeCx::new(16.0, 24.0);
+
+        assert_eq!(resolve_length(2.0.em().into(), 200.0, &font_size_cx), 32.0);
+        assert_eq!(resolve_length(1.5.lh().into(), 200.0, &font_size_cx), 36.0);
+        assert_eq!(
+            resolve_length(25.0.pct().into(), 200.0, &font_size_cx),
+            50.0
+        );
+    }
+
+    #[test]
+    fn box_model_data_resolves_relative_padding_consistently() {
+        let style = Style::new()
+            .font_size(16.0)
+            .line_height(1.5)
+            .padding_left(1.0.em())
+            .padding_right(50.0.pct())
+            .padding_top(1.0.lh())
+            .padding_bottom(8.0);
+
+        let data = box_model_data(&style, Rect::new(0.0, 0.0, 200.0, 100.0));
+
+        assert_eq!(data.content_width, 84.0);
+        assert_eq!(data.content_height, 68.0);
     }
 }

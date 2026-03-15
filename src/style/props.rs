@@ -180,6 +180,8 @@ pub(crate) type HashAnyFn = fn(val: &dyn Any) -> u64;
 
 /// Function pointer type for comparing two style values for equality.
 pub(crate) type EqAnyFn = fn(val1: &dyn Any, val2: &dyn Any) -> bool;
+/// Function pointer type for resolving a stored inherited property into a concrete value.
+pub(crate) type ResolveInheritedAnyFn = fn(val: &dyn Any, style: &Style) -> Rc<dyn Any>;
 
 #[derive(Debug)]
 pub struct StylePropInfo {
@@ -195,6 +197,8 @@ pub struct StylePropInfo {
     pub(crate) hash_any: HashAnyFn,
     /// Compares two style values for equality.
     pub(crate) eq_any: EqAnyFn,
+    /// Resolves a stored property value for inheritance propagation.
+    pub(crate) resolve_inherited_any: ResolveInheritedAnyFn,
 }
 
 impl StylePropInfo {
@@ -303,6 +307,24 @@ impl StylePropInfo {
                         val2.type_id()
                     )
                 }
+            },
+            resolve_inherited_any: |val, style| {
+                let resolved = match val.downcast_ref::<StyleMapValue<T>>().unwrap_or_else(|| {
+                    panic!(
+                        "expected type {} for property {}",
+                        type_name::<T>(),
+                        std::any::type_name::<Name>(),
+                    )
+                }) {
+                    StyleMapValue::Val(value) | StyleMapValue::Animated(value) => {
+                        StyleMapValue::Val(value.clone())
+                    }
+                    StyleMapValue::Context(context_value) => {
+                        StyleMapValue::Val(context_value.resolve(style))
+                    }
+                    StyleMapValue::Unset => StyleMapValue::Unset,
+                };
+                Rc::new(resolved)
             },
         }
     }
@@ -604,6 +626,7 @@ pub enum StyleKeyInfo {
     Selector(StyleSelectors),
     Class(StyleClassInfo),
     DebugGroup(StyleDebugGroupInfo),
+    DeferredEffects,
     /// Storage for parameterized structural selectors (`:first-child`, `:nth-child(...)`, etc.).
     StructuralSelectors,
     /// Storage for parameterized responsive selectors (`min/max/range` window width).
@@ -624,6 +647,7 @@ impl StyleKey {
             StyleKeyInfo::Selector(selectors) => selectors.debug_string(),
             StyleKeyInfo::Transition
             | StyleKeyInfo::DebugGroup(_)
+            | StyleKeyInfo::DeferredEffects
             | StyleKeyInfo::StructuralSelectors
             | StyleKeyInfo::ResponsiveSelectors => String::new(),
             StyleKeyInfo::Class(info) => (info.name)().to_string(),
@@ -634,6 +658,7 @@ impl StyleKey {
         match self.info {
             StyleKeyInfo::Selector(..)
             | StyleKeyInfo::Transition
+            | StyleKeyInfo::DeferredEffects
             | StyleKeyInfo::StructuralSelectors
             | StyleKeyInfo::ResponsiveSelectors => false,
             StyleKeyInfo::Class(..) => true,
@@ -664,6 +689,7 @@ impl Debug for StyleKey {
                 write!(f, "selectors: {}", selectors.debug_string())
             }
             StyleKeyInfo::Transition => write!(f, "transition"),
+            StyleKeyInfo::DeferredEffects => write!(f, "DeferredEffects"),
             StyleKeyInfo::StructuralSelectors => write!(f, "StructuralSelectors"),
             StyleKeyInfo::ResponsiveSelectors => write!(f, "ResponsiveSelectors"),
             StyleKeyInfo::Class(v) => write!(f, "{}", (v.name)()),

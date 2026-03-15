@@ -724,7 +724,7 @@ impl TextInput {
     }
 
     fn font_size(&self) -> f32 {
-        self.font.size()
+        self.font.size() as f32
     }
 
     /// Retrieve attributes for the placeholder text.

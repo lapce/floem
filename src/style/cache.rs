@@ -505,6 +505,7 @@ impl Style {
                 }
                 StyleKeyInfo::StructuralSelectors
                 | StyleKeyInfo::ResponsiveSelectors
+                | StyleKeyInfo::DeferredEffects
                 | StyleKeyInfo::DebugGroup(_)
                 | StyleKeyInfo::Transition => {
                     // Context mappings and transitions use pointer hash for identity

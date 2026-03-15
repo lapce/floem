@@ -28,7 +28,7 @@ fn child_view() -> impl IntoView {
                 "PNG".style(|s| s.justify_center()),
             )),
             Stack::vertical((
-                svg(ferris_svg).style(|s| s.unset_color().width(69.px()).height(45.9.px())),
+                svg(ferris_svg).style(|s| s.unset_color().width(69.pt()).height(45.9.pt())),
                 "SVG".style(|s| s.justify_center()),
             )),
         ))

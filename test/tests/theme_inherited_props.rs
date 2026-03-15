@@ -321,7 +321,7 @@ fn test_inherited_context_contents() {
     use std::cell::Cell;
     use std::rc::Rc;
 
-    let received_font_size: Rc<Cell<Option<f32>>> = Rc::new(Cell::new(None));
+    let received_font_size: Rc<Cell<Option<f64>>> = Rc::new(Cell::new(None));
     let captured = received_font_size.clone();
 
     let view = Label::new("Test").style(move |s| {
@@ -363,7 +363,7 @@ fn test_with_context_works_when_font_size_is_explicit() {
     use std::cell::Cell;
     use std::rc::Rc;
 
-    let received_font_size: Rc<Cell<Option<f32>>> = Rc::new(Cell::new(None));
+    let received_font_size: Rc<Cell<Option<f64>>> = Rc::new(Cell::new(None));
     let captured = received_font_size.clone();
 
     let child = Label::new("Test").style(move |s| {

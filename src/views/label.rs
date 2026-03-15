@@ -221,7 +221,7 @@ impl Label {
     fn get_attrs_list(&self) -> AttrsList {
         let mut attrs = Attrs::new().color(self.label_props.color().unwrap_or(palette::css::BLACK));
         let font_size = self.font_props.size();
-        attrs = attrs.font_size(font_size);
+        attrs = attrs.font_size(font_size as f32);
 
         if let Some(font_style) = self.font_props.style() {
             attrs = attrs.font_style(font_style);
@@ -236,9 +236,7 @@ impl Label {
         if let Some(font_weight) = self.font_props.weight() {
             attrs = attrs.weight(font_weight);
         }
-        if let Some(line_height) = self.label_props.line_height() {
-            attrs = attrs.line_height(line_height);
-        }
+        attrs = attrs.line_height(self.label_props.line_height());
         if let TextOverflow::Wrap { word_break, .. } = self.label_props.text_overflow()
             && word_break != WordBreakStrength::Normal
         {
@@ -488,6 +486,7 @@ impl View for Label {
             self.layout_data.borrow_mut().clear_overflow_state();
             self.set_text_layout();
             self.id.request_layout();
+            self.id.request_paint();
         }
         if self.selection_style.read(cx) {
             cx.window_state.request_paint(self.id);

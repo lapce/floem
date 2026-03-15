@@ -20,7 +20,7 @@ use crate::{
 };
 use floem_reactive::Scope;
 use imbl::HashSet;
-use peniko::kurbo::{Affine, Point, Vec2};
+use peniko::kurbo::{Affine, Vec2};
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 use std::{cell::RefCell, marker::PhantomData, rc::Rc};
@@ -300,8 +300,6 @@ pub struct ViewState {
     pub(crate) has_style_selectors: Option<StyleSelectors>,
     // the translation value that this view applies to children elements. Scroll view can use this to scroll.
     pub(crate) child_translation: Vec2,
-    // total accumulated offset from all scroll ancestors. This is updated when updating the box tree
-    pub(crate) scroll_cx: Vec2,
     pub(crate) layout_props: LayoutProps,
     pub(crate) view_style_props: ViewStyleProps,
     pub(crate) view_transform_props: TransformProps,
@@ -325,6 +323,8 @@ pub struct ViewState {
     /// - Visual properties (background, border, transform)
     /// - Anything that affects what gets rendered
     /// - Converting to taffy style for layout engine
+    ///
+    /// This DOES NOT have final interpolated values and it DOES NOT resolve properties into points.
     pub(crate) computed_style: Style,
     /// this can be used to make it so that a view will pull it's style context from a different parent.
     /// This is useful for overlays that are children of the window root but should pull their style cx from the creating view
@@ -363,7 +363,6 @@ pub struct ViewState {
     pub(crate) event_listeners: FxHashMap<EventListenerKey, EventListenerVec>,
     /// these are the listeners that are registered in the window state. This is used to efficiently clean up those listeners from the window state.
     pub(crate) registered_listener_keys: SmallVec<[listener::EventListenerKey; 2]>,
-    pub(crate) layout_window_origin: Point,
     pub(crate) layout: Option<LayoutChanged>,
     pub(crate) visual_change: Option<VisualChanged>,
     pub(crate) context_menu: Option<Rc<MenuCallback>>,
@@ -422,13 +421,11 @@ impl ViewState {
             dragging_style: None,
             event_listeners: FxHashMap::default(),
             registered_listener_keys: SmallVec::new(),
-            layout_window_origin: Point::ZERO,
             layout: None,
             visual_change: None,
             context_menu: None,
             popout_menu: None,
             child_translation: Vec2::ZERO,
-            scroll_cx: Vec2::ZERO,
             cleanup_listeners: Default::default(),
             num_waiting_animations: 0,
             disable_default_events: HashSet::new(),

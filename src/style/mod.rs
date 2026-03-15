@@ -191,7 +191,8 @@ pub use selectors::{NthChild, StructuralSelector, StyleSelector, StyleSelectors}
 pub use theme::{DesignSystem, StyleThemeExt};
 pub use transition::{DirectTransition, Transition, TransitionState};
 pub use unit::{
-    AnchorAbout, Angle, Auto, DurationUnitExt, LineHeightValue, Pct, Px, PxPct, PxPctAuto, UnitExt,
+    AnchorAbout, Angle, Auto, DurationUnitExt, Em, FontSizeCx, Length, LengthAuto, Lh,
+    LineHeightValue, Pct, Pt, UnitExt,
 };
 pub use values::{ContextValue, ObjectFit, StrokeWrap, StyleMapValue, StylePropValue, StyleValue};
 
@@ -201,6 +202,10 @@ pub(crate) use props::{RESPONSIVE_SELECTORS_INFO, STRUCTURAL_SELECTORS_INFO, sty
 
 static NEXT_STYLE_MERGE_ID: AtomicU64 = AtomicU64::new(1);
 const MERGE_MIX_CONST: u64 = 0x9E3779B97F4A7C15;
+static DEFERRED_EFFECTS_INFO: StyleKeyInfo = StyleKeyInfo::DeferredEffects;
+const DEFERRED_EFFECTS_KEY: StyleKey = StyleKey {
+    info: &DEFERRED_EFFECTS_INFO,
+};
 
 fn next_style_merge_id() -> u64 {
     NEXT_STYLE_MERGE_ID.fetch_add(1, Ordering::Relaxed)
@@ -212,6 +217,21 @@ fn combine_merge_ids(a: u64, b: u64) -> u64 {
 
 type StructuralSelectorRules = SmallVec<[(StructuralSelector, Rc<Style>); 2]>;
 type ResponsiveSelectorRules = SmallVec<[(ResponsiveSelector, Rc<Style>); 2]>;
+
+#[derive(Clone)]
+pub(crate) struct DeferredStyleEffect {
+    run: Rc<dyn Fn(&Style)>,
+}
+
+impl DeferredStyleEffect {
+    fn new(run: impl Fn(&Style) + 'static) -> Self {
+        Self { run: Rc::new(run) }
+    }
+
+    fn run(&self, style: &Style) {
+        (self.run)(style);
+    }
+}
 
 #[derive(Clone, Default, Debug)]
 pub struct ExprStyle {
@@ -236,10 +256,19 @@ pub struct ContextRef<P: StyleProp> {
 }
 
 impl<P: StyleProp> ContextRef<P> {
-    /// Create a deferred value by mapping the current context prop to a single property value.
+    /// Create a deferred value from the current context prop.
     ///
-    /// The closure is evaluated when the target property is read. It only computes one
-    /// value and does not participate in nested-map resolution.
+    /// This is for producing another style value from context, such as
+    /// `font_size(fs.def(|fs| fs * 0.85))` or `background(t.def(|t| t.bg_base()))`.
+    ///
+    /// You can read `def` either as "function definition" or as shorthand for
+    /// "defer": it packages a closure that will be evaluated later when the
+    /// resulting value is needed.
+    ///
+    /// The closure is evaluated only if the property using the returned [`ContextValue`]
+    /// is actually read later. It does not run eagerly during `resolve_nested_maps`, so
+    /// it should not be used for side effects that must always happen during style
+    /// resolution. Use [`Style::defer`] for that.
     pub fn def<T>(self, f: impl Fn(P::Type) -> T + 'static) -> ContextValue<T>
     where
         P::Type: 'static,
@@ -258,6 +287,18 @@ impl<P: StyleProp> ContextRef<P> {
     {
         self.def(f)
     }
+
+    pub(crate) fn into_deferred(self, f: impl Fn(P::Type) + 'static) -> DeferredStyleEffect
+    where
+        P::Type: 'static,
+    {
+        let effect = self.def(move |value| {
+            f(value);
+        });
+        DeferredStyleEffect::new(move |style| {
+            effect.resolve(style);
+        })
+    }
 }
 
 impl ExprStyle {
@@ -275,7 +316,7 @@ impl ExprStyle {
         over(self)
     }
 
-    pub fn apply(mut self, over: Style) -> Self {
+    fn merge(mut self, over: Style) -> Self {
         self.style.apply_mut(over);
         self
     }
@@ -335,27 +376,27 @@ impl ExprStyle {
     }
 
     pub fn hover(self, style: impl FnOnce(ExprStyle) -> ExprStyle) -> Self {
-        self.apply(Style::default().hover(|s| style(s.into()).into()))
+        self.merge(Style::default().hover(|s| style(s.into()).into()))
     }
 
     pub fn focus(self, style: impl FnOnce(ExprStyle) -> ExprStyle) -> Self {
-        self.apply(Style::default().focus(|s| style(s.into()).into()))
+        self.merge(Style::default().focus(|s| style(s.into()).into()))
     }
 
     pub fn focus_visible(self, style: impl FnOnce(ExprStyle) -> ExprStyle) -> Self {
-        self.apply(Style::default().focus_visible(|s| style(s.into()).into()))
+        self.merge(Style::default().focus_visible(|s| style(s.into()).into()))
     }
 
     pub fn focus_within(self, style: impl FnOnce(ExprStyle) -> ExprStyle) -> Self {
-        self.apply(Style::default().focus_within(|s| style(s.into()).into()))
+        self.merge(Style::default().focus_within(|s| style(s.into()).into()))
     }
 
     pub fn active(self, style: impl FnOnce(ExprStyle) -> ExprStyle) -> Self {
-        self.apply(Style::default().active(|s| style(s.into()).into()))
+        self.merge(Style::default().active(|s| style(s.into()).into()))
     }
 
     pub fn disabled(self, style: impl FnOnce(ExprStyle) -> ExprStyle) -> Self {
-        self.apply(Style::default().disabled(|s| style(s.into()).into()))
+        self.merge(Style::default().disabled(|s| style(s.into()).into()))
     }
 
     pub fn class<C: StyleClass>(
@@ -363,22 +404,22 @@ impl ExprStyle {
         class: C,
         style: impl FnOnce(ExprStyle) -> ExprStyle,
     ) -> Self {
-        self.apply(Style::default().class(class, |s| style(s.into()).into()))
+        self.merge(Style::default().class(class, |s| style(s.into()).into()))
     }
 
     /// Sets the font size for text content.
     pub fn font_size<T>(self, size: ContextValue<T>) -> Self
     where
-        T: Into<Px> + 'static,
+        T: Into<Pt> + 'static,
     {
-        let px = size.map(|s| s.into().0 as f32);
+        let px = size.map(|s| s.into().0);
         self.set_context(FontSize, px)
     }
 
     pub fn size<W, H>(self, width: ContextValue<W>, height: ContextValue<H>) -> Self
     where
-        W: Into<PxPctAuto> + 'static,
-        H: Into<PxPctAuto> + 'static,
+        W: Into<LengthAuto> + 'static,
+        H: Into<LengthAuto> + 'static,
     {
         self.width(width).height(height)
     }
@@ -393,7 +434,7 @@ impl ExprStyle {
 
     pub fn margin<T>(self, margin: ContextValue<T>) -> Self
     where
-        T: Into<PxPctAuto> + 'static,
+        T: Into<LengthAuto> + 'static,
     {
         let margin = margin.map(Into::into);
         self.set(MarginLeft, margin.clone())
@@ -415,7 +456,7 @@ impl ExprStyle {
 
     pub fn border_radius<T>(self, radius: ContextValue<T>) -> Self
     where
-        T: Into<PxPct> + 'static,
+        T: Into<Length> + 'static,
     {
         let radius = radius.map(Into::into);
         self.set(BorderTopLeftRadius, radius.clone())
@@ -426,7 +467,7 @@ impl ExprStyle {
 
     pub fn border<T>(self, width: ContextValue<T>) -> Self
     where
-        T: Into<Px> + 'static,
+        T: Into<Pt> + 'static,
     {
         let stroke = width.map(|width| Stroke::new(width.into().0));
         self.set(BorderLeft, stroke.clone())
@@ -437,7 +478,7 @@ impl ExprStyle {
 
     pub fn border_top<T>(self, width: ContextValue<T>) -> Self
     where
-        T: Into<Px> + 'static,
+        T: Into<Pt> + 'static,
     {
         self.set(BorderTop, width.map(|width| Stroke::new(width.into().0)))
     }
@@ -454,20 +495,20 @@ impl ExprStyle {
     }
 
     pub fn selected(self, style: impl FnOnce(ExprStyle) -> ExprStyle) -> Self {
-        self.apply(Style::default().selected(|s| style(s.into()).into()))
+        self.merge(Style::default().selected(|s| style(s.into()).into()))
     }
 
     pub fn drag(self, style: impl FnOnce(ExprStyle) -> ExprStyle) -> Self {
-        self.apply(Style::default().drag(|s| style(s.into()).into()))
+        self.merge(Style::default().drag(|s| style(s.into()).into()))
     }
 
     pub fn file_hover(self, style: impl FnOnce(ExprStyle) -> ExprStyle) -> Self {
-        self.apply(Style::default().file_hover(|s| style(s.into()).into()))
+        self.merge(Style::default().file_hover(|s| style(s.into()).into()))
     }
 
     pub fn padding<T>(self, padding: ContextValue<T>) -> Self
     where
-        T: Into<PxPct> + 'static,
+        T: Into<Length> + 'static,
     {
         let padding = padding.map(Into::into);
         self.set(PaddingLeft, padding.clone())
@@ -478,7 +519,7 @@ impl ExprStyle {
 
     pub fn padding_horiz<T>(self, padding: ContextValue<T>) -> Self
     where
-        T: Into<PxPct> + 'static,
+        T: Into<Length> + 'static,
     {
         let padding = padding.map(Into::into);
         self.set(PaddingLeft, padding.clone())
@@ -487,7 +528,7 @@ impl ExprStyle {
 
     pub fn padding_vert<T>(self, padding: ContextValue<T>) -> Self
     where
-        T: Into<PxPct> + 'static,
+        T: Into<Length> + 'static,
     {
         let padding = padding.map(Into::into);
         self.set(PaddingTop, padding.clone())
@@ -496,7 +537,7 @@ impl ExprStyle {
 
     pub fn gap<T>(self, gap: ContextValue<T>) -> Self
     where
-        T: Into<PxPct> + 'static,
+        T: Into<Length> + 'static,
     {
         let gap = gap.map(Into::into);
         self.set(ColGap, gap.clone()).set(RowGap, gap)
@@ -506,11 +547,11 @@ impl ExprStyle {
     where
         CS: Default + Clone + Into<Style> + From<Style>,
     {
-        self.apply(custom(CS::default()).into())
+        self.merge(custom(CS::default()).into())
     }
 
     pub fn apply_border_radius(self, border_radius: BorderRadius) -> Self {
-        self.apply(Style::new().apply_border_radius(border_radius))
+        self.merge(Style::new().apply_border_radius(border_radius))
     }
 
     pub fn apply_box_shadows(self, shadow: impl Into<SmallVec<[BoxShadow; 3]>>) -> Self {
@@ -518,14 +559,14 @@ impl ExprStyle {
     }
 
     pub fn transition_background(self, transition: Transition) -> Self {
-        self.apply(Style::new().transition_background(transition))
+        self.merge(Style::new().transition_background(transition))
     }
 
-    pub fn border_bottom(self, width: impl Into<Px>) -> Self {
+    pub fn border_bottom(self, width: impl Into<Pt>) -> Self {
         self.set(BorderBottom, Stroke::new(width.into().0))
     }
 
-    pub fn outline(self, width: impl Into<Px>) -> Self {
+    pub fn outline(self, width: impl Into<Pt>) -> Self {
         self.set(Outline, Stroke::new(width.into().0))
     }
 }
@@ -549,9 +590,9 @@ struct ResponsiveSelectors(ResponsiveSelectorRules);
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum ResponsiveSelector {
     ScreenSize(ScreenSize),
-    MinWidth(Px),
-    MaxWidth(Px),
-    WidthRange { min: Px, max: Px },
+    MinWidth(Pt),
+    MaxWidth(Pt),
+    WidthRange { min: Pt, max: Pt },
 }
 
 impl ResponsiveSelector {
@@ -625,6 +666,7 @@ pub fn resolve_nested_maps(
     let result = class_style
         .apply(view_style)
         .with_inherited_context(inherited_context);
+    result.run_deferred_effects();
     let _ = effect_context;
     (result, selectors)
 }
@@ -865,8 +907,14 @@ impl Style {
     /// inherited properties like font-size, color, etc.
     pub fn apply_only_inherited(to: &mut Style, from: &Style) {
         if from.any_inherited() {
-            let inherited = from.map.iter().filter(|(p, _)| p.inherited());
-            to.apply_iter(inherited, None);
+            for (k, v) in from.map.iter().filter(|(p, _)| p.inherited()) {
+                let StyleKeyInfo::Prop(info) = k.info else {
+                    continue;
+                };
+                to.map_mut()
+                    .insert(*k, (info.resolve_inherited_any)(&**v, from));
+                to.has_inherited = true;
+            }
             to.merge_id = combine_merge_ids(to.merge_id, from.merge_id);
         }
     }
@@ -886,8 +934,15 @@ impl Style {
 
             // Apply inherited properties
             if has_inherited {
-                let inherited = from.map.iter().filter(|(p, _)| p.inherited());
-                new_style.apply_iter(inherited, None);
+                for (k, v) in from.map.iter().filter(|(p, _)| p.inherited()) {
+                    let StyleKeyInfo::Prop(info) = k.info else {
+                        continue;
+                    };
+                    new_style
+                        .map_mut()
+                        .insert(*k, (info.resolve_inherited_any)(&**v, from));
+                    new_style.has_inherited = true;
+                }
                 new_style.merge_id = combine_merge_ids(new_style.merge_id, from.merge_id);
             }
 
@@ -1234,6 +1289,21 @@ impl Style {
                         let mut merged: ResponsiveSelectorRules = current.0;
                         merged.extend(new_rules.iter().cloned());
                         Rc::new(ResponsiveSelectors(merged))
+                    } else {
+                        v.clone()
+                    };
+                    self.map_mut().insert(*k, merged);
+                }
+                StyleKeyInfo::DeferredEffects => {
+                    let merged = if let Some(current) = self.map_mut().remove(k) {
+                        let mut current: Vec<DeferredStyleEffect> = take_any(current);
+                        current.extend(
+                            v.downcast_ref::<Vec<DeferredStyleEffect>>()
+                                .unwrap()
+                                .iter()
+                                .cloned(),
+                        );
+                        Rc::new(current)
                     } else {
                         v.clone()
                     };
@@ -1602,32 +1672,32 @@ define_builtin_props!(
     /// Sets the width of the view.
     ///
     /// Can be specified in pixels, percentages, or auto.
-    Width width {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    Width width {tr}: LengthAuto {} = LengthAuto::Auto,
 
     /// Sets the height of the view.
     ///
     /// Can be specified in pixels, percentages, or auto.
-    Height height {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    Height height {tr}: LengthAuto {} = LengthAuto::Auto,
 
     /// Sets the minimum width of the view.
     ///
     /// The view will not shrink below this width.
-    MinWidth min_width {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    MinWidth min_width {tr}: LengthAuto {} = LengthAuto::Auto,
 
     /// Sets the minimum height of the view.
     ///
     /// The view will not shrink below this height.
-    MinHeight min_height {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    MinHeight min_height {tr}: LengthAuto {} = LengthAuto::Auto,
 
     /// Sets the maximum width of the view.
     ///
     /// The view will not grow beyond this width.
-    MaxWidth max_width {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    MaxWidth max_width {tr}: LengthAuto {} = LengthAuto::Auto,
 
     /// Sets the maximum height of the view.
     ///
     /// The view will not grow beyond this height.
-    MaxHeight max_height {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    MaxHeight max_height {tr}: LengthAuto {} = LengthAuto::Auto,
 
     /// Sets the direction of the main axis for flex items.
     ///
@@ -1652,7 +1722,7 @@ define_builtin_props!(
     /// Sets the initial main size of a flex item.
     ///
     /// This is the size of the item before free space is distributed.
-    FlexBasis flex_basis {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    FlexBasis flex_basis {tr}: LengthAuto {} = LengthAuto::Auto,
 
     /// Controls alignment of flex items along the main axis.
     ///
@@ -1763,43 +1833,43 @@ define_builtin_props!(
     BorderBottomColor border_bottom_color { tr }: Option<Brush> [Brush] {} = None,
 
     /// Sets the top-left border radius.
-    BorderTopLeftRadius border_top_left_radius { tr }: PxPct {} = PxPct::Px(0.),
+    BorderTopLeftRadius border_top_left_radius { tr }: Length {} = Length::Pt(0.),
     /// Sets the top-right border radius.
-    BorderTopRightRadius border_top_right_radius { tr }: PxPct {} = PxPct::Px(0.),
+    BorderTopRightRadius border_top_right_radius { tr }: Length {} = Length::Pt(0.),
     /// Sets the bottom-left border radius.
-    BorderBottomLeftRadius border_bottom_left_radius { tr }: PxPct {} = PxPct::Px(0.),
+    BorderBottomLeftRadius border_bottom_left_radius { tr }: Length {} = Length::Pt(0.),
     /// Sets the bottom-right border radius.
-    BorderBottomRightRadius border_bottom_right_radius { tr }: PxPct {} = PxPct::Px(0.),
+    BorderBottomRightRadius border_bottom_right_radius { tr }: Length {} = Length::Pt(0.),
 
     /// Sets the left padding.
-    PaddingLeft padding_left { tr }: PxPct {} = PxPct::Px(0.),
+    PaddingLeft padding_left { tr }: Length {} = Length::Pt(0.),
     /// Sets the top padding.
-    PaddingTop padding_top { tr }: PxPct {} = PxPct::Px(0.),
+    PaddingTop padding_top { tr }: Length {} = Length::Pt(0.),
     /// Sets the right padding.
-    PaddingRight padding_right { tr }: PxPct {} = PxPct::Px(0.),
+    PaddingRight padding_right { tr }: Length {} = Length::Pt(0.),
     /// Sets the bottom padding.
-    PaddingBottom padding_bottom { tr }: PxPct {} = PxPct::Px(0.),
+    PaddingBottom padding_bottom { tr }: Length {} = Length::Pt(0.),
 
     /// Sets the left margin.
-    MarginLeft margin_left { tr }: PxPctAuto {} = PxPctAuto::Px(0.),
+    MarginLeft margin_left { tr }: LengthAuto {} = LengthAuto::Pt(0.),
     /// Sets the top margin.
-    MarginTop margin_top { tr }: PxPctAuto {} = PxPctAuto::Px(0.),
+    MarginTop margin_top { tr }: LengthAuto {} = LengthAuto::Pt(0.),
     /// Sets the right margin.
-    MarginRight margin_right { tr }: PxPctAuto {} = PxPctAuto::Px(0.),
+    MarginRight margin_right { tr }: LengthAuto {} = LengthAuto::Pt(0.),
     /// Sets the bottom margin.
-    MarginBottom margin_bottom { tr }: PxPctAuto {} = PxPctAuto::Px(0.),
+    MarginBottom margin_bottom { tr }: LengthAuto {} = LengthAuto::Pt(0.),
 
     /// Sets the left offset for positioned views.
-    InsetLeft inset_left {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    InsetLeft inset_left {tr}: LengthAuto {} = LengthAuto::Auto,
 
     /// Sets the top offset for positioned views.
-    InsetTop inset_top {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    InsetTop inset_top {tr}: LengthAuto {} = LengthAuto::Auto,
 
     /// Sets the right offset for positioned views.
-    InsetRight inset_right {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    InsetRight inset_right {tr}: LengthAuto {} = LengthAuto::Auto,
 
     /// Sets the bottom offset for positioned views.
-    InsetBottom inset_bottom {tr}: PxPctAuto {} = PxPctAuto::Auto,
+    InsetBottom inset_bottom {tr}: LengthAuto {} = LengthAuto::Auto,
 
     /// Controls whether the view can be the target of mouse events.
     ///
@@ -1842,7 +1912,7 @@ define_builtin_props!(
     /// Sets the font size for text content.
     ///
     /// This property is inherited by child views.
-    FontSize font_size { nocb, tr }: f32 { inherited } = 14.,
+    FontSize font_size { nocb, tr }: f64 { inherited } = 14.,
 
     /// Sets the font family for text content.
     ///
@@ -1888,7 +1958,7 @@ define_builtin_props!(
     /// Sets the line height for text content.
     ///
     /// This property is inherited by child views.
-    LineHeight line_height { tr }: Option<LineHeightValue> [LineHeightValue] { inherited } = None,
+    LineHeight line_height { tr }: LineHeightValue { inherited } = LineHeightValue::Normal(1.),
 
     /// Sets the preferred aspect ratio for the view.
     ///
@@ -1905,12 +1975,12 @@ define_builtin_props!(
     /// Sets the gap between columns in grid or flex layouts.
     ///
     /// Creates space between items in the horizontal direction.
-    ColGap col_gap { tr }: PxPct {} = PxPct::Px(0.),
+    ColGap col_gap { tr }: Length {} = Length::Pt(0.),
 
     /// Sets the gap between rows in grid or flex layouts.
     ///
     /// Creates space between items in the vertical direction.
-    RowGap row_gap { tr }: PxPct {} = PxPct::Px(0.),
+    RowGap row_gap { tr }: Length {} = Length::Pt(0.),
 
     /// Width of the scrollbar track in pixels.
     ///
@@ -1933,7 +2003,7 @@ define_builtin_props!(
     /// ```
     ///
     /// **Default:** `8px`
-    ScrollbarWidth scrollbar_width {tr}: Px {} = Px(8.),
+    ScrollbarWidth scrollbar_width {tr}: Pt {} = Pt(8.),
 
     /// How children overflowing their container in X axis should affect layout
     OverflowX overflow_x {}: Overflow {} = Overflow::default(),
@@ -1963,7 +2033,7 @@ define_builtin_props!(
     /// Translation is applied first in the transform sequence, in the element's local coordinate space.
     /// This matches CSS individual transform properties behavior.
     /// Transform order: translate → rotate → scale.
-    TranslateX translate_x {tr}: PxPct {} = PxPct::Px(0.),
+    TranslateX translate_x {tr}: Length {} = Length::Pt(0.),
 
     /// Sets the vertical translation transform.
     ///
@@ -1971,7 +2041,7 @@ define_builtin_props!(
     /// Translation is applied first in the transform sequence, in the element's local coordinate space.
     /// This matches CSS individual transform properties behavior.
     /// Transform order: translate → rotate → scale.
-    TranslateY translate_y {tr}: PxPct {} = PxPct::Px(0.),
+    TranslateY translate_y {tr}: Length {} = Length::Pt(0.),
 
     /// Sets the rotation transform angle.
     ///
@@ -2091,6 +2161,10 @@ prop_extractor! {
 
         pub row_gap: RowGap,
         pub col_gap: ColGap,
+
+        // these are part of layout props because of em/lh units
+        pub font_size: FontSize,
+        pub line_height: LineHeight,
     }
 }
 
@@ -2127,20 +2201,14 @@ impl TransformProps {
         }
     }
 
-    pub fn affine(&self, size: kurbo::Size) -> Affine {
+    pub fn affine(&self, size: kurbo::Size, resolve_cx: &FontSizeCx) -> Affine {
         let mut result = Affine::IDENTITY;
         // CANONICAL ORDER (matches CSS individual properties):
         // 1. translate → 2. rotate → 3. scale → 4. transform property
 
         // 1. Translate
-        let transform_x = match self.translate_x() {
-            crate::unit::PxPct::Px(px) => px,
-            crate::unit::PxPct::Pct(pct) => (pct / 100.) * size.width,
-        };
-        let transform_y = match self.translate_y() {
-            crate::unit::PxPct::Px(px) => px,
-            crate::unit::PxPct::Pct(pct) => (pct / 100.) * size.height,
-        };
+        let transform_x = self.translate_x().resolve(size.width, resolve_cx);
+        let transform_y = self.translate_y().resolve(size.height, resolve_cx);
         result *= Affine::translate(Vec2 {
             x: transform_x,
             y: transform_y,
@@ -2180,7 +2248,11 @@ impl TransformProps {
         result
     }
 
-    pub fn clip_rect(&self, mut local_rect: kurbo::Rect) -> Option<RoundedRect> {
+    pub fn clip_rect(
+        &self,
+        mut local_rect: kurbo::Rect,
+        resolve_cx: &FontSizeCx,
+    ) -> Option<RoundedRect> {
         use Overflow::*;
 
         let (overflow_x, overflow_y) = (self.overflow_x(), self.overflow_y());
@@ -2192,7 +2264,7 @@ impl TransformProps {
 
         let border_radius = self
             .border_radius()
-            .resolve_border_radii(local_rect.size().min_side());
+            .resolve_border_radii(local_rect.size().min_side(), resolve_cx);
 
         // Extend to infinity on visible axes
         if overflow_x == Visible {
@@ -2218,22 +2290,32 @@ impl LayoutProps {
         }
     }
 
+    pub fn font_size_cx(&self) -> FontSizeCx {
+        {
+            let font_size = self.font_size();
+            let line_height = self.line_height();
+            let line_height = line_height.resolve(font_size as f32);
+            FontSizeCx::new(font_size, line_height as f64)
+        }
+    }
+
     pub fn apply_to_taffy_style(&self, style: &mut TaffyStyle) {
+        let resolve_cx = &self.font_size_cx();
         style.size = taffy::prelude::Size {
-            width: self.width().into(),
-            height: self.height().into(),
+            width: self.width().to_taffy_dim(resolve_cx),
+            height: self.height().to_taffy_dim(resolve_cx),
         };
         style.min_size = taffy::prelude::Size {
-            width: self.min_width().into(),
-            height: self.min_height().into(),
+            width: self.min_width().to_taffy_dim(resolve_cx),
+            height: self.min_height().to_taffy_dim(resolve_cx),
         };
         style.max_size = taffy::prelude::Size {
-            width: self.max_width().into(),
-            height: self.max_height().into(),
+            width: self.max_width().to_taffy_dim(resolve_cx),
+            height: self.max_height().to_taffy_dim(resolve_cx),
         };
         style.flex_grow = self.flex_grow();
         style.flex_shrink = self.flex_shrink();
-        style.flex_basis = self.flex_basis().into();
+        style.flex_basis = self.flex_basis().to_taffy_dim(resolve_cx);
         style.border = Rect {
             left: LengthPercentage::length(self.border_left().width as f32),
             top: LengthPercentage::length(self.border_top().width as f32),
@@ -2241,26 +2323,26 @@ impl LayoutProps {
             bottom: LengthPercentage::length(self.border_bottom().width as f32),
         };
         style.padding = Rect {
-            left: self.padding_left().into(),
-            top: self.padding_top().into(),
-            right: self.padding_right().into(),
-            bottom: self.padding_bottom().into(),
+            left: self.padding_left().to_taffy(resolve_cx),
+            top: self.padding_top().to_taffy(resolve_cx),
+            right: self.padding_right().to_taffy(resolve_cx),
+            bottom: self.padding_bottom().to_taffy(resolve_cx),
         };
         style.margin = Rect {
-            left: self.margin_left().into(),
-            top: self.margin_top().into(),
-            right: self.margin_right().into(),
-            bottom: self.margin_bottom().into(),
+            left: self.margin_left().to_taffy_len_perc_auto(resolve_cx),
+            top: self.margin_top().to_taffy_len_perc_auto(resolve_cx),
+            right: self.margin_right().to_taffy_len_perc_auto(resolve_cx),
+            bottom: self.margin_bottom().to_taffy_len_perc_auto(resolve_cx),
         };
         style.inset = Rect {
-            left: self.inset_left().into(),
-            top: self.inset_top().into(),
-            right: self.inset_right().into(),
-            bottom: self.inset_bottom().into(),
+            left: self.inset_left().to_taffy_len_perc_auto(resolve_cx),
+            top: self.inset_top().to_taffy_len_perc_auto(resolve_cx),
+            right: self.inset_right().to_taffy_len_perc_auto(resolve_cx),
+            bottom: self.inset_bottom().to_taffy_len_perc_auto(resolve_cx),
         };
         style.gap = Size {
-            width: self.col_gap().into(),
-            height: self.row_gap().into(),
+            width: self.col_gap().to_taffy(resolve_cx),
+            height: self.row_gap().to_taffy(resolve_cx),
         };
     }
 }
@@ -2273,6 +2355,38 @@ prop_extractor! {
 }
 
 impl Style {
+    fn deferred_effects(&self) -> impl Iterator<Item = &DeferredStyleEffect> {
+        self.map
+            .get(&DEFERRED_EFFECTS_KEY)
+            .into_iter()
+            .flat_map(|effects| {
+                effects
+                    .downcast_ref::<Vec<DeferredStyleEffect>>()
+                    .into_iter()
+                    .flat_map(|effects| effects.iter())
+            })
+    }
+
+    fn run_deferred_effects(&self) {
+        for effect in self.deferred_effects() {
+            effect.run(self);
+        }
+    }
+
+    fn push_deferred_effect(mut self, effect: DeferredStyleEffect) -> Self {
+        let mut effects = self
+            .map
+            .get(&DEFERRED_EFFECTS_KEY)
+            .and_then(|effects| effects.downcast_ref::<Vec<DeferredStyleEffect>>())
+            .cloned()
+            .unwrap_or_default();
+        effects.push(effect);
+        self.map_mut()
+            .insert(DEFERRED_EFFECTS_KEY, Rc::new(effects));
+        self.merge_id = next_style_merge_id();
+        self
+    }
+
     /// Gets the value of a style property, returning the default if not set.
     pub fn get<P: StyleProp>(&self, _prop: P) -> P::Type {
         self.get_prop_or_default::<P>()
@@ -2291,6 +2405,21 @@ impl Style {
     /// Sets a property to a deferred context-derived value.
     pub fn set_context<P: StyleProp>(self, prop: P, value: ContextValue<P::Type>) -> Self {
         self.set_style_value(prop, StyleValue::Context(value))
+    }
+
+    /// Register a deferred side effect for a context prop.
+    ///
+    /// Unlike [`ContextRef::def`], this does not produce a property value. The closure is
+    /// guaranteed to run during nested-style resolution after inherited context has been
+    /// attached, even if no property later reads the context value.
+    ///
+    /// Use this for debug-view setup and similar side effects:
+    /// `Style::new().defer::<Theme>(|t| color.set(t.primary()))`.
+    pub fn defer<P: StyleProp>(self, f: impl Fn(P::Type) + 'static) -> Self
+    where
+        P::Type: 'static,
+    {
+        self.push_deferred_effect(ContextRef::<P>::default().into_deferred(f))
     }
 
     pub fn set_from_context<C: StyleProp, P: StyleProp>(
@@ -2338,6 +2467,7 @@ impl Style {
                 let previous_value = previous_value.clone();
                 StyleMapValue::Context(ContextValue::new(move |style| {
                     let mut base_style = style.clone();
+                    base_style.map_mut().remove(&P::key());
                     // A deferred value for property `P` is allowed to read `P` from context,
                     // e.g. `FontSize := FontSize * 0.8`. If we resolved against the current
                     // style as-is, that lookup would see the context expression we are
@@ -2346,14 +2476,24 @@ impl Style {
                     // Instead, same-prop context reads resolve against the previous effective
                     // value for `P`: the previous local value if there was one, otherwise the
                     // inherited fallback carried by `Style`.
-                    match previous_value.clone() {
-                        Some(previous_value) => {
-                            base_style.map_mut().insert(P::key(), previous_value);
-                        }
-                        None => {
-                            // Removing the local entry exposes the inherited context fallback
-                            // on `base_style`, if one exists.
-                            base_style.map_mut().remove(&P::key());
+                    if let Some(previous_value) = previous_value.clone() {
+                        let previous_value = match previous_value
+                            .downcast_ref::<StyleMapValue<P::Type>>()
+                            .unwrap()
+                        {
+                            StyleMapValue::Val(value) | StyleMapValue::Animated(value) => {
+                                Some(value.clone())
+                            }
+                            StyleMapValue::Context(context_value) => {
+                                Some(context_value.resolve(&base_style))
+                            }
+                            StyleMapValue::Unset => None,
+                        };
+
+                        if let Some(previous_value) = previous_value {
+                            base_style
+                                .map_mut()
+                                .insert(P::key(), Rc::new(StyleMapValue::Val(previous_value)));
                         }
                     }
                     value.resolve(&base_style)
@@ -2486,7 +2626,7 @@ impl Style {
     /// Applies styles when window width is at least `min`.
     pub fn min_window_width(
         mut self,
-        min: impl Into<Px>,
+        min: impl Into<Pt>,
         style: impl FnOnce(Style) -> Style,
     ) -> Self {
         let over = style(Style::default());
@@ -2497,7 +2637,7 @@ impl Style {
     /// Applies styles when window width is at most `max`.
     pub fn max_window_width(
         mut self,
-        max: impl Into<Px>,
+        max: impl Into<Pt>,
         style: impl FnOnce(Style) -> Style,
     ) -> Self {
         let over = style(Style::default());
@@ -2508,8 +2648,8 @@ impl Style {
     /// Applies styles when window width is within `[min, max]` (inclusive).
     pub fn window_width_range(
         mut self,
-        min: impl Into<Px>,
-        max: impl Into<Px>,
+        min: impl Into<Pt>,
+        max: impl Into<Pt>,
         style: impl FnOnce(Style) -> Style,
     ) -> Self {
         let over = style(Style::default());
@@ -2599,9 +2739,9 @@ impl Style {
     }
 
     /// Sets the font size for text content.
-    pub fn font_size(self, size: impl Into<Px>) -> Self {
+    pub fn font_size(self, size: impl Into<Pt>) -> Self {
         let px = size.into();
-        self.set_style_value(FontSize, StyleValue::Val(px.0 as f32))
+        self.set_style_value(FontSize, StyleValue::Val(px.0))
     }
 
     /// Makes the view non-focusable through any means.
@@ -2615,18 +2755,18 @@ impl Style {
     }
 
     /// Sets different gaps for rows and columns in grid or flex layouts.
-    pub fn row_col_gap(self, width: impl Into<PxPct>, height: impl Into<PxPct>) -> Self {
+    pub fn row_col_gap(self, width: impl Into<Length>, height: impl Into<Length>) -> Self {
         self.col_gap(width).row_gap(height)
     }
 
     /// Sets the same gap for both rows and columns in grid or flex layouts.
-    pub fn gap(self, gap: impl Into<PxPct>) -> Self {
+    pub fn gap(self, gap: impl Into<Length>) -> Self {
         let gap = gap.into();
         self.col_gap(gap).row_gap(gap)
     }
 
     /// Sets both width and height of the view.
-    pub fn size(self, width: impl Into<PxPctAuto>, height: impl Into<PxPctAuto>) -> Self {
+    pub fn size(self, width: impl Into<LengthAuto>, height: impl Into<LengthAuto>) -> Self {
         self.width(width).height(height)
     }
 
@@ -2668,8 +2808,8 @@ impl Style {
     /// Sets both minimum width and height of the view.
     pub fn min_size(
         self,
-        min_width: impl Into<PxPctAuto>,
-        min_height: impl Into<PxPctAuto>,
+        min_width: impl Into<LengthAuto>,
+        min_height: impl Into<LengthAuto>,
     ) -> Self {
         self.min_width(min_width).min_height(min_height)
     }
@@ -2702,8 +2842,8 @@ impl Style {
     /// Sets both maximum width and height of the view.
     pub fn max_size(
         self,
-        max_width: impl Into<PxPctAuto>,
-        max_height: impl Into<PxPctAuto>,
+        max_width: impl Into<LengthAuto>,
+        max_height: impl Into<LengthAuto>,
     ) -> Self {
         self.max_width(max_width).max_height(max_height)
     }
@@ -2796,7 +2936,7 @@ impl Style {
     }
 
     /// Set padding on all directions
-    pub fn padding(self, padding: impl Into<PxPct>) -> Self {
+    pub fn padding(self, padding: impl Into<Length>) -> Self {
         let padding = padding.into();
         self.set(PaddingLeft, padding)
             .set(PaddingTop, padding)
@@ -2810,7 +2950,7 @@ impl Style {
     }
 
     /// Sets `padding_left` and `padding_right` to `padding`
-    pub fn padding_horiz(self, padding: impl Into<PxPct>) -> Self {
+    pub fn padding_horiz(self, padding: impl Into<Length>) -> Self {
         let padding = padding.into();
         self.set(PaddingLeft, padding).set(PaddingRight, padding)
     }
@@ -2821,7 +2961,7 @@ impl Style {
     }
 
     /// Sets `padding_top` and `padding_bottom` to `padding`
-    pub fn padding_vert(self, padding: impl Into<PxPct>) -> Self {
+    pub fn padding_vert(self, padding: impl Into<Length>) -> Self {
         let padding = padding.into();
         self.set(PaddingTop, padding).set(PaddingBottom, padding)
     }
@@ -2852,7 +2992,7 @@ impl Style {
     }
 
     /// Sets margin on all sides of the view.
-    pub fn margin(self, margin: impl Into<PxPctAuto>) -> Self {
+    pub fn margin(self, margin: impl Into<LengthAuto>) -> Self {
         let margin = margin.into();
         self.set(MarginLeft, margin)
             .set(MarginTop, margin)
@@ -2866,7 +3006,7 @@ impl Style {
     }
 
     /// Sets `margin_left` and `margin_right` to `margin`
-    pub fn margin_horiz(self, margin: impl Into<PxPctAuto>) -> Self {
+    pub fn margin_horiz(self, margin: impl Into<LengthAuto>) -> Self {
         let margin = margin.into();
         self.set(MarginLeft, margin).set(MarginRight, margin)
     }
@@ -2877,7 +3017,7 @@ impl Style {
     }
 
     /// Sets `margin_top` and `margin_bottom` to `margin`
-    pub fn margin_vert(self, margin: impl Into<PxPctAuto>) -> Self {
+    pub fn margin_vert(self, margin: impl Into<LengthAuto>) -> Self {
         let margin = margin.into();
         self.set(MarginTop, margin).set(MarginBottom, margin)
     }
@@ -2923,7 +3063,7 @@ impl Style {
     }
 
     /// Sets the border radius for all corners of the view.
-    pub fn border_radius(self, radius: impl Into<PxPct>) -> Self {
+    pub fn border_radius(self, radius: impl Into<Length>) -> Self {
         let radius = radius.into();
         self.set(BorderTopLeftRadius, radius)
             .set(BorderTopRightRadius, radius)
@@ -3004,7 +3144,7 @@ impl Style {
     }
 
     /// Sets all insets (left, top, right, bottom) to the same value.
-    pub fn inset(self, inset: impl Into<PxPctAuto>) -> Self {
+    pub fn inset(self, inset: impl Into<LengthAuto>) -> Self {
         let inset = inset.into();
         self.inset_left(inset)
             .inset_top(inset)
@@ -3023,7 +3163,7 @@ impl Style {
 
     /// Specifies shadow blur. The larger this value, the bigger the blur,
     /// so the shadow becomes bigger and lighter.
-    pub fn box_shadow_blur(self, blur_radius: impl Into<PxPct>) -> Self {
+    pub fn box_shadow_blur(self, blur_radius: impl Into<Length>) -> Self {
         let mut value = self.get(BoxShadowProp);
         if let Some(v) = value.first_mut() {
             v.blur_radius = blur_radius.into();
@@ -3052,7 +3192,7 @@ impl Style {
 
     /// Specifies shadow blur spread. Positive values will cause the shadow
     /// to expand and grow bigger, negative values will cause the shadow to shrink.
-    pub fn box_shadow_spread(self, spread: impl Into<PxPct>) -> Self {
+    pub fn box_shadow_spread(self, spread: impl Into<Length>) -> Self {
         let mut value = self.get(BoxShadowProp);
         if let Some(v) = value.first_mut() {
             v.spread = spread.into();
@@ -3103,7 +3243,7 @@ impl Style {
 
     /// Specifies the offset on horizontal axis.
     /// Negative offset value places the shadow to the left of the view.
-    pub fn box_shadow_h_offset(self, h_offset: impl Into<PxPct>) -> Self {
+    pub fn box_shadow_h_offset(self, h_offset: impl Into<Length>) -> Self {
         let mut value = self.get(BoxShadowProp);
         let offset = h_offset.into();
         if let Some(v) = value.first_mut() {
@@ -3121,7 +3261,7 @@ impl Style {
 
     /// Specifies the offset on vertical axis.
     /// Negative offset value places the shadow above the view.
-    pub fn box_shadow_v_offset(self, v_offset: impl Into<PxPct>) -> Self {
+    pub fn box_shadow_v_offset(self, v_offset: impl Into<Length>) -> Self {
         let mut value = self.get(BoxShadowProp);
         let offset = v_offset.into();
         if let Some(v) = value.first_mut() {
@@ -3138,7 +3278,7 @@ impl Style {
     }
 
     /// Specifies the offset of the left edge.
-    pub fn box_shadow_left_offset(self, left_offset: impl Into<PxPct>) -> Self {
+    pub fn box_shadow_left_offset(self, left_offset: impl Into<Length>) -> Self {
         let mut value = self.get(BoxShadowProp);
         if let Some(v) = value.first_mut() {
             v.left_offset = left_offset.into();
@@ -3152,7 +3292,7 @@ impl Style {
     }
 
     /// Specifies the offset of the right edge.
-    pub fn box_shadow_right_offset(self, right_offset: impl Into<PxPct>) -> Self {
+    pub fn box_shadow_right_offset(self, right_offset: impl Into<Length>) -> Self {
         let mut value = self.get(BoxShadowProp);
         if let Some(v) = value.first_mut() {
             v.right_offset = right_offset.into();
@@ -3166,7 +3306,7 @@ impl Style {
     }
 
     /// Specifies the offset of the top edge.
-    pub fn box_shadow_top_offset(self, top_offset: impl Into<PxPct>) -> Self {
+    pub fn box_shadow_top_offset(self, top_offset: impl Into<Length>) -> Self {
         let mut value = self.get(BoxShadowProp);
         if let Some(v) = value.first_mut() {
             v.top_offset = top_offset.into();
@@ -3180,7 +3320,7 @@ impl Style {
     }
 
     /// Specifies the offset of the bottom edge.
-    pub fn box_shadow_bottom_offset(self, bottom_offset: impl Into<PxPct>) -> Self {
+    pub fn box_shadow_bottom_offset(self, bottom_offset: impl Into<Length>) -> Self {
         let mut value = self.get(BoxShadowProp);
         if let Some(v) = value.first_mut() {
             v.bottom_offset = bottom_offset.into();
@@ -3392,8 +3532,17 @@ impl Style {
 }
 
 impl Style {
+    pub(crate) fn font_size_cx(&self) -> FontSizeCx {
+        let builtin = self.builtin();
+        let font_size = builtin.font_size();
+        let line_height = builtin.line_height();
+        let line_height = line_height.resolve(font_size as f32);
+        FontSizeCx::new(font_size, line_height as f64)
+    }
+
     pub fn to_taffy_style(&self) -> TaffyStyle {
         let style = self.builtin();
+        let font_size_cx = self.font_size_cx();
         TaffyStyle {
             display: style.display(),
             overflow: taffy::Point {
@@ -3402,21 +3551,21 @@ impl Style {
             },
             position: style.position(),
             size: taffy::prelude::Size {
-                width: style.width().into(),
-                height: style.height().into(),
+                width: style.width().to_taffy_dim(&font_size_cx),
+                height: style.height().to_taffy_dim(&font_size_cx),
             },
             min_size: taffy::prelude::Size {
-                width: style.min_width().into(),
-                height: style.min_height().into(),
+                width: style.min_width().to_taffy_dim(&font_size_cx),
+                height: style.min_height().to_taffy_dim(&font_size_cx),
             },
             max_size: taffy::prelude::Size {
-                width: style.max_width().into(),
-                height: style.max_height().into(),
+                width: style.max_width().to_taffy_dim(&font_size_cx),
+                height: style.max_height().to_taffy_dim(&font_size_cx),
             },
             flex_direction: style.flex_direction(),
             flex_grow: style.flex_grow(),
             flex_shrink: style.flex_shrink(),
-            flex_basis: style.flex_basis().into(),
+            flex_basis: style.flex_basis().to_taffy_dim(&font_size_cx),
             flex_wrap: style.flex_wrap(),
             justify_content: style.justify_content(),
             justify_self: style.justify_self(),
@@ -3435,29 +3584,29 @@ impl Style {
             },
             padding: {
                 Rect {
-                    left: style.padding_left().into(),
-                    top: style.padding_top().into(),
-                    right: style.padding_right().into(),
-                    bottom: style.padding_bottom().into(),
+                    left: style.padding_left().to_taffy(&font_size_cx),
+                    top: style.padding_top().to_taffy(&font_size_cx),
+                    right: style.padding_right().to_taffy(&font_size_cx),
+                    bottom: style.padding_bottom().to_taffy(&font_size_cx),
                 }
             },
             margin: {
                 Rect {
-                    left: style.margin_left().into(),
-                    top: style.margin_top().into(),
-                    right: style.margin_right().into(),
-                    bottom: style.margin_bottom().into(),
+                    left: style.margin_left().to_taffy_len_perc_auto(&font_size_cx),
+                    top: style.margin_top().to_taffy_len_perc_auto(&font_size_cx),
+                    right: style.margin_right().to_taffy_len_perc_auto(&font_size_cx),
+                    bottom: style.margin_bottom().to_taffy_len_perc_auto(&font_size_cx),
                 }
             },
             inset: Rect {
-                left: style.inset_left().into(),
-                top: style.inset_top().into(),
-                right: style.inset_right().into(),
-                bottom: style.inset_bottom().into(),
+                left: style.inset_left().to_taffy_len_perc_auto(&font_size_cx),
+                top: style.inset_top().to_taffy_len_perc_auto(&font_size_cx),
+                right: style.inset_right().to_taffy_len_perc_auto(&font_size_cx),
+                bottom: style.inset_bottom().to_taffy_len_perc_auto(&font_size_cx),
             },
             gap: Size {
-                width: style.col_gap().into(),
-                height: style.row_gap().into(),
+                width: style.col_gap().to_taffy(&font_size_cx),
+                height: style.row_gap().to_taffy(&font_size_cx),
             },
             grid_template_rows: style.grid_template_rows(),
             grid_template_columns: style.grid_template_columns(),

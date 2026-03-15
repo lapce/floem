@@ -123,8 +123,16 @@ impl FamilyOwned {
 pub enum LineHeightValue {
     /// A multiplier of the font size (e.g. `1.0` means line height equals font size).
     Normal(f32),
-    /// An absolute line height in pixels.
-    Px(f32),
+    /// An absolute line height in points.
+    Pt(f32),
+}
+impl LineHeightValue {
+    pub fn resolve(&self, font_size: f32) -> f32 {
+        match self {
+            LineHeightValue::Pt(value) => *value,
+            LineHeightValue::Normal(multiplier) => font_size * multiplier,
+        }
+    }
 }
 
 impl From<f32> for LineHeightValue {
@@ -332,7 +340,7 @@ impl<'a> Attrs<'a> {
     pub fn effective_line_height(&self) -> f32 {
         match self.line_height {
             LineHeightValue::Normal(n) => self.font_size * n,
-            LineHeightValue::Px(n) => n,
+            LineHeightValue::Pt(n) => n,
         }
     }
 
@@ -865,7 +873,7 @@ mod tests {
             .weight(FontWeight::BOLD)
             .font_style(FontStyle::Italic)
             .font_width(FontWidth::CONDENSED)
-            .line_height(LineHeightValue::Px(24.0))
+            .line_height(LineHeightValue::Pt(24.0))
             .metadata(42);
 
         assert_eq!(a.font_size, 20.0);
@@ -874,7 +882,7 @@ mod tests {
         assert_eq!(a.get_weight(), Some(FontWeight::BOLD));
         assert_eq!(a.get_font_style(), Some(FontStyle::Italic));
         assert_eq!(a.get_stretch(), Some(FontWidth::CONDENSED));
-        assert_eq!(a.get_line_height(), LineHeightValue::Px(24.0));
+        assert_eq!(a.get_line_height(), LineHeightValue::Pt(24.0));
         assert_eq!(a.get_metadata(), Some(42));
     }
 
@@ -896,7 +904,7 @@ mod tests {
     fn effective_line_height_px_absolute() {
         let a = Attrs::new()
             .font_size(20.0)
-            .line_height(LineHeightValue::Px(24.0));
+            .line_height(LineHeightValue::Pt(24.0));
         assert!((a.effective_line_height() - 24.0).abs() < f32::EPSILON);
     }
 
