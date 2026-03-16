@@ -20,10 +20,11 @@ use winit::{
 };
 
 use super::{APP_UPDATE_EVENTS, AppConfig, AppEventCallback, AppUpdateEvent, UserEvent};
+#[cfg(not(feature = "skia"))]
+use crate::context::PaintState;
 use crate::{
     AppEvent, Application,
     action::{Timer, TimerToken},
-    context::PaintState,
     dropped_file,
     event::dropped_file::FileDragEvent,
     ext_event::EXT_EVENT_HANDLER,
@@ -86,6 +87,7 @@ impl ApplicationHandle {
                     });
                 }
             }
+            #[cfg(not(feature = "skia"))]
             UserEvent::GpuResourcesUpdate { window_id } => {
                 let handle = self.window_handles.get_mut(&window_id).unwrap();
                 if let PaintState::PendingGpuResources {

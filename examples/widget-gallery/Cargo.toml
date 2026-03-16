@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-floem = { path = "../..", features = ["vello"] }
+floem = { path = "../..", features = ["skia"] }
 strum = { workspace = true }
 files = { path = "../files/", optional = true }
 
