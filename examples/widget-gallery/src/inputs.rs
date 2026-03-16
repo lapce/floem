@@ -62,7 +62,7 @@ pub fn text_input_view() -> impl IntoView {
             "Disabled Input:",
             TextInput::new(text)
                 .placeholder("Disabled input")
-                .style(|s| s.set_disabled(true)),
+                .style(|s| s.set_disabled(true).width(250.0)),
         ),
     ))
 }

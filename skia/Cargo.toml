@@ -8,8 +8,10 @@ license.workspace = true
 
 [dependencies]
 anyhow = "1.0"
-anyrender = { git = "https://github.com/jrmoulton/anyrender", rev = "9f09d1d9aebf714b51697267fa8b1135a3b66f03" }
-anyrender_skia = { git = "https://github.com/jrmoulton/anyrender", rev = "9f09d1d9aebf714b51697267fa8b1135a3b66f03" }
+# anyrender = {path = "../../anyrender/crates/anyrender", package = "anyrender"}
+# anyrender_skia = { path = "../../anyrender/crates/anyrender_skia", package = "anyrender_skia" }
+anyrender = { git = "https://github.com/jrmoulton/anyrender", rev = "e38ca6c35f45" }
+anyrender_skia = { git = "https://github.com/jrmoulton/anyrender", rev = "e38ca6c35f45" }
 floem_renderer = { path = "../renderer", version = "0.2.0" }
 kurbo = "0.13"
 parley = { workspace = true }
