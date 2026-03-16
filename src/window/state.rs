@@ -54,7 +54,7 @@ struct ElementMetaFocusPropsLookup<'a> {
 
 impl FocusPropsLookup<understory_box_tree::NodeId> for ElementMetaFocusPropsLookup<'_> {
     fn props(&self, id: &understory_box_tree::NodeId) -> FocusProps {
-        let Some(meta) = self.tree.meta(*id).flatten() else {
+        let Some(meta) = self.tree.element_meta(*id) else {
             return FocusProps::default();
         };
         let focus = meta.focus;
@@ -273,7 +273,7 @@ impl WindowState {
             );
 
             for node_entry in space.nodes {
-                if let Some(meta) = box_tree.meta(node_entry.id).flatten() {
+                if let Some(meta) = box_tree.element_meta(node_entry.id) {
                     self.focus_nav_cache.entries.push(FocusEntry {
                         id: meta.element_id,
                         rect: node_entry.rect,

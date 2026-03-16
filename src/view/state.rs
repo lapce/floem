@@ -397,7 +397,7 @@ impl ViewState {
             id,
             true,
         );
-        box_tree.set_meta(element_id.0, Some(crate::ElementMeta::new(element_id)));
+        box_tree.set_element_meta(element_id.0, Some(crate::ElementMeta::new(element_id)));
 
         add_update_message(UpdateMessage::RequestStyle(
             element_id,

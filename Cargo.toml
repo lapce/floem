@@ -114,11 +114,11 @@ fluent-bundle = { version = "0.16", optional = true }
 unic-langid = { version = "0.9", optional = true }
 sys-locale = { version = "0.3.2", optional = true }
 ouroboros = { version = "0.18", optional = true }
-understory_box_tree = { git = "https://github.com/jrmoulton/understory", rev = "e3dc4f7bc94d2c87d0800b0dd55242cda876a278", package = "understory_box_tree" }
-understory_event_state = { git = "https://github.com/jrmoulton/understory", rev = "e3dc4f7bc94d2c87d0800b0dd55242cda876a278", package = "understory_event_state" }
-understory_index = { git = "https://github.com/jrmoulton/understory", rev = "e3dc4f7bc94d2c87d0800b0dd55242cda876a278", package = "understory_index" }
-understory_focus = { git = "https://github.com/jrmoulton/understory", rev = "e3dc4f7bc94d2c87d0800b0dd55242cda876a278", package = "understory_focus", features = ["box_tree_adapter"] }
-understory_virtual_list = { git = "https://github.com/jrmoulton/understory", rev = "e3dc4f7bc94d2c87d0800b0dd55242cda876a278", package = "understory_virtual_list" }
+understory_box_tree = { git = "https://github.com/jrmoulton/understory", rev = "eb66510f53f7", package = "understory_box_tree" }
+understory_event_state = { git = "https://github.com/jrmoulton/understory", rev = "eb66510f53f7", package = "understory_event_state" }
+understory_index = { git = "https://github.com/jrmoulton/understory", rev = "eb66510f53f7", package = "understory_index" }
+understory_focus = { git = "https://github.com/jrmoulton/understory", rev = "eb66510f53f7", package = "understory_focus", features = ["box_tree_adapter"] }
+understory_virtual_list = { git = "https://github.com/jrmoulton/understory", rev = "eb66510f53f7", package = "understory_virtual_list" }
 
 [target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
 muda = { workspace = true }

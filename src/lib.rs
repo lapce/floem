@@ -176,6 +176,10 @@
 //!
 //! For additional information about animation, [see here](crate::animate::Animation).
 
+use std::ops::{Deref, DerefMut};
+
+use rustc_hash::FxHashMap;
+
 pub mod action;
 pub mod animate;
 mod app;
@@ -328,8 +332,106 @@ mod element_id {
 pub use element_id::ElementId;
 pub use element_id::{ElementMeta, FocusNavMeta};
 
-pub type BoxTree = understory_box_tree::Tree<understory_index::backends::GridF64, ElementMeta>;
-// pub type BoxTree = understory_box_tree::Tree;
+type RawBoxTree = understory_box_tree::Tree<understory_index::backends::GridF64>;
+
+#[derive(Debug)]
+pub struct BoxTree {
+    tree: RawBoxTree,
+    metadata: FxHashMap<understory_box_tree::NodeId, ElementMeta>,
+}
+
+impl BoxTree {
+    pub fn with_backend(backend: understory_index::backends::GridF64) -> Self {
+        Self {
+            tree: RawBoxTree::with_backend(backend),
+            metadata: FxHashMap::default(),
+        }
+    }
+
+    pub fn element_meta(&self, id: understory_box_tree::NodeId) -> Option<ElementMeta> {
+        self.tree
+            .is_alive(id)
+            .then(|| self.metadata.get(&id).copied())
+            .flatten()
+    }
+
+    pub fn set_element_meta(
+        &mut self,
+        id: understory_box_tree::NodeId,
+        meta: Option<ElementMeta>,
+    ) -> bool {
+        if !self.tree.is_alive(id) {
+            return false;
+        }
+        if let Some(meta) = meta {
+            self.metadata.insert(id, meta);
+        } else {
+            self.metadata.remove(&id);
+        }
+        true
+    }
+
+    pub fn element_id_of(&self, id: understory_box_tree::NodeId) -> Option<ElementId> {
+        self.element_meta(id).map(|meta| meta.element_id)
+    }
+
+    pub fn focus_nav_meta(&self, id: understory_box_tree::NodeId) -> Option<FocusNavMeta> {
+        self.element_meta(id).map(|meta| meta.focus)
+    }
+
+    pub fn set_focus_nav_meta(
+        &mut self,
+        id: understory_box_tree::NodeId,
+        focus: FocusNavMeta,
+    ) -> bool {
+        let Some(mut meta) = self.element_meta(id) else {
+            return false;
+        };
+        meta.focus = focus;
+        self.metadata.insert(id, meta);
+        true
+    }
+
+    pub fn reparent(
+        &mut self,
+        id: understory_box_tree::NodeId,
+        new_parent: Option<understory_box_tree::NodeId>,
+    ) {
+        self.tree.reparent(id, new_parent);
+    }
+
+    pub fn remove(&mut self, id: understory_box_tree::NodeId) {
+        if !self.tree.is_alive(id) {
+            return;
+        }
+        let mut pending = vec![id];
+        while let Some(node) = pending.pop() {
+            pending.extend(self.tree.children_of(node).iter().copied());
+            self.metadata.remove(&node);
+        }
+        self.tree.remove(id);
+    }
+}
+
+impl Default for BoxTree {
+    fn default() -> Self {
+        Self::with_backend(understory_index::backends::GridF64::new(100.))
+    }
+}
+
+impl Deref for BoxTree {
+    type Target = RawBoxTree;
+
+    fn deref(&self) -> &Self::Target {
+        &self.tree
+    }
+}
+
+impl DerefMut for BoxTree {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.tree
+    }
+}
 
 static FOCUS_NAV_META_REVISION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 

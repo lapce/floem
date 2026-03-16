@@ -677,7 +677,7 @@ fn register_capture_elements(
             bt.reparent(element.0, Some(parent_element.0));
             bt.set_local_bounds(element.0, rect);
             bt.set_flags(element.0, NodeFlags::VISIBLE | NodeFlags::PICKABLE);
-            bt.set_meta(
+            bt.set_element_meta(
                 element.0,
                 Some(crate::ElementMeta::new(ElementId(
                     element.0, owner_id, false,

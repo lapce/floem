@@ -783,6 +783,7 @@ fn test_overlay_with_container_derived_rebuild() {
 
     use floem::views::Container;
 
+    let root = TestRoot::new();
     let counter = RwSignal::new(0);
 
     let view = Stack::new((
@@ -796,7 +797,6 @@ fn test_overlay_with_container_derived_rebuild() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Initial paint should work
@@ -822,6 +822,7 @@ fn test_overlay_with_nested_container_derived() {
 
     use floem::views::Container;
 
+    let root = TestRoot::new();
     let open = RwSignal::new(true);
 
     let view = Stack::new((
@@ -858,7 +859,6 @@ fn test_overlay_with_nested_container_derived() {
     ))
     .style(|s| s.size(100.0, 100.0));
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
 
     // Initial state: dialog open

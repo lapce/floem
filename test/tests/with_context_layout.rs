@@ -67,10 +67,10 @@ impl TestThemeExt for Style {
 #[test]
 #[serial]
 fn test_size_applied_directly() {
+    let root = TestRoot::new();
     let view = Empty::new().style(|s| s.size(100.0, 50.0));
     let id = view.view_id();
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
@@ -91,6 +91,7 @@ fn test_size_applied_directly() {
 #[test]
 #[serial]
 fn test_absolute_positioning_directly() {
+    let root = TestRoot::new();
     let element = Empty::new().style(|s| {
         s.absolute()
             .inset_left(20.0)
@@ -101,7 +102,6 @@ fn test_absolute_positioning_directly() {
 
     let view = Stack::new((element,)).style(|s| s.size(200.0, 200.0));
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
@@ -129,6 +129,7 @@ fn test_absolute_positioning_directly() {
 #[test]
 #[serial]
 fn test_size_inside_with_context() {
+    let root = TestRoot::new();
     let theme = TestTheme::default();
     let view = Empty::new().style(move |s| {
         s.set(TestThemeProp, theme)
@@ -136,7 +137,6 @@ fn test_size_inside_with_context() {
     });
     let id = view.view_id();
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
@@ -161,6 +161,7 @@ fn test_size_inside_with_context() {
 #[test]
 #[serial]
 fn test_layout_outside_color_inside_with_context() {
+    let root = TestRoot::new();
     let theme = TestTheme::default();
     let view = Empty::new().style(move |s| {
         s.size(100.0, 50.0)
@@ -169,7 +170,6 @@ fn test_layout_outside_color_inside_with_context() {
     });
     let id = view.view_id();
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 
@@ -196,6 +196,7 @@ fn test_layout_outside_color_inside_with_context() {
 #[test]
 #[serial]
 fn test_theme_value_for_size() {
+    let root = TestRoot::new();
     let theme = TestTheme {
         primary: palette::css::BLUE,
         size: 80.0,
@@ -206,7 +207,6 @@ fn test_theme_value_for_size() {
     });
     let id = view.view_id();
 
-    let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, view, 200.0, 200.0);
     harness.rebuild();
 

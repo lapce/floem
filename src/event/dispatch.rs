@@ -118,7 +118,7 @@ fn build_ancestor_chain(target: ElementId, box_tree: &BoxTree) -> SmallVec<[Elem
             break;
         };
 
-        let Some(next) = box_tree.meta(parent_node).flatten().map(|m| m.element_id) else {
+        let Some(next) = box_tree.element_id_of(parent_node) else {
             break;
         };
 
@@ -1477,7 +1477,7 @@ impl RouteCx<'_, '_> {
             std::iter::successors(Some(target), |&cur| {
                 box_tree
                     .parent_of(cur.0)
-                    .and_then(|p| box_tree.meta(p).flatten().map(|m| m.element_id))
+                    .and_then(|p| box_tree.element_id_of(p))
             })
         };
 
@@ -1487,9 +1487,8 @@ impl RouteCx<'_, '_> {
                 .map(|f| f.contains(required))
                 .unwrap_or(false);
             let nav_enabled = box_tree
-                .meta(id.0)
-                .flatten()
-                .map(|m| m.focus.enabled)
+                .focus_nav_meta(id.0)
+                .map(|m| m.enabled)
                 .unwrap_or(true);
             flags_match && nav_enabled
         });
@@ -1501,7 +1500,7 @@ impl RouteCx<'_, '_> {
         std::iter::successors(Some(focus_target), |&cur| {
             box_tree
                 .parent_of(cur.0)
-                .and_then(|p| box_tree.meta(p).flatten().map(|m| m.element_id))
+                .and_then(|p| box_tree.element_id_of(p))
         })
         .collect()
     }
@@ -1618,9 +1617,8 @@ impl RouteCx<'_, '_> {
             box_tree.flags(id.0).is_some_and(|flags| {
                 flags.contains(NodeFlags::VISIBLE | NodeFlags::KEYBOARD_NAVIGABLE)
             }) && box_tree
-                .meta(id.0)
-                .flatten()
-                .map(|m| m.focus.enabled)
+                .focus_nav_meta(id.0)
+                .map(|m| m.enabled)
                 .unwrap_or(true)
         };
 
@@ -1649,7 +1647,7 @@ impl RouteCx<'_, '_> {
             )
             .into_iter()
             .rev()
-            .find_map(|node| box_tree.meta(node).flatten().map(|m| m.element_id))
+            .find_map(|node| box_tree.element_id_of(node))
             .unwrap_or(root_element_id)
     }
 
@@ -1683,7 +1681,7 @@ impl RouteCx<'_, '_> {
     ) {
         for node in box_tree.intersect_rect(rect, QueryFilter::new().visible().keyboard_navigable())
         {
-            let Some(meta) = box_tree.meta(node).flatten() else {
+            let Some(meta) = box_tree.element_meta(node) else {
                 continue;
             };
             let Some(rect) = box_tree.world_bounds(node) else {
@@ -1719,7 +1717,7 @@ impl RouteCx<'_, '_> {
             {
                 return None;
             }
-            box_tree.meta(current_focus.0).flatten().and_then(|meta| {
+            box_tree.element_meta(current_focus.0).and_then(|meta| {
                 if !meta.focus.enabled {
                     return None;
                 }
@@ -1731,9 +1729,8 @@ impl RouteCx<'_, '_> {
         let current_group = if let Some(current_focus) = active_focus {
             let box_tree = self.gcx.window_state.box_tree.borrow();
             box_tree
-                .meta(current_focus.0)
-                .flatten()
-                .and_then(|m| m.focus.group)
+                .focus_nav_meta(current_focus.0)
+                .and_then(|m| m.group)
         } else {
             None
         };
@@ -1851,9 +1848,8 @@ impl RouteCx<'_, '_> {
         let box_tree = self.gcx.window_state.box_tree.borrow();
         let current_focus = self.keyboard_navigation_origin(&box_tree, root_element_id);
         let current_group = box_tree
-            .meta(current_focus.0)
-            .flatten()
-            .and_then(|m| m.focus.group);
+            .focus_nav_meta(current_focus.0)
+            .and_then(|m| m.group);
         let current_rect = box_tree.world_bounds(current_focus.0);
         let root_rect = box_tree.world_bounds(root_element_id.0);
 
@@ -1875,7 +1871,7 @@ impl RouteCx<'_, '_> {
                 && box_tree.flags(current_focus.0).is_some_and(|flags| {
                     flags.contains(NodeFlags::VISIBLE | NodeFlags::KEYBOARD_NAVIGABLE)
                 })
-                && let Some(meta) = box_tree.meta(current_focus.0).flatten()
+                && let Some(meta) = box_tree.element_meta(current_focus.0)
                 && let Some(rect) = box_tree.world_bounds(current_focus.0)
             {
                 Self::push_focus_entry(meta, rect, &mut entries);

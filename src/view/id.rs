@@ -209,7 +209,8 @@ impl ViewId {
                 let this_element_id = s.state(*self).borrow().element_id;
                 let parent_element_id =
                     box_tree_parent_element_id_for_child(s, logical_parent_id, *self);
-                s.box_tree(*self)
+                let box_tree = s.box_tree(*self);
+                box_tree
                     .borrow_mut()
                     .reparent(this_element_id.0, Some(parent_element_id.0));
             }
@@ -224,7 +225,8 @@ impl ViewId {
             if let Some(logical_parent_id) = s.parent.get(*self).and_then(|p| *p) {
                 let this_element_id = s.state(*self).borrow().element_id;
                 let parent_element_id = s.state(logical_parent_id).borrow().element_id;
-                s.box_tree(*self)
+                let box_tree = s.box_tree(*self);
+                box_tree
                     .borrow_mut()
                     .reparent(this_element_id.0, Some(parent_element_id.0));
             }
@@ -1290,7 +1292,7 @@ impl ViewId {
             let element_id = ElementId(child_element_id, *self, false);
             box_tree
                 .borrow_mut()
-                .set_meta(child_element_id, Some(crate::ElementMeta::new(element_id)));
+                .set_element_meta(child_element_id, Some(crate::ElementMeta::new(element_id)));
             box_tree.borrow_mut().set_z_index(child_element_id, z_index);
             element_id
         })
@@ -1299,11 +1301,7 @@ impl ViewId {
     /// Read focus navigation metadata for a specific element owned by this view.
     pub fn focus_nav_meta_for_element(&self, element_id: ElementId) -> Option<FocusNavMeta> {
         let box_tree = self.box_tree();
-        box_tree
-            .borrow()
-            .meta(element_id.0)
-            .flatten()
-            .map(|m| m.focus)
+        box_tree.borrow().focus_nav_meta(element_id.0)
     }
 
     /// Replace focus navigation metadata for a specific element.
@@ -1321,11 +1319,9 @@ impl ViewId {
         );
         let box_tree = self.box_tree();
         let mut box_tree = box_tree.borrow_mut();
-        let Some(mut meta) = box_tree.meta(element_id.0).flatten() else {
+        if !box_tree.set_focus_nav_meta(element_id.0, focus) {
             return false;
-        };
-        meta.focus = focus;
-        box_tree.set_meta(element_id.0, Some(meta));
+        }
         crate::bump_focus_nav_meta_revision();
         true
     }
