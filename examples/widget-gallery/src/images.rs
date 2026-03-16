@@ -1,4 +1,4 @@
-use floem::prelude::*;
+use floem::{prelude::*, style::ObjectFit};
 
 use crate::form::{form, form_item};
 
@@ -21,23 +21,20 @@ pub fn img_view() -> impl IntoView {
         ),
         form_item(
             "SVG(from file):",
-            svg(ferris_svg).style(|s| s.unset_color().width(230.pt()).height(153.pt())),
+            svg(ferris_svg).style(|s| s.unset_color().width(230.pt())),
         ),
-        form_item(
-            "SVG(from string):",
-            svg(svg_str).style(|s| s.width(100.pt()).height(100.pt())),
-        ),
+        form_item("SVG(from string):", svg(svg_str).style(|s| s.width(100))),
         form_item("JPG:", img(move || sunflower.to_vec())),
         form_item(
             "JPG(resized):",
             img(move || sunflower.to_vec()).style(|s| s.width(320.pt()).height(490.pt())),
         ),
-        //TODO: support percentages for width/height
-        //     img(move || ferris_png.to_vec()).style(|s| s.width(90.pct()).height(90.pct()))
-        //
-        //TODO: object fit and object position
-        //     img(move || ferris_png.to_vec())
-        //     .object_fit(ObjectFit::Contain).object_position(VertPosition::Top, HorizPosition::Left))
-        //
+        form_item(
+            "JPG(controlled):",
+            img(move || ferris_png.to_vec()).style(|s| {
+                s.object_fit(ObjectFit::Cover).width(100).height(100)
+                // .object_position(VertPosition::Top, HorizPosition::Left)
+            }),
+        ),
     ))
 }

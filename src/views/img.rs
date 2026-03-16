@@ -2,8 +2,8 @@
 #![deny(missing_docs)]
 use std::{cell::RefCell, path::PathBuf, rc::Rc, sync::Arc};
 
-use floem_reactive::Effect;
-use peniko::{Blob, ImageAlphaType, ImageData};
+use floem_reactive::UpdaterEffect;
+use peniko::{Blob, ImageAlphaType, ImageData, kurbo::Rect};
 use sha2::{Digest, Sha256};
 
 use crate::{
@@ -42,94 +42,22 @@ impl ImageLayoutData {
     /// Create a taffy layout function for image sizing following CSS rules
     pub fn create_taffy_layout_fn(
         layout_data: Rc<RefCell<Self>>,
-        object_fit: ObjectFit,
+        _object_fit: ObjectFit,
     ) -> Box<MeasureFn> {
         Box::new(
-            move |known_dimensions, available_space, _node_id, _style, _measure_ctx| {
+            move |known_dimensions, _available_space, _node_id, _style, _measure_ctx| {
                 use taffy::*;
 
                 let data = layout_data.borrow();
                 let natural_width = data.natural_width as f32;
                 let natural_height = data.natural_height as f32;
                 let natural_aspect = data.aspect_ratio();
-
-                // If both dimensions are explicitly set, use them
-                if let (Some(w), Some(h)) = (known_dimensions.width, known_dimensions.height) {
+                if natural_width == 0.0 || natural_height == 0.0 {
                     return Size {
-                        width: w,
-                        height: h,
+                        width: 0.0,
+                        height: 0.0,
                     };
                 }
-
-                // Helper to compute size based on object-fit behavior
-                let compute_size = |container_width: f32, container_height: f32| -> Size<f32> {
-                    match object_fit {
-                        ObjectFit::Fill => {
-                            // Stretch to fill - use container size
-                            Size {
-                                width: container_width,
-                                height: container_height,
-                            }
-                        }
-                        ObjectFit::Contain => {
-                            // Fit inside maintaining aspect ratio
-                            let container_aspect = container_width / container_height;
-                            if natural_aspect > container_aspect {
-                                // Image is wider - constrain by width
-                                Size {
-                                    width: container_width,
-                                    height: container_width / natural_aspect,
-                                }
-                            } else {
-                                // Image is taller - constrain by height
-                                Size {
-                                    width: container_height * natural_aspect,
-                                    height: container_height,
-                                }
-                            }
-                        }
-                        ObjectFit::Cover => {
-                            // Cover entire container maintaining aspect ratio
-                            let container_aspect = container_width / container_height;
-                            if natural_aspect > container_aspect {
-                                // Image is wider - constrain by height
-                                Size {
-                                    width: container_height * natural_aspect,
-                                    height: container_height,
-                                }
-                            } else {
-                                // Image is taller - constrain by width
-                                Size {
-                                    width: container_width,
-                                    height: container_width / natural_aspect,
-                                }
-                            }
-                        }
-                        ObjectFit::None => {
-                            // Use natural size
-                            Size {
-                                width: natural_width,
-                                height: natural_height,
-                            }
-                        }
-                        ObjectFit::ScaleDown => {
-                            // Like contain but don't scale up
-                            let container_aspect = container_width / container_height;
-                            let (scaled_width, scaled_height) = if natural_aspect > container_aspect
-                            {
-                                (container_width, container_width / natural_aspect)
-                            } else {
-                                (container_height * natural_aspect, container_height)
-                            };
-
-                            // Don't scale up beyond natural size
-                            Size {
-                                width: scaled_width.min(natural_width),
-                                height: scaled_height.min(natural_height),
-                            }
-                        }
-                    }
-                };
 
                 // If only width is set, compute height from aspect ratio
                 if let Some(w) = known_dimensions.width {
@@ -152,32 +80,13 @@ impl ImageLayoutData {
                     };
                 }
 
-                // No explicit dimensions - use available space and object-fit
-                match (available_space.width, available_space.height) {
-                    (AvailableSpace::Definite(w), AvailableSpace::Definite(h)) => {
-                        compute_size(w, h)
-                    }
-                    (AvailableSpace::Definite(w), _) => {
-                        // Only width available
-                        Size {
-                            width: w,
-                            height: w / natural_aspect,
-                        }
-                    }
-                    (_, AvailableSpace::Definite(h)) => {
-                        // Only height available
-                        Size {
-                            width: h * natural_aspect,
-                            height: h,
-                        }
-                    }
-                    _ => {
-                        // No constraints - use natural size
-                        Size {
-                            width: natural_width,
-                            height: natural_height,
-                        }
-                    }
+                // No explicit dimensions: use intrinsic size to match CSS img default
+                // behavior when width/height are `auto`.
+                Size {
+                    // Both dimensions provided by layout context still do not force a resized
+                    // intrinsic image; object-fit is a paint-time behavior for sized boxes.
+                    width: natural_width,
+                    height: natural_height,
                 }
             },
         )
@@ -193,8 +102,8 @@ prop_extractor! {
 /// Holds the data needed for [img] view fn to display images.
 pub struct Img {
     id: ViewId,
-    img: Option<peniko::ImageBrush>,
-    img_hash: Option<Vec<u8>>,
+    img: peniko::ImageBrush,
+    img_hash: Vec<u8>,
     layout_data: Rc<RefCell<ImageLayoutData>>,
     style: Extractor,
 }
@@ -297,16 +206,24 @@ pub fn img_from_path(image: impl Fn() -> PathBuf + 'static) -> Img {
 
 pub(crate) fn img_dynamic(image: impl Fn() -> peniko::ImageBrush + 'static) -> Img {
     let id = ViewId::new();
-    let layout_data = Rc::new(RefCell::new(ImageLayoutData::new(0, 0)));
 
-    Effect::new(move |_| {
-        id.update_state(image());
+    let img = UpdaterEffect::new(image, move |image| {
+        id.update_state(image);
     });
+
+    let layout_data = Rc::new(RefCell::new(ImageLayoutData::new(
+        img.image.width,
+        img.image.height,
+    )));
+
+    let mut hasher = Sha256::new();
+    hasher.update(img.image.data.data());
+    let img_hash = hasher.finalize().to_vec();
 
     let mut img = Img {
         id,
-        img: None,
-        img_hash: None,
+        img,
+        img_hash,
         layout_data,
         style: Extractor::default(),
     };
@@ -333,6 +250,51 @@ impl Img {
             }),
         );
     }
+
+    /// Compute the destination rect for the image within the content box,
+    /// following CSS object-fit rules. The returned rect is in local coords
+    /// and may be larger than `content_rect` (for Cover) or smaller (for Contain).
+    pub fn object_fit_dest_rect(&self, content_rect: Rect) -> Rect {
+        self.object_fit_dest_rect_with(content_rect, self.style.object_fit())
+    }
+
+    /// This method is mostly here for tests
+    pub fn object_fit_dest_rect_with(&self, content_rect: Rect, object_fit: ObjectFit) -> Rect {
+        let natural_w = self.img.image.width as f64;
+        let natural_h = self.img.image.height as f64;
+        if natural_w == 0.0 || natural_h == 0.0 {
+            return content_rect;
+        }
+        let box_w = content_rect.width();
+        let box_h = content_rect.height();
+        if box_w == 0.0 || box_h == 0.0 {
+            return content_rect;
+        }
+        let (rendered_w, rendered_h) = match object_fit {
+            ObjectFit::Fill => (box_w, box_h),
+            ObjectFit::None => (natural_w, natural_h),
+            ObjectFit::Contain => {
+                let scale = (box_w / natural_w).min(box_h / natural_h);
+                (natural_w * scale, natural_h * scale)
+            }
+            ObjectFit::Cover => {
+                let scale = (box_w / natural_w).max(box_h / natural_h);
+                (natural_w * scale, natural_h * scale)
+            }
+            ObjectFit::ScaleDown => {
+                let contain_scale = (box_w / natural_w).min(box_h / natural_h);
+                let scale = contain_scale.min(1.0);
+                (natural_w * scale, natural_h * scale)
+            }
+        };
+        let x0 = content_rect.x0 + (box_w - rendered_w) / 2.0;
+        let y0 = content_rect.y0 + (box_h - rendered_h) / 2.0;
+        Rect::new(x0, y0, x0 + rendered_w, y0 + rendered_h)
+    }
+
+    fn needs_clip(&self) -> bool {
+        matches!(self.style.object_fit(), ObjectFit::Cover | ObjectFit::None)
+    }
 }
 
 impl View for Img {
@@ -348,7 +310,7 @@ impl View for Img {
         if let Ok(img) = state.downcast::<peniko::ImageBrush>() {
             let mut hasher = Sha256::new();
             hasher.update(img.image.data.data());
-            self.img_hash = Some(hasher.finalize().to_vec());
+            self.img_hash = hasher.finalize().to_vec();
 
             // Update layout data with new image dimensions
             let width = img.image.width;
@@ -356,7 +318,8 @@ impl View for Img {
             self.layout_data.borrow_mut().natural_width = width;
             self.layout_data.borrow_mut().natural_height = height;
 
-            self.img = Some(*img);
+            self.img = *img;
+            self.id.request_mark_view_layout_dirty();
             self.id.request_layout();
         }
     }
@@ -370,15 +333,169 @@ impl View for Img {
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        if let Some(ref img) = self.img {
-            let rect = self.id.get_content_rect_local();
-            cx.draw_img(
-                floem_renderer::Img {
-                    img: img.clone(),
-                    hash: self.img_hash.as_ref().unwrap(),
-                },
-                rect,
-            );
+        let content_rect = self.id.get_content_rect_local();
+        let dest_rect = self.object_fit_dest_rect(content_rect);
+
+        if self.needs_clip() {
+            cx.clip(&content_rect);
         }
+
+        cx.draw_img(
+            floem_renderer::Img {
+                img: self.img.clone(),
+                hash: &self.img_hash,
+            },
+            dest_rect,
+        );
+        if self.needs_clip() {
+            cx.clear_clip();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::view::MeasureCx;
+
+    fn run_measure(
+        width: u32,
+        height: u32,
+        object_fit: ObjectFit,
+        known: taffy::Size<Option<f32>>,
+        available: taffy::Size<taffy::AvailableSpace>,
+    ) -> taffy::Size<f32> {
+        let layout_data = Rc::new(RefCell::new(ImageLayoutData::new(width, height)));
+        let mut measure = ImageLayoutData::create_taffy_layout_fn(layout_data, object_fit);
+        let mut tree = taffy::TaffyTree::<()>::new();
+        let node_id = tree.new_leaf(taffy::Style::default()).unwrap();
+        let mut measure_ctx = MeasureCx::default();
+
+        measure(
+            known,
+            available,
+            node_id,
+            &taffy::Style::default(),
+            &mut measure_ctx,
+        )
+    }
+
+    fn assert_close(actual: f32, expected: f32) {
+        let epsilon = 0.01f64;
+        assert!((actual as f64 - expected as f64).abs() < epsilon);
+    }
+
+    #[test]
+    fn img_object_fit_fill_uses_natural_size_without_explicit_dimensions() {
+        let result = run_measure(
+            4,
+            3,
+            ObjectFit::Fill,
+            taffy::Size {
+                width: None,
+                height: None,
+            },
+            taffy::Size {
+                width: taffy::AvailableSpace::Definite(300.0),
+                height: taffy::AvailableSpace::Definite(200.0),
+            },
+        );
+        assert_close(result.width, 4.0);
+        assert_close(result.height, 3.0);
+    }
+
+    #[test]
+    fn img_object_fit_contain_uses_natural_size_without_explicit_dimensions() {
+        let result = run_measure(
+            4,
+            3,
+            ObjectFit::Contain,
+            taffy::Size {
+                width: None,
+                height: None,
+            },
+            taffy::Size {
+                width: taffy::AvailableSpace::Definite(100.0),
+                height: taffy::AvailableSpace::Definite(300.0),
+            },
+        );
+        assert_close(result.width, 4.0);
+        assert_close(result.height, 3.0);
+    }
+
+    #[test]
+    fn img_object_fit_cover_uses_natural_size_without_explicit_dimensions() {
+        let result = run_measure(
+            4,
+            3,
+            ObjectFit::Cover,
+            taffy::Size {
+                width: None,
+                height: None,
+            },
+            taffy::Size {
+                width: taffy::AvailableSpace::Definite(300.0),
+                height: taffy::AvailableSpace::Definite(300.0),
+            },
+        );
+        assert_close(result.width, 4.0);
+        assert_close(result.height, 3.0);
+    }
+
+    #[test]
+    fn img_object_fit_scale_down_never_scales_above_natural() {
+        let result = run_measure(
+            120,
+            80,
+            ObjectFit::ScaleDown,
+            taffy::Size {
+                width: None,
+                height: None,
+            },
+            taffy::Size {
+                width: taffy::AvailableSpace::Definite(2.0),
+                height: taffy::AvailableSpace::Definite(2.0),
+            },
+        );
+        assert_close(result.width, 120.0);
+        assert_close(result.height, 80.0);
+    }
+
+    #[test]
+    fn img_explicit_width_keeps_aspect_ratio_without_height() {
+        let result = run_measure(
+            4,
+            3,
+            ObjectFit::Contain,
+            taffy::Size {
+                width: Some(100.0),
+                height: None,
+            },
+            taffy::Size {
+                width: taffy::AvailableSpace::MaxContent,
+                height: taffy::AvailableSpace::MaxContent,
+            },
+        );
+        assert_close(result.width, 100.0);
+        assert_close(result.height, 75.0);
+    }
+
+    #[test]
+    fn img_explicit_dimensions_override_object_fit() {
+        let result = run_measure(
+            4,
+            300,
+            ObjectFit::Fill,
+            taffy::Size {
+                width: Some(200.0),
+                height: Some(60.0),
+            },
+            taffy::Size {
+                width: taffy::AvailableSpace::Definite(1000.0),
+                height: taffy::AvailableSpace::Definite(1000.0),
+            },
+        );
+        assert_close(result.width, 200.0);
+        assert_close(result.height, 60.0);
     }
 }

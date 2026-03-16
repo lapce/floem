@@ -1,3 +1,5 @@
+use std::{cell::RefCell, rc::Rc};
+
 use floem_reactive::Effect;
 use floem_renderer::{
     Renderer,
@@ -13,8 +15,8 @@ use crate::{
     prop, prop_extractor,
     style::{Style, TextColor},
     style_class,
-    view::View,
     view::ViewId,
+    view::{LayoutNodeCx, MeasureFn, View},
 };
 
 use super::Decorators;
@@ -28,6 +30,111 @@ prop_extractor! {
     }
 }
 
+#[derive(Clone)]
+struct SvgLayoutData {
+    natural_width: f32,
+    natural_height: f32,
+}
+
+impl SvgLayoutData {
+    fn new() -> Self {
+        Self {
+            natural_width: 0.0,
+            natural_height: 0.0,
+        }
+    }
+
+    fn set_size(&mut self, width: f32, height: f32) {
+        self.natural_width = width;
+        self.natural_height = height;
+    }
+
+    fn aspect_ratio(&self) -> f32 {
+        if self.natural_height == 0.0 {
+            1.0
+        } else {
+            self.natural_width / self.natural_height
+        }
+    }
+
+    fn create_taffy_layout_fn(layout_data: Rc<RefCell<Self>>) -> Box<MeasureFn> {
+        Box::new(
+            move |known_dimensions, available_space, _node_id, style, _measure_ctx| {
+                use taffy::*;
+
+                let data = layout_data.borrow();
+                let natural_width = data.natural_width;
+                let natural_height = data.natural_height;
+                let natural_aspect_ratio = data.aspect_ratio();
+                let explicit_aspect_ratio = style
+                    .aspect_ratio
+                    .filter(|ratio| ratio.is_finite() && *ratio > 0.0)
+                    .unwrap_or(natural_aspect_ratio);
+
+                if let (Some(width), Some(height)) =
+                    (known_dimensions.width, known_dimensions.height)
+                {
+                    return Size { width, height };
+                }
+
+                if let Some(width) = known_dimensions.width {
+                    let height = known_dimensions
+                        .height
+                        .unwrap_or_else(|| width / explicit_aspect_ratio);
+                    return Size { width, height };
+                }
+
+                if let Some(height) = known_dimensions.height {
+                    let width = if explicit_aspect_ratio == 0.0 {
+                        0.0
+                    } else {
+                        height * explicit_aspect_ratio
+                    };
+                    return Size { width, height };
+                }
+
+                if natural_width > 0.0 && natural_height > 0.0 {
+                    return Size {
+                        width: natural_width,
+                        height: natural_height,
+                    };
+                }
+
+                match (available_space.width, available_space.height) {
+                    (AvailableSpace::Definite(width), _) => Size {
+                        width: if natural_width == 0.0 {
+                            width
+                        } else {
+                            natural_width
+                        },
+                        height: if natural_width > 0.0 && explicit_aspect_ratio > 0.0 {
+                            natural_width / explicit_aspect_ratio
+                        } else {
+                            0.0
+                        },
+                    },
+                    (_, AvailableSpace::Definite(height)) => Size {
+                        width: if natural_height > 0.0 && explicit_aspect_ratio > 0.0 {
+                            height * explicit_aspect_ratio
+                        } else {
+                            0.0
+                        },
+                        height: if natural_height == 0.0 {
+                            height
+                        } else {
+                            natural_height
+                        },
+                    },
+                    _ => Size {
+                        width: natural_width,
+                        height: natural_height,
+                    },
+                }
+            },
+        )
+    }
+}
+
 pub struct Svg {
     id: ViewId,
     svg_tree: Option<Tree>,
@@ -37,6 +144,7 @@ pub struct Svg {
     svg_css: Option<String>,
     css_prop: Option<Box<dyn SvgCssPropExtractor>>,
     aspect_ratio: f32,
+    layout_data: Rc<RefCell<SvgLayoutData>>,
 }
 
 style_class!(pub SvgClass);
@@ -108,7 +216,8 @@ pub fn svg(svg_str_fn: impl Into<SvgStrFn> + 'static) -> Svg {
         let new_svg_str = (svg_str_fn.str_fn)();
         id.update_state(SvgOrStyle::Svg(new_svg_str));
     });
-    Svg {
+    let layout_data = Rc::new(RefCell::new(SvgLayoutData::new()));
+    let mut svg = Svg {
         id,
         svg_tree: None,
         svg_hash: None,
@@ -117,8 +226,25 @@ pub fn svg(svg_str_fn: impl Into<SvgStrFn> + 'static) -> Svg {
         css_prop: None,
         svg_css: None,
         aspect_ratio: 1.,
+        layout_data,
+    };
+    svg.set_taffy_layout();
+    svg.class(SvgClass)
+}
+
+impl Svg {
+    fn set_taffy_layout(&mut self) {
+        let taffy_node = self.id.taffy_node();
+        let taffy = self.id.taffy();
+        let layout_fn = SvgLayoutData::create_taffy_layout_fn(self.layout_data.clone());
+        let _ = taffy.borrow_mut().set_node_context(
+            taffy_node,
+            Some(LayoutNodeCx::Custom {
+                measure: layout_fn,
+                finalize: None,
+            }),
+        );
     }
-    .class(SvgClass)
 }
 
 impl View for Svg {
@@ -156,24 +282,45 @@ impl View for Svg {
     fn update(&mut self, _cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(state) = state.downcast::<SvgOrStyle>() {
             let (text, style) = match *state {
-                SvgOrStyle::Svg(text) => {
-                    self.svg_string = text;
-                    (&self.svg_string, self.svg_css.clone())
-                }
-                SvgOrStyle::Style(css) => {
-                    self.svg_css = Some(css);
-                    (&self.svg_string, self.svg_css.clone())
-                }
+                SvgOrStyle::Svg(text) => (text, self.svg_css.clone()),
+                SvgOrStyle::Style(css) => (self.svg_string.clone(), Some(css)),
             };
 
-            self.svg_tree = Tree::from_str(
-                text,
+            if text == self.svg_string && style == self.svg_css {
+                return;
+            }
+
+            self.svg_string = text.clone();
+            self.svg_css = style.clone();
+
+            let svg_tree = Tree::from_str(
+                text.as_str(),
                 &usvg::Options {
                     style_sheet: style,
                     ..Default::default()
                 },
             )
             .ok();
+            {
+                let mut layout_data = self.layout_data.borrow_mut();
+                if let Some(tree) = svg_tree.as_ref() {
+                    let size = tree.size();
+                    layout_data.set_size(size.width(), size.height());
+                } else {
+                    layout_data.set_size(0.0, 0.0);
+                }
+            }
+            self.aspect_ratio = svg_tree.as_ref().map_or(f32::NAN, |tree| {
+                let size = tree.size();
+                let width = size.width();
+                let height = size.height();
+                if height == 0.0 {
+                    f32::NAN
+                } else {
+                    width / height
+                }
+            });
+            self.svg_tree = svg_tree;
 
             let mut hasher = Sha256::new();
             hasher.update(text);

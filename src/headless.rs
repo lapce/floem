@@ -21,9 +21,11 @@
 //! let result = harness.pointer_down(50.0, 50.0);
 //! ```
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use peniko::kurbo::{Point, Size};
 
-use crate::ElementId;
 use crate::context::InteractionState;
 use crate::event::Event;
 use crate::event::path::hit_test;
@@ -34,6 +36,7 @@ use crate::style::{Style, StyleSelector};
 use crate::view::IntoView;
 use crate::view::ViewId;
 use crate::window::handle::{WindowHandle, set_current_view};
+use crate::{ElementId, View};
 
 /// A test root that owns a root ViewId and sets it as the current view.
 ///
@@ -463,6 +466,10 @@ impl HeadlessHarness {
     /// Get the size of a view from its layout.
     pub fn get_size(&self, id: ViewId) -> Option<Size> {
         id.get_size()
+    }
+
+    pub fn get_view(&self, id: ViewId) -> Rc<RefCell<Box<dyn View + 'static>>> {
+        id.view()
     }
 
     /// Get the content rectangle for a view (excluding padding/borders).
