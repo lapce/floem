@@ -384,6 +384,10 @@ impl TextEditor {
         self.editor.doc()
     }
 
+    pub fn try_doc(&self) -> Option<Rc<dyn Document>> {
+        self.editor.try_doc()
+    }
+
     /// Try downcasting the document to a [`TextDocument`].
     /// Returns `None` if the document is not a [`TextDocument`].
     fn text_doc(&self) -> Option<Rc<TextDocument>> {

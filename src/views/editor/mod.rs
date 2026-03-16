@@ -323,6 +323,10 @@ impl Editor {
         self.doc.get_untracked()
     }
 
+    pub fn try_doc(&self) -> Option<Rc<dyn Document>> {
+        self.doc.try_get_untracked()
+    }
+
     pub fn doc_track(&self) -> Rc<dyn Document> {
         self.doc.get()
     }
