@@ -6,7 +6,6 @@ use floem::{
     new_window,
     peniko::Color,
     prelude::*,
-    style::Style,
     text::Alignment,
     theme::StyleThemeExt,
     view::ViewId,
@@ -218,10 +217,10 @@ impl Spot {
                 s.width_full()
                     .padding(18.0)
                     .row_gap(12.0)
+                    .border(1.0)
                     .with_theme(|s, t| {
                         s.border_radius(t.border_radius())
                             .background(t.bg_elevated())
-                            .apply(Style::new().border(1.0))
                             .border_color(t.border())
                     })
             })
@@ -279,11 +278,11 @@ impl Spot {
                     .row_gap(14.0)
                     .padding(22.0)
                     .max_width(400)
+                    .border(1.0)
                     .with_theme(move |s, t| {
                         let semantic = t.def(move |theme| result.color(&theme));
                         s.border_radius(t.border_radius())
                             .background(t.bg_elevated())
-                            .apply(Style::new().border(1.0))
                             .border_color(semantic.map(|color| color.with_alpha(0.3)))
                     })
             })
@@ -722,12 +721,14 @@ fn home_screen() -> impl IntoView {
     let hero = (hero_title, hero_subtitle, hero_dots)
         .v_stack()
         .style(|s| {
-            s.padding(22.0).row_gap(10.0).with_theme(|s, t| {
-                s.border_radius(t.border_radius())
-                    .background(t.bg_elevated())
-                    .apply(Style::new().border(1.0))
-                    .border_color(t.border())
-            })
+            s.padding(22.0)
+                .row_gap(10.0)
+                .border(1.0)
+                .with_theme(|s, t| {
+                    s.border_radius(t.border_radius())
+                        .background(t.bg_elevated())
+                        .border_color(t.border())
+                })
         })
         .debug_name("hero");
 
@@ -763,10 +764,10 @@ fn floating_action_button() -> impl IntoView {
                 .font_size(16.0)
                 .font_bold()
                 .justify_center()
+                .border_radius(999.0)
+                .border(1.0)
                 .with_theme(|s, t| {
-                    s.apply(Style::new().border_radius(999.0))
-                        .background(t.def(|theme| theme.bg_elevated().with_alpha(0.96)))
-                        .apply(Style::new().border(1.0))
+                    s.background(t.def(|theme| theme.bg_elevated().with_alpha(0.96)))
                         .border_color(t.border())
                         .color(t.primary())
                 })
@@ -819,10 +820,10 @@ fn quick_action_sheet(button_id: ViewId) -> impl IntoView {
                 .padding(18.0)
                 .row_gap(10.0)
                 .keyboard_navigable()
+                .border(1.0)
                 .with_theme(|s, t| {
                     s.border_radius(t.border_radius())
                         .background(t.bg_elevated())
-                        .apply(Style::new().border(1.0))
                         .border_color(t.border())
                 })
         })

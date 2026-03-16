@@ -27,7 +27,7 @@ use crate::{
         BorderTopRightRadius, CustomStylable, CustomStyle, OverflowX, OverflowY, Style, StyleClass,
     },
     style_class,
-    unit::{Px, PxPct},
+    unit::{Length, Pt},
     view::{IntoView, View},
 };
 use crate::{ViewId, custom_event};
@@ -198,8 +198,8 @@ impl ScrollHandle {
         let content_size_val = content_size.get_coord(self.axis);
         let full_rect_size = full_rect.size().get_coord(self.axis);
 
-        // No scrollbar if content fits in viewport
-        if viewport_size >= (content_size_val - f64::EPSILON) {
+        // Hide the scrollbar unless content exceeds the viewport by more than 1px.
+        if content_size_val <= viewport_size + 1.0 {
             // Hide the handle
             self.box_tree
                 .borrow_mut()
@@ -263,20 +263,24 @@ impl ScrollHandle {
             let border_radius = self.style.border_radius();
             RoundedRectRadii {
                 top_left: crate::view::border_radius(
-                    border_radius.top_left.unwrap_or(PxPct::Px(0.)),
+                    border_radius.top_left.unwrap_or(Length::Pt(0.)),
                     size,
+                    &cx.font_size_cx,
                 ),
                 top_right: crate::view::border_radius(
-                    border_radius.top_right.unwrap_or(PxPct::Px(0.)),
+                    border_radius.top_right.unwrap_or(Length::Pt(0.)),
                     size,
+                    &cx.font_size_cx,
                 ),
                 bottom_left: crate::view::border_radius(
-                    border_radius.bottom_left.unwrap_or(PxPct::Px(0.)),
+                    border_radius.bottom_left.unwrap_or(Length::Pt(0.)),
                     size,
+                    &cx.font_size_cx,
                 ),
                 bottom_right: crate::view::border_radius(
-                    border_radius.bottom_right.unwrap_or(PxPct::Px(0.)),
+                    border_radius.bottom_right.unwrap_or(Length::Pt(0.)),
                     size,
+                    &cx.font_size_cx,
                 ),
             }
         };
@@ -287,7 +291,7 @@ impl ScrollHandle {
 
         cx.fill(
             &rounded_rect,
-            &self.style.color().unwrap_or(HANDLE_COLOR),
+            &self.style.background().unwrap_or(HANDLE_COLOR),
             0.0,
         );
 
@@ -398,8 +402,8 @@ impl ScrollTrack {
         let viewport_size = viewport.size().get_coord(self.axis);
         let content_size_val = content_size.get_coord(self.axis);
 
-        // No scrollbar if content fits in viewport
-        if viewport_size >= (content_size_val - f64::EPSILON) {
+        // Hide the scrollbar unless content exceeds the viewport by more than 1px.
+        if content_size_val <= viewport_size + 1.0 {
             // Hide the track
             self.box_tree
                 .borrow_mut()
@@ -436,7 +440,7 @@ impl ScrollTrack {
         let box_tree = self.box_tree.borrow();
         let rect = box_tree.local_bounds(self.element_id.0).unwrap_or_default();
 
-        if let Some(color) = self.style.color() {
+        if let Some(color) = self.style.background() {
             cx.fill(&rect, &color, 0.0);
         }
     }
@@ -457,12 +461,12 @@ prop!(
 );
 prop!(
     /// Defines the border width of a scroll track in pixels.
-    pub Border: Px {} = Px(0.0)
+    pub Border: Pt {} = Pt(0.0)
 );
 
 prop_extractor! {
     ScrollTrackStyle {
-        color: Background,
+        background: Background,
         border_top_left_radius: BorderTopLeftRadius,
         border_top_right_radius: BorderTopRightRadius,
         border_bottom_left_radius: BorderBottomLeftRadius,
@@ -498,12 +502,12 @@ impl ScrollTrackStyle {
 
 prop!(
     /// Specifies the vertical inset of the scrollable area in pixels.
-    pub VerticalInset: Px {} = Px(0.0)
+    pub VerticalInset: Pt {} = Pt(0.0)
 );
 
 prop!(
     /// Defines the horizontal inset of the scrollable area in pixels.
-    pub HorizontalInset: Px {} = Px(0.0)
+    pub HorizontalInset: Pt {} = Pt(0.0)
 );
 
 prop!(
@@ -1124,7 +1128,7 @@ impl ScrollCustomStyle {
     }
 
     /// Sets the border radius for the handle.
-    pub fn handle_border_radius(mut self, border_radius: impl Into<PxPct>) -> Self {
+    pub fn handle_border_radius(mut self, border_radius: impl Into<Length>) -> Self {
         self = Self(self.0.class(Handle, |s| s.border_radius(border_radius)));
         self
     }
@@ -1136,7 +1140,7 @@ impl ScrollCustomStyle {
     }
 
     /// Sets the border thickness for the handle.
-    pub fn handle_border(mut self, border: impl Into<Px>) -> Self {
+    pub fn handle_border(mut self, border: impl Into<Pt>) -> Self {
         self = Self(self.0.class(Handle, |s| s.set(Border, border)));
         self
     }
@@ -1154,7 +1158,7 @@ impl ScrollCustomStyle {
     }
 
     /// Sets the border radius for the track.
-    pub fn track_border_radius(mut self, border_radius: impl Into<PxPct>) -> Self {
+    pub fn track_border_radius(mut self, border_radius: impl Into<Length>) -> Self {
         self = Self(self.0.class(Track, |s| s.border_radius(border_radius)));
         self
     }
@@ -1166,7 +1170,7 @@ impl ScrollCustomStyle {
     }
 
     /// Sets the border thickness for the track.
-    pub fn track_border(mut self, border: impl Into<Px>) -> Self {
+    pub fn track_border(mut self, border: impl Into<Pt>) -> Self {
         self = Self(self.0.class(Track, |s| s.set(Border, border)));
         self
     }
@@ -1178,13 +1182,13 @@ impl ScrollCustomStyle {
     }
 
     /// Sets the vertical track inset.
-    pub fn vertical_track_inset(mut self, inset: impl Into<Px>) -> Self {
+    pub fn vertical_track_inset(mut self, inset: impl Into<Pt>) -> Self {
         self = Self(self.0.set(VerticalInset, inset));
         self
     }
 
     /// Sets the horizontal track inset.
-    pub fn horizontal_track_inset(mut self, inset: impl Into<Px>) -> Self {
+    pub fn horizontal_track_inset(mut self, inset: impl Into<Pt>) -> Self {
         self = Self(self.0.set(HorizontalInset, inset));
         self
     }

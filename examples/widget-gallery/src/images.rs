@@ -17,20 +17,20 @@ pub fn img_view() -> impl IntoView {
         ),
         form_item(
             "PNG(resized):",
-            img(move || ferris_png.to_vec()).style(|s| s.width(230.px()).height(153.px())),
+            img(move || ferris_png.to_vec()).style(|s| s.width(230.pt()).height(153.pt())),
         ),
         form_item(
             "SVG(from file):",
-            svg(ferris_svg).style(|s| s.unset_color().width(230.px()).height(153.px())),
+            svg(ferris_svg).style(|s| s.unset_color().width(230.pt()).height(153.pt())),
         ),
         form_item(
             "SVG(from string):",
-            svg(svg_str).style(|s| s.width(100.px()).height(100.px())),
+            svg(svg_str).style(|s| s.width(100.pt()).height(100.pt())),
         ),
         form_item("JPG:", img(move || sunflower.to_vec())),
         form_item(
             "JPG(resized):",
-            img(move || sunflower.to_vec()).style(|s| s.width(320.px()).height(490.px())),
+            img(move || sunflower.to_vec()).style(|s| s.width(320.pt()).height(490.pt())),
         ),
         //TODO: support percentages for width/height
         //     img(move || ferris_png.to_vec()).style(|s| s.width(90.pct()).height(90.pct()))

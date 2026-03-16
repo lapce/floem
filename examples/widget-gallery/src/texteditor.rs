@@ -67,7 +67,7 @@ pub fn editor_view() -> impl IntoView {
     ))
     .style(|s| {
         s.size(100.pct(), 50.pct())
-            .min_size(300, 500)
+            .min_size(300, 800)
             .flex_col()
             .gap(10)
             .items_center()

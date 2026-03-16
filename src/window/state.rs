@@ -853,7 +853,6 @@ impl WindowState {
                 box_tree,
                 self.root_layout_node,
                 Vec2::ZERO, // parent_scroll - root has no parent scroll
-                Vec2::ZERO, // parent_scroll_ctx - root has no accumulated scroll
             );
         });
         // Clear pending individual updates since the full tree walk handled everything
@@ -877,26 +876,20 @@ impl WindowState {
 
                 if let Some(layout) = layout {
                     // Get parent's scroll offset and scroll_ctx
-                    let (parent_scroll, parent_scroll_ctx) =
+                    let parent_scroll =
                         if let Some(parent_id) = s.parent.get(view_id).and_then(|p| *p) {
                             s.states
                                 .get(parent_id)
                                 .map(|p| {
                                     let p = p.borrow();
-                                    (p.child_translation, p.scroll_cx)
+                                    p.child_translation
                                 })
-                                .unwrap_or((Vec2::ZERO, Vec2::ZERO))
+                                .unwrap_or(Vec2::ZERO)
                         } else {
-                            (Vec2::ZERO, Vec2::ZERO)
+                            Vec2::ZERO
                         };
 
-                    let props = compute_view_box_properties(
-                        s,
-                        view_id,
-                        layout,
-                        parent_scroll,
-                        parent_scroll_ctx,
-                    );
+                    let props = compute_view_box_properties(s, view_id, layout, parent_scroll);
 
                     // Update box tree
                     let mut box_tree = self.box_tree.borrow_mut();
@@ -1002,6 +995,7 @@ impl WindowState {
         self.apply_fixed_positioning_transforms();
 
         let damage = self.box_tree.borrow_mut().commit();
+
         let pointer = self.last_pointer;
         for damage_rect in &damage.dirty_rects {
             if damage_rect.contains(pointer.0) {
@@ -1054,6 +1048,7 @@ impl WindowState {
                         let overlay_element_id = overlay_state_borrow.element_id;
                         let overlay_layout_id = overlay_state_borrow.layout_id;
                         let overlay_transform = overlay_state_borrow.transform;
+                        let font_size_cx = overlay_state_borrow.layout_props.font_size_cx();
                         let style_transform_props =
                             overlay_state_borrow.view_transform_props.clone();
                         drop(overlay_state_borrow);
@@ -1075,7 +1070,7 @@ impl WindowState {
                         let local_pos =
                             Point::new(layout.location.x as f64, layout.location.y as f64);
 
-                        let style_transform = style_transform_props.affine(size);
+                        let style_transform = style_transform_props.affine(size, &font_size_cx);
                         let view_local_transform = style_transform * overlay_transform;
                         let base_local_transform = Affine::translate(-parent_scroll)
                             * Affine::translate(local_pos.to_vec2())
@@ -1117,7 +1112,6 @@ impl WindowState {
                 .filter_map(|&view_id| {
                     let state = s.states.get(view_id)?;
                     let state_borrow = state.borrow();
-                    let builtin = state_borrow.combined_style.builtin();
                     let element_id = state_borrow.element_id;
                     let local_bounds = self
                         .box_tree
@@ -1126,26 +1120,48 @@ impl WindowState {
                         .unwrap_or_default();
 
                     let mut pos = Point::new(0.0, 0.0);
+                    let font_size_cx = state_borrow.layout_props.font_size_cx();
+                    let layout_props = &state_borrow.layout_props;
 
                     if let (Some(left), Some(_)) = (
-                        builtin.inset_left().resolve(root_size.width),
-                        builtin.inset_right().resolve(root_size.width),
+                        layout_props
+                            .inset_left()
+                            .resolve(root_size.width, &font_size_cx),
+                        layout_props
+                            .inset_right()
+                            .resolve(root_size.width, &font_size_cx),
                     ) {
                         pos.x = left;
-                    } else if let Some(left) = builtin.inset_left().resolve(root_size.width) {
+                    } else if let Some(left) = layout_props
+                        .inset_left()
+                        .resolve(root_size.width, &font_size_cx)
+                    {
                         pos.x = left;
-                    } else if let Some(right) = builtin.inset_right().resolve(root_size.width) {
+                    } else if let Some(right) = layout_props
+                        .inset_right()
+                        .resolve(root_size.width, &font_size_cx)
+                    {
                         pos.x = root_size.width - right - local_bounds.width();
                     }
 
                     if let (Some(top), Some(_)) = (
-                        builtin.inset_top().resolve(root_size.height),
-                        builtin.inset_bottom().resolve(root_size.height),
+                        layout_props
+                            .inset_top()
+                            .resolve(root_size.height, &font_size_cx),
+                        layout_props
+                            .inset_bottom()
+                            .resolve(root_size.height, &font_size_cx),
                     ) {
                         pos.y = top;
-                    } else if let Some(top) = builtin.inset_top().resolve(root_size.height) {
+                    } else if let Some(top) = layout_props
+                        .inset_top()
+                        .resolve(root_size.height, &font_size_cx)
+                    {
                         pos.y = top;
-                    } else if let Some(bottom) = builtin.inset_bottom().resolve(root_size.height) {
+                    } else if let Some(bottom) = layout_props
+                        .inset_bottom()
+                        .resolve(root_size.height, &font_size_cx)
+                    {
                         pos.y = root_size.height - bottom - local_bounds.height();
                     }
 
@@ -1369,7 +1385,6 @@ struct ViewBoxProperties {
     local_rect: Rect,
     local_transform: Affine,
     scroll_offset: Vec2,
-    scroll_ctx: Vec2,
     clip: Option<RoundedRect>,
 }
 
@@ -1379,7 +1394,6 @@ fn compute_view_box_properties(
     view_id: ViewId,
     layout: taffy::Layout,
     parent_scroll: Vec2,
-    parent_scroll_ctx: Vec2,
 ) -> ViewBoxProperties {
     let size = Size::new(layout.size.width as f64, layout.size.height as f64);
     let local_rect = Rect::from_origin_size(Point::ZERO, size);
@@ -1388,20 +1402,18 @@ fn compute_view_box_properties(
     let state = s.states.get(view_id).unwrap();
     let state_borrow = state.borrow();
 
-    let style_transform = state_borrow.view_transform_props.affine(size);
+    let font_size_cx = state_borrow.layout_props.font_size_cx();
+    let style_transform = state_borrow
+        .view_transform_props
+        .affine(size, &font_size_cx);
     let view_local_transform = style_transform * state_borrow.transform;
     let scroll_offset = state_borrow.child_translation;
-    let clip = state_borrow.view_transform_props.clip_rect(local_rect);
+    let clip = state_borrow
+        .view_transform_props
+        .clip_rect(local_rect, &font_size_cx);
     let element_id = state_borrow.element_id;
 
     drop(state_borrow);
-
-    // Compute scroll context
-    let scroll_ctx = if parent_scroll != Vec2::ZERO {
-        parent_scroll_ctx + parent_scroll
-    } else {
-        parent_scroll_ctx
-    };
 
     // Compute local transform
     let parent_transform_for_children = Affine::translate(-parent_scroll);
@@ -1409,20 +1421,11 @@ fn compute_view_box_properties(
         * Affine::translate(local_pos.to_vec2())
         * view_local_transform;
 
-    // Compute layout window origin (position in window coordinates after scrolling)
-    let layout_window_origin = Point::new(local_pos.x - scroll_ctx.x, local_pos.y - scroll_ctx.y);
-
-    // Update state
-    let mut state_mut = state.borrow_mut();
-    state_mut.scroll_cx = scroll_ctx;
-    state_mut.layout_window_origin = layout_window_origin;
-
     ViewBoxProperties {
         element_id,
         local_rect,
         local_transform,
         scroll_offset,
-        scroll_ctx,
         clip,
     }
 }
@@ -1433,7 +1436,6 @@ fn compute_absolute_transforms_and_boxes(
     box_tree: Rc<RefCell<BoxTree>>,
     node: NodeId,
     parent_scroll: Vec2,
-    parent_scroll_ctx: Vec2,
 ) {
     let taffy = layout_tree.borrow();
     let layout = *taffy.layout(node).unwrap();
@@ -1441,8 +1443,7 @@ fn compute_absolute_transforms_and_boxes(
     drop(taffy);
 
     if let Some(&view_id) = s.taffy_to_view.get(&node) {
-        let props =
-            compute_view_box_properties(s, view_id, layout, parent_scroll, parent_scroll_ctx);
+        let props = compute_view_box_properties(s, view_id, layout, parent_scroll);
 
         // Update box tree
         {
@@ -1461,7 +1462,6 @@ fn compute_absolute_transforms_and_boxes(
                     box_tree.clone(),
                     child,
                     props.scroll_offset,
-                    props.scroll_ctx,
                 );
             }
         }
@@ -1475,7 +1475,6 @@ fn compute_absolute_transforms_and_boxes(
                     box_tree.clone(),
                     child,
                     parent_scroll,
-                    parent_scroll_ctx,
                 );
             }
         }

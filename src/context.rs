@@ -2,11 +2,13 @@ use peniko::kurbo::{Affine, Point, Rect};
 use smallvec::SmallVec;
 use std::{cell::RefCell, rc::Rc};
 
-use crate::event::Phase;
-use crate::platform::menu::Menu;
-use crate::style::recalc::StyleReason;
-use crate::{ElementId, custom_event};
-use crate::{event::EventPropagation, view::ViewId};
+use crate::{
+    ElementId, custom_event,
+    event::{EventPropagation, Phase},
+    platform::menu::Menu,
+    style::recalc::StyleReason,
+    view::ViewId,
+};
 
 pub type EventCallback = dyn FnMut(&mut EventCx) -> EventPropagation;
 pub type ResizeCallback = dyn Fn(Rect);
@@ -151,7 +153,8 @@ pub struct LayoutChanged {
     pub new_content_box: Rect,
     /// The position of the layout box's origin in window coordinates (box layout position, NOT visual position)
     ///
-    /// **WARNING**: This does not include transforms. Use `VisualChanged` for actual rendered position.
+    /// **WARNING**: This does point is not the final vistual position of the view because it intentionally does not include transforms.
+    /// Use `VisualChanged` for actual rendered position.
     pub new_window_origin: Point,
 }
 custom_event!(LayoutChanged, allow_disabled = |_event| true);

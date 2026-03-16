@@ -95,7 +95,7 @@ pub fn tab_view() -> impl IntoView {
             }),
         ))
         .style(|s| {
-            s.height(40.px())
+            s.height(40.pt())
                 .width_full()
                 .border_bottom(1.)
                 .with_theme(|s, t| s.border_color(t.border_muted()))
@@ -104,7 +104,7 @@ pub fn tab_view() -> impl IntoView {
                 .items_center()
                 .align_content(AlignContent::SpaceAround)
         }),
-        Stack::new((tabs_view, tabs_content_view)).style(|s| s.height(400.px()).width(500.px())),
+        Stack::new((tabs_view, tabs_content_view)).style(|s| s.height(400.pt()).width(500.pt())),
     ))
     .style(|s| s.size_full())
     .container()
@@ -122,7 +122,7 @@ fn show_tab_content(tab: TabContent) -> impl IntoView {
         "is now active".style(|s| s.font_size(13.)),
     ))
     .style(|s| {
-        s.size(150.px(), 150.px())
+        s.size(150.pt(), 150.pt())
             .items_center()
             .justify_center()
             .row_gap(10.)
@@ -169,7 +169,7 @@ fn tab_side_item(tab: TabContent, act_tab: RwSignal<Option<usize>>) -> impl Into
         .button()
         .style(move |s| {
             s.width_full()
-                .height(36.px())
+                .height(36.pt())
                 .apply_if(act_tab.get().is_some_and(|a| a == tab.idx), |s| {
                     s.with_theme(|s, t| s.border_color(t.primary()))
                 })

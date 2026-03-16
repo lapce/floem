@@ -13,7 +13,7 @@ use crate::{
     prelude::*,
     style::{FontSize, OverflowX, OverflowY, TextColor, theme::Theme},
     theme::StyleThemeExt as _,
-    unit::PxPctAuto,
+    unit::LengthAuto,
     views::{
         Button, CheckboxClass, ContainerExt, Decorators, Label, ListClass, ListItemClass,
         ScrollExt, Stack, TabSelectorClass, TooltipExt, resizable::Resizable,
@@ -292,14 +292,14 @@ fn capture_view(
             "selected"
                 .style(move |s| {
                     s.apply_if(active_tab.get() == 0, |s| s.set_selected(true))
-                        .margin_left(PxPctAuto::Auto)
+                        .margin_left(LengthAuto::Auto)
                 })
                 .class(TabSelectorClass)
                 .action(move || active_tab.set(0)),
             "stats"
                 .style(move |s| {
                     s.apply_if(active_tab.get() == 1, |s| s.set_selected(true))
-                        .margin_right(PxPctAuto::Auto)
+                        .margin_right(LengthAuto::Auto)
                 })
                 .class(TabSelectorClass)
                 .action(move || active_tab.set(1)),
