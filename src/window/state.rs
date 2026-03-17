@@ -14,20 +14,16 @@ use smallvec::{SmallVec, smallvec};
 use taffy::{AvailableSpace, NodeId};
 use ui_events::pointer::{PointerId, PointerInfo};
 use understory_event_state::{click::ClickState, focus::FocusState, hover::HoverState};
-use understory_focus::{
-    FocusEntry, FocusProps,
-    adapters::box_tree::{FocusPropsLookup, build_focus_space_for_scope},
-};
+use understory_focus::{FocusEntry, FocusSpace};
 use winit::cursor::CursorIcon;
 use winit::window::Theme;
 
 use std::rc::Rc;
 
 use crate::{
-    BoxTree,
+    BoxTree, ElementId,
     action::add_update_message,
     context::FrameUpdate,
-    element_id::ElementId,
     event::{DragTracker, Event, WindowEvent, clear_hit_test_cache},
     layout::responsive::{GridBreakpoints, ScreenSizeBp},
     message::UpdateMessage,
@@ -44,27 +40,59 @@ pub(crate) type PointerCaptureMap = SmallVec<[(PointerId, ElementId); 2]>;
 pub(crate) struct FocusNavCache {
     built: bool,
     meta_revision: u64,
-    adapter_nodes: Vec<FocusEntry<understory_box_tree::NodeId>>,
     entries: SmallVec<[FocusEntry<ElementId>; 128]>,
 }
 
-struct ElementMetaFocusPropsLookup<'a> {
-    tree: &'a BoxTree,
-}
+fn build_focus_space_for_scope<'a>(
+    tree: &BoxTree,
+    scope_root: ElementId,
+    out: &'a mut SmallVec<[FocusEntry<ElementId>; 128]>,
+) -> FocusSpace<'a, ElementId> {
+    out.clear();
 
-impl FocusPropsLookup<understory_box_tree::NodeId> for ElementMetaFocusPropsLookup<'_> {
-    fn props(&self, id: &understory_box_tree::NodeId) -> FocusProps {
-        let Some(meta) = self.tree.element_meta(*id) else {
-            return FocusProps::default();
-        };
-        let focus = meta.focus;
-        FocusProps {
-            enabled: focus.enabled,
-            order: focus.order,
-            group: focus.group,
-            autofocus: focus.autofocus,
-            policy_hint: focus.policy_hint,
+    if !tree.is_alive(scope_root.0) {
+        return FocusSpace { nodes: &[] };
+    }
+
+    // Match the upstream adapter traversal, but take focus policy from
+    // Floem-owned metadata instead of raw box-tree focus flags.
+    let mut stack = vec![(scope_root.0, 0u8)];
+    while let Some((id, depth)) = stack.pop() {
+        if !tree.is_alive(id) {
+            continue;
         }
+
+        if let (Some(flags), Some(bounds), Some(meta)) =
+            (tree.flags(id), tree.world_bounds(id), tree.element_meta(id))
+        {
+            let focus = meta.focus;
+            if flags.contains(understory_box_tree::NodeFlags::VISIBLE)
+                && focus.is_keyboard_navigable()
+                && focus.enabled
+            {
+                out.push(FocusEntry {
+                    id: meta.element_id,
+                    rect: bounds,
+                    order: focus.order,
+                    group: focus.group,
+                    enabled: focus.enabled,
+                    scope_depth: if focus.scope_depth == 0 {
+                        depth
+                    } else {
+                        focus.scope_depth
+                    },
+                });
+            }
+        }
+
+        let next_depth = depth.saturating_add(1);
+        for &child in tree.children_of(id).iter().rev() {
+            stack.push((child, next_depth));
+        }
+    }
+
+    FocusSpace {
+        nodes: out.as_slice(),
     }
 }
 
@@ -264,30 +292,7 @@ impl WindowState {
             self.focus_nav_cache.entries.clear();
             let box_tree = self.box_tree.borrow();
             let root = self.root_view_id.get_element_id();
-            let lookup = ElementMetaFocusPropsLookup { tree: &box_tree };
-            let space = build_focus_space_for_scope(
-                &box_tree,
-                root.0,
-                &lookup,
-                &mut self.focus_nav_cache.adapter_nodes,
-            );
-
-            for node_entry in space.nodes {
-                if let Some(meta) = box_tree.element_meta(node_entry.id) {
-                    self.focus_nav_cache.entries.push(FocusEntry {
-                        id: meta.element_id,
-                        rect: node_entry.rect,
-                        order: node_entry.order,
-                        group: node_entry.group,
-                        enabled: node_entry.enabled,
-                        scope_depth: if meta.focus.scope_depth == 0 {
-                            node_entry.scope_depth
-                        } else {
-                            meta.focus.scope_depth
-                        },
-                    });
-                }
-            }
+            build_focus_space_for_scope(&box_tree, root, &mut self.focus_nav_cache.entries);
 
             self.focus_nav_cache.meta_revision = crate::focus_nav_meta_revision();
             self.focus_nav_cache.built = true;

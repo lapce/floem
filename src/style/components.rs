@@ -776,7 +776,9 @@ impl StylePropValue for BoxShadow {
 ///
 /// Focus determines which element receives keyboard input and is used for accessibility
 /// and keyboard navigation. This enum provides three levels of focus behavior, where
-/// each level includes the capabilities of the previous level.
+/// each level includes the capabilities of the previous level. In particular,
+/// [`Focus::Keyboard`] always implies full focusability for pointer and
+/// programmatic focus too.
 ///
 /// # Focus Sources
 ///

@@ -537,12 +537,13 @@ impl<'a> StyleCx<'a> {
                 // ─────────────────────────────────────────────────────────────────────
                 // Phase 8.2: Update box tree visiblity dependent props  (must happen after visibility phase override)
                 // ─────────────────────────────────────────────────────────────────────
-                let focus_nav_flags_changed;
+                let focus_nav_changed;
                 {
                     let box_tree = view_id.box_tree();
                     let element_id = vs.element_id;
                     let box_tree = &mut box_tree.borrow_mut();
                     let old_flags = box_tree.flags(element_id.0).unwrap_or(NodeFlags::empty());
+                    let old_focus = box_tree.focus_nav_meta(element_id.0).unwrap_or_default();
                     let mut flags = NodeFlags::empty();
                     // need to update this after visibility.
                     if (vs.computed_style.builtin().pointer_events()
@@ -551,30 +552,26 @@ impl<'a> StyleCx<'a> {
                     {
                         flags |= NodeFlags::PICKABLE;
                     }
-                    if vs
-                        .computed_style
-                        .builtin()
-                        .set_focus()
-                        .allows_keyboard_navigation()
-                        && !is_hidden_final
-                        && !self.view_interact_state.is_disabled
-                    {
-                        flags |= NodeFlags::KEYBOARD_NAVIGABLE;
-                    }
-                    if vs.computed_style.builtin().set_focus().is_focusable()
-                        && !is_hidden_final
-                        && !self.view_interact_state.is_disabled
-                    {
-                        flags |= NodeFlags::FOCUSABLE;
-                    }
                     if !is_hidden_final {
                         flags |= NodeFlags::VISIBLE;
                     }
                     if old_flags != flags {
                         box_tree.set_flags(element_id.0, flags);
                     }
-                    let nav_bits = NodeFlags::VISIBLE | NodeFlags::KEYBOARD_NAVIGABLE;
-                    focus_nav_flags_changed = (old_flags & nav_bits) != (flags & nav_bits);
+                    let effective_focus = vs.computed_style.builtin().set_focus();
+                    let focusable = effective_focus.is_focusable()
+                        && !is_hidden_final
+                        && !self.view_interact_state.is_disabled;
+                    let keyboard_navigable = effective_focus.allows_keyboard_navigation()
+                        && !is_hidden_final
+                        && !self.view_interact_state.is_disabled;
+                    let mut new_focus = old_focus;
+                    new_focus.set_focusable(focusable);
+                    new_focus.set_keyboard_navigable(keyboard_navigable);
+                    focus_nav_changed = old_focus != new_focus;
+                    if focus_nav_changed {
+                        box_tree.set_focus_nav_meta(element_id.0, new_focus);
+                    }
 
                     let new_z_index = vs.combined_style.builtin().z_index().unwrap_or(0);
 
@@ -584,7 +581,7 @@ impl<'a> StyleCx<'a> {
                         box_tree.set_z_index(element_id.0, new_z_index);
                     }
                 }
-                if focus_nav_flags_changed {
+                if focus_nav_changed {
                     self.window_state.invalidate_focus_nav_cache();
                 }
                 // ─────────────────────────────────────────────────────────────────────

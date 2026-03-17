@@ -1460,6 +1460,29 @@ impl RouteCx<'_, '_> {
         }
     }
 
+    #[inline]
+    fn is_visible(box_tree: &BoxTree, id: ElementId) -> bool {
+        box_tree
+            .flags(id.0)
+            .is_some_and(|flags| flags.contains(NodeFlags::VISIBLE))
+    }
+
+    #[inline]
+    fn is_effectively_focusable(box_tree: &BoxTree, id: ElementId) -> bool {
+        Self::is_visible(box_tree, id)
+            && box_tree
+                .focus_nav_meta(id.0)
+                .is_some_and(|focus| focus.is_focusable() && focus.enabled)
+    }
+
+    #[inline]
+    fn is_effectively_keyboard_navigable(box_tree: &BoxTree, id: ElementId) -> bool {
+        Self::is_visible(box_tree, id)
+            && box_tree
+                .focus_nav_meta(id.0)
+                .is_some_and(|focus| focus.is_keyboard_navigable() && focus.enabled)
+    }
+
     /// Walk up from `target` to find the first ancestor (or self) that is
     /// visible and focusable (or keyboard-navigable if using keyboard nav).
     fn resolve_focus_targets(
@@ -1467,11 +1490,6 @@ impl RouteCx<'_, '_> {
         target: ElementId,
         keyboard_navigation: bool,
     ) -> SmallVec<[ElementId; 16]> {
-        let required = if keyboard_navigation {
-            NodeFlags::VISIBLE | NodeFlags::KEYBOARD_NAVIGABLE
-        } else {
-            NodeFlags::VISIBLE | NodeFlags::FOCUSABLE
-        };
         let box_tree = self.gcx.window_state.box_tree.borrow();
         let ancestors = || {
             std::iter::successors(Some(target), |&cur| {
@@ -1481,16 +1499,12 @@ impl RouteCx<'_, '_> {
             })
         };
 
-        let focus_target = ancestors().find(|id| {
-            let flags_match = box_tree
-                .flags(id.0)
-                .map(|f| f.contains(required))
-                .unwrap_or(false);
-            let nav_enabled = box_tree
-                .focus_nav_meta(id.0)
-                .map(|m| m.enabled)
-                .unwrap_or(true);
-            flags_match && nav_enabled
+        let focus_target = ancestors().find(|&id| {
+            if keyboard_navigation {
+                Self::is_effectively_keyboard_navigable(&box_tree, id)
+            } else {
+                Self::is_effectively_focusable(&box_tree, id)
+            }
         });
 
         let Some(focus_target) = focus_target else {
@@ -1613,15 +1627,6 @@ impl RouteCx<'_, '_> {
         box_tree: &BoxTree,
         root_element_id: ElementId,
     ) -> ElementId {
-        let is_valid_nav_target = |id: ElementId| {
-            box_tree.flags(id.0).is_some_and(|flags| {
-                flags.contains(NodeFlags::VISIBLE | NodeFlags::KEYBOARD_NAVIGABLE)
-            }) && box_tree
-                .focus_nav_meta(id.0)
-                .map(|m| m.enabled)
-                .unwrap_or(true)
-        };
-
         if let Some(current_focus) = self
             .gcx
             .window_state
@@ -1634,20 +1639,18 @@ impl RouteCx<'_, '_> {
         }
 
         if let Some(last_focused) = self.gcx.window_state.last_focused_element
-            && is_valid_nav_target(last_focused)
+            && Self::is_effectively_keyboard_navigable(box_tree, last_focused)
         {
             return last_focused;
         }
 
         let pointer_point = self.gcx.window_state.last_pointer.0;
         box_tree
-            .hit_test_visual_stack(
-                pointer_point,
-                QueryFilter::new().visible().keyboard_navigable(),
-            )
+            .hit_test_visual_stack(pointer_point, QueryFilter::new().visible())
             .into_iter()
             .rev()
-            .find_map(|node| box_tree.element_id_of(node))
+            .filter_map(|node| box_tree.element_id_of(node))
+            .find(|&id| Self::is_effectively_keyboard_navigable(box_tree, id))
             .unwrap_or(root_element_id)
     }
 
@@ -1679,11 +1682,13 @@ impl RouteCx<'_, '_> {
         rect: Rect,
         out: &mut SmallVec<[FocusEntry<ElementId>; 64]>,
     ) {
-        for node in box_tree.intersect_rect(rect, QueryFilter::new().visible().keyboard_navigable())
-        {
+        for node in box_tree.intersect_rect(rect, QueryFilter::new().visible()) {
             let Some(meta) = box_tree.element_meta(node) else {
                 continue;
             };
+            if !meta.focus.is_keyboard_navigable() || !meta.focus.enabled {
+                continue;
+            }
             let Some(rect) = box_tree.world_bounds(node) else {
                 continue;
             };
@@ -1711,14 +1716,14 @@ impl RouteCx<'_, '_> {
             .copied();
         let non_keyboard_anchor = active_focus.and_then(|current_focus| {
             let box_tree = self.gcx.window_state.box_tree.borrow();
-            let flags = box_tree.flags(current_focus.0)?;
-            if !flags.contains(NodeFlags::VISIBLE | NodeFlags::FOCUSABLE)
-                || flags.contains(NodeFlags::KEYBOARD_NAVIGABLE)
-            {
+            if !Self::is_visible(&box_tree, current_focus) {
                 return None;
             }
             box_tree.element_meta(current_focus.0).and_then(|meta| {
-                if !meta.focus.enabled {
+                if !meta.focus.is_focusable()
+                    || meta.focus.is_keyboard_navigable()
+                    || !meta.focus.enabled
+                {
                     return None;
                 }
                 box_tree
@@ -1868,9 +1873,7 @@ impl RouteCx<'_, '_> {
         if let Some(rect) = directional_rect {
             Self::collect_keyboard_focus_entries_in_rect(&box_tree, rect, &mut entries);
             if !entries.iter().any(|entry| entry.id == current_focus)
-                && box_tree.flags(current_focus.0).is_some_and(|flags| {
-                    flags.contains(NodeFlags::VISIBLE | NodeFlags::KEYBOARD_NAVIGABLE)
-                })
+                && Self::is_effectively_keyboard_navigable(&box_tree, current_focus)
                 && let Some(meta) = box_tree.element_meta(current_focus.0)
                 && let Some(rect) = box_tree.world_bounds(current_focus.0)
             {

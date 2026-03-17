@@ -6387,8 +6387,6 @@ version = "0.1.0"
 source = "git+https://github.com/jrmoulton/understory?rev=3acd6cde8c5c#3acd6cde8c5c642442f14b02d893b7e1068e41eb"
 dependencies = [
  "kurbo",
- "understory_box_tree",
- "understory_index",
 ]
 
 [[package]]

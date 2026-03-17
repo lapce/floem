@@ -509,6 +509,8 @@ fn custom_element_metadata_roundtrip_fields() {
 
     let element = owner_id.create_child_element_id(0);
     let meta = FocusNavMeta {
+        focusable: true,
+        keyboard_navigable: true,
         order: Some(17),
         group: Some(GROUP_X),
         policy_hint: Some(HINT_GRID),
@@ -525,6 +527,8 @@ fn custom_element_metadata_roundtrip_fields() {
     assert_eq!(read.policy_hint, Some(HINT_GRID));
     assert_eq!(read.scope_depth, 3);
     assert!(read.autofocus);
+    assert!(read.focusable);
+    assert!(read.keyboard_navigable);
     assert!(!read.enabled);
 }
 
@@ -551,6 +555,34 @@ fn custom_element_group_and_order_roundtrip() {
         .expect("custom element metadata should exist");
     assert_eq!(read.order, Some(99));
     assert_eq!(read.group, Some(GROUP));
+}
+
+#[test]
+fn element_focus_api_makes_keyboard_navigation_imply_focusable() {
+    let root = TestRoot::new();
+    let owner = Empty::new().style(|s| s.size(200.0, 40.0).focus_none());
+    let owner_id = owner.view_id();
+    let mut harness = HeadlessHarness::new_with_size(root, owner, 200.0, 40.0);
+    harness.rebuild();
+
+    let custom = owner_id.create_child_element_id(0);
+    assert!(owner_id.set_keyboard_navigable_for_element(custom, true));
+
+    let read = owner_id
+        .focus_nav_meta_for_element(custom)
+        .expect("custom element metadata should exist");
+    assert!(read.keyboard_navigable);
+    assert!(read.focusable);
+
+    assert!(owner_id.set_focusable_for_element(custom, false));
+    let read = owner_id
+        .focus_nav_meta_for_element(custom)
+        .expect("custom element metadata should exist");
+    assert!(!read.focusable);
+    assert!(
+        !read.keyboard_navigable,
+        "clearing focusable should also clear keyboard navigation"
+    );
 }
 
 #[test]

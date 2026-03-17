@@ -2727,6 +2727,7 @@ impl Style {
     /// The view can receive focus via Tab/Shift+Tab navigation, arrow keys,
     /// pointer clicks, and programmatic focus calls. This is the recommended
     /// setting for interactive controls like buttons, inputs, and links.
+    /// Keyboard navigable is a strict superset of focusable.
     ///
     /// Equivalent to `focus(Focus::Keyboard)`.
     pub fn keyboard_navigable(self) -> Self {
@@ -2740,6 +2741,8 @@ impl Style {
     /// The view can be clicked to receive focus or focused via `request_focus()`,
     /// but will not be included in Tab order or arrow key navigation. Useful for
     /// scroll containers, modal backdrops, or roving tabindex patterns.
+    /// If you need keyboard traversal, use [Self::keyboard_navigable], which
+    /// also enables focusability automatically.
     ///
     /// Equivalent to `focus(Focus::PointerAndProgrammatic)`.
     pub fn focusable(self) -> Self {

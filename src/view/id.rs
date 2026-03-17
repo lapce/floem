@@ -1326,6 +1326,46 @@ impl ViewId {
         true
     }
 
+    /// Set whether an owned element can receive focus at all.
+    ///
+    /// Clearing focusability also clears keyboard navigation.
+    pub fn set_focusable_for_element(&self, element_id: ElementId, focusable: bool) -> bool {
+        debug_assert_eq!(
+            element_id.owning_id(),
+            *self,
+            "element must be owned by this view"
+        );
+        let box_tree = self.box_tree();
+        let mut box_tree = box_tree.borrow_mut();
+        if !box_tree.set_focusable(element_id.0, focusable) {
+            return false;
+        }
+        crate::bump_focus_nav_meta_revision();
+        true
+    }
+
+    /// Set whether an owned element participates in keyboard traversal.
+    ///
+    /// Enabling keyboard navigation also enables focusability.
+    pub fn set_keyboard_navigable_for_element(
+        &self,
+        element_id: ElementId,
+        keyboard_navigable: bool,
+    ) -> bool {
+        debug_assert_eq!(
+            element_id.owning_id(),
+            *self,
+            "element must be owned by this view"
+        );
+        let box_tree = self.box_tree();
+        let mut box_tree = box_tree.borrow_mut();
+        if !box_tree.set_keyboard_navigable(element_id.0, keyboard_navigable) {
+            return false;
+        }
+        crate::bump_focus_nav_meta_revision();
+        true
+    }
+
     /// Set or clear group membership used by keyboard focus traversal policies.
     pub fn set_focus_group_for_element(
         &self,
