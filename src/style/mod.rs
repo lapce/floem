@@ -194,7 +194,9 @@ pub use unit::{
     AnchorAbout, Angle, Auto, DurationUnitExt, Em, FontSizeCx, Length, LengthAuto, Lh,
     LineHeightValue, Pct, Pt, UnitExt,
 };
-pub use values::{ContextValue, ObjectFit, StrokeWrap, StyleMapValue, StylePropValue, StyleValue};
+pub use values::{
+    ContextValue, ObjectFit, ObjectPosition, StrokeWrap, StyleMapValue, StylePropValue, StyleValue,
+};
 
 pub use cache::{StyleCache, StyleCacheKey};
 
@@ -1971,6 +1973,12 @@ define_builtin_props!(
     /// to fit within its container while potentially preserving its aspect ratio.
     /// Corresponds to the CSS `object-fit` property.
     ObjectFitProp object_fit {}: ObjectFit {} = ObjectFit::Fill,
+
+    /// Controls where replaced content is anchored inside its content box.
+    ///
+    /// This property affects paint-time placement for images and other replaced content.
+    /// Corresponds to common CSS `object-position` keyword combinations.
+    ObjectPositionProp object_position {}: ObjectPosition {} = ObjectPosition::Center,
 
     /// Sets the gap between columns in grid or flex layouts.
     ///

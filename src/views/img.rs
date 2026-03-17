@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     Renderer, prop_extractor,
-    style::ObjectFit,
+    style::{FontSizeCx, ObjectFit, ObjectPosition},
     view::{LayoutNodeCx, MeasureFn, View, ViewId},
 };
 
@@ -96,6 +96,7 @@ impl ImageLayoutData {
 prop_extractor! {
     Extractor {
         object_fit: crate::style::ObjectFitProp,
+        object_position: crate::style::ObjectPositionProp,
     }
 }
 
@@ -255,11 +256,20 @@ impl Img {
     /// following CSS object-fit rules. The returned rect is in local coords
     /// and may be larger than `content_rect` (for Cover) or smaller (for Contain).
     pub fn object_fit_dest_rect(&self, content_rect: Rect) -> Rect {
-        self.object_fit_dest_rect_with(content_rect, self.style.object_fit())
+        self.object_fit_dest_rect_with(
+            content_rect,
+            self.style.object_fit(),
+            self.style.object_position(),
+        )
     }
 
     /// This method is mostly here for tests
-    pub fn object_fit_dest_rect_with(&self, content_rect: Rect, object_fit: ObjectFit) -> Rect {
+    pub fn object_fit_dest_rect_with(
+        &self,
+        content_rect: Rect,
+        object_fit: ObjectFit,
+        object_position: ObjectPosition,
+    ) -> Rect {
         let natural_w = self.img.image.width as f64;
         let natural_h = self.img.image.height as f64;
         if natural_w == 0.0 || natural_h == 0.0 {
@@ -287,8 +297,27 @@ impl Img {
                 (natural_w * scale, natural_h * scale)
             }
         };
-        let x0 = content_rect.x0 + (box_w - rendered_w) / 2.0;
-        let y0 = content_rect.y0 + (box_h - rendered_h) / 2.0;
+        let (x_align, y_align) = match object_position {
+            ObjectPosition::TopLeft => (0.0, 0.0),
+            ObjectPosition::Top => (0.5, 0.0),
+            ObjectPosition::TopRight => (1.0, 0.0),
+            ObjectPosition::Left => (0.0, 0.5),
+            ObjectPosition::Center => (0.5, 0.5),
+            ObjectPosition::Right => (1.0, 0.5),
+            ObjectPosition::BottomLeft => (0.0, 1.0),
+            ObjectPosition::Bottom => (0.5, 1.0),
+            ObjectPosition::BottomRight => (1.0, 1.0),
+            ObjectPosition::Custom(x, y) => {
+                let font_size_cx = FontSizeCx::new(16.0, 16.0);
+                let free_x = box_w - rendered_w;
+                let free_y = box_h - rendered_h;
+                let x0 = content_rect.x0 + x.resolve(free_x, &font_size_cx);
+                let y0 = content_rect.y0 + y.resolve(free_y, &font_size_cx);
+                return Rect::new(x0, y0, x0 + rendered_w, y0 + rendered_h);
+            }
+        };
+        let x0 = content_rect.x0 + (box_w - rendered_w) * x_align;
+        let y0 = content_rect.y0 + (box_h - rendered_h) * y_align;
         Rect::new(x0, y0, x0 + rendered_w, y0 + rendered_h)
     }
 

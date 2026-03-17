@@ -191,6 +191,36 @@ pub enum ObjectFit {
     None,
 }
 
+/// Where the content of a replaced element should be positioned inside its container.
+/// Corresponds to common CSS `object-position` keyword combinations.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum ObjectPosition {
+    /// Align content to the top-left corner.
+    TopLeft,
+    /// Align content to the top edge and center horizontally.
+    Top,
+    /// Align content to the top-right corner.
+    TopRight,
+    /// Align content to the left edge and center vertically.
+    Left,
+    /// Center content both horizontally and vertically.
+    #[default]
+    Center,
+    /// Align content to the right edge and center vertically.
+    Right,
+    /// Align content to the bottom-left corner.
+    BottomLeft,
+    /// Align content to the bottom edge and center horizontally.
+    Bottom,
+    /// Align content to the bottom-right corner.
+    BottomRight,
+    /// Position content using explicit horizontal and vertical offsets.
+    ///
+    /// Percentage values are resolved against the remaining free space on each axis,
+    /// matching CSS object-position behavior.
+    Custom(crate::style::Length, crate::style::Length),
+}
+
 impl StylePropValue for ObjectFit {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         use peniko::kurbo::RoundedRect;
@@ -330,6 +360,146 @@ impl StylePropValue for ObjectFit {
         Some(
             preview
                 .tooltip(tooltip_view)
+                .style(|s| s.items_center())
+                .into_any(),
+        )
+    }
+}
+
+impl StylePropValue for ObjectPosition {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        use peniko::kurbo::{Circle, RoundedRect};
+
+        let object_position = *self;
+        let container_color = RwSignal::new(palette::css::GRAY);
+        let image_color = RwSignal::new(palette::css::BLUE);
+        let marker_color = RwSignal::new(palette::css::RED);
+
+        let preview = canvas(move |cx, size| {
+            let width = size.width;
+            let height = size.height;
+            let padding = 6.0;
+            let container_size = width.min(height) - padding * 2.0;
+            let container_x = (width - container_size) / 2.0;
+            let container_y = (height - container_size) / 2.0;
+            let container_rect = RoundedRect::from_rect(
+                kurbo::Rect::new(
+                    container_x,
+                    container_y,
+                    container_x + container_size,
+                    container_y + container_size,
+                ),
+                2.0,
+            );
+            cx.stroke(
+                &container_rect,
+                container_color.get(),
+                &Stroke {
+                    width: 1.5,
+                    ..Default::default()
+                },
+            );
+
+            let image_w = container_size * 0.55;
+            let image_h = container_size * 0.35;
+            let free_x = container_size - image_w;
+            let free_y = container_size - image_h;
+            let font_size_cx = crate::style::FontSizeCx::new(16.0, 16.0);
+
+            let (offset_x, offset_y) = match object_position {
+                ObjectPosition::TopLeft => (0.0, 0.0),
+                ObjectPosition::Top => (free_x * 0.5, 0.0),
+                ObjectPosition::TopRight => (free_x, 0.0),
+                ObjectPosition::Left => (0.0, free_y * 0.5),
+                ObjectPosition::Center => (free_x * 0.5, free_y * 0.5),
+                ObjectPosition::Right => (free_x, free_y * 0.5),
+                ObjectPosition::BottomLeft => (0.0, free_y),
+                ObjectPosition::Bottom => (free_x * 0.5, free_y),
+                ObjectPosition::BottomRight => (free_x, free_y),
+                ObjectPosition::Custom(x, y) => (
+                    x.resolve(free_x, &font_size_cx),
+                    y.resolve(free_y, &font_size_cx),
+                ),
+            };
+
+            let img_x = container_x + offset_x;
+            let img_y = container_y + offset_y;
+            let img_rect = RoundedRect::from_rect(
+                kurbo::Rect::new(img_x, img_y, img_x + image_w, img_y + image_h),
+                2.0,
+            );
+            cx.fill(&img_rect, image_color.get(), 0.0);
+
+            let marker = Circle::new(
+                kurbo::Point::new(img_x + image_w / 2.0, img_y + image_h / 2.0),
+                2.5,
+            );
+            cx.fill(&marker, marker_color.get(), 0.0);
+        })
+        .style(|s| s.width(70.0).height(70.0))
+        .container()
+        .style(move |s| {
+            s.padding(4.0)
+                .border(1.)
+                .border_radius(5.0)
+                .with_theme(move |s, t| s.border_color(t.border()))
+        });
+
+        let (label_text, description) = match object_position {
+            ObjectPosition::TopLeft => ("TopLeft", "Anchors content to the top-left corner."),
+            ObjectPosition::Top => (
+                "Top",
+                "Anchors content to the top edge, centered horizontally.",
+            ),
+            ObjectPosition::TopRight => ("TopRight", "Anchors content to the top-right corner."),
+            ObjectPosition::Left => (
+                "Left",
+                "Anchors content to the left edge, centered vertically.",
+            ),
+            ObjectPosition::Center => ("Center", "Centers content on both axes."),
+            ObjectPosition::Right => (
+                "Right",
+                "Anchors content to the right edge, centered vertically.",
+            ),
+            ObjectPosition::BottomLeft => {
+                ("BottomLeft", "Anchors content to the bottom-left corner.")
+            }
+            ObjectPosition::Bottom => (
+                "Bottom",
+                "Anchors content to the bottom edge, centered horizontally.",
+            ),
+            ObjectPosition::BottomRight => {
+                ("BottomRight", "Anchors content to the bottom-right corner.")
+            }
+            ObjectPosition::Custom(x, y) => {
+                let label = format!("Custom({x:?}, {y:?})");
+                let description = "Uses explicit horizontal and vertical offsets. Percentages resolve against remaining free space.";
+                return Some(
+                    preview
+                        .tooltip(move || {
+                            Stack::vertical((
+                                Label::new(label.clone()).style(|s| s.font_bold()),
+                                Label::new(description)
+                                    .style(|s| s.with_theme(|s, t| s.color(t.text_muted()))),
+                            ))
+                            .style(|s| s.gap(8.0).padding(12.0).max_width(240.0))
+                        })
+                        .style(|s| s.items_center())
+                        .into_any(),
+                );
+            }
+        };
+
+        Some(
+            preview
+                .tooltip(move || {
+                    Stack::vertical((
+                        Label::new(label_text).style(|s| s.font_bold()),
+                        Label::new(description)
+                            .style(|s| s.with_theme(|s, t| s.color(t.text_muted()))),
+                    ))
+                    .style(|s| s.gap(8.0).padding(12.0).max_width(240.0))
+                })
                 .style(|s| s.items_center())
                 .into_any(),
         )

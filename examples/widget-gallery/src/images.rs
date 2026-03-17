@@ -1,4 +1,8 @@
-use floem::{prelude::*, style::ObjectFit};
+use floem::{
+    prelude::*,
+    style::{CursorStyle, ObjectFit, ObjectPosition},
+    theme::StyleThemeExt,
+};
 
 use crate::form::{form, form_item};
 
@@ -23,18 +27,114 @@ pub fn img_view() -> impl IntoView {
             "SVG(from file):",
             svg(ferris_svg).style(|s| s.unset_color().width(230.pt())),
         ),
+        form_item("Image Fit", object_fit_position_picker(ferris_png)),
         form_item("SVG(from string):", svg(svg_str).style(|s| s.width(100))),
         form_item("JPG:", img(move || sunflower.to_vec())),
         form_item(
             "JPG(resized):",
             img(move || sunflower.to_vec()).style(|s| s.width(320.pt()).height(490.pt())),
         ),
-        form_item(
-            "JPG(controlled):",
-            img(move || ferris_png.to_vec()).style(|s| {
-                s.object_fit(ObjectFit::Cover).width(100).height(100)
-                // .object_position(VertPosition::Top, HorizPosition::Left)
-            }),
-        ),
     ))
+}
+
+fn object_fit_position_picker(image: &'static [u8]) -> impl IntoView {
+    let object_fit = RwSignal::new(ObjectFit::Cover);
+    let object_position = RwSignal::new(ObjectPosition::Center);
+
+    let fit_options = [
+        ("Fill", ObjectFit::Fill),
+        ("Contain", ObjectFit::Contain),
+        ("Cover", ObjectFit::Cover),
+        ("ScaleDown", ObjectFit::ScaleDown),
+        ("None", ObjectFit::None),
+    ];
+    let position_options = [
+        ("TopLeft", ObjectPosition::TopLeft),
+        ("Top", ObjectPosition::Top),
+        ("TopRight", ObjectPosition::TopRight),
+        ("Left", ObjectPosition::Left),
+        ("Center", ObjectPosition::Center),
+        ("Right", ObjectPosition::Right),
+        ("BottomLeft", ObjectPosition::BottomLeft),
+        ("Bottom", ObjectPosition::Bottom),
+        ("BottomRight", ObjectPosition::BottomRight),
+    ];
+
+    let fit_picker = fit_options
+        .map(|(label, _)| {
+            label.style(|s| {
+                s.text_clip()
+                    .items_center()
+                    .justify_center()
+                    .padding_vert(10.)
+                    .padding_horiz(8.)
+                    .selectable(false)
+                    .cursor(CursorStyle::Pointer)
+            })
+        })
+        .list()
+        .on_select(move |idx| {
+            if let Some(idx) = idx {
+                object_fit.set(fit_options[idx].1);
+            }
+        })
+        .style(|s| s.flex_row().gap(5))
+        .scroll()
+        .style(|s| {
+            s.max_width(320.)
+                .flex_row()
+                .padding_right(3.)
+                .scrollbar_width(0.)
+                .border_horiz(3.)
+                .with_theme(|s, t| s.border_color(t.border()))
+        });
+
+    let position_picker = position_options
+        .map(|(label, _)| {
+            label.style(|s| {
+                s.text_clip()
+                    .items_center()
+                    .justify_center()
+                    .padding_vert(10.)
+                    .padding_horiz(8.)
+                    .selectable(false)
+                    .cursor(CursorStyle::Pointer)
+            })
+        })
+        .list()
+        .on_select(move |idx| {
+            if let Some(idx) = idx {
+                object_position.set(position_options[idx].1);
+            }
+        })
+        .style(|s| s.flex_row().gap(5))
+        .scroll()
+        .style(|s| {
+            s.max_width(320.)
+                .flex_row()
+                .padding_right(3.)
+                .scrollbar_width(0.)
+                .border_horiz(3.)
+                .with_theme(|s, t| s.border_color(t.border()))
+        });
+
+    let controls = Stack::vertical((
+        ("Object fit:".style(|s| s.width(110.0)), fit_picker).style(|s| s.gap(10).items_center()),
+        (
+            "Object position:".style(|s| s.width(110.0)),
+            position_picker,
+        )
+            .style(|s| s.gap(10).items_center()),
+    ))
+    .style(|s| s.gap(10).items_start());
+
+    let preview = img(move || image.to_vec()).style(move |s| {
+        s.object_fit(object_fit.get())
+            .object_position(object_position.get())
+            .size(300, 300)
+            .border(2)
+            .border_color(css::RED)
+    });
+
+    Stack::vertical((controls, preview)).style(|s| s.gap(12).items_center())
 }

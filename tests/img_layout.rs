@@ -1,6 +1,7 @@
 use floem::HasViewId;
 use floem::headless::{HeadlessHarness, TestRoot};
-use floem::style::{ObjectFit, Style};
+use floem::style::{ObjectFit, ObjectPosition, Style};
+use floem::unit::UnitExt;
 use floem::views::{Decorators, Stack, img};
 use image::{ColorType, ImageEncoder, RgbaImage, codecs::png::PngEncoder};
 use peniko::kurbo::Rect;
@@ -158,10 +159,16 @@ fn layout_explicit_size_same_for_all_object_fit_variants() {
 // implementation uses. content_rect is anchored at (0,0) in all cases.
 // ---------------------------------------------------------------------------
 
-fn dest_rect(natural_w: u32, natural_h: u32, object_fit: ObjectFit, content_rect: Rect) -> Rect {
+fn dest_rect(
+    natural_w: u32,
+    natural_h: u32,
+    object_fit: ObjectFit,
+    object_position: ObjectPosition,
+    content_rect: Rect,
+) -> Rect {
     let img_bytes = png_bytes(natural_w, natural_h);
     let view = img(move || img_bytes.clone());
-    view.object_fit_dest_rect_with(content_rect, object_fit)
+    view.object_fit_dest_rect_with(content_rect, object_fit, object_position)
 }
 
 // --- Fill -----------------------------------------------------------------
@@ -169,13 +176,25 @@ fn dest_rect(natural_w: u32, natural_h: u32, object_fit: ObjectFit, content_rect
 #[test]
 fn paint_fill_stretches_to_box() {
     // Fill always maps the image exactly onto the box, ignoring aspect ratio.
-    let dest = dest_rect(4, 3, ObjectFit::Fill, box_rect(100.0, 80.0));
+    let dest = dest_rect(
+        4,
+        3,
+        ObjectFit::Fill,
+        ObjectPosition::Center,
+        box_rect(100.0, 80.0),
+    );
     assert_rect(dest, box_rect(100.0, 80.0));
 }
 
 #[test]
 fn paint_fill_square_box() {
-    let dest = dest_rect(4, 3, ObjectFit::Fill, box_rect(50.0, 50.0));
+    let dest = dest_rect(
+        4,
+        3,
+        ObjectFit::Fill,
+        ObjectPosition::Center,
+        box_rect(50.0, 50.0),
+    );
     assert_rect(dest, box_rect(50.0, 50.0));
 }
 
@@ -185,7 +204,13 @@ fn paint_fill_square_box() {
 fn paint_contain_wide_image_in_square_box_letterboxed() {
     // 4:3 image in 120×120 box → scale to fit width → 120×90, centered vertically
     // y offset = (120 - 90) / 2 = 15
-    let dest = dest_rect(4, 3, ObjectFit::Contain, box_rect(120.0, 120.0));
+    let dest = dest_rect(
+        4,
+        3,
+        ObjectFit::Contain,
+        ObjectPosition::Center,
+        box_rect(120.0, 120.0),
+    );
     assert_rect(dest, Rect::new(0.0, 15.0, 120.0, 105.0));
 }
 
@@ -193,14 +218,26 @@ fn paint_contain_wide_image_in_square_box_letterboxed() {
 fn paint_contain_tall_image_in_square_box_pillarboxed() {
     // 3:4 image in 120×120 box → scale to fit height → 90×120, centered horizontally
     // x offset = (120 - 90) / 2 = 15
-    let dest = dest_rect(3, 4, ObjectFit::Contain, box_rect(120.0, 120.0));
+    let dest = dest_rect(
+        3,
+        4,
+        ObjectFit::Contain,
+        ObjectPosition::Center,
+        box_rect(120.0, 120.0),
+    );
     assert_rect(dest, Rect::new(15.0, 0.0, 105.0, 120.0));
 }
 
 #[test]
 fn paint_contain_exact_aspect_ratio_fills_box() {
     // Image AR matches box AR → no letterbox/pillarbox
-    let dest = dest_rect(4, 3, ObjectFit::Contain, box_rect(120.0, 90.0));
+    let dest = dest_rect(
+        4,
+        3,
+        ObjectFit::Contain,
+        ObjectPosition::Center,
+        box_rect(120.0, 90.0),
+    );
     assert_rect(dest, box_rect(120.0, 90.0));
 }
 
@@ -208,7 +245,13 @@ fn paint_contain_exact_aspect_ratio_fills_box() {
 fn paint_contain_small_image_scales_up_to_fit() {
     // 2×1 image in 100×100 box → scale up to 100×50, centered vertically
     // y offset = (100 - 50) / 2 = 25
-    let dest = dest_rect(2, 1, ObjectFit::Contain, box_rect(100.0, 100.0));
+    let dest = dest_rect(
+        2,
+        1,
+        ObjectFit::Contain,
+        ObjectPosition::Center,
+        box_rect(100.0, 100.0),
+    );
     assert_rect(dest, Rect::new(0.0, 25.0, 100.0, 75.0));
 }
 
@@ -218,7 +261,13 @@ fn paint_contain_small_image_scales_up_to_fit() {
 fn paint_cover_wide_image_in_square_box_cropped_sides() {
     // 4:3 image in 120×120 → scale to fill height → 160×120, centered
     // x offset = (120 - 160) / 2 = -20  (overflows; clipped by caller)
-    let dest = dest_rect(4, 3, ObjectFit::Cover, box_rect(120.0, 120.0));
+    let dest = dest_rect(
+        4,
+        3,
+        ObjectFit::Cover,
+        ObjectPosition::Center,
+        box_rect(120.0, 120.0),
+    );
     assert_rect(dest, Rect::new(-20.0, 0.0, 140.0, 120.0));
 }
 
@@ -226,13 +275,25 @@ fn paint_cover_wide_image_in_square_box_cropped_sides() {
 fn paint_cover_tall_image_in_square_box_cropped_top_bottom() {
     // 3:4 image in 120×120 → scale to fill width → 120×160, centered
     // y offset = (120 - 160) / 2 = -20
-    let dest = dest_rect(3, 4, ObjectFit::Cover, box_rect(120.0, 120.0));
+    let dest = dest_rect(
+        3,
+        4,
+        ObjectFit::Cover,
+        ObjectPosition::Center,
+        box_rect(120.0, 120.0),
+    );
     assert_rect(dest, Rect::new(0.0, -20.0, 120.0, 140.0));
 }
 
 #[test]
 fn paint_cover_exact_aspect_ratio_fills_box() {
-    let dest = dest_rect(4, 3, ObjectFit::Cover, box_rect(120.0, 90.0));
+    let dest = dest_rect(
+        4,
+        3,
+        ObjectFit::Cover,
+        ObjectPosition::Center,
+        box_rect(120.0, 90.0),
+    );
     assert_rect(dest, box_rect(120.0, 90.0));
 }
 
@@ -240,7 +301,13 @@ fn paint_cover_exact_aspect_ratio_fills_box() {
 fn paint_cover_small_image_scales_up_to_cover() {
     // 1×1 image in 100×50 box → cover picks larger scale: max(100/1, 50/1) = 100
     // → 100×100, centered vertically: y offset = (50 - 100) / 2 = -25
-    let dest = dest_rect(1, 1, ObjectFit::Cover, box_rect(100.0, 50.0));
+    let dest = dest_rect(
+        1,
+        1,
+        ObjectFit::Cover,
+        ObjectPosition::Center,
+        box_rect(100.0, 50.0),
+    );
     assert_rect(dest, Rect::new(0.0, -25.0, 100.0, 75.0));
 }
 
@@ -250,7 +317,13 @@ fn paint_cover_small_image_scales_up_to_cover() {
 fn paint_none_uses_natural_size_centered() {
     // Natural size, centered in box. 40×20 image in 100×80 box.
     // x = (100 - 40) / 2 = 30, y = (80 - 20) / 2 = 30
-    let dest = dest_rect(40, 20, ObjectFit::None, box_rect(100.0, 80.0));
+    let dest = dest_rect(
+        40,
+        20,
+        ObjectFit::None,
+        ObjectPosition::Center,
+        box_rect(100.0, 80.0),
+    );
     assert_rect(dest, Rect::new(30.0, 30.0, 70.0, 50.0));
 }
 
@@ -259,14 +332,26 @@ fn paint_none_large_image_overflows_box() {
     // 200×100 image in 80×80 box → natural size, centered → clipped by caller
     // x = (80 - 200) / 2 = -60, y = (80 - 100) / 2 = -10
     // x1 = -60 + 200 = 140, y1 = -10 + 100 = 90
-    let dest = dest_rect(200, 100, ObjectFit::None, box_rect(80.0, 80.0));
+    let dest = dest_rect(
+        200,
+        100,
+        ObjectFit::None,
+        ObjectPosition::Center,
+        box_rect(80.0, 80.0),
+    );
     assert_rect(dest, Rect::new(-60.0, -10.0, 140.0, 90.0));
 }
 
 #[test]
 fn paint_none_exact_fit_no_offset() {
     // Natural size matches box exactly → no offset
-    let dest = dest_rect(40, 30, ObjectFit::None, box_rect(40.0, 30.0));
+    let dest = dest_rect(
+        40,
+        30,
+        ObjectFit::None,
+        ObjectPosition::Center,
+        box_rect(40.0, 30.0),
+    );
     assert_rect(dest, box_rect(40.0, 30.0));
 }
 
@@ -275,23 +360,53 @@ fn paint_none_exact_fit_no_offset() {
 #[test]
 fn paint_scale_down_large_image_acts_like_contain() {
     // Image larger than box → scale down. Must match Contain result exactly.
-    let contain = dest_rect(120, 90, ObjectFit::Contain, box_rect(80.0, 80.0));
-    let sd = dest_rect(120, 90, ObjectFit::ScaleDown, box_rect(80.0, 80.0));
+    let contain = dest_rect(
+        120,
+        90,
+        ObjectFit::Contain,
+        ObjectPosition::Center,
+        box_rect(80.0, 80.0),
+    );
+    let sd = dest_rect(
+        120,
+        90,
+        ObjectFit::ScaleDown,
+        ObjectPosition::Center,
+        box_rect(80.0, 80.0),
+    );
     assert_rect(sd, contain);
 }
 
 #[test]
 fn paint_scale_down_small_image_acts_like_none() {
     // Image smaller than box → do NOT scale up. Must match None result exactly.
-    let none = dest_rect(40, 30, ObjectFit::None, box_rect(200.0, 200.0));
-    let sd = dest_rect(40, 30, ObjectFit::ScaleDown, box_rect(200.0, 200.0));
+    let none = dest_rect(
+        40,
+        30,
+        ObjectFit::None,
+        ObjectPosition::Center,
+        box_rect(200.0, 200.0),
+    );
+    let sd = dest_rect(
+        40,
+        30,
+        ObjectFit::ScaleDown,
+        ObjectPosition::Center,
+        box_rect(200.0, 200.0),
+    );
     assert_rect(sd, none);
 }
 
 #[test]
 fn paint_scale_down_exact_fit_no_scaling() {
     // Natural size exactly matches box → no scaling, no offset
-    let dest = dest_rect(40, 30, ObjectFit::ScaleDown, box_rect(40.0, 30.0));
+    let dest = dest_rect(
+        40,
+        30,
+        ObjectFit::ScaleDown,
+        ObjectPosition::Center,
+        box_rect(40.0, 30.0),
+    );
     assert_rect(dest, box_rect(40.0, 30.0));
 }
 
@@ -299,7 +414,13 @@ fn paint_scale_down_exact_fit_no_scaling() {
 fn paint_scale_down_never_scales_above_natural_size() {
     // Box larger than image → natural size, centered. Must NOT upscale.
     // 40×20 image in 120×80 box: x = (120-40)/2 = 40, y = (80-20)/2 = 30
-    let dest = dest_rect(40, 20, ObjectFit::ScaleDown, box_rect(120.0, 80.0));
+    let dest = dest_rect(
+        40,
+        20,
+        ObjectFit::ScaleDown,
+        ObjectPosition::Center,
+        box_rect(120.0, 80.0),
+    );
     assert_rect(dest, Rect::new(40.0, 30.0, 80.0, 50.0));
 }
 
@@ -308,13 +429,97 @@ fn paint_scale_down_never_scales_above_natural_size() {
 #[test]
 fn paint_zero_natural_size_returns_content_rect() {
     // 1×1 image with zero-size box — degenerate box hits the fallback return.
-    let dest = dest_rect(1, 1, ObjectFit::Contain, box_rect(0.0, 0.0));
+    let dest = dest_rect(
+        1,
+        1,
+        ObjectFit::Contain,
+        ObjectPosition::Center,
+        box_rect(0.0, 0.0),
+    );
     assert_rect(dest, box_rect(0.0, 0.0));
 }
 
 #[test]
 fn paint_zero_box_size_returns_content_rect() {
     // Degenerate box (0×0) → fall back to content rect unchanged
-    let dest = dest_rect(40, 30, ObjectFit::Cover, box_rect(0.0, 0.0));
+    let dest = dest_rect(
+        40,
+        30,
+        ObjectFit::Cover,
+        ObjectPosition::Center,
+        box_rect(0.0, 0.0),
+    );
     assert_rect(dest, box_rect(0.0, 0.0));
+}
+
+#[test]
+fn paint_contain_top_left_positions_to_top_left_corner() {
+    let dest = dest_rect(
+        4,
+        3,
+        ObjectFit::Contain,
+        ObjectPosition::TopLeft,
+        box_rect(120.0, 120.0),
+    );
+    assert_rect(dest, Rect::new(0.0, 0.0, 120.0, 90.0));
+}
+
+#[test]
+fn paint_contain_bottom_right_positions_to_bottom_right_corner() {
+    let dest = dest_rect(
+        4,
+        3,
+        ObjectFit::Contain,
+        ObjectPosition::BottomRight,
+        box_rect(120.0, 120.0),
+    );
+    assert_rect(dest, Rect::new(0.0, 30.0, 120.0, 120.0));
+}
+
+#[test]
+fn paint_none_top_left_uses_natural_size_without_centering() {
+    let dest = dest_rect(
+        40,
+        20,
+        ObjectFit::None,
+        ObjectPosition::TopLeft,
+        box_rect(100.0, 80.0),
+    );
+    assert_rect(dest, Rect::new(0.0, 0.0, 40.0, 20.0));
+}
+
+#[test]
+fn paint_cover_right_keeps_overflow_aligned_to_right() {
+    let dest = dest_rect(
+        4,
+        3,
+        ObjectFit::Cover,
+        ObjectPosition::Right,
+        box_rect(120.0, 120.0),
+    );
+    assert_rect(dest, Rect::new(-40.0, 0.0, 120.0, 120.0));
+}
+
+#[test]
+fn paint_custom_position_uses_percentages_of_remaining_space() {
+    let dest = dest_rect(
+        4,
+        3,
+        ObjectFit::Contain,
+        ObjectPosition::Custom(0.pct().into(), 100.pct().into()),
+        box_rect(120.0, 120.0),
+    );
+    assert_rect(dest, Rect::new(0.0, 30.0, 120.0, 120.0));
+}
+
+#[test]
+fn paint_custom_position_uses_point_offsets() {
+    let dest = dest_rect(
+        40,
+        20,
+        ObjectFit::None,
+        ObjectPosition::Custom(10.pt().into(), 15.pt().into()),
+        box_rect(100.0, 80.0),
+    );
+    assert_rect(dest, Rect::new(10.0, 15.0, 50.0, 35.0));
 }
