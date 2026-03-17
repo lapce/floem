@@ -323,6 +323,18 @@ impl Editor {
         self.doc.get_untracked()
     }
 
+    /// Retrieves the [Document] and subscribes the current reactive scope to updates.
+    /// Returns `None` if the underlying reactive scope has been disposed.
+    pub fn try_doc(&self) -> Option<Rc<dyn Document>> {
+        self.doc.try_get()
+    }
+
+    /// Retrieves the [Document] without subscribing to reactive updates.
+    /// Returns `None` if the underlying reactive scope has been disposed.
+    pub fn try_doc_untracked(&self) -> Option<Rc<dyn Document>> {
+        self.doc.try_get_untracked()
+    }
+
     pub fn doc_track(&self) -> Rc<dyn Document> {
         self.doc.get()
     }

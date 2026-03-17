@@ -384,6 +384,18 @@ impl TextEditor {
         self.editor.doc()
     }
 
+    /// Retrieves the [Document] and subscribes the current reactive scope to updates.
+    /// Returns `None` if the underlying reactive scope has been disposed.
+    pub fn try_doc(&self) -> Option<Rc<dyn Document>> {
+        self.editor.try_doc()
+    }
+
+    /// Retrieves the [Document] without subscribing to reactive updates.
+    /// Returns `None` if the underlying reactive scope has been disposed.
+    pub fn try_doc_untracked(&self) -> Option<Rc<dyn Document>> {
+        self.editor.try_doc_untracked()
+    }
+
     /// Try downcasting the document to a [`TextDocument`].
     /// Returns `None` if the document is not a [`TextDocument`].
     fn text_doc(&self) -> Option<Rc<TextDocument>> {
