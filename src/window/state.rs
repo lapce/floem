@@ -953,14 +953,25 @@ impl WindowState {
                 .local_bounds(dragging_preview.element_id.0)
                 .unwrap_or_default();
 
-            // Get current world transform and update natural position (detects layout changes)
-            let current_transform = self
-                .box_tree
-                .borrow_mut()
-                .get_or_compute_world_transform(dragging_preview.element_id.0)
-                .unwrap_or(Affine::IDENTITY);
+            // Reconstruct the authored world transform from the node's local transform and its
+            // parent's current world transform. This intentionally ignores any active
+            // set_world_position override on the dragged element itself so the release animation
+            // targets the real layout position instead of the preview override.
+            let natural_transform = {
+                let mut box_tree = self.box_tree.borrow_mut();
+                let element_id = dragging_preview.element_id.0;
+                let local_transform = box_tree
+                    .local_transform(element_id)
+                    .unwrap_or(Affine::IDENTITY);
+                let parent_world_transform = box_tree
+                    .parent_of(element_id)
+                    .and_then(|parent| box_tree.get_or_compute_world_transform(parent))
+                    .unwrap_or(Affine::IDENTITY);
 
-            let natural_position = dragging.update_and_get_natural_position(current_transform);
+                parent_world_transform * local_transform
+            };
+
+            let natural_position = dragging.update_and_get_natural_position(natural_transform);
 
             // Calculate the drag point offset (where user grabbed within the element)
             let drag_point_offset = Point::new(
@@ -1005,7 +1016,8 @@ impl WindowState {
 
         let damage = self.box_tree.borrow_mut().commit();
 
-        self.pending_damage_rects.extend(damage.dirty_rects.iter().copied());
+        self.pending_damage_rects
+            .extend(damage.dirty_rects.iter().copied());
 
         let pointer = self.last_pointer;
         for damage_rect in &damage.dirty_rects {

@@ -19,7 +19,6 @@ use peniko::{
     kurbo::{Affine, Point, Size},
 };
 
-
 /// Shared Parley font context used by Floem text layout construction.
 ///
 /// This is exposed so callers that need to register or inspect fonts can work

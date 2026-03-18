@@ -978,8 +978,7 @@ impl View for Scroll {
                     && self
                         .apply_scroll_delta(new_offset - self.scroll_offset)
                         .is_some()
-                {
-                }
+                {}
                 return result.propagation;
             }
             if cx.target == self.h_handle.element_id {
@@ -988,8 +987,7 @@ impl View for Scroll {
                     && self
                         .apply_scroll_delta(new_offset - self.scroll_offset)
                         .is_some()
-                {
-                }
+                {}
                 return result.propagation;
             }
             if cx.target == self.v_track.element_id {
@@ -998,8 +996,7 @@ impl View for Scroll {
                     && self
                         .apply_scroll_delta(new_offset - self.scroll_offset)
                         .is_some()
-                {
-                }
+                {}
                 return result.propagation;
             }
             if cx.target == self.h_track.element_id {
@@ -1008,8 +1005,7 @@ impl View for Scroll {
                     && self
                         .apply_scroll_delta(new_offset - self.scroll_offset)
                         .is_some()
-                {
-                }
+                {}
                 return result.propagation;
             }
         }

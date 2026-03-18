@@ -31,8 +31,8 @@ use crate::view::stacking::{StackingContextItem, collect_stacking_context_items_
 use crate::view::{paint_bg, paint_border, paint_outline};
 use crate::window::state::WindowState;
 use display_list::{
-    ElementSnapshot, RecordingRenderer, RetainedDisplayList, TransformClass,
-    replay_stage, transform_diff_class,
+    ElementSnapshot, RecordingRenderer, RetainedDisplayList, TransformClass, replay_stage,
+    transform_diff_class,
 };
 
 std::thread_local! {

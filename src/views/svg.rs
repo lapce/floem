@@ -1,9 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use floem_reactive::Effect;
-use floem_renderer::{
-    usvg::{self, Tree},
-};
+use floem_renderer::usvg::{self, Tree};
 use peniko::{
     Brush, GradientKind, LinearGradientPosition,
     kurbo::{Point, Size},

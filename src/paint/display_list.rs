@@ -6,9 +6,7 @@ use imaging::{
     Clip, Composite, Draw, FillRule, Geometry, Glyph as SceneGlyph, GlyphRun, Group, StrokeStyle,
 };
 use peniko::BrushRef;
-use peniko::kurbo::{
-    Affine, BezPath, Circle, Line, Point, Rect, RoundedRect, Shape, Stroke,
-};
+use peniko::kurbo::{Affine, BezPath, Circle, Line, Point, Rect, RoundedRect, Shape, Stroke};
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{ElementId, paint::PaintOrPost};
@@ -160,7 +158,8 @@ impl RetainedDisplayList {
         }
 
         let diff = transform_diff_class(previous.world_transform, snapshot.world_transform);
-        !element.paint.transform_class.supports(diff) || !element.post.transform_class.supports(diff)
+        !element.paint.transform_class.supports(diff)
+            || !element.post.transform_class.supports(diff)
     }
 
     pub(crate) fn retain_only(&mut self, ids: &FxHashSet<ElementId>) {
@@ -349,7 +348,6 @@ impl RecordingRenderer<'_> {
             transform: self.transform,
         });
     }
-
 }
 
 pub(crate) fn replay_stage(
@@ -360,7 +358,9 @@ pub(crate) fn replay_stage(
     for command in &stage.commands {
         match command {
             DisplayCommand::SetZIndex(z_index) => renderer.set_z_index(*z_index),
-            DisplayCommand::PushClip { clip, hint } => replay_clip(renderer, clip, hint.clone(), base_transform),
+            DisplayCommand::PushClip { clip, hint } => {
+                replay_clip(renderer, clip, hint.clone(), base_transform)
+            }
             DisplayCommand::PopClip => renderer.clear_clip(),
             DisplayCommand::PushLayer {
                 group,
@@ -422,7 +422,9 @@ pub(crate) fn replay_stage(
                 }
             }
             DisplayCommand::PopLayer => renderer.pop_layer(),
-            DisplayCommand::Draw { draw, hint } => replay_draw(renderer, draw, hint.clone(), base_transform),
+            DisplayCommand::Draw { draw, hint } => {
+                replay_draw(renderer, draw, hint.clone(), base_transform)
+            }
             DisplayCommand::DrawImage {
                 img,
                 hash,
@@ -458,7 +460,12 @@ pub(crate) fn replay_stage(
     }
 }
 
-fn replay_clip(renderer: &mut impl FloemRenderer, clip: &Clip, hint: Option<ShapeHint>, base_transform: Affine) {
+fn replay_clip(
+    renderer: &mut impl FloemRenderer,
+    clip: &Clip,
+    hint: Option<ShapeHint>,
+    base_transform: Affine,
+) {
     let Clip::Fill {
         transform, shape, ..
     } = clip

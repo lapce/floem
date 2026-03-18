@@ -429,7 +429,8 @@ impl WindowHandle {
         let scale = self.window_state.effective_scale();
         self.paint_state.set_scale(scale);
         self.event(Event::Window(WindowEvent::ScaleChanged(scale)));
-        self.window_state.request_paint(self.window_state.root_view_id);
+        self.window_state
+            .request_paint(self.window_state.root_view_id);
         self.schedule_repaint();
     }
 
@@ -501,7 +502,8 @@ impl WindowHandle {
         self.layout();
         self.commit_box_tree();
         self.process_update_no_paint();
-        self.window_state.request_paint(self.window_state.root_view_id);
+        self.window_state
+            .request_paint(self.window_state.root_view_id);
         self.schedule_repaint();
     }
 
@@ -785,8 +787,7 @@ impl WindowHandle {
         }
 
         if self.live_resize_active() {
-            self.window_state
-                .schedule_paint(self.id.get_element_id());
+            self.window_state.schedule_paint(self.id.get_element_id());
             self.schedule_repaint();
         } else {
             self.live_resize_until = None;
