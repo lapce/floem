@@ -2,7 +2,6 @@ use std::{cell::RefCell, rc::Rc};
 
 use floem_reactive::Effect;
 use floem_renderer::{
-    Renderer,
     usvg::{self, Tree},
 };
 use peniko::{

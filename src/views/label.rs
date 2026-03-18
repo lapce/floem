@@ -20,7 +20,6 @@ use crate::{
     views::editor::SelectionColor,
 };
 use floem_reactive::UpdaterEffect;
-use floem_renderer::Renderer;
 use peniko::{
     Brush,
     color::palette::{self},

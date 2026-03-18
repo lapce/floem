@@ -15,7 +15,6 @@ use crate::{
 };
 use floem_reactive::{Effect, SignalGet, SignalTrack, SignalUpdate, SignalWith};
 
-use floem_renderer::Renderer;
 use taffy::Dimension;
 use ui_events::keyboard::{Key, KeyState, KeyboardEvent, Modifiers, NamedKey};
 use ui_events::pointer::{PointerButton, PointerButtonEvent, PointerEvent};
@@ -1534,7 +1533,7 @@ impl View for TextInput {
         // skip rendering selection / cursor if we don't have focus
         if !cx.window_state.is_focused(self.id) {
             // Clear the custom clip we applied
-            cx.clear_clip();
+            cx.pop_clip();
             return;
         }
 
@@ -1548,12 +1547,12 @@ impl View for TextInput {
         if has_selection {
             // Clear the custom clip we applied
             self.paint_selection_rect(cx);
-            cx.clear_clip();
+            cx.pop_clip();
             return;
         }
 
         // Clear the custom clip we applied
-        cx.clear_clip();
+        cx.pop_clip();
 
         // see if we should render the cursor
         let is_cursor_visible = (self.last_cursor_action_on.elapsed().as_millis()

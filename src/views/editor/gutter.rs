@@ -1,7 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
 use crate::{
-    Renderer,
     context::PaintCx,
     peniko::kurbo::Point,
     prop, prop_extractor,

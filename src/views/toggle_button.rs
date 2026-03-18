@@ -13,7 +13,7 @@ use crate::context::Phases;
 use crate::custom_event;
 use crate::event::listener::EventListenerTrait;
 use crate::{
-    BoxTree, ElementId, Renderer,
+    BoxTree, ElementId,
     context::{EventCx, PaintCx, UpdateCx},
     easing::Linear,
     event::{

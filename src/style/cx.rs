@@ -537,10 +537,10 @@ impl<'a> StyleCx<'a> {
                 // ─────────────────────────────────────────────────────────────────────
                 // Phase 8.2: Update box tree visiblity dependent props  (must happen after visibility phase override)
                 // ─────────────────────────────────────────────────────────────────────
+                let element_id = vs.element_id;
                 let focus_nav_changed;
                 {
                     let box_tree = view_id.box_tree();
-                    let element_id = vs.element_id;
                     let box_tree = &mut box_tree.borrow_mut();
                     let old_flags = box_tree.flags(element_id.0).unwrap_or(NodeFlags::empty());
                     let old_focus = box_tree.focus_nav_meta(element_id.0).unwrap_or_default();
@@ -588,7 +588,7 @@ impl<'a> StyleCx<'a> {
                 // Phase 8.3: request paint for view style changes if not hidden
                 // ─────────────────────────────────────────────────────────────────────
                 if !is_hidden_final && need_paint {
-                    self.window_state.request_paint(view_id);
+                    self.window_state.request_paint(element_id);
                 }
             }
         }

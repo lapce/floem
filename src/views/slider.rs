@@ -13,7 +13,6 @@ use crate::custom_event;
 use crate::event::CustomEvent;
 use crate::unit::FontSizeCx;
 use crate::{
-    Renderer,
     context::{LayoutChanged, LayoutChangedListener},
     event::{Event, EventPropagation, FocusEvent},
     prelude::*,
@@ -389,7 +388,7 @@ impl View for Slider {
                 .unwrap_or(palette::css::TRANSPARENT.into()),
             0.,
         );
-        cx.clear_clip();
+        cx.pop_clip();
 
         if let Some(color) = self.style.foreground() {
             cx.fill(&self.handle, &color, 0.);

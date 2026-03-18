@@ -6,7 +6,6 @@ use std::{
     sync::LazyLock,
 };
 
-use floem_renderer::Renderer as _;
 use floem_renderer::text::{AttrsList, GlyphRunProps, TextBrush};
 use parking_lot::Mutex;
 use parley::swash::{FontRef, scale::ScaleContext, zeno};
@@ -20,7 +19,6 @@ use peniko::{
     kurbo::{Affine, Point, Size},
 };
 
-use crate::paint::Renderer;
 
 /// Shared Parley font context used by Floem text layout construction.
 ///
@@ -779,8 +777,8 @@ impl TextLayout {
         (min_y.is_finite() && max_y.is_finite()).then_some((min_y, max_y))
     }
 
-    /// Draws the layout at the given origin using Floem's renderer wrapper.
-    pub fn draw(&self, renderer: &mut Renderer, origin: impl Into<Point>) {
+    /// Draws the layout into Floem's retained paint recorder.
+    pub fn draw(&self, renderer: &mut crate::paint::PaintCx<'_>, origin: impl Into<Point>) {
         let origin = origin.into();
         for line in self.layout.lines() {
             for item in line.items() {

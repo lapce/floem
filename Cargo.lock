@@ -1557,6 +1557,7 @@ dependencies = [
  "fluent-bundle",
  "futures",
  "image 0.25.9",
+ "imaging",
  "imbl",
  "indexmap",
  "lapce-xi-rope",
@@ -2993,6 +2994,15 @@ name = "imagesize"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09e54e57b4c48b40f7aec75635392b12b3421fa26fe8b4332e63138ed278459c"
+
+[[package]]
+name = "imaging"
+version = "0.0.1"
+source = "git+https://github.com/forest-rs/imaging?rev=0527cbabf0d6ea27e14a82955f4a582c57bdc440#0527cbabf0d6ea27e14a82955f4a582c57bdc440"
+dependencies = [
+ "kurbo",
+ "peniko",
+]
 
 [[package]]
 name = "imbl"

@@ -17,7 +17,7 @@ use crate::prelude::EventListenerTrait;
 use crate::prelude::el::UpdatePhaseLayout;
 use crate::style::ScrollbarWidth;
 use crate::{
-    BoxTree, ElementId, Renderer,
+    BoxTree, ElementId,
     context::{EventCx, PaintCx, StyleCx},
     event::{Event, EventPropagation, Phase},
     prop, prop_extractor,

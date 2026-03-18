@@ -48,7 +48,7 @@ pub fn canvas_view() -> impl IntoView {
                     rounded.track();
                     let now = Instant::now();
                     if border_radius.borrow_mut().step(&now) {
-                        cx.window_state.schedule_paint(cx.target_id.owning_id());
+                        cx.window_state.schedule_paint(cx.target_id);
                     }
                     cx.fill(
                         &Rect::ZERO
@@ -295,7 +295,7 @@ impl View for SatValuePicker {
             cx.stroke(&inner, css::BLACK, &Stroke::new(1.0));
         }
 
-        cx.clear_clip();
+        cx.pop_clip();
     }
 }
 
@@ -417,7 +417,7 @@ impl View for HuePicker {
             cx.clip(&rect_path);
             cx.stroke(&indicator_rect, css::WHITE, &Stroke::new(2.0));
             cx.fill(&indicator_rect, css::BLACK, 0.);
-            cx.clear_clip();
+            cx.pop_clip();
         }
     }
 }
@@ -539,7 +539,7 @@ impl View for OpacityPicker {
             cx.clip(&rect_path);
             cx.stroke(&indicator_rect, css::WHITE, &Stroke::new(2.0));
             cx.fill(&indicator_rect, css::BLACK, 0.);
-            cx.clear_clip();
+            cx.pop_clip();
         }
     }
 }

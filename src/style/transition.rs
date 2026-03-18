@@ -6,7 +6,6 @@
 //! - [`DirectTransition`] - Standalone transition controller
 
 use floem_reactive::{RwSignal, SignalGet};
-use floem_renderer::Renderer;
 use peniko::color::palette;
 use peniko::kurbo::{self, Point, Stroke};
 use std::rc::Rc;

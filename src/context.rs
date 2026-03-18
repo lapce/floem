@@ -7,7 +7,6 @@ use crate::{
     event::{EventPropagation, Phase},
     platform::menu::Menu,
     style::recalc::StyleReason,
-    view::ViewId,
 };
 
 pub type EventCallback = dyn FnMut(&mut EventCx) -> EventPropagation;
@@ -272,7 +271,7 @@ pub(crate) enum FrameUpdate {
     Style(ElementId, StyleReason),
     Layout,
     BoxTreeCommit,
-    Paint(ViewId),
+    Paint(ElementId),
 }
 
 // Re-export EventCx from event module for backward compatibility

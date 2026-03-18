@@ -65,7 +65,6 @@ use std::hash::Hash;
 use std::rc::Rc;
 
 use crate::{
-    Renderer,
     context::{EventCx, PaintCx, StyleCx, UpdateCx},
     event::EventPropagation,
     style::{LayoutProps, Style, StyleClassRef},

@@ -7,7 +7,7 @@ use peniko::{Blob, ImageAlphaType, ImageData, kurbo::Rect};
 use sha2::{Digest, Sha256};
 
 use crate::{
-    Renderer, prop_extractor,
+    prop_extractor,
     style::{FontSizeCx, ObjectFit, ObjectPosition},
     view::{LayoutNodeCx, MeasureFn, View, ViewId},
 };
@@ -377,7 +377,7 @@ impl View for Img {
             dest_rect,
         );
         if self.needs_clip() {
-            cx.clear_clip();
+            cx.pop_clip();
         }
     }
 }

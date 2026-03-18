@@ -420,14 +420,14 @@ impl HeadlessHarness {
     ///
     /// This is useful for verifying that style changes trigger repaints.
     pub fn paint_requested(&self) -> bool {
-        self.window_handle.window_state.request_paint
+        self.window_handle.window_state.has_pending_paint()
     }
 
     /// Clear the paint request flag.
     ///
     /// Call this before an operation to then check if it triggered a repaint.
     pub fn clear_paint_request(&mut self) {
-        self.window_handle.window_state.request_paint = false;
+        self.window_handle.window_state.clear_pending_paint();
     }
 
     /// Check if a view has pending style changes.

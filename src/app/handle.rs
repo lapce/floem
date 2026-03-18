@@ -107,7 +107,10 @@ impl ApplicationHandle {
                         *font_embolden,
                     );
                     self.gpu_resources = Some(gpu_resources);
-                    handle.paint_state = PaintState::Initialized { renderer };
+                    handle.paint_state = PaintState::Initialized {
+                        renderer,
+                        display_list: crate::paint::display_list::RetainedDisplayList::default(),
+                    };
                     handle.gpu_resources = self.gpu_resources.clone();
                     handle.init_renderer();
                 } else {
@@ -674,7 +677,7 @@ impl ApplicationHandle {
                 any_work_remaining = true;
             }
 
-            if handle.window_state.request_paint && handle.can_render_now() {
+            if handle.window_state.has_pending_paint() && handle.can_render_now() {
                 handle.window.request_redraw();
                 let frame_interval = handle
                     .window

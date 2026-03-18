@@ -303,6 +303,16 @@ impl BoxTree {
         }
         self.tree.remove(id);
     }
+
+    pub fn element_ids_for_view(&self, view_id: ViewId) -> Vec<ElementId> {
+        self.metadata
+            .values()
+            .filter_map(|meta| {
+                (meta.element_id.owning_id() == view_id && self.tree.is_alive(meta.element_id.0))
+                    .then_some(meta.element_id)
+            })
+            .collect()
+    }
 }
 
 impl Default for BoxTree {

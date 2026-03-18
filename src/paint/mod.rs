@@ -6,15 +6,14 @@
 //! - [`Renderer`] - Backend renderer abstraction
 
 pub mod border_path_iter;
+pub mod display_list;
 pub mod renderer;
 
 pub use border_path_iter::{BorderPath, BorderPathEvent};
 pub use renderer::Renderer;
 
-use floem_renderer::Renderer as FloemRenderer;
 use floem_renderer::gpu_resources::{GpuResourceError, GpuResources};
 use peniko::kurbo::{Affine, RoundedRect, Shape, Size};
-use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use understory_box_tree::NodeFlags;
 use winit::window::Window;
@@ -30,6 +29,9 @@ use crate::view::ViewId;
 use crate::view::stacking::{StackingContextItem, collect_stacking_context_items_into};
 use crate::view::{paint_bg, paint_border, paint_outline};
 use crate::window::state::WindowState;
+use display_list::{
+    ElementSnapshot, RecordingRenderer, RetainedDisplayList, TransformClass, replay_stage,
+};
 
 std::thread_local! {
     /// Holds the ID of a View being painted very briefly if it is being rendered as
@@ -125,7 +127,9 @@ pub struct GlobalPaintCx<'a> {
 pub struct PaintCx<'a> {
     /// Reference to global paint state
     pub window_state: &'a mut WindowState,
-    paint_state: &'a mut PaintState,
+    recorder: &'a mut RecordingRenderer<'a>,
+    uses_layer_clip: bool,
+    is_vger: bool,
     /// The target visual node being painted (CRITICAL for views with multiple visuals)
     pub target_id: ElementId,
     /// World transform for this visual node (from box tree)
@@ -137,6 +141,7 @@ pub struct PaintCx<'a> {
     pub font_size_cx: FontSizeCx,
 }
 
+#[derive(Clone, Copy)]
 pub(crate) enum PaintOrPost {
     Paint(ElementId),
     Post(ElementId),
@@ -254,84 +259,172 @@ impl GlobalPaintCx<'_> {
         let paint_order = self.build_paint_order(root_element_id, &mut box_tree);
         drop(box_tree);
 
-        for id_or_pop in paint_order {
+        let active_ids = paint_order
+            .iter()
+            .map(|step| match *step {
+                PaintOrPost::Paint(id) | PaintOrPost::Post(id) => id,
+            })
+            .collect();
+
+        self.paint_state
+            .display_list_mut()
+            .retain_only(&active_ids);
+        self.paint_state
+            .display_list_mut()
+            .set_paint_order(paint_order.clone());
+
+        let mut dirty_ids = self.window_state.take_dirty_paint_elements();
+        let snapshots = {
+            let mut box_tree = self.window_state.box_tree.borrow_mut();
+            active_ids
+                .iter()
+                .copied()
+                .map(|element_id| {
+                    let snapshot = ElementSnapshot {
+                        local_bounds: box_tree.local_bounds(element_id.0).unwrap_or_default(),
+                        clip: box_tree.clipped_local_clip(element_id.0),
+                        world_transform: box_tree
+                            .get_or_compute_world_transform(element_id.0)
+                            .unwrap_or_default(),
+                    };
+                    (element_id, snapshot)
+                })
+                .collect::<Vec<_>>()
+        };
+
+        for (element_id, snapshot) in snapshots {
+            if self
+                .paint_state
+                .display_list()
+                .needs_rerecord(element_id, snapshot)
+            {
+                dirty_ids.insert(element_id);
+            }
+        }
+        for element_id in dirty_ids {
+            self.record_visual_node(element_id, false);
+            self.record_visual_node(element_id, true);
+        }
+
+        let replay_order = self.paint_state.display_list().paint_order().to_vec();
+        for id_or_pop in replay_order {
             match id_or_pop {
                 PaintOrPost::Paint(element_id) => {
                     // Record for testing
                     if self.record_paint_order {
                         record_paint(element_id.owning_id());
                     }
-
-                    // Create per-target PaintCx and paint this visual node
-                    self.paint_visual_node(element_id, false);
+                    self.replay_visual_node(element_id, false);
                 }
                 PaintOrPost::Post(element_id) => {
-                    self.paint_visual_node(element_id, true);
+                    self.replay_visual_node(element_id, true);
                 }
             }
         }
     }
 
-    /// Paint a single visual node with its absolute transform
-    pub(crate) fn paint_visual_node(&mut self, element_id: ElementId, is_post: bool) {
+    fn element_base_transform(&mut self, element_id: ElementId) -> Affine {
         // Get state from box tree for this visual node
         let mut box_tree = self.window_state.box_tree.borrow_mut();
-        let world_transform = box_tree
+        box_tree
             .get_or_compute_world_transform(element_id.0)
-            .unwrap_or_default();
+            .unwrap_or_default()
+    }
+
+    fn replay_visual_node(&mut self, element_id: ElementId, is_post: bool) {
+        let base_transform = self
+            .element_base_transform(element_id)
+            .then_scale(self.window_state.effective_scale());
+        let Some(element) = self.paint_state.display_list().element(element_id) else {
+            return;
+        };
+        let stage = if is_post {
+            element.post.clone()
+        } else {
+            element.paint.clone()
+        };
+        let renderer = self.paint_state.renderer_mut();
+        replay_stage(&stage, renderer, base_transform);
+    }
+
+    /// Record a single visual node in local coordinates.
+    pub(crate) fn record_visual_node(&mut self, element_id: ElementId, is_post: bool) {
+        let mut box_tree = self.window_state.box_tree.borrow_mut();
         let layout_rect_local = box_tree.local_bounds(element_id.0).unwrap_or_default();
         let clip = box_tree.clipped_local_clip(element_id.0);
+        let snapshot = ElementSnapshot {
+            local_bounds: layout_rect_local,
+            clip,
+            world_transform: box_tree
+                .get_or_compute_world_transform(element_id.0)
+                .unwrap_or_default(),
+        };
         drop(box_tree);
-
-        // Set absolute transform on renderer
-        let device_transform = world_transform.then_scale(self.window_state.effective_scale());
-        self.paint_state
-            .renderer_mut()
-            .set_transform(device_transform);
 
         let layout_rect = layout_rect_local;
         let view_id = element_id.owning_id();
         let view = view_id.view();
         let view_state = view_id.state();
+        let mut commands = Vec::new();
+        let mut recorder = RecordingRenderer::new(&mut commands);
+        let uses_layer_clip = self.paint_state.renderer().uses_layer_clip();
+        let is_vger = self.paint_state.renderer().is_vger();
+        let world_transform = self.element_base_transform(element_id);
+        let font_size_cx = view_state.borrow().layout_props.font_size_cx();
 
-        // Create per-target PaintCx
-        let mut cx = PaintCx {
-            window_state: self.window_state,
-            paint_state: self.paint_state,
-            target_id: element_id,
-            world_transform,
-            layout_rect_local,
-            clip,
-            font_size_cx: view_state.borrow().layout_props.font_size_cx(),
-        };
+        {
+            // Create per-target PaintCx
+            let mut cx = PaintCx {
+                window_state: self.window_state,
+                recorder: &mut recorder,
+                uses_layer_clip,
+                is_vger,
+                target_id: element_id,
+                world_transform,
+                layout_rect_local,
+                clip,
+                font_size_cx,
+            };
 
-        if !is_post {
-            if element_id.is_view() {
-                let state = view_state.borrow();
-                paint_bg(&mut cx, &state.view_style_props, layout_rect);
-                paint_border(
-                    &mut cx,
-                    &state.layout_props,
-                    &state.view_style_props,
-                    layout_rect,
-                );
-                drop(state);
-                // Apply overflow clip (stays active through children)
-                if let Some(clip_shape) = clip {
-                    cx.clip(&clip_shape);
+            if !is_post {
+                if element_id.is_view() {
+                    let state = view_state.borrow();
+                    paint_bg(&mut cx, &state.view_style_props, layout_rect);
+                    paint_border(
+                        &mut cx,
+                        &state.layout_props,
+                        &state.view_style_props,
+                        layout_rect,
+                    );
+                    drop(state);
+                    // Apply overflow clip (stays active through children)
+                    if let Some(clip_shape) = clip {
+                        cx.clip(&clip_shape);
+                    }
+                }
+                view.borrow_mut().paint(&mut cx);
+            } else {
+                if element_id.is_view() && clip.is_some() {
+                    cx.pop_clip();
+                }
+                view.borrow_mut().post_paint(&mut cx);
+                if element_id.is_view() {
+                    let state = view_state.borrow();
+                    paint_outline(&mut cx, &state.view_style_props, layout_rect);
                 }
             }
-            view.borrow_mut().paint(&mut cx);
-        } else {
-            if element_id.is_view() && clip.is_some() {
-                cx.clear_clip();
-            }
-            view.borrow_mut().post_paint(&mut cx);
-            if element_id.is_view() {
-                let state = view_state.borrow();
-                paint_outline(&mut cx, &state.view_style_props, layout_rect);
-            }
         }
+
+        let display_list = self.paint_state.display_list_mut();
+        let element = display_list.element_mut(element_id);
+        let stage = if is_post {
+            &mut element.post
+        } else {
+            &mut element.paint
+        };
+        stage.commands = commands;
+        stage.transform_class = TransformClass::Affine;
+        element.snapshot = Some(snapshot);
     }
 }
 
@@ -354,25 +447,91 @@ impl PaintCx<'_> {
 
     /// Clip the drawing area (delegates to helper methods)
     pub fn clip(&mut self, shape: &impl Shape) {
-        if self.paint_state.renderer().uses_layer_clip() {
+        if self.uses_layer_clip {
             use peniko::Mix;
             self.push_layer(Mix::Normal, 1.0, Affine::IDENTITY, shape);
         } else {
-            self.paint_state.renderer_mut().clip(shape);
+            self.recorder.clip(shape);
         }
     }
 
     /// Clear clip
-    pub fn clear_clip(&mut self) {
-        if self.paint_state.renderer().uses_layer_clip() {
+    pub fn pop_clip(&mut self) {
+        if self.uses_layer_clip {
             self.pop_layer();
         } else {
-            self.paint_state.renderer_mut().clear_clip();
+            self.recorder.clear_clip();
         }
     }
 
     // Note: get_transform/set_transform removed as Renderer doesn't expose transform()
     // Views that previously used save/restore should use clip/clear_clip instead
+
+    pub fn stroke<'b, 's>(
+        &mut self,
+        shape: &impl Shape,
+        brush: impl Into<peniko::BrushRef<'b>>,
+        stroke: &'s peniko::kurbo::Stroke,
+    ) {
+        self.recorder.stroke(shape, brush, stroke);
+    }
+
+    pub fn fill<'b>(
+        &mut self,
+        path: &impl peniko::kurbo::Shape,
+        brush: impl Into<peniko::BrushRef<'b>>,
+        blur_radius: f64,
+    ) {
+        self.recorder.fill(path, brush, blur_radius);
+    }
+
+    pub fn push_layer(
+        &mut self,
+        blend: impl Into<peniko::BlendMode>,
+        alpha: f32,
+        transform: Affine,
+        clip: &impl Shape,
+    ) {
+        self.recorder.push_layer(blend, alpha, transform, clip);
+    }
+
+    pub fn pop_layer(&mut self) {
+        self.recorder.pop_layer();
+    }
+
+    pub fn draw_img(&mut self, img: floem_renderer::Img<'_>, rect: peniko::kurbo::Rect) {
+        self.recorder.draw_img(img, rect);
+    }
+
+    pub fn draw_glyphs<'a>(
+        &mut self,
+        origin: peniko::kurbo::Point,
+        props: &floem_renderer::text::GlyphRunProps<'a>,
+        glyphs: impl Iterator<Item = floem_renderer::text::Glyph> + 'a,
+    ) {
+        self.recorder.draw_glyphs(origin, props, glyphs);
+    }
+
+    pub fn draw_svg<'b>(
+        &mut self,
+        svg: floem_renderer::Svg<'b>,
+        rect: peniko::kurbo::Rect,
+        brush: Option<impl Into<peniko::BrushRef<'b>>>,
+    ) {
+        self.recorder.draw_svg(svg, rect, brush);
+    }
+
+    pub fn set_transform(&mut self, transform: Affine) {
+        self.recorder.set_transform(transform);
+    }
+
+    pub fn set_z_index(&mut self, z_index: i32) {
+        self.recorder.set_z_index(z_index);
+    }
+
+    pub fn is_vger(&self) -> bool {
+        self.is_vger
+    }
 }
 
 // TODO: should this be private?
@@ -391,7 +550,10 @@ pub enum PaintState {
         renderer: Renderer,
     },
     /// The renderer is initialized and ready to paint.
-    Initialized { renderer: Renderer },
+    Initialized {
+        renderer: Renderer,
+        display_list: RetainedDisplayList,
+    },
 }
 
 impl PaintState {
@@ -425,26 +587,50 @@ impl PaintState {
             size,
             font_embolden,
         );
-        Self::Initialized { renderer }
+        Self::Initialized {
+            renderer,
+            display_list: RetainedDisplayList::default(),
+        }
     }
 
     #[cfg(feature = "skia")]
     pub fn new_skia(window: Arc<dyn Window>, scale: f64, size: Size, font_embolden: f32) -> Self {
         let renderer = Renderer::new_skia(window.clone(), scale, size, font_embolden);
-        Self::Initialized { renderer }
+        Self::Initialized {
+            renderer,
+            display_list: RetainedDisplayList::default(),
+        }
     }
 
     pub(crate) fn renderer(&self) -> &Renderer {
         match self {
             PaintState::PendingGpuResources { renderer, .. } => renderer,
-            PaintState::Initialized { renderer } => renderer,
+            PaintState::Initialized { renderer, .. } => renderer,
         }
     }
 
     pub(crate) fn renderer_mut(&mut self) -> &mut Renderer {
         match self {
             PaintState::PendingGpuResources { renderer, .. } => renderer,
-            PaintState::Initialized { renderer } => renderer,
+            PaintState::Initialized { renderer, .. } => renderer,
+        }
+    }
+
+    pub(crate) fn display_list(&self) -> &RetainedDisplayList {
+        match self {
+            PaintState::PendingGpuResources { .. } => {
+                panic!("display list is unavailable before renderer initialization")
+            }
+            PaintState::Initialized { display_list, .. } => display_list,
+        }
+    }
+
+    pub(crate) fn display_list_mut(&mut self) -> &mut RetainedDisplayList {
+        match self {
+            PaintState::PendingGpuResources { .. } => {
+                panic!("display list is unavailable before renderer initialization")
+            }
+            PaintState::Initialized { display_list, .. } => display_list,
         }
     }
 
@@ -454,19 +640,5 @@ impl PaintState {
 
     pub(crate) fn set_scale(&mut self, scale: f64) {
         self.renderer_mut().set_scale(scale);
-    }
-}
-
-impl Deref for PaintCx<'_> {
-    type Target = Renderer;
-
-    fn deref(&self) -> &Self::Target {
-        self.paint_state.renderer()
-    }
-}
-
-impl DerefMut for PaintCx<'_> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.paint_state.renderer_mut()
     }
 }
