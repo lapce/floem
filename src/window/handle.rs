@@ -778,8 +778,9 @@ impl WindowHandle {
 
     pub(crate) fn render_frame(&mut self) {
         let renderer_ready = matches!(self.paint_state, PaintState::Initialized { .. });
-        if self.window_state.has_pending_paint() && renderer_ready {
+        if self.window_state.has_pending_render() && renderer_ready {
             self.paint();
+            self.window_state.clear_pending_damage();
             self.last_presented_at = Instant::now();
         }
 
@@ -911,7 +912,7 @@ impl WindowHandle {
     }
 
     pub(crate) fn render_frame_if_due(&mut self, min_frame_interval: Duration) -> bool {
-        if !self.window_state.has_pending_paint() {
+        if !self.window_state.has_pending_render() {
             return false;
         }
         if self.last_presented_at.elapsed() < min_frame_interval {
@@ -1123,8 +1124,8 @@ impl WindowHandle {
                     UpdateMessage::RequestBoxTreeCommit => {
                         self.window_state.needs_box_tree_commit = true;
                     }
-                    UpdateMessage::RequestPaint => {
-                        cx.window_state.request_paint(cx.window_state.root_view_id);
+                    UpdateMessage::RequestPaint(id) => {
+                        cx.window_state.request_paint(id);
                     }
                     UpdateMessage::Focus(id) => {
                         // because we do not call route, the processing messages event is not sent.

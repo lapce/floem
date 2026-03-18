@@ -24,6 +24,7 @@ thread_local! {
 use crate::context::EventCallbackConfig;
 use crate::event::listener::EventListenerKey;
 use crate::event::{RouteKind, listener};
+use crate::paint::display_list::TransformClass;
 use crate::style::recalc::StyleReason;
 use crate::view::LayoutTree;
 use crate::window::handle::get_current_view;
@@ -842,7 +843,7 @@ impl ViewId {
         ));
         self.request_layout();
         self.request_box_tree_commit();
-        self.add_update_message(UpdateMessage::RequestPaint);
+        self.add_update_message(UpdateMessage::RequestPaint(self.get_element_id()));
     }
 
     /// Request that this view have it's layout pass run
@@ -881,7 +882,7 @@ impl ViewId {
 
     /// Request that this view have it's paint pass run
     pub fn request_paint(&self) {
-        self.add_update_message(UpdateMessage::RequestPaint);
+        self.add_update_message(UpdateMessage::RequestPaint(self.get_element_id()));
     }
 
     /// request that this node be styled again
@@ -1324,6 +1325,18 @@ impl ViewId {
         }
         crate::bump_focus_nav_meta_revision();
         true
+    }
+
+    /// Mark an owned element as a retained transform boundary.
+    pub(crate) fn set_retained_transform_boundary_for_element(
+        &self,
+        element_id: ElementId,
+        boundary: Option<TransformClass>,
+    ) -> bool {
+        let box_tree = self.box_tree();
+        box_tree
+            .borrow_mut()
+            .set_retained_transform_boundary(element_id.0, boundary)
     }
 
     /// Set whether an owned element can receive focus at all.

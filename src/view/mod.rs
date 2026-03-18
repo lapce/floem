@@ -1128,7 +1128,7 @@ impl View for Box<dyn View> {
     }
 
     fn post_paint(&mut self, cx: &mut PaintCx) {
-        (**self).paint(cx)
+        (**self).post_paint(cx)
     }
 }
 

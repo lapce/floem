@@ -3,6 +3,7 @@ use std::ops::{Deref, DerefMut};
 use rustc_hash::FxHashMap;
 
 use crate::ViewId;
+use crate::paint::display_list::TransformClass;
 
 /// A visual identifier that represents a rectangle in the box tree.
 ///
@@ -162,6 +163,7 @@ impl FocusNavMeta {
 pub struct ElementMeta {
     pub element_id: ElementId,
     pub focus: FocusNavMeta,
+    pub(crate) retained_transform_boundary: Option<TransformClass>,
 }
 
 impl ElementMeta {
@@ -178,6 +180,7 @@ impl ElementMeta {
                 autofocus: false,
                 enabled: true,
             },
+            retained_transform_boundary: None,
         }
     }
 }
@@ -238,6 +241,27 @@ impl BoxTree {
             return false;
         };
         meta.focus = focus.with_keyboard_navigable(focus.keyboard_navigable);
+        self.metadata.insert(id, meta);
+        true
+    }
+
+    pub(crate) fn retained_transform_boundary(
+        &self,
+        id: understory_box_tree::NodeId,
+    ) -> Option<TransformClass> {
+        self.element_meta(id)
+            .and_then(|meta| meta.retained_transform_boundary)
+    }
+
+    pub(crate) fn set_retained_transform_boundary(
+        &mut self,
+        id: understory_box_tree::NodeId,
+        boundary: Option<TransformClass>,
+    ) -> bool {
+        let Some(mut meta) = self.element_meta(id) else {
+            return false;
+        };
+        meta.retained_transform_boundary = boundary;
         self.metadata.insert(id, meta);
         true
     }

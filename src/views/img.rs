@@ -358,6 +358,7 @@ impl View for Img {
             // object_fit changed, update taffy layout
             self.set_taffy_layout();
             self.id.request_layout();
+            cx.window_state.request_paint(self.id);
         }
     }
 

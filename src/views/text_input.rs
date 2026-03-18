@@ -1220,7 +1220,7 @@ impl View for TextInput {
         format!("TextInput: {:?}", self.buffer.get_untracked()).into()
     }
 
-    fn update(&mut self, _cx: &mut UpdateCx, state: Box<dyn Any>) {
+    fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) {
         if state.is::<TimerToken>() {
             if let Ok(token) = state.downcast::<TimerToken>()
                 && *token == self.cursor_blink_timer
@@ -1244,6 +1244,7 @@ impl View for TextInput {
             if text_updated {
                 self.update_text_layout();
                 self.id.request_layout();
+                cx.window_state.request_paint(self.id);
             }
         } else {
             eprintln!("downcast failed");

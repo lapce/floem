@@ -585,6 +585,10 @@ impl Scroll {
         let child = child.into_any();
         let child_id = child.id();
         id.add_child(child);
+        id.set_retained_transform_boundary_for_element(
+            child_id.get_element_id(),
+            Some(crate::paint::display_list::TransformClass::TranslateOnly),
+        );
         // we need to first set the clip rect to zero so that virtual items don't set a large initial size
         id.set_box_tree_clip(Some(RoundedRect::from_rect(Rect::ZERO, 0.)));
 
@@ -975,7 +979,6 @@ impl View for Scroll {
                         .apply_scroll_delta(new_offset - self.scroll_offset)
                         .is_some()
                 {
-                    cx.window_state.request_paint(self.id);
                 }
                 return result.propagation;
             }
@@ -986,7 +989,6 @@ impl View for Scroll {
                         .apply_scroll_delta(new_offset - self.scroll_offset)
                         .is_some()
                 {
-                    cx.window_state.request_paint(self.id);
                 }
                 return result.propagation;
             }
@@ -997,7 +999,6 @@ impl View for Scroll {
                         .apply_scroll_delta(new_offset - self.scroll_offset)
                         .is_some()
                 {
-                    cx.window_state.request_paint(self.id);
                 }
                 return result.propagation;
             }
@@ -1008,7 +1009,6 @@ impl View for Scroll {
                         .apply_scroll_delta(new_offset - self.scroll_offset)
                         .is_some()
                 {
-                    cx.window_state.request_paint(self.id);
                 }
                 return result.propagation;
             }
@@ -1028,10 +1028,6 @@ impl View for Scroll {
             };
 
             let change = self.apply_scroll_delta(delta);
-
-            if change.is_some() {
-                cx.window_state.request_paint(self.id);
-            }
 
             return if self.scroll_style.propagate_pointer_wheel() && change.is_none() {
                 EventPropagation::Continue

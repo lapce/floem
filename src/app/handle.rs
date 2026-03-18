@@ -677,7 +677,7 @@ impl ApplicationHandle {
                 any_work_remaining = true;
             }
 
-            if handle.window_state.has_pending_paint() && handle.can_render_now() {
+            if handle.window_state.has_pending_render() && handle.can_render_now() {
                 handle.window.request_redraw();
                 let frame_interval = handle
                     .window

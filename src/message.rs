@@ -65,7 +65,7 @@ pub enum UpdateMessage {
         pointer_id: PointerId,
     },
     WindowScale(f64),
-    RequestPaint,
+    RequestPaint(ElementId),
     RequestLayout,
     /// Request that the box tree be updated from the layout tree (full walk) and committed
     RequestBoxTreeUpdate,

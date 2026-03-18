@@ -495,11 +495,13 @@ impl View for Label {
     fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) {
         if state.is::<String>()
             && let Ok(state) = state.downcast::<String>()
+            && *state != self.label
         {
             self.label = *state;
             self.layout_data.borrow_mut().clear_overflow_state();
             self.set_text_layout();
-            cx.window_state.schedule_layout();
+            self.id.request_layout();
+            cx.window_state.request_paint(self.id);
         }
     }
 

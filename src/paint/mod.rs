@@ -14,6 +14,7 @@ pub use renderer::Renderer;
 
 use floem_renderer::gpu_resources::{GpuResourceError, GpuResources};
 use peniko::kurbo::{Affine, RoundedRect, Shape, Size};
+use rustc_hash::FxHashSet;
 use std::sync::Arc;
 use understory_box_tree::NodeFlags;
 use winit::window::Window;
@@ -30,7 +31,8 @@ use crate::view::stacking::{StackingContextItem, collect_stacking_context_items_
 use crate::view::{paint_bg, paint_border, paint_outline};
 use crate::window::state::WindowState;
 use display_list::{
-    ElementSnapshot, RecordingRenderer, RetainedDisplayList, TransformClass, replay_stage,
+    ElementSnapshot, RecordingRenderer, RetainedDisplayList, TransformClass,
+    replay_stage, transform_diff_class,
 };
 
 std::thread_local! {
@@ -212,6 +214,66 @@ pub(crate) fn collect_visual_order(
 }
 
 impl GlobalPaintCx<'_> {
+    fn collect_retained_subtree_descendants(
+        &mut self,
+        active_ids: &FxHashSet<ElementId>,
+        explicit_dirty: &FxHashSet<ElementId>,
+    ) -> FxHashSet<ElementId> {
+        let mut reusable_descendants = FxHashSet::default();
+        let display_list = self.paint_state.display_list();
+
+        let mut box_tree = self.window_state.box_tree.borrow_mut();
+        let mut stack = Vec::new();
+
+        for &element_id in active_ids {
+            let Some(boundary) = box_tree.retained_transform_boundary(element_id.0) else {
+                continue;
+            };
+
+            if explicit_dirty.contains(&element_id) {
+                continue;
+            }
+
+            let snapshot = ElementSnapshot {
+                local_bounds: box_tree.local_bounds(element_id.0).unwrap_or_default(),
+                clip: box_tree.local_clip(element_id.0).flatten(),
+                world_transform: box_tree
+                    .get_or_compute_world_transform(element_id.0)
+                    .unwrap_or_default(),
+            };
+
+            let Some(previous) = display_list.element(element_id).and_then(|e| e.snapshot) else {
+                continue;
+            };
+            let diff = transform_diff_class(previous.world_transform, snapshot.world_transform);
+            if previous.local_bounds != snapshot.local_bounds
+                || previous.clip != snapshot.clip
+                || !boundary.supports(diff)
+            {
+                continue;
+            }
+
+            stack.clear();
+            stack.extend(box_tree.children_of(element_id.0).iter().copied());
+            while let Some(node_id) = stack.pop() {
+                let Some(descendant) = box_tree.element_id_of(node_id) else {
+                    continue;
+                };
+                if !active_ids.contains(&descendant)
+                    || explicit_dirty.contains(&descendant)
+                    || display_list.element(descendant).is_none()
+                {
+                    stack.extend(box_tree.children_of(node_id).iter().copied());
+                    continue;
+                }
+                reusable_descendants.insert(descendant);
+                stack.extend(box_tree.children_of(node_id).iter().copied());
+            }
+        }
+
+        reusable_descendants
+    }
+
     /// Build explicit paint order for entire view tree.
     ///
     /// Returns a flat list of VisualIds in paint order (back-to-front, respecting z-index).
@@ -266,14 +328,14 @@ impl GlobalPaintCx<'_> {
             })
             .collect();
 
-        self.paint_state
-            .display_list_mut()
-            .retain_only(&active_ids);
+        self.paint_state.display_list_mut().retain_only(&active_ids);
         self.paint_state
             .display_list_mut()
             .set_paint_order(paint_order.clone());
 
         let mut dirty_ids = self.window_state.take_dirty_paint_elements();
+        let reusable_descendants =
+            self.collect_retained_subtree_descendants(&active_ids, &dirty_ids);
         let snapshots = {
             let mut box_tree = self.window_state.box_tree.borrow_mut();
             active_ids
@@ -282,7 +344,7 @@ impl GlobalPaintCx<'_> {
                 .map(|element_id| {
                     let snapshot = ElementSnapshot {
                         local_bounds: box_tree.local_bounds(element_id.0).unwrap_or_default(),
-                        clip: box_tree.clipped_local_clip(element_id.0),
+                        clip: box_tree.local_clip(element_id.0).flatten(),
                         world_transform: box_tree
                             .get_or_compute_world_transform(element_id.0)
                             .unwrap_or_default(),
@@ -293,6 +355,9 @@ impl GlobalPaintCx<'_> {
         };
 
         for (element_id, snapshot) in snapshots {
+            if reusable_descendants.contains(&element_id) {
+                continue;
+            }
             if self
                 .paint_state
                 .display_list()
@@ -351,7 +416,10 @@ impl GlobalPaintCx<'_> {
     pub(crate) fn record_visual_node(&mut self, element_id: ElementId, is_post: bool) {
         let mut box_tree = self.window_state.box_tree.borrow_mut();
         let layout_rect_local = box_tree.local_bounds(element_id.0).unwrap_or_default();
-        let clip = box_tree.clipped_local_clip(element_id.0);
+        // Retained identity uses the element's own local clip. Do not use
+        // `clipped_local_clip()` here: that value includes ancestor/world clipping
+        // and would make the retained entry depend on transient parent state.
+        let clip = box_tree.local_clip(element_id.0).flatten();
         let snapshot = ElementSnapshot {
             local_bounds: layout_rect_local,
             clip,

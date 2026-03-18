@@ -13,7 +13,6 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::{SmallVec, smallvec};
 use taffy::{AvailableSpace, NodeId};
 use ui_events::pointer::{PointerId, PointerInfo};
-use understory_box_tree::QueryFilter;
 use understory_event_state::{click::ClickState, focus::FocusState, hover::HoverState};
 use understory_focus::{FocusEntry, FocusSpace};
 use winit::cursor::CursorIcon;
@@ -142,6 +141,7 @@ pub struct WindowState {
     pub(crate) disabled_selector_views: FxHashMap<ViewId, ()>,
     pub(crate) selected_selector_views: FxHashMap<ViewId, ()>,
     pub(crate) dirty_paint_elements: FxHashSet<ElementId>,
+    pub(crate) pending_damage_rects: Vec<Rect>,
     pub(crate) drag_tracker: DragTracker,
     pub(crate) screen_size_bp: ScreenSizeBp,
     pub(crate) grid_bps: GridBreakpoints,
@@ -219,6 +219,7 @@ impl WindowState {
             screen_size_bp: ScreenSizeBp::Xs,
             scheduled_updates: vec![FrameUpdate::Paint(root_element_id)],
             dirty_paint_elements: FxHashSet::from_iter([root_element_id]),
+            pending_damage_rects: Vec::new(),
             style_dirty: Default::default(),
             responsive_selector_views: FxHashMap::default(),
             disabled_selector_views: FxHashMap::default(),
@@ -1004,18 +1005,7 @@ impl WindowState {
 
         let damage = self.box_tree.borrow_mut().commit();
 
-        if !damage.dirty_rects.is_empty() {
-            let dirty_elements: FxHashSet<ElementId> = {
-                let box_tree = self.box_tree.borrow();
-                damage
-                    .dirty_rects
-                    .iter()
-                    .flat_map(|rect| box_tree.intersect_rect(*rect, QueryFilter::new().visible()))
-                    .filter_map(|node_id| box_tree.element_id_of(node_id))
-                    .collect()
-            };
-            self.dirty_paint_elements.extend(dirty_elements);
-        }
+        self.pending_damage_rects.extend(damage.dirty_rects.iter().copied());
 
         let pointer = self.last_pointer;
         for damage_rect in &damage.dirty_rects {
@@ -1241,8 +1231,16 @@ impl WindowState {
         !self.dirty_paint_elements.is_empty()
     }
 
+    pub fn has_pending_render(&self) -> bool {
+        !self.dirty_paint_elements.is_empty() || !self.pending_damage_rects.is_empty()
+    }
+
     pub fn clear_pending_paint(&mut self) {
         self.dirty_paint_elements.clear();
+    }
+
+    pub fn clear_pending_damage(&mut self) {
+        self.pending_damage_rects.clear();
     }
 
     pub(crate) fn update_screen_size_bp(&mut self, size: Size) {
