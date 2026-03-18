@@ -49,7 +49,72 @@ impl KeypressMap {
         add_default_linux(&mut keymaps);
         Self { keymaps }
     }
+
+    /// Look up a command for the given keypress, accounting for modal editing.
+    ///
+    /// In insert mode, a keypress with Shift held (e.g. Shift+Home) falls back
+    /// to the unshifted binding (Home) if no exact match exists. In other modes,
+    /// Shift+key is a distinct command and no fallback occurs.
+    fn resolve_command(
+        &self,
+        editor: RwSignal<Editor>,
+        keypress: &KeypressKey,
+    ) -> Option<&Command> {
+        if let Some(cmd) = self.keymaps.get(keypress) {
+            return Some(cmd);
+        }
+
+        let mode = editor.get_untracked().cursor.get_untracked().get_mode();
+        if mode != Mode::Insert {
+            return None;
+        }
+
+        // Insert mode: Shift is a text modifier (uppercase), not a command
+        // modifier. Try the lookup again without it.
+        let mut unshifted = keypress.modifiers;
+        unshifted.set(Modifiers::SHIFT, false);
+        self.keymaps.get(&KeypressKey {
+            key: keypress.key.clone(),
+            modifiers: unshifted,
+        })
+    }
+
+    /// Dispatch a key combination against this keymap.
+    ///
+    /// Looks up the key combination in the keymap. If no exact match is
+    /// found, retries the lookup with the Shift modifier removed. This
+    /// allows movement commands like Home and End to support selection
+    /// extension (Shift+Home, Shift+End) without needing separate keymap
+    /// entries — the Shift modifier is passed through to the command,
+    /// which uses it to decide between moving the cursor and extending
+    /// the selection.
+    ///
+    /// This applies to any binding in the map, including custom ones.
+    /// A binding for Ctrl+Home will automatically handle Ctrl+Shift+Home
+    /// as the same command with selection extension.
+    ///
+    /// Returns [`CommandExecuted::Yes`] if a command was found and executed,
+    /// [`CommandExecuted::No`] otherwise.
+    ///
+    /// See the [`custom_keymap`](https://github.com/lapce/floem/tree/main/examples/custom_keymap)
+    /// example for a complete usage demonstration.
+    pub fn handle_keypress(
+        &self,
+        editor: RwSignal<Editor>,
+        keypress: &KeypressKey,
+    ) -> CommandExecuted {
+        let Some(command) = self.resolve_command(editor, keypress) else {
+            return CommandExecuted::No;
+        };
+
+        editor.with_untracked(|editor| {
+            editor
+                .doc()
+                .run_command(editor, command, Some(1), keypress.modifiers)
+        })
+    }
 }
+
 impl Default for KeypressMap {
     fn default() -> Self {
         match std::env::consts::OS {
@@ -382,31 +447,15 @@ fn add_default_nonmacos(c: &mut HashMap<KeypressKey, Command>) {
     );
 }
 
+/// Returns a key handler closure that dispatches against the default keymap.
+///
+/// This is used internally by [`text_editor`](super::text_editor::text_editor)
+/// to provide standard editing keybindings. If you need the default keymap with
+/// additional custom shortcuts, use [`KeypressMap::handle_keypress`] directly
+/// instead.
 pub fn default_key_handler(
     editor: RwSignal<Editor>,
 ) -> impl Fn(KeypressKey) -> CommandExecuted + 'static {
     let keypress_map = KeypressMap::default();
-    move |keypress| {
-        let command = keypress_map.keymaps.get(&keypress).or_else(|| {
-            let mode = editor.get_untracked().cursor.get_untracked().get_mode();
-            if mode == Mode::Insert {
-                let mut modified_modifiers = keypress.modifiers;
-                modified_modifiers.set(Modifiers::SHIFT, false);
-                keypress_map.keymaps.get(&KeypressKey {
-                    key: keypress.key,
-                    modifiers: modified_modifiers,
-                })
-            } else {
-                None
-            }
-        });
-        let Some(command) = command else {
-            return CommandExecuted::No;
-        };
-        editor.with_untracked(|editor| {
-            editor
-                .doc()
-                .run_command(editor, command, Some(1), keypress.modifiers)
-        })
-    }
+    move |keypress| keypress_map.handle_keypress(editor, &keypress)
 }
