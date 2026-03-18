@@ -112,6 +112,7 @@ impl Default for ElementStage {
 pub(crate) struct ElementSnapshot {
     pub local_bounds: Rect,
     pub clip: Option<RoundedRect>,
+    pub effective_clip: Option<RoundedRect>,
     pub world_transform: Affine,
 }
 

@@ -113,6 +113,21 @@ fn record_paint(id: ViewId) {
     });
 }
 
+fn effective_clip_not_loosened(
+    recorded: Option<RoundedRect>,
+    current: Option<RoundedRect>,
+) -> bool {
+    match (recorded, current) {
+        (None, _) => true,
+        (Some(_), None) => false,
+        (Some(recorded), Some(current)) => {
+            recorded == current
+                || (recorded.radii() == current.radii()
+                    && recorded.rect().contains_rect(current.rect()))
+        }
+    }
+}
+
 /// Global paint context - holds shared state for entire paint pass
 /// Similar to GlobalEventCx in event dispatch
 pub struct GlobalPaintCx<'a> {
@@ -237,6 +252,7 @@ impl GlobalPaintCx<'_> {
             let snapshot = ElementSnapshot {
                 local_bounds: box_tree.local_bounds(element_id.0).unwrap_or_default(),
                 clip: box_tree.local_clip(element_id.0).flatten(),
+                effective_clip: box_tree.clipped_local_clip(element_id.0),
                 world_transform: box_tree
                     .get_or_compute_world_transform(element_id.0)
                     .unwrap_or_default(),
@@ -248,6 +264,7 @@ impl GlobalPaintCx<'_> {
             let diff = transform_diff_class(previous.world_transform, snapshot.world_transform);
             if previous.local_bounds != snapshot.local_bounds
                 || previous.clip != snapshot.clip
+                || !effective_clip_not_loosened(previous.effective_clip, snapshot.effective_clip)
                 || !boundary.supports(diff)
             {
                 continue;
@@ -345,6 +362,7 @@ impl GlobalPaintCx<'_> {
                     let snapshot = ElementSnapshot {
                         local_bounds: box_tree.local_bounds(element_id.0).unwrap_or_default(),
                         clip: box_tree.local_clip(element_id.0).flatten(),
+                        effective_clip: box_tree.clipped_local_clip(element_id.0),
                         world_transform: box_tree
                             .get_or_compute_world_transform(element_id.0)
                             .unwrap_or_default(),
@@ -419,10 +437,12 @@ impl GlobalPaintCx<'_> {
         // Retained identity uses the element's own local clip. Do not use
         // `clipped_local_clip()` here: that value includes ancestor/world clipping
         // and would make the retained entry depend on transient parent state.
-        let clip = box_tree.local_clip(element_id.0).flatten();
+        let local_clip = box_tree.local_clip(element_id.0).flatten();
+        let effective_clip = box_tree.clipped_local_clip(element_id.0);
         let snapshot = ElementSnapshot {
             local_bounds: layout_rect_local,
-            clip,
+            clip: local_clip,
+            effective_clip,
             world_transform: box_tree
                 .get_or_compute_world_transform(element_id.0)
                 .unwrap_or_default(),
@@ -450,7 +470,7 @@ impl GlobalPaintCx<'_> {
                 target_id: element_id,
                 world_transform,
                 layout_rect_local,
-                clip,
+                clip: local_clip,
                 font_size_cx,
             };
 
@@ -466,13 +486,13 @@ impl GlobalPaintCx<'_> {
                     );
                     drop(state);
                     // Apply overflow clip (stays active through children)
-                    if let Some(clip_shape) = clip {
+                    if let Some(clip_shape) = effective_clip {
                         cx.clip(&clip_shape);
                     }
                 }
                 view.borrow_mut().paint(&mut cx);
             } else {
-                if element_id.is_view() && clip.is_some() {
+                if element_id.is_view() && effective_clip.is_some() {
                     cx.pop_clip();
                 }
                 view.borrow_mut().post_paint(&mut cx);
