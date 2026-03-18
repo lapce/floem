@@ -142,6 +142,17 @@ impl ViewStorage {
             .clone()
     }
 
+    pub(crate) fn existing_box_tree(&self, view_id: ViewId) -> Rc<RefCell<BoxTree>> {
+        let root = self
+            .root
+            .get(view_id)
+            .expect("all view ids are created with a root");
+        self.box_tree
+            .get(root)
+            .expect("box tree should exist for live view")
+            .clone()
+    }
+
     pub(crate) fn state(&mut self, id: ViewId) -> Rc<RefCell<ViewState>> {
         if !self.view_ids.contains_key(id) {
             // if view_ids doesn't have this view id, that means it's been cleaned up,

@@ -901,10 +901,11 @@ impl WindowState {
                     let props = compute_view_box_properties(s, view_id, layout, parent_scroll);
 
                     // Update box tree
-                    let mut box_tree = self.box_tree.borrow_mut();
-                    box_tree.set_local_bounds(props.element_id.0, props.local_rect);
-                    box_tree.set_local_clip(props.element_id.0, props.clip);
-                    box_tree.set_local_transform(props.element_id.0, props.local_transform);
+                    props.element_id.set_local_bounds(props.local_rect);
+                    props.element_id.set_local_clip(props.clip);
+                    self.box_tree
+                        .borrow_mut()
+                        .set_local_transform(props.element_id.0, props.local_transform);
                 }
             }
         });
@@ -1487,12 +1488,11 @@ fn compute_absolute_transforms_and_boxes(
         let props = compute_view_box_properties(s, view_id, layout, parent_scroll);
 
         // Update box tree
-        {
-            let mut box_tree = box_tree.borrow_mut();
-            box_tree.set_local_bounds(props.element_id.0, props.local_rect);
-            box_tree.set_local_clip(props.element_id.0, props.clip);
-            box_tree.set_local_transform(props.element_id.0, props.local_transform);
-        }
+        props.element_id.set_local_bounds(props.local_rect);
+        props.element_id.set_local_clip(props.clip);
+        box_tree
+            .borrow_mut()
+            .set_local_transform(props.element_id.0, props.local_transform);
 
         // Recurse with this view's scroll offset
         if let Some(children) = children {

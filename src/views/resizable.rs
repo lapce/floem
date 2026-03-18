@@ -211,9 +211,7 @@ impl Handle {
             }
         };
 
-        self.box_tree
-            .borrow_mut()
-            .set_local_bounds(self.element_id.0, new_rect);
+        self.element_id.set_local_bounds(new_rect);
         self.box_tree
             .borrow_mut()
             .set_flags(self.element_id.0, NodeFlags::VISIBLE | NodeFlags::PICKABLE);

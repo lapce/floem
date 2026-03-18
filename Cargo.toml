@@ -116,11 +116,17 @@ fluent-bundle = { version = "0.16", optional = true }
 unic-langid = { version = "0.9", optional = true }
 sys-locale = { version = "0.3.2", optional = true }
 ouroboros = { version = "0.18", optional = true }
-understory_box_tree = { git = "https://github.com/jrmoulton/understory", rev = "0ae67e1bf2a8", package = "understory_box_tree" }
-understory_event_state = { git = "https://github.com/jrmoulton/understory", rev = "0ae67e1bf2a8", package = "understory_event_state" }
-understory_index = { git = "https://github.com/jrmoulton/understory", rev = "0ae67e1bf2a8", package = "understory_index" }
-understory_focus = { git = "https://github.com/jrmoulton/understory", rev = "0ae67e1bf2a8", package = "understory_focus" }
-understory_virtual_list = { git = "https://github.com/jrmoulton/understory", rev = "0ae67e1bf2a8", package = "understory_virtual_list" }
+# understory_box_tree = { git = "https://github.com/jrmoulton/understory", rev = "0ae67e1bf2a8", package = "understory_box_tree" }
+# understory_event_state = { git = "https://github.com/jrmoulton/understory", rev = "0ae67e1bf2a8", package = "understory_event_state" }
+# understory_index = { git = "https://github.com/jrmoulton/understory", rev = "0ae67e1bf2a8", package = "understory_index" }
+# understory_focus = { git = "https://github.com/jrmoulton/understory", rev = "0ae67e1bf2a8", package = "understory_focus" }
+# understory_virtual_list = { git = "https://github.com/jrmoulton/understory", rev = "0ae67e1bf2a8", package = "understory_virtual_list" }
+
+understory_box_tree = { path = "../understory/understory_box_tree", package = "understory_box_tree" }
+understory_event_state = { path = "../understory/understory_event_state", package = "understory_event_state" }
+understory_index = { path = "../understory/understory_index", package = "understory_index" }
+understory_focus = { path = "../understory/understory_focus", package = "understory_focus" }
+understory_virtual_list = { path = "../understory/understory_virtual_list", package = "understory_virtual_list" }
 
 [target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
 muda = { workspace = true }

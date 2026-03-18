@@ -1,9 +1,13 @@
 use std::ops::{Deref, DerefMut};
 
+use peniko::kurbo::{Rect, RoundedRect};
 use rustc_hash::FxHashMap;
 
 use crate::ViewId;
+use crate::action::add_update_message;
+use crate::message::UpdateMessage;
 use crate::paint::display_list::TransformClass;
+use crate::view::VIEW_STORAGE;
 
 /// A visual identifier that represents a rectangle in the box tree.
 ///
@@ -59,6 +63,20 @@ impl ElementId {
     /// Returns true if the element id is the primary element for a view.
     pub fn is_view(&self) -> bool {
         self.2
+    }
+
+    pub fn set_local_clip(&self, clip: Option<RoundedRect>) {
+        let box_tree = VIEW_STORAGE.with_borrow(|s| s.existing_box_tree(self.owning_id()));
+        if box_tree.borrow_mut().set_local_clip(self.0, clip) {
+            add_update_message(UpdateMessage::RequestPaint(*self));
+        }
+    }
+
+    pub fn set_local_bounds(&self, rect: Rect) {
+        let box_tree = VIEW_STORAGE.with_borrow(|s| s.existing_box_tree(self.owning_id()));
+        if box_tree.borrow_mut().set_local_bounds(self.0, rect) {
+            add_update_message(UpdateMessage::RequestPaint(*self));
+        }
     }
 }
 

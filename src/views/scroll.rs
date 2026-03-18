@@ -107,7 +107,7 @@ impl ScrollHandle {
         let resolved =
             cx.resolve_nested_maps(Style::new(), &[Handle::class_ref()], self.element_id);
         if self.style.read_style_for(cx, &resolved, self.element_id) {
-            self.element_id.owning_id().request_paint();
+            cx.window_state.request_paint(self.element_id);
         }
     }
 
@@ -241,9 +241,7 @@ impl ScrollHandle {
             }
         };
 
-        self.box_tree
-            .borrow_mut()
-            .set_local_bounds(self.element_id.0, rect);
+        self.element_id.set_local_bounds(rect);
         self.box_tree
             .borrow_mut()
             .set_flags(self.element_id.0, NodeFlags::VISIBLE | NodeFlags::PICKABLE);
@@ -329,7 +327,7 @@ impl ScrollTrack {
     fn style(&mut self, cx: &mut StyleCx) {
         let resolved = cx.resolve_nested_maps(Style::new(), &[Track::class_ref()], self.element_id);
         if self.style.read_style_for(cx, &resolved, self.element_id) {
-            self.element_id.owning_id().request_paint();
+            cx.window_state.request_paint(self.element_id);
         }
     }
 
@@ -428,9 +426,7 @@ impl ScrollTrack {
             }
         };
 
-        self.box_tree
-            .borrow_mut()
-            .set_local_bounds(self.element_id.0, rect);
+        self.element_id.set_local_bounds(rect);
         self.box_tree
             .borrow_mut()
             .set_flags(self.element_id.0, NodeFlags::VISIBLE | NodeFlags::PICKABLE);

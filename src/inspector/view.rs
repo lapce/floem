@@ -675,7 +675,6 @@ fn register_capture_elements(
             let box_tree = owner_id.box_tree();
             let mut bt = box_tree.borrow_mut();
             bt.reparent(element.0, Some(parent_element.0));
-            bt.set_local_bounds(element.0, rect);
             bt.set_flags(element.0, NodeFlags::VISIBLE | NodeFlags::PICKABLE);
             bt.set_element_meta(
                 element.0,
@@ -684,6 +683,7 @@ fn register_capture_elements(
                 ))),
             );
             drop(bt);
+            element.set_local_bounds(rect);
             element_to_data_id.insert(element, captured.id_data_str.clone());
             next_parent = element;
         }

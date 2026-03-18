@@ -782,11 +782,7 @@ impl ViewId {
 
     /// set the clip rectange in local coordinates in the box tree
     pub fn set_box_tree_clip(&self, clip: Option<RoundedRect>) {
-        let element_id = self.get_element_id();
-        VIEW_STORAGE.with_borrow_mut(|s| {
-            let box_tree = s.box_tree(*self);
-            box_tree.borrow_mut().set_local_clip(element_id.0, clip)
-        })
+        self.get_element_id().set_local_clip(clip);
     }
 
     /// Returns true if this view is hidden.

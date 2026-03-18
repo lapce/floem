@@ -2,7 +2,7 @@
 //! A toggle button widget. An example can be found in [widget-gallery/button](https://github.com/lapce/floem/tree/main/examples/widget-gallery)
 //! in the floem examples.
 
-use std::{cell::RefCell, rc::Rc, time::Duration};
+use std::time::Duration;
 
 use floem_reactive::{Effect, SignalGet, SignalUpdate};
 use peniko::Brush;
@@ -13,7 +13,7 @@ use crate::context::Phases;
 use crate::custom_event;
 use crate::event::listener::EventListenerTrait;
 use crate::{
-    BoxTree, ElementId,
+    ElementId,
     context::{EventCx, PaintCx, UpdateCx},
     easing::Linear,
     event::{
@@ -60,7 +60,6 @@ custom_event!(ToggleChanged, bool, ToggleChanged::extract_inner);
 
 struct Handle {
     element_id: ElementId,
-    box_tree: Rc<RefCell<BoxTree>>,
     position: f64,
     parent_id: ViewId,
     dragged: bool,
@@ -72,7 +71,6 @@ impl Handle {
         Self {
             parent_id,
             element_id: parent_id.create_child_element_id(1),
-            box_tree: parent_id.box_tree(),
             position: 0.0,
             dragged: false,
             moved_on_down: false,
@@ -93,8 +91,7 @@ impl Handle {
             self.position + radius,
             size.height,
         );
-        let mut bt = self.box_tree.borrow_mut();
-        bt.set_local_bounds(self.element_id.0, rect);
+        self.element_id.set_local_bounds(rect);
     }
 
     fn snap(&mut self, state: bool, size: Size, radius: f64, inset: f64) {
