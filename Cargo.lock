@@ -6366,7 +6366,7 @@ dependencies = [
 [[package]]
 name = "understory_box_tree"
 version = "0.0.1"
-source = "git+https://github.com/jrmoulton/understory?rev=d7867c59e246#d7867c59e24699860feaa5e675dc638677ad853c"
+source = "git+https://github.com/jrmoulton/understory?rev=3acd6cde8c5c#3acd6cde8c5c642442f14b02d893b7e1068e41eb"
 dependencies = [
  "bitflags 2.11.0",
  "kurbo",
@@ -6376,7 +6376,7 @@ dependencies = [
 [[package]]
 name = "understory_event_state"
 version = "0.1.0"
-source = "git+https://github.com/jrmoulton/understory?rev=d7867c59e246#d7867c59e24699860feaa5e675dc638677ad853c"
+source = "git+https://github.com/jrmoulton/understory?rev=3acd6cde8c5c#3acd6cde8c5c642442f14b02d893b7e1068e41eb"
 dependencies = [
  "kurbo",
 ]
@@ -6384,7 +6384,7 @@ dependencies = [
 [[package]]
 name = "understory_focus"
 version = "0.1.0"
-source = "git+https://github.com/jrmoulton/understory?rev=d7867c59e246#d7867c59e24699860feaa5e675dc638677ad853c"
+source = "git+https://github.com/jrmoulton/understory?rev=3acd6cde8c5c#3acd6cde8c5c642442f14b02d893b7e1068e41eb"
 dependencies = [
  "kurbo",
  "understory_box_tree",
@@ -6394,7 +6394,7 @@ dependencies = [
 [[package]]
 name = "understory_index"
 version = "0.0.1"
-source = "git+https://github.com/jrmoulton/understory?rev=d7867c59e246#d7867c59e24699860feaa5e675dc638677ad853c"
+source = "git+https://github.com/jrmoulton/understory?rev=3acd6cde8c5c#3acd6cde8c5c642442f14b02d893b7e1068e41eb"
 dependencies = [
  "hashbrown 0.16.1",
  "smallvec",
@@ -6403,7 +6403,7 @@ dependencies = [
 [[package]]
 name = "understory_virtual_list"
 version = "0.1.0"
-source = "git+https://github.com/jrmoulton/understory?rev=d7867c59e246#d7867c59e24699860feaa5e675dc638677ad853c"
+source = "git+https://github.com/jrmoulton/understory?rev=3acd6cde8c5c#3acd6cde8c5c642442f14b02d893b7e1068e41eb"
 
 [[package]]
 name = "unic-langid"
