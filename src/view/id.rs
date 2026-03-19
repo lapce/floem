@@ -599,7 +599,7 @@ impl ViewId {
         VIEW_STORAGE.with_borrow_mut(|s| {
             s.box_tree(*self)
                 .borrow_mut()
-                .get_or_compute_world_transform(element_id.0)
+                .world_transform(element_id.0)
                 .unwrap_or_default()
         })
     }
@@ -614,7 +614,7 @@ impl ViewId {
         VIEW_STORAGE.with_borrow_mut(|s| {
             s.box_tree(*self)
                 .borrow_mut()
-                .get_or_compute_world_bounds(element_id.0)
+                .world_bounds(element_id.0)
                 .unwrap_or_default()
         })
     }
@@ -642,7 +642,7 @@ impl ViewId {
             .with_borrow_mut(|s| {
                 s.box_tree(*self)
                     .borrow_mut()
-                    .get_or_compute_world_bounds(element_id.0)
+                    .world_bounds(element_id.0)
                     .unwrap_or_default()
             })
             .origin()
@@ -1407,7 +1407,7 @@ impl ViewId {
         VIEW_STORAGE.with_borrow_mut(|s| {
             s.box_tree(*self)
                 .borrow_mut()
-                .get_or_compute_world_transform(element_id.0)
+                .world_transform(element_id.0)
                 .unwrap_or_default()
                 * Point::ZERO
         })

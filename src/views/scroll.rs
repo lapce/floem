@@ -687,6 +687,43 @@ impl Scroll {
 
 /// internal methods
 impl Scroll {
+    fn clamp_scroll_offset_to_content(&mut self) -> bool {
+        let viewport_size = self.id.get_content_rect_local().size();
+        let content_size = self.child.get_layout_rect_local().size();
+
+        let mut max_scroll =
+            (content_size.to_vec2() - viewport_size.to_vec2()).max_by_component(Vec2::ZERO);
+
+        if !matches!(self.scroll_style.overflow_x(), taffy::Overflow::Scroll) {
+            max_scroll.x = 0.0;
+        }
+        if !matches!(self.scroll_style.overflow_y(), taffy::Overflow::Scroll) {
+            max_scroll.y = 0.0;
+        }
+
+        let old_scroll_offset = self.scroll_offset;
+        self.scroll_offset = self
+            .scroll_offset
+            .max_by_component(Vec2::ZERO)
+            .min_by_component(max_scroll);
+        let changed = old_scroll_offset != self.scroll_offset;
+        let translation_changed = self.id.set_child_translation(self.scroll_offset);
+
+        if translation_changed {
+            self.id.route_event(
+                Event::new_custom(ScrollChanged {
+                    offset: self.scroll_offset,
+                }),
+                RouteKind::Directed {
+                    target: self.id.get_element_id(),
+                    phases: crate::context::Phases::TARGET,
+                },
+            );
+        }
+
+        changed
+    }
+
     /// this applies a delta, set the viewport in the window state and returns the delta that was actually applied
     ///
     /// If the delta is positive, the view will scroll down, negative will scroll up.
@@ -799,7 +836,7 @@ impl Scroll {
     fn do_scroll_to_element(&mut self, scroll_to: ScrollTo) -> EventPropagation {
         let child_element_id = self.child.get_element_id();
         let box_tree = self.id.box_tree();
-        let mut box_tree = box_tree.borrow_mut();
+        let box_tree = box_tree.borrow();
 
         let Some(target_local_rect) = scroll_to
             .rect
@@ -809,10 +846,10 @@ impl Scroll {
         };
 
         let target_transform = box_tree
-            .get_or_compute_world_transform(scroll_to.id.0)
+            .world_transform(scroll_to.id.0)
             .unwrap_or(Affine::IDENTITY);
         let child_transform = box_tree
-            .get_or_compute_world_transform(child_element_id.0)
+            .world_transform(child_element_id.0)
             .unwrap_or(Affine::IDENTITY);
 
         let target_world_rect = target_transform.transform_rect_bbox(target_local_rect);
@@ -959,6 +996,7 @@ impl View for Scroll {
     fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
         // in order to use this we had to set `id.has_layout_listener`.
         if UpdatePhaseLayout::extract(&cx.event).is_some() {
+            self.clamp_scroll_offset_to_content();
             self.set_positions();
             return EventPropagation::Stop;
         }

@@ -27,6 +27,7 @@ use crate::{
     event::{DragTracker, Event, WindowEvent, clear_hit_test_cache},
     layout::responsive::{GridBreakpoints, ScreenSizeBp},
     message::UpdateMessage,
+    paint::PaintStats,
     paint::display_list::RetainedDisplayList,
     style::{CursorStyle, Style, StyleSelector, theme::default_theme},
     view::{LayoutNodeCx, MeasureCx, VIEW_STORAGE, ViewId},
@@ -102,6 +103,7 @@ pub struct WindowState {
     pub(crate) layout_tree: Rc<RefCell<taffy::TaffyTree<LayoutNodeCx>>>,
     pub(crate) box_tree: Rc<RefCell<BoxTree>>,
     pub(crate) display_list: RetainedDisplayList,
+    pub(crate) last_paint_stats: PaintStats,
 
     /// Per-pointer capture tracking inspired by Chromium's PointerEventManager.
     /// Maps pointer IDs to the view that has captured that pointer.
@@ -213,6 +215,7 @@ impl WindowState {
             layout_tree,
             box_tree,
             display_list: RetainedDisplayList::default(),
+            last_paint_stats: PaintStats::default(),
             pointer_capture_target: PointerCaptureMap::new(),
             pending_pointer_capture_target: PointerCaptureMap::new(),
             os_scale,
@@ -904,8 +907,10 @@ impl WindowState {
                     let props = compute_view_box_properties(s, view_id, layout, parent_scroll);
 
                     // Update box tree
-                    props.element_id.set_local_bounds(props.local_rect);
-                    props.element_id.set_local_clip(props.clip);
+                    props
+                        .element_id
+                        .set_local_bounds_without_paint(props.local_rect);
+                    props.element_id.set_local_clip_without_paint(props.clip);
                     self.box_tree
                         .borrow_mut()
                         .set_local_transform(props.element_id.0, props.local_transform);
@@ -962,14 +967,14 @@ impl WindowState {
             // set_world_position override on the dragged element itself so the release animation
             // targets the real layout position instead of the preview override.
             let natural_transform = {
-                let mut box_tree = self.box_tree.borrow_mut();
+                let box_tree = self.box_tree.borrow();
                 let element_id = dragging_preview.element_id.0;
                 let local_transform = box_tree
                     .local_transform(element_id)
                     .unwrap_or(Affine::IDENTITY);
                 let parent_world_transform = box_tree
                     .parent_of(element_id)
-                    .and_then(|parent| box_tree.get_or_compute_world_transform(parent))
+                    .and_then(|parent| box_tree.world_transform(parent))
                     .unwrap_or(Affine::IDENTITY);
 
                 parent_world_transform * local_transform
@@ -1114,7 +1119,7 @@ impl WindowState {
         let mut tree = self.box_tree.borrow_mut();
         for (overlay_element_id, logical_parent_element_id, base_local_transform) in overlay_data {
             let parent_world = tree
-                .get_or_compute_world_transform(logical_parent_element_id.0)
+                .world_transform(logical_parent_element_id.0)
                 .unwrap_or(Affine::IDENTITY);
             tree.set_local_transform(overlay_element_id.0, parent_world * base_local_transform);
         }
@@ -1491,8 +1496,10 @@ fn compute_absolute_transforms_and_boxes(
         let props = compute_view_box_properties(s, view_id, layout, parent_scroll);
 
         // Update box tree
-        props.element_id.set_local_bounds(props.local_rect);
-        props.element_id.set_local_clip(props.clip);
+        props
+            .element_id
+            .set_local_bounds_without_paint(props.local_rect);
+        props.element_id.set_local_clip_without_paint(props.clip);
         box_tree
             .borrow_mut()
             .set_local_transform(props.element_id.0, props.local_transform);

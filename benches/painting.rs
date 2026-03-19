@@ -321,7 +321,8 @@ fn bench_scroll_repaint(c: &mut Criterion) {
                 || {
                     let root = TestRoot::new();
                     let view = create_scroll_label_list(n);
-                    HeadlessHarness::new_with_size(root, view, 1000.0, 240.0)
+                    let mut harness = HeadlessHarness::new_with_size(root, view, 1000.0, 240.0);
+                    harness
                 },
                 |mut harness| {
                     harness.paint();
@@ -360,6 +361,7 @@ fn bench_scroll_repaint(c: &mut Criterion) {
                 let root = TestRoot::new();
                 let view = create_scroll_label_list(n);
                 let mut harness = HeadlessHarness::new_with_size(root, view, 320.0, 240.0);
+                harness.rebuild();
                 harness.paint();
                 let mut scroll_down = true;
 

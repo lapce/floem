@@ -30,7 +30,8 @@ use crate::context::InteractionState;
 use crate::event::Event;
 use crate::event::path::hit_test;
 use crate::paint::{
-    clear_paint_order, disable_paint_order_tracking, enable_paint_order_tracking, get_paint_order,
+    PaintStats, clear_paint_order, disable_paint_order_tracking, enable_paint_order_tracking,
+    get_paint_order,
 };
 use crate::style::{Style, StyleSelector};
 use crate::view::IntoView;
@@ -534,6 +535,10 @@ impl HeadlessHarness {
     /// verify paint order.
     pub fn paint(&mut self) {
         self.window_handle.paint();
+    }
+
+    pub fn last_paint_stats(&self) -> PaintStats {
+        self.window_handle.window_state.last_paint_stats
     }
 }
 

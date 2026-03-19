@@ -71,6 +71,15 @@ impl PaintOrderTracker {
     }
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct PaintStats {
+    pub active_ids: usize,
+    pub explicit_dirty_ids: usize,
+    pub reusable_descendants: usize,
+    pub rerecord_ids: usize,
+    pub replay_steps: usize,
+}
+
 /// Enable paint order tracking. When enabled, all painted ViewIds are recorded in order.
 pub fn enable_paint_order_tracking() {
     PAINT_ORDER_TRACKER.with(|tracker| {
@@ -183,7 +192,7 @@ pub(crate) fn collect_visual_order(
         }
 
         box_tree
-            .get_or_compute_world_bounds(element_id.0)
+            .world_bounds(element_id.0)
             .is_none_or(|bounds| bounds.area() != 0.0)
     };
 
@@ -236,7 +245,7 @@ impl GlobalPaintCx<'_> {
         let mut reusable_descendants = FxHashSet::default();
         let display_list = &self.window_state.display_list;
 
-        let mut box_tree = self.window_state.box_tree.borrow_mut();
+        let box_tree = self.window_state.box_tree.borrow();
         let mut stack = Vec::new();
 
         for &element_id in active_ids {
@@ -252,9 +261,7 @@ impl GlobalPaintCx<'_> {
                 local_bounds: box_tree.local_bounds(element_id.0).unwrap_or_default(),
                 clip: box_tree.local_clip(element_id.0).flatten(),
                 effective_clip: box_tree.clipped_local_clip(element_id.0),
-                world_transform: box_tree
-                    .get_or_compute_world_transform(element_id.0)
-                    .unwrap_or_default(),
+                world_transform: box_tree.world_transform(element_id.0).unwrap_or_default(),
             };
 
             let Some(previous) = display_list.element(element_id).and_then(|e| e.snapshot) else {
@@ -350,10 +357,11 @@ impl GlobalPaintCx<'_> {
             .set_paint_order(paint_order.clone());
 
         let mut dirty_ids = self.window_state.take_dirty_paint_elements();
+        let explicit_dirty_ids = dirty_ids.len();
         let reusable_descendants =
             self.collect_retained_subtree_descendants(&active_ids, &dirty_ids);
         let snapshots = {
-            let mut box_tree = self.window_state.box_tree.borrow_mut();
+            let box_tree = self.window_state.box_tree.borrow();
             active_ids
                 .iter()
                 .copied()
@@ -362,9 +370,7 @@ impl GlobalPaintCx<'_> {
                         local_bounds: box_tree.local_bounds(element_id.0).unwrap_or_default(),
                         clip: box_tree.clipped_local_clip(element_id.0),
                         effective_clip: box_tree.clipped_local_clip(element_id.0),
-                        world_transform: box_tree
-                            .get_or_compute_world_transform(element_id.0)
-                            .unwrap_or_default(),
+                        world_transform: box_tree.world_transform(element_id.0).unwrap_or_default(),
                     };
                     (element_id, snapshot)
                 })
@@ -375,16 +381,28 @@ impl GlobalPaintCx<'_> {
             if reusable_descendants.contains(&element_id) {
                 continue;
             }
-            if self.window_state.display_list.needs_rerecord(element_id, snapshot) {
+            if self
+                .window_state
+                .display_list
+                .needs_rerecord(element_id, snapshot)
+            {
                 dirty_ids.insert(element_id);
             }
         }
+        let rerecord_ids = dirty_ids.len();
         for element_id in dirty_ids {
             self.record_visual_node(element_id, false);
             self.record_visual_node(element_id, true);
         }
 
         let replay_order = self.window_state.display_list.paint_order().to_vec();
+        self.window_state.last_paint_stats = PaintStats {
+            active_ids: active_ids.len(),
+            explicit_dirty_ids,
+            reusable_descendants: reusable_descendants.len(),
+            rerecord_ids,
+            replay_steps: replay_order.len(),
+        };
         for id_or_pop in replay_order {
             match id_or_pop {
                 PaintOrPost::Paint(element_id) => {
@@ -403,10 +421,8 @@ impl GlobalPaintCx<'_> {
 
     fn element_base_transform(&mut self, element_id: ElementId) -> Affine {
         // Get state from box tree for this visual node
-        let mut box_tree = self.window_state.box_tree.borrow_mut();
-        box_tree
-            .get_or_compute_world_transform(element_id.0)
-            .unwrap_or_default()
+        let box_tree = self.window_state.box_tree.borrow();
+        box_tree.world_transform(element_id.0).unwrap_or_default()
     }
 
     fn replay_visual_node(&mut self, element_id: ElementId, is_post: bool) {
@@ -427,7 +443,7 @@ impl GlobalPaintCx<'_> {
 
     /// Record a single visual node in local coordinates.
     pub(crate) fn record_visual_node(&mut self, element_id: ElementId, is_post: bool) {
-        let mut box_tree = self.window_state.box_tree.borrow_mut();
+        let box_tree = self.window_state.box_tree.borrow_mut();
         let layout_rect_local = box_tree.local_bounds(element_id.0).unwrap_or_default();
         let local_clip = box_tree.clipped_local_clip(element_id.0);
         let effective_clip = box_tree.clipped_local_clip(element_id.0);
@@ -435,9 +451,7 @@ impl GlobalPaintCx<'_> {
             local_bounds: layout_rect_local,
             clip: local_clip,
             effective_clip,
-            world_transform: box_tree
-                .get_or_compute_world_transform(element_id.0)
-                .unwrap_or_default(),
+            world_transform: box_tree.world_transform(element_id.0).unwrap_or_default(),
         };
         drop(box_tree);
 
@@ -629,9 +643,7 @@ pub enum PaintState {
         renderer: Renderer,
     },
     /// The renderer is initialized and ready to paint.
-    Initialized {
-        renderer: Renderer,
-    },
+    Initialized { renderer: Renderer },
 }
 
 impl PaintState {
@@ -665,17 +677,13 @@ impl PaintState {
             size,
             font_embolden,
         );
-        Self::Initialized {
-            renderer,
-        }
+        Self::Initialized { renderer }
     }
 
     #[cfg(feature = "skia")]
     pub fn new_skia(window: Arc<dyn Window>, scale: f64, size: Size, font_embolden: f32) -> Self {
         let renderer = Renderer::new_skia(window.clone(), scale, size, font_embolden);
-        Self::Initialized {
-            renderer,
-        }
+        Self::Initialized { renderer }
     }
 
     pub(crate) fn renderer(&self) -> &Renderer {

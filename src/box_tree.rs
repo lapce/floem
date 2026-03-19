@@ -65,18 +65,34 @@ impl ElementId {
         self.2
     }
 
-    pub fn set_local_clip(&self, clip: Option<RoundedRect>) {
+    fn set_local_clip_inner(&self, clip: Option<RoundedRect>, request_paint: bool) {
         let box_tree = VIEW_STORAGE.with_borrow(|s| s.existing_box_tree(self.owning_id()));
-        if box_tree.borrow_mut().set_local_clip(self.0, clip) {
+        if box_tree.borrow_mut().set_local_clip(self.0, clip) && request_paint {
+            add_update_message(UpdateMessage::RequestPaint(*self));
+        }
+    }
+
+    pub fn set_local_clip(&self, clip: Option<RoundedRect>) {
+        self.set_local_clip_inner(clip, true);
+    }
+
+    pub(crate) fn set_local_clip_without_paint(&self, clip: Option<RoundedRect>) {
+        self.set_local_clip_inner(clip, false);
+    }
+
+    fn set_local_bounds_inner(&self, rect: Rect, request_paint: bool) {
+        let box_tree = VIEW_STORAGE.with_borrow(|s| s.existing_box_tree(self.owning_id()));
+        if box_tree.borrow_mut().set_local_bounds(self.0, rect) && request_paint {
             add_update_message(UpdateMessage::RequestPaint(*self));
         }
     }
 
     pub fn set_local_bounds(&self, rect: Rect) {
-        let box_tree = VIEW_STORAGE.with_borrow(|s| s.existing_box_tree(self.owning_id()));
-        if box_tree.borrow_mut().set_local_bounds(self.0, rect) {
-            add_update_message(UpdateMessage::RequestPaint(*self));
-        }
+        self.set_local_bounds_inner(rect, true);
+    }
+
+    pub(crate) fn set_local_bounds_without_paint(&self, rect: Rect) {
+        self.set_local_bounds_inner(rect, false);
     }
 }
 
