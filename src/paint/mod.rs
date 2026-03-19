@@ -30,9 +30,7 @@ use crate::view::ViewId;
 use crate::view::stacking::{StackingContextItem, collect_stacking_context_items_into};
 use crate::view::{paint_bg, paint_border, paint_outline};
 use crate::window::state::WindowState;
-use display_list::{
-    ElementSnapshot, RecordingRenderer, TransformClass, replay_stage, transform_diff_class,
-};
+use display_list::{ElementSnapshot, RecordingRenderer, replay_stage, transform_diff_class};
 
 std::thread_local! {
     /// Holds the ID of a View being painted very briefly if it is being rendered as
@@ -119,21 +117,6 @@ fn record_paint(id: ViewId) {
     PAINT_ORDER_TRACKER.with(|tracker| {
         tracker.borrow_mut().record(id);
     });
-}
-
-fn effective_clip_not_loosened(
-    recorded: Option<RoundedRect>,
-    current: Option<RoundedRect>,
-) -> bool {
-    match (recorded, current) {
-        (None, _) => true,
-        (Some(_), None) => false,
-        (Some(recorded), Some(current)) => {
-            recorded == current
-                || (recorded.radii() == current.radii()
-                    && recorded.rect().contains_rect(current.rect()))
-        }
-    }
 }
 
 /// Global paint context - holds shared state for entire paint pass
@@ -257,22 +240,13 @@ impl GlobalPaintCx<'_> {
                 continue;
             }
 
-            let snapshot = ElementSnapshot {
-                local_bounds: box_tree.local_bounds(element_id.0).unwrap_or_default(),
-                clip: box_tree.local_clip(element_id.0).flatten(),
-                effective_clip: box_tree.clipped_local_clip(element_id.0),
-                world_transform: box_tree.world_transform(element_id.0).unwrap_or_default(),
-            };
+            let snapshot = ElementSnapshot::from_box_tree(&box_tree, element_id);
 
             let Some(previous) = display_list.element(element_id).and_then(|e| e.snapshot) else {
                 continue;
             };
             let diff = transform_diff_class(previous.world_transform, snapshot.world_transform);
-            if previous.local_bounds != snapshot.local_bounds
-                || previous.clip != snapshot.clip
-                || !effective_clip_not_loosened(previous.effective_clip, snapshot.effective_clip)
-                || !boundary.supports(diff)
-            {
+            if !previous.supports_reuse(snapshot) || !boundary.supports(diff) {
                 continue;
             }
 
@@ -365,15 +339,7 @@ impl GlobalPaintCx<'_> {
             active_ids
                 .iter()
                 .copied()
-                .map(|element_id| {
-                    let snapshot = ElementSnapshot {
-                        local_bounds: box_tree.local_bounds(element_id.0).unwrap_or_default(),
-                        clip: box_tree.clipped_local_clip(element_id.0),
-                        effective_clip: box_tree.clipped_local_clip(element_id.0),
-                        world_transform: box_tree.world_transform(element_id.0).unwrap_or_default(),
-                    };
-                    (element_id, snapshot)
-                })
+                .map(|element_id| (element_id, ElementSnapshot::from_box_tree(&box_tree, element_id)))
                 .collect::<Vec<_>>()
         };
 
@@ -388,6 +354,9 @@ impl GlobalPaintCx<'_> {
             {
                 dirty_ids.insert(element_id);
             }
+        }
+        if std::env::var("FLOEM_TRACE_RERECORD").ok().as_deref() == Some("1") {
+            eprintln!("dirty_ids={dirty_ids:?}");
         }
         let rerecord_ids = dirty_ids.len();
         for element_id in dirty_ids {
@@ -433,26 +402,21 @@ impl GlobalPaintCx<'_> {
             return;
         };
         let stage = if is_post {
-            element.post.clone()
+            &element.post
         } else {
-            element.paint.clone()
+            &element.paint
         };
         let renderer = self.paint_state.renderer_mut();
-        replay_stage(&stage, renderer, base_transform);
+        replay_stage(stage, renderer, base_transform);
     }
 
     /// Record a single visual node in local coordinates.
     pub(crate) fn record_visual_node(&mut self, element_id: ElementId, is_post: bool) {
         let box_tree = self.window_state.box_tree.borrow_mut();
         let layout_rect_local = box_tree.local_bounds(element_id.0).unwrap_or_default();
-        let local_clip = box_tree.clipped_local_clip(element_id.0);
+        let local_clip = box_tree.local_clip(element_id.0).flatten();
         let effective_clip = box_tree.clipped_local_clip(element_id.0);
-        let snapshot = ElementSnapshot {
-            local_bounds: layout_rect_local,
-            clip: local_clip,
-            effective_clip,
-            world_transform: box_tree.world_transform(element_id.0).unwrap_or_default(),
-        };
+        let snapshot = ElementSnapshot::from_box_tree(&box_tree, element_id);
         drop(box_tree);
 
         let layout_rect = layout_rect_local;
@@ -515,8 +479,7 @@ impl GlobalPaintCx<'_> {
         } else {
             &mut element.paint
         };
-        stage.commands = commands;
-        stage.transform_class = TransformClass::Affine;
+        stage.set_commands(commands);
         element.snapshot = Some(snapshot);
     }
 }

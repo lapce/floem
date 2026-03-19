@@ -30,6 +30,17 @@ impl TransformClass {
             Self::Affine => true,
         }
     }
+
+    pub(crate) fn combine(self, other: Self) -> Self {
+        use TransformClass::{Affine, Exact, Orthonormal, TranslateOnly};
+
+        match (self, other) {
+            (Exact, x) | (x, Exact) => x,
+            (TranslateOnly, _) | (_, TranslateOnly) => TranslateOnly,
+            (Orthonormal, _) | (_, Orthonormal) => Orthonormal,
+            (Affine, Affine) => Affine,
+        }
+    }
 }
 
 pub(crate) fn transform_diff_class(original: Affine, current: Affine) -> TransformClass {
@@ -95,17 +106,49 @@ pub(crate) enum DisplayCommand {
 
 #[derive(Clone)]
 pub(crate) struct ElementStage {
-    pub commands: Vec<DisplayCommand>,
+    pub chunks: Vec<PaintChunk>,
     pub transform_class: TransformClass,
 }
 
 impl Default for ElementStage {
     fn default() -> Self {
         Self {
-            commands: Vec::new(),
-            transform_class: TransformClass::Affine,
+            chunks: Vec::new(),
+            transform_class: TransformClass::Exact,
         }
     }
+}
+
+impl ElementStage {
+    pub(crate) fn set_commands(&mut self, commands: Vec<DisplayCommand>) {
+        self.chunks = chunk_display_commands(commands);
+        self.transform_class = self
+            .chunks
+            .iter()
+            .map(|chunk| chunk.transform_class)
+            .fold(TransformClass::Exact, TransformClass::combine);
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct PaintPropertyState {
+    pub z_index: i32,
+    pub clip_depth: u32,
+    pub layer_depth: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PaintChunkKind {
+    Boundary,
+    Draw,
+}
+
+#[derive(Clone)]
+pub(crate) struct PaintChunk {
+    pub kind: PaintChunkKind,
+    pub properties: PaintPropertyState,
+    pub commands: Vec<DisplayCommand>,
+    pub transform_class: TransformClass,
 }
 
 #[derive(Clone, Copy)]
@@ -114,6 +157,23 @@ pub(crate) struct ElementSnapshot {
     pub clip: Option<RoundedRect>,
     pub effective_clip: Option<RoundedRect>,
     pub world_transform: Affine,
+}
+
+impl ElementSnapshot {
+    pub(crate) fn from_box_tree(box_tree: &crate::BoxTree, element_id: ElementId) -> Self {
+        Self {
+            local_bounds: box_tree.local_bounds(element_id.0).unwrap_or_default(),
+            clip: box_tree.local_clip(element_id.0).flatten(),
+            effective_clip: box_tree.clipped_local_clip(element_id.0),
+            world_transform: box_tree.world_transform(element_id.0).unwrap_or_default(),
+        }
+    }
+
+    pub(crate) fn supports_reuse(self, current: Self) -> bool {
+        self.local_bounds == current.local_bounds
+            && self.clip == current.clip
+            && effective_clip_not_loosened(self.effective_clip, current.effective_clip)
+    }
 }
 
 #[derive(Clone, Default)]
@@ -154,7 +214,7 @@ impl RetainedDisplayList {
             return true;
         };
 
-        if previous.local_bounds != snapshot.local_bounds || previous.clip != snapshot.clip {
+        if !previous.supports_reuse(snapshot) {
             return true;
         }
 
@@ -356,107 +416,217 @@ pub(crate) fn replay_stage(
     renderer: &mut impl FloemRenderer,
     base_transform: Affine,
 ) {
-    for command in &stage.commands {
-        match command {
-            DisplayCommand::SetZIndex(z_index) => renderer.set_z_index(*z_index),
-            DisplayCommand::PushClip { clip, hint } => {
-                replay_clip(renderer, clip, hint.clone(), base_transform)
-            }
-            DisplayCommand::PopClip => renderer.clear_clip(),
-            DisplayCommand::PushLayer {
-                group,
-                transform,
-                clip_hint,
-            } => {
-                let Some(Clip::Fill {
-                    transform: clip_transform,
-                    shape,
-                    ..
-                }) = group.clip.as_ref()
-                else {
-                    continue;
-                };
-                renderer.set_transform(base_transform * *clip_transform);
-                match (clip_hint.clone(), shape) {
-                    (Some(ShapeHint::Rect(rect)), _) => renderer.push_layer(
-                        group.composite.blend,
-                        group.composite.alpha,
-                        *transform,
-                        &rect,
-                    ),
-                    (Some(ShapeHint::RoundedRect(rect)), _) => renderer.push_layer(
-                        group.composite.blend,
-                        group.composite.alpha,
-                        *transform,
-                        &rect,
-                    ),
-                    (Some(ShapeHint::Line(line)), _) => renderer.push_layer(
-                        group.composite.blend,
-                        group.composite.alpha,
-                        *transform,
-                        &line,
-                    ),
-                    (Some(ShapeHint::Circle(circle)), _) => renderer.push_layer(
-                        group.composite.blend,
-                        group.composite.alpha,
-                        *transform,
-                        &circle,
-                    ),
-                    (None, Geometry::Rect(rect)) => renderer.push_layer(
-                        group.composite.blend,
-                        group.composite.alpha,
-                        *transform,
-                        rect,
-                    ),
-                    (None, Geometry::RoundedRect(rect)) => renderer.push_layer(
-                        group.composite.blend,
-                        group.composite.alpha,
-                        *transform,
-                        rect,
-                    ),
-                    (None, Geometry::Path(path)) => renderer.push_layer(
-                        group.composite.blend,
-                        group.composite.alpha,
-                        *transform,
-                        path,
-                    ),
+    let mut current_z_index = None;
+    let mut current_transform = None;
+
+    for chunk in &stage.chunks {
+        if current_z_index != Some(chunk.properties.z_index) {
+            renderer.set_z_index(chunk.properties.z_index);
+            current_z_index = Some(chunk.properties.z_index);
+        }
+        for command in &chunk.commands {
+            match command {
+                DisplayCommand::SetZIndex(_) => {}
+                DisplayCommand::PushClip { clip, hint } => {
+                    replay_clip(renderer, clip, hint.clone(), base_transform, &mut current_transform)
+                }
+                DisplayCommand::PopClip => renderer.clear_clip(),
+                DisplayCommand::PushLayer {
+                    group,
+                    transform,
+                    clip_hint,
+                } => {
+                    let Some(Clip::Fill {
+                        transform: clip_transform,
+                        shape,
+                        ..
+                    }) = group.clip.as_ref()
+                    else {
+                        continue;
+                    };
+                    set_transform_if_needed(
+                        renderer,
+                        base_transform * *clip_transform,
+                        &mut current_transform,
+                    );
+                    match (clip_hint.clone(), shape) {
+                        (Some(ShapeHint::Rect(rect)), _) => renderer.push_layer(
+                            group.composite.blend,
+                            group.composite.alpha,
+                            *transform,
+                            &rect,
+                        ),
+                        (Some(ShapeHint::RoundedRect(rect)), _) => renderer.push_layer(
+                            group.composite.blend,
+                            group.composite.alpha,
+                            *transform,
+                            &rect,
+                        ),
+                        (Some(ShapeHint::Line(line)), _) => renderer.push_layer(
+                            group.composite.blend,
+                            group.composite.alpha,
+                            *transform,
+                            &line,
+                        ),
+                        (Some(ShapeHint::Circle(circle)), _) => renderer.push_layer(
+                            group.composite.blend,
+                            group.composite.alpha,
+                            *transform,
+                            &circle,
+                        ),
+                        (None, Geometry::Rect(rect)) => renderer.push_layer(
+                            group.composite.blend,
+                            group.composite.alpha,
+                            *transform,
+                            rect,
+                        ),
+                        (None, Geometry::RoundedRect(rect)) => renderer.push_layer(
+                            group.composite.blend,
+                            group.composite.alpha,
+                            *transform,
+                            rect,
+                        ),
+                        (None, Geometry::Path(path)) => renderer.push_layer(
+                            group.composite.blend,
+                            group.composite.alpha,
+                            *transform,
+                            path,
+                        ),
+                    }
+                }
+                DisplayCommand::PopLayer => renderer.pop_layer(),
+                DisplayCommand::Draw { draw, hint } => {
+                    replay_draw(
+                        renderer,
+                        draw,
+                        hint.clone(),
+                        base_transform,
+                        &mut current_transform,
+                    )
+                }
+                DisplayCommand::DrawImage {
+                    img,
+                    hash,
+                    rect,
+                    transform,
+                } => {
+                    set_transform_if_needed(
+                        renderer,
+                        base_transform * *transform,
+                        &mut current_transform,
+                    );
+                    renderer.draw_img(
+                        Img {
+                            img: img.clone(),
+                            hash,
+                        },
+                        *rect,
+                    );
+                }
+                DisplayCommand::DrawSvg {
+                    svg,
+                    rect,
+                    transform,
+                    brush,
+                } => {
+                    set_transform_if_needed(
+                        renderer,
+                        base_transform * *transform,
+                        &mut current_transform,
+                    );
+                    renderer.draw_svg(
+                        Svg {
+                            tree: svg.tree.as_ref(),
+                            hash: svg.hash.as_ref(),
+                        },
+                        *rect,
+                        brush.as_ref(),
+                    );
                 }
             }
-            DisplayCommand::PopLayer => renderer.pop_layer(),
-            DisplayCommand::Draw { draw, hint } => {
-                replay_draw(renderer, draw, hint.clone(), base_transform)
+        }
+    }
+}
+
+fn chunk_display_commands(commands: Vec<DisplayCommand>) -> Vec<PaintChunk> {
+    let mut chunks = Vec::new();
+    let mut properties = PaintPropertyState::default();
+
+    for command in commands {
+        match command {
+            DisplayCommand::SetZIndex(z_index) => {
+                properties.z_index = z_index;
             }
-            DisplayCommand::DrawImage {
-                img,
-                hash,
-                rect,
-                transform,
-            } => {
-                renderer.set_transform(base_transform * *transform);
-                renderer.draw_img(
-                    Img {
-                        img: img.clone(),
-                        hash,
-                    },
-                    *rect,
-                );
+            DisplayCommand::PushClip { .. } => {
+                push_boundary_chunk(&mut chunks, properties, command_transform_class(&command), command);
+                properties.clip_depth += 1;
             }
-            DisplayCommand::DrawSvg {
-                svg,
-                rect,
-                transform,
-                brush,
-            } => {
-                renderer.set_transform(base_transform * *transform);
-                renderer.draw_svg(
-                    Svg {
-                        tree: svg.tree.as_ref(),
-                        hash: svg.hash.as_ref(),
-                    },
-                    *rect,
-                    brush.as_ref(),
-                );
+            DisplayCommand::PopClip => {
+                properties.clip_depth = properties.clip_depth.saturating_sub(1);
+                push_boundary_chunk(&mut chunks, properties, command_transform_class(&command), command);
             }
+            DisplayCommand::PushLayer { .. } => {
+                push_boundary_chunk(&mut chunks, properties, command_transform_class(&command), command);
+                properties.layer_depth += 1;
+            }
+            DisplayCommand::PopLayer => {
+                properties.layer_depth = properties.layer_depth.saturating_sub(1);
+                push_boundary_chunk(&mut chunks, properties, command_transform_class(&command), command);
+            }
+            command => {
+                let transform_class = command_transform_class(&command);
+                match chunks.last_mut() {
+                    Some(PaintChunk {
+                        kind: PaintChunkKind::Draw,
+                        properties: chunk_properties,
+                        commands: chunk_commands,
+                        transform_class: chunk_transform_class,
+                    }) if *chunk_properties == properties => {
+                        *chunk_transform_class =
+                            chunk_transform_class.combine(transform_class);
+                        chunk_commands.push(command);
+                    }
+                    _ => chunks.push(PaintChunk {
+                        kind: PaintChunkKind::Draw,
+                        properties,
+                        commands: vec![command],
+                        transform_class,
+                    }),
+                }
+            }
+        }
+    }
+
+    chunks
+}
+
+fn push_boundary_chunk(
+    chunks: &mut Vec<PaintChunk>,
+    properties: PaintPropertyState,
+    transform_class: TransformClass,
+    command: DisplayCommand,
+) {
+    chunks.push(PaintChunk {
+        kind: PaintChunkKind::Boundary,
+        properties,
+        commands: vec![command],
+        transform_class,
+    });
+}
+
+fn command_transform_class(command: &DisplayCommand) -> TransformClass {
+    match command {
+        DisplayCommand::SetZIndex(_)
+        | DisplayCommand::PushClip { .. }
+        | DisplayCommand::PopClip
+        | DisplayCommand::PushLayer { .. }
+        | DisplayCommand::PopLayer => TransformClass::Affine,
+        DisplayCommand::Draw { draw, .. } => match draw {
+            Draw::Fill { .. } | Draw::Stroke { .. } => TransformClass::Affine,
+            Draw::GlyphRun(_) | Draw::BlurredRoundedRect(_) => TransformClass::TranslateOnly,
+        },
+        DisplayCommand::DrawImage { .. } | DisplayCommand::DrawSvg { .. } => {
+            TransformClass::TranslateOnly
         }
     }
 }
@@ -466,6 +636,7 @@ fn replay_clip(
     clip: &Clip,
     hint: Option<ShapeHint>,
     base_transform: Affine,
+    current_transform: &mut Option<Affine>,
 ) {
     let Clip::Fill {
         transform, shape, ..
@@ -473,7 +644,7 @@ fn replay_clip(
     else {
         return;
     };
-    renderer.set_transform(base_transform * *transform);
+    set_transform_if_needed(renderer, base_transform * *transform, current_transform);
     match (hint, shape) {
         (Some(ShapeHint::Rect(rect)), _) => renderer.clip(&rect),
         (Some(ShapeHint::RoundedRect(rect)), _) => renderer.clip(&rect),
@@ -490,6 +661,7 @@ fn replay_draw(
     draw: &Draw,
     hint: Option<ShapeHint>,
     base_transform: Affine,
+    current_transform: &mut Option<Affine>,
 ) {
     match draw {
         Draw::Fill {
@@ -498,7 +670,7 @@ fn replay_draw(
             shape,
             ..
         } => {
-            renderer.set_transform(base_transform * *transform);
+            set_transform_if_needed(renderer, base_transform * *transform, current_transform);
             match (hint, shape) {
                 (Some(ShapeHint::Rect(rect)), _) => renderer.fill(&rect, paint, 0.0),
                 (Some(ShapeHint::RoundedRect(rect)), _) => renderer.fill(&rect, paint, 0.0),
@@ -516,7 +688,7 @@ fn replay_draw(
             shape,
             ..
         } => {
-            renderer.set_transform(base_transform * *transform);
+            set_transform_if_needed(renderer, base_transform * *transform, current_transform);
             match (hint, shape) {
                 (Some(ShapeHint::Rect(rect)), _) => renderer.stroke(&rect, paint, stroke),
                 (Some(ShapeHint::RoundedRect(rect)), _) => renderer.stroke(&rect, paint, stroke),
@@ -539,7 +711,7 @@ fn replay_draw(
                 transform: run.transform,
                 glyph_transform: run.glyph_transform,
             };
-            renderer.set_transform(base_transform);
+            set_transform_if_needed(renderer, base_transform, current_transform);
             renderer.draw_glyphs(
                 Point::ZERO,
                 &props,
@@ -553,10 +725,132 @@ fn replay_draw(
             );
         }
         Draw::BlurredRoundedRect(rect) => {
-            renderer.set_transform(base_transform * rect.transform);
+            set_transform_if_needed(renderer, base_transform * rect.transform, current_transform);
             let shape = rect.rect.to_rounded_rect(rect.radius);
             renderer.fill(&shape, rect.color, rect.std_dev);
         }
+    }
+}
+
+fn set_transform_if_needed(
+    renderer: &mut impl FloemRenderer,
+    transform: Affine,
+    current_transform: &mut Option<Affine>,
+) {
+    if current_transform != &Some(transform) {
+        renderer.set_transform(transform);
+        *current_transform = Some(transform);
+    }
+}
+
+fn effective_clip_not_loosened(
+    recorded: Option<RoundedRect>,
+    current: Option<RoundedRect>,
+) -> bool {
+    match (recorded, current) {
+        (None, _) => true,
+        (Some(_), None) => false,
+        (Some(recorded), Some(current)) => {
+            recorded == current
+                || (recorded.radii() == current.radii()
+                    && recorded.rect().contains_rect(current.rect()))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use peniko::Color;
+
+    #[test]
+    fn stage_groups_adjacent_draws_with_matching_properties() {
+        let rect = Rect::new(0.0, 0.0, 10.0, 10.0);
+        let mut stage = ElementStage::default();
+        stage.set_commands(vec![
+            DisplayCommand::SetZIndex(7),
+            DisplayCommand::Draw {
+                draw: Draw::Fill {
+                    transform: Affine::IDENTITY,
+                    fill_rule: FillRule::NonZero,
+                    paint: Color::BLACK.into(),
+                    paint_transform: None,
+                    shape: Geometry::Rect(rect),
+                    composite: Composite::default(),
+                },
+                hint: Some(ShapeHint::Rect(rect)),
+            },
+            DisplayCommand::Draw {
+                draw: Draw::Stroke {
+                    transform: Affine::IDENTITY,
+                    stroke: StrokeStyle::new(1.0),
+                    paint: Color::BLACK.into(),
+                    paint_transform: None,
+                    shape: Geometry::Rect(rect),
+                    composite: Composite::default(),
+                },
+                hint: Some(ShapeHint::Rect(rect)),
+            },
+        ]);
+
+        assert_eq!(stage.chunks.len(), 1);
+        assert_eq!(stage.chunks[0].kind, PaintChunkKind::Draw);
+        assert_eq!(stage.chunks[0].properties.z_index, 7);
+        assert_eq!(stage.chunks[0].commands.len(), 2);
+        assert_eq!(stage.transform_class, TransformClass::Affine);
+    }
+
+    #[test]
+    fn stage_tracks_clip_depth_across_boundary_chunks() {
+        let rect = Rect::new(0.0, 0.0, 10.0, 10.0);
+        let mut stage = ElementStage::default();
+        stage.set_commands(vec![
+            DisplayCommand::PushClip {
+                clip: Clip::Fill {
+                    transform: Affine::IDENTITY,
+                    shape: Geometry::Rect(rect),
+                    fill_rule: FillRule::NonZero,
+                },
+                hint: Some(ShapeHint::Rect(rect)),
+            },
+            DisplayCommand::Draw {
+                draw: Draw::Fill {
+                    transform: Affine::IDENTITY,
+                    fill_rule: FillRule::NonZero,
+                    paint: Color::BLACK.into(),
+                    paint_transform: None,
+                    shape: Geometry::Rect(rect),
+                    composite: Composite::default(),
+                },
+                hint: Some(ShapeHint::Rect(rect)),
+            },
+            DisplayCommand::PopClip,
+        ]);
+
+        assert_eq!(stage.chunks.len(), 3);
+        assert_eq!(stage.chunks[0].kind, PaintChunkKind::Boundary);
+        assert_eq!(stage.chunks[1].kind, PaintChunkKind::Draw);
+        assert_eq!(stage.chunks[1].properties.clip_depth, 1);
+        assert_eq!(stage.chunks[2].kind, PaintChunkKind::Boundary);
+        assert_eq!(stage.chunks[2].properties.clip_depth, 0);
+    }
+
+    #[test]
+    fn blurred_draws_downgrade_stage_transform_retention() {
+        let mut stage = ElementStage::default();
+        stage.set_commands(vec![DisplayCommand::Draw {
+            draw: Draw::BlurredRoundedRect(imaging::BlurredRoundedRect {
+                transform: Affine::IDENTITY,
+                rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+                color: Color::BLACK,
+                radius: 4.0,
+                std_dev: 6.0,
+                composite: Composite::default(),
+            }),
+            hint: None,
+        }]);
+
+        assert_eq!(stage.transform_class, TransformClass::TranslateOnly);
     }
 }
 
