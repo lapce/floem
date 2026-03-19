@@ -27,6 +27,7 @@ use crate::{
     event::{DragTracker, Event, WindowEvent, clear_hit_test_cache},
     layout::responsive::{GridBreakpoints, ScreenSizeBp},
     message::UpdateMessage,
+    paint::display_list::RetainedDisplayList,
     style::{CursorStyle, Style, StyleSelector, theme::default_theme},
     view::{LayoutNodeCx, MeasureCx, VIEW_STORAGE, ViewId},
 };
@@ -100,6 +101,7 @@ fn build_focus_space_for_scope<'a>(
 pub struct WindowState {
     pub(crate) layout_tree: Rc<RefCell<taffy::TaffyTree<LayoutNodeCx>>>,
     pub(crate) box_tree: Rc<RefCell<BoxTree>>,
+    pub(crate) display_list: RetainedDisplayList,
 
     /// Per-pointer capture tracking inspired by Chromium's PointerEventManager.
     /// Maps pointer IDs to the view that has captured that pointer.
@@ -210,6 +212,7 @@ impl WindowState {
             root_view_id,
             layout_tree,
             box_tree,
+            display_list: RetainedDisplayList::default(),
             pointer_capture_target: PointerCaptureMap::new(),
             pending_pointer_capture_target: PointerCaptureMap::new(),
             os_scale,

@@ -107,10 +107,7 @@ impl ApplicationHandle {
                         *font_embolden,
                     );
                     self.gpu_resources = Some(gpu_resources);
-                    handle.paint_state = PaintState::Initialized {
-                        renderer,
-                        display_list: crate::paint::display_list::RetainedDisplayList::default(),
-                    };
+                    handle.paint_state = PaintState::Initialized { renderer };
                     handle.gpu_resources = self.gpu_resources.clone();
                     handle.init_renderer();
                 } else {

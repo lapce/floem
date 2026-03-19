@@ -31,8 +31,7 @@ use crate::view::stacking::{StackingContextItem, collect_stacking_context_items_
 use crate::view::{paint_bg, paint_border, paint_outline};
 use crate::window::state::WindowState;
 use display_list::{
-    ElementSnapshot, RecordingRenderer, RetainedDisplayList, TransformClass, replay_stage,
-    transform_diff_class,
+    ElementSnapshot, RecordingRenderer, TransformClass, replay_stage, transform_diff_class,
 };
 
 std::thread_local! {
@@ -235,7 +234,7 @@ impl GlobalPaintCx<'_> {
         explicit_dirty: &FxHashSet<ElementId>,
     ) -> FxHashSet<ElementId> {
         let mut reusable_descendants = FxHashSet::default();
-        let display_list = self.paint_state.display_list();
+        let display_list = &self.window_state.display_list;
 
         let mut box_tree = self.window_state.box_tree.borrow_mut();
         let mut stack = Vec::new();
@@ -345,9 +344,9 @@ impl GlobalPaintCx<'_> {
             })
             .collect();
 
-        self.paint_state.display_list_mut().retain_only(&active_ids);
-        self.paint_state
-            .display_list_mut()
+        self.window_state.display_list.retain_only(&active_ids);
+        self.window_state
+            .display_list
             .set_paint_order(paint_order.clone());
 
         let mut dirty_ids = self.window_state.take_dirty_paint_elements();
@@ -361,7 +360,7 @@ impl GlobalPaintCx<'_> {
                 .map(|element_id| {
                     let snapshot = ElementSnapshot {
                         local_bounds: box_tree.local_bounds(element_id.0).unwrap_or_default(),
-                        clip: box_tree.local_clip(element_id.0).flatten(),
+                        clip: box_tree.clipped_local_clip(element_id.0),
                         effective_clip: box_tree.clipped_local_clip(element_id.0),
                         world_transform: box_tree
                             .get_or_compute_world_transform(element_id.0)
@@ -376,11 +375,7 @@ impl GlobalPaintCx<'_> {
             if reusable_descendants.contains(&element_id) {
                 continue;
             }
-            if self
-                .paint_state
-                .display_list()
-                .needs_rerecord(element_id, snapshot)
-            {
+            if self.window_state.display_list.needs_rerecord(element_id, snapshot) {
                 dirty_ids.insert(element_id);
             }
         }
@@ -389,7 +384,7 @@ impl GlobalPaintCx<'_> {
             self.record_visual_node(element_id, true);
         }
 
-        let replay_order = self.paint_state.display_list().paint_order().to_vec();
+        let replay_order = self.window_state.display_list.paint_order().to_vec();
         for id_or_pop in replay_order {
             match id_or_pop {
                 PaintOrPost::Paint(element_id) => {
@@ -418,7 +413,7 @@ impl GlobalPaintCx<'_> {
         let base_transform = self
             .element_base_transform(element_id)
             .then_scale(self.window_state.effective_scale());
-        let Some(element) = self.paint_state.display_list().element(element_id) else {
+        let Some(element) = self.window_state.display_list.element(element_id) else {
             return;
         };
         let stage = if is_post {
@@ -434,10 +429,7 @@ impl GlobalPaintCx<'_> {
     pub(crate) fn record_visual_node(&mut self, element_id: ElementId, is_post: bool) {
         let mut box_tree = self.window_state.box_tree.borrow_mut();
         let layout_rect_local = box_tree.local_bounds(element_id.0).unwrap_or_default();
-        // Retained identity uses the element's own local clip. Do not use
-        // `clipped_local_clip()` here: that value includes ancestor/world clipping
-        // and would make the retained entry depend on transient parent state.
-        let local_clip = box_tree.local_clip(element_id.0).flatten();
+        let local_clip = box_tree.clipped_local_clip(element_id.0);
         let effective_clip = box_tree.clipped_local_clip(element_id.0);
         let snapshot = ElementSnapshot {
             local_bounds: layout_rect_local,
@@ -503,8 +495,7 @@ impl GlobalPaintCx<'_> {
             }
         }
 
-        let display_list = self.paint_state.display_list_mut();
-        let element = display_list.element_mut(element_id);
+        let element = self.window_state.display_list.element_mut(element_id);
         let stage = if is_post {
             &mut element.post
         } else {
@@ -640,7 +631,6 @@ pub enum PaintState {
     /// The renderer is initialized and ready to paint.
     Initialized {
         renderer: Renderer,
-        display_list: RetainedDisplayList,
     },
 }
 
@@ -677,7 +667,6 @@ impl PaintState {
         );
         Self::Initialized {
             renderer,
-            display_list: RetainedDisplayList::default(),
         }
     }
 
@@ -686,39 +675,20 @@ impl PaintState {
         let renderer = Renderer::new_skia(window.clone(), scale, size, font_embolden);
         Self::Initialized {
             renderer,
-            display_list: RetainedDisplayList::default(),
         }
     }
 
     pub(crate) fn renderer(&self) -> &Renderer {
         match self {
             PaintState::PendingGpuResources { renderer, .. } => renderer,
-            PaintState::Initialized { renderer, .. } => renderer,
+            PaintState::Initialized { renderer } => renderer,
         }
     }
 
     pub(crate) fn renderer_mut(&mut self) -> &mut Renderer {
         match self {
             PaintState::PendingGpuResources { renderer, .. } => renderer,
-            PaintState::Initialized { renderer, .. } => renderer,
-        }
-    }
-
-    pub(crate) fn display_list(&self) -> &RetainedDisplayList {
-        match self {
-            PaintState::PendingGpuResources { .. } => {
-                panic!("display list is unavailable before renderer initialization")
-            }
-            PaintState::Initialized { display_list, .. } => display_list,
-        }
-    }
-
-    pub(crate) fn display_list_mut(&mut self) -> &mut RetainedDisplayList {
-        match self {
-            PaintState::PendingGpuResources { .. } => {
-                panic!("display list is unavailable before renderer initialization")
-            }
-            PaintState::Initialized { display_list, .. } => display_list,
+            PaintState::Initialized { renderer } => renderer,
         }
     }
 
