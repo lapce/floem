@@ -321,8 +321,7 @@ fn bench_scroll_repaint(c: &mut Criterion) {
                 || {
                     let root = TestRoot::new();
                     let view = create_scroll_label_list(n);
-                    let mut harness = HeadlessHarness::new_with_size(root, view, 1000.0, 240.0);
-                    harness
+                    HeadlessHarness::new_with_size(root, view, 1000.0, 240.0)
                 },
                 |mut harness| {
                     harness.paint();

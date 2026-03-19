@@ -12,6 +12,7 @@ pub mod renderer;
 pub use border_path_iter::{BorderPath, BorderPathEvent};
 pub use renderer::Renderer;
 
+use floem_renderer::Renderer as _;
 use floem_renderer::gpu_resources::{GpuResourceError, GpuResources};
 use peniko::kurbo::{Affine, RoundedRect, Shape, Size};
 use rustc_hash::FxHashSet;
@@ -220,6 +221,24 @@ pub(crate) fn collect_visual_order(
 }
 
 impl GlobalPaintCx<'_> {
+    fn replay_element_overflow_clip(&mut self, element_id: ElementId) {
+        let box_tree = self.window_state.box_tree.borrow();
+        let Some(clip) = box_tree.local_clip(element_id.0).flatten() else {
+            return;
+        };
+        drop(box_tree);
+
+        let base_transform = self
+            .element_base_transform(element_id)
+            .then_scale(self.window_state.effective_scale());
+        let render_size = self.paint_state.renderer().size();
+        let renderer = self.paint_state.renderer_mut();
+
+        // Overflow clip must be replayed at traversal time rather than recorded into the
+        // element stage so it can stay active across descendant element replay.
+        display_list::replay_view_clip(renderer, clip, base_transform, render_size);
+    }
+
     fn collect_retained_subtree_descendants(
         &mut self,
         active_ids: &FxHashSet<ElementId>,
@@ -376,10 +395,28 @@ impl GlobalPaintCx<'_> {
                     if self.record_paint_order {
                         record_paint(element_id.owning_id());
                     }
-                    self.replay_visual_node(element_id, false);
+                    if element_id.is_view() {
+                        self.replay_element_overflow_clip(element_id);
+                    }
+                    // Damage-aware chunk replay is intentionally disabled here for now.
+                    // Every backend rebuilds a fresh frame/scene on `begin()`, so skipping
+                    // undamaged chunks would drop previously visible content and cause flashing.
+                    self.replay_visual_node(element_id, false, None);
                 }
                 PaintOrPost::Post(element_id) => {
-                    self.replay_visual_node(element_id, true);
+                    self.replay_visual_node(element_id, true, None);
+                    if element_id.is_view() {
+                        let has_clip = self
+                            .window_state
+                            .box_tree
+                            .borrow()
+                            .local_clip(element_id.0)
+                            .flatten()
+                            .is_some();
+                        if has_clip {
+                            self.paint_state.renderer_mut().clear_clip();
+                        }
+                    }
                 }
             }
         }
@@ -391,7 +428,12 @@ impl GlobalPaintCx<'_> {
         box_tree.world_transform(element_id.0).unwrap_or_default()
     }
 
-    fn replay_visual_node(&mut self, element_id: ElementId, is_post: bool) {
+    fn replay_visual_node(
+        &mut self,
+        element_id: ElementId,
+        is_post: bool,
+        damage_rects: Option<&[peniko::kurbo::Rect]>,
+    ) {
         let base_transform = self
             .element_base_transform(element_id)
             .then_scale(self.window_state.effective_scale());
@@ -403,16 +445,27 @@ impl GlobalPaintCx<'_> {
         } else {
             &element.paint
         };
+        let local_damage = damage_rects.map(|rects| {
+            let inverse = base_transform.inverse();
+            rects.iter()
+                .map(|rect| inverse.transform_rect_bbox(*rect))
+                .collect::<Vec<_>>()
+        });
+        let render_size = self.paint_state.renderer().size();
         let renderer = self.paint_state.renderer_mut();
-        replay_stage(stage, renderer, base_transform);
+        replay_stage(
+            stage,
+            renderer,
+            base_transform,
+            render_size,
+            local_damage.as_deref(),
+        );
     }
 
     /// Record a single visual node in local coordinates.
     pub(crate) fn record_visual_node(&mut self, element_id: ElementId, is_post: bool) {
         let box_tree = self.window_state.box_tree.borrow_mut();
         let layout_rect_local = box_tree.local_bounds(element_id.0).unwrap_or_default();
-        let local_clip = box_tree.local_clip(element_id.0).flatten();
-        let effective_clip = box_tree.clipped_local_clip(element_id.0);
         let snapshot = ElementSnapshot::from_box_tree(&box_tree, element_id);
         drop(box_tree);
 
@@ -437,7 +490,7 @@ impl GlobalPaintCx<'_> {
                 target_id: element_id,
                 world_transform,
                 layout_rect_local,
-                clip: local_clip,
+                clip: snapshot.clip,
                 font_size_cx,
             };
 
@@ -452,16 +505,9 @@ impl GlobalPaintCx<'_> {
                         layout_rect,
                     );
                     drop(state);
-                    // Apply overflow clip (stays active through children)
-                    if let Some(clip_shape) = effective_clip {
-                        cx.clip(&clip_shape);
-                    }
                 }
                 view.borrow_mut().paint(&mut cx);
             } else {
-                if element_id.is_view() && effective_clip.is_some() {
-                    cx.pop_clip();
-                }
                 view.borrow_mut().post_paint(&mut cx);
                 if element_id.is_view() {
                     let state = view_state.borrow();
