@@ -107,6 +107,7 @@ pub(crate) enum DisplayCommand {
 #[derive(Clone)]
 pub(crate) struct ElementStage {
     pub chunks: Vec<PaintChunk>,
+    pub property_tree: PaintPropertyTree,
     pub transform_class: TransformClass,
 }
 
@@ -114,33 +115,123 @@ impl Default for ElementStage {
     fn default() -> Self {
         Self {
             chunks: Vec::new(),
-            transform_class: TransformClass::Exact,
+            property_tree: PaintPropertyTree::default(),
+            transform_class: TransformClass::Affine,
         }
     }
 }
 
 impl ElementStage {
     pub(crate) fn set_commands(&mut self, commands: Vec<DisplayCommand>) {
-        self.chunks = chunk_display_commands(commands);
-        self.transform_class = self
-            .chunks
-            .iter()
-            .map(|chunk| chunk.transform_class)
-            .fold(TransformClass::Exact, TransformClass::combine);
+        let (chunks, property_tree) = chunk_display_commands(commands);
+        self.chunks = chunks;
+        self.property_tree = property_tree;
+        self.transform_class = if self.chunks.is_empty() {
+            TransformClass::Affine
+        } else {
+            self.chunks
+                .iter()
+                .map(|chunk| chunk.transform_class)
+                .fold(TransformClass::Exact, TransformClass::combine)
+        };
     }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct PaintPropertyState {
     pub z_index: i32,
-    pub clip_depth: u32,
-    pub layer_depth: u32,
+    pub transform_id: TransformNodeId,
+    pub clip_id: ClipNodeId,
+    pub effect_id: EffectNodeId,
+    pub scroll_id: ScrollNodeId,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum PaintChunkKind {
     Boundary,
     Draw,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub(crate) struct TransformNodeId(pub u32);
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub(crate) struct ClipNodeId(pub u32);
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub(crate) struct EffectNodeId(pub u32);
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub(crate) struct ScrollNodeId(pub u32);
+
+#[allow(dead_code)]
+#[derive(Clone, Debug)]
+pub(crate) struct TransformNode {
+    pub parent: Option<TransformNodeId>,
+    pub transform: Affine,
+}
+
+#[allow(dead_code)]
+#[derive(Clone)]
+pub(crate) struct ClipNode {
+    pub parent: Option<ClipNodeId>,
+    pub transform_id: TransformNodeId,
+    pub clip: Clip,
+    pub hint: Option<ShapeHint>,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct EffectNode {
+    pub parent: Option<EffectNodeId>,
+    pub blend: peniko::BlendMode,
+    pub alpha: f32,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ScrollNode {
+    pub parent: Option<ScrollNodeId>,
+    pub translation: Affine,
+}
+
+#[allow(dead_code)]
+#[derive(Clone)]
+pub(crate) struct PaintPropertyTree {
+    pub transforms: Vec<TransformNode>,
+    pub clips: Vec<ClipNode>,
+    pub effects: Vec<EffectNode>,
+    pub scrolls: Vec<ScrollNode>,
+}
+
+impl Default for PaintPropertyTree {
+    fn default() -> Self {
+        Self {
+            transforms: vec![TransformNode {
+                parent: None,
+                transform: Affine::IDENTITY,
+            }],
+            clips: vec![ClipNode {
+                parent: None,
+                transform_id: TransformNodeId(0),
+                clip: Clip::Fill {
+                    transform: Affine::IDENTITY,
+                    shape: Geometry::Rect(Rect::ZERO),
+                    fill_rule: FillRule::NonZero,
+                },
+                hint: Some(ShapeHint::Rect(Rect::ZERO)),
+            }],
+            effects: vec![EffectNode {
+                parent: None,
+                blend: peniko::BlendMode::default(),
+                alpha: 1.0,
+            }],
+            scrolls: vec![ScrollNode {
+                parent: None,
+                translation: Affine::IDENTITY,
+            }],
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -548,32 +639,100 @@ pub(crate) fn replay_stage(
     }
 }
 
-fn chunk_display_commands(commands: Vec<DisplayCommand>) -> Vec<PaintChunk> {
+fn chunk_display_commands(commands: Vec<DisplayCommand>) -> (Vec<PaintChunk>, PaintPropertyTree) {
     let mut chunks = Vec::new();
     let mut properties = PaintPropertyState::default();
+    let mut property_tree = PaintPropertyTree::default();
+    let mut transform_intern = FxHashMap::default();
+    transform_intern.insert(transform_key(Affine::IDENTITY), TransformNodeId(0));
+    let mut clip_stack: Vec<ClipNodeId> = Vec::new();
+    let mut effect_stack: Vec<EffectNodeId> = vec![EffectNodeId(0)];
 
     for command in commands {
         match command {
             DisplayCommand::SetZIndex(z_index) => {
                 properties.z_index = z_index;
             }
-            DisplayCommand::PushClip { .. } => {
-                push_boundary_chunk(&mut chunks, properties, command_transform_class(&command), command);
-                properties.clip_depth += 1;
+            DisplayCommand::PushClip { clip, hint } => {
+                let transform_id = intern_transform(clip_transform(&clip), &mut property_tree, &mut transform_intern);
+                let clip_id = ClipNodeId(property_tree.clips.len() as u32);
+                property_tree.clips.push(ClipNode {
+                    parent: clip_stack.last().copied(),
+                    transform_id,
+                    clip,
+                    hint: hint.clone(),
+                });
+                clip_stack.push(clip_id);
+                properties.clip_id = clip_id;
+                push_boundary_chunk(
+                    &mut chunks,
+                    properties,
+                    command_transform_class(&DisplayCommand::PushClip {
+                        clip: property_tree.clips[clip_id.0 as usize].clip.clone(),
+                        hint: property_tree.clips[clip_id.0 as usize].hint.clone(),
+                    }),
+                    DisplayCommand::PushClip {
+                        clip: property_tree.clips[clip_id.0 as usize].clip.clone(),
+                        hint: property_tree.clips[clip_id.0 as usize].hint.clone(),
+                    },
+                );
             }
             DisplayCommand::PopClip => {
-                properties.clip_depth = properties.clip_depth.saturating_sub(1);
-                push_boundary_chunk(&mut chunks, properties, command_transform_class(&command), command);
+                clip_stack.pop();
+                properties.clip_id = clip_stack.last().copied().unwrap_or_default();
+                push_boundary_chunk(
+                    &mut chunks,
+                    properties,
+                    command_transform_class(&DisplayCommand::PopClip),
+                    DisplayCommand::PopClip,
+                );
             }
-            DisplayCommand::PushLayer { .. } => {
-                push_boundary_chunk(&mut chunks, properties, command_transform_class(&command), command);
-                properties.layer_depth += 1;
+            DisplayCommand::PushLayer {
+                group,
+                transform,
+                clip_hint,
+            } => {
+                let effect_id = EffectNodeId(property_tree.effects.len() as u32);
+                property_tree.effects.push(EffectNode {
+                    parent: effect_stack.last().copied(),
+                    blend: group.composite.blend,
+                    alpha: group.composite.alpha,
+                });
+                effect_stack.push(effect_id);
+                properties.effect_id = effect_id;
+                properties.transform_id =
+                    intern_transform(transform, &mut property_tree, &mut transform_intern);
+                push_boundary_chunk(
+                    &mut chunks,
+                    properties,
+                    command_transform_class(&DisplayCommand::PushLayer {
+                        group: group.clone(),
+                        transform,
+                        clip_hint: clip_hint.clone(),
+                    }),
+                    DisplayCommand::PushLayer {
+                        group,
+                        transform,
+                        clip_hint,
+                    },
+                );
             }
             DisplayCommand::PopLayer => {
-                properties.layer_depth = properties.layer_depth.saturating_sub(1);
-                push_boundary_chunk(&mut chunks, properties, command_transform_class(&command), command);
+                effect_stack.pop();
+                properties.effect_id = effect_stack.last().copied().unwrap_or_default();
+                push_boundary_chunk(
+                    &mut chunks,
+                    properties,
+                    command_transform_class(&DisplayCommand::PopLayer),
+                    DisplayCommand::PopLayer,
+                );
             }
             command => {
+                properties.transform_id = intern_transform(
+                    command_affine(&command),
+                    &mut property_tree,
+                    &mut transform_intern,
+                );
                 let transform_class = command_transform_class(&command);
                 match chunks.last_mut() {
                     Some(PaintChunk {
@@ -597,7 +756,7 @@ fn chunk_display_commands(commands: Vec<DisplayCommand>) -> Vec<PaintChunk> {
         }
     }
 
-    chunks
+    (chunks, property_tree)
 }
 
 fn push_boundary_chunk(
@@ -629,6 +788,54 @@ fn command_transform_class(command: &DisplayCommand) -> TransformClass {
             TransformClass::TranslateOnly
         }
     }
+}
+
+fn command_affine(command: &DisplayCommand) -> Affine {
+    match command {
+        DisplayCommand::SetZIndex(_) | DisplayCommand::PopClip | DisplayCommand::PopLayer => {
+            Affine::IDENTITY
+        }
+        DisplayCommand::PushClip { clip, .. } => clip_transform(clip),
+        DisplayCommand::PushLayer { transform, .. } => *transform,
+        DisplayCommand::Draw { draw, .. } => match draw {
+            Draw::Fill { transform, .. } | Draw::Stroke { transform, .. } => *transform,
+            Draw::GlyphRun(run) => run.transform,
+            Draw::BlurredRoundedRect(rect) => rect.transform,
+        },
+        DisplayCommand::DrawImage { transform, .. } | DisplayCommand::DrawSvg { transform, .. } => {
+            *transform
+        }
+    }
+}
+
+fn clip_transform(clip: &Clip) -> Affine {
+    match clip {
+        Clip::Fill { transform, .. } => *transform,
+        Clip::Stroke { transform, .. } => *transform,
+    }
+}
+
+fn intern_transform(
+    transform: Affine,
+    property_tree: &mut PaintPropertyTree,
+    intern: &mut FxHashMap<[u64; 6], TransformNodeId>,
+) -> TransformNodeId {
+    let key = transform_key(transform);
+    if let Some(id) = intern.get(&key).copied() {
+        return id;
+    }
+
+    let id = TransformNodeId(property_tree.transforms.len() as u32);
+    property_tree.transforms.push(TransformNode {
+        parent: Some(TransformNodeId(0)),
+        transform,
+    });
+    intern.insert(key, id);
+    id
+}
+
+fn transform_key(transform: Affine) -> [u64; 6] {
+    transform.as_coeffs().map(f64::to_bits)
 }
 
 fn replay_clip(
@@ -830,9 +1037,46 @@ mod tests {
         assert_eq!(stage.chunks.len(), 3);
         assert_eq!(stage.chunks[0].kind, PaintChunkKind::Boundary);
         assert_eq!(stage.chunks[1].kind, PaintChunkKind::Draw);
-        assert_eq!(stage.chunks[1].properties.clip_depth, 1);
+        assert_ne!(stage.chunks[1].properties.clip_id, ClipNodeId(0));
         assert_eq!(stage.chunks[2].kind, PaintChunkKind::Boundary);
-        assert_eq!(stage.chunks[2].properties.clip_depth, 0);
+        assert_eq!(stage.chunks[2].properties.clip_id, ClipNodeId(0));
+    }
+
+    #[test]
+    fn stage_splits_draw_chunks_on_transform_state() {
+        let rect = Rect::new(0.0, 0.0, 10.0, 10.0);
+        let mut stage = ElementStage::default();
+        stage.set_commands(vec![
+            DisplayCommand::Draw {
+                draw: Draw::Fill {
+                    transform: Affine::IDENTITY,
+                    fill_rule: FillRule::NonZero,
+                    paint: Color::BLACK.into(),
+                    paint_transform: None,
+                    shape: Geometry::Rect(rect),
+                    composite: Composite::default(),
+                },
+                hint: Some(ShapeHint::Rect(rect)),
+            },
+            DisplayCommand::Draw {
+                draw: Draw::Fill {
+                    transform: Affine::translate((5.0, 0.0)),
+                    fill_rule: FillRule::NonZero,
+                    paint: Color::BLACK.into(),
+                    paint_transform: None,
+                    shape: Geometry::Rect(rect),
+                    composite: Composite::default(),
+                },
+                hint: Some(ShapeHint::Rect(rect)),
+            },
+        ]);
+
+        assert_eq!(stage.chunks.len(), 2);
+        assert_ne!(
+            stage.chunks[0].properties.transform_id,
+            stage.chunks[1].properties.transform_id
+        );
+        assert_eq!(stage.property_tree.transforms.len(), 2);
     }
 
     #[test]

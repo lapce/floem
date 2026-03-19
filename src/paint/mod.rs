@@ -355,9 +355,6 @@ impl GlobalPaintCx<'_> {
                 dirty_ids.insert(element_id);
             }
         }
-        if std::env::var("FLOEM_TRACE_RERECORD").ok().as_deref() == Some("1") {
-            eprintln!("dirty_ids={dirty_ids:?}");
-        }
         let rerecord_ids = dirty_ids.len();
         for element_id in dirty_ids {
             self.record_visual_node(element_id, false);
