@@ -1,10 +1,13 @@
-use std::{cell::RefCell, rc::Rc, time::Instant};
+use std::{cell::RefCell, rc::Rc, time::Duration, time::Instant};
 
 use floem::{
     ViewId,
     context::{EventCx, LayoutChanged, LayoutChangedListener, PaintCx},
-    easing::Spring,
-    event::{CustomEvent, Event, EventPropagation},
+    easing::{Linear, Spring},
+    event::{
+        CustomEvent, DragConfig, DragEvent, DragSourceEvent, Event, EventPropagation,
+        PointerCaptureEvent,
+    },
     kurbo::{Affine, Circle, Point, Rect, Shape, Size, Stroke},
     peniko::{
         Gradient, Mix,
@@ -151,7 +154,6 @@ pub struct SatValuePicker {
     current_color: AlphaColor<Hwb>,
     on_change: Option<Box<dyn Fn(Color)>>,
     point: Point,
-    track: bool,
 }
 impl SatValuePicker {
     pub fn new(color: impl Fn() -> Color + 'static) -> Self {
@@ -164,7 +166,6 @@ impl SatValuePicker {
             current_color: color.convert(),
             on_change: None,
             point: Point::ZERO,
-            track: false,
         }
     }
 
@@ -196,6 +197,13 @@ impl SatValuePicker {
     fn post_layout(&mut self, new_layout: &LayoutChanged) {
         self.size = new_layout.new_box.size();
     }
+
+    fn set_from_point(&mut self, point: Point) -> Color {
+        self.id.request_paint();
+        self.current_color = self.position_to_hwb(point);
+        self.point = point;
+        self.current_color.convert()
+    }
 }
 impl View for SatValuePicker {
     fn id(&self) -> ViewId {
@@ -205,6 +213,7 @@ impl View for SatValuePicker {
     fn update(&mut self, _cx: &mut floem::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(color) = state.downcast::<Color>() {
             self.current_color = color.convert();
+            self.id.request_paint();
         }
     }
 
@@ -212,36 +221,35 @@ impl View for SatValuePicker {
         if let Some(new_layout) = LayoutChangedListener::extract(&cx.event) {
             self.post_layout(new_layout);
         }
-        if let Some(on_change) = &self.on_change {
-            match &cx.event {
-                Event::Pointer(PointerEvent::Down(PointerButtonEvent {
-                    state, pointer, ..
-                })) => {
-                    self.current_color = self.position_to_hwb(state.logical_point());
-                    self.point = state.logical_point();
-                    on_change(self.current_color.convert());
-                    self.track = true;
-                    if let Some(pointer_id) = pointer.pointer_id {
-                        cx.request_pointer_capture(pointer_id);
-                    }
+        let updated_color = match &cx.event {
+            Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, pointer, .. })) => {
+                if let Some(pointer_id) = pointer.pointer_id {
+                    cx.window_state.set_pointer_capture(pointer_id, self.id);
                 }
-                Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. })) => {
-                    self.current_color = self.position_to_hwb(state.logical_point());
-                    self.point = state.logical_point();
-                    on_change(self.current_color.convert());
-                    self.track = false;
-                }
-                Event::Pointer(PointerEvent::Move(pu)) => {
-                    if self.track {
-                        self.current_color = self.position_to_hwb(pu.current.logical_point());
-                        self.point = pu.current.logical_point();
-                        on_change(self.current_color.convert());
-                    }
-                }
-                _ => {
-                    return EventPropagation::Continue;
-                }
+                Some(self.set_from_point(state.logical_point()))
             }
+            Event::PointerCapture(PointerCaptureEvent::Gained(drag)) => {
+                cx.start_drag(*drag, DragConfig::new(0., Duration::ZERO, Linear), false);
+                None
+            }
+            Event::Drag(DragEvent::Source(DragSourceEvent::Move(dme))) => {
+                Some(self.set_from_point(dme.current_state.logical_point()))
+            }
+            Event::Drag(DragEvent::Source(DragSourceEvent::End(de))) => {
+                Some(self.set_from_point(de.current_state.logical_point()))
+            }
+            Event::Drag(DragEvent::Source(DragSourceEvent::Cancel(dce))) => {
+                Some(self.set_from_point(dce.current_state.logical_point()))
+            }
+            _ => {
+                return EventPropagation::Continue;
+            }
+        };
+
+        if let Some(color) = updated_color
+            && let Some(on_change) = &self.on_change
+        {
+            on_change(color);
         }
         EventPropagation::Stop
     }
@@ -304,7 +312,6 @@ pub struct HuePicker {
     size: Size,
     current_color: AlphaColor<Hsl>,
     on_change: Option<Box<dyn Fn(Color)>>,
-    track: bool,
 }
 
 impl HuePicker {
@@ -317,7 +324,6 @@ impl HuePicker {
             size: Size::ZERO,
             current_color: color.convert(),
             on_change: None,
-            track: false,
         }
     }
 
@@ -339,6 +345,12 @@ impl HuePicker {
     fn post_layout(&mut self, new_layout: &LayoutChanged) {
         self.size = new_layout.new_box.size();
     }
+
+    fn set_from_point(&mut self, point: Point) -> Color {
+        self.id.request_paint();
+        self.current_color = self.position_to_hsl(point);
+        self.current_color.convert()
+    }
 }
 
 impl View for HuePicker {
@@ -349,6 +361,7 @@ impl View for HuePicker {
     fn update(&mut self, _cx: &mut floem::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(color) = state.downcast::<Color>() {
             self.current_color = color.convert();
+            self.id.request_paint();
         }
     }
 
@@ -356,33 +369,35 @@ impl View for HuePicker {
         if let Some(new_layout) = LayoutChangedListener::extract(&cx.event) {
             self.post_layout(new_layout);
         }
-        if let Some(on_change) = &self.on_change {
-            match &cx.event {
-                Event::Pointer(PointerEvent::Down(PointerButtonEvent {
-                    state, pointer, ..
-                })) => {
-                    self.current_color = self.position_to_hsl(state.logical_point());
-                    on_change(self.current_color.convert());
-                    self.track = true;
-                    if let Some(pointer_id) = pointer.pointer_id {
-                        cx.request_pointer_capture(pointer_id);
-                    }
+        let updated_color = match &cx.event {
+            Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, pointer, .. })) => {
+                if let Some(pointer_id) = pointer.pointer_id {
+                    cx.window_state.set_pointer_capture(pointer_id, self.id);
                 }
-                Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. })) => {
-                    self.current_color = self.position_to_hsl(state.logical_point());
-                    on_change(self.current_color.convert());
-                    self.track = false;
-                }
-                Event::Pointer(PointerEvent::Move(pu)) => {
-                    if self.track {
-                        self.current_color = self.position_to_hsl(pu.current.logical_point());
-                        on_change(self.current_color.convert());
-                    }
-                }
-                _ => {
-                    return EventPropagation::Continue;
-                }
+                Some(self.set_from_point(state.logical_point()))
             }
+            Event::PointerCapture(PointerCaptureEvent::Gained(drag)) => {
+                cx.start_drag(*drag, DragConfig::new(0., Duration::ZERO, Linear), false);
+                None
+            }
+            Event::Drag(DragEvent::Source(DragSourceEvent::Move(dme))) => {
+                Some(self.set_from_point(dme.current_state.logical_point()))
+            }
+            Event::Drag(DragEvent::Source(DragSourceEvent::End(de))) => {
+                Some(self.set_from_point(de.current_state.logical_point()))
+            }
+            Event::Drag(DragEvent::Source(DragSourceEvent::Cancel(dce))) => {
+                Some(self.set_from_point(dce.current_state.logical_point()))
+            }
+            _ => {
+                return EventPropagation::Continue;
+            }
+        };
+
+        if let Some(color) = updated_color
+            && let Some(on_change) = &self.on_change
+        {
+            on_change(color);
         }
         EventPropagation::Stop
     }
@@ -427,7 +442,6 @@ pub struct OpacityPicker {
     size: Size,
     current_color: Color,
     on_change: Option<Box<dyn Fn(Color)>>,
-    track: bool,
 }
 
 impl OpacityPicker {
@@ -440,7 +454,6 @@ impl OpacityPicker {
             size: Size::ZERO,
             current_color: color,
             on_change: None,
-            track: false,
         }
     }
 
@@ -458,6 +471,12 @@ impl OpacityPicker {
     fn post_layout(&mut self, layout_changed: &LayoutChanged) {
         self.size = layout_changed.new_box.size();
     }
+
+    fn set_from_point(&mut self, point: Point) -> Color {
+        self.id.request_paint();
+        self.current_color = self.position_to_alpha(point);
+        self.current_color
+    }
 }
 
 impl View for OpacityPicker {
@@ -468,6 +487,7 @@ impl View for OpacityPicker {
     fn update(&mut self, _cx: &mut floem::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(color) = state.downcast::<Color>() {
             self.current_color = *color;
+            self.id.request_paint();
         }
     }
 
@@ -475,33 +495,35 @@ impl View for OpacityPicker {
         if let Some(new_layout) = LayoutChangedListener::extract(&cx.event) {
             self.post_layout(new_layout);
         }
-        if let Some(on_change) = &self.on_change {
-            match &cx.event {
-                Event::Pointer(PointerEvent::Down(PointerButtonEvent {
-                    state, pointer, ..
-                })) => {
-                    self.current_color = self.position_to_alpha(state.logical_point());
-                    on_change(self.current_color);
-                    self.track = true;
-                    if let Some(pointer_id) = pointer.pointer_id {
-                        cx.request_pointer_capture(pointer_id);
-                    }
+        let updated_color = match &cx.event {
+            Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, pointer, .. })) => {
+                if let Some(pointer_id) = pointer.pointer_id {
+                    cx.window_state.set_pointer_capture(pointer_id, self.id);
                 }
-                Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. })) => {
-                    self.current_color = self.position_to_alpha(state.logical_point());
-                    on_change(self.current_color);
-                    self.track = false;
-                }
-                Event::Pointer(PointerEvent::Move(pu)) => {
-                    if self.track {
-                        self.current_color = self.position_to_alpha(pu.current.logical_point());
-                        on_change(self.current_color);
-                    }
-                }
-                _ => {
-                    return EventPropagation::Continue;
-                }
+                Some(self.set_from_point(state.logical_point()))
             }
+            Event::PointerCapture(PointerCaptureEvent::Gained(drag)) => {
+                cx.start_drag(*drag, DragConfig::new(0., Duration::ZERO, Linear), false);
+                None
+            }
+            Event::Drag(DragEvent::Source(DragSourceEvent::Move(dme))) => {
+                Some(self.set_from_point(dme.current_state.logical_point()))
+            }
+            Event::Drag(DragEvent::Source(DragSourceEvent::End(de))) => {
+                Some(self.set_from_point(de.current_state.logical_point()))
+            }
+            Event::Drag(DragEvent::Source(DragSourceEvent::Cancel(dce))) => {
+                Some(self.set_from_point(dce.current_state.logical_point()))
+            }
+            _ => {
+                return EventPropagation::Continue;
+            }
+        };
+
+        if let Some(color) = updated_color
+            && let Some(on_change) = &self.on_change
+        {
+            on_change(color);
         }
         EventPropagation::Stop
     }

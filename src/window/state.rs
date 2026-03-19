@@ -528,7 +528,7 @@ impl WindowState {
     /// Note: Unlike the web API, this doesn't validate that the pointer is active
     /// (has button pressed). The caller should ensure this constraint if needed.
     #[inline]
-    pub(crate) fn set_pointer_capture(
+    pub fn set_pointer_capture(
         &mut self,
         pointer_id: PointerId,
         target: impl Into<ElementId>,
