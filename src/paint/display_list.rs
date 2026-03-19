@@ -135,6 +135,15 @@ impl ElementStage {
                 .fold(TransformClass::Exact, TransformClass::combine)
         };
     }
+
+    #[allow(dead_code)]
+    pub(crate) fn chunk_indices_for_damage(&self, damage: &[Rect]) -> Vec<usize> {
+        self.chunks
+            .iter()
+            .enumerate()
+            .filter_map(|(index, chunk)| chunk.intersects_damage(damage).then_some(index))
+            .collect()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -239,7 +248,30 @@ pub(crate) struct PaintChunk {
     pub kind: PaintChunkKind,
     pub properties: PaintPropertyState,
     pub commands: Vec<DisplayCommand>,
+    pub bounds: Option<Rect>,
+    pub metadata: PaintChunkMetadata,
     pub transform_class: TransformClass,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct PaintChunkMetadata {
+    pub has_text: bool,
+    pub has_raster_image: bool,
+    pub has_vector_image: bool,
+    pub has_blur: bool,
+    pub requires_layer: bool,
+}
+
+impl PaintChunkMetadata {
+    fn merge(self, other: Self) -> Self {
+        Self {
+            has_text: self.has_text || other.has_text,
+            has_raster_image: self.has_raster_image || other.has_raster_image,
+            has_vector_image: self.has_vector_image || other.has_vector_image,
+            has_blur: self.has_blur || other.has_blur,
+            requires_layer: self.requires_layer || other.requires_layer,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -264,6 +296,16 @@ impl ElementSnapshot {
         self.local_bounds == current.local_bounds
             && self.clip == current.clip
             && effective_clip_not_loosened(self.effective_clip, current.effective_clip)
+    }
+}
+
+impl PaintChunk {
+    #[allow(dead_code)]
+    pub(crate) fn intersects_damage(&self, damage: &[Rect]) -> bool {
+        let Some(bounds) = self.bounds else {
+            return true;
+        };
+        damage.iter().any(|rect| rect.intersect(bounds).area() > 0.0)
     }
 }
 
@@ -734,21 +776,29 @@ fn chunk_display_commands(commands: Vec<DisplayCommand>) -> (Vec<PaintChunk>, Pa
                     &mut transform_intern,
                 );
                 let transform_class = command_transform_class(&command);
+                let bounds = command_bounds(&command);
+                let metadata = command_metadata(&command);
                 match chunks.last_mut() {
                     Some(PaintChunk {
                         kind: PaintChunkKind::Draw,
                         properties: chunk_properties,
                         commands: chunk_commands,
+                        bounds: chunk_bounds,
+                        metadata: chunk_metadata,
                         transform_class: chunk_transform_class,
                     }) if *chunk_properties == properties => {
                         *chunk_transform_class =
                             chunk_transform_class.combine(transform_class);
+                        *chunk_bounds = union_rects(*chunk_bounds, bounds);
+                        *chunk_metadata = chunk_metadata.merge(metadata);
                         chunk_commands.push(command);
                     }
                     _ => chunks.push(PaintChunk {
                         kind: PaintChunkKind::Draw,
                         properties,
                         commands: vec![command],
+                        bounds,
+                        metadata,
                         transform_class,
                     }),
                 }
@@ -769,6 +819,8 @@ fn push_boundary_chunk(
         kind: PaintChunkKind::Boundary,
         properties,
         commands: vec![command],
+        bounds: None,
+        metadata: PaintChunkMetadata::default(),
         transform_class,
     });
 }
@@ -787,6 +839,100 @@ fn command_transform_class(command: &DisplayCommand) -> TransformClass {
         DisplayCommand::DrawImage { .. } | DisplayCommand::DrawSvg { .. } => {
             TransformClass::TranslateOnly
         }
+    }
+}
+
+fn command_bounds(command: &DisplayCommand) -> Option<Rect> {
+    match command {
+        DisplayCommand::SetZIndex(_)
+        | DisplayCommand::PushClip { .. }
+        | DisplayCommand::PopClip
+        | DisplayCommand::PushLayer { .. }
+        | DisplayCommand::PopLayer => None,
+        DisplayCommand::Draw { draw, .. } => draw_bounds(draw),
+        DisplayCommand::DrawImage { rect, .. } | DisplayCommand::DrawSvg { rect, .. } => Some(*rect),
+    }
+}
+
+fn draw_bounds(draw: &Draw) -> Option<Rect> {
+    match draw {
+        Draw::Fill { shape, .. } => Some(geometry_bounds(shape)),
+        Draw::Stroke { shape, stroke, .. } => {
+            let bounds = geometry_bounds(shape);
+            let inset = stroke.width / 2.0;
+            Some(bounds.inflate(inset, inset))
+        }
+        Draw::GlyphRun(run) => glyph_run_bounds(run),
+        Draw::BlurredRoundedRect(rect) => Some(rect.rect.inflate(rect.std_dev * 3.0, rect.std_dev * 3.0)),
+    }
+}
+
+fn geometry_bounds(geometry: &Geometry) -> Rect {
+    match geometry {
+        Geometry::Rect(rect) => *rect,
+        Geometry::RoundedRect(rect) => rect.rect(),
+        Geometry::Path(path) => path.bounding_box(),
+    }
+}
+
+fn glyph_run_bounds(run: &GlyphRun) -> Option<Rect> {
+    let mut glyphs = run.glyphs.iter();
+    let first = glyphs.next()?;
+    let mut rect = Rect::new(
+        first.x as f64,
+        (first.y - run.font_size) as f64,
+        (first.x + run.font_size) as f64,
+        first.y as f64,
+    );
+    for glyph in glyphs {
+        rect = rect.union(Rect::new(
+            glyph.x as f64,
+            (glyph.y - run.font_size) as f64,
+            (glyph.x + run.font_size) as f64,
+            glyph.y as f64,
+        ));
+    }
+    Some(rect)
+}
+
+fn command_metadata(command: &DisplayCommand) -> PaintChunkMetadata {
+    match command {
+        DisplayCommand::SetZIndex(_)
+        | DisplayCommand::PushClip { .. }
+        | DisplayCommand::PopClip
+        | DisplayCommand::PopLayer => PaintChunkMetadata::default(),
+        DisplayCommand::PushLayer { .. } => PaintChunkMetadata {
+            requires_layer: true,
+            ..PaintChunkMetadata::default()
+        },
+        DisplayCommand::Draw { draw, .. } => match draw {
+            Draw::Fill { .. } | Draw::Stroke { .. } => PaintChunkMetadata::default(),
+            Draw::GlyphRun(_) => PaintChunkMetadata {
+                has_text: true,
+                ..PaintChunkMetadata::default()
+            },
+            Draw::BlurredRoundedRect(_) => PaintChunkMetadata {
+                has_blur: true,
+                ..PaintChunkMetadata::default()
+            },
+        },
+        DisplayCommand::DrawImage { .. } => PaintChunkMetadata {
+            has_raster_image: true,
+            ..PaintChunkMetadata::default()
+        },
+        DisplayCommand::DrawSvg { .. } => PaintChunkMetadata {
+            has_vector_image: true,
+            ..PaintChunkMetadata::default()
+        },
+    }
+}
+
+fn union_rects(lhs: Option<Rect>, rhs: Option<Rect>) -> Option<Rect> {
+    match (lhs, rhs) {
+        (Some(lhs), Some(rhs)) => Some(lhs.union(rhs)),
+        (Some(lhs), None) => Some(lhs),
+        (None, Some(rhs)) => Some(rhs),
+        (None, None) => None,
     }
 }
 
@@ -1095,6 +1241,46 @@ mod tests {
         }]);
 
         assert_eq!(stage.transform_class, TransformClass::TranslateOnly);
+        assert_eq!(stage.chunks[0].metadata.has_blur, true);
+        assert!(stage.chunks[0].bounds.is_some());
+    }
+
+    #[test]
+    fn stage_damage_query_filters_chunks_by_bounds() {
+        let rect = Rect::new(0.0, 0.0, 10.0, 10.0);
+        let mut stage = ElementStage::default();
+        stage.set_commands(vec![
+            DisplayCommand::Draw {
+                draw: Draw::Fill {
+                    transform: Affine::IDENTITY,
+                    fill_rule: FillRule::NonZero,
+                    paint: Color::BLACK.into(),
+                    paint_transform: None,
+                    shape: Geometry::Rect(rect),
+                    composite: Composite::default(),
+                },
+                hint: Some(ShapeHint::Rect(rect)),
+            },
+            DisplayCommand::DrawImage {
+                img: peniko::ImageBrush::new(peniko::ImageData {
+                    data: peniko::Blob::new(Arc::new(vec![255, 255, 255, 255])),
+                    format: peniko::ImageFormat::Rgba8,
+                    alpha_type: peniko::ImageAlphaType::Alpha,
+                    width: 1,
+                    height: 1,
+                }),
+                hash: Arc::from([1_u8].as_slice()),
+                rect: Rect::new(40.0, 40.0, 50.0, 50.0),
+                transform: Affine::IDENTITY,
+            },
+        ]);
+
+        let damage = [Rect::new(1.0, 1.0, 5.0, 5.0)];
+        let chunks = stage.chunk_indices_for_damage(&damage);
+        assert_eq!(chunks, vec![0]);
+        assert_eq!(stage.chunks.len(), 1);
+        assert!(stage.chunks[0].metadata.has_raster_image);
+        assert_eq!(stage.chunks[0].bounds, Some(Rect::new(0.0, 0.0, 50.0, 50.0)));
     }
 }
 
