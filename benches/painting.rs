@@ -11,12 +11,12 @@
 
 use std::hint::black_box;
 
-use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
 use floem::headless::{HeadlessHarness, TestRoot};
 use floem::prelude::*;
 use floem::style::FlexWrap;
 use floem::unit::Pct;
-use floem::views::{Container, Decorators, Empty, Stack};
+use floem::views::{Container, Decorators, Empty, Label, ScrollExt, Stack};
 
 // =============================================================================
 // View tree creation helpers
@@ -103,6 +103,29 @@ fn create_wide_tree_depth2(width: usize) -> impl IntoView {
         .collect();
 
     Stack::from_iter(children).style(|s| s.size(100.0, 100.0))
+}
+
+/// Create a large vertically scrollable list of labels.
+fn create_scroll_label_list(n: usize) -> impl IntoView {
+    let rows: Vec<_> = (0..n)
+        .map(|i| {
+            Label::new(format!(
+                "Row {i:05} | benchmark label content for retained scroll repaint"
+            ))
+            .style(|s| {
+                s.width_full()
+                    .height(24.0)
+                    .padding_horiz(6.0)
+                    .padding_vert(2.0)
+            })
+            .into_any()
+        })
+        .collect();
+
+    Stack::from_iter(rows)
+        .style(|s| s.flex_col())
+        .scroll()
+        .style(|s| s.size(1000.0, 240.0))
 }
 
 // =============================================================================
@@ -285,6 +308,78 @@ fn bench_repaint_after_change(c: &mut Criterion) {
     group.finish();
 }
 
+// =============================================================================
+// Scroll repaint benchmarks
+// =============================================================================
+
+fn bench_scroll_repaint(c: &mut Criterion) {
+    let mut group = c.benchmark_group("scroll_repaint");
+
+    for n in [100, 1_000].iter() {
+        group.bench_with_input(BenchmarkId::new("initial_paint", n), n, |b, &n| {
+            b.iter_batched(
+                || {
+                    let root = TestRoot::new();
+                    let view = create_scroll_label_list(n);
+                    HeadlessHarness::new_with_size(root, view, 1000.0, 240.0)
+                },
+                |mut harness| {
+                    harness.paint();
+                    black_box(());
+                },
+                BatchSize::SmallInput,
+            );
+        });
+
+        group.bench_with_input(
+            BenchmarkId::new("first_repaint_after_scroll", n),
+            n,
+            |b, &n| {
+                b.iter_batched(
+                    || {
+                        let root = TestRoot::new();
+                        let view = create_scroll_label_list(n);
+                        let mut harness = HeadlessHarness::new_with_size(root, view, 1000.0, 240.0);
+                        harness.paint();
+                        harness
+                    },
+                    |mut harness| {
+                        harness.scroll_down(160.0, 120.0, 48.0);
+                        harness.paint();
+                        black_box(());
+                    },
+                    BatchSize::SmallInput,
+                );
+            },
+        );
+
+        group.bench_with_input(
+            BenchmarkId::new("steady_repaint_after_scroll", n),
+            n,
+            |b, &n| {
+                let root = TestRoot::new();
+                let view = create_scroll_label_list(n);
+                let mut harness = HeadlessHarness::new_with_size(root, view, 320.0, 240.0);
+                harness.paint();
+                let mut scroll_down = true;
+
+                b.iter(|| {
+                    if scroll_down {
+                        harness.scroll_down(160.0, 120.0, 48.0);
+                    } else {
+                        harness.scroll_up(160.0, 120.0, 48.0);
+                    }
+                    scroll_down = !scroll_down;
+                    harness.paint();
+                    black_box(());
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_paint_flat_tree,
@@ -293,6 +388,7 @@ criterion_group!(
     bench_paint_wide_tree,
     bench_paint_order_tracking,
     bench_repaint_after_change,
+    bench_scroll_repaint,
 );
 
 criterion_main!(benches);
