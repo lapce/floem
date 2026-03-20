@@ -223,11 +223,14 @@ pub mod receiver_signal {
 
 pub use box_tree::{BoxTree, ElementId, ElementMeta, FocusNavMeta};
 pub(crate) use box_tree::{bump_focus_nav_meta_revision, focus_nav_meta_revision};
+pub use compositor::backend::CompositorBackend;
 pub use compositor::{
     Compositor, CompositorLayerDescriptor, CompositorLayerId, CompositorLayerKind,
     CompositorTiming, ExternalAlphaMode, ExternalColorSpace, ExternalPixelFormat,
     ExternalSurfaceDescriptor, ExternalSurfaceHandle, ExternalSurfaceId, FrameRequestReason,
 };
+#[cfg(feature = "subduction")]
+pub use compositor::subduction::SubductionCompositorBackend;
 
 pub use app::{AppConfig, AppEvent, Application, launch, quit_app, reopen};
 pub use floem_reactive as reactive;

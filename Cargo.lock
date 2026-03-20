@@ -1580,6 +1580,7 @@ dependencies = [
  "smallvec",
  "strum",
  "strum_macros",
+ "subduction_core",
  "sys-locale",
  "taffy",
  "tokio",
@@ -3238,6 +3239,7 @@ checksum = "7564e90fe3c0d5771e1f0bc95322b21baaeaa0d9213fa6a0b61c99f8b17b3bfb"
 dependencies = [
  "arrayvec",
  "euclid",
+ "libm",
  "serde",
  "smallvec",
 ]
@@ -5726,6 +5728,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "subduction_core"
+version = "0.0.1"
+source = "git+https://github.com/forest-rs/subduction.git?rev=942a0d4d1a65f855c2a77aa10d01be132196d4bd#942a0d4d1a65f855c2a77aa10d01be132196d4bd"
+dependencies = [
+ "kurbo",
+ "understory_dirty",
+]
+
+[[package]]
 name = "svg_fmt"
 version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6381,6 +6392,14 @@ dependencies = [
  "bitflags 2.11.0",
  "kurbo",
  "understory_index",
+]
+
+[[package]]
+name = "understory_dirty"
+version = "0.1.0"
+source = "git+https://github.com/endoli/understory.git?rev=e66fecdc521b57b76bb3b28ddc70ce3944926664#e66fecdc521b57b76bb3b28ddc70ce3944926664"
+dependencies = [
+ "hashbrown 0.16.1",
 ]
 
 [[package]]

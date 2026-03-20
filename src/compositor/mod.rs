@@ -50,11 +50,17 @@
 //!
 //! In other words, this module is the start of Floem's compositor boundary.
 
+pub mod backend;
+#[cfg(feature = "subduction")]
+pub mod subduction;
+
 use std::time::{Duration, Instant};
 
 use peniko::BlendMode;
 use peniko::kurbo::{Rect, Size};
 use rustc_hash::FxHashMap;
+
+use self::backend::CompositorBackend;
 
 /// Stable identifier for a compositor layer.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
@@ -197,7 +203,7 @@ pub struct CompositorLayerState {
 }
 
 /// Retained compositor registry and frame-request state.
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct Compositor {
     next_layer_id: u64,
     next_surface_id: u64,
@@ -205,9 +211,51 @@ pub struct Compositor {
     external_surfaces: FxHashMap<ExternalSurfaceId, ExternalSurfaceState>,
     pending_frame_reasons: Vec<FrameRequestReason>,
     timing: CompositorTiming,
+    backend: Option<Box<dyn CompositorBackend>>,
+}
+
+impl std::fmt::Debug for Compositor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Compositor")
+            .field("next_layer_id", &self.next_layer_id)
+            .field("next_surface_id", &self.next_surface_id)
+            .field("layers", &self.layers)
+            .field("external_surfaces", &self.external_surfaces)
+            .field("pending_frame_reasons", &self.pending_frame_reasons)
+            .field("timing", &self.timing)
+            .field("backend_name", &self.backend_name())
+            .finish()
+    }
 }
 
 impl Compositor {
+    /// Installs a compositor backend and synchronizes the retained state into it.
+    pub fn install_backend(&mut self, mut backend: Box<dyn CompositorBackend>) {
+        for (&id, surface) in &self.external_surfaces {
+            backend.register_external_surface(id, surface.handle, surface.descriptor);
+        }
+
+        for (&id, layer) in &self.layers {
+            backend.register_layer(id, layer.descriptor);
+            if layer.dirty {
+                backend.mark_layer_dirty(id);
+            }
+        }
+
+        for &reason in &self.pending_frame_reasons {
+            backend.request_frame(reason);
+        }
+
+        backend.update_timing(self.timing);
+        self.backend = Some(backend);
+    }
+
+    /// Returns the installed backend name, if any.
+    #[must_use]
+    pub fn backend_name(&self) -> Option<&'static str> {
+        self.backend.as_ref().map(|backend| backend.name())
+    }
+
     /// Registers a new externally managed surface and returns its id.
     pub fn register_external_surface(
         &mut self,
@@ -224,6 +272,9 @@ impl Compositor {
                 latest_ready_at: None,
             },
         );
+        if let Some(backend) = self.backend.as_mut() {
+            backend.register_external_surface(id, handle, descriptor);
+        }
         id
     }
 
@@ -239,6 +290,9 @@ impl Compositor {
         };
         surface.handle = handle;
         surface.descriptor = descriptor;
+        if let Some(backend) = self.backend.as_mut() {
+            backend.update_external_surface(id, handle, descriptor);
+        }
         true
     }
 
@@ -261,6 +315,10 @@ impl Compositor {
                 dirty: true,
             },
         );
+        if let Some(backend) = self.backend.as_mut() {
+            backend.register_layer(id, descriptor);
+            backend.mark_layer_dirty(id);
+        }
         id
     }
 
@@ -275,6 +333,10 @@ impl Compositor {
         };
         layer.descriptor = descriptor;
         layer.dirty = true;
+        if let Some(backend) = self.backend.as_mut() {
+            backend.update_layer(id, descriptor);
+            backend.mark_layer_dirty(id);
+        }
         true
     }
 
@@ -289,6 +351,10 @@ impl Compositor {
             layer.dirty = true;
             self.pending_frame_reasons
                 .push(FrameRequestReason::LayerDirty(id));
+            if let Some(backend) = self.backend.as_mut() {
+                backend.mark_layer_dirty(id);
+                backend.request_frame(FrameRequestReason::LayerDirty(id));
+            }
         }
     }
 
@@ -300,12 +366,19 @@ impl Compositor {
         surface.latest_ready_at = Some(Instant::now());
         self.pending_frame_reasons
             .push(FrameRequestReason::ExternalSurfaceReady(id));
+        if let Some(backend) = self.backend.as_mut() {
+            backend.notify_external_surface_ready(id);
+            backend.request_frame(FrameRequestReason::ExternalSurfaceReady(id));
+        }
         true
     }
 
     /// Requests a compositor frame for an explicit reason.
     pub fn request_frame(&mut self, reason: FrameRequestReason) {
         self.pending_frame_reasons.push(reason);
+        if let Some(backend) = self.backend.as_mut() {
+            backend.request_frame(reason);
+        }
     }
 
     /// Returns whether a compositor frame has been requested.
@@ -323,6 +396,9 @@ impl Compositor {
         for layer in self.layers.values_mut() {
             layer.dirty = false;
         }
+        if let Some(backend) = self.backend.as_mut() {
+            backend.clear_layer_dirtiness();
+        }
     }
 
     /// Returns the most recent compositor timing state.
@@ -333,5 +409,8 @@ impl Compositor {
     /// Updates compositor timing state after presentation work has advanced.
     pub fn update_timing(&mut self, timing: CompositorTiming) {
         self.timing = timing;
+        if let Some(backend) = self.backend.as_mut() {
+            backend.update_timing(timing);
+        }
     }
 }

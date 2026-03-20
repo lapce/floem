@@ -5,6 +5,7 @@ use crate::{
     compositor::{
         Compositor, CompositorLayerDescriptor, CompositorLayerId, CompositorTiming,
         ExternalSurfaceDescriptor, ExternalSurfaceHandle, ExternalSurfaceId, FrameRequestReason,
+        backend::CompositorBackend,
     },
     inspector::CaptureState,
     platform::menu_types::MenuId,
@@ -1292,6 +1293,14 @@ impl WindowState {
 
     pub fn request_compositor_frame(&mut self, reason: FrameRequestReason) {
         self.compositor.request_frame(reason);
+    }
+
+    pub fn install_compositor_backend(&mut self, backend: Box<dyn CompositorBackend>) {
+        self.compositor.install_backend(backend);
+    }
+
+    pub fn compositor_backend_name(&self) -> Option<&'static str> {
+        self.compositor.backend_name()
     }
 
     pub const fn compositor_timing(&self) -> &CompositorTiming {
