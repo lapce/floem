@@ -67,7 +67,7 @@ ui-events = { version = "0.3", features = ["kurbo"] }
 ui-events-winit = { path = "./ui-events-winit", package = "ui-events-floem-winit" }
 dpi = { version = "0.1.2", default-features = false }
 rustc-hash = "2.1"
-imaging = { git = "https://github.com/forest-rs/imaging", rev = "0527cbabf0d6ea27e14a82955f4a582c57bdc440", package = "imaging" }
+imaging = { git = "https://github.com/forest-rs/imaging", rev = "eacda40b585058fde8e0cfcae031f93d8d8c25ec", package = "imaging" }
 
 [dependencies]
 slotmap = "1.0"

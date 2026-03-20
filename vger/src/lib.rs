@@ -679,10 +679,6 @@ impl Renderer for VgerRenderer {
         self.transform = transform;
     }
 
-    fn set_z_index(&mut self, z_index: i32) {
-        self.vger.set_z_index(z_index);
-    }
-
     fn clip(&mut self, shape: &impl Shape) {
         let (rect, radius) = if let Some(rect) = shape.as_rect() {
             (rect, 0.0)

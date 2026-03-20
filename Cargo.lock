@@ -3000,7 +3000,7 @@ checksum = "09e54e57b4c48b40f7aec75635392b12b3421fa26fe8b4332e63138ed278459c"
 [[package]]
 name = "imaging"
 version = "0.0.1"
-source = "git+https://github.com/forest-rs/imaging?rev=0527cbabf0d6ea27e14a82955f4a582c57bdc440#0527cbabf0d6ea27e14a82955f4a582c57bdc440"
+source = "git+https://github.com/forest-rs/imaging?rev=eacda40b585058fde8e0cfcae031f93d8d8c25ec#eacda40b585058fde8e0cfcae031f93d8d8c25ec"
 dependencies = [
  "kurbo",
  "peniko",

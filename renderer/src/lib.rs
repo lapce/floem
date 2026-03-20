@@ -122,12 +122,6 @@ pub trait Renderer {
     /// resolution.
     fn set_transform(&mut self, transform: Affine);
 
-    /// Set the z-index for subsequent draw commands.
-    ///
-    /// Not all backends honour this — Vello and tiny-skia rely on painter's
-    /// order instead.
-    fn set_z_index(&mut self, z_index: i32);
-
     /// Clip all subsequent drawing to the interior of `shape`.
     ///
     /// The clip remains in effect until [`clear_clip`](Renderer::clear_clip) is

@@ -14,7 +14,8 @@ pub use renderer::Renderer;
 
 use floem_renderer::Renderer as _;
 use floem_renderer::gpu_resources::{GpuResourceError, GpuResources};
-use peniko::kurbo::{Affine, Point, RoundedRect, Shape, Size};
+use imaging::{BlurredRoundedRect, ClipRef, Composite, GeometryRef, PaintSink, Painter};
+use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Shape, Size};
 use rustc_hash::FxHashSet;
 use std::sync::Arc;
 use understory_box_tree::NodeFlags;
@@ -614,7 +615,7 @@ impl PaintCx<'_> {
             use peniko::Mix;
             self.push_layer(Mix::Normal, 1.0, Affine::IDENTITY, shape);
         } else {
-            self.recorder.clip(shape);
+            self.recorder.push_clip(ClipRef::fill(geometry_ref_from_shape(shape)));
         }
     }
 
@@ -623,7 +624,7 @@ impl PaintCx<'_> {
         if self.uses_layer_clip {
             self.pop_layer();
         } else {
-            self.recorder.clear_clip();
+            self.recorder.pop_clip();
         }
     }
 
@@ -636,7 +637,12 @@ impl PaintCx<'_> {
         brush: impl Into<peniko::BrushRef<'b>>,
         stroke: &'s peniko::kurbo::Stroke,
     ) {
-        self.recorder.stroke(shape, brush, stroke);
+        let brush = brush.into().to_owned();
+        let transform = self.recorder.transform();
+        Painter::new(self.recorder)
+            .stroke(geometry_ref_from_shape(shape), stroke, &brush)
+            .transform(transform)
+            .draw();
     }
 
     pub fn fill<'b>(
@@ -645,7 +651,27 @@ impl PaintCx<'_> {
         brush: impl Into<peniko::BrushRef<'b>>,
         blur_radius: f64,
     ) {
-        self.recorder.fill(path, brush, blur_radius);
+        let brush = brush.into().to_owned();
+        let transform = self.recorder.transform();
+        if blur_radius > 0.0
+            && let peniko::Brush::Solid(color) = brush
+            && let Some((rect, radius)) = blurred_rounded_rect(path)
+        {
+            Painter::new(self.recorder).blurred_rounded_rect(BlurredRoundedRect {
+                transform,
+                rect,
+                color,
+                radius,
+                std_dev: blur_radius,
+                composite: Composite::default(),
+            });
+            return;
+        }
+
+        Painter::new(self.recorder)
+            .fill(geometry_ref_from_shape(path), &brush)
+            .transform(transform)
+            .draw();
     }
 
     pub fn push_layer(
@@ -672,7 +698,29 @@ impl PaintCx<'_> {
         props: &floem_renderer::text::GlyphRunProps<'a>,
         glyphs: impl Iterator<Item = floem_renderer::text::Glyph> + 'a,
     ) {
-        self.recorder.draw_glyphs(origin, props, glyphs);
+        let brush = props.brush.to_owned();
+        let glyphs = glyphs
+            .map(|glyph| imaging::record::Glyph {
+                id: glyph.id,
+                x: glyph.x,
+                y: glyph.y,
+            })
+            .collect::<Vec<_>>();
+        let transform = self.recorder.transform()
+            * Affine::translate((origin.x, origin.y))
+            * props.transform;
+        Painter::new(self.recorder)
+            .glyphs(&props.font, &brush)
+            .transform(transform)
+            .glyph_transform(props.glyph_transform)
+            .font_size(props.font_size)
+            .hint(props.hint)
+            .normalized_coords(props.normalized_coords)
+            .composite(Composite::new(
+                peniko::BlendMode::default(),
+                props.brush_alpha,
+            ))
+            .draw(&props.style.to_owned(), &glyphs);
     }
 
     pub fn draw_svg<'b>(
@@ -686,10 +734,6 @@ impl PaintCx<'_> {
 
     pub fn set_transform(&mut self, transform: Affine) {
         self.recorder.set_transform(transform);
-    }
-
-    pub fn set_z_index(&mut self, z_index: i32) {
-        self.recorder.set_z_index(z_index);
     }
 
     pub fn is_vger(&self) -> bool {
@@ -777,4 +821,26 @@ impl PaintState {
     pub(crate) fn set_scale(&mut self, scale: f64) {
         self.renderer_mut().set_scale(scale);
     }
+}
+
+fn geometry_ref_from_shape(shape: &impl Shape) -> GeometryRef<'static> {
+    if let Some(rect) = shape.as_rect() {
+        return GeometryRef::Rect(rect);
+    }
+    if let Some(rect) = shape.as_rounded_rect() {
+        return GeometryRef::RoundedRect(rect);
+    }
+    GeometryRef::OwnedPath(shape.to_path(0.1))
+}
+
+fn blurred_rounded_rect(shape: &impl Shape) -> Option<(Rect, f64)> {
+    if let Some(rect) = shape.as_rect() {
+        return Some((rect, 0.0));
+    }
+    let rect = shape.as_rounded_rect()?;
+    let radii = rect.radii();
+    (radii.top_left == radii.top_right
+        && radii.top_left == radii.bottom_left
+        && radii.top_left == radii.bottom_right)
+        .then_some((rect.rect(), radii.top_left))
 }

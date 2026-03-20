@@ -1480,10 +1480,6 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
         self.transform = cumulative_transform;
     }
 
-    fn set_z_index(&mut self, _z_index: i32) {
-        // FIXME: Remove this method?
-    }
-
     fn clip(&mut self, shape: &impl Shape) {
         if let Some(clip) = self.current_clip_path(shape) {
             self.recording.push_clip(clip);

@@ -590,8 +590,6 @@ impl Renderer for VelloRenderer {
         self.transform = transform;
     }
 
-    fn set_z_index(&mut self, _z_index: i32) {}
-
     fn clip(&mut self, shape: &impl Shape) {
         self.scene.push_layer(
             Fill::NonZero,

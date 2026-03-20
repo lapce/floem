@@ -451,18 +451,6 @@ impl floem_renderer::Renderer for Renderer {
         }
     }
 
-    fn set_z_index(&mut self, z_index: i32) {
-        match self {
-            Renderer::Active(v) => {
-                v.set_z_index(z_index);
-            }
-            Renderer::TinySkia(v) => {
-                v.set_z_index(z_index);
-            }
-            Renderer::Uninitialized { .. } => {}
-        }
-    }
-
     fn finish(&mut self) -> Option<peniko::ImageBrush> {
         match self {
             Renderer::Active(r) => r.finish(),

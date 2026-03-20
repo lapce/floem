@@ -340,8 +340,6 @@ impl Renderer for SkiaRenderer {
         self.transform = transform;
     }
 
-    fn set_z_index(&mut self, _z_index: i32) {}
-
     fn clip(&mut self, shape: &impl Shape) {
         self.commands.push(Command::PushClip {
             transform: self.transform,
