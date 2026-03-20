@@ -988,7 +988,8 @@ impl WindowHandle {
 
             let promoted_raster_clip = match role {
                 crate::compositor::FloemPaintedSurfaceRole::Promoted(element_id) => {
-                    cx.window_state.promoted_compositor_layer_raster_clip(element_id)
+                    cx.window_state
+                        .current_promoted_raster_clip(element_id, bounds)
                 }
                 _ => None,
             };

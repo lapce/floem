@@ -4,10 +4,10 @@ use std::{cell::RefCell, collections::HashMap};
 use crate::{
     action::exec_after_animation_frame,
     compositor::{
-        Compositor, CompositorAlphaMode, CompositorLayerDescriptor, CompositorLayerId,
-        CompositorTiming, ExternalSurfaceDescriptor, ExternalSurfaceHandle, ExternalSurfaceId,
-        FloemSurfaceRoleVisitor, FrameRequestReason, ResolvedPromotedLayer,
-        backend::CompositorBackend,
+        Compositor, CompositorAlphaMode, CompositorLayerBacking, CompositorLayerDescriptor,
+        CompositorLayerId, CompositorTiming, ExternalSurfaceDescriptor,
+        ExternalSurfaceHandle, ExternalSurfaceId, FloemSurfaceRoleVisitor, FrameRequestReason,
+        ResolvedPromotedLayer, backend::CompositorBackend,
     },
     inspector::CaptureState,
     platform::menu_types::MenuId,
@@ -1412,8 +1412,10 @@ impl WindowState {
                     element_id: promoted.element_id,
                     bounds,
                     raster_clip,
+                    compositor_clip: raster_clip,
                     z_index: promoted.z_index,
                     compositing_depth,
+                    backing: CompositorLayerBacking::TextureBacked,
                     isolated,
                     alpha_mode: CompositorAlphaMode::Straight,
                 })
@@ -1440,8 +1442,13 @@ impl WindowState {
         self.compositor.promoted_layer_ids()
     }
 
-    pub fn promoted_compositor_layer_raster_clip(&self, element_id: ElementId) -> Option<Rect> {
-        self.compositor.promoted_layer_raster_clip(element_id)
+    pub fn current_promoted_raster_clip(
+        &self,
+        element_id: ElementId,
+        layer_bounds: Rect,
+    ) -> Option<Rect> {
+        self.accumulated_clip_bounds_for_element(element_id, self.effective_scale())
+            .map(|clip| clip.intersect(layer_bounds))
     }
 
     pub fn compositor_backend_name(&self) -> Option<&'static str> {

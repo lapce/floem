@@ -171,11 +171,76 @@ pub enum CompositorLayerKind {
     },
 }
 
+/// How a compositor layer is realized by the compositor/backend.
+///
+/// This is intentionally separate from [`CompositorLayerKind`]. A Floem-painted
+/// layer, an external surface layer, and a mixed layer can all be realized as a
+/// texture-backed compositor surface or as a platform/native layer depending on
+/// backend capabilities and the use case.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CompositorLayerBacking {
+    /// Backed by an internal compositor texture/surface that Floem can raster
+    /// into and composite with normal texture-space operations.
+    #[default]
+    TextureBacked,
+    /// Backed by a platform/native compositor layer or externally managed
+    /// presentable surface.
+    PlatformSurface,
+}
+
+/// Capability summary for a realized compositor layer backing.
+///
+/// Keeping these capabilities explicit avoids conflating texture-backed layers
+/// with host/platform layers. The compositor can branch on actual support
+/// instead of assuming all layers permit the same operations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CompositorLayerCapabilities {
+    pub supports_opacity: bool,
+    pub supports_blend_mode: bool,
+    pub supports_filters: bool,
+    pub supports_clip_to_bounds: bool,
+    pub supports_direct_raster: bool,
+    pub supports_external_surface_import: bool,
+}
+
+impl Default for CompositorLayerCapabilities {
+    fn default() -> Self {
+        Self::for_backing(CompositorLayerBacking::TextureBacked)
+    }
+}
+
+impl CompositorLayerCapabilities {
+    #[must_use]
+    pub const fn for_backing(backing: CompositorLayerBacking) -> Self {
+        match backing {
+            CompositorLayerBacking::TextureBacked => Self {
+                supports_opacity: true,
+                supports_blend_mode: true,
+                supports_filters: true,
+                supports_clip_to_bounds: true,
+                supports_direct_raster: true,
+                supports_external_surface_import: true,
+            },
+            CompositorLayerBacking::PlatformSurface => Self {
+                supports_opacity: false,
+                supports_blend_mode: false,
+                supports_filters: false,
+                supports_clip_to_bounds: true,
+                supports_direct_raster: false,
+                supports_external_surface_import: true,
+            },
+        }
+    }
+}
+
 /// Retained descriptor for a compositor layer.
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct CompositorLayerDescriptor {
     pub kind: CompositorLayerKind,
+    pub backing: CompositorLayerBacking,
+    pub capabilities: CompositorLayerCapabilities,
     pub bounds: Rect,
+    pub compositor_clip: Option<Rect>,
     pub z_index: i32,
     pub compositing_depth: u32,
     pub opacity: f32,
@@ -230,8 +295,10 @@ pub(crate) struct ResolvedPromotedLayer {
     pub element_id: ElementId,
     pub bounds: Rect,
     pub raster_clip: Option<Rect>,
+    pub compositor_clip: Option<Rect>,
     pub z_index: i32,
     pub compositing_depth: u32,
+    pub backing: CompositorLayerBacking,
     pub isolated: bool,
     pub alpha_mode: CompositorAlphaMode,
 }
@@ -247,7 +314,6 @@ pub struct Compositor {
     layers: FxHashMap<CompositorLayerId, CompositorLayerState>,
     external_surfaces: FxHashMap<ExternalSurfaceId, ExternalSurfaceState>,
     promoted_layers: FxHashMap<ElementId, CompositorLayerId>,
-    promoted_layer_raster_clips: FxHashMap<ElementId, Rect>,
     root_layer: Option<CompositorLayerId>,
     overlay_layer: Option<CompositorLayerId>,
     pending_frame_reasons: Vec<FrameRequestReason>,
@@ -263,7 +329,6 @@ impl std::fmt::Debug for Compositor {
             .field("layers", &self.layers)
             .field("external_surfaces", &self.external_surfaces)
             .field("promoted_layers", &self.promoted_layers)
-            .field("promoted_layer_raster_clips", &self.promoted_layer_raster_clips)
             .field("root_layer", &self.root_layer)
             .field("overlay_layer", &self.overlay_layer)
             .field("pending_frame_reasons", &self.pending_frame_reasons)
@@ -311,12 +376,14 @@ impl Compositor {
     /// layer candidates.
     pub(crate) fn sync_promoted_layers(&mut self, promoted_layers: &[ResolvedPromotedLayer]) {
         let mut active = FxHashMap::default();
-        self.promoted_layer_raster_clips.clear();
 
         for promoted in promoted_layers {
             let descriptor = CompositorLayerDescriptor {
                 kind: CompositorLayerKind::FloemPainted,
+                backing: promoted.backing,
+                capabilities: CompositorLayerCapabilities::for_backing(promoted.backing),
                 bounds: promoted.bounds,
+                compositor_clip: promoted.compositor_clip,
                 z_index: promoted.z_index,
                 compositing_depth: promoted.compositing_depth,
                 opacity: 1.0,
@@ -335,10 +402,6 @@ impl Compositor {
             };
 
             active.insert(promoted.element_id, layer_id);
-            if let Some(raster_clip) = promoted.raster_clip {
-                self.promoted_layer_raster_clips
-                    .insert(promoted.element_id, raster_clip);
-            }
         }
 
         let stale: Vec<_> = self
@@ -352,7 +415,12 @@ impl Compositor {
                 layer_id,
                 CompositorLayerDescriptor {
                     kind: CompositorLayerKind::FloemPainted,
+                    backing: CompositorLayerBacking::TextureBacked,
+                    capabilities: CompositorLayerCapabilities::for_backing(
+                        CompositorLayerBacking::TextureBacked,
+                    ),
                     bounds: Rect::ZERO,
+                    compositor_clip: None,
                     z_index: 0,
                     compositing_depth: 0,
                     opacity: 0.0,
@@ -368,7 +436,12 @@ impl Compositor {
     pub(crate) fn ensure_root_layer(&mut self, bounds: Rect) -> CompositorLayerId {
         let descriptor = CompositorLayerDescriptor {
             kind: CompositorLayerKind::FloemPainted,
+            backing: CompositorLayerBacking::TextureBacked,
+            capabilities: CompositorLayerCapabilities::for_backing(
+                CompositorLayerBacking::TextureBacked,
+            ),
             bounds,
+            compositor_clip: None,
             z_index: i32::MIN,
             compositing_depth: 0,
             opacity: 1.0,
@@ -390,7 +463,12 @@ impl Compositor {
     pub(crate) fn ensure_overlay_layer(&mut self, bounds: Rect) -> CompositorLayerId {
         let descriptor = CompositorLayerDescriptor {
             kind: CompositorLayerKind::FloemPainted,
+            backing: CompositorLayerBacking::TextureBacked,
+            capabilities: CompositorLayerCapabilities::for_backing(
+                CompositorLayerBacking::TextureBacked,
+            ),
             bounds,
+            compositor_clip: None,
             z_index: i32::MAX,
             compositing_depth: 0,
             opacity: 1.0,
@@ -419,6 +497,15 @@ impl Compositor {
 
         let mut visit_backend: &mut FloemPaintedSurfaceVisitor<'_> =
             &mut |layer_id, bounds, size, view| {
+                let Some(layer_state) = self.layers.get(&layer_id) else {
+                    return;
+                };
+                if !matches!(layer_state.descriptor.kind, CompositorLayerKind::FloemPainted)
+                    || !layer_state.descriptor.capabilities.supports_direct_raster
+                {
+                    return;
+                }
+
                 let role = if self.root_layer == Some(layer_id) {
                     Some(FloemPaintedSurfaceRole::Root)
                 } else if self.overlay_layer == Some(layer_id) {
@@ -441,10 +528,6 @@ impl Compositor {
 
     pub(crate) fn promoted_layer_ids(&self) -> Vec<ElementId> {
         self.promoted_layers.keys().copied().collect()
-    }
-
-    pub(crate) fn promoted_layer_raster_clip(&self, element_id: ElementId) -> Option<Rect> {
-        self.promoted_layer_raster_clips.get(&element_id).copied()
     }
 
     /// Returns the installed backend name, if any.

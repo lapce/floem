@@ -23,8 +23,9 @@ use subduction_core::{
 use subduction_backend_wgpu::WgpuPresenter;
 
 use super::{
-    CompositorAlphaMode, CompositorLayerDescriptor, CompositorLayerId, CompositorLayerKind, CompositorTiming,
-    ExternalSurfaceDescriptor, ExternalSurfaceHandle, ExternalSurfaceId, FrameRequestReason,
+    CompositorAlphaMode, CompositorLayerBacking, CompositorLayerDescriptor, CompositorLayerId,
+    CompositorLayerKind, CompositorTiming, ExternalSurfaceDescriptor, ExternalSurfaceHandle,
+    ExternalSurfaceId, FrameRequestReason,
     backend::{CompositorBackend, FloemPaintedSurfaceVisitor},
 };
 
@@ -142,8 +143,14 @@ impl SubductionCompositorBackend {
             },
         );
         self.store.set_opacity(layer_id, descriptor.opacity);
-        self.store
-            .set_clip(layer_id, clip_shape_for_bounds(bounds, descriptor.isolated));
+        self.store.set_clip(
+            layer_id,
+            clip_shape_for_bounds(
+                bounds,
+                descriptor.compositor_clip,
+                descriptor.isolated && descriptor.capabilities.supports_clip_to_bounds,
+            ),
+        );
         self.store
             .set_flags(layer_id, LayerFlags { hidden: descriptor.opacity <= 0.0 || is_empty });
         let content = self.content_for_kind(id, descriptor.kind);
@@ -158,8 +165,14 @@ impl SubductionCompositorBackend {
     }
 
     fn content_for_kind(&mut self, id: CompositorLayerId, kind: CompositorLayerKind) -> Option<SurfaceId> {
+        let backing = self
+            .layer_descriptors
+            .get(&id)
+            .map(|descriptor| descriptor.backing)
+            .unwrap_or(CompositorLayerBacking::TextureBacked);
         match kind {
-            CompositorLayerKind::FloemPainted => Some(self.floem_surface_id_for(id)),
+            CompositorLayerKind::FloemPainted => matches!(backing, CompositorLayerBacking::TextureBacked)
+                .then(|| self.floem_surface_id_for(id)),
             CompositorLayerKind::ExternalSurface { surface_id }
             | CompositorLayerKind::Mixed { surface_id } => self.surface_ids.get(&surface_id).copied(),
         }
@@ -349,18 +362,22 @@ impl CompositorBackend for SubductionCompositorBackend {
     }
 }
 
-fn clip_shape_for_bounds(bounds: Rect, isolated: bool) -> Option<ClipShape> {
+fn clip_shape_for_bounds(
+    bounds: Rect,
+    compositor_clip: Option<Rect>,
+    isolated: bool,
+) -> Option<ClipShape> {
     if !isolated || !bounds.is_finite() {
         return None;
     }
 
-    let width = bounds.width();
-    let height = bounds.height();
+    let clip = compositor_clip.unwrap_or(bounds);
+    let local_clip = clip.with_origin(clip.origin() - bounds.origin().to_vec2());
+    let width = local_clip.width();
+    let height = local_clip.height();
     if width <= 0.0 || height <= 0.0 {
         return None;
     }
 
-    // `subduction` currently exposes only per-layer clips, so use the layer's
-    // local bounds as an isolation clip when requested.
-    Some(ClipShape::RoundedRect(RoundedRect::from_rect(bounds.with_origin((0.0, 0.0)), 0.0)))
+    Some(ClipShape::RoundedRect(RoundedRect::from_rect(local_clip, 0.0)))
 }
