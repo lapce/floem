@@ -4,8 +4,8 @@ use std::{cell::RefCell, collections::HashMap};
 use crate::{
     action::exec_after_animation_frame,
     compositor::{
-        Compositor, CompositorAlphaMode, CompositorLayerDescriptor, CompositorLayerId, CompositorTiming,
-        ExternalSurfaceDescriptor, ExternalSurfaceHandle, ExternalSurfaceId,
+        Compositor, CompositorAlphaMode, CompositorLayerDescriptor, CompositorLayerId,
+        CompositorTiming, ExternalSurfaceDescriptor, ExternalSurfaceHandle, ExternalSurfaceId,
         FloemSurfaceRoleVisitor, FrameRequestReason, ResolvedPromotedLayer,
         backend::CompositorBackend,
     },
@@ -1318,42 +1318,16 @@ impl WindowState {
         &self,
         element_id: ElementId,
         scale: f64,
-        render_size: Size,
     ) -> Option<Rect> {
         let box_tree = self.box_tree.borrow();
-        let mut clip_bounds = None::<Rect>;
-        let mut cursor = Some(element_id.0);
-
-        while let Some(node_id) = cursor {
-            if let Some(local_clip) = box_tree.local_clip(node_id).flatten()
-                && let Some(world_transform) = box_tree.world_transform(node_id)
-            {
-                // Promoted layers must respect the full ancestor clip chain, not just their
-                // own viewport clip. Constrain infinite clips against the current render
-                // surface before converting them into compositor bounds so nested scrolls
-                // cannot allocate unbounded layer textures.
-                let constrained_clip = constrain_rect_to_render_bounds(
-                    local_clip.rect(),
-                    world_transform.then_scale(scale),
-                    render_size,
-                );
-                let world_clip_bounds = world_transform.transform_rect_bbox(constrained_clip);
-                let next_clip_bounds = Rect::new(
-                    world_clip_bounds.x0 * scale,
-                    world_clip_bounds.y0 * scale,
-                    world_clip_bounds.x1 * scale,
-                    world_clip_bounds.y1 * scale,
-                );
-                clip_bounds = Some(match clip_bounds {
-                    Some(current) => current.intersect(next_clip_bounds),
-                    None => next_clip_bounds,
-                });
-            }
-
-            cursor = box_tree.parent_of(node_id);
-        }
-
-        clip_bounds
+        box_tree.world_bounds(element_id.0).map(|bounds| {
+            Rect::new(
+                bounds.x0 * scale,
+                bounds.y0 * scale,
+                bounds.x1 * scale,
+                bounds.y1 * scale,
+            )
+        })
     }
 
     pub fn sync_display_list_promoted_layers(&mut self) {
@@ -1374,7 +1348,7 @@ impl WindowState {
             .filter_map(|promoted| {
                 let box_tree = self.box_tree.borrow();
                 let accumulated_clip_bounds =
-                    self.accumulated_clip_bounds_for_element(promoted.element_id, scale, render_size);
+                    self.accumulated_clip_bounds_for_element(promoted.element_id, scale);
 
                 let mut bounds = scale_rect(
                     promoted
