@@ -6,7 +6,7 @@ use rustc_hash::FxHashMap;
 use crate::ViewId;
 use crate::action::add_update_message;
 use crate::message::UpdateMessage;
-use crate::paint::display_list::TransformClass;
+use crate::paint::display_list::{CompositorPromotionHint, TransformClass};
 use crate::view::VIEW_STORAGE;
 
 /// A visual identifier that represents a rectangle in the box tree.
@@ -198,6 +198,7 @@ pub struct ElementMeta {
     pub element_id: ElementId,
     pub focus: FocusNavMeta,
     pub(crate) retained_transform_boundary: Option<TransformClass>,
+    pub(crate) compositor_promotion_hint: Option<CompositorPromotionHint>,
 }
 
 impl ElementMeta {
@@ -215,6 +216,7 @@ impl ElementMeta {
                 enabled: true,
             },
             retained_transform_boundary: None,
+            compositor_promotion_hint: None,
         }
     }
 }
@@ -296,6 +298,27 @@ impl BoxTree {
             return false;
         };
         meta.retained_transform_boundary = boundary;
+        self.metadata.insert(id, meta);
+        true
+    }
+
+    pub(crate) fn compositor_promotion_hint(
+        &self,
+        id: understory_box_tree::NodeId,
+    ) -> Option<CompositorPromotionHint> {
+        self.element_meta(id)
+            .and_then(|meta| meta.compositor_promotion_hint)
+    }
+
+    pub(crate) fn set_compositor_promotion_hint(
+        &mut self,
+        id: understory_box_tree::NodeId,
+        hint: Option<CompositorPromotionHint>,
+    ) -> bool {
+        let Some(mut meta) = self.element_meta(id) else {
+            return false;
+        };
+        meta.compositor_promotion_hint = hint;
         self.metadata.insert(id, meta);
         true
     }

@@ -8,11 +8,15 @@
 use std::time::{Duration, Instant};
 
 use floem_renderer::gpu_resources::GpuResources;
+use peniko::kurbo::Rect;
 
 use super::{
     CompositorLayerDescriptor, CompositorLayerId, CompositorTiming, ExternalSurfaceDescriptor,
     ExternalSurfaceHandle, ExternalSurfaceId, FrameRequestReason,
 };
+
+pub type FloemPaintedSurfaceVisitor<'a> =
+    dyn FnMut(CompositorLayerId, Rect, (u32, u32), &wgpu::TextureView) + 'a;
 
 /// Backend interface for mirroring Floem compositor state into a concrete
 /// presentation/composition engine.
@@ -79,8 +83,23 @@ pub trait CompositorBackend {
     ) {
     }
 
+    /// Applies retained layer updates so compositor-owned Floem surfaces exist
+    /// before the paint phase tries to rasterize into them.
+    fn prepare_floem_surfaces(&mut self, _output_size: (u32, u32)) {}
+
     /// Returns a backend-specific frame interval hint when available.
     fn preferred_frame_interval(&self) -> Option<Duration> {
         None
     }
+
+    /// Iterates compositor-owned surfaces that expect Floem to rasterize content
+    /// into them before final composition.
+    fn for_each_floem_painted_surface(
+        &self,
+        _visit: &mut FloemPaintedSurfaceVisitor<'_>,
+    ) {
+    }
+
+    /// Composites the current backend layer tree into the provided output view.
+    fn composite_to_output(&mut self, _output: &wgpu::TextureView) {}
 }

@@ -26,8 +26,10 @@ use winit::window::{
 use floem_reactive::{RwSignal, Scope, SignalGet, SignalUpdate};
 use floem_renderer::Renderer;
 use floem_renderer::gpu_resources::GpuResources;
+use peniko::BlendMode;
 use peniko::color::palette;
 use peniko::kurbo::{self, Point, Size};
+use rustc_hash::FxHashSet;
 use winit::{
     cursor::CursorIcon,
     dpi::{LogicalPosition, LogicalSize},
@@ -814,6 +816,8 @@ impl WindowHandle {
     }
 
     pub fn paint(&mut self) -> Option<peniko::ImageBrush> {
+        let use_vello_compositor =
+            self.uses_vello_compositor_paint_path() && self.window_state.capture.is_none();
         // Create GlobalPaintCx (global/shared state)
         let mut cx = crate::paint::GlobalPaintCx {
             window_state: &mut self.window_state,
@@ -822,6 +826,16 @@ impl WindowHandle {
             window: self.window.clone(),
             record_paint_order: crate::paint::is_paint_order_tracking_enabled(),
         };
+
+        if use_vello_compositor {
+            return Self::paint_with_vello_compositor(
+                &self.window,
+                self.id,
+                self.transparent,
+                self.default_theme.as_ref(),
+                &mut cx,
+            );
+        }
 
         cx.paint_state
             .renderer_mut()
@@ -843,6 +857,7 @@ impl WindowHandle {
 
         // Paint main tree with overlays using explicit traversal
         cx.paint_with_traversal(self.id);
+        cx.window_state.sync_display_list_promoted_layers();
 
         self.window.pre_present_notify();
         let root_element_id = cx.window_state.root_view_id.get_element_id();
@@ -850,6 +865,198 @@ impl WindowHandle {
         GlobalEventCx::new(cx.window_state, root_element_id, event).route_window_event();
 
         cx.paint_state.renderer_mut().finish()
+    }
+
+    fn uses_vello_compositor_paint_path(&self) -> bool {
+        #[cfg(all(feature = "vello", not(feature = "skia"), feature = "subduction"))]
+        {
+            self.window_state.compositor_backend_name() == Some("subduction")
+        }
+
+        #[cfg(not(all(feature = "vello", not(feature = "skia"), feature = "subduction")))]
+        {
+            false
+        }
+    }
+
+    fn paint_with_vello_compositor(
+        window: &Arc<dyn Window>,
+        root_id: ViewId,
+        transparent: bool,
+        default_theme: Option<&Style>,
+        cx: &mut crate::paint::GlobalPaintCx<'_>,
+    ) -> Option<peniko::ImageBrush> {
+        let replay_order = cx.prepare_display_list(root_id);
+        cx.window_state.sync_display_list_promoted_layers();
+        let root_bounds = cx.paint_state.renderer().size().to_rect();
+        cx.window_state.ensure_compositor_root_layer(root_bounds);
+        cx.window_state.ensure_compositor_overlay_layer(root_bounds);
+        cx.window_state
+            .prepare_compositor_floem_surfaces(renderer_output_size(cx.paint_state.renderer().size()));
+
+        let promoted_roots = cx.window_state.promoted_compositor_layer_ids();
+        let mut promoted_subtrees = Vec::with_capacity(promoted_roots.len());
+        let mut root_scene_ids = FxHashSet::default();
+        let mut overlay_scene_ids = FxHashSet::default();
+
+        for &step in &replay_order {
+            let element_id = match step {
+                crate::paint::PaintOrPost::Paint(id) | crate::paint::PaintOrPost::Post(id) => id,
+            };
+            root_scene_ids.insert(element_id);
+        }
+
+        let box_tree = cx.window_state.box_tree.borrow();
+        for promoted_root in promoted_roots {
+            let subtree = cx.collect_subtree_elements(promoted_root);
+            root_scene_ids.retain(|id| !subtree.contains(id));
+
+            if let Some(parent_id) = box_tree.parent_of(promoted_root.0)
+                && let Some(parent_element_id) = box_tree.element_id_of(parent_id)
+            {
+                overlay_scene_ids.extend(cx.collect_subtree_elements(parent_element_id));
+            }
+
+            promoted_subtrees.push((promoted_root, subtree));
+        }
+        drop(box_tree);
+
+        for (_, subtree) in &promoted_subtrees {
+            overlay_scene_ids.retain(|id| !subtree.contains(id));
+        }
+
+        {
+            let box_tree = cx.window_state.box_tree.borrow();
+            for index in 0..promoted_subtrees.len() {
+                let promoted_root = promoted_subtrees[index].0;
+                let nested_promoted_roots = promoted_subtrees
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(other_index, (other_root, other_subtree))| {
+                        if index == other_index {
+                            return None;
+                        }
+
+                        let mut cursor = box_tree.parent_of(other_root.0);
+                        while let Some(parent_id) = cursor {
+                            if parent_id == promoted_root.0 {
+                                return Some(other_subtree.clone());
+                            }
+                            cursor = box_tree.parent_of(parent_id);
+                        }
+                        None
+                    })
+                    .collect::<Vec<_>>();
+
+                let (_, subtree) = &mut promoted_subtrees[index];
+                for nested_subtree in nested_promoted_roots {
+                    subtree.retain(|id| !nested_subtree.contains(id));
+                }
+            }
+        }
+
+        let mut surfaces = Vec::new();
+        cx.window_state
+            .for_each_floem_painted_surface(&mut |role, bounds, size, view| {
+                surfaces.push((role, bounds, size, view.clone()));
+            });
+
+        for (role, bounds, size, view) in surfaces {
+            cx.paint_state.renderer_mut().begin(false);
+
+            if matches!(role, crate::compositor::FloemPaintedSurfaceRole::Root) && !transparent {
+                let color = default_theme
+                    .and_then(|theme| theme.get(crate::style::Background))
+                    .unwrap_or(peniko::Brush::Solid(palette::css::WHITE));
+                cx.paint_state.renderer_mut().fill(
+                    &Size::new(size.0 as f64, size.1 as f64).to_rect().expand(),
+                    &color,
+                    0.0,
+                );
+            }
+
+            let included_ids = match role {
+                crate::compositor::FloemPaintedSurfaceRole::Root => &root_scene_ids,
+                crate::compositor::FloemPaintedSurfaceRole::Overlay => &overlay_scene_ids,
+                crate::compositor::FloemPaintedSurfaceRole::Promoted(element_id) => promoted_subtrees
+                    .iter()
+                    .find_map(|(promoted_root, subtree)| {
+                        (*promoted_root == element_id).then_some(subtree)
+                    })
+                    .unwrap_or(&root_scene_ids),
+            };
+
+            let promoted_raster_clip = match role {
+                crate::compositor::FloemPaintedSurfaceRole::Promoted(element_id) => {
+                    cx.window_state.promoted_compositor_layer_raster_clip(element_id)
+                }
+                _ => None,
+            };
+            let should_replay_promoted = promoted_raster_clip.is_none_or(|clip| {
+                let local_clip = clip.with_origin(clip.origin() - bounds.origin().to_vec2());
+                local_clip.width() > 0.0 && local_clip.height() > 0.0
+            });
+
+            if matches!(role, crate::compositor::FloemPaintedSurfaceRole::Promoted(_)) {
+                // Promoted compositor layers are rasterized into their own textures.
+                // Keep the promoted surface sized to its own logical bounds, but clip replay
+                // to the current accumulated ancestor clip for the frame. That lets nested
+                // promoted layers keep stable surfaces while still updating correctly as outer
+                // scroll clips move.
+                let clip_rect = promoted_raster_clip
+                    .map(|clip| clip.with_origin(clip.origin() - bounds.origin().to_vec2()))
+                    .unwrap_or_else(|| Size::new(size.0 as f64, size.1 as f64).to_rect());
+                cx.paint_state.renderer_mut().push_layer(
+                    BlendMode::default(),
+                    1.0,
+                    kurbo::Affine::IDENTITY,
+                    &clip_rect,
+                );
+            }
+
+            if !matches!(role, crate::compositor::FloemPaintedSurfaceRole::Promoted(_))
+                || should_replay_promoted
+            {
+                cx.replay_display_list(
+                    &replay_order,
+                    Some(included_ids),
+                    bounds.origin(),
+                    Some(Size::new(size.0 as f64, size.1 as f64)),
+                );
+            }
+
+            if matches!(role, crate::compositor::FloemPaintedSurfaceRole::Promoted(_)) {
+                cx.paint_state.renderer_mut().pop_layer();
+            }
+
+            if !cx
+                .paint_state
+                .renderer_mut()
+                .render_scene_to_premultiplied_texture_view(&view, size)
+            {
+                return cx.paint_state.renderer_mut().finish();
+            }
+        }
+
+        window.pre_present_notify();
+        let root_element_id = cx.window_state.root_view_id.get_element_id();
+        let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::PaintPresent));
+        GlobalEventCx::new(cx.window_state, root_element_id, event).route_window_event();
+
+        let presented = {
+            let window_state = &mut cx.window_state;
+            cx.paint_state
+                .renderer_mut()
+                .present_composited_output(|output| {
+                    window_state.composite_compositor_to_output(output);
+                })
+        };
+        if presented {
+            cx.window_state.clear_compositor_layer_dirtiness();
+            None
+        } else {
+            cx.paint_state.renderer_mut().finish()
+        }
     }
 
     pub(crate) fn capture(&mut self) -> Capture {
@@ -1476,6 +1683,12 @@ impl WindowHandle {
     }
 
     fn attach_compositor_presenter(&mut self) {
+        #[cfg(all(feature = "vello", not(feature = "skia"), feature = "subduction"))]
+        if self.window_state.compositor_backend_name().is_none() {
+            self.window_state
+                .install_compositor_backend(Box::new(crate::SubductionCompositorBackend::new()));
+        }
+
         let Some(gpu_resources) = self.gpu_resources.as_ref() else {
             return;
         };

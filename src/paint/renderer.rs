@@ -256,6 +256,48 @@ impl Renderer {
             Self::Uninitialized { .. } => "Uninitialized".to_string(),
         }
     }
+
+    #[cfg(all(feature = "vello", not(feature = "skia")))]
+    pub(crate) fn render_scene_to_premultiplied_texture_view(
+        &mut self,
+        target_view: &wgpu::TextureView,
+        size: (u32, u32),
+    ) -> bool {
+        match self {
+            Renderer::Active(r) => r
+                .render_scene_to_premultiplied_texture_view(target_view, size.0, size.1)
+                .is_ok(),
+            Renderer::TinySkia(_) | Renderer::Uninitialized { .. } => false,
+        }
+    }
+
+    #[cfg(not(all(feature = "vello", not(feature = "skia"))))]
+    pub(crate) fn render_scene_to_premultiplied_texture_view(
+        &mut self,
+        _target_view: &wgpu::TextureView,
+        _size: (u32, u32),
+    ) -> bool {
+        false
+    }
+
+    #[cfg(all(feature = "vello", not(feature = "skia")))]
+    pub(crate) fn present_composited_output(
+        &mut self,
+        composite: impl FnOnce(&wgpu::TextureView),
+    ) -> bool {
+        match self {
+            Renderer::Active(r) => r.present_composited_output(composite),
+            Renderer::TinySkia(_) | Renderer::Uninitialized { .. } => false,
+        }
+    }
+
+    #[cfg(not(all(feature = "vello", not(feature = "skia"))))]
+    pub(crate) fn present_composited_output(
+        &mut self,
+        _composite: impl FnOnce(&wgpu::TextureView),
+    ) -> bool {
+        false
+    }
 }
 
 impl floem_renderer::Renderer for Renderer {

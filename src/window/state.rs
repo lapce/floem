@@ -1,11 +1,12 @@
-use std::{cell::RefCell, collections::HashMap};
 use std::time::{Duration, Instant};
+use std::{cell::RefCell, collections::HashMap};
 
 use crate::{
     action::exec_after_animation_frame,
     compositor::{
-        Compositor, CompositorLayerDescriptor, CompositorLayerId, CompositorTiming,
-        ExternalSurfaceDescriptor, ExternalSurfaceHandle, ExternalSurfaceId, FrameRequestReason,
+        Compositor, CompositorAlphaMode, CompositorLayerDescriptor, CompositorLayerId, CompositorTiming,
+        ExternalSurfaceDescriptor, ExternalSurfaceHandle, ExternalSurfaceId,
+        FloemSurfaceRoleVisitor, FrameRequestReason, ResolvedPromotedLayer,
         backend::CompositorBackend,
     },
     inspector::CaptureState,
@@ -34,8 +35,8 @@ use crate::{
     event::{DragTracker, Event, WindowEvent, clear_hit_test_cache},
     layout::responsive::{GridBreakpoints, ScreenSizeBp},
     message::UpdateMessage,
-    paint::PaintStats,
-    paint::display_list::RetainedDisplayList,
+    paint::display_list::{RetainedDisplayList, constrain_rect_to_render_bounds},
+    paint::{PaintStats, display_list::PromotedLayerCandidate},
     style::{CursorStyle, Style, StyleSelector, theme::default_theme},
     view::{LayoutNodeCx, MeasureCx, VIEW_STORAGE, ViewId},
 };
@@ -1277,7 +1278,8 @@ impl WindowState {
         handle: ExternalSurfaceHandle,
         descriptor: ExternalSurfaceDescriptor,
     ) -> ExternalSurfaceId {
-        self.compositor.register_external_surface(handle, descriptor)
+        self.compositor
+            .register_external_surface(handle, descriptor)
     }
 
     pub fn update_external_surface(
@@ -1286,7 +1288,8 @@ impl WindowState {
         handle: ExternalSurfaceHandle,
         descriptor: ExternalSurfaceDescriptor,
     ) -> bool {
-        self.compositor.update_external_surface(id, handle, descriptor)
+        self.compositor
+            .update_external_surface(id, handle, descriptor)
     }
 
     pub fn notify_external_surface_ready(&mut self, id: ExternalSurfaceId) -> bool {
@@ -1311,6 +1314,162 @@ impl WindowState {
             .attach_wgpu_presenter(gpu_resources, output_format, output_size);
     }
 
+    fn accumulated_clip_bounds_for_element(
+        &self,
+        element_id: ElementId,
+        scale: f64,
+        render_size: Size,
+    ) -> Option<Rect> {
+        let box_tree = self.box_tree.borrow();
+        let mut clip_bounds = None::<Rect>;
+        let mut cursor = Some(element_id.0);
+
+        while let Some(node_id) = cursor {
+            if let Some(local_clip) = box_tree.local_clip(node_id).flatten()
+                && let Some(world_transform) = box_tree.world_transform(node_id)
+            {
+                // Promoted layers must respect the full ancestor clip chain, not just their
+                // own viewport clip. Constrain infinite clips against the current render
+                // surface before converting them into compositor bounds so nested scrolls
+                // cannot allocate unbounded layer textures.
+                let constrained_clip = constrain_rect_to_render_bounds(
+                    local_clip.rect(),
+                    world_transform.then_scale(scale),
+                    render_size,
+                );
+                let world_clip_bounds = world_transform.transform_rect_bbox(constrained_clip);
+                let next_clip_bounds = Rect::new(
+                    world_clip_bounds.x0 * scale,
+                    world_clip_bounds.y0 * scale,
+                    world_clip_bounds.x1 * scale,
+                    world_clip_bounds.y1 * scale,
+                );
+                clip_bounds = Some(match clip_bounds {
+                    Some(current) => current.intersect(next_clip_bounds),
+                    None => next_clip_bounds,
+                });
+            }
+
+            cursor = box_tree.parent_of(node_id);
+        }
+
+        clip_bounds
+    }
+
+    pub fn sync_display_list_promoted_layers(&mut self) {
+        let scale = self.effective_scale();
+        let render_size = self.root_size * scale;
+        let scale_rect = |rect: Rect| {
+            Rect::new(
+                rect.x0 * scale,
+                rect.y0 * scale,
+                rect.x1 * scale,
+                rect.y1 * scale,
+            )
+        };
+        let promoted_layers: Vec<PromotedLayerCandidate> =
+            self.display_list.promoted_layer_candidates();
+        let resolved_layers = promoted_layers
+            .into_iter()
+            .filter_map(|promoted| {
+                let box_tree = self.box_tree.borrow();
+                let accumulated_clip_bounds =
+                    self.accumulated_clip_bounds_for_element(promoted.element_id, scale, render_size);
+
+                let mut bounds = scale_rect(
+                    promoted
+                        .snapshot
+                        .world_transform
+                        .transform_rect_bbox(promoted.candidate.bounds),
+                );
+                let mut isolated = accumulated_clip_bounds.is_some();
+
+                if let Some(local_clip) = promoted.candidate.clip {
+                    let constrained_clip = constrain_rect_to_render_bounds(
+                        local_clip.rect(),
+                        promoted.snapshot.world_transform.then_scale(scale),
+                        render_size,
+                    );
+                    bounds = bounds.intersect(scale_rect(
+                        promoted
+                            .snapshot
+                            .world_transform
+                            .transform_rect_bbox(constrained_clip),
+                    ));
+                }
+
+                if matches!(
+                    promoted.candidate.promotion_hint,
+                    crate::paint::display_list::CompositorPromotionHint::ScrollContent
+                ) && let Some(parent_id) = box_tree.parent_of(promoted.element_id.0)
+                    && let Some(parent_transform) = box_tree.world_transform(parent_id)
+                    && let Some(parent_clip) = box_tree.local_clip(parent_id).flatten()
+                {
+                    let constrained_clip = constrain_rect_to_render_bounds(
+                        parent_clip.rect(),
+                        parent_transform.then_scale(scale),
+                        render_size,
+                    );
+                    bounds = scale_rect(parent_transform.transform_rect_bbox(constrained_clip));
+                    isolated = true;
+                }
+
+                if !bounds.is_finite() || bounds.width() <= 0.0 || bounds.height() <= 0.0 {
+                    // Promoted surfaces should keep stable sizing based on their own logical
+                    // bounds/viewport. Skip only when the layer's own bounds collapse.
+                    return None;
+                }
+
+                let raster_clip = accumulated_clip_bounds.map(|clip| clip.intersect(bounds));
+
+                let mut compositing_depth = 0_u32;
+                let mut cursor = box_tree.parent_of(promoted.element_id.0);
+                while let Some(parent_id) = cursor {
+                    if matches!(
+                        box_tree.compositor_promotion_hint(parent_id),
+                        Some(crate::paint::display_list::CompositorPromotionHint::ScrollContent)
+                    ) {
+                        compositing_depth += 1;
+                    }
+                    cursor = box_tree.parent_of(parent_id);
+                }
+
+                Some(ResolvedPromotedLayer {
+                    element_id: promoted.element_id,
+                    bounds,
+                    raster_clip,
+                    z_index: promoted.z_index,
+                    compositing_depth,
+                    isolated,
+                    alpha_mode: CompositorAlphaMode::Straight,
+                })
+            })
+            .collect::<Vec<_>>();
+        self.compositor.sync_promoted_layers(&resolved_layers);
+    }
+
+    pub fn ensure_compositor_root_layer(
+        &mut self,
+        bounds: peniko::kurbo::Rect,
+    ) -> CompositorLayerId {
+        self.compositor.ensure_root_layer(bounds)
+    }
+
+    pub fn ensure_compositor_overlay_layer(
+        &mut self,
+        bounds: peniko::kurbo::Rect,
+    ) -> CompositorLayerId {
+        self.compositor.ensure_overlay_layer(bounds)
+    }
+
+    pub fn promoted_compositor_layer_ids(&self) -> Vec<ElementId> {
+        self.compositor.promoted_layer_ids()
+    }
+
+    pub fn promoted_compositor_layer_raster_clip(&self, element_id: ElementId) -> Option<Rect> {
+        self.compositor.promoted_layer_raster_clip(element_id)
+    }
+
     pub fn compositor_backend_name(&self) -> Option<&'static str> {
         self.compositor.backend_name()
     }
@@ -1321,6 +1480,10 @@ impl WindowState {
 
     pub const fn compositor_timing(&self) -> &CompositorTiming {
         self.compositor.timing()
+    }
+
+    pub(crate) fn for_each_floem_painted_surface(&self, visit: &mut FloemSurfaceRoleVisitor<'_>) {
+        self.compositor.for_each_floem_painted_surface(visit);
     }
 
     pub fn update_compositor_timing(&mut self, timing: CompositorTiming) {
@@ -1357,8 +1520,16 @@ impl WindowState {
         self.compositor.clear_layer_dirtiness();
     }
 
+    pub(crate) fn composite_compositor_to_output(&mut self, output: &wgpu::TextureView) {
+        self.compositor.composite_to_output(output);
+    }
+
     pub fn begin_compositor_frame(&mut self, output_size: (u32, u32), started_at: Instant) {
         self.compositor.begin_frame(output_size, started_at);
+    }
+
+    pub fn prepare_compositor_floem_surfaces(&mut self, output_size: (u32, u32)) {
+        self.compositor.prepare_floem_surfaces(output_size);
     }
 
     pub fn finish_compositor_frame(

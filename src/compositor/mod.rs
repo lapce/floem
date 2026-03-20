@@ -61,7 +61,8 @@ use peniko::BlendMode;
 use peniko::kurbo::{Rect, Size};
 use rustc_hash::FxHashMap;
 
-use self::backend::CompositorBackend;
+use self::backend::{CompositorBackend, FloemPaintedSurfaceVisitor};
+use crate::ElementId;
 
 /// Stable identifier for a compositor layer.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
@@ -106,6 +107,18 @@ pub enum ExternalAlphaMode {
     Opaque,
     Straight,
     Premultiplied,
+}
+
+/// Alpha handling for compositor layer contents.
+///
+/// This is separate from [`ExternalAlphaMode`] because compositor layers are the
+/// unit the backend actually composites. A Floem-painted layer may be straight-
+/// alpha even when an external producer uses a different convention.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CompositorAlphaMode {
+    #[default]
+    Premultiplied,
+    Straight,
 }
 
 /// Color-space hint for an external surface.
@@ -164,7 +177,9 @@ pub struct CompositorLayerDescriptor {
     pub kind: CompositorLayerKind,
     pub bounds: Rect,
     pub z_index: i32,
+    pub compositing_depth: u32,
     pub opacity: f32,
+    pub alpha_mode: CompositorAlphaMode,
     pub blend_mode: BlendMode,
     pub isolated: bool,
 }
@@ -203,6 +218,27 @@ pub struct CompositorLayerState {
     pub dirty: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FloemPaintedSurfaceRole {
+    Root,
+    Overlay,
+    Promoted(ElementId),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct ResolvedPromotedLayer {
+    pub element_id: ElementId,
+    pub bounds: Rect,
+    pub raster_clip: Option<Rect>,
+    pub z_index: i32,
+    pub compositing_depth: u32,
+    pub isolated: bool,
+    pub alpha_mode: CompositorAlphaMode,
+}
+
+pub(crate) type FloemSurfaceRoleVisitor<'a> =
+    dyn FnMut(FloemPaintedSurfaceRole, Rect, (u32, u32), &wgpu::TextureView) + 'a;
+
 /// Retained compositor registry and frame-request state.
 #[derive(Default)]
 pub struct Compositor {
@@ -210,6 +246,10 @@ pub struct Compositor {
     next_surface_id: u64,
     layers: FxHashMap<CompositorLayerId, CompositorLayerState>,
     external_surfaces: FxHashMap<ExternalSurfaceId, ExternalSurfaceState>,
+    promoted_layers: FxHashMap<ElementId, CompositorLayerId>,
+    promoted_layer_raster_clips: FxHashMap<ElementId, Rect>,
+    root_layer: Option<CompositorLayerId>,
+    overlay_layer: Option<CompositorLayerId>,
     pending_frame_reasons: Vec<FrameRequestReason>,
     timing: CompositorTiming,
     backend: Option<Box<dyn CompositorBackend>>,
@@ -222,6 +262,10 @@ impl std::fmt::Debug for Compositor {
             .field("next_surface_id", &self.next_surface_id)
             .field("layers", &self.layers)
             .field("external_surfaces", &self.external_surfaces)
+            .field("promoted_layers", &self.promoted_layers)
+            .field("promoted_layer_raster_clips", &self.promoted_layer_raster_clips)
+            .field("root_layer", &self.root_layer)
+            .field("overlay_layer", &self.overlay_layer)
             .field("pending_frame_reasons", &self.pending_frame_reasons)
             .field("timing", &self.timing)
             .field("backend_name", &self.backend_name())
@@ -261,6 +305,146 @@ impl Compositor {
         if let Some(backend) = self.backend.as_mut() {
             backend.attach_wgpu_presenter(gpu_resources, output_format, output_size);
         }
+    }
+
+    /// Synchronizes compositor-owned Floem layers from retained display-list
+    /// layer candidates.
+    pub(crate) fn sync_promoted_layers(&mut self, promoted_layers: &[ResolvedPromotedLayer]) {
+        let mut active = FxHashMap::default();
+        self.promoted_layer_raster_clips.clear();
+
+        for promoted in promoted_layers {
+            let descriptor = CompositorLayerDescriptor {
+                kind: CompositorLayerKind::FloemPainted,
+                bounds: promoted.bounds,
+                z_index: promoted.z_index,
+                compositing_depth: promoted.compositing_depth,
+                opacity: 1.0,
+                alpha_mode: promoted.alpha_mode,
+                blend_mode: BlendMode::default(),
+                isolated: promoted.isolated,
+            };
+
+            let layer_id = if let Some(layer_id) = self.promoted_layers.get(&promoted.element_id).copied() {
+                let _ = self.update_layer(layer_id, descriptor);
+                layer_id
+            } else {
+                let layer_id = self.register_layer(descriptor);
+                self.promoted_layers.insert(promoted.element_id, layer_id);
+                layer_id
+            };
+
+            active.insert(promoted.element_id, layer_id);
+            if let Some(raster_clip) = promoted.raster_clip {
+                self.promoted_layer_raster_clips
+                    .insert(promoted.element_id, raster_clip);
+            }
+        }
+
+        let stale: Vec<_> = self
+            .promoted_layers
+            .iter()
+            .filter_map(|(&element_id, &layer_id)| (!active.contains_key(&element_id)).then_some((element_id, layer_id)))
+            .collect();
+
+        for (element_id, layer_id) in stale {
+            let _ = self.update_layer(
+                layer_id,
+                CompositorLayerDescriptor {
+                    kind: CompositorLayerKind::FloemPainted,
+                    bounds: Rect::ZERO,
+                    z_index: 0,
+                    compositing_depth: 0,
+                    opacity: 0.0,
+                    alpha_mode: CompositorAlphaMode::Straight,
+                    blend_mode: BlendMode::default(),
+                    isolated: false,
+                },
+            );
+            self.promoted_layers.remove(&element_id);
+        }
+    }
+
+    pub(crate) fn ensure_root_layer(&mut self, bounds: Rect) -> CompositorLayerId {
+        let descriptor = CompositorLayerDescriptor {
+            kind: CompositorLayerKind::FloemPainted,
+            bounds,
+            z_index: i32::MIN,
+            compositing_depth: 0,
+            opacity: 1.0,
+            alpha_mode: CompositorAlphaMode::Straight,
+            blend_mode: BlendMode::default(),
+            isolated: false,
+        };
+
+        if let Some(layer_id) = self.root_layer {
+            let _ = self.update_layer(layer_id, descriptor);
+            layer_id
+        } else {
+            let layer_id = self.register_layer(descriptor);
+            self.root_layer = Some(layer_id);
+            layer_id
+        }
+    }
+
+    pub(crate) fn ensure_overlay_layer(&mut self, bounds: Rect) -> CompositorLayerId {
+        let descriptor = CompositorLayerDescriptor {
+            kind: CompositorLayerKind::FloemPainted,
+            bounds,
+            z_index: i32::MAX,
+            compositing_depth: 0,
+            opacity: 1.0,
+            alpha_mode: CompositorAlphaMode::Straight,
+            blend_mode: BlendMode::default(),
+            isolated: false,
+        };
+
+        if let Some(layer_id) = self.overlay_layer {
+            let _ = self.update_layer(layer_id, descriptor);
+            layer_id
+        } else {
+            let layer_id = self.register_layer(descriptor);
+            self.overlay_layer = Some(layer_id);
+            layer_id
+        }
+    }
+
+    pub(crate) fn for_each_floem_painted_surface(
+        &self,
+        visit: &mut FloemSurfaceRoleVisitor<'_>,
+    ) {
+        let Some(backend) = self.backend.as_ref() else {
+            return;
+        };
+
+        let mut visit_backend: &mut FloemPaintedSurfaceVisitor<'_> =
+            &mut |layer_id, bounds, size, view| {
+                let role = if self.root_layer == Some(layer_id) {
+                    Some(FloemPaintedSurfaceRole::Root)
+                } else if self.overlay_layer == Some(layer_id) {
+                    Some(FloemPaintedSurfaceRole::Overlay)
+                } else {
+                    self.promoted_layers
+                        .iter()
+                    .find_map(|(&element_id, &promoted_layer_id)| {
+                        (promoted_layer_id == layer_id)
+                            .then_some(FloemPaintedSurfaceRole::Promoted(element_id))
+                    })
+            };
+
+            if let Some(role) = role {
+                visit(role, bounds, size, view);
+            }
+        };
+        backend.for_each_floem_painted_surface(&mut visit_backend);
+    }
+
+    pub(crate) fn promoted_layer_ids(&self) -> Vec<ElementId> {
+        self.promoted_layers.keys().copied().collect()
+    }
+
+    pub(crate) fn promoted_layer_raster_clip(&self, element_id: ElementId) -> Option<Rect> {
+        self.promoted_layer_raster_clips.get(&element_id).copied()
     }
 
     /// Returns the installed backend name, if any.
@@ -448,6 +632,12 @@ impl Compositor {
         }
     }
 
+    pub(crate) fn prepare_floem_surfaces(&mut self, output_size: (u32, u32)) {
+        if let Some(backend) = self.backend.as_mut() {
+            backend.prepare_floem_surfaces(output_size);
+        }
+    }
+
     /// Marks the completion of a compositor-driven frame.
     pub fn finish_frame(
         &mut self,
@@ -467,6 +657,12 @@ impl Compositor {
 
         if let Some(backend) = self.backend.as_mut() {
             backend.finish_frame(output_size, started_at, completed_at);
+        }
+    }
+
+    pub(crate) fn composite_to_output(&mut self, output: &wgpu::TextureView) {
+        if let Some(backend) = self.backend.as_mut() {
+            backend.composite_to_output(output);
         }
     }
 }

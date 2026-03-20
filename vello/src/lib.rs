@@ -22,6 +22,49 @@ use vello::{AaConfig, RendererOptions, Scene};
 use wgpu::util::TextureBlitter;
 use wgpu::{Adapter, DeviceType, Queue, TextureAspect, TextureFormat};
 
+const PREMULTIPLY_SHADER: &str = r#"
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+}
+
+@vertex
+fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
+    let positions = array<vec2<f32>, 3>(
+        vec2(-1.0, -3.0),
+        vec2(-1.0, 1.0),
+        vec2(3.0, 1.0),
+    );
+    let pos = positions[vertex_index];
+    var out: VertexOutput;
+    out.position = vec4(pos, 0.0, 1.0);
+    out.uv = 0.5 * vec2(pos.x + 1.0, 1.0 - pos.y);
+    return out;
+}
+
+@group(0) @binding(0) var source_texture: texture_2d<f32>;
+@group(0) @binding(1) var source_sampler: sampler;
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    let color = textureSample(source_texture, source_sampler, in.uv);
+    return vec4(color.rgb * color.a, color.a);
+}
+"#;
+
+struct PremultiplyPipeline {
+    render_pipeline: wgpu::RenderPipeline,
+    bind_group_layout: wgpu::BindGroupLayout,
+    sampler: wgpu::Sampler,
+}
+
+struct PremultiplyScratch {
+    size: (u32, u32),
+    #[allow(dead_code)]
+    texture: wgpu::Texture,
+    view: wgpu::TextureView,
+}
+
 pub struct VelloRenderer {
     device: Device,
     #[allow(unused)]
@@ -42,11 +85,22 @@ pub struct VelloRenderer {
     svg_cache: HashMap<Vec<u8>, (bool, Scene)>,
     /// Current cache generation; toggled each frame so stale entries are evicted.
     cache_generation: bool,
+    premultiply_pipeline: PremultiplyPipeline,
+    compositor_scratch: Option<PremultiplyScratch>,
 }
 
 impl VelloRenderer {
     fn device_transform(&self) -> Affine {
         self.transform
+    }
+
+    fn render_params(width: u32, height: u32) -> vello::RenderParams {
+        vello::RenderParams {
+            base_color: palette::css::TRANSPARENT,
+            width,
+            height,
+            antialiasing_method: vello::AaConfig::Msaa16,
+        }
     }
 
     pub fn new(
@@ -144,6 +198,8 @@ impl VelloRenderer {
             },
         )
         .unwrap();
+        let premultiply_pipeline =
+            create_premultiply_pipeline(&device, wgpu::TextureFormat::Rgba8Unorm);
 
         Ok(Self {
             device,
@@ -159,6 +215,8 @@ impl VelloRenderer {
             font_embolden,
             svg_cache: HashMap::new(),
             cache_generation: false,
+            premultiply_pipeline,
+            compositor_scratch: None,
         })
     }
 
@@ -199,6 +257,134 @@ impl VelloRenderer {
             self.surface.config.width as f64,
             self.surface.config.height as f64,
         )
+    }
+
+    pub fn render_scene_to_texture_view(
+        &mut self,
+        target_view: &wgpu::TextureView,
+        width: u32,
+        height: u32,
+    ) -> Result<()> {
+        Ok(self.renderer.render_to_texture(
+            &self.device,
+            &self.queue,
+            &self.scene,
+            target_view,
+            &Self::render_params(width, height),
+        )?)
+    }
+
+    pub fn render_scene_to_premultiplied_texture_view(
+        &mut self,
+        target_view: &wgpu::TextureView,
+        width: u32,
+        height: u32,
+    ) -> Result<()> {
+        let scratch_view = self.ensure_compositor_scratch((width, height));
+        self.render_scene_to_texture_view(&scratch_view, width, height)?;
+        self.premultiply_into_view(&scratch_view, target_view);
+        Ok(())
+    }
+
+    pub fn present_composited_output(
+        &mut self,
+        composite: impl FnOnce(&wgpu::TextureView),
+    ) -> bool {
+        let Ok(surface_texture) = self.surface.surface.get_current_texture() else {
+            return false;
+        };
+        let output_view = surface_texture
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        composite(&output_view);
+        surface_texture.present();
+        true
+    }
+
+    fn ensure_compositor_scratch(&mut self, size: (u32, u32)) -> wgpu::TextureView {
+        let needs_new_texture = self
+            .compositor_scratch
+            .as_ref()
+            .is_none_or(|scratch| scratch.size != size);
+
+        if needs_new_texture {
+            let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("Floem Compositor Scratch"),
+                size: wgpu::Extent3d {
+                    width: size.0,
+                    height: size.1,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING
+                    | wgpu::TextureUsages::STORAGE_BINDING,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                view_formats: &[],
+            });
+            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            self.compositor_scratch = Some(PremultiplyScratch {
+                size,
+                texture,
+                view,
+            });
+        }
+
+        self.compositor_scratch
+            .as_ref()
+            .expect("scratch texture just created")
+            .view
+            .clone()
+    }
+
+    fn premultiply_into_view(
+        &self,
+        source_view: &wgpu::TextureView,
+        target_view: &wgpu::TextureView,
+    ) {
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Floem Premultiply Bind Group"),
+            layout: &self.premultiply_pipeline.bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(source_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.premultiply_pipeline.sampler),
+                },
+            ],
+        });
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Floem Premultiply Encoder"),
+            });
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Floem Premultiply Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: target_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            pass.set_pipeline(&self.premultiply_pipeline.render_pipeline);
+            pass.set_bind_group(0, &bind_group, &[]);
+            pass.draw(0..3, 0..1);
+        }
+        self.queue.submit([encoder.finish()]);
     }
 }
 
@@ -406,21 +592,18 @@ impl Renderer for VelloRenderer {
 
     fn set_z_index(&mut self, _z_index: i32) {}
 
-    fn clip(&mut self, _shape: &impl Shape) {
-        // if shape.bounding_box().is_zero_area() {
-        //     return;
-        // }
-        // self.scene.pop_layer();
-        // self.scene.push_layer(
-        //     vello::peniko::BlendMode::default(),
-        //     1.,
-        //     self.transform.then_scale(self.window_scale),
-        //     shape,
-        // );
+    fn clip(&mut self, shape: &impl Shape) {
+        self.scene.push_layer(
+            Fill::NonZero,
+            vello::peniko::BlendMode::default(),
+            1.0,
+            self.transform,
+            shape,
+        );
     }
 
     fn clear_clip(&mut self) {
-        // self.scene.pop_layer();
+        self.scene.pop_layer();
     }
 
     fn finish(&mut self) -> Option<vello::peniko::ImageBrush> {
@@ -428,20 +611,15 @@ impl Renderer for VelloRenderer {
             self.render_capture_image()
         } else {
             if let Ok(surface_texture) = self.surface.surface.get_current_texture() {
-                self.renderer
-                    .render_to_texture(
-                        &self.device,
-                        &self.queue,
-                        &self.scene,
-                        &self.surface.target_view,
-                        &vello::RenderParams {
-                            base_color: palette::css::TRANSPARENT, // Background color
-                            width: self.surface.config.width,
-                            height: self.surface.config.height,
-                            antialiasing_method: vello::AaConfig::Msaa16,
-                        },
-                    )
-                    .unwrap();
+                let target_view = self.surface.target_view.clone();
+                let width = self.surface.config.width;
+                let height = self.surface.config.height;
+                self.render_scene_to_texture_view(
+                    &target_view,
+                    width,
+                    height,
+                )
+                .unwrap();
 
                 // Perform the copy
                 let mut encoder =
@@ -518,10 +696,8 @@ impl VelloRenderer {
                 &self.scene,
                 &view,
                 &vello::RenderParams {
-                    base_color: palette::css::TRANSPARENT,
-                    width: self.surface.config.width,
-                    height: self.surface.config.height,
                     antialiasing_method: AaConfig::Area,
+                    ..Self::render_params(self.surface.config.width, self.surface.config.height)
                 },
             )
             .unwrap();
@@ -579,6 +755,79 @@ impl VelloRenderer {
             width: self.surface.config.width,
             height,
         }))
+    }
+}
+
+fn create_premultiply_pipeline(
+    device: &wgpu::Device,
+    target_format: wgpu::TextureFormat,
+) -> PremultiplyPipeline {
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("Floem Premultiply Shader"),
+        source: wgpu::ShaderSource::Wgsl(PREMULTIPLY_SHADER.into()),
+    });
+    let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("Floem Premultiply BGL"),
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    multisampled: false,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+        ],
+    });
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("Floem Premultiply Layout"),
+        bind_group_layouts: &[&bind_group_layout],
+        push_constant_ranges: &[],
+    });
+    let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("Floem Premultiply Pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: Some("vs_main"),
+            buffers: &[],
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: Some("fs_main"),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: target_format,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+        }),
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        multiview: None,
+        cache: None,
+    });
+    let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        label: Some("Floem Premultiply Sampler"),
+        mag_filter: wgpu::FilterMode::Linear,
+        min_filter: wgpu::FilterMode::Linear,
+        ..Default::default()
+    });
+
+    PremultiplyPipeline {
+        render_pipeline,
+        bind_group_layout,
+        sampler,
     }
 }
 

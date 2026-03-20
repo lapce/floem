@@ -14,7 +14,7 @@ pub use renderer::Renderer;
 
 use floem_renderer::Renderer as _;
 use floem_renderer::gpu_resources::{GpuResourceError, GpuResources};
-use peniko::kurbo::{Affine, RoundedRect, Shape, Size};
+use peniko::kurbo::{Affine, Point, RoundedRect, Shape, Size};
 use rustc_hash::FxHashSet;
 use std::sync::Arc;
 use understory_box_tree::NodeFlags;
@@ -221,7 +221,12 @@ pub(crate) fn collect_visual_order(
 }
 
 impl GlobalPaintCx<'_> {
-    fn replay_element_overflow_clip(&mut self, element_id: ElementId) {
+    fn replay_element_overflow_clip(
+        &mut self,
+        element_id: ElementId,
+        target_origin: Point,
+        render_size: Option<Size>,
+    ) {
         let box_tree = self.window_state.box_tree.borrow();
         let Some(clip) = box_tree.local_clip(element_id.0).flatten() else {
             return;
@@ -230,8 +235,9 @@ impl GlobalPaintCx<'_> {
 
         let base_transform = self
             .element_base_transform(element_id)
-            .then_scale(self.window_state.effective_scale());
-        let render_size = self.paint_state.renderer().size();
+            .then_scale(self.window_state.effective_scale())
+            .then_translate(-target_origin.to_vec2());
+        let render_size = render_size.unwrap_or_else(|| self.paint_state.renderer().size());
         let renderer = self.paint_state.renderer_mut();
 
         // Overflow clip must be replayed at traversal time rather than recorded into the
@@ -332,6 +338,11 @@ impl GlobalPaintCx<'_> {
     }
     /// Paint entire tree using explicit traversal
     pub(crate) fn paint_with_traversal(&mut self, root_id: ViewId) {
+        let replay_order = self.prepare_display_list(root_id);
+        self.replay_display_list(&replay_order, None, Point::ZERO, None);
+    }
+
+    pub(crate) fn prepare_display_list(&mut self, root_id: ViewId) -> Vec<PaintOrPost> {
         let root_element_id = root_id.get_element_id();
         let mut box_tree = self.window_state.box_tree.borrow_mut();
         let paint_order = self.build_paint_order(root_element_id, &mut box_tree);
@@ -361,20 +372,34 @@ impl GlobalPaintCx<'_> {
                 .map(|element_id| (element_id, ElementSnapshot::from_box_tree(&box_tree, element_id)))
                 .collect::<Vec<_>>()
         };
+        let mut reused_snapshots = Vec::new();
 
-        for (element_id, snapshot) in snapshots {
+        for &(element_id, snapshot) in &snapshots {
             if reusable_descendants.contains(&element_id) {
                 continue;
             }
             if self
                 .window_state
                 .display_list
-                .needs_rerecord(element_id, snapshot)
+                .needs_stage_rerecord(element_id, snapshot)
             {
                 dirty_ids.insert(element_id);
+            } else {
+                reused_snapshots.push((element_id, snapshot));
             }
         }
         let rerecord_ids = dirty_ids.len();
+        for (element_id, snapshot) in reused_snapshots {
+            if let Some(element) = self.window_state.display_list.element(element_id)
+                && element.snapshot != Some(snapshot)
+            {
+                // Retained commands can be reused across pure transform/clip changes, but
+                // downstream systems like promoted compositor bounds still need the current
+                // snapshot every frame. Keep the artifact metadata fresh even when we skip
+                // rerecording the stage commands.
+                self.window_state.display_list.element_mut(element_id).snapshot = Some(snapshot);
+            }
+        }
         for element_id in dirty_ids {
             self.record_visual_node(element_id, false);
             self.record_visual_node(element_id, true);
@@ -388,7 +413,24 @@ impl GlobalPaintCx<'_> {
             rerecord_ids,
             replay_steps: replay_order.len(),
         };
-        for id_or_pop in replay_order {
+        replay_order
+    }
+
+    pub(crate) fn replay_display_list(
+        &mut self,
+        replay_order: &[PaintOrPost],
+        included_ids: Option<&FxHashSet<ElementId>>,
+        target_origin: Point,
+        render_size: Option<Size>,
+    ) {
+        for &id_or_pop in replay_order {
+            let element_id = match id_or_pop {
+                PaintOrPost::Paint(id) | PaintOrPost::Post(id) => id,
+            };
+            if included_ids.is_some_and(|ids| !ids.contains(&element_id)) {
+                continue;
+            }
+
             match id_or_pop {
                 PaintOrPost::Paint(element_id) => {
                     // Record for testing
@@ -396,15 +438,19 @@ impl GlobalPaintCx<'_> {
                         record_paint(element_id.owning_id());
                     }
                     if element_id.is_view() {
-                        self.replay_element_overflow_clip(element_id);
+                        self.replay_element_overflow_clip(
+                            element_id,
+                            target_origin,
+                            render_size,
+                        );
                     }
                     // Damage-aware chunk replay is intentionally disabled here for now.
                     // Every backend rebuilds a fresh frame/scene on `begin()`, so skipping
                     // undamaged chunks would drop previously visible content and cause flashing.
-                    self.replay_visual_node(element_id, false, None);
+                    self.replay_visual_node(element_id, false, None, target_origin, render_size);
                 }
                 PaintOrPost::Post(element_id) => {
-                    self.replay_visual_node(element_id, true, None);
+                    self.replay_visual_node(element_id, true, None, target_origin, render_size);
                     if element_id.is_view() {
                         let has_clip = self
                             .window_state
@@ -422,6 +468,21 @@ impl GlobalPaintCx<'_> {
         }
     }
 
+    pub(crate) fn collect_subtree_elements(&self, root: ElementId) -> FxHashSet<ElementId> {
+        let box_tree = self.window_state.box_tree.borrow();
+        let mut elements = FxHashSet::default();
+        let mut stack = vec![root.0];
+
+        while let Some(node_id) = stack.pop() {
+            if let Some(element_id) = box_tree.element_id_of(node_id) {
+                elements.insert(element_id);
+            }
+            stack.extend(box_tree.children_of(node_id).iter().copied());
+        }
+
+        elements
+    }
+
     fn element_base_transform(&mut self, element_id: ElementId) -> Affine {
         // Get state from box tree for this visual node
         let box_tree = self.window_state.box_tree.borrow();
@@ -433,10 +494,13 @@ impl GlobalPaintCx<'_> {
         element_id: ElementId,
         is_post: bool,
         damage_rects: Option<&[peniko::kurbo::Rect]>,
+        target_origin: Point,
+        render_size: Option<Size>,
     ) {
         let base_transform = self
             .element_base_transform(element_id)
-            .then_scale(self.window_state.effective_scale());
+            .then_scale(self.window_state.effective_scale())
+            .then_translate(-target_origin.to_vec2());
         let Some(element) = self.window_state.display_list.element(element_id) else {
             return;
         };
@@ -451,7 +515,7 @@ impl GlobalPaintCx<'_> {
                 .map(|rect| inverse.transform_rect_bbox(*rect))
                 .collect::<Vec<_>>()
         });
-        let render_size = self.paint_state.renderer().size();
+        let render_size = render_size.unwrap_or_else(|| self.paint_state.renderer().size());
         let renderer = self.paint_state.renderer_mut();
         replay_stage(
             stage,
@@ -522,7 +586,7 @@ impl GlobalPaintCx<'_> {
         } else {
             &mut element.paint
         };
-        stage.set_commands(commands);
+        stage.set_commands(commands, snapshot.layer_candidate());
         element.snapshot = Some(snapshot);
     }
 }

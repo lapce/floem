@@ -194,6 +194,18 @@ impl TransformClass {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum CompositorPromotionHint {
+    ScrollContent,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct CompositorLayerCandidate {
+    pub promotion_hint: CompositorPromotionHint,
+    pub bounds: Rect,
+    pub clip: Option<RoundedRect>,
+}
+
 pub(crate) fn transform_diff_class(original: Affine, current: Affine) -> TransformClass {
     if current == original {
         return TransformClass::Exact;
@@ -260,6 +272,7 @@ pub(crate) struct ElementStage {
     pub chunks: Vec<PaintChunk>,
     pub property_tree: PaintPropertyTree,
     pub transform_class: TransformClass,
+    pub layer_candidate: Option<CompositorLayerCandidate>,
 }
 
 impl Default for ElementStage {
@@ -268,15 +281,21 @@ impl Default for ElementStage {
             chunks: Vec::new(),
             property_tree: PaintPropertyTree::default(),
             transform_class: TransformClass::Affine,
+            layer_candidate: None,
         }
     }
 }
 
 impl ElementStage {
-    pub(crate) fn set_commands(&mut self, commands: Vec<DisplayCommand>) {
+    pub(crate) fn set_commands(
+        &mut self,
+        commands: Vec<DisplayCommand>,
+        layer_candidate: Option<CompositorLayerCandidate>,
+    ) {
         let (chunks, property_tree) = chunk_display_commands(commands);
         self.chunks = chunks;
         self.property_tree = property_tree;
+        self.layer_candidate = layer_candidate.clone();
         self.transform_class = if self.chunks.is_empty() {
             TransformClass::Affine
         } else {
@@ -285,6 +304,12 @@ impl ElementStage {
                 .map(|chunk| chunk.transform_class)
                 .fold(TransformClass::Exact, TransformClass::combine)
         };
+
+        if let Some(layer_candidate) = layer_candidate {
+            for chunk in &mut self.chunks {
+                chunk.metadata.promotion_hint = Some(layer_candidate.promotion_hint);
+            }
+        }
     }
 
     #[allow(dead_code)]
@@ -415,6 +440,7 @@ pub(crate) struct PaintChunkMetadata {
     pub has_vector_image: bool,
     pub has_blur: bool,
     pub requires_layer: bool,
+    pub promotion_hint: Option<CompositorPromotionHint>,
 }
 
 impl PaintChunkMetadata {
@@ -425,15 +451,17 @@ impl PaintChunkMetadata {
             has_vector_image: self.has_vector_image || other.has_vector_image,
             has_blur: self.has_blur || other.has_blur,
             requires_layer: self.requires_layer || other.requires_layer,
+            promotion_hint: self.promotion_hint.or(other.promotion_hint),
         }
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct ElementSnapshot {
     pub local_bounds: Rect,
     pub clip: Option<RoundedRect>,
     pub world_transform: Affine,
+    pub promotion_hint: Option<CompositorPromotionHint>,
 }
 
 impl ElementSnapshot {
@@ -442,11 +470,22 @@ impl ElementSnapshot {
             local_bounds: box_tree.local_bounds(element_id.0).unwrap_or_default(),
             clip: box_tree.local_clip(element_id.0).flatten(),
             world_transform: box_tree.world_transform(element_id.0).unwrap_or_default(),
+            promotion_hint: box_tree.compositor_promotion_hint(element_id.0),
         }
     }
 
     pub(crate) fn supports_reuse(self, current: Self) -> bool {
-        self.local_bounds == current.local_bounds && self.clip == current.clip
+        self.local_bounds == current.local_bounds
+            && self.clip == current.clip
+            && self.promotion_hint == current.promotion_hint
+    }
+
+    pub(crate) fn layer_candidate(self) -> Option<CompositorLayerCandidate> {
+        Some(CompositorLayerCandidate {
+            promotion_hint: self.promotion_hint?,
+            bounds: self.local_bounds,
+            clip: self.clip,
+        })
     }
 }
 
@@ -477,6 +516,14 @@ pub(crate) struct ElementDisplayList {
     pub snapshot: Option<ElementSnapshot>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct PromotedLayerCandidate {
+    pub element_id: ElementId,
+    pub candidate: CompositorLayerCandidate,
+    pub snapshot: ElementSnapshot,
+    pub z_index: i32,
+}
+
 #[derive(Default)]
 pub struct RetainedDisplayList {
     paint_order: Vec<PaintOrPost>,
@@ -500,7 +547,7 @@ impl RetainedDisplayList {
         self.elements.get(&id)
     }
 
-    pub(crate) fn needs_rerecord(&self, id: ElementId, snapshot: ElementSnapshot) -> bool {
+    pub(crate) fn needs_stage_rerecord(&self, id: ElementId, snapshot: ElementSnapshot) -> bool {
         let Some(element) = self.element(id) else {
             return true;
         };
@@ -519,6 +566,33 @@ impl RetainedDisplayList {
 
     pub(crate) fn retain_only(&mut self, ids: &FxHashSet<ElementId>) {
         self.elements.retain(|id, _| ids.contains(id));
+    }
+
+    pub(crate) fn promoted_layer_candidates(&self) -> Vec<PromotedLayerCandidate> {
+        self.elements
+            .iter()
+            .filter_map(|(&element_id, element)| {
+                let snapshot = element.snapshot?;
+                let candidate = element
+                    .paint
+                    .layer_candidate
+                    .clone()
+                    .or_else(|| snapshot.layer_candidate())?;
+                let z_index = element
+                    .paint
+                    .chunks
+                    .first()
+                    .map(|chunk| chunk.properties.z_index)
+                    .unwrap_or_default();
+
+                Some(PromotedLayerCandidate {
+                    element_id,
+                    candidate,
+                    snapshot,
+                    z_index,
+                })
+            })
+            .collect()
     }
 }
 
@@ -1416,7 +1490,11 @@ fn constrain_infinite_rounded_rect(
     RoundedRect::from_rect(constrained, rect.radii())
 }
 
-fn constrain_infinite_rect(rect: Rect, transform: Affine, render_size: Size) -> Rect {
+pub(crate) fn constrain_rect_to_render_bounds(
+    rect: Rect,
+    transform: Affine,
+    render_size: Size,
+) -> Rect {
     if rect.x0.is_finite() && rect.x1.is_finite() && rect.y0.is_finite() && rect.y1.is_finite() {
         return rect;
     }
@@ -1447,6 +1525,10 @@ fn constrain_infinite_rect(rect: Rect, transform: Affine, render_size: Size) -> 
             local_viewport.y1
         },
     )
+}
+
+fn constrain_infinite_rect(rect: Rect, transform: Affine, render_size: Size) -> Rect {
+    constrain_rect_to_render_bounds(rect, transform, render_size)
 }
 
 #[cfg(test)]
@@ -1483,7 +1565,7 @@ mod tests {
                 },
                 hint: Some(ShapeHint::Rect(rect)),
             },
-        ]);
+        ], None);
 
         assert_eq!(stage.chunks.len(), 1);
         assert_eq!(stage.chunks[0].kind, PaintChunkKind::Draw);
@@ -1517,7 +1599,7 @@ mod tests {
                 hint: Some(ShapeHint::Rect(rect)),
             },
             DisplayCommand::PopClip,
-        ]);
+        ], None);
 
         assert_eq!(stage.chunks.len(), 1);
         assert_eq!(stage.chunks[0].kind, PaintChunkKind::Draw);
@@ -1552,7 +1634,7 @@ mod tests {
                 },
                 hint: Some(ShapeHint::Rect(rect)),
             },
-        ]);
+        ], None);
 
         assert_eq!(stage.chunks.len(), 2);
         assert_ne!(
@@ -1575,7 +1657,7 @@ mod tests {
                 composite: Composite::default(),
             }),
             hint: None,
-        }]);
+        }], None);
 
         assert_eq!(stage.transform_class, TransformClass::TranslateOnly);
         assert!(stage.chunks[0].metadata.has_blur);
@@ -1610,7 +1692,7 @@ mod tests {
                 rect: Rect::new(40.0, 40.0, 50.0, 50.0),
                 transform: Affine::IDENTITY,
             },
-        ]);
+        ], None);
 
         let damage = [Rect::new(1.0, 1.0, 5.0, 5.0)];
         let chunks = stage.chunk_indices_for_damage(&damage);
