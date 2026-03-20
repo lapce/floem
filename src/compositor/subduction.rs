@@ -16,9 +16,11 @@
 use peniko::kurbo::{Affine, Rect, RoundedRect};
 use rustc_hash::FxHashMap;
 use subduction_core::{
+    backend::Presenter as _,
     layer::{ClipShape, FrameChanges, LayerFlags, LayerId, LayerStore, SurfaceId},
     transform::Transform3d,
 };
+use subduction_backend_wgpu::WgpuPresenter;
 
 use super::{
     CompositorLayerDescriptor, CompositorLayerId, CompositorLayerKind, CompositorTiming,
@@ -40,6 +42,7 @@ pub struct SubductionCompositorBackend {
     pending_frame_reasons: Vec<FrameRequestReason>,
     timing: CompositorTiming,
     needs_reorder: bool,
+    presenter: Option<WgpuPresenter>,
 }
 
 impl Default for SubductionCompositorBackend {
@@ -67,6 +70,7 @@ impl SubductionCompositorBackend {
             pending_frame_reasons: Vec::new(),
             timing: CompositorTiming::default(),
             needs_reorder: false,
+            presenter: None,
         }
     }
 
@@ -237,6 +241,40 @@ impl CompositorBackend for SubductionCompositorBackend {
     fn update_timing(&mut self, timing: CompositorTiming) {
         self.timing = timing;
     }
+
+    fn attach_wgpu_presenter(
+        &mut self,
+        gpu_resources: &floem_renderer::gpu_resources::GpuResources,
+        output_format: wgpu::TextureFormat,
+        output_size: (u32, u32),
+    ) {
+        let default_layer_size = (
+            output_size.0.clamp(1, 2048),
+            output_size.1.clamp(1, 2048),
+        );
+        self.presenter = Some(WgpuPresenter::new(
+            gpu_resources.device.clone(),
+            gpu_resources.queue.clone(),
+            output_format,
+            output_size,
+            default_layer_size,
+        ));
+    }
+
+    fn begin_frame(&mut self, output_size: (u32, u32), _started_at: std::time::Instant) {
+        let has_presenter = self.presenter.is_some();
+        if has_presenter {
+            let changes = self.evaluate();
+            if let Some(presenter) = self.presenter.as_mut() {
+                presenter.resize_output(output_size.0, output_size.1);
+                presenter.apply(&self.store, &changes);
+            }
+        }
+    }
+
+    fn preferred_frame_interval(&self) -> Option<std::time::Duration> {
+        self.timing.frame_interval
+    }
 }
 
 fn clip_shape_for_bounds(bounds: Rect, isolated: bool) -> Option<ClipShape> {
@@ -254,4 +292,3 @@ fn clip_shape_for_bounds(bounds: Rect, isolated: bool) -> Option<ClipShape> {
     // local bounds as an isolation clip when requested.
     Some(ClipShape::RoundedRect(RoundedRect::from_rect(bounds.with_origin((0.0, 0.0)), 0.0)))
 }
-

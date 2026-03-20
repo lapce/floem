@@ -56,6 +56,7 @@ pub mod subduction;
 
 use std::time::{Duration, Instant};
 
+use floem_renderer::gpu_resources::GpuResources;
 use peniko::BlendMode;
 use peniko::kurbo::{Rect, Size};
 use rustc_hash::FxHashMap;
@@ -250,10 +251,31 @@ impl Compositor {
         self.backend = Some(backend);
     }
 
+    /// Attaches shared wgpu presentation resources to the installed backend.
+    pub fn attach_wgpu_presenter(
+        &mut self,
+        gpu_resources: &GpuResources,
+        output_format: wgpu::TextureFormat,
+        output_size: (u32, u32),
+    ) {
+        if let Some(backend) = self.backend.as_mut() {
+            backend.attach_wgpu_presenter(gpu_resources, output_format, output_size);
+        }
+    }
+
     /// Returns the installed backend name, if any.
     #[must_use]
     pub fn backend_name(&self) -> Option<&'static str> {
         self.backend.as_ref().map(|backend| backend.name())
+    }
+
+    /// Returns the preferred compositor frame interval if a backend can provide one.
+    #[must_use]
+    pub fn preferred_frame_interval(&self) -> Option<Duration> {
+        self.backend
+            .as_ref()
+            .and_then(|backend| backend.preferred_frame_interval())
+            .or(self.timing.frame_interval)
     }
 
     /// Registers a new externally managed surface and returns its id.
@@ -411,6 +433,40 @@ impl Compositor {
         self.timing = timing;
         if let Some(backend) = self.backend.as_mut() {
             backend.update_timing(timing);
+        }
+    }
+
+    /// Marks the start of a compositor-driven frame.
+    pub fn begin_frame(&mut self, output_size: (u32, u32), started_at: Instant) {
+        let mut timing = self.timing;
+        timing.last_present_started = Some(started_at);
+        timing.predicted_next_present = timing.frame_interval.map(|interval| started_at + interval);
+        self.update_timing(timing);
+
+        if let Some(backend) = self.backend.as_mut() {
+            backend.begin_frame(output_size, started_at);
+        }
+    }
+
+    /// Marks the completion of a compositor-driven frame.
+    pub fn finish_frame(
+        &mut self,
+        output_size: (u32, u32),
+        started_at: Instant,
+        completed_at: Instant,
+    ) {
+        let mut timing = self.timing;
+        if let Some(last_completed) = timing.last_present_completed {
+            timing.frame_interval = Some(completed_at.saturating_duration_since(last_completed));
+        }
+        timing.last_present_started = Some(started_at);
+        timing.last_present_completed = Some(completed_at);
+        timing.frame_number = timing.frame_number.saturating_add(1);
+        timing.predicted_next_present = timing.frame_interval.map(|interval| completed_at + interval);
+        self.update_timing(timing);
+
+        if let Some(backend) = self.backend.as_mut() {
+            backend.finish_frame(output_size, started_at, completed_at);
         }
     }
 }

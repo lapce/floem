@@ -5,6 +5,10 @@
 //! retained compositor state into a concrete presentation engine such as
 //! `subduction`.
 
+use std::time::{Duration, Instant};
+
+use floem_renderer::gpu_resources::GpuResources;
+
 use super::{
     CompositorLayerDescriptor, CompositorLayerId, CompositorTiming, ExternalSurfaceDescriptor,
     ExternalSurfaceHandle, ExternalSurfaceId, FrameRequestReason,
@@ -52,4 +56,31 @@ pub trait CompositorBackend {
 
     /// Updates compositor timing after presentation has advanced.
     fn update_timing(&mut self, timing: CompositorTiming);
+
+    /// Attaches shared wgpu resources so the backend can prepare any presenter-
+    /// side resources against Floem's device and queue.
+    fn attach_wgpu_presenter(
+        &mut self,
+        _gpu_resources: &GpuResources,
+        _output_format: wgpu::TextureFormat,
+        _output_size: (u32, u32),
+    ) {
+    }
+
+    /// Called before Floem paints a frame.
+    fn begin_frame(&mut self, _output_size: (u32, u32), _started_at: Instant) {}
+
+    /// Called after Floem completes and presents a frame.
+    fn finish_frame(
+        &mut self,
+        _output_size: (u32, u32),
+        _started_at: Instant,
+        _completed_at: Instant,
+    ) {
+    }
+
+    /// Returns a backend-specific frame interval hint when available.
+    fn preferred_frame_interval(&self) -> Option<Duration> {
+        None
+    }
 }

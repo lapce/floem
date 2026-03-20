@@ -383,6 +383,7 @@ impl WindowHandle {
             let size = LogicalSize::new(rect.width(), rect.height());
             self.size(Size::new(size.width, size.height));
         }
+        self.attach_compositor_presenter();
         // Now that the renderer is initialized, draw the first frame
         self.render_frame();
         self.window.set_visible(true);
@@ -781,9 +782,19 @@ impl WindowHandle {
     pub(crate) fn render_frame(&mut self) {
         let renderer_ready = matches!(self.paint_state, PaintState::Initialized { .. });
         if self.window_state.has_pending_render() && renderer_ready {
+            let output_size = renderer_output_size(self.paint_state.renderer().size());
+            let frame_started_at = Instant::now();
+            self.window_state
+                .begin_compositor_frame(output_size, frame_started_at);
             self.paint();
+            let frame_completed_at = Instant::now();
+            self.window_state.finish_compositor_frame(
+                output_size,
+                frame_started_at,
+                frame_completed_at,
+            );
             self.window_state.clear_pending_damage();
-            self.last_presented_at = Instant::now();
+            self.last_presented_at = frame_completed_at;
         }
 
         if self.live_resize_active() {
@@ -1464,6 +1475,22 @@ impl WindowHandle {
         self.window.request_redraw();
     }
 
+    fn attach_compositor_presenter(&mut self) {
+        let Some(gpu_resources) = self.gpu_resources.as_ref() else {
+            return;
+        };
+
+        let Some(output_format) = compositor_output_format(gpu_resources, self.window.clone()) else {
+            return;
+        };
+
+        self.window_state.attach_compositor_wgpu_presenter(
+            gpu_resources,
+            output_format,
+            renderer_output_size(self.paint_state.renderer().size()),
+        );
+    }
+
     pub(crate) fn destroy(&mut self) {
         self.event(Event::Window(WindowEvent::Closed));
         self.scope.dispose();
@@ -1665,6 +1692,27 @@ impl WindowHandle {
         // will still be considered a "known root" when the ViewId slot is reused.
         remove_window_id_mapping(&self.id, &self.window_id);
     }
+}
+
+fn renderer_output_size(size: Size) -> (u32, u32) {
+    (
+        size.width.max(1.0).round() as u32,
+        size.height.max(1.0).round() as u32,
+    )
+}
+
+fn compositor_output_format(
+    gpu_resources: &GpuResources,
+    window: Arc<dyn winit::window::Window>,
+) -> Option<wgpu::TextureFormat> {
+    let surface = gpu_resources.instance.create_surface(window).ok()?;
+    let caps = surface.get_capabilities(&gpu_resources.adapter);
+    caps.formats.into_iter().find(|format| {
+        matches!(
+            format,
+            wgpu::TextureFormat::Rgba8Unorm | wgpu::TextureFormat::Bgra8Unorm
+        )
+    })
 }
 
 pub(crate) fn get_current_view() -> ViewId {

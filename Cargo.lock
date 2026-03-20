@@ -1580,6 +1580,7 @@ dependencies = [
  "smallvec",
  "strum",
  "strum_macros",
+ "subduction_backend_wgpu",
  "subduction_core",
  "sys-locale",
  "taffy",
@@ -5725,6 +5726,16 @@ dependencies = [
  "proc-macro2 1.0.106",
  "quote 1.0.45",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "subduction_backend_wgpu"
+version = "0.0.1"
+source = "git+https://github.com/forest-rs/subduction.git?rev=942a0d4d1a65f855c2a77aa10d01be132196d4bd#942a0d4d1a65f855c2a77aa10d01be132196d4bd"
+dependencies = [
+ "bytemuck",
+ "subduction_core",
+ "wgpu",
 ]
 
 [[package]]

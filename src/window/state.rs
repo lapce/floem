@@ -1,4 +1,5 @@
 use std::{cell::RefCell, collections::HashMap};
+use std::time::{Duration, Instant};
 
 use crate::{
     action::exec_after_animation_frame,
@@ -13,6 +14,7 @@ use crate::{
     view::ViewStorage,
 };
 
+use floem_renderer::gpu_resources::GpuResources;
 use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Size, Vec2};
 use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::{SmallVec, smallvec};
@@ -1299,8 +1301,22 @@ impl WindowState {
         self.compositor.install_backend(backend);
     }
 
+    pub fn attach_compositor_wgpu_presenter(
+        &mut self,
+        gpu_resources: &GpuResources,
+        output_format: wgpu::TextureFormat,
+        output_size: (u32, u32),
+    ) {
+        self.compositor
+            .attach_wgpu_presenter(gpu_resources, output_format, output_size);
+    }
+
     pub fn compositor_backend_name(&self) -> Option<&'static str> {
         self.compositor.backend_name()
+    }
+
+    pub fn compositor_preferred_frame_interval(&self) -> Option<Duration> {
+        self.compositor.preferred_frame_interval()
     }
 
     pub const fn compositor_timing(&self) -> &CompositorTiming {
@@ -1339,6 +1355,20 @@ impl WindowState {
 
     pub fn clear_compositor_layer_dirtiness(&mut self) {
         self.compositor.clear_layer_dirtiness();
+    }
+
+    pub fn begin_compositor_frame(&mut self, output_size: (u32, u32), started_at: Instant) {
+        self.compositor.begin_frame(output_size, started_at);
+    }
+
+    pub fn finish_compositor_frame(
+        &mut self,
+        output_size: (u32, u32),
+        started_at: Instant,
+        completed_at: Instant,
+    ) {
+        self.compositor
+            .finish_frame(output_size, started_at, completed_at);
     }
 
     pub(crate) fn update_screen_size_bp(&mut self, size: Size) {
