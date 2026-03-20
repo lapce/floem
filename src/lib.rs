@@ -180,6 +180,7 @@ pub mod action;
 pub mod animate;
 mod app;
 mod box_tree;
+pub mod compositor;
 pub mod context;
 pub mod event;
 pub mod ext_event;
@@ -222,6 +223,11 @@ pub mod receiver_signal {
 
 pub use box_tree::{BoxTree, ElementId, ElementMeta, FocusNavMeta};
 pub(crate) use box_tree::{bump_focus_nav_meta_revision, focus_nav_meta_revision};
+pub use compositor::{
+    Compositor, CompositorLayerDescriptor, CompositorLayerId, CompositorLayerKind,
+    CompositorTiming, ExternalAlphaMode, ExternalColorSpace, ExternalPixelFormat,
+    ExternalSurfaceDescriptor, ExternalSurfaceHandle, ExternalSurfaceId, FrameRequestReason,
+};
 
 pub use app::{AppConfig, AppEvent, Application, launch, quit_app, reopen};
 pub use floem_reactive as reactive;

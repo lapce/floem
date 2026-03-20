@@ -2,6 +2,10 @@ use std::{cell::RefCell, collections::HashMap};
 
 use crate::{
     action::exec_after_animation_frame,
+    compositor::{
+        Compositor, CompositorLayerDescriptor, CompositorLayerId, CompositorTiming,
+        ExternalSurfaceDescriptor, ExternalSurfaceHandle, ExternalSurfaceId, FrameRequestReason,
+    },
     inspector::CaptureState,
     platform::menu_types::MenuId,
     style::{StyleSelectors, recalc::StyleReason},
@@ -102,6 +106,7 @@ fn build_focus_space_for_scope<'a>(
 pub struct WindowState {
     pub(crate) layout_tree: Rc<RefCell<taffy::TaffyTree<LayoutNodeCx>>>,
     pub(crate) box_tree: Rc<RefCell<BoxTree>>,
+    pub(crate) compositor: Compositor,
     pub(crate) display_list: RetainedDisplayList,
     pub(crate) last_paint_stats: PaintStats,
 
@@ -214,6 +219,7 @@ impl WindowState {
             root_view_id,
             layout_tree,
             box_tree,
+            compositor: Compositor::default(),
             display_list: RetainedDisplayList::default(),
             last_paint_stats: PaintStats::default(),
             pointer_capture_target: PointerCaptureMap::new(),
@@ -1244,6 +1250,58 @@ impl WindowState {
         self.dirty_paint_elements.insert(id.into());
     }
 
+    pub fn register_compositor_layer(
+        &mut self,
+        descriptor: CompositorLayerDescriptor,
+    ) -> CompositorLayerId {
+        self.compositor.register_layer(descriptor)
+    }
+
+    pub fn update_compositor_layer(
+        &mut self,
+        id: CompositorLayerId,
+        descriptor: CompositorLayerDescriptor,
+    ) -> bool {
+        self.compositor.update_layer(id, descriptor)
+    }
+
+    pub fn mark_compositor_layer_dirty(&mut self, id: CompositorLayerId) {
+        self.compositor.mark_layer_dirty(id);
+    }
+
+    pub fn register_external_surface(
+        &mut self,
+        handle: ExternalSurfaceHandle,
+        descriptor: ExternalSurfaceDescriptor,
+    ) -> ExternalSurfaceId {
+        self.compositor.register_external_surface(handle, descriptor)
+    }
+
+    pub fn update_external_surface(
+        &mut self,
+        id: ExternalSurfaceId,
+        handle: ExternalSurfaceHandle,
+        descriptor: ExternalSurfaceDescriptor,
+    ) -> bool {
+        self.compositor.update_external_surface(id, handle, descriptor)
+    }
+
+    pub fn notify_external_surface_ready(&mut self, id: ExternalSurfaceId) -> bool {
+        self.compositor.notify_external_surface_ready(id)
+    }
+
+    pub fn request_compositor_frame(&mut self, reason: FrameRequestReason) {
+        self.compositor.request_frame(reason);
+    }
+
+    pub const fn compositor_timing(&self) -> &CompositorTiming {
+        self.compositor.timing()
+    }
+
+    pub fn update_compositor_timing(&mut self, timing: CompositorTiming) {
+        self.compositor.update_timing(timing);
+    }
+
     pub fn take_dirty_paint_elements(&mut self) -> FxHashSet<ElementId> {
         std::mem::take(&mut self.dirty_paint_elements)
     }
@@ -1253,7 +1311,9 @@ impl WindowState {
     }
 
     pub fn has_pending_render(&self) -> bool {
-        !self.dirty_paint_elements.is_empty() || !self.pending_damage_rects.is_empty()
+        !self.dirty_paint_elements.is_empty()
+            || !self.pending_damage_rects.is_empty()
+            || self.compositor.has_pending_frame()
     }
 
     pub fn clear_pending_paint(&mut self) {
@@ -1262,6 +1322,14 @@ impl WindowState {
 
     pub fn clear_pending_damage(&mut self) {
         self.pending_damage_rects.clear();
+    }
+
+    pub fn take_pending_compositor_frame_reasons(&mut self) -> Vec<FrameRequestReason> {
+        self.compositor.take_pending_frame_reasons()
+    }
+
+    pub fn clear_compositor_layer_dirtiness(&mut self) {
+        self.compositor.clear_layer_dirtiness();
     }
 
     pub(crate) fn update_screen_size_bp(&mut self, size: Size) {
