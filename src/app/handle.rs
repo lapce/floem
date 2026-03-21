@@ -316,7 +316,9 @@ impl ApplicationHandle {
                 window_handle.position(point);
             }
             WindowEvent::CloseRequested => {
-                self.close_window(window_id, event_loop);
+                if self.should_close_window_on_request(window_id) {
+                    self.close_window(window_id, event_loop);
+                }
             }
             WindowEvent::Destroyed => {
                 self.close_window(window_id, event_loop);
@@ -629,6 +631,16 @@ impl ApplicationHandle {
             font_embolden,
         );
         self.window_handles.insert(window_id, window_handle);
+    }
+
+    fn should_close_window_on_request(&mut self, window_id: WindowId) -> bool {
+        let Some(handle) = self.window_handles.get_mut(&window_id) else {
+            return false;
+        };
+
+        !handle.event(crate::event::Event::Window(
+            crate::event::WindowEvent::CloseRequested,
+        ))
     }
 
     fn close_window(&mut self, window_id: WindowId, event_loop: &dyn ActiveEventLoop) {
@@ -956,4 +968,96 @@ fn setup_traffic_light_constraints_all_pixels(
     }
 
     Ok(())
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        view::ViewId,
+        views::{Decorators, Empty},
+    };
+
+    #[test]
+    fn close_requested_defaults_to_closing_when_unhandled() {
+        let mut app = ApplicationHandle::new(AppConfig::default());
+
+        let root_id = ViewId::new_root();
+        crate::window::handle::set_current_view(root_id);
+        let view = Empty::new().style(|s| s.size(100.0, 100.0));
+        let window_handle = WindowHandle::new_headless(root_id, view, Size::new(400.0, 300.0), 1.0);
+        let window_id = window_handle.window_id();
+
+        app.window_handles.insert(window_id, window_handle);
+
+        assert!(app.should_close_window_on_request(window_id));
+    }
+
+    #[test]
+    fn close_requested_can_be_prevented() {
+        let mut app = ApplicationHandle::new(AppConfig::default());
+
+        let root_id = ViewId::new_root();
+        crate::window::handle::set_current_view(root_id);
+        let view = Empty::new()
+            .style(|s| s.size(100.0, 100.0))
+            .on_event_cont(crate::event::listener::WindowCloseRequested, |cx, _| {
+                cx.prevent_default();
+            });
+        let window_handle = WindowHandle::new_headless(root_id, view, Size::new(400.0, 300.0), 1.0);
+        let window_id = window_handle.window_id();
+
+        app.window_handles.insert(window_id, window_handle);
+
+        assert!(!app.should_close_window_on_request(window_id));
+        assert_eq!(app.window_handles.len(), 1);
+    }
+
+    #[test]
+    fn close_requested_stop_only_does_not_cancel_close() {
+        let mut app = ApplicationHandle::new(AppConfig::default());
+
+        let root_id = ViewId::new_root();
+        crate::window::handle::set_current_view(root_id);
+        let view = Empty::new()
+            .style(|s| s.size(100.0, 100.0))
+            .on_event_stop(crate::event::listener::WindowCloseRequested, |_cx, _| {});
+        let window_handle = WindowHandle::new_headless(root_id, view, Size::new(400.0, 300.0), 1.0);
+        let window_id = window_handle.window_id();
+
+        app.window_handles.insert(window_id, window_handle);
+
+        assert!(app.should_close_window_on_request(window_id));
+    }
+
+    #[test]
+    fn preventing_one_window_close_does_not_affect_another() {
+        let mut app = ApplicationHandle::new(AppConfig::default());
+
+        let prevented_root = ViewId::new_root();
+        crate::window::handle::set_current_view(prevented_root);
+        let prevented_view = Empty::new()
+            .style(|s| s.size(100.0, 100.0))
+            .on_event_cont(crate::event::listener::WindowCloseRequested, |cx, _| {
+                cx.prevent_default();
+            });
+        let prevented_window =
+            WindowHandle::new_headless(prevented_root, prevented_view, Size::new(400.0, 300.0), 1.0);
+        let prevented_id = prevented_window.window_id();
+
+        let plain_root = ViewId::new_root();
+        crate::window::handle::set_current_view(plain_root);
+        let plain_view = Empty::new().style(|s| s.size(100.0, 100.0));
+        let plain_window =
+            WindowHandle::new_headless(plain_root, plain_view, Size::new(400.0, 300.0), 1.0);
+        let plain_id = plain_window.window_id();
+
+        app.window_handles.insert(prevented_id, prevented_window);
+        app.window_handles.insert(plain_id, plain_window);
+
+        assert!(!app.should_close_window_on_request(prevented_id));
+        assert!(app.should_close_window_on_request(plain_id));
+        assert_eq!(app.window_handles.len(), 2);
+    }
 }

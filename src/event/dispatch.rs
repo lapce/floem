@@ -355,7 +355,9 @@ impl<'a> GlobalEventCx<'a> {
 
     /// Route the original OS window event. This is the primary entry point
     /// called once per OS event from the window handle.
-    pub fn route_window_event(self) {
+    ///
+    /// Returns `true` if the event's default action was prevented.
+    pub fn route_window_event(self) -> bool {
         self.with_route_cx(|rcx| {
             let event = rcx.event.clone();
 
@@ -467,7 +469,9 @@ impl<'a> GlobalEventCx<'a> {
             if let Event::Pointer(PointerEvent::Leave(_)) = &event {
                 rcx.update_hover_from_path(&[]);
             }
-        });
+
+            rcx.prevent_default
+        })
     }
 
     /// Update hover from a path without dispatching any event to views.

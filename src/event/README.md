@@ -187,6 +187,11 @@ The system must support `EventPropagation` enum with:
 - Dispatch through stacking context to all views
 - Views can opt-in to handle specific window events
 
+**Default Actions**:
+- Window events are observational by default
+- `WindowCloseRequested` is the exception: handlers may call `cx.prevent_default()` to keep the window open
+- Stopping propagation alone does not cancel the close request
+
 **Responsive Style Updates**:
 - `WindowResized` triggers style recalculation for views with responsive styles
 - Check `has_style_selectors.has_responsive()` before updating

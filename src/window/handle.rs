@@ -388,7 +388,7 @@ impl WindowHandle {
         self.window.set_visible(true);
     }
 
-    pub fn event(&mut self, event: Event) {
+    pub fn event(&mut self, event: Event) -> bool {
         set_current_view(self.id.root());
 
         // Check event type for platform-specific context menu handling
@@ -398,7 +398,8 @@ impl WindowHandle {
         let is_pointer_up = matches!(&event, Event::Pointer(PointerEvent::Up { .. }));
 
         let root_element_id = self.window_state.root_view_id.get_element_id();
-        GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
+        let default_prevented =
+            GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
 
         // Platform-specific context menu handling
         #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
@@ -422,6 +423,13 @@ impl WindowHandle {
                 self.context_menu.set(None);
             }
         }
+
+        default_prevented
+    }
+
+    #[cfg(test)]
+    pub(crate) fn window_id(&self) -> WindowId {
+        self.window_id
     }
 
     pub(crate) fn os_scale(&mut self, os_scale: f64) {
@@ -1700,7 +1708,11 @@ impl View for WindowView {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::views::{Decorators, Empty};
+    use crate::{
+        event::{Event, WindowEvent, listener},
+        views::{Decorators, Empty},
+    };
+    use std::{cell::Cell, rc::Rc};
 
     /// Test that we can create a headless WindowHandle.
     #[test]
@@ -1717,7 +1729,6 @@ mod tests {
     /// Test that headless WindowHandle can dispatch events.
     #[test]
     fn test_headless_event_dispatch() {
-        use crate::event::Event;
         use ui_events::pointer::{
             PointerButton, PointerButtonEvent, PointerEvent, PointerId, PointerInfo, PointerType,
         };
@@ -1750,7 +1761,6 @@ mod tests {
     /// Test that headless WindowHandle runs process_update correctly.
     #[test]
     fn test_headless_process_update() {
-        use crate::event::Event;
         use ui_events::pointer::{
             PointerButton, PointerButtonEvent, PointerEvent, PointerId, PointerInfo, PointerType,
         };
@@ -1793,6 +1803,100 @@ mod tests {
 
         // All should complete without panic
     }
+
+    #[test]
+    fn test_headless_window_close_requested_can_prevent_default() {
+        let root_id = ViewId::new_root();
+        set_current_view(root_id);
+
+        let view = Empty::new()
+            .style(|s| s.size(100.0, 100.0))
+            .on_event_cont(listener::WindowCloseRequested, |cx, _| {
+                cx.prevent_default();
+            });
+
+        let mut window_handle =
+            WindowHandle::new_headless(root_id, view, Size::new(800.0, 600.0), 1.0);
+
+        assert!(window_handle.event(Event::Window(WindowEvent::CloseRequested)));
+    }
+
+    #[test]
+    fn test_headless_window_close_requested_defaults_to_close() {
+        let root_id = ViewId::new_root();
+        set_current_view(root_id);
+
+        let view = Empty::new().style(|s| s.size(100.0, 100.0));
+        let mut window_handle =
+            WindowHandle::new_headless(root_id, view, Size::new(800.0, 600.0), 1.0);
+
+        assert!(!window_handle.event(Event::Window(WindowEvent::CloseRequested)));
+    }
+
+    #[test]
+    fn test_headless_window_close_requested_stop_only_does_not_prevent_default() {
+        let root_id = ViewId::new_root();
+        set_current_view(root_id);
+
+        let view = Empty::new()
+            .style(|s| s.size(100.0, 100.0))
+            .on_event_stop(listener::WindowCloseRequested, |_cx, _| {});
+
+        let mut window_handle =
+            WindowHandle::new_headless(root_id, view, Size::new(800.0, 600.0), 1.0);
+
+        assert!(!window_handle.event(Event::Window(WindowEvent::CloseRequested)));
+    }
+
+    #[test]
+    fn test_headless_window_prevented_close_request_does_not_emit_window_closed() {
+        let root_id = ViewId::new_root();
+        set_current_view(root_id);
+
+        let closed_count = Rc::new(Cell::new(0));
+        let closed_count_for_listener = closed_count.clone();
+
+        let view = Empty::new()
+            .style(|s| s.size(100.0, 100.0))
+            .on_event_cont(listener::WindowCloseRequested, |cx, _| {
+                cx.prevent_default();
+            })
+            .on_event_cont(listener::WindowClosed, move |_cx, _| {
+                closed_count_for_listener.set(closed_count_for_listener.get() + 1);
+            });
+
+        let mut window_handle =
+            WindowHandle::new_headless(root_id, view, Size::new(800.0, 600.0), 1.0);
+
+        assert!(window_handle.event(Event::Window(WindowEvent::CloseRequested)));
+        assert_eq!(closed_count.get(), 0);
+    }
+
+    #[test]
+    fn test_headless_window_destroy_emits_window_closed() {
+        let root_id = ViewId::new_root();
+        set_current_view(root_id);
+
+        let closed_count = Rc::new(Cell::new(0));
+        let closed_count_for_listener = closed_count.clone();
+
+        let view = Empty::new()
+            .style(|s| s.size(100.0, 100.0))
+            .on_event_cont(listener::WindowClosed, move |_cx, _| {
+                closed_count_for_listener.set(closed_count_for_listener.get() + 1);
+            });
+
+        let mut window_handle =
+            WindowHandle::new_headless(root_id, view, Size::new(800.0, 600.0), 1.0);
+
+        assert!(!window_handle.event(Event::Window(WindowEvent::CloseRequested)));
+        assert_eq!(closed_count.get(), 0);
+
+        window_handle.destroy();
+
+        assert_eq!(closed_count.get(), 1);
+    }
+
 
     #[test]
     fn test_budgeted_update_quiesces_with_unreachable_style_dirty_view() {

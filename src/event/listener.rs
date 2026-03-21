@@ -84,6 +84,7 @@ pub use inner::{
     UpdatePhaseStyle,
     WindowChangeUnderCursor,
 
+    WindowCloseRequested,
     WindowClosed,
     WindowGainedFocus,
     WindowLostFocus,
@@ -915,6 +916,25 @@ mod inner {
         |event| {
             if let Event::Window(WindowEvent::ThemeChanged(theme)) = event {
                 return Some(theme as &dyn Any);
+            }
+            None
+        }
+    );
+
+    event_listener!(
+        /// Receives [`Event::Window`] `CloseRequested` variant — fired when the system requests
+        /// that the window close.
+        ///
+        /// # Routing
+        /// Dispatched to **Target phase only** on all views that have registered this listener.
+        /// Views that do not register a listener do not receive window events.
+        ///
+        /// # Default Actions (preventable with `cx.prevent_default()`)
+        /// Closes the window unless prevented.
+        pub WindowCloseRequested: (),
+        |event| {
+            if let Event::Window(WindowEvent::CloseRequested) = event {
+                return Some(&() as &dyn Any);
             }
             None
         }
