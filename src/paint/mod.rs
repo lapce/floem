@@ -14,8 +14,8 @@ pub use renderer::Renderer;
 
 use floem_renderer::Renderer as _;
 use floem_renderer::gpu_resources::{GpuResourceError, GpuResources};
-use imaging::{BlurredRoundedRect, ClipRef, Composite, GeometryRef, PaintSink, Painter};
-use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Shape, Size};
+use imaging::Painter;
+use peniko::kurbo::{Affine, Point, RoundedRect, Size};
 use rustc_hash::FxHashSet;
 use std::sync::Arc;
 use understory_box_tree::NodeFlags;
@@ -137,8 +137,7 @@ pub struct GlobalPaintCx<'a> {
 pub struct PaintCx<'a> {
     /// Reference to global paint state
     pub window_state: &'a mut WindowState,
-    recorder: &'a mut RecordingRenderer<'a>,
-    uses_layer_clip: bool,
+    pub painter: Painter<'a, RecordingRenderer<'a>>,
     is_vger: bool,
     /// The target visual node being painted (CRITICAL for views with multiple visuals)
     pub target_id: ElementId,
@@ -370,7 +369,12 @@ impl GlobalPaintCx<'_> {
             active_ids
                 .iter()
                 .copied()
-                .map(|element_id| (element_id, ElementSnapshot::from_box_tree(&box_tree, element_id)))
+                .map(|element_id| {
+                    (
+                        element_id,
+                        ElementSnapshot::from_box_tree(&box_tree, element_id),
+                    )
+                })
                 .collect::<Vec<_>>()
         };
         let mut reused_snapshots = Vec::new();
@@ -398,7 +402,10 @@ impl GlobalPaintCx<'_> {
                 // downstream systems like promoted compositor bounds still need the current
                 // snapshot every frame. Keep the artifact metadata fresh even when we skip
                 // rerecording the stage commands.
-                self.window_state.display_list.element_mut(element_id).snapshot = Some(snapshot);
+                self.window_state
+                    .display_list
+                    .element_mut(element_id)
+                    .snapshot = Some(snapshot);
             }
         }
         for element_id in dirty_ids {
@@ -439,11 +446,7 @@ impl GlobalPaintCx<'_> {
                         record_paint(element_id.owning_id());
                     }
                     if element_id.is_view() {
-                        self.replay_element_overflow_clip(
-                            element_id,
-                            target_origin,
-                            render_size,
-                        );
+                        self.replay_element_overflow_clip(element_id, target_origin, render_size);
                     }
                     // Damage-aware chunk replay is intentionally disabled here for now.
                     // Every backend rebuilds a fresh frame/scene on `begin()`, so skipping
@@ -512,7 +515,8 @@ impl GlobalPaintCx<'_> {
         };
         let local_damage = damage_rects.map(|rects| {
             let inverse = base_transform.inverse();
-            rects.iter()
+            rects
+                .iter()
                 .map(|rect| inverse.transform_rect_bbox(*rect))
                 .collect::<Vec<_>>()
         });
@@ -540,7 +544,6 @@ impl GlobalPaintCx<'_> {
         let view_state = view_id.state();
         let mut commands = Vec::new();
         let mut recorder = RecordingRenderer::new(&mut commands);
-        let uses_layer_clip = self.paint_state.renderer().uses_layer_clip();
         let is_vger = self.paint_state.renderer().is_vger();
         let world_transform = self.element_base_transform(element_id);
         let font_size_cx = view_state.borrow().layout_props.font_size_cx();
@@ -549,8 +552,7 @@ impl GlobalPaintCx<'_> {
             // Create per-target PaintCx
             let mut cx = PaintCx {
                 window_state: self.window_state,
-                recorder: &mut recorder,
-                uses_layer_clip,
+                painter: Painter::new(&mut recorder),
                 is_vger,
                 target_id: element_id,
                 world_transform,
@@ -592,7 +594,7 @@ impl GlobalPaintCx<'_> {
     }
 }
 
-impl PaintCx<'_> {
+impl<'a> PaintCx<'a> {
     /// Allows a `View` to determine if it is being called in order to
     /// paint a *draggable* image of itself during a drag (likely
     /// `draggable()` was called on the `View` or `ViewId`) as opposed
@@ -609,131 +611,13 @@ impl PaintCx<'_> {
         false
     }
 
-    /// Clip the drawing area (delegates to helper methods)
-    pub fn clip(&mut self, shape: &impl Shape) {
-        if self.uses_layer_clip {
-            use peniko::Mix;
-            self.push_layer(Mix::Normal, 1.0, Affine::IDENTITY, shape);
-        } else {
-            self.recorder.push_clip(ClipRef::fill(geometry_ref_from_shape(shape)));
-        }
-    }
-
-    /// Clear clip
-    pub fn pop_clip(&mut self) {
-        if self.uses_layer_clip {
-            self.pop_layer();
-        } else {
-            self.recorder.pop_clip();
-        }
-    }
-
-    // Note: get_transform/set_transform removed as Renderer doesn't expose transform()
-    // Views that previously used save/restore should use clip/clear_clip instead
-
-    pub fn stroke<'b, 's>(
-        &mut self,
-        shape: &impl Shape,
-        brush: impl Into<peniko::BrushRef<'b>>,
-        stroke: &'s peniko::kurbo::Stroke,
-    ) {
-        let brush = brush.into().to_owned();
-        let transform = self.recorder.transform();
-        Painter::new(self.recorder)
-            .stroke(geometry_ref_from_shape(shape), stroke, &brush)
-            .transform(transform)
-            .draw();
-    }
-
-    pub fn fill<'b>(
-        &mut self,
-        path: &impl peniko::kurbo::Shape,
-        brush: impl Into<peniko::BrushRef<'b>>,
-        blur_radius: f64,
-    ) {
-        let brush = brush.into().to_owned();
-        let transform = self.recorder.transform();
-        if blur_radius > 0.0
-            && let peniko::Brush::Solid(color) = brush
-            && let Some((rect, radius)) = blurred_rounded_rect(path)
-        {
-            Painter::new(self.recorder).blurred_rounded_rect(BlurredRoundedRect {
-                transform,
-                rect,
-                color,
-                radius,
-                std_dev: blur_radius,
-                composite: Composite::default(),
-            });
-            return;
-        }
-
-        Painter::new(self.recorder)
-            .fill(geometry_ref_from_shape(path), &brush)
-            .transform(transform)
-            .draw();
-    }
-
-    pub fn push_layer(
-        &mut self,
-        blend: impl Into<peniko::BlendMode>,
-        alpha: f32,
-        transform: Affine,
-        clip: &impl Shape,
-    ) {
-        self.recorder.push_layer(blend, alpha, transform, clip);
-    }
-
-    pub fn pop_layer(&mut self) {
-        self.recorder.pop_layer();
-    }
-
-    pub fn draw_img(&mut self, img: floem_renderer::Img<'_>, rect: peniko::kurbo::Rect) {
-        self.recorder.draw_img(img, rect);
-    }
-
-    pub fn draw_glyphs<'a>(
-        &mut self,
-        origin: peniko::kurbo::Point,
-        props: &floem_renderer::text::GlyphRunProps<'a>,
-        glyphs: impl Iterator<Item = floem_renderer::text::Glyph> + 'a,
-    ) {
-        let brush = props.brush.to_owned();
-        let glyphs = glyphs
-            .map(|glyph| imaging::record::Glyph {
-                id: glyph.id,
-                x: glyph.x,
-                y: glyph.y,
-            })
-            .collect::<Vec<_>>();
-        let transform = self.recorder.transform()
-            * Affine::translate((origin.x, origin.y))
-            * props.transform;
-        Painter::new(self.recorder)
-            .glyphs(&props.font, &brush)
-            .transform(transform)
-            .glyph_transform(props.glyph_transform)
-            .font_size(props.font_size)
-            .hint(props.hint)
-            .normalized_coords(props.normalized_coords)
-            .composite(Composite::new(
-                peniko::BlendMode::default(),
-                props.brush_alpha,
-            ))
-            .draw(&props.style.to_owned(), &glyphs);
-    }
-
     pub fn draw_svg<'b>(
         &mut self,
         svg: floem_renderer::Svg<'b>,
         rect: peniko::kurbo::Rect,
         brush: Option<impl Into<peniko::BrushRef<'b>>>,
     ) {
-        self.recorder.draw_svg(svg, rect, brush);
-    }
-
-    pub fn set_transform(&mut self, transform: Affine) {
-        self.recorder.set_transform(transform);
+        let _ = (svg, rect, brush);
     }
 
     pub fn is_vger(&self) -> bool {
@@ -821,26 +705,4 @@ impl PaintState {
     pub(crate) fn set_scale(&mut self, scale: f64) {
         self.renderer_mut().set_scale(scale);
     }
-}
-
-fn geometry_ref_from_shape(shape: &impl Shape) -> GeometryRef<'static> {
-    if let Some(rect) = shape.as_rect() {
-        return GeometryRef::Rect(rect);
-    }
-    if let Some(rect) = shape.as_rounded_rect() {
-        return GeometryRef::RoundedRect(rect);
-    }
-    GeometryRef::OwnedPath(shape.to_path(0.1))
-}
-
-fn blurred_rounded_rect(shape: &impl Shape) -> Option<(Rect, f64)> {
-    if let Some(rect) = shape.as_rect() {
-        return Some((rect, 0.0));
-    }
-    let rect = shape.as_rounded_rect()?;
-    let radii = rect.radii();
-    (radii.top_left == radii.top_right
-        && radii.top_left == radii.bottom_left
-        && radii.top_left == radii.bottom_right)
-        .then_some((rect.rect(), radii.top_left))
 }

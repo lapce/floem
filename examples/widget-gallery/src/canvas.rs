@@ -8,9 +8,9 @@ use floem::{
         CustomEvent, DragConfig, DragEvent, DragSourceEvent, Event, EventPropagation,
         PointerCaptureEvent,
     },
-    kurbo::{Affine, Circle, Point, Rect, Shape, Size, Stroke},
+    kurbo::{Circle, Point, Rect, Shape, Size, Stroke},
     peniko::{
-        Gradient, Mix,
+        Brush, Compose, Gradient, Mix,
         color::{
             AlphaColor,
             ColorSpaceTag::{self, LinearSrgb},
@@ -53,13 +53,15 @@ pub fn canvas_view() -> impl IntoView {
                     if border_radius.borrow_mut().step(&now) {
                         cx.window_state.schedule_paint(cx.target_id);
                     }
-                    cx.fill(
-                        &Rect::ZERO
-                            .with_size(size)
-                            .to_rounded_rect(border_radius.borrow().get()),
-                        color.get(),
-                        0.,
-                    );
+                    let brush = Brush::Solid(color.get());
+                    cx.painter
+                        .fill(
+                            Rect::ZERO
+                                .with_size(size)
+                                .to_rounded_rect(border_radius.borrow().get()),
+                            &brush,
+                        )
+                        .draw();
                 })
                 .style(|s| s.size(300, 100)),
                 Button::new("toggle rounded corners")
@@ -95,7 +97,8 @@ fn color_picker(color: RwSignal<Color>) -> impl IntoView {
 
             draw_transparency_checkerboard(cx, size, &rect_path);
 
-            cx.fill(&rect_path, base_color, 0.);
+            let brush = Brush::Solid(base_color);
+            cx.painter.fill(rect_path, &brush).draw();
         })
         .style(move |s| s.height_full().aspect_ratio(1.).border(1).border_radius(8))
         .debug_name("final color"),
@@ -120,32 +123,33 @@ fn two_d_picker(color: RwSignal<Color>) -> impl IntoView {
 }
 
 fn draw_transparency_checkerboard(cx: &mut PaintCx, size: Size, clip_path: &impl Shape) {
-    cx.push_layer(Mix::Normal, 1.0, Affine::IDENTITY, clip_path);
+    cx.painter.with_fill_clip(clip_path.to_path(0.1), |p| {
+        let cell_size = 8.0;
+        let dark_color = Brush::Solid(css::LIGHT_GRAY);
+        let light_color = Brush::Solid(css::WHITE);
 
-    let cell_size = 8.0;
-    let dark_color = css::LIGHT_GRAY;
-    let light_color = css::WHITE;
+        let cols = (size.width / cell_size).ceil() as usize;
+        let rows = (size.height / cell_size).ceil() as usize;
 
-    let cols = (size.width / cell_size).ceil() as usize;
-    let rows = (size.height / cell_size).ceil() as usize;
+        for row in 0..rows {
+            for col in 0..cols {
+                let brush = if (row + col) % 2 == 0 {
+                    &dark_color
+                } else {
+                    &light_color
+                };
 
-    for row in 0..rows {
-        for col in 0..cols {
-            let is_dark = (row + col) % 2 == 0;
-            let color = if is_dark { dark_color } else { light_color };
+                let rect = Rect::new(
+                    col as f64 * cell_size,
+                    row as f64 * cell_size,
+                    (col + 1) as f64 * cell_size,
+                    (row + 1) as f64 * cell_size,
+                );
 
-            let rect = Rect::new(
-                col as f64 * cell_size,
-                row as f64 * cell_size,
-                (col + 1) as f64 * cell_size,
-                (row + 1) as f64 * cell_size,
-            );
-
-            cx.fill(&rect, color, 0.0);
+                p.fill(rect, brush).draw();
+            }
         }
-    }
-
-    cx.pop_layer();
+    });
 }
 
 pub struct SatValuePicker {
@@ -260,30 +264,37 @@ impl View for SatValuePicker {
         let hue = self.current_color.components[0];
 
         // base
-        cx.fill(&rect_path, css::WHITE, 0.);
+        let white = Brush::Solid(css::WHITE);
+        cx.painter.fill(rect_path, &white).draw();
 
         // saturation gradient
-        let sat_gradient = Gradient::new_linear(Point::ZERO, Point::new(size.width, 0.0))
+        let sat_gradient: Brush = Gradient::new_linear(Point::ZERO, Point::new(size.width, 0.0))
             .with_stops([
                 (0.0, css::WHITE),
                 (1.0, AlphaColor::<Hsl>::new([hue, 100., 50., 1.]).convert()),
             ])
-            .with_interpolation_cs(ColorSpaceTag::LinearSrgb);
+            .with_interpolation_cs(ColorSpaceTag::LinearSrgb)
+            .into();
 
-        cx.fill(&rect_path, &sat_gradient, 0.);
+        cx.painter.fill(rect_path, &sat_gradient).draw();
 
         // value gradient
-        cx.push_layer(Mix::Multiply, 1.0, Affine::IDENTITY, &rect_path);
-
-        let val_gradient = Gradient::new_linear(Point::ZERO, Point::new(0.0, size.height))
+        let val_gradient: Brush = Gradient::new_linear(Point::ZERO, Point::new(0.0, size.height))
             .with_stops([(0.0, Color::from_rgba8(0, 0, 0, 0)), (1.0, css::BLACK)])
-            .with_interpolation_cs(ColorSpaceTag::LinearSrgb);
-
-        cx.fill(&rect_path, &val_gradient, 0.);
-
-        cx.pop_layer();
-
-        cx.clip(&rect_path);
+            .with_interpolation_cs(ColorSpaceTag::LinearSrgb)
+            .into();
+        let group = floem::imaging::GroupRef::new()
+            .with_clip(floem::imaging::ClipRef::fill(rect_path))
+            .with_composite(floem::imaging::Composite::new(
+                floem::peniko::BlendMode {
+                    mix: Mix::Multiply,
+                    compose: Compose::SrcOver,
+                },
+                1.0,
+            ));
+        cx.painter.with_group(group, |p| {
+            p.fill(rect_path, &val_gradient).draw();
+        });
 
         if size.width > 0.0 && size.height > 0.0 {
             // Larger indicator
@@ -294,16 +305,17 @@ impl View for SatValuePicker {
             let inner = Circle::new(self.point, inner_radius);
 
             // fill center with the selected color
-            cx.fill(&inner, self.current_color.convert::<Srgb>(), 0.);
-
-            // white outline for contrast
-            cx.stroke(&outer, css::WHITE, &Stroke::new(2.0));
-
-            // subtle black inner stroke so it works on light backgrounds
-            cx.stroke(&inner, css::BLACK, &Stroke::new(1.0));
+            let inner_fill = Brush::Solid(self.current_color.convert::<Srgb>());
+            let white = Brush::Solid(css::WHITE);
+            let black = Brush::Solid(css::BLACK);
+            cx.painter.with_fill_clip(rect_path, |p| {
+                p.fill(inner.to_path(0.1), &inner_fill).draw();
+                p.stroke(outer.to_path(0.1), &Stroke::new(2.0), &white)
+                    .draw();
+                p.stroke(inner.to_path(0.1), &Stroke::new(1.0), &black)
+                    .draw();
+            });
         }
-
-        cx.pop_clip();
     }
 }
 
@@ -405,7 +417,7 @@ impl View for HuePicker {
     fn paint(&mut self, cx: &mut PaintCx) {
         let size = self.size;
         let rect_path = Rect::ZERO.with_size(size).to_rounded_rect(8.);
-        let hue_gradient = Gradient::new_linear(
+        let hue_gradient: Brush = Gradient::new_linear(
             Point::new(0.0, size.height / 2.0),
             Point::new(size.width, size.height / 2.0),
         )
@@ -414,9 +426,10 @@ impl View for HuePicker {
             (1.0, AlphaColor::<Hsl>::new([360.0, 100.0, 50.0, 1.0])),
         ])
         .with_hue_direction(floem::peniko::color::HueDirection::Longer)
-        .with_interpolation_cs(ColorSpaceTag::Hsl);
+        .with_interpolation_cs(ColorSpaceTag::Hsl)
+        .into();
 
-        cx.fill(&rect_path, &hue_gradient, 0.);
+        cx.painter.fill(rect_path, &hue_gradient).draw();
         if size.width > 0.0 {
             let hue = self.current_color.components[0];
             let x_pos = hue as f64 / 360. * size.width;
@@ -429,10 +442,12 @@ impl View for HuePicker {
                 size.height,
             );
 
-            cx.clip(&rect_path);
-            cx.stroke(&indicator_rect, css::WHITE, &Stroke::new(2.0));
-            cx.fill(&indicator_rect, css::BLACK, 0.);
-            cx.pop_clip();
+            let white = Brush::Solid(css::WHITE);
+            let black = Brush::Solid(css::BLACK);
+            cx.painter.with_fill_clip(rect_path, |p| {
+                p.stroke(indicator_rect, &Stroke::new(2.0), &white).draw();
+                p.fill(indicator_rect, &black).draw();
+            });
         }
     }
 }
@@ -534,7 +549,7 @@ impl View for OpacityPicker {
 
         draw_transparency_checkerboard(cx, size, &rect_path);
 
-        let opacity_gradient = Gradient::new_linear(
+        let opacity_gradient: Brush = Gradient::new_linear(
             Point::new(0.0, size.height / 2.0),
             Point::new(size.width, size.height / 2.0),
         )
@@ -542,9 +557,10 @@ impl View for OpacityPicker {
             (0.0, self.current_color.with_alpha(0.0)),
             (1.0, self.current_color.with_alpha(1.0)),
         ])
-        .with_interpolation_cs(LinearSrgb);
+        .with_interpolation_cs(LinearSrgb)
+        .into();
 
-        cx.fill(&rect_path, &opacity_gradient, 0.);
+        cx.painter.fill(rect_path, &opacity_gradient).draw();
 
         if size.width > 0.0 {
             let alpha = self.current_color.components[3];
@@ -558,10 +574,12 @@ impl View for OpacityPicker {
                 size.height,
             );
 
-            cx.clip(&rect_path);
-            cx.stroke(&indicator_rect, css::WHITE, &Stroke::new(2.0));
-            cx.fill(&indicator_rect, css::BLACK, 0.);
-            cx.pop_clip();
+            let white = Brush::Solid(css::WHITE);
+            let black = Brush::Solid(css::BLACK);
+            cx.painter.with_fill_clip(rect_path, |p| {
+                p.stroke(indicator_rect, &Stroke::new(2.0), &white).draw();
+                p.fill(indicator_rect, &black).draw();
+            });
         }
     }
 }

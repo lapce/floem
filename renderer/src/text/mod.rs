@@ -9,13 +9,9 @@
 
 mod attrs;
 
-use peniko::{
-    BrushRef, Fill, FontData, StyleRef,
-    kurbo::{Affine, Point},
-};
-
 pub use attrs::{Attrs, AttrsList, AttrsOwned, FamilyOwned, LineHeightValue};
 pub use fontique::{FontStyle, FontWeight, FontWidth};
+pub use imaging::{GlyphRunRef, NormalizedCoord};
 pub use parley::layout::Glyph;
 
 // --- Brush type for Parley ---
@@ -47,89 +43,11 @@ impl From<TextBrush> for peniko::Color {
     }
 }
 
-/// Variable font design-space coordinate.
-pub type NormalizedCoord = i16;
-
-/// Rendering properties shared by a glyph run.
-#[derive(Clone, Debug)]
-pub struct GlyphRunProps<'a> {
-    pub font: FontData,
-    pub font_size: f32,
-    pub hint: bool,
-    pub normalized_coords: &'a [NormalizedCoord],
-    pub style: StyleRef<'a>,
-    pub brush: BrushRef<'a>,
-    pub brush_alpha: f32,
-    pub transform: Affine,
-    pub glyph_transform: Option<Affine>,
-}
-
-impl<'a> GlyphRunProps<'a> {
-    pub fn new(font: &FontData) -> Self {
-        Self {
-            font: font.clone(),
-            font_size: 16.0,
-            hint: false,
-            normalized_coords: &[],
-            style: Fill::NonZero.into(),
-            brush: peniko::color::palette::css::BLACK.into(),
-            brush_alpha: 1.0,
-            transform: Affine::IDENTITY,
-            glyph_transform: None,
-        }
-    }
-
-    pub fn font(mut self, font: &FontData) -> Self {
-        self.font = font.clone();
-        self
-    }
-
-    pub fn font_size(mut self, font_size: f32) -> Self {
-        self.font_size = font_size;
-        self
-    }
-
-    pub fn hint(mut self, hint: bool) -> Self {
-        self.hint = hint;
-        self
-    }
-
-    pub fn normalized_coords(mut self, normalized_coords: &'a [NormalizedCoord]) -> Self {
-        self.normalized_coords = normalized_coords;
-        self
-    }
-
-    pub fn style(mut self, style: impl Into<StyleRef<'a>>) -> Self {
-        self.style = style.into();
-        self
-    }
-
-    pub fn brush(mut self, brush: impl Into<BrushRef<'a>>) -> Self {
-        self.brush = brush.into();
-        self
-    }
-
-    pub fn brush_alpha(mut self, brush_alpha: f32) -> Self {
-        self.brush_alpha = brush_alpha;
-        self
-    }
-
-    pub fn transform(mut self, transform: Affine) -> Self {
-        self.transform = transform;
-        self
-    }
-
-    pub fn glyph_transform(mut self, glyph_transform: Option<Affine>) -> Self {
-        self.glyph_transform = glyph_transform;
-        self
-    }
-}
-
 pub trait GlyphDrawer {
     fn draw_glyphs<'a>(
         &mut self,
-        origin: Point,
-        props: &GlyphRunProps<'a>,
+        origin: peniko::kurbo::Point,
+        run: &GlyphRunRef<'a>,
         glyphs: impl Iterator<Item = Glyph> + 'a,
     );
 }
@@ -149,12 +67,13 @@ mod tests {
 
     #[test]
     fn text_glyphs_props_default_is_usable() {
-        let font = FontData::new(peniko::Blob::new(std::sync::Arc::new([])), 0);
-        let props = GlyphRunProps::new(&font);
-        assert_eq!(props.font, font);
-        assert_eq!(props.font_size, 16.0);
-        assert_eq!(props.brush_alpha, 1.0);
-        assert_eq!(props.transform, Affine::IDENTITY);
-        assert!(props.normalized_coords.is_empty());
+        let font = peniko::FontData::new(peniko::Blob::new(std::sync::Arc::new([])), 0);
+        let style = peniko::Style::Fill(peniko::Fill::NonZero);
+        let run = GlyphRunRef::new(&font, &style, peniko::color::palette::css::BLACK);
+        assert_eq!(run.font, &font);
+        assert_eq!(run.font_size, 16.0);
+        assert_eq!(run.composite.alpha, 1.0);
+        assert_eq!(run.transform, peniko::kurbo::Affine::IDENTITY);
+        assert!(run.normalized_coords.is_empty());
     }
 }

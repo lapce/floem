@@ -5,7 +5,7 @@ use std::ops::RangeInclusive;
 use floem_reactive::{SignalGet, SignalUpdate, UpdaterEffect};
 use peniko::Brush;
 use peniko::color::palette;
-use peniko::kurbo::{Circle, Point, RoundedRect, RoundedRectRadii};
+use peniko::kurbo::{Circle, Point, RoundedRect, RoundedRectRadii, Shape};
 use ui_events::keyboard::{Key, KeyState, KeyboardEvent, NamedKey};
 use ui_events::pointer::{PointerButtonEvent, PointerEvent};
 
@@ -370,28 +370,22 @@ impl View for Slider {
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        cx.fill(
-            &self.base_bar,
-            &self
-                .base_bar_style
-                .color()
-                .unwrap_or(palette::css::BLACK.into()),
-            0.,
-        );
-        // Apply temporary clip for accent bar
-        cx.clip(&self.base_bar);
-        cx.fill(
-            &self.accent_bar,
-            &self
-                .accent_bar_style
-                .color()
-                .unwrap_or(palette::css::TRANSPARENT.into()),
-            0.,
-        );
-        cx.pop_clip();
+        let base_bar = self
+            .base_bar_style
+            .color()
+            .unwrap_or(palette::css::BLACK.into());
+        cx.painter.fill(self.base_bar, &base_bar).draw();
+
+        let accent_bar = self
+            .accent_bar_style
+            .color()
+            .unwrap_or(palette::css::TRANSPARENT.into());
+        cx.painter.with_fill_clip(self.base_bar, |p| {
+            p.fill(self.accent_bar, &accent_bar).draw();
+        });
 
         if let Some(color) = self.style.foreground() {
-            cx.fill(&self.handle, &color, 0.);
+            cx.painter.fill(self.handle.to_path(0.1), &color).draw();
         }
     }
 }

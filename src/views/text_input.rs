@@ -1110,7 +1110,10 @@ impl TextInput {
         self.selection = self.selection_from_byte_positions(new_selection.start, new_selection.end);
     }
 
-    fn paint_selection_rect(&self, cx: &mut crate::context::PaintCx<'_>) {
+    fn paint_selection_rect_with_painter<S: imaging::PaintSink + ?Sized>(
+        &self,
+        painter: &mut imaging::Painter<'_, S>,
+    ) {
         let cursor_color = self.selection_style.selection_color();
         let selection = if let Some(selection) = self.selection {
             selection
@@ -1137,8 +1140,7 @@ impl TextInput {
             &selection,
             selection_origin,
             |rect| {
-                // Clipping already handled by traversal.
-                cx.fill(&rect, &cursor_color, 0.0);
+                painter.fill(rect, &cursor_color).draw();
             },
         );
     }
@@ -1484,61 +1486,63 @@ impl View for TextInput {
 
         let text_start_point = self.get_text_origin();
 
-        // Apply custom clip for text content area
         let mut clip_rect = self.id.get_layout_rect_local();
         let content_rect = self.id.get_content_rect_local();
         clip_rect.x0 = content_rect.x0;
         clip_rect.x1 = content_rect.x1;
-        cx.clip(&clip_rect);
-
-        // Draw text using layout_data
-        self.layout_data
-            .borrow()
-            .with_effective_text_layout(|text_layout| {
-                text_layout.draw(
-                    cx,
-                    Point::new(text_start_point.x - self.scroll_offset, text_start_point.y),
-                );
-            });
-
-        // underline the preedit text
-        if let Some(preedit) = &self.preedit {
-            let start_idx = self.cursor_glyph_idx;
-            let end_idx = start_idx + preedit.text.len();
-
+        cx.painter.with_fill_clip(clip_rect, |p| {
             self.layout_data
                 .borrow()
                 .with_effective_text_layout(|text_layout| {
-                    let start_x = text_start_point.x
-                        + text_layout.cursor_point(start_idx, Affinity::Upstream).x
-                        - self.scroll_offset;
-                    let end_x = text_start_point.x
-                        + text_layout.cursor_point(end_idx, Affinity::Upstream).x
-                        - self.scroll_offset;
-
-                    let color = self.style.color().unwrap_or(palette::css::BLACK);
-                    let y = text_start_point.y
-                        + text_layout
-                            .line_metrics_at(start_idx, Affinity::Upstream)
-                            .map(|metrics| metrics.ascent as f64)
-                            .unwrap_or(0.0);
-
-                    cx.fill(
-                        &Rect::new(start_x, y, end_x, y + 1.0),
-                        &Brush::Solid(color),
-                        0.0,
+                    text_layout.draw_with_painter(
+                        p,
+                        Point::new(text_start_point.x - self.scroll_offset, text_start_point.y),
                     );
                 });
-        }
 
-        // skip rendering selection / cursor if we don't have focus
+            if let Some(preedit) = &self.preedit {
+                let start_idx = self.cursor_glyph_idx;
+                let end_idx = start_idx + preedit.text.len();
+
+                self.layout_data
+                    .borrow()
+                    .with_effective_text_layout(|text_layout| {
+                        let start_x = text_start_point.x
+                            + text_layout.cursor_point(start_idx, Affinity::Upstream).x
+                            - self.scroll_offset;
+                        let end_x = text_start_point.x
+                            + text_layout.cursor_point(end_idx, Affinity::Upstream).x
+                            - self.scroll_offset;
+
+                        let color = self.style.color().unwrap_or(palette::css::BLACK);
+                        let y = text_start_point.y
+                            + text_layout
+                                .line_metrics_at(start_idx, Affinity::Upstream)
+                                .map(|metrics| metrics.ascent as f64)
+                                .unwrap_or(0.0);
+
+                        p.fill(Rect::new(start_x, y, end_x, y + 1.0), &Brush::Solid(color))
+                            .draw();
+                    });
+            }
+
+            if cx.window_state.is_focused(self.id) {
+                let has_selection = self.selection.is_some()
+                    || self
+                        .preedit
+                        .as_ref()
+                        .is_some_and(|p| p.cursor.is_some_and(|c| c.0 != c.1));
+
+                if has_selection {
+                    self.paint_selection_rect_with_painter(p);
+                }
+            }
+        });
+
         if !cx.window_state.is_focused(self.id) {
-            // Clear the custom clip we applied
-            cx.pop_clip();
             return;
         }
 
-        // see if we have a selection range
         let has_selection = self.selection.is_some()
             || self
                 .preedit
@@ -1546,14 +1550,8 @@ impl View for TextInput {
                 .is_some_and(|p| p.cursor.is_some_and(|c| c.0 != c.1));
 
         if has_selection {
-            // Clear the custom clip we applied
-            self.paint_selection_rect(cx);
-            cx.pop_clip();
             return;
         }
-
-        // Clear the custom clip we applied
-        cx.pop_clip();
 
         // see if we should render the cursor
         let is_cursor_visible = (self.last_cursor_action_on.elapsed().as_millis()
@@ -1569,7 +1567,7 @@ impl View for TextInput {
                 .builtin()
                 .cursor_color();
             let cursor_rect = self.get_cursor_rect();
-            cx.fill(&cursor_rect, &cursor_color, 0.0);
+            cx.painter.fill(cursor_rect, &cursor_color).draw();
         }
 
         // request paint either way if we're attempting draw a cursor

@@ -151,15 +151,14 @@
 
 use std::sync::Arc;
 
-use floem_renderer::text::{Glyph, GlyphRunProps};
+use floem_renderer::text::{Glyph, GlyphRunRef};
 use floem_renderer::{Img, Renderer as FloemRenderer, Svg, usvg};
 use imaging::{
-    BlurredRoundedRect, ClipRef, Composite, FillRef, GlyphRunRef, GroupRef, PaintSink,
-    StrokeRef,
-    record::{Clip, Draw, Geometry, GlyphRun, Group},
+    BlurredRoundedRect, ClipRef, FillRef, GroupRef, PaintSink, StrokeRef,
+    record::{Clip, Draw, Geometry, Glyph as ImagingGlyph, GlyphRun, Group},
 };
+use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Shape, Size};
 use peniko::{BrushRef, Fill};
-use peniko::kurbo::{Affine, BezPath, Point, Rect, RoundedRect, Shape, Size};
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{ElementId, paint::PaintOrPost};
@@ -231,20 +230,25 @@ pub(crate) struct OwnedSvg {
 
 #[derive(Clone)]
 pub(crate) enum DisplayCommand {
-    PushClip { clip: Clip },
-    PopClip,
-    PushLayer {
-        group: Group,
-        transform: Affine,
+    PushClip {
+        clip: Clip,
     },
-    PopLayer,
-    Draw { draw: Draw },
+    PopClip,
+    PushGroup {
+        group: Group,
+    },
+    PopGroup,
+    Draw {
+        draw: Draw,
+    },
+    #[allow(dead_code)]
     DrawImage {
         img: peniko::ImageBrush,
         hash: Arc<[u8]>,
         rect: Rect,
         transform: Affine,
     },
+    #[allow(dead_code)]
     DrawSvg {
         svg: OwnedSvg,
         rect: Rect,
@@ -483,7 +487,9 @@ impl PaintChunk {
         let Some(bounds) = self.visible_bounds(property_tree) else {
             return true;
         };
-        damage.iter().any(|rect| rect.intersect(bounds).area() > 0.0)
+        damage
+            .iter()
+            .any(|rect| rect.intersect(bounds).area() > 0.0)
     }
 
     fn visible_bounds(&self, property_tree: &PaintPropertyTree) -> Option<Rect> {
@@ -580,17 +586,13 @@ impl RetainedDisplayList {
     }
 }
 
-pub(crate) struct RecordingRenderer<'a> {
+pub struct RecordingRenderer<'a> {
     commands: &'a mut Vec<DisplayCommand>,
-    transform: Affine,
 }
 
 impl<'a> RecordingRenderer<'a> {
-    pub fn new(commands: &'a mut Vec<DisplayCommand>) -> Self {
-        Self {
-            commands,
-            transform: Affine::IDENTITY,
-        }
+    pub(crate) fn new(commands: &'a mut Vec<DisplayCommand>) -> Self {
+        Self { commands }
     }
 
     fn record_draw(&mut self, draw: Draw) {
@@ -599,44 +601,12 @@ impl<'a> RecordingRenderer<'a> {
 }
 
 impl RecordingRenderer<'_> {
-    pub fn transform(&self) -> Affine {
-        self.transform
-    }
-
-    pub fn set_transform(&mut self, transform: Affine) {
-        self.transform = transform;
-    }
-
-    pub fn push_layer(
-        &mut self,
-        blend: impl Into<peniko::BlendMode>,
-        alpha: f32,
-        transform: Affine,
-        clip: &impl Shape,
-    ) {
-        let shape = shape_to_geometry(clip);
-        self.commands.push(DisplayCommand::PushLayer {
-            group: Group {
-                clip: Some(Clip::Fill {
-                    transform: self.transform,
-                    shape,
-                    fill_rule: Fill::NonZero,
-                }),
-                filters: Vec::new(),
-                composite: Composite::new(blend.into(), alpha),
-            },
-            transform,
-        });
-    }
-
-    pub fn pop_layer(&mut self) {
-        self.commands.push(DisplayCommand::PopLayer);
-    }
-
+    #[allow(dead_code)]
     pub fn draw_svg<'b>(
         &mut self,
         svg: Svg<'b>,
         rect: Rect,
+        transform: Affine,
         brush: Option<impl Into<BrushRef<'b>>>,
     ) {
         self.commands.push(DisplayCommand::DrawSvg {
@@ -645,24 +615,27 @@ impl RecordingRenderer<'_> {
                 hash: Arc::from(svg.hash.to_vec()),
             },
             rect,
-            transform: self.transform,
+            transform,
             brush: brush.map(|brush| brush.into().to_owned()),
         });
     }
 
-    pub fn draw_img(&mut self, img: Img<'_>, rect: Rect) {
+    #[allow(dead_code)]
+    pub fn draw_img(&mut self, img: Img<'_>, rect: Rect, transform: Affine) {
         self.commands.push(DisplayCommand::DrawImage {
             img: img.img,
             hash: Arc::from(img.hash.to_vec()),
             rect,
-            transform: self.transform,
+            transform,
         });
     }
 }
 
 impl PaintSink for RecordingRenderer<'_> {
     fn push_clip(&mut self, clip: ClipRef<'_>) {
-        self.commands.push(DisplayCommand::PushClip { clip: clip.to_owned() });
+        self.commands.push(DisplayCommand::PushClip {
+            clip: clip.to_owned(),
+        });
     }
 
     fn pop_clip(&mut self) {
@@ -670,14 +643,13 @@ impl PaintSink for RecordingRenderer<'_> {
     }
 
     fn push_group(&mut self, group: GroupRef<'_>) {
-        self.commands.push(DisplayCommand::PushLayer {
+        self.commands.push(DisplayCommand::PushGroup {
             group: group.to_owned(),
-            transform: Affine::IDENTITY,
         });
     }
 
     fn pop_group(&mut self) {
-        self.commands.push(DisplayCommand::PopLayer);
+        self.commands.push(DisplayCommand::PopGroup);
     }
 
     fn fill(&mut self, draw: FillRef<'_>) {
@@ -688,8 +660,12 @@ impl PaintSink for RecordingRenderer<'_> {
         self.record_draw(draw.to_owned());
     }
 
-    fn glyph_run(&mut self, draw: GlyphRunRef<'_>) {
-        self.record_draw(Draw::GlyphRun(draw.to_owned()));
+    fn glyph_run(
+        &mut self,
+        draw: GlyphRunRef<'_>,
+        glyphs: &mut dyn Iterator<Item = ImagingGlyph>,
+    ) {
+        self.record_draw(Draw::GlyphRun(draw.to_owned(glyphs)));
     }
 
     fn blurred_rounded_rect(&mut self, draw: BlurredRoundedRect) {
@@ -713,7 +689,9 @@ pub(crate) fn replay_stage(
     let chunk_indices = local_damage.map(|damage| stage.chunk_indices_for_damage(damage));
 
     for (index, chunk) in stage.chunks.iter().enumerate() {
-        if let Some(indices) = &chunk_indices && !indices.contains(&index) {
+        if let Some(indices) = &chunk_indices
+            && !indices.contains(&index)
+        {
             continue;
         }
         apply_clip_state(
@@ -728,7 +706,7 @@ pub(crate) fn replay_stage(
         for command in &chunk.commands {
             match command {
                 DisplayCommand::PushClip { .. } | DisplayCommand::PopClip => {}
-                DisplayCommand::PushLayer { group, transform } => {
+                DisplayCommand::PushGroup { group } => {
                     let Some(Clip::Fill {
                         transform: clip_transform,
                         shape,
@@ -737,39 +715,33 @@ pub(crate) fn replay_stage(
                     else {
                         continue;
                     };
-                    set_transform_if_needed(
-                        renderer,
-                        base_transform * *clip_transform,
-                        &mut current_transform,
-                    );
-                    match sanitize_clip_geometry(shape, base_transform * *clip_transform, render_size) {
+                    let layer_transform = base_transform * *clip_transform;
+                    set_transform_if_needed(renderer, base_transform, &mut current_transform);
+                    match sanitize_clip_geometry(shape, layer_transform, render_size) {
                         Geometry::Rect(rect) => renderer.push_layer(
                             group.composite.blend,
                             group.composite.alpha,
-                            *transform,
+                            *clip_transform,
                             &rect,
                         ),
                         Geometry::RoundedRect(rect) => renderer.push_layer(
                             group.composite.blend,
                             group.composite.alpha,
-                            *transform,
+                            *clip_transform,
                             &rect,
                         ),
                         Geometry::Path(path) => renderer.push_layer(
                             group.composite.blend,
                             group.composite.alpha,
-                            *transform,
+                            *clip_transform,
                             &path,
                         ),
                     }
                 }
-                DisplayCommand::PopLayer => renderer.pop_layer(),
-                DisplayCommand::Draw { draw } => replay_draw(
-                    renderer,
-                    draw,
-                    base_transform,
-                    &mut current_transform,
-                ),
+                DisplayCommand::PopGroup => renderer.pop_layer(),
+                DisplayCommand::Draw { draw } => {
+                    replay_draw(renderer, draw, base_transform, &mut current_transform)
+                }
                 DisplayCommand::DrawImage {
                     img,
                     hash,
@@ -848,7 +820,11 @@ fn chunk_display_commands(commands: Vec<DisplayCommand>) -> (Vec<PaintChunk>, Pa
     for command in commands {
         match command {
             DisplayCommand::PushClip { clip } => {
-                let transform_id = intern_transform(clip_transform(&clip), &mut property_tree, &mut transform_intern);
+                let transform_id = intern_transform(
+                    clip_transform(&clip),
+                    &mut property_tree,
+                    &mut transform_intern,
+                );
                 let clip_id = ClipNodeId(property_tree.clips.len() as u32);
                 property_tree.clips.push(ClipNode {
                     parent: clip_stack.last().copied(),
@@ -862,7 +838,7 @@ fn chunk_display_commands(commands: Vec<DisplayCommand>) -> (Vec<PaintChunk>, Pa
                 clip_stack.pop();
                 properties.clip_id = clip_stack.last().copied().unwrap_or_default();
             }
-            DisplayCommand::PushLayer { group, transform } => {
+            DisplayCommand::PushGroup { group } => {
                 let effect_id = EffectNodeId(property_tree.effects.len() as u32);
                 property_tree.effects.push(EffectNode {
                     parent: effect_stack.last().copied(),
@@ -871,26 +847,23 @@ fn chunk_display_commands(commands: Vec<DisplayCommand>) -> (Vec<PaintChunk>, Pa
                 });
                 effect_stack.push(effect_id);
                 properties.effect_id = effect_id;
-                properties.transform_id =
-                    intern_transform(transform, &mut property_tree, &mut transform_intern);
                 push_boundary_chunk(
                     &mut chunks,
                     properties,
-                    command_transform_class(&DisplayCommand::PushLayer {
+                    command_transform_class(&DisplayCommand::PushGroup {
                         group: group.clone(),
-                        transform,
                     }),
-                    DisplayCommand::PushLayer { group, transform },
+                    DisplayCommand::PushGroup { group },
                 );
             }
-            DisplayCommand::PopLayer => {
+            DisplayCommand::PopGroup => {
                 effect_stack.pop();
                 properties.effect_id = effect_stack.last().copied().unwrap_or_default();
                 push_boundary_chunk(
                     &mut chunks,
                     properties,
-                    command_transform_class(&DisplayCommand::PopLayer),
-                    DisplayCommand::PopLayer,
+                    command_transform_class(&DisplayCommand::PopGroup),
+                    DisplayCommand::PopGroup,
                 );
             }
             command => {
@@ -911,8 +884,7 @@ fn chunk_display_commands(commands: Vec<DisplayCommand>) -> (Vec<PaintChunk>, Pa
                         metadata: chunk_metadata,
                         transform_class: chunk_transform_class,
                     }) if *chunk_properties == properties => {
-                        *chunk_transform_class =
-                            chunk_transform_class.combine(transform_class);
+                        *chunk_transform_class = chunk_transform_class.combine(transform_class);
                         *chunk_bounds = union_rects(*chunk_bounds, bounds);
                         *chunk_metadata = chunk_metadata.merge(metadata);
                         chunk_commands.push(command);
@@ -953,8 +925,8 @@ fn command_transform_class(command: &DisplayCommand) -> TransformClass {
     match command {
         DisplayCommand::PushClip { .. }
         | DisplayCommand::PopClip
-        | DisplayCommand::PushLayer { .. }
-        | DisplayCommand::PopLayer => TransformClass::Affine,
+        | DisplayCommand::PushGroup { .. }
+        | DisplayCommand::PopGroup => TransformClass::Affine,
         DisplayCommand::Draw { draw } => match draw {
             Draw::Fill { .. } | Draw::Stroke { .. } => TransformClass::Affine,
             Draw::GlyphRun(_) | Draw::BlurredRoundedRect(_) => TransformClass::TranslateOnly,
@@ -969,10 +941,12 @@ fn command_bounds(command: &DisplayCommand) -> Option<Rect> {
     match command {
         DisplayCommand::PushClip { .. }
         | DisplayCommand::PopClip
-        | DisplayCommand::PushLayer { .. }
-        | DisplayCommand::PopLayer => None,
+        | DisplayCommand::PushGroup { .. }
+        | DisplayCommand::PopGroup => None,
         DisplayCommand::Draw { draw, .. } => draw_bounds(draw),
-        DisplayCommand::DrawImage { rect, .. } | DisplayCommand::DrawSvg { rect, .. } => Some(*rect),
+        DisplayCommand::DrawImage { rect, .. } | DisplayCommand::DrawSvg { rect, .. } => {
+            Some(*rect)
+        }
     }
 }
 
@@ -985,7 +959,9 @@ fn draw_bounds(draw: &Draw) -> Option<Rect> {
             Some(bounds.inflate(inset, inset))
         }
         Draw::GlyphRun(run) => glyph_run_bounds(run),
-        Draw::BlurredRoundedRect(rect) => Some(rect.rect.inflate(rect.std_dev * 3.0, rect.std_dev * 3.0)),
+        Draw::BlurredRoundedRect(rect) => {
+            Some(rect.rect.inflate(rect.std_dev * 3.0, rect.std_dev * 3.0))
+        }
     }
 }
 
@@ -1019,10 +995,10 @@ fn glyph_run_bounds(run: &GlyphRun) -> Option<Rect> {
 
 fn command_metadata(command: &DisplayCommand) -> PaintChunkMetadata {
     match command {
-        DisplayCommand::PushClip { .. }
-        | DisplayCommand::PopClip
-        | DisplayCommand::PopLayer => PaintChunkMetadata::default(),
-        DisplayCommand::PushLayer { .. } => PaintChunkMetadata {
+        DisplayCommand::PushClip { .. } | DisplayCommand::PopClip | DisplayCommand::PopGroup => {
+            PaintChunkMetadata::default()
+        }
+        DisplayCommand::PushGroup { .. } => PaintChunkMetadata {
             requires_layer: true,
             ..PaintChunkMetadata::default()
         },
@@ -1095,11 +1071,9 @@ fn clip_node_bounds(node: &ClipNode) -> Option<Rect> {
 
 fn command_affine(command: &DisplayCommand) -> Affine {
     match command {
-        DisplayCommand::PopClip | DisplayCommand::PopLayer => {
-            Affine::IDENTITY
-        }
+        DisplayCommand::PopClip | DisplayCommand::PopGroup => Affine::IDENTITY,
         DisplayCommand::PushClip { clip } => clip_transform(clip),
-        DisplayCommand::PushLayer { transform, .. } => *transform,
+        DisplayCommand::PushGroup { .. } => Affine::IDENTITY,
         DisplayCommand::Draw { draw, .. } => match draw {
             Draw::Fill { transform, .. } | Draw::Stroke { transform, .. } => *transform,
             Draw::GlyphRun(run) => run.transform,
@@ -1262,21 +1236,21 @@ fn replay_draw(
             }
         }
         Draw::GlyphRun(run) => {
-            let props = GlyphRunProps {
-                font: run.font.clone(),
+            let run_ref = GlyphRunRef {
+                font: &run.font,
+                transform: run.transform,
+                glyph_transform: run.glyph_transform,
                 font_size: run.font_size,
                 hint: run.hint,
                 normalized_coords: &run.normalized_coords,
-                style: (&run.style).into(),
+                style: &run.style,
                 brush: (&run.brush).into(),
-                brush_alpha: run.composite.alpha,
-                transform: run.transform,
-                glyph_transform: run.glyph_transform,
+                composite: run.composite,
             };
             set_transform_if_needed(renderer, base_transform, current_transform);
             renderer.draw_glyphs(
                 Point::ZERO,
-                &props,
+                &run_ref,
                 run.glyphs.iter().map(|glyph| Glyph {
                     id: glyph.id,
                     style_index: 0,
@@ -1373,34 +1347,38 @@ fn constrain_infinite_rect(rect: Rect, transform: Affine, render_size: Size) -> 
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
+    use imaging::Composite;
     use peniko::Color;
 
     #[test]
     fn stage_groups_adjacent_draws_with_matching_properties() {
         let rect = Rect::new(0.0, 0.0, 10.0, 10.0);
         let mut stage = ElementStage::default();
-        stage.set_commands(vec![
-            DisplayCommand::Draw {
-                draw: Draw::Fill {
-                    transform: Affine::IDENTITY,
-                    fill_rule: Fill::NonZero,
-                    brush: Color::BLACK.into(),
-                    brush_transform: None,
-                    shape: Geometry::Rect(rect),
-                    composite: Composite::default(),
+        stage.set_commands(
+            vec![
+                DisplayCommand::Draw {
+                    draw: Draw::Fill {
+                        transform: Affine::IDENTITY,
+                        fill_rule: Fill::NonZero,
+                        brush: Color::BLACK.into(),
+                        brush_transform: None,
+                        shape: Geometry::Rect(rect),
+                        composite: Composite::default(),
+                    },
                 },
-            },
-            DisplayCommand::Draw {
-                draw: Draw::Stroke {
-                    transform: Affine::IDENTITY,
-                    stroke: peniko::kurbo::Stroke::new(1.0),
-                    brush: Color::BLACK.into(),
-                    brush_transform: None,
-                    shape: Geometry::Rect(rect),
-                    composite: Composite::default(),
+                DisplayCommand::Draw {
+                    draw: Draw::Stroke {
+                        transform: Affine::IDENTITY,
+                        stroke: peniko::kurbo::Stroke::new(1.0),
+                        brush: Color::BLACK.into(),
+                        brush_transform: None,
+                        shape: Geometry::Rect(rect),
+                        composite: Composite::default(),
+                    },
                 },
-            },
-        ], None);
+            ],
+            None,
+        );
 
         assert_eq!(stage.chunks.len(), 1);
         assert_eq!(stage.chunks[0].kind, PaintChunkKind::Draw);
@@ -1413,26 +1391,29 @@ mod tests {
     fn stage_tracks_clip_state_without_boundary_chunks() {
         let rect = Rect::new(0.0, 0.0, 10.0, 10.0);
         let mut stage = ElementStage::default();
-        stage.set_commands(vec![
-            DisplayCommand::PushClip {
-                clip: Clip::Fill {
-                    transform: Affine::IDENTITY,
-                    shape: Geometry::Rect(rect),
-                    fill_rule: Fill::NonZero,
+        stage.set_commands(
+            vec![
+                DisplayCommand::PushClip {
+                    clip: Clip::Fill {
+                        transform: Affine::IDENTITY,
+                        shape: Geometry::Rect(rect),
+                        fill_rule: Fill::NonZero,
+                    },
                 },
-            },
-            DisplayCommand::Draw {
-                draw: Draw::Fill {
-                    transform: Affine::IDENTITY,
-                    fill_rule: Fill::NonZero,
-                    brush: Color::BLACK.into(),
-                    brush_transform: None,
-                    shape: Geometry::Rect(rect),
-                    composite: Composite::default(),
+                DisplayCommand::Draw {
+                    draw: Draw::Fill {
+                        transform: Affine::IDENTITY,
+                        fill_rule: Fill::NonZero,
+                        brush: Color::BLACK.into(),
+                        brush_transform: None,
+                        shape: Geometry::Rect(rect),
+                        composite: Composite::default(),
+                    },
                 },
-            },
-            DisplayCommand::PopClip,
-        ], None);
+                DisplayCommand::PopClip,
+            ],
+            None,
+        );
 
         assert_eq!(stage.chunks.len(), 1);
         assert_eq!(stage.chunks[0].kind, PaintChunkKind::Draw);
@@ -1444,28 +1425,31 @@ mod tests {
     fn stage_splits_draw_chunks_on_transform_state() {
         let rect = Rect::new(0.0, 0.0, 10.0, 10.0);
         let mut stage = ElementStage::default();
-        stage.set_commands(vec![
-            DisplayCommand::Draw {
-                draw: Draw::Fill {
-                    transform: Affine::IDENTITY,
-                    fill_rule: Fill::NonZero,
-                    brush: Color::BLACK.into(),
-                    brush_transform: None,
-                    shape: Geometry::Rect(rect),
-                    composite: Composite::default(),
+        stage.set_commands(
+            vec![
+                DisplayCommand::Draw {
+                    draw: Draw::Fill {
+                        transform: Affine::IDENTITY,
+                        fill_rule: Fill::NonZero,
+                        brush: Color::BLACK.into(),
+                        brush_transform: None,
+                        shape: Geometry::Rect(rect),
+                        composite: Composite::default(),
+                    },
                 },
-            },
-            DisplayCommand::Draw {
-                draw: Draw::Fill {
-                    transform: Affine::translate((5.0, 0.0)),
-                    fill_rule: Fill::NonZero,
-                    brush: Color::BLACK.into(),
-                    brush_transform: None,
-                    shape: Geometry::Rect(rect),
-                    composite: Composite::default(),
+                DisplayCommand::Draw {
+                    draw: Draw::Fill {
+                        transform: Affine::translate((5.0, 0.0)),
+                        fill_rule: Fill::NonZero,
+                        brush: Color::BLACK.into(),
+                        brush_transform: None,
+                        shape: Geometry::Rect(rect),
+                        composite: Composite::default(),
+                    },
                 },
-            },
-        ], None);
+            ],
+            None,
+        );
 
         assert_eq!(stage.chunks.len(), 2);
         assert_ne!(
@@ -1478,16 +1462,19 @@ mod tests {
     #[test]
     fn blurred_draws_downgrade_stage_transform_retention() {
         let mut stage = ElementStage::default();
-        stage.set_commands(vec![DisplayCommand::Draw {
-            draw: Draw::BlurredRoundedRect(imaging::BlurredRoundedRect {
-                transform: Affine::IDENTITY,
-                rect: Rect::new(0.0, 0.0, 10.0, 10.0),
-                color: Color::BLACK,
-                radius: 4.0,
-                std_dev: 6.0,
-                composite: Composite::default(),
-            }),
-        }], None);
+        stage.set_commands(
+            vec![DisplayCommand::Draw {
+                draw: Draw::BlurredRoundedRect(imaging::BlurredRoundedRect {
+                    transform: Affine::IDENTITY,
+                    rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+                    color: Color::BLACK,
+                    radius: 4.0,
+                    std_dev: 6.0,
+                    composite: Composite::default(),
+                }),
+            }],
+            None,
+        );
 
         assert_eq!(stage.transform_class, TransformClass::TranslateOnly);
         assert!(stage.chunks[0].metadata.has_blur);
@@ -1498,37 +1485,43 @@ mod tests {
     fn stage_damage_query_filters_chunks_by_bounds() {
         let rect = Rect::new(0.0, 0.0, 10.0, 10.0);
         let mut stage = ElementStage::default();
-        stage.set_commands(vec![
-            DisplayCommand::Draw {
-                draw: Draw::Fill {
-                    transform: Affine::IDENTITY,
-                    fill_rule: Fill::NonZero,
-                    brush: Color::BLACK.into(),
-                    brush_transform: None,
-                    shape: Geometry::Rect(rect),
-                    composite: Composite::default(),
+        stage.set_commands(
+            vec![
+                DisplayCommand::Draw {
+                    draw: Draw::Fill {
+                        transform: Affine::IDENTITY,
+                        fill_rule: Fill::NonZero,
+                        brush: Color::BLACK.into(),
+                        brush_transform: None,
+                        shape: Geometry::Rect(rect),
+                        composite: Composite::default(),
+                    },
                 },
-            },
-            DisplayCommand::DrawImage {
-                img: peniko::ImageBrush::new(peniko::ImageData {
-                    data: peniko::Blob::new(Arc::new(vec![255, 255, 255, 255])),
-                    format: peniko::ImageFormat::Rgba8,
-                    alpha_type: peniko::ImageAlphaType::Alpha,
-                    width: 1,
-                    height: 1,
-                }),
-                hash: Arc::from([1_u8].as_slice()),
-                rect: Rect::new(40.0, 40.0, 50.0, 50.0),
-                transform: Affine::IDENTITY,
-            },
-        ], None);
+                DisplayCommand::DrawImage {
+                    img: peniko::ImageBrush::new(peniko::ImageData {
+                        data: peniko::Blob::new(Arc::new(vec![255, 255, 255, 255])),
+                        format: peniko::ImageFormat::Rgba8,
+                        alpha_type: peniko::ImageAlphaType::Alpha,
+                        width: 1,
+                        height: 1,
+                    }),
+                    hash: Arc::from([1_u8].as_slice()),
+                    rect: Rect::new(40.0, 40.0, 50.0, 50.0),
+                    transform: Affine::IDENTITY,
+                },
+            ],
+            None,
+        );
 
         let damage = [Rect::new(1.0, 1.0, 5.0, 5.0)];
         let chunks = stage.chunk_indices_for_damage(&damage);
         assert_eq!(chunks, vec![0]);
         assert_eq!(stage.chunks.len(), 1);
         assert!(stage.chunks[0].metadata.has_raster_image);
-        assert_eq!(stage.chunks[0].bounds, Some(Rect::new(0.0, 0.0, 50.0, 50.0)));
+        assert_eq!(
+            stage.chunks[0].bounds,
+            Some(Rect::new(0.0, 0.0, 50.0, 50.0))
+        );
     }
 
     #[test]
@@ -1544,18 +1537,4 @@ mod tests {
         assert_eq!(constrained.y0, 10.0);
         assert_eq!(constrained.y1, 20.0);
     }
-}
-
-fn shape_to_geometry(shape: &impl Shape) -> Geometry {
-    if let Some(rect) = shape.as_rect() {
-        return Geometry::Rect(rect);
-    }
-    if let Some(rect) = shape.as_rounded_rect() {
-        return Geometry::RoundedRect(rect);
-    }
-    Geometry::Path(path_from_shape(shape))
-}
-
-fn path_from_shape(shape: &impl Shape) -> BezPath {
-    shape.to_path(0.1)
 }

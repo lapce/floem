@@ -7,7 +7,7 @@
 
 use floem_reactive::{RwSignal, SignalGet};
 use peniko::color::palette;
-use peniko::kurbo::{self, Point, Stroke};
+use peniko::kurbo::{self, Point, Shape, Stroke};
 use std::rc::Rc;
 use taffy::prelude::{auto, fr};
 
@@ -145,14 +145,17 @@ impl Transition {
             }
 
             // Draw the curve
-            cx.stroke(
-                &path,
-                curve_color.get(),
-                &Stroke {
-                    width: 2.0,
-                    ..Default::default()
-                },
-            );
+            let curve_brush = peniko::Brush::Solid(curve_color.get());
+            cx.painter
+                .stroke(
+                    path,
+                    &Stroke {
+                        width: 2.0,
+                        ..Default::default()
+                    },
+                    &curve_brush,
+                )
+                .draw();
 
             // Draw axes
             let axis_stroke = Stroke {
@@ -161,24 +164,31 @@ impl Transition {
             };
 
             // X axis
-            cx.stroke(
-                &kurbo::Line::new(
-                    Point::new(padding, height - padding),
-                    Point::new(width - padding, height - padding),
-                ),
-                axis_color.get(),
-                &axis_stroke,
-            );
+            let axis_brush = peniko::Brush::Solid(axis_color.get());
+            cx.painter
+                .stroke(
+                    kurbo::Line::new(
+                        Point::new(padding, height - padding),
+                        Point::new(width - padding, height - padding),
+                    )
+                    .to_path(0.1),
+                    &axis_stroke,
+                    &axis_brush,
+                )
+                .draw();
 
             // Y axis
-            cx.stroke(
-                &kurbo::Line::new(
-                    Point::new(padding, padding),
-                    Point::new(padding, height - padding),
-                ),
-                axis_color.get(),
-                &axis_stroke,
-            );
+            cx.painter
+                .stroke(
+                    kurbo::Line::new(
+                        Point::new(padding, padding),
+                        Point::new(padding, height - padding),
+                    )
+                    .to_path(0.1),
+                    &axis_stroke,
+                    &axis_brush,
+                )
+                .draw();
         })
         .style(|s| s.width(80.0).height(60.0))
         .container()

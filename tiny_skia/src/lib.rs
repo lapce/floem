@@ -3,7 +3,7 @@ mod recording;
 use anyhow::{Result, anyhow};
 use floem_renderer::Img;
 use floem_renderer::Renderer;
-use floem_renderer::text::{Glyph as ParleyGlyph, GlyphRunProps};
+use floem_renderer::text::{Glyph as ParleyGlyph, GlyphRunRef};
 use floem_renderer::tiny_skia::{
     self, FillRule, FilterQuality, GradientStop, IntRect, LinearGradient, Mask, MaskType, Paint,
     Path, PathBuilder, Pixmap, PixmapPaint, PremultipliedColorU8, RadialGradient, Shader,
@@ -1304,15 +1304,15 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
     fn draw_glyphs<'a>(
         &mut self,
         origin: Point,
-        props: &GlyphRunProps<'a>,
+        run: &GlyphRunRef<'a>,
         glyphs: impl Iterator<Item = ParleyGlyph> + 'a,
     ) {
-        let font = &props.font;
-        let text_transform = self.transform * props.transform;
+        let font = run.font;
+        let text_transform = self.transform * run.transform;
         let (_, _, raster_scale) = affine_scale_components(text_transform);
         let transform = normalize_affine(text_transform, false);
         let raster_origin = transform.inverse() * (text_transform * origin);
-        let brush_color = match &props.brush {
+        let brush_color = match &run.brush {
             peniko::Brush::Solid(color) => Color::from(*color),
             _ => return,
         };
@@ -1321,14 +1321,14 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
             None => return,
         };
         let font_blob_id = font.data.id();
-        let skew = props
+        let skew = run
             .glyph_transform
             .map(|transform| transform.as_coeffs()[0].atan().to_degrees() as f32);
 
         for glyph in glyphs {
             let glyph_x = (raster_origin.x + glyph.x as f64 * raster_scale) as f32;
             let glyph_y = (raster_origin.y + glyph.y as f64 * raster_scale) as f32;
-            let scaled_font_size = props.font_size * raster_scale as f32;
+            let scaled_font_size = run.font_size * raster_scale as f32;
             let scaled_embolden = scaled_embolden_strength(self.font_embolden, raster_scale);
             let (cache_key, new_x, new_y) = GlyphCacheKey::new(
                 font_blob_id,
@@ -1337,7 +1337,7 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
                 scaled_font_size,
                 glyph_x,
                 glyph_y,
-                props.hint,
+                run.hint,
                 false,
                 skew,
             );
@@ -1348,8 +1348,8 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
                 brush_color,
                 &font_ref,
                 scaled_font_size,
-                props.hint,
-                props.normalized_coords,
+                run.hint,
+                run.normalized_coords,
                 scaled_embolden,
                 skew,
                 new_x,

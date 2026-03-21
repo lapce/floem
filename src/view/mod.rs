@@ -1179,14 +1179,14 @@ pub(crate) fn paint_bg(cx: &mut PaintCx, style: &ViewStyleProps, rect: Rect) {
             None => return,
         };
         let rounded_rect = rect.to_rounded_rect(radii);
-        cx.fill(&rounded_rect, &bg, 0.0);
+        cx.painter.fill(rounded_rect, &bg).draw();
     } else {
         paint_box_shadow(cx, style, rect, None);
         let bg = match style.background() {
             Some(color) => color,
             None => return,
         };
-        cx.fill(&rect, &bg, 0.0);
+        cx.painter.fill(rect, &bg).draw();
     }
 }
 
@@ -1212,10 +1212,25 @@ fn paint_box_shadow(
         );
         let rect = rect.inflate(spread, spread).inset(inset);
         if let Some(radii) = rect_radius {
-            let rounded_rect = RoundedRect::from_rect(rect, radii_add(radii, spread));
-            cx.fill(&rounded_rect, shadow.color, blur_radius);
+            cx.painter
+                .blurred_rounded_rect(imaging::BlurredRoundedRect {
+                    transform: Affine::IDENTITY,
+                    rect,
+                    color: shadow.color,
+                    radius: radii_max(radii_add(radii, spread)),
+                    std_dev: blur_radius,
+                    composite: imaging::Composite::default(),
+                });
         } else {
-            cx.fill(&rect, shadow.color, blur_radius);
+            cx.painter
+                .blurred_rounded_rect(imaging::BlurredRoundedRect {
+                    transform: Affine::IDENTITY,
+                    rect,
+                    color: shadow.color,
+                    radius: 0.0,
+                    std_dev: blur_radius,
+                    composite: imaging::Composite::default(),
+                });
         }
     }
 }
@@ -1228,11 +1243,13 @@ pub(crate) fn paint_outline(cx: &mut PaintCx, style: &ViewStyleProps, rect: Rect
         let half = outline.width / 2.0;
         let rect = rect.inflate(half, half);
         let border_radii = border_to_radii_view(style, rect.size(), &cx.font_size_cx);
-        cx.stroke(
-            &rect.to_rounded_rect(radii_add(border_radii, half)),
-            &style.outline_color(),
-            outline,
-        );
+        cx.painter
+            .stroke(
+                rect.to_rounded_rect(radii_add(border_radii, half)),
+                outline,
+                &style.outline_color(),
+            )
+            .draw();
         return;
     }
 
@@ -1278,7 +1295,9 @@ pub(crate) fn paint_outline(cx: &mut PaintCx, style: &ViewStyleProps, rect: Rect
             BorderPathEvent::NewStroke(stroke) => {
                 // Render current path with previous stroke if any
                 if !current_path.is_empty() {
-                    cx.stroke(&current_path.as_slice(), &outline_color, &stroke.0);
+                    cx.painter
+                        .stroke(BezPath::from_vec(current_path.clone()), &stroke.0, &outline_color)
+                        .draw();
                     current_path.clear();
                 }
             }
@@ -1320,9 +1339,11 @@ pub(crate) fn paint_border(
             if let Some(color) = style.border_color().left {
                 if radii_max(radii) > 0.0 {
                     let radii = radii_map(radii, |r| (r - half).max(0.0));
-                    cx.stroke(&rect.to_rounded_rect(radii), &color, &left);
+                    cx.painter
+                        .stroke(rect.to_rounded_rect(radii), &left, &color)
+                        .draw();
                 } else {
-                    cx.stroke(&rect, &color, &left);
+                    cx.painter.stroke(rect, &left, &color).draw();
                 }
             }
         } else {
@@ -1330,47 +1351,59 @@ pub(crate) fn paint_border(
                 && let Some(color) = style.border_color().left
             {
                 let half = left.width / 2.0;
-                cx.stroke(
-                    &Line::new(Point::new(half, 0.0), Point::new(half, rect.height())),
-                    &color,
-                    &left,
-                );
+                cx.painter
+                    .stroke(
+                        Line::new(Point::new(half, 0.0), Point::new(half, rect.height()))
+                            .to_path(0.1),
+                        &left,
+                        &color,
+                    )
+                    .draw();
             }
             if right.width > 0.0
                 && let Some(color) = style.border_color().right
             {
                 let half = right.width / 2.0;
-                cx.stroke(
-                    &Line::new(
-                        Point::new(rect.width() - half, 0.0),
-                        Point::new(rect.width() - half, rect.height()),
-                    ),
-                    &color,
-                    &right,
-                );
+                cx.painter
+                    .stroke(
+                        Line::new(
+                            Point::new(rect.width() - half, 0.0),
+                            Point::new(rect.width() - half, rect.height()),
+                        )
+                        .to_path(0.1),
+                        &right,
+                        &color,
+                    )
+                    .draw();
             }
             if top.width > 0.0
                 && let Some(color) = style.border_color().top
             {
                 let half = top.width / 2.0;
-                cx.stroke(
-                    &Line::new(Point::new(0.0, half), Point::new(rect.width(), half)),
-                    &color,
-                    &top,
-                );
+                cx.painter
+                    .stroke(
+                        Line::new(Point::new(0.0, half), Point::new(rect.width(), half))
+                            .to_path(0.1),
+                        &top,
+                        &color,
+                    )
+                    .draw();
             }
             if bottom.width > 0.0
                 && let Some(color) = style.border_color().bottom
             {
                 let half = bottom.width / 2.0;
-                cx.stroke(
-                    &Line::new(
-                        Point::new(0.0, rect.height() - half),
-                        Point::new(rect.width(), rect.height() - half),
-                    ),
-                    &color,
-                    &bottom,
-                );
+                cx.painter
+                    .stroke(
+                        Line::new(
+                            Point::new(0.0, rect.height() - half),
+                            Point::new(rect.width(), rect.height() - half),
+                        )
+                        .to_path(0.1),
+                        &bottom,
+                        &color,
+                    )
+                    .draw();
             }
         }
         return;
@@ -1437,7 +1470,9 @@ pub(crate) fn paint_border(
             BorderPathEvent::NewStroke(stroke) => {
                 // Render current path with previous stroke if any
                 if !current_path.is_empty() && stroke.0.width > 0. {
-                    cx.stroke(&current_path.as_slice(), &stroke.1, &stroke.0);
+                    cx.painter
+                        .stroke(BezPath::from_vec(current_path.to_vec()), &stroke.0, &stroke.1)
+                        .draw();
                     current_path.clear();
                 } else if stroke.0.width == 0. {
                     current_path.clear();

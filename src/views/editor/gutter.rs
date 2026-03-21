@@ -12,7 +12,7 @@ use crate::{
 };
 use floem_editor_core::{cursor::CursorMode, mode::Mode};
 use floem_reactive::{RwSignal, SignalGet, SignalWith};
-use peniko::Color;
+use peniko::{Brush, Color};
 use peniko::color::palette;
 use peniko::kurbo::Rect;
 
@@ -135,7 +135,8 @@ impl View for EditorGutterView {
                                     (*self.full_width.borrow() + 1.1, f64::from(line_height)),
                                 );
 
-                                cx.fill(&rect, current_line_color, 0.0);
+                                let brush = Brush::Solid(current_line_color);
+                                cx.painter.fill(rect, &brush).draw();
                             }
                         }
                     }

@@ -360,7 +360,7 @@ impl Handle {
             }
         };
 
-        cx.fill(&paint_rect, &self.handle_style.color(), 0.);
+        cx.painter.fill(paint_rect, &self.handle_style.color()).draw();
     }
 }
 

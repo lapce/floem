@@ -14,6 +14,7 @@ parley = { workspace = true }
 fontique = { workspace = true }
 winit = { workspace = true }
 wgpu = { workspace = true }
+imaging = { workspace = true }
 crossbeam = { version = "0.8", optional = true }
 futures = "0.3.32"
 

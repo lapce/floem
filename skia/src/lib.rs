@@ -4,7 +4,7 @@ use std::sync::Arc;
 use anyhow::{Result, anyhow};
 use anyrender::{ImageRenderer as _, WindowRenderer as _};
 use anyrender_skia::{SkiaImageRenderer, SkiaWindowRenderer};
-use floem_renderer::text::{Glyph, GlyphRunProps};
+use floem_renderer::text::{Glyph, GlyphRunRef};
 use floem_renderer::{Img, Renderer, Svg};
 use peniko::kurbo::{Affine, BezPath, Point, Rect, Shape, Size, Stroke};
 use peniko::{
@@ -427,20 +427,20 @@ impl Renderer for SkiaRenderer {
     fn draw_glyphs<'a>(
         &mut self,
         origin: Point,
-        props: &GlyphRunProps<'a>,
+        run: &GlyphRunRef<'a>,
         glyphs: impl Iterator<Item = Glyph> + 'a,
     ) {
-        let transform = self.transform * Affine::translate((origin.x, origin.y)) * props.transform;
+        let transform = self.transform * Affine::translate((origin.x, origin.y)) * run.transform;
         self.commands.push(Command::Glyphs {
-            font: props.font.clone(),
-            font_size: props.font_size,
-            hint: props.hint,
-            normalized_coords: props.normalized_coords.to_vec(),
-            style: props.style.to_owned(),
-            brush: props.brush.to_owned(),
-            brush_alpha: props.brush_alpha,
+            font: run.font.clone(),
+            font_size: run.font_size,
+            hint: run.hint,
+            normalized_coords: run.normalized_coords.to_vec(),
+            style: run.style.clone(),
+            brush: run.brush.to_owned(),
+            brush_alpha: run.composite.alpha,
             transform,
-            glyph_transform: props.glyph_transform,
+            glyph_transform: run.glyph_transform,
             glyphs: glyphs
                 .map(|glyph| anyrender::Glyph {
                     id: glyph.id,

@@ -1867,6 +1867,7 @@ dependencies = [
  "floem-winit",
  "fontique",
  "futures",
+ "imaging",
  "parking_lot",
  "parley",
  "peniko",
@@ -3000,7 +3001,7 @@ checksum = "09e54e57b4c48b40f7aec75635392b12b3421fa26fe8b4332e63138ed278459c"
 [[package]]
 name = "imaging"
 version = "0.0.1"
-source = "git+https://github.com/forest-rs/imaging?rev=eacda40b585058fde8e0cfcae031f93d8d8c25ec#eacda40b585058fde8e0cfcae031f93d8d8c25ec"
+source = "git+https://github.com/forest-rs/imaging?rev=58c71b4b235a70a88536247839d50fb9caa013a9#58c71b4b235a70a88536247839d50fb9caa013a9"
 dependencies = [
  "kurbo",
  "peniko",

@@ -3,7 +3,7 @@
 use std::{cell::RefCell, path::PathBuf, rc::Rc, sync::Arc};
 
 use floem_reactive::UpdaterEffect;
-use peniko::{Blob, ImageAlphaType, ImageData, kurbo::Rect};
+use peniko::{Blob, Brush, ImageAlphaType, ImageData, kurbo::Rect};
 use sha2::{Digest, Sha256};
 
 use crate::{
@@ -365,20 +365,14 @@ impl View for Img {
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         let content_rect = self.id.get_content_rect_local();
         let dest_rect = self.object_fit_dest_rect(content_rect);
+        let image_brush = Brush::Image(self.img.clone());
 
         if self.needs_clip() {
-            cx.clip(&content_rect);
-        }
-
-        cx.draw_img(
-            floem_renderer::Img {
-                img: self.img.clone(),
-                hash: &self.img_hash,
-            },
-            dest_rect,
-        );
-        if self.needs_clip() {
-            cx.pop_clip();
+            cx.painter.with_fill_clip(content_rect, |p| {
+                p.fill(dest_rect, &image_brush).draw();
+            });
+        } else {
+            cx.painter.fill(dest_rect, &image_brush).draw();
         }
     }
 }

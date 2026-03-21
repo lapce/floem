@@ -22,7 +22,7 @@ use crate::{
 };
 use floem_reactive::{Effect, Memo, RwSignal, SignalGet, SignalUpdate};
 use peniko::{
-    Color,
+    Brush, Color,
     color::palette::{self, css},
     kurbo::{Rect, Stroke},
 };
@@ -804,22 +804,26 @@ impl View for InspectorImageView {
     fn post_paint(&mut self, cx: &mut crate::paint::PaintCx) {
         if cx.target_id == self.id {
             if let Some(selected_overlay) = self.overlay_rect(self.capture_view.selected.get()) {
-                cx.fill(&selected_overlay, self.selected_overlay_color, 0.);
-                cx.stroke(
-                    &selected_overlay,
-                    self.selected_overlay_border_color,
-                    &Stroke::new(1.0),
-                );
+                let fill = Brush::Solid(self.selected_overlay_color);
+                let stroke = Brush::Solid(self.selected_overlay_border_color);
+                cx.painter
+                    .fill(selected_overlay, &fill)
+                    .draw();
+                cx.painter
+                    .stroke(selected_overlay, &Stroke::new(1.0), &stroke)
+                    .draw();
             }
             if let Some(highlighted_overlay) =
                 self.overlay_rect(self.capture_view.highlighted.get())
             {
-                cx.fill(&highlighted_overlay, self.highlighted_overlay_color, 0.);
-                cx.stroke(
-                    &highlighted_overlay,
-                    self.highlighted_overlay_border_color,
-                    &Stroke::new(1.0),
-                );
+                let fill = Brush::Solid(self.highlighted_overlay_color);
+                let stroke = Brush::Solid(self.highlighted_overlay_border_color);
+                cx.painter
+                    .fill(highlighted_overlay, &fill)
+                    .draw();
+                cx.painter
+                    .stroke(highlighted_overlay, &Stroke::new(1.0), &stroke)
+                    .draw();
             }
         }
     }

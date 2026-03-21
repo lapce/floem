@@ -346,7 +346,7 @@ impl Label {
             self.layout_data
                 .borrow()
                 .selection_rects_for_selection(&selection, text_loc, |rect| {
-                    paint_cx.fill(&rect, &selection_color, 0.0);
+                    paint_cx.painter.fill(rect, &selection_color).draw();
                 });
         }
     }

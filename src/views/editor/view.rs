@@ -7,7 +7,7 @@ use crate::{
         CustomEvent, Event, EventPropagation, ImeEvent, PointerScrollEventExt, listener,
         listener::UpdatePhaseBoxTreeCommit,
     },
-    kurbo::{BezPath, Line, Point, Rect, Size, Vec2},
+    kurbo::{BezPath, Line, Point, Rect, Shape, Size, Vec2},
     peniko::Color,
     prelude::EventListenerTrait,
     reactive::{Effect, Memo, RwSignal, Scope},
@@ -538,7 +538,7 @@ impl EditorView {
             };
 
             let rect = Rect::from_origin_size((x0, vline_y), (width, line_height));
-            cx.fill(&rect, color, 0.0);
+            cx.painter.fill(rect, color).draw();
         }
     }
 
@@ -587,7 +587,7 @@ impl EditorView {
                 (viewport.x0, vline_y),
                 (x1 - viewport.x0, f64::from(line_height)),
             );
-            cx.fill(&rect, color, 0.0);
+            cx.painter.fill(rect, color).draw();
         }
     }
 
@@ -633,7 +633,7 @@ impl EditorView {
             let line_height = ed.line_height(line);
             let rect =
                 Rect::from_origin_size((x0, line_info.vline_y), (x1 - x0, f64::from(line_height)));
-            cx.fill(&rect, color, 0.0);
+            cx.painter.fill(rect, color).draw();
         }
     }
 
@@ -666,7 +666,8 @@ impl EditorView {
                                 (viewport.width(), f64::from(line_height)),
                             );
 
-                            cx.fill(&rect, current_line_color, 0.0);
+                            let brush = Brush::Solid(current_line_color);
+                            cx.painter.fill(rect, &brush).draw();
                         }
                     }
                 }
@@ -791,7 +792,7 @@ impl EditorView {
                     let line_height = ed.line_height(info.vline_info.rvline.line);
                     let rect =
                         Rect::from_origin_size((x, info.vline_y), (width, f64::from(line_height)));
-                    cx.fill(&rect, &caret_color, 0.0);
+                    cx.painter.fill(rect, &caret_color).draw();
                 }
             }
         });
@@ -814,7 +815,10 @@ impl EditorView {
             direction *= -1.0;
         }
 
-        cx.stroke(&path, color, &peniko::kurbo::Stroke::new(1.));
+        let brush = Brush::Solid(color);
+        cx.painter
+            .stroke(path, &peniko::kurbo::Stroke::new(1.), &brush)
+            .draw();
     }
 
     pub fn paint_extra_style(
@@ -834,13 +838,15 @@ impl EditorView {
                 };
                 let x = style.x + base;
                 let y = y + style.y;
-                cx.fill(
-                    &Rect::ZERO
-                        .with_size(Size::new(width, height))
-                        .with_origin(Point::new(x, y)),
-                    bg,
-                    0.0,
-                );
+                let brush = Brush::Solid(bg);
+                cx.painter
+                    .fill(
+                        Rect::ZERO
+                            .with_size(Size::new(width, height))
+                            .with_origin(Point::new(x, y)),
+                        &brush,
+                    )
+                    .draw();
             }
 
             if let Some(color) = style.under_line {
@@ -852,11 +858,14 @@ impl EditorView {
                 };
                 let x = style.x + base;
                 let y = y + style.y + height;
-                cx.stroke(
-                    &Line::new(Point::new(x, y), Point::new(x + width, y)),
-                    color,
-                    &peniko::kurbo::Stroke::new(1.),
-                );
+                let brush = Brush::Solid(color);
+                cx.painter
+                    .stroke(
+                        Line::new(Point::new(x, y), Point::new(x + width, y)).to_path(0.1),
+                        &peniko::kurbo::Stroke::new(1.),
+                        &brush,
+                    )
+                    .draw();
             }
 
             if let Some(color) = style.wave_line {
@@ -896,16 +905,20 @@ impl EditorView {
         if ed.es.with(|s| s.show_indent_guide()) {
             // Cache the indent guide color outside the loop to avoid repeated signal access
             let indent_guide_color = ed.es.with_untracked(|es| es.indent_guide());
+            let indent_guide_brush = Brush::Solid(indent_guide_color);
             for (line, y) in screen_lines.iter_lines_y() {
                 let text_layout = ed.text_layout(line);
                 let line_height = f64::from(ed.line_height(line));
                 let mut x = 0.0;
                 while x + 1.0 < text_layout.indent {
-                    cx.stroke(
-                        &Line::new(Point::new(x, y), Point::new(x, y + line_height)),
-                        indent_guide_color,
-                        &peniko::kurbo::Stroke::new(1.),
-                    );
+                    cx.painter
+                        .stroke(
+                            Line::new(Point::new(x, y), Point::new(x, y + line_height))
+                                .to_path(0.1),
+                            &peniko::kurbo::Stroke::new(1.),
+                            &indent_guide_brush,
+                        )
+                        .draw();
                     x += indent_text_width;
                 }
             }

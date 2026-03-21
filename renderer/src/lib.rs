@@ -178,7 +178,7 @@ pub trait Renderer {
     fn draw_glyphs<'a>(
         &mut self,
         origin: Point,
-        props: &text::GlyphRunProps<'a>,
+        run: &text::GlyphRunRef<'a>,
         glyphs: impl Iterator<Item = text::Glyph> + 'a,
     );
 

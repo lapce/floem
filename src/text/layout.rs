@@ -6,7 +6,8 @@ use std::{
     sync::LazyLock,
 };
 
-use floem_renderer::text::{AttrsList, GlyphRunProps, TextBrush};
+use floem_renderer::text::{AttrsList, GlyphRunRef, TextBrush};
+use imaging::{Composite, PaintSink, Painter, record::Glyph as ImagingGlyph};
 use parking_lot::Mutex;
 use parley::swash::{FontRef, scale::ScaleContext, zeno};
 use parley::{
@@ -776,8 +777,11 @@ impl TextLayout {
         (min_y.is_finite() && max_y.is_finite()).then_some((min_y, max_y))
     }
 
-    /// Draws the layout into Floem's retained paint recorder.
-    pub fn draw(&self, renderer: &mut crate::paint::PaintCx<'_>, origin: impl Into<Point>) {
+    pub fn draw_with_painter<S: PaintSink + ?Sized>(
+        &self,
+        painter: &mut Painter<'_, S>,
+        origin: impl Into<Point>,
+    ) {
         let origin = origin.into();
         for line in self.layout.lines() {
             for item in line.items() {
@@ -791,16 +795,42 @@ impl TextLayout {
                     .skew()
                     .map(|angle| Affine::skew((angle as f64).to_radians().tan(), 0.0));
 
-                let props = GlyphRunProps::new(run.font())
-                    .font_size(run.font_size())
-                    .hint(false)
-                    .normalized_coords(run.normalized_coords())
-                    .style(Fill::NonZero)
-                    .brush(glyph_run.style().brush.0)
-                    .glyph_transform(glyph_transform);
+                let style = peniko::Style::Fill(Fill::NonZero);
+                let run = GlyphRunRef {
+                    font: run.font(),
+                    transform: Affine::IDENTITY,
+                    glyph_transform,
+                    font_size: run.font_size(),
+                    hint: false,
+                    normalized_coords: run.normalized_coords(),
+                    style: &style,
+                    brush: glyph_run.style().brush.0.into(),
+                    composite: Composite::default(),
+                };
+                let brush = run.brush.to_owned().multiply_alpha(run.composite.alpha);
+                let glyphs = glyph_run
+                    .positioned_glyphs()
+                    .map(|glyph| ImagingGlyph {
+                        id: glyph.id,
+                        x: glyph.x,
+                        y: glyph.y,
+                    })
+                    .collect::<Vec<_>>();
 
-                renderer.draw_glyphs(origin, &props, glyph_run.positioned_glyphs());
+                painter
+                    .glyphs(run.font, &brush)
+                    .transform(run.transform * Affine::translate(origin.to_vec2()))
+                    .glyph_transform(run.glyph_transform)
+                    .font_size(run.font_size)
+                    .hint(run.hint)
+                    .normalized_coords(run.normalized_coords)
+                    .draw(run.style, &glyphs);
             }
         }
+    }
+
+    /// Draws the layout into Floem's retained paint recorder.
+    pub fn draw(&self, renderer: &mut crate::paint::PaintCx<'_>, origin: impl Into<Point>) {
+        self.draw_with_painter(&mut renderer.painter, origin);
     }
 }

@@ -3,7 +3,7 @@
 use floem_reactive::{RwSignal, SignalGet, SignalUpdate as _};
 use floem_renderer::text::{FontWeight, LineHeightValue};
 use peniko::color::{HueDirection, palette};
-use peniko::kurbo::{self, Affine, Point, Stroke, Vec2};
+use peniko::kurbo::{self, Affine, Point, Shape, Stroke, Vec2};
 use peniko::{
     Brush, Color, ColorStop, ColorStops, Gradient, GradientKind, InterpolationAlphaSpace,
     LinearGradientPosition,
@@ -247,14 +247,17 @@ impl StylePropValue for ObjectFit {
                 ),
                 2.0,
             );
-            cx.stroke(
-                &container_rect,
-                container_color.get(),
-                &Stroke {
-                    width: 1.5,
-                    ..Default::default()
-                },
-            );
+            let container_brush = Brush::Solid(container_color.get());
+            cx.painter
+                .stroke(
+                    container_rect,
+                    &Stroke {
+                        width: 1.5,
+                        ..Default::default()
+                    },
+                    &container_brush,
+                )
+                .draw();
 
             // Simulate an image with 2:1 aspect ratio (wider than tall)
             let image_aspect = 2.0;
@@ -304,15 +307,16 @@ impl StylePropValue for ObjectFit {
                     2.0,
                 );
                 // Show it as semi-transparent to indicate it's clipped
-                let clipped_color = image_color.get().with_alpha(0.7);
-                cx.fill(&img_rect, clipped_color, 0.0);
+                let clipped_color = Brush::Solid(image_color.get().with_alpha(0.7));
+                cx.painter.fill(img_rect, &clipped_color).draw();
             } else {
                 // Draw the image rect normally
                 let img_rect = RoundedRect::from_rect(
                     kurbo::Rect::new(img_x, img_y, img_x + img_width, img_y + img_height),
                     2.0,
                 );
-                cx.fill(&img_rect, image_color.get(), 0.0);
+                let image_brush = Brush::Solid(image_color.get());
+                cx.painter.fill(img_rect, &image_brush).draw();
             }
         })
         .style(|s| s.width(70.0).height(70.0))
@@ -390,14 +394,17 @@ impl StylePropValue for ObjectPosition {
                 ),
                 2.0,
             );
-            cx.stroke(
-                &container_rect,
-                container_color.get(),
-                &Stroke {
-                    width: 1.5,
-                    ..Default::default()
-                },
-            );
+            let container_brush = Brush::Solid(container_color.get());
+            cx.painter
+                .stroke(
+                    container_rect,
+                    &Stroke {
+                        width: 1.5,
+                        ..Default::default()
+                    },
+                    &container_brush,
+                )
+                .draw();
 
             let image_w = container_size * 0.55;
             let image_h = container_size * 0.35;
@@ -427,13 +434,15 @@ impl StylePropValue for ObjectPosition {
                 kurbo::Rect::new(img_x, img_y, img_x + image_w, img_y + image_h),
                 2.0,
             );
-            cx.fill(&img_rect, image_color.get(), 0.0);
+            let image_brush = Brush::Solid(image_color.get());
+            cx.painter.fill(img_rect, &image_brush).draw();
 
             let marker = Circle::new(
                 kurbo::Point::new(img_x + image_w / 2.0, img_y + image_h / 2.0),
                 2.5,
             );
-            cx.fill(&marker, marker_color.get(), 0.0);
+            let marker_brush = Brush::Solid(marker_color.get());
+            cx.painter.fill(marker.to_path(0.1), &marker_brush).draw();
         })
         .style(|s| s.width(70.0).height(70.0))
         .container()
@@ -999,14 +1008,18 @@ impl StylePropValue for Stroke {
 
         // Visual preview of the stroke
         let preview = canvas(move |cx, size| {
-            cx.stroke(
-                &kurbo::Line::new(
-                    Point::new(0., size.height / 2.),
-                    Point::new(size.width, size.height / 2.),
-                ),
-                color.get(),
-                &clone,
-            );
+            let brush = Brush::Solid(color.get());
+            cx.painter
+                .stroke(
+                    kurbo::Line::new(
+                        Point::new(0., size.height / 2.),
+                        Point::new(size.width, size.height / 2.),
+                    )
+                    .to_path(0.1),
+                    &clone,
+                    &brush,
+                )
+                .draw();
         })
         .style(move |s| s.width(80.0).height(20.0))
         .container()
@@ -1265,11 +1278,14 @@ impl StylePropValue for Affine {
             // Draw original position (dashed outline)
             let original_rect =
                 kurbo::Rect::from_center_size(center, kurbo::Size::new(box_size, box_size));
-            cx.stroke(
-                &original_rect,
-                palette::css::GRAY.with_alpha(0.5),
-                &kurbo::Stroke::new(1.0).with_dashes(0., [3., 3.]),
-            );
+            let original_brush = Brush::Solid(palette::css::GRAY.with_alpha(0.5));
+            cx.painter
+                .stroke(
+                    original_rect,
+                    &kurbo::Stroke::new(1.0).with_dashes(0., [3., 3.]),
+                    &original_brush,
+                )
+                .draw();
 
             // Draw transformed position
             let transform_offset =
@@ -1277,20 +1293,20 @@ impl StylePropValue for Affine {
             let display_transform = transform_offset * affine * transform_offset.inverse();
 
             let transformed_rect = kurbo::Rect::new(0., 0., box_size, box_size);
-            cx.fill(
-                &display_transform.transform_rect_bbox(transformed_rect),
-                palette::css::BLUE.with_alpha(0.7),
-                0.,
-            );
-            cx.stroke(
-                &(display_transform.transform_rect_bbox(transformed_rect)),
-                palette::css::BLUE,
-                &kurbo::Stroke::new(2.0),
-            );
+            let transformed = display_transform.transform_rect_bbox(transformed_rect);
+            let fill_brush = Brush::Solid(palette::css::BLUE.with_alpha(0.7));
+            let stroke_brush = Brush::Solid(palette::css::BLUE);
+            cx.painter.fill(transformed, &fill_brush).draw();
+            cx.painter
+                .stroke(transformed, &kurbo::Stroke::new(2.0), &stroke_brush)
+                .draw();
 
             // Draw origin point
             let origin_marker = kurbo::Circle::new(display_transform * Point::ZERO, 3.0);
-            cx.fill(&origin_marker, palette::css::RED, 0.);
+            let origin_brush = Brush::Solid(palette::css::RED);
+            cx.painter
+                .fill(origin_marker.to_path(0.1), &origin_brush)
+                .draw();
         })
         .style(|s| s.width(80.0).height(60.0))
         .container()

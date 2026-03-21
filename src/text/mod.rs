@@ -16,7 +16,7 @@ mod layout_state;
 
 pub use floem_renderer::text::{
     Attrs, AttrsList, AttrsOwned, FamilyOwned, FontStyle, FontWeight, FontWidth, Glyph,
-    GlyphRunProps, LineHeightValue, NormalizedCoord,
+    GlyphRunRef, LineHeightValue, NormalizedCoord,
 };
 pub use layout::{FONT_CONTEXT, TextLayout, TextSelection};
 pub use layout_state::{TextLayoutState, TextOverflowChanged};

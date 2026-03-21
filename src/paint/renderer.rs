@@ -86,11 +86,6 @@ impl Renderer {
     #[cfg(any(feature = "vello", feature = "skia"))]
     const ACTIVE_IS_VGER: bool = false;
 
-    #[cfg(all(feature = "vello", not(feature = "skia")))]
-    const ACTIVE_USES_LAYER_CLIP: bool = true;
-    #[cfg(any(not(feature = "vello"), feature = "skia"))]
-    const ACTIVE_USES_LAYER_CLIP: bool = false;
-
     #[cfg(feature = "skia")]
     pub fn new_skia(window: Arc<dyn Window>, scale: f64, size: Size, font_embolden: f32) -> Self {
         let size = Size::new(size.width.max(1.0), size.height.max(1.0));
@@ -127,14 +122,6 @@ impl Renderer {
 
     pub(crate) fn is_vger(&self) -> bool {
         Self::ACTIVE_IS_VGER && matches!(self, Renderer::Active(_))
-    }
-
-    pub(crate) fn uses_layer_clip(&self) -> bool {
-        match self {
-            Renderer::Active(_) => Self::ACTIVE_USES_LAYER_CLIP,
-            Renderer::TinySkia(_) => false,
-            Renderer::Uninitialized { .. } => false,
-        }
     }
 
     #[cfg(all(feature = "vello", not(feature = "skia")))]
@@ -412,12 +399,12 @@ impl floem_renderer::Renderer for Renderer {
     fn draw_glyphs<'a>(
         &mut self,
         origin: Point,
-        props: &floem_renderer::text::GlyphRunProps<'a>,
+        run: &floem_renderer::text::GlyphRunRef<'a>,
         glyphs: impl Iterator<Item = floem_renderer::text::Glyph> + 'a,
     ) {
         match self {
-            Renderer::Active(v) => v.draw_glyphs(origin, props, glyphs),
-            Renderer::TinySkia(v) => v.draw_glyphs(origin, props, glyphs),
+            Renderer::Active(v) => v.draw_glyphs(origin, run, glyphs),
+            Renderer::TinySkia(v) => v.draw_glyphs(origin, run, glyphs),
             Renderer::Uninitialized { .. } => {}
         }
     }

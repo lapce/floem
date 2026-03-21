@@ -287,16 +287,16 @@ impl ScrollHandle {
         let rect_with_border = rect.inset(-edge_width / 2.0);
         let rounded_rect = rect_with_border.to_rounded_rect(radius);
 
-        cx.fill(
-            &rounded_rect,
-            &self.style.background().unwrap_or(HANDLE_COLOR),
-            0.0,
-        );
+        cx.painter
+            .fill(rounded_rect, &self.style.background().unwrap_or(HANDLE_COLOR))
+            .draw();
 
         if edge_width > 0.0
             && let Some(color) = self.style.border_color().right
         {
-            cx.stroke(&rounded_rect, &color, &Stroke::new(edge_width));
+            cx.painter
+                .stroke(rounded_rect, &Stroke::new(edge_width), &color)
+                .draw();
         }
     }
 }
@@ -437,7 +437,7 @@ impl ScrollTrack {
         let rect = box_tree.local_bounds(self.element_id.0).unwrap_or_default();
 
         if let Some(color) = self.style.background() {
-            cx.fill(&rect, &color, 0.0);
+            cx.painter.fill(rect, &color).draw();
         }
     }
 }

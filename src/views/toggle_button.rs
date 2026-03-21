@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use floem_reactive::{Effect, SignalGet, SignalUpdate};
 use peniko::Brush;
-use peniko::kurbo::{Point, Rect, Size};
+use peniko::kurbo::{Point, Rect, Shape, Size};
 use ui_events::pointer::PointerEvent;
 
 use crate::context::Phases;
@@ -152,7 +152,7 @@ impl Handle {
         let circle_point = Point::new(self.position, size.to_rect().center().y);
         let circle = crate::kurbo::Circle::new(circle_point, radius);
         if let Some(color) = color {
-            cx.fill(&circle, &color, 0.);
+            cx.painter.fill(circle.to_path(0.1), &color).draw();
         }
     }
 }

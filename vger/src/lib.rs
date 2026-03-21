@@ -5,7 +5,7 @@ use std::sync::mpsc::sync_channel;
 
 use anyhow::Result;
 use floem_renderer::gpu_resources::GpuResources;
-use floem_renderer::text::{Glyph, GlyphRunProps};
+use floem_renderer::text::{Glyph, GlyphRunRef};
 use floem_renderer::{Img, Renderer, tiny_skia};
 use floem_vger_rs::{GlyphImage, Image, PaintIndex, PixelFormat, Vger};
 use peniko::kurbo::{Size, Stroke};
@@ -498,11 +498,11 @@ impl Renderer for VgerRenderer {
     fn draw_glyphs<'a>(
         &mut self,
         origin: Point,
-        props: &GlyphRunProps<'a>,
+        run: &GlyphRunRef<'a>,
         glyphs: impl Iterator<Item = Glyph> + 'a,
     ) {
-        let font = &props.font;
-        let coeffs = props.transform.as_coeffs();
+        let font = run.font;
+        let coeffs = run.transform.as_coeffs();
         let pos = self.device_transform() * (origin + Point::new(coeffs[4], coeffs[5]).to_vec2());
         // This assumes that text is axis-aligned.
         let (_, _, scale) = self.scale_components();
@@ -512,14 +512,14 @@ impl Renderer for VgerRenderer {
             return;
         };
         let font_blob_id = font.data.id();
-        let _color = match &props.brush {
+        let _color = match &run.brush {
             peniko::Brush::Solid(color) => Color::from(*color),
             _ => return,
         };
-        let Some(paint) = self.brush_to_paint(props.brush) else {
+        let Some(paint) = self.brush_to_paint(run.brush) else {
             return;
         };
-        let skew = props
+        let skew = run
             .glyph_transform
             .map(|transform| transform.as_coeffs()[0].atan().to_degrees() as f32);
         let embolden = scaled_embolden_strength(self.font_embolden, scale);
@@ -534,14 +534,14 @@ impl Renderer for VgerRenderer {
                 break;
             }
 
-            let scaled_font_size = (props.font_size * scale as f32).round() as u32;
+            let scaled_font_size = (run.font_size * scale as f32).round() as u32;
 
             let x_bin = ((glyph_x.fract() + 1.0).fract() * 4.0).min(3.0) as u8;
             let y_bin = ((glyph_y.fract() + 1.0).fract() * 4.0).min(3.0) as u8;
 
             let glyph_id = glyph.id as u16;
-            let scaled_size = props.font_size * scale as f32;
-            let coords = props.normalized_coords;
+            let scaled_size = run.font_size * scale as f32;
+            let coords = run.normalized_coords;
 
             let synthesis_bits = skew.unwrap_or(0.0).to_bits() & 0xFFFF_FFFE;
 
@@ -558,7 +558,7 @@ impl Renderer for VgerRenderer {
                         let mut scaler = ctx
                             .builder(font_ref)
                             .size(scaled_size)
-                            .hint(props.hint)
+                            .hint(run.hint)
                             .normalized_coords(coords)
                             .build();
                         let mut render = Render::new(&[

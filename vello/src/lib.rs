@@ -6,7 +6,7 @@ use std::sync::mpsc::sync_channel;
 
 use anyhow::Result;
 use floem_renderer::gpu_resources::GpuResources;
-use floem_renderer::text::{Glyph, GlyphRunProps};
+use floem_renderer::text::{Glyph, GlyphRunRef};
 use floem_renderer::{Img, Renderer};
 use peniko::kurbo::Size;
 use peniko::{
@@ -488,24 +488,24 @@ impl Renderer for VelloRenderer {
     fn draw_glyphs<'a>(
         &mut self,
         origin: Point,
-        props: &GlyphRunProps<'a>,
+        run: &GlyphRunRef<'a>,
         glyphs: impl Iterator<Item = Glyph> + 'a,
     ) {
         // TODO: Vello 0.7's DrawGlyphs API has no embolden support.
         // Synthetic bold from layout synthesis and `self.font_embolden` are not applied.
         let transform =
-            self.device_transform() * Affine::translate((origin.x, origin.y)) * props.transform;
+            self.device_transform() * Affine::translate((origin.x, origin.y)) * run.transform;
         self.scene
-            .draw_glyphs(&props.font)
-            .brush(props.brush)
-            .brush_alpha(props.brush_alpha)
-            .hint(props.hint)
+            .draw_glyphs(run.font)
+            .brush(run.brush)
+            .brush_alpha(run.composite.alpha)
+            .hint(run.hint)
             .transform(transform)
-            .glyph_transform(props.glyph_transform)
-            .font_size(props.font_size)
-            .normalized_coords(props.normalized_coords)
+            .glyph_transform(run.glyph_transform)
+            .font_size(run.font_size)
+            .normalized_coords(run.normalized_coords)
             .draw(
-                props.style,
+                run.style,
                 glyphs.map(|glyph| vello::Glyph {
                     id: glyph.id,
                     x: glyph.x,
