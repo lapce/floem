@@ -1,4 +1,4 @@
-// pub(crate) mod handle;
+pub(crate) mod handle;
 pub(crate) mod id;
 pub mod mock;
 pub(crate) mod state;

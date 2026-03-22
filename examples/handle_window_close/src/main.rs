@@ -17,54 +17,52 @@ const OS_MOD: Modifiers = if cfg!(target_os = "macos") {
 };
 
 fn confirm_overlay(window_id: WindowId, show_confirm: RwSignal<bool>) -> Overlay {
+    let backdrop = Empty::new()
+    .style(|s| {
+        s.absolute()
+        .inset(0.0)
+        .background(css::BLACK)
+        .opacity(0.25)
+        .z_index(1)
+    })
+    .on_event_cont(listener::Click, move |_, _| {
+        show_confirm.set(false);
+    });
+
+    let buttons = Stack::horizontal((
+        Button::new("Yes").action(move || close_window(window_id)),
+        Button::new("No").action(move || show_confirm.set(false)),
+    ))
+    .style(|s| s.col_gap(8.0));
+
+    let dialog = Stack::vertical((
+        Label::new("Close this window?")
+            .style(|s| s.font_size(18.0)),
+        Label::new("Unsaved work in this window would be lost.")
+            .style(|s| s.color(css::DIM_GRAY)),
+        buttons,
+    ))
+    .style(|s| {
+        s.absolute()
+        .inset_left(40.0)
+        .inset_top(40.0)
+        .width(320.0)
+        .padding(16.0)
+        .row_gap(12.0)
+        .border(1.0)
+        .border_radius(12.0)
+        .border_color(css::LIGHT_GRAY)
+        .background(css::WHITE)
+        .z_index(10)
+    });
+
     Overlay::new(
-        Stack::new((
-            Empty::new()
-                .style(|s| {
-                    s.absolute()
-                        .inset(0.0)
-                        .background(css::BLACK)
-                        .opacity(0.25)
-                        .z_index(1)
-                })
-                .on_event_cont(listener::Click, move |_, _| {
-                    show_confirm.set(false);
-                }),
-            Stack::vertical((
-                Label::new("Close this window?")
-                    .style(|s| s.font_size(18.0)),
-                Label::new("Unsaved work in this window would be lost.")
-                    .style(|s| s.color(css::DIM_GRAY)),
-                Stack::horizontal((
-                    Button::new("Yes").action(move || {
-                        close_window(window_id);
-                    }),
-                    Button::new("No").action(move || {
-                        show_confirm.set(false);
-                    }),
-                ))
-                .style(|s| s.col_gap(8.0)),
-            ))
-            .style(|s| {
-                s.absolute()
-                    .inset_left(40.0)
-                    .inset_top(40.0)
-                    .width(320.0)
-                    .padding(16.0)
-                    .row_gap(12.0)
-                    .border(1.0)
-                    .border_radius(12.0)
-                    .border_color(css::LIGHT_GRAY)
-                    .background(css::WHITE)
-                    .z_index(10)
-            }),
-        ))
-        .style(move |s| {
+        Stack::new((backdrop, dialog)).style(move |s| {
             s.fixed()
-                .inset(0.0)
-                .width_full()
-                .height_full()
-                .apply_if(!show_confirm.get(), |s| s.hide())
+            .inset(0.0)
+            .width_full()
+            .height_full()
+            .apply_if(!show_confirm.get(), |s| s.hide())
         }),
     )
 }
