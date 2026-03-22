@@ -1,3 +1,8 @@
+// examples/handle_window_close/src/main.rs
+//
+// Demonstrates how to intercept an attempt to close a window.
+// Also, demonstrates how to launch a second window.
+
 use floem::{
     close_window,
     event::listener,

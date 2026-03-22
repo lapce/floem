@@ -638,6 +638,13 @@ impl ApplicationHandle {
         self.window_handles.insert(window_id, window_handle);
     }
 
+    /// Dispatch a `CloseRequested` event to the window's view tree and return
+    /// whether the window should be closed.
+    ///
+    /// Returns `true` if no handler called `cx.prevent_default()` (the window
+    /// should close). Returns `false` if any handler prevented the default
+    /// (the window should stay open). Returns `false` if the window does not
+    /// exist.
     fn should_close_window_on_request(&mut self, window_id: WindowId) -> bool {
         let Some(handle) = self.window_handles.get_mut(&window_id) else {
             return false;
