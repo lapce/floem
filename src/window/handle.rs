@@ -1809,11 +1809,12 @@ mod tests {
         let root_id = ViewId::new_root();
         set_current_view(root_id);
 
-        let view = Empty::new()
-            .style(|s| s.size(100.0, 100.0))
-            .on_event_cont(listener::WindowCloseRequested, |cx, _| {
+        let view = Empty::new().style(|s| s.size(100.0, 100.0)).on_event_cont(
+            listener::WindowCloseRequested,
+            |cx, _| {
                 cx.prevent_default();
-            });
+            },
+        );
 
         let mut window_handle =
             WindowHandle::new_headless(root_id, view, Size::new(800.0, 600.0), 1.0);
@@ -1880,11 +1881,12 @@ mod tests {
         let closed_count = Rc::new(Cell::new(0));
         let closed_count_for_listener = closed_count.clone();
 
-        let view = Empty::new()
-            .style(|s| s.size(100.0, 100.0))
-            .on_event_cont(listener::WindowClosed, move |_cx, _| {
+        let view = Empty::new().style(|s| s.size(100.0, 100.0)).on_event_cont(
+            listener::WindowClosed,
+            move |_cx, _| {
                 closed_count_for_listener.set(closed_count_for_listener.get() + 1);
-            });
+            },
+        );
 
         let mut window_handle =
             WindowHandle::new_headless(root_id, view, Size::new(800.0, 600.0), 1.0);
@@ -1896,7 +1898,6 @@ mod tests {
 
         assert_eq!(closed_count.get(), 1);
     }
-
 
     #[test]
     fn test_budgeted_update_quiesces_with_unreachable_style_dirty_view() {

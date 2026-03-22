@@ -246,7 +246,9 @@ pub use understory_focus;
 pub use view::ViewId;
 pub use view::{AnyView, HasViewId, IntoView, LazyView, ParentView, View};
 pub use view::{Stack, StackOffset};
-pub use window::{Urgency, WindowIdExt, WindowState, close_window, new_window};
+pub use window::{
+    Urgency, WindowIdExt, WindowState, close_window, new_window, request_close_window,
+};
 
 /// Re-export unit and theme modules from style for backward compatibility.
 pub use style::{theme, unit};

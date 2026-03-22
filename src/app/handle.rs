@@ -147,6 +147,11 @@ impl ApplicationHandle {
                 AppUpdateEvent::CloseWindow { window_id } => {
                     self.close_window(window_id, event_loop);
                 }
+                AppUpdateEvent::RequestCloseWindow { window_id } => {
+                    if self.should_close_window_on_request(window_id) {
+                        self.close_window(window_id, event_loop);
+                    }
+                }
                 AppUpdateEvent::RequestTimer { timer } => {
                     self.request_timer(timer, event_loop);
                 }
@@ -970,7 +975,6 @@ fn setup_traffic_light_constraints_all_pixels(
     Ok(())
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1000,11 +1004,12 @@ mod tests {
 
         let root_id = ViewId::new_root();
         crate::window::handle::set_current_view(root_id);
-        let view = Empty::new()
-            .style(|s| s.size(100.0, 100.0))
-            .on_event_cont(crate::event::listener::WindowCloseRequested, |cx, _| {
+        let view = Empty::new().style(|s| s.size(100.0, 100.0)).on_event_cont(
+            crate::event::listener::WindowCloseRequested,
+            |cx, _| {
                 cx.prevent_default();
-            });
+            },
+        );
         let window_handle = WindowHandle::new_headless(root_id, view, Size::new(400.0, 300.0), 1.0);
         let window_id = window_handle.window_id();
 
@@ -1037,13 +1042,18 @@ mod tests {
 
         let prevented_root = ViewId::new_root();
         crate::window::handle::set_current_view(prevented_root);
-        let prevented_view = Empty::new()
-            .style(|s| s.size(100.0, 100.0))
-            .on_event_cont(crate::event::listener::WindowCloseRequested, |cx, _| {
+        let prevented_view = Empty::new().style(|s| s.size(100.0, 100.0)).on_event_cont(
+            crate::event::listener::WindowCloseRequested,
+            |cx, _| {
                 cx.prevent_default();
-            });
-        let prevented_window =
-            WindowHandle::new_headless(prevented_root, prevented_view, Size::new(400.0, 300.0), 1.0);
+            },
+        );
+        let prevented_window = WindowHandle::new_headless(
+            prevented_root,
+            prevented_view,
+            Size::new(400.0, 300.0),
+            1.0,
+        );
         let prevented_id = prevented_window.window_id();
 
         let plain_root = ViewId::new_root();
@@ -1059,5 +1069,43 @@ mod tests {
         assert!(!app.should_close_window_on_request(prevented_id));
         assert!(app.should_close_window_on_request(plain_id));
         assert_eq!(app.window_handles.len(), 2);
+    }
+
+    #[test]
+    fn request_close_window_allows_unhandled() {
+        let mut app = ApplicationHandle::new(AppConfig::default());
+
+        let root_id = ViewId::new_root();
+        crate::window::handle::set_current_view(root_id);
+        let view = Empty::new().style(|s| s.size(100.0, 100.0));
+        let window_handle = WindowHandle::new_headless(root_id, view, Size::new(400.0, 300.0), 1.0);
+        let window_id = window_handle.window_id();
+
+        app.window_handles.insert(window_id, window_handle);
+
+        // Simulate what AppUpdateEvent::RequestCloseWindow does
+        assert!(app.should_close_window_on_request(window_id));
+    }
+
+    #[test]
+    fn request_close_window_respects_prevent_default() {
+        let mut app = ApplicationHandle::new(AppConfig::default());
+
+        let root_id = ViewId::new_root();
+        crate::window::handle::set_current_view(root_id);
+        let view = Empty::new().style(|s| s.size(100.0, 100.0)).on_event_cont(
+            crate::event::listener::WindowCloseRequested,
+            |cx, _| {
+                cx.prevent_default();
+            },
+        );
+        let window_handle = WindowHandle::new_headless(root_id, view, Size::new(400.0, 300.0), 1.0);
+        let window_id = window_handle.window_id();
+
+        app.window_handles.insert(window_id, window_handle);
+
+        // Simulate what AppUpdateEvent::RequestCloseWindow does
+        assert!(!app.should_close_window_on_request(window_id));
+        assert_eq!(app.window_handles.len(), 1);
     }
 }

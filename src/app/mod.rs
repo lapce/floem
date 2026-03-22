@@ -143,6 +143,9 @@ pub(crate) enum AppUpdateEvent {
     CloseWindow {
         window_id: WindowId,
     },
+    RequestCloseWindow {
+        window_id: WindowId,
+    },
     CaptureWindow {
         window_id: WindowId,
         capture: WriteSignal<Option<Rc<Capture>>>,
@@ -325,10 +328,11 @@ impl Application {
     }
 }
 
-/// Initiates the application shutdown process.
+/// Immediately terminates the application.
 ///
-/// This function sends a `QuitApp` event to the application's event loop,
-/// triggering the application to close gracefully.
+/// This is an unconditional exit: no windows receive a `CloseRequested` event
+/// and no `WindowCloseRequested` handlers are consulted. The event loop exits
+/// immediately.
 pub fn quit_app() {
     Application::send_proxy_event(UserEvent::QuitApp);
 }
