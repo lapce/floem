@@ -14,7 +14,7 @@ pub use renderer::Renderer;
 
 use floem_renderer::Renderer as _;
 use floem_renderer::gpu_resources::{GpuResourceError, GpuResources};
-use imaging::Painter;
+use imaging::{PaintSink, Painter};
 use peniko::kurbo::{Affine, Point, RoundedRect, Size};
 use rustc_hash::FxHashSet;
 use std::sync::Arc;
@@ -148,6 +148,23 @@ pub struct PaintCx<'a> {
     /// Optional clip for this visual node (from box tree)
     pub clip: Option<RoundedRect>,
     pub font_size_cx: FontSizeCx,
+}
+
+pub trait PainterExt {
+    fn dyn_painter(&mut self) -> Painter<'_, dyn PaintSink + '_>;
+}
+
+impl<S: PaintSink> PainterExt for Painter<'_, S> {
+    fn dyn_painter(&mut self) -> Painter<'_, dyn PaintSink + '_> {
+        let sink: &mut dyn PaintSink = self.sink_mut();
+        Painter::new(sink)
+    }
+}
+
+impl PaintCx<'_> {
+    pub fn dyn_painter(&mut self) -> Painter<'_, dyn PaintSink + '_> {
+        self.painter.dyn_painter()
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -609,15 +626,6 @@ impl<'a> PaintCx<'a> {
             return dragging == id;
         }
         false
-    }
-
-    pub fn draw_svg<'b>(
-        &mut self,
-        svg: floem_renderer::Svg<'b>,
-        rect: peniko::kurbo::Rect,
-        brush: Option<impl Into<peniko::BrushRef<'b>>>,
-    ) {
-        let _ = (svg, rect, brush);
     }
 
     pub fn is_vger(&self) -> bool {

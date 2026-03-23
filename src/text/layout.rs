@@ -7,7 +7,7 @@ use std::{
 };
 
 use floem_renderer::text::{AttrsList, GlyphRunRef, TextBrush};
-use imaging::{Composite, PaintSink, Painter, record::Glyph as ImagingGlyph};
+use imaging::{Composite, Painter, record::Glyph as ImagingGlyph};
 use parking_lot::Mutex;
 use parley::swash::{FontRef, scale::ScaleContext, zeno};
 use parley::{
@@ -777,11 +777,7 @@ impl TextLayout {
         (min_y.is_finite() && max_y.is_finite()).then_some((min_y, max_y))
     }
 
-    pub fn draw_with_painter<S: PaintSink + ?Sized>(
-        &self,
-        painter: &mut Painter<'_, S>,
-        origin: impl Into<Point>,
-    ) {
+    pub fn draw_with_painter(&self, mut painter: Painter<'_>, origin: impl Into<Point>) {
         let origin = origin.into();
         for line in self.layout.lines() {
             for item in line.items() {
@@ -808,14 +804,11 @@ impl TextLayout {
                     composite: Composite::default(),
                 };
                 let brush = run.brush.to_owned().multiply_alpha(run.composite.alpha);
-                let glyphs = glyph_run
-                    .positioned_glyphs()
-                    .map(|glyph| ImagingGlyph {
-                        id: glyph.id,
-                        x: glyph.x,
-                        y: glyph.y,
-                    })
-                    .collect::<Vec<_>>();
+                let glyphs = glyph_run.positioned_glyphs().map(|glyph| ImagingGlyph {
+                    id: glyph.id,
+                    x: glyph.x,
+                    y: glyph.y,
+                });
 
                 painter
                     .glyphs(run.font, &brush)
@@ -824,13 +817,13 @@ impl TextLayout {
                     .font_size(run.font_size)
                     .hint(run.hint)
                     .normalized_coords(run.normalized_coords)
-                    .draw(run.style, &glyphs);
+                    .draw(run.style, glyphs);
             }
         }
     }
 
     /// Draws the layout into Floem's retained paint recorder.
-    pub fn draw(&self, renderer: &mut crate::paint::PaintCx<'_>, origin: impl Into<Point>) {
-        self.draw_with_painter(&mut renderer.painter, origin);
+    pub fn draw(&self, cx: &mut crate::paint::PaintCx<'_>, origin: impl Into<Point>) {
+        self.draw_with_painter(cx.dyn_painter(), origin);
     }
 }

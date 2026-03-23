@@ -4,6 +4,7 @@ use crate::{
     action::{TimerToken, exec_after, set_ime_allowed, set_ime_cursor_area},
     custom_event,
     event::{EventPropagation, FocusEvent, ImeEvent, Phase, RouteKind},
+    paint::PainterExt,
     prop_extractor,
     reactive::RwSignal,
     style::{
@@ -1110,10 +1111,7 @@ impl TextInput {
         self.selection = self.selection_from_byte_positions(new_selection.start, new_selection.end);
     }
 
-    fn paint_selection_rect_with_painter<S: imaging::PaintSink + ?Sized>(
-        &self,
-        painter: &mut imaging::Painter<'_, S>,
-    ) {
+    fn paint_selection_rect_with_painter(&self, painter: &mut imaging::Painter<'_>) {
         let cursor_color = self.selection_style.selection_color();
         let selection = if let Some(selection) = self.selection {
             selection
@@ -1495,7 +1493,7 @@ impl View for TextInput {
                 .borrow()
                 .with_effective_text_layout(|text_layout| {
                     text_layout.draw_with_painter(
-                        p,
+                        p.dyn_painter(),
                         Point::new(text_start_point.x - self.scroll_offset, text_start_point.y),
                     );
                 });
@@ -1534,7 +1532,9 @@ impl View for TextInput {
                         .is_some_and(|p| p.cursor.is_some_and(|c| c.0 != c.1));
 
                 if has_selection {
-                    self.paint_selection_rect_with_painter(p);
+                    let sink: &mut dyn imaging::PaintSink = p.sink_mut();
+                    let mut painter = imaging::Painter::new(sink);
+                    self.paint_selection_rect_with_painter(&mut painter);
                 }
             }
         });

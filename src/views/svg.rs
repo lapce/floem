@@ -4,7 +4,7 @@ use floem_reactive::Effect;
 use floem_renderer::usvg::{self, Tree};
 use peniko::{
     Brush, GradientKind, LinearGradientPosition,
-    kurbo::{Point, Size},
+    kurbo::{Affine, Point, Size},
 };
 use sha2::{Digest, Sha256};
 
@@ -339,7 +339,12 @@ impl View for Svg {
             } else {
                 self.svg_style.text_color().map(Brush::Solid)
             };
-            cx.draw_svg(crate::RendererSvg { tree, hash }, rect, color.as_ref());
+            cx.painter.sink_mut().draw_svg(
+                crate::RendererSvg { tree, hash },
+                rect,
+                Affine::IDENTITY,
+                color.as_ref(),
+            );
         }
     }
 }
