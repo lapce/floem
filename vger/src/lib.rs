@@ -166,11 +166,7 @@ impl PaintSink for VgerRenderer {
         }
     }
 
-    fn glyph_run(
-        &mut self,
-        draw: GlyphRunRef<'_>,
-        glyphs: &mut dyn Iterator<Item = Glyph>,
-    ) {
+    fn glyph_run(&mut self, draw: GlyphRunRef<'_>, glyphs: &mut dyn Iterator<Item = Glyph>) {
         self.draw_glyphs(draw, glyphs);
     }
 

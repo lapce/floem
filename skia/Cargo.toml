@@ -1,0 +1,15 @@
+[package]
+name = "floem_skia_renderer"
+version.workspace = true
+edition.workspace = true
+repository = "https://github.com/lapce/floem"
+description = "A native Rust UI library with fine-grained reactivity"
+license.workspace = true
+
+[dependencies]
+imaging = { workspace = true }
+peniko = { workspace = true }
+
+anyhow = "1.0"
+imaging_skia = { path = "../../imaging/imaging_skia" }
+floem_renderer = { path = "../renderer", version = "0.2.0" }

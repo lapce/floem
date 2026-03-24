@@ -116,6 +116,7 @@ impl ApplicationHandle {
             #[cfg(any(
                 feature = "active-vello-hybrid",
                 feature = "active-vello-cpu",
+                feature = "active-skia",
                 feature = "active-tiny-skia"
             ))]
             UserEvent::GpuResourcesUpdate { .. } => {}
@@ -124,6 +125,7 @@ impl ApplicationHandle {
                 feature = "active-vger",
                 feature = "active-vello-hybrid",
                 feature = "active-vello-cpu",
+                feature = "active-skia",
                 feature = "active-tiny-skia"
             )))]
             UserEvent::GpuResourcesUpdate { .. } => unreachable!(),

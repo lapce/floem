@@ -290,7 +290,7 @@ dependencies = [
  "anyhow",
  "arrayvec",
  "log",
- "nom",
+ "nom 8.0.0",
  "num-rational 0.4.2",
  "v_frame",
 ]
@@ -323,6 +323,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b1f45e9417d87227c7a56d22e471c6206462cba514c7590c09aff4cf6d1ddcad"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "bindgen"
+version = "0.72.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "993776b509cfb49c750f11b8f07a46fa23e0a1386ffc01fb1e7d343efc387895"
+dependencies = [
+ "bitflags 2.11.0",
+ "cexpr",
+ "clang-sys",
+ "itertools 0.13.0",
+ "log",
+ "prettyplease",
+ "proc-macro2 1.0.106",
+ "quote 1.0.45",
+ "regex",
+ "rustc-hash 2.1.1",
+ "shlex",
+ "syn 2.0.117",
 ]
 
 [[package]]
@@ -555,6 +575,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6d43a04d8753f35258c91f8ec639f792891f748a1edbd759cf1dcea3382ad83c"
 
 [[package]]
+name = "cexpr"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6fac387a98bb7c37292057cffc56d62ecb629900026402633ae9160df93a8766"
+dependencies = [
+ "nom 7.1.3",
+]
+
+[[package]]
 name = "cfg-expr"
 version = "0.15.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -601,6 +630,17 @@ checksum = "57663b653d948a338bfb3eeba9bb2fd5fcfaecb9e199e87e1eda4d9e8b240fd9"
 dependencies = [
  "ciborium-io",
  "half",
+]
+
+[[package]]
+name = "clang-sys"
+version = "1.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b023947811758c97c59bf9d1c188fd619ad4718dcaa767947df1cadb14f39f4"
+dependencies = [
+ "glob",
+ "libc",
+ "libloading",
 ]
 
 [[package]]
@@ -700,7 +740,7 @@ dependencies = [
  "directories",
  "serde",
  "thiserror 2.0.18",
- "toml",
+ "toml 0.8.2",
 ]
 
 [[package]]
@@ -1348,6 +1388,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "filetime"
+version = "0.2.27"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f98844151eee8917efc50bd9e8318cb963ae8b297431495d3f758616ea5c57db"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "libredox",
+]
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1394,6 +1445,7 @@ dependencies = [
  "floem-winit",
  "floem_reactive",
  "floem_renderer",
+ "floem_skia_renderer",
  "floem_tiny_skia_renderer",
  "floem_vello_cpu_renderer",
  "floem_vello_hybrid_renderer",
@@ -1721,6 +1773,17 @@ dependencies = [
  "resvg",
  "wasm-bindgen-futures",
  "wgpu 28.0.0",
+]
+
+[[package]]
+name = "floem_skia_renderer"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "floem_renderer",
+ "imaging",
+ "imaging_skia",
+ "peniko",
 ]
 
 [[package]]
@@ -2308,6 +2371,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "glob"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
+
+[[package]]
 name = "glow"
 version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2828,6 +2897,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "imaging_skia"
+version = "0.0.1"
+dependencies = [
+ "imaging",
+ "kurbo",
+ "peniko",
+ "skia-safe",
+]
+
+[[package]]
 name = "imaging_vello"
 version = "0.0.1"
 dependencies = [
@@ -3345,6 +3424,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6877bb514081ee2a7ff5ef9de3281f14a4dd4bceac4c09388074a6b5df8a139a"
 
 [[package]]
+name = "minimal-lexical"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
+
+[[package]]
 name = "miniz_oxide"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3506,6 +3591,16 @@ name = "new_debug_unreachable"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
+
+[[package]]
+name = "nom"
+version = "7.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d273983c5a657a70a3e8f2a01329822f3b8c8172b73826411a55751e404a0a4a"
+dependencies = [
+ "memchr",
+ "minimal-lexical",
+]
 
 [[package]]
 name = "nom"
@@ -5225,6 +5320,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_spanned"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "876ac351060d4f882bb1032b6369eb0aef79ad9df1ea8bc404874d8cc3d0cd98"
+dependencies = [
+ "serde_core",
+]
+
+[[package]]
 name = "serde_urlencoded"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5324,6 +5428,33 @@ name = "siphasher"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b2aa850e253778c88a04c3d7323b043aeda9d3e30d5971937c1855769763678e"
+
+[[package]]
+name = "skia-bindings"
+version = "0.90.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f6f96e00735f14a781aac8a6870c862b8cc831df6d8e4ad77ab78e11411b9af"
+dependencies = [
+ "bindgen",
+ "cc",
+ "flate2",
+ "heck 0.5.0",
+ "pkg-config",
+ "regex",
+ "serde_json",
+ "tar",
+ "toml 0.9.12+spec-1.1.0",
+]
+
+[[package]]
+name = "skia-safe"
+version = "0.90.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a71c01d325d40b1031dee67d251a5e0132e79e2a9ec272149a4f4a0d4b8b3be"
+dependencies = [
+ "bitflags 2.11.0",
+ "skia-bindings",
+]
 
 [[package]]
 name = "skrifa"
@@ -5703,7 +5834,7 @@ dependencies = [
  "cfg-expr",
  "heck 0.5.0",
  "pkg-config",
- "toml",
+ "toml 0.8.2",
  "version-compare",
 ]
 
@@ -5717,6 +5848,17 @@ dependencies = [
  "grid",
  "serde",
  "slotmap",
+]
+
+[[package]]
+name = "tar"
+version = "0.4.45"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "22692a6476a21fa75fdfc11d452fda482af402c008cdbaf3476414e122040973"
+dependencies = [
+ "filetime",
+ "libc",
+ "xattr",
 ]
 
 [[package]]
@@ -6009,9 +6151,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "185d8ab0dfbb35cf1399a6344d8484209c088f75f8f68230da55d48d95d43e3d"
 dependencies = [
  "serde",
- "serde_spanned",
+ "serde_spanned 0.6.9",
  "toml_datetime 0.6.3",
  "toml_edit 0.20.2",
+]
+
+[[package]]
+name = "toml"
+version = "0.9.12+spec-1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf92845e79fc2e2def6a5d828f0801e29a2f8acc037becc5ab08595c7d5e9863"
+dependencies = [
+ "indexmap",
+ "serde_core",
+ "serde_spanned 1.1.0",
+ "toml_datetime 0.7.5+spec-1.1.0",
+ "toml_parser",
+ "toml_writer",
+ "winnow 0.7.14",
 ]
 
 [[package]]
@@ -6021,6 +6178,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7cda73e2f1397b1262d6dfdcef8aafae14d1de7748d66822d3bfeeb6d03e5e4b"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "toml_datetime"
+version = "0.7.5+spec-1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "92e1cfed4a3038bc5a127e35a2d360f145e1f4b971b551a2ba5fd7aedf7e1347"
+dependencies = [
+ "serde_core",
 ]
 
 [[package]]
@@ -6051,7 +6217,7 @@ checksum = "396e4d48bbb2b7554c944bde63101b5ae446cff6ec4a24227428f15eb72ef338"
 dependencies = [
  "indexmap",
  "serde",
- "serde_spanned",
+ "serde_spanned 0.6.9",
  "toml_datetime 0.6.3",
  "winnow 0.5.40",
 ]
@@ -6076,6 +6242,12 @@ checksum = "702d4415e08923e7e1ef96cd5727c0dfed80b4d2fa25db9647fe5eb6f7c5a4c4"
 dependencies = [
  "winnow 0.7.14",
 ]
+
+[[package]]
+name = "toml_writer"
+version = "1.1.0+spec-1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d282ade6016312faf3e41e57ebbba0c073e4056dab1232ab1cb624199648f8ed"
 
 [[package]]
 name = "tower-service"
@@ -7819,6 +7991,16 @@ name = "x11rb-protocol"
 version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ea6fc2961e4ef194dcbfe56bb845534d0dc8098940c7e5c012a258bfec6701bd"
+
+[[package]]
+name = "xattr"
+version = "1.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32e45ad4206f6d2479085147f02bc2ef834ac85886624a23575ae137c8aa8156"
+dependencies = [
+ "libc",
+ "rustix",
+]
 
 [[package]]
 name = "xcursor"

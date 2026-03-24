@@ -691,6 +691,7 @@ impl PaintState {
     #[cfg(any(
         feature = "active-vello-hybrid",
         feature = "active-vello-cpu",
+        feature = "active-skia",
         feature = "active-tiny-skia"
     ))]
     pub fn new_cpu(window: Arc<dyn Window>, scale: f64, size: Size, font_embolden: f32) -> Self {

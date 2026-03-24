@@ -18,8 +18,9 @@ files = { path = "../files/", optional = true, default-features = false }
 signpost = "*"
 
 [features]
-default = ["full", "vger" ]
+default = ["full", "skia" ]
 vello = ["floem/vello", "files?/vello"]
 vger = ["floem/vger"]
+skia = ["floem/skia"]
 vello-hybrid = ["floem/vello-hybrid", "files?/vello-hybrid"]
 full = ["dep:files"]

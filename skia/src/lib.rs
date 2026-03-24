@@ -1,6 +1,3 @@
-use std::ops::{Deref, DerefMut};
-use std::sync::Arc;
-
 use anyhow::{Result, anyhow};
 use floem_renderer::DisplayCommandExt;
 use imaging::record::Scene;
@@ -9,26 +6,24 @@ use imaging::{
     StrokeRef,
 };
 use peniko::{Blob, ImageAlphaType, ImageData, ImageFormat};
+use std::sync::Arc;
 
-pub struct VelloHybridRenderer {
-    renderer: imaging_vello_hybrid::VelloHybridRenderer,
+pub struct SkiaRenderer {
+    renderer: imaging_skia::SkiaRenderer,
     scene: Scene,
     width: u32,
     height: u32,
 }
 
-impl VelloHybridRenderer {
+impl SkiaRenderer {
     pub fn new(width: u32, height: u32) -> Result<Self> {
-        let width_u16 =
-            u16::try_from(width).map_err(|_| anyhow!("width exceeds vello_hybrid limit"))?;
-        let height_u16 =
-            u16::try_from(height).map_err(|_| anyhow!("height exceeds vello_hybrid limit"))?;
+        let width = u16::try_from(width).map_err(|_| anyhow!("width exceeds skia limit"))?;
+        let height = u16::try_from(height).map_err(|_| anyhow!("height exceeds skia limit"))?;
         Ok(Self {
-            renderer: imaging_vello_hybrid::VelloHybridRenderer::try_new(width_u16, height_u16)
-                .map_err(|err| anyhow!("{err:?}"))?,
+            renderer: imaging_skia::SkiaRenderer::new(width, height),
             scene: Scene::new(),
-            width,
-            height,
+            width: u32::from(width),
+            height: u32::from(height),
         })
     }
 
@@ -52,25 +47,11 @@ impl VelloHybridRenderer {
     }
 
     pub fn debug_info(&self) -> String {
-        "name: Vello Hybrid\ninfo: imaging_vello_hybrid".to_string()
+        "name: Skia\ninfo: imaging_skia".to_string()
     }
 }
 
-impl Deref for VelloHybridRenderer {
-    type Target = imaging_vello_hybrid::VelloHybridRenderer;
-
-    fn deref(&self) -> &Self::Target {
-        &self.renderer
-    }
-}
-
-impl DerefMut for VelloHybridRenderer {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.renderer
-    }
-}
-
-impl PaintSink for VelloHybridRenderer {
+impl PaintSink for SkiaRenderer {
     fn push_clip(&mut self, clip: ClipRef<'_>) {
         PaintSink::push_clip(&mut self.scene, clip);
     }
@@ -108,6 +89,6 @@ impl PaintSink for VelloHybridRenderer {
     }
 }
 
-impl CustomPaintSink<DisplayCommandExt> for VelloHybridRenderer {
+impl CustomPaintSink<DisplayCommandExt> for SkiaRenderer {
     fn custom(&mut self, _command: &DisplayCommandExt) {}
 }

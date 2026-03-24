@@ -54,6 +54,7 @@ use std::sync::Arc;
     feature = "active-vger",
     feature = "active-vello-hybrid",
     feature = "active-vello-cpu",
+    feature = "active-skia",
     feature = "active-tiny-skia",
 )))]
 compile_error!("Enable exactly one active renderer feature.");
@@ -61,13 +62,18 @@ compile_error!("Enable exactly one active renderer feature.");
     all(feature = "active-vello", feature = "active-vger"),
     all(feature = "active-vello", feature = "active-vello-hybrid"),
     all(feature = "active-vello", feature = "active-vello-cpu"),
+    all(feature = "active-vello", feature = "active-skia"),
     all(feature = "active-vello", feature = "active-tiny-skia"),
     all(feature = "active-vger", feature = "active-vello-hybrid"),
     all(feature = "active-vger", feature = "active-vello-cpu"),
+    all(feature = "active-vger", feature = "active-skia"),
     all(feature = "active-vger", feature = "active-tiny-skia"),
     all(feature = "active-vello-hybrid", feature = "active-vello-cpu"),
+    all(feature = "active-vello-hybrid", feature = "active-skia"),
     all(feature = "active-vello-hybrid", feature = "active-tiny-skia"),
+    all(feature = "active-vello-cpu", feature = "active-skia"),
     all(feature = "active-vello-cpu", feature = "active-tiny-skia"),
+    all(feature = "active-skia", feature = "active-tiny-skia"),
 ))]
 compile_error!("Enable only one active renderer feature.");
 #[cfg(not(any(feature = "fallback-vello-cpu", feature = "fallback-tiny-skia")))]
@@ -79,6 +85,8 @@ compile_error!("Enable only one CPU fallback renderer feature.");
 use floem_renderer::gpu_resources::GpuResources;
 #[cfg(any(feature = "active-vello", feature = "active-vger"))]
 use floem_renderer::{GpuTextureOutput, RenderOutput};
+#[cfg(feature = "active-skia")]
+use floem_skia_renderer::SkiaRenderer as ActiveRenderer;
 #[cfg(feature = "active-tiny-skia")]
 use floem_tiny_skia_renderer::TinySkiaRenderer as ActiveRenderer;
 #[cfg(feature = "fallback-tiny-skia")]
@@ -102,6 +110,7 @@ use peniko::kurbo::Size;
 #[cfg(any(
     feature = "active-vello-hybrid",
     feature = "active-vello-cpu",
+    feature = "active-skia",
     feature = "active-tiny-skia",
     feature = "fallback-vello-cpu",
     feature = "fallback-tiny-skia"
@@ -110,6 +119,7 @@ use softbuffer::{Context, Surface};
 #[cfg(any(
     feature = "active-vello-hybrid",
     feature = "active-vello-cpu",
+    feature = "active-skia",
     feature = "active-tiny-skia",
     feature = "fallback-vello-cpu",
     feature = "fallback-tiny-skia"
@@ -151,6 +161,7 @@ struct ActiveState {
 #[cfg(any(
     feature = "active-vello-hybrid",
     feature = "active-vello-cpu",
+    feature = "active-skia",
     feature = "active-tiny-skia"
 ))]
 struct ActiveState {
@@ -245,6 +256,7 @@ impl GpuWindowPresenter {
 #[cfg(any(
     feature = "active-vello-hybrid",
     feature = "active-vello-cpu",
+    feature = "active-skia",
     feature = "active-tiny-skia",
     feature = "fallback-vello-cpu",
     feature = "fallback-tiny-skia"
@@ -301,6 +313,7 @@ pub enum Renderer {
         feature = "active-vger",
         feature = "active-vello-hybrid",
         feature = "active-vello-cpu",
+        feature = "active-skia",
         feature = "active-tiny-skia"
     ))]
     Active(ActiveState),
@@ -308,9 +321,7 @@ pub enum Renderer {
     CpuFallback(CpuFallbackState),
     /// Uninitialized renderer, used to allow the renderer to be created lazily
     /// All operations on this renderer are no-ops
-    Uninitialized {
-        size: Size,
-    },
+    Uninitialized { size: Size },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -335,6 +346,8 @@ impl Renderer {
     const ACTIVE_RENDERER_NAME: &str = "VelloHybridRenderer";
     #[cfg(feature = "active-vello-cpu")]
     const ACTIVE_RENDERER_NAME: &str = "VelloCpuRenderer";
+    #[cfg(feature = "active-skia")]
+    const ACTIVE_RENDERER_NAME: &str = "SkiaRenderer";
     #[cfg(feature = "active-tiny-skia")]
     const ACTIVE_RENDERER_NAME: &str = "TinySkiaRenderer";
 
@@ -369,20 +382,25 @@ impl Renderer {
     #[cfg(any(
         feature = "active-vello-hybrid",
         feature = "active-vello-cpu",
+        feature = "active-skia",
         feature = "active-tiny-skia"
     ))]
     fn try_new_active(
         window: Arc<dyn Window>,
         width: u32,
         height: u32,
-        scale: f64,
-        font_embolden: f32,
+        _scale: f64,
+        _font_embolden: f32,
     ) -> Result<ActiveState, String> {
         let presenter = CpuImagePresenter::new(window, width, height)?;
         #[cfg(feature = "active-tiny-skia")]
-        let renderer = ActiveRenderer::new(width, height, scale, font_embolden)
+        let renderer = ActiveRenderer::new(width, height, _scale, _font_embolden)
             .map_err(|err| err.to_string())?;
-        #[cfg(any(feature = "active-vello-hybrid", feature = "active-vello-cpu"))]
+        #[cfg(any(
+            feature = "active-vello-hybrid",
+            feature = "active-vello-cpu",
+            feature = "active-skia"
+        ))]
         let renderer = ActiveRenderer::new(width, height).map_err(|err| err.to_string())?;
         Ok(ActiveState {
             renderer,
@@ -409,30 +427,6 @@ impl Renderer {
             renderer,
             presenter,
             size: Size::new(width as f64, height as f64),
-        })
-    }
-
-    #[cfg(feature = "fallback-vello-cpu")]
-    fn finish_cpu_renderer(renderer: &mut CpuFallbackRenderer, size: Size) -> Option<ImageData> {
-        let data = renderer.finish_rgba8().ok()?;
-        Some(ImageData {
-            data: peniko::Blob::new(std::sync::Arc::new(data)),
-            format: peniko::ImageFormat::Rgba8,
-            alpha_type: peniko::ImageAlphaType::Alpha,
-            width: size.width as u32,
-            height: size.height as u32,
-        })
-    }
-
-    #[cfg(any(feature = "active-vello-hybrid", feature = "active-vello-cpu"))]
-    fn finish_active_cpu_renderer(renderer: &mut ActiveRenderer, size: Size) -> Option<ImageData> {
-        let data = renderer.finish_rgba8().ok()?;
-        Some(ImageData {
-            data: peniko::Blob::new(std::sync::Arc::new(data)),
-            format: peniko::ImageFormat::Rgba8,
-            alpha_type: peniko::ImageAlphaType::Alpha,
-            width: size.width as u32,
-            height: size.height as u32,
         })
     }
 
@@ -500,6 +494,7 @@ impl Renderer {
     #[cfg(any(
         feature = "active-vello-hybrid",
         feature = "active-vello-cpu",
+        feature = "active-skia",
         feature = "active-tiny-skia"
     ))]
     pub fn new_cpu(window: Arc<dyn Window>, scale: f64, size: Size, font_embolden: f32) -> Self {
@@ -561,7 +556,11 @@ impl Renderer {
                 state
                     .renderer
                     .begin(width, height, frame.scale, frame.font_embolden);
-                #[cfg(any(feature = "active-vello-hybrid", feature = "active-vello-cpu"))]
+                #[cfg(any(
+                    feature = "active-vello-hybrid",
+                    feature = "active-vello-cpu",
+                    feature = "active-skia"
+                ))]
                 {
                     if size_changed {
                         state.renderer = ActiveRenderer::new(width, height).unwrap_or_else(|err| {
@@ -614,13 +613,18 @@ impl Renderer {
             #[cfg(any(
                 feature = "active-vello-hybrid",
                 feature = "active-vello-cpu",
+                feature = "active-skia",
                 feature = "active-tiny-skia"
             ))]
             Renderer::Active(state) => {
+                #[cfg(feature = "active-vello-hybrid")]
+                let image = state.renderer.finish();
+                #[cfg(feature = "active-vello-cpu")]
+                let image = state.renderer.finish();
+                #[cfg(feature = "active-skia")]
+                let image = state.renderer.finish();
                 #[cfg(feature = "active-tiny-skia")]
                 let image = state.renderer.finish();
-                #[cfg(any(feature = "active-vello-hybrid", feature = "active-vello-cpu"))]
-                let image = Self::finish_active_cpu_renderer(&mut state.renderer, state.size);
                 if mode == FinishMode::Present
                     && let Some(image) = image.as_ref()
                 {
@@ -630,10 +634,10 @@ impl Renderer {
                 image
             }
             Renderer::CpuFallback(state) => {
+                #[cfg(feature = "fallback-vello-cpu")]
+                let image = state.renderer.finish();
                 #[cfg(feature = "fallback-tiny-skia")]
                 let image = state.renderer.finish();
-                #[cfg(feature = "fallback-vello-cpu")]
-                let image = Self::finish_cpu_renderer(&mut state.renderer, state.size);
                 if mode == FinishMode::Present
                     && let Some(image) = image.as_ref()
                 {

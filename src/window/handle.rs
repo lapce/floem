@@ -261,6 +261,7 @@ impl WindowHandle {
     #[cfg(any(
         feature = "active-vello-hybrid",
         feature = "active-vello-cpu",
+        feature = "active-skia",
         feature = "active-tiny-skia"
     ))]
     fn new_paint_state(
@@ -280,6 +281,7 @@ impl WindowHandle {
         feature = "active-vger",
         feature = "active-vello-hybrid",
         feature = "active-vello-cpu",
+        feature = "active-skia",
         feature = "active-tiny-skia"
     )))]
     fn new_paint_state(
@@ -354,6 +356,7 @@ impl WindowHandle {
         #[cfg(any(
             feature = "active-vello-hybrid",
             feature = "active-vello-cpu",
+            feature = "active-skia",
             feature = "active-tiny-skia"
         ))]
         let paint_state = PaintState::new_cpu(window.clone(), os_scale, size_val * os_scale, 0.0);
@@ -363,6 +366,7 @@ impl WindowHandle {
             feature = "active-vger",
             feature = "active-vello-hybrid",
             feature = "active-vello-cpu",
+            feature = "active-skia",
             feature = "active-tiny-skia"
         )))]
         let paint_state = PaintState::Initialized {
