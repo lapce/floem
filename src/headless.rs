@@ -199,6 +199,11 @@ impl HeadlessHarness {
         self.window_handle.id
     }
 
+    /// Returns the `winit::window::WindowId` of the underlying headless window.
+    pub fn window_id(&self) -> winit::window::WindowId {
+        self.window_handle.window_id()
+    }
+
     /// Dispatch an event to the view tree.
     ///
     /// This uses the full WindowHandle event dispatch and processing,

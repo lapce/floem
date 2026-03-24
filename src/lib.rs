@@ -250,6 +250,9 @@ pub use window::{
     Urgency, WindowIdExt, WindowState, close_window, new_window, request_close_window,
 };
 
+#[doc(hidden)]
+pub use app::take_close_window_event_count;
+
 /// Re-export unit and theme modules from style for backward compatibility.
 pub use style::{theme, unit};
 

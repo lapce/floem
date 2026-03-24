@@ -355,9 +355,7 @@ impl<'a> GlobalEventCx<'a> {
 
     /// Route the original OS window event. This is the primary entry point
     /// called once per OS event from the window handle.
-    ///
-    /// Returns `true` if the event's default action was prevented.
-    pub fn route_window_event(self) -> bool {
+    pub fn route_window_event(self) {
         self.with_route_cx(|rcx| {
             let event = rcx.event.clone();
 
@@ -469,8 +467,6 @@ impl<'a> GlobalEventCx<'a> {
             if let Event::Pointer(PointerEvent::Leave(_)) = &event {
                 rcx.update_hover_from_path(&[]);
             }
-
-            rcx.prevent_default
         })
     }
 
@@ -1206,6 +1202,12 @@ impl RouteCx<'_, '_> {
         };
         if let Some(pbe) = pbe {
             self.handle_menu_events(&pbe.clone());
+        }
+
+        // Window close — close the window if not prevented.
+        if matches!(&self.event, Event::Window(WindowEvent::CloseRequested)) {
+            let window_id = self.gcx.window_state.window_id;
+            crate::app::add_app_update_event(crate::app::AppUpdateEvent::CloseWindow { window_id });
         }
     }
 
