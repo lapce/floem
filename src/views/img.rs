@@ -366,13 +366,31 @@ impl View for Img {
         let content_rect = self.id.get_content_rect_local();
         let dest_rect = self.object_fit_dest_rect(content_rect);
         let image_brush = Brush::Image(self.img.clone());
+        let source_width = self.img.image.width as f64;
+        let source_height = self.img.image.height as f64;
+
+        if source_width <= 0.0 || source_height <= 0.0 {
+            return;
+        }
+
+        let source_rect = Rect::new(0.0, 0.0, source_width, source_height);
+        let image_transform = peniko::kurbo::Affine::translate((dest_rect.x0, dest_rect.y0))
+            .then_scale_non_uniform(
+                dest_rect.width() / source_width,
+                dest_rect.height() / source_height,
+            );
 
         if self.needs_clip() {
             cx.painter.with_fill_clip(content_rect, |p| {
-                p.fill(dest_rect, &image_brush).draw();
+                p.fill(source_rect, &image_brush)
+                    .transform(image_transform)
+                    .draw();
             });
         } else {
-            cx.painter.fill(dest_rect, &image_brush).draw();
+            cx.painter
+                .fill(source_rect, &image_brush)
+                .transform(image_transform)
+                .draw();
         }
     }
 }

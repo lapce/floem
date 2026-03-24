@@ -9,7 +9,7 @@ use floem_renderer::text::{Glyph, GlyphRunRef};
 use floem_renderer::{Img, Renderer, tiny_skia};
 use floem_vger_rs::{GlyphImage, Image, PaintIndex, PixelFormat, Vger};
 use peniko::kurbo::{Size, Stroke};
-use peniko::{Blob, ImageData, LinearGradientPosition};
+use peniko::{Blob, Extend, ImageData, ImageQuality, LinearGradientPosition};
 use peniko::{
     BrushRef, Color, GradientKind,
     kurbo::{Affine, Point, Rect, Shape},
@@ -648,6 +648,37 @@ impl Renderer for VgerRenderer {
         let width = (rect.width() * scale_x.abs()).round().max(1.0) as u32;
         let height = (rect.height() * scale_y.abs()).round().max(1.0) as u32;
 
+        let brush = brush.map(Into::into);
+
+        if let Some(BrushRef::Image(image)) = brush {
+            let image = image.to_owned();
+            let mut svg_pixmap = tiny_skia::Pixmap::new(width, height).unwrap();
+            let svg_scale = (width as f32 / svg.tree.size().width())
+                .min(height as f32 / svg.tree.size().height());
+            let transform = tiny_skia::Transform::from_scale(svg_scale, svg_scale);
+            resvg::render(svg.tree, transform, &mut svg_pixmap.as_mut());
+
+            let Some(final_pixmap) = colorize_svg_pixmap(&svg_pixmap, &image) else {
+                return;
+            };
+
+            let mut hash = Vec::with_capacity(
+                svg.hash.len() + std::mem::size_of::<u64>() + std::mem::size_of::<u32>() * 2,
+            );
+            hash.extend_from_slice(svg.hash);
+            hash.extend_from_slice(&image.image.data.id().to_le_bytes());
+            hash.extend_from_slice(&width.to_le_bytes());
+            hash.extend_from_slice(&height.to_le_bytes());
+
+            self.vger.render_image(x, y, &hash, width, height, || Image {
+                width,
+                height,
+                data: final_pixmap.data().to_vec().into(),
+                pixel_format: PixelFormat::Rgba,
+            });
+            return;
+        }
+
         let paint = brush.and_then(|b| self.brush_to_paint(b));
 
         self.vger.render_svg(
@@ -762,6 +793,67 @@ fn vger_color(color: Color) -> floem_vger_rs::Color {
         b: color.components[2],
         a: color.components[3],
     }
+}
+
+fn image_quality_to_filter_quality(quality: ImageQuality) -> tiny_skia::FilterQuality {
+    match quality {
+        ImageQuality::Low => tiny_skia::FilterQuality::Nearest,
+        ImageQuality::Medium | ImageQuality::High => tiny_skia::FilterQuality::Bilinear,
+    }
+}
+
+fn image_brush_spread_mode(image: &peniko::ImageBrush) -> tiny_skia::SpreadMode {
+    match if image.sampler.x_extend == image.sampler.y_extend {
+        image.sampler.x_extend
+    } else {
+        Extend::Pad
+    } {
+        Extend::Pad => tiny_skia::SpreadMode::Pad,
+        Extend::Repeat => tiny_skia::SpreadMode::Repeat,
+        Extend::Reflect => tiny_skia::SpreadMode::Reflect,
+    }
+}
+
+fn image_brush_pixmap(image: &peniko::ImageBrush) -> Option<tiny_skia::Pixmap> {
+    let mut pixmap = tiny_skia::Pixmap::new(image.image.width, image.image.height)?;
+    for (a, b) in pixmap
+        .pixels_mut()
+        .iter_mut()
+        .zip(image.image.data.data().chunks_exact(4))
+    {
+        *a = tiny_skia::Color::from_rgba8(b[0], b[1], b[2], b[3])
+            .premultiply()
+            .to_color_u8();
+    }
+    Some(pixmap)
+}
+
+fn colorize_svg_pixmap(
+    mask_pixmap: &tiny_skia::Pixmap,
+    image: &peniko::ImageBrush,
+) -> Option<tiny_skia::Pixmap> {
+    let image_pixmap = image_brush_pixmap(image)?;
+    let mut colored = tiny_skia::Pixmap::new(mask_pixmap.width(), mask_pixmap.height())?;
+    let rect = tiny_skia::Rect::from_xywh(
+        0.0,
+        0.0,
+        mask_pixmap.width() as f32,
+        mask_pixmap.height() as f32,
+    )?;
+    let paint = tiny_skia::Paint {
+        shader: tiny_skia::Pattern::new(
+            image_pixmap.as_ref(),
+            image_brush_spread_mode(image),
+            image_quality_to_filter_quality(image.sampler.quality),
+            image.sampler.alpha,
+            tiny_skia::Transform::identity(),
+        ),
+        ..Default::default()
+    };
+    colored.fill_rect(rect, &paint, tiny_skia::Transform::identity(), None);
+    let mask = tiny_skia::Mask::from_pixmap(mask_pixmap.as_ref(), tiny_skia::MaskType::Alpha);
+    colored.apply_mask(&mask);
+    Some(colored)
 }
 
 fn scaled_embolden_strength(font_embolden: f32, scale: f64) -> f32 {

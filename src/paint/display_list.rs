@@ -152,10 +152,13 @@
 use std::sync::Arc;
 
 use floem_renderer::text::{Glyph, GlyphRunRef};
-use floem_renderer::{Img, Renderer as FloemRenderer, Svg, usvg};
+use floem_renderer::{Renderer as FloemRenderer, Svg, usvg};
 use imaging::{
-    BlurredRoundedRect, ClipRef, FillRef, GroupRef, PaintSink, StrokeRef,
-    record::{Clip, Draw, Geometry, Glyph as ImagingGlyph, GlyphRun, Group},
+    BlurredRoundedRect, ClipRef, CustomPaintSink, FillRef, GroupRef, PaintSink, StrokeRef,
+    record::{
+        Clip, Draw, ExtendedScene, Geometry, Glyph as ImagingGlyph, GlyphRun, Group,
+        replay_ext_transformed,
+    },
 };
 use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Shape, Size};
 use peniko::{BrushRef, Fill};
@@ -229,6 +232,34 @@ pub(crate) struct OwnedSvg {
 }
 
 #[derive(Clone)]
+pub(crate) enum DisplayCommandExt {
+    DrawSvg {
+        svg: OwnedSvg,
+        rect: Rect,
+        transform: Affine,
+        brush: Option<peniko::Brush>,
+    },
+}
+
+impl imaging::record::CustomCommand for DisplayCommandExt {
+    fn prepend_transform(&self, prefix: Affine) -> Self {
+        match self {
+            Self::DrawSvg {
+                svg,
+                rect,
+                transform,
+                brush,
+            } => Self::DrawSvg {
+                svg: svg.clone(),
+                rect: *rect,
+                transform: prefix * *transform,
+                brush: brush.clone(),
+            },
+        }
+    }
+}
+
+#[derive(Clone)]
 pub(crate) enum DisplayCommand {
     PushClip {
         clip: Clip,
@@ -241,14 +272,6 @@ pub(crate) enum DisplayCommand {
     Draw {
         draw: Draw,
     },
-    #[allow(dead_code)]
-    DrawImage {
-        img: peniko::ImageBrush,
-        hash: Arc<[u8]>,
-        rect: Rect,
-        transform: Affine,
-    },
-    #[allow(dead_code)]
     DrawSvg {
         svg: OwnedSvg,
         rect: Rect,
@@ -415,7 +438,7 @@ impl Default for PaintPropertyTree {
 pub(crate) struct PaintChunk {
     pub kind: PaintChunkKind,
     pub properties: PaintPropertyState,
-    pub commands: Vec<DisplayCommand>,
+    pub commands: ExtendedScene<DisplayCommandExt>,
     pub bounds: Option<Rect>,
     pub metadata: PaintChunkMetadata,
     pub transform_class: TransformClass,
@@ -601,7 +624,6 @@ impl<'a> RecordingRenderer<'a> {
 }
 
 impl RecordingRenderer<'_> {
-    #[allow(dead_code)]
     pub fn draw_svg<'b>(
         &mut self,
         svg: Svg<'b>,
@@ -617,16 +639,6 @@ impl RecordingRenderer<'_> {
             rect,
             transform,
             brush: brush.map(|brush| brush.into().to_owned()),
-        });
-    }
-
-    #[allow(dead_code)]
-    pub fn draw_img(&mut self, img: Img<'_>, rect: Rect, transform: Affine) {
-        self.commands.push(DisplayCommand::DrawImage {
-            img: img.img,
-            hash: Arc::from(img.hash.to_vec()),
-            rect,
-            transform,
         });
     }
 }
@@ -660,16 +672,161 @@ impl PaintSink for RecordingRenderer<'_> {
         self.record_draw(draw.to_owned());
     }
 
-    fn glyph_run(
-        &mut self,
-        draw: GlyphRunRef<'_>,
-        glyphs: &mut dyn Iterator<Item = ImagingGlyph>,
-    ) {
+    fn glyph_run(&mut self, draw: GlyphRunRef<'_>, glyphs: &mut dyn Iterator<Item = ImagingGlyph>) {
         self.record_draw(Draw::GlyphRun(draw.to_owned(glyphs)));
     }
 
     fn blurred_rounded_rect(&mut self, draw: BlurredRoundedRect) {
         self.record_draw(Draw::BlurredRoundedRect(draw));
+    }
+}
+
+struct ReplayRenderer<'a, R> {
+    renderer: &'a mut R,
+    render_size: Size,
+    current_transform: &'a mut Option<Affine>,
+}
+
+impl<R> PaintSink for ReplayRenderer<'_, R>
+where
+    R: FloemRenderer,
+{
+    fn push_clip(&mut self, clip: ClipRef<'_>) {
+        let ClipRef::Fill {
+            transform, shape, ..
+        } = clip
+        else {
+            return;
+        };
+        set_transform_if_needed(self.renderer, transform, self.current_transform);
+        match sanitize_clip_geometry(&shape.to_owned(), transform, self.render_size) {
+            Geometry::Rect(rect) => self.renderer.clip(&rect),
+            Geometry::RoundedRect(rect) => self.renderer.clip(&rect),
+            Geometry::Path(path) => self.renderer.clip(&path),
+        }
+    }
+
+    fn pop_clip(&mut self) {
+        self.renderer.clear_clip();
+    }
+
+    fn push_group(&mut self, group: GroupRef<'_>) {
+        let Some(ClipRef::Fill {
+            transform, shape, ..
+        }) = group.clip
+        else {
+            return;
+        };
+        set_transform_if_needed(self.renderer, Affine::IDENTITY, self.current_transform);
+        match sanitize_clip_geometry(&shape.to_owned(), transform, self.render_size) {
+            Geometry::Rect(rect) => self.renderer.push_layer(
+                group.composite.blend,
+                group.composite.alpha,
+                transform,
+                &rect,
+            ),
+            Geometry::RoundedRect(rect) => self.renderer.push_layer(
+                group.composite.blend,
+                group.composite.alpha,
+                transform,
+                &rect,
+            ),
+            Geometry::Path(path) => self.renderer.push_layer(
+                group.composite.blend,
+                group.composite.alpha,
+                transform,
+                &path,
+            ),
+        }
+    }
+
+    fn pop_group(&mut self) {
+        self.renderer.pop_layer();
+    }
+
+    fn fill(&mut self, draw: FillRef<'_>) {
+        set_transform_if_needed(self.renderer, draw.transform, self.current_transform);
+        match draw.shape {
+            imaging::GeometryRef::Rect(rect) => self.renderer.fill(&rect, draw.brush, 0.0),
+            imaging::GeometryRef::RoundedRect(rect) => self.renderer.fill(&rect, draw.brush, 0.0),
+            imaging::GeometryRef::Path(path) => self.renderer.fill(path, draw.brush, 0.0),
+            imaging::GeometryRef::OwnedPath(path) => self.renderer.fill(&path, draw.brush, 0.0),
+        }
+    }
+
+    fn stroke(&mut self, draw: StrokeRef<'_>) {
+        set_transform_if_needed(self.renderer, draw.transform, self.current_transform);
+        match draw.shape {
+            imaging::GeometryRef::Rect(rect) => {
+                self.renderer.stroke(&rect, draw.brush, draw.stroke)
+            }
+            imaging::GeometryRef::RoundedRect(rect) => {
+                self.renderer.stroke(&rect, draw.brush, draw.stroke)
+            }
+            imaging::GeometryRef::Path(path) => self.renderer.stroke(path, draw.brush, draw.stroke),
+            imaging::GeometryRef::OwnedPath(path) => {
+                self.renderer.stroke(&path, draw.brush, draw.stroke)
+            }
+        }
+    }
+
+    fn glyph_run(
+        &mut self,
+        draw: imaging::GlyphRunRef<'_>,
+        glyphs: &mut dyn Iterator<Item = ImagingGlyph>,
+    ) {
+        let run_ref = GlyphRunRef {
+            font: draw.font,
+            transform: draw.transform,
+            glyph_transform: draw.glyph_transform,
+            font_size: draw.font_size,
+            hint: draw.hint,
+            normalized_coords: draw.normalized_coords,
+            style: draw.style,
+            brush: draw.brush,
+            composite: draw.composite,
+        };
+        set_transform_if_needed(self.renderer, Affine::IDENTITY, self.current_transform);
+        self.renderer.draw_glyphs(
+            Point::ZERO,
+            &run_ref,
+            glyphs.map(|glyph| Glyph {
+                id: glyph.id,
+                style_index: 0,
+                x: glyph.x,
+                y: glyph.y,
+                advance: 0.0,
+            }),
+        );
+    }
+
+    fn blurred_rounded_rect(&mut self, draw: BlurredRoundedRect) {
+        set_transform_if_needed(self.renderer, draw.transform, self.current_transform);
+        let shape = draw.rect.to_rounded_rect(draw.radius);
+        self.renderer.fill(&shape, draw.color, draw.std_dev);
+    }
+}
+
+impl<R> CustomPaintSink<DisplayCommandExt> for ReplayRenderer<'_, R>
+where
+    R: FloemRenderer,
+{
+    fn custom(&mut self, command: &DisplayCommandExt) {
+        let DisplayCommandExt::DrawSvg {
+            svg,
+            rect,
+            transform,
+            brush,
+        } = command;
+        set_transform_if_needed(self.renderer, *transform, self.current_transform);
+        self.renderer.draw_svg(
+            Svg {
+                tree: svg.tree.as_ref(),
+                hash: svg.hash.as_ref(),
+            },
+            *rect,
+            brush.as_ref(),
+        );
     }
 }
 
@@ -703,86 +860,12 @@ pub(crate) fn replay_stage(
             &mut current_transform,
             &mut current_clip_stack,
         );
-        for command in &chunk.commands {
-            match command {
-                DisplayCommand::PushClip { .. } | DisplayCommand::PopClip => {}
-                DisplayCommand::PushGroup { group } => {
-                    let Some(Clip::Fill {
-                        transform: clip_transform,
-                        shape,
-                        ..
-                    }) = group.clip.as_ref()
-                    else {
-                        continue;
-                    };
-                    let layer_transform = base_transform * *clip_transform;
-                    set_transform_if_needed(renderer, base_transform, &mut current_transform);
-                    match sanitize_clip_geometry(shape, layer_transform, render_size) {
-                        Geometry::Rect(rect) => renderer.push_layer(
-                            group.composite.blend,
-                            group.composite.alpha,
-                            *clip_transform,
-                            &rect,
-                        ),
-                        Geometry::RoundedRect(rect) => renderer.push_layer(
-                            group.composite.blend,
-                            group.composite.alpha,
-                            *clip_transform,
-                            &rect,
-                        ),
-                        Geometry::Path(path) => renderer.push_layer(
-                            group.composite.blend,
-                            group.composite.alpha,
-                            *clip_transform,
-                            &path,
-                        ),
-                    }
-                }
-                DisplayCommand::PopGroup => renderer.pop_layer(),
-                DisplayCommand::Draw { draw } => {
-                    replay_draw(renderer, draw, base_transform, &mut current_transform)
-                }
-                DisplayCommand::DrawImage {
-                    img,
-                    hash,
-                    rect,
-                    transform,
-                } => {
-                    set_transform_if_needed(
-                        renderer,
-                        base_transform * *transform,
-                        &mut current_transform,
-                    );
-                    renderer.draw_img(
-                        Img {
-                            img: img.clone(),
-                            hash,
-                        },
-                        *rect,
-                    );
-                }
-                DisplayCommand::DrawSvg {
-                    svg,
-                    rect,
-                    transform,
-                    brush,
-                } => {
-                    set_transform_if_needed(
-                        renderer,
-                        base_transform * *transform,
-                        &mut current_transform,
-                    );
-                    renderer.draw_svg(
-                        Svg {
-                            tree: svg.tree.as_ref(),
-                            hash: svg.hash.as_ref(),
-                        },
-                        *rect,
-                        brush.as_ref(),
-                    );
-                }
-            }
-        }
+        let mut replay = ReplayRenderer {
+            renderer,
+            render_size,
+            current_transform: &mut current_transform,
+        };
+        replay_ext_transformed(&chunk.commands, &mut replay, base_transform);
     }
 
     apply_clip_state(
@@ -887,12 +970,12 @@ fn chunk_display_commands(commands: Vec<DisplayCommand>) -> (Vec<PaintChunk>, Pa
                         *chunk_transform_class = chunk_transform_class.combine(transform_class);
                         *chunk_bounds = union_rects(*chunk_bounds, bounds);
                         *chunk_metadata = chunk_metadata.merge(metadata);
-                        chunk_commands.push(command);
+                        record_scene_command(chunk_commands, command);
                     }
                     _ => chunks.push(PaintChunk {
                         kind: PaintChunkKind::Draw,
                         properties,
-                        commands: vec![command],
+                        commands: replay_scene([command]),
                         bounds,
                         metadata,
                         transform_class,
@@ -914,11 +997,50 @@ fn push_boundary_chunk(
     chunks.push(PaintChunk {
         kind: PaintChunkKind::Boundary,
         properties,
-        commands: vec![command],
+        commands: replay_scene([command]),
         bounds: None,
         metadata: PaintChunkMetadata::default(),
         transform_class,
     });
+}
+
+fn replay_scene(
+    commands: impl IntoIterator<Item = DisplayCommand>,
+) -> ExtendedScene<DisplayCommandExt> {
+    let mut scene = ExtendedScene::new();
+    for command in commands {
+        record_scene_command(&mut scene, command);
+    }
+    scene
+}
+
+fn record_scene_command(scene: &mut ExtendedScene<DisplayCommandExt>, command: DisplayCommand) {
+    match command {
+        DisplayCommand::PushClip { clip } => {
+            let _ = scene.push_clip(clip);
+        }
+        DisplayCommand::PopClip => scene.pop_clip(),
+        DisplayCommand::PushGroup { group } => {
+            let _ = scene.push_group(group);
+        }
+        DisplayCommand::PopGroup => scene.pop_group(),
+        DisplayCommand::Draw { draw } => {
+            let _ = scene.draw(draw);
+        }
+        DisplayCommand::DrawSvg {
+            svg,
+            rect,
+            transform,
+            brush,
+        } => {
+            let _ = scene.custom_command(DisplayCommandExt::DrawSvg {
+                svg,
+                rect,
+                transform,
+                brush,
+            });
+        }
+    }
 }
 
 fn command_transform_class(command: &DisplayCommand) -> TransformClass {
@@ -931,9 +1053,7 @@ fn command_transform_class(command: &DisplayCommand) -> TransformClass {
             Draw::Fill { .. } | Draw::Stroke { .. } => TransformClass::Affine,
             Draw::GlyphRun(_) | Draw::BlurredRoundedRect(_) => TransformClass::TranslateOnly,
         },
-        DisplayCommand::DrawImage { .. } | DisplayCommand::DrawSvg { .. } => {
-            TransformClass::TranslateOnly
-        }
+        DisplayCommand::DrawSvg { .. } => TransformClass::TranslateOnly,
     }
 }
 
@@ -944,9 +1064,7 @@ fn command_bounds(command: &DisplayCommand) -> Option<Rect> {
         | DisplayCommand::PushGroup { .. }
         | DisplayCommand::PopGroup => None,
         DisplayCommand::Draw { draw, .. } => draw_bounds(draw),
-        DisplayCommand::DrawImage { rect, .. } | DisplayCommand::DrawSvg { rect, .. } => {
-            Some(*rect)
-        }
+        DisplayCommand::DrawSvg { rect, .. } => Some(*rect),
     }
 }
 
@@ -1013,10 +1131,6 @@ fn command_metadata(command: &DisplayCommand) -> PaintChunkMetadata {
                 ..PaintChunkMetadata::default()
             },
         },
-        DisplayCommand::DrawImage { .. } => PaintChunkMetadata {
-            has_raster_image: true,
-            ..PaintChunkMetadata::default()
-        },
         DisplayCommand::DrawSvg { .. } => PaintChunkMetadata {
             has_vector_image: true,
             ..PaintChunkMetadata::default()
@@ -1079,9 +1193,7 @@ fn command_affine(command: &DisplayCommand) -> Affine {
             Draw::GlyphRun(run) => run.transform,
             Draw::BlurredRoundedRect(rect) => rect.transform,
         },
-        DisplayCommand::DrawImage { transform, .. } | DisplayCommand::DrawSvg { transform, .. } => {
-            *transform
-        }
+        DisplayCommand::DrawSvg { transform, .. } => *transform,
     }
 }
 
@@ -1201,73 +1313,6 @@ fn clip_chain(property_tree: &PaintPropertyTree, clip_id: ClipNodeId) -> Vec<Cli
     chain
 }
 
-fn replay_draw(
-    renderer: &mut impl FloemRenderer,
-    draw: &Draw,
-    base_transform: Affine,
-    current_transform: &mut Option<Affine>,
-) {
-    match draw {
-        Draw::Fill {
-            transform,
-            brush,
-            shape,
-            ..
-        } => {
-            set_transform_if_needed(renderer, base_transform * *transform, current_transform);
-            match shape {
-                Geometry::Rect(rect) => renderer.fill(rect, brush, 0.0),
-                Geometry::RoundedRect(rect) => renderer.fill(rect, brush, 0.0),
-                Geometry::Path(path) => renderer.fill(path, brush, 0.0),
-            }
-        }
-        Draw::Stroke {
-            transform,
-            stroke,
-            brush,
-            shape,
-            ..
-        } => {
-            set_transform_if_needed(renderer, base_transform * *transform, current_transform);
-            match shape {
-                Geometry::Rect(rect) => renderer.stroke(rect, brush, stroke),
-                Geometry::RoundedRect(rect) => renderer.stroke(rect, brush, stroke),
-                Geometry::Path(path) => renderer.stroke(path, brush, stroke),
-            }
-        }
-        Draw::GlyphRun(run) => {
-            let run_ref = GlyphRunRef {
-                font: &run.font,
-                transform: run.transform,
-                glyph_transform: run.glyph_transform,
-                font_size: run.font_size,
-                hint: run.hint,
-                normalized_coords: &run.normalized_coords,
-                style: &run.style,
-                brush: (&run.brush).into(),
-                composite: run.composite,
-            };
-            set_transform_if_needed(renderer, base_transform, current_transform);
-            renderer.draw_glyphs(
-                Point::ZERO,
-                &run_ref,
-                run.glyphs.iter().map(|glyph| Glyph {
-                    id: glyph.id,
-                    style_index: 0,
-                    x: glyph.x,
-                    y: glyph.y,
-                    advance: 0.0,
-                }),
-            );
-        }
-        Draw::BlurredRoundedRect(rect) => {
-            set_transform_if_needed(renderer, base_transform * rect.transform, current_transform);
-            let shape = rect.rect.to_rounded_rect(rect.radius);
-            renderer.fill(&shape, rect.color, rect.std_dev);
-        }
-    }
-}
-
 fn set_transform_if_needed(
     renderer: &mut impl FloemRenderer,
     transform: Affine,
@@ -1383,7 +1428,7 @@ mod tests {
         assert_eq!(stage.chunks.len(), 1);
         assert_eq!(stage.chunks[0].kind, PaintChunkKind::Draw);
         assert_eq!(stage.chunks[0].properties.z_index, 0);
-        assert_eq!(stage.chunks[0].commands.len(), 2);
+        assert_eq!(stage.chunks[0].commands.commands().len(), 2);
         assert_eq!(stage.transform_class, TransformClass::Affine);
     }
 
@@ -1479,49 +1524,6 @@ mod tests {
         assert_eq!(stage.transform_class, TransformClass::TranslateOnly);
         assert!(stage.chunks[0].metadata.has_blur);
         assert!(stage.chunks[0].bounds.is_some());
-    }
-
-    #[test]
-    fn stage_damage_query_filters_chunks_by_bounds() {
-        let rect = Rect::new(0.0, 0.0, 10.0, 10.0);
-        let mut stage = ElementStage::default();
-        stage.set_commands(
-            vec![
-                DisplayCommand::Draw {
-                    draw: Draw::Fill {
-                        transform: Affine::IDENTITY,
-                        fill_rule: Fill::NonZero,
-                        brush: Color::BLACK.into(),
-                        brush_transform: None,
-                        shape: Geometry::Rect(rect),
-                        composite: Composite::default(),
-                    },
-                },
-                DisplayCommand::DrawImage {
-                    img: peniko::ImageBrush::new(peniko::ImageData {
-                        data: peniko::Blob::new(Arc::new(vec![255, 255, 255, 255])),
-                        format: peniko::ImageFormat::Rgba8,
-                        alpha_type: peniko::ImageAlphaType::Alpha,
-                        width: 1,
-                        height: 1,
-                    }),
-                    hash: Arc::from([1_u8].as_slice()),
-                    rect: Rect::new(40.0, 40.0, 50.0, 50.0),
-                    transform: Affine::IDENTITY,
-                },
-            ],
-            None,
-        );
-
-        let damage = [Rect::new(1.0, 1.0, 5.0, 5.0)];
-        let chunks = stage.chunk_indices_for_damage(&damage);
-        assert_eq!(chunks, vec![0]);
-        assert_eq!(stage.chunks.len(), 1);
-        assert!(stage.chunks[0].metadata.has_raster_image);
-        assert_eq!(
-            stage.chunks[0].bounds,
-            Some(Rect::new(0.0, 0.0, 50.0, 50.0))
-        );
     }
 
     #[test]

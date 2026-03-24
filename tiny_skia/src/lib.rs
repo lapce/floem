@@ -6,8 +6,8 @@ use floem_renderer::Renderer;
 use floem_renderer::text::{Glyph as ParleyGlyph, GlyphRunRef};
 use floem_renderer::tiny_skia::{
     self, FillRule, FilterQuality, GradientStop, IntRect, LinearGradient, Mask, MaskType, Paint,
-    Path, PathBuilder, Pixmap, PixmapPaint, PremultipliedColorU8, RadialGradient, Shader,
-    SpreadMode, Stroke, Transform,
+    Path, PathBuilder, Pattern, Pixmap, PixmapPaint, PremultipliedColorU8, RadialGradient,
+    Shader, SpreadMode, Stroke, Transform,
 };
 use peniko::color::{self, ColorSpaceTag, DynamicColor, HueDirection, Srgb};
 use peniko::kurbo::{PathEl, Size};
@@ -908,7 +908,7 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
         match brush.into() {
             BrushRef::Solid(color) => Some(peniko::Brush::Solid(color)),
             BrushRef::Gradient(gradient) => Some(peniko::Brush::Gradient(gradient.clone())),
-            BrushRef::Image(_) => None,
+            BrushRef::Image(image) => Some(peniko::Brush::Image(image.to_owned())),
         }
     }
 
@@ -917,14 +917,31 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
         pixmap: &Pixmap,
         brush: Option<impl Into<BrushRef<'b>>>,
     ) -> Option<Arc<Pixmap>> {
-        let paint = brush.and_then(|brush| brush_to_paint(brush))?;
+        let brush = brush?.into();
         let mut colored_bg = Pixmap::new(pixmap.width(), pixmap.height())?;
-        colored_bg.fill_rect(
-            tiny_skia::Rect::from_xywh(0.0, 0.0, pixmap.width() as f32, pixmap.height() as f32)?,
-            &paint,
-            Transform::identity(),
-            None,
-        );
+        let rect =
+            tiny_skia::Rect::from_xywh(0.0, 0.0, pixmap.width() as f32, pixmap.height() as f32)?;
+        match brush {
+            BrushRef::Image(image) => {
+                let image = image.to_owned();
+                let image_pixmap = image_brush_pixmap(&image)?;
+                let paint = Paint {
+                    shader: Pattern::new(
+                        image_pixmap.as_ref(),
+                        image_brush_spread_mode(&image),
+                        image_quality_to_filter_quality(image.sampler.quality),
+                        image.sampler.alpha,
+                        Transform::identity(),
+                    ),
+                    ..Default::default()
+                };
+                colored_bg.fill_rect(rect, &paint, Transform::identity(), None);
+            }
+            brush => {
+                let paint = brush_to_paint(brush)?;
+                colored_bg.fill_rect(rect, &paint, Transform::identity(), None);
+            }
+        }
 
         let mask = Mask::from_pixmap(pixmap.as_ref(), MaskType::Alpha);
         colored_bg.apply_mask(&mask);
@@ -1681,6 +1698,29 @@ fn brush_to_paint<'b>(brush: impl Into<BrushRef<'b>>) -> Option<Paint<'static>> 
         shader,
         ..Default::default()
     })
+}
+
+fn image_brush_pixmap(image: &peniko::ImageBrush) -> Option<Pixmap> {
+    let mut pixmap = Pixmap::new(image.image.width, image.image.height)?;
+    for (a, b) in pixmap
+        .pixels_mut()
+        .iter_mut()
+        .zip(image.image.data.data().chunks_exact(4))
+    {
+        *a = tiny_skia::Color::from_rgba8(b[0], b[1], b[2], b[3])
+            .premultiply()
+            .to_color_u8();
+    }
+    Some(pixmap)
+}
+
+fn image_brush_spread_mode(image: &peniko::ImageBrush) -> SpreadMode {
+    let extend = if image.sampler.x_extend == image.sampler.y_extend {
+        image.sampler.x_extend
+    } else {
+        Extend::Pad
+    };
+    to_spread_mode(extend)
 }
 
 const GRADIENT_TOLERANCE: f32 = 0.01;
