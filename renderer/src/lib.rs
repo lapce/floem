@@ -22,16 +22,15 @@ pub use resvg::usvg;
 
 pub mod gpu_resources;
 
-pub struct GpuTextureOutput {
-    pub texture: wgpu::Texture,
-    pub view: wgpu::TextureView,
-    pub format: wgpu::TextureFormat,
-    pub size: (u32, u32),
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FinishMode {
+    GpuTexture,
+    CpuImage,
 }
 
 pub enum RenderOutput {
     Image(peniko::ImageData),
-    GpuTexture(GpuTextureOutput),
+    GpuTexture(wgpu::TextureView),
 }
 
 #[derive(Clone)]

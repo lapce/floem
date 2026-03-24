@@ -1114,9 +1114,12 @@ pub fn editor_view(
     });
 
     let hide_cursor = ed.cursor_info.hidden;
+    let focused_for_blink = ed.editor_view_focused_value;
     Effect::new(move |_| {
         hide_cursor.track();
-        id.request_paint();
+        if focused_for_blink.get() {
+            id.request_paint();
+        }
     });
 
     let editor_window_origin = ed.window_origin;

@@ -279,7 +279,7 @@ impl Editor {
 
         let editor_style = cx.create_rw_signal(EditorStyle::default());
 
-        let ed = Editor {
+        let mut ed = Editor {
             cx: Cell::new(cx),
             effects_cx: Cell::new(cx.create_child()),
             id,
@@ -308,6 +308,9 @@ impl Editor {
             es: editor_style,
             floem_style_id: cx.create_rw_signal(0),
         };
+
+        let editor_view_focused = ed.editor_view_focused_value;
+        ed.cursor_info.should_blink = Rc::new(move || editor_view_focused.get_untracked());
 
         create_view_effects(ed.effects_cx.get(), &ed);
 
@@ -1534,6 +1537,19 @@ fn create_view_effects(cx: Scope, ed: &Editor) {
         });
     }
 
+    {
+        let cursor_info = ed.cursor_info.clone();
+        let focused = ed.editor_view_focused_value;
+        cx.create_effect(move |_| {
+            if focused.get() {
+                cursor_info.reset();
+            } else {
+                cursor_info.hidden.set(false);
+                cursor_info.blink_timer.set(TimerToken::INVALID);
+            }
+        });
+    }
+
     let update_screen_lines = |ed: &Editor| {
         // This function should not depend on the viewport signal directly.
 
@@ -1721,15 +1737,23 @@ impl CursorInfo {
     pub fn blink(&self) {
         let info = self.clone();
         let blink_interval = (info.blink_interval)();
-        if blink_interval > 0 && (info.should_blink)() {
+        if blink_interval > 0
+            && (info.should_blink)()
+            && info.blink_timer.get_untracked() == TimerToken::INVALID
+        {
             let blink_timer = info.blink_timer;
             let timer_token =
                 exec_after(Duration::from_millis(blink_interval), move |timer_token| {
                     if info.blink_timer.try_get_untracked() == Some(timer_token) {
-                        info.hidden.update(|hide| {
-                            *hide = !*hide;
-                        });
-                        info.blink();
+                        info.blink_timer.set(TimerToken::INVALID);
+                        if (info.should_blink)() {
+                            info.hidden.update(|hide| {
+                                *hide = !*hide;
+                            });
+                            info.blink();
+                        } else {
+                            info.blink_timer.set(TimerToken::INVALID);
+                        }
                     }
                 });
             blink_timer.set(timer_token);
@@ -1741,7 +1765,11 @@ impl CursorInfo {
             self.hidden.set(false);
         }
 
-        self.blink_timer.set(TimerToken::INVALID);
+        let blink_timer = self.blink_timer.get_untracked();
+        if blink_timer != TimerToken::INVALID {
+            blink_timer.cancel();
+            self.blink_timer.set(TimerToken::INVALID);
+        }
 
         self.blink();
     }

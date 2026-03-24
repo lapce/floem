@@ -4,7 +4,7 @@ use std::sync::mpsc::sync_channel;
 
 use anyhow::Result;
 use floem_renderer::gpu_resources::GpuResources;
-use floem_renderer::{DisplayCommandExt, GpuTextureOutput, RenderOutput, tiny_skia};
+use floem_renderer::{DisplayCommandExt, FinishMode, RenderOutput, tiny_skia};
 use floem_vger_rs::{GlyphImage, Image, PaintIndex, PixelFormat, Vger};
 use imaging::{
     BlurredRoundedRect, ClipRef, CustomPaintSink, FillRef, GlyphRunRef, GroupRef, PaintSink,
@@ -46,6 +46,9 @@ pub struct VgerRenderer {
     #[allow(unused)]
     queue: Arc<Queue>,
     vger: Vger,
+    texture_format: TextureFormat,
+    texture: Option<wgpu::Texture>,
+    view: Option<wgpu::TextureView>,
     size: (u32, u32),
     scale: f64,
     transform: Affine,
@@ -59,6 +62,7 @@ impl VgerRenderer {
         gpu_resources: GpuResources,
         width: u32,
         height: u32,
+        texture_format: TextureFormat,
         scale: f64,
         font_embolden: f32,
     ) -> Result<Self> {
@@ -89,13 +93,15 @@ impl VgerRenderer {
         let device = Arc::new(device);
         let queue = Arc::new(queue);
 
-        let vger =
-            floem_vger_rs::Vger::new(device.clone(), queue.clone(), TextureFormat::Rgba8Unorm);
+        let vger = floem_vger_rs::Vger::new(device.clone(), queue.clone(), texture_format);
 
         Ok(Self {
             device,
             queue,
             vger,
+            texture_format,
+            texture: None,
+            view: None,
             scale,
             size: (width, height),
             transform: Affine::IDENTITY,
@@ -106,6 +112,10 @@ impl VgerRenderer {
     }
 
     pub fn begin(&mut self, width: u32, height: u32, scale: f64, font_embolden: f32) {
+        if self.size != (width, height) && self.texture.is_some() {
+            self.texture = None;
+            self.view = None;
+        }
         self.size = (width, height);
         self.scale = scale;
         self.font_embolden = font_embolden;
@@ -333,29 +343,17 @@ impl VgerRenderer {
         floem_vger_rs::defs::LocalRect::new(origin, size)
     }
 
-    fn render_to_texture_output(&mut self) -> Option<GpuTextureOutput> {
-        let height = self.size.1;
-        let texture_desc = wgpu::TextureDescriptor {
-            size: wgpu::Extent3d {
-                width: self.size.0,
-                height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                | wgpu::TextureUsages::COPY_SRC
-                | wgpu::TextureUsages::TEXTURE_BINDING,
-            label: Some("render_texture"),
-            view_formats: &[wgpu::TextureFormat::Rgba8Unorm],
-        };
-        let texture = self.device.create_texture(&texture_desc);
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    fn render_to_texture_output(&mut self) -> Option<wgpu::TextureView> {
+        self.ensure_offscreen_target();
+        let view = self.view.as_ref()?.clone();
+        self.encode_to_view(&view);
+        Some(view)
+    }
+
+    fn encode_to_view(&mut self, view: &wgpu::TextureView) {
         let desc = wgpu::RenderPassDescriptor {
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &view,
+                view,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
@@ -367,20 +365,42 @@ impl VgerRenderer {
         };
 
         self.vger.encode(&desc);
+    }
 
-        Some(GpuTextureOutput {
-            texture,
-            view,
-            format: wgpu::TextureFormat::Rgba8Unorm,
-            size: (self.size.0, height),
-        })
+    fn ensure_offscreen_target(&mut self) {
+        if self.texture.is_some() && self.view.is_some() {
+            return;
+        }
+
+        let texture_desc = wgpu::TextureDescriptor {
+            size: wgpu::Extent3d {
+                width: self.size.0,
+                height: self.size.1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: self.texture_format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::TEXTURE_BINDING,
+            label: Some("render_texture"),
+            view_formats: &[self.texture_format],
+        };
+        let texture = self.device.create_texture(&texture_desc);
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        self.texture = Some(texture);
+        self.view = Some(view);
     }
 
     fn render_image(&mut self) -> Option<peniko::ImageData> {
         let output = self.render_to_texture_output()?;
+        let texture = self.texture.as_ref()?;
+        let size = output.texture().size();
         let width_align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT - 1;
-        let padded_width = (output.size.0 + width_align) & !width_align;
-        let height = output.size.1;
+        let padded_width = (size.width + width_align) & !width_align;
+        let height = size.height;
         let bytes_per_pixel = 4;
         let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
@@ -393,7 +413,7 @@ impl VgerRenderer {
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         encoder.copy_texture_to_buffer(
-            output.texture.as_image_copy(),
+            texture.as_image_copy(),
             wgpu::TexelCopyBufferInfo {
                 buffer: &buffer,
                 layout: wgpu::TexelCopyBufferLayout {
@@ -403,7 +423,7 @@ impl VgerRenderer {
                 },
             },
             wgpu::Extent3d {
-                width: output.size.0,
+                width: size.width,
                 height,
                 depth_or_array_layers: 1,
             },
@@ -429,7 +449,7 @@ impl VgerRenderer {
         let mut cropped_buffer = Vec::new();
         let mapped: Vec<u8> = slice.get_mapped_range().to_owned();
         let mut cursor = 0;
-        let row_size = output.size.0 as usize * bytes_per_pixel as usize;
+        let row_size = size.width as usize * bytes_per_pixel as usize;
         for _ in 0..height {
             cropped_buffer.extend_from_slice(&mapped[cursor..(cursor + row_size)]);
             cursor += bytes_per_row as usize;
@@ -438,7 +458,7 @@ impl VgerRenderer {
             data: Blob::new(Arc::new(cropped_buffer)),
             format: peniko::ImageFormat::Rgba8,
             alpha_type: peniko::ImageAlphaType::AlphaPremultiplied,
-            width: output.size.0,
+            width: size.width,
             height,
         })
     }
@@ -828,12 +848,12 @@ impl VgerRenderer {
         self.clip = None;
     }
 
-    pub fn finish(&mut self, capture: bool) -> Option<RenderOutput> {
-        if capture {
-            self.render_image().map(RenderOutput::Image)
-        } else {
-            self.render_to_texture_output()
-                .map(RenderOutput::GpuTexture)
+    pub fn finish(&mut self, mode: FinishMode) -> Option<RenderOutput> {
+        match mode {
+            FinishMode::GpuTexture => self
+                .render_to_texture_output()
+                .map(RenderOutput::GpuTexture),
+            FinishMode::CpuImage => self.render_image().map(RenderOutput::Image),
         }
     }
 

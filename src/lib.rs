@@ -254,7 +254,7 @@ pub use imbl;
 pub use layout::ScreenLayout;
 #[cfg(not(target_arch = "wasm32"))]
 pub use muda;
-pub use paint::renderer::Renderer;
+pub use paint::renderer::Rasterizer;
 pub use peniko;
 pub use peniko::kurbo;
 #[cfg(not(target_arch = "wasm32"))]
@@ -275,7 +275,7 @@ pub use window::{Urgency, WindowIdExt, WindowState, close_window, new_window};
 pub use style::{theme, unit};
 
 pub mod prelude {
-    pub use crate::Renderer;
+    pub use crate::Rasterizer;
     pub use crate::event::listener as el;
     pub use crate::event::listener;
     pub use crate::event::listener::EventListenerTrait;

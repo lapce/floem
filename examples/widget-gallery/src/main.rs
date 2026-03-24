@@ -44,7 +44,7 @@ pub const OS_MOD: Modifiers = if cfg!(target_os = "macos") {
 fn app_view(window_id: WindowId) -> impl IntoView {
     const FPS_SAMPLE_COUNT: usize = 60;
 
-    let fps = RwSignal::new(0u32);
+    let fps = RwSignal::new(0f64);
     let last_presented_at = Cell::new(None::<Instant>);
     let frame_times = RefCell::new(Vec::<Duration>::with_capacity(FPS_SAMPLE_COUNT));
 
@@ -185,9 +185,9 @@ fn app_view(window_id: WindowId) -> impl IntoView {
                 .inset_right(15.)
         });
 
-    let fps_overlay = Label::derived(move || fps.get().to_string())
+    let fps_overlay = Label::derived(move || format!("{:.2} FPS", fps.get()))
         .style(|s| {
-            s.padding_horiz(10.0)
+            s.padding_horiz(12.0)
                 .padding_vert(6.0)
                 .background(css::BLACK.with_alpha(0.7))
                 .color(css::WHITE)
@@ -196,7 +196,13 @@ fn app_view(window_id: WindowId) -> impl IntoView {
                 .font_size(14.0)
         })
         .overlay()
-        .style(|s| s.absolute().z_index(2).inset_top(12.).inset_right(12.));
+        .style(|s| {
+            s.absolute()
+                .z_index(2)
+                .inset_top(12.)
+                .inset_right(12.)
+                .pointer_events_none()
+        });
 
     let view = Stack::horizontal((left_side_bar, tab, floem_logo, fps_overlay))
         .style(|s| s.padding(5.0).width_full().height_full().col_gap(5.0))
@@ -365,7 +371,10 @@ fn app_view(window_id: WindowId) -> impl IntoView {
                 let total_secs = samples.iter().map(Duration::as_secs_f64).sum::<f64>();
                 let average_secs = total_secs / samples.len() as f64;
                 if average_secs > 0.0 {
-                    fps.set((1.0 / average_secs).round() as u32);
+                    let new_fps = 1.0 / average_secs;
+                    if (new_fps - fps.get_untracked()).abs() >= 0.05 {
+                        fps.set(new_fps);
+                    }
                 }
             }
         }

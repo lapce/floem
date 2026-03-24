@@ -3,7 +3,7 @@ use std::sync::mpsc::sync_channel;
 
 use anyhow::Result;
 use floem_renderer::gpu_resources::GpuResources;
-use floem_renderer::{DisplayCommandExt, GpuTextureOutput, RenderOutput};
+use floem_renderer::{DisplayCommandExt, FinishMode, RenderOutput};
 use imaging::record::{CustomCommand, ExtendedScene, Glyph as ImagingGlyph, replay_ext};
 use imaging::{
     BlurredRoundedRect, ClipRef, CustomPaintSink, FillRef, GroupRef, PaintSink, StrokeRef,
@@ -15,7 +15,7 @@ use peniko::{
 };
 use peniko::{ImageAlphaType, ImageData};
 use vello::{AaConfig, RenderParams, RendererOptions, Scene};
-use wgpu::{Adapter, DeviceType, Queue, TextureAspect, TextureFormat};
+use wgpu::{Adapter, DeviceType, Queue, TextureAspect};
 
 #[derive(Clone)]
 enum VelloCommand {
@@ -133,6 +133,8 @@ pub struct VelloRenderer {
     device: wgpu::Device,
     queue: Queue,
     renderer: vello::Renderer,
+    texture: Option<wgpu::Texture>,
+    view: Option<wgpu::TextureView>,
     scene: ExtendedScene<VelloCommand>,
     size: (u32, u32),
     adapter: Adapter,
@@ -155,6 +157,7 @@ impl VelloRenderer {
         gpu_resources: GpuResources,
         width: u32,
         height: u32,
+        _texture_format: wgpu::TextureFormat,
         _scale: f64,
         font_embolden: f32,
     ) -> Result<Self> {
@@ -187,6 +190,8 @@ impl VelloRenderer {
             device,
             queue,
             renderer,
+            texture: None,
+            view: None,
             scene: ExtendedScene::new(),
             size: (width, height),
             adapter,
@@ -196,6 +201,10 @@ impl VelloRenderer {
     }
 
     pub fn begin(&mut self, width: u32, height: u32, _scale: f64, font_embolden: f32) {
+        if self.size != (width, height) && self.texture.is_some() {
+            self.texture = None;
+            self.view = None;
+        }
         self.size = (width, height);
         self.font_embolden = font_embolden;
         self.scene = ExtendedScene::new();
@@ -234,12 +243,12 @@ impl VelloRenderer {
 }
 
 impl VelloRenderer {
-    pub fn finish(&mut self, capture: bool) -> Option<RenderOutput> {
-        if capture {
-            self.render_capture_image().map(RenderOutput::Image)
-        } else {
-            self.render_to_texture_output()
-                .map(RenderOutput::GpuTexture)
+    pub fn finish(&mut self, mode: FinishMode) -> Option<RenderOutput> {
+        match mode {
+            FinishMode::GpuTexture => self
+                .render_to_texture_output()
+                .map(RenderOutput::GpuTexture),
+            FinishMode::CpuImage => self.render_capture_image().map(RenderOutput::Image),
         }
     }
 
@@ -252,10 +261,13 @@ impl VelloRenderer {
         out
     }
     fn render_capture_image(&mut self) -> Option<peniko::ImageData> {
+        self.ensure_offscreen_target().ok()?;
         let output = self.render_to_texture_output()?;
+        let texture = self.texture.as_ref()?;
+        let size = output.texture().size();
         let width_align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT - 1;
-        let width = (output.size.0 + width_align) & !width_align;
-        let height = output.size.1;
+        let width = (size.width + width_align) & !width_align;
+        let height = size.height;
         let bytes_per_pixel = 4u64;
         let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
@@ -270,7 +282,7 @@ impl VelloRenderer {
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         encoder.copy_texture_to_buffer(
-            output.texture.as_image_copy(),
+            texture.as_image_copy(),
             wgpu::TexelCopyBufferInfo {
                 buffer: &buffer,
                 layout: wgpu::TexelCopyBufferLayout {
@@ -280,7 +292,7 @@ impl VelloRenderer {
                 },
             },
             wgpu::Extent3d {
-                width: output.size.0,
+                width: size.width,
                 height,
                 depth_or_array_layers: 1,
             },
@@ -298,7 +310,7 @@ impl VelloRenderer {
 
         let buffer: Vec<u8> = slice.get_mapped_range().to_owned();
 
-        let row_size = output.size.0 as usize * bytes_per_pixel as usize;
+        let row_size = size.width as usize * bytes_per_pixel as usize;
         let mut cropped_buffer = Vec::with_capacity(row_size * height as usize);
         let mut cursor = 0;
         for _ in 0..height {
@@ -310,49 +322,71 @@ impl VelloRenderer {
             data: Blob::new(Arc::new(cropped_buffer)),
             format: peniko::ImageFormat::Rgba8,
             alpha_type: ImageAlphaType::AlphaPremultiplied,
-            width: output.size.0,
+            width: size.width,
             height,
         })
     }
 
-    fn render_to_texture_output(&mut self) -> Option<GpuTextureOutput> {
-        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Floem Vello Output"),
-            size: wgpu::Extent3d {
-                width: self.size.0,
-                height: self.size.1,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                | wgpu::TextureUsages::TEXTURE_BINDING
-                | wgpu::TextureUsages::COPY_SRC
-                | wgpu::TextureUsages::STORAGE_BINDING,
-            format: wgpu::TextureFormat::Rgba8Unorm,
-            view_formats: &[wgpu::TextureFormat::Rgba8Unorm],
-        });
-        let view = texture.create_view(&wgpu::TextureViewDescriptor {
-            label: Some("Floem Vello Output View"),
-            format: Some(TextureFormat::Rgba8Unorm),
-            dimension: Some(wgpu::TextureViewDimension::D2),
-            aspect: TextureAspect::default(),
-            base_mip_level: 0,
-            mip_level_count: None,
-            base_array_layer: 0,
-            array_layer_count: None,
-            ..Default::default()
-        });
-        self.render_scene_to_texture_view(&view, self.size.0, self.size.1)
+    fn render_to_texture_output(&mut self) -> Option<wgpu::TextureView> {
+        self.ensure_offscreen_target().ok()?;
+        let size = self.size;
+        let view = self.view.as_ref()?.clone();
+        self.render_scene_to_texture_view(&view, size.0, size.1)
             .ok()?;
-        Some(GpuTextureOutput {
-            texture,
-            view,
-            format: wgpu::TextureFormat::Rgba8Unorm,
-            size: self.size,
-        })
+        Some(view)
     }
+
+    fn ensure_offscreen_target(&mut self) -> Result<()> {
+        if self.texture.is_some() && self.view.is_some() {
+            return Ok(());
+        }
+        let (texture, view) = create_output_texture(
+            &self.device,
+            self.size.0,
+            self.size.1,
+            wgpu::TextureFormat::Rgba8Unorm,
+        );
+        self.texture = Some(texture);
+        self.view = Some(view);
+        Ok(())
+    }
+}
+
+fn create_output_texture(
+    device: &wgpu::Device,
+    width: u32,
+    height: u32,
+    texture_format: wgpu::TextureFormat,
+) -> (wgpu::Texture, wgpu::TextureView) {
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("Floem Vello Output"),
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+            | wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_SRC
+            | wgpu::TextureUsages::STORAGE_BINDING,
+        format: texture_format,
+        view_formats: &[texture_format],
+    });
+    let view = texture.create_view(&wgpu::TextureViewDescriptor {
+        label: Some("Floem Vello Output View"),
+        format: Some(texture_format),
+        dimension: Some(wgpu::TextureViewDimension::D2),
+        aspect: TextureAspect::default(),
+        base_mip_level: 0,
+        mip_level_count: None,
+        base_array_layer: 0,
+        array_layer_count: None,
+        ..Default::default()
+    });
+    (texture, view)
 }
 
 impl PaintSink for VelloRenderer {

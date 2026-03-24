@@ -9,8 +9,7 @@
 //! ## Current architecture
 //!
 //! The core retained object is [`RetainedDisplayList`]. It stores:
-//! - A frame-wide paint order of [`PaintOrPost`] entries, which preserves traversal
-//!   order and the split between pre-child paint and post-child paint.
+//! - A retained depth-first paint-order tree of painted elements.
 //! - Per-element retained stages in [`ElementDisplayList`].
 //! - For each stage, a chunked representation in [`ElementStage`].
 //!
@@ -154,17 +153,23 @@ use std::sync::Arc;
 use floem_renderer::text::GlyphRunRef;
 use floem_renderer::{DisplayCommandExt, OwnedSvg, Svg};
 use imaging::{
-    BlurredRoundedRect, ClipRef, FillRef, GroupRef, PaintSink, StrokeRef,
+    BlurredRoundedRect, ClipRef, Composite, FillRef, GroupRef, PaintSink, StrokeRef,
     record::{
-        Clip, Draw, ExtendedScene, Geometry, Glyph as ImagingGlyph, GlyphRun, Group,
+        AppliedMask, Clip, Draw, ExtendedScene, Geometry, Glyph as ImagingGlyph, GlyphRun, Mask,
         replay_ext_transformed,
     },
+    Filter,
 };
 use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Shape, Size};
 use peniko::{BrushRef, Fill};
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use crate::{ElementId, Renderer as AppRenderer, paint::PaintOrPost};
+use understory_box_tree::NodeFlags;
+
+use crate::{
+    BoxTree, ElementId, Rasterizer as AppRasterizer,
+    view::stacking::{StackingContextItem, collect_stacking_context_items_into},
+};
 
 /// Transform class describing when recorded content remains valid.
 #[allow(dead_code)]
@@ -232,7 +237,10 @@ pub(crate) enum DisplayCommand {
     },
     PopClip,
     PushGroup {
-        group: Group,
+        clip: Option<Clip>,
+        mask: Option<(Mask, Affine)>,
+        filters: Vec<Filter>,
+        composite: Composite,
     },
     PopGroup,
     Draw {
@@ -503,27 +511,150 @@ pub(crate) struct PromotedLayerCandidate {
     pub z_index: i32,
 }
 
+pub(crate) struct DisplayListSync {
+    pub active_ids: FxHashSet<ElementId>,
+    pub newly_active_ids: FxHashSet<ElementId>,
+}
+
+const LARGE_CHILD_INDEX_THRESHOLD: usize = 10;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct DisplayNodeSlot(usize);
+
+#[derive(Clone, Default)]
+struct ChildList {
+    ordered: Vec<DisplayNodeSlot>,
+    direct_lookup: Option<FxHashMap<ElementId, DisplayNodeSlot>>,
+}
+
+impl ChildList {
+    fn new(children: Vec<DisplayNodeSlot>, nodes: &[Option<DisplayNode>]) -> Self {
+        let direct_lookup = (children.len() > LARGE_CHILD_INDEX_THRESHOLD).then(|| {
+            children
+                .iter()
+                .filter_map(|&slot| {
+                    let node = nodes.get(slot.0)?.as_ref()?;
+                    Some((node.element_id?, slot))
+                })
+                .collect()
+        });
+        Self {
+            ordered: children,
+            direct_lookup,
+        }
+    }
+
+    fn direct_child(&self, id: ElementId, nodes: &[Option<DisplayNode>]) -> Option<DisplayNodeSlot> {
+        if let Some(slot) = self
+            .direct_lookup
+            .as_ref()
+            .and_then(|lookup| lookup.get(&id).copied())
+        {
+            return Some(slot);
+        }
+
+        self.ordered.iter().copied().find(|slot| {
+            nodes
+                .get(slot.0)
+                .and_then(Option::as_ref)
+                .is_some_and(|node| node.element_id == Some(id))
+        })
+    }
+}
+
+#[derive(Clone, Default)]
+struct DisplayNode {
+    element_id: Option<ElementId>,
+    parent: Option<DisplayNodeSlot>,
+    children: ChildList,
+    display: ElementDisplayList,
+}
+
 #[derive(Default)]
 pub struct RetainedDisplayList {
-    paint_order: Vec<PaintOrPost>,
-    elements: FxHashMap<ElementId, ElementDisplayList>,
+    roots: Vec<DisplayNodeSlot>,
+    nodes: Vec<Option<DisplayNode>>,
+    free_list: Vec<DisplayNodeSlot>,
+    inactive_elements: FxHashMap<ElementId, ElementDisplayList>,
+    active_count: usize,
 }
 
 impl RetainedDisplayList {
-    pub(crate) fn set_paint_order(&mut self, paint_order: Vec<PaintOrPost>) {
-        self.paint_order = paint_order;
+    pub(crate) fn sync_structure(
+        &mut self,
+        root: ElementId,
+        box_tree: &BoxTree,
+        dragging_preview: Option<ElementId>,
+    ) -> DisplayListSync {
+        let mut existing = FxHashMap::default();
+        for (index, node) in self.nodes.iter().enumerate() {
+            let Some(node) = node.as_ref() else {
+                continue;
+            };
+            let Some(element_id) = node.element_id else {
+                continue;
+            };
+            existing.insert(element_id, DisplayNodeSlot(index));
+        }
+
+        let mut roots = Vec::new();
+        let mut active_ids = FxHashSet::default();
+        let mut newly_active_ids = FxHashSet::default();
+
+        self.sync_branch(
+            root,
+            None,
+            false,
+            dragging_preview,
+            box_tree,
+            &mut existing,
+            &mut active_ids,
+            &mut newly_active_ids,
+            &mut roots,
+        );
+
+        if let Some(preview) = dragging_preview {
+            self.sync_branch(
+                preview,
+                None,
+                true,
+                None,
+                box_tree,
+                &mut existing,
+                &mut active_ids,
+                &mut newly_active_ids,
+                &mut roots,
+            );
+        }
+
+        for (_, slot) in existing {
+            self.free_slot(slot);
+        }
+
+        self.active_count = active_ids.len();
+        self.roots = roots;
+        DisplayListSync {
+            active_ids,
+            newly_active_ids,
+        }
     }
 
-    pub(crate) fn paint_order(&self) -> &[PaintOrPost] {
-        &self.paint_order
+    pub(crate) fn replay_step_count(&self) -> usize {
+        self.active_count * 2
     }
 
     pub(crate) fn element_mut(&mut self, id: ElementId) -> &mut ElementDisplayList {
-        self.elements.entry(id).or_default()
+        if let Some(slot) = self.find_slot(id) {
+            return &mut self.node_mut(slot).expect("display list node missing").display;
+        }
+        self.inactive_elements.entry(id).or_default()
     }
 
     pub(crate) fn element(&self, id: ElementId) -> Option<&ElementDisplayList> {
-        self.elements.get(&id)
+        if let Some(slot) = self.find_slot(id) {
+            return Some(&self.node(slot)?.display);
+        }
+        self.inactive_elements.get(&id)
     }
 
     pub(crate) fn needs_stage_rerecord(&self, id: ElementId, snapshot: ElementSnapshot) -> bool {
@@ -543,14 +674,13 @@ impl RetainedDisplayList {
             || !element.post.transform_class.supports(diff)
     }
 
-    pub(crate) fn retain_only(&mut self, ids: &FxHashSet<ElementId>) {
-        self.elements.retain(|id, _| ids.contains(id));
-    }
-
     pub(crate) fn promoted_layer_candidates(&self) -> Vec<PromotedLayerCandidate> {
-        self.elements
+        self.nodes
             .iter()
-            .filter_map(|(&element_id, element)| {
+            .filter_map(|node| node.as_ref())
+            .filter_map(|node| {
+                let element_id = node.element_id?;
+                let element = &node.display;
                 let snapshot = element.snapshot?;
                 let candidate = element
                     .paint
@@ -572,6 +702,163 @@ impl RetainedDisplayList {
                 })
             })
             .collect()
+    }
+
+    pub(crate) fn root_slots(&self) -> &[DisplayNodeSlot] {
+        &self.roots
+    }
+
+    pub(crate) fn node_element_id(&self, slot: DisplayNodeSlot) -> Option<ElementId> {
+        self.node(slot)?.element_id
+    }
+
+    pub(crate) fn child_slots(&self, slot: DisplayNodeSlot) -> Option<&[DisplayNodeSlot]> {
+        Some(&self.node(slot)?.children.ordered)
+    }
+
+    fn sync_branch(
+        &mut self,
+        element_id: ElementId,
+        parent: Option<DisplayNodeSlot>,
+        is_drag_preview: bool,
+        skip_element_id: Option<ElementId>,
+        box_tree: &BoxTree,
+        existing: &mut FxHashMap<ElementId, DisplayNodeSlot>,
+        active_ids: &mut FxHashSet<ElementId>,
+        newly_active_ids: &mut FxHashSet<ElementId>,
+        out: &mut Vec<DisplayNodeSlot>,
+    ) {
+        if !is_drag_preview && Some(element_id) == skip_element_id {
+            return;
+        }
+
+        if box_tree
+            .flags(element_id.0)
+            .is_none_or(|f| !f.contains(NodeFlags::VISIBLE))
+        {
+            return;
+        }
+
+        let paints_this_node = if is_drag_preview {
+            true
+        } else {
+            box_tree
+                .world_bounds(element_id.0)
+                .is_none_or(|bounds| bounds.area() != 0.0)
+        };
+
+        let mut child_items: Vec<StackingContextItem> = Vec::new();
+        collect_stacking_context_items_into(element_id, box_tree, &mut child_items);
+
+        if paints_this_node {
+            let (slot, is_new) = match existing.remove(&element_id) {
+                Some(slot) => (slot, false),
+                None => (self.alloc_slot(element_id), true),
+            };
+            let mut child_slots = Vec::with_capacity(child_items.len());
+            for child in child_items {
+                self.sync_branch(
+                    child.element_id,
+                    Some(slot),
+                    is_drag_preview,
+                    skip_element_id,
+                    box_tree,
+                    existing,
+                    active_ids,
+                    newly_active_ids,
+                    &mut child_slots,
+                );
+            }
+
+            let children = ChildList::new(child_slots, &self.nodes);
+            let inactive_display = if is_new {
+                self.inactive_elements.remove(&element_id)
+            } else {
+                None
+            };
+            let node = self.node_mut(slot).expect("display list node missing");
+            node.element_id = Some(element_id);
+            node.parent = parent;
+            node.children = children;
+            if let Some(display) = inactive_display {
+                node.display = display;
+            }
+            active_ids.insert(element_id);
+            if is_new {
+                newly_active_ids.insert(element_id);
+            }
+            out.push(slot);
+        } else {
+            for child in child_items {
+                self.sync_branch(
+                    child.element_id,
+                    parent,
+                    is_drag_preview,
+                    skip_element_id,
+                    box_tree,
+                    existing,
+                    active_ids,
+                    newly_active_ids,
+                    out,
+                );
+            }
+        }
+    }
+
+    fn find_slot(&self, id: ElementId) -> Option<DisplayNodeSlot> {
+        self.roots
+            .iter()
+            .copied()
+            .find_map(|slot| self.find_slot_from(slot, id))
+    }
+
+    fn find_slot_from(&self, slot: DisplayNodeSlot, id: ElementId) -> Option<DisplayNodeSlot> {
+        let node = self.node(slot)?;
+        if node.element_id == Some(id) {
+            return Some(slot);
+        }
+        if let Some(child) = node.children.direct_child(id, &self.nodes) {
+            return Some(child);
+        }
+        node.children
+            .ordered
+            .iter()
+            .copied()
+            .find_map(|child| self.find_slot_from(child, id))
+    }
+
+    fn alloc_slot(&mut self, element_id: ElementId) -> DisplayNodeSlot {
+        if let Some(slot) = self.free_list.pop() {
+            self.nodes[slot.0] = Some(DisplayNode {
+                element_id: Some(element_id),
+                ..DisplayNode::default()
+            });
+            return slot;
+        }
+
+        let slot = DisplayNodeSlot(self.nodes.len());
+        self.nodes.push(Some(DisplayNode {
+            element_id: Some(element_id),
+            ..DisplayNode::default()
+        }));
+        slot
+    }
+
+    fn free_slot(&mut self, slot: DisplayNodeSlot) {
+        if let Some(node) = self.nodes.get_mut(slot.0).and_then(Option::take) {
+            if node.element_id.is_some() && self.active_count > 0 {
+                self.active_count -= 1;
+            }
+            self.free_list.push(slot);
+        }
+    }
+
+    fn node(&self, slot: DisplayNodeSlot) -> Option<&DisplayNode> {
+        self.nodes.get(slot.0)?.as_ref()
+    }
+
+    fn node_mut(&mut self, slot: DisplayNodeSlot) -> Option<&mut DisplayNode> {
+        self.nodes.get_mut(slot.0)?.as_mut()
     }
 }
 
@@ -622,7 +909,12 @@ impl PaintSink for RecordingRenderer<'_> {
 
     fn push_group(&mut self, group: GroupRef<'_>) {
         self.commands.push(DisplayCommand::PushGroup {
-            group: group.to_owned(),
+            clip: group.clip.map(|clip| clip.to_owned()),
+            mask: group
+                .mask
+                .map(|applied| (applied.mask.to_owned(), applied.transform)),
+            filters: group.filters.to_vec(),
+            composite: group.composite,
         });
     }
 
@@ -649,7 +941,7 @@ impl PaintSink for RecordingRenderer<'_> {
 
 pub(crate) fn replay_stage(
     stage: &ElementStage,
-    renderer: &mut AppRenderer,
+    renderer: &mut dyn AppRasterizer,
     base_transform: Affine,
     render_size: Size,
     local_damage: Option<&[Rect]>,
@@ -689,7 +981,7 @@ pub(crate) fn replay_stage(
 }
 
 pub(crate) fn replay_view_clip(
-    renderer: &mut AppRenderer,
+    renderer: &mut dyn AppRasterizer,
     clip: RoundedRect,
     base_transform: Affine,
     render_size: Size,
@@ -728,22 +1020,31 @@ fn chunk_display_commands(commands: Vec<DisplayCommand>) -> (Vec<PaintChunk>, Pa
                 clip_stack.pop();
                 properties.clip_id = clip_stack.last().copied().unwrap_or_default();
             }
-            DisplayCommand::PushGroup { group } => {
+            DisplayCommand::PushGroup {
+                clip,
+                mask,
+                filters,
+                composite,
+            } => {
                 let effect_id = EffectNodeId(property_tree.effects.len() as u32);
                 property_tree.effects.push(EffectNode {
                     parent: effect_stack.last().copied(),
-                    blend: group.composite.blend,
-                    alpha: group.composite.alpha,
+                    blend: composite.blend,
+                    alpha: composite.alpha,
                 });
                 effect_stack.push(effect_id);
                 properties.effect_id = effect_id;
+                let command = DisplayCommand::PushGroup {
+                    clip,
+                    mask,
+                    filters,
+                    composite,
+                };
                 push_boundary_chunk(
                     &mut chunks,
                     properties,
-                    command_transform_class(&DisplayCommand::PushGroup {
-                        group: group.clone(),
-                    }),
-                    DisplayCommand::PushGroup { group },
+                    command_transform_class(&command),
+                    command,
                 );
             }
             DisplayCommand::PopGroup => {
@@ -811,9 +1112,7 @@ fn push_boundary_chunk(
     });
 }
 
-fn replay_scene(
-    commands: impl IntoIterator<Item = DisplayCommand>,
-) -> ExtendedScene<DisplayCommandExt> {
+fn replay_scene(commands: impl IntoIterator<Item = DisplayCommand>) -> ExtendedScene<DisplayCommandExt> {
     let mut scene = ExtendedScene::new();
     for command in commands {
         record_scene_command(&mut scene, command);
@@ -827,8 +1126,22 @@ fn record_scene_command(scene: &mut ExtendedScene<DisplayCommandExt>, command: D
             let _ = scene.push_clip(clip);
         }
         DisplayCommand::PopClip => scene.pop_clip(),
-        DisplayCommand::PushGroup { group } => {
-            let _ = scene.push_group(group);
+        DisplayCommand::PushGroup {
+            clip,
+            mask,
+            filters,
+            composite,
+        } => {
+            let mask = mask.map(|(mask, transform)| AppliedMask {
+                mask: scene.define_mask(mask),
+                transform,
+            });
+            let _ = scene.push_group(imaging::record::Group {
+                clip,
+                mask,
+                filters,
+                composite,
+            });
         }
         DisplayCommand::PopGroup => scene.pop_group(),
         DisplayCommand::Draw { draw } => {
@@ -1035,7 +1348,7 @@ fn transform_key(transform: Affine) -> [u64; 6] {
 }
 
 fn replay_clip_node(
-    renderer: &mut AppRenderer,
+    renderer: &mut dyn AppRasterizer,
     clip_node: &ClipNode,
     property_tree: &PaintPropertyTree,
     base_transform: Affine,
@@ -1054,7 +1367,7 @@ fn replay_clip_node(
 }
 
 fn apply_clip_state(
-    renderer: &mut AppRenderer,
+    renderer: &mut dyn AppRasterizer,
     property_tree: &PaintPropertyTree,
     target_clip_id: ClipNodeId,
     base_transform: Affine,

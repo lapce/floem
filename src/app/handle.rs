@@ -20,6 +20,11 @@ use winit::{
 };
 
 use super::{APP_UPDATE_EVENTS, AppConfig, AppEventCallback, AppUpdateEvent, UserEvent};
+#[cfg(any(
+    feature = "active-vello",
+    feature = "active-vger",
+    feature = "active-skia"
+))]
 use crate::context::PaintState;
 use crate::{
     AppEvent, Application,
@@ -86,27 +91,35 @@ impl ApplicationHandle {
                     });
                 }
             }
-            #[cfg(any(feature = "active-vello", feature = "active-vger"))]
+            #[cfg(any(
+                feature = "active-vello",
+                feature = "active-vger",
+                feature = "active-skia"
+            ))]
             UserEvent::GpuResourcesUpdate { window_id } => {
                 let handle = self.window_handles.get_mut(&window_id).unwrap();
                 if let PaintState::PendingGpuResources {
                     window,
                     rx,
                     font_embolden,
-                    renderer: _,
+                    rasterizer: _,
                 } = &handle.paint_state
                 {
                     let (gpu_resources, surface) = rx.recv().unwrap().unwrap();
-                    let renderer = crate::paint::Renderer::new(
+                    let init = crate::paint::renderer::new(
                         window.clone(),
                         gpu_resources.clone(),
                         surface,
+                        handle.transparent,
                         handle.window_state.effective_scale(),
                         handle.window_state.root_size * handle.window_state.os_scale,
                         *font_embolden,
                     );
                     self.gpu_resources = Some(gpu_resources);
-                    handle.paint_state = PaintState::Initialized { renderer };
+                    handle.paint_state = PaintState::Initialized {
+                        rasterizer: init.rasterizer,
+                    };
+                    handle.presenter = init.presenter;
                     handle.gpu_resources = self.gpu_resources.clone();
                     handle.init_renderer();
                 } else {
@@ -116,16 +129,17 @@ impl ApplicationHandle {
             #[cfg(any(
                 feature = "active-vello-hybrid",
                 feature = "active-vello-cpu",
-                feature = "active-skia",
+                feature = "active-skia-cpu",
                 feature = "active-tiny-skia"
             ))]
             UserEvent::GpuResourcesUpdate { .. } => {}
             #[cfg(not(any(
                 feature = "active-vello",
                 feature = "active-vger",
+                feature = "active-skia",
                 feature = "active-vello-hybrid",
                 feature = "active-vello-cpu",
-                feature = "active-skia",
+                feature = "active-skia-cpu",
                 feature = "active-tiny-skia"
             )))]
             UserEvent::GpuResourcesUpdate { .. } => unreachable!(),
@@ -249,6 +263,7 @@ impl ApplicationHandle {
         if any_work_remaining {
             self.request_update();
         }
+        self.update_control_flow(event_loop);
     }
 
     pub(crate) fn handle_window_event(
@@ -258,6 +273,7 @@ impl ApplicationHandle {
         event_loop: &dyn ActiveEventLoop,
     ) {
         let is_redraw = matches!(event, WindowEvent::RedrawRequested);
+        let mut request_followup_update = false;
         let window_handle = match self.window_handles.get_mut(&window_id) {
             Some(window_handle) => window_handle,
             None => return,
@@ -319,10 +335,17 @@ impl ApplicationHandle {
         match event {
             WindowEvent::ActivationTokenDone { .. } => {}
             WindowEvent::SurfaceResized(size) => {
-                window_handle.refresh_live_resize();
                 let size: LogicalSize<f64> = size.to_logical(window_handle.window_state.os_scale);
                 let size = Size::new(size.width, size.height);
                 window_handle.size(size);
+
+                #[cfg(target_os = "macos")]
+                window_handle.set_presents_with_transaction(true);
+
+                window_handle.render_frame();
+
+                #[cfg(target_os = "macos")]
+                window_handle.set_presents_with_transaction(false);
             }
             WindowEvent::Moved(position) => {
                 let position: LogicalPosition<f64> =
@@ -393,6 +416,7 @@ impl ApplicationHandle {
             }
             WindowEvent::RedrawRequested => {
                 window_handle.render_frame();
+                request_followup_update = !window_handle.window_state.scheduled_updates.is_empty();
             }
             WindowEvent::PanGesture { .. } => {}
             WindowEvent::DoubleTapGesture { .. } => {}
@@ -427,9 +451,10 @@ impl ApplicationHandle {
                 }
             }
         }
-        if !is_redraw {
+        if request_followup_update || !is_redraw {
             self.request_update();
         }
+        self.update_control_flow(event_loop);
     }
 
     pub(crate) fn new_window(
@@ -689,7 +714,16 @@ impl ApplicationHandle {
                 any_work_remaining = true;
             }
 
-            if handle.window_state.has_pending_render() && handle.can_render_now() {
+            let has_scheduled_updates = !handle.window_state.scheduled_updates.is_empty();
+            if has_scheduled_updates {
+                self.animating_windows.insert(*window_id);
+            } else {
+                self.animating_windows.remove(window_id);
+            }
+
+            if (handle.window_state.has_pending_render() || has_scheduled_updates)
+                && handle.can_render_now()
+            {
                 handle.window.request_redraw();
                 let frame_interval = handle
                     .window_state
@@ -703,7 +737,9 @@ impl ApplicationHandle {
                             .map(|mhz| Duration::from_nanos(1_000_000_000_000 / mhz.get() as u64))
                     })
                     .unwrap_or(Duration::from_millis(8));
-                handle.render_frame_if_due(frame_interval);
+                if handle.window_state.has_pending_render() {
+                    handle.render_frame_if_due(frame_interval);
+                }
             }
 
             if !done || start.elapsed() >= budget {

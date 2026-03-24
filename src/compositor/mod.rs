@@ -25,6 +25,31 @@
 //! - a frame request queue with reasons, including "external surface ready"
 //! - frame timing information that can be queried by higher-level code
 //!
+//! ## Timing today vs. timing later
+//!
+//! The timing state exposed here is currently *local/inferred* timing, not
+//! authoritative platform presentation feedback. Floem updates
+//! [`CompositorTiming`] from its own frame begin/finish points after app-side
+//! paint/present work advances, so values such as `frame_interval` and
+//! `predicted_next_present` are only estimates derived from prior completion
+//! timestamps.
+//!
+//! This distinction matters because a plain `winit` + `wgpu` surface/presenter
+//! stack does not, by itself, expose portable compositor-vsync or
+//! actual-present callbacks. The current `subduction_backend_wgpu`
+//! `WgpuPresenter` mirrors that limitation: it composites layers into a wgpu
+//! output texture, but it does not provide real presentation feedback.
+//!
+//! Some `subduction` platform backends *do* have stronger timing signals:
+//! - Wayland can receive `wp_presentation` feedback with actual present time.
+//! - Apple display-link backends can provide predictive ticks and, depending on
+//!   API, previous-frame actual-present style timing.
+//!
+//! Those backend-specific signals are the intended future source for true
+//! compositor pacing / present feedback here. Until that wiring exists, callers
+//! should treat [`CompositorTiming`] as a pacing hint rather than ground truth
+//! about when pixels reached the screen.
+//!
 //! This is an API and state-model introduction. It does not yet own final platform
 //! presentation or backend-specific composition. That work will come later when
 //! Floem's renderer/compositor split is made explicit.

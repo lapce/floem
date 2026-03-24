@@ -84,12 +84,6 @@ unsafe impl slotmap::Key for ViewId {
     }
 }
 
-fn request_structural_selector_restyle(children: &[ViewId]) {
-    for child in children {
-        child.request_style(StyleReason::full_recalc());
-    }
-}
-
 impl ViewId {
     /// Create a new unique `Viewid`.
     pub fn new() -> ViewId {
@@ -315,7 +309,6 @@ impl ViewId {
         // Re-parent child's scope under nearest ancestor's scope to match view hierarchy.
         // This ensures scope hierarchy matches view hierarchy for proper cleanup.
         reparent_scope_if_needed(child_id, *self);
-        request_structural_selector_restyle(&self.children());
     }
 
     /// Append multiple children to this Id's list of children.
@@ -363,7 +356,6 @@ impl ViewId {
         for child_id in child_ids {
             reparent_scope_if_needed(child_id, *self);
         }
-        request_structural_selector_restyle(&self.children());
     }
 
     /// Set the children views of this Id
@@ -402,7 +394,6 @@ impl ViewId {
         for child_id in children_ids {
             reparent_scope_if_needed(child_id, *self);
         }
-        request_structural_selector_restyle(&self.children());
     }
 
     /// Set the children views of this Id using a Vector
@@ -449,7 +440,6 @@ impl ViewId {
         for child_id in children_ids {
             reparent_scope_if_needed(child_id, *self);
         }
-        request_structural_selector_restyle(&self.children());
     }
 
     /// Set the view that should be associated with this Id
@@ -509,7 +499,6 @@ impl ViewId {
                 .set_children(this_taffy_node, &taffy_children);
             s.children.insert(*self, children);
         });
-        request_structural_selector_restyle(&self.children());
     }
 
     /// Get the list of `ViewId`s that are associated with the children views of this `ViewId`

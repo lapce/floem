@@ -11,7 +11,7 @@ use crate::{
     views::Decorators,
 };
 use floem_editor_core::{cursor::CursorMode, mode::Mode};
-use floem_reactive::{RwSignal, SignalGet, SignalWith};
+use floem_reactive::{Effect, RwSignal, SignalGet, SignalTrack, SignalWith};
 use peniko::color::palette;
 use peniko::kurbo::Rect;
 use peniko::{Brush, Color};
@@ -54,6 +54,11 @@ style_class!(pub GutterClass);
 
 pub fn editor_gutter_view(editor: RwSignal<Editor>) -> EditorGutterView {
     let id = ViewId::new();
+    let viewport = editor.get_untracked().viewport;
+    Effect::new(move |_| {
+        viewport.track();
+        id.request_paint();
+    });
 
     let mut gutter = EditorGutterView {
         id,

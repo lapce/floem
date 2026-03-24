@@ -41,3 +41,33 @@ fn print_scroll_paint_stats_after_rebuild() {
         harness.last_paint_stats()
     );
 }
+
+#[test]
+fn scroll_rerecords_newly_reactivated_rows() {
+    let root = TestRoot::new();
+    let view = create_scroll_label_list(1_000);
+    let mut harness = HeadlessHarness::new_with_size(root, view, 320.0, 240.0);
+
+    harness.rebuild();
+    harness.paint();
+
+    // First scroll lets the retained display list shed fully clipped rows.
+    harness.scroll_down(160.0, 120.0, 240.0);
+    harness.paint();
+    let first = harness.last_paint_stats();
+
+    // Second scroll should bring new rows into the active set. Those rows need their
+    // retained commands recorded again rather than being treated as reusable descendants.
+    harness.scroll_down(160.0, 120.0, 240.0);
+    harness.paint();
+    let second = harness.last_paint_stats();
+
+    assert!(
+        first.active_ids > 0,
+        "expected first scroll to leave an active retained set"
+    );
+    assert!(
+        second.rerecord_ids > second.explicit_dirty_ids,
+        "expected scrolling clipped rows back into the active set to rerecord them; stats={second:?}"
+    );
+}

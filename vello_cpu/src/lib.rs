@@ -16,7 +16,7 @@ pub struct VelloCpuRenderer {
 }
 
 impl VelloCpuRenderer {
-    pub fn new(width: u32, height: u32) -> Result<Self> {
+    pub fn new(width: u32, height: u32, _scale: f64, _font_embolden: f32) -> Result<Self> {
         let width_u16 =
             u16::try_from(width).map_err(|_| anyhow!("width exceeds vello_cpu limit"))?;
         let height_u16 =
@@ -26,6 +26,14 @@ impl VelloCpuRenderer {
             width,
             height,
         })
+    }
+
+    pub fn begin(&mut self, width: u32, height: u32, scale: f64, font_embolden: f32) {
+        if self.width != width || self.height != height {
+            *self = Self::new(width, height, scale, font_embolden)
+                .expect("failed to recreate VelloCpuRenderer");
+        }
+        self.reset();
     }
 
     pub fn finish(&mut self) -> Option<ImageData> {

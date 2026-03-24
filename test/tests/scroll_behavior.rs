@@ -1145,3 +1145,39 @@ fn test_scroll_paints_partially_visible_after_scroll() {
         paint_order
     );
 }
+
+#[test]
+#[serial]
+fn test_scrolled_out_dirty_item_stays_out_of_paint_order() {
+    let root = TestRoot::new();
+
+    let item1 = Empty::new().style(|s| s.size(100.0, 50.0));
+    let item1_id = item1.view_id();
+    let item2 = Empty::new().style(|s| s.size(100.0, 50.0));
+    let item3 = Empty::new().style(|s| s.size(100.0, 50.0));
+    let item4 = Empty::new().style(|s| s.size(100.0, 50.0));
+    let item5 = Empty::new().style(|s| s.size(100.0, 50.0));
+
+    let content =
+        Stack::new((item1, item2, item3, item4, item5)).style(|s| s.flex_col().size(100.0, 250.0));
+    let scroll_view = Scroll::new(content).style(|s| s.size(100.0, 100.0));
+
+    let mut harness = HeadlessHarness::new_with_size(root, scroll_view, 100.0, 100.0);
+
+    harness.scroll_down(50.0, 50.0, 100.0);
+    let paint_order = harness.paint_and_get_order();
+    assert!(
+        !paint_order.contains(&item1_id),
+        "item1 should be clipped out after scroll. Paint order: {:?}",
+        paint_order
+    );
+
+    item1_id.request_paint();
+    harness.process_update_no_paint();
+    let paint_order = harness.paint_and_get_order();
+    assert!(
+        !paint_order.contains(&item1_id),
+        "dirty scrolled-out item should not escape scroll clip. Paint order: {:?}",
+        paint_order
+    );
+}

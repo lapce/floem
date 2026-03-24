@@ -1,5 +1,5 @@
 [package]
-name = "floem_skia_renderer"
+name = "floem_skia_cpu_renderer"
 version.workspace = true
 edition.workspace = true
 repository = "https://github.com/lapce/floem"
@@ -9,8 +9,7 @@ license.workspace = true
 [dependencies]
 imaging = { workspace = true }
 peniko = { workspace = true }
-wgpu = { workspace = true }
 
 anyhow = "1.0"
-imaging_skia = { path = "../../imaging/imaging_skia", features = ["wgpu"] }
+imaging_skia = { path = "../../imaging/imaging_skia" }
 floem_renderer = { path = "../renderer", version = "0.2.0" }

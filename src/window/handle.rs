@@ -4,7 +4,14 @@ use std::{cell::RefCell, mem, rc::Rc, sync::Arc};
 
 #[cfg(feature = "crossbeam")]
 use crossbeam::channel::bounded as sync_channel;
-#[cfg(not(feature = "crossbeam"))]
+#[cfg(all(
+    not(feature = "crossbeam"),
+    any(
+        feature = "active-vello",
+        feature = "active-vger",
+        feature = "active-skia"
+    )
+))]
 use std::sync::mpsc::sync_channel;
 
 use crate::event::{CustomEvent, RouteKind, ScrollTo, UpdatePhaseEvent};
@@ -24,6 +31,7 @@ use winit::window::{
 };
 
 use floem_reactive::{RwSignal, Scope, SignalGet, SignalUpdate};
+use floem_renderer::FinishMode;
 use floem_renderer::gpu_resources::GpuResources;
 use imaging::{FillRef, PaintSink};
 use peniko::color::palette;
@@ -37,7 +45,7 @@ use winit::{
 
 use super::state::WindowState;
 use super::tracking::{remove_window_id_mapping, store_window_id_mapping};
-use crate::app::{MenuWrapper, add_app_update_event};
+use crate::app::MenuWrapper;
 #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
 use crate::platform::context_menu::context_menu_view;
 #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
@@ -85,7 +93,7 @@ pub(crate) struct WindowHandle {
     pub(crate) profile: Option<Profile>,
     font_embolden: f32,
     is_maximized: bool,
-    transparent: bool,
+    pub(crate) transparent: bool,
     pub(crate) modifiers: Modifiers,
     pub(crate) window_position: Point,
     #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
@@ -96,9 +104,9 @@ pub(crate) struct WindowHandle {
     pub(crate) window_menu: Option<MudaMenu>,
     pub(crate) event_reducer: WindowEventReducer,
     pub(crate) gpu_resources: Option<GpuResources>,
+    pub(crate) presenter: crate::paint::renderer::WindowPresenter,
     last_presented_at: Instant,
     is_occluded: bool,
-    live_resize_until: Option<Instant>,
 }
 
 impl Drop for WindowHandle {
@@ -110,8 +118,6 @@ impl Drop for WindowHandle {
 }
 
 impl WindowHandle {
-    const LIVE_RESIZE_IDLE_TIMEOUT: Duration = Duration::from_millis(120);
-
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         window: Box<dyn winit::window::Window>,
@@ -161,9 +167,10 @@ impl WindowHandle {
         let window: Arc<dyn Window> = window.into();
         store_window_id_mapping(id, window_id, &window);
 
-        let paint_state = Self::new_paint_state(
+        let (paint_state, presenter) = Self::new_paint_state(
             window.clone(),
             gpu_resources.clone(),
+            transparent,
             os_scale,
             size.get_untracked() * os_scale,
             font_embolden,
@@ -201,9 +208,9 @@ impl WindowHandle {
             window_menu: None,
             event_reducer: WindowEventReducer::default(),
             gpu_resources,
+            presenter,
             last_presented_at: Instant::now(),
             is_occluded: false,
-            live_resize_until: None,
         };
         if paint_state_initialized {
             window_handle.init_renderer();
@@ -229,22 +236,41 @@ impl WindowHandle {
         window_handle
     }
 
-    #[cfg(any(feature = "active-vello", feature = "active-vger"))]
+    #[cfg(any(
+        feature = "active-vello",
+        feature = "active-vger",
+        feature = "active-skia"
+    ))]
     fn new_paint_state(
         window: Arc<dyn Window>,
         gpu_resources: Option<GpuResources>,
+        transparent: bool,
         os_scale: f64,
         size: Size,
         font_embolden: f32,
         required_features: wgpu::Features,
         backends: Option<wgpu::Backends>,
-    ) -> PaintState {
+    ) -> (PaintState, crate::paint::renderer::WindowPresenter) {
         if let Some(resources) = gpu_resources {
             let surface = resources
                 .instance
                 .create_surface(Arc::clone(&window))
                 .expect("can create second window");
-            PaintState::new(window, surface, resources, os_scale, size, font_embolden)
+            let init = crate::paint::renderer::new(
+                window,
+                resources,
+                surface,
+                transparent,
+                os_scale,
+                size,
+                font_embolden,
+            );
+            (
+                PaintState::Initialized {
+                    rasterizer: init.rasterizer,
+                },
+                init.presenter,
+            )
         } else {
             let gpu_resources_rx = GpuResources::request(
                 move |window_id| {
@@ -254,26 +280,36 @@ impl WindowHandle {
                 backends,
                 window.clone(),
             );
-            PaintState::new_pending(window, gpu_resources_rx, size, font_embolden)
+            (
+                PaintState::new_pending(window, gpu_resources_rx, size, font_embolden),
+                crate::paint::renderer::WindowPresenter::None,
+            )
         }
     }
 
     #[cfg(any(
         feature = "active-vello-hybrid",
         feature = "active-vello-cpu",
-        feature = "active-skia",
+        feature = "active-skia-cpu",
         feature = "active-tiny-skia"
     ))]
     fn new_paint_state(
         window: Arc<dyn Window>,
         _gpu_resources: Option<GpuResources>,
+        _transparent: bool,
         os_scale: f64,
         size: Size,
         font_embolden: f32,
         _required_features: wgpu::Features,
         _backends: Option<wgpu::Backends>,
-    ) -> PaintState {
-        PaintState::new_cpu(window, os_scale, size, font_embolden)
+    ) -> (PaintState, crate::paint::renderer::WindowPresenter) {
+        let init = crate::paint::renderer::new_cpu(window, os_scale, size, font_embolden);
+        (
+            PaintState::Initialized {
+                rasterizer: init.rasterizer,
+            },
+            init.presenter,
+        )
     }
 
     #[cfg(not(any(
@@ -282,20 +318,25 @@ impl WindowHandle {
         feature = "active-vello-hybrid",
         feature = "active-vello-cpu",
         feature = "active-skia",
+        feature = "active-skia-cpu",
         feature = "active-tiny-skia"
     )))]
     fn new_paint_state(
         _window: Arc<dyn Window>,
         _gpu_resources: Option<GpuResources>,
+        _transparent: bool,
         _os_scale: f64,
         size: Size,
         _font_embolden: f32,
         _required_features: wgpu::Features,
         _backends: Option<wgpu::Backends>,
-    ) -> PaintState {
-        PaintState::Initialized {
-            renderer: crate::paint::Renderer::Uninitialized { size },
-        }
+    ) -> (PaintState, crate::paint::renderer::WindowPresenter) {
+        (
+            PaintState::Initialized {
+                rasterizer: crate::paint::renderer::uninitialized_rasterizer(),
+            },
+            crate::paint::renderer::WindowPresenter::None,
+        )
     }
 
     /// Creates a headless WindowHandle for testing purposes.
@@ -341,7 +382,11 @@ impl WindowHandle {
 
         // Create a paint state that will never initialize (for headless testing)
         // We use a channel that will never receive a value
-        #[cfg(any(feature = "active-vello", feature = "active-vger"))]
+        #[cfg(any(
+            feature = "active-vello",
+            feature = "active-vger",
+            feature = "active-skia"
+        ))]
         let paint_state = {
             let (tx, rx) = sync_channel(1);
             drop(tx); // Drop sender so receiver will never receive
@@ -352,28 +397,52 @@ impl WindowHandle {
                 0.0, // font_embolden
             )
         };
+        #[cfg(any(
+            feature = "active-vello",
+            feature = "active-vger",
+            feature = "active-skia"
+        ))]
+        let presenter = crate::paint::renderer::WindowPresenter::None;
 
         #[cfg(any(
             feature = "active-vello-hybrid",
             feature = "active-vello-cpu",
-            feature = "active-skia",
+            feature = "active-skia-cpu",
             feature = "active-tiny-skia"
         ))]
-        let paint_state = PaintState::new_cpu(window.clone(), os_scale, size_val * os_scale, 0.0);
+        let (paint_state, presenter) = Self::new_paint_state(
+            window.clone(),
+            None,
+            false,
+            os_scale,
+            size_val * os_scale,
+            0.0,
+            wgpu::Features::empty(),
+            None,
+        );
 
         #[cfg(not(any(
             feature = "active-vello",
             feature = "active-vger",
+            feature = "active-skia",
             feature = "active-vello-hybrid",
             feature = "active-vello-cpu",
-            feature = "active-skia",
+            feature = "active-skia-cpu",
             feature = "active-tiny-skia"
         )))]
         let paint_state = PaintState::Initialized {
-            renderer: crate::paint::Renderer::Uninitialized {
-                size: size_val * os_scale,
-            },
+            rasterizer: crate::paint::renderer::uninitialized_rasterizer(),
         };
+        #[cfg(not(any(
+            feature = "active-vello",
+            feature = "active-vger",
+            feature = "active-skia",
+            feature = "active-vello-hybrid",
+            feature = "active-vello-cpu",
+            feature = "active-skia-cpu",
+            feature = "active-tiny-skia"
+        )))]
+        let presenter = crate::paint::renderer::WindowPresenter::None;
 
         let window_state = WindowState::new(id, os_theme, os_scale);
 
@@ -400,9 +469,9 @@ impl WindowHandle {
             window_menu: None,
             event_reducer: WindowEventReducer::default(),
             gpu_resources: None,
+            presenter,
             last_presented_at: Instant::now(),
             is_occluded: false,
-            live_resize_until: None,
         };
 
         window_handle
@@ -556,16 +625,6 @@ impl WindowHandle {
         self.process_update_no_paint();
         self.window_state
             .request_paint(self.window_state.root_view_id);
-        self.schedule_repaint();
-    }
-
-    pub(crate) fn refresh_live_resize(&mut self) {
-        self.live_resize_until = Some(Instant::now() + Self::LIVE_RESIZE_IDLE_TIMEOUT);
-    }
-
-    fn live_resize_active(&self) -> bool {
-        self.live_resize_until
-            .is_some_and(|deadline| Instant::now() < deadline)
     }
 
     pub(crate) fn position(&mut self, point: Point) {
@@ -849,20 +908,6 @@ impl WindowHandle {
             self.last_presented_at = frame_completed_at;
         }
 
-        if self.live_resize_active() {
-            self.window_state.schedule_paint(self.id.get_element_id());
-            self.schedule_repaint();
-        } else {
-            self.live_resize_until = None;
-        }
-
-        // Keep animation control flow in sync with scheduled updates.
-        let window_id = self.window.id();
-        if !self.window_state.scheduled_updates.is_empty() {
-            add_app_update_event(crate::app::AppUpdateEvent::AnimationFrame(true, window_id));
-        } else {
-            add_app_update_event(crate::app::AppUpdateEvent::AnimationFrame(false, window_id));
-        }
     }
 
     pub fn paint(&mut self) -> Option<peniko::ImageData> {
@@ -876,8 +921,11 @@ impl WindowHandle {
         };
 
         let frame_size = cx.window_state.root_size * cx.window_state.os_scale;
+        let frame_size = Size::new(frame_size.width.max(1.0), frame_size.height.max(1.0));
+        self.presenter
+            .resize(frame_size.width as u32, frame_size.height as u32);
         cx.paint_state
-            .renderer_mut()
+            .rasterizer_mut()
             .begin(crate::paint::renderer::BeginFrame {
                 size: frame_size,
                 scale: cx.window_state.effective_scale(),
@@ -890,7 +938,7 @@ impl WindowHandle {
                 .as_ref()
                 .and_then(|theme| theme.get(crate::style::Background))
                 .unwrap_or(peniko::Brush::Solid(palette::css::WHITE));
-            let renderer = cx.paint_state.renderer_mut();
+            let renderer = cx.paint_state.rasterizer_mut();
             PaintSink::fill(
                 renderer,
                 FillRef::new(frame_size.to_rect().expand(), &color),
@@ -900,17 +948,26 @@ impl WindowHandle {
         cx.paint_with_traversal(self.id);
         cx.window_state.sync_display_list_promoted_layers();
 
-        self.window.pre_present_notify();
         let root_element_id = cx.window_state.root_view_id.get_element_id();
         let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::PaintPresent));
         GlobalEventCx::new(cx.window_state, root_element_id, event).route_window_event();
 
-        let mode = if cx.window_state.capture.is_some() {
-            crate::paint::renderer::FinishMode::Capture
+        let finish_mode = if cx.window_state.capture.is_some() {
+            FinishMode::CpuImage
         } else {
-            crate::paint::renderer::FinishMode::Present
+            FinishMode::GpuTexture
         };
-        cx.paint_state.renderer_mut().finish(mode)
+        self.window.pre_present_notify();
+
+        let output = cx.paint_state.rasterizer_mut().finish(finish_mode);
+        if finish_mode == FinishMode::CpuImage {
+            output.and_then(|output| output.into_image())
+        } else {
+            if let Some(output) = output.as_ref() {
+                self.presenter.present(output);
+            }
+            None
+        }
     }
 
     pub(crate) fn capture(&mut self) -> Capture {
@@ -972,7 +1029,7 @@ impl WindowHandle {
             window_size,
             root: Rc::new(root),
             state: self.window_state.capture.take().unwrap(),
-            renderer: self.paint_state.renderer().debug_info(),
+            renderer: self.paint_state.rasterizer().debug_info(),
         };
         // Process any updates produced by capturing
         self.process_update();
@@ -1757,6 +1814,26 @@ impl WindowHandle {
         // This is crucial for test isolation - if not done, the old root ViewId
         // will still be considered a "known root" when the ViewId slot is reused.
         remove_window_id_mapping(&self.id, &self.window_id);
+    }
+
+    #[cfg(target_os = "macos")]
+    pub(crate) fn set_presents_with_transaction(&mut self, value: bool) {
+        use wgpu::hal::api::Metal;
+
+        use crate::paint::renderer::WindowPresenter;
+
+        let WindowPresenter::Gpu(presenter) = &self.presenter else {
+            return;
+        };
+
+        unsafe {
+            if let Some(metal_surface) = presenter.surface.as_hal::<Metal>() {
+                metal_surface
+                    .render_layer()
+                    .lock()
+                    .set_presents_with_transaction(value);
+            }
+        }
     }
 }
 
