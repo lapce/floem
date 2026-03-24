@@ -12,7 +12,6 @@ pub mod renderer;
 pub use border_path_iter::{BorderPath, BorderPathEvent};
 pub use renderer::Renderer;
 
-use floem_renderer::Renderer as _;
 use floem_renderer::gpu_resources::{GpuResourceError, GpuResources};
 use imaging::{PaintSink, Painter};
 use peniko::kurbo::{Affine, Point, RoundedRect, Size};
@@ -254,7 +253,8 @@ impl GlobalPaintCx<'_> {
             .element_base_transform(element_id)
             .then_scale(self.window_state.effective_scale())
             .then_translate(-target_origin.to_vec2());
-        let render_size = render_size.unwrap_or_else(|| self.paint_state.renderer().size());
+        let render_size =
+            render_size.unwrap_or_else(|| self.window_state.root_size * self.window_state.os_scale);
         let renderer = self.paint_state.renderer_mut();
 
         // Overflow clip must be replayed at traversal time rather than recorded into the
@@ -481,7 +481,7 @@ impl GlobalPaintCx<'_> {
                             .flatten()
                             .is_some();
                         if has_clip {
-                            self.paint_state.renderer_mut().clear_clip();
+                            PaintSink::pop_clip(self.paint_state.renderer_mut());
                         }
                     }
                 }
@@ -537,7 +537,8 @@ impl GlobalPaintCx<'_> {
                 .map(|rect| inverse.transform_rect_bbox(*rect))
                 .collect::<Vec<_>>()
         });
-        let render_size = render_size.unwrap_or_else(|| self.paint_state.renderer().size());
+        let render_size =
+            render_size.unwrap_or_else(|| self.window_state.root_size * self.window_state.os_scale);
         let renderer = self.paint_state.renderer_mut();
         replay_stage(
             stage,
@@ -667,6 +668,7 @@ impl PaintState {
         }
     }
 
+    #[cfg(any(feature = "active-vello", feature = "active-vger"))]
     pub fn new(
         window: Arc<dyn Window>,
         surface: wgpu::Surface<'static>,
@@ -686,9 +688,13 @@ impl PaintState {
         Self::Initialized { renderer }
     }
 
-    #[cfg(feature = "skia")]
-    pub fn new_skia(window: Arc<dyn Window>, scale: f64, size: Size, font_embolden: f32) -> Self {
-        let renderer = Renderer::new_skia(window.clone(), scale, size, font_embolden);
+    #[cfg(any(
+        feature = "active-vello-hybrid",
+        feature = "active-vello-cpu",
+        feature = "active-tiny-skia"
+    ))]
+    pub fn new_cpu(window: Arc<dyn Window>, scale: f64, size: Size, font_embolden: f32) -> Self {
+        let renderer = Renderer::new_cpu(window, scale, size, font_embolden);
         Self::Initialized { renderer }
     }
 
@@ -704,13 +710,5 @@ impl PaintState {
             PaintState::PendingGpuResources { renderer, .. } => renderer,
             PaintState::Initialized { renderer } => renderer,
         }
-    }
-
-    pub(crate) fn resize(&mut self, scale: f64, size: Size) {
-        self.renderer_mut().resize(scale, size);
-    }
-
-    pub(crate) fn set_scale(&mut self, scale: f64) {
-        self.renderer_mut().set_scale(scale);
     }
 }

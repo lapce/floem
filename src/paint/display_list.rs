@@ -151,10 +151,10 @@
 
 use std::sync::Arc;
 
-use floem_renderer::text::{Glyph, GlyphRunRef};
-use floem_renderer::{Renderer as FloemRenderer, Svg, usvg};
+use floem_renderer::text::GlyphRunRef;
+use floem_renderer::{DisplayCommandExt, OwnedSvg, Svg};
 use imaging::{
-    BlurredRoundedRect, ClipRef, CustomPaintSink, FillRef, GroupRef, PaintSink, StrokeRef,
+    BlurredRoundedRect, ClipRef, FillRef, GroupRef, PaintSink, StrokeRef,
     record::{
         Clip, Draw, ExtendedScene, Geometry, Glyph as ImagingGlyph, GlyphRun, Group,
         replay_ext_transformed,
@@ -164,7 +164,7 @@ use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Shape, Size};
 use peniko::{BrushRef, Fill};
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use crate::{ElementId, paint::PaintOrPost};
+use crate::{ElementId, Renderer as AppRenderer, paint::PaintOrPost};
 
 /// Transform class describing when recorded content remains valid.
 #[allow(dead_code)]
@@ -222,40 +222,6 @@ pub(crate) fn transform_diff_class(original: Affine, current: Affine) -> Transfo
         TransformClass::TranslateOnly
     } else {
         TransformClass::Affine
-    }
-}
-
-#[derive(Clone)]
-pub(crate) struct OwnedSvg {
-    pub tree: Arc<usvg::Tree>,
-    pub hash: Arc<[u8]>,
-}
-
-#[derive(Clone)]
-pub(crate) enum DisplayCommandExt {
-    DrawSvg {
-        svg: OwnedSvg,
-        rect: Rect,
-        transform: Affine,
-        brush: Option<peniko::Brush>,
-    },
-}
-
-impl imaging::record::CustomCommand for DisplayCommandExt {
-    fn prepend_transform(&self, prefix: Affine) -> Self {
-        match self {
-            Self::DrawSvg {
-                svg,
-                rect,
-                transform,
-                brush,
-            } => Self::DrawSvg {
-                svg: svg.clone(),
-                rect: *rect,
-                transform: prefix * *transform,
-                brush: brush.clone(),
-            },
-        }
     }
 }
 
@@ -681,163 +647,13 @@ impl PaintSink for RecordingRenderer<'_> {
     }
 }
 
-struct ReplayRenderer<'a, R> {
-    renderer: &'a mut R,
-    render_size: Size,
-    current_transform: &'a mut Option<Affine>,
-}
-
-impl<R> PaintSink for ReplayRenderer<'_, R>
-where
-    R: FloemRenderer,
-{
-    fn push_clip(&mut self, clip: ClipRef<'_>) {
-        let ClipRef::Fill {
-            transform, shape, ..
-        } = clip
-        else {
-            return;
-        };
-        set_transform_if_needed(self.renderer, transform, self.current_transform);
-        match sanitize_clip_geometry(&shape.to_owned(), transform, self.render_size) {
-            Geometry::Rect(rect) => self.renderer.clip(&rect),
-            Geometry::RoundedRect(rect) => self.renderer.clip(&rect),
-            Geometry::Path(path) => self.renderer.clip(&path),
-        }
-    }
-
-    fn pop_clip(&mut self) {
-        self.renderer.clear_clip();
-    }
-
-    fn push_group(&mut self, group: GroupRef<'_>) {
-        let Some(ClipRef::Fill {
-            transform, shape, ..
-        }) = group.clip
-        else {
-            return;
-        };
-        set_transform_if_needed(self.renderer, Affine::IDENTITY, self.current_transform);
-        match sanitize_clip_geometry(&shape.to_owned(), transform, self.render_size) {
-            Geometry::Rect(rect) => self.renderer.push_layer(
-                group.composite.blend,
-                group.composite.alpha,
-                transform,
-                &rect,
-            ),
-            Geometry::RoundedRect(rect) => self.renderer.push_layer(
-                group.composite.blend,
-                group.composite.alpha,
-                transform,
-                &rect,
-            ),
-            Geometry::Path(path) => self.renderer.push_layer(
-                group.composite.blend,
-                group.composite.alpha,
-                transform,
-                &path,
-            ),
-        }
-    }
-
-    fn pop_group(&mut self) {
-        self.renderer.pop_layer();
-    }
-
-    fn fill(&mut self, draw: FillRef<'_>) {
-        set_transform_if_needed(self.renderer, draw.transform, self.current_transform);
-        match draw.shape {
-            imaging::GeometryRef::Rect(rect) => self.renderer.fill(&rect, draw.brush, 0.0),
-            imaging::GeometryRef::RoundedRect(rect) => self.renderer.fill(&rect, draw.brush, 0.0),
-            imaging::GeometryRef::Path(path) => self.renderer.fill(path, draw.brush, 0.0),
-            imaging::GeometryRef::OwnedPath(path) => self.renderer.fill(&path, draw.brush, 0.0),
-        }
-    }
-
-    fn stroke(&mut self, draw: StrokeRef<'_>) {
-        set_transform_if_needed(self.renderer, draw.transform, self.current_transform);
-        match draw.shape {
-            imaging::GeometryRef::Rect(rect) => {
-                self.renderer.stroke(&rect, draw.brush, draw.stroke)
-            }
-            imaging::GeometryRef::RoundedRect(rect) => {
-                self.renderer.stroke(&rect, draw.brush, draw.stroke)
-            }
-            imaging::GeometryRef::Path(path) => self.renderer.stroke(path, draw.brush, draw.stroke),
-            imaging::GeometryRef::OwnedPath(path) => {
-                self.renderer.stroke(&path, draw.brush, draw.stroke)
-            }
-        }
-    }
-
-    fn glyph_run(
-        &mut self,
-        draw: imaging::GlyphRunRef<'_>,
-        glyphs: &mut dyn Iterator<Item = ImagingGlyph>,
-    ) {
-        let run_ref = GlyphRunRef {
-            font: draw.font,
-            transform: draw.transform,
-            glyph_transform: draw.glyph_transform,
-            font_size: draw.font_size,
-            hint: draw.hint,
-            normalized_coords: draw.normalized_coords,
-            style: draw.style,
-            brush: draw.brush,
-            composite: draw.composite,
-        };
-        set_transform_if_needed(self.renderer, Affine::IDENTITY, self.current_transform);
-        self.renderer.draw_glyphs(
-            Point::ZERO,
-            &run_ref,
-            glyphs.map(|glyph| Glyph {
-                id: glyph.id,
-                style_index: 0,
-                x: glyph.x,
-                y: glyph.y,
-                advance: 0.0,
-            }),
-        );
-    }
-
-    fn blurred_rounded_rect(&mut self, draw: BlurredRoundedRect) {
-        set_transform_if_needed(self.renderer, draw.transform, self.current_transform);
-        let shape = draw.rect.to_rounded_rect(draw.radius);
-        self.renderer.fill(&shape, draw.color, draw.std_dev);
-    }
-}
-
-impl<R> CustomPaintSink<DisplayCommandExt> for ReplayRenderer<'_, R>
-where
-    R: FloemRenderer,
-{
-    fn custom(&mut self, command: &DisplayCommandExt) {
-        let DisplayCommandExt::DrawSvg {
-            svg,
-            rect,
-            transform,
-            brush,
-        } = command;
-        set_transform_if_needed(self.renderer, *transform, self.current_transform);
-        self.renderer.draw_svg(
-            Svg {
-                tree: svg.tree.as_ref(),
-                hash: svg.hash.as_ref(),
-            },
-            *rect,
-            brush.as_ref(),
-        );
-    }
-}
-
 pub(crate) fn replay_stage(
     stage: &ElementStage,
-    renderer: &mut impl FloemRenderer,
+    renderer: &mut AppRenderer,
     base_transform: Affine,
     render_size: Size,
     local_damage: Option<&[Rect]>,
 ) {
-    let mut current_transform = None;
     let mut current_clip_stack: Vec<ClipNodeId> = Vec::new();
     // This stays wired through the replay path even though full-scene replay is still active.
     // Once the renderer/compositor can preserve undamaged content across frames, the stage can
@@ -857,15 +673,9 @@ pub(crate) fn replay_stage(
             chunk.properties.clip_id,
             base_transform,
             render_size,
-            &mut current_transform,
             &mut current_clip_stack,
         );
-        let mut replay = ReplayRenderer {
-            renderer,
-            render_size,
-            current_transform: &mut current_transform,
-        };
-        replay_ext_transformed(&chunk.commands, &mut replay, base_transform);
+        replay_ext_transformed(&chunk.commands, renderer, base_transform);
     }
 
     apply_clip_state(
@@ -874,21 +684,18 @@ pub(crate) fn replay_stage(
         ClipNodeId(0),
         base_transform,
         render_size,
-        &mut current_transform,
         &mut current_clip_stack,
     );
 }
 
 pub(crate) fn replay_view_clip(
-    renderer: &mut impl FloemRenderer,
+    renderer: &mut AppRenderer,
     clip: RoundedRect,
     base_transform: Affine,
     render_size: Size,
 ) {
-    let final_transform = base_transform;
-    renderer.set_transform(final_transform);
-    let clip = constrain_infinite_rounded_rect(clip, final_transform, render_size);
-    renderer.clip(&clip);
+    let clip = constrain_infinite_rounded_rect(clip, base_transform, render_size);
+    PaintSink::push_clip(renderer, ClipRef::fill(clip).with_transform(base_transform));
 }
 
 fn chunk_display_commands(commands: Vec<DisplayCommand>) -> (Vec<PaintChunk>, PaintPropertyTree) {
@@ -1228,16 +1035,12 @@ fn transform_key(transform: Affine) -> [u64; 6] {
 }
 
 fn replay_clip_node(
-    renderer: &mut impl FloemRenderer,
+    renderer: &mut AppRenderer,
     clip_node: &ClipNode,
     property_tree: &PaintPropertyTree,
     base_transform: Affine,
     render_size: Size,
-    current_transform: &mut Option<Affine>,
 ) {
-    let Clip::Fill { shape, .. } = &clip_node.clip else {
-        return;
-    };
     let Some(transform) = property_tree
         .transforms
         .get(clip_node.transform_id.0 as usize)
@@ -1246,21 +1049,16 @@ fn replay_clip_node(
         return;
     };
     let final_transform = base_transform * transform;
-    set_transform_if_needed(renderer, final_transform, current_transform);
-    match sanitize_clip_geometry(shape, final_transform, render_size) {
-        Geometry::Rect(rect) => renderer.clip(&rect),
-        Geometry::RoundedRect(rect) => renderer.clip(&rect),
-        Geometry::Path(path) => renderer.clip(&path),
-    }
+    let clip = sanitize_clip(&clip_node.clip, final_transform, render_size);
+    PaintSink::push_clip(renderer, clip.as_ref());
 }
 
 fn apply_clip_state(
-    renderer: &mut impl FloemRenderer,
+    renderer: &mut AppRenderer,
     property_tree: &PaintPropertyTree,
     target_clip_id: ClipNodeId,
     base_transform: Affine,
     render_size: Size,
-    current_transform: &mut Option<Affine>,
     current_clip_stack: &mut Vec<ClipNodeId>,
 ) {
     // Stage-local clips are now driven by property ids instead of recorded Push/Pop commands.
@@ -1274,7 +1072,7 @@ fn apply_clip_state(
         .count();
 
     for _ in shared_prefix..current_clip_stack.len() {
-        renderer.clear_clip();
+        PaintSink::pop_clip(renderer);
     }
     current_clip_stack.truncate(shared_prefix);
 
@@ -1282,14 +1080,7 @@ fn apply_clip_state(
         let Some(node) = property_tree.clips.get(clip_id.0 as usize) else {
             continue;
         };
-        replay_clip_node(
-            renderer,
-            node,
-            property_tree,
-            base_transform,
-            render_size,
-            current_transform,
-        );
+        replay_clip_node(renderer, node, property_tree, base_transform, render_size);
         current_clip_stack.push(clip_id);
     }
 }
@@ -1313,17 +1104,6 @@ fn clip_chain(property_tree: &PaintPropertyTree, clip_id: ClipNodeId) -> Vec<Cli
     chain
 }
 
-fn set_transform_if_needed(
-    renderer: &mut impl FloemRenderer,
-    transform: Affine,
-    current_transform: &mut Option<Affine>,
-) {
-    if current_transform != &Some(transform) {
-        renderer.set_transform(transform);
-        *current_transform = Some(transform);
-    }
-}
-
 fn sanitize_clip_geometry(shape: &Geometry, transform: Affine, render_size: Size) -> Geometry {
     match shape {
         Geometry::Rect(rect) => {
@@ -1335,6 +1115,23 @@ fn sanitize_clip_geometry(shape: &Geometry, transform: Affine, render_size: Size
             render_size,
         )),
         Geometry::Path(path) => Geometry::Path(path.clone()),
+    }
+}
+
+fn sanitize_clip(clip: &Clip, transform: Affine, render_size: Size) -> Clip {
+    match clip {
+        Clip::Fill {
+            shape, fill_rule, ..
+        } => Clip::Fill {
+            transform,
+            shape: sanitize_clip_geometry(shape, transform, render_size),
+            fill_rule: *fill_rule,
+        },
+        Clip::Stroke { shape, stroke, .. } => Clip::Stroke {
+            transform,
+            shape: sanitize_clip_geometry(shape, transform, render_size),
+            stroke: stroke.clone(),
+        },
     }
 }
 

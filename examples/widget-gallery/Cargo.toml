@@ -4,14 +4,22 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-floem = { path = "../..", features = ["vello", "subduction"] }
+floem = { path = "../..", default-features = false, features = [
+  "editor",
+  "default-image-formats",
+  "fallback-vello-cpu",
+  "serde",
+  "subduction",
+] }
 strum = { workspace = true }
-files = { path = "../files/", optional = true }
+files = { path = "../files/", optional = true, default-features = false }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 signpost = "*"
 
 [features]
-default = ["full"]
-vello = ["floem/vello"]
+default = ["full", "vger" ]
+vello = ["floem/vello", "files?/vello"]
+vger = ["floem/vger"]
+vello-hybrid = ["floem/vello-hybrid", "files?/vello-hybrid"]
 full = ["dep:files"]

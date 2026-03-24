@@ -15,6 +15,7 @@ package = "floem-vger"
 image = { workspace = true }
 resvg = { workspace = true }
 peniko = { workspace = true }
+imaging = { workspace = true }
 wgpu = { workspace = true }
 parley = { workspace = true }
 swash = { workspace = true }

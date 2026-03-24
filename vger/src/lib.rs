@@ -1,14 +1,16 @@
 use std::cell::RefCell;
-use std::mem;
 use std::sync::Arc;
 use std::sync::mpsc::sync_channel;
 
 use anyhow::Result;
 use floem_renderer::gpu_resources::GpuResources;
-use floem_renderer::text::{Glyph, GlyphRunRef};
-use floem_renderer::{Renderer, tiny_skia};
+use floem_renderer::{DisplayCommandExt, GpuTextureOutput, RenderOutput, tiny_skia};
 use floem_vger_rs::{GlyphImage, Image, PaintIndex, PixelFormat, Vger};
-use peniko::kurbo::{Size, Stroke};
+use imaging::{
+    BlurredRoundedRect, ClipRef, CustomPaintSink, FillRef, GlyphRunRef, GroupRef, PaintSink,
+    StrokeRef, record::Glyph,
+};
+use peniko::kurbo::Stroke;
 use peniko::{Blob, Extend, ImageData, ImageQuality, LinearGradientPosition};
 use peniko::{
     BrushRef, Color, GradientKind,
@@ -17,9 +19,7 @@ use peniko::{
 use swash::FontRef;
 use swash::scale::{Render, ScaleContext, Source, StrikeWith};
 use swash::zeno::Format;
-use wgpu::{
-    Adapter, Device, DeviceType, Queue, StoreOp, Surface, SurfaceConfiguration, TextureFormat,
-};
+use wgpu::{Adapter, Device, DeviceType, Queue, StoreOp, TextureFormat};
 
 thread_local! {
     /// Swash [`ScaleContext`] used for CPU glyph rasterization on vger cache misses.
@@ -28,18 +28,28 @@ thread_local! {
     static SCALE_CONTEXT: RefCell<ScaleContext> = RefCell::new(ScaleContext::new());
 }
 
+struct ResolvedTextRun {
+    raster_scale: f64,
+    raster_origin: Point,
+    transform: Affine,
+}
+
+struct ResolvedGlyph {
+    glyph_id: u16,
+    baseline_x: f32,
+    baseline_y: f32,
+    subpx: (u8, u8),
+}
+
 pub struct VgerRenderer {
     device: Arc<Device>,
     #[allow(unused)]
     queue: Arc<Queue>,
-    surface: Surface<'static>,
     vger: Vger,
-    alt_vger: Option<Vger>,
-    config: SurfaceConfiguration,
+    size: (u32, u32),
     scale: f64,
     transform: Affine,
     clip: Option<Rect>,
-    capture: bool,
     font_embolden: f32,
     adapter: Adapter,
 }
@@ -47,7 +57,6 @@ pub struct VgerRenderer {
 impl VgerRenderer {
     pub fn new(
         gpu_resources: GpuResources,
-        surface: wgpu::Surface<'static>,
         width: u32,
         height: u32,
         scale: f64,
@@ -80,63 +89,121 @@ impl VgerRenderer {
         let device = Arc::new(device);
         let queue = Arc::new(queue);
 
-        let surface_caps = surface.get_capabilities(&adapter);
-        let texture_format = surface_caps
-            .formats
-            .into_iter()
-            .find(|it| matches!(it, TextureFormat::Rgba8Unorm | TextureFormat::Bgra8Unorm))
-            .ok_or_else(|| anyhow::anyhow!("surface should support Rgba8Unorm or Bgra8Unorm"))?;
-
-        let latency = match adapter.get_info().backend {
-            wgpu::Backend::Vulkan => 2,
-            _ => 1,
-        };
-
-        let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: texture_format,
-            width,
-            height,
-            present_mode: wgpu::PresentMode::AutoVsync,
-            alpha_mode: wgpu::CompositeAlphaMode::Auto,
-            view_formats: vec![],
-            desired_maximum_frame_latency: latency,
-        };
-        surface.configure(&device, &config);
-
-        let vger = floem_vger_rs::Vger::new(device.clone(), queue.clone(), texture_format);
+        let vger =
+            floem_vger_rs::Vger::new(device.clone(), queue.clone(), TextureFormat::Rgba8Unorm);
 
         Ok(Self {
             device,
             queue,
-            surface,
             vger,
-            alt_vger: None,
             scale,
-            config,
+            size: (width, height),
             transform: Affine::IDENTITY,
             clip: None,
-            capture: false,
             font_embolden,
             adapter,
         })
     }
 
-    pub fn resize(&mut self, width: u32, height: u32, scale: f64) {
-        if width != self.config.width || height != self.config.height {
-            self.config.width = width;
-            self.config.height = height;
-            self.surface.configure(&self.device, &self.config);
+    pub fn begin(&mut self, width: u32, height: u32, scale: f64, font_embolden: f32) {
+        self.size = (width, height);
+        self.scale = scale;
+        self.font_embolden = font_embolden;
+        self.transform = Affine::IDENTITY;
+        self.clip = None;
+        self.vger.begin(self.size.0 as f32, self.size.1 as f32, 1.0);
+    }
+}
+
+impl PaintSink for VgerRenderer {
+    fn push_clip(&mut self, clip: ClipRef<'_>) {
+        let (transform, rect, radius) = match clip {
+            ClipRef::Fill {
+                transform, shape, ..
+            }
+            | ClipRef::Stroke {
+                transform, shape, ..
+            } => {
+                let (rect, radius) = match shape {
+                    imaging::GeometryRef::Rect(rect) => (rect, 0.0),
+                    imaging::GeometryRef::RoundedRect(rect) => (rect.rect(), rect.radii().top_left),
+                    imaging::GeometryRef::Path(path) => (path.bounding_box(), 0.0),
+                    imaging::GeometryRef::OwnedPath(path) => (path.bounding_box(), 0.0),
+                };
+                (transform, rect, radius)
+            }
+        };
+
+        self.set_transform(transform);
+        self.clip(&rect.to_rounded_rect(radius));
+    }
+
+    fn pop_clip(&mut self) {
+        self.clear_clip();
+    }
+
+    fn push_group(&mut self, _group: GroupRef<'_>) {}
+
+    fn pop_group(&mut self) {}
+
+    fn fill(&mut self, draw: FillRef<'_>) {
+        self.set_transform(draw.transform);
+        match draw.shape {
+            imaging::GeometryRef::Rect(rect) => self.fill(&rect, draw.brush, 0.0),
+            imaging::GeometryRef::RoundedRect(rect) => self.fill(&rect, draw.brush, 0.0),
+            imaging::GeometryRef::Path(path) => self.fill(path, draw.brush, 0.0),
+            imaging::GeometryRef::OwnedPath(path) => self.fill(&path, draw.brush, 0.0),
         }
-        self.scale = scale;
     }
 
-    pub fn set_scale(&mut self, scale: f64) {
-        self.scale = scale;
+    fn stroke(&mut self, draw: StrokeRef<'_>) {
+        self.set_transform(draw.transform);
+        match draw.shape {
+            imaging::GeometryRef::Rect(rect) => self.stroke(&rect, draw.brush, draw.stroke),
+            imaging::GeometryRef::RoundedRect(rect) => self.stroke(&rect, draw.brush, draw.stroke),
+            imaging::GeometryRef::Path(path) => self.stroke(path, draw.brush, draw.stroke),
+            imaging::GeometryRef::OwnedPath(path) => self.stroke(&path, draw.brush, draw.stroke),
+        }
     }
 
-    pub fn size(&self) -> Size {
-        Size::new(self.config.width as f64, self.config.height as f64)
+    fn glyph_run(
+        &mut self,
+        draw: GlyphRunRef<'_>,
+        glyphs: &mut dyn Iterator<Item = Glyph>,
+    ) {
+        self.draw_glyphs(draw, glyphs);
+    }
+
+    fn blurred_rounded_rect(&mut self, draw: BlurredRoundedRect) {
+        self.set_transform(draw.transform);
+        self.fill(
+            &draw.rect.to_rounded_rect(draw.radius),
+            draw.color,
+            draw.std_dev,
+        );
+    }
+}
+
+impl CustomPaintSink<DisplayCommandExt> for VgerRenderer {
+    fn custom(&mut self, command: &DisplayCommandExt) {
+        match command {
+            DisplayCommandExt::DrawSvg {
+                svg,
+                rect,
+                transform,
+                brush,
+            } => {
+                self.set_transform(*transform);
+                self.draw_svg(
+                    floem_renderer::Svg {
+                        tree: svg.tree.as_ref(),
+                        hash: svg.hash.as_ref(),
+                    },
+                    *rect,
+                    brush.as_ref(),
+                );
+            }
+        }
     }
 }
 
@@ -151,6 +218,74 @@ impl VgerRenderer {
         let scale_y = coeffs[2].hypot(coeffs[3]);
         let uniform = (scale_x + scale_y) * 0.5;
         (scale_x, scale_y, uniform)
+    }
+
+    fn affine_scale_components(transform: Affine) -> (f64, f64, f64) {
+        let coeffs = transform.as_coeffs();
+        let scale_x = coeffs[0].hypot(coeffs[1]);
+        let scale_y = coeffs[2].hypot(coeffs[3]);
+        let uniform = (scale_x + scale_y) * 0.5;
+        (scale_x, scale_y, uniform)
+    }
+
+    fn normalize_affine(transform: Affine, include_translation: bool) -> Affine {
+        let coeffs = transform.as_coeffs();
+        let (scale_x, scale_y, _) = Self::affine_scale_components(transform);
+        let tx = if include_translation { coeffs[4] } else { 0.0 };
+        let ty = if include_translation { coeffs[5] } else { 0.0 };
+        Affine::new([
+            if scale_x != 0.0 {
+                coeffs[0] / scale_x
+            } else {
+                0.0
+            },
+            if scale_x != 0.0 {
+                coeffs[1] / scale_x
+            } else {
+                0.0
+            },
+            if scale_y != 0.0 {
+                coeffs[2] / scale_y
+            } else {
+                0.0
+            },
+            if scale_y != 0.0 {
+                coeffs[3] / scale_y
+            } else {
+                0.0
+            },
+            tx,
+            ty,
+        ])
+    }
+
+    fn resolve_text_run(transform: Affine) -> ResolvedTextRun {
+        let (_, _, raster_scale) = Self::affine_scale_components(transform);
+        let normalized_transform = Self::normalize_affine(transform, false);
+        let raster_origin = normalized_transform.inverse() * (transform * Point::ZERO);
+        ResolvedTextRun {
+            raster_scale,
+            raster_origin,
+            transform: normalized_transform,
+        }
+    }
+
+    fn subpixel_bin(value: f32) -> u8 {
+        ((value.fract() + 1.0).fract() * 4.0).min(3.0) as u8
+    }
+
+    fn resolve_glyph(text_run: &ResolvedTextRun, glyph: Glyph) -> ResolvedGlyph {
+        let glyph_x = text_run.raster_origin.x as f32 + glyph.x * text_run.raster_scale as f32;
+        let glyph_y = text_run.raster_origin.y as f32 + glyph.y * text_run.raster_scale as f32;
+        let baseline_x = glyph_x.floor();
+        let baseline_y = glyph_y.floor();
+
+        ResolvedGlyph {
+            glyph_id: glyph.id as u16,
+            baseline_x,
+            baseline_y,
+            subpx: (Self::subpixel_bin(glyph_x), Self::subpixel_bin(glyph_y)),
+        }
     }
 
     fn brush_to_paint<'b>(&mut self, brush: impl Into<BrushRef<'b>>) -> Option<PaintIndex> {
@@ -202,13 +337,11 @@ impl VgerRenderer {
         floem_vger_rs::defs::LocalRect::new(origin, size)
     }
 
-    fn render_image(&mut self) -> Option<peniko::ImageBrush> {
-        let width_align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT - 1;
-        let width = (self.config.width + width_align) & !width_align;
-        let height = self.config.height;
+    fn render_to_texture_output(&mut self) -> Option<GpuTextureOutput> {
+        let height = self.size.1;
         let texture_desc = wgpu::TextureDescriptor {
             size: wgpu::Extent3d {
-                width: self.config.width,
+                width: self.size.0,
                 height,
                 depth_or_array_layers: 1,
             },
@@ -216,7 +349,9 @@ impl VgerRenderer {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::TEXTURE_BINDING,
             label: Some("render_texture"),
             view_formats: &[wgpu::TextureFormat::Rgba8Unorm],
         };
@@ -237,21 +372,32 @@ impl VgerRenderer {
 
         self.vger.encode(&desc);
 
+        Some(GpuTextureOutput {
+            texture,
+            view,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            size: (self.size.0, height),
+        })
+    }
+
+    fn render_image(&mut self) -> Option<peniko::ImageData> {
+        let output = self.render_to_texture_output()?;
+        let width_align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT - 1;
+        let padded_width = (output.size.0 + width_align) & !width_align;
+        let height = output.size.1;
         let bytes_per_pixel = 4;
         let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
-            size: (width as u64 * height as u64 * bytes_per_pixel),
+            size: (padded_width as u64 * height as u64 * bytes_per_pixel),
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let bytes_per_row = width * bytes_per_pixel as u32;
-        assert!(bytes_per_row.is_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT));
-
+        let bytes_per_row = padded_width * bytes_per_pixel as u32;
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         encoder.copy_texture_to_buffer(
-            texture.as_image_copy(),
+            output.texture.as_image_copy(),
             wgpu::TexelCopyBufferInfo {
                 buffer: &buffer,
                 layout: wgpu::TexelCopyBufferLayout {
@@ -260,7 +406,11 @@ impl VgerRenderer {
                     rows_per_image: None,
                 },
             },
-            texture_desc.size,
+            wgpu::Extent3d {
+                width: output.size.0,
+                height,
+                depth_or_array_layers: 1,
+            },
         );
         let command_buffer = encoder.finish();
         self.queue.submit(Some(command_buffer));
@@ -269,7 +419,6 @@ impl VgerRenderer {
         let slice = buffer.slice(..);
         let (tx, rx) = sync_channel(1);
         slice.map_async(wgpu::MapMode::Read, move |r| tx.send(r).unwrap());
-
         loop {
             if let Ok(r) = rx.try_recv() {
                 break r.ok()?;
@@ -281,49 +430,26 @@ impl VgerRenderer {
                 break;
             }
         }
-
         let mut cropped_buffer = Vec::new();
-        let buffer: Vec<u8> = slice.get_mapped_range().to_owned();
-
+        let mapped: Vec<u8> = slice.get_mapped_range().to_owned();
         let mut cursor = 0;
-        let row_size = self.config.width as usize * bytes_per_pixel as usize;
+        let row_size = output.size.0 as usize * bytes_per_pixel as usize;
         for _ in 0..height {
-            cropped_buffer.extend_from_slice(&buffer[cursor..(cursor + row_size)]);
+            cropped_buffer.extend_from_slice(&mapped[cursor..(cursor + row_size)]);
             cursor += bytes_per_row as usize;
         }
-
-        Some(peniko::ImageBrush::new(ImageData {
+        Some(ImageData {
             data: Blob::new(Arc::new(cropped_buffer)),
             format: peniko::ImageFormat::Rgba8,
             alpha_type: peniko::ImageAlphaType::AlphaPremultiplied,
-            width: self.config.width,
+            width: output.size.0,
             height,
-        }))
-        // RgbaImage::from_raw(self.config.width, height, cropped_buffer).map(DynamicImage::ImageRgba8)
+        })
     }
 }
 
-impl Renderer for VgerRenderer {
-    fn begin(&mut self, capture: bool) {
-        // Switch to the capture Vger if needed
-        if self.capture != capture {
-            self.capture = capture;
-            if self.alt_vger.is_none() {
-                self.alt_vger = Some(floem_vger_rs::Vger::new(
-                    self.device.clone(),
-                    self.queue.clone(),
-                    TextureFormat::Rgba8Unorm,
-                ));
-            }
-            mem::swap(&mut self.vger, self.alt_vger.as_mut().unwrap())
-        }
-
-        self.transform = Affine::IDENTITY;
-        self.vger
-            .begin(self.config.width as f32, self.config.height as f32, 1.0);
-    }
-
-    fn stroke<'b, 's>(
+impl VgerRenderer {
+    pub fn stroke<'b, 's>(
         &mut self,
         shape: &impl Shape,
         brush: impl Into<BrushRef<'b>>,
@@ -420,7 +546,12 @@ impl Renderer for VgerRenderer {
         }
     }
 
-    fn fill<'b>(&mut self, path: &impl Shape, brush: impl Into<BrushRef<'b>>, blur_radius: f64) {
+    pub fn fill<'b>(
+        &mut self,
+        path: &impl Shape,
+        brush: impl Into<BrushRef<'b>>,
+        blur_radius: f64,
+    ) {
         let (_, _, scale) = self.scale_components();
         let paint = match self.brush_to_paint(brush) {
             Some(paint) => paint,
@@ -495,17 +626,10 @@ impl Renderer for VgerRenderer {
         self.vger.fill(paint);
     }
 
-    fn draw_glyphs<'a>(
-        &mut self,
-        origin: Point,
-        run: &GlyphRunRef<'a>,
-        glyphs: impl Iterator<Item = Glyph> + 'a,
-    ) {
+    pub fn draw_glyphs(&mut self, run: GlyphRunRef<'_>, glyphs: &mut dyn Iterator<Item = Glyph>) {
         let font = run.font;
-        let coeffs = run.transform.as_coeffs();
-        let pos = self.device_transform() * (origin + Point::new(coeffs[4], coeffs[5]).to_vec2());
-        // This assumes that text is axis-aligned.
-        let (_, _, scale) = self.scale_components();
+        let text_run = Self::resolve_text_run(run.transform);
+        let scale = text_run.raster_scale;
 
         let clip = self.clip;
         let Some(font_ref) = FontRef::from_index(font.data.data(), font.index as usize) else {
@@ -524,34 +648,32 @@ impl Renderer for VgerRenderer {
             .map(|transform| transform.as_coeffs()[0].atan().to_degrees() as f32);
         let embolden = scaled_embolden_strength(self.font_embolden, scale);
 
+        // Match tiny-skia's split: raster glyphs in run-local space and keep a single
+        // normalized transform for the whole run. `vger-rs` cannot consume this yet.
+        let _run_transform = text_run.transform;
+
         for glyph in glyphs {
-            let glyph_x = pos.x as f32 + glyph.x * scale as f32;
-            let glyph_y = pos.y as f32 + glyph.y * scale as f32;
+            let glyph = Self::resolve_glyph(&text_run, glyph);
 
             if let Some(rect) = clip
-                && (glyph_x as f64) > rect.x1
+                && (glyph.baseline_x as f64) > rect.x1
             {
                 break;
             }
 
             let scaled_font_size = (run.font_size * scale as f32).round() as u32;
-
-            let x_bin = ((glyph_x.fract() + 1.0).fract() * 4.0).min(3.0) as u8;
-            let y_bin = ((glyph_y.fract() + 1.0).fract() * 4.0).min(3.0) as u8;
-
-            let glyph_id = glyph.id as u16;
             let scaled_size = run.font_size * scale as f32;
             let coords = run.normalized_coords;
 
             let synthesis_bits = skew.unwrap_or(0.0).to_bits() & 0xFFFF_FFFE;
 
             self.vger.render_glyph(
-                glyph_x.floor(),
-                glyph_y.floor(),
+                glyph.baseline_x,
+                glyph.baseline_y,
                 font_blob_id,
-                glyph_id,
+                glyph.glyph_id,
                 scaled_font_size,
-                (x_bin, y_bin),
+                glyph.subpx,
                 synthesis_bits,
                 || {
                     let image = SCALE_CONTEXT.with_borrow_mut(|ctx| {
@@ -568,7 +690,10 @@ impl Renderer for VgerRenderer {
                         ]);
                         render
                             .format(Format::Alpha)
-                            .offset(swash::zeno::Vector::new(glyph_x.fract(), glyph_y.fract()))
+                            .offset(swash::zeno::Vector::new(
+                                glyph.subpx.0 as f32 / 4.0,
+                                glyph.subpx.1 as f32 / 4.0,
+                            ))
                             .embolden(embolden);
                         if let Some(angle) = skew {
                             render.transform(Some(swash::zeno::Transform::skew(
@@ -576,7 +701,7 @@ impl Renderer for VgerRenderer {
                                 swash::zeno::Angle::ZERO,
                             )));
                         }
-                        render.render(&mut scaler, glyph_id)
+                        render.render(&mut scaler, glyph.glyph_id)
                     });
                     match image {
                         Some(img) => GlyphImage {
@@ -602,7 +727,7 @@ impl Renderer for VgerRenderer {
         }
     }
 
-    fn draw_svg<'b>(
+    pub fn draw_svg<'b>(
         &mut self,
         svg: floem_renderer::Svg<'b>,
         rect: Rect,
@@ -643,12 +768,13 @@ impl Renderer for VgerRenderer {
             hash.extend_from_slice(&width.to_le_bytes());
             hash.extend_from_slice(&height.to_le_bytes());
 
-            self.vger.render_image(x, y, &hash, width, height, || Image {
-                width,
-                height,
-                data: final_pixmap.data().to_vec().into(),
-                pixel_format: PixelFormat::Rgba,
-            });
+            self.vger
+                .render_image(x, y, &hash, width, height, || Image {
+                    width,
+                    height,
+                    data: final_pixmap.data().to_vec().into(),
+                    pixel_format: PixelFormat::Rgba,
+                });
             return;
         }
 
@@ -679,11 +805,11 @@ impl Renderer for VgerRenderer {
         );
     }
 
-    fn set_transform(&mut self, transform: Affine) {
+    pub fn set_transform(&mut self, transform: Affine) {
         self.transform = transform;
     }
 
-    fn clip(&mut self, shape: &impl Shape) {
+    pub fn clip(&mut self, shape: &impl Shape) {
         let (rect, radius) = if let Some(rect) = shape.as_rect() {
             (rect, 0.0)
         } else if let Some(rect) = shape.as_rounded_rect() {
@@ -701,44 +827,21 @@ impl Renderer for VgerRenderer {
         self.clip = Some(transformed_rect);
     }
 
-    fn clear_clip(&mut self) {
+    pub fn clear_clip(&mut self) {
         self.vger.reset_scissor();
         self.clip = None;
     }
 
-    fn finish(&mut self) -> Option<peniko::ImageBrush> {
-        if self.capture {
-            self.render_image()
+    pub fn finish(&mut self, capture: bool) -> Option<RenderOutput> {
+        if capture {
+            self.render_image().map(RenderOutput::Image)
         } else {
-            if let Ok(frame) = self.surface.get_current_texture() {
-                let texture_view = frame
-                    .texture
-                    .create_view(&wgpu::TextureViewDescriptor::default());
-                let desc = wgpu::RenderPassDescriptor {
-                    label: None,
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &texture_view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                            store: StoreOp::Store,
-                        },
-                        depth_slice: None,
-                    })],
-                    depth_stencil_attachment: None,
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                    multiview_mask: None,
-                };
-
-                self.vger.encode(&desc);
-                frame.present();
-            }
-            None
+            self.render_to_texture_output()
+                .map(RenderOutput::GpuTexture)
         }
     }
 
-    fn push_layer(
+    pub fn push_layer(
         &mut self,
         _blend: impl Into<peniko::BlendMode>,
         _alpha: f32,
@@ -747,9 +850,9 @@ impl Renderer for VgerRenderer {
     ) {
     }
 
-    fn pop_layer(&mut self) {}
+    pub fn pop_layer(&mut self) {}
 
-    fn debug_info(&self) -> String {
+    pub fn debug_info(&self) -> String {
         use std::fmt::Write;
 
         let mut out = String::new();

@@ -49,22 +49,263 @@
 //!
 use std::sync::Arc;
 
+#[cfg(not(any(
+    feature = "active-vello",
+    feature = "active-vger",
+    feature = "active-vello-hybrid",
+    feature = "active-vello-cpu",
+    feature = "active-tiny-skia",
+)))]
+compile_error!("Enable exactly one active renderer feature.");
+#[cfg(any(
+    all(feature = "active-vello", feature = "active-vger"),
+    all(feature = "active-vello", feature = "active-vello-hybrid"),
+    all(feature = "active-vello", feature = "active-vello-cpu"),
+    all(feature = "active-vello", feature = "active-tiny-skia"),
+    all(feature = "active-vger", feature = "active-vello-hybrid"),
+    all(feature = "active-vger", feature = "active-vello-cpu"),
+    all(feature = "active-vger", feature = "active-tiny-skia"),
+    all(feature = "active-vello-hybrid", feature = "active-vello-cpu"),
+    all(feature = "active-vello-hybrid", feature = "active-tiny-skia"),
+    all(feature = "active-vello-cpu", feature = "active-tiny-skia"),
+))]
+compile_error!("Enable only one active renderer feature.");
+#[cfg(not(any(feature = "fallback-vello-cpu", feature = "fallback-tiny-skia")))]
+compile_error!("Enable exactly one CPU fallback renderer feature.");
+#[cfg(all(feature = "fallback-vello-cpu", feature = "fallback-tiny-skia"))]
+compile_error!("Enable only one CPU fallback renderer feature.");
+
+#[cfg(any(feature = "active-vello", feature = "active-vger"))]
 use floem_renderer::gpu_resources::GpuResources;
-#[cfg(feature = "skia")]
-use floem_skia_renderer::SkiaRenderer as ActiveRenderer;
-use floem_tiny_skia_renderer::TinySkiaRenderer;
-#[cfg(all(feature = "vello", not(feature = "skia")))]
+#[cfg(any(feature = "active-vello", feature = "active-vger"))]
+use floem_renderer::{GpuTextureOutput, RenderOutput};
+#[cfg(feature = "active-tiny-skia")]
+use floem_tiny_skia_renderer::TinySkiaRenderer as ActiveRenderer;
+#[cfg(feature = "fallback-tiny-skia")]
+use floem_tiny_skia_renderer::TinySkiaRenderer as CpuFallbackRenderer;
+#[cfg(feature = "active-vello-cpu")]
+use floem_vello_cpu_renderer::VelloCpuRenderer as ActiveRenderer;
+#[cfg(feature = "fallback-vello-cpu")]
+use floem_vello_cpu_renderer::VelloCpuRenderer as CpuFallbackRenderer;
+#[cfg(feature = "active-vello-hybrid")]
+use floem_vello_hybrid_renderer::VelloHybridRenderer as ActiveRenderer;
+#[cfg(feature = "active-vello")]
 use floem_vello_renderer::VelloRenderer as ActiveRenderer;
-#[cfg(all(not(feature = "vello"), not(feature = "skia")))]
+#[cfg(feature = "active-vger")]
 use floem_vger_renderer::VgerRenderer as ActiveRenderer;
-use peniko::BrushRef;
-use peniko::kurbo::{Affine, Point, Rect, Shape, Size, Stroke};
+use imaging::{
+    BlurredRoundedRect, ClipRef, CustomPaintSink, FillRef, GlyphRunRef, GroupRef, PaintSink,
+    StrokeRef,
+};
+use peniko::ImageData;
+use peniko::kurbo::Size;
+#[cfg(any(
+    feature = "active-vello-hybrid",
+    feature = "active-vello-cpu",
+    feature = "active-tiny-skia",
+    feature = "fallback-vello-cpu",
+    feature = "fallback-tiny-skia"
+))]
+use softbuffer::{Context, Surface};
+#[cfg(any(
+    feature = "active-vello-hybrid",
+    feature = "active-vello-cpu",
+    feature = "active-tiny-skia",
+    feature = "fallback-vello-cpu",
+    feature = "fallback-tiny-skia"
+))]
+use std::num::NonZeroU32;
+#[cfg(any(feature = "active-vello", feature = "active-vger"))]
+use wgpu::util::TextureBlitter;
 use winit::window::Window;
 
-#[allow(clippy::large_enum_variant)]
+use floem_renderer::DisplayCommandExt;
+
+#[cfg(any(
+    feature = "active-vello-hybrid",
+    feature = "active-vello-cpu",
+    feature = "active-tiny-skia",
+    feature = "fallback-vello-cpu",
+    feature = "fallback-tiny-skia"
+))]
+struct CpuImagePresenter<W> {
+    #[allow(unused)]
+    context: Context<W>,
+    surface: Surface<W, W>,
+}
+
+#[cfg(any(feature = "fallback-vello-cpu", feature = "fallback-tiny-skia"))]
+struct CpuFallbackState {
+    renderer: CpuFallbackRenderer,
+    presenter: CpuImagePresenter<Arc<dyn Window>>,
+    size: Size,
+}
+
+#[cfg(any(feature = "active-vello", feature = "active-vger"))]
+struct ActiveState {
+    renderer: ActiveRenderer,
+    presenter: GpuWindowPresenter,
+    size: Size,
+}
+
+#[cfg(any(
+    feature = "active-vello-hybrid",
+    feature = "active-vello-cpu",
+    feature = "active-tiny-skia"
+))]
+struct ActiveState {
+    renderer: ActiveRenderer,
+    presenter: CpuImagePresenter<Arc<dyn Window>>,
+    size: Size,
+}
+
+#[cfg(any(feature = "active-vello", feature = "active-vger"))]
+struct GpuWindowPresenter {
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    surface: wgpu::Surface<'static>,
+    config: wgpu::SurfaceConfiguration,
+    blitter: TextureBlitter,
+}
+
+#[cfg(any(feature = "active-vello", feature = "active-vger"))]
+impl GpuWindowPresenter {
+    fn new(
+        gpu_resources: &GpuResources,
+        surface: wgpu::Surface<'static>,
+        width: u32,
+        height: u32,
+    ) -> Result<Self, String> {
+        let surface_caps = surface.get_capabilities(&gpu_resources.adapter);
+        let texture_format = surface_caps
+            .formats
+            .into_iter()
+            .find(|it| {
+                matches!(
+                    it,
+                    wgpu::TextureFormat::Rgba8Unorm | wgpu::TextureFormat::Bgra8Unorm
+                )
+            })
+            .ok_or_else(|| "surface should support Rgba8Unorm or Bgra8Unorm".to_string())?;
+
+        let latency = match gpu_resources.adapter.get_info().backend {
+            wgpu::Backend::Vulkan => 2,
+            _ => 1,
+        };
+
+        let config = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            format: texture_format,
+            width,
+            height,
+            present_mode: wgpu::PresentMode::AutoVsync,
+            alpha_mode: wgpu::CompositeAlphaMode::Auto,
+            view_formats: vec![],
+            desired_maximum_frame_latency: latency,
+        };
+        surface.configure(&gpu_resources.device, &config);
+
+        Ok(Self {
+            device: gpu_resources.device.clone(),
+            queue: gpu_resources.queue.clone(),
+            surface,
+            config,
+            blitter: TextureBlitter::new(&gpu_resources.device, texture_format),
+        })
+    }
+
+    fn resize(&mut self, width: u32, height: u32) {
+        if self.config.width != width || self.config.height != height {
+            self.config.width = width;
+            self.config.height = height;
+            self.surface.configure(&self.device, &self.config);
+        }
+    }
+
+    fn present(&mut self, output: &GpuTextureOutput) {
+        let surface_texture = self
+            .surface
+            .get_current_texture()
+            .expect("failed to acquire surface texture");
+        let output_view = surface_texture
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Floem Surface Blit"),
+            });
+        self.blitter
+            .copy(&self.device, &mut encoder, &output.view, &output_view);
+        self.queue.submit([encoder.finish()]);
+        surface_texture.present();
+    }
+}
+
+#[cfg(any(
+    feature = "active-vello-hybrid",
+    feature = "active-vello-cpu",
+    feature = "active-tiny-skia",
+    feature = "fallback-vello-cpu",
+    feature = "fallback-tiny-skia"
+))]
+impl<W> CpuImagePresenter<W>
+where
+    W: Clone + raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle,
+{
+    fn new(window: W, width: u32, height: u32) -> Result<Self, String> {
+        let context = Context::new(window.clone()).map_err(|err| err.to_string())?;
+        let mut surface = Surface::new(&context, window).map_err(|err| err.to_string())?;
+        surface
+            .resize(
+                NonZeroU32::new(width).unwrap_or(NonZeroU32::new(1).unwrap()),
+                NonZeroU32::new(height).unwrap_or(NonZeroU32::new(1).unwrap()),
+            )
+            .map_err(|err| err.to_string())?;
+        Ok(Self { context, surface })
+    }
+
+    fn resize(&mut self, width: u32, height: u32) {
+        self.surface
+            .resize(
+                NonZeroU32::new(width).unwrap_or(NonZeroU32::new(1).unwrap()),
+                NonZeroU32::new(height).unwrap_or(NonZeroU32::new(1).unwrap()),
+            )
+            .expect("failed to resize surface");
+    }
+
+    fn present(&mut self, image: &ImageData) {
+        let mut buffer = self
+            .surface
+            .buffer_mut()
+            .expect("failed to get the surface buffer");
+        let width = image.width as usize;
+        for y in 0..image.height as usize {
+            let row_start = y * width;
+            let src = &image.data.data()[row_start * 4..(row_start + width) * 4];
+            let dst = &mut buffer[row_start..row_start + width];
+            for (out_pixel, rgba) in dst.iter_mut().zip(src.chunks_exact(4)) {
+                *out_pixel = ((rgba[0] as u32) << 16) | ((rgba[1] as u32) << 8) | (rgba[2] as u32);
+            }
+        }
+        buffer
+            .present()
+            .expect("failed to present the surface buffer");
+    }
+}
+
+#[allow(clippy::large_enum_variant, private_interfaces)]
 pub enum Renderer {
-    Active(ActiveRenderer),
-    TinySkia(TinySkiaRenderer<Arc<dyn Window>>),
+    #[cfg(any(
+        feature = "active-vello",
+        feature = "active-vger",
+        feature = "active-vello-hybrid",
+        feature = "active-vello-cpu",
+        feature = "active-tiny-skia"
+    ))]
+    Active(ActiveState),
+    #[cfg(any(feature = "fallback-vello-cpu", feature = "fallback-tiny-skia"))]
+    CpuFallback(CpuFallbackState),
     /// Uninitialized renderer, used to allow the renderer to be created lazily
     /// All operations on this renderer are no-ops
     Uninitialized {
@@ -72,58 +313,41 @@ pub enum Renderer {
     },
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct BeginFrame {
+    pub size: Size,
+    pub scale: f64,
+    pub font_embolden: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FinishMode {
+    Present,
+    Capture,
+}
+
 impl Renderer {
-    #[cfg(feature = "skia")]
-    const ACTIVE_RENDERER_NAME: &str = "SkiaRenderer";
-    #[cfg(all(feature = "vello", not(feature = "skia")))]
+    #[cfg(feature = "active-vello")]
     const ACTIVE_RENDERER_NAME: &str = "VelloRenderer";
-    #[cfg(all(not(feature = "vello"), not(feature = "skia")))]
+    #[cfg(feature = "active-vger")]
     const ACTIVE_RENDERER_NAME: &str = "VgerRenderer";
+    #[cfg(feature = "active-vello-hybrid")]
+    const ACTIVE_RENDERER_NAME: &str = "VelloHybridRenderer";
+    #[cfg(feature = "active-vello-cpu")]
+    const ACTIVE_RENDERER_NAME: &str = "VelloCpuRenderer";
+    #[cfg(feature = "active-tiny-skia")]
+    const ACTIVE_RENDERER_NAME: &str = "TinySkiaRenderer";
 
-    #[cfg(all(not(feature = "vello"), not(feature = "skia")))]
+    #[cfg(feature = "active-vger")]
     const ACTIVE_IS_VGER: bool = true;
-    #[cfg(any(feature = "vello", feature = "skia"))]
+    #[cfg(not(feature = "active-vger"))]
     const ACTIVE_IS_VGER: bool = false;
-
-    #[cfg(feature = "skia")]
-    pub fn new_skia(window: Arc<dyn Window>, scale: f64, size: Size, font_embolden: f32) -> Self {
-        let size = Size::new(size.width.max(1.0), size.height.max(1.0));
-
-        let force_tiny_skia = std::env::var("FLOEM_FORCE_TINY_SKIA")
-            .ok()
-            .map(|val| val.as_str() == "1")
-            .unwrap_or(false);
-
-        if !force_tiny_skia {
-            match ActiveRenderer::new(
-                window.clone(),
-                size.width as u32,
-                size.height as u32,
-                scale,
-                font_embolden,
-            ) {
-                Ok(renderer) => return Self::Active(renderer),
-                Err(err) => panic!("Failed to create {}: {err}", Self::ACTIVE_RENDERER_NAME),
-            }
-        }
-
-        match TinySkiaRenderer::new(
-            window,
-            size.width as u32,
-            size.height as u32,
-            scale,
-            font_embolden,
-        ) {
-            Ok(tiny_skia) => Self::TinySkia(tiny_skia),
-            Err(err) => panic!("Failed to create TinySkiaRenderer: {err}"),
-        }
-    }
 
     pub(crate) fn is_vger(&self) -> bool {
         Self::ACTIVE_IS_VGER && matches!(self, Renderer::Active(_))
     }
 
-    #[cfg(all(feature = "vello", not(feature = "skia")))]
+    #[cfg(any(feature = "active-vello", feature = "active-vger"))]
     fn try_new_active(
         gpu_resources: GpuResources,
         surface: wgpu::Surface<'static>,
@@ -131,24 +355,88 @@ impl Renderer {
         height: u32,
         scale: f64,
         font_embolden: f32,
-    ) -> Result<ActiveRenderer, String> {
-        ActiveRenderer::new(gpu_resources, surface, width, height, scale, font_embolden)
-            .map_err(|err| err.to_string())
+    ) -> Result<ActiveState, String> {
+        let presenter = GpuWindowPresenter::new(&gpu_resources, surface, width, height)?;
+        let renderer = ActiveRenderer::new(gpu_resources, width, height, scale, font_embolden)
+            .map_err(|err| err.to_string())?;
+        Ok(ActiveState {
+            renderer,
+            presenter,
+            size: Size::new(width as f64, height as f64),
+        })
     }
 
-    #[cfg(all(not(feature = "vello"), not(feature = "skia")))]
+    #[cfg(any(
+        feature = "active-vello-hybrid",
+        feature = "active-vello-cpu",
+        feature = "active-tiny-skia"
+    ))]
     fn try_new_active(
-        gpu_resources: GpuResources,
-        surface: wgpu::Surface<'static>,
+        window: Arc<dyn Window>,
         width: u32,
         height: u32,
         scale: f64,
         font_embolden: f32,
-    ) -> Result<ActiveRenderer, String> {
-        ActiveRenderer::new(gpu_resources, surface, width, height, scale, font_embolden)
-            .map_err(|err| err.to_string())
+    ) -> Result<ActiveState, String> {
+        let presenter = CpuImagePresenter::new(window, width, height)?;
+        #[cfg(feature = "active-tiny-skia")]
+        let renderer = ActiveRenderer::new(width, height, scale, font_embolden)
+            .map_err(|err| err.to_string())?;
+        #[cfg(any(feature = "active-vello-hybrid", feature = "active-vello-cpu"))]
+        let renderer = ActiveRenderer::new(width, height).map_err(|err| err.to_string())?;
+        Ok(ActiveState {
+            renderer,
+            presenter,
+            size: Size::new(width as f64, height as f64),
+        })
     }
 
+    #[allow(unused_variables)]
+    fn try_new_cpu_fallback(
+        window: Arc<dyn Window>,
+        width: u32,
+        height: u32,
+        scale: f64,
+        font_embolden: f32,
+    ) -> Result<CpuFallbackState, String> {
+        let presenter = CpuImagePresenter::new(window, width, height)?;
+        #[cfg(feature = "fallback-tiny-skia")]
+        let renderer = CpuFallbackRenderer::new(width, height, scale, font_embolden)
+            .map_err(|err| err.to_string())?;
+        #[cfg(feature = "fallback-vello-cpu")]
+        let renderer = CpuFallbackRenderer::new(width, height).map_err(|err| err.to_string())?;
+        Ok(CpuFallbackState {
+            renderer,
+            presenter,
+            size: Size::new(width as f64, height as f64),
+        })
+    }
+
+    #[cfg(feature = "fallback-vello-cpu")]
+    fn finish_cpu_renderer(renderer: &mut CpuFallbackRenderer, size: Size) -> Option<ImageData> {
+        let data = renderer.finish_rgba8().ok()?;
+        Some(ImageData {
+            data: peniko::Blob::new(std::sync::Arc::new(data)),
+            format: peniko::ImageFormat::Rgba8,
+            alpha_type: peniko::ImageAlphaType::Alpha,
+            width: size.width as u32,
+            height: size.height as u32,
+        })
+    }
+
+    #[cfg(any(feature = "active-vello-hybrid", feature = "active-vello-cpu"))]
+    fn finish_active_cpu_renderer(renderer: &mut ActiveRenderer, size: Size) -> Option<ImageData> {
+        let data = renderer.finish_rgba8().ok()?;
+        Some(ImageData {
+            data: peniko::Blob::new(std::sync::Arc::new(data)),
+            format: peniko::ImageFormat::Rgba8,
+            alpha_type: peniko::ImageAlphaType::Alpha,
+            width: size.width as u32,
+            height: size.height as u32,
+        })
+    }
+
+    #[cfg(any(feature = "active-vello", feature = "active-vger"))]
     #[allow(unused_variables)]
     pub fn new(
         window: Arc<dyn Window>,
@@ -160,13 +448,18 @@ impl Renderer {
     ) -> Self {
         let size = Size::new(size.width.max(1.0), size.height.max(1.0));
 
-        let force_tiny_skia = std::env::var("FLOEM_FORCE_TINY_SKIA")
+        let force_cpu = std::env::var("FLOEM_FORCE_CPU")
             .ok()
             .map(|val| val.as_str() == "1")
+            .or_else(|| {
+                std::env::var("FLOEM_FORCE_TINY_SKIA")
+                    .ok()
+                    .map(|val| val.as_str() == "1")
+            })
             .unwrap_or(false);
 
-        #[cfg(not(feature = "skia"))]
-        let active_err = if !force_tiny_skia {
+        #[cfg(any(feature = "active-vello", feature = "active-vger"))]
+        let active_err = if !force_cpu {
             match Self::try_new_active(
                 gpu_resources,
                 surface,
@@ -182,261 +475,256 @@ impl Renderer {
             None
         };
 
-        let tiny_skia_err = match TinySkiaRenderer::new(
+        let cpu_fallback_err = match Self::try_new_cpu_fallback(
             window,
             size.width as u32,
             size.height as u32,
             scale,
             font_embolden,
         ) {
-            Ok(tiny_skia) => return Self::TinySkia(tiny_skia),
+            Ok(state) => return Self::CpuFallback(state),
             Err(err) => err,
         };
 
-        if !force_tiny_skia {
-            #[cfg(feature = "skia")]
-            panic!("Failed to create TinySkiaRenderer: {tiny_skia_err}");
-
-            #[cfg(not(feature = "skia"))]
+        if !force_cpu {
             panic!(
-                "Failed to create {}: {}\nFailed to create TinySkiaRenderer: {tiny_skia_err}",
+                "Failed to create {}: {}\nFailed to create CPU fallback renderer: {cpu_fallback_err}",
                 Self::ACTIVE_RENDERER_NAME,
                 active_err.unwrap()
             );
         } else {
-            panic!("Failed to create TinySkiaRenderer: {tiny_skia_err}");
+            panic!("Failed to create CPU fallback renderer: {cpu_fallback_err}");
         }
     }
 
-    pub fn resize(&mut self, scale: f64, size: Size) {
+    #[cfg(any(
+        feature = "active-vello-hybrid",
+        feature = "active-vello-cpu",
+        feature = "active-tiny-skia"
+    ))]
+    pub fn new_cpu(window: Arc<dyn Window>, scale: f64, size: Size, font_embolden: f32) -> Self {
         let size = Size::new(size.width.max(1.0), size.height.max(1.0));
-        match self {
-            Renderer::Active(r) => r.resize(size.width as u32, size.height as u32, scale),
-            Renderer::TinySkia(r) => r.resize(size.width as u32, size.height as u32, scale),
-            Renderer::Uninitialized { .. } => {}
-        }
-    }
 
-    pub fn set_scale(&mut self, scale: f64) {
-        match self {
-            Renderer::Active(r) => r.set_scale(scale),
-            Renderer::TinySkia(r) => r.set_scale(scale),
-            Renderer::Uninitialized { .. } => {}
-        }
-    }
+        let active_err = match Self::try_new_active(
+            window.clone(),
+            size.width as u32,
+            size.height as u32,
+            scale,
+            font_embolden,
+        ) {
+            Ok(renderer) => return Self::Active(renderer),
+            Err(err) => Some(err),
+        };
 
-    pub fn size(&self) -> Size {
-        match self {
-            Renderer::Active(r) => r.size(),
-            Renderer::TinySkia(r) => r.size(),
-            Renderer::Uninitialized { size } => *size,
-        }
+        let cpu_fallback_err = match Self::try_new_cpu_fallback(
+            window,
+            size.width as u32,
+            size.height as u32,
+            scale,
+            font_embolden,
+        ) {
+            Ok(state) => return Self::CpuFallback(state),
+            Err(err) => err,
+        };
+
+        panic!(
+            "Failed to create {}: {}\nFailed to create CPU fallback renderer: {cpu_fallback_err}",
+            Self::ACTIVE_RENDERER_NAME,
+            active_err.unwrap()
+        );
     }
 
     pub(crate) fn debug_info(&self) -> String {
-        use crate::Renderer;
-
         match self {
-            Self::Active(r) => r.debug_info(),
-            Self::TinySkia(r) => r.debug_info(),
+            Self::Active(state) => state.renderer.debug_info(),
+            Self::CpuFallback(state) => state.renderer.debug_info(),
             Self::Uninitialized { .. } => "Uninitialized".to_string(),
         }
     }
 
-    #[cfg(all(feature = "vello", not(feature = "skia")))]
-    pub(crate) fn render_scene_to_premultiplied_texture_view(
-        &mut self,
-        target_view: &wgpu::TextureView,
-        target_format: wgpu::TextureFormat,
-        size: (u32, u32),
-    ) -> bool {
+    pub(crate) fn begin(&mut self, frame: BeginFrame) {
+        let size = Size::new(frame.size.width.max(1.0), frame.size.height.max(1.0));
+        let width = size.width as u32;
+        let height = size.height as u32;
         match self {
-            Renderer::Active(r) => r
-                .render_scene_to_premultiplied_texture_view(
-                    target_view,
-                    target_format,
-                    size.0,
-                    size.1,
-                )
-                .is_ok(),
-            Renderer::TinySkia(_) | Renderer::Uninitialized { .. } => false,
+            Renderer::Active(state) => {
+                let size_changed = state.size != size;
+                if size_changed {
+                    state.presenter.resize(width, height);
+                    state.size = size;
+                }
+                #[cfg(any(
+                    feature = "active-vello",
+                    feature = "active-vger",
+                    feature = "active-tiny-skia"
+                ))]
+                state
+                    .renderer
+                    .begin(width, height, frame.scale, frame.font_embolden);
+                #[cfg(any(feature = "active-vello-hybrid", feature = "active-vello-cpu"))]
+                {
+                    if size_changed {
+                        state.renderer = ActiveRenderer::new(width, height).unwrap_or_else(|err| {
+                            panic!("Failed to recreate {}: {err}", Self::ACTIVE_RENDERER_NAME)
+                        });
+                    }
+                    state.renderer.reset();
+                }
+            }
+            Renderer::CpuFallback(state) => {
+                let size_changed = state.size != size;
+                if size_changed {
+                    state.presenter.resize(width, height);
+                    state.size = size;
+                }
+                #[cfg(feature = "fallback-tiny-skia")]
+                state
+                    .renderer
+                    .begin(width, height, frame.scale, frame.font_embolden);
+                #[cfg(feature = "fallback-vello-cpu")]
+                {
+                    if size_changed {
+                        state.renderer =
+                            CpuFallbackRenderer::new(width, height).unwrap_or_else(|err| {
+                                panic!("Failed to recreate CPU fallback renderer: {err}")
+                            });
+                    }
+                    state.renderer.reset();
+                }
+            }
+            Renderer::Uninitialized { .. } => {}
         }
     }
 
-    #[cfg(not(all(feature = "vello", not(feature = "skia"))))]
-    pub(crate) fn render_scene_to_premultiplied_texture_view(
-        &mut self,
-        _target_view: &wgpu::TextureView,
-        _target_format: wgpu::TextureFormat,
-        _size: (u32, u32),
-    ) -> bool {
-        false
-    }
-
-    #[cfg(all(feature = "vello", not(feature = "skia")))]
-    pub(crate) fn present_composited_output(
-        &mut self,
-        composite: impl FnOnce(&wgpu::TextureView),
-    ) -> bool {
+    pub(crate) fn finish(&mut self, mode: FinishMode) -> Option<ImageData> {
         match self {
-            Renderer::Active(r) => r.present_composited_output(composite),
-            Renderer::TinySkia(_) | Renderer::Uninitialized { .. } => false,
+            #[cfg(any(feature = "active-vello", feature = "active-vger"))]
+            Renderer::Active(state) => match state.renderer.finish(mode == FinishMode::Capture) {
+                Some(RenderOutput::Image(image)) => Some(image),
+                Some(RenderOutput::GpuTexture(output)) => {
+                    if mode == FinishMode::Present {
+                        state.presenter.present(&output);
+                        None
+                    } else {
+                        None
+                    }
+                }
+                None => None,
+            },
+            #[cfg(any(
+                feature = "active-vello-hybrid",
+                feature = "active-vello-cpu",
+                feature = "active-tiny-skia"
+            ))]
+            Renderer::Active(state) => {
+                #[cfg(feature = "active-tiny-skia")]
+                let image = state.renderer.finish();
+                #[cfg(any(feature = "active-vello-hybrid", feature = "active-vello-cpu"))]
+                let image = Self::finish_active_cpu_renderer(&mut state.renderer, state.size);
+                if mode == FinishMode::Present
+                    && let Some(image) = image.as_ref()
+                {
+                    state.presenter.present(image);
+                    return None;
+                }
+                image
+            }
+            Renderer::CpuFallback(state) => {
+                #[cfg(feature = "fallback-tiny-skia")]
+                let image = state.renderer.finish();
+                #[cfg(feature = "fallback-vello-cpu")]
+                let image = Self::finish_cpu_renderer(&mut state.renderer, state.size);
+                if mode == FinishMode::Present
+                    && let Some(image) = image.as_ref()
+                {
+                    state.presenter.present(image);
+                    return None;
+                }
+                image
+            }
+            Renderer::Uninitialized { .. } => None,
         }
-    }
-
-    #[cfg(not(all(feature = "vello", not(feature = "skia"))))]
-    pub(crate) fn present_composited_output(
-        &mut self,
-        _composite: impl FnOnce(&wgpu::TextureView),
-    ) -> bool {
-        false
     }
 }
 
-impl floem_renderer::Renderer for Renderer {
-    fn begin(&mut self, capture: bool) {
+impl PaintSink for Renderer {
+    fn push_clip(&mut self, clip: ClipRef<'_>) {
         match self {
-            Renderer::Active(r) => {
-                r.begin(capture);
-            }
-            Renderer::TinySkia(r) => {
-                r.begin(capture);
-            }
+            Renderer::Active(state) => PaintSink::push_clip(&mut state.renderer, clip),
+            Renderer::CpuFallback(state) => PaintSink::push_clip(&mut state.renderer, clip),
             Renderer::Uninitialized { .. } => {}
         }
     }
 
-    fn clip(&mut self, shape: &impl Shape) {
+    fn pop_clip(&mut self) {
         match self {
-            Renderer::Active(v) => {
-                v.clip(shape);
-            }
-            Renderer::TinySkia(v) => {
-                v.clip(shape);
-            }
+            Renderer::Active(state) => PaintSink::pop_clip(&mut state.renderer),
+            Renderer::CpuFallback(state) => PaintSink::pop_clip(&mut state.renderer),
             Renderer::Uninitialized { .. } => {}
         }
     }
 
-    fn clear_clip(&mut self) {
+    fn push_group(&mut self, group: GroupRef<'_>) {
         match self {
-            Renderer::Active(v) => {
-                v.clear_clip();
-            }
-            Renderer::TinySkia(v) => {
-                v.clear_clip();
-            }
+            Renderer::Active(state) => PaintSink::push_group(&mut state.renderer, group),
+            Renderer::CpuFallback(state) => PaintSink::push_group(&mut state.renderer, group),
             Renderer::Uninitialized { .. } => {}
         }
     }
 
-    fn stroke<'b, 's>(
+    fn pop_group(&mut self) {
+        match self {
+            Renderer::Active(state) => PaintSink::pop_group(&mut state.renderer),
+            Renderer::CpuFallback(state) => PaintSink::pop_group(&mut state.renderer),
+            Renderer::Uninitialized { .. } => {}
+        }
+    }
+
+    fn fill(&mut self, draw: FillRef<'_>) {
+        match self {
+            Renderer::Active(state) => PaintSink::fill(&mut state.renderer, draw),
+            Renderer::CpuFallback(state) => PaintSink::fill(&mut state.renderer, draw),
+            Renderer::Uninitialized { .. } => {}
+        }
+    }
+
+    fn stroke(&mut self, draw: StrokeRef<'_>) {
+        match self {
+            Renderer::Active(state) => PaintSink::stroke(&mut state.renderer, draw),
+            Renderer::CpuFallback(state) => PaintSink::stroke(&mut state.renderer, draw),
+            Renderer::Uninitialized { .. } => {}
+        }
+    }
+
+    fn glyph_run(
         &mut self,
-        shape: &impl Shape,
-        brush: impl Into<BrushRef<'b>>,
-        stroke: &'s Stroke,
+        draw: GlyphRunRef<'_>,
+        glyphs: &mut dyn Iterator<Item = imaging::record::Glyph>,
     ) {
         match self {
-            Renderer::Active(v) => {
-                v.stroke(shape, brush, stroke);
-            }
-            Renderer::TinySkia(v) => {
-                v.stroke(shape, brush, stroke);
-            }
+            Renderer::Active(state) => PaintSink::glyph_run(&mut state.renderer, draw, glyphs),
+            Renderer::CpuFallback(state) => PaintSink::glyph_run(&mut state.renderer, draw, glyphs),
             Renderer::Uninitialized { .. } => {}
         }
     }
 
-    fn fill<'b>(
-        &mut self,
-        path: &impl peniko::kurbo::Shape,
-        brush: impl Into<peniko::BrushRef<'b>>,
-        blur_radius: f64,
-    ) {
+    fn blurred_rounded_rect(&mut self, draw: BlurredRoundedRect) {
         match self {
-            Renderer::Active(v) => {
-                v.fill(path, brush, blur_radius);
-            }
-            Renderer::TinySkia(v) => {
-                v.fill(path, brush, blur_radius);
+            Renderer::Active(state) => PaintSink::blurred_rounded_rect(&mut state.renderer, draw),
+            Renderer::CpuFallback(state) => {
+                PaintSink::blurred_rounded_rect(&mut state.renderer, draw)
             }
             Renderer::Uninitialized { .. } => {}
         }
     }
+}
 
-    fn push_layer(
-        &mut self,
-        blend: impl Into<peniko::BlendMode>,
-        alpha: f32,
-        transform: Affine,
-        clip: &impl Shape,
-    ) {
+impl CustomPaintSink<DisplayCommandExt> for Renderer {
+    fn custom(&mut self, command: &DisplayCommandExt) {
         match self {
-            Renderer::Active(v) => {
-                v.push_layer(blend, alpha, transform, clip);
-            }
-            Renderer::TinySkia(v) => v.push_layer(blend, alpha, transform, clip),
+            Renderer::Active(state) => CustomPaintSink::custom(&mut state.renderer, command),
+            Renderer::CpuFallback(state) => CustomPaintSink::custom(&mut state.renderer, command),
             Renderer::Uninitialized { .. } => {}
-        }
-    }
-
-    fn pop_layer(&mut self) {
-        match self {
-            Renderer::Active(v) => {
-                v.pop_layer();
-            }
-            Renderer::TinySkia(v) => v.pop_layer(),
-            Renderer::Uninitialized { .. } => {}
-        }
-    }
-
-    fn draw_glyphs<'a>(
-        &mut self,
-        origin: Point,
-        run: &floem_renderer::text::GlyphRunRef<'a>,
-        glyphs: impl Iterator<Item = floem_renderer::text::Glyph> + 'a,
-    ) {
-        match self {
-            Renderer::Active(v) => v.draw_glyphs(origin, run, glyphs),
-            Renderer::TinySkia(v) => v.draw_glyphs(origin, run, glyphs),
-            Renderer::Uninitialized { .. } => {}
-        }
-    }
-
-    fn draw_svg<'b>(
-        &mut self,
-        svg: floem_renderer::Svg<'b>,
-        rect: Rect,
-        brush: Option<impl Into<BrushRef<'b>>>,
-    ) {
-        match self {
-            Renderer::Active(v) => {
-                v.draw_svg(svg, rect, brush);
-            }
-            Renderer::TinySkia(v) => {
-                v.draw_svg(svg, rect, brush);
-            }
-            Renderer::Uninitialized { .. } => {}
-        }
-    }
-
-    fn set_transform(&mut self, transform: Affine) {
-        match self {
-            Renderer::Active(v) => {
-                v.set_transform(transform);
-            }
-            Renderer::TinySkia(v) => {
-                v.set_transform(transform);
-            }
-            Renderer::Uninitialized { .. } => {}
-        }
-    }
-
-    fn finish(&mut self) -> Option<peniko::ImageBrush> {
-        match self {
-            Renderer::Active(r) => r.finish(),
-            Renderer::TinySkia(r) => r.finish(),
-            Renderer::Uninitialized { .. } => None,
         }
     }
 }

@@ -197,7 +197,7 @@ fn capture_view(
     let renderer = capture_.renderer.clone();
 
     let image = if let Some(window) = window {
-        img_dynamic(move || window.clone()).into_any()
+        img_dynamic(move || peniko::ImageBrush::new(window.clone())).into_any()
     } else {
         ().style(move |s| s.min_width(size.width).min_height(size.height))
             .into_any()
@@ -806,9 +806,7 @@ impl View for InspectorImageView {
             if let Some(selected_overlay) = self.overlay_rect(self.capture_view.selected.get()) {
                 let fill = Brush::Solid(self.selected_overlay_color);
                 let stroke = Brush::Solid(self.selected_overlay_border_color);
-                cx.painter
-                    .fill(selected_overlay, &fill)
-                    .draw();
+                cx.painter.fill(selected_overlay, &fill).draw();
                 cx.painter
                     .stroke(selected_overlay, &Stroke::new(1.0), &stroke)
                     .draw();
@@ -818,9 +816,7 @@ impl View for InspectorImageView {
             {
                 let fill = Brush::Solid(self.highlighted_overlay_color);
                 let stroke = Brush::Solid(self.highlighted_overlay_border_color);
-                cx.painter
-                    .fill(highlighted_overlay, &fill)
-                    .draw();
+                cx.painter.fill(highlighted_overlay, &fill).draw();
                 cx.painter
                     .stroke(highlighted_overlay, &Stroke::new(1.0), &stroke)
                     .draw();

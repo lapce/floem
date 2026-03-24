@@ -1296,7 +1296,11 @@ pub(crate) fn paint_outline(cx: &mut PaintCx, style: &ViewStyleProps, rect: Rect
                 // Render current path with previous stroke if any
                 if !current_path.is_empty() {
                     cx.painter
-                        .stroke(BezPath::from_vec(current_path.clone()), &stroke.0, &outline_color)
+                        .stroke(
+                            BezPath::from_vec(current_path.clone()),
+                            &stroke.0,
+                            &outline_color,
+                        )
                         .draw();
                     current_path.clear();
                 }
@@ -1471,7 +1475,11 @@ pub(crate) fn paint_border(
                 // Render current path with previous stroke if any
                 if !current_path.is_empty() && stroke.0.width > 0. {
                     cx.painter
-                        .stroke(BezPath::from_vec(current_path.to_vec()), &stroke.0, &stroke.1)
+                        .stroke(
+                            BezPath::from_vec(current_path.to_vec()),
+                            &stroke.0,
+                            &stroke.1,
+                        )
                         .draw();
                     current_path.clear();
                 } else if stroke.0.width == 0. {

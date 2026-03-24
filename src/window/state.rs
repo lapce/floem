@@ -5,9 +5,9 @@ use crate::{
     action::exec_after_animation_frame,
     compositor::{
         Compositor, CompositorAlphaMode, CompositorLayerBacking, CompositorLayerDescriptor,
-        CompositorLayerId, CompositorTiming, ExternalSurfaceDescriptor,
-        ExternalSurfaceHandle, ExternalSurfaceId, FloemSurfaceRoleVisitor, FrameRequestReason,
-        ResolvedPromotedLayer, backend::CompositorBackend,
+        CompositorLayerId, CompositorTiming, ExternalSurfaceDescriptor, ExternalSurfaceHandle,
+        ExternalSurfaceId, FloemSurfaceRoleVisitor, FrameRequestReason, ResolvedPromotedLayer,
+        backend::CompositorBackend,
     },
     inspector::CaptureState,
     platform::menu_types::MenuId,

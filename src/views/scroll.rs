@@ -288,7 +288,10 @@ impl ScrollHandle {
         let rounded_rect = rect_with_border.to_rounded_rect(radius);
 
         cx.painter
-            .fill(rounded_rect, &self.style.background().unwrap_or(HANDLE_COLOR))
+            .fill(
+                rounded_rect,
+                &self.style.background().unwrap_or(HANDLE_COLOR),
+            )
             .draw();
 
         if edge_width > 0.0

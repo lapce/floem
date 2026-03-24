@@ -26,6 +26,20 @@
 //!
 //! Floem's objectives prioritize simplicity and performance, enabling the development of complex graphical user interfaces with minimal boilerplate.
 //!
+//! ## Renderer Selection
+//!
+//! Floem normally uses the active renderer selected by crate features and falls back to the
+//! configured CPU renderer only if needed.
+//!
+//! To force Floem to use the CPU renderer path at runtime, set:
+//!
+//! ```text
+//! FLOEM_FORCE_CPU=1
+//! ```
+//!
+//! `FLOEM_FORCE_TINY_SKIA=1` is still accepted as a deprecated alias for compatibility, but new
+//! code should use `FLOEM_FORCE_CPU`.
+//!
 //! ## Views
 //! Floem models the UI using a tree of [Views](view::View). Views, such as the `h_stack`, `label`, and
 //! `button` elements are the building blocks of UI in Floem.
@@ -224,23 +238,23 @@ pub mod receiver_signal {
 pub use box_tree::{BoxTree, ElementId, ElementMeta, FocusNavMeta};
 pub(crate) use box_tree::{bump_focus_nav_meta_revision, focus_nav_meta_revision};
 pub use compositor::backend::CompositorBackend;
+#[cfg(feature = "subduction")]
+pub use compositor::subduction::SubductionCompositorBackend;
 pub use compositor::{
     Compositor, CompositorLayerDescriptor, CompositorLayerId, CompositorLayerKind,
     CompositorTiming, ExternalAlphaMode, ExternalColorSpace, ExternalPixelFormat,
     ExternalSurfaceDescriptor, ExternalSurfaceHandle, ExternalSurfaceId, FrameRequestReason,
 };
-#[cfg(feature = "subduction")]
-pub use compositor::subduction::SubductionCompositorBackend;
 
 pub use app::{AppConfig, AppEvent, Application, launch, quit_app, reopen};
 pub use floem_reactive as reactive;
-pub use floem_renderer::Renderer;
 pub use floem_renderer::Svg as RendererSvg;
 pub use floem_renderer::gpu_resources::GpuResources;
 pub use imbl;
 pub use layout::ScreenLayout;
 #[cfg(not(target_arch = "wasm32"))]
 pub use muda;
+pub use paint::renderer::Renderer;
 pub use peniko;
 pub use peniko::kurbo;
 #[cfg(not(target_arch = "wasm32"))]

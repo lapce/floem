@@ -1,5 +1,5 @@
 [package]
-name = "floem_tiny_skia_renderer"
+name = "floem_vello_cpu_renderer"
 version.workspace = true
 edition.workspace = true
 repository = "https://github.com/lapce/floem"
@@ -7,13 +7,9 @@ description = "A native Rust UI library with fine-grained reactivity"
 license.workspace = true
 
 [dependencies]
-peniko = { workspace = true }
-imaging = { workspace = true }
-resvg = { workspace = true }
-raw-window-handle = { workspace = true }
-parley = { workspace = true }
-swash = { workspace = true }
-rustc-hash.workspace = true
-
 anyhow = "1.0"
+imaging = { workspace = true }
+imaging_vello_cpu = { path = "../../imaging/imaging_vello_cpu" }
 floem_renderer = { path = "../renderer", version = "0.2.0" }
+peniko = { workspace = true }
+parley = { workspace = true }

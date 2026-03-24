@@ -1,3 +1,6 @@
+use std::cell::{Cell, RefCell};
+use std::time::{Duration, Instant};
+
 pub mod animation;
 pub mod buttons;
 pub mod canvas;
@@ -26,6 +29,7 @@ use floem::{
     new_window,
     prelude::{palette::css, *},
     style::{Background, CursorStyle, CustomStylable, Transition},
+    text::FontWeight,
     theme::StyleThemeExt,
     ui_events::keyboard::{Key, KeyboardEvent, Modifiers, NamedKey},
     window::{Theme, WindowConfig, WindowId},
@@ -38,6 +42,12 @@ pub const OS_MOD: Modifiers = if cfg!(target_os = "macos") {
 };
 
 fn app_view(window_id: WindowId) -> impl IntoView {
+    const FPS_SAMPLE_COUNT: usize = 60;
+
+    let fps = RwSignal::new(0u32);
+    let last_presented_at = Cell::new(None::<Instant>);
+    let frame_times = RefCell::new(Vec::<Duration>::with_capacity(FPS_SAMPLE_COUNT));
+
     let tabs: Vec<&'static str> = vec![
         "Label",
         "Button",
@@ -175,7 +185,20 @@ fn app_view(window_id: WindowId) -> impl IntoView {
                 .inset_right(15.)
         });
 
-    let view = Stack::horizontal((left_side_bar, tab, floem_logo))
+    let fps_overlay = Label::derived(move || fps.get().to_string())
+        .style(|s| {
+            s.padding_horiz(10.0)
+                .padding_vert(6.0)
+                .background(css::BLACK.with_alpha(0.7))
+                .color(css::WHITE)
+                .border_radius(999.0)
+                .font_weight(FontWeight::BOLD)
+                .font_size(14.0)
+        })
+        .overlay()
+        .style(|s| s.absolute().z_index(2).inset_top(12.).inset_right(12.));
+
+    let view = Stack::horizontal((left_side_bar, tab, floem_logo, fps_overlay))
         .style(|s| s.padding(5.0).width_full().height_full().col_gap(5.0))
         .window_title(|| "Widget Gallery".to_owned());
 
@@ -328,6 +351,26 @@ fn app_view(window_id: WindowId) -> impl IntoView {
             }
         },
     )
+    .on_event_stop(listener::UpdatePhasePaintPresent, move |_, _| {
+        let now = Instant::now();
+        if let Some(previous) = last_presented_at.get() {
+            let dt = now.saturating_duration_since(previous);
+            if !dt.is_zero() {
+                let mut samples = frame_times.borrow_mut();
+                if samples.len() == FPS_SAMPLE_COUNT {
+                    samples.remove(0);
+                }
+                samples.push(dt);
+
+                let total_secs = samples.iter().map(Duration::as_secs_f64).sum::<f64>();
+                let average_secs = total_secs / samples.len() as f64;
+                if average_secs > 0.0 {
+                    fps.set((1.0 / average_secs).round() as u32);
+                }
+            }
+        }
+        last_presented_at.set(Some(now));
+    })
     .on_event_stop(
         el::KeyDown,
         move |_, KeyboardEvent { key, modifiers, .. }| match key {

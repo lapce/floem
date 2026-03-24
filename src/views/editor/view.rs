@@ -1045,6 +1045,7 @@ impl View for EditorView {
             );
             if editor.viewport.with_untracked(|v| v != &viewport) {
                 editor.viewport.set(viewport);
+                cx.window_state.request_paint(self.id());
             }
         }
         if LayoutChangedListener::extract(&cx.event).is_some() {

@@ -8,7 +8,12 @@ fn create_scroll_label_list(n: usize) -> impl IntoView {
             Label::new(format!(
                 "Row {i:05} | benchmark label content for retained scroll repaint"
             ))
-            .style(|s| s.width_full().height(24.0).padding_horiz(6.0).padding_vert(2.0))
+            .style(|s| {
+                s.width_full()
+                    .height(24.0)
+                    .padding_horiz(6.0)
+                    .padding_vert(2.0)
+            })
             .into_any()
         })
         .collect();

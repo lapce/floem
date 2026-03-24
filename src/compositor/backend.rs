@@ -94,11 +94,7 @@ pub trait CompositorBackend {
 
     /// Iterates compositor-owned surfaces that expect Floem to rasterize content
     /// into them before final composition.
-    fn for_each_floem_painted_surface(
-        &self,
-        _visit: &mut FloemPaintedSurfaceVisitor<'_>,
-    ) {
-    }
+    fn for_each_floem_painted_surface(&self, _visit: &mut FloemPaintedSurfaceVisitor<'_>) {}
 
     /// Composites the current backend layer tree into the provided output view.
     fn composite_to_output(&mut self, _output: &wgpu::TextureView) {}

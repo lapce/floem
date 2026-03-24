@@ -560,26 +560,26 @@ impl View for OpacityPicker {
         .with_interpolation_cs(LinearSrgb)
         .into();
 
-        cx.painter.fill(rect_path, &opacity_gradient).draw();
+        cx.painter.with_fill_clip(rect_path, |p| {
+            p.fill(rect_path, &opacity_gradient).draw();
 
-        if size.width > 0.0 {
-            let alpha = self.current_color.components[3];
-            let x_pos = alpha as f64 * size.width;
+            if size.width > 0.0 {
+                let alpha = self.current_color.components[3];
+                let x_pos = alpha as f64 * size.width;
 
-            let indicator_width = 2.0;
-            let indicator_rect = Rect::new(
-                x_pos - indicator_width / 2.0,
-                0.0,
-                x_pos + indicator_width / 2.0,
-                size.height,
-            );
+                let indicator_width = 2.0;
+                let indicator_rect = Rect::new(
+                    x_pos - indicator_width / 2.0,
+                    0.0,
+                    x_pos + indicator_width / 2.0,
+                    size.height,
+                );
 
-            let white = Brush::Solid(css::WHITE);
-            let black = Brush::Solid(css::BLACK);
-            cx.painter.with_fill_clip(rect_path, |p| {
+                let white = Brush::Solid(css::WHITE);
+                let black = Brush::Solid(css::BLACK);
                 p.stroke(indicator_rect, &Stroke::new(2.0), &white).draw();
                 p.fill(indicator_rect, &black).draw();
-            });
-        }
+            }
+        });
     }
 }

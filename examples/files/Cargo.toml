@@ -4,4 +4,14 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-floem = { path = "../.." }
+floem = { path = "../..", default-features = false, features = [
+  "editor",
+  "default-image-formats",
+  "fallback-vello-cpu",
+  "serde",
+] }
+
+[features]
+default = []
+vello = ["floem/vello"]
+vello-hybrid = ["floem/vello-hybrid"]

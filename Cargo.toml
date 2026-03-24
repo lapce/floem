@@ -2,8 +2,9 @@
 resolver = "3"
 members = [
   "renderer",
-  "skia",
   "vello",
+  "vello_hybrid",
+  "vello_cpu",
   "vger",
   "tiny_skia",
   "reactive",
@@ -15,8 +16,9 @@ members = [
 default-members = [
   ".",
   "renderer",
-  "skia",
   "vello",
+  "vello_hybrid",
+  "vello_cpu",
   "vger",
   "tiny_skia",
   "reactive",
@@ -93,10 +95,11 @@ strum = { workspace = true, optional = true }
 strum_macros = { workspace = true, optional = true }
 paste = "1.0"
 floem_renderer = { path = "renderer", version = "0.2.0" }
-floem_skia_renderer = { path = "skia", version = "0.2.0", optional = true }
 floem_vello_renderer = { path = "vello", version = "0.2.0", optional = true }
+floem_vello_hybrid_renderer = { path = "vello_hybrid", version = "0.2.0", optional = true }
+floem_vello_cpu_renderer = { path = "vello_cpu", version = "0.2.0", optional = true }
 floem_vger_renderer = { path = "vger", version = "0.2.0", optional = true }
-floem_tiny_skia_renderer = { path = "tiny_skia", version = "0.2.0" }
+floem_tiny_skia_renderer = { path = "tiny_skia", version = "0.2.0", optional = true }
 floem_reactive = { path = "reactive", version = "0.2.0" }
 floem-editor-core = { path = "editor-core", version = "0.2.0", optional = true }
 subduction_core = { git = "https://github.com/jrmoulton/subduction.git", branch = "bump-wgpu", package = "subduction_core", optional = true, features = ["std"] }
@@ -106,7 +109,9 @@ copypasta = { version = "0.10", default-features = false, features = [
   "x11",
 ] }
 parking_lot = { workspace = true }
+swash = { workspace = true, features = ["scale"] }
 image = { workspace = true }
+softbuffer = "0.4.1"
 winit = { workspace = true }
 futures = { version = "0.3.31" }
 crossbeam = { version = "0.8", optional = true }
@@ -155,11 +160,19 @@ objc2-app-kit = { version = "0.3", features = [
 dispatch2 = {version = "0.3.0"}
 
 [features]
-default = ["editor", "default-image-formats", "vello", "serde"]
-skia = ["dep:floem_skia_renderer"]
-vello = ["dep:floem_vello_renderer"]
-vger = ["dep:floem_vger_renderer"]
-# tiny-skia = ["dep:floem_tiny_skia_renderer"]
+default = ["editor", "default-image-formats", "serde"]
+active-vello = ["dep:floem_vello_renderer"]
+active-vger = ["dep:floem_vger_renderer"]
+active-vello-hybrid = ["dep:floem_vello_hybrid_renderer"]
+active-vello-cpu = ["dep:floem_vello_cpu_renderer"]
+active-tiny-skia = ["dep:floem_tiny_skia_renderer"]
+fallback-vello-cpu = ["dep:floem_vello_cpu_renderer"]
+fallback-tiny-skia = ["dep:floem_tiny_skia_renderer"]
+vello = ["active-vello"]
+vger = ["active-vger"]
+vello-hybrid = ["active-vello-hybrid"]
+vello-cpu = ["active-vello-cpu"]
+tiny-skia = ["active-tiny-skia"]
 serde = [
   "dep:serde",
   "winit/serde",

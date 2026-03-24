@@ -20,7 +20,6 @@ use winit::{
 };
 
 use super::{APP_UPDATE_EVENTS, AppConfig, AppEventCallback, AppUpdateEvent, UserEvent};
-#[cfg(not(feature = "skia"))]
 use crate::context::PaintState;
 use crate::{
     AppEvent, Application,
@@ -87,14 +86,14 @@ impl ApplicationHandle {
                     });
                 }
             }
-            #[cfg(not(feature = "skia"))]
+            #[cfg(any(feature = "active-vello", feature = "active-vger"))]
             UserEvent::GpuResourcesUpdate { window_id } => {
                 let handle = self.window_handles.get_mut(&window_id).unwrap();
                 if let PaintState::PendingGpuResources {
                     window,
                     rx,
                     font_embolden,
-                    renderer,
+                    renderer: _,
                 } = &handle.paint_state
                 {
                     let (gpu_resources, surface) = rx.recv().unwrap().unwrap();
@@ -103,7 +102,7 @@ impl ApplicationHandle {
                         gpu_resources.clone(),
                         surface,
                         handle.window_state.effective_scale(),
-                        renderer.size(),
+                        handle.window_state.root_size * handle.window_state.os_scale,
                         *font_embolden,
                     );
                     self.gpu_resources = Some(gpu_resources);
@@ -114,6 +113,20 @@ impl ApplicationHandle {
                     panic!("Sent a gpu resource update after it had already been initialized");
                 }
             }
+            #[cfg(any(
+                feature = "active-vello-hybrid",
+                feature = "active-vello-cpu",
+                feature = "active-tiny-skia"
+            ))]
+            UserEvent::GpuResourcesUpdate { .. } => {}
+            #[cfg(not(any(
+                feature = "active-vello",
+                feature = "active-vger",
+                feature = "active-vello-hybrid",
+                feature = "active-vello-cpu",
+                feature = "active-tiny-skia"
+            )))]
+            UserEvent::GpuResourcesUpdate { .. } => unreachable!(),
             UserEvent::ShowContextMenu {
                 window_id,
                 menu,

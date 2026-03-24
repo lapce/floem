@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Compositor-facing API and retained compositor state.
 //!
 //! This module is the public entry point for composition-level concepts that sit
@@ -162,13 +163,9 @@ pub enum CompositorLayerKind {
     #[default]
     FloemPainted,
     /// Layer contents come from a registered external surface.
-    ExternalSurface {
-        surface_id: ExternalSurfaceId,
-    },
+    ExternalSurface { surface_id: ExternalSurfaceId },
     /// Layer combines an external surface with Floem-drawn overlays or underlays.
-    Mixed {
-        surface_id: ExternalSurfaceId,
-    },
+    Mixed { surface_id: ExternalSurfaceId },
 }
 
 /// How a compositor layer is realized by the compositor/backend.
@@ -303,9 +300,8 @@ pub(crate) struct ResolvedPromotedLayer {
     pub alpha_mode: CompositorAlphaMode,
 }
 
-pub(crate) type FloemSurfaceRoleVisitor<'a> =
-    dyn FnMut(FloemPaintedSurfaceRole, Rect, (u32, u32), wgpu::TextureFormat, &wgpu::TextureView)
-        + 'a;
+pub(crate) type FloemSurfaceRoleVisitor<'a> = dyn FnMut(FloemPaintedSurfaceRole, Rect, (u32, u32), wgpu::TextureFormat, &wgpu::TextureView)
+    + 'a;
 
 /// Retained compositor registry and frame-request state.
 #[derive(Default)]
@@ -393,14 +389,15 @@ impl Compositor {
                 isolated: promoted.isolated,
             };
 
-            let layer_id = if let Some(layer_id) = self.promoted_layers.get(&promoted.element_id).copied() {
-                let _ = self.update_layer(layer_id, descriptor);
-                layer_id
-            } else {
-                let layer_id = self.register_layer(descriptor);
-                self.promoted_layers.insert(promoted.element_id, layer_id);
-                layer_id
-            };
+            let layer_id =
+                if let Some(layer_id) = self.promoted_layers.get(&promoted.element_id).copied() {
+                    let _ = self.update_layer(layer_id, descriptor);
+                    layer_id
+                } else {
+                    let layer_id = self.register_layer(descriptor);
+                    self.promoted_layers.insert(promoted.element_id, layer_id);
+                    layer_id
+                };
 
             active.insert(promoted.element_id, layer_id);
         }
@@ -408,7 +405,9 @@ impl Compositor {
         let stale: Vec<_> = self
             .promoted_layers
             .iter()
-            .filter_map(|(&element_id, &layer_id)| (!active.contains_key(&element_id)).then_some((element_id, layer_id)))
+            .filter_map(|(&element_id, &layer_id)| {
+                (!active.contains_key(&element_id)).then_some((element_id, layer_id))
+            })
             .collect();
 
         for (element_id, layer_id) in stale {
@@ -488,10 +487,7 @@ impl Compositor {
         }
     }
 
-    pub(crate) fn for_each_floem_painted_surface(
-        &self,
-        visit: &mut FloemSurfaceRoleVisitor<'_>,
-    ) {
+    pub(crate) fn for_each_floem_painted_surface(&self, visit: &mut FloemSurfaceRoleVisitor<'_>) {
         let Some(backend) = self.backend.as_ref() else {
             return;
         };
@@ -501,8 +497,10 @@ impl Compositor {
                 let Some(layer_state) = self.layers.get(&layer_id) else {
                     return;
                 };
-                if !matches!(layer_state.descriptor.kind, CompositorLayerKind::FloemPainted)
-                    || !layer_state.descriptor.capabilities.supports_direct_raster
+                if !matches!(
+                    layer_state.descriptor.kind,
+                    CompositorLayerKind::FloemPainted
+                ) || !layer_state.descriptor.capabilities.supports_direct_raster
                 {
                     return;
                 }
@@ -514,16 +512,16 @@ impl Compositor {
                 } else {
                     self.promoted_layers
                         .iter()
-                    .find_map(|(&element_id, &promoted_layer_id)| {
-                        (promoted_layer_id == layer_id)
-                            .then_some(FloemPaintedSurfaceRole::Promoted(element_id))
-                    })
-            };
+                        .find_map(|(&element_id, &promoted_layer_id)| {
+                            (promoted_layer_id == layer_id)
+                                .then_some(FloemPaintedSurfaceRole::Promoted(element_id))
+                        })
+                };
 
-            if let Some(role) = role {
-                visit(role, bounds, size, format, view);
-            }
-        };
+                if let Some(role) = role {
+                    visit(role, bounds, size, format, view);
+                }
+            };
         backend.for_each_floem_painted_surface(&mut visit_backend);
     }
 
@@ -592,10 +590,7 @@ impl Compositor {
     }
 
     /// Registers a compositor layer and returns its id.
-    pub fn register_layer(
-        &mut self,
-        descriptor: CompositorLayerDescriptor,
-    ) -> CompositorLayerId {
+    pub fn register_layer(&mut self, descriptor: CompositorLayerDescriptor) -> CompositorLayerId {
         let id = CompositorLayerId(self.next_layer_id);
         self.next_layer_id += 1;
         self.layers.insert(
@@ -736,7 +731,9 @@ impl Compositor {
         timing.last_present_started = Some(started_at);
         timing.last_present_completed = Some(completed_at);
         timing.frame_number = timing.frame_number.saturating_add(1);
-        timing.predicted_next_present = timing.frame_interval.map(|interval| completed_at + interval);
+        timing.predicted_next_present = timing
+            .frame_interval
+            .map(|interval| completed_at + interval);
         self.update_timing(timing);
 
         if let Some(backend) = self.backend.as_mut() {

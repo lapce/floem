@@ -12,9 +12,9 @@ use crate::{
 };
 use floem_editor_core::{cursor::CursorMode, mode::Mode};
 use floem_reactive::{RwSignal, SignalGet, SignalWith};
-use peniko::{Brush, Color};
 use peniko::color::palette;
 use peniko::kurbo::Rect;
+use peniko::{Brush, Color};
 
 use super::{CurrentLineColor, Editor};
 

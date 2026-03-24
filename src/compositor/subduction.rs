@@ -15,12 +15,12 @@
 
 use peniko::kurbo::{Rect, RoundedRect};
 use rustc_hash::FxHashMap;
+use subduction_backend_wgpu::WgpuPresenter;
 use subduction_core::{
     backend::Presenter as _,
     layer::{ClipShape, FrameChanges, LayerFlags, LayerId, LayerStore, SurfaceId},
     transform::Transform3d,
 };
-use subduction_backend_wgpu::WgpuPresenter;
 
 use super::{
     CompositorAlphaMode, CompositorLayerBacking, CompositorLayerDescriptor, CompositorLayerId,
@@ -124,7 +124,11 @@ impl SubductionCompositorBackend {
         layer_id
     }
 
-    fn apply_layer_descriptor(&mut self, id: CompositorLayerId, descriptor: CompositorLayerDescriptor) {
+    fn apply_layer_descriptor(
+        &mut self,
+        id: CompositorLayerId,
+        descriptor: CompositorLayerDescriptor,
+    ) {
         let layer_id = self.ensure_layer_id(id);
         self.layer_descriptors.insert(id, descriptor);
 
@@ -153,8 +157,12 @@ impl SubductionCompositorBackend {
                 descriptor.isolated && descriptor.capabilities.supports_clip_to_bounds,
             ),
         );
-        self.store
-            .set_flags(layer_id, LayerFlags { hidden: descriptor.opacity <= 0.0 || is_empty });
+        self.store.set_flags(
+            layer_id,
+            LayerFlags {
+                hidden: descriptor.opacity <= 0.0 || is_empty,
+            },
+        );
         let content = self.content_for_kind(id, descriptor.kind);
         self.store.set_content(layer_id, content);
         if matches!(descriptor.alpha_mode, CompositorAlphaMode::Straight) {
@@ -166,17 +174,25 @@ impl SubductionCompositorBackend {
         self.needs_reorder = true;
     }
 
-    fn content_for_kind(&mut self, id: CompositorLayerId, kind: CompositorLayerKind) -> Option<SurfaceId> {
+    fn content_for_kind(
+        &mut self,
+        id: CompositorLayerId,
+        kind: CompositorLayerKind,
+    ) -> Option<SurfaceId> {
         let backing = self
             .layer_descriptors
             .get(&id)
             .map(|descriptor| descriptor.backing)
             .unwrap_or(CompositorLayerBacking::TextureBacked);
         match kind {
-            CompositorLayerKind::FloemPainted => matches!(backing, CompositorLayerBacking::TextureBacked)
-                .then(|| self.floem_surface_id_for(id)),
+            CompositorLayerKind::FloemPainted => {
+                matches!(backing, CompositorLayerBacking::TextureBacked)
+                    .then(|| self.floem_surface_id_for(id))
+            }
             CompositorLayerKind::ExternalSurface { surface_id }
-            | CompositorLayerKind::Mixed { surface_id } => self.surface_ids.get(&surface_id).copied(),
+            | CompositorLayerKind::Mixed { surface_id } => {
+                self.surface_ids.get(&surface_id).copied()
+            }
         }
     }
 
@@ -300,10 +316,7 @@ impl CompositorBackend for SubductionCompositorBackend {
         output_format: wgpu::TextureFormat,
         output_size: (u32, u32),
     ) {
-        let default_layer_size = (
-            output_size.0.clamp(1, 2048),
-            output_size.1.clamp(1, 2048),
-        );
+        let default_layer_size = (output_size.0.clamp(1, 2048), output_size.1.clamp(1, 2048));
         self.presenter = Some(WgpuPresenter::new(
             gpu_resources.device.clone(),
             gpu_resources.queue.clone(),
@@ -332,10 +345,7 @@ impl CompositorBackend for SubductionCompositorBackend {
         }
     }
 
-    fn for_each_floem_painted_surface(
-        &self,
-        visit: &mut FloemPaintedSurfaceVisitor<'_>,
-    ) {
+    fn for_each_floem_painted_surface(&self, visit: &mut FloemPaintedSurfaceVisitor<'_>) {
         let Some(presenter) = self.presenter.as_ref() else {
             return;
         };
@@ -387,5 +397,7 @@ fn clip_shape_for_bounds(
         return None;
     }
 
-    Some(ClipShape::RoundedRect(RoundedRect::from_rect(local_clip, 0.0)))
+    Some(ClipShape::RoundedRect(RoundedRect::from_rect(
+        local_clip, 0.0,
+    )))
 }
