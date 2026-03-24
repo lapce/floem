@@ -58,7 +58,7 @@ imbl = "7.0"
 resvg = { version = "0.46" }
 raw-window-handle = "0.6.0"
 unicode-segmentation = "1.10"
-wgpu = { version = "27.0" }
+wgpu = { version = "28.0" }
 parking_lot = { version = "0.12" }
 swash = { version = "0.2" }
 muda = { version = "0.17.1", default-features = false }
@@ -99,8 +99,8 @@ floem_vger_renderer = { path = "vger", version = "0.2.0", optional = true }
 floem_tiny_skia_renderer = { path = "tiny_skia", version = "0.2.0" }
 floem_reactive = { path = "reactive", version = "0.2.0" }
 floem-editor-core = { path = "editor-core", version = "0.2.0", optional = true }
-subduction_core = { git = "https://github.com/forest-rs/subduction.git", rev = "942a0d4d1a65f855c2a77aa10d01be132196d4bd", package = "subduction_core", optional = true, features = ["std"] }
-subduction_backend_wgpu = { git = "https://github.com/forest-rs/subduction.git", rev = "942a0d4d1a65f855c2a77aa10d01be132196d4bd", package = "subduction_backend_wgpu", optional = true }
+subduction_core = { git = "https://github.com/jrmoulton/subduction.git", branch = "bump-wgpu", package = "subduction_core", optional = true, features = ["std"] }
+subduction_backend_wgpu = { git = "https://github.com/jrmoulton/subduction.git", branch = "bump-wgpu", package = "subduction_backend_wgpu", optional = true }
 copypasta = { version = "0.10", default-features = false, features = [
   "wayland",
   "x11",
@@ -155,7 +155,7 @@ objc2-app-kit = { version = "0.3", features = [
 dispatch2 = {version = "0.3.0"}
 
 [features]
-default = ["editor", "default-image-formats", "vger", "serde"]
+default = ["editor", "default-image-formats", "vello", "serde"]
 skia = ["dep:floem_skia_renderer"]
 vello = ["dep:floem_vello_renderer"]
 vger = ["dep:floem_vger_renderer"]

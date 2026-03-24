@@ -5,7 +5,7 @@ use anyhow::{Result, anyhow};
 use anyrender::{ImageRenderer as _, WindowRenderer as _};
 use anyrender_skia::{SkiaImageRenderer, SkiaWindowRenderer};
 use floem_renderer::text::{Glyph, GlyphRunRef};
-use floem_renderer::{Img, Renderer, Svg};
+use floem_renderer::{Renderer, Svg};
 use peniko::kurbo::{Affine, BezPath, Point, Rect, Shape, Size, Stroke};
 use peniko::{
     Blob, Brush, BrushRef, Compose, Fill, ImageAlphaType, ImageData, ImageFormat, Mix, Style,
@@ -59,11 +59,6 @@ enum Command {
         transform: Affine,
         glyph_transform: Option<Affine>,
         glyphs: Vec<anyrender::Glyph>,
-    },
-    Image {
-        image: peniko::ImageBrush,
-        rect: Rect,
-        transform: Affine,
     },
     Svg {
         image: peniko::ImageBrush,
@@ -224,25 +219,6 @@ impl SkiaRenderer {
                         *transform,
                         *glyph_transform,
                         glyphs.iter().copied(),
-                    );
-                }
-                Command::Image {
-                    image,
-                    rect,
-                    transform,
-                } => {
-                    let image_transform = image_transform(*transform, *rect, image);
-                    scene.fill(
-                        Fill::NonZero,
-                        image_transform,
-                        image.as_ref(),
-                        None,
-                        &Rect::new(
-                            0.0,
-                            0.0,
-                            image.image.width as f64,
-                            image.image.height as f64,
-                        ),
                     );
                 }
                 Command::Svg {
@@ -465,14 +441,6 @@ impl Renderer for SkiaRenderer {
             rect,
             transform: self.transform,
             brush: brush.map(|brush| brush.into().to_owned()),
-        });
-    }
-
-    fn draw_img(&mut self, img: Img<'_>, rect: Rect) {
-        self.commands.push(Command::Image {
-            image: img.img,
-            rect,
-            transform: self.transform,
         });
     }
 

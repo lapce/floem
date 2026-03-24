@@ -1,7 +1,6 @@
 mod recording;
 
 use anyhow::{Result, anyhow};
-use floem_renderer::Img;
 use floem_renderer::Renderer;
 use floem_renderer::text::{Glyph as ParleyGlyph, GlyphRunRef};
 use floem_renderer::tiny_skia::{
@@ -1179,56 +1178,6 @@ fn image_quality_to_filter_quality(quality: ImageQuality) -> FilterQuality {
     }
 }
 
-fn axis_aligned_device_placement(rect: Rect, transform: Affine) -> Option<(f32, f32, u32, u32)> {
-    if !is_axis_aligned(transform) {
-        return None;
-    }
-
-    let device_rect = transform.transform_rect_bbox(rect);
-    let width = nearly_integral(device_rect.width())?;
-    let height = nearly_integral(device_rect.height())?;
-    (width > 0 && height > 0).then_some((
-        device_rect.x0 as f32,
-        device_rect.y0 as f32,
-        width as u32,
-        height as u32,
-    ))
-}
-
-fn cache_scaled_pixmap(
-    cache_color: CacheColor,
-    cache_key: ScaledImageCacheKey,
-    pixmap: &Pixmap,
-    quality: ImageQuality,
-) -> Option<Arc<Pixmap>> {
-    if let Some(cached) = SCALED_IMAGE_CACHE.with_borrow_mut(|cache| {
-        cache.get_mut(&cache_key).map(|(color, pixmap)| {
-            *color = cache_color;
-            pixmap.clone()
-        })
-    }) {
-        return Some(cached);
-    }
-
-    let mut scaled = Pixmap::new(cache_key.width, cache_key.height)?;
-    let paint = PixmapPaint {
-        opacity: 1.0,
-        blend_mode: tiny_skia::BlendMode::SourceOver,
-        quality: image_quality_to_filter_quality(quality),
-    };
-    let transform = Transform::from_scale(
-        cache_key.width as f32 / pixmap.width() as f32,
-        cache_key.height as f32 / pixmap.height() as f32,
-    );
-    scaled.draw_pixmap(0, 0, pixmap.as_ref(), &paint, transform, None);
-
-    let scaled = Arc::new(scaled);
-    SCALED_IMAGE_CACHE.with_borrow_mut(|cache| {
-        cache.insert(cache_key, (cache_color, scaled.clone()));
-    });
-    Some(scaled)
-}
-
 fn mul_div_255(value: u8, factor: u8) -> u8 {
     (((value as u16 * factor as u16) + 127) / 255) as u8
 }
@@ -1383,70 +1332,6 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
                 );
             }
         }
-    }
-
-    fn draw_img(&mut self, img: Img<'_>, rect: Rect) {
-        let transform = self.transform;
-        let pixmap = if let Some(pixmap) = IMAGE_CACHE.with_borrow_mut(|ic| {
-            ic.get_mut(img.hash).map(|(color, pixmap)| {
-                *color = self.cache_color;
-                pixmap.clone()
-            })
-        }) {
-            pixmap
-        } else {
-            let image_data = img.img.image.data.data();
-            let mut pixmap = try_ret!(Pixmap::new(img.img.image.width, img.img.image.height));
-            for (a, b) in pixmap
-                .pixels_mut()
-                .iter_mut()
-                .zip(image_data.chunks_exact(4))
-            {
-                *a = tiny_skia::Color::from_rgba8(b[0], b[1], b[2], b[3])
-                    .premultiply()
-                    .to_color_u8();
-            }
-
-            let pixmap = Arc::new(pixmap);
-            IMAGE_CACHE.with_borrow_mut(|ic| {
-                ic.insert(img.hash.to_owned(), (self.cache_color, pixmap.clone()));
-            });
-            pixmap
-        };
-
-        let quality = img.img.sampler.quality;
-        if let Some((draw_x, draw_y, width, height)) =
-            axis_aligned_device_placement(rect, transform)
-        {
-            let filter_quality = image_quality_to_filter_quality(quality);
-            let device_pixmap = if width == pixmap.width() && height == pixmap.height() {
-                pixmap.clone()
-            } else {
-                let cache_key = ScaledImageCacheKey {
-                    image_id: img.img.image.data.id(),
-                    width,
-                    height,
-                    quality: quality as u8,
-                };
-                try_ret!(cache_scaled_pixmap(
-                    self.cache_color,
-                    cache_key,
-                    &pixmap,
-                    quality
-                ))
-            };
-            self.recording.draw_pixmap_direct(
-                device_pixmap,
-                draw_x,
-                draw_y,
-                Affine::IDENTITY,
-                filter_quality,
-            );
-            return;
-        }
-
-        self.recording
-            .draw_pixmap_rect(pixmap, rect, transform, quality);
     }
 
     fn draw_svg<'b>(

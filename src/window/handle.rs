@@ -957,11 +957,11 @@ impl WindowHandle {
 
         let mut surfaces = Vec::new();
         cx.window_state
-            .for_each_floem_painted_surface(&mut |role, bounds, size, view| {
-                surfaces.push((role, bounds, size, view.clone()));
+            .for_each_floem_painted_surface(&mut |role, bounds, size, target_format, view| {
+                surfaces.push((role, bounds, size, target_format, view.clone()));
             });
 
-        for (role, bounds, size, view) in surfaces {
+        for (role, bounds, size, target_format, view) in surfaces {
             cx.paint_state.renderer_mut().begin(false);
 
             if matches!(role, crate::compositor::FloemPaintedSurfaceRole::Root) && !transparent {
@@ -1033,7 +1033,7 @@ impl WindowHandle {
             if !cx
                 .paint_state
                 .renderer_mut()
-                .render_scene_to_premultiplied_texture_view(&view, size)
+                .render_scene_to_premultiplied_texture_view(&view, target_format, size)
             {
                 return cx.paint_state.renderer_mut().finish();
             }

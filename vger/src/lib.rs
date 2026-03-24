@@ -6,7 +6,7 @@ use std::sync::mpsc::sync_channel;
 use anyhow::Result;
 use floem_renderer::gpu_resources::GpuResources;
 use floem_renderer::text::{Glyph, GlyphRunRef};
-use floem_renderer::{Img, Renderer, tiny_skia};
+use floem_renderer::{Renderer, tiny_skia};
 use floem_vger_rs::{GlyphImage, Image, PaintIndex, PixelFormat, Vger};
 use peniko::kurbo::{Size, Stroke};
 use peniko::{Blob, Extend, ImageData, ImageQuality, LinearGradientPosition};
@@ -602,33 +602,6 @@ impl Renderer for VgerRenderer {
         }
     }
 
-    fn draw_img(&mut self, img: Img<'_>, rect: Rect) {
-        let transform = self.device_transform().as_coeffs();
-        let (scale_x, scale_y, _) = self.scale_components();
-
-        let origin = rect.origin();
-        let transformed_x = transform[0] * origin.x + transform[2] * origin.y + transform[4];
-        let transformed_y = transform[1] * origin.x + transform[3] * origin.y + transform[5];
-
-        let x = transformed_x.round() as f32;
-        let y = transformed_y.round() as f32;
-
-        let width = (rect.width() * scale_x.abs()).round().max(1.0) as u32;
-        let height = (rect.height() * scale_y.abs()).round().max(1.0) as u32;
-
-        self.vger.render_image(x, y, img.hash, width, height, || {
-            let data = img.img.image.data;
-            let (width, height) = (img.img.image.width, img.img.image.height);
-
-            Image {
-                width,
-                height,
-                data,
-                pixel_format: PixelFormat::Rgba,
-            }
-        });
-    }
-
     fn draw_svg<'b>(
         &mut self,
         svg: floem_renderer::Svg<'b>,
@@ -755,6 +728,7 @@ impl Renderer for VgerRenderer {
                     depth_stencil_attachment: None,
                     timestamp_writes: None,
                     occlusion_query_set: None,
+                    multiview_mask: None,
                 };
 
                 self.vger.encode(&desc);

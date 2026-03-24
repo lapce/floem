@@ -1,24 +1,25 @@
 use std::collections::HashMap;
-use std::mem;
-use std::num::NonZero;
 use std::sync::Arc;
 use std::sync::mpsc::sync_channel;
 
 use anyhow::Result;
 use floem_renderer::gpu_resources::GpuResources;
 use floem_renderer::text::{Glyph, GlyphRunRef};
-use floem_renderer::{Img, Renderer};
+use floem_renderer::{Renderer, Svg};
+use imaging::record::{CustomCommand, ExtendedScene, Glyph as ImagingGlyph, replay_ext};
+use imaging::{
+    BlurredRoundedRect, ClipRef, Composite, CustomPaintSink, FillRef, GroupRef, PaintSink,
+    StrokeRef,
+};
 use peniko::kurbo::Size;
 use peniko::{
     Blob, BrushRef,
     color::palette,
     kurbo::{Affine, Point, Rect, Shape},
 };
-use peniko::{Compose, Fill, ImageAlphaType, ImageData, Mix};
-use vello::kurbo::Stroke;
+use peniko::{ImageAlphaType, ImageData};
 use vello::util::RenderSurface;
-use vello::wgpu::Device;
-use vello::{AaConfig, RendererOptions, Scene};
+use vello::{AaConfig, RenderParams, RendererOptions, Scene};
 use wgpu::util::TextureBlitter;
 use wgpu::{Adapter, DeviceType, Queue, TextureAspect, TextureFormat};
 
@@ -65,41 +66,142 @@ struct PremultiplyScratch {
     view: wgpu::TextureView,
 }
 
+#[derive(Clone)]
+enum VelloCommand {
+    DrawSvg {
+        svg: SvgCommand,
+        rect: Rect,
+        transform: Affine,
+        brush: Option<peniko::Brush>,
+    },
+}
+
+impl CustomCommand for VelloCommand {
+    fn prepend_transform(&self, prefix: Affine) -> Self {
+        match self {
+            Self::DrawSvg {
+                svg,
+                rect,
+                transform,
+                brush,
+            } => Self::DrawSvg {
+                svg: svg.clone(),
+                rect: *rect,
+                transform: prefix * *transform,
+                brush: brush.clone(),
+            },
+        }
+    }
+}
+
+#[derive(Clone)]
+struct SvgCommand {
+    hash: Arc<[u8]>,
+}
+
+#[derive(Default)]
+struct SvgCache {
+    entries: HashMap<Vec<u8>, SvgCacheEntry>,
+}
+
+impl SvgCache {
+    fn touch(&mut self, svg: &SvgCommand) {
+        self.entries.entry(svg.hash.to_vec()).or_default();
+    }
+}
+
+#[derive(Default)]
+struct SvgCacheEntry {
+    #[allow(dead_code)]
+    alpha_mask_scene: AlphaMaskScene,
+}
+
+#[derive(Default)]
+struct AlphaMaskScene {
+    #[allow(dead_code)]
+    scene: Option<Scene>,
+}
+
+struct VelloSceneAdapter<'a, 'b> {
+    inner: &'a mut imaging_vello::VelloSceneSink<'b>,
+    svg_cache: &'a mut SvgCache,
+}
+
+impl PaintSink for VelloSceneAdapter<'_, '_> {
+    fn push_clip(&mut self, clip: ClipRef<'_>) {
+        self.inner.push_clip(clip);
+    }
+
+    fn pop_clip(&mut self) {
+        self.inner.pop_clip();
+    }
+
+    fn push_group(&mut self, group: GroupRef<'_>) {
+        self.inner.push_group(group);
+    }
+
+    fn pop_group(&mut self) {
+        self.inner.pop_group();
+    }
+
+    fn fill(&mut self, draw: FillRef<'_>) {
+        self.inner.fill(draw);
+    }
+
+    fn stroke(&mut self, draw: StrokeRef<'_>) {
+        self.inner.stroke(draw);
+    }
+
+    fn glyph_run(
+        &mut self,
+        draw: imaging::GlyphRunRef<'_>,
+        glyphs: &mut dyn Iterator<Item = ImagingGlyph>,
+    ) {
+        self.inner.glyph_run(draw, glyphs);
+    }
+
+    fn blurred_rounded_rect(&mut self, draw: BlurredRoundedRect) {
+        self.inner.blurred_rounded_rect(draw);
+    }
+}
+
+impl CustomPaintSink<VelloCommand> for VelloSceneAdapter<'_, '_> {
+    fn custom(&mut self, command: &VelloCommand) {
+        let VelloCommand::DrawSvg {
+            svg,
+            rect,
+            transform,
+            brush,
+        } = command;
+        self.svg_cache.touch(svg);
+        let _ = (rect, transform, brush);
+    }
+}
+
 pub struct VelloRenderer {
-    device: Device,
-    #[allow(unused)]
+    device: wgpu::Device,
     queue: Queue,
     surface: RenderSurface<'static>,
     renderer: vello::Renderer,
-    scene: Scene,
-    alt_scene: Option<Scene>,
+    scene: ExtendedScene<VelloCommand>,
     window_scale: f64,
     transform: Affine,
     capture: bool,
     adapter: Adapter,
-    // TODO: Apply once vello's DrawGlyphs gains embolden support.
     #[allow(dead_code)]
     font_embolden: f32,
-    /// Cached vello scenes keyed by SVG content hash.
-    /// The bool tracks the current generation for eviction.
-    svg_cache: HashMap<Vec<u8>, (bool, Scene)>,
-    /// Current cache generation; toggled each frame so stale entries are evicted.
-    cache_generation: bool,
-    premultiply_pipeline: PremultiplyPipeline,
+    svg_cache: SvgCache,
+    premultiply_pipelines: HashMap<wgpu::TextureFormat, PremultiplyPipeline>,
     compositor_scratch: Option<PremultiplyScratch>,
 }
 
 impl VelloRenderer {
-    fn device_transform(&self) -> Affine {
-        self.transform
-    }
-
-    fn render_params(width: u32, height: u32) -> vello::RenderParams {
-        vello::RenderParams {
+    fn render_params(width: u32, height: u32) -> RenderParams {
+        RenderParams {
             base_color: palette::css::TRANSPARENT,
             width,
             height,
-            antialiasing_method: vello::AaConfig::Msaa16,
+            antialiasing_method: AaConfig::Area,
         }
     }
 
@@ -187,35 +289,20 @@ impl VelloRenderer {
             blitter: TextureBlitter::new(&device, texture_format),
         };
 
-        let scene = Scene::new();
-        let renderer = vello::Renderer::new(
-            &device,
-            RendererOptions {
-                pipeline_cache: None,
-                use_cpu: false,
-                antialiasing_support: vello::AaSupport::all(),
-                num_init_threads: Some(NonZero::new(1).unwrap()),
-            },
-        )
-        .unwrap();
-        let premultiply_pipeline =
-            create_premultiply_pipeline(&device, wgpu::TextureFormat::Rgba8Unorm);
-
+        let renderer = vello::Renderer::new(&device, RendererOptions::default())?;
         Ok(Self {
             device,
             queue,
             surface: render_surface,
             renderer,
-            scene,
-            alt_scene: None,
+            scene: ExtendedScene::new(),
             window_scale: scale,
             transform: Affine::IDENTITY,
             capture: false,
             adapter,
             font_embolden,
-            svg_cache: HashMap::new(),
-            cache_generation: false,
-            premultiply_pipeline,
+            svg_cache: SvgCache::default(),
+            premultiply_pipelines: HashMap::default(),
             compositor_scratch: None,
         })
     }
@@ -259,16 +346,32 @@ impl VelloRenderer {
         )
     }
 
+    fn build_scene(&mut self, width: u32, height: u32) -> Result<Scene> {
+        let mut scene = Scene::new();
+        let bounds = Rect::new(0.0, 0.0, width as f64, height as f64);
+        let mut sink = imaging_vello::VelloSceneSink::new(&mut scene, bounds);
+        {
+            let mut adapter = VelloSceneAdapter {
+                inner: &mut sink,
+                svg_cache: &mut self.svg_cache,
+            };
+            replay_ext(&self.scene, &mut adapter);
+        }
+        sink.finish().map_err(|err| anyhow::anyhow!("{err:?}"))?;
+        Ok(scene)
+    }
+
     pub fn render_scene_to_texture_view(
         &mut self,
         target_view: &wgpu::TextureView,
         width: u32,
         height: u32,
     ) -> Result<()> {
+        let scene = self.build_scene(width, height)?;
         Ok(self.renderer.render_to_texture(
             &self.device,
             &self.queue,
-            &self.scene,
+            &scene,
             target_view,
             &Self::render_params(width, height),
         )?)
@@ -277,12 +380,13 @@ impl VelloRenderer {
     pub fn render_scene_to_premultiplied_texture_view(
         &mut self,
         target_view: &wgpu::TextureView,
+        target_format: wgpu::TextureFormat,
         width: u32,
         height: u32,
     ) -> Result<()> {
         let scratch_view = self.ensure_compositor_scratch((width, height));
         self.render_scene_to_texture_view(&scratch_view, width, height)?;
-        self.premultiply_into_view(&scratch_view, target_view);
+        self.premultiply_into_view(&scratch_view, target_view, target_format);
         Ok(())
     }
 
@@ -340,13 +444,22 @@ impl VelloRenderer {
     }
 
     fn premultiply_into_view(
-        &self,
+        &mut self,
         source_view: &wgpu::TextureView,
         target_view: &wgpu::TextureView,
+        target_format: wgpu::TextureFormat,
     ) {
+        if !self.premultiply_pipelines.contains_key(&target_format) {
+            let pipeline = create_premultiply_pipeline(&self.device, target_format);
+            self.premultiply_pipelines.insert(target_format, pipeline);
+        }
+        let pipeline = self
+            .premultiply_pipelines
+            .get(&target_format)
+            .expect("premultiply pipeline just inserted");
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Floem Premultiply Bind Group"),
-            layout: &self.premultiply_pipeline.bind_group_layout,
+            layout: &pipeline.bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
@@ -354,7 +467,7 @@ impl VelloRenderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&self.premultiply_pipeline.sampler),
+                    resource: wgpu::BindingResource::Sampler(&pipeline.sampler),
                 },
             ],
         });
@@ -379,8 +492,9 @@ impl VelloRenderer {
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
-            pass.set_pipeline(&self.premultiply_pipeline.render_pipeline);
+            pass.set_pipeline(&pipeline.render_pipeline);
             pass.set_bind_group(0, &bind_group, &[]);
             pass.draw(0..3, 0..1);
         }
@@ -390,79 +504,65 @@ impl VelloRenderer {
 
 impl Renderer for VelloRenderer {
     fn begin(&mut self, capture: bool) {
-        if self.capture == capture {
-            self.scene.reset();
-        } else {
-            self.capture = capture;
-            if self.alt_scene.is_none() {
-                self.alt_scene = Some(Scene::new());
-            }
-            if let Some(scene) = self.alt_scene.as_mut() {
-                scene.reset();
-            }
-            self.scene.reset();
-            mem::swap(&mut self.scene, self.alt_scene.as_mut().unwrap());
-        }
+        self.capture = capture;
+        self.scene = ExtendedScene::new();
         self.transform = Affine::IDENTITY;
-
-        // Evict SVG scenes not used in the previous frame, then flip generation.
-        let generation = self.cache_generation;
-        self.svg_cache.retain(|_, (g, _)| *g == generation);
-        self.cache_generation = !generation;
     }
 
     fn stroke<'b, 's>(
         &mut self,
         shape: &impl Shape,
         brush: impl Into<BrushRef<'b>>,
-        stroke: &'s Stroke,
+        stroke: &'s peniko::kurbo::Stroke,
     ) {
-        self.scene
-            .stroke(stroke, self.device_transform(), brush, None, shape);
+        let draw = imaging::record::Draw::Stroke {
+            transform: self.transform,
+            stroke: stroke.clone(),
+            brush: brush.into().to_owned(),
+            brush_transform: None,
+            shape: shape_to_geometry(shape).to_owned(),
+            composite: Composite::default(),
+        };
+        self.scene.draw(draw);
     }
 
     fn fill<'b>(&mut self, path: &impl Shape, brush: impl Into<BrushRef<'b>>, blur_radius: f64) {
-        let brush: BrushRef<'b> = brush.into();
+        let brush = brush.into();
 
-        // For solid colors with specific shapes, use optimized methods
         if blur_radius > 0.0
             && let BrushRef::Solid(color) = brush
         {
             if let Some(rounded) = path.as_rounded_rect() {
-                if rounded.radii().top_left == rounded.radii().top_right
-                    && rounded.radii().top_left == rounded.radii().bottom_left
-                    && rounded.radii().top_left == rounded.radii().bottom_right
+                let radii = rounded.radii();
+                if radii.top_left == radii.top_right
+                    && radii.top_left == radii.bottom_left
+                    && radii.top_left == radii.bottom_right
                 {
-                    let rect_radius = rounded.radii().top_left;
-                    let rect = rounded.rect();
-                    self.scene.draw_blurred_rounded_rect(
-                        self.device_transform(),
-                        rect,
+                    self.scene.blurred_rounded_rect(BlurredRoundedRect {
+                        transform: self.transform,
+                        rect: rounded.rect(),
                         color,
-                        rect_radius,
-                        blur_radius,
-                    );
+                        radius: radii.top_left,
+                        std_dev: blur_radius,
+                        composite: Composite::default(),
+                    });
                     return;
                 }
             } else if let Some(rect) = path.as_rect() {
-                self.scene.draw_blurred_rounded_rect(
-                    self.device_transform(),
+                self.scene.blurred_rounded_rect(BlurredRoundedRect {
+                    transform: self.transform,
                     rect,
                     color,
-                    0.,
-                    blur_radius,
-                );
+                    radius: 0.0,
+                    std_dev: blur_radius,
+                    composite: Composite::default(),
+                });
                 return;
             }
         }
 
-        self.scene.fill(
-            vello::peniko::Fill::NonZero,
-            self.device_transform(),
-            brush,
-            None,
-            path,
-        );
+        self.scene
+            .fill(FillRef::new(shape_to_geometry(path), brush).transform(self.transform));
     }
 
     fn push_layer(
@@ -472,17 +572,18 @@ impl Renderer for VelloRenderer {
         transform: Affine,
         clip: &impl Shape,
     ) {
-        self.scene.push_layer(
-            Fill::NonZero,
-            blend,
-            alpha,
-            self.transform * transform,
-            clip,
+        PaintSink::push_group(
+            &mut self.scene,
+            GroupRef::new()
+                .with_clip(ClipRef::fill(shape_to_geometry(clip)).with_transform(
+                    self.transform * transform,
+                ))
+                .with_composite(Composite::new(blend.into(), alpha)),
         );
     }
 
     fn pop_layer(&mut self) {
-        self.scene.pop_layer();
+        self.scene.pop_group();
     }
 
     fn draw_glyphs<'a>(
@@ -491,99 +592,34 @@ impl Renderer for VelloRenderer {
         run: &GlyphRunRef<'a>,
         glyphs: impl Iterator<Item = Glyph> + 'a,
     ) {
-        // TODO: Vello 0.7's DrawGlyphs API has no embolden support.
-        // Synthetic bold from layout synthesis and `self.font_embolden` are not applied.
-        let transform =
-            self.device_transform() * Affine::translate((origin.x, origin.y)) * run.transform;
-        self.scene
-            .draw_glyphs(run.font)
-            .brush(run.brush)
-            .brush_alpha(run.composite.alpha)
-            .hint(run.hint)
-            .transform(transform)
-            .glyph_transform(run.glyph_transform)
-            .font_size(run.font_size)
-            .normalized_coords(run.normalized_coords)
-            .draw(
-                run.style,
-                glyphs.map(|glyph| vello::Glyph {
-                    id: glyph.id,
-                    x: glyph.x,
-                    y: glyph.y,
-                }),
-            );
-    }
-
-    fn draw_img(&mut self, img: Img<'_>, rect: Rect) {
-        let rect_width = rect.width().max(1.);
-        let rect_height = rect.height().max(1.);
-
-        let scale_x = rect_width / img.img.image.width as f64;
-        let scale_y = rect_height / img.img.image.height as f64;
-
-        let translate_x = rect.min_x();
-        let translate_y = rect.min_y();
-
-        self.scene.draw_image(
-            &img.img,
-            self.device_transform()
-                .pre_scale_non_uniform(scale_x, scale_y)
-                .pre_translate((translate_x, translate_y).into()),
-        );
-    }
-
-    fn draw_svg<'b>(
-        &mut self,
-        svg: floem_renderer::Svg<'b>,
-        rect: Rect,
-        brush: Option<impl Into<BrushRef<'b>>>,
-    ) {
-        let rect_width = rect.width().max(1.);
-        let rect_height = rect.height().max(1.);
-
-        let svg_size = svg.tree.size();
-
-        let scale_x = rect_width / f64::from(svg_size.width());
-        let scale_y = rect_height / f64::from(svg_size.height());
-
-        let translate_x = rect.min_x();
-        let translate_y = rect.min_y();
-
-        let transform = self
-            .device_transform()
-            .pre_scale_non_uniform(scale_x, scale_y)
-            .pre_translate((translate_x, translate_y).into());
-
-        // Look up (or create) the cached base scene for this SVG.
-        let generation = self.cache_generation;
-        let base = self
-            .svg_cache
-            .entry(svg.hash.to_owned())
-            .and_modify(|(g, _)| *g = generation)
-            .or_insert_with(|| (generation, vello_svg::render_tree(svg.tree)));
-
-        // When a brush is applied (tinted icons), composite through an alpha mask.
-        // The base scene is cached; only the masking composite is rebuilt per frame.
-        let composited;
-        let scene_to_append = match brush {
-            Some(brush) => {
-                let brush = brush.into();
-                let size = Size::new(svg_size.width() as _, svg_size.height() as _);
-                let fill_rect = Rect::from_origin_size(Point::ZERO, size);
-                let base_scene = &base.1;
-                composited = alpha_mask_scene(
-                    size,
-                    |scene| scene.append(base_scene, None),
-                    move |scene| {
-                        scene.fill(Fill::NonZero, Affine::IDENTITY, brush, None, &fill_rect);
-                    },
-                );
-                &composited
-            }
-            None => &base.1,
+        let draw = imaging::GlyphRunRef {
+            font: run.font,
+            transform: self.transform * Affine::translate((origin.x, origin.y)) * run.transform,
+            glyph_transform: run.glyph_transform,
+            font_size: run.font_size,
+            hint: run.hint,
+            normalized_coords: run.normalized_coords,
+            style: run.style,
+            brush: run.brush,
+            composite: run.composite,
         };
+        let mut glyphs = glyphs.map(|glyph| ImagingGlyph {
+            id: glyph.id,
+            x: glyph.x,
+            y: glyph.y,
+        });
+        self.scene.glyph_run(draw, &mut glyphs);
+    }
 
-        self.scene.append(scene_to_append, Some(transform));
+    fn draw_svg<'b>(&mut self, svg: Svg<'b>, rect: Rect, brush: Option<impl Into<BrushRef<'b>>>) {
+        CustomPaintSink::custom(&mut self.scene, &VelloCommand::DrawSvg {
+            svg: SvgCommand {
+                hash: Arc::from(svg.hash),
+            },
+            rect,
+            transform: self.transform,
+            brush: brush.map(|brush| brush.into().to_owned()),
+        });
     }
 
     fn set_transform(&mut self, transform: Affine) {
@@ -591,20 +627,17 @@ impl Renderer for VelloRenderer {
     }
 
     fn clip(&mut self, shape: &impl Shape) {
-        self.scene.push_layer(
-            Fill::NonZero,
-            vello::peniko::BlendMode::default(),
-            1.0,
-            self.transform,
-            shape,
+        PaintSink::push_clip(
+            &mut self.scene,
+            ClipRef::fill(shape_to_geometry(shape)).with_transform(self.transform),
         );
     }
 
     fn clear_clip(&mut self) {
-        self.scene.pop_layer();
+        self.scene.pop_clip();
     }
 
-    fn finish(&mut self) -> Option<vello::peniko::ImageBrush> {
+    fn finish(&mut self) -> Option<peniko::ImageBrush> {
         if self.capture {
             self.render_capture_image()
         } else {
@@ -612,14 +645,9 @@ impl Renderer for VelloRenderer {
                 let target_view = self.surface.target_view.clone();
                 let width = self.surface.config.width;
                 let height = self.surface.config.height;
-                self.render_scene_to_texture_view(
-                    &target_view,
-                    width,
-                    height,
-                )
-                .unwrap();
+                self.render_scene_to_texture_view(&target_view, width, height)
+                    .unwrap();
 
-                // Perform the copy
                 let mut encoder =
                     self.device
                         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -634,8 +662,6 @@ impl Renderer for VelloRenderer {
                         .create_view(&wgpu::TextureViewDescriptor::default()),
                 );
                 self.queue.submit([encoder.finish()]);
-
-                // Queue the texture to be presented on the surface
                 surface_texture.present();
             }
             None
@@ -648,7 +674,6 @@ impl Renderer for VelloRenderer {
         let mut out = String::new();
         writeln!(out, "name: Vello").ok();
         writeln!(out, "info: {:#?}", self.adapter.get_info()).ok();
-
         out
     }
 }
@@ -687,23 +712,26 @@ impl VelloRenderer {
             ..Default::default()
         });
 
+        let scene = self
+            .build_scene(self.surface.config.width, self.surface.config.height)
+            .ok()?;
         self.renderer
             .render_to_texture(
                 &self.device,
                 &self.queue,
-                &self.scene,
+                &scene,
                 &view,
-                &vello::RenderParams {
+                &RenderParams {
                     antialiasing_method: AaConfig::Area,
                     ..Self::render_params(self.surface.config.width, self.surface.config.height)
                 },
             )
-            .unwrap();
+            .ok()?;
 
-        let bytes_per_pixel = 4;
+        let bytes_per_pixel = 4u64;
         let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
-            size: (u64::from(width * height) * bytes_per_pixel),
+            size: u64::from(width * height) * bytes_per_pixel,
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -746,13 +774,23 @@ impl VelloRenderer {
             cursor += bytes_per_row as usize;
         }
 
-        Some(vello::peniko::ImageBrush::new(ImageData {
+        Some(peniko::ImageBrush::new(ImageData {
             data: Blob::new(Arc::new(cropped_buffer)),
-            format: vello::peniko::ImageFormat::Rgba8,
+            format: peniko::ImageFormat::Rgba8,
             alpha_type: ImageAlphaType::AlphaPremultiplied,
             width: self.surface.config.width,
             height,
         }))
+    }
+}
+
+fn shape_to_geometry(shape: &impl Shape) -> imaging::GeometryRef<'static> {
+    if let Some(rect) = shape.as_rect() {
+        imaging::GeometryRef::Rect(rect)
+    } else if let Some(rect) = shape.as_rounded_rect() {
+        imaging::GeometryRef::RoundedRect(rect)
+    } else {
+        imaging::GeometryRef::OwnedPath(shape.to_path(0.1))
     }
 }
 
@@ -788,7 +826,7 @@ fn create_premultiply_pipeline(
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("Floem Premultiply Layout"),
         bind_group_layouts: &[&bind_group_layout],
-        push_constant_ranges: &[],
+        immediate_size: 0,
     });
     let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("Floem Premultiply Pipeline"),
@@ -812,7 +850,7 @@ fn create_premultiply_pipeline(
         primitive: wgpu::PrimitiveState::default(),
         depth_stencil: None,
         multisample: wgpu::MultisampleState::default(),
-        multiview: None,
+        multiview_mask: None,
         cache: None,
     });
     let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -827,55 +865,4 @@ fn create_premultiply_pipeline(
         bind_group_layout,
         sampler,
     }
-}
-
-fn common_alpha_mask_scene(
-    size: Size,
-    alpha_mask: impl FnOnce(&mut Scene),
-    item: impl FnOnce(&mut Scene),
-    compose_mode: Compose,
-) -> Scene {
-    let mut scene = Scene::new();
-    scene.push_layer(
-        Fill::NonZero,
-        Mix::Normal,
-        1.0,
-        Affine::IDENTITY,
-        &Rect::from_origin_size((0., 0.), size),
-    );
-
-    alpha_mask(&mut scene);
-
-    scene.push_layer(
-        Fill::NonZero,
-        vello::peniko::BlendMode {
-            mix: Mix::Normal,
-            compose: compose_mode,
-        },
-        1.,
-        Affine::IDENTITY,
-        &Rect::from_origin_size((0., 0.), size),
-    );
-
-    item(&mut scene);
-
-    scene.pop_layer();
-    scene.pop_layer();
-    scene
-}
-
-fn alpha_mask_scene(
-    size: Size,
-    alpha_mask: impl FnOnce(&mut Scene),
-    item: impl FnOnce(&mut Scene),
-) -> Scene {
-    common_alpha_mask_scene(size, alpha_mask, item, Compose::SrcIn)
-}
-#[allow(unused)]
-fn invert_alpha_mask_scene(
-    size: Size,
-    alpha_mask: impl FnOnce(&mut Scene),
-    item: impl FnOnce(&mut Scene),
-) -> Scene {
-    common_alpha_mask_scene(size, alpha_mask, item, Compose::SrcOut)
 }

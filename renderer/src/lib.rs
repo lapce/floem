@@ -1,7 +1,7 @@
 //! Rendering abstraction layer for the Floem UI framework.
 //!
 //! This crate defines the [`Renderer`] trait that all Floem rendering backends must
-//! implement, along with supporting types for passing images and SVGs to the renderer.
+//! implement, along with supporting types for passing SVGs to the renderer.
 //! Floem ships with three backend implementations:
 //!
 //! - **Vello** (`floem_vello_renderer`) — GPU-accelerated renderer using the Vello scene graph (default).
@@ -56,34 +56,11 @@ pub struct Svg<'a> {
     pub hash: &'a [u8],
 }
 
-/// A raster image paired with a cache key.
-///
-/// # Example
-///
-/// ```no_run
-/// use floem_renderer::Img;
-///
-/// # fn make_image_brush() -> peniko::ImageBrush { todo!() }
-/// let brush = make_image_brush();
-/// let hash = b"photo-abc123";
-///
-/// let img = Img {
-///     img: brush,
-///     hash: hash.as_slice(),
-/// };
-/// ```
-pub struct Img<'a> {
-    /// The image data as a [`peniko::ImageBrush`].
-    pub img: peniko::ImageBrush,
-    /// An opaque byte slice used as a cache key by the renderer.
-    pub hash: &'a [u8],
-}
-
 /// The core rendering trait that every Floem backend must implement.
 ///
 /// A frame is bracketed by [`begin`](Renderer::begin) and [`finish`](Renderer::finish).
 /// Between those calls the framework issues drawing commands — fills, strokes, text,
-/// images, SVGs — which the backend records or executes immediately depending on its
+/// SVGs — which the backend records or executes immediately depending on its
 /// architecture.
 ///
 /// The typical call sequence within a single frame looks like:
@@ -95,7 +72,6 @@ pub struct Img<'a> {
 /// renderer.clip(..);          // restrict drawing area
 /// renderer.draw_text_lines(..); // labels, editors
 /// renderer.draw_svg(..);      // icons
-/// renderer.draw_img(..);      // photos
 /// renderer.stroke(..);        // borders
 /// renderer.clear_clip();
 /// renderer.finish();
@@ -187,11 +163,6 @@ pub trait Renderer {
     /// When `brush` is `Some`, the SVG is rendered as a mask and filled with
     /// the given brush — this is how Floem applies a color override to icons.
     fn draw_svg<'b>(&mut self, svg: Svg<'b>, rect: Rect, brush: Option<impl Into<BrushRef<'b>>>);
-
-    /// Draw a raster image inside `rect`.
-    ///
-    /// The image is scaled to fit the destination rectangle.
-    fn draw_img(&mut self, img: Img<'_>, rect: Rect);
 
     /// Finish the current frame and present it.
     ///

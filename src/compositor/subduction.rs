@@ -13,7 +13,7 @@
 //! This is enough to establish the architectural seam. It is not yet full
 //! presentation integration.
 
-use peniko::kurbo::{Affine, Rect, RoundedRect};
+use peniko::kurbo::{Rect, RoundedRect};
 use rustc_hash::FxHashMap;
 use subduction_core::{
     backend::Presenter as _,
@@ -132,8 +132,10 @@ impl SubductionCompositorBackend {
         // translation (rect origin) and a local size (rect dimensions).
         let bounds = descriptor.bounds;
         let is_empty = !bounds.is_finite() || bounds.width() <= 0.0 || bounds.height() <= 0.0;
-        self.store
-            .set_transform(layer_id, Transform3d::from(Affine::translate(bounds.origin().to_vec2())));
+        self.store.set_transform(
+            layer_id,
+            Transform3d::from_translation(bounds.x0, bounds.y0, 0.0),
+        );
         self.store.set_bounds(
             layer_id,
             if is_empty {
@@ -349,7 +351,13 @@ impl CompositorBackend for SubductionCompositorBackend {
                 descriptor.bounds.width().max(1.0).round() as u32,
                 descriptor.bounds.height().max(1.0).round() as u32,
             );
-            visit(layer_id, descriptor.bounds, size, view);
+            visit(
+                layer_id,
+                descriptor.bounds,
+                size,
+                presenter.layer_format(),
+                view,
+            );
         }
     }
 

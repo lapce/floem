@@ -49,7 +49,6 @@
 //!
 use std::sync::Arc;
 
-use floem_renderer::Img;
 use floem_renderer::gpu_resources::GpuResources;
 #[cfg(feature = "skia")]
 use floem_skia_renderer::SkiaRenderer as ActiveRenderer;
@@ -248,11 +247,17 @@ impl Renderer {
     pub(crate) fn render_scene_to_premultiplied_texture_view(
         &mut self,
         target_view: &wgpu::TextureView,
+        target_format: wgpu::TextureFormat,
         size: (u32, u32),
     ) -> bool {
         match self {
             Renderer::Active(r) => r
-                .render_scene_to_premultiplied_texture_view(target_view, size.0, size.1)
+                .render_scene_to_premultiplied_texture_view(
+                    target_view,
+                    target_format,
+                    size.0,
+                    size.1,
+                )
                 .is_ok(),
             Renderer::TinySkia(_) | Renderer::Uninitialized { .. } => false,
         }
@@ -262,6 +267,7 @@ impl Renderer {
     pub(crate) fn render_scene_to_premultiplied_texture_view(
         &mut self,
         _target_view: &wgpu::TextureView,
+        _target_format: wgpu::TextureFormat,
         _size: (u32, u32),
     ) -> bool {
         false
@@ -380,18 +386,6 @@ impl floem_renderer::Renderer for Renderer {
                 v.pop_layer();
             }
             Renderer::TinySkia(v) => v.pop_layer(),
-            Renderer::Uninitialized { .. } => {}
-        }
-    }
-
-    fn draw_img(&mut self, img: Img<'_>, rect: Rect) {
-        match self {
-            Renderer::Active(v) => {
-                v.draw_img(img, rect);
-            }
-            Renderer::TinySkia(v) => {
-                v.draw_img(img, rect);
-            }
             Renderer::Uninitialized { .. } => {}
         }
     }

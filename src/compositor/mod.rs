@@ -304,7 +304,8 @@ pub(crate) struct ResolvedPromotedLayer {
 }
 
 pub(crate) type FloemSurfaceRoleVisitor<'a> =
-    dyn FnMut(FloemPaintedSurfaceRole, Rect, (u32, u32), &wgpu::TextureView) + 'a;
+    dyn FnMut(FloemPaintedSurfaceRole, Rect, (u32, u32), wgpu::TextureFormat, &wgpu::TextureView)
+        + 'a;
 
 /// Retained compositor registry and frame-request state.
 #[derive(Default)]
@@ -496,7 +497,7 @@ impl Compositor {
         };
 
         let mut visit_backend: &mut FloemPaintedSurfaceVisitor<'_> =
-            &mut |layer_id, bounds, size, view| {
+            &mut |layer_id, bounds, size, format, view| {
                 let Some(layer_state) = self.layers.get(&layer_id) else {
                     return;
                 };
@@ -520,7 +521,7 @@ impl Compositor {
             };
 
             if let Some(role) = role {
-                visit(role, bounds, size, view);
+                visit(role, bounds, size, format, view);
             }
         };
         backend.for_each_floem_painted_surface(&mut visit_backend);

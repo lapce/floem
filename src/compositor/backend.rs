@@ -16,7 +16,7 @@ use super::{
 };
 
 pub type FloemPaintedSurfaceVisitor<'a> =
-    dyn FnMut(CompositorLayerId, Rect, (u32, u32), &wgpu::TextureView) + 'a;
+    dyn FnMut(CompositorLayerId, Rect, (u32, u32), wgpu::TextureFormat, &wgpu::TextureView) + 'a;
 
 /// Backend interface for mirroring Floem compositor state into a concrete
 /// presentation/composition engine.
