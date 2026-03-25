@@ -16,7 +16,7 @@ use ui_events::pointer::{PointerId, PointerInfo};
 use understory_event_state::{click::ClickState, focus::FocusState, hover::HoverState};
 use understory_focus::{FocusEntry, FocusSpace};
 use winit::cursor::CursorIcon;
-use winit::window::{Theme, WindowId};
+use winit::window::Theme;
 
 use std::rc::Rc;
 
@@ -98,7 +98,6 @@ fn build_focus_space_for_scope<'a>(
 
 /// Encapsulates and owns the global state of the application,
 pub struct WindowState {
-    pub(crate) window_id: WindowId,
     pub(crate) layout_tree: Rc<RefCell<taffy::TaffyTree<LayoutNodeCx>>>,
     pub(crate) box_tree: Rc<RefCell<BoxTree>>,
 
@@ -196,12 +195,7 @@ pub struct WindowState {
 }
 
 impl WindowState {
-    pub fn new(
-        root_view_id: ViewId,
-        window_id: WindowId,
-        os_theme: Option<Theme>,
-        os_scale: f64,
-    ) -> Self {
+    pub fn new(root_view_id: ViewId, os_theme: Option<Theme>, os_scale: f64) -> Self {
         let theme = default_theme(os_theme.unwrap_or(Theme::Light));
         let inherited = Self::extract_inherited_props(&theme);
         let box_tree = VIEW_STORAGE.with_borrow_mut(|s| s.box_tree(root_view_id));
@@ -209,7 +203,6 @@ impl WindowState {
         let root_layout_node = root_view_id.taffy_node();
 
         Self {
-            window_id,
             root_layout_node,
             root_view_id,
             layout_tree,

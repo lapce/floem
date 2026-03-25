@@ -172,7 +172,7 @@ impl WindowHandle {
 
         let paint_state_initialized = matches!(paint_state, PaintState::Initialized { .. });
 
-        let window_state = WindowState::new(id, window_id, os_theme, os_scale);
+        let window_state = WindowState::new(id, os_theme, os_scale);
 
         let mut window_handle = Self {
             window,
@@ -321,7 +321,7 @@ impl WindowHandle {
             0.0, // font_embolden
         );
 
-        let window_state = WindowState::new(id, window_id, os_theme, os_scale);
+        let window_state = WindowState::new(id, os_theme, os_scale);
 
         let mut window_handle = Self {
             window,
