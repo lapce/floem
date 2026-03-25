@@ -147,6 +147,13 @@ impl ApplicationHandle {
                 AppUpdateEvent::CloseWindow { window_id } => {
                     self.close_window(window_id, event_loop);
                 }
+                AppUpdateEvent::RequestCloseWindow { window_id } => {
+                    if let Some(handle) = self.window_handles.get_mut(&window_id) {
+                        handle.event(crate::event::Event::Window(
+                            crate::event::WindowEvent::CloseRequested,
+                        ));
+                    }
+                }
                 AppUpdateEvent::RequestTimer { timer } => {
                     self.request_timer(timer, event_loop);
                 }
@@ -316,7 +323,11 @@ impl ApplicationHandle {
                 window_handle.position(point);
             }
             WindowEvent::CloseRequested => {
-                self.close_window(window_id, event_loop);
+                if let Some(handle) = self.window_handles.get_mut(&window_id) {
+                    handle.event(crate::event::Event::Window(
+                        crate::event::WindowEvent::CloseRequested,
+                    ));
+                }
             }
             WindowEvent::Destroyed => {
                 self.close_window(window_id, event_loop);
