@@ -1205,15 +1205,14 @@ impl RouteCx<'_, '_> {
         }
 
         // Window close — close the window if not prevented.
-        if matches!(&self.event, Event::Window(WindowEvent::CloseRequested)) {
-            if let Some(window_id) =
+        if matches!(&self.event, Event::Window(WindowEvent::CloseRequested))
+            && let Some(window_id) =
                 crate::window::tracking::window_id_for_root(self.gcx.window_state.root_view_id)
             {
                 crate::app::add_app_update_event(crate::app::AppUpdateEvent::CloseWindow {
                     window_id,
                 });
             }
-        }
     }
 
     /// Helper: dispatch a `DragEventDispatch` variant as a synthetic route.
