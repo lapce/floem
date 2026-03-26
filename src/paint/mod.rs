@@ -464,8 +464,8 @@ impl GlobalPaintCx<'_> {
         let view_id = element_id.owning_id();
         let view = view_id.view();
         let view_state = view_id.state();
-        let mut commands = Vec::new();
-        let mut recorder = RecordingRenderer::new(&mut commands);
+        let mut scene = imaging::record::ExtendedScene::new();
+        let mut recorder = RecordingRenderer::new(&mut scene);
         let is_vger = self.paint_state.rasterizer().is_vger();
         let world_transform = self.element_base_transform(element_id);
         let font_size_cx = view_state.borrow().layout_props.font_size_cx();
@@ -511,7 +511,7 @@ impl GlobalPaintCx<'_> {
         } else {
             &mut element.paint
         };
-        stage.set_commands(commands, snapshot.layer_candidate());
+        stage.set_scene(scene, snapshot.layer_candidate());
         element.snapshot = Some(snapshot);
     }
 }

@@ -34,9 +34,8 @@
 //! imperative stream as the final artifact format.
 //!
 //! Recording proceeds in two steps:
-//! 1. Views emit [`DisplayCommand`]s in local space.
-//! 2. [`ElementStage::set_commands`] compiles those commands into chunks plus property
-//!    state.
+//! 1. Views emit local-space commands into a retained [`ExtendedScene`].
+//! 2. [`ElementStage::set_scene`] compiles that scene into chunks plus property state.
 //!
 //! At the moment, this compilation does a few useful things:
 //! - Infers [`TransformClass`] from the actual recorded content instead of assuming
@@ -153,12 +152,12 @@ use std::sync::Arc;
 use floem_renderer::text::GlyphRunRef;
 use floem_renderer::{DisplayCommandExt, OwnedSvg, Svg};
 use imaging::{
-    BlurredRoundedRect, ClipRef, Composite, FillRef, GroupRef, PaintSink, StrokeRef,
+    BlurredRoundedRect, ClipRef, FillRef, GroupRef, PaintSink, StrokeRef,
     record::{
-        AppliedMask, Clip, Draw, ExtendedScene, Geometry, Glyph as ImagingGlyph, GlyphRun, Mask,
+        AppliedMask, Clip, Draw, ExtendedCommand, ExtendedScene, Geometry,
+        Glyph as ImagingGlyph, GlyphRun,
         replay_ext_transformed,
     },
-    Filter,
 };
 use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Shape, Size};
 use peniko::{BrushRef, Fill};
@@ -231,30 +230,6 @@ pub(crate) fn transform_diff_class(original: Affine, current: Affine) -> Transfo
 }
 
 #[derive(Clone)]
-pub(crate) enum DisplayCommand {
-    PushClip {
-        clip: Clip,
-    },
-    PopClip,
-    PushGroup {
-        clip: Option<Clip>,
-        mask: Option<(Mask, Affine)>,
-        filters: Vec<Filter>,
-        composite: Composite,
-    },
-    PopGroup,
-    Draw {
-        draw: Draw,
-    },
-    DrawSvg {
-        svg: OwnedSvg,
-        rect: Rect,
-        transform: Affine,
-        brush: Option<peniko::Brush>,
-    },
-}
-
-#[derive(Clone)]
 pub(crate) struct ElementStage {
     pub chunks: Vec<PaintChunk>,
     pub property_tree: PaintPropertyTree,
@@ -274,12 +249,12 @@ impl Default for ElementStage {
 }
 
 impl ElementStage {
-    pub(crate) fn set_commands(
+    pub(crate) fn set_scene(
         &mut self,
-        commands: Vec<DisplayCommand>,
+        scene: ExtendedScene<DisplayCommandExt>,
         layer_candidate: Option<CompositorLayerCandidate>,
     ) {
-        let (chunks, property_tree) = chunk_display_commands(commands);
+        let (chunks, property_tree) = chunk_display_commands(scene);
         self.chunks = chunks;
         self.property_tree = property_tree;
         self.layer_candidate = layer_candidate.clone();
@@ -439,6 +414,14 @@ impl PaintChunkMetadata {
             promotion_hint: self.promotion_hint.or(other.promotion_hint),
         }
     }
+}
+
+#[derive(Clone, Copy)]
+struct CommandAnalysis {
+    transform: Affine,
+    transform_class: TransformClass,
+    bounds: Option<Rect>,
+    metadata: PaintChunkMetadata,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -863,16 +846,12 @@ impl RetainedDisplayList {
 }
 
 pub struct RecordingRenderer<'a> {
-    commands: &'a mut Vec<DisplayCommand>,
+    scene: &'a mut ExtendedScene<DisplayCommandExt>,
 }
 
 impl<'a> RecordingRenderer<'a> {
-    pub(crate) fn new(commands: &'a mut Vec<DisplayCommand>) -> Self {
-        Self { commands }
-    }
-
-    fn record_draw(&mut self, draw: Draw) {
-        self.commands.push(DisplayCommand::Draw { draw });
+    pub(crate) fn new(scene: &'a mut ExtendedScene<DisplayCommandExt>) -> Self {
+        Self { scene }
     }
 }
 
@@ -884,7 +863,7 @@ impl RecordingRenderer<'_> {
         transform: Affine,
         brush: Option<impl Into<BrushRef<'b>>>,
     ) {
-        self.commands.push(DisplayCommand::DrawSvg {
+        let _ = self.scene.custom_command(DisplayCommandExt::DrawSvg {
             svg: OwnedSvg {
                 tree: Arc::new(svg.tree.clone()),
                 hash: Arc::from(svg.hash.to_vec()),
@@ -898,44 +877,35 @@ impl RecordingRenderer<'_> {
 
 impl PaintSink for RecordingRenderer<'_> {
     fn push_clip(&mut self, clip: ClipRef<'_>) {
-        self.commands.push(DisplayCommand::PushClip {
-            clip: clip.to_owned(),
-        });
+        let _ = self.scene.push_clip(clip.to_owned());
     }
 
     fn pop_clip(&mut self) {
-        self.commands.push(DisplayCommand::PopClip);
+        self.scene.pop_clip();
     }
 
     fn push_group(&mut self, group: GroupRef<'_>) {
-        self.commands.push(DisplayCommand::PushGroup {
-            clip: group.clip.map(|clip| clip.to_owned()),
-            mask: group
-                .mask
-                .map(|applied| (applied.mask.to_owned(), applied.transform)),
-            filters: group.filters.to_vec(),
-            composite: group.composite,
-        });
+        PaintSink::push_group(self.scene, group);
     }
 
     fn pop_group(&mut self) {
-        self.commands.push(DisplayCommand::PopGroup);
+        self.scene.pop_group();
     }
 
     fn fill(&mut self, draw: FillRef<'_>) {
-        self.record_draw(draw.to_owned());
+        let _ = self.scene.draw(draw.to_owned());
     }
 
     fn stroke(&mut self, draw: StrokeRef<'_>) {
-        self.record_draw(draw.to_owned());
+        let _ = self.scene.draw(draw.to_owned());
     }
 
     fn glyph_run(&mut self, draw: GlyphRunRef<'_>, glyphs: &mut dyn Iterator<Item = ImagingGlyph>) {
-        self.record_draw(Draw::GlyphRun(draw.to_owned(glyphs)));
+        let _ = self.scene.draw(Draw::GlyphRun(draw.to_owned(glyphs)));
     }
 
     fn blurred_rounded_rect(&mut self, draw: BlurredRoundedRect) {
-        self.record_draw(Draw::BlurredRoundedRect(draw));
+        let _ = self.scene.draw(Draw::BlurredRoundedRect(draw));
     }
 }
 
@@ -990,7 +960,9 @@ pub(crate) fn replay_view_clip(
     PaintSink::push_clip(renderer, ClipRef::fill(clip).with_transform(base_transform));
 }
 
-fn chunk_display_commands(commands: Vec<DisplayCommand>) -> (Vec<PaintChunk>, PaintPropertyTree) {
+fn chunk_display_commands(
+    scene: ExtendedScene<DisplayCommandExt>,
+) -> (Vec<PaintChunk>, PaintPropertyTree) {
     let mut chunks = Vec::new();
     let mut properties = PaintPropertyState::default();
     let mut property_tree = PaintPropertyTree::default();
@@ -999,9 +971,10 @@ fn chunk_display_commands(commands: Vec<DisplayCommand>) -> (Vec<PaintChunk>, Pa
     let mut clip_stack: Vec<ClipNodeId> = Vec::new();
     let mut effect_stack: Vec<EffectNodeId> = vec![EffectNodeId(0)];
 
-    for command in commands {
+    for command in scene.commands() {
         match command {
-            DisplayCommand::PushClip { clip } => {
+            ExtendedCommand::PushClip(id) => {
+                let clip = scene.clip(*id).clone();
                 let transform_id = intern_transform(
                     clip_transform(&clip),
                     &mut property_tree,
@@ -1016,56 +989,46 @@ fn chunk_display_commands(commands: Vec<DisplayCommand>) -> (Vec<PaintChunk>, Pa
                 clip_stack.push(clip_id);
                 properties.clip_id = clip_id;
             }
-            DisplayCommand::PopClip => {
+            ExtendedCommand::PopClip => {
                 clip_stack.pop();
                 properties.clip_id = clip_stack.last().copied().unwrap_or_default();
             }
-            DisplayCommand::PushGroup {
-                clip,
-                mask,
-                filters,
-                composite,
-            } => {
+            ExtendedCommand::PushGroup(id) => {
+                let group = scene.group(*id);
                 let effect_id = EffectNodeId(property_tree.effects.len() as u32);
                 property_tree.effects.push(EffectNode {
                     parent: effect_stack.last().copied(),
-                    blend: composite.blend,
-                    alpha: composite.alpha,
+                    blend: group.composite.blend,
+                    alpha: group.composite.alpha,
                 });
                 effect_stack.push(effect_id);
                 properties.effect_id = effect_id;
-                let command = DisplayCommand::PushGroup {
-                    clip,
-                    mask,
-                    filters,
-                    composite,
-                };
                 push_boundary_chunk(
                     &mut chunks,
                     properties,
-                    command_transform_class(&command),
+                    analyze_command(&scene, command).transform_class,
+                    &scene,
                     command,
                 );
             }
-            DisplayCommand::PopGroup => {
+            ExtendedCommand::PopGroup => {
                 effect_stack.pop();
                 properties.effect_id = effect_stack.last().copied().unwrap_or_default();
                 push_boundary_chunk(
                     &mut chunks,
                     properties,
-                    command_transform_class(&DisplayCommand::PopGroup),
-                    DisplayCommand::PopGroup,
+                    analyze_command(&scene, command).transform_class,
+                    &scene,
+                    command,
                 );
             }
             command => {
+                let analysis = analyze_command(&scene, command);
                 properties.transform_id = intern_transform(
-                    command_affine(&command),
+                    analysis.transform,
                     &mut property_tree,
                     &mut transform_intern,
                 );
-                let transform_class = command_transform_class(&command);
-                let bounds = command_bounds(&command);
-                let metadata = command_metadata(&command);
                 match chunks.last_mut() {
                     Some(PaintChunk {
                         kind: PaintChunkKind::Draw,
@@ -1075,18 +1038,19 @@ fn chunk_display_commands(commands: Vec<DisplayCommand>) -> (Vec<PaintChunk>, Pa
                         metadata: chunk_metadata,
                         transform_class: chunk_transform_class,
                     }) if *chunk_properties == properties => {
-                        *chunk_transform_class = chunk_transform_class.combine(transform_class);
-                        *chunk_bounds = union_rects(*chunk_bounds, bounds);
-                        *chunk_metadata = chunk_metadata.merge(metadata);
-                        record_scene_command(chunk_commands, command);
+                        *chunk_transform_class =
+                            chunk_transform_class.combine(analysis.transform_class);
+                        *chunk_bounds = union_rects(*chunk_bounds, analysis.bounds);
+                        *chunk_metadata = chunk_metadata.merge(analysis.metadata);
+                        append_scene_command(chunk_commands, &scene, command);
                     }
                     _ => chunks.push(PaintChunk {
                         kind: PaintChunkKind::Draw,
                         properties,
-                        commands: replay_scene([command]),
-                        bounds,
-                        metadata,
-                        transform_class,
+                        commands: single_command_scene(&scene, command),
+                        bounds: analysis.bounds,
+                        metadata: analysis.metadata,
+                        transform_class: analysis.transform_class,
                     }),
                 }
             }
@@ -1100,106 +1064,99 @@ fn push_boundary_chunk(
     chunks: &mut Vec<PaintChunk>,
     properties: PaintPropertyState,
     transform_class: TransformClass,
-    command: DisplayCommand,
+    scene: &ExtendedScene<DisplayCommandExt>,
+    command: &ExtendedCommand,
 ) {
     chunks.push(PaintChunk {
         kind: PaintChunkKind::Boundary,
         properties,
-        commands: replay_scene([command]),
+        commands: single_command_scene(scene, command),
         bounds: None,
         metadata: PaintChunkMetadata::default(),
         transform_class,
     });
 }
 
-fn replay_scene(commands: impl IntoIterator<Item = DisplayCommand>) -> ExtendedScene<DisplayCommandExt> {
+fn single_command_scene(
+    source: &ExtendedScene<DisplayCommandExt>,
+    command: &ExtendedCommand,
+) -> ExtendedScene<DisplayCommandExt> {
     let mut scene = ExtendedScene::new();
-    for command in commands {
-        record_scene_command(&mut scene, command);
-    }
+    append_scene_command(&mut scene, source, command);
     scene
 }
 
-fn record_scene_command(scene: &mut ExtendedScene<DisplayCommandExt>, command: DisplayCommand) {
+fn append_scene_command(
+    scene: &mut ExtendedScene<DisplayCommandExt>,
+    source: &ExtendedScene<DisplayCommandExt>,
+    command: &ExtendedCommand,
+) {
     match command {
-        DisplayCommand::PushClip { clip } => {
-            let _ = scene.push_clip(clip);
+        ExtendedCommand::PushClip(id) => {
+            let _ = scene.push_clip(source.clip(*id).clone());
         }
-        DisplayCommand::PopClip => scene.pop_clip(),
-        DisplayCommand::PushGroup {
-            clip,
-            mask,
-            filters,
-            composite,
-        } => {
-            let mask = mask.map(|(mask, transform)| AppliedMask {
-                mask: scene.define_mask(mask),
-                transform,
+        ExtendedCommand::PopClip => scene.pop_clip(),
+        ExtendedCommand::PushGroup(id) => {
+            let group = source.group(*id);
+            let mask = group.mask.as_ref().map(|applied| AppliedMask {
+                mask: scene.define_mask(source.mask(applied.mask).clone()),
+                transform: applied.transform,
             });
             let _ = scene.push_group(imaging::record::Group {
-                clip,
+                clip: group.clip.clone(),
                 mask,
-                filters,
-                composite,
+                filters: group.filters.clone(),
+                composite: group.composite,
             });
         }
-        DisplayCommand::PopGroup => scene.pop_group(),
-        DisplayCommand::Draw { draw } => {
-            let _ = scene.draw(draw);
+        ExtendedCommand::PopGroup => scene.pop_group(),
+        ExtendedCommand::Draw(id) => {
+            let _ = scene.draw(source.draw_op(*id).clone());
         }
-        DisplayCommand::DrawSvg {
-            svg,
-            rect,
-            transform,
-            brush,
-        } => {
-            let _ = scene.custom_command(DisplayCommandExt::DrawSvg {
-                svg,
-                rect,
-                transform,
-                brush,
-            });
+        ExtendedCommand::Custom(id) => {
+            let _ = scene.custom_command(source.custom(*id).clone());
         }
     }
 }
 
-fn command_transform_class(command: &DisplayCommand) -> TransformClass {
+fn analyze_command(
+    scene: &ExtendedScene<DisplayCommandExt>,
+    command: &ExtendedCommand,
+) -> CommandAnalysis {
     match command {
-        DisplayCommand::PushClip { .. }
-        | DisplayCommand::PopClip
-        | DisplayCommand::PushGroup { .. }
-        | DisplayCommand::PopGroup => TransformClass::Affine,
-        DisplayCommand::Draw { draw } => match draw {
-            Draw::Fill { .. } | Draw::Stroke { .. } => TransformClass::Affine,
-            Draw::GlyphRun(_) | Draw::BlurredRoundedRect(_) => TransformClass::TranslateOnly,
+        ExtendedCommand::PushClip(id) => CommandAnalysis {
+            transform: clip_transform(scene.clip(*id)),
+            transform_class: TransformClass::Affine,
+            bounds: None,
+            metadata: PaintChunkMetadata::default(),
         },
-        DisplayCommand::DrawSvg { .. } => TransformClass::TranslateOnly,
-    }
-}
-
-fn command_bounds(command: &DisplayCommand) -> Option<Rect> {
-    match command {
-        DisplayCommand::PushClip { .. }
-        | DisplayCommand::PopClip
-        | DisplayCommand::PushGroup { .. }
-        | DisplayCommand::PopGroup => None,
-        DisplayCommand::Draw { draw, .. } => draw_bounds(draw),
-        DisplayCommand::DrawSvg { rect, .. } => Some(*rect),
-    }
-}
-
-fn draw_bounds(draw: &Draw) -> Option<Rect> {
-    match draw {
-        Draw::Fill { shape, .. } => Some(geometry_bounds(shape)),
-        Draw::Stroke { shape, stroke, .. } => {
-            let bounds = geometry_bounds(shape);
-            let inset = stroke.width / 2.0;
-            Some(bounds.inflate(inset, inset))
-        }
-        Draw::GlyphRun(run) => glyph_run_bounds(run),
-        Draw::BlurredRoundedRect(rect) => {
-            Some(rect.rect.inflate(rect.std_dev * 3.0, rect.std_dev * 3.0))
-        }
+        ExtendedCommand::PopClip | ExtendedCommand::PopGroup => CommandAnalysis {
+            transform: Affine::IDENTITY,
+            transform_class: TransformClass::Affine,
+            bounds: None,
+            metadata: PaintChunkMetadata::default(),
+        },
+        ExtendedCommand::PushGroup(_) => CommandAnalysis {
+            transform: Affine::IDENTITY,
+            transform_class: TransformClass::Affine,
+            bounds: None,
+            metadata: PaintChunkMetadata {
+                requires_layer: true,
+                ..PaintChunkMetadata::default()
+            },
+        },
+        ExtendedCommand::Draw(id) => analyze_draw(scene.draw_op(*id)),
+        ExtendedCommand::Custom(id) => match scene.custom(*id) {
+            DisplayCommandExt::DrawSvg { rect, transform, .. } => CommandAnalysis {
+                transform: *transform,
+                transform_class: TransformClass::TranslateOnly,
+                bounds: Some(*rect),
+                metadata: PaintChunkMetadata {
+                    has_vector_image: true,
+                    ..PaintChunkMetadata::default()
+                },
+            },
+        },
     }
 }
 
@@ -1229,33 +1186,6 @@ fn glyph_run_bounds(run: &GlyphRun) -> Option<Rect> {
         ));
     }
     Some(rect)
-}
-
-fn command_metadata(command: &DisplayCommand) -> PaintChunkMetadata {
-    match command {
-        DisplayCommand::PushClip { .. } | DisplayCommand::PopClip | DisplayCommand::PopGroup => {
-            PaintChunkMetadata::default()
-        }
-        DisplayCommand::PushGroup { .. } => PaintChunkMetadata {
-            requires_layer: true,
-            ..PaintChunkMetadata::default()
-        },
-        DisplayCommand::Draw { draw, .. } => match draw {
-            Draw::Fill { .. } | Draw::Stroke { .. } => PaintChunkMetadata::default(),
-            Draw::GlyphRun(_) => PaintChunkMetadata {
-                has_text: true,
-                ..PaintChunkMetadata::default()
-            },
-            Draw::BlurredRoundedRect(_) => PaintChunkMetadata {
-                has_blur: true,
-                ..PaintChunkMetadata::default()
-            },
-        },
-        DisplayCommand::DrawSvg { .. } => PaintChunkMetadata {
-            has_vector_image: true,
-            ..PaintChunkMetadata::default()
-        },
-    }
 }
 
 fn union_rects(lhs: Option<Rect>, rhs: Option<Rect>) -> Option<Rect> {
@@ -1303,17 +1233,49 @@ fn clip_node_bounds(node: &ClipNode) -> Option<Rect> {
     }
 }
 
-fn command_affine(command: &DisplayCommand) -> Affine {
-    match command {
-        DisplayCommand::PopClip | DisplayCommand::PopGroup => Affine::IDENTITY,
-        DisplayCommand::PushClip { clip } => clip_transform(clip),
-        DisplayCommand::PushGroup { .. } => Affine::IDENTITY,
-        DisplayCommand::Draw { draw, .. } => match draw {
-            Draw::Fill { transform, .. } | Draw::Stroke { transform, .. } => *transform,
-            Draw::GlyphRun(run) => run.transform,
-            Draw::BlurredRoundedRect(rect) => rect.transform,
+fn analyze_draw(draw: &Draw) -> CommandAnalysis {
+    match draw {
+        Draw::Fill {
+            transform, shape, ..
+        } => CommandAnalysis {
+            transform: *transform,
+            transform_class: TransformClass::Affine,
+            bounds: Some(geometry_bounds(shape)),
+            metadata: PaintChunkMetadata::default(),
         },
-        DisplayCommand::DrawSvg { transform, .. } => *transform,
+        Draw::Stroke {
+            transform,
+            shape,
+            stroke,
+            ..
+        } => {
+            let bounds = geometry_bounds(shape);
+            let inset = stroke.width / 2.0;
+            CommandAnalysis {
+                transform: *transform,
+                transform_class: TransformClass::Affine,
+                bounds: Some(bounds.inflate(inset, inset)),
+                metadata: PaintChunkMetadata::default(),
+            }
+        }
+        Draw::GlyphRun(run) => CommandAnalysis {
+            transform: run.transform,
+            transform_class: TransformClass::TranslateOnly,
+            bounds: glyph_run_bounds(run),
+            metadata: PaintChunkMetadata {
+                has_text: true,
+                ..PaintChunkMetadata::default()
+            },
+        },
+        Draw::BlurredRoundedRect(rect) => CommandAnalysis {
+            transform: rect.transform,
+            transform_class: TransformClass::TranslateOnly,
+            bounds: Some(rect.rect.inflate(rect.std_dev * 3.0, rect.std_dev * 3.0)),
+            metadata: PaintChunkMetadata {
+                has_blur: true,
+                ..PaintChunkMetadata::default()
+            },
+        },
     }
 }
 
@@ -1505,35 +1467,32 @@ mod tests {
     use imaging::Composite;
     use peniko::Color;
 
+    fn fill_draw(rect: Rect, transform: Affine) -> Draw {
+        Draw::Fill {
+            transform,
+            fill_rule: Fill::NonZero,
+            brush: Color::BLACK.into(),
+            brush_transform: None,
+            shape: Geometry::Rect(rect),
+            composite: Composite::default(),
+        }
+    }
+
     #[test]
     fn stage_groups_adjacent_draws_with_matching_properties() {
         let rect = Rect::new(0.0, 0.0, 10.0, 10.0);
         let mut stage = ElementStage::default();
-        stage.set_commands(
-            vec![
-                DisplayCommand::Draw {
-                    draw: Draw::Fill {
-                        transform: Affine::IDENTITY,
-                        fill_rule: Fill::NonZero,
-                        brush: Color::BLACK.into(),
-                        brush_transform: None,
-                        shape: Geometry::Rect(rect),
-                        composite: Composite::default(),
-                    },
-                },
-                DisplayCommand::Draw {
-                    draw: Draw::Stroke {
-                        transform: Affine::IDENTITY,
-                        stroke: peniko::kurbo::Stroke::new(1.0),
-                        brush: Color::BLACK.into(),
-                        brush_transform: None,
-                        shape: Geometry::Rect(rect),
-                        composite: Composite::default(),
-                    },
-                },
-            ],
-            None,
-        );
+        let mut scene = ExtendedScene::new();
+        let _ = scene.draw(fill_draw(rect, Affine::IDENTITY));
+        let _ = scene.draw(Draw::Stroke {
+            transform: Affine::IDENTITY,
+            stroke: peniko::kurbo::Stroke::new(1.0),
+            brush: Color::BLACK.into(),
+            brush_transform: None,
+            shape: Geometry::Rect(rect),
+            composite: Composite::default(),
+        });
+        stage.set_scene(scene, None);
 
         assert_eq!(stage.chunks.len(), 1);
         assert_eq!(stage.chunks[0].kind, PaintChunkKind::Draw);
@@ -1546,29 +1505,15 @@ mod tests {
     fn stage_tracks_clip_state_without_boundary_chunks() {
         let rect = Rect::new(0.0, 0.0, 10.0, 10.0);
         let mut stage = ElementStage::default();
-        stage.set_commands(
-            vec![
-                DisplayCommand::PushClip {
-                    clip: Clip::Fill {
-                        transform: Affine::IDENTITY,
-                        shape: Geometry::Rect(rect),
-                        fill_rule: Fill::NonZero,
-                    },
-                },
-                DisplayCommand::Draw {
-                    draw: Draw::Fill {
-                        transform: Affine::IDENTITY,
-                        fill_rule: Fill::NonZero,
-                        brush: Color::BLACK.into(),
-                        brush_transform: None,
-                        shape: Geometry::Rect(rect),
-                        composite: Composite::default(),
-                    },
-                },
-                DisplayCommand::PopClip,
-            ],
-            None,
-        );
+        let mut scene = ExtendedScene::new();
+        let _ = scene.push_clip(Clip::Fill {
+            transform: Affine::IDENTITY,
+            shape: Geometry::Rect(rect),
+            fill_rule: Fill::NonZero,
+        });
+        let _ = scene.draw(fill_draw(rect, Affine::IDENTITY));
+        scene.pop_clip();
+        stage.set_scene(scene, None);
 
         assert_eq!(stage.chunks.len(), 1);
         assert_eq!(stage.chunks[0].kind, PaintChunkKind::Draw);
@@ -1580,31 +1525,10 @@ mod tests {
     fn stage_splits_draw_chunks_on_transform_state() {
         let rect = Rect::new(0.0, 0.0, 10.0, 10.0);
         let mut stage = ElementStage::default();
-        stage.set_commands(
-            vec![
-                DisplayCommand::Draw {
-                    draw: Draw::Fill {
-                        transform: Affine::IDENTITY,
-                        fill_rule: Fill::NonZero,
-                        brush: Color::BLACK.into(),
-                        brush_transform: None,
-                        shape: Geometry::Rect(rect),
-                        composite: Composite::default(),
-                    },
-                },
-                DisplayCommand::Draw {
-                    draw: Draw::Fill {
-                        transform: Affine::translate((5.0, 0.0)),
-                        fill_rule: Fill::NonZero,
-                        brush: Color::BLACK.into(),
-                        brush_transform: None,
-                        shape: Geometry::Rect(rect),
-                        composite: Composite::default(),
-                    },
-                },
-            ],
-            None,
-        );
+        let mut scene = ExtendedScene::new();
+        let _ = scene.draw(fill_draw(rect, Affine::IDENTITY));
+        let _ = scene.draw(fill_draw(rect, Affine::translate((5.0, 0.0))));
+        stage.set_scene(scene, None);
 
         assert_eq!(stage.chunks.len(), 2);
         assert_ne!(
@@ -1617,19 +1541,16 @@ mod tests {
     #[test]
     fn blurred_draws_downgrade_stage_transform_retention() {
         let mut stage = ElementStage::default();
-        stage.set_commands(
-            vec![DisplayCommand::Draw {
-                draw: Draw::BlurredRoundedRect(imaging::BlurredRoundedRect {
-                    transform: Affine::IDENTITY,
-                    rect: Rect::new(0.0, 0.0, 10.0, 10.0),
-                    color: Color::BLACK,
-                    radius: 4.0,
-                    std_dev: 6.0,
-                    composite: Composite::default(),
-                }),
-            }],
-            None,
-        );
+        let mut scene = ExtendedScene::new();
+        let _ = scene.draw(Draw::BlurredRoundedRect(imaging::BlurredRoundedRect {
+            transform: Affine::IDENTITY,
+            rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+            color: Color::BLACK,
+            radius: 4.0,
+            std_dev: 6.0,
+            composite: Composite::default(),
+        }));
+        stage.set_scene(scene, None);
 
         assert_eq!(stage.transform_class, TransformClass::TranslateOnly);
         assert!(stage.chunks[0].metadata.has_blur);

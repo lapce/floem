@@ -47,6 +47,26 @@ impl VelloCpuRenderer {
         })
     }
 
+    pub fn finish_into_rgba8_opaque(
+        &mut self,
+        dst: &mut [u8],
+        bytes_per_row: usize,
+    ) -> Result<()> {
+        self.renderer
+            .finish_into_rgba8_opaque(dst, bytes_per_row)
+            .map_err(|err| anyhow!("{err:?}"))
+    }
+
+    pub fn finish_into_bgra8_opaque(
+        &mut self,
+        dst: &mut [u8],
+        bytes_per_row: usize,
+    ) -> Result<()> {
+        self.renderer
+            .finish_into_bgra8_opaque(dst, bytes_per_row)
+            .map_err(|err| anyhow!("{err:?}"))
+    }
+
     pub fn debug_info(&self) -> String {
         "name: Vello CPU\ninfo: imaging_vello_cpu".to_string()
     }

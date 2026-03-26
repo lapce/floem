@@ -380,68 +380,12 @@ impl WindowHandle {
         let window: Arc<dyn Window> = Arc::new(mock_window);
         store_window_id_mapping(id, window_id, &window);
 
-        // Create a paint state that will never initialize (for headless testing)
-        // We use a channel that will never receive a value
-        #[cfg(any(
-            feature = "active-vello",
-            feature = "active-vger",
-            feature = "active-skia"
-        ))]
-        let paint_state = {
-            let (tx, rx) = sync_channel(1);
-            drop(tx); // Drop sender so receiver will never receive
-            PaintState::new_pending(
-                window.clone(),
-                rx,
-                size_val * os_scale,
-                0.0, // font_embolden
-            )
-        };
-        #[cfg(any(
-            feature = "active-vello",
-            feature = "active-vger",
-            feature = "active-skia"
-        ))]
-        let presenter = crate::paint::renderer::WindowPresenter::None;
-
-        #[cfg(any(
-            feature = "active-vello-hybrid",
-            feature = "active-vello-cpu",
-            feature = "active-skia-cpu",
-            feature = "active-tiny-skia"
-        ))]
-        let (paint_state, presenter) = Self::new_paint_state(
-            window.clone(),
-            None,
-            false,
-            os_scale,
-            size_val * os_scale,
-            0.0,
-            wgpu::Features::empty(),
-            None,
-        );
-
-        #[cfg(not(any(
-            feature = "active-vello",
-            feature = "active-vger",
-            feature = "active-skia",
-            feature = "active-vello-hybrid",
-            feature = "active-vello-cpu",
-            feature = "active-skia-cpu",
-            feature = "active-tiny-skia"
-        )))]
+        // Headless windows are used for tests and benchmarks where we want to exercise Floem's
+        // paint traversal and retained display-list building without touching any real rendering
+        // backend. Keep a no-op rasterizer here even when CPU/GPU renderer features are enabled.
         let paint_state = PaintState::Initialized {
             rasterizer: crate::paint::renderer::uninitialized_rasterizer(),
         };
-        #[cfg(not(any(
-            feature = "active-vello",
-            feature = "active-vger",
-            feature = "active-skia",
-            feature = "active-vello-hybrid",
-            feature = "active-vello-cpu",
-            feature = "active-skia-cpu",
-            feature = "active-tiny-skia"
-        )))]
         let presenter = crate::paint::renderer::WindowPresenter::None;
 
         let window_state = WindowState::new(id, os_theme, os_scale);
@@ -907,7 +851,6 @@ impl WindowHandle {
             self.window_state.clear_pending_damage();
             self.last_presented_at = frame_completed_at;
         }
-
     }
 
     pub fn paint(&mut self) -> Option<peniko::ImageData> {
@@ -959,11 +902,16 @@ impl WindowHandle {
         };
         self.window.pre_present_notify();
 
-        let output = cx.paint_state.rasterizer_mut().finish(finish_mode);
         if finish_mode == FinishMode::CpuImage {
-            output.and_then(|output| output.into_image())
+            cx.paint_state
+                .rasterizer_mut()
+                .finish(finish_mode)
+                .and_then(|output| output.into_image())
         } else {
-            if let Some(output) = output.as_ref() {
+            let rasterizer = cx.paint_state.rasterizer_mut();
+            if !self.presenter.present_rasterizer(rasterizer)
+                && let Some(output) = rasterizer.finish(finish_mode).as_ref()
+            {
                 self.presenter.present(output);
             }
             None
@@ -1818,20 +1766,34 @@ impl WindowHandle {
 
     #[cfg(target_os = "macos")]
     pub(crate) fn set_presents_with_transaction(&mut self, value: bool) {
-        use wgpu::hal::api::Metal;
+        #[cfg(not(any(
+            feature = "active-vello",
+            feature = "active-vger",
+            feature = "active-skia"
+        )))]
+        let _ = value;
 
-        use crate::paint::renderer::WindowPresenter;
+        #[cfg(any(
+            feature = "active-vello",
+            feature = "active-vger",
+            feature = "active-skia"
+        ))]
+        {
+            use wgpu::hal::api::Metal;
 
-        let WindowPresenter::Gpu(presenter) = &self.presenter else {
-            return;
-        };
+            use crate::paint::renderer::WindowPresenter;
 
-        unsafe {
-            if let Some(metal_surface) = presenter.surface.as_hal::<Metal>() {
-                metal_surface
-                    .render_layer()
-                    .lock()
-                    .set_presents_with_transaction(value);
+            let WindowPresenter::Gpu(presenter) = &self.presenter else {
+                return;
+            };
+
+            unsafe {
+                if let Some(metal_surface) = presenter.surface.as_hal::<Metal>() {
+                    metal_surface
+                        .render_layer()
+                        .lock()
+                        .set_presents_with_transaction(value);
+                }
             }
         }
     }

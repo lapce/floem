@@ -54,6 +54,26 @@ impl SkiaCpuRenderer {
         })
     }
 
+    pub fn finish_into_rgba8_opaque(
+        &mut self,
+        dst: &mut [u8],
+        bytes_per_row: usize,
+    ) -> Result<()> {
+        self.renderer
+            .render_scene_into_rgba8_opaque(&self.scene, dst, bytes_per_row)
+            .map_err(|err| anyhow!("{err:?}"))
+    }
+
+    pub fn finish_into_bgra8_opaque(
+        &mut self,
+        dst: &mut [u8],
+        bytes_per_row: usize,
+    ) -> Result<()> {
+        self.renderer
+            .render_scene_into_bgra8_opaque(&self.scene, dst, bytes_per_row)
+            .map_err(|err| anyhow!("{err:?}"))
+    }
+
     pub fn debug_info(&self) -> String {
         "name: Skia CPU\ninfo: imaging_skia::SkiaCpuRenderer".to_string()
     }

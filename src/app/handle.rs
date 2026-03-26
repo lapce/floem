@@ -189,14 +189,7 @@ impl ApplicationHandle {
                     timer.deadline = Instant::now() + self.frame_duration_for_window(&window_id);
                     self.request_timer(timer, event_loop);
                 }
-                AppUpdateEvent::AnimationFrame(animate, window_id) => {
-                    if animate && self.window_can_render(&window_id) {
-                        self.animating_windows.insert(window_id);
-                    } else {
-                        self.animating_windows.remove(&window_id);
-                    }
-                    self.update_control_flow(event_loop);
-                }
+
                 AppUpdateEvent::CancelTimer { timer } => {
                     self.remove_timer(&timer, event_loop);
                 }

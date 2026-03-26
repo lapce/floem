@@ -166,7 +166,6 @@ pub(crate) enum AppUpdateEvent {
     ThemeChanged {
         theme: Theme,
     },
-    AnimationFrame(bool, WindowId),
 }
 
 pub(crate) fn add_app_update_event(event: AppUpdateEvent) {

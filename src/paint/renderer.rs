@@ -176,9 +176,42 @@ pub trait Rasterizer: PaintSink + CustomPaintSink<DisplayCommandExt> {
     fn finish(&mut self, mode: FinishMode) -> Option<RasterizerOutput>;
     fn debug_info(&self) -> String;
 
+    #[cfg(any(
+        feature = "active-vello-hybrid",
+        feature = "active-vello-cpu",
+        feature = "active-skia-cpu",
+        feature = "active-tiny-skia",
+        feature = "fallback-vello-cpu",
+        feature = "fallback-tiny-skia"
+    ))]
+    fn finish_into_buffer(
+        &mut self,
+        _buffer: &mut [u8],
+        _width: u32,
+        _height: u32,
+        _bytes_per_row: usize,
+        _format: CpuBufferFormat,
+    ) -> bool {
+        false
+    }
+
     fn is_vger(&self) -> bool {
         false
     }
+}
+
+#[cfg(any(
+    feature = "active-vello-hybrid",
+    feature = "active-vello-cpu",
+    feature = "active-skia-cpu",
+    feature = "active-tiny-skia",
+    feature = "fallback-vello-cpu",
+    feature = "fallback-tiny-skia"
+))]
+#[derive(Clone, Copy, Debug)]
+pub enum CpuBufferFormat {
+    Rgba8Opaque,
+    Bgra8Opaque,
 }
 
 struct NullRasterizer;
@@ -316,6 +349,27 @@ impl WindowPresenter {
                 feature = "active-skia"
             ))]
             _ => panic!("presenter/output mismatch"),
+        }
+    }
+
+    pub(crate) fn present_rasterizer(&mut self, rasterizer: &mut dyn Rasterizer) -> bool {
+        match self {
+            Self::None => false,
+            #[cfg(any(
+                feature = "active-vello",
+                feature = "active-vger",
+                feature = "active-skia"
+            ))]
+            Self::Gpu(_) => false,
+            #[cfg(any(
+                feature = "active-vello-hybrid",
+                feature = "active-vello-cpu",
+                feature = "active-skia-cpu",
+                feature = "active-tiny-skia",
+                feature = "fallback-vello-cpu",
+                feature = "fallback-tiny-skia"
+            ))]
+            Self::Cpu(presenter) => presenter.present_rasterizer(rasterizer),
         }
     }
 }
@@ -457,6 +511,36 @@ where
             .expect("failed to resize surface");
     }
 
+    fn present_rasterizer(&mut self, rasterizer: &mut dyn Rasterizer) -> bool {
+        let mut buffer = self
+            .surface
+            .buffer_mut()
+            .expect("failed to get the surface buffer");
+        let width = buffer.width().get();
+        let height = buffer.height().get();
+        let bytes_per_row = width as usize * 4;
+        #[cfg(target_endian = "little")]
+        let format = CpuBufferFormat::Bgra8Opaque;
+        #[cfg(target_endian = "big")]
+        let format = CpuBufferFormat::Rgba8Opaque;
+        let rendered = {
+            let byte_len = std::mem::size_of_val(&*buffer);
+            let bytes = unsafe {
+                std::slice::from_raw_parts_mut(buffer.as_mut_ptr().cast::<u8>(), byte_len)
+            };
+            rasterizer.finish_into_buffer(bytes, width, height, bytes_per_row, format)
+        };
+        if rendered {
+            for pixel in buffer.iter_mut() {
+                *pixel &= 0x00ff_ffff;
+            }
+            buffer
+                .present()
+                .expect("failed to present the surface buffer");
+        }
+        rendered
+    }
+
     fn present(&mut self, image: &ImageData) {
         let mut buffer = self
             .surface
@@ -542,6 +626,21 @@ impl Rasterizer for floem_vello_hybrid_renderer::VelloHybridRenderer {
     fn debug_info(&self) -> String {
         Self::debug_info(self)
     }
+
+    fn finish_into_buffer(
+        &mut self,
+        buffer: &mut [u8],
+        _width: u32,
+        _height: u32,
+        bytes_per_row: usize,
+        format: CpuBufferFormat,
+    ) -> bool {
+        let result = match format {
+            CpuBufferFormat::Rgba8Opaque => self.finish_into_rgba8_opaque(buffer, bytes_per_row),
+            CpuBufferFormat::Bgra8Opaque => self.finish_into_bgra8_opaque(buffer, bytes_per_row),
+        };
+        result.is_ok()
+    }
 }
 
 #[cfg(any(feature = "active-vello-cpu", feature = "fallback-vello-cpu"))]
@@ -562,6 +661,21 @@ impl Rasterizer for floem_vello_cpu_renderer::VelloCpuRenderer {
 
     fn debug_info(&self) -> String {
         Self::debug_info(self)
+    }
+
+    fn finish_into_buffer(
+        &mut self,
+        buffer: &mut [u8],
+        _width: u32,
+        _height: u32,
+        bytes_per_row: usize,
+        format: CpuBufferFormat,
+    ) -> bool {
+        let result = match format {
+            CpuBufferFormat::Rgba8Opaque => self.finish_into_rgba8_opaque(buffer, bytes_per_row),
+            CpuBufferFormat::Bgra8Opaque => self.finish_into_bgra8_opaque(buffer, bytes_per_row),
+        };
+        result.is_ok()
     }
 }
 
@@ -605,6 +719,21 @@ impl Rasterizer for floem_skia_cpu_renderer::SkiaCpuRenderer {
     fn debug_info(&self) -> String {
         Self::debug_info(self)
     }
+
+    fn finish_into_buffer(
+        &mut self,
+        buffer: &mut [u8],
+        _width: u32,
+        _height: u32,
+        bytes_per_row: usize,
+        format: CpuBufferFormat,
+    ) -> bool {
+        let result = match format {
+            CpuBufferFormat::Rgba8Opaque => self.finish_into_rgba8_opaque(buffer, bytes_per_row),
+            CpuBufferFormat::Bgra8Opaque => self.finish_into_bgra8_opaque(buffer, bytes_per_row),
+        };
+        result.is_ok()
+    }
 }
 
 #[cfg(any(feature = "active-tiny-skia", feature = "fallback-tiny-skia"))]
@@ -625,6 +754,21 @@ impl Rasterizer for floem_tiny_skia_renderer::TinySkiaRenderer {
 
     fn debug_info(&self) -> String {
         Self::debug_info(self)
+    }
+
+    fn finish_into_buffer(
+        &mut self,
+        buffer: &mut [u8],
+        _width: u32,
+        _height: u32,
+        bytes_per_row: usize,
+        format: CpuBufferFormat,
+    ) -> bool {
+        match format {
+            CpuBufferFormat::Rgba8Opaque => self.finish_into_rgba8_opaque(buffer, bytes_per_row),
+            CpuBufferFormat::Bgra8Opaque => self.finish_into_bgra8_opaque(buffer, bytes_per_row),
+        }
+        .is_some()
     }
 }
 
@@ -728,14 +872,12 @@ fn try_new_active(
     feature = "active-skia-cpu",
     feature = "active-tiny-skia"
 ))]
-fn try_new_active(
-    window: Arc<dyn Window>,
+fn try_new_active_rasterizer(
     width: u32,
     height: u32,
     scale: f64,
     font_embolden: f32,
-) -> Result<RasterizerInit, String> {
-    let presenter = WindowPresenter::Cpu(CpuImagePresenter::new(window, width, height)?);
+) -> Result<Box<dyn Rasterizer>, String> {
     #[cfg(feature = "active-vello-hybrid")]
     let rasterizer: Box<dyn Rasterizer> = Box::new(
         floem_vello_hybrid_renderer::VelloHybridRenderer::new(width, height, scale, font_embolden)
@@ -756,13 +898,16 @@ fn try_new_active(
         floem_tiny_skia_renderer::TinySkiaRenderer::new(width, height, scale, font_embolden)
             .map_err(|err| err.to_string())?,
     );
-    Ok(RasterizerInit {
-        rasterizer,
-        presenter,
-    })
+    Ok(rasterizer)
 }
 
-fn try_new_cpu_fallback(
+#[cfg(any(
+    feature = "active-vello-hybrid",
+    feature = "active-vello-cpu",
+    feature = "active-skia-cpu",
+    feature = "active-tiny-skia"
+))]
+fn try_new_active(
     window: Arc<dyn Window>,
     width: u32,
     height: u32,
@@ -770,6 +915,19 @@ fn try_new_cpu_fallback(
     font_embolden: f32,
 ) -> Result<RasterizerInit, String> {
     let presenter = WindowPresenter::Cpu(CpuImagePresenter::new(window, width, height)?);
+    let rasterizer = try_new_active_rasterizer(width, height, scale, font_embolden)?;
+    Ok(RasterizerInit {
+        rasterizer,
+        presenter,
+    })
+}
+
+fn try_new_cpu_fallback_rasterizer(
+    width: u32,
+    height: u32,
+    scale: f64,
+    font_embolden: f32,
+) -> Result<Box<dyn Rasterizer>, String> {
     #[cfg(feature = "fallback-vello-cpu")]
     let rasterizer: Box<dyn Rasterizer> = Box::new(
         floem_vello_cpu_renderer::VelloCpuRenderer::new(width, height, scale, font_embolden)
@@ -780,6 +938,18 @@ fn try_new_cpu_fallback(
         floem_tiny_skia_renderer::TinySkiaRenderer::new(width, height, scale, font_embolden)
             .map_err(|err| err.to_string())?,
     );
+    Ok(rasterizer)
+}
+
+fn try_new_cpu_fallback(
+    window: Arc<dyn Window>,
+    width: u32,
+    height: u32,
+    scale: f64,
+    font_embolden: f32,
+) -> Result<RasterizerInit, String> {
+    let presenter = WindowPresenter::Cpu(CpuImagePresenter::new(window, width, height)?);
+    let rasterizer = try_new_cpu_fallback_rasterizer(width, height, scale, font_embolden)?;
     Ok(RasterizerInit {
         rasterizer,
         presenter,

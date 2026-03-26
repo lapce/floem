@@ -1489,6 +1489,46 @@ impl TinySkiaRenderer {
         })
     }
 
+    pub fn finish_into_rgba8_opaque(&mut self, dst: &mut [u8], bytes_per_row: usize) -> Option<()> {
+        self.finish_into_opaque(dst, bytes_per_row, true)
+    }
+
+    pub fn finish_into_bgra8_opaque(&mut self, dst: &mut [u8], bytes_per_row: usize) -> Option<()> {
+        self.finish_into_opaque(dst, bytes_per_row, false)
+    }
+
+    fn finish_into_opaque(&mut self, dst: &mut [u8], bytes_per_row: usize, rgba: bool) -> Option<()> {
+        IMAGE_CACHE.with_borrow_mut(|ic| ic.retain(|_, (c, _)| *c == self.cache_color));
+        SCALED_IMAGE_CACHE.with_borrow_mut(|ic| ic.retain(|_, (c, _)| *c == self.cache_color));
+        let now = Instant::now();
+        GLYPH_CACHE.with_borrow_mut(|gc| {
+            gc.retain(|_, entry| should_retain_glyph_entry(entry, self.cache_color, now))
+        });
+        self.cache_color = CacheColor(!self.cache_color.0);
+
+        let pixmap = &self.layers[0].pixmap;
+        let width = pixmap.width() as usize;
+        let height = pixmap.height() as usize;
+        if dst.len() < bytes_per_row.checked_mul(height)? || bytes_per_row < width * 4 {
+            return None;
+        }
+
+        for (src_row, dst_row) in pixmap
+            .data()
+            .chunks_exact(width * 4)
+            .zip(dst.chunks_exact_mut(bytes_per_row))
+        {
+            for (src, out) in src_row.chunks_exact(4).zip(dst_row[..width * 4].chunks_exact_mut(4)) {
+                if rgba {
+                    out.copy_from_slice(&[src[0], src[1], src[2], 0xff]);
+                } else {
+                    out.copy_from_slice(&[src[2], src[1], src[0], 0xff]);
+                }
+            }
+        }
+        Some(())
+    }
+
     pub fn debug_info(&self) -> String {
         "name: tiny_skia".into()
     }
