@@ -2919,18 +2919,39 @@ mod tests {
                 .get(),
             1
         );
-        // starts at 'd'. Tests that cursor affinity works for soft line breaks
+        // Find a real soft-wrap boundary and verify that affinity selects
+        // the previous/next visual line at that shared buffer offset.
+        let wrapped_line = 4;
+        let wrapped_rvlines: Vec<_> = lines
+            .iter_rvlines(&text_prov, false, RVLine::new(wrapped_line, 0))
+            .take_while(|info| info.rvline.line == wrapped_line)
+            .map(|info| info.rvline)
+            .collect();
+        assert!(
+            wrapped_rvlines.len() >= 2,
+            "test fixture must produce at least one soft wrap"
+        );
+
+        let prev = wrapped_rvlines[0];
+        let next = wrapped_rvlines[1];
+        let boundary = lines.offset_of_rvline(&text_prov, next);
+
+        assert_eq!(text_prov.text().line_of_offset(boundary), wrapped_line);
         assert_eq!(
-            lines
-                .vline_of_offset(&text_prov, 16, CursorAffinity::Forward)
-                .get(),
-            5
+            lines.rvline_of_offset(&text_prov, boundary, CursorAffinity::Forward),
+            next
         );
         assert_eq!(
-            lines
-                .vline_of_offset(&text_prov, 16, CursorAffinity::Backward)
-                .get(),
-            4
+            lines.rvline_of_offset(&text_prov, boundary, CursorAffinity::Backward),
+            prev
+        );
+        assert_eq!(
+            lines.vline_of_offset(&text_prov, boundary, CursorAffinity::Forward),
+            lines.vline_of_rvline(&text_prov, next)
+        );
+        assert_eq!(
+            lines.vline_of_offset(&text_prov, boundary, CursorAffinity::Backward),
+            lines.vline_of_rvline(&text_prov, prev)
         );
 
         assert_eq!(
