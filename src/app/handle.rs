@@ -719,16 +719,11 @@ impl ApplicationHandle {
             {
                 handle.window.request_redraw();
                 let frame_interval = handle
-                    .window_state
-                    .compositor_preferred_frame_interval()
-                    .or_else(|| {
-                        handle
-                            .window
-                            .current_monitor()
-                            .and_then(|m| m.current_video_mode())
-                            .and_then(|v| v.refresh_rate_millihertz())
-                            .map(|mhz| Duration::from_nanos(1_000_000_000_000 / mhz.get() as u64))
-                    })
+                    .window
+                    .current_monitor()
+                    .and_then(|m| m.current_video_mode())
+                    .and_then(|v| v.refresh_rate_millihertz())
+                    .map(|mhz| Duration::from_nanos(1_000_000_000_000 / mhz.get() as u64))
                     .unwrap_or(Duration::from_millis(8));
                 if handle.window_state.has_pending_render() {
                     handle.render_frame_if_due(frame_interval);

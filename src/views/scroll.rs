@@ -588,10 +588,6 @@ impl Scroll {
             child_id.get_element_id(),
             Some(crate::paint::display_list::TransformClass::TranslateOnly),
         );
-        id.set_compositor_promotion_hint_for_element(
-            child_id.get_element_id(),
-            Some(crate::paint::display_list::CompositorPromotionHint::ScrollContent),
-        );
         // we need to first set the clip rect to zero so that virtual items don't set a large initial size
         id.set_box_tree_clip(Some(RoundedRect::from_rect(Rect::ZERO, 0.)));
 

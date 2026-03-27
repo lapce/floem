@@ -10,9 +10,12 @@ pub mod display_list;
 pub mod renderer;
 
 pub use border_path_iter::{BorderPath, BorderPathEvent};
-pub use renderer::Rasterizer;
+pub use floem_renderer::SceneRasterizer as Rasterizer;
 
-use floem_renderer::gpu_resources::{GpuResourceError, GpuResources};
+use floem_renderer::{
+    RasterIntoBackend, SceneRasterizer,
+    gpu_resources::{GpuResourceError, GpuResources},
+};
 use imaging::{PaintSink, Painter};
 use peniko::kurbo::{Affine, Point, RoundedRect, Size};
 use rustc_hash::FxHashSet;
@@ -30,6 +33,12 @@ use crate::view::ViewId;
 use crate::view::{paint_bg, paint_border, paint_outline};
 use crate::window::state::WindowState;
 use display_list::{ElementSnapshot, RecordingRenderer, replay_stage, transform_diff_class};
+
+#[cfg(feature = "active-skia")]
+pub(crate) type WindowRasterizer =
+    RasterIntoBackend<Box<dyn SceneRasterizer>, floem_skia_renderer::SkiaRenderer, ()>;
+#[cfg(not(feature = "active-skia"))]
+pub(crate) type WindowRasterizer = RasterIntoBackend<Box<dyn SceneRasterizer>, (), ()>;
 
 std::thread_local! {
     /// Holds the ID of a View being painted very briefly if it is being rendered as
@@ -304,10 +313,8 @@ impl GlobalPaintCx<'_> {
             if let Some(element) = self.window_state.display_list.element(element_id)
                 && element.snapshot != Some(snapshot)
             {
-                // Retained commands can be reused across pure transform/clip changes, but
-                // downstream systems like promoted compositor bounds still need the current
-                // snapshot every frame. Keep the artifact metadata fresh even when we skip
-                // rerecording the stage commands.
+                // Retained commands can be reused across pure transform/clip changes, but the
+                // current snapshot still needs to track the element's latest geometry/transform.
                 self.window_state
                     .display_list
                     .element_mut(element_id)
@@ -387,7 +394,7 @@ impl GlobalPaintCx<'_> {
                     .flatten()
                     .is_some();
                 if has_clip {
-                    PaintSink::pop_clip(self.paint_state.rasterizer_mut());
+                    PaintSink::pop_clip(self.paint_state.rasterizer_mut().paint_sink());
                 }
             }
         }
@@ -466,7 +473,7 @@ impl GlobalPaintCx<'_> {
         let view_state = view_id.state();
         let mut scene = imaging::record::ExtendedScene::new();
         let mut recorder = RecordingRenderer::new(&mut scene);
-        let is_vger = self.paint_state.rasterizer().is_vger();
+        let is_vger = false;
         let world_transform = self.element_base_transform(element_id);
         let font_size_cx = view_state.borrow().layout_props.font_size_cx();
 
@@ -511,7 +518,7 @@ impl GlobalPaintCx<'_> {
         } else {
             &mut element.paint
         };
-        stage.set_scene(scene, snapshot.layer_candidate());
+        stage.set_scene(scene);
         element.snapshot = Some(snapshot);
     }
 }
@@ -551,10 +558,10 @@ pub enum PaintState {
         ///
         /// Previously, `PaintState::rasterizer` and `PaintState::rasterizer_mut` would panic if called when the rasterizer was uninitialized.
         /// However, this turned out to be hard to handle properly and led to panics, especially since the rest of the application code can't control when the renderer is initialized.
-        rasterizer: Box<dyn Rasterizer>,
+        rasterizer: WindowRasterizer,
     },
     /// The renderer is initialized and ready to paint.
-    Initialized { rasterizer: Box<dyn Rasterizer> },
+    Initialized { rasterizer: WindowRasterizer },
 }
 
 impl PaintState {
@@ -572,17 +579,49 @@ impl PaintState {
         }
     }
 
-    pub(crate) fn rasterizer(&self) -> &(dyn Rasterizer + '_) {
+    pub(crate) fn rasterizer(&self) -> &(dyn SceneRasterizer + '_) {
         match self {
-            PaintState::PendingGpuResources { rasterizer, .. } => rasterizer.as_ref(),
-            PaintState::Initialized { rasterizer } => rasterizer.as_ref(),
+            PaintState::PendingGpuResources { rasterizer, .. } => match rasterizer {
+                RasterIntoBackend::Null => unreachable!("null rasterizer is not stored"),
+                RasterIntoBackend::Rasterizer(rasterizer) => rasterizer.as_ref(),
+                #[cfg(feature = "active-skia")]
+                RasterIntoBackend::Gpu(rasterizer) => rasterizer,
+                #[cfg(not(feature = "active-skia"))]
+                RasterIntoBackend::Gpu(_) => unreachable!("gpu target backend is unavailable"),
+                RasterIntoBackend::Cpu(_) => unreachable!("cpu target backend is unavailable"),
+            },
+            PaintState::Initialized { rasterizer } => match rasterizer {
+                RasterIntoBackend::Null => unreachable!("null rasterizer is not stored"),
+                RasterIntoBackend::Rasterizer(rasterizer) => rasterizer.as_ref(),
+                #[cfg(feature = "active-skia")]
+                RasterIntoBackend::Gpu(rasterizer) => rasterizer,
+                #[cfg(not(feature = "active-skia"))]
+                RasterIntoBackend::Gpu(_) => unreachable!("gpu target backend is unavailable"),
+                RasterIntoBackend::Cpu(_) => unreachable!("cpu target backend is unavailable"),
+            },
         }
     }
 
-    pub(crate) fn rasterizer_mut(&mut self) -> &mut (dyn Rasterizer + '_) {
+    pub(crate) fn rasterizer_mut(&mut self) -> &mut (dyn SceneRasterizer + '_) {
         match self {
-            PaintState::PendingGpuResources { rasterizer, .. } => rasterizer.as_mut(),
-            PaintState::Initialized { rasterizer } => rasterizer.as_mut(),
+            PaintState::PendingGpuResources { rasterizer, .. } => match rasterizer {
+                RasterIntoBackend::Null => unreachable!("null rasterizer is not stored"),
+                RasterIntoBackend::Rasterizer(rasterizer) => rasterizer.as_mut(),
+                #[cfg(feature = "active-skia")]
+                RasterIntoBackend::Gpu(rasterizer) => rasterizer,
+                #[cfg(not(feature = "active-skia"))]
+                RasterIntoBackend::Gpu(_) => unreachable!("gpu target backend is unavailable"),
+                RasterIntoBackend::Cpu(_) => unreachable!("cpu target backend is unavailable"),
+            },
+            PaintState::Initialized { rasterizer } => match rasterizer {
+                RasterIntoBackend::Null => unreachable!("null rasterizer is not stored"),
+                RasterIntoBackend::Rasterizer(rasterizer) => rasterizer.as_mut(),
+                #[cfg(feature = "active-skia")]
+                RasterIntoBackend::Gpu(rasterizer) => rasterizer,
+                #[cfg(not(feature = "active-skia"))]
+                RasterIntoBackend::Gpu(_) => unreachable!("gpu target backend is unavailable"),
+                RasterIntoBackend::Cpu(_) => unreachable!("cpu target backend is unavailable"),
+            },
         }
     }
 }

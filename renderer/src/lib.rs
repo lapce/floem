@@ -21,6 +21,12 @@ pub use resvg::tiny_skia;
 pub use resvg::usvg;
 
 pub mod gpu_resources;
+pub mod rasterizer;
+pub use rasterizer::{
+    BeginFrame, CpuBufferFormat, CpuBufferTarget, CustomRasterizer, GpuTextureTarget, RasterCore,
+    RasterIntoBackend, RasterTarget, Rasterizer, RasterizerOutput, SceneRasterizer,
+    SceneTargetRasterizer,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FinishMode {

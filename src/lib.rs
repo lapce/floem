@@ -194,7 +194,6 @@ pub mod action;
 pub mod animate;
 mod app;
 mod box_tree;
-pub mod compositor;
 pub mod context;
 pub mod event;
 pub mod ext_event;
@@ -237,24 +236,15 @@ pub mod receiver_signal {
 
 pub use box_tree::{BoxTree, ElementId, ElementMeta, FocusNavMeta};
 pub(crate) use box_tree::{bump_focus_nav_meta_revision, focus_nav_meta_revision};
-pub use compositor::backend::CompositorBackend;
-#[cfg(feature = "subduction")]
-pub use compositor::subduction::SubductionCompositorBackend;
-pub use compositor::{
-    Compositor, CompositorLayerDescriptor, CompositorLayerId, CompositorLayerKind,
-    CompositorTiming, ExternalAlphaMode, ExternalColorSpace, ExternalPixelFormat,
-    ExternalSurfaceDescriptor, ExternalSurfaceHandle, ExternalSurfaceId, FrameRequestReason,
-};
-
 pub use app::{AppConfig, AppEvent, Application, launch, quit_app, reopen};
 pub use floem_reactive as reactive;
-pub use floem_renderer::Svg as RendererSvg;
 pub use floem_renderer::gpu_resources::GpuResources;
+pub use floem_renderer::SceneRasterizer as Rasterizer;
+pub use floem_renderer::Svg as RendererSvg;
 pub use imbl;
 pub use layout::ScreenLayout;
 #[cfg(not(target_arch = "wasm32"))]
 pub use muda;
-pub use paint::renderer::Rasterizer;
 pub use peniko;
 pub use peniko::kurbo;
 #[cfg(not(target_arch = "wasm32"))]

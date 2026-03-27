@@ -1,10 +1,13 @@
 use anyhow::{Result, anyhow};
-use floem_renderer::DisplayCommandExt;
 use floem_renderer::text::{Glyph as ParleyGlyph, GlyphRunRef};
 use floem_renderer::tiny_skia::{
     self, FillRule, FilterQuality, GradientStop, IntRect, LinearGradient, Mask, MaskType, Paint,
     Path, PathBuilder, Pattern, Pixmap, PixmapPaint, PremultipliedColorU8, RadialGradient, Shader,
     SpreadMode, Stroke, Transform,
+};
+use floem_renderer::{
+    BeginFrame, CpuBufferFormat, CpuBufferTarget, CustomRasterizer, DisplayCommandExt, RasterCore,
+    RasterTarget, Rasterizer, RasterizerOutput,
 };
 use imaging::{
     BlurredRoundedRect, ClipRef, CustomPaintSink, FillRef, GroupRef, PaintSink, StrokeRef,
@@ -902,6 +905,12 @@ pub struct TinySkiaRenderer {
     font_embolden: f32,
 }
 
+pub struct TinySkiaTargetRenderer<'a> {
+    inner: TinySkiaRenderer,
+    target: CpuBufferTarget<'a>,
+    finished_image: Option<ImageData>,
+}
+
 impl TinySkiaRenderer {
     fn clip_path_for_geometry(
         &self,
@@ -1188,6 +1197,121 @@ impl CustomPaintSink<DisplayCommandExt> for TinySkiaRenderer {
     }
 }
 
+impl RasterCore for TinySkiaRenderer {
+    fn with_paint_sink(&mut self, f: &mut dyn FnMut(&mut dyn PaintSink)) {
+        f(self)
+    }
+
+    fn finish(&mut self) {}
+
+    fn readback(&mut self) -> Option<RasterizerOutput> {
+        Self::readback_image(self).map(RasterizerOutput::Image)
+    }
+}
+
+impl Rasterizer for TinySkiaRenderer {
+    fn begin(&mut self, frame: BeginFrame) {
+        Self::begin(
+            self,
+            frame.size.width as u32,
+            frame.size.height as u32,
+            frame.scale,
+            frame.font_embolden,
+        );
+    }
+}
+
+impl CustomRasterizer for TinySkiaRenderer {
+    fn with_custom_paint_sink(
+        &mut self,
+        f: &mut dyn FnMut(&mut dyn CustomPaintSink<DisplayCommandExt>),
+    ) {
+        f(self)
+    }
+
+    fn debug_info(&self) -> String {
+        Self::debug_info(self)
+    }
+}
+
+impl TinySkiaTargetRenderer<'_> {
+    fn read_image_from_target(&self) -> ImageData {
+        let data = match self.target.format {
+            CpuBufferFormat::Rgba8Opaque => self.target.buffer.to_vec(),
+            CpuBufferFormat::Bgra8Opaque => {
+                let mut rgba = Vec::with_capacity(self.target.buffer.len());
+                for pixel in self.target.buffer.chunks_exact(4) {
+                    rgba.extend_from_slice(&[pixel[2], pixel[1], pixel[0], pixel[3]]);
+                }
+                rgba
+            }
+        };
+        ImageData {
+            data: Blob::new(Arc::new(data)),
+            format: peniko::ImageFormat::Rgba8,
+            alpha_type: ImageAlphaType::Alpha,
+            width: self.target.width,
+            height: self.target.height,
+        }
+    }
+
+    pub fn debug_info(&self) -> String {
+        self.inner.debug_info()
+    }
+}
+
+impl RasterCore for TinySkiaTargetRenderer<'_> {
+    fn with_paint_sink(&mut self, f: &mut dyn FnMut(&mut dyn PaintSink)) {
+        f(&mut self.inner)
+    }
+
+    fn finish(&mut self) {
+        let result = match self.target.format {
+            CpuBufferFormat::Rgba8Opaque => self
+                .inner
+                .finish_into_rgba8_opaque(self.target.buffer, self.target.bytes_per_row),
+            CpuBufferFormat::Bgra8Opaque => self
+                .inner
+                .finish_into_bgra8_opaque(self.target.buffer, self.target.bytes_per_row),
+        };
+        self.finished_image = result.map(|_| self.read_image_from_target());
+    }
+
+    fn readback(&mut self) -> Option<RasterizerOutput> {
+        self.finished_image
+            .clone()
+            .or_else(|| Some(self.read_image_from_target()))
+            .map(RasterizerOutput::Image)
+    }
+}
+
+impl<'a> RasterTarget for TinySkiaTargetRenderer<'a> {
+    type Target = CpuBufferTarget<'a>;
+
+    fn create(target: Self::Target) -> Result<Self, String> {
+        let inner = TinySkiaRenderer::new(target.width, target.height, 1.0, 0.0)
+            .map_err(|err| err.to_string())?;
+        Ok(Self {
+            inner,
+            target,
+            finished_image: None,
+        })
+    }
+}
+
+impl CustomRasterizer for TinySkiaTargetRenderer<'_> {
+    fn with_custom_paint_sink(
+        &mut self,
+        f: &mut dyn FnMut(&mut dyn CustomPaintSink<DisplayCommandExt>),
+    ) {
+        f(&mut self.inner)
+    }
+
+    fn debug_info(&self) -> String {
+        Self::debug_info(self)
+    }
+}
+
 fn to_color(color: Color) -> tiny_skia::Color {
     let c = color.to_rgba8();
     tiny_skia::Color::from_rgba8(c.r, c.g, c.b, c.a)
@@ -1466,7 +1590,7 @@ impl TinySkiaRenderer {
         });
     }
 
-    pub fn finish(&mut self) -> Option<peniko::ImageData> {
+    pub fn readback_image(&mut self) -> Option<peniko::ImageData> {
         // Remove cache entries which were not accessed.
         IMAGE_CACHE.with_borrow_mut(|ic| ic.retain(|_, (c, _)| *c == self.cache_color));
         SCALED_IMAGE_CACHE.with_borrow_mut(|ic| ic.retain(|_, (c, _)| *c == self.cache_color));
@@ -1497,7 +1621,12 @@ impl TinySkiaRenderer {
         self.finish_into_opaque(dst, bytes_per_row, false)
     }
 
-    fn finish_into_opaque(&mut self, dst: &mut [u8], bytes_per_row: usize, rgba: bool) -> Option<()> {
+    fn finish_into_opaque(
+        &mut self,
+        dst: &mut [u8],
+        bytes_per_row: usize,
+        rgba: bool,
+    ) -> Option<()> {
         IMAGE_CACHE.with_borrow_mut(|ic| ic.retain(|_, (c, _)| *c == self.cache_color));
         SCALED_IMAGE_CACHE.with_borrow_mut(|ic| ic.retain(|_, (c, _)| *c == self.cache_color));
         let now = Instant::now();
@@ -1518,7 +1647,10 @@ impl TinySkiaRenderer {
             .chunks_exact(width * 4)
             .zip(dst.chunks_exact_mut(bytes_per_row))
         {
-            for (src, out) in src_row.chunks_exact(4).zip(dst_row[..width * 4].chunks_exact_mut(4)) {
+            for (src, out) in src_row
+                .chunks_exact(4)
+                .zip(dst_row[..width * 4].chunks_exact_mut(4))
+            {
                 if rgba {
                     out.copy_from_slice(&[src[0], src[1], src[2], 0xff]);
                 } else {

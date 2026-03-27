@@ -1,19 +1,15 @@
 use std::sync::Arc;
-use std::sync::mpsc::sync_channel;
 
 use anyhow::Result;
 use floem_renderer::gpu_resources::GpuResources;
-use floem_renderer::{DisplayCommandExt, FinishMode, RenderOutput};
+use floem_renderer::{
+    BeginFrame, CustomRasterizer, DisplayCommandExt, RasterCore, Rasterizer, RasterizerOutput,
+};
 use imaging::record::{CustomCommand, ExtendedScene, Glyph as ImagingGlyph, replay_ext};
 use imaging::{
     BlurredRoundedRect, ClipRef, CustomPaintSink, FillRef, GroupRef, PaintSink, StrokeRef,
 };
-use peniko::{
-    Blob,
-    color::palette,
-    kurbo::{Affine, Rect},
-};
-use peniko::{ImageAlphaType, ImageData};
+use peniko::{color::palette, kurbo::{Affine, Rect}};
 use vello::{AaConfig, RenderParams, RendererOptions, Scene};
 use wgpu::{Adapter, DeviceType, Queue, TextureAspect};
 
@@ -141,6 +137,7 @@ pub struct VelloRenderer {
     #[allow(dead_code)]
     font_embolden: f32,
     svg_cache: SvgCache,
+    finished_output: Option<RasterizerOutput>,
 }
 
 impl VelloRenderer {
@@ -197,6 +194,7 @@ impl VelloRenderer {
             adapter,
             font_embolden,
             svg_cache: SvgCache::default(),
+            finished_output: None,
         })
     }
 
@@ -208,6 +206,7 @@ impl VelloRenderer {
         self.size = (width, height);
         self.font_embolden = font_embolden;
         self.scene = ExtendedScene::new();
+        self.finished_output = None;
     }
 
     fn build_scene(&mut self, width: u32, height: u32) -> Result<Scene> {
@@ -243,15 +242,6 @@ impl VelloRenderer {
 }
 
 impl VelloRenderer {
-    pub fn finish(&mut self, mode: FinishMode) -> Option<RenderOutput> {
-        match mode {
-            FinishMode::GpuTexture => self
-                .render_to_texture_output()
-                .map(RenderOutput::GpuTexture),
-            FinishMode::CpuImage => self.render_capture_image().map(RenderOutput::Image),
-        }
-    }
-
     pub fn debug_info(&self) -> String {
         use std::fmt::Write;
 
@@ -260,73 +250,6 @@ impl VelloRenderer {
         writeln!(out, "info: {:#?}", self.adapter.get_info()).ok();
         out
     }
-    fn render_capture_image(&mut self) -> Option<peniko::ImageData> {
-        self.ensure_offscreen_target().ok()?;
-        let output = self.render_to_texture_output()?;
-        let texture = self.texture.as_ref()?;
-        let size = output.texture().size();
-        let width_align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT - 1;
-        let width = (size.width + width_align) & !width_align;
-        let height = size.height;
-        let bytes_per_pixel = 4u64;
-        let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: None,
-            size: u64::from(width * height) * bytes_per_pixel,
-            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let bytes_per_row = width * bytes_per_pixel as u32;
-        assert!(bytes_per_row.is_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT));
-
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        encoder.copy_texture_to_buffer(
-            texture.as_image_copy(),
-            wgpu::TexelCopyBufferInfo {
-                buffer: &buffer,
-                layout: wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(bytes_per_row),
-                    rows_per_image: None,
-                },
-            },
-            wgpu::Extent3d {
-                width: size.width,
-                height,
-                depth_or_array_layers: 1,
-            },
-        );
-        let command_buffer = encoder.finish();
-        self.queue.submit(Some(command_buffer));
-        self.device.poll(wgpu::PollType::wait_indefinitely()).ok()?;
-
-        let slice = buffer.slice(..);
-        let (tx, rx) = sync_channel(1);
-        slice.map_async(wgpu::MapMode::Read, move |r| tx.send(r).unwrap());
-
-        self.device.poll(wgpu::PollType::wait_indefinitely()).ok()?;
-        rx.recv().ok()?.ok()?;
-
-        let buffer: Vec<u8> = slice.get_mapped_range().to_owned();
-
-        let row_size = size.width as usize * bytes_per_pixel as usize;
-        let mut cropped_buffer = Vec::with_capacity(row_size * height as usize);
-        let mut cursor = 0;
-        for _ in 0..height {
-            cropped_buffer.extend_from_slice(&buffer[cursor..(cursor + row_size)]);
-            cursor += bytes_per_row as usize;
-        }
-
-        Some(ImageData {
-            data: Blob::new(Arc::new(cropped_buffer)),
-            format: peniko::ImageFormat::Rgba8,
-            alpha_type: ImageAlphaType::AlphaPremultiplied,
-            width: size.width,
-            height,
-        })
-    }
-
     fn render_to_texture_output(&mut self) -> Option<wgpu::TextureView> {
         self.ensure_offscreen_target().ok()?;
         let size = self.size;
@@ -449,5 +372,48 @@ impl CustomPaintSink<DisplayCommandExt> for VelloRenderer {
                 );
             }
         }
+    }
+}
+
+impl RasterCore for VelloRenderer {
+    fn with_paint_sink(&mut self, f: &mut dyn FnMut(&mut dyn PaintSink)) {
+        f(self)
+    }
+
+    fn finish(&mut self) {
+        self.finished_output = self
+            .render_to_texture_output()
+            .map(RasterizerOutput::GpuTexture);
+    }
+
+    fn readback(&mut self) -> Option<RasterizerOutput> {
+        self.finished_output
+            .take()
+            .or_else(|| self.render_to_texture_output().map(RasterizerOutput::GpuTexture))
+    }
+}
+
+impl Rasterizer for VelloRenderer {
+    fn begin(&mut self, frame: BeginFrame) {
+        Self::begin(
+            self,
+            frame.size.width as u32,
+            frame.size.height as u32,
+            frame.scale,
+            frame.font_embolden,
+        );
+    }
+}
+
+impl CustomRasterizer for VelloRenderer {
+    fn with_custom_paint_sink(
+        &mut self,
+        f: &mut dyn FnMut(&mut dyn CustomPaintSink<DisplayCommandExt>),
+    ) {
+        f(self)
+    }
+
+    fn debug_info(&self) -> String {
+        Self::debug_info(self)
     }
 }

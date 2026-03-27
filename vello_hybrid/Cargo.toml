@@ -13,3 +13,4 @@ imaging_vello_hybrid = { path = "../../imaging/imaging_vello_hybrid" }
 floem_renderer = { path = "../renderer", version = "0.2.0" }
 peniko = { workspace = true }
 parley = { workspace = true }
+vello_hybrid = "0.0.6"

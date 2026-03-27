@@ -1,17 +1,19 @@
 use std::cell::RefCell;
 use std::sync::Arc;
-use std::sync::mpsc::sync_channel;
 
 use anyhow::Result;
 use floem_renderer::gpu_resources::GpuResources;
-use floem_renderer::{DisplayCommandExt, FinishMode, RenderOutput, tiny_skia};
+use floem_renderer::{
+    BeginFrame, CustomRasterizer, DisplayCommandExt, GpuTextureTarget, RasterCore, RasterTarget,
+    Rasterizer, RasterizerOutput, tiny_skia,
+};
 use floem_vger_rs::{GlyphImage, Image, PaintIndex, PixelFormat, Vger};
 use imaging::{
     BlurredRoundedRect, ClipRef, CustomPaintSink, FillRef, GlyphRunRef, GroupRef, PaintSink,
     StrokeRef, record::Glyph,
 };
 use peniko::kurbo::Stroke;
-use peniko::{Blob, Extend, ImageData, ImageQuality, LinearGradientPosition};
+use peniko::{Blob, Extend, ImageQuality, LinearGradientPosition};
 use peniko::{
     BrushRef, Color, GradientKind,
     kurbo::{Affine, Point, Rect, Shape},
@@ -19,7 +21,7 @@ use peniko::{
 use swash::FontRef;
 use swash::scale::{Render, ScaleContext, Source, StrikeWith};
 use swash::zeno::Format;
-use wgpu::{Adapter, Device, DeviceType, Queue, StoreOp, TextureFormat};
+use wgpu::{Device, DeviceType, Queue, StoreOp, TextureFormat};
 
 thread_local! {
     /// Swash [`ScaleContext`] used for CPU glyph rasterization on vger cache misses.
@@ -54,7 +56,7 @@ pub struct VgerRenderer {
     transform: Affine,
     clip: Option<Rect>,
     font_embolden: f32,
-    adapter: Adapter,
+    finished_output: Option<RasterizerOutput>,
 }
 
 impl VgerRenderer {
@@ -107,7 +109,7 @@ impl VgerRenderer {
             transform: Affine::IDENTITY,
             clip: None,
             font_embolden,
-            adapter,
+            finished_output: None,
         })
     }
 
@@ -121,6 +123,7 @@ impl VgerRenderer {
         self.font_embolden = font_embolden;
         self.transform = Affine::IDENTITY;
         self.clip = None;
+        self.finished_output = None;
         self.vger.begin(self.size.0 as f32, self.size.1 as f32, 1.0);
     }
 }
@@ -210,6 +213,75 @@ impl CustomPaintSink<DisplayCommandExt> for VgerRenderer {
                 );
             }
         }
+    }
+}
+
+impl RasterCore for VgerRenderer {
+    fn with_paint_sink(&mut self, f: &mut dyn FnMut(&mut dyn PaintSink)) {
+        f(self)
+    }
+
+    fn finish(&mut self) {
+        self.finished_output = self
+            .render_to_texture_output()
+            .map(RasterizerOutput::GpuTexture);
+    }
+
+    fn readback(&mut self) -> Option<RasterizerOutput> {
+        self.finished_output
+            .take()
+            .or_else(|| self.render_to_texture_output().map(RasterizerOutput::GpuTexture))
+    }
+}
+
+impl Rasterizer for VgerRenderer {
+    fn begin(&mut self, frame: BeginFrame) {
+        Self::begin(
+            self,
+            frame.size.width as u32,
+            frame.size.height as u32,
+            frame.scale,
+            frame.font_embolden,
+        );
+    }
+}
+
+impl RasterTarget for VgerRenderer {
+    type Target = GpuTextureTarget;
+
+    fn create(target: Self::Target) -> Result<Self, String> {
+        let device = Arc::new(target.device);
+        let queue = Arc::new(target.queue);
+        let texture_format = target.texture_view.texture().format();
+        let size = target.texture_view.texture().size();
+        let vger = floem_vger_rs::Vger::new(device.clone(), queue.clone(), texture_format);
+        Ok(Self {
+            device,
+            queue,
+            vger,
+            texture_format,
+            texture: None,
+            view: Some(target.texture_view),
+            size: (size.width, size.height),
+            scale: 1.0,
+            transform: Affine::IDENTITY,
+            clip: None,
+            font_embolden: 0.0,
+            finished_output: None,
+        })
+    }
+}
+
+impl CustomRasterizer for VgerRenderer {
+    fn with_custom_paint_sink(
+        &mut self,
+        f: &mut dyn FnMut(&mut dyn CustomPaintSink<DisplayCommandExt>),
+    ) {
+        f(self)
+    }
+
+    fn debug_info(&self) -> String {
+        Self::debug_info(self)
     }
 }
 
@@ -394,74 +466,6 @@ impl VgerRenderer {
         self.view = Some(view);
     }
 
-    fn render_image(&mut self) -> Option<peniko::ImageData> {
-        let output = self.render_to_texture_output()?;
-        let texture = self.texture.as_ref()?;
-        let size = output.texture().size();
-        let width_align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT - 1;
-        let padded_width = (size.width + width_align) & !width_align;
-        let height = size.height;
-        let bytes_per_pixel = 4;
-        let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: None,
-            size: (padded_width as u64 * height as u64 * bytes_per_pixel),
-            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let bytes_per_row = padded_width * bytes_per_pixel as u32;
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        encoder.copy_texture_to_buffer(
-            texture.as_image_copy(),
-            wgpu::TexelCopyBufferInfo {
-                buffer: &buffer,
-                layout: wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(bytes_per_row),
-                    rows_per_image: None,
-                },
-            },
-            wgpu::Extent3d {
-                width: size.width,
-                height,
-                depth_or_array_layers: 1,
-            },
-        );
-        let command_buffer = encoder.finish();
-        self.queue.submit(Some(command_buffer));
-        self.device.poll(wgpu::PollType::wait_indefinitely()).ok()?;
-
-        let slice = buffer.slice(..);
-        let (tx, rx) = sync_channel(1);
-        slice.map_async(wgpu::MapMode::Read, move |r| tx.send(r).unwrap());
-        loop {
-            if let Ok(r) = rx.try_recv() {
-                break r.ok()?;
-            }
-            if let wgpu::PollStatus::WaitSucceeded =
-                self.device.poll(wgpu::PollType::wait_indefinitely()).ok()?
-            {
-                rx.recv().ok()?.ok()?;
-                break;
-            }
-        }
-        let mut cropped_buffer = Vec::new();
-        let mapped: Vec<u8> = slice.get_mapped_range().to_owned();
-        let mut cursor = 0;
-        let row_size = size.width as usize * bytes_per_pixel as usize;
-        for _ in 0..height {
-            cropped_buffer.extend_from_slice(&mapped[cursor..(cursor + row_size)]);
-            cursor += bytes_per_row as usize;
-        }
-        Some(ImageData {
-            data: Blob::new(Arc::new(cropped_buffer)),
-            format: peniko::ImageFormat::Rgba8,
-            alpha_type: peniko::ImageAlphaType::AlphaPremultiplied,
-            width: size.width,
-            height,
-        })
-    }
 }
 
 impl VgerRenderer {
@@ -848,15 +852,6 @@ impl VgerRenderer {
         self.clip = None;
     }
 
-    pub fn finish(&mut self, mode: FinishMode) -> Option<RenderOutput> {
-        match mode {
-            FinishMode::GpuTexture => self
-                .render_to_texture_output()
-                .map(RenderOutput::GpuTexture),
-            FinishMode::CpuImage => self.render_image().map(RenderOutput::Image),
-        }
-    }
-
     pub fn push_layer(
         &mut self,
         _blend: impl Into<peniko::BlendMode>,
@@ -873,8 +868,6 @@ impl VgerRenderer {
 
         let mut out = String::new();
         writeln!(out, "name: Vger").ok();
-        writeln!(out, "info: {:#?}", self.adapter.get_info()).ok();
-
         out
     }
 }

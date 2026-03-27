@@ -1,168 +1,22 @@
 //! Retained paint artifact storage and replay.
 //!
-//! This module holds Floem's retained display-list representation. The current design
-//! is intentionally moving away from a purely "record a flat command stream per
-//! element and replay it blindly" model toward a more Blink-like paint-artifact model:
-//! element-local recording, explicit property state, chunking, and eventually
-//! selective replay/layerization/compositing.
-//!
-//! ## Current architecture
-//!
-//! The core retained object is [`RetainedDisplayList`]. It stores:
-//! - A retained depth-first paint-order tree of painted elements.
-//! - Per-element retained stages in [`ElementDisplayList`].
-//! - For each stage, a chunked representation in [`ElementStage`].
-//!
-//! Each [`ElementStage`] is recorded in the element's local coordinate space. Recording
-//! local geometry is important because it makes artifacts reusable across transform
-//! changes such as scrolling or ancestor movement. The stage is then compiled into:
-//! - [`PaintChunk`]s, which are adjacent runs of draw work sharing the same property
-//!   state.
-//! - A [`PaintPropertyTree`], which currently tracks transform, clip, effect, and
-//!   scroll state ids referenced by those chunks.
-//!
-//! The chunk/property split is the key architectural step away from the older model.
-//! The old flat command list encoded state transitions directly in the command stream.
-//! The current structure instead treats chunks as "draw work under property state X",
-//! which is much closer to the way Blink's paint chunks and property trees work.
-//!
-//! ## Recording model
-//!
-//! [`RecordingRenderer`] is the adapter used during paint recording. Views still paint
-//! through a familiar imperative API (`fill`, `stroke`, `draw_glyphs`, `draw_img`,
-//! `draw_svg`, `push_layer`, etc.), but the retained layer no longer treats that
-//! imperative stream as the final artifact format.
-//!
-//! Recording proceeds in two steps:
-//! 1. Views emit local-space commands into a retained [`ExtendedScene`].
-//! 2. [`ElementStage::set_scene`] compiles that scene into chunks plus property state.
-//!
-//! At the moment, this compilation does a few useful things:
-//! - Infers [`TransformClass`] from the actual recorded content instead of assuming
-//!   every stage is always affine-sensitive.
-//! - Coalesces adjacent draw commands that share the same property state.
-//! - Tracks chunk bounds and simple chunk metadata.
-//! - Moves stage-local clips out of the replay command stream and into clip property
-//!   ids.
-//!
-//! ## Clip model
-//!
-//! Clip handling is deliberately split in two:
-//! - Stage-local clips are represented in the property tree and applied by clip id
-//!   during replay.
-//! - View-owned overflow clips are replayed by traversal code in `paint/mod.rs` so
-//!   they remain active across descendant element replay.
-//!
-//! This split exists because stage-local clip transitions are local to one retained
-//! artifact, while overflow clips affect the replay of descendant artifacts and cannot
-//! be modeled as a purely local stage concern.
-//!
-//! Another important detail is that the retained snapshot only uses the element's
-//! intrinsic local clip as artifact identity. We explicitly do **not** use the
-//! ancestor-accumulated effective clip as a rerecord key anymore. That avoids the
-//! old bug where scrolling changed the accumulated clip and invalidated reusable
-//! artifacts even though the local recording itself was unchanged.
-//!
-//! Some local clips can extend to infinity on visible axes. Those clips are still
-//! represented locally for identity purposes, but replay sanitizes them against the
-//! current render surface before sending them to the renderer. This keeps retained
-//! reuse decoupled from accumulated clip state without ever handing infinite clip
-//! geometry to raster backends.
-//!
-//! ## Replay model
-//!
-//! Replay happens in [`replay_stage`]. The stage walks chunks, diffs the currently
-//! applied clip chain against the chunk's target [`ClipNodeId`], and mutates renderer
-//! state to match before replaying the chunk's draw commands.
-//!
-//! A few optimizations are already in place:
-//! - Redundant `set_transform` calls are skipped.
-//! - Redundant `set_z_index` calls are skipped.
-//! - Stage-local clips are diffed by property id rather than replaying recorded
-//!   `PushClip` / `PopClip` commands.
-//! - Chunk metadata and bounds are available for future scheduler/compositor work.
-//!
-//! However, replay is still fundamentally full-frame/full-scene today. Backends such
-//! as Vello and tiny-skia rebuild their scene/recording from scratch on every frame.
-//! That means chunk-level damage filtering is currently staged but not active as a
-//! drawing optimization, because skipping a chunk in a fresh frame would simply make
-//! that content disappear.
-//!
-//! ## Retention and invalidation
-//!
-//! [`ElementSnapshot`] captures the element-local state used to decide whether an
-//! artifact can be reused:
-//! - local bounds
-//! - local clip
-//! - world transform
-//!
-//! Retention is refined by [`TransformClass`], which describes what transform changes
-//! are safe for a recorded artifact. This is especially useful for scroll/content
-//! reuse where translation-only movement should not force rerecord.
-//!
-//! The retained subtree optimization in `paint/mod.rs` builds on top of this by
-//! allowing transform boundaries to mark subtrees as reusable under certain transform
-//! changes, while still replaying them in the correct frame order.
-//!
-//! ## Current optimizations
-//!
-//! The main optimizations already implemented in this module are:
-//! - Element-local retained recording.
-//! - Stage compilation into chunks.
-//! - Property-tree ids for transforms, clips, and effects.
-//! - Transform sensitivity inference.
-//! - Adjacent draw coalescing by property state.
-//! - Chunk bounds and metadata collection.
-//! - Property-driven stage-local clip replay.
-//! - Infinite clip sanitization at replay time.
-//!
-//! These changes are mostly architectural. They make later performance work possible
-//! without forcing a second format rewrite.
-//!
-//! ## Where this is going
-//!
-//! The intended direction is a true retained paint artifact system that can support:
-//! - Chunk-level damage-driven replay.
-//! - Layer promotion based on chunk/property metadata.
-//! - Tiling and partial raster.
-//! - Parallel paint artifact construction.
-//! - Parallel raster/composite for independent tiles or layers.
-//! - Stronger separation between paint, raster, and compositing.
-//!
-//! In practical terms, the major remaining steps are:
-//! 1. Introduce a real retained surface/compositor model so undamaged content can
-//!    survive across frames.
-//! 2. Promote damage filtering from "artifact metadata" to "actual replay/raster
-//!    decision making".
-//! 3. Expand property trees so clip/effect/transform/scroll state is not just
-//!    recorded, but also reusable across layer/tile boundaries.
-//! 4. Teach chunk metadata to drive layerization decisions, especially for blur,
-//!    text, images, and isolated compositing effects.
-//! 5. Add explicit raster/composite invalidation so rerecord, reraster, and replay
-//!    become separate decisions rather than one combined paint decision.
-//! 6. Eventually move from a single-threaded replay model toward chunk/tile/layer
-//!    scheduling that can exploit parallelism safely.
-//!
-//! Until those steps land, this module should be read as a staging layer for the
-//! future architecture: the artifact format is becoming compositor-friendly before
-//! the compositor itself exists.
+//! The retained display list stores per-element paint and post-paint recordings as
+//! [`ExtendedScene`] values in local space. Retention happens at the element/stage
+//! level: we rerecord only dirty elements and reuse unchanged retained scenes across
+//! transform changes when the recorded content allows it.
 
 use std::sync::Arc;
 
 use floem_renderer::text::GlyphRunRef;
 use floem_renderer::{DisplayCommandExt, OwnedSvg, Svg};
 use imaging::{
-    BlurredRoundedRect, ClipRef, FillRef, GroupRef, PaintSink, StrokeRef,
-    record::{
-        AppliedMask, Clip, Draw, ExtendedCommand, ExtendedScene, Geometry,
-        Glyph as ImagingGlyph, GlyphRun,
-        replay_ext_transformed,
-    },
+    BlurredRoundedRect, ClipRef, CustomPaintSink, FillRef, GeometryRef, GroupRef, PaintSink,
+    StrokeRef,
+    record::{Clip, Draw, ExtendedCommand, ExtendedScene, Geometry, Glyph as ImagingGlyph, replay_ext_transformed},
 };
-use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Shape, Size};
-use peniko::{BrushRef, Fill};
+use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Size};
+use peniko::BrushRef;
 use rustc_hash::{FxHashMap, FxHashSet};
-
 use understory_box_tree::NodeFlags;
 
 use crate::{
@@ -171,7 +25,6 @@ use crate::{
 };
 
 /// Transform class describing when recorded content remains valid.
-#[allow(dead_code)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum TransformClass {
     Exact,
@@ -202,18 +55,6 @@ impl TransformClass {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) enum CompositorPromotionHint {
-    ScrollContent,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct CompositorLayerCandidate {
-    pub promotion_hint: CompositorPromotionHint,
-    pub bounds: Rect,
-    pub clip: Option<RoundedRect>,
-}
-
 pub(crate) fn transform_diff_class(original: Affine, current: Affine) -> TransformClass {
     if current == original {
         return TransformClass::Exact;
@@ -231,197 +72,24 @@ pub(crate) fn transform_diff_class(original: Affine, current: Affine) -> Transfo
 
 #[derive(Clone)]
 pub(crate) struct ElementStage {
-    pub chunks: Vec<PaintChunk>,
-    pub property_tree: PaintPropertyTree,
+    pub scene: ExtendedScene<DisplayCommandExt>,
     pub transform_class: TransformClass,
-    pub layer_candidate: Option<CompositorLayerCandidate>,
 }
 
 impl Default for ElementStage {
     fn default() -> Self {
         Self {
-            chunks: Vec::new(),
-            property_tree: PaintPropertyTree::default(),
+            scene: ExtendedScene::new(),
             transform_class: TransformClass::Affine,
-            layer_candidate: None,
         }
     }
 }
 
 impl ElementStage {
-    pub(crate) fn set_scene(
-        &mut self,
-        scene: ExtendedScene<DisplayCommandExt>,
-        layer_candidate: Option<CompositorLayerCandidate>,
-    ) {
-        let (chunks, property_tree) = chunk_display_commands(scene);
-        self.chunks = chunks;
-        self.property_tree = property_tree;
-        self.layer_candidate = layer_candidate.clone();
-        self.transform_class = if self.chunks.is_empty() {
-            TransformClass::Affine
-        } else {
-            self.chunks
-                .iter()
-                .map(|chunk| chunk.transform_class)
-                .fold(TransformClass::Exact, TransformClass::combine)
-        };
-
-        if let Some(layer_candidate) = layer_candidate {
-            for chunk in &mut self.chunks {
-                chunk.metadata.promotion_hint = Some(layer_candidate.promotion_hint);
-            }
-        }
+    pub(crate) fn set_scene(&mut self, scene: ExtendedScene<DisplayCommandExt>) {
+        self.transform_class = scene_transform_class(&scene);
+        self.scene = scene;
     }
-
-    #[allow(dead_code)]
-    pub(crate) fn chunk_indices_for_damage(&self, damage: &[Rect]) -> Vec<usize> {
-        self.chunks
-            .iter()
-            .enumerate()
-            .filter_map(|(index, chunk)| {
-                chunk
-                    .intersects_damage(damage, &self.property_tree)
-                    .then_some(index)
-            })
-            .collect()
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) struct PaintPropertyState {
-    pub z_index: i32,
-    pub transform_id: TransformNodeId,
-    pub clip_id: ClipNodeId,
-    pub effect_id: EffectNodeId,
-    pub scroll_id: ScrollNodeId,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum PaintChunkKind {
-    Boundary,
-    Draw,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub(crate) struct TransformNodeId(pub u32);
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub(crate) struct ClipNodeId(pub u32);
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub(crate) struct EffectNodeId(pub u32);
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub(crate) struct ScrollNodeId(pub u32);
-
-#[allow(dead_code)]
-#[derive(Clone, Debug)]
-pub(crate) struct TransformNode {
-    pub parent: Option<TransformNodeId>,
-    pub transform: Affine,
-}
-
-#[allow(dead_code)]
-#[derive(Clone)]
-pub(crate) struct ClipNode {
-    pub parent: Option<ClipNodeId>,
-    pub transform_id: TransformNodeId,
-    pub clip: Clip,
-}
-
-#[allow(dead_code)]
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct EffectNode {
-    pub parent: Option<EffectNodeId>,
-    pub blend: peniko::BlendMode,
-    pub alpha: f32,
-}
-
-#[allow(dead_code)]
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct ScrollNode {
-    pub parent: Option<ScrollNodeId>,
-    pub translation: Affine,
-}
-
-#[allow(dead_code)]
-#[derive(Clone)]
-pub(crate) struct PaintPropertyTree {
-    pub transforms: Vec<TransformNode>,
-    pub clips: Vec<ClipNode>,
-    pub effects: Vec<EffectNode>,
-    pub scrolls: Vec<ScrollNode>,
-}
-
-impl Default for PaintPropertyTree {
-    fn default() -> Self {
-        Self {
-            transforms: vec![TransformNode {
-                parent: None,
-                transform: Affine::IDENTITY,
-            }],
-            clips: vec![ClipNode {
-                parent: None,
-                transform_id: TransformNodeId(0),
-                clip: Clip::Fill {
-                    transform: Affine::IDENTITY,
-                    shape: Geometry::Rect(Rect::ZERO),
-                    fill_rule: Fill::NonZero,
-                },
-            }],
-            effects: vec![EffectNode {
-                parent: None,
-                blend: peniko::BlendMode::default(),
-                alpha: 1.0,
-            }],
-            scrolls: vec![ScrollNode {
-                parent: None,
-                translation: Affine::IDENTITY,
-            }],
-        }
-    }
-}
-
-#[derive(Clone)]
-pub(crate) struct PaintChunk {
-    pub kind: PaintChunkKind,
-    pub properties: PaintPropertyState,
-    pub commands: ExtendedScene<DisplayCommandExt>,
-    pub bounds: Option<Rect>,
-    pub metadata: PaintChunkMetadata,
-    pub transform_class: TransformClass,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) struct PaintChunkMetadata {
-    pub has_text: bool,
-    pub has_raster_image: bool,
-    pub has_vector_image: bool,
-    pub has_blur: bool,
-    pub requires_layer: bool,
-    pub promotion_hint: Option<CompositorPromotionHint>,
-}
-
-impl PaintChunkMetadata {
-    fn merge(self, other: Self) -> Self {
-        Self {
-            has_text: self.has_text || other.has_text,
-            has_raster_image: self.has_raster_image || other.has_raster_image,
-            has_vector_image: self.has_vector_image || other.has_vector_image,
-            has_blur: self.has_blur || other.has_blur,
-            requires_layer: self.requires_layer || other.requires_layer,
-            promotion_hint: self.promotion_hint.or(other.promotion_hint),
-        }
-    }
-}
-
-#[derive(Clone, Copy)]
-struct CommandAnalysis {
-    transform: Affine,
-    transform_class: TransformClass,
-    bounds: Option<Rect>,
-    metadata: PaintChunkMetadata,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -429,7 +97,6 @@ pub(crate) struct ElementSnapshot {
     pub local_bounds: Rect,
     pub clip: Option<RoundedRect>,
     pub world_transform: Affine,
-    pub promotion_hint: Option<CompositorPromotionHint>,
 }
 
 impl ElementSnapshot {
@@ -438,44 +105,11 @@ impl ElementSnapshot {
             local_bounds: box_tree.local_bounds(element_id.0).unwrap_or_default(),
             clip: box_tree.local_clip(element_id.0).flatten(),
             world_transform: box_tree.world_transform(element_id.0).unwrap_or_default(),
-            promotion_hint: box_tree.compositor_promotion_hint(element_id.0),
         }
     }
 
     pub(crate) fn supports_reuse(self, current: Self) -> bool {
-        self.local_bounds == current.local_bounds
-            && self.clip == current.clip
-            && self.promotion_hint == current.promotion_hint
-    }
-
-    pub(crate) fn layer_candidate(self) -> Option<CompositorLayerCandidate> {
-        Some(CompositorLayerCandidate {
-            promotion_hint: self.promotion_hint?,
-            bounds: self.local_bounds,
-            clip: self.clip,
-        })
-    }
-}
-
-impl PaintChunk {
-    #[allow(dead_code)]
-    pub(crate) fn intersects_damage(
-        &self,
-        damage: &[Rect],
-        property_tree: &PaintPropertyTree,
-    ) -> bool {
-        let Some(bounds) = self.visible_bounds(property_tree) else {
-            return true;
-        };
-        damage
-            .iter()
-            .any(|rect| rect.intersect(bounds).area() > 0.0)
-    }
-
-    fn visible_bounds(&self, property_tree: &PaintPropertyTree) -> Option<Rect> {
-        clip_bounds_for_id(property_tree, self.properties.clip_id)
-            .map(|clip_bounds| bounds_intersection(self.bounds, Some(clip_bounds)))
-            .unwrap_or(self.bounds)
+        self.local_bounds == current.local_bounds && self.clip == current.clip
     }
 }
 
@@ -484,14 +118,6 @@ pub(crate) struct ElementDisplayList {
     pub paint: ElementStage,
     pub post: ElementStage,
     pub snapshot: Option<ElementSnapshot>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct PromotedLayerCandidate {
-    pub element_id: ElementId,
-    pub candidate: CompositorLayerCandidate,
-    pub snapshot: ElementSnapshot,
-    pub z_index: i32,
 }
 
 pub(crate) struct DisplayListSync {
@@ -655,36 +281,6 @@ impl RetainedDisplayList {
         let diff = transform_diff_class(previous.world_transform, snapshot.world_transform);
         !element.paint.transform_class.supports(diff)
             || !element.post.transform_class.supports(diff)
-    }
-
-    pub(crate) fn promoted_layer_candidates(&self) -> Vec<PromotedLayerCandidate> {
-        self.nodes
-            .iter()
-            .filter_map(|node| node.as_ref())
-            .filter_map(|node| {
-                let element_id = node.element_id?;
-                let element = &node.display;
-                let snapshot = element.snapshot?;
-                let candidate = element
-                    .paint
-                    .layer_candidate
-                    .clone()
-                    .or_else(|| snapshot.layer_candidate())?;
-                let z_index = element
-                    .paint
-                    .chunks
-                    .first()
-                    .map(|chunk| chunk.properties.z_index)
-                    .unwrap_or_default();
-
-                Some(PromotedLayerCandidate {
-                    element_id,
-                    candidate,
-                    snapshot,
-                    z_index,
-                })
-            })
-            .collect()
     }
 
     pub(crate) fn root_slots(&self) -> &[DisplayNodeSlot] {
@@ -914,40 +510,13 @@ pub(crate) fn replay_stage(
     renderer: &mut dyn AppRasterizer,
     base_transform: Affine,
     render_size: Size,
-    local_damage: Option<&[Rect]>,
+    _local_damage: Option<&[Rect]>,
 ) {
-    let mut current_clip_stack: Vec<ClipNodeId> = Vec::new();
-    // This stays wired through the replay path even though full-scene replay is still active.
-    // Once the renderer/compositor can preserve undamaged content across frames, the stage can
-    // switch from "replay every chunk" to "replay only intersecting chunks" without changing the
-    // artifact format again.
-    let chunk_indices = local_damage.map(|damage| stage.chunk_indices_for_damage(damage));
-
-    for (index, chunk) in stage.chunks.iter().enumerate() {
-        if let Some(indices) = &chunk_indices
-            && !indices.contains(&index)
-        {
-            continue;
-        }
-        apply_clip_state(
-            renderer,
-            &stage.property_tree,
-            chunk.properties.clip_id,
-            base_transform,
-            render_size,
-            &mut current_clip_stack,
-        );
-        replay_ext_transformed(&chunk.commands, renderer, base_transform);
-    }
-
-    apply_clip_state(
-        renderer,
-        &stage.property_tree,
-        ClipNodeId(0),
-        base_transform,
+    let mut sink = SanitizingSink {
+        inner: renderer,
         render_size,
-        &mut current_clip_stack,
-    );
+    };
+    replay_ext_transformed(&stage.scene, &mut sink, base_transform);
 }
 
 pub(crate) fn replay_view_clip(
@@ -957,456 +526,123 @@ pub(crate) fn replay_view_clip(
     render_size: Size,
 ) {
     let clip = constrain_infinite_rounded_rect(clip, base_transform, render_size);
-    PaintSink::push_clip(renderer, ClipRef::fill(clip).with_transform(base_transform));
-}
-
-fn chunk_display_commands(
-    scene: ExtendedScene<DisplayCommandExt>,
-) -> (Vec<PaintChunk>, PaintPropertyTree) {
-    let mut chunks = Vec::new();
-    let mut properties = PaintPropertyState::default();
-    let mut property_tree = PaintPropertyTree::default();
-    let mut transform_intern = FxHashMap::default();
-    transform_intern.insert(transform_key(Affine::IDENTITY), TransformNodeId(0));
-    let mut clip_stack: Vec<ClipNodeId> = Vec::new();
-    let mut effect_stack: Vec<EffectNodeId> = vec![EffectNodeId(0)];
-
-    for command in scene.commands() {
-        match command {
-            ExtendedCommand::PushClip(id) => {
-                let clip = scene.clip(*id).clone();
-                let transform_id = intern_transform(
-                    clip_transform(&clip),
-                    &mut property_tree,
-                    &mut transform_intern,
-                );
-                let clip_id = ClipNodeId(property_tree.clips.len() as u32);
-                property_tree.clips.push(ClipNode {
-                    parent: clip_stack.last().copied(),
-                    transform_id,
-                    clip,
-                });
-                clip_stack.push(clip_id);
-                properties.clip_id = clip_id;
-            }
-            ExtendedCommand::PopClip => {
-                clip_stack.pop();
-                properties.clip_id = clip_stack.last().copied().unwrap_or_default();
-            }
-            ExtendedCommand::PushGroup(id) => {
-                let group = scene.group(*id);
-                let effect_id = EffectNodeId(property_tree.effects.len() as u32);
-                property_tree.effects.push(EffectNode {
-                    parent: effect_stack.last().copied(),
-                    blend: group.composite.blend,
-                    alpha: group.composite.alpha,
-                });
-                effect_stack.push(effect_id);
-                properties.effect_id = effect_id;
-                push_boundary_chunk(
-                    &mut chunks,
-                    properties,
-                    analyze_command(&scene, command).transform_class,
-                    &scene,
-                    command,
-                );
-            }
-            ExtendedCommand::PopGroup => {
-                effect_stack.pop();
-                properties.effect_id = effect_stack.last().copied().unwrap_or_default();
-                push_boundary_chunk(
-                    &mut chunks,
-                    properties,
-                    analyze_command(&scene, command).transform_class,
-                    &scene,
-                    command,
-                );
-            }
-            command => {
-                let analysis = analyze_command(&scene, command);
-                properties.transform_id = intern_transform(
-                    analysis.transform,
-                    &mut property_tree,
-                    &mut transform_intern,
-                );
-                match chunks.last_mut() {
-                    Some(PaintChunk {
-                        kind: PaintChunkKind::Draw,
-                        properties: chunk_properties,
-                        commands: chunk_commands,
-                        bounds: chunk_bounds,
-                        metadata: chunk_metadata,
-                        transform_class: chunk_transform_class,
-                    }) if *chunk_properties == properties => {
-                        *chunk_transform_class =
-                            chunk_transform_class.combine(analysis.transform_class);
-                        *chunk_bounds = union_rects(*chunk_bounds, analysis.bounds);
-                        *chunk_metadata = chunk_metadata.merge(analysis.metadata);
-                        append_scene_command(chunk_commands, &scene, command);
-                    }
-                    _ => chunks.push(PaintChunk {
-                        kind: PaintChunkKind::Draw,
-                        properties,
-                        commands: single_command_scene(&scene, command),
-                        bounds: analysis.bounds,
-                        metadata: analysis.metadata,
-                        transform_class: analysis.transform_class,
-                    }),
-                }
-            }
-        }
-    }
-
-    (chunks, property_tree)
-}
-
-fn push_boundary_chunk(
-    chunks: &mut Vec<PaintChunk>,
-    properties: PaintPropertyState,
-    transform_class: TransformClass,
-    scene: &ExtendedScene<DisplayCommandExt>,
-    command: &ExtendedCommand,
-) {
-    chunks.push(PaintChunk {
-        kind: PaintChunkKind::Boundary,
-        properties,
-        commands: single_command_scene(scene, command),
-        bounds: None,
-        metadata: PaintChunkMetadata::default(),
-        transform_class,
-    });
-}
-
-fn single_command_scene(
-    source: &ExtendedScene<DisplayCommandExt>,
-    command: &ExtendedCommand,
-) -> ExtendedScene<DisplayCommandExt> {
-    let mut scene = ExtendedScene::new();
-    append_scene_command(&mut scene, source, command);
-    scene
-}
-
-fn append_scene_command(
-    scene: &mut ExtendedScene<DisplayCommandExt>,
-    source: &ExtendedScene<DisplayCommandExt>,
-    command: &ExtendedCommand,
-) {
-    match command {
-        ExtendedCommand::PushClip(id) => {
-            let _ = scene.push_clip(source.clip(*id).clone());
-        }
-        ExtendedCommand::PopClip => scene.pop_clip(),
-        ExtendedCommand::PushGroup(id) => {
-            let group = source.group(*id);
-            let mask = group.mask.as_ref().map(|applied| AppliedMask {
-                mask: scene.define_mask(source.mask(applied.mask).clone()),
-                transform: applied.transform,
-            });
-            let _ = scene.push_group(imaging::record::Group {
-                clip: group.clip.clone(),
-                mask,
-                filters: group.filters.clone(),
-                composite: group.composite,
-            });
-        }
-        ExtendedCommand::PopGroup => scene.pop_group(),
-        ExtendedCommand::Draw(id) => {
-            let _ = scene.draw(source.draw_op(*id).clone());
-        }
-        ExtendedCommand::Custom(id) => {
-            let _ = scene.custom_command(source.custom(*id).clone());
-        }
-    }
-}
-
-fn analyze_command(
-    scene: &ExtendedScene<DisplayCommandExt>,
-    command: &ExtendedCommand,
-) -> CommandAnalysis {
-    match command {
-        ExtendedCommand::PushClip(id) => CommandAnalysis {
-            transform: clip_transform(scene.clip(*id)),
-            transform_class: TransformClass::Affine,
-            bounds: None,
-            metadata: PaintChunkMetadata::default(),
-        },
-        ExtendedCommand::PopClip | ExtendedCommand::PopGroup => CommandAnalysis {
-            transform: Affine::IDENTITY,
-            transform_class: TransformClass::Affine,
-            bounds: None,
-            metadata: PaintChunkMetadata::default(),
-        },
-        ExtendedCommand::PushGroup(_) => CommandAnalysis {
-            transform: Affine::IDENTITY,
-            transform_class: TransformClass::Affine,
-            bounds: None,
-            metadata: PaintChunkMetadata {
-                requires_layer: true,
-                ..PaintChunkMetadata::default()
-            },
-        },
-        ExtendedCommand::Draw(id) => analyze_draw(scene.draw_op(*id)),
-        ExtendedCommand::Custom(id) => match scene.custom(*id) {
-            DisplayCommandExt::DrawSvg { rect, transform, .. } => CommandAnalysis {
-                transform: *transform,
-                transform_class: TransformClass::TranslateOnly,
-                bounds: Some(*rect),
-                metadata: PaintChunkMetadata {
-                    has_vector_image: true,
-                    ..PaintChunkMetadata::default()
-                },
-            },
-        },
-    }
-}
-
-fn geometry_bounds(geometry: &Geometry) -> Rect {
-    match geometry {
-        Geometry::Rect(rect) => *rect,
-        Geometry::RoundedRect(rect) => rect.rect(),
-        Geometry::Path(path) => path.bounding_box(),
-    }
-}
-
-fn glyph_run_bounds(run: &GlyphRun) -> Option<Rect> {
-    let mut glyphs = run.glyphs.iter();
-    let first = glyphs.next()?;
-    let mut rect = Rect::new(
-        first.x as f64,
-        (first.y - run.font_size) as f64,
-        (first.x + run.font_size) as f64,
-        first.y as f64,
+    PaintSink::push_clip(
+        renderer.paint_sink(),
+        ClipRef::fill(clip).with_transform(base_transform),
     );
-    for glyph in glyphs {
-        rect = rect.union(Rect::new(
-            glyph.x as f64,
-            (glyph.y - run.font_size) as f64,
-            (glyph.x + run.font_size) as f64,
-            glyph.y as f64,
-        ));
-    }
-    Some(rect)
 }
 
-fn union_rects(lhs: Option<Rect>, rhs: Option<Rect>) -> Option<Rect> {
-    match (lhs, rhs) {
-        (Some(lhs), Some(rhs)) => Some(lhs.union(rhs)),
-        (Some(lhs), None) => Some(lhs),
-        (None, Some(rhs)) => Some(rhs),
-        (None, None) => None,
-    }
+struct SanitizingSink<'a> {
+    inner: &'a mut (dyn AppRasterizer + floem_renderer::CustomRasterizer),
+    render_size: Size,
 }
 
-fn bounds_intersection(lhs: Option<Rect>, rhs: Option<Rect>) -> Option<Rect> {
-    match (lhs, rhs) {
-        (Some(lhs), Some(rhs)) => {
-            let intersection = lhs.intersect(rhs);
-            (intersection.area() > 0.0).then_some(intersection)
-        }
-        (Some(lhs), None) => Some(lhs),
-        (None, Some(rhs)) => Some(rhs),
-        (None, None) => None,
-    }
-}
-
-fn clip_bounds_for_id(property_tree: &PaintPropertyTree, clip_id: ClipNodeId) -> Option<Rect> {
-    if clip_id == ClipNodeId(0) {
-        return None;
+impl PaintSink for SanitizingSink<'_> {
+    fn push_clip(&mut self, clip: ClipRef<'_>) {
+        let clip = sanitize_clip_ref(clip, self.render_size);
+        self.inner.paint_sink().push_clip(clip.as_ref());
     }
 
-    let mut current = Some(clip_id);
-    let mut bounds = None;
-    while let Some(id) = current {
-        if id == ClipNodeId(0) {
-            break;
-        }
-        let node = property_tree.clips.get(id.0 as usize)?;
-        bounds = bounds_intersection(bounds, clip_node_bounds(node));
-        current = node.parent;
+    fn pop_clip(&mut self) {
+        self.inner.paint_sink().pop_clip();
     }
-    bounds
-}
 
-fn clip_node_bounds(node: &ClipNode) -> Option<Rect> {
-    match &node.clip {
-        Clip::Fill { shape, .. } | Clip::Stroke { shape, .. } => Some(geometry_bounds(shape)),
+    fn push_group(&mut self, group: GroupRef<'_>) {
+        let clip = group.clip.map(|clip| sanitize_clip_ref(clip, self.render_size));
+        let group = GroupRef {
+            clip: clip.as_ref().map(Clip::as_ref),
+            mask: group.mask.clone(),
+            filters: group.filters,
+            composite: group.composite,
+        };
+        self.inner.paint_sink().push_group(group);
+    }
+
+    fn pop_group(&mut self) {
+        self.inner.paint_sink().pop_group();
+    }
+
+    fn fill(&mut self, draw: FillRef<'_>) {
+        self.inner.paint_sink().fill(draw);
+    }
+
+    fn stroke(&mut self, draw: StrokeRef<'_>) {
+        self.inner.paint_sink().stroke(draw);
+    }
+
+    fn glyph_run(&mut self, draw: GlyphRunRef<'_>, glyphs: &mut dyn Iterator<Item = ImagingGlyph>) {
+        self.inner.paint_sink().glyph_run(draw, glyphs);
+    }
+
+    fn blurred_rounded_rect(&mut self, draw: BlurredRoundedRect) {
+        self.inner.paint_sink().blurred_rounded_rect(draw);
     }
 }
 
-fn analyze_draw(draw: &Draw) -> CommandAnalysis {
-    match draw {
-        Draw::Fill {
-            transform, shape, ..
-        } => CommandAnalysis {
-            transform: *transform,
-            transform_class: TransformClass::Affine,
-            bounds: Some(geometry_bounds(shape)),
-            metadata: PaintChunkMetadata::default(),
+impl CustomPaintSink<DisplayCommandExt> for SanitizingSink<'_> {
+    fn custom(&mut self, command: &DisplayCommandExt) {
+        self.inner.custom_paint_sink().custom(command);
+    }
+}
+
+fn scene_transform_class(scene: &ExtendedScene<DisplayCommandExt>) -> TransformClass {
+    scene
+        .commands()
+        .iter()
+        .map(|command| command_transform_class(scene, command))
+        .fold(TransformClass::Exact, TransformClass::combine)
+}
+
+fn command_transform_class(
+    scene: &ExtendedScene<DisplayCommandExt>,
+    command: &ExtendedCommand,
+) -> TransformClass {
+    match command {
+        ExtendedCommand::PushClip(_)
+        | ExtendedCommand::PopClip
+        | ExtendedCommand::PushGroup(_)
+        | ExtendedCommand::PopGroup => TransformClass::Affine,
+        ExtendedCommand::Draw(id) => match scene.draw_op(*id) {
+            Draw::Fill { .. } | Draw::Stroke { .. } => TransformClass::Affine,
+            Draw::GlyphRun(_) | Draw::BlurredRoundedRect(_) => TransformClass::TranslateOnly,
         },
-        Draw::Stroke {
+        ExtendedCommand::Custom(id) => match scene.custom(*id) {
+            DisplayCommandExt::DrawSvg { .. } => TransformClass::TranslateOnly,
+        },
+    }
+}
+
+fn sanitize_clip_ref(clip: ClipRef<'_>, render_size: Size) -> Clip {
+    match clip {
+        ClipRef::Fill {
             transform,
             shape,
-            stroke,
-            ..
-        } => {
-            let bounds = geometry_bounds(shape);
-            let inset = stroke.width / 2.0;
-            CommandAnalysis {
-                transform: *transform,
-                transform_class: TransformClass::Affine,
-                bounds: Some(bounds.inflate(inset, inset)),
-                metadata: PaintChunkMetadata::default(),
-            }
-        }
-        Draw::GlyphRun(run) => CommandAnalysis {
-            transform: run.transform,
-            transform_class: TransformClass::TranslateOnly,
-            bounds: glyph_run_bounds(run),
-            metadata: PaintChunkMetadata {
-                has_text: true,
-                ..PaintChunkMetadata::default()
-            },
-        },
-        Draw::BlurredRoundedRect(rect) => CommandAnalysis {
-            transform: rect.transform,
-            transform_class: TransformClass::TranslateOnly,
-            bounds: Some(rect.rect.inflate(rect.std_dev * 3.0, rect.std_dev * 3.0)),
-            metadata: PaintChunkMetadata {
-                has_blur: true,
-                ..PaintChunkMetadata::default()
-            },
-        },
-    }
-}
-
-fn clip_transform(clip: &Clip) -> Affine {
-    match clip {
-        Clip::Fill { transform, .. } => *transform,
-        Clip::Stroke { transform, .. } => *transform,
-    }
-}
-
-fn intern_transform(
-    transform: Affine,
-    property_tree: &mut PaintPropertyTree,
-    intern: &mut FxHashMap<[u64; 6], TransformNodeId>,
-) -> TransformNodeId {
-    let key = transform_key(transform);
-    if let Some(id) = intern.get(&key).copied() {
-        return id;
-    }
-
-    let id = TransformNodeId(property_tree.transforms.len() as u32);
-    property_tree.transforms.push(TransformNode {
-        parent: Some(TransformNodeId(0)),
-        transform,
-    });
-    intern.insert(key, id);
-    id
-}
-
-fn transform_key(transform: Affine) -> [u64; 6] {
-    transform.as_coeffs().map(f64::to_bits)
-}
-
-fn replay_clip_node(
-    renderer: &mut dyn AppRasterizer,
-    clip_node: &ClipNode,
-    property_tree: &PaintPropertyTree,
-    base_transform: Affine,
-    render_size: Size,
-) {
-    let Some(transform) = property_tree
-        .transforms
-        .get(clip_node.transform_id.0 as usize)
-        .map(|node| node.transform)
-    else {
-        return;
-    };
-    let final_transform = base_transform * transform;
-    let clip = sanitize_clip(&clip_node.clip, final_transform, render_size);
-    PaintSink::push_clip(renderer, clip.as_ref());
-}
-
-fn apply_clip_state(
-    renderer: &mut dyn AppRasterizer,
-    property_tree: &PaintPropertyTree,
-    target_clip_id: ClipNodeId,
-    base_transform: Affine,
-    render_size: Size,
-    current_clip_stack: &mut Vec<ClipNodeId>,
-) {
-    // Stage-local clips are now driven by property ids instead of recorded Push/Pop commands.
-    // Replay diffs the active clip chain against the target chunk state and mutates the renderer
-    // clip stack to match.
-    let target_stack = clip_chain(property_tree, target_clip_id);
-    let shared_prefix = current_clip_stack
-        .iter()
-        .zip(target_stack.iter())
-        .take_while(|(lhs, rhs)| lhs == rhs)
-        .count();
-
-    for _ in shared_prefix..current_clip_stack.len() {
-        PaintSink::pop_clip(renderer);
-    }
-    current_clip_stack.truncate(shared_prefix);
-
-    for clip_id in target_stack.into_iter().skip(shared_prefix) {
-        let Some(node) = property_tree.clips.get(clip_id.0 as usize) else {
-            continue;
-        };
-        replay_clip_node(renderer, node, property_tree, base_transform, render_size);
-        current_clip_stack.push(clip_id);
-    }
-}
-
-fn clip_chain(property_tree: &PaintPropertyTree, clip_id: ClipNodeId) -> Vec<ClipNodeId> {
-    let mut chain = Vec::new();
-    let mut current = Some(clip_id);
-
-    while let Some(id) = current {
-        if id == ClipNodeId(0) {
-            break;
-        }
-        chain.push(id);
-        current = property_tree
-            .clips
-            .get(id.0 as usize)
-            .and_then(|node| node.parent);
-    }
-
-    chain.reverse();
-    chain
-}
-
-fn sanitize_clip_geometry(shape: &Geometry, transform: Affine, render_size: Size) -> Geometry {
-    match shape {
-        Geometry::Rect(rect) => {
-            Geometry::Rect(constrain_infinite_rect(*rect, transform, render_size))
-        }
-        Geometry::RoundedRect(rect) => Geometry::RoundedRect(constrain_infinite_rounded_rect(
-            *rect,
-            transform,
-            render_size,
-        )),
-        Geometry::Path(path) => Geometry::Path(path.clone()),
-    }
-}
-
-fn sanitize_clip(clip: &Clip, transform: Affine, render_size: Size) -> Clip {
-    match clip {
-        Clip::Fill {
-            shape, fill_rule, ..
+            fill_rule,
         } => Clip::Fill {
             transform,
             shape: sanitize_clip_geometry(shape, transform, render_size),
-            fill_rule: *fill_rule,
+            fill_rule,
         },
-        Clip::Stroke { shape, stroke, .. } => Clip::Stroke {
+        ClipRef::Stroke {
+            transform,
+            shape,
+            stroke,
+        } => Clip::Stroke {
             transform,
             shape: sanitize_clip_geometry(shape, transform, render_size),
             stroke: stroke.clone(),
         },
+    }
+}
+
+fn sanitize_clip_geometry(shape: GeometryRef<'_>, transform: Affine, render_size: Size) -> Geometry {
+    match shape {
+        GeometryRef::Rect(rect) => Geometry::Rect(constrain_infinite_rect(rect, transform, render_size)),
+        GeometryRef::RoundedRect(rect) => {
+            Geometry::RoundedRect(constrain_infinite_rounded_rect(rect, transform, render_size))
+        }
+        GeometryRef::Path(path) => Geometry::Path(path.clone()),
+        GeometryRef::OwnedPath(path) => Geometry::Path(path),
     }
 }
 
@@ -1465,7 +701,7 @@ fn constrain_infinite_rect(rect: Rect, transform: Affine, render_size: Size) -> 
 mod tests {
     use super::*;
     use imaging::Composite;
-    use peniko::Color;
+    use peniko::{Color, Fill};
 
     fn fill_draw(rect: Rect, transform: Affine) -> Draw {
         Draw::Fill {
@@ -1479,7 +715,7 @@ mod tests {
     }
 
     #[test]
-    fn stage_groups_adjacent_draws_with_matching_properties() {
+    fn stage_stores_scene_directly() {
         let rect = Rect::new(0.0, 0.0, 10.0, 10.0);
         let mut stage = ElementStage::default();
         let mut scene = ExtendedScene::new();
@@ -1492,17 +728,14 @@ mod tests {
             shape: Geometry::Rect(rect),
             composite: Composite::default(),
         });
-        stage.set_scene(scene, None);
+        stage.set_scene(scene);
 
-        assert_eq!(stage.chunks.len(), 1);
-        assert_eq!(stage.chunks[0].kind, PaintChunkKind::Draw);
-        assert_eq!(stage.chunks[0].properties.z_index, 0);
-        assert_eq!(stage.chunks[0].commands.commands().len(), 2);
+        assert_eq!(stage.scene.commands().len(), 2);
         assert_eq!(stage.transform_class, TransformClass::Affine);
     }
 
     #[test]
-    fn stage_tracks_clip_state_without_boundary_chunks() {
+    fn clip_commands_are_preserved_in_scene() {
         let rect = Rect::new(0.0, 0.0, 10.0, 10.0);
         let mut stage = ElementStage::default();
         let mut scene = ExtendedScene::new();
@@ -1513,33 +746,13 @@ mod tests {
         });
         let _ = scene.draw(fill_draw(rect, Affine::IDENTITY));
         scene.pop_clip();
-        stage.set_scene(scene, None);
+        stage.set_scene(scene);
 
-        assert_eq!(stage.chunks.len(), 1);
-        assert_eq!(stage.chunks[0].kind, PaintChunkKind::Draw);
-        assert_ne!(stage.chunks[0].properties.clip_id, ClipNodeId(0));
-        assert_eq!(stage.property_tree.clips.len(), 2);
+        assert_eq!(stage.scene.commands().len(), 3);
     }
 
     #[test]
-    fn stage_splits_draw_chunks_on_transform_state() {
-        let rect = Rect::new(0.0, 0.0, 10.0, 10.0);
-        let mut stage = ElementStage::default();
-        let mut scene = ExtendedScene::new();
-        let _ = scene.draw(fill_draw(rect, Affine::IDENTITY));
-        let _ = scene.draw(fill_draw(rect, Affine::translate((5.0, 0.0))));
-        stage.set_scene(scene, None);
-
-        assert_eq!(stage.chunks.len(), 2);
-        assert_ne!(
-            stage.chunks[0].properties.transform_id,
-            stage.chunks[1].properties.transform_id
-        );
-        assert_eq!(stage.property_tree.transforms.len(), 2);
-    }
-
-    #[test]
-    fn blurred_draws_downgrade_stage_transform_retention() {
+    fn transformed_glyph_or_blur_downgrades_retention() {
         let mut stage = ElementStage::default();
         let mut scene = ExtendedScene::new();
         let _ = scene.draw(Draw::BlurredRoundedRect(imaging::BlurredRoundedRect {
@@ -1550,11 +763,9 @@ mod tests {
             std_dev: 6.0,
             composite: Composite::default(),
         }));
-        stage.set_scene(scene, None);
+        stage.set_scene(scene);
 
         assert_eq!(stage.transform_class, TransformClass::TranslateOnly);
-        assert!(stage.chunks[0].metadata.has_blur);
-        assert!(stage.chunks[0].bounds.is_some());
     }
 
     #[test]

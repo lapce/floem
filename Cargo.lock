@@ -1453,7 +1453,6 @@ dependencies = [
  "floem-winit",
  "floem_reactive",
  "floem_renderer",
- "floem_skia_cpu_renderer",
  "floem_skia_renderer",
  "floem_tiny_skia_renderer",
  "floem_vello_cpu_renderer",
@@ -1785,17 +1784,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "floem_skia_cpu_renderer"
-version = "0.2.0"
-dependencies = [
- "anyhow",
- "floem_renderer",
- "imaging",
- "imaging_skia",
- "peniko",
-]
-
-[[package]]
 name = "floem_skia_renderer"
 version = "0.2.0"
 dependencies = [
@@ -1804,6 +1792,7 @@ dependencies = [
  "imaging",
  "imaging_skia",
  "peniko",
+ "skia-safe",
  "wgpu 28.0.0",
 ]
 
@@ -1844,6 +1833,7 @@ dependencies = [
  "imaging_vello_hybrid",
  "parley",
  "peniko",
+ "vello_hybrid",
 ]
 
 [[package]]

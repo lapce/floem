@@ -24,7 +24,7 @@ thread_local! {
 use crate::context::EventCallbackConfig;
 use crate::event::listener::EventListenerKey;
 use crate::event::{RouteKind, listener};
-use crate::paint::display_list::{CompositorPromotionHint, TransformClass};
+use crate::paint::display_list::TransformClass;
 use crate::style::recalc::StyleReason;
 use crate::view::LayoutTree;
 use crate::window::handle::get_current_view;
@@ -1322,19 +1322,6 @@ impl ViewId {
         box_tree
             .borrow_mut()
             .set_retained_transform_boundary(element_id.0, boundary)
-    }
-
-    /// Mark an owned element with compositor-promotion intent that should flow
-    /// into retained paint artifacts.
-    pub(crate) fn set_compositor_promotion_hint_for_element(
-        &self,
-        element_id: ElementId,
-        hint: Option<CompositorPromotionHint>,
-    ) -> bool {
-        let box_tree = self.box_tree();
-        box_tree
-            .borrow_mut()
-            .set_compositor_promotion_hint(element_id.0, hint)
     }
 
     /// Set whether an owned element can receive focus at all.

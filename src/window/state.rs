@@ -1,21 +1,12 @@
-use std::time::{Duration, Instant};
 use std::{cell::RefCell, collections::HashMap};
 
 use crate::{
     action::exec_after_animation_frame,
-    compositor::{
-        Compositor, CompositorAlphaMode, CompositorLayerBacking, CompositorLayerDescriptor,
-        CompositorLayerId, CompositorTiming, ExternalSurfaceDescriptor, ExternalSurfaceHandle,
-        ExternalSurfaceId, FloemSurfaceRoleVisitor, FrameRequestReason, ResolvedPromotedLayer,
-        backend::CompositorBackend,
-    },
     inspector::CaptureState,
     platform::menu_types::MenuId,
     style::{StyleSelectors, recalc::StyleReason},
     view::ViewStorage,
 };
-
-use floem_renderer::gpu_resources::GpuResources;
 use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Size, Vec2};
 use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::{SmallVec, smallvec};
@@ -35,8 +26,8 @@ use crate::{
     event::{DragTracker, Event, WindowEvent, clear_hit_test_cache},
     layout::responsive::{GridBreakpoints, ScreenSizeBp},
     message::UpdateMessage,
-    paint::display_list::{RetainedDisplayList, constrain_rect_to_render_bounds},
-    paint::{PaintStats, display_list::PromotedLayerCandidate},
+    paint::display_list::RetainedDisplayList,
+    paint::PaintStats,
     style::{CursorStyle, Style, StyleSelector, theme::default_theme},
     view::{LayoutNodeCx, MeasureCx, VIEW_STORAGE, ViewId},
 };
@@ -110,7 +101,6 @@ fn build_focus_space_for_scope<'a>(
 pub struct WindowState {
     pub(crate) layout_tree: Rc<RefCell<taffy::TaffyTree<LayoutNodeCx>>>,
     pub(crate) box_tree: Rc<RefCell<BoxTree>>,
-    pub(crate) compositor: Compositor,
     pub(crate) display_list: RetainedDisplayList,
     pub(crate) last_paint_stats: PaintStats,
 
@@ -223,7 +213,6 @@ impl WindowState {
             root_view_id,
             layout_tree,
             box_tree,
-            compositor: Compositor::default(),
             display_list: RetainedDisplayList::default(),
             last_paint_stats: PaintStats::default(),
             pointer_capture_target: PointerCaptureMap::new(),
@@ -1254,223 +1243,6 @@ impl WindowState {
         self.dirty_paint_elements.insert(id.into());
     }
 
-    pub fn register_compositor_layer(
-        &mut self,
-        descriptor: CompositorLayerDescriptor,
-    ) -> CompositorLayerId {
-        self.compositor.register_layer(descriptor)
-    }
-
-    pub fn update_compositor_layer(
-        &mut self,
-        id: CompositorLayerId,
-        descriptor: CompositorLayerDescriptor,
-    ) -> bool {
-        self.compositor.update_layer(id, descriptor)
-    }
-
-    pub fn mark_compositor_layer_dirty(&mut self, id: CompositorLayerId) {
-        self.compositor.mark_layer_dirty(id);
-    }
-
-    pub fn register_external_surface(
-        &mut self,
-        handle: ExternalSurfaceHandle,
-        descriptor: ExternalSurfaceDescriptor,
-    ) -> ExternalSurfaceId {
-        self.compositor
-            .register_external_surface(handle, descriptor)
-    }
-
-    pub fn update_external_surface(
-        &mut self,
-        id: ExternalSurfaceId,
-        handle: ExternalSurfaceHandle,
-        descriptor: ExternalSurfaceDescriptor,
-    ) -> bool {
-        self.compositor
-            .update_external_surface(id, handle, descriptor)
-    }
-
-    pub fn notify_external_surface_ready(&mut self, id: ExternalSurfaceId) -> bool {
-        self.compositor.notify_external_surface_ready(id)
-    }
-
-    pub fn request_compositor_frame(&mut self, reason: FrameRequestReason) {
-        self.compositor.request_frame(reason);
-    }
-
-    pub fn install_compositor_backend(&mut self, backend: Box<dyn CompositorBackend>) {
-        self.compositor.install_backend(backend);
-    }
-
-    pub fn attach_compositor_wgpu_presenter(
-        &mut self,
-        gpu_resources: &GpuResources,
-        output_format: wgpu::TextureFormat,
-        output_size: (u32, u32),
-    ) {
-        self.compositor
-            .attach_wgpu_presenter(gpu_resources, output_format, output_size);
-    }
-
-    fn accumulated_clip_bounds_for_element(
-        &self,
-        element_id: ElementId,
-        scale: f64,
-    ) -> Option<Rect> {
-        let box_tree = self.box_tree.borrow();
-        box_tree.world_bounds(element_id.0).map(|bounds| {
-            Rect::new(
-                bounds.x0 * scale,
-                bounds.y0 * scale,
-                bounds.x1 * scale,
-                bounds.y1 * scale,
-            )
-        })
-    }
-
-    pub fn sync_display_list_promoted_layers(&mut self) {
-        let scale = self.effective_scale();
-        let render_size = self.root_size * scale;
-        let scale_rect = |rect: Rect| {
-            Rect::new(
-                rect.x0 * scale,
-                rect.y0 * scale,
-                rect.x1 * scale,
-                rect.y1 * scale,
-            )
-        };
-        let promoted_layers: Vec<PromotedLayerCandidate> =
-            self.display_list.promoted_layer_candidates();
-        let resolved_layers = promoted_layers
-            .into_iter()
-            .filter_map(|promoted| {
-                let box_tree = self.box_tree.borrow();
-                let accumulated_clip_bounds =
-                    self.accumulated_clip_bounds_for_element(promoted.element_id, scale);
-
-                let mut bounds = scale_rect(
-                    promoted
-                        .snapshot
-                        .world_transform
-                        .transform_rect_bbox(promoted.candidate.bounds),
-                );
-                let mut isolated = accumulated_clip_bounds.is_some();
-
-                if let Some(local_clip) = promoted.candidate.clip {
-                    let constrained_clip = constrain_rect_to_render_bounds(
-                        local_clip.rect(),
-                        promoted.snapshot.world_transform.then_scale(scale),
-                        render_size,
-                    );
-                    bounds = bounds.intersect(scale_rect(
-                        promoted
-                            .snapshot
-                            .world_transform
-                            .transform_rect_bbox(constrained_clip),
-                    ));
-                }
-
-                if matches!(
-                    promoted.candidate.promotion_hint,
-                    crate::paint::display_list::CompositorPromotionHint::ScrollContent
-                ) && let Some(parent_id) = box_tree.parent_of(promoted.element_id.0)
-                    && let Some(parent_transform) = box_tree.world_transform(parent_id)
-                    && let Some(parent_clip) = box_tree.local_clip(parent_id).flatten()
-                {
-                    let constrained_clip = constrain_rect_to_render_bounds(
-                        parent_clip.rect(),
-                        parent_transform.then_scale(scale),
-                        render_size,
-                    );
-                    bounds = scale_rect(parent_transform.transform_rect_bbox(constrained_clip));
-                    isolated = true;
-                }
-
-                if !bounds.is_finite() || bounds.width() <= 0.0 || bounds.height() <= 0.0 {
-                    // Promoted surfaces should keep stable sizing based on their own logical
-                    // bounds/viewport. Skip only when the layer's own bounds collapse.
-                    return None;
-                }
-
-                let raster_clip = accumulated_clip_bounds.map(|clip| clip.intersect(bounds));
-
-                let mut compositing_depth = 0_u32;
-                let mut cursor = box_tree.parent_of(promoted.element_id.0);
-                while let Some(parent_id) = cursor {
-                    if matches!(
-                        box_tree.compositor_promotion_hint(parent_id),
-                        Some(crate::paint::display_list::CompositorPromotionHint::ScrollContent)
-                    ) {
-                        compositing_depth += 1;
-                    }
-                    cursor = box_tree.parent_of(parent_id);
-                }
-
-                Some(ResolvedPromotedLayer {
-                    element_id: promoted.element_id,
-                    bounds,
-                    raster_clip,
-                    compositor_clip: raster_clip,
-                    z_index: promoted.z_index,
-                    compositing_depth,
-                    backing: CompositorLayerBacking::TextureBacked,
-                    isolated,
-                    alpha_mode: CompositorAlphaMode::Straight,
-                })
-            })
-            .collect::<Vec<_>>();
-        self.compositor.sync_promoted_layers(&resolved_layers);
-    }
-
-    pub fn ensure_compositor_root_layer(
-        &mut self,
-        bounds: peniko::kurbo::Rect,
-    ) -> CompositorLayerId {
-        self.compositor.ensure_root_layer(bounds)
-    }
-
-    pub fn ensure_compositor_overlay_layer(
-        &mut self,
-        bounds: peniko::kurbo::Rect,
-    ) -> CompositorLayerId {
-        self.compositor.ensure_overlay_layer(bounds)
-    }
-
-    pub fn promoted_compositor_layer_ids(&self) -> Vec<ElementId> {
-        self.compositor.promoted_layer_ids()
-    }
-
-    pub fn current_promoted_raster_clip(
-        &self,
-        element_id: ElementId,
-        layer_bounds: Rect,
-    ) -> Option<Rect> {
-        self.accumulated_clip_bounds_for_element(element_id, self.effective_scale())
-            .map(|clip| clip.intersect(layer_bounds))
-    }
-
-    pub fn compositor_backend_name(&self) -> Option<&'static str> {
-        self.compositor.backend_name()
-    }
-
-    pub fn compositor_preferred_frame_interval(&self) -> Option<Duration> {
-        self.compositor.preferred_frame_interval()
-    }
-
-    pub const fn compositor_timing(&self) -> &CompositorTiming {
-        self.compositor.timing()
-    }
-
-    pub(crate) fn for_each_floem_painted_surface(&self, visit: &mut FloemSurfaceRoleVisitor<'_>) {
-        self.compositor.for_each_floem_painted_surface(visit);
-    }
-
-    pub fn update_compositor_timing(&mut self, timing: CompositorTiming) {
-        self.compositor.update_timing(timing);
-    }
-
     pub fn take_dirty_paint_elements(&mut self) -> FxHashSet<ElementId> {
         std::mem::take(&mut self.dirty_paint_elements)
     }
@@ -1480,9 +1252,7 @@ impl WindowState {
     }
 
     pub fn has_pending_render(&self) -> bool {
-        !self.dirty_paint_elements.is_empty()
-            || !self.pending_damage_rects.is_empty()
-            || self.compositor.has_pending_frame()
+        !self.dirty_paint_elements.is_empty() || !self.pending_damage_rects.is_empty()
     }
 
     pub fn clear_pending_paint(&mut self) {
@@ -1491,36 +1261,6 @@ impl WindowState {
 
     pub fn clear_pending_damage(&mut self) {
         self.pending_damage_rects.clear();
-    }
-
-    pub fn take_pending_compositor_frame_reasons(&mut self) -> Vec<FrameRequestReason> {
-        self.compositor.take_pending_frame_reasons()
-    }
-
-    pub fn clear_compositor_layer_dirtiness(&mut self) {
-        self.compositor.clear_layer_dirtiness();
-    }
-
-    pub(crate) fn composite_compositor_to_output(&mut self, output: &wgpu::TextureView) {
-        self.compositor.composite_to_output(output);
-    }
-
-    pub fn begin_compositor_frame(&mut self, output_size: (u32, u32), started_at: Instant) {
-        self.compositor.begin_frame(output_size, started_at);
-    }
-
-    pub fn prepare_compositor_floem_surfaces(&mut self, output_size: (u32, u32)) {
-        self.compositor.prepare_floem_surfaces(output_size);
-    }
-
-    pub fn finish_compositor_frame(
-        &mut self,
-        output_size: (u32, u32),
-        started_at: Instant,
-        completed_at: Instant,
-    ) {
-        self.compositor
-            .finish_frame(output_size, started_at, completed_at);
     }
 
     pub(crate) fn update_screen_size_bp(&mut self, size: Size) {
