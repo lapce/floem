@@ -167,8 +167,8 @@ default = [
   "editor",
   "default-image-formats",
   "serde",
-  "tiny-skia",
-  "fallback-tiny-skia",
+  "skia",
+  "fallback-vello-cpu",
 ]
 active-vello = ["dep:floem_vello_renderer"]
 active-vger = ["dep:floem_vger_renderer"]

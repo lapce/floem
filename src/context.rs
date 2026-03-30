@@ -280,6 +280,6 @@ pub use crate::event::EventCx;
 // Re-export style context types from style module for backward compatibility
 pub use crate::style::{InteractionState, StyleCx};
 // Re-export paint context types from paint module for backward compatibility
-pub use crate::paint::{PaintCx, PaintState};
+pub use crate::paint::PaintCx;
 // Re-export update context types from message module for backward compatibility
 pub use crate::message::UpdateCx;

@@ -20,12 +20,6 @@ use winit::{
 };
 
 use super::{APP_UPDATE_EVENTS, AppConfig, AppEventCallback, AppUpdateEvent, UserEvent};
-#[cfg(any(
-    feature = "active-vello",
-    feature = "active-vger",
-    feature = "active-skia"
-))]
-use crate::context::PaintState;
 use crate::{
     AppEvent, Application,
     action::{Timer, TimerToken},
@@ -36,6 +30,7 @@ use crate::{
         Capture,
         profiler::{Profile, ProfileEvent},
     },
+    paint::PaintState,
     view::View,
     window::{WindowConfig, handle::WindowHandle, id::process_window_updates},
 };
@@ -91,11 +86,6 @@ impl ApplicationHandle {
                     });
                 }
             }
-            #[cfg(any(
-                feature = "active-vello",
-                feature = "active-vger",
-                feature = "active-skia"
-            ))]
             UserEvent::GpuResourcesUpdate { window_id } => {
                 let handle = self.window_handles.get_mut(&window_id).unwrap();
                 if let PaintState::PendingGpuResources {
@@ -106,7 +96,7 @@ impl ApplicationHandle {
                 } = &handle.paint_state
                 {
                     let (gpu_resources, surface) = rx.recv().unwrap().unwrap();
-                    let init = crate::paint::renderer::new(
+                    let (renderer, window_backend) = crate::paint::renderer::new(
                         window.clone(),
                         gpu_resources.clone(),
                         surface,
@@ -117,32 +107,15 @@ impl ApplicationHandle {
                     );
                     self.gpu_resources = Some(gpu_resources);
                     handle.paint_state = PaintState::Initialized {
-                        rasterizer: init.rasterizer,
+                        rasterizer: renderer,
                     };
-                    handle.presenter = init.presenter;
+                    handle.window_backend = Some(window_backend);
                     handle.gpu_resources = self.gpu_resources.clone();
                     handle.init_renderer();
                 } else {
                     panic!("Sent a gpu resource update after it had already been initialized");
                 }
             }
-            #[cfg(any(
-                feature = "active-vello-hybrid",
-                feature = "active-vello-cpu",
-                feature = "active-skia-cpu",
-                feature = "active-tiny-skia"
-            ))]
-            UserEvent::GpuResourcesUpdate { .. } => {}
-            #[cfg(not(any(
-                feature = "active-vello",
-                feature = "active-vger",
-                feature = "active-skia",
-                feature = "active-vello-hybrid",
-                feature = "active-vello-cpu",
-                feature = "active-skia-cpu",
-                feature = "active-tiny-skia"
-            )))]
-            UserEvent::GpuResourcesUpdate { .. } => unreachable!(),
             UserEvent::ShowContextMenu {
                 window_id,
                 menu,

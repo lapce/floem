@@ -3,13 +3,16 @@ use std::sync::Arc;
 use anyhow::Result;
 use floem_renderer::gpu_resources::GpuResources;
 use floem_renderer::{
-    BeginFrame, CustomRasterizer, DisplayCommandExt, RasterCore, Rasterizer, RasterizerOutput,
+    BeginFrame, CustomRenderer, DisplayCommandExt, RenderCore, Renderer, RasterizerOutput,
 };
 use imaging::record::{CustomCommand, ExtendedScene, Glyph as ImagingGlyph, replay_ext};
 use imaging::{
     BlurredRoundedRect, ClipRef, CustomPaintSink, FillRef, GroupRef, PaintSink, StrokeRef,
 };
-use peniko::{color::palette, kurbo::{Affine, Rect}};
+use peniko::{
+    color::palette,
+    kurbo::{Affine, Rect},
+};
 use vello::{AaConfig, RenderParams, RendererOptions, Scene};
 use wgpu::{Adapter, DeviceType, Queue, TextureAspect};
 
@@ -375,8 +378,8 @@ impl CustomPaintSink<DisplayCommandExt> for VelloRenderer {
     }
 }
 
-impl RasterCore for VelloRenderer {
-    fn with_paint_sink(&mut self, f: &mut dyn FnMut(&mut dyn PaintSink)) {
+impl RenderCore for VelloRenderer {
+    fn render(&mut self, f: &mut dyn FnMut(&mut dyn PaintSink)) {
         f(self)
     }
 
@@ -387,14 +390,17 @@ impl RasterCore for VelloRenderer {
     }
 
     fn readback(&mut self) -> Option<RasterizerOutput> {
-        self.finished_output
-            .take()
-            .or_else(|| self.render_to_texture_output().map(RasterizerOutput::GpuTexture))
+        self.finished_output.take().or_else(|| {
+            self.render_to_texture_output()
+                .map(RasterizerOutput::GpuTexture)
+        })
     }
 }
 
-impl Rasterizer for VelloRenderer {
-    fn begin(&mut self, frame: BeginFrame) {
+impl Renderer for VelloRenderer {
+    type Target = wgpu::TextureView;
+
+    fn set_size(&mut self, frame: BeginFrame) {
         Self::begin(
             self,
             frame.size.width as u32,
@@ -403,9 +409,20 @@ impl Rasterizer for VelloRenderer {
             frame.font_embolden,
         );
     }
+
+    fn reset(&mut self) {
+        self.finished_output = None;
+    }
+
+    fn read_target(&mut self) -> Option<Self::Target> {
+        self.finished_output.take().and_then(|output| match output {
+            RasterizerOutput::GpuTexture(texture) => Some(texture),
+            RasterizerOutput::Image(_) => None,
+        })
+    }
 }
 
-impl CustomRasterizer for VelloRenderer {
+impl CustomRenderer for VelloRenderer {
     fn with_custom_paint_sink(
         &mut self,
         f: &mut dyn FnMut(&mut dyn CustomPaintSink<DisplayCommandExt>),

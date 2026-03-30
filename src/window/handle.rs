@@ -2,19 +2,8 @@
 use std::collections::HashMap;
 use std::{cell::RefCell, mem, rc::Rc, sync::Arc};
 
-#[cfg(feature = "crossbeam")]
-use crossbeam::channel::bounded as sync_channel;
-#[cfg(all(
-    not(feature = "crossbeam"),
-    any(
-        feature = "active-vello",
-        feature = "active-vger",
-        feature = "active-skia"
-    )
-))]
-use std::sync::mpsc::sync_channel;
-
 use crate::event::{CustomEvent, RouteKind, ScrollTo, UpdatePhaseEvent};
+use crate::paint::PaintState;
 use crate::platform::menu_types::{Menu as MudaMenu, MenuId};
 use crate::style::recalc::StyleReason;
 use crate::style::{StyleSelector, StyleSelectors};
@@ -58,7 +47,7 @@ use crate::views::{Container, Decorators, Stack};
 use crate::{
     Application,
     app::UserEvent,
-    context::{FrameUpdate, LayoutChanged, PaintState, StyleCx, UpdateCx, VisualChanged},
+    context::{FrameUpdate, LayoutChanged, StyleCx, UpdateCx, VisualChanged},
     event::{
         Event, GlobalEventCx, ImeEvent, WindowEvent, clear_hit_test_cache,
         dropped_file::FileDragEvent,
@@ -167,36 +156,30 @@ impl WindowHandle {
         let window: Arc<dyn Window> = window.into();
         store_window_id_mapping(id, window_id, &window);
         let frame_size = size.get_untracked() * os_scale;
-        let (paint_state, window_backend) =
-            if crate::paint::renderer::HAS_GPU_ACTIVE_RENDERER {
-                if let Some(resources) = gpu_resources.clone() {
-                    Self::new_gpu_backed_paint_state(
-                        window.clone(),
-                        resources,
-                        transparent,
-                        os_scale,
-                        frame_size,
-                        font_embolden,
-                    )
-                } else {
-                    Self::new_pending_paint_state(
-                        window.clone(),
-                        frame_size,
-                        font_embolden,
-                        required_features,
-                        backends,
-                    )
-                }
-            } else if crate::paint::renderer::HAS_IMMEDIATE_RENDERER {
-                Self::new_immediate_paint_state(
+        let (paint_state, window_backend) = if crate::paint::renderer::HAS_GPU_ACTIVE_RENDERER {
+            if let Some(resources) = gpu_resources.clone() {
+                Self::new_gpu_backed_paint_state(
                     window.clone(),
+                    resources,
+                    transparent,
                     os_scale,
                     frame_size,
                     font_embolden,
                 )
             } else {
-                Self::new_uninitialized_paint_state()
-            };
+                Self::new_pending_paint_state(
+                    window.clone(),
+                    frame_size,
+                    font_embolden,
+                    required_features,
+                    backends,
+                )
+            }
+        } else if crate::paint::renderer::HAS_IMMEDIATE_RENDERER {
+            Self::new_immediate_paint_state(window.clone(), os_scale, frame_size, font_embolden)
+        } else {
+            Self::new_uninitialized_paint_state()
+        };
 
         let paint_state_initialized = matches!(paint_state, PaintState::Initialized { .. });
 
@@ -274,7 +257,7 @@ impl WindowHandle {
                 .instance
                 .create_surface(Arc::clone(&window))
                 .expect("can create second window");
-            let init = crate::paint::renderer::new(
+            let (renderer, window_backend) = crate::paint::renderer::new(
                 window,
                 gpu_resources,
                 surface,
@@ -285,9 +268,9 @@ impl WindowHandle {
             );
             return (
                 PaintState::Initialized {
-                    rasterizer: init.rasterizer,
+                    rasterizer: renderer,
                 },
-                Some(init.window_backend),
+                Some(window_backend),
             );
         }
 
@@ -322,12 +305,13 @@ impl WindowHandle {
             feature = "active-tiny-skia"
         ))]
         {
-            let init = crate::paint::renderer::new_cpu(window, os_scale, size, font_embolden);
+            let (renderer, window_backend) =
+                crate::paint::renderer::new_cpu(window, os_scale, size, font_embolden);
             return (
                 PaintState::Initialized {
-                    rasterizer: init.rasterizer,
+                    rasterizer: renderer,
                 },
-                Some(init.window_backend),
+                Some(window_backend),
             );
         }
 
@@ -350,38 +334,22 @@ impl WindowHandle {
         required_features: wgpu::Features,
         backends: Option<wgpu::Backends>,
     ) -> (PaintState, Option<crate::paint::renderer::WindowBackend>) {
-        #[cfg(any(
-            feature = "active-vello",
-            feature = "active-vger",
-            feature = "active-skia"
-        ))]
-        {
-            let gpu_resources_rx = GpuResources::request(
-                move |window_id| {
-                    Application::send_proxy_event(UserEvent::GpuResourcesUpdate { window_id });
-                },
-                required_features,
-                backends,
-                window.clone(),
-            );
-            return (
-                PaintState::new_pending(window, gpu_resources_rx, size, font_embolden),
-                None,
-            );
-        }
-
-        #[cfg(not(any(
-            feature = "active-vello",
-            feature = "active-vger",
-            feature = "active-skia"
-        )))]
-        {
-            let _ = (window, size, font_embolden, required_features, backends);
-            unreachable!("Pending paint state is only valid for GPU-backed renderers")
-        }
+        let gpu_resources_rx = GpuResources::request(
+            move |window_id| {
+                Application::send_proxy_event(UserEvent::GpuResourcesUpdate { window_id });
+            },
+            required_features,
+            backends,
+            window.clone(),
+        );
+        return (
+            PaintState::new_pending(window, gpu_resources_rx, size, font_embolden),
+            None,
+        );
     }
 
-    fn new_uninitialized_paint_state() -> (PaintState, Option<crate::paint::renderer::WindowBackend>) {
+    fn new_uninitialized_paint_state() -> (PaintState, Option<crate::paint::renderer::WindowBackend>)
+    {
         (
             PaintState::Initialized {
                 rasterizer: crate::paint::renderer::uninitialized_rasterizer(),
@@ -908,35 +876,14 @@ impl WindowHandle {
 
         let frame_size = cx.window_state.root_size * cx.window_state.os_scale;
         let frame_size = Size::new(frame_size.width.max(1.0), frame_size.height.max(1.0));
+        let begin = floem_renderer::BeginFrame {
+            size: frame_size,
+            scale: cx.window_state.effective_scale(),
+            font_embolden: self.font_embolden,
+        };
         if let Some(window_backend) = self.window_backend.as_mut() {
             window_backend.resize(frame_size.width as u32, frame_size.height as u32);
         }
-        cx.paint_state
-            .rasterizer_mut()
-            .begin(floem_renderer::BeginFrame {
-                size: frame_size,
-                scale: cx.window_state.effective_scale(),
-                font_embolden: self.font_embolden,
-            });
-
-        if !self.transparent {
-            let color = self
-                .default_theme
-                .as_ref()
-                .and_then(|theme| theme.get(crate::style::Background))
-                .unwrap_or(peniko::Brush::Solid(palette::css::WHITE));
-            let renderer = cx.paint_state.rasterizer_mut();
-            PaintSink::fill(
-                renderer.paint_sink(),
-                FillRef::new(frame_size.to_rect().expand(), &color),
-            );
-        }
-
-        cx.paint_with_traversal(self.id);
-
-        let root_element_id = cx.window_state.root_view_id.get_element_id();
-        let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::PaintPresent));
-        GlobalEventCx::new(cx.window_state, root_element_id, event).route_window_event();
 
         let finish_mode = if cx.window_state.capture.is_some() {
             FinishMode::CpuImage
@@ -945,26 +892,63 @@ impl WindowHandle {
         };
         self.window.pre_present_notify();
 
+        if finish_mode == FinishMode::CpuImage || self.window_backend.is_none() {
+            cx.paint_state.rasterizer_mut().set_size(begin);
+            cx.paint_state.rasterizer_mut().reset();
+            if !self.transparent {
+                let color = self
+                    .default_theme
+                    .as_ref()
+                    .and_then(|theme| theme.get(crate::style::Background))
+                    .unwrap_or(peniko::Brush::Solid(palette::css::WHITE));
+                let renderer = cx.paint_state.rasterizer_mut();
+                renderer.render(&mut |sink| {
+                    PaintSink::fill(sink, FillRef::new(frame_size.to_rect().expand(), &color));
+                });
+            }
+
+            cx.paint_with_traversal(self.id);
+
+            let root_element_id = cx.window_state.root_view_id.get_element_id();
+            let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::PaintPresent));
+            GlobalEventCx::new(cx.window_state, root_element_id, event).route_window_event();
+        }
+
         if finish_mode == FinishMode::CpuImage {
             let rasterizer = cx.paint_state.rasterizer_mut();
             rasterizer.finish();
-            rasterizer.readback(finish_mode).and_then(|output| output.into_image())
-        } else {
-            let rasterizer = cx.paint_state.rasterizer_mut();
-            if !self
-                .window_backend
-                .as_mut()
-                .is_some_and(|window_backend| window_backend.present_rasterizer(rasterizer))
-            {
-                rasterizer.finish();
-                if let Some(output) = rasterizer.readback(finish_mode).as_ref() {
-                    if let Some(window_backend) = self.window_backend.as_mut() {
-                        window_backend.present(output);
-                    }
-                }
+            rasterizer.readback().and_then(|output| output.into_image())
+        } else if let Some(window_backend) = self.window_backend.as_mut() {
+            let background = if self.transparent {
+                None
             } else {
-                rasterizer.finish();
-            }
+                Some(
+                    self.default_theme
+                        .as_ref()
+                        .and_then(|theme| theme.get(crate::style::Background))
+                        .unwrap_or(peniko::Brush::Solid(palette::css::WHITE)),
+                )
+            };
+
+            window_backend.render(
+                begin,
+                &mut |renderer: &mut dyn floem_renderer::SceneRenderer| {
+                    if let Some(color) = background.as_ref() {
+                        renderer.render(&mut |sink| {
+                            PaintSink::fill(
+                                sink,
+                                FillRef::new(frame_size.to_rect().expand(), color),
+                            );
+                        });
+                    }
+                    cx.paint_with_traversal_into(self.id, renderer);
+                },
+            );
+            let root_element_id = cx.window_state.root_view_id.get_element_id();
+            let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::PaintPresent));
+            GlobalEventCx::new(cx.window_state, root_element_id, event).route_window_event();
+            None
+        } else {
             None
         }
     }
@@ -1808,15 +1792,16 @@ impl WindowHandle {
         ))]
         {
             use wgpu::hal::api::Metal;
-
-            use crate::paint::renderer::WindowBackend;
-
-            let Some(WindowBackend::Gpu { presenter, .. }) = &self.window_backend else {
+            let Some(surface) = self
+                .window_backend
+                .as_ref()
+                .and_then(|window_backend| window_backend.gpu_surface())
+            else {
                 return;
             };
 
             unsafe {
-                if let Some(metal_surface) = presenter.surface.as_hal::<Metal>() {
+                if let Some(metal_surface) = surface.as_hal::<Metal>() {
                     metal_surface
                         .render_layer()
                         .lock()

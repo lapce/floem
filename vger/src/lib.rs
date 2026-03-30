@@ -4,8 +4,8 @@ use std::sync::Arc;
 use anyhow::Result;
 use floem_renderer::gpu_resources::GpuResources;
 use floem_renderer::{
-    BeginFrame, CustomRasterizer, DisplayCommandExt, GpuTextureTarget, RasterCore, RasterTarget,
-    Rasterizer, RasterizerOutput, tiny_skia,
+    BeginFrame, CustomRenderer, DisplayCommandExt, GpuTextureTarget, RasterizerOutput, RenderCore,
+    Renderer, TargetRenderer, tiny_skia,
 };
 use floem_vger_rs::{GlyphImage, Image, PaintIndex, PixelFormat, Vger};
 use imaging::{
@@ -216,8 +216,8 @@ impl CustomPaintSink<DisplayCommandExt> for VgerRenderer {
     }
 }
 
-impl RasterCore for VgerRenderer {
-    fn with_paint_sink(&mut self, f: &mut dyn FnMut(&mut dyn PaintSink)) {
+impl RenderCore for VgerRenderer {
+    fn render(&mut self, f: &mut dyn FnMut(&mut dyn PaintSink)) {
         f(self)
     }
 
@@ -228,14 +228,17 @@ impl RasterCore for VgerRenderer {
     }
 
     fn readback(&mut self) -> Option<RasterizerOutput> {
-        self.finished_output
-            .take()
-            .or_else(|| self.render_to_texture_output().map(RasterizerOutput::GpuTexture))
+        self.finished_output.take().or_else(|| {
+            self.render_to_texture_output()
+                .map(RasterizerOutput::GpuTexture)
+        })
     }
 }
 
-impl Rasterizer for VgerRenderer {
-    fn begin(&mut self, frame: BeginFrame) {
+impl Renderer for VgerRenderer {
+    type Target = wgpu::TextureView;
+
+    fn set_size(&mut self, frame: BeginFrame) {
         Self::begin(
             self,
             frame.size.width as u32,
@@ -244,18 +247,30 @@ impl Rasterizer for VgerRenderer {
             frame.font_embolden,
         );
     }
+
+    fn reset(&mut self) {
+        self.finished_output = None;
+        self.clip = None;
+    }
+
+    fn read_target(&mut self) -> Option<Self::Target> {
+        self.finished_output.take().and_then(|output| match output {
+            RasterizerOutput::GpuTexture(texture) => Some(texture),
+            RasterizerOutput::Image(_) => None,
+        })
+    }
 }
 
-impl RasterTarget for VgerRenderer {
+impl TargetRenderer for VgerRenderer {
     type Target = GpuTextureTarget;
 
-    fn create(target: Self::Target) -> Result<Self, String> {
+    fn create(frame: BeginFrame, target: Self::Target) -> Result<Self, String> {
         let device = Arc::new(target.device);
         let queue = Arc::new(target.queue);
         let texture_format = target.texture_view.texture().format();
         let size = target.texture_view.texture().size();
         let vger = floem_vger_rs::Vger::new(device.clone(), queue.clone(), texture_format);
-        Ok(Self {
+        let mut renderer = Self {
             device,
             queue,
             vger,
@@ -263,16 +278,23 @@ impl RasterTarget for VgerRenderer {
             texture: None,
             view: Some(target.texture_view),
             size: (size.width, size.height),
-            scale: 1.0,
+            scale: frame.scale,
             transform: Affine::IDENTITY,
             clip: None,
-            font_embolden: 0.0,
+            font_embolden: frame.font_embolden,
             finished_output: None,
-        })
+        };
+        renderer.begin(
+            frame.size.width as u32,
+            frame.size.height as u32,
+            frame.scale,
+            frame.font_embolden,
+        );
+        Ok(renderer)
     }
 }
 
-impl CustomRasterizer for VgerRenderer {
+impl CustomRenderer for VgerRenderer {
     fn with_custom_paint_sink(
         &mut self,
         f: &mut dyn FnMut(&mut dyn CustomPaintSink<DisplayCommandExt>),
@@ -465,7 +487,6 @@ impl VgerRenderer {
         self.texture = Some(texture);
         self.view = Some(view);
     }
-
 }
 
 impl VgerRenderer {

@@ -10,13 +10,13 @@ pub mod display_list;
 pub mod renderer;
 
 pub use border_path_iter::{BorderPath, BorderPathEvent};
-pub use floem_renderer::SceneRasterizer as Rasterizer;
+pub use floem_renderer::SceneRenderer as Rasterizer;
 
 use floem_renderer::{
-    RasterIntoBackend, SceneRasterizer,
+    BeginFrame, DisplayCommandExt, Renderer, SceneRenderer,
     gpu_resources::{GpuResourceError, GpuResources},
 };
-use imaging::{PaintSink, Painter};
+use imaging::{CustomPaintSink, PaintSink, Painter};
 use peniko::kurbo::{Affine, Point, RoundedRect, Size};
 use rustc_hash::FxHashSet;
 use std::sync::Arc;
@@ -34,11 +34,23 @@ use crate::view::{paint_bg, paint_border, paint_outline};
 use crate::window::state::WindowState;
 use display_list::{ElementSnapshot, RecordingRenderer, replay_stage, transform_diff_class};
 
-#[cfg(feature = "active-skia")]
-pub(crate) type WindowRasterizer =
-    RasterIntoBackend<Box<dyn SceneRasterizer>, floem_skia_renderer::SkiaRenderer, ()>;
-#[cfg(not(feature = "active-skia"))]
-pub(crate) type WindowRasterizer = RasterIntoBackend<Box<dyn SceneRasterizer>, (), ()>;
+pub(crate) trait WindowRasterizer: SceneRenderer {
+    fn set_size(&mut self, frame: BeginFrame);
+    fn reset(&mut self);
+}
+
+impl<T> WindowRasterizer for T
+where
+    T: SceneRenderer + Renderer,
+{
+    fn set_size(&mut self, frame: BeginFrame) {
+        Renderer::set_size(self, frame);
+    }
+
+    fn reset(&mut self) {
+        Renderer::reset(self);
+    }
+}
 
 std::thread_local! {
     /// Holds the ID of a View being painted very briefly if it is being rendered as
@@ -174,31 +186,6 @@ impl PaintCx<'_> {
 }
 
 impl GlobalPaintCx<'_> {
-    fn replay_element_overflow_clip(
-        &mut self,
-        element_id: ElementId,
-        target_origin: Point,
-        render_size: Option<Size>,
-    ) {
-        let box_tree = self.window_state.box_tree.borrow();
-        let Some(clip) = box_tree.local_clip(element_id.0).flatten() else {
-            return;
-        };
-        drop(box_tree);
-
-        let base_transform = self
-            .element_base_transform(element_id)
-            .then_scale(self.window_state.effective_scale())
-            .then_translate(-target_origin.to_vec2());
-        let render_size =
-            render_size.unwrap_or_else(|| self.window_state.root_size * self.window_state.os_scale);
-        let renderer = self.paint_state.rasterizer_mut();
-
-        // Overflow clip must be replayed at traversal time rather than recorded into the
-        // element stage so it can stay active across descendant element replay.
-        display_list::replay_view_clip(renderer, clip, base_transform, render_size);
-    }
-
     fn collect_retained_subtree_descendants(
         &mut self,
         active_ids: &FxHashSet<ElementId>,
@@ -253,7 +240,37 @@ impl GlobalPaintCx<'_> {
     /// Paint entire tree using explicit traversal
     pub(crate) fn paint_with_traversal(&mut self, root_id: ViewId) {
         self.prepare_display_list(root_id);
-        self.replay_display_list(None, Point::ZERO, None);
+        let window_state = &mut self.window_state;
+        let record_paint_order = self.record_paint_order;
+        let rasterizer = self.paint_state.rasterizer_mut();
+        rasterizer.with_custom_paint_sink(&mut |sink| {
+            Self::replay_display_list_to_sink_with_state(
+                window_state,
+                record_paint_order,
+                sink,
+                None,
+                Point::ZERO,
+                None,
+            );
+        });
+    }
+
+    pub(crate) fn paint_with_traversal_into(
+        &mut self,
+        root_id: ViewId,
+        renderer: &mut dyn SceneRenderer,
+    ) {
+        self.prepare_display_list(root_id);
+        renderer.with_custom_paint_sink(&mut |sink| {
+            Self::replay_display_list_to_sink_with_state(
+                self.window_state,
+                self.record_paint_order,
+                sink,
+                None,
+                Point::ZERO,
+                None,
+            );
+        });
     }
 
     pub(crate) fn prepare_display_list(&mut self, root_id: ViewId) {
@@ -335,20 +352,21 @@ impl GlobalPaintCx<'_> {
         };
     }
 
-    pub(crate) fn replay_display_list(
-        &mut self,
+    fn replay_display_list_to_sink_with_state(
+        window_state: &mut WindowState,
+        record_paint_order: bool,
+        sink: &mut dyn CustomPaintSink<DisplayCommandExt>,
         included_ids: Option<&FxHashSet<ElementId>>,
         target_origin: Point,
         render_size: Option<Size>,
     ) {
-        let mut stack = self
-            .window_state
+        let mut stack = window_state
             .display_list
             .root_slots()
             .iter()
             .rev()
             .filter_map(|&slot| {
-                self.window_state
+                window_state
                     .display_list
                     .node_element_id(slot)
                     .map(|id| (slot, false, id))
@@ -361,58 +379,84 @@ impl GlobalPaintCx<'_> {
             }
 
             if !is_post {
-                if self.record_paint_order {
+                if record_paint_order {
                     record_paint(element_id.owning_id());
                 }
                 if element_id.is_view() {
-                    self.replay_element_overflow_clip(element_id, target_origin, render_size);
+                    Self::replay_element_overflow_clip_to_sink_with_state(
+                        window_state,
+                        sink,
+                        element_id,
+                        target_origin,
+                        render_size,
+                    );
                 }
-                self.replay_visual_node(element_id, false, None, target_origin, render_size);
+                Self::replay_visual_node_to_sink_with_state(
+                    window_state,
+                    sink,
+                    element_id,
+                    false,
+                    None,
+                    target_origin,
+                    render_size,
+                );
 
                 stack.push((slot, true, element_id));
-                let children = self
-                    .window_state
+                let children = window_state
                     .display_list
                     .child_slots(slot)
                     .map(|children| children.to_vec())
                     .unwrap_or_default();
                 for child in children.into_iter().rev() {
-                    if let Some(child_id) = self.window_state.display_list.node_element_id(child) {
+                    if let Some(child_id) = window_state.display_list.node_element_id(child) {
                         stack.push((child, false, child_id));
                     }
                 }
                 continue;
             }
 
-            self.replay_visual_node(element_id, true, None, target_origin, render_size);
+            Self::replay_visual_node_to_sink_with_state(
+                window_state,
+                sink,
+                element_id,
+                true,
+                None,
+                target_origin,
+                render_size,
+            );
             if element_id.is_view() {
-                let has_clip = self
-                    .window_state
+                let has_clip = window_state
                     .box_tree
                     .borrow()
                     .local_clip(element_id.0)
                     .flatten()
                     .is_some();
                 if has_clip {
-                    PaintSink::pop_clip(self.paint_state.rasterizer_mut().paint_sink());
+                    PaintSink::pop_clip(sink);
                 }
             }
         }
     }
 
-    pub(crate) fn collect_subtree_elements(&self, root: ElementId) -> FxHashSet<ElementId> {
-        let box_tree = self.window_state.box_tree.borrow();
-        let mut elements = FxHashSet::default();
-        let mut stack = vec![root.0];
+    fn replay_element_overflow_clip_to_sink_with_state(
+        window_state: &mut WindowState,
+        sink: &mut dyn CustomPaintSink<DisplayCommandExt>,
+        element_id: ElementId,
+        target_origin: Point,
+        render_size: Option<Size>,
+    ) {
+        let box_tree = window_state.box_tree.borrow();
+        let Some(clip) = box_tree.local_clip(element_id.0).flatten() else {
+            return;
+        };
+        drop(box_tree);
 
-        while let Some(node_id) = stack.pop() {
-            if let Some(element_id) = box_tree.element_id_of(node_id) {
-                elements.insert(element_id);
-            }
-            stack.extend(box_tree.children_of(node_id).iter().copied());
-        }
-
-        elements
+        let base_transform = Self::element_base_transform_from_state(window_state, element_id)
+            .then_scale(window_state.effective_scale())
+            .then_translate(-target_origin.to_vec2());
+        let render_size =
+            render_size.unwrap_or_else(|| window_state.root_size * window_state.os_scale);
+        display_list::replay_view_clip(sink, clip, base_transform, render_size);
     }
 
     fn element_base_transform(&mut self, element_id: ElementId) -> Affine {
@@ -421,19 +465,27 @@ impl GlobalPaintCx<'_> {
         box_tree.world_transform(element_id.0).unwrap_or_default()
     }
 
-    fn replay_visual_node(
-        &mut self,
+    fn element_base_transform_from_state(
+        window_state: &mut WindowState,
+        element_id: ElementId,
+    ) -> Affine {
+        let box_tree = window_state.box_tree.borrow();
+        box_tree.world_transform(element_id.0).unwrap_or_default()
+    }
+
+    fn replay_visual_node_to_sink_with_state(
+        window_state: &mut WindowState,
+        sink: &mut dyn CustomPaintSink<DisplayCommandExt>,
         element_id: ElementId,
         is_post: bool,
         damage_rects: Option<&[peniko::kurbo::Rect]>,
         target_origin: Point,
         render_size: Option<Size>,
     ) {
-        let base_transform = self
-            .element_base_transform(element_id)
-            .then_scale(self.window_state.effective_scale())
+        let base_transform = Self::element_base_transform_from_state(window_state, element_id)
+            .then_scale(window_state.effective_scale())
             .then_translate(-target_origin.to_vec2());
-        let Some(element) = self.window_state.display_list.element(element_id) else {
+        let Some(element) = window_state.display_list.element(element_id) else {
             return;
         };
         let stage = if is_post {
@@ -449,11 +501,10 @@ impl GlobalPaintCx<'_> {
                 .collect::<Vec<_>>()
         });
         let render_size =
-            render_size.unwrap_or_else(|| self.window_state.root_size * self.window_state.os_scale);
-        let renderer = self.paint_state.rasterizer_mut();
+            render_size.unwrap_or_else(|| window_state.root_size * window_state.os_scale);
         replay_stage(
             stage,
-            renderer,
+            sink,
             base_transform,
             render_size,
             local_damage.as_deref(),
@@ -545,8 +596,7 @@ impl<'a> PaintCx<'a> {
     }
 }
 
-// TODO: should this be private?
-pub enum PaintState {
+pub(crate) enum PaintState {
     /// The renderer is not yet initialized. This state is used to wait for the GPU resources to be acquired.
     PendingGpuResources {
         window: Arc<dyn Window>,
@@ -558,10 +608,10 @@ pub enum PaintState {
         ///
         /// Previously, `PaintState::rasterizer` and `PaintState::rasterizer_mut` would panic if called when the rasterizer was uninitialized.
         /// However, this turned out to be hard to handle properly and led to panics, especially since the rest of the application code can't control when the renderer is initialized.
-        rasterizer: WindowRasterizer,
+        rasterizer: Box<dyn WindowRasterizer>,
     },
     /// The renderer is initialized and ready to paint.
-    Initialized { rasterizer: WindowRasterizer },
+    Initialized { rasterizer: Box<dyn WindowRasterizer> },
 }
 
 impl PaintState {
@@ -579,49 +629,17 @@ impl PaintState {
         }
     }
 
-    pub(crate) fn rasterizer(&self) -> &(dyn SceneRasterizer + '_) {
+    pub(crate) fn rasterizer(&self) -> &(dyn WindowRasterizer + '_) {
         match self {
-            PaintState::PendingGpuResources { rasterizer, .. } => match rasterizer {
-                RasterIntoBackend::Null => unreachable!("null rasterizer is not stored"),
-                RasterIntoBackend::Rasterizer(rasterizer) => rasterizer.as_ref(),
-                #[cfg(feature = "active-skia")]
-                RasterIntoBackend::Gpu(rasterizer) => rasterizer,
-                #[cfg(not(feature = "active-skia"))]
-                RasterIntoBackend::Gpu(_) => unreachable!("gpu target backend is unavailable"),
-                RasterIntoBackend::Cpu(_) => unreachable!("cpu target backend is unavailable"),
-            },
-            PaintState::Initialized { rasterizer } => match rasterizer {
-                RasterIntoBackend::Null => unreachable!("null rasterizer is not stored"),
-                RasterIntoBackend::Rasterizer(rasterizer) => rasterizer.as_ref(),
-                #[cfg(feature = "active-skia")]
-                RasterIntoBackend::Gpu(rasterizer) => rasterizer,
-                #[cfg(not(feature = "active-skia"))]
-                RasterIntoBackend::Gpu(_) => unreachable!("gpu target backend is unavailable"),
-                RasterIntoBackend::Cpu(_) => unreachable!("cpu target backend is unavailable"),
-            },
+            PaintState::PendingGpuResources { rasterizer, .. } => rasterizer.as_ref(),
+            PaintState::Initialized { rasterizer } => rasterizer.as_ref(),
         }
     }
 
-    pub(crate) fn rasterizer_mut(&mut self) -> &mut (dyn SceneRasterizer + '_) {
+    pub(crate) fn rasterizer_mut(&mut self) -> &mut (dyn WindowRasterizer + '_) {
         match self {
-            PaintState::PendingGpuResources { rasterizer, .. } => match rasterizer {
-                RasterIntoBackend::Null => unreachable!("null rasterizer is not stored"),
-                RasterIntoBackend::Rasterizer(rasterizer) => rasterizer.as_mut(),
-                #[cfg(feature = "active-skia")]
-                RasterIntoBackend::Gpu(rasterizer) => rasterizer,
-                #[cfg(not(feature = "active-skia"))]
-                RasterIntoBackend::Gpu(_) => unreachable!("gpu target backend is unavailable"),
-                RasterIntoBackend::Cpu(_) => unreachable!("cpu target backend is unavailable"),
-            },
-            PaintState::Initialized { rasterizer } => match rasterizer {
-                RasterIntoBackend::Null => unreachable!("null rasterizer is not stored"),
-                RasterIntoBackend::Rasterizer(rasterizer) => rasterizer.as_mut(),
-                #[cfg(feature = "active-skia")]
-                RasterIntoBackend::Gpu(rasterizer) => rasterizer,
-                #[cfg(not(feature = "active-skia"))]
-                RasterIntoBackend::Gpu(_) => unreachable!("gpu target backend is unavailable"),
-                RasterIntoBackend::Cpu(_) => unreachable!("cpu target backend is unavailable"),
-            },
+            PaintState::PendingGpuResources { rasterizer, .. } => rasterizer.as_mut(),
+            PaintState::Initialized { rasterizer } => rasterizer.as_mut(),
         }
     }
 }

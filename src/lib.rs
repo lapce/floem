@@ -234,13 +234,11 @@ pub mod receiver_signal {
     pub use stream_signal::*;
 }
 
+pub use app::{AppConfig, AppEvent, Application, launch, quit_app, reopen};
 pub use box_tree::{BoxTree, ElementId, ElementMeta, FocusNavMeta};
 pub(crate) use box_tree::{bump_focus_nav_meta_revision, focus_nav_meta_revision};
-pub use app::{AppConfig, AppEvent, Application, launch, quit_app, reopen};
 pub use floem_reactive as reactive;
 pub use floem_renderer::gpu_resources::GpuResources;
-pub use floem_renderer::SceneRasterizer as Rasterizer;
-pub use floem_renderer::Svg as RendererSvg;
 pub use imbl;
 pub use layout::ScreenLayout;
 #[cfg(not(target_arch = "wasm32"))]
@@ -270,7 +268,6 @@ pub use app::take_close_window_event_count;
 pub use style::{theme, unit};
 
 pub mod prelude {
-    pub use crate::Rasterizer;
     pub use crate::event::listener as el;
     pub use crate::event::listener;
     pub use crate::event::listener::EventListenerTrait;

@@ -6,8 +6,8 @@ use floem_renderer::tiny_skia::{
     SpreadMode, Stroke, Transform,
 };
 use floem_renderer::{
-    BeginFrame, CpuBufferFormat, CpuBufferTarget, CustomRasterizer, DisplayCommandExt, RasterCore,
-    RasterTarget, Rasterizer, RasterizerOutput,
+    BeginFrame, CpuBufferFormat, CpuBufferTarget, CustomRenderer, DisplayCommandExt,
+    RasterizerOutput, RenderCore, Renderer, TargetRenderer,
 };
 use imaging::{
     BlurredRoundedRect, ClipRef, CustomPaintSink, FillRef, GroupRef, PaintSink, StrokeRef,
@@ -1197,8 +1197,8 @@ impl CustomPaintSink<DisplayCommandExt> for TinySkiaRenderer {
     }
 }
 
-impl RasterCore for TinySkiaRenderer {
-    fn with_paint_sink(&mut self, f: &mut dyn FnMut(&mut dyn PaintSink)) {
+impl RenderCore for TinySkiaRenderer {
+    fn render(&mut self, f: &mut dyn FnMut(&mut dyn PaintSink)) {
         f(self)
     }
 
@@ -1209,8 +1209,10 @@ impl RasterCore for TinySkiaRenderer {
     }
 }
 
-impl Rasterizer for TinySkiaRenderer {
-    fn begin(&mut self, frame: BeginFrame) {
+impl Renderer for TinySkiaRenderer {
+    type Target = ImageData;
+
+    fn set_size(&mut self, frame: BeginFrame) {
         Self::begin(
             self,
             frame.size.width as u32,
@@ -1219,9 +1221,15 @@ impl Rasterizer for TinySkiaRenderer {
             frame.font_embolden,
         );
     }
+
+    fn reset(&mut self) {}
+
+    fn read_target(&mut self) -> Option<Self::Target> {
+        Self::readback_image(self)
+    }
 }
 
-impl CustomRasterizer for TinySkiaRenderer {
+impl CustomRenderer for TinySkiaRenderer {
     fn with_custom_paint_sink(
         &mut self,
         f: &mut dyn FnMut(&mut dyn CustomPaintSink<DisplayCommandExt>),
@@ -1260,8 +1268,8 @@ impl TinySkiaTargetRenderer<'_> {
     }
 }
 
-impl RasterCore for TinySkiaTargetRenderer<'_> {
-    fn with_paint_sink(&mut self, f: &mut dyn FnMut(&mut dyn PaintSink)) {
+impl RenderCore for TinySkiaTargetRenderer<'_> {
+    fn render(&mut self, f: &mut dyn FnMut(&mut dyn PaintSink)) {
         f(&mut self.inner)
     }
 
@@ -1285,11 +1293,16 @@ impl RasterCore for TinySkiaTargetRenderer<'_> {
     }
 }
 
-impl<'a> RasterTarget for TinySkiaTargetRenderer<'a> {
+impl<'a> TargetRenderer for TinySkiaTargetRenderer<'a> {
     type Target = CpuBufferTarget<'a>;
 
-    fn create(target: Self::Target) -> Result<Self, String> {
-        let inner = TinySkiaRenderer::new(target.width, target.height, 1.0, 0.0)
+    fn create(frame: BeginFrame, target: Self::Target) -> Result<Self, String> {
+        let inner = TinySkiaRenderer::new(
+            target.width,
+            target.height,
+            frame.scale,
+            frame.font_embolden,
+        )
             .map_err(|err| err.to_string())?;
         Ok(Self {
             inner,
@@ -1299,7 +1312,7 @@ impl<'a> RasterTarget for TinySkiaTargetRenderer<'a> {
     }
 }
 
-impl CustomRasterizer for TinySkiaTargetRenderer<'_> {
+impl CustomRenderer for TinySkiaTargetRenderer<'_> {
     fn with_custom_paint_sink(
         &mut self,
         f: &mut dyn FnMut(&mut dyn CustomPaintSink<DisplayCommandExt>),

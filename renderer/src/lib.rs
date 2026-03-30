@@ -23,9 +23,8 @@ pub use resvg::usvg;
 pub mod gpu_resources;
 pub mod rasterizer;
 pub use rasterizer::{
-    BeginFrame, CpuBufferFormat, CpuBufferTarget, CustomRasterizer, GpuTextureTarget, RasterCore,
-    RasterIntoBackend, RasterTarget, Rasterizer, RasterizerOutput, SceneRasterizer,
-    SceneTargetRasterizer,
+    BeginFrame, CpuBufferFormat, CpuBufferTarget, CustomRenderer, GpuTextureTarget,
+    RasterizerOutput, RenderCore, Renderer, SceneRenderer, SceneTargetRenderer, TargetRenderer,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

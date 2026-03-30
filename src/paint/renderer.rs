@@ -49,45 +49,6 @@
 //!
 use std::sync::Arc;
 
-#[cfg(not(any(
-    feature = "active-vello",
-    feature = "active-vger",
-    feature = "active-vello-hybrid",
-    feature = "active-vello-cpu",
-    feature = "active-skia",
-    feature = "active-skia-cpu",
-    feature = "active-tiny-skia",
-)))]
-compile_error!("Enable exactly one active renderer feature.");
-#[cfg(any(
-    all(feature = "active-vello", feature = "active-vger"),
-    all(feature = "active-vello", feature = "active-vello-hybrid"),
-    all(feature = "active-vello", feature = "active-vello-cpu"),
-    all(feature = "active-vello", feature = "active-skia"),
-    all(feature = "active-vello", feature = "active-skia-cpu"),
-    all(feature = "active-vello", feature = "active-tiny-skia"),
-    all(feature = "active-vger", feature = "active-vello-hybrid"),
-    all(feature = "active-vger", feature = "active-vello-cpu"),
-    all(feature = "active-vger", feature = "active-skia"),
-    all(feature = "active-vger", feature = "active-skia-cpu"),
-    all(feature = "active-vger", feature = "active-tiny-skia"),
-    all(feature = "active-vello-hybrid", feature = "active-vello-cpu"),
-    all(feature = "active-vello-hybrid", feature = "active-skia"),
-    all(feature = "active-vello-hybrid", feature = "active-skia-cpu"),
-    all(feature = "active-vello-hybrid", feature = "active-tiny-skia"),
-    all(feature = "active-vello-cpu", feature = "active-skia"),
-    all(feature = "active-vello-cpu", feature = "active-skia-cpu"),
-    all(feature = "active-vello-cpu", feature = "active-tiny-skia"),
-    all(feature = "active-skia", feature = "active-tiny-skia"),
-    all(feature = "active-skia", feature = "active-skia-cpu"),
-    all(feature = "active-skia-cpu", feature = "active-tiny-skia"),
-))]
-compile_error!("Enable only one active renderer feature.");
-#[cfg(not(any(feature = "fallback-vello-cpu", feature = "fallback-tiny-skia")))]
-compile_error!("Enable exactly one CPU fallback renderer feature.");
-#[cfg(all(feature = "fallback-vello-cpu", feature = "fallback-tiny-skia"))]
-compile_error!("Enable only one CPU fallback renderer feature.");
-
 #[cfg(any(
     feature = "active-vello",
     feature = "active-vger",
@@ -117,10 +78,9 @@ pub(crate) const HAS_IMMEDIATE_RENDERER: bool = true;
 pub(crate) const HAS_IMMEDIATE_RENDERER: bool = false;
 
 use floem_renderer::gpu_resources::GpuResources;
-use floem_renderer::rasterizer::{CpuOrRasterizer, GpuOrRasterizer};
 use floem_renderer::{
-    BeginFrame, CustomRasterizer, DisplayCommandExt, FinishMode, RasterCore, Rasterizer,
-    RasterizerOutput, SceneRasterizer,
+    BeginFrame, CustomRenderer, DisplayCommandExt, RasterizerOutput, RenderCore, Renderer,
+    SceneRenderer, TargetRenderer,
 };
 use imaging::{
     BlurredRoundedRect, ClipRef, CustomPaintSink, FillRef, GlyphRunRef, GroupRef, PaintSink,
@@ -133,10 +93,16 @@ use std::num::NonZeroU32;
 use wgpu::util::TextureBlitter;
 use winit::window::Window;
 
-struct NullRasterizer;
+type CpuTargetRenderFn = dyn for<'a> FnMut(
+    BeginFrame,
+    floem_renderer::CpuBufferTarget<'a>,
+    &mut dyn FnMut(&mut dyn SceneRenderer),
+) -> Result<(), String>;
 
-impl RasterCore for NullRasterizer {
-    fn with_paint_sink(&mut self, f: &mut dyn FnMut(&mut dyn PaintSink)) {
+struct NullRenderer;
+
+impl RenderCore for NullRenderer {
+    fn render(&mut self, f: &mut dyn FnMut(&mut dyn PaintSink)) {
         f(self)
     }
 
@@ -147,11 +113,19 @@ impl RasterCore for NullRasterizer {
     }
 }
 
-impl Rasterizer for NullRasterizer {
-    fn begin(&mut self, _frame: BeginFrame) {}
+impl Renderer for NullRenderer {
+    type Target = RasterizerOutput;
+
+    fn set_size(&mut self, _frame: BeginFrame) {}
+
+    fn reset(&mut self) {}
+
+    fn read_target(&mut self) -> Option<Self::Target> {
+        None
+    }
 }
 
-impl PaintSink for NullRasterizer {
+impl PaintSink for NullRenderer {
     fn push_clip(&mut self, _clip: ClipRef<'_>) {}
 
     fn pop_clip(&mut self) {}
@@ -174,11 +148,11 @@ impl PaintSink for NullRasterizer {
     fn blurred_rounded_rect(&mut self, _draw: BlurredRoundedRect) {}
 }
 
-impl CustomPaintSink<DisplayCommandExt> for NullRasterizer {
+impl CustomPaintSink<DisplayCommandExt> for NullRenderer {
     fn custom(&mut self, _command: &DisplayCommandExt) {}
 }
 
-impl CustomRasterizer for NullRasterizer {
+impl CustomRenderer for NullRenderer {
     fn with_custom_paint_sink(
         &mut self,
         f: &mut dyn FnMut(&mut dyn CustomPaintSink<DisplayCommandExt>),
@@ -191,94 +165,52 @@ impl CustomRasterizer for NullRasterizer {
     }
 }
 
-pub(crate) struct CpuImagePresenter<W> {
+struct CpuWindowTarget<W> {
     #[allow(unused)]
     context: Context<W>,
     surface: Surface<W, W>,
+    width: u32,
+    height: u32,
 }
 
-pub(crate) struct GpuWindowPresenter {
+struct GpuWindowTarget {
     device: wgpu::Device,
     queue: wgpu::Queue,
     pub surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
     blitter: TextureBlitter,
-    frame_texture: Option<wgpu::SurfaceTexture>,
 }
 
-pub(crate) enum FrameTarget<'a> {
-    Gpu {
-        begin: BeginFrame,
-        target: wgpu::TextureView,
-    },
-    Cpu {
-        begin: BeginFrame,
-        target: floem_renderer::CpuBufferTarget<'a>,
-    },
+pub enum RendererType {
+    TargetCpu(Box<CpuTargetRenderFn>),
+    CopyGpu(Box<dyn Renderer<Target = wgpu::TextureView>>),
+    CopyCpu(Box<dyn Renderer<Target = ImageData>>),
 }
 
-pub(crate) enum WindowBackend {
-    Gpu {
-        presenter: GpuWindowPresenter,
-        rasterizer: GpuOrRasterizer,
-    },
-    Cpu {
-        presenter: CpuImagePresenter<Arc<dyn Window>>,
-        rasterizer: CpuOrRasterizer,
-    },
-}
-
-impl WindowBackend {
-    pub(crate) fn resize(&mut self, width: u32, height: u32) {
-        match self {
-            Self::Gpu { presenter, .. } => presenter.resize(width, height),
-            Self::Cpu { presenter, .. } => presenter.resize(width, height),
-        }
-    }
-
-    pub(crate) fn rasterizer(&self) -> &(dyn SceneRasterizer + '_) {
-        match self {
-            Self::Gpu { rasterizer, .. } => rasterizer.as_ref(),
-            Self::Cpu { rasterizer, .. } => rasterizer.as_ref(),
-        }
-    }
-
-    pub(crate) fn rasterizer_mut(&mut self) -> &mut (dyn SceneRasterizer + '_) {
-        match self {
-            Self::Gpu { rasterizer, .. } => rasterizer.as_mut(),
-            Self::Cpu { rasterizer, .. } => rasterizer.as_mut(),
-        }
-    }
-
-    pub(crate) fn present(&mut self, output: &RasterizerOutput) {
-        match (self, output) {
-            (Self::Gpu { presenter, .. }, RasterizerOutput::GpuTexture(output)) => {
-                presenter.present(output)
-            }
-            (Self::Cpu { presenter, .. }, RasterizerOutput::Image(image)) => {
-                presenter.present(image)
-            }
-            _ => {}
-        }
-    }
-
-    pub(crate) fn present_rasterizer(&mut self, rasterizer: &mut dyn SceneRasterizer) -> bool {
-        match self {
-            Self::Gpu { presenter, .. } => presenter.present_prepared(),
-            Self::Cpu { presenter, .. } => presenter.present_rasterizer(rasterizer),
-        }
+pub(crate) trait WindowRenderer {
+    fn resize(&mut self, width: u32, height: u32);
+    fn render(&mut self, begin: BeginFrame, paint: &mut dyn FnMut(&mut dyn SceneRenderer));
+    fn gpu_surface(&self) -> Option<&wgpu::Surface<'static>> {
+        None
     }
 }
 
-pub(crate) struct RasterizerInit {
-    pub(crate) window_backend: WindowBackend,
+struct CpuDirectWindowRenderer<R> {
+    target: CpuWindowTarget<Arc<dyn Window>>,
+    _marker: std::marker::PhantomData<R>,
 }
 
-pub(crate) fn uninitialized_rasterizer() -> crate::paint::WindowRasterizer {
-    crate::paint::WindowRasterizer::Rasterizer(Box::new(NullRasterizer))
+struct GpuCopyWindowRenderer<R> {
+    renderer: R,
+    target: GpuWindowTarget,
 }
 
-impl GpuWindowPresenter {
+struct CpuCopyWindowRenderer<R> {
+    renderer: R,
+    target: CpuWindowTarget<Arc<dyn Window>>,
+}
+
+impl GpuWindowTarget {
     fn new(
         gpu_resources: &GpuResources,
         surface: wgpu::Surface<'static>,
@@ -315,7 +247,6 @@ impl GpuWindowPresenter {
             surface,
             config,
             blitter: TextureBlitter::new(&gpu_resources.device, texture_format),
-            frame_texture: None,
         })
     }
 
@@ -346,28 +277,8 @@ impl GpuWindowPresenter {
         surface_texture.present();
     }
 
-    #[cfg(feature = "active-skia")]
-    fn prepare_skia_target(&mut self, rasterizer: &mut floem_skia_renderer::SkiaRenderer) -> bool {
-        let surface_texture = self
-            .surface
-            .get_current_texture()
-            .expect("failed to acquire surface texture");
-        let view = surface_texture
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-        floem_renderer::RasterTarget::set_target(rasterizer, view)
-            .expect("failed to retarget rasterizer");
-        self.frame_texture = Some(surface_texture);
-        true
-    }
-
-    fn present_prepared(&mut self) -> bool {
-        if let Some(surface_texture) = self.frame_texture.take() {
-            surface_texture.present();
-            true
-        } else {
-            false
-        }
+    fn gpu_surface(&self) -> &wgpu::Surface<'static> {
+        &self.surface
     }
 }
 
@@ -388,7 +299,7 @@ fn choose_surface_texture_format(
         .ok_or_else(|| "surface should support Rgba8Unorm or Bgra8Unorm".to_string())
 }
 
-impl<W> CpuImagePresenter<W>
+impl<W> CpuWindowTarget<W>
 where
     W: Clone + raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle,
 {
@@ -401,20 +312,23 @@ where
                 NonZeroU32::new(height).unwrap_or(NonZeroU32::new(1).unwrap()),
             )
             .map_err(|err| err.to_string())?;
-        Ok(Self { context, surface })
+        Ok(Self {
+            context,
+            surface,
+            width,
+            height,
+        })
     }
 
     fn resize(&mut self, width: u32, height: u32) {
+        self.width = width;
+        self.height = height;
         self.surface
             .resize(
                 NonZeroU32::new(width).unwrap_or(NonZeroU32::new(1).unwrap()),
                 NonZeroU32::new(height).unwrap_or(NonZeroU32::new(1).unwrap()),
             )
             .expect("failed to resize surface");
-    }
-
-    fn present_rasterizer(&mut self, _rasterizer: &mut dyn SceneRasterizer) -> bool {
-        false
     }
 
     fn present(&mut self, image: &ImageData) {
@@ -435,281 +349,391 @@ where
             .present()
             .expect("failed to present the surface buffer");
     }
+
+    fn with_cpu_target(&mut self, f: &mut dyn FnMut(floem_renderer::CpuBufferTarget<'_>)) {
+        let mut buffer = self
+            .surface
+            .buffer_mut()
+            .expect("failed to get the surface buffer");
+        let width = self.width.max(1);
+        let height = self.height.max(1);
+        let bytes_per_row = width as usize * std::mem::size_of::<u32>();
+        let pixel_bytes = unsafe {
+            std::slice::from_raw_parts_mut(
+                buffer.as_mut_ptr().cast::<u8>(),
+                buffer.len() * std::mem::size_of::<u32>(),
+            )
+        };
+        f(floem_renderer::CpuBufferTarget {
+            buffer: pixel_bytes,
+            width,
+            height,
+            bytes_per_row,
+            format: floem_renderer::CpuBufferFormat::Bgra8Opaque,
+        });
+        buffer
+            .present()
+            .expect("failed to present the surface buffer");
+    }
 }
 
-#[cfg(any(
-    feature = "active-vello",
-    feature = "active-vger",
-    feature = "active-skia"
-))]
+#[cfg(feature = "active-vello-hybrid")]
+impl WindowRenderer
+    for CpuDirectWindowRenderer<floem_vello_hybrid_renderer::VelloHybridTargetRenderer<'static>>
+{
+    fn resize(&mut self, width: u32, height: u32) {
+        self.target.resize(width, height);
+    }
+
+    fn render(&mut self, begin: BeginFrame, paint: &mut dyn FnMut(&mut dyn SceneRenderer)) {
+        self.target.with_cpu_target(&mut |target| {
+            let mut renderer =
+                floem_vello_hybrid_renderer::VelloHybridTargetRenderer::create(begin, target)
+                    .expect("failed to create cpu target renderer");
+            paint(&mut renderer);
+            renderer.finish();
+        });
+    }
+}
+
+#[cfg(feature = "active-vello-cpu")]
+impl WindowRenderer
+    for CpuDirectWindowRenderer<floem_vello_cpu_renderer::VelloCpuTargetRenderer<'static>>
+{
+    fn resize(&mut self, width: u32, height: u32) {
+        self.target.resize(width, height);
+    }
+
+    fn render(&mut self, begin: BeginFrame, paint: &mut dyn FnMut(&mut dyn SceneRenderer)) {
+        self.target.with_cpu_target(&mut |target| {
+            let mut renderer =
+                floem_vello_cpu_renderer::VelloCpuTargetRenderer::create(begin, target)
+                    .expect("failed to create cpu target renderer");
+            paint(&mut renderer);
+            renderer.finish();
+        });
+    }
+}
+
+#[cfg(feature = "active-skia-cpu")]
+impl WindowRenderer
+    for CpuDirectWindowRenderer<floem_skia_renderer::SkiaCpuTargetRenderer<'static>>
+{
+    fn resize(&mut self, width: u32, height: u32) {
+        self.target.resize(width, height);
+    }
+
+    fn render(&mut self, begin: BeginFrame, paint: &mut dyn FnMut(&mut dyn SceneRenderer)) {
+        self.target.with_cpu_target(&mut |target| {
+            let mut renderer = floem_skia_renderer::SkiaCpuTargetRenderer::create(begin, target)
+                .expect("failed to create cpu target renderer");
+            paint(&mut renderer);
+            renderer.finish();
+        });
+    }
+}
+
+#[cfg(feature = "active-tiny-skia")]
+impl WindowRenderer
+    for CpuDirectWindowRenderer<floem_tiny_skia_renderer::TinySkiaTargetRenderer<'static>>
+{
+    fn resize(&mut self, width: u32, height: u32) {
+        self.target.resize(width, height);
+    }
+
+    fn render(&mut self, begin: BeginFrame, paint: &mut dyn FnMut(&mut dyn SceneRenderer)) {
+        self.target.with_cpu_target(&mut |target| {
+            let mut renderer =
+                floem_tiny_skia_renderer::TinySkiaTargetRenderer::create(begin, target)
+                    .expect("failed to create cpu target renderer");
+            paint(&mut renderer);
+            renderer.finish();
+        });
+    }
+}
+
+impl<R> WindowRenderer for GpuCopyWindowRenderer<R>
+where
+    R: Renderer<Target = wgpu::TextureView> + SceneRenderer + 'static,
+{
+    fn resize(&mut self, width: u32, height: u32) {
+        self.target.resize(width, height);
+    }
+
+    fn render(&mut self, begin: BeginFrame, paint: &mut dyn FnMut(&mut dyn SceneRenderer)) {
+        self.renderer.set_size(begin);
+        self.renderer.reset();
+        paint(&mut self.renderer);
+        self.renderer.finish();
+        if let Some(output) = self.renderer.read_target() {
+            self.target.present(&output);
+        }
+    }
+
+    fn gpu_surface(&self) -> Option<&wgpu::Surface<'static>> {
+        Some(self.target.gpu_surface())
+    }
+}
+
+impl<R> WindowRenderer for CpuCopyWindowRenderer<R>
+where
+    R: Renderer<Target = ImageData> + SceneRenderer + 'static,
+{
+    fn resize(&mut self, width: u32, height: u32) {
+        self.target.resize(width, height);
+    }
+
+    fn render(&mut self, begin: BeginFrame, paint: &mut dyn FnMut(&mut dyn SceneRenderer)) {
+        self.renderer.set_size(begin);
+        self.renderer.reset();
+        paint(&mut self.renderer);
+        self.renderer.finish();
+        if let Some(output) = self.renderer.read_target() {
+            self.target.present(&output);
+        }
+    }
+}
+
 fn env_flag_requested(name: &str) -> bool {
     std::env::var(name)
         .ok()
         .is_some_and(|value| value.as_str() == "1")
 }
 
-#[cfg(any(
-    feature = "active-vello",
-    feature = "active-vger",
-    feature = "active-skia"
-))]
 fn force_cpu_requested() -> bool {
     env_flag_requested("FLOEM_FORCE_CPU") || env_flag_requested("FLOEM_FORCE_TINY_SKIA")
 }
 
-#[cfg(feature = "active-vello")]
-type ActiveGpuRenderer = floem_vello_renderer::VelloRenderer;
-#[cfg(feature = "active-vello")]
-const ACTIVE_GPU_RENDERER_NAME: &str = "VelloRenderer";
+pub(crate) type WindowBackend = Box<dyn WindowRenderer>;
 
-#[cfg(feature = "active-vger")]
-type ActiveGpuRenderer = floem_vger_renderer::VgerRenderer;
-#[cfg(feature = "active-vger")]
-const ACTIVE_GPU_RENDERER_NAME: &str = "VgerRenderer";
-
-#[cfg(feature = "active-skia")]
-type ActiveGpuRenderer = floem_skia_renderer::SkiaRenderer;
-#[cfg(feature = "active-skia")]
-const ACTIVE_GPU_RENDERER_NAME: &str = "SkiaRenderer";
-
-#[cfg(any(
-    feature = "active-vello",
-    feature = "active-vger",
-    feature = "active-skia"
-))]
-fn new_active_gpu_rasterizer(
-    gpu_resources: GpuResources,
-    width: u32,
-    height: u32,
-    texture_format: wgpu::TextureFormat,
-    scale: f64,
-    font_embolden: f32,
-) -> Result<Box<dyn SceneRasterizer>, String> {
-    Ok(Box::new(
-        ActiveGpuRenderer::new(
-            gpu_resources,
-            width,
-            height,
-            texture_format,
-            scale,
-            font_embolden,
-        )
-        .map_err(|err| err.to_string())?,
-    ))
-}
-
-#[cfg(any(
-    feature = "active-vello",
-    feature = "active-vger",
-    feature = "active-skia"
-))]
-fn try_new_active_gpu_backend(
-    gpu_resources: GpuResources,
-    surface: wgpu::Surface<'static>,
-    width: u32,
-    height: u32,
-    transparent: bool,
-    scale: f64,
-    font_embolden: f32,
-) -> Result<RasterizerInit, String> {
-    let texture_format = choose_surface_texture_format(&surface, &gpu_resources)?;
-
-    let presenter = GpuWindowPresenter::new(&gpu_resources, surface, width, height, transparent)?;
-    let rasterizer = new_active_gpu_rasterizer(
-        gpu_resources,
-        width,
-        height,
-        texture_format,
-        scale,
-        font_embolden,
-    )?;
-    Ok(RasterizerInit {
-        window_backend: WindowBackend::Gpu {
-            presenter,
-            rasterizer,
-        },
-    })
-}
-
-#[cfg(feature = "active-vello-hybrid")]
-type ActiveImmediateRenderer = floem_vello_hybrid_renderer::VelloHybridRenderer;
-#[cfg(feature = "active-vello-hybrid")]
-const ACTIVE_IMMEDIATE_RENDERER_NAME: &str = "VelloHybridRenderer";
-
-#[cfg(feature = "active-vello-cpu")]
-type ActiveImmediateRenderer = floem_vello_cpu_renderer::VelloCpuRenderer;
-#[cfg(feature = "active-vello-cpu")]
-const ACTIVE_IMMEDIATE_RENDERER_NAME: &str = "VelloCpuRenderer";
-
-#[cfg(feature = "active-skia-cpu")]
-type ActiveImmediateRenderer = floem_skia_renderer::SkiaCpuRenderer;
-#[cfg(feature = "active-skia-cpu")]
-const ACTIVE_IMMEDIATE_RENDERER_NAME: &str = "SkiaCpuRenderer";
-
-#[cfg(feature = "active-tiny-skia")]
-type ActiveImmediateRenderer = floem_tiny_skia_renderer::TinySkiaRenderer;
-#[cfg(feature = "active-tiny-skia")]
-const ACTIVE_IMMEDIATE_RENDERER_NAME: &str = "TinySkiaRenderer";
-
-#[cfg(any(
-    feature = "active-vello-hybrid",
-    feature = "active-vello-cpu",
-    feature = "active-skia-cpu",
-    feature = "active-tiny-skia"
-))]
-fn new_active_immediate_rasterizer(
-    width: u32,
-    height: u32,
-    scale: f64,
-    font_embolden: f32,
-) -> Result<Box<dyn SceneRasterizer>, String> {
-    Ok(Box::new(
-        ActiveImmediateRenderer::new(width, height, scale, font_embolden)
-            .map_err(|err| err.to_string())?,
-    ))
-}
-
-#[cfg(any(
-    feature = "active-vello-hybrid",
-    feature = "active-vello-cpu",
-    feature = "active-skia-cpu",
-    feature = "active-tiny-skia"
-))]
-fn try_new_active_immediate_backend(
-    window: Arc<dyn Window>,
-    width: u32,
-    height: u32,
-    scale: f64,
-    font_embolden: f32,
-) -> Result<RasterizerInit, String> {
-    let presenter = CpuImagePresenter::new(window, width, height)?;
-    let rasterizer = new_active_immediate_rasterizer(width, height, scale, font_embolden)?;
-    Ok(RasterizerInit {
-        window_backend: WindowBackend::Cpu {
-            presenter,
-            rasterizer,
-        },
-    })
+pub(crate) fn uninitialized_rasterizer() -> Box<dyn crate::paint::WindowRasterizer> {
+    Box::new(NullRenderer)
 }
 
 #[cfg(feature = "fallback-vello-cpu")]
 type CpuFallbackRenderer = floem_vello_cpu_renderer::VelloCpuRenderer;
-
 #[cfg(feature = "fallback-tiny-skia")]
 type CpuFallbackRenderer = floem_tiny_skia_renderer::TinySkiaRenderer;
 
-fn new_cpu_fallback_rasterizer(
-    width: u32,
-    height: u32,
-    scale: f64,
-    font_embolden: f32,
-) -> Result<Box<dyn SceneRasterizer>, String> {
-    Ok(Box::new(
-        CpuFallbackRenderer::new(width, height, scale, font_embolden)
-            .map_err(|err| err.to_string())?,
-    ))
+fn boxed_rasterizer(
+    renderer: impl crate::paint::WindowRasterizer + 'static,
+) -> Box<dyn crate::paint::WindowRasterizer> {
+    Box::new(renderer)
 }
 
-fn try_new_cpu_fallback(
-    window: Arc<dyn Window>,
-    width: u32,
-    height: u32,
-    scale: f64,
-    font_embolden: f32,
-) -> Result<RasterizerInit, String> {
-    let presenter = CpuImagePresenter::new(window, width, height)?;
-    let rasterizer = new_cpu_fallback_rasterizer(width, height, scale, font_embolden)?;
-    Ok(RasterizerInit {
-        window_backend: WindowBackend::Cpu {
-            presenter,
-            rasterizer,
-        },
-    })
-}
-
-#[cfg(any(
-    feature = "active-vello",
-    feature = "active-vger",
-    feature = "active-skia"
-))]
 pub(crate) fn new(
     window: Arc<dyn Window>,
     gpu_resources: GpuResources,
     surface: wgpu::Surface<'static>,
-    transparent: bool,
+    _transparent: bool,
     scale: f64,
     size: Size,
     font_embolden: f32,
-) -> RasterizerInit {
+) -> (Box<dyn crate::paint::WindowRasterizer>, WindowBackend) {
     let size = Size::new(size.width.max(1.0), size.height.max(1.0));
     let width = size.width as u32;
     let height = size.height as u32;
-    let force_cpu = force_cpu_requested();
+    let texture_format =
+        choose_surface_texture_format(&surface, &gpu_resources).expect("surface format");
 
-    let active_err = if !force_cpu {
-        match try_new_active_gpu_backend(
-            gpu_resources,
-            surface,
-            width,
-            height,
-            transparent,
-            scale,
-            font_embolden,
-        ) {
-            Ok(init) => return init,
-            Err(err) => Some(err),
+    if !force_cpu_requested() {
+        #[cfg(feature = "active-vello")]
+        {
+            let renderer = floem_vello_renderer::VelloRenderer::new(
+                gpu_resources.clone(),
+                width,
+                height,
+                texture_format,
+                scale,
+                font_embolden,
+            )
+            .map_err(|err| err.to_string())
+            .expect("create vello renderer");
+            let window_backend: WindowBackend = Box::new(GpuCopyWindowRenderer {
+                renderer: floem_vello_renderer::VelloRenderer::new(
+                    gpu_resources.clone(),
+                    width,
+                    height,
+                    texture_format,
+                    scale,
+                    font_embolden,
+                )
+                .map_err(|err| err.to_string())
+                .expect("create vello window renderer"),
+                target: GpuWindowTarget::new(&gpu_resources, surface, width, height, _transparent)
+                    .expect("create gpu target"),
+            });
+            return (boxed_rasterizer(renderer), window_backend);
         }
-    } else {
-        None
-    };
 
-    let cpu_fallback_err = match try_new_cpu_fallback(window, width, height, scale, font_embolden) {
-        Ok(init) => return init,
-        Err(err) => err,
-    };
+        #[cfg(feature = "active-vger")]
+        {
+            let renderer = floem_vger_renderer::VgerRenderer::new(
+                gpu_resources.clone(),
+                width,
+                height,
+                texture_format,
+                scale,
+                font_embolden,
+            )
+            .map_err(|err| err.to_string())
+            .expect("create vger renderer");
+            let window_backend: WindowBackend = Box::new(GpuCopyWindowRenderer {
+                renderer: floem_vger_renderer::VgerRenderer::new(
+                    gpu_resources.clone(),
+                    width,
+                    height,
+                    texture_format,
+                    scale,
+                    font_embolden,
+                )
+                .map_err(|err| err.to_string())
+                .expect("create vger window renderer"),
+                target: GpuWindowTarget::new(&gpu_resources, surface, width, height, _transparent)
+                    .expect("create gpu target"),
+            });
+            return (boxed_rasterizer(renderer), window_backend);
+        }
 
-    if !force_cpu {
-        panic!(
-            "Failed to create {active_name}: {active_err}\nFailed to create CPU fallback rasterizer: {cpu_fallback_err}",
-            active_name = ACTIVE_GPU_RENDERER_NAME,
-            active_err = active_err.unwrap()
-        );
-    } else {
-        panic!("Failed to create CPU fallback rasterizer: {cpu_fallback_err}");
+        #[cfg(feature = "active-skia")]
+        {
+            let renderer = floem_skia_renderer::SkiaRenderer::new(
+                gpu_resources.clone(),
+                width,
+                height,
+                texture_format,
+                scale,
+                font_embolden,
+            )
+            .map_err(|err| err.to_string())
+            .expect("create skia renderer");
+            let window_backend: WindowBackend = Box::new(GpuCopyWindowRenderer {
+                renderer: floem_skia_renderer::SkiaRenderer::new(
+                    gpu_resources.clone(),
+                    width,
+                    height,
+                    texture_format,
+                    scale,
+                    font_embolden,
+                )
+                .map_err(|err| err.to_string())
+                .expect("create skia window renderer"),
+                target: GpuWindowTarget::new(&gpu_resources, surface, width, height, _transparent)
+                    .expect("create gpu target"),
+            });
+            return (boxed_rasterizer(renderer), window_backend);
+        }
     }
+
+    let window_backend: WindowBackend = Box::new(CpuCopyWindowRenderer {
+        renderer: CpuFallbackRenderer::new(width, height, scale, font_embolden)
+            .map_err(|err| err.to_string())
+            .expect("create cpu fallback renderer"),
+        target: CpuWindowTarget::new(window, width, height).expect("create cpu target"),
+    });
+    (
+        boxed_rasterizer(
+            CpuFallbackRenderer::new(width, height, scale, font_embolden)
+                .map_err(|err| err.to_string())
+                .expect("create cpu fallback renderer"),
+        ),
+        window_backend,
+    )
 }
 
-#[cfg(any(
-    feature = "active-vello-hybrid",
-    feature = "active-vello-cpu",
-    feature = "active-skia-cpu",
-    feature = "active-tiny-skia"
-))]
+#[allow(unreachable_code)]
 pub(crate) fn new_cpu(
     window: Arc<dyn Window>,
     scale: f64,
     size: Size,
     font_embolden: f32,
-) -> RasterizerInit {
+) -> (Box<dyn crate::paint::WindowRasterizer>, WindowBackend) {
     let size = Size::new(size.width.max(1.0), size.height.max(1.0));
     let width = size.width as u32;
     let height = size.height as u32;
 
-    let active_err =
-        match try_new_active_immediate_backend(window.clone(), width, height, scale, font_embolden)
-        {
-            Ok(init) => return init,
-            Err(err) => Some(err),
-        };
+    #[cfg(feature = "active-vello-hybrid")]
+    {
+        return (
+            boxed_rasterizer(
+                floem_vello_hybrid_renderer::VelloHybridRenderer::new(
+                    width,
+                    height,
+                    scale,
+                    font_embolden,
+                )
+                .map_err(|err| err.to_string())
+                .expect("create vello hybrid renderer"),
+            ),
+            Box::new(CpuDirectWindowRenderer::<
+                floem_vello_hybrid_renderer::VelloHybridTargetRenderer<'static>,
+            > {
+                target: CpuWindowTarget::new(window, width, height).expect("create cpu target"),
+                _marker: std::marker::PhantomData,
+            }),
+        );
+    }
 
-    let cpu_fallback_err = match try_new_cpu_fallback(window, width, height, scale, font_embolden) {
-        Ok(init) => return init,
-        Err(err) => err,
-    };
+    #[cfg(feature = "active-vello-cpu")]
+    {
+        return (
+            boxed_rasterizer(
+                floem_vello_cpu_renderer::VelloCpuRenderer::new(
+                    width,
+                    height,
+                    scale,
+                    font_embolden,
+                )
+                .map_err(|err| err.to_string())
+                .expect("create vello cpu renderer"),
+            ),
+            Box::new(CpuDirectWindowRenderer::<
+                floem_vello_cpu_renderer::VelloCpuTargetRenderer<'static>,
+            > {
+                target: CpuWindowTarget::new(window, width, height).expect("create cpu target"),
+                _marker: std::marker::PhantomData,
+            }),
+        );
+    }
 
-    panic!(
-        "Failed to create {active_name}: {active_err}\nFailed to create CPU fallback rasterizer: {cpu_fallback_err}",
-        active_name = ACTIVE_IMMEDIATE_RENDERER_NAME,
-        active_err = active_err.unwrap()
-    );
+    #[cfg(feature = "active-skia-cpu")]
+    {
+        return (
+            boxed_rasterizer(
+                floem_skia_renderer::SkiaCpuRenderer::new(width, height, scale, font_embolden)
+                    .map_err(|err| err.to_string())
+                    .expect("create skia cpu renderer"),
+            ),
+            Box::new(CpuDirectWindowRenderer::<
+                floem_skia_renderer::SkiaCpuTargetRenderer<'static>,
+            > {
+                target: CpuWindowTarget::new(window, width, height).expect("create cpu target"),
+                _marker: std::marker::PhantomData,
+            }),
+        );
+    }
+
+    #[cfg(feature = "active-tiny-skia")]
+    {
+        return (
+            boxed_rasterizer(
+                floem_tiny_skia_renderer::TinySkiaRenderer::new(
+                    width,
+                    height,
+                    scale,
+                    font_embolden,
+                )
+                .map_err(|err| err.to_string())
+                .expect("create tiny-skia renderer"),
+            ),
+            Box::new(CpuDirectWindowRenderer::<
+                floem_tiny_skia_renderer::TinySkiaTargetRenderer<'static>,
+            > {
+                target: CpuWindowTarget::new(window, width, height).expect("create cpu target"),
+                _marker: std::marker::PhantomData,
+            }),
+        );
+    }
+
+    unreachable!("immediate renderer requested without an enabled immediate renderer")
 }

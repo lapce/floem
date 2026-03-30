@@ -54,41 +54,27 @@ pub struct GpuTextureTarget {
     pub texture_view: wgpu::TextureView,
 }
 
-pub enum RasterIntoBackend<R, G, C> {
-    Null,
-    Rasterizer(R),
-    Gpu(G),
-    Cpu(C),
-}
-
-pub enum GpuOrRasterizer<G = (), R = Box<dyn SceneRasterizer>> {
-    Gpu(G),
-    Rasterizer(R),
-}
-
-pub enum CpuOrRasterizer<'a, C = (), R = Box<dyn SceneRasterizer>> {
-    Cpu(C),
-    Rasterizer(R),
-    _Marker(std::marker::PhantomData<&'a mut ()>),
-}
-
-pub trait RasterCore {
-    fn with_paint_sink(&mut self, f: &mut dyn FnMut(&mut dyn PaintSink));
+pub trait RenderCore {
+    fn render(&mut self, f: &mut dyn FnMut(&mut dyn PaintSink));
     fn finish(&mut self);
     fn readback(&mut self) -> Option<RasterizerOutput>;
 }
 
-pub trait Rasterizer: RasterCore {
-    fn begin(&mut self, frame: BeginFrame);
-}
-
-pub trait RasterTarget: RasterCore + Sized {
+pub trait Renderer: RenderCore {
     type Target;
 
-    fn create(target: Self::Target) -> Result<Self, String>;
+    fn set_size(&mut self, frame: BeginFrame);
+    fn reset(&mut self);
+    fn read_target(&mut self) -> Option<Self::Target>;
 }
 
-pub trait CustomRasterizer: RasterCore {
+pub trait TargetRenderer: RenderCore + Sized {
+    type Target;
+
+    fn create(frame: BeginFrame, target: Self::Target) -> Result<Self, String>;
+}
+
+pub trait CustomRenderer {
     fn with_custom_paint_sink(
         &mut self,
         f: &mut dyn FnMut(&mut dyn CustomPaintSink<DisplayCommandExt>),
@@ -96,10 +82,10 @@ pub trait CustomRasterizer: RasterCore {
     fn debug_info(&self) -> String;
 }
 
-pub trait SceneRasterizer: Rasterizer + CustomRasterizer {}
-impl<T> SceneRasterizer for T where T: Rasterizer + CustomRasterizer {}
+pub trait SceneRenderer: RenderCore + CustomRenderer {}
+impl<T> SceneRenderer for T where T: RenderCore + CustomRenderer {}
 
-pub trait SceneTargetRasterizer: RasterTarget + CustomRasterizer {}
-impl<T> SceneTargetRasterizer for T where T: RasterTarget + CustomRasterizer {}
+pub trait SceneTargetRenderer: TargetRenderer + CustomRenderer {}
+impl<T> SceneTargetRenderer for T where T: TargetRenderer + CustomRenderer {}
 
 pub type GlyphIter<'a> = dyn Iterator<Item = Glyph> + 'a;

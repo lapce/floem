@@ -1,7 +1,7 @@
 use anyhow::Result;
 use floem_renderer::{
-    BeginFrame, CpuBufferFormat, CpuBufferTarget, CustomRasterizer, DisplayCommandExt, RasterCore,
-    RasterTarget, Rasterizer, RasterizerOutput,
+    BeginFrame, CpuBufferFormat, CpuBufferTarget, CustomRenderer, DisplayCommandExt,
+    RasterizerOutput, RenderCore, Renderer, TargetRenderer,
 };
 use imaging::{
     BlurredRoundedRect, ClipRef, CustomPaintSink, FillRef, GlyphRunRef, GroupRef, PaintSink,
@@ -123,8 +123,8 @@ impl<'a> SkiaCpuTargetRenderer<'a> {
     }
 }
 
-impl RasterCore for SkiaCpuRenderer {
-    fn with_paint_sink(&mut self, f: &mut dyn FnMut(&mut dyn PaintSink)) {
+impl RenderCore for SkiaCpuRenderer {
+    fn render(&mut self, f: &mut dyn FnMut(&mut dyn PaintSink)) {
         self.with_canvas(&mut |canvas| f(canvas));
     }
 
@@ -139,16 +139,24 @@ impl RasterCore for SkiaCpuRenderer {
     }
 }
 
-impl Rasterizer for SkiaCpuRenderer {
-    fn begin(&mut self, _frame: BeginFrame) {
+impl Renderer for SkiaCpuRenderer {
+    type Target = ImageData;
+
+    fn set_size(&mut self, _frame: BeginFrame) {}
+
+    fn reset(&mut self) {
         let canvas = self.inner.surface().canvas();
         canvas.restore_to_count(1);
         canvas.reset_matrix();
         canvas.clear(sk::Color::TRANSPARENT);
     }
+
+    fn read_target(&mut self) -> Option<Self::Target> {
+        self.readback_image().ok()
+    }
 }
 
-impl CustomRasterizer for SkiaCpuRenderer {
+impl CustomRenderer for SkiaCpuRenderer {
     fn with_custom_paint_sink(
         &mut self,
         f: &mut dyn FnMut(&mut dyn CustomPaintSink<DisplayCommandExt>),
@@ -161,8 +169,8 @@ impl CustomRasterizer for SkiaCpuRenderer {
     }
 }
 
-impl RasterCore for SkiaCpuTargetRenderer<'_> {
-    fn with_paint_sink(&mut self, f: &mut dyn FnMut(&mut dyn PaintSink)) {
+impl RenderCore for SkiaCpuTargetRenderer<'_> {
+    fn render(&mut self, f: &mut dyn FnMut(&mut dyn PaintSink)) {
         self.with_canvas(&mut |canvas| f(canvas));
     }
 
@@ -177,7 +185,7 @@ impl RasterCore for SkiaCpuTargetRenderer<'_> {
     }
 }
 
-impl<'a> CustomRasterizer for SkiaCpuTargetRenderer<'a> {
+impl<'a> CustomRenderer for SkiaCpuTargetRenderer<'a> {
     fn with_custom_paint_sink(
         &mut self,
         f: &mut dyn FnMut(&mut dyn CustomPaintSink<DisplayCommandExt>),
@@ -190,10 +198,10 @@ impl<'a> CustomRasterizer for SkiaCpuTargetRenderer<'a> {
     }
 }
 
-impl<'a> RasterTarget for SkiaCpuTargetRenderer<'a> {
+impl<'a> TargetRenderer for SkiaCpuTargetRenderer<'a> {
     type Target = CpuBufferTarget<'a>;
 
-    fn create(target: Self::Target) -> Result<Self, String> {
+    fn create(_frame: BeginFrame, target: Self::Target) -> Result<Self, String> {
         let color_type = match target.format {
             CpuBufferFormat::Rgba8Opaque => sk::ColorType::RGBA8888,
             CpuBufferFormat::Bgra8Opaque => sk::ColorType::BGRA8888,

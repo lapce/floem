@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use anyhow::{Result, anyhow};
 use floem_renderer::{
-    BeginFrame, CpuBufferFormat, CpuBufferTarget, CustomRasterizer, DisplayCommandExt, RasterCore,
-    RasterTarget, Rasterizer, RasterizerOutput,
+    BeginFrame, CpuBufferFormat, CpuBufferTarget, CustomRenderer, DisplayCommandExt, RenderCore,
+    TargetRenderer, Renderer, RasterizerOutput,
 };
 use imaging::{CustomPaintSink, PaintSink};
 use peniko::{Blob, ImageAlphaType, ImageData, ImageFormat};
@@ -150,8 +150,8 @@ impl VelloHybridTargetRenderer<'_> {
     }
 }
 
-impl RasterCore for VelloHybridRenderer {
-    fn with_paint_sink(&mut self, f: &mut dyn FnMut(&mut dyn PaintSink)) {
+impl RenderCore for VelloHybridRenderer {
+    fn render(&mut self, f: &mut dyn FnMut(&mut dyn PaintSink)) {
         self.with_scene_sink(&mut |canvas| f(canvas));
     }
 
@@ -167,20 +167,29 @@ impl RasterCore for VelloHybridRenderer {
     }
 }
 
-impl Rasterizer for VelloHybridRenderer {
-    fn begin(&mut self, frame: BeginFrame) {
+impl Renderer for VelloHybridRenderer {
+    type Target = ImageData;
+
+    fn set_size(&mut self, frame: BeginFrame) {
         let width = frame.size.width as u32;
         let height = frame.size.height as u32;
         if self.width != width || self.height != height {
             *self = Self::new(width, height, frame.scale, frame.font_embolden)
                 .expect("failed to recreate VelloHybridRenderer");
         }
+    }
+
+    fn reset(&mut self) {
         self.reset_scene();
         self.finished_image = None;
     }
+
+    fn read_target(&mut self) -> Option<Self::Target> {
+        self.finished_image.clone().or_else(|| self.read_image())
+    }
 }
 
-impl CustomRasterizer for VelloHybridRenderer {
+impl CustomRenderer for VelloHybridRenderer {
     fn with_custom_paint_sink(
         &mut self,
         f: &mut dyn FnMut(&mut dyn CustomPaintSink<DisplayCommandExt>),
@@ -193,8 +202,8 @@ impl CustomRasterizer for VelloHybridRenderer {
     }
 }
 
-impl RasterCore for VelloHybridTargetRenderer<'_> {
-    fn with_paint_sink(&mut self, f: &mut dyn FnMut(&mut dyn PaintSink)) {
+impl RenderCore for VelloHybridTargetRenderer<'_> {
+    fn render(&mut self, f: &mut dyn FnMut(&mut dyn PaintSink)) {
         self.with_scene_sink(&mut |canvas| f(canvas));
     }
 
@@ -224,10 +233,10 @@ impl RasterCore for VelloHybridTargetRenderer<'_> {
     }
 }
 
-impl<'a> RasterTarget for VelloHybridTargetRenderer<'a> {
+impl<'a> TargetRenderer for VelloHybridTargetRenderer<'a> {
     type Target = CpuBufferTarget<'a>;
 
-    fn create(target: Self::Target) -> Result<Self, String> {
+    fn create(_frame: BeginFrame, target: Self::Target) -> Result<Self, String> {
         let width_u16 = u16::try_from(target.width)
             .map_err(|_| "width exceeds vello_hybrid limit".to_string())?;
         let height_u16 = u16::try_from(target.height)
@@ -242,7 +251,7 @@ impl<'a> RasterTarget for VelloHybridTargetRenderer<'a> {
     }
 }
 
-impl CustomRasterizer for VelloHybridTargetRenderer<'_> {
+impl CustomRenderer for VelloHybridTargetRenderer<'_> {
     fn with_custom_paint_sink(
         &mut self,
         f: &mut dyn FnMut(&mut dyn CustomPaintSink<DisplayCommandExt>),

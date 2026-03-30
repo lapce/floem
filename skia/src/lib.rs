@@ -4,8 +4,8 @@ pub use cpu::{SkiaCpuRenderer, SkiaCpuTargetRenderer};
 
 use anyhow::{Result, anyhow};
 use floem_renderer::{
-    BeginFrame, CustomRasterizer, DisplayCommandExt, GpuTextureTarget, RasterCore, RasterTarget,
-    Rasterizer, RasterizerOutput, gpu_resources::GpuResources,
+    BeginFrame, CustomRenderer, DisplayCommandExt, GpuTextureTarget, RasterizerOutput, RenderCore,
+    Renderer, TargetRenderer, gpu_resources::GpuResources,
 };
 use imaging::{
     BlurredRoundedRect, ClipRef, CustomPaintSink, FillRef, GlyphRunRef, GroupRef, PaintSink,
@@ -115,8 +115,8 @@ impl SkiaRenderer {
     }
 }
 
-impl RasterCore for SkiaRenderer {
-    fn with_paint_sink(&mut self, f: &mut dyn FnMut(&mut dyn PaintSink)) {
+impl RenderCore for SkiaRenderer {
+    fn render(&mut self, f: &mut dyn FnMut(&mut dyn PaintSink)) {
         self.with_canvas(&mut |canvas| f(canvas));
     }
 
@@ -132,8 +132,10 @@ impl RasterCore for SkiaRenderer {
     }
 }
 
-impl Rasterizer for SkiaRenderer {
-    fn begin(&mut self, frame: BeginFrame) {
+impl Renderer for SkiaRenderer {
+    type Target = wgpu::TextureView;
+
+    fn set_size(&mut self, frame: BeginFrame) {
         if self.inner.wgpu_texture().is_none_or(|t| {
             t.size().width != frame.size.width as u32 || t.size().height != frame.size.height as u32
         }) {
@@ -152,25 +154,35 @@ impl Rasterizer for SkiaRenderer {
                 .replace_wgpu_texture(texture_format, texture, &self.device, &self.queue)
                 .expect("failed to recreate SkiaRenderer");
         }
+    }
+
+    fn reset(&mut self) {
         self.inner
             .reset()
             .expect("failed to reset imaging_skia renderer");
     }
+
+    fn read_target(&mut self) -> Option<Self::Target> {
+        self.inner.wgpu_texture_view().cloned()
+    }
 }
 
-impl RasterTarget for SkiaRenderer {
+impl TargetRenderer for SkiaRenderer {
     type Target = GpuTextureTarget;
 
-    fn create(target: Self::Target) -> Result<Self, String> {
+    fn create(frame: BeginFrame, target: Self::Target) -> Result<Self, String> {
         let device = target.device;
         let queue = target.queue;
         let texture = target.texture_view.texture().clone();
         let texture_format = texture.format();
-        Self::from_texture(device, queue, texture_format, texture)
+        let mut renderer = Self::from_texture(device, queue, texture_format, texture)?;
+        renderer.set_size(frame);
+        renderer.reset();
+        Ok(renderer)
     }
 }
 
-impl CustomRasterizer for SkiaRenderer {
+impl CustomRenderer for SkiaRenderer {
     fn with_custom_paint_sink(
         &mut self,
         f: &mut dyn FnMut(&mut dyn CustomPaintSink<DisplayCommandExt>),

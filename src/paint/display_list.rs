@@ -12,15 +12,18 @@ use floem_renderer::{DisplayCommandExt, OwnedSvg, Svg};
 use imaging::{
     BlurredRoundedRect, ClipRef, CustomPaintSink, FillRef, GeometryRef, GroupRef, PaintSink,
     StrokeRef,
-    record::{Clip, Draw, ExtendedCommand, ExtendedScene, Geometry, Glyph as ImagingGlyph, replay_ext_transformed},
+    record::{
+        Clip, Draw, ExtendedCommand, ExtendedScene, Geometry, Glyph as ImagingGlyph,
+        replay_ext_transformed,
+    },
 };
-use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Size};
 use peniko::BrushRef;
+use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Size};
 use rustc_hash::{FxHashMap, FxHashSet};
 use understory_box_tree::NodeFlags;
 
 use crate::{
-    BoxTree, ElementId, Rasterizer as AppRasterizer,
+    BoxTree, ElementId,
     view::stacking::{StackingContextItem, collect_stacking_context_items_into},
 };
 
@@ -153,7 +156,11 @@ impl ChildList {
         }
     }
 
-    fn direct_child(&self, id: ElementId, nodes: &[Option<DisplayNode>]) -> Option<DisplayNodeSlot> {
+    fn direct_child(
+        &self,
+        id: ElementId,
+        nodes: &[Option<DisplayNode>],
+    ) -> Option<DisplayNodeSlot> {
         if let Some(slot) = self
             .direct_lookup
             .as_ref()
@@ -254,7 +261,10 @@ impl RetainedDisplayList {
 
     pub(crate) fn element_mut(&mut self, id: ElementId) -> &mut ElementDisplayList {
         if let Some(slot) = self.find_slot(id) {
-            return &mut self.node_mut(slot).expect("display list node missing").display;
+            return &mut self
+                .node_mut(slot)
+                .expect("display list node missing")
+                .display;
         }
         self.inactive_elements.entry(id).or_default()
     }
@@ -507,81 +517,80 @@ impl PaintSink for RecordingRenderer<'_> {
 
 pub(crate) fn replay_stage(
     stage: &ElementStage,
-    renderer: &mut dyn AppRasterizer,
+    sink: &mut dyn CustomPaintSink<DisplayCommandExt>,
     base_transform: Affine,
     render_size: Size,
     _local_damage: Option<&[Rect]>,
 ) {
     let mut sink = SanitizingSink {
-        inner: renderer,
+        inner: sink,
         render_size,
     };
     replay_ext_transformed(&stage.scene, &mut sink, base_transform);
 }
 
 pub(crate) fn replay_view_clip(
-    renderer: &mut dyn AppRasterizer,
+    sink: &mut dyn CustomPaintSink<DisplayCommandExt>,
     clip: RoundedRect,
     base_transform: Affine,
     render_size: Size,
 ) {
     let clip = constrain_infinite_rounded_rect(clip, base_transform, render_size);
-    PaintSink::push_clip(
-        renderer.paint_sink(),
-        ClipRef::fill(clip).with_transform(base_transform),
-    );
+    PaintSink::push_clip(sink, ClipRef::fill(clip).with_transform(base_transform));
 }
 
 struct SanitizingSink<'a> {
-    inner: &'a mut (dyn AppRasterizer + floem_renderer::CustomRasterizer),
+    inner: &'a mut dyn CustomPaintSink<DisplayCommandExt>,
     render_size: Size,
 }
 
 impl PaintSink for SanitizingSink<'_> {
     fn push_clip(&mut self, clip: ClipRef<'_>) {
         let clip = sanitize_clip_ref(clip, self.render_size);
-        self.inner.paint_sink().push_clip(clip.as_ref());
+        self.inner.push_clip(clip.as_ref());
     }
 
     fn pop_clip(&mut self) {
-        self.inner.paint_sink().pop_clip();
+        self.inner.pop_clip();
     }
 
     fn push_group(&mut self, group: GroupRef<'_>) {
-        let clip = group.clip.map(|clip| sanitize_clip_ref(clip, self.render_size));
+        let clip = group
+            .clip
+            .map(|clip| sanitize_clip_ref(clip, self.render_size));
         let group = GroupRef {
             clip: clip.as_ref().map(Clip::as_ref),
             mask: group.mask.clone(),
             filters: group.filters,
             composite: group.composite,
         };
-        self.inner.paint_sink().push_group(group);
+        self.inner.push_group(group);
     }
 
     fn pop_group(&mut self) {
-        self.inner.paint_sink().pop_group();
+        self.inner.pop_group();
     }
 
     fn fill(&mut self, draw: FillRef<'_>) {
-        self.inner.paint_sink().fill(draw);
+        self.inner.fill(draw);
     }
 
     fn stroke(&mut self, draw: StrokeRef<'_>) {
-        self.inner.paint_sink().stroke(draw);
+        self.inner.stroke(draw);
     }
 
     fn glyph_run(&mut self, draw: GlyphRunRef<'_>, glyphs: &mut dyn Iterator<Item = ImagingGlyph>) {
-        self.inner.paint_sink().glyph_run(draw, glyphs);
+        self.inner.glyph_run(draw, glyphs);
     }
 
     fn blurred_rounded_rect(&mut self, draw: BlurredRoundedRect) {
-        self.inner.paint_sink().blurred_rounded_rect(draw);
+        self.inner.blurred_rounded_rect(draw);
     }
 }
 
 impl CustomPaintSink<DisplayCommandExt> for SanitizingSink<'_> {
     fn custom(&mut self, command: &DisplayCommandExt) {
-        self.inner.custom_paint_sink().custom(command);
+        self.inner.custom(command);
     }
 }
 
@@ -635,12 +644,20 @@ fn sanitize_clip_ref(clip: ClipRef<'_>, render_size: Size) -> Clip {
     }
 }
 
-fn sanitize_clip_geometry(shape: GeometryRef<'_>, transform: Affine, render_size: Size) -> Geometry {
+fn sanitize_clip_geometry(
+    shape: GeometryRef<'_>,
+    transform: Affine,
+    render_size: Size,
+) -> Geometry {
     match shape {
-        GeometryRef::Rect(rect) => Geometry::Rect(constrain_infinite_rect(rect, transform, render_size)),
-        GeometryRef::RoundedRect(rect) => {
-            Geometry::RoundedRect(constrain_infinite_rounded_rect(rect, transform, render_size))
+        GeometryRef::Rect(rect) => {
+            Geometry::Rect(constrain_infinite_rect(rect, transform, render_size))
         }
+        GeometryRef::RoundedRect(rect) => Geometry::RoundedRect(constrain_infinite_rounded_rect(
+            rect,
+            transform,
+            render_size,
+        )),
         GeometryRef::Path(path) => Geometry::Path(path.clone()),
         GeometryRef::OwnedPath(path) => Geometry::Path(path),
     }

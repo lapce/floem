@@ -340,7 +340,7 @@ impl View for Svg {
                 self.svg_style.text_color().map(Brush::Solid)
             };
             cx.painter.sink_mut().draw_svg(
-                crate::RendererSvg { tree, hash },
+                floem_renderer::Svg { tree, hash },
                 rect,
                 Affine::IDENTITY,
                 color.as_ref(),

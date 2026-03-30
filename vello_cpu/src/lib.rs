@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use anyhow::{Result, anyhow};
 use floem_renderer::{
-    BeginFrame, CpuBufferFormat, CpuBufferTarget, CustomRasterizer, DisplayCommandExt, RasterCore,
-    RasterTarget, Rasterizer, RasterizerOutput,
+    BeginFrame, CpuBufferFormat, CpuBufferTarget, CustomRenderer, DisplayCommandExt,
+    RasterizerOutput, RenderCore, Renderer, TargetRenderer,
 };
 use imaging::{
     BlurredRoundedRect, ClipRef, CustomPaintSink, FillRef, GlyphRunRef, GroupRef, PaintSink,
@@ -134,8 +134,8 @@ impl<'a> VelloCpuTargetRenderer<'a> {
     }
 }
 
-impl RasterCore for VelloCpuRenderer {
-    fn with_paint_sink(&mut self, f: &mut dyn FnMut(&mut dyn PaintSink)) {
+impl RenderCore for VelloCpuRenderer {
+    fn render(&mut self, f: &mut dyn FnMut(&mut dyn PaintSink)) {
         let mut canvas = VelloCpuCanvas {
             inner: &mut self.inner,
         };
@@ -154,20 +154,29 @@ impl RasterCore for VelloCpuRenderer {
     }
 }
 
-impl Rasterizer for VelloCpuRenderer {
-    fn begin(&mut self, frame: BeginFrame) {
+impl Renderer for VelloCpuRenderer {
+    type Target = ImageData;
+
+    fn set_size(&mut self, frame: BeginFrame) {
         let width = frame.size.width as u32;
         let height = frame.size.height as u32;
         if self.width != width || self.height != height {
             *self = Self::new(width, height, frame.scale, frame.font_embolden)
                 .expect("failed to recreate VelloCpuRenderer");
         }
+    }
+
+    fn reset(&mut self) {
         self.inner.reset();
         self.finished_image = None;
     }
+
+    fn read_target(&mut self) -> Option<Self::Target> {
+        self.finished_image.clone().or_else(|| self.read_image())
+    }
 }
 
-impl CustomRasterizer for VelloCpuRenderer {
+impl CustomRenderer for VelloCpuRenderer {
     fn with_custom_paint_sink(
         &mut self,
         f: &mut dyn FnMut(&mut dyn CustomPaintSink<DisplayCommandExt>),
@@ -183,8 +192,8 @@ impl CustomRasterizer for VelloCpuRenderer {
     }
 }
 
-impl RasterCore for VelloCpuTargetRenderer<'_> {
-    fn with_paint_sink(&mut self, f: &mut dyn FnMut(&mut dyn PaintSink)) {
+impl RenderCore for VelloCpuTargetRenderer<'_> {
+    fn render(&mut self, f: &mut dyn FnMut(&mut dyn PaintSink)) {
         let mut canvas = VelloCpuCanvas {
             inner: &mut self.inner,
         };
@@ -211,7 +220,7 @@ impl RasterCore for VelloCpuTargetRenderer<'_> {
     }
 }
 
-impl<'a> CustomRasterizer for VelloCpuTargetRenderer<'a> {
+impl<'a> CustomRenderer for VelloCpuTargetRenderer<'a> {
     fn with_custom_paint_sink(
         &mut self,
         f: &mut dyn FnMut(&mut dyn CustomPaintSink<DisplayCommandExt>),
@@ -227,10 +236,10 @@ impl<'a> CustomRasterizer for VelloCpuTargetRenderer<'a> {
     }
 }
 
-impl<'a> RasterTarget for VelloCpuTargetRenderer<'a> {
+impl<'a> TargetRenderer for VelloCpuTargetRenderer<'a> {
     type Target = CpuBufferTarget<'a>;
 
-    fn create(target: Self::Target) -> Result<Self, String> {
+    fn create(_frame: BeginFrame, target: Self::Target) -> Result<Self, String> {
         let width_u16 =
             u16::try_from(target.width).map_err(|_| "width exceeds vello_cpu limit".to_string())?;
         let height_u16 = u16::try_from(target.height)
