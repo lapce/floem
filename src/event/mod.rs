@@ -705,6 +705,12 @@ pub enum WindowEvent {
     /// The window lost input focus.
     FocusLost,
 
+    /// The user requested that the window close.
+    ///
+    /// # Default Actions (preventable with `cx.prevent_default()`)
+    /// Closes the window unless a handler prevents the default action.
+    CloseRequested,
+
     /// The window was closed.
     Closed,
 
@@ -1473,12 +1479,13 @@ pub enum Event {
     /// # Events
     /// - `Resized`: Window size changed (triggers responsive style updates)
     /// - `CloseRequested`: User requested window close
-    /// - `Destroyed`: Window is being destroyed
+    /// - `Closed`: Window teardown notification fired during destruction
     /// - `ThemeChanged`: System theme changed (light/dark mode)
-    /// - `RescaleRequested`: DPI scale factor changed
+    /// - `ScaleChanged`: DPI scale factor changed
     ///
     /// # Default Actions
-    /// No preventable default action for any `Window` variant.
+    /// All `Window` variants are observational except `CloseRequested`, whose default action is
+    /// to close the window unless prevented with `cx.prevent_default()`.
     ///
     /// # Example
     /// ```rust
@@ -2048,6 +2055,7 @@ impl Event {
             Self::Ime(ImeEvent::DeleteSurrounding { .. }) => ImeDeleteSurrounding::listener_key(),
             Self::Focus(FocusEvent::Gained(_)) => FocusGained::listener_key(),
             Self::Focus(FocusEvent::Lost) => FocusLost::listener_key(),
+            Self::Window(WindowEvent::CloseRequested) => WindowCloseRequested::listener_key(),
             Self::Window(WindowEvent::Closed) => WindowClosed::listener_key(),
             Self::Window(WindowEvent::Resized(_)) => WindowResized::listener_key(),
             Self::Window(WindowEvent::Moved(_)) => WindowMoved::listener_key(),

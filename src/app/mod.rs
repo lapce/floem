@@ -142,6 +142,9 @@ pub(crate) enum AppUpdateEvent {
     CloseWindow {
         window_id: WindowId,
     },
+    RequestCloseWindow {
+        window_id: WindowId,
+    },
     CaptureWindow {
         window_id: WindowId,
         capture: WriteSignal<Option<Rc<Capture>>>,
@@ -173,6 +176,26 @@ pub(crate) fn add_app_update_event(event: AppUpdateEvent) {
         events.borrow_mut().push(event);
     });
     Application::request_update();
+}
+
+/// Drain the pending app update events and return how many of them were
+/// `CloseWindow` for the given `window_id`.  This is intended for testing
+/// the `handle_default_behaviors` close logic.
+#[doc(hidden)]
+pub fn take_close_window_event_count(window_id: WindowId) -> usize {
+    APP_UPDATE_EVENTS.with(|events| {
+        let mut events = events.borrow_mut();
+        let count = events
+            .iter()
+            .filter(
+                |e| matches!(e, AppUpdateEvent::CloseWindow { window_id: id } if *id == window_id),
+            )
+            .count();
+        events.retain(
+            |e| !matches!(e, AppUpdateEvent::CloseWindow { window_id: id } if *id == window_id),
+        );
+        count
+    })
 }
 
 /// Floem top level application
@@ -323,10 +346,11 @@ impl Application {
     }
 }
 
-/// Initiates the application shutdown process.
+/// Immediately terminates the application.
 ///
-/// This function sends a `QuitApp` event to the application's event loop,
-/// triggering the application to close gracefully.
+/// This is an unconditional exit: no windows receive a `CloseRequested` event
+/// and no `WindowCloseRequested` handlers are consulted. The event loop exits
+/// immediately.
 pub fn quit_app() {
     Application::send_proxy_event(UserEvent::QuitApp);
 }

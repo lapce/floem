@@ -467,7 +467,7 @@ impl<'a> GlobalEventCx<'a> {
             if let Event::Pointer(PointerEvent::Leave(_)) = &event {
                 rcx.update_hover_from_path(&[]);
             }
-        });
+        })
     }
 
     /// Update hover from a path without dispatching any event to views.
@@ -1202,6 +1202,14 @@ impl RouteCx<'_, '_> {
         };
         if let Some(pbe) = pbe {
             self.handle_menu_events(&pbe.clone());
+        }
+
+        // Window close — close the window if not prevented.
+        if matches!(&self.event, Event::Window(WindowEvent::CloseRequested))
+            && let Some(window_id) =
+                crate::window::tracking::window_id_for_root(self.gcx.window_state.root_view_id)
+        {
+            crate::app::add_app_update_event(crate::app::AppUpdateEvent::CloseWindow { window_id });
         }
     }
 

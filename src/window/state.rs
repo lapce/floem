@@ -26,8 +26,8 @@ use crate::{
     event::{DragTracker, Event, WindowEvent, clear_hit_test_cache},
     layout::responsive::{GridBreakpoints, ScreenSizeBp},
     message::UpdateMessage,
-    paint::display_list::RetainedDisplayList,
     paint::PaintStats,
+    paint::display_list::RetainedDisplayList,
     style::{CursorStyle, Style, StyleSelector, theme::default_theme},
     view::{LayoutNodeCx, MeasureCx, VIEW_STORAGE, ViewId},
 };
@@ -1022,13 +1022,10 @@ impl WindowState {
         self.apply_overlay_parent_transforms();
         self.apply_fixed_positioning_transforms();
 
-        let damage = self.box_tree.borrow_mut().commit();
-
-        self.pending_damage_rects
-            .extend(damage.dirty_rects.iter().copied());
+        let dirty_rects = self.box_tree.borrow_mut().commit().dirty_rects;
 
         let pointer = self.last_pointer;
-        for damage_rect in &damage.dirty_rects {
+        for damage_rect in &dirty_rects {
             if damage_rect.contains(pointer.0) {
                 clear_hit_test_cache();
                 let root_element_id = self.root_view_id.get_element_id();
@@ -1040,7 +1037,7 @@ impl WindowState {
                 .route_window_event();
             }
         }
-        if !damage.dirty_rects.is_empty() {
+        if !dirty_rects.is_empty() {
             self.invalidate_focus_nav_cache();
         }
         self.needs_box_tree_commit = false;

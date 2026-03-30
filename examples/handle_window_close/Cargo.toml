@@ -1,0 +1,7 @@
+[package]
+name = "handle_window_close"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+floem = { path = "../..", features = ["skia"] }

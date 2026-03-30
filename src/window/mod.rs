@@ -662,7 +662,28 @@ pub fn new_window<V: IntoView + 'static>(
     });
 }
 
-/// request the window to be closed
+/// Closes the window unconditionally.
+///
+/// This bypasses any `WindowCloseRequested` handlers: no `CloseRequested`
+/// event is dispatched to the view tree and `cx.prevent_default()` has no
+/// effect. The window is destroyed immediately.
+///
+/// Use [`request_close_window`] instead if you want close-request handlers
+/// to have the opportunity to cancel the close (e.g. to prompt for unsaved
+/// changes).
 pub fn close_window(window_id: WindowId) {
     add_app_update_event(AppUpdateEvent::CloseWindow { window_id });
+}
+
+/// Requests the window to close, dispatching `CloseRequested` first.
+///
+/// This sends a `WindowCloseRequested` event to the view tree before closing.
+/// If any handler calls `cx.prevent_default()`, the close is cancelled and the
+/// window remains open. If no handler prevents the default, the window is
+/// destroyed.
+///
+/// This is the interceptable counterpart to [`close_window`], which closes
+/// unconditionally.
+pub fn request_close_window(window_id: WindowId) {
+    add_app_update_event(AppUpdateEvent::RequestCloseWindow { window_id });
 }
