@@ -162,7 +162,7 @@ pub(crate) fn collect_visual_order(
         }
 
         box_tree
-            .get_or_compute_world_bounds(element_id.0)
+            .world_bounds(element_id.0)
             .is_none_or(|bounds| bounds.area() != 0.0)
     };
 
@@ -275,10 +275,8 @@ impl GlobalPaintCx<'_> {
     /// Paint a single visual node with its absolute transform
     pub(crate) fn paint_visual_node(&mut self, element_id: ElementId, is_post: bool) {
         // Get state from box tree for this visual node
-        let mut box_tree = self.window_state.box_tree.borrow_mut();
-        let world_transform = box_tree
-            .get_or_compute_world_transform(element_id.0)
-            .unwrap_or_default();
+        let box_tree = self.window_state.box_tree.borrow_mut();
+        let world_transform = box_tree.world_transform(element_id.0).unwrap_or_default();
         let layout_rect_local = box_tree.local_bounds(element_id.0).unwrap_or_default();
         let clip = box_tree.clipped_local_clip(element_id.0);
         drop(box_tree);
