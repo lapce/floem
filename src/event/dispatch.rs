@@ -834,7 +834,7 @@ impl RouteCx<'_, '_> {
             .window_state
             .box_tree
             .borrow_mut()
-            .get_or_compute_world_transform(dispatch_step.target_element_id.0)
+            .world_transform(dispatch_step.target_element_id.0)
         else {
             // we are storing pending events so it's possible that a node becomes stale. if it
             // did, don't panic, just continue.
@@ -1273,7 +1273,7 @@ impl RouteCx<'_, '_> {
                     .window_state
                     .box_tree
                     .borrow_mut()
-                    .get_or_compute_world_bounds(hit.owning_id().get_element_id().0)
+                    .world_bounds(hit.owning_id().get_element_id().0)
                     .unwrap_or_default();
                 let bottom_left = Point::new(bounds.x0, bounds.y1);
                 show_context_menu(menu(), Some(bottom_left));

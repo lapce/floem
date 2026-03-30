@@ -1185,10 +1185,14 @@ fn test_fixed_overlay_with_non_fixed_sibling() {
             clicked1_clone.set(true);
         });
 
+    use floem::View;
+    let id = fixed1.id();
+
     // Non-fixed element at (300, 200) - this should NOT block the fixed element
     let non_fixed2 = Empty::new()
         .style(|s| s.background(BLUE).size(50.0, 50.0))
         .action(|| {});
+    let id2 = non_fixed2.id();
 
     let view = Stack::new((
         // First overlay with fixed child
@@ -1209,6 +1213,9 @@ fn test_fixed_overlay_with_non_fixed_sibling() {
     .style(|s| s.size(400.0, 300.0));
 
     let mut harness = HeadlessHarness::new_with_size(root, view, 400.0, 300.0);
+    harness.rebuild();
+    dbg!(id.get_visual_rect());
+    dbg!(id2.get_visual_rect());
 
     // Click at (35, 35) should hit the fixed element
     harness.click(35.0, 35.0);

@@ -421,7 +421,7 @@ impl DragTracker {
                 // Calculate percentage based on custom_pct or initial click position
                 // Get world bounds at drag start to know where user clicked
                 let start_world_bounds = box_tree
-                    .get_or_compute_world_bounds(pending.element_id.0)
+                    .world_bounds(pending.element_id.0)
                     .expect("drag source went stale during threshold check");
 
                 let click_offset_x = start_pos.x - start_world_bounds.x0;

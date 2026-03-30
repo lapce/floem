@@ -953,7 +953,7 @@ impl WindowState {
             let current_transform = self
                 .box_tree
                 .borrow_mut()
-                .get_or_compute_world_transform(dragging_preview.element_id.0)
+                .world_transform(dragging_preview.element_id.0)
                 .unwrap_or(Affine::IDENTITY);
 
             let natural_position = dragging.update_and_get_natural_position(current_transform);
@@ -996,13 +996,20 @@ impl WindowState {
             self.drag_tracker.active_drag = None;
         }
 
+        let mut dirty_rects = Vec::new();
+
+        // Understory now exposes only last-committed world transforms while dirty.
+        // Commit once to refresh layout-derived parent world transforms before applying
+        // overlay/fixed corrections that depend on them, then commit the corrected state.
+        dirty_rects.extend(self.box_tree.borrow_mut().commit().dirty_rects);
+
         self.apply_overlay_parent_transforms();
         self.apply_fixed_positioning_transforms();
 
-        let damage = self.box_tree.borrow_mut().commit();
+        dirty_rects.extend(self.box_tree.borrow_mut().commit().dirty_rects);
 
         let pointer = self.last_pointer;
-        for damage_rect in &damage.dirty_rects {
+        for damage_rect in &dirty_rects {
             if damage_rect.contains(pointer.0) {
                 clear_hit_test_cache();
                 let root_element_id = self.root_view_id.get_element_id();
@@ -1014,7 +1021,7 @@ impl WindowState {
                 .route_window_event();
             }
         }
-        if !damage.dirty_rects.is_empty() {
+        if !dirty_rects.is_empty() {
             self.invalidate_focus_nav_cache();
             self.request_paint = true;
         }
@@ -1093,7 +1100,7 @@ impl WindowState {
         let mut tree = self.box_tree.borrow_mut();
         for (overlay_element_id, logical_parent_element_id, base_local_transform) in overlay_data {
             let parent_world = tree
-                .get_or_compute_world_transform(logical_parent_element_id.0)
+                .world_transform(logical_parent_element_id.0)
                 .unwrap_or(Affine::IDENTITY);
             tree.set_local_transform(overlay_element_id.0, parent_world * base_local_transform);
         }
