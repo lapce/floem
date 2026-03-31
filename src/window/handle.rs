@@ -111,6 +111,7 @@ impl WindowHandle {
     pub(crate) fn new(
         window: Box<dyn winit::window::Window>,
         gpu_resources: Option<GpuResources>,
+        renderer_installers: &[crate::paint::renderer::RendererInstaller],
         required_features: wgpu::Features,
         backends: Option<wgpu::Backends>,
         view_fn: impl FnOnce(winit::window::WindowId) -> Box<dyn View> + 'static,
@@ -156,27 +157,41 @@ impl WindowHandle {
         let window: Arc<dyn Window> = window.into();
         store_window_id_mapping(id, window_id, &window);
         let frame_size = size.get_untracked() * os_scale;
-        let (paint_state, window_backend) = if crate::paint::renderer::HAS_GPU_ACTIVE_RENDERER {
-            if let Some(resources) = gpu_resources.clone() {
-                Self::new_gpu_backed_paint_state(
-                    window.clone(),
-                    resources,
-                    transparent,
-                    os_scale,
-                    frame_size,
-                    font_embolden,
-                )
-            } else {
-                Self::new_pending_paint_state(
-                    window.clone(),
-                    frame_size,
-                    font_embolden,
-                    required_features,
-                    backends,
-                )
-            }
-        } else if crate::paint::renderer::HAS_IMMEDIATE_RENDERER {
-            Self::new_immediate_paint_state(window.clone(), os_scale, frame_size, font_embolden)
+        let has_cpu_installer = renderer_installers
+            .iter()
+            .any(|installer| !installer.requires_gpu());
+        let has_gpu_installer = renderer_installers
+            .iter()
+            .any(|installer| installer.requires_gpu());
+
+        let prefer_gpu_installers = has_gpu_installer && !crate::paint::renderer::force_cpu_requested();
+
+        let (paint_state, window_backend) = if let Some(resources) = gpu_resources.clone() {
+            Self::new_gpu_backed_paint_state(
+                renderer_installers,
+                window.clone(),
+                resources,
+                transparent,
+                os_scale,
+                frame_size,
+                font_embolden,
+            )
+        } else if prefer_gpu_installers {
+            Self::new_pending_paint_state(
+                window.clone(),
+                frame_size,
+                font_embolden,
+                required_features,
+                backends,
+            )
+        } else if has_cpu_installer {
+            Self::new_cpu_backed_paint_state(
+                renderer_installers,
+                window.clone(),
+                os_scale,
+                frame_size,
+                font_embolden,
+            )
         } else {
             Self::new_uninitialized_paint_state()
         };
@@ -240,6 +255,7 @@ impl WindowHandle {
     }
 
     fn new_gpu_backed_paint_state(
+        renderer_installers: &[crate::paint::renderer::RendererInstaller],
         window: Arc<dyn Window>,
         gpu_resources: GpuResources,
         transparent: bool,
@@ -247,84 +263,48 @@ impl WindowHandle {
         size: Size,
         font_embolden: f32,
     ) -> (PaintState, Option<crate::paint::renderer::WindowBackend>) {
-        #[cfg(any(
-            feature = "active-vello",
-            feature = "active-vger",
-            feature = "active-skia"
-        ))]
-        {
-            let surface = gpu_resources
-                .instance
-                .create_surface(Arc::clone(&window))
-                .expect("can create second window");
-            let (renderer, window_backend) = crate::paint::renderer::new(
-                window,
-                gpu_resources,
-                surface,
-                transparent,
-                os_scale,
-                size,
-                font_embolden,
-            );
-            return (
-                PaintState::Initialized {
-                    rasterizer: renderer,
-                },
-                Some(window_backend),
-            );
-        }
-
-        #[cfg(not(any(
-            feature = "active-vello",
-            feature = "active-vger",
-            feature = "active-skia"
-        )))]
-        {
-            let _ = (
-                window,
-                gpu_resources,
-                transparent,
-                os_scale,
-                size,
-                font_embolden,
-            );
-            unreachable!("GPU-backed paint state is only valid for GPU-backed renderers")
-        }
+        let surface = gpu_resources
+            .instance
+            .create_surface(Arc::clone(&window))
+            .expect("can create second window");
+        let (renderer, window_backend) = crate::paint::renderer::new(
+            renderer_installers,
+            window,
+            gpu_resources,
+            surface,
+            transparent,
+            os_scale,
+            size,
+            font_embolden,
+        );
+        (
+            PaintState::Initialized {
+                rasterizer: renderer,
+            },
+            Some(window_backend),
+        )
     }
 
-    fn new_immediate_paint_state(
+    fn new_cpu_backed_paint_state(
+        renderer_installers: &[crate::paint::renderer::RendererInstaller],
         window: Arc<dyn Window>,
         os_scale: f64,
         size: Size,
         font_embolden: f32,
     ) -> (PaintState, Option<crate::paint::renderer::WindowBackend>) {
-        #[cfg(any(
-            feature = "active-vello-hybrid",
-            feature = "active-vello-cpu",
-            feature = "active-skia-cpu",
-            feature = "active-tiny-skia"
-        ))]
-        {
-            let (renderer, window_backend) =
-                crate::paint::renderer::new_cpu(window, os_scale, size, font_embolden);
-            return (
-                PaintState::Initialized {
-                    rasterizer: renderer,
-                },
-                Some(window_backend),
-            );
-        }
-
-        #[cfg(not(any(
-            feature = "active-vello-hybrid",
-            feature = "active-vello-cpu",
-            feature = "active-skia-cpu",
-            feature = "active-tiny-skia"
-        )))]
-        {
-            let _ = (window, os_scale, size, font_embolden);
-            unreachable!("Immediate paint state is only valid for immediate renderers")
-        }
+        let (renderer, window_backend) = crate::paint::renderer::new_cpu(
+            renderer_installers,
+            window,
+            os_scale,
+            size,
+            font_embolden,
+        );
+        (
+            PaintState::Initialized {
+                rasterizer: renderer,
+            },
+            Some(window_backend),
+        )
     }
 
     fn new_pending_paint_state(
@@ -342,10 +322,10 @@ impl WindowHandle {
             backends,
             window.clone(),
         );
-        return (
+        (
             PaintState::new_pending(window, gpu_resources_rx, size, font_embolden),
             None,
-        );
+        )
     }
 
     fn new_uninitialized_paint_state() -> (PaintState, Option<crate::paint::renderer::WindowBackend>)
@@ -892,7 +872,41 @@ impl WindowHandle {
         };
         self.window.pre_present_notify();
 
-        if finish_mode == FinishMode::CpuImage || self.window_backend.is_none() {
+        if finish_mode == FinishMode::CpuImage && self.window_backend.is_some() {
+            let background = if self.transparent {
+                None
+            } else {
+                Some(
+                    self.default_theme
+                        .as_ref()
+                        .and_then(|theme| theme.get(crate::style::Background))
+                        .unwrap_or(peniko::Brush::Solid(palette::css::WHITE)),
+                )
+            };
+
+            let window = self.window_backend.as_mut().and_then(|window_backend| {
+                window_backend.capture(
+                    begin,
+                    &mut |renderer: &mut dyn floem_renderer::SceneRenderer| {
+                        if let Some(color) = background.as_ref() {
+                            renderer.render(&mut |sink| {
+                                PaintSink::fill(
+                                    sink,
+                                    FillRef::new(frame_size.to_rect().expand(), color),
+                                );
+                            });
+                        }
+                        cx.paint_with_traversal_into(self.id, renderer);
+                    },
+                )
+            });
+            let root_element_id = cx.window_state.root_view_id.get_element_id();
+            let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::PaintPresent));
+            GlobalEventCx::new(cx.window_state, root_element_id, event).route_window_event();
+            return window;
+        }
+
+        if self.window_backend.is_none() {
             cx.paint_state.rasterizer_mut().set_size(begin);
             cx.paint_state.rasterizer_mut().reset();
             if !self.transparent {
@@ -917,7 +931,13 @@ impl WindowHandle {
         if finish_mode == FinishMode::CpuImage {
             let rasterizer = cx.paint_state.rasterizer_mut();
             rasterizer.finish();
-            rasterizer.readback().and_then(|output| output.into_image())
+            rasterizer.readback().and_then(|output| {
+                if let Some(gpu_resources) = cx.gpu_resources.as_ref() {
+                    output.into_image_with(&gpu_resources.device, &gpu_resources.queue)
+                } else {
+                    output.into_image()
+                }
+            })
         } else if let Some(window_backend) = self.window_backend.as_mut() {
             let background = if self.transparent {
                 None
@@ -1012,7 +1032,11 @@ impl WindowHandle {
             window_size,
             root: Rc::new(root),
             state: self.window_state.capture.take().unwrap(),
-            renderer: self.paint_state.rasterizer().debug_info(),
+            renderer: self
+                .window_backend
+                .as_ref()
+                .map(|backend| backend.debug_info())
+                .unwrap_or_else(|| self.paint_state.rasterizer().debug_info()),
         };
         // Process any updates produced by capturing
         self.process_update();

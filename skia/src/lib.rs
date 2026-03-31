@@ -4,7 +4,7 @@ pub use cpu::{SkiaCpuRenderer, SkiaCpuTargetRenderer};
 
 use anyhow::{Result, anyhow};
 use floem_renderer::{
-    BeginFrame, CustomRenderer, DisplayCommandExt, GpuTextureTarget, RasterizerOutput, RenderCore,
+    BeginFrame, CustomRenderer, DisplayCommandExt, GpuTextureTarget, RenderCore, RenderOutput,
     Renderer, TargetRenderer, gpu_resources::GpuResources,
 };
 use imaging::{
@@ -124,11 +124,11 @@ impl RenderCore for SkiaRenderer {
         let _ = self.inner.with_canvas_sink(|c| c.finish());
     }
 
-    fn readback(&mut self) -> Option<RasterizerOutput> {
+    fn readback(&mut self) -> Option<RenderOutput> {
         self.inner
             .wgpu_texture_view()
             .cloned()
-            .map(RasterizerOutput::GpuTexture)
+            .map(RenderOutput::GpuTexture)
     }
 }
 

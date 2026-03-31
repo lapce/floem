@@ -49,38 +49,10 @@
 //!
 use std::sync::Arc;
 
-#[cfg(any(
-    feature = "active-vello",
-    feature = "active-vger",
-    feature = "active-skia"
-))]
-pub(crate) const HAS_GPU_ACTIVE_RENDERER: bool = true;
-#[cfg(not(any(
-    feature = "active-vello",
-    feature = "active-vger",
-    feature = "active-skia"
-)))]
-pub(crate) const HAS_GPU_ACTIVE_RENDERER: bool = false;
-
-#[cfg(any(
-    feature = "active-vello-hybrid",
-    feature = "active-vello-cpu",
-    feature = "active-skia-cpu",
-    feature = "active-tiny-skia"
-))]
-pub(crate) const HAS_IMMEDIATE_RENDERER: bool = true;
-#[cfg(not(any(
-    feature = "active-vello-hybrid",
-    feature = "active-vello-cpu",
-    feature = "active-skia-cpu",
-    feature = "active-tiny-skia"
-)))]
-pub(crate) const HAS_IMMEDIATE_RENDERER: bool = false;
-
 use floem_renderer::gpu_resources::GpuResources;
 use floem_renderer::{
-    BeginFrame, CustomRenderer, DisplayCommandExt, RasterizerOutput, RenderCore, Renderer,
-    SceneRenderer, TargetRenderer,
+    BeginFrame, CustomRenderer, DisplayCommandExt, RenderCore, RenderOutput, Renderer,
+    SceneRenderer,
 };
 use imaging::{
     BlurredRoundedRect, ClipRef, CustomPaintSink, FillRef, GlyphRunRef, GroupRef, PaintSink,
@@ -93,11 +65,77 @@ use std::num::NonZeroU32;
 use wgpu::util::TextureBlitter;
 use winit::window::Window;
 
-type CpuTargetRenderFn = dyn for<'a> FnMut(
+pub type CpuTargetRenderFn = dyn for<'a> FnMut(
     BeginFrame,
     floem_renderer::CpuBufferTarget<'a>,
     &mut dyn FnMut(&mut dyn SceneRenderer),
 ) -> Result<(), String>;
+
+pub type CpuRendererInstallFn =
+    dyn Fn(CpuRendererInstallCx) -> Result<RendererType, String> + Send + Sync;
+pub type GpuRendererInstallFn =
+    dyn for<'a> Fn(GpuRendererInstallCx<'a>) -> Result<RendererType, String> + Send + Sync;
+
+pub trait GpuCopyRenderer: Renderer<Target = wgpu::TextureView> + SceneRenderer {}
+impl<T> GpuCopyRenderer for T where T: Renderer<Target = wgpu::TextureView> + SceneRenderer {}
+
+pub trait CpuCopyRenderer: Renderer<Target = ImageData> + SceneRenderer {}
+impl<T> CpuCopyRenderer for T where T: Renderer<Target = ImageData> + SceneRenderer {}
+
+#[derive(Clone, Copy)]
+pub struct CpuRendererInstallCx {
+    pub size: Size,
+    pub scale: f64,
+    pub font_embolden: f32,
+}
+
+#[derive(Clone, Copy)]
+pub struct GpuRendererInstallCx<'a> {
+    pub size: Size,
+    pub scale: f64,
+    pub font_embolden: f32,
+    pub gpu_resources: &'a GpuResources,
+    pub texture_format: wgpu::TextureFormat,
+}
+
+enum RendererInstallerKind {
+    Cpu(Box<CpuRendererInstallFn>),
+    Gpu(Box<GpuRendererInstallFn>),
+}
+
+pub struct RendererInstaller {
+    pub name: &'static str,
+    kind: RendererInstallerKind,
+}
+
+impl RendererInstaller {
+    pub fn cpu(
+        name: &'static str,
+        install: impl Fn(CpuRendererInstallCx) -> Result<RendererType, String> + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            name,
+            kind: RendererInstallerKind::Cpu(Box::new(install)),
+        }
+    }
+
+    pub fn gpu(
+        name: &'static str,
+        install: impl for<'a> Fn(GpuRendererInstallCx<'a>) -> Result<RendererType, String>
+        + Send
+        + Sync
+        + 'static,
+    ) -> Self {
+        Self {
+            name,
+            kind: RendererInstallerKind::Gpu(Box::new(install)),
+        }
+    }
+
+    pub(crate) fn requires_gpu(&self) -> bool {
+        matches!(&self.kind, RendererInstallerKind::Gpu(_))
+    }
+}
 
 struct NullRenderer;
 
@@ -108,13 +146,13 @@ impl RenderCore for NullRenderer {
 
     fn finish(&mut self) {}
 
-    fn readback(&mut self) -> Option<RasterizerOutput> {
+    fn readback(&mut self) -> Option<RenderOutput> {
         None
     }
 }
 
 impl Renderer for NullRenderer {
-    type Target = RasterizerOutput;
+    type Target = RenderOutput;
 
     fn set_size(&mut self, _frame: BeginFrame) {}
 
@@ -183,31 +221,180 @@ struct GpuWindowTarget {
 
 pub enum RendererType {
     TargetCpu(Box<CpuTargetRenderFn>),
-    CopyGpu(Box<dyn Renderer<Target = wgpu::TextureView>>),
-    CopyCpu(Box<dyn Renderer<Target = ImageData>>),
+    CopyGpu(Box<dyn GpuCopyRenderer>),
+    CopyCpu(Box<dyn CpuCopyRenderer>),
 }
 
 pub(crate) trait WindowRenderer {
     fn resize(&mut self, width: u32, height: u32);
     fn render(&mut self, begin: BeginFrame, paint: &mut dyn FnMut(&mut dyn SceneRenderer));
+    fn capture(
+        &mut self,
+        begin: BeginFrame,
+        paint: &mut dyn FnMut(&mut dyn SceneRenderer),
+    ) -> Option<ImageData>;
+    fn debug_info(&self) -> String;
     fn gpu_surface(&self) -> Option<&wgpu::Surface<'static>> {
         None
     }
 }
 
+#[allow(dead_code)]
 struct CpuDirectWindowRenderer<R> {
     target: CpuWindowTarget<Arc<dyn Window>>,
     _marker: std::marker::PhantomData<R>,
 }
 
-struct GpuCopyWindowRenderer<R> {
-    renderer: R,
+struct GpuCopyWindowRenderer {
+    renderer: GpuCopyRasterizer,
     target: GpuWindowTarget,
 }
 
-struct CpuCopyWindowRenderer<R> {
-    renderer: R,
+struct CpuCopyWindowRenderer {
+    renderer: CpuCopyRasterizer,
     target: CpuWindowTarget<Arc<dyn Window>>,
+}
+
+struct CaptureBuffer {
+    data: Vec<u8>,
+    width: u32,
+    height: u32,
+    bytes_per_row: usize,
+}
+
+impl CaptureBuffer {
+    fn with_target(
+        &mut self,
+        width: u32,
+        height: u32,
+        f: &mut dyn FnMut(floem_renderer::CpuBufferTarget<'_>),
+    ) -> ImageData {
+        let width = width.max(1);
+        let height = height.max(1);
+        let bytes_per_row = width as usize * 4;
+        let len = bytes_per_row * height as usize;
+        if self.data.len() != len {
+            self.data.resize(len, 0);
+        }
+        self.width = width;
+        self.height = height;
+        self.bytes_per_row = bytes_per_row;
+        f(floem_renderer::CpuBufferTarget {
+            buffer: &mut self.data,
+            width,
+            height,
+            bytes_per_row,
+            format: floem_renderer::CpuBufferFormat::Bgra8Opaque,
+        });
+        ImageData {
+            data: peniko::Blob::new(Arc::new(self.data.clone())),
+            format: peniko::ImageFormat::Bgra8,
+            width,
+            height,
+            alpha_type: peniko::ImageAlphaType::Alpha,
+        }
+    }
+}
+
+struct TargetCpuWindowRenderer {
+    renderer: Box<CpuTargetRenderFn>,
+    target: CpuWindowTarget<Arc<dyn Window>>,
+    capture: CaptureBuffer,
+    debug_name: &'static str,
+}
+
+struct GpuCopyRasterizer {
+    renderer: Box<dyn GpuCopyRenderer>,
+}
+
+impl RenderCore for GpuCopyRasterizer {
+    fn render(&mut self, f: &mut dyn FnMut(&mut dyn PaintSink)) {
+        self.renderer.render(f);
+    }
+
+    fn finish(&mut self) {
+        self.renderer.finish();
+    }
+
+    fn readback(&mut self) -> Option<RenderOutput> {
+        self.renderer.readback()
+    }
+}
+
+impl Renderer for GpuCopyRasterizer {
+    type Target = wgpu::TextureView;
+
+    fn set_size(&mut self, frame: BeginFrame) {
+        self.renderer.set_size(frame);
+    }
+
+    fn reset(&mut self) {
+        self.renderer.reset();
+    }
+
+    fn read_target(&mut self) -> Option<Self::Target> {
+        self.renderer.read_target()
+    }
+}
+
+impl CustomRenderer for GpuCopyRasterizer {
+    fn with_custom_paint_sink(
+        &mut self,
+        f: &mut dyn FnMut(&mut dyn CustomPaintSink<DisplayCommandExt>),
+    ) {
+        self.renderer.with_custom_paint_sink(f);
+    }
+
+    fn debug_info(&self) -> String {
+        self.renderer.debug_info()
+    }
+}
+
+struct CpuCopyRasterizer {
+    renderer: Box<dyn CpuCopyRenderer>,
+}
+
+impl RenderCore for CpuCopyRasterizer {
+    fn render(&mut self, f: &mut dyn FnMut(&mut dyn PaintSink)) {
+        self.renderer.render(f);
+    }
+
+    fn finish(&mut self) {
+        self.renderer.finish();
+    }
+
+    fn readback(&mut self) -> Option<RenderOutput> {
+        self.renderer.readback()
+    }
+}
+
+impl Renderer for CpuCopyRasterizer {
+    type Target = ImageData;
+
+    fn set_size(&mut self, frame: BeginFrame) {
+        self.renderer.set_size(frame);
+    }
+
+    fn reset(&mut self) {
+        self.renderer.reset();
+    }
+
+    fn read_target(&mut self) -> Option<Self::Target> {
+        self.renderer.read_target()
+    }
+}
+
+impl CustomRenderer for CpuCopyRasterizer {
+    fn with_custom_paint_sink(
+        &mut self,
+        f: &mut dyn FnMut(&mut dyn CustomPaintSink<DisplayCommandExt>),
+    ) {
+        self.renderer.with_custom_paint_sink(f);
+    }
+
+    fn debug_info(&self) -> String {
+        self.renderer.debug_info()
+    }
 }
 
 impl GpuWindowTarget {
@@ -394,6 +581,18 @@ impl WindowRenderer
             renderer.finish();
         });
     }
+
+    fn capture(
+        &mut self,
+        _begin: BeginFrame,
+        _paint: &mut dyn FnMut(&mut dyn SceneRenderer),
+    ) -> Option<ImageData> {
+        None
+    }
+
+    fn debug_info(&self) -> String {
+        "Vello Hybrid".to_string()
+    }
 }
 
 #[cfg(feature = "active-vello-cpu")]
@@ -405,6 +604,7 @@ impl WindowRenderer
     }
 
     fn render(&mut self, begin: BeginFrame, paint: &mut dyn FnMut(&mut dyn SceneRenderer)) {
+        use floem_renderer::TargetRenderer;
         self.target.with_cpu_target(&mut |target| {
             let mut renderer =
                 floem_vello_cpu_renderer::VelloCpuTargetRenderer::create(begin, target)
@@ -412,6 +612,18 @@ impl WindowRenderer
             paint(&mut renderer);
             renderer.finish();
         });
+    }
+
+    fn capture(
+        &mut self,
+        _begin: BeginFrame,
+        _paint: &mut dyn FnMut(&mut dyn SceneRenderer),
+    ) -> Option<ImageData> {
+        None
+    }
+
+    fn debug_info(&self) -> String {
+        "Vello CPU".to_string()
     }
 }
 
@@ -424,12 +636,25 @@ impl WindowRenderer
     }
 
     fn render(&mut self, begin: BeginFrame, paint: &mut dyn FnMut(&mut dyn SceneRenderer)) {
+        use floem_renderer::TargetRenderer;
         self.target.with_cpu_target(&mut |target| {
             let mut renderer = floem_skia_renderer::SkiaCpuTargetRenderer::create(begin, target)
                 .expect("failed to create cpu target renderer");
             paint(&mut renderer);
             renderer.finish();
         });
+    }
+
+    fn capture(
+        &mut self,
+        _begin: BeginFrame,
+        _paint: &mut dyn FnMut(&mut dyn SceneRenderer),
+    ) -> Option<ImageData> {
+        None
+    }
+
+    fn debug_info(&self) -> String {
+        "Skia CPU".to_string()
     }
 }
 
@@ -442,6 +667,7 @@ impl WindowRenderer
     }
 
     fn render(&mut self, begin: BeginFrame, paint: &mut dyn FnMut(&mut dyn SceneRenderer)) {
+        use floem_renderer::TargetRenderer;
         self.target.with_cpu_target(&mut |target| {
             let mut renderer =
                 floem_tiny_skia_renderer::TinySkiaTargetRenderer::create(begin, target)
@@ -450,12 +676,51 @@ impl WindowRenderer
             renderer.finish();
         });
     }
+
+    fn capture(
+        &mut self,
+        _begin: BeginFrame,
+        _paint: &mut dyn FnMut(&mut dyn SceneRenderer),
+    ) -> Option<ImageData> {
+        None
+    }
+
+    fn debug_info(&self) -> String {
+        "Tiny Skia".to_string()
+    }
 }
 
-impl<R> WindowRenderer for GpuCopyWindowRenderer<R>
-where
-    R: Renderer<Target = wgpu::TextureView> + SceneRenderer + 'static,
-{
+impl WindowRenderer for TargetCpuWindowRenderer {
+    fn resize(&mut self, width: u32, height: u32) {
+        self.target.resize(width, height);
+    }
+
+    fn render(&mut self, begin: BeginFrame, paint: &mut dyn FnMut(&mut dyn SceneRenderer)) {
+        self.target.with_cpu_target(&mut |target| {
+            (self.renderer)(begin, target, paint).expect("failed to render cpu target");
+        });
+    }
+
+    fn capture(
+        &mut self,
+        begin: BeginFrame,
+        paint: &mut dyn FnMut(&mut dyn SceneRenderer),
+    ) -> Option<ImageData> {
+        Some(self.capture.with_target(
+            begin.size.width as u32,
+            begin.size.height as u32,
+            &mut |target| {
+                (self.renderer)(begin, target, paint).expect("failed to capture cpu target");
+            },
+        ))
+    }
+
+    fn debug_info(&self) -> String {
+        self.debug_name.to_string()
+    }
+}
+
+impl WindowRenderer for GpuCopyWindowRenderer {
     fn resize(&mut self, width: u32, height: u32) {
         self.target.resize(width, height);
     }
@@ -468,6 +733,24 @@ where
         if let Some(output) = self.renderer.read_target() {
             self.target.present(&output);
         }
+    }
+
+    fn capture(
+        &mut self,
+        begin: BeginFrame,
+        paint: &mut dyn FnMut(&mut dyn SceneRenderer),
+    ) -> Option<ImageData> {
+        self.renderer.set_size(begin);
+        self.renderer.reset();
+        paint(&mut self.renderer);
+        self.renderer.finish();
+        self.renderer
+            .readback()
+            .and_then(|output| output.into_image_with(&self.target.device, &self.target.queue))
+    }
+
+    fn debug_info(&self) -> String {
+        self.renderer.debug_info()
     }
 
     fn gpu_surface(&self) -> Option<&wgpu::Surface<'static>> {
@@ -475,10 +758,7 @@ where
     }
 }
 
-impl<R> WindowRenderer for CpuCopyWindowRenderer<R>
-where
-    R: Renderer<Target = ImageData> + SceneRenderer + 'static,
-{
+impl WindowRenderer for CpuCopyWindowRenderer {
     fn resize(&mut self, width: u32, height: u32) {
         self.target.resize(width, height);
     }
@@ -491,6 +771,22 @@ where
         if let Some(output) = self.renderer.read_target() {
             self.target.present(&output);
         }
+    }
+
+    fn capture(
+        &mut self,
+        begin: BeginFrame,
+        paint: &mut dyn FnMut(&mut dyn SceneRenderer),
+    ) -> Option<ImageData> {
+        self.renderer.set_size(begin);
+        self.renderer.reset();
+        paint(&mut self.renderer);
+        self.renderer.finish();
+        self.renderer.read_target()
+    }
+
+    fn debug_info(&self) -> String {
+        self.renderer.debug_info()
     }
 }
 
@@ -500,7 +796,7 @@ fn env_flag_requested(name: &str) -> bool {
         .is_some_and(|value| value.as_str() == "1")
 }
 
-fn force_cpu_requested() -> bool {
+pub(crate) fn force_cpu_requested() -> bool {
     env_flag_requested("FLOEM_FORCE_CPU") || env_flag_requested("FLOEM_FORCE_TINY_SKIA")
 }
 
@@ -510,230 +806,356 @@ pub(crate) fn uninitialized_rasterizer() -> Box<dyn crate::paint::WindowRasteriz
     Box::new(NullRenderer)
 }
 
-#[cfg(feature = "fallback-vello-cpu")]
-type CpuFallbackRenderer = floem_vello_cpu_renderer::VelloCpuRenderer;
-#[cfg(feature = "fallback-tiny-skia")]
-type CpuFallbackRenderer = floem_tiny_skia_renderer::TinySkiaRenderer;
-
 fn boxed_rasterizer(
     renderer: impl crate::paint::WindowRasterizer + 'static,
 ) -> Box<dyn crate::paint::WindowRasterizer> {
     Box::new(renderer)
 }
 
+fn cpu_install_cx(size: Size, scale: f64, font_embolden: f32) -> CpuRendererInstallCx {
+    CpuRendererInstallCx {
+        size,
+        scale,
+        font_embolden,
+    }
+}
+
+fn gpu_install_cx<'a>(
+    size: Size,
+    scale: f64,
+    font_embolden: f32,
+    gpu_resources: &'a GpuResources,
+    texture_format: wgpu::TextureFormat,
+) -> GpuRendererInstallCx<'a> {
+    GpuRendererInstallCx {
+        size,
+        scale,
+        font_embolden,
+        gpu_resources,
+        texture_format,
+    }
+}
+
+fn invoke_installer(
+    installer: &RendererInstaller,
+    cpu_cx: CpuRendererInstallCx,
+    gpu_cx: Option<GpuRendererInstallCx<'_>>,
+) -> Result<Option<RendererType>, String> {
+    match (&installer.kind, gpu_cx) {
+        (RendererInstallerKind::Cpu(install), _) => install(cpu_cx).map(Some),
+        (RendererInstallerKind::Gpu(install), Some(gpu_cx)) => install(gpu_cx).map(Some),
+        (RendererInstallerKind::Gpu(_), None) => Ok(None),
+    }
+}
+
+fn create_rasterizer_for_installer(
+    installer: &RendererInstaller,
+    cpu_cx: CpuRendererInstallCx,
+    gpu_cx: Option<GpuRendererInstallCx<'_>>,
+) -> Result<Box<dyn crate::paint::WindowRasterizer>, String> {
+    match invoke_installer(installer, cpu_cx, gpu_cx)? {
+        Some(RendererType::TargetCpu(_)) => Ok(uninitialized_rasterizer()),
+        Some(RendererType::CopyGpu(renderer)) => {
+            Ok(boxed_rasterizer(GpuCopyRasterizer { renderer }))
+        }
+        Some(RendererType::CopyCpu(renderer)) => {
+            Ok(boxed_rasterizer(CpuCopyRasterizer { renderer }))
+        }
+        None => Err(format!(
+            "renderer installer {} requires GPU",
+            installer.name
+        )),
+    }
+}
+
+fn create_window_backend(
+    installer_name: &'static str,
+    renderer_type: RendererType,
+    window: Arc<dyn Window>,
+    gpu_resources: Option<&GpuResources>,
+    surface: Option<wgpu::Surface<'static>>,
+    transparent: bool,
+    width: u32,
+    height: u32,
+) -> Result<WindowBackend, String> {
+    match renderer_type {
+        RendererType::TargetCpu(renderer) => Ok(Box::new(TargetCpuWindowRenderer {
+            renderer,
+            target: CpuWindowTarget::new(window, width, height)?,
+            capture: CaptureBuffer {
+                data: Vec::new(),
+                width: 0,
+                height: 0,
+                bytes_per_row: 0,
+            },
+            debug_name: installer_name,
+        })),
+        RendererType::CopyGpu(renderer) => {
+            let gpu_resources = gpu_resources
+                .ok_or_else(|| format!("renderer installer {installer_name} requires GPU"))?;
+            let surface = surface.ok_or_else(|| {
+                format!("renderer installer {installer_name} requires GPU surface")
+            })?;
+            Ok(Box::new(GpuCopyWindowRenderer {
+                renderer: GpuCopyRasterizer { renderer },
+                target: GpuWindowTarget::new(gpu_resources, surface, width, height, transparent)?,
+            }))
+        }
+        RendererType::CopyCpu(renderer) => Ok(Box::new(CpuCopyWindowRenderer {
+            renderer: CpuCopyRasterizer { renderer },
+            target: CpuWindowTarget::new(window, width, height)?,
+        })),
+    }
+}
+
+fn create_installed_renderer(
+    installers: &[RendererInstaller],
+    window: Arc<dyn Window>,
+    gpu_resources: Option<&GpuResources>,
+    surface: Option<wgpu::Surface<'static>>,
+    transparent: bool,
+    scale: f64,
+    size: Size,
+    font_embolden: f32,
+    allow_gpu: bool,
+) -> Result<(Box<dyn crate::paint::WindowRasterizer>, WindowBackend), String> {
+    let size = Size::new(size.width.max(1.0), size.height.max(1.0));
+    let width = size.width as u32;
+    let height = size.height as u32;
+    let cpu_cx = cpu_install_cx(size, scale, font_embolden);
+    let texture_format = if allow_gpu {
+        match (surface.as_ref(), gpu_resources) {
+            (Some(surface), Some(gpu_resources)) => {
+                Some(choose_surface_texture_format(surface, gpu_resources)?)
+            }
+            _ => None,
+        }
+    } else {
+        None
+    };
+    let gpu_cx = match (gpu_resources, texture_format) {
+        (Some(gpu_resources), Some(texture_format)) => Some(gpu_install_cx(
+            size,
+            scale,
+            font_embolden,
+            gpu_resources,
+            texture_format,
+        )),
+        _ => None,
+    };
+
+    let mut surface = surface;
+    let mut errors = Vec::new();
+    for installer in installers {
+        if !allow_gpu && installer.requires_gpu() {
+            continue;
+        }
+        let renderer_type = match invoke_installer(installer, cpu_cx, gpu_cx) {
+            Ok(Some(renderer_type)) => renderer_type,
+            Ok(None) => continue,
+            Err(err) => {
+                errors.push(format!("{}: {err}", installer.name));
+                continue;
+            }
+        };
+
+        let rasterizer = match create_rasterizer_for_installer(installer, cpu_cx, gpu_cx) {
+            Ok(rasterizer) => rasterizer,
+            Err(err) => {
+                errors.push(format!("{}: {err}", installer.name));
+                continue;
+            }
+        };
+
+        let window_backend = match create_window_backend(
+            installer.name,
+            renderer_type,
+            window.clone(),
+            gpu_resources,
+            surface.take(),
+            transparent,
+            width,
+            height,
+        ) {
+            Ok(window_backend) => window_backend,
+            Err(err) => return Err(format!("{}: {err}", installer.name)),
+        };
+        return Ok((rasterizer, window_backend));
+    }
+
+    if errors.is_empty() {
+        Err("no renderer installers succeeded".to_string())
+    } else {
+        Err(errors.join("; "))
+    }
+}
+
 pub(crate) fn new(
+    installers: &[RendererInstaller],
     window: Arc<dyn Window>,
     gpu_resources: GpuResources,
     surface: wgpu::Surface<'static>,
-    _transparent: bool,
+    transparent: bool,
     scale: f64,
     size: Size,
     font_embolden: f32,
 ) -> (Box<dyn crate::paint::WindowRasterizer>, WindowBackend) {
-    let size = Size::new(size.width.max(1.0), size.height.max(1.0));
-    let width = size.width as u32;
-    let height = size.height as u32;
-    let texture_format =
-        choose_surface_texture_format(&surface, &gpu_resources).expect("surface format");
-
-    if !force_cpu_requested() {
-        #[cfg(feature = "active-vello")]
-        {
-            let renderer = floem_vello_renderer::VelloRenderer::new(
-                gpu_resources.clone(),
-                width,
-                height,
-                texture_format,
-                scale,
-                font_embolden,
-            )
-            .map_err(|err| err.to_string())
-            .expect("create vello renderer");
-            let window_backend: WindowBackend = Box::new(GpuCopyWindowRenderer {
-                renderer: floem_vello_renderer::VelloRenderer::new(
-                    gpu_resources.clone(),
-                    width,
-                    height,
-                    texture_format,
-                    scale,
-                    font_embolden,
-                )
-                .map_err(|err| err.to_string())
-                .expect("create vello window renderer"),
-                target: GpuWindowTarget::new(&gpu_resources, surface, width, height, _transparent)
-                    .expect("create gpu target"),
-            });
-            return (boxed_rasterizer(renderer), window_backend);
-        }
-
-        #[cfg(feature = "active-vger")]
-        {
-            let renderer = floem_vger_renderer::VgerRenderer::new(
-                gpu_resources.clone(),
-                width,
-                height,
-                texture_format,
-                scale,
-                font_embolden,
-            )
-            .map_err(|err| err.to_string())
-            .expect("create vger renderer");
-            let window_backend: WindowBackend = Box::new(GpuCopyWindowRenderer {
-                renderer: floem_vger_renderer::VgerRenderer::new(
-                    gpu_resources.clone(),
-                    width,
-                    height,
-                    texture_format,
-                    scale,
-                    font_embolden,
-                )
-                .map_err(|err| err.to_string())
-                .expect("create vger window renderer"),
-                target: GpuWindowTarget::new(&gpu_resources, surface, width, height, _transparent)
-                    .expect("create gpu target"),
-            });
-            return (boxed_rasterizer(renderer), window_backend);
-        }
-
-        #[cfg(feature = "active-skia")]
-        {
-            let renderer = floem_skia_renderer::SkiaRenderer::new(
-                gpu_resources.clone(),
-                width,
-                height,
-                texture_format,
-                scale,
-                font_embolden,
-            )
-            .map_err(|err| err.to_string())
-            .expect("create skia renderer");
-            let window_backend: WindowBackend = Box::new(GpuCopyWindowRenderer {
-                renderer: floem_skia_renderer::SkiaRenderer::new(
-                    gpu_resources.clone(),
-                    width,
-                    height,
-                    texture_format,
-                    scale,
-                    font_embolden,
-                )
-                .map_err(|err| err.to_string())
-                .expect("create skia window renderer"),
-                target: GpuWindowTarget::new(&gpu_resources, surface, width, height, _transparent)
-                    .expect("create gpu target"),
-            });
-            return (boxed_rasterizer(renderer), window_backend);
-        }
-    }
-
-    let window_backend: WindowBackend = Box::new(CpuCopyWindowRenderer {
-        renderer: CpuFallbackRenderer::new(width, height, scale, font_embolden)
-            .map_err(|err| err.to_string())
-            .expect("create cpu fallback renderer"),
-        target: CpuWindowTarget::new(window, width, height).expect("create cpu target"),
-    });
-    (
-        boxed_rasterizer(
-            CpuFallbackRenderer::new(width, height, scale, font_embolden)
-                .map_err(|err| err.to_string())
-                .expect("create cpu fallback renderer"),
-        ),
-        window_backend,
+    create_installed_renderer(
+        installers,
+        window,
+        Some(&gpu_resources),
+        Some(surface),
+        transparent,
+        scale,
+        size,
+        font_embolden,
+        !force_cpu_requested(),
     )
+    .expect("create renderer")
 }
 
 #[allow(unreachable_code)]
 pub(crate) fn new_cpu(
+    installers: &[RendererInstaller],
     window: Arc<dyn Window>,
     scale: f64,
     size: Size,
     font_embolden: f32,
 ) -> (Box<dyn crate::paint::WindowRasterizer>, WindowBackend) {
-    let size = Size::new(size.width.max(1.0), size.height.max(1.0));
-    let width = size.width as u32;
-    let height = size.height as u32;
+    create_installed_renderer(
+        installers,
+        window,
+        None,
+        None,
+        false,
+        scale,
+        size,
+        font_embolden,
+        false,
+    )
+    .expect("create cpu renderer")
+}
+
+pub fn default_renderer_installers() -> Vec<RendererInstaller> {
+    let mut installers = Vec::new();
+
+    #[cfg(feature = "active-vello")]
+    installers.push(RendererInstaller::gpu("Vello", |cx| {
+        Ok(RendererType::CopyGpu(Box::new(
+            floem_vello_renderer::VelloRenderer::new(
+                cx.gpu_resources.clone(),
+                cx.size.width.max(1.0) as u32,
+                cx.size.height.max(1.0) as u32,
+                cx.texture_format,
+                cx.scale,
+                cx.font_embolden,
+            )
+            .map_err(|err| err.to_string())?,
+        )))
+    }));
+
+    #[cfg(feature = "active-vger")]
+    installers.push(RendererInstaller::gpu("Vger", |cx| {
+        Ok(RendererType::CopyGpu(Box::new(
+            floem_vger_renderer::VgerRenderer::new(
+                cx.gpu_resources.clone(),
+                cx.size.width.max(1.0) as u32,
+                cx.size.height.max(1.0) as u32,
+                cx.texture_format,
+                cx.scale,
+                cx.font_embolden,
+            )
+            .map_err(|err| err.to_string())?,
+        )))
+    }));
+
+    #[cfg(feature = "active-skia")]
+    installers.push(RendererInstaller::gpu("Skia", |cx| {
+        Ok(RendererType::CopyGpu(Box::new(
+            floem_skia_renderer::SkiaRenderer::new(
+                cx.gpu_resources.clone(),
+                cx.size.width.max(1.0) as u32,
+                cx.size.height.max(1.0) as u32,
+                cx.texture_format,
+                cx.scale,
+                cx.font_embolden,
+            )
+            .map_err(|err| err.to_string())?,
+        )))
+    }));
 
     #[cfg(feature = "active-vello-hybrid")]
-    {
-        return (
-            boxed_rasterizer(
-                floem_vello_hybrid_renderer::VelloHybridRenderer::new(
-                    width,
-                    height,
-                    scale,
-                    font_embolden,
-                )
-                .map_err(|err| err.to_string())
-                .expect("create vello hybrid renderer"),
-            ),
-            Box::new(CpuDirectWindowRenderer::<
-                floem_vello_hybrid_renderer::VelloHybridTargetRenderer<'static>,
-            > {
-                target: CpuWindowTarget::new(window, width, height).expect("create cpu target"),
-                _marker: std::marker::PhantomData,
-            }),
-        );
-    }
+    installers.push(RendererInstaller::cpu("Vello Hybrid", |_cx| {
+        Ok(RendererType::TargetCpu(Box::new(|begin, target, paint| {
+            use floem_renderer::TargetRenderer;
+            let mut renderer =
+                floem_vello_hybrid_renderer::VelloHybridTargetRenderer::create(begin, target)?;
+            paint(&mut renderer);
+            renderer.finish();
+            Ok(())
+        })))
+    }));
 
     #[cfg(feature = "active-vello-cpu")]
-    {
-        return (
-            boxed_rasterizer(
-                floem_vello_cpu_renderer::VelloCpuRenderer::new(
-                    width,
-                    height,
-                    scale,
-                    font_embolden,
-                )
-                .map_err(|err| err.to_string())
-                .expect("create vello cpu renderer"),
-            ),
-            Box::new(CpuDirectWindowRenderer::<
-                floem_vello_cpu_renderer::VelloCpuTargetRenderer<'static>,
-            > {
-                target: CpuWindowTarget::new(window, width, height).expect("create cpu target"),
-                _marker: std::marker::PhantomData,
-            }),
-        );
-    }
+    installers.push(RendererInstaller::cpu("Vello CPU", |_cx| {
+        Ok(RendererType::TargetCpu(Box::new(|begin, target, paint| {
+            use floem_renderer::TargetRenderer;
+            let mut renderer =
+                floem_vello_cpu_renderer::VelloCpuTargetRenderer::create(begin, target)?;
+            paint(&mut renderer);
+            renderer.finish();
+            Ok(())
+        })))
+    }));
 
     #[cfg(feature = "active-skia-cpu")]
-    {
-        return (
-            boxed_rasterizer(
-                floem_skia_renderer::SkiaCpuRenderer::new(width, height, scale, font_embolden)
-                    .map_err(|err| err.to_string())
-                    .expect("create skia cpu renderer"),
-            ),
-            Box::new(CpuDirectWindowRenderer::<
-                floem_skia_renderer::SkiaCpuTargetRenderer<'static>,
-            > {
-                target: CpuWindowTarget::new(window, width, height).expect("create cpu target"),
-                _marker: std::marker::PhantomData,
-            }),
-        );
-    }
+    installers.push(RendererInstaller::cpu("Skia CPU", |_cx| {
+        Ok(RendererType::TargetCpu(Box::new(|begin, target, paint| {
+            use floem_renderer::TargetRenderer;
+            let mut renderer = floem_skia_renderer::SkiaCpuTargetRenderer::create(begin, target)?;
+            paint(&mut renderer);
+            renderer.finish();
+            Ok(())
+        })))
+    }));
 
     #[cfg(feature = "active-tiny-skia")]
-    {
-        return (
-            boxed_rasterizer(
-                floem_tiny_skia_renderer::TinySkiaRenderer::new(
-                    width,
-                    height,
-                    scale,
-                    font_embolden,
-                )
-                .map_err(|err| err.to_string())
-                .expect("create tiny-skia renderer"),
-            ),
-            Box::new(CpuDirectWindowRenderer::<
-                floem_tiny_skia_renderer::TinySkiaTargetRenderer<'static>,
-            > {
-                target: CpuWindowTarget::new(window, width, height).expect("create cpu target"),
-                _marker: std::marker::PhantomData,
-            }),
-        );
-    }
+    installers.push(RendererInstaller::cpu("Tiny Skia", |_cx| {
+        Ok(RendererType::TargetCpu(Box::new(|begin, target, paint| {
+            use floem_renderer::TargetRenderer;
+            let mut renderer =
+                floem_tiny_skia_renderer::TinySkiaTargetRenderer::create(begin, target)?;
+            paint(&mut renderer);
+            renderer.finish();
+            Ok(())
+        })))
+    }));
 
-    unreachable!("immediate renderer requested without an enabled immediate renderer")
+    #[cfg(feature = "fallback-vello-cpu")]
+    installers.push(RendererInstaller::cpu("Vello CPU Copy", |cx| {
+        Ok(RendererType::CopyCpu(Box::new(
+            floem_vello_cpu_renderer::VelloCpuRenderer::new(
+                cx.size.width.max(1.0) as u32,
+                cx.size.height.max(1.0) as u32,
+                cx.scale,
+                cx.font_embolden,
+            )
+            .map_err(|err| err.to_string())?,
+        )))
+    }));
+
+    #[cfg(feature = "fallback-tiny-skia")]
+    installers.push(RendererInstaller::cpu("Tiny Skia Copy", |cx| {
+        Ok(RendererType::CopyCpu(Box::new(
+            floem_tiny_skia_renderer::TinySkiaRenderer::new(
+                cx.size.width.max(1.0) as u32,
+                cx.size.height.max(1.0) as u32,
+                cx.scale,
+                cx.font_embolden,
+            )
+            .map_err(|err| err.to_string())?,
+        )))
+    }));
+
+    installers
 }

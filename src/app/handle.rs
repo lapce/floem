@@ -97,6 +97,7 @@ impl ApplicationHandle {
                 {
                     let (gpu_resources, surface) = rx.recv().unwrap().unwrap();
                     let (renderer, window_backend) = crate::paint::renderer::new(
+                        &self.config.renderer_installers,
                         window.clone(),
                         gpu_resources.clone(),
                         surface,
@@ -638,6 +639,7 @@ impl ApplicationHandle {
         let window_handle = WindowHandle::new(
             window,
             self.gpu_resources.clone(),
+            &self.config.renderer_installers,
             self.config.wgpu_features,
             self.config.wgpu_backends,
             view_fn,

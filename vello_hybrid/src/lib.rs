@@ -3,7 +3,7 @@ use std::sync::Arc;
 use anyhow::{Result, anyhow};
 use floem_renderer::{
     BeginFrame, CpuBufferFormat, CpuBufferTarget, CustomRenderer, DisplayCommandExt, RenderCore,
-    TargetRenderer, Renderer, RasterizerOutput,
+    RenderOutput, Renderer, TargetRenderer,
 };
 use imaging::{CustomPaintSink, PaintSink};
 use peniko::{Blob, ImageAlphaType, ImageData, ImageFormat};
@@ -159,11 +159,11 @@ impl RenderCore for VelloHybridRenderer {
         self.finished_image = self.read_image();
     }
 
-    fn readback(&mut self) -> Option<RasterizerOutput> {
+    fn readback(&mut self) -> Option<RenderOutput> {
         self.finished_image
             .clone()
             .or_else(|| self.read_image())
-            .map(RasterizerOutput::Image)
+            .map(RenderOutput::Image)
     }
 }
 
@@ -225,11 +225,11 @@ impl RenderCore for VelloHybridTargetRenderer<'_> {
         self.finished_image = result.ok().map(|_| self.read_image_from_target());
     }
 
-    fn readback(&mut self) -> Option<RasterizerOutput> {
+    fn readback(&mut self) -> Option<RenderOutput> {
         self.finished_image
             .clone()
             .or_else(|| Some(self.read_image_from_target()))
-            .map(RasterizerOutput::Image)
+            .map(RenderOutput::Image)
     }
 }
 

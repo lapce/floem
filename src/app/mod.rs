@@ -43,12 +43,24 @@ thread_local! {
     pub(crate) static APP_UPDATE_EVENTS: RefCell<Vec<AppUpdateEvent>> = Default::default();
 }
 
-#[derive(Debug)]
 pub struct AppConfig {
     pub(crate) exit_on_close: bool,
     pub(crate) wgpu_features: wgpu::Features,
     pub(crate) wgpu_backends: Option<wgpu::Backends>,
     pub(crate) global_theme_override: Option<Theme>,
+    pub(crate) renderer_installers: Vec<crate::paint::renderer::RendererInstaller>,
+}
+
+impl std::fmt::Debug for AppConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AppConfig")
+            .field("exit_on_close", &self.exit_on_close)
+            .field("wgpu_features", &self.wgpu_features)
+            .field("wgpu_backends", &self.wgpu_backends)
+            .field("global_theme_override", &self.global_theme_override)
+            .field("renderer_installers_len", &self.renderer_installers.len())
+            .finish()
+    }
 }
 
 impl Default for AppConfig {
@@ -58,6 +70,7 @@ impl Default for AppConfig {
             wgpu_features: wgpu::Features::default(),
             wgpu_backends: None,
             global_theme_override: None,
+            renderer_installers: crate::paint::renderer::default_renderer_installers(),
         }
     }
 }
@@ -81,6 +94,15 @@ impl AppConfig {
     #[inline]
     pub fn set_global_theme(mut self, theme: Theme) -> Self {
         self.global_theme_override = Some(theme);
+        self
+    }
+
+    #[inline]
+    pub fn renderer_installers(
+        mut self,
+        renderer_installers: Vec<crate::paint::renderer::RendererInstaller>,
+    ) -> Self {
+        self.renderer_installers = renderer_installers;
         self
     }
 }

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use anyhow::{Result, anyhow};
 use floem_renderer::{
     BeginFrame, CpuBufferFormat, CpuBufferTarget, CustomRenderer, DisplayCommandExt,
-    RasterizerOutput, RenderCore, Renderer, TargetRenderer,
+    RenderCore, RenderOutput, Renderer, TargetRenderer,
 };
 use imaging::{
     BlurredRoundedRect, ClipRef, CustomPaintSink, FillRef, GlyphRunRef, GroupRef, PaintSink,
@@ -146,11 +146,11 @@ impl RenderCore for VelloCpuRenderer {
         self.finished_image = self.read_image();
     }
 
-    fn readback(&mut self) -> Option<RasterizerOutput> {
+    fn readback(&mut self) -> Option<RenderOutput> {
         self.finished_image
             .clone()
             .or_else(|| self.read_image())
-            .map(RasterizerOutput::Image)
+            .map(RenderOutput::Image)
     }
 }
 
@@ -212,11 +212,11 @@ impl RenderCore for VelloCpuTargetRenderer<'_> {
         self.finished_image = result.ok().map(|_| self.read_image_from_target());
     }
 
-    fn readback(&mut self) -> Option<RasterizerOutput> {
+    fn readback(&mut self) -> Option<RenderOutput> {
         self.finished_image
             .clone()
             .or_else(|| Some(self.read_image_from_target()))
-            .map(RasterizerOutput::Image)
+            .map(RenderOutput::Image)
     }
 }
 

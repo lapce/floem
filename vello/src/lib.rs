@@ -3,7 +3,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use floem_renderer::gpu_resources::GpuResources;
 use floem_renderer::{
-    BeginFrame, CustomRenderer, DisplayCommandExt, RenderCore, Renderer, RasterizerOutput,
+    BeginFrame, CustomRenderer, DisplayCommandExt, RenderCore, RenderOutput, Renderer,
 };
 use imaging::record::{CustomCommand, ExtendedScene, Glyph as ImagingGlyph, replay_ext};
 use imaging::{
@@ -140,7 +140,7 @@ pub struct VelloRenderer {
     #[allow(dead_code)]
     font_embolden: f32,
     svg_cache: SvgCache,
-    finished_output: Option<RasterizerOutput>,
+    finished_output: Option<RenderOutput>,
 }
 
 impl VelloRenderer {
@@ -386,13 +386,13 @@ impl RenderCore for VelloRenderer {
     fn finish(&mut self) {
         self.finished_output = self
             .render_to_texture_output()
-            .map(RasterizerOutput::GpuTexture);
+            .map(RenderOutput::GpuTexture);
     }
 
-    fn readback(&mut self) -> Option<RasterizerOutput> {
+    fn readback(&mut self) -> Option<RenderOutput> {
         self.finished_output.take().or_else(|| {
             self.render_to_texture_output()
-                .map(RasterizerOutput::GpuTexture)
+                .map(RenderOutput::GpuTexture)
         })
     }
 }
@@ -416,8 +416,8 @@ impl Renderer for VelloRenderer {
 
     fn read_target(&mut self) -> Option<Self::Target> {
         self.finished_output.take().and_then(|output| match output {
-            RasterizerOutput::GpuTexture(texture) => Some(texture),
-            RasterizerOutput::Image(_) => None,
+            RenderOutput::GpuTexture(texture) => Some(texture),
+            RenderOutput::Image(_) => None,
         })
     }
 }

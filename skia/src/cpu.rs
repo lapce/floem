@@ -1,7 +1,7 @@
 use anyhow::Result;
 use floem_renderer::{
     BeginFrame, CpuBufferFormat, CpuBufferTarget, CustomRenderer, DisplayCommandExt,
-    RasterizerOutput, RenderCore, Renderer, TargetRenderer,
+    RenderCore, RenderOutput, Renderer, TargetRenderer,
 };
 use imaging::{
     BlurredRoundedRect, ClipRef, CustomPaintSink, FillRef, GlyphRunRef, GroupRef, PaintSink,
@@ -134,8 +134,8 @@ impl RenderCore for SkiaCpuRenderer {
         });
     }
 
-    fn readback(&mut self) -> Option<RasterizerOutput> {
-        self.readback_image().ok().map(RasterizerOutput::Image)
+    fn readback(&mut self) -> Option<RenderOutput> {
+        self.readback_image().ok().map(RenderOutput::Image)
     }
 }
 
@@ -180,8 +180,8 @@ impl RenderCore for SkiaCpuTargetRenderer<'_> {
         });
     }
 
-    fn readback(&mut self) -> Option<RasterizerOutput> {
-        self.readback_image().ok().map(RasterizerOutput::Image)
+    fn readback(&mut self) -> Option<RenderOutput> {
+        self.readback_image().ok().map(RenderOutput::Image)
     }
 }
 

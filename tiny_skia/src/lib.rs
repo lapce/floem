@@ -2,12 +2,12 @@ use anyhow::{Result, anyhow};
 use floem_renderer::text::{Glyph as ParleyGlyph, GlyphRunRef};
 use floem_renderer::tiny_skia::{
     self, FillRule, FilterQuality, GradientStop, IntRect, LinearGradient, Mask, MaskType, Paint,
-    Path, PathBuilder, Pattern, Pixmap, PixmapPaint, PremultipliedColorU8, RadialGradient, Shader,
-    SpreadMode, Stroke, Transform,
+    Path, PathBuilder, Pattern, Pixmap, PixmapMut, PixmapPaint, PixmapRef, PremultipliedColorU8,
+    RadialGradient, Shader, SpreadMode, Stroke, Transform,
 };
 use floem_renderer::{
-    BeginFrame, CpuBufferFormat, CpuBufferTarget, CustomRenderer, DisplayCommandExt,
-    RasterizerOutput, RenderCore, Renderer, TargetRenderer,
+    BeginFrame, CpuBufferFormat, CpuBufferTarget, CustomRenderer, DisplayCommandExt, RenderCore,
+    RenderOutput, Renderer, TargetRenderer,
 };
 use imaging::{
     BlurredRoundedRect, ClipRef, CustomPaintSink, FillRef, GroupRef, PaintSink, StrokeRef,
@@ -250,8 +250,127 @@ struct ScaledImageCacheKey {
     quality: u8,
 }
 
-struct Layer {
-    pixmap: Pixmap,
+enum LayerPixmap<'a> {
+    Owned(Pixmap),
+    Borrowed(PixmapMut<'a>),
+}
+
+impl LayerPixmap<'_> {
+    fn as_ref(&self) -> PixmapRef<'_> {
+        match self {
+            Self::Owned(pixmap) => pixmap.as_ref(),
+            Self::Borrowed(pixmap) => pixmap.as_ref(),
+        }
+    }
+
+    fn width(&self) -> u32 {
+        match self {
+            Self::Owned(pixmap) => pixmap.width(),
+            Self::Borrowed(pixmap) => pixmap.width(),
+        }
+    }
+
+    fn height(&self) -> u32 {
+        match self {
+            Self::Owned(pixmap) => pixmap.height(),
+            Self::Borrowed(pixmap) => pixmap.height(),
+        }
+    }
+
+    fn fill(&mut self, color: tiny_skia::Color) {
+        match self {
+            Self::Owned(pixmap) => pixmap.fill(color),
+            Self::Borrowed(pixmap) => pixmap.fill(color),
+        }
+    }
+
+    fn pixels_mut(&mut self) -> &mut [PremultipliedColorU8] {
+        match self {
+            Self::Owned(pixmap) => pixmap.pixels_mut(),
+            Self::Borrowed(pixmap) => pixmap.pixels_mut(),
+        }
+    }
+
+    fn data(&self) -> &[u8] {
+        match self {
+            Self::Owned(pixmap) => pixmap.data(),
+            Self::Borrowed(pixmap) => pixmap.as_ref().data(),
+        }
+    }
+
+    fn data_mut(&mut self) -> &mut [u8] {
+        match self {
+            Self::Owned(pixmap) => pixmap.data_mut(),
+            Self::Borrowed(pixmap) => pixmap.data_mut(),
+        }
+    }
+
+    fn fill_rect(
+        &mut self,
+        rect: tiny_skia::Rect,
+        paint: &Paint<'_>,
+        transform: Transform,
+        mask: Option<&Mask>,
+    ) {
+        match self {
+            Self::Owned(pixmap) => pixmap.fill_rect(rect, paint, transform, mask),
+            Self::Borrowed(pixmap) => pixmap.fill_rect(rect, paint, transform, mask),
+        }
+    }
+
+    fn fill_path(
+        &mut self,
+        path: &Path,
+        paint: &Paint<'_>,
+        fill_rule: FillRule,
+        transform: Transform,
+        mask: Option<&Mask>,
+    ) {
+        match self {
+            Self::Owned(pixmap) => pixmap.fill_path(path, paint, fill_rule, transform, mask),
+            Self::Borrowed(pixmap) => pixmap.fill_path(path, paint, fill_rule, transform, mask),
+        }
+    }
+
+    fn stroke_path(
+        &mut self,
+        path: &Path,
+        paint: &Paint<'_>,
+        stroke: &Stroke,
+        transform: Transform,
+        mask: Option<&Mask>,
+    ) {
+        match self {
+            Self::Owned(pixmap) => pixmap.stroke_path(path, paint, stroke, transform, mask),
+            Self::Borrowed(pixmap) => pixmap.stroke_path(path, paint, stroke, transform, mask),
+        }
+    }
+
+    fn draw_pixmap(
+        &mut self,
+        x: i32,
+        y: i32,
+        pixmap: PixmapRef<'_>,
+        paint: &PixmapPaint,
+        transform: Transform,
+        mask: Option<&Mask>,
+    ) {
+        match self {
+            Self::Owned(dst) => dst.draw_pixmap(x, y, pixmap, paint, transform, mask),
+            Self::Borrowed(dst) => dst.draw_pixmap(x, y, pixmap, paint, transform, mask),
+        }
+    }
+
+    fn clone_rect(&self, rect: IntRect) -> Option<Pixmap> {
+        match self {
+            Self::Owned(pixmap) => pixmap.clone_rect(rect),
+            Self::Borrowed(pixmap) => pixmap.as_ref().clone_rect(rect),
+        }
+    }
+}
+
+struct Layer<'a> {
+    pixmap: LayerPixmap<'a>,
     base_clip: Option<ClipPath>,
     clip_stack: Vec<ClipPath>,
     /// clip is stored with the transform at the time clip is called
@@ -264,10 +383,12 @@ struct Layer {
     blend_mode: BlendMode,
     alpha: f32,
 }
-impl Layer {
+impl Layer<'static> {
     fn new_root(width: u32, height: u32) -> Result<Self, anyhow::Error> {
         Ok(Self {
-            pixmap: Pixmap::new(width, height).ok_or_else(|| anyhow!("unable to create pixmap"))?,
+            pixmap: LayerPixmap::Owned(
+                Pixmap::new(width, height).ok_or_else(|| anyhow!("unable to create pixmap"))?,
+            ),
             base_clip: None,
             clip_stack: Vec::new(),
             clip: None,
@@ -288,7 +409,9 @@ impl Layer {
         height: u32,
     ) -> Result<Self, anyhow::Error> {
         let mut layer = Self {
-            pixmap: Pixmap::new(width, height).ok_or_else(|| anyhow!("unable to create pixmap"))?,
+            pixmap: LayerPixmap::Owned(
+                Pixmap::new(width, height).ok_or_else(|| anyhow!("unable to create pixmap"))?,
+            ),
             base_clip: Some(clip),
             clip_stack: Vec::new(),
             clip: None,
@@ -301,6 +424,30 @@ impl Layer {
         };
         layer.rebuild_clip_mask(&[]);
         Ok(layer)
+    }
+}
+
+impl<'a> Layer<'a> {
+    fn new_root_borrowed(
+        data: &'a mut [u8],
+        width: u32,
+        height: u32,
+    ) -> Result<Self, anyhow::Error> {
+        Ok(Self {
+            pixmap: LayerPixmap::Borrowed(
+                PixmapMut::from_bytes(data, width, height)
+                    .ok_or_else(|| anyhow!("unable to wrap target pixmap"))?,
+            ),
+            base_clip: None,
+            clip_stack: Vec::new(),
+            clip: None,
+            simple_clip: None,
+            draw_bounds: None,
+            mask: Mask::new(width, height).ok_or_else(|| anyhow!("unable to create mask"))?,
+            transform: Affine::IDENTITY,
+            blend_mode: Mix::Normal.into(),
+            alpha: 1.0,
+        })
     }
 
     fn clip_rect_to_mask_bounds(&self, rect: Rect) -> Option<(usize, usize, usize, usize)> {
@@ -772,7 +919,7 @@ impl Layer {
         skia_transform(self.device_transform())
     }
 }
-impl Layer {
+impl Layer<'_> {
     #[cfg(test)]
     fn clip(&mut self, shape: &impl Shape) {
         let path =
@@ -897,21 +1044,31 @@ impl Layer {
     }
 }
 
-pub struct TinySkiaRenderer {
+pub type TinySkiaRenderer = TinySkiaRendererImpl<'static>;
+
+pub struct TinySkiaRendererImpl<'a> {
     cache_color: CacheColor,
     transform: Affine,
     window_scale: f64,
-    layers: Vec<Layer>,
+    layers: Vec<Layer<'a>>,
     font_embolden: f32,
 }
 
-pub struct TinySkiaTargetRenderer<'a> {
-    inner: TinySkiaRenderer,
-    target: CpuBufferTarget<'a>,
-    finished_image: Option<ImageData>,
+pub enum TinySkiaTargetRenderer<'a> {
+    Direct {
+        inner: TinySkiaRendererImpl<'a>,
+        width: u32,
+        height: u32,
+        finished_image: Option<ImageData>,
+    },
+    Copy {
+        inner: TinySkiaRenderer,
+        target: CpuBufferTarget<'a>,
+        finished_image: Option<ImageData>,
+    },
 }
 
-impl TinySkiaRenderer {
+impl<'a> TinySkiaRendererImpl<'a> {
     fn clip_path_for_geometry(
         &self,
         shape: imaging::GeometryRef<'_>,
@@ -1000,12 +1157,14 @@ impl TinySkiaRenderer {
         Some(Arc::new(colored_bg))
     }
 
-    fn current_layer_mut(&mut self) -> &mut Layer {
+    fn current_layer_mut(&mut self) -> &mut Layer<'a> {
         self.layers
             .last_mut()
             .expect("TinySkiaRenderer always has a root layer")
     }
+}
 
+impl TinySkiaRendererImpl<'static> {
     pub fn new(width: u32, height: u32, scale: f64, font_embolden: f32) -> Result<Self> {
         let main_layer = Layer::new_root(width, height)?;
         Ok(Self {
@@ -1029,7 +1188,7 @@ impl TinySkiaRenderer {
     }
 }
 
-impl PaintSink for TinySkiaRenderer {
+impl PaintSink for TinySkiaRendererImpl<'_> {
     fn push_clip(&mut self, clip: ClipRef<'_>) {
         let clip_path = match clip {
             ClipRef::Fill {
@@ -1174,7 +1333,7 @@ impl PaintSink for TinySkiaRenderer {
     }
 }
 
-impl CustomPaintSink<DisplayCommandExt> for TinySkiaRenderer {
+impl CustomPaintSink<DisplayCommandExt> for TinySkiaRendererImpl<'_> {
     fn custom(&mut self, command: &DisplayCommandExt) {
         match command {
             DisplayCommandExt::DrawSvg {
@@ -1197,19 +1356,19 @@ impl CustomPaintSink<DisplayCommandExt> for TinySkiaRenderer {
     }
 }
 
-impl RenderCore for TinySkiaRenderer {
+impl RenderCore for TinySkiaRendererImpl<'_> {
     fn render(&mut self, f: &mut dyn FnMut(&mut dyn PaintSink)) {
         f(self)
     }
 
     fn finish(&mut self) {}
 
-    fn readback(&mut self) -> Option<RasterizerOutput> {
-        Self::readback_image(self).map(RasterizerOutput::Image)
+    fn readback(&mut self) -> Option<RenderOutput> {
+        Self::readback_image(self).map(RenderOutput::Image)
     }
 }
 
-impl Renderer for TinySkiaRenderer {
+impl Renderer for TinySkiaRendererImpl<'static> {
     type Target = ImageData;
 
     fn set_size(&mut self, frame: BeginFrame) {
@@ -1229,7 +1388,7 @@ impl Renderer for TinySkiaRenderer {
     }
 }
 
-impl CustomRenderer for TinySkiaRenderer {
+impl CustomRenderer for TinySkiaRendererImpl<'_> {
     fn with_custom_paint_sink(
         &mut self,
         f: &mut dyn FnMut(&mut dyn CustomPaintSink<DisplayCommandExt>),
@@ -1244,52 +1403,112 @@ impl CustomRenderer for TinySkiaRenderer {
 
 impl TinySkiaTargetRenderer<'_> {
     fn read_image_from_target(&self) -> ImageData {
-        let data = match self.target.format {
-            CpuBufferFormat::Rgba8Opaque => self.target.buffer.to_vec(),
-            CpuBufferFormat::Bgra8Opaque => {
-                let mut rgba = Vec::with_capacity(self.target.buffer.len());
-                for pixel in self.target.buffer.chunks_exact(4) {
-                    rgba.extend_from_slice(&[pixel[2], pixel[1], pixel[0], pixel[3]]);
-                }
-                rgba
+        let (data, width, height) = match self {
+            Self::Direct {
+                inner,
+                width,
+                height,
+                ..
+            } => (inner.layers[0].pixmap.data().to_vec(), *width, *height),
+            Self::Copy { target, .. } => {
+                let data = match target.format {
+                    CpuBufferFormat::Rgba8Opaque => target.buffer.to_vec(),
+                    CpuBufferFormat::Bgra8Opaque => {
+                        let mut rgba = Vec::with_capacity(target.buffer.len());
+                        for pixel in target.buffer.chunks_exact(4) {
+                            rgba.extend_from_slice(&[pixel[2], pixel[1], pixel[0], pixel[3]]);
+                        }
+                        rgba
+                    }
+                };
+                (data, target.width, target.height)
             }
         };
         ImageData {
             data: Blob::new(Arc::new(data)),
             format: peniko::ImageFormat::Rgba8,
             alpha_type: ImageAlphaType::Alpha,
-            width: self.target.width,
-            height: self.target.height,
+            width,
+            height,
         }
     }
 
     pub fn debug_info(&self) -> String {
-        self.inner.debug_info()
+        match self {
+            Self::Direct { inner, .. } => inner.debug_info(),
+            Self::Copy { inner, .. } => inner.debug_info(),
+        }
     }
 }
 
 impl RenderCore for TinySkiaTargetRenderer<'_> {
     fn render(&mut self, f: &mut dyn FnMut(&mut dyn PaintSink)) {
-        f(&mut self.inner)
+        match self {
+            Self::Direct { inner, .. } => f(inner),
+            Self::Copy { inner, .. } => f(inner),
+        }
     }
 
     fn finish(&mut self) {
-        let result = match self.target.format {
-            CpuBufferFormat::Rgba8Opaque => self
-                .inner
-                .finish_into_rgba8_opaque(self.target.buffer, self.target.bytes_per_row),
-            CpuBufferFormat::Bgra8Opaque => self
-                .inner
-                .finish_into_bgra8_opaque(self.target.buffer, self.target.bytes_per_row),
-        };
-        self.finished_image = result.map(|_| self.read_image_from_target());
+        match self {
+            Self::Direct {
+                inner,
+                finished_image,
+                ..
+            } => {
+                *finished_image = inner.finish_direct_rgba8_opaque().map(|_| ImageData {
+                    data: Blob::new(Arc::new(inner.layers[0].pixmap.data().to_vec())),
+                    format: peniko::ImageFormat::Rgba8,
+                    alpha_type: ImageAlphaType::Alpha,
+                    width: inner.layers[0].pixmap.width(),
+                    height: inner.layers[0].pixmap.height(),
+                });
+            }
+            Self::Copy {
+                inner,
+                target,
+                finished_image,
+            } => {
+                let result = match target.format {
+                    CpuBufferFormat::Rgba8Opaque => {
+                        inner.finish_into_rgba8_opaque(target.buffer, target.bytes_per_row)
+                    }
+                    CpuBufferFormat::Bgra8Opaque => {
+                        inner.finish_into_bgra8_opaque(target.buffer, target.bytes_per_row)
+                    }
+                };
+                *finished_image = result.map(|_| {
+                    let data = match target.format {
+                        CpuBufferFormat::Rgba8Opaque => target.buffer.to_vec(),
+                        CpuBufferFormat::Bgra8Opaque => {
+                            let mut rgba = Vec::with_capacity(target.buffer.len());
+                            for pixel in target.buffer.chunks_exact(4) {
+                                rgba.extend_from_slice(&[pixel[2], pixel[1], pixel[0], pixel[3]]);
+                            }
+                            rgba
+                        }
+                    };
+                    ImageData {
+                        data: Blob::new(Arc::new(data)),
+                        format: peniko::ImageFormat::Rgba8,
+                        alpha_type: ImageAlphaType::Alpha,
+                        width: target.width,
+                        height: target.height,
+                    }
+                });
+            }
+        }
     }
 
-    fn readback(&mut self) -> Option<RasterizerOutput> {
-        self.finished_image
-            .clone()
-            .or_else(|| Some(self.read_image_from_target()))
-            .map(RasterizerOutput::Image)
+    fn readback(&mut self) -> Option<RenderOutput> {
+        match self {
+            Self::Direct { finished_image, .. } | Self::Copy { finished_image, .. } => {
+                finished_image
+                    .clone()
+                    .or_else(|| Some(self.read_image_from_target()))
+                    .map(RenderOutput::Image)
+            }
+        }
     }
 }
 
@@ -1297,18 +1516,32 @@ impl<'a> TargetRenderer for TinySkiaTargetRenderer<'a> {
     type Target = CpuBufferTarget<'a>;
 
     fn create(frame: BeginFrame, target: Self::Target) -> Result<Self, String> {
-        let inner = TinySkiaRenderer::new(
-            target.width,
-            target.height,
-            frame.scale,
-            frame.font_embolden,
-        )
-            .map_err(|err| err.to_string())?;
-        Ok(Self {
-            inner,
-            target,
-            finished_image: None,
-        })
+        dbg!(target.format);
+        if matches!(target.format, CpuBufferFormat::Rgba8Opaque) {
+            if target.bytes_per_row != target.width as usize * 4 {
+                return Err("tiny-skia direct target renderer requires packed RGBA8 rows".into());
+            }
+
+            let mut inner = TinySkiaRendererImpl {
+                transform: Affine::IDENTITY,
+                window_scale: frame.scale,
+                cache_color: CacheColor(false),
+                layers: vec![
+                    Layer::new_root_borrowed(target.buffer, target.width, target.height)
+                        .map_err(|err| err.to_string())?,
+                ],
+                font_embolden: frame.font_embolden,
+            };
+            inner.clear_root_layer();
+            return Ok(Self::Direct {
+                width: target.width,
+                height: target.height,
+                inner,
+                finished_image: None,
+            });
+        }
+
+        Err("tiny-skia target renderer only supports packed RGBA8 targets".into())
     }
 }
 
@@ -1317,7 +1550,10 @@ impl CustomRenderer for TinySkiaTargetRenderer<'_> {
         &mut self,
         f: &mut dyn FnMut(&mut dyn CustomPaintSink<DisplayCommandExt>),
     ) {
-        f(&mut self.inner)
+        match self {
+            Self::Direct { inner, .. } => f(inner),
+            Self::Copy { inner, .. } => f(inner),
+        }
     }
 
     fn debug_info(&self) -> String {
@@ -1446,7 +1682,7 @@ fn blend_source_over(src: PremultipliedColorU8, dst: PremultipliedColorU8) -> Pr
     .expect("source-over premultiplied blend must remain premultiplied")
 }
 
-impl TinySkiaRenderer {
+impl TinySkiaRendererImpl<'_> {
     fn canvas_size(&self) -> Size {
         Size::new(
             self.layers[0].pixmap.width() as f64,
@@ -1634,12 +1870,15 @@ impl TinySkiaRenderer {
         self.finish_into_opaque(dst, bytes_per_row, false)
     }
 
-    fn finish_into_opaque(
-        &mut self,
-        dst: &mut [u8],
-        bytes_per_row: usize,
-        rgba: bool,
-    ) -> Option<()> {
+    pub fn finish_direct_rgba8_opaque(&mut self) -> Option<()> {
+        self.finalize_frame();
+        for pixel in self.layers[0].pixmap.data_mut().chunks_exact_mut(4) {
+            pixel[3] = 0xff;
+        }
+        Some(())
+    }
+
+    fn finalize_frame(&mut self) {
         IMAGE_CACHE.with_borrow_mut(|ic| ic.retain(|_, (c, _)| *c == self.cache_color));
         SCALED_IMAGE_CACHE.with_borrow_mut(|ic| ic.retain(|_, (c, _)| *c == self.cache_color));
         let now = Instant::now();
@@ -1647,6 +1886,15 @@ impl TinySkiaRenderer {
             gc.retain(|_, entry| should_retain_glyph_entry(entry, self.cache_color, now))
         });
         self.cache_color = CacheColor(!self.cache_color.0);
+    }
+
+    fn finish_into_opaque(
+        &mut self,
+        dst: &mut [u8],
+        bytes_per_row: usize,
+        rgba: bool,
+    ) -> Option<()> {
+        self.finalize_frame();
 
         let pixmap = &self.layers[0].pixmap;
         let width = pixmap.width() as usize;
@@ -1985,7 +2233,7 @@ fn mix_to_tiny_blend_mode(mix: Mix) -> TinyBlendMode {
     }
 }
 
-fn layer_composite_rect(layer: &Layer, parent: &Layer) -> Option<IntRect> {
+fn layer_composite_rect(layer: &Layer<'_>, parent: &Layer<'_>) -> Option<IntRect> {
     let mut rect = Rect::from_origin_size(
         Point::ZERO,
         Size::new(layer.pixmap.width() as f64, layer.pixmap.height() as f64),
@@ -2016,7 +2264,7 @@ fn draw_layer_pixmap(
     pixmap: &Pixmap,
     x: i32,
     y: i32,
-    parent: &mut Layer,
+    parent: &mut Layer<'_>,
     blend_mode: TinyBlendMode,
     alpha: f32,
 ) {
@@ -2044,8 +2292,8 @@ fn draw_layer_pixmap(
 }
 
 fn draw_layer_region(
-    parent: &mut Layer,
-    pixmap: &Pixmap,
+    parent: &mut Layer<'_>,
+    pixmap: PixmapRef<'_>,
     composite_rect: IntRect,
     blend_mode: TinyBlendMode,
     alpha: f32,
@@ -2064,12 +2312,12 @@ fn draw_layer_region(
     );
 }
 
-fn apply_alpha_mask_from_pixmap(target: &mut Pixmap, mask_source: &Pixmap) {
-    let mask = Mask::from_pixmap(mask_source.as_ref(), MaskType::Alpha);
+fn apply_alpha_mask_from_pixmap(target: &mut Pixmap, mask_source: PixmapRef<'_>) {
+    let mask = Mask::from_pixmap(mask_source, MaskType::Alpha);
     target.apply_mask(&mask);
 }
 
-fn apply_layer(layer: &Layer, parent: &mut Layer) {
+fn apply_layer(layer: &Layer<'_>, parent: &mut Layer<'_>) {
     let Some(composite_rect) = layer_composite_rect(layer, parent) else {
         return;
     };
@@ -2078,7 +2326,7 @@ fn apply_layer(layer: &Layer, parent: &mut Layer) {
         BlendStrategy::SinglePass(blend_mode) => {
             draw_layer_region(
                 parent,
-                &layer.pixmap,
+                layer.pixmap.as_ref(),
                 composite_rect,
                 blend_mode,
                 layer.alpha,
@@ -2095,12 +2343,18 @@ fn apply_layer(layer: &Layer, parent: &mut Layer) {
                 return;
             };
 
-            draw_layer_region(parent, &layer.pixmap, composite_rect, first_pass, 1.0);
+            draw_layer_region(
+                parent,
+                layer.pixmap.as_ref(),
+                composite_rect,
+                first_pass,
+                1.0,
+            );
 
             let Some(mut intermediate) = parent.pixmap.clone_rect(composite_rect) else {
                 return;
             };
-            apply_alpha_mask_from_pixmap(&mut intermediate, &coverage);
+            apply_alpha_mask_from_pixmap(&mut intermediate, coverage.as_ref());
 
             draw_layer_pixmap(
                 &original_parent,
