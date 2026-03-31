@@ -15,7 +15,7 @@ use crate::event::{
 };
 use crate::prelude::EventListenerTrait;
 use crate::prelude::el::UpdatePhaseLayout;
-use crate::style::ScrollbarWidth;
+use crate::style::{DirectTransition, ScrollbarWidth, StylePropValue, Transition};
 use crate::{
     BoxTree, ElementId, Renderer,
     context::{EventCx, PaintCx, StyleCx},
@@ -77,6 +77,19 @@ impl Vec2Ext for Vec2 {
 
     fn min_by_component(self, other: Self) -> Self {
         Vec2::new(self.x.min(other.x), self.y.min(other.y))
+    }
+}
+
+/// Wrapper for target scroll delta
+#[derive(Debug, Clone, PartialEq)]
+pub struct ScrollVec2(pub Vec2);
+
+impl StylePropValue for ScrollVec2 {
+    fn interpolate(&self, other: &Self, t: f64) -> Option<Self> {
+        Some(ScrollVec2(Vec2::new(
+            self.0.x * (1.0 - t) + other.0.x * t,
+            self.0.y * (1.0 - t) + other.0.y * t,
+        )))
     }
 }
 
@@ -532,8 +545,8 @@ prop!(
 );
 
 prop!(
-    /// When true, scroll wheel events are animated smoothly instead of jumping instantly.
-    pub SmoothScroll: bool {} = true
+    /// Configures the scroll wheel animation. Pass `None` to disable smooth scrolling.
+    pub ScrollAnimation: Option<Transition> {} = Some(Transition::linear(Duration::from_millis(100)))
 );
 
 prop_extractor!(ScrollStyle {
@@ -546,7 +559,7 @@ prop_extractor!(ScrollStyle {
     overflow_x: OverflowX,
     overflow_y: OverflowY,
     scrollbar_width: ScrollbarWidth,
-    smooth_scroll: SmoothScroll,
+    scroll_animation: ScrollAnimation,
 });
 
 const HANDLE_COLOR: Brush = Brush::Solid(Color::from_rgba8(0, 0, 0, 120));
@@ -562,18 +575,15 @@ pub struct Scroll {
     child: ViewId,
     // any time this changes, we must update the scroll_offset in the ViewState.
     scroll_offset: Vec2,
-    target_offset: Vec2,
     v_handle: ScrollHandle,
     h_handle: ScrollHandle,
     v_track: ScrollTrack,
     h_track: ScrollTrack,
     scroll_style: ScrollStyle,
-    is_animating: bool,
-    anim_start_time: Option<Instant>,
-    anim_start_offset: Vec2,
     cached_viewport: Rect,
     cached_full_rect: Rect,
     cached_content_size: peniko::kurbo::Size,
+    scroll_anim: DirectTransition<ScrollVec2>,
 }
 
 /// Create a new scroll view
@@ -609,18 +619,18 @@ impl Scroll {
             id,
             child: child_id,
             scroll_offset: Vec2::ZERO,
-            target_offset: Vec2::ZERO,
             v_track: ScrollTrack::new(id, v_handle.element_id, Axis::Vertical),
             h_track: ScrollTrack::new(id, h_handle.element_id, Axis::Horizontal),
             v_handle,
             h_handle,
             scroll_style: Default::default(),
-            is_animating: false,
-            anim_start_time: None,
-            anim_start_offset: Vec2::ZERO,
             cached_viewport: Rect::ZERO,
             cached_full_rect: Rect::ZERO,
             cached_content_size: Size::ZERO,
+            scroll_anim: DirectTransition::new(
+                ScrollVec2(Vec2::ZERO),
+                Some(Transition::linear(Duration::from_millis(100)))
+            ),
         }
         .class(ScrollClass)
     }
@@ -914,34 +924,6 @@ impl Scroll {
         )
     }
 
-    fn advance_animation(&mut self) -> bool {
-        if !self.is_animating {
-            return false;
-        }
-
-        let now = Instant::now();
-        let elapsed = self.anim_start_time
-            .map(|t| now.duration_since(t).as_secs_f64())
-            .unwrap_or(0.0);
-
-        let duration = 0.1; // seconds
-        let t = (elapsed / duration).min(1.0);
-
-        let target = self.target_offset;
-        let start = self.anim_start_offset;
-        let new_pos = start + (target - start) * t;
-        let delta = new_pos - self.scroll_offset;
-
-        self.apply_scroll_delta(delta);
-
-        if t >= 1.0 {
-            self.is_animating = false;
-            self.anim_start_time = None;
-            return false;
-        }
-
-        true
-    }
 }
 
 impl View for Scroll {
@@ -991,8 +973,11 @@ impl View for Scroll {
                     self.do_scroll_to_element(ScrollTo { id, rect: None });
                 }
                 ScrollState::AnimTick => {
-                    if self.advance_animation() {
-                        // We are still moving, queue up the next frame
+                    let now = Instant::now();
+                    if self.scroll_anim.step(&now) {
+                        let new_pos = self.scroll_anim.get().0;
+                        let delta = new_pos - self.scroll_offset;
+                        self.apply_scroll_delta(delta);
                         self.id.update_state_deferred(ScrollState::AnimTick);
                     }
                 }
@@ -1004,6 +989,10 @@ impl View for Scroll {
 
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         self.scroll_style.read(cx);
+
+        if self.scroll_style.read(cx) {
+            self.scroll_anim.set_transition(self.scroll_style.scroll_animation());
+        }
 
         // If the reason implies nested style maps must be resolved, restyle everything.
         if cx.reason.needs_resolve_nested_maps() {
@@ -1124,50 +1113,31 @@ impl View for Scroll {
                     delta
                 };
 
-                if self.scroll_style.smooth_scroll() {
-                    if !self.is_animating {
-                        self.target_offset = self.scroll_offset;
-                    }
-                    let old_target = self.target_offset;
-                    self.target_offset = self.clamp_scroll(self.target_offset + delta);
+                let new_target = self.clamp_scroll(self.scroll_anim.target().0 + delta);
 
-                    if self.target_offset == old_target && !self.is_animating {
-                        return if self.scroll_style.propagate_pointer_wheel() {
-                            EventPropagation::Continue
-                        } else {
-                            EventPropagation::Stop
-                        };
-                    }
+                // If target didn't move, propagate to parent if configured
+                if new_target == self.scroll_anim.target().0 && !self.scroll_anim.is_active() {
+                    return if self.scroll_style.propagate_pointer_wheel() {
+                        EventPropagation::Continue
+                    } else {
+                        EventPropagation::Stop
+                    };
+                }
 
-                    if !self.is_animating {
-                        self.target_offset = self.scroll_offset;
-                    }
-                    self.target_offset = self.clamp_scroll(self.target_offset + delta);
-
-                    // Always reset start to current position and restart the clock.
-                    self.anim_start_offset = self.scroll_offset;
-                    self.anim_start_time = Some(Instant::now());
-
-                    if !self.is_animating {
-                        self.is_animating = true;
-                        self.id.update_state(ScrollState::AnimTick);
-                    }
-
-                    return EventPropagation::Stop;
+                let started = self.scroll_anim.transition_to(ScrollVec2(new_target));
+                if started {
+                    self.id.update_state(ScrollState::AnimTick);
                 } else {
+                    let delta = new_target - self.scroll_offset;
                     let change = self.apply_scroll_delta(delta);
-                    self.set_positions();
-
-                    if change.is_some() {
-                        cx.window_state.request_paint(self.id);
-                    }
-
                     return if self.scroll_style.propagate_pointer_wheel() && change.is_none() {
                         EventPropagation::Continue
                     } else {
                         EventPropagation::Stop
                     };
                 }
+
+                return EventPropagation::Stop;
 
                 
             }
@@ -1347,9 +1317,9 @@ impl ScrollCustomStyle {
         self
     }
 
-    /// Sets whether scroll wheel events should animate smoothly.
-    pub fn smooth_scroll(mut self, smooth: impl Into<bool>) -> Self {
-        self = Self(self.0.set(SmoothScroll, smooth));
+    /// Pass a `Transition` to enable smooth scrolling, or `None` to disable it.
+    pub fn scroll_animation(mut self, transition: Option<Transition>) -> Self {
+        self = Self(self.0.set(ScrollAnimation, transition));
         self
     }
 }
