@@ -2,7 +2,9 @@ mod data;
 pub(crate) mod profiler;
 mod view;
 use floem_reactive::{Effect, Scope};
+use floem_renderer::DisplayCommandExt;
 use floem_renderer::text::FontWeight;
+use imaging::record::{ExtendedScene, ReplaySourceExt};
 use peniko::kurbo::{Rect, Size};
 use peniko::{
     Color,
@@ -19,7 +21,7 @@ use crate::{
     prelude::*,
     style::{
         BorderRadius, FontSizeCx, Length, LengthAuto, OverflowX, OverflowY, StrokeWrap, Style,
-        StyleThemeExt, TextColor,
+        StyleThemeExt, TextColor, scene_debug_view_with_size,
     },
 };
 
@@ -582,20 +584,36 @@ pub struct Capture {
 #[derive(Default)]
 pub struct CaptureState {
     computed_styles: HashMap<ViewId, Style>,
+    scenes: HashMap<ViewId, ExtendedScene<DisplayCommandExt>>,
 }
 
 impl CaptureState {
-    pub(crate) fn collect_from(root: ViewId) -> Self {
-        fn collect(id: ViewId, computed_styles: &mut HashMap<ViewId, Style>) {
+    pub(crate) fn collect_from(root: ViewId, window_state: &WindowState) -> Self {
+        fn collect(
+            id: ViewId,
+            window_state: &WindowState,
+            computed_styles: &mut HashMap<ViewId, Style>,
+            scenes: &mut HashMap<ViewId, ExtendedScene<DisplayCommandExt>>,
+        ) {
             computed_styles.insert(id, id.state().borrow().computed_style.clone());
+            let mut scene = ExtendedScene::new();
+            if let Some(element) = window_state.display_list.element(id.get_element_id()) {
+                element.paint.scene.replay_into_ext(&mut scene);
+                element.post.scene.replay_into_ext(&mut scene);
+            }
+            scenes.insert(id, scene);
             for child in id.children() {
-                collect(child, computed_styles);
+                collect(child, window_state, computed_styles, scenes);
             }
         }
 
         let mut computed_styles = HashMap::new();
-        collect(root, &mut computed_styles);
-        Self { computed_styles }
+        let mut scenes = HashMap::new();
+        collect(root, window_state, &mut computed_styles, &mut scenes);
+        Self {
+            computed_styles,
+            scenes,
+        }
     }
 }
 
@@ -832,17 +850,13 @@ fn selected_view(
                 .get(&view.id)
                 .cloned()
                 .unwrap_or_default();
-
-            let style_list = style
-                .debug_view(Some(&view.direct_style))
-                .style(|s| s.height_full().flex_grow(1.))
-                .scroll()
-                .style(|s| {
-                    s.set(OverflowX, taffy::Overflow::Scroll)
-                        .set(OverflowY, taffy::Overflow::Visible)
-                        .height_full()
-                        .flex_grow(1.)
-                });
+            let scene = capture
+                .state
+                .scenes
+                .get(&view.id)
+                .cloned()
+                .unwrap_or_default();
+            let scene_size = Size::new(view.taffy.size.width as f64, view.taffy.size.height as f64);
 
             let selected_view_info = Stack::vertical_from_iter(
                 [name, id, count, x, y, w, h, tx, ty, tw, th]
@@ -882,10 +896,57 @@ fn selected_view(
             let selected_view_panel =
                 Stack::vertical((header("Selected View"), selected_view_summary))
                     .style(|s| s.width_full().min_size(0., 0.).flex_grow(1.));
-            let style_panel = Stack::vertical((header("View Style"), style_list))
-                .style(|s| s.width_full().min_size(0., 0.).flex_grow(1.));
+            let active_tab = RwSignal::new(0);
+            let style_scene_tabs = Stack::vertical((
+                Stack::horizontal((
+                    "style"
+                        .class(TabSelectorClass)
+                        .style(move |s| s.set_selected(active_tab.get() == 0))
+                        .action(move || active_tab.set(0)),
+                    "scene"
+                        .class(TabSelectorClass)
+                        .style(move |s| s.set_selected(active_tab.get() == 1))
+                        .action(move || active_tab.set(1)),
+                ))
+                .style(|s| s.gap(8.0).padding_bottom(4.0)),
+                tab(move || Some(active_tab.get()), move || [0, 1], |it| *it, {
+                    let style = style.clone();
+                    let direct_style = view.direct_style.clone();
+                    let scene = scene.clone();
+                    let scene_size = scene_size;
+                    move |it| match it {
+                        0 => style
+                            .debug_view(Some(&direct_style))
+                            .style(|s| s.height_full().flex_grow(1.))
+                            .scroll()
+                            .style(|s| {
+                                s.set(OverflowX, taffy::Overflow::Scroll)
+                                    .set(OverflowY, taffy::Overflow::Visible)
+                                    .height_full()
+                                    .flex_grow(1.)
+                            })
+                            .into_any(),
+                        1 => scene_debug_view_with_size(
+                            scene.clone(),
+                            scene_size,
+                        )
+                            .style(|s| s.height_full().flex_grow(1.))
+                            .scroll()
+                            .style(|s| {
+                                s.set(OverflowX, taffy::Overflow::Scroll)
+                                    .set(OverflowY, taffy::Overflow::Visible)
+                                    .height_full()
+                                    .flex_grow(1.)
+                            })
+                            .into_any(),
+                        _ => panic!(),
+                    }
+                })
+                .style(|s| s.width_full().height_full().min_size(0.0, 0.0)),
+            ))
+            .style(|s| s.width_full().min_size(0., 0.).flex_grow(1.));
 
-            Stack::vertical((selected_view_panel, style_panel))
+            Stack::vertical((selected_view_panel, style_scene_tabs))
                 .style(|s| s.width_full().flex_shrink(0.).gap(10).min_size(0., 0.))
                 .into_any()
         } else {

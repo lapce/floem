@@ -24,7 +24,7 @@ fn child_view() -> impl IntoView {
         .style(|s| s.border(1.0).border_radius(8.0).height(64.0).width(64.0)),
         Stack::horizontal((
             Stack::vertical((
-                img(move || ferris_png.to_vec()).style(|s| s.width(69.0).height(45.9)),
+                Img::new(move || ferris_png.to_vec()).style(|s| s.width(69.0).height(45.9)),
                 "PNG".style(|s| s.justify_center()),
             )),
             Stack::vertical((

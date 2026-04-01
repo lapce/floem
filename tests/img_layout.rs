@@ -2,7 +2,7 @@ use floem::HasViewId;
 use floem::headless::{HeadlessHarness, TestRoot};
 use floem::style::{ObjectFit, ObjectPosition, Style};
 use floem::unit::UnitExt;
-use floem::views::{Decorators, Stack, img};
+use floem::views::{Decorators, Img, Stack};
 use image::{ColorType, ImageEncoder, RgbaImage, codecs::png::PngEncoder};
 use peniko::kurbo::Rect;
 use std::io::Cursor;
@@ -32,7 +32,7 @@ fn layout_rect(
 ) -> Rect {
     let img_bytes = png_bytes(natural_w, natural_h);
     let root = TestRoot::new();
-    let img_view = img(move || img_bytes.clone()).style(style);
+    let img_view = Img::new(move || img_bytes.clone()).style(style);
     let img_id = img_view.view_id();
     let container = Stack::new((img_view,))
         .style(move |s| s.items_start().size(container_size.0, container_size.1));
@@ -167,7 +167,7 @@ fn dest_rect(
     content_rect: Rect,
 ) -> Rect {
     let img_bytes = png_bytes(natural_w, natural_h);
-    let view = img(move || img_bytes.clone());
+    let view = Img::new(move || img_bytes.clone());
     view.object_fit_dest_rect_with(content_rect, object_fit, object_position)
 }
 

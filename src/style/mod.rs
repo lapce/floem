@@ -201,6 +201,7 @@ pub use values::{
 pub use cache::{StyleCache, StyleCacheKey};
 
 pub(crate) use props::{RESPONSIVE_SELECTORS_INFO, STRUCTURAL_SELECTORS_INFO, style_key_selector};
+pub(crate) use values::scene_debug_view_with_size;
 
 static NEXT_STYLE_MERGE_ID: AtomicU64 = AtomicU64::new(1);
 const MERGE_MIX_CONST: u64 = 0x9E3779B97F4A7C15;
@@ -1979,6 +1980,11 @@ define_builtin_props!(
     /// This property affects paint-time placement for images and other replaced content.
     /// Corresponds to common CSS `object-position` keyword combinations.
     ObjectPositionProp object_position {}: ObjectPosition {} = ObjectPosition::Center,
+
+    /// Controls how image brushes are sampled when painted.
+    ///
+    /// This includes extend mode, sampling quality, and an alpha multiplier.
+    ImageSamplerProp image_sampler {}: peniko::ImageSampler {} = peniko::ImageSampler::new(),
 
     /// Sets the gap between columns in grid or flex layouts.
     ///

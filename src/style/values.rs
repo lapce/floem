@@ -2,14 +2,15 @@
 
 #[path = "values_extended_scene.rs"]
 mod values_extended_scene;
+pub(crate) use values_extended_scene::scene_debug_view_with_size;
 
 use floem_reactive::{RwSignal, SignalGet, SignalUpdate as _};
 use floem_renderer::text::{FontWeight, LineHeightValue};
 use peniko::color::{HueDirection, palette};
 use peniko::kurbo::{self, Affine, Point, Shape, Stroke, Vec2};
 use peniko::{
-    Brush, Color, ColorStop, ColorStops, Gradient, GradientKind, InterpolationAlphaSpace,
-    LinearGradientPosition,
+    Brush, Color, ColorStop, ColorStops, Gradient, GradientKind, ImageQuality, ImageSampler,
+    InterpolationAlphaSpace, LinearGradientPosition,
 };
 use smallvec::SmallVec;
 use std::collections::HashSet;
@@ -158,6 +159,17 @@ impl StylePropValue for FlexWrap {}
 impl StylePropValue for AlignItems {}
 impl StylePropValue for BoxSizing {}
 impl StylePropValue for AlignContent {}
+impl StylePropValue for ImageQuality {}
+impl StylePropValue for ImageSampler {
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        Some(Self {
+            x_extend: self.x_extend,
+            y_extend: self.y_extend,
+            quality: self.quality,
+            alpha: self.alpha + (other.alpha - self.alpha) * value as f32,
+        })
+    }
+}
 impl StylePropValue for GridTemplateComponent<String> {}
 impl StylePropValue for MinTrackSizingFunction {}
 impl StylePropValue for MaxTrackSizingFunction {}
@@ -815,9 +827,12 @@ pub(crate) fn views(views: impl ViewTuple) -> Vec<AnyView> {
     views.into_views()
 }
 
-impl StylePropValue for Color {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
-        let color = *self;
+impl IntoView for Color {
+    type V = AnyView;
+    type Intermediate = AnyView;
+
+    fn into_intermediate(self) -> Self::Intermediate {
+        let color = self;
         let swatch = ()
             .style(move |s| {
                 s.background(color)
@@ -899,12 +914,16 @@ impl StylePropValue for Color {
                 })
         };
 
-        Some(
-            swatch
-                .tooltip(tooltip_view)
-                .style(|s| s.items_center())
-                .into_any(),
-        )
+        swatch
+            .tooltip(tooltip_view)
+            .style(|s| s.items_center())
+            .into_any()
+    }
+}
+
+impl StylePropValue for Color {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        Some((*self).into_any())
     }
 
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
@@ -912,10 +931,13 @@ impl StylePropValue for Color {
     }
 }
 
-impl StylePropValue for Gradient {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
-        let box_width = 22.;
-        let box_height = 14.;
+impl IntoView for Gradient {
+    type V = AnyView;
+    type Intermediate = AnyView;
+
+    fn into_intermediate(self) -> Self::Intermediate {
+        let box_width = 34.;
+        let box_height = 18.;
         let mut grad = self.clone();
         grad.kind = match grad.kind {
             GradientKind::Linear(LinearGradientPosition { start, end }) => {
@@ -960,11 +982,68 @@ impl StylePropValue for Gradient {
                 .border_radius(5.0)
                 .margin_left(6.0)
         });
-        Some(
-            Stack::new((Label::new(format!("{self:?}")), color))
-                .style(|s| s.items_center())
-                .into_any(),
-        )
+
+        let tooltip_gradient = self.clone();
+        let tooltip_view = move || {
+            let kind = format!("{:?}", tooltip_gradient.kind);
+            let extend = format!("{:?}", tooltip_gradient.extend);
+            let interpolation_cs = format!("{:?}", tooltip_gradient.interpolation_cs);
+            let alpha_space = format!("{:?}", tooltip_gradient.interpolation_alpha_space);
+            let hue_direction = format!("{:?}", tooltip_gradient.hue_direction);
+            let metadata = Stack::vertical((
+                Stack::horizontal((
+                    "Kind:".style(|s| s.font_bold().min_width(110.0).justify_end()),
+                    Label::new(kind.clone()),
+                )),
+                Stack::horizontal((
+                    "Extend:".style(|s| s.font_bold().min_width(110.0).justify_end()),
+                    Label::new(extend.clone()),
+                )),
+                Stack::horizontal((
+                    "Interpolation:".style(|s| s.font_bold().min_width(110.0).justify_end()),
+                    Label::new(interpolation_cs.clone()),
+                )),
+                Stack::horizontal((
+                    "Alpha Space:".style(|s| s.font_bold().min_width(110.0).justify_end()),
+                    Label::new(alpha_space.clone()),
+                )),
+                Stack::horizontal((
+                    "Hue Direction:".style(|s| s.font_bold().min_width(110.0).justify_end()),
+                    Label::new(hue_direction.clone()),
+                )),
+            ))
+            .style(|s| s.gap(10.0));
+
+            let stops = Stack::vertical_from_iter(tooltip_gradient.stops.iter().enumerate().map(
+                |(idx, stop)| {
+                    Stack::horizontal((
+                        Label::new(format!("[{idx}]"))
+                            .style(|s| s.font_bold().min_width(36.0).justify_end()),
+                        Label::new(format!("{:.3}", stop.offset)).style(|s| s.min_width(52.0)),
+                        stop.color.to_alpha_color().into_any(),
+                    ))
+                    .style(|s| s.items_center().gap(10.0))
+                },
+            ))
+            .style(|s| s.gap(8.0).width_full());
+
+            Stack::vertical((
+                metadata,
+                Label::new("Stops").style(|s| s.font_bold().margin_top(12.0)),
+                stops,
+            ))
+            .style(|s| s.padding(20.0).gap(8.0).min_width(320.0))
+        };
+
+        color
+            .tooltip(tooltip_view)
+            .into_any()
+    }
+}
+
+impl StylePropValue for Gradient {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        Some(self.clone().into_any())
     }
 
     fn interpolate(&self, _other: &Self, _value: f64) -> Option<Self> {
@@ -1002,9 +1081,12 @@ impl From<i32> for StrokeWrap {
     }
 }
 
-impl StylePropValue for Stroke {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
-        let stroke = self.clone();
+impl IntoView for Stroke {
+    type V = AnyView;
+    type Intermediate = AnyView;
+
+    fn into_intermediate(self) -> Self::Intermediate {
+        let stroke = self;
         let clone = stroke.clone();
 
         let color = RwSignal::new(palette::css::RED);
@@ -1106,21 +1188,35 @@ impl StylePropValue for Stroke {
             })
         };
 
-        Some(
-            preview
-                .tooltip(tooltip_view)
-                .style(|s| s.items_center())
-                .into_any(),
-        )
+        preview
+            .tooltip(tooltip_view)
+            .style(|s| s.items_center())
+            .into_any()
     }
 }
+
+impl StylePropValue for Stroke {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        Some(self.clone().into_any())
+    }
+}
+
+impl IntoView for Brush {
+    type V = AnyView;
+    type Intermediate = AnyView;
+
+    fn into_intermediate(self) -> Self::Intermediate {
+        match self {
+            Brush::Solid(color) => color.into_any(),
+            Brush::Gradient(grad) => grad.into_any(),
+            Brush::Image(image) => Label::new(format!("{image:?}")).into_any(),
+        }
+    }
+}
+
 impl StylePropValue for Brush {
     fn debug_view(&self) -> Option<Box<dyn View>> {
-        match self {
-            Brush::Solid(color) => color.debug_view(),
-            Brush::Gradient(grad) => grad.debug_view(),
-            Brush::Image(_) => None,
-        }
+        Some(self.clone().into_any())
     }
 
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
@@ -1209,9 +1305,12 @@ impl StylePropValue for super::AnchorAbout {
     }
 }
 
-impl StylePropValue for kurbo::Rect {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
-        let r = *self;
+impl IntoView for kurbo::Rect {
+    type V = AnyView;
+    type Intermediate = AnyView;
+
+    fn into_intermediate(self) -> Self::Intermediate {
+        let r = self;
 
         let w = r.x1 - r.x0;
         let h = r.y1 - r.y0;
@@ -1228,10 +1327,12 @@ impl StylePropValue for kurbo::Rect {
 
         let preview = Empty::new().style(move |s| {
             let max = w.abs().max(h.abs()).max(1.0);
-            let scale = 60.0 / max;
+            let scale = 64.0 / max;
 
             s.width(w.abs() * scale)
                 .height(h.abs() * scale)
+                .min_width(8.0)
+                .min_height(8.0)
                 .border(1.0)
                 .with_theme(|s, t| {
                     s.border_color(t.border())
@@ -1240,16 +1341,20 @@ impl StylePropValue for kurbo::Rect {
                 })
         });
 
-        Some(
-            (
-                "Rect",
-                preview,
-                coords.style(|s| s.gap(2)),
-                wh.style(|s| s.gap(8)),
-            )
-                .v_stack()
-                .into_any(),
-        )
+        Stack::vertical((
+            Label::new("Rect").style(|s| s.font_bold()),
+            preview.container().style(|s| s.padding_vert(4.0)),
+            coords.style(|s| s.gap(2).font_size(11.0)),
+            wh.style(|s| s.gap(8).font_size(11.0)),
+        ))
+            .style(|s| s.gap(4.0).items_start().min_width(0.0))
+            .into_any()
+    }
+}
+
+impl StylePropValue for kurbo::Rect {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        Some((*self).into_any())
     }
 
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
@@ -1264,9 +1369,12 @@ impl StylePropValue for kurbo::Rect {
     }
 }
 
-impl StylePropValue for Affine {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
-        let affine = *self;
+impl IntoView for Affine {
+    type V = AnyView;
+    type Intermediate = AnyView;
+
+    fn into_intermediate(self) -> Self::Intermediate {
+        let affine = self;
         let coeffs = affine.as_coeffs();
 
         // Decompose to show meaningful transform components
@@ -1410,12 +1518,16 @@ impl StylePropValue for Affine {
             Stack::vertical_from_iter(content).style(|s| s.padding(20))
         };
 
-        Some(
-            preview
-                .tooltip(tooltip_view)
-                .style(|s| s.items_center())
-                .into_any(),
-        )
+        preview
+            .tooltip(tooltip_view)
+            .style(|s| s.items_center())
+            .into_any()
+    }
+}
+
+impl StylePropValue for Affine {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        Some((*self).into_any())
     }
 
     fn interpolate(&self, other: &Self, t: f64) -> Option<Self> {
@@ -2192,7 +2304,7 @@ impl Style {
             tab_item("Classes", 2),
         )
             .h_stack()
-            .style(|s| s.with_theme(|s, t| s.background(t.bg_base())));
+        .style(|s| s.with_theme(|s, t| s.background(t.bg_base())));
         let direct_keys_for_body = direct_keys.clone();
         let style_for_body = style.clone();
         let style_for_selectors = style.clone();

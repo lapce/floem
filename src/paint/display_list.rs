@@ -515,6 +515,12 @@ impl PaintSink for RecordingRenderer<'_> {
     }
 }
 
+impl CustomPaintSink<DisplayCommandExt> for RecordingRenderer<'_> {
+    fn custom(&mut self, command: &DisplayCommandExt) {
+        let _ = self.scene.custom_command(command.clone());
+    }
+}
+
 pub(crate) fn replay_stage(
     stage: &ElementStage,
     sink: &mut dyn CustomPaintSink<DisplayCommandExt>,

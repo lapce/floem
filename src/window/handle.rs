@@ -954,7 +954,7 @@ impl WindowHandle {
         let window = self.capture_image();
         let end = Instant::now();
         let window_size = self.window_state.root_size;
-        let state = CaptureState::collect_from(self.id);
+        let state = CaptureState::collect_from(self.id, &self.window_state);
 
         let capture = Capture {
             start,

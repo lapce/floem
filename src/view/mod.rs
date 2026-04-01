@@ -57,6 +57,7 @@ pub(crate) use storage::*;
 pub use tuple::*;
 
 use floem_reactive::{Effect, ReadSignal, RwSignal, Scope, SignalGet, UpdaterEffect};
+use peniko::Brush;
 use peniko::kurbo::*;
 use smallvec::SmallVec;
 use std::any::Any;
@@ -1316,7 +1317,23 @@ pub(crate) fn paint_border(
     style: &ViewStyleProps,
     rect: Rect,
 ) {
+    let all_border_colors_transparent = |style: &ViewStyleProps| {
+        let colors = style.border_color();
+        [colors.top, colors.right, colors.bottom, colors.left]
+            .into_iter()
+            .all(|color| {
+                color.is_none_or(|color| match color {
+                    Brush::Solid(color) => color.components[3] == 0.0,
+                    Brush::Gradient(_) | Brush::Image(_) => false,
+                })
+            })
+    };
+
     if cx.is_vger() {
+        if all_border_colors_transparent(style) {
+            return;
+        }
+
         let border = layout_style.border();
 
         let left = border.left.unwrap_or(Stroke::new(0.));
@@ -1439,7 +1456,7 @@ pub(crate) fn paint_border(
     ];
 
     // Early return if no borders
-    if borders.iter().all(|b| b.0.width == 0.0) {
+    if borders.iter().all(|b| b.0.width == 0.0) || all_border_colors_transparent(style) {
         return;
     }
 

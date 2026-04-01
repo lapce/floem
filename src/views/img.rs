@@ -1,10 +1,9 @@
 //! Module defining image view and its properties: style, position and fit.
 #![deny(missing_docs)]
-use std::{cell::RefCell, path::PathBuf, rc::Rc, sync::Arc};
+use std::{cell::RefCell, path::{Path, PathBuf}, rc::Rc, sync::Arc};
 
-use floem_reactive::UpdaterEffect;
+use floem_reactive::{ReadSignal, RwSignal, SignalWith, UpdaterEffect};
 use peniko::{Blob, Brush, ImageAlphaType, ImageData, kurbo::Rect};
-use sha2::{Digest, Sha256};
 
 use crate::{
     prop_extractor,
@@ -97,16 +96,127 @@ prop_extractor! {
     Extractor {
         object_fit: crate::style::ObjectFitProp,
         object_position: crate::style::ObjectPositionProp,
+        image_sampler: crate::style::ImageSamplerProp,
     }
 }
 
 /// Holds the data needed for [img] view fn to display images.
 pub struct Img {
     id: ViewId,
-    img: peniko::ImageBrush,
-    img_hash: Vec<u8>,
+    img: ImageData,
     layout_data: Rc<RefCell<ImageLayoutData>>,
     style: Extractor,
+}
+
+#[doc(hidden)]
+pub enum ImgReader {
+    Static(ImageData),
+    Reactive(Rc<dyn Fn() -> ImageData>),
+}
+
+/// A static input that can be converted into [`ImageData`] for [`Img`].
+pub trait ImgDataSource {
+    /// Convert this value into owned image data.
+    fn into_image_data(self) -> ImageData;
+}
+
+impl ImgDataSource for ImageData {
+    fn into_image_data(self) -> ImageData {
+        self
+    }
+}
+
+impl ImgDataSource for Vec<u8> {
+    fn into_image_data(self) -> ImageData {
+        Img::image_data_from_bytes(&self)
+    }
+}
+
+impl ImgDataSource for &'static [u8] {
+    fn into_image_data(self) -> ImageData {
+        Img::image_data_from_bytes(self)
+    }
+}
+
+impl<const N: usize> ImgDataSource for &'static [u8; N] {
+    fn into_image_data(self) -> ImageData {
+        Img::image_data_from_bytes(self.as_slice())
+    }
+}
+
+impl ImgDataSource for PathBuf {
+    fn into_image_data(self) -> ImageData {
+        Img::image_data_from_path(&self)
+    }
+}
+
+/// A source that can produce image content for [`Img`].
+///
+/// This supports:
+/// - direct image bytes (`Vec<u8>`)
+/// - direct file paths (`PathBuf`)
+/// - direct [`ImageData`]
+/// - closures returning any of the above
+/// - [`ReadSignal`] and [`RwSignal`] values containing any of the above
+pub trait ImgSource: 'static {
+    /// Convert this source into either a static image or a reactive reader.
+    fn into_img_reader(self) -> ImgReader;
+}
+
+impl ImgSource for Vec<u8> {
+    fn into_img_reader(self) -> ImgReader {
+        ImgReader::Static(self.into_image_data())
+    }
+}
+
+impl ImgSource for &'static [u8] {
+    fn into_img_reader(self) -> ImgReader {
+        ImgReader::Static(self.into_image_data())
+    }
+}
+
+impl ImgSource for PathBuf {
+    fn into_img_reader(self) -> ImgReader {
+        ImgReader::Static(self.into_image_data())
+    }
+}
+
+impl ImgSource for ImageData {
+    fn into_img_reader(self) -> ImgReader {
+        ImgReader::Static(self)
+    }
+}
+
+impl<T, F> ImgSource for F
+where
+    F: Fn() -> T + 'static,
+    T: ImgDataSource,
+{
+    fn into_img_reader(self) -> ImgReader {
+        ImgReader::Reactive(Rc::new(move || self().into_image_data()))
+    }
+}
+
+impl<P, S> ImgSource for ReadSignal<P, S>
+where
+    ReadSignal<P, S>: SignalWith<P>,
+    P: Clone + ImgDataSource + 'static,
+    S: 'static,
+{
+    fn into_img_reader(self) -> ImgReader {
+        ImgReader::Reactive(Rc::new(move || self.with(|value| value.clone().into_image_data())))
+    }
+}
+
+impl<P, S> ImgSource for RwSignal<P, S>
+where
+    RwSignal<P, S>: SignalWith<P>,
+    P: Clone + ImgDataSource + 'static,
+    S: 'static,
+{
+    fn into_img_reader(self) -> ImgReader {
+        ImgReader::Reactive(Rc::new(move || self.with(|value| value.clone().into_image_data())))
+    }
 }
 
 /// A view that can display an image and controls its position.
@@ -154,21 +264,9 @@ pub struct Img {
 ///     }).style(|s| s.size(50.,50.))
 /// });
 /// ```
+#[deprecated(note = "Use Img::new(...) instead")]
 pub fn img(image: impl Fn() -> Vec<u8> + 'static) -> Img {
-    let image = image::load_from_memory(&image()).ok();
-    let width = image.as_ref().map_or(0, |img| img.width());
-    let height = image.as_ref().map_or(0, |img| img.height());
-    let data = Arc::new(image.map_or(Default::default(), |img| img.into_rgba8().into_vec()));
-    let blob = Blob::new(data);
-    let image = peniko::ImageBrush::new(ImageData {
-        data: blob,
-        format: peniko::ImageFormat::Rgba8,
-        alpha_type: ImageAlphaType::Alpha,
-        width,
-        height,
-    })
-    .with_quality(peniko::ImageQuality::High);
-    img_dynamic(move || image.clone())
+    Img::new(image)
 }
 
 /// A view that can display an image and controls its position.
@@ -189,51 +287,70 @@ pub fn img(image: impl Fn() -> Vec<u8> + 'static) -> Img {
 /// # Reactivity
 /// The `img` function is not reactive, so to make it change on event, wrap it
 /// with [`dyn_view`](crate::views::dyn_view::dyn_view).
+#[deprecated(note = "Use Img::new(...) instead")]
 pub fn img_from_path(image: impl Fn() -> PathBuf + 'static) -> Img {
-    let image = image::open(image()).ok();
-    let width = image.as_ref().map_or(0, |img| img.width());
-    let height = image.as_ref().map_or(0, |img| img.height());
-    let data = Arc::new(image.map_or(Default::default(), |img| img.into_rgba8().into_vec()));
-    let blob = Blob::new(data);
-    let image = peniko::ImageBrush::new(ImageData {
-        data: blob,
-        format: peniko::ImageFormat::Rgba8,
-        alpha_type: ImageAlphaType::Alpha,
-        width,
-        height,
-    });
-    img_dynamic(move || image.clone())
-}
-
-pub(crate) fn img_dynamic(image: impl Fn() -> peniko::ImageBrush + 'static) -> Img {
-    let id = ViewId::new();
-
-    let img = UpdaterEffect::new(image, move |image| {
-        id.update_state(image);
-    });
-
-    let layout_data = Rc::new(RefCell::new(ImageLayoutData::new(
-        img.image.width,
-        img.image.height,
-    )));
-
-    let mut hasher = Sha256::new();
-    hasher.update(img.image.data.data());
-    let img_hash = hasher.finalize().to_vec();
-
-    let mut img = Img {
-        id,
-        img,
-        img_hash,
-        layout_data,
-        style: Extractor::default(),
-    };
-
-    img.set_taffy_layout();
-    img
+    Img::new(image)
 }
 
 impl Img {
+    /// Decode static image bytes, a static image path, or reuse existing [`ImageData`].
+    pub fn image_data(source: impl ImgDataSource) -> ImageData {
+        source.into_image_data()
+    }
+
+    fn image_data_from_dynamic(image: Option<image::DynamicImage>) -> ImageData {
+        let width = image.as_ref().map_or(0, |img| img.width());
+        let height = image.as_ref().map_or(0, |img| img.height());
+        let data = Arc::new(image.map_or_else(Vec::new, |img| img.into_rgba8().into_vec()));
+        let blob = Blob::new(data);
+        ImageData {
+            data: blob,
+            format: peniko::ImageFormat::Rgba8,
+            alpha_type: ImageAlphaType::Alpha,
+            width,
+            height,
+        }
+    }
+
+    fn image_data_from_bytes(bytes: &[u8]) -> ImageData {
+        Self::image_data_from_dynamic(image::load_from_memory(bytes).ok())
+    }
+
+    fn image_data_from_path(path: &Path) -> ImageData {
+        Self::image_data_from_dynamic(image::open(path).ok())
+    }
+
+    /// Create an image view from bytes, a path, image data,
+    /// or a reactive closure/signal producing any of those.
+    pub fn new(source: impl ImgSource) -> Self {
+        let id = ViewId::new();
+        let img = match source.into_img_reader() {
+            ImgReader::Static(image) => image,
+            ImgReader::Reactive(reader) => {
+                let initial = reader();
+                UpdaterEffect::new(move || reader(), move |image| {
+                    id.update_state(image);
+                });
+                initial
+            }
+        };
+
+        let layout_data = Rc::new(RefCell::new(ImageLayoutData::new(
+            img.width,
+            img.height,
+        )));
+
+        let mut img = Self {
+            id,
+            img,
+            layout_data,
+            style: Extractor::default(),
+        };
+
+        img.set_taffy_layout();
+        img
+    }
+
     fn set_taffy_layout(&mut self) {
         let taffy = self.id.taffy();
         let taffy_node = self.id.taffy_node();
@@ -270,8 +387,8 @@ impl Img {
         object_fit: ObjectFit,
         object_position: ObjectPosition,
     ) -> Rect {
-        let natural_w = self.img.image.width as f64;
-        let natural_h = self.img.image.height as f64;
+        let natural_w = self.img.width as f64;
+        let natural_h = self.img.height as f64;
         if natural_w == 0.0 || natural_h == 0.0 {
             return content_rect;
         }
@@ -336,14 +453,10 @@ impl View for Img {
     }
 
     fn update(&mut self, _cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
-        if let Ok(img) = state.downcast::<peniko::ImageBrush>() {
-            let mut hasher = Sha256::new();
-            hasher.update(img.image.data.data());
-            self.img_hash = hasher.finalize().to_vec();
-
+        if let Ok(img) = state.downcast::<ImageData>() {
             // Update layout data with new image dimensions
-            let width = img.image.width;
-            let height = img.image.height;
+            let width = img.width;
+            let height = img.height;
             self.layout_data.borrow_mut().natural_width = width;
             self.layout_data.borrow_mut().natural_height = height;
 
@@ -355,7 +468,7 @@ impl View for Img {
 
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         if self.style.read(cx) {
-            // object_fit changed, update taffy layout
+            // object_fit or image quality changed
             self.set_taffy_layout();
             self.id.request_layout();
             cx.window_state.request_paint(self.id);
@@ -365,9 +478,12 @@ impl View for Img {
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         let content_rect = self.id.get_content_rect_local();
         let dest_rect = self.object_fit_dest_rect(content_rect);
-        let image_brush = Brush::Image(self.img.clone());
-        let source_width = self.img.image.width as f64;
-        let source_height = self.img.image.height as f64;
+        let image_brush = Brush::Image(peniko::ImageBrush {
+            image: self.img.clone(),
+            sampler: self.style.image_sampler(),
+        });
+        let source_width = self.img.width as f64;
+        let source_height = self.img.height as f64;
 
         if source_width <= 0.0 || source_height <= 0.0 {
             return;
