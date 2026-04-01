@@ -163,6 +163,7 @@ impl<T: StylePropValue, M: StylePropValue> StylePropValue for MinMax<T, M> {}
 impl<T: StylePropValue> StylePropValue for Line<T> {}
 impl StylePropValue for taffy::GridAutoFlow {}
 impl StylePropValue for GridPlacement {}
+impl StylePropValue for Transition {}
 
 /// How the content of a replaced element, such as an img, should be resized to fit its container.
 /// Corresponds to the CSS `object-fit` property.

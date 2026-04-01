@@ -273,6 +273,13 @@ impl Transition {
     }
 }
 
+impl PartialEq for Transition {
+    //For the purpose of style caching, comparing just the duration is fine
+    fn eq(&self, other: &Self) -> bool {
+        self.duration == other.duration
+    }
+}
+
 /// Direct transition controller using TransitionState without the Style system.
 ///
 /// This allows you to animate any value that implements `StylePropValue` by managing
