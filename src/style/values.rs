@@ -1,5 +1,8 @@
 //! Core style property value trait and implementations.
 
+#[path = "values_extended_scene.rs"]
+mod values_extended_scene;
+
 use floem_reactive::{RwSignal, SignalGet, SignalUpdate as _};
 use floem_renderer::text::{FontWeight, LineHeightValue};
 use peniko::color::{HueDirection, palette};

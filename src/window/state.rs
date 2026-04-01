@@ -2,7 +2,6 @@ use std::{cell::RefCell, collections::HashMap};
 
 use crate::{
     action::exec_after_animation_frame,
-    inspector::CaptureState,
     platform::menu_types::MenuId,
     style::{StyleSelectors, recalc::StyleReason},
     view::ViewStorage,
@@ -169,9 +168,6 @@ pub struct WindowState {
     pub(crate) keyboard_navigation: bool,
     pub(crate) context_menu: HashMap<MenuId, Box<dyn Fn()>>,
 
-    /// This is set if we're currently capturing the window for the inspector.
-    pub(crate) capture: Option<CaptureState>,
-
     /// Cache for style resolution results.
     /// Views with identical styles and interaction states can share resolved styles.
     // no need for style cache
@@ -253,7 +249,6 @@ impl WindowState {
             keyboard_navigation: false,
             grid_bps: GridBreakpoints::default(),
             context_menu: HashMap::new(),
-            capture: None,
             default_theme: theme,
             default_theme_inherited: inherited,
             needs_layout: true,
@@ -431,59 +426,40 @@ impl WindowState {
         let mut traversal: SmallVec<[(ViewId, StyleReason); 16]> =
             SmallVec::with_capacity(self.style_dirty.len());
 
-        if self.capture.is_some() {
-            // Capture mode always does a full traversal and should consume all dirty entries.
+        // Number of dirty views we still need to collect
+        let mut remaining = self.style_dirty.len();
+
+        if remaining == 0 {
+            return SmallVec::new();
+        }
+
+        // DFS collecting dirty views in tree order
+        let mut stack: SmallVec<[ViewId; 8]> = smallvec![root];
+
+        while let Some(view_id) = stack.pop() {
+            if let Some(reason) = self.style_dirty.remove(&view_id) {
+                traversal.push((view_id, reason));
+                remaining -= 1;
+
+                // Early exit once all dirty views found
+                if remaining == 0 {
+                    break;
+                }
+            }
+
+            let children =
+                VIEW_STORAGE.with_borrow(|s| s.children.get(view_id).cloned().unwrap_or_default());
+
+            for child in children.iter().rev() {
+                stack.push(*child);
+            }
+        }
+
+        if remaining > 0 {
+            // Some dirty views were not reachable from this window root.
+            // Keeping them would cause style/update loops to spin forever
+            // because traversal can no longer make progress on them.
             self.style_dirty.clear();
-
-            // Full traversal when capture active
-            let mut stack: SmallVec<[ViewId; 8]> = smallvec![root];
-            // stack.push(root);
-            while let Some(view_id) = stack.pop() {
-                traversal.push((view_id, StyleReason::full_recalc()));
-
-                let children = VIEW_STORAGE
-                    .with_borrow(|s| s.children.get(view_id).cloned().unwrap_or_default());
-
-                for child in children.iter().rev() {
-                    stack.push(*child);
-                }
-            }
-        } else {
-            // Number of dirty views we still need to collect
-            let mut remaining = self.style_dirty.len();
-
-            if remaining == 0 {
-                return SmallVec::new();
-            }
-
-            // DFS collecting dirty views in tree order
-            let mut stack: SmallVec<[ViewId; 8]> = smallvec![root];
-
-            while let Some(view_id) = stack.pop() {
-                if let Some(reason) = self.style_dirty.remove(&view_id) {
-                    traversal.push((view_id, reason));
-                    remaining -= 1;
-
-                    // Early exit once all dirty views found
-                    if remaining == 0 {
-                        break;
-                    }
-                }
-
-                let children = VIEW_STORAGE
-                    .with_borrow(|s| s.children.get(view_id).cloned().unwrap_or_default());
-
-                for child in children.iter().rev() {
-                    stack.push(*child);
-                }
-            }
-
-            if remaining > 0 {
-                // Some dirty views were not reachable from this window root.
-                // Keeping them would cause style/update loops to spin forever
-                // because traversal can no longer make progress on them.
-                self.style_dirty.clear();
-            }
         }
 
         // Fix ordering for custom style parents

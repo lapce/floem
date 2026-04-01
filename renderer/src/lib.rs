@@ -38,13 +38,19 @@ pub enum RenderOutput {
     GpuTexture(wgpu::TextureView),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct OwnedSvg {
     pub tree: Arc<usvg::Tree>,
     pub hash: Arc<[u8]>,
 }
 
-#[derive(Clone)]
+impl PartialEq for OwnedSvg {
+    fn eq(&self, other: &Self) -> bool {
+        self.hash == other.hash
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum DisplayCommandExt {
     DrawSvg {
         svg: OwnedSvg,

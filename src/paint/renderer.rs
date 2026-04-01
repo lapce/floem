@@ -239,6 +239,33 @@ pub(crate) trait WindowRenderer {
     }
 }
 
+struct NullWindowBackend {
+    renderer: NullRenderer,
+}
+
+impl WindowRenderer for NullWindowBackend {
+    fn resize(&mut self, _width: u32, _height: u32) {}
+
+    fn render(&mut self, _begin: BeginFrame, paint: &mut dyn FnMut(&mut dyn SceneRenderer)) {
+        paint(&mut self.renderer);
+        self.renderer.finish();
+    }
+
+    fn capture(
+        &mut self,
+        _begin: BeginFrame,
+        paint: &mut dyn FnMut(&mut dyn SceneRenderer),
+    ) -> Option<ImageData> {
+        paint(&mut self.renderer);
+        self.renderer.finish();
+        None
+    }
+
+    fn debug_info(&self) -> String {
+        self.renderer.debug_info()
+    }
+}
+
 #[allow(dead_code)]
 struct CpuDirectWindowRenderer<R> {
     target: CpuWindowTarget<Arc<dyn Window>>,
@@ -246,12 +273,12 @@ struct CpuDirectWindowRenderer<R> {
 }
 
 struct GpuCopyWindowRenderer {
-    renderer: GpuCopyRasterizer,
+    renderer: Box<dyn GpuCopyRenderer>,
     target: GpuWindowTarget,
 }
 
 struct CpuCopyWindowRenderer {
-    renderer: CpuCopyRasterizer,
+    renderer: Box<dyn CpuCopyRenderer>,
     target: CpuWindowTarget<Arc<dyn Window>>,
 }
 
@@ -301,100 +328,6 @@ struct TargetCpuWindowRenderer {
     target: CpuWindowTarget<Arc<dyn Window>>,
     capture: CaptureBuffer,
     debug_name: &'static str,
-}
-
-struct GpuCopyRasterizer {
-    renderer: Box<dyn GpuCopyRenderer>,
-}
-
-impl RenderCore for GpuCopyRasterizer {
-    fn render(&mut self, f: &mut dyn FnMut(&mut dyn PaintSink)) {
-        self.renderer.render(f);
-    }
-
-    fn finish(&mut self) {
-        self.renderer.finish();
-    }
-
-    fn readback(&mut self) -> Option<RenderOutput> {
-        self.renderer.readback()
-    }
-}
-
-impl Renderer for GpuCopyRasterizer {
-    type Target = wgpu::TextureView;
-
-    fn set_size(&mut self, frame: BeginFrame) {
-        self.renderer.set_size(frame);
-    }
-
-    fn reset(&mut self) {
-        self.renderer.reset();
-    }
-
-    fn read_target(&mut self) -> Option<Self::Target> {
-        self.renderer.read_target()
-    }
-}
-
-impl CustomRenderer for GpuCopyRasterizer {
-    fn with_custom_paint_sink(
-        &mut self,
-        f: &mut dyn FnMut(&mut dyn CustomPaintSink<DisplayCommandExt>),
-    ) {
-        self.renderer.with_custom_paint_sink(f);
-    }
-
-    fn debug_info(&self) -> String {
-        self.renderer.debug_info()
-    }
-}
-
-struct CpuCopyRasterizer {
-    renderer: Box<dyn CpuCopyRenderer>,
-}
-
-impl RenderCore for CpuCopyRasterizer {
-    fn render(&mut self, f: &mut dyn FnMut(&mut dyn PaintSink)) {
-        self.renderer.render(f);
-    }
-
-    fn finish(&mut self) {
-        self.renderer.finish();
-    }
-
-    fn readback(&mut self) -> Option<RenderOutput> {
-        self.renderer.readback()
-    }
-}
-
-impl Renderer for CpuCopyRasterizer {
-    type Target = ImageData;
-
-    fn set_size(&mut self, frame: BeginFrame) {
-        self.renderer.set_size(frame);
-    }
-
-    fn reset(&mut self) {
-        self.renderer.reset();
-    }
-
-    fn read_target(&mut self) -> Option<Self::Target> {
-        self.renderer.read_target()
-    }
-}
-
-impl CustomRenderer for CpuCopyRasterizer {
-    fn with_custom_paint_sink(
-        &mut self,
-        f: &mut dyn FnMut(&mut dyn CustomPaintSink<DisplayCommandExt>),
-    ) {
-        self.renderer.with_custom_paint_sink(f);
-    }
-
-    fn debug_info(&self) -> String {
-        self.renderer.debug_info()
-    }
 }
 
 impl GpuWindowTarget {
@@ -728,7 +661,7 @@ impl WindowRenderer for GpuCopyWindowRenderer {
     fn render(&mut self, begin: BeginFrame, paint: &mut dyn FnMut(&mut dyn SceneRenderer)) {
         self.renderer.set_size(begin);
         self.renderer.reset();
-        paint(&mut self.renderer);
+        paint(&mut *self.renderer);
         self.renderer.finish();
         if let Some(output) = self.renderer.read_target() {
             self.target.present(&output);
@@ -742,7 +675,7 @@ impl WindowRenderer for GpuCopyWindowRenderer {
     ) -> Option<ImageData> {
         self.renderer.set_size(begin);
         self.renderer.reset();
-        paint(&mut self.renderer);
+        paint(&mut *self.renderer);
         self.renderer.finish();
         self.renderer
             .readback()
@@ -766,7 +699,7 @@ impl WindowRenderer for CpuCopyWindowRenderer {
     fn render(&mut self, begin: BeginFrame, paint: &mut dyn FnMut(&mut dyn SceneRenderer)) {
         self.renderer.set_size(begin);
         self.renderer.reset();
-        paint(&mut self.renderer);
+        paint(&mut *self.renderer);
         self.renderer.finish();
         if let Some(output) = self.renderer.read_target() {
             self.target.present(&output);
@@ -780,7 +713,7 @@ impl WindowRenderer for CpuCopyWindowRenderer {
     ) -> Option<ImageData> {
         self.renderer.set_size(begin);
         self.renderer.reset();
-        paint(&mut self.renderer);
+        paint(&mut *self.renderer);
         self.renderer.finish();
         self.renderer.read_target()
     }
@@ -802,14 +735,10 @@ pub(crate) fn force_cpu_requested() -> bool {
 
 pub(crate) type WindowBackend = Box<dyn WindowRenderer>;
 
-pub(crate) fn uninitialized_rasterizer() -> Box<dyn crate::paint::WindowRasterizer> {
-    Box::new(NullRenderer)
-}
-
-fn boxed_rasterizer(
-    renderer: impl crate::paint::WindowRasterizer + 'static,
-) -> Box<dyn crate::paint::WindowRasterizer> {
-    Box::new(renderer)
+pub(crate) fn uninitialized_backend() -> WindowBackend {
+    Box::new(NullWindowBackend {
+        renderer: NullRenderer,
+    })
 }
 
 fn cpu_install_cx(size: Size, scale: f64, font_embolden: f32) -> CpuRendererInstallCx {
@@ -848,26 +777,6 @@ fn invoke_installer(
     }
 }
 
-fn create_rasterizer_for_installer(
-    installer: &RendererInstaller,
-    cpu_cx: CpuRendererInstallCx,
-    gpu_cx: Option<GpuRendererInstallCx<'_>>,
-) -> Result<Box<dyn crate::paint::WindowRasterizer>, String> {
-    match invoke_installer(installer, cpu_cx, gpu_cx)? {
-        Some(RendererType::TargetCpu(_)) => Ok(uninitialized_rasterizer()),
-        Some(RendererType::CopyGpu(renderer)) => {
-            Ok(boxed_rasterizer(GpuCopyRasterizer { renderer }))
-        }
-        Some(RendererType::CopyCpu(renderer)) => {
-            Ok(boxed_rasterizer(CpuCopyRasterizer { renderer }))
-        }
-        None => Err(format!(
-            "renderer installer {} requires GPU",
-            installer.name
-        )),
-    }
-}
-
 fn create_window_backend(
     installer_name: &'static str,
     renderer_type: RendererType,
@@ -897,12 +806,12 @@ fn create_window_backend(
                 format!("renderer installer {installer_name} requires GPU surface")
             })?;
             Ok(Box::new(GpuCopyWindowRenderer {
-                renderer: GpuCopyRasterizer { renderer },
+                renderer,
                 target: GpuWindowTarget::new(gpu_resources, surface, width, height, transparent)?,
             }))
         }
         RendererType::CopyCpu(renderer) => Ok(Box::new(CpuCopyWindowRenderer {
-            renderer: CpuCopyRasterizer { renderer },
+            renderer,
             target: CpuWindowTarget::new(window, width, height)?,
         })),
     }
@@ -918,7 +827,7 @@ fn create_installed_renderer(
     size: Size,
     font_embolden: f32,
     allow_gpu: bool,
-) -> Result<(Box<dyn crate::paint::WindowRasterizer>, WindowBackend), String> {
+) -> Result<WindowBackend, String> {
     let size = Size::new(size.width.max(1.0), size.height.max(1.0));
     let width = size.width as u32;
     let height = size.height as u32;
@@ -959,14 +868,6 @@ fn create_installed_renderer(
             }
         };
 
-        let rasterizer = match create_rasterizer_for_installer(installer, cpu_cx, gpu_cx) {
-            Ok(rasterizer) => rasterizer,
-            Err(err) => {
-                errors.push(format!("{}: {err}", installer.name));
-                continue;
-            }
-        };
-
         let window_backend = match create_window_backend(
             installer.name,
             renderer_type,
@@ -980,7 +881,7 @@ fn create_installed_renderer(
             Ok(window_backend) => window_backend,
             Err(err) => return Err(format!("{}: {err}", installer.name)),
         };
-        return Ok((rasterizer, window_backend));
+        return Ok(window_backend);
     }
 
     if errors.is_empty() {
@@ -999,7 +900,7 @@ pub(crate) fn new(
     scale: f64,
     size: Size,
     font_embolden: f32,
-) -> (Box<dyn crate::paint::WindowRasterizer>, WindowBackend) {
+) -> WindowBackend {
     create_installed_renderer(
         installers,
         window,
@@ -1021,7 +922,7 @@ pub(crate) fn new_cpu(
     scale: f64,
     size: Size,
     font_embolden: f32,
-) -> (Box<dyn crate::paint::WindowRasterizer>, WindowBackend) {
+) -> WindowBackend {
     create_installed_renderer(
         installers,
         window,

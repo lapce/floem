@@ -13,7 +13,7 @@ pub use border_path_iter::{BorderPath, BorderPathEvent};
 pub use floem_renderer::SceneRenderer as Rasterizer;
 
 use floem_renderer::{
-    BeginFrame, DisplayCommandExt, Renderer, SceneRenderer,
+    DisplayCommandExt, SceneRenderer,
     gpu_resources::{GpuResourceError, GpuResources},
 };
 use imaging::{CustomPaintSink, PaintSink, Painter};
@@ -33,24 +33,6 @@ use crate::view::ViewId;
 use crate::view::{paint_bg, paint_border, paint_outline};
 use crate::window::state::WindowState;
 use display_list::{ElementSnapshot, RecordingRenderer, replay_stage, transform_diff_class};
-
-pub(crate) trait WindowRasterizer: SceneRenderer {
-    fn set_size(&mut self, frame: BeginFrame);
-    fn reset(&mut self);
-}
-
-impl<T> WindowRasterizer for T
-where
-    T: SceneRenderer + Renderer,
-{
-    fn set_size(&mut self, frame: BeginFrame) {
-        Renderer::set_size(self, frame);
-    }
-
-    fn reset(&mut self) {
-        Renderer::reset(self);
-    }
-}
 
 std::thread_local! {
     /// Holds the ID of a View being painted very briefly if it is being rendered as
@@ -143,7 +125,6 @@ fn record_paint(id: ViewId) {
 /// Similar to GlobalEventCx in event dispatch
 pub struct GlobalPaintCx<'a> {
     pub window_state: &'a mut WindowState,
-    pub(crate) paint_state: &'a mut PaintState,
     pub gpu_resources: Option<GpuResources>,
     pub window: Arc<dyn Window>,
     /// Whether to record paint order for testing. Cached from thread-local at creation.
@@ -235,24 +216,6 @@ impl GlobalPaintCx<'_> {
         }
 
         reusable_descendants
-    }
-
-    /// Paint entire tree using explicit traversal
-    pub(crate) fn paint_with_traversal(&mut self, root_id: ViewId) {
-        self.prepare_display_list(root_id);
-        let window_state = &mut self.window_state;
-        let record_paint_order = self.record_paint_order;
-        let rasterizer = self.paint_state.rasterizer_mut();
-        rasterizer.with_custom_paint_sink(&mut |sink| {
-            Self::replay_display_list_to_sink_with_state(
-                window_state,
-                record_paint_order,
-                sink,
-                None,
-                Point::ZERO,
-                None,
-            );
-        });
     }
 
     pub(crate) fn paint_with_traversal_into(
@@ -602,16 +565,10 @@ pub(crate) enum PaintState {
         window: Arc<dyn Window>,
         rx: Receiver<Result<(GpuResources, wgpu::Surface<'static>), GpuResourceError>>,
         font_embolden: f32,
-        /// This field holds a no-op rasterizer until the GPU resources are acquired,
-        /// which will be returned in `PaintState::rasterizer` and `PaintState::rasterizer_mut`.
-        /// All calls to rasterizer methods will be no-ops until initialization finishes.
-        ///
-        /// Previously, `PaintState::rasterizer` and `PaintState::rasterizer_mut` would panic if called when the rasterizer was uninitialized.
-        /// However, this turned out to be hard to handle properly and led to panics, especially since the rest of the application code can't control when the renderer is initialized.
-        rasterizer: Box<dyn WindowRasterizer>,
+        backend: renderer::WindowBackend,
     },
     /// The renderer is initialized and ready to paint.
-    Initialized { rasterizer: Box<dyn WindowRasterizer> },
+    Initialized { backend: renderer::WindowBackend },
 }
 
 impl PaintState {
@@ -625,21 +582,21 @@ impl PaintState {
             window,
             rx,
             font_embolden,
-            rasterizer: renderer::uninitialized_rasterizer(),
+            backend: renderer::uninitialized_backend(),
         }
     }
 
-    pub(crate) fn rasterizer(&self) -> &(dyn WindowRasterizer + '_) {
+    pub(crate) fn backend(&self) -> &(dyn renderer::WindowRenderer + '_) {
         match self {
-            PaintState::PendingGpuResources { rasterizer, .. } => rasterizer.as_ref(),
-            PaintState::Initialized { rasterizer } => rasterizer.as_ref(),
+            PaintState::PendingGpuResources { backend, .. } => backend.as_ref(),
+            PaintState::Initialized { backend } => backend.as_ref(),
         }
     }
 
-    pub(crate) fn rasterizer_mut(&mut self) -> &mut (dyn WindowRasterizer + '_) {
+    pub(crate) fn backend_mut(&mut self) -> &mut (dyn renderer::WindowRenderer + '_) {
         match self {
-            PaintState::PendingGpuResources { rasterizer, .. } => rasterizer.as_mut(),
-            PaintState::Initialized { rasterizer } => rasterizer.as_mut(),
+            PaintState::PendingGpuResources { backend, .. } => backend.as_mut(),
+            PaintState::Initialized { backend } => backend.as_mut(),
         }
     }
 }

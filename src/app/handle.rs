@@ -92,11 +92,11 @@ impl ApplicationHandle {
                     window,
                     rx,
                     font_embolden,
-                    rasterizer: _,
+                    backend: _,
                 } = &handle.paint_state
                 {
                     let (gpu_resources, surface) = rx.recv().unwrap().unwrap();
-                    let (renderer, window_backend) = crate::paint::renderer::new(
+                    let backend = crate::paint::renderer::new(
                         &self.config.renderer_installers,
                         window.clone(),
                         gpu_resources.clone(),
@@ -107,10 +107,7 @@ impl ApplicationHandle {
                         *font_embolden,
                     );
                     self.gpu_resources = Some(gpu_resources);
-                    handle.paint_state = PaintState::Initialized {
-                        rasterizer: renderer,
-                    };
-                    handle.window_backend = Some(window_backend);
+                    handle.paint_state = PaintState::Initialized { backend };
                     handle.gpu_resources = self.gpu_resources.clone();
                     handle.init_renderer();
                 } else {

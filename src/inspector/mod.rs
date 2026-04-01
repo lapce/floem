@@ -19,7 +19,7 @@ use crate::{
     prelude::*,
     style::{
         BorderRadius, FontSizeCx, Length, LengthAuto, OverflowX, OverflowY, StrokeWrap, Style,
-        StyleCx, StyleThemeExt, TextColor,
+        StyleThemeExt, TextColor,
     },
 };
 
@@ -585,10 +585,17 @@ pub struct CaptureState {
 }
 
 impl CaptureState {
-    pub(crate) fn capture_style(id: ViewId, cx: &mut StyleCx, computed_style: Style) {
-        if let Some(capture) = cx.window_state.capture.as_mut() {
-            capture.computed_styles.insert(id, computed_style);
+    pub(crate) fn collect_from(root: ViewId) -> Self {
+        fn collect(id: ViewId, computed_styles: &mut HashMap<ViewId, Style>) {
+            computed_styles.insert(id, id.state().borrow().computed_style.clone());
+            for child in id.children() {
+                collect(child, computed_styles);
+            }
         }
+
+        let mut computed_styles = HashMap::new();
+        collect(root, &mut computed_styles);
+        Self { computed_styles }
     }
 }
 
