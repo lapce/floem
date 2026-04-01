@@ -2,7 +2,7 @@
 //! Scroll View
 
 use floem_reactive::Effect;
-use peniko::kurbo::{Affine, Axis, Point, Rect, RoundedRect, RoundedRectRadii, Stroke, Vec2, Size};
+use peniko::kurbo::{Affine, Axis, Point, Rect, RoundedRect, RoundedRectRadii, Size, Stroke, Vec2};
 use peniko::{Brush, Color};
 use std::time::{Duration, Instant};
 use std::{cell::RefCell, rc::Rc};
@@ -629,7 +629,7 @@ impl Scroll {
             cached_content_size: Size::ZERO,
             scroll_anim: DirectTransition::new(
                 ScrollVec2(Vec2::ZERO),
-                Some(Transition::linear(Duration::from_millis(100)))
+                Some(Transition::linear(Duration::from_millis(100))),
             ),
         }
         .class(ScrollClass)
@@ -918,12 +918,8 @@ impl Scroll {
         let max_x = (content_size.width - viewport_size.width).max(0.0);
         let max_y = (content_size.height - viewport_size.height).max(0.0);
 
-        Vec2::new(
-            offset.x.clamp(0.0, max_x),
-            offset.y.clamp(0.0, max_y),
-        )
+        Vec2::new(offset.x.clamp(0.0, max_x), offset.y.clamp(0.0, max_y))
     }
-
 }
 
 impl View for Scroll {
@@ -991,7 +987,8 @@ impl View for Scroll {
         self.scroll_style.read(cx);
 
         if self.scroll_style.read(cx) {
-            self.scroll_anim.set_transition(self.scroll_style.scroll_animation());
+            self.scroll_anim
+                .set_transition(self.scroll_style.scroll_animation());
         }
 
         // If the reason implies nested style maps must be resolved, restyle everything.
@@ -1100,54 +1097,51 @@ impl View for Scroll {
 
         // Handle scroll wheel events in bubble phase
         // Only handle this in the bubble phase, otherwise it fires multiple times
-        if cx.phase == Phase::Bubble {
-            if let Event::Pointer(PointerEvent::Scroll(pse)) = &cx.event {
-                let size = self.id.get_layout_rect_local().size();
-                let delta = pse.resolve_to_points(None, Some(size));
-                let delta = -if self.scroll_style.vertical_scroll_as_horizontal()
-                    && delta.x == 0.0
-                    && delta.y != 0.0
-                {
-                    Vec2::new(delta.y, delta.x)
+        if cx.phase == Phase::Bubble
+            && let Event::Pointer(PointerEvent::Scroll(pse)) = &cx.event
+        {
+            let size = self.id.get_layout_rect_local().size();
+            let delta = pse.resolve_to_points(None, Some(size));
+            let delta = -if self.scroll_style.vertical_scroll_as_horizontal()
+                && delta.x == 0.0
+                && delta.y != 0.0
+            {
+                Vec2::new(delta.y, delta.x)
+            } else {
+                delta
+            };
+
+            let new_target = self.clamp_scroll(self.scroll_anim.target().0 + delta);
+
+            // If target didn't move, propagate to parent if configured
+            if new_target == self.scroll_anim.target().0 && !self.scroll_anim.is_active() {
+                return if self.scroll_style.propagate_pointer_wheel() {
+                    EventPropagation::Continue
                 } else {
-                    delta
+                    EventPropagation::Stop
                 };
-
-                let new_target = self.clamp_scroll(self.scroll_anim.target().0 + delta);
-
-                // If target didn't move, propagate to parent if configured
-                if new_target == self.scroll_anim.target().0 && !self.scroll_anim.is_active() {
-                    return if self.scroll_style.propagate_pointer_wheel() {
-                        EventPropagation::Continue
-                    } else {
-                        EventPropagation::Stop
-                    };
-                }
-
-                let started = self.scroll_anim.transition_to(ScrollVec2(new_target));
-                if started {
-                    self.id.update_state(ScrollState::AnimTick);
-                } else {
-                    let delta = new_target - self.scroll_offset;
-                    let change = self.apply_scroll_delta(delta);
-                    return if self.scroll_style.propagate_pointer_wheel() && change.is_none() {
-                        EventPropagation::Continue
-                    } else {
-                        EventPropagation::Stop
-                    };
-                }
-
-                return EventPropagation::Stop;
-
-                
             }
+
+            let started = self.scroll_anim.transition_to(ScrollVec2(new_target));
+            if started {
+                self.id.update_state(ScrollState::AnimTick);
+            } else {
+                let delta = new_target - self.scroll_offset;
+                let change = self.apply_scroll_delta(delta);
+                return if self.scroll_style.propagate_pointer_wheel() && change.is_none() {
+                    EventPropagation::Continue
+                } else {
+                    EventPropagation::Stop
+                };
+            }
+
+            return EventPropagation::Stop;
         }
 
         EventPropagation::Continue
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-
         // Check which visual node we're painting
         // Scroll view creates multiple visual IDs for scrollbars/tracks
         if cx.target_id == self.id.get_element_id() {
