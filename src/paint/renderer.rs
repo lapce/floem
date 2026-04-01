@@ -56,7 +56,7 @@ use floem_renderer::{
 };
 use imaging::{
     BlurredRoundedRect, ClipRef, CustomPaintSink, FillRef, GlyphRunRef, GroupRef, PaintSink,
-    StrokeRef,
+    RetainedDrawRef, StrokeRef,
 };
 use peniko::ImageData;
 use peniko::kurbo::Size;
@@ -171,6 +171,8 @@ impl PaintSink for NullRenderer {
     fn push_group(&mut self, _group: GroupRef<'_>) {}
 
     fn pop_group(&mut self) {}
+
+    fn retained(&mut self, _draw: RetainedDrawRef<'_>) {}
 
     fn fill(&mut self, _draw: FillRef<'_>) {}
 

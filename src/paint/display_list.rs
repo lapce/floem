@@ -11,7 +11,7 @@ use floem_renderer::text::GlyphRunRef;
 use floem_renderer::{DisplayCommandExt, OwnedSvg, Svg};
 use imaging::{
     BlurredRoundedRect, ClipRef, CustomPaintSink, FillRef, GeometryRef, GroupRef, PaintSink,
-    StrokeRef,
+    RetainedDrawRef, StrokeRef,
     record::{
         Clip, Draw, ExtendedCommand, ExtendedScene, Geometry, Glyph as ImagingGlyph,
         replay_ext_transformed,
@@ -498,6 +498,10 @@ impl PaintSink for RecordingRenderer<'_> {
         self.scene.pop_group();
     }
 
+    fn retained(&mut self, draw: RetainedDrawRef<'_>) {
+        PaintSink::retained(self.scene, draw);
+    }
+
     fn fill(&mut self, draw: FillRef<'_>) {
         let _ = self.scene.draw(draw.to_owned());
     }
@@ -577,6 +581,10 @@ impl PaintSink for SanitizingSink<'_> {
         self.inner.pop_group();
     }
 
+    fn retained(&mut self, draw: RetainedDrawRef<'_>) {
+        self.inner.retained(draw);
+    }
+
     fn fill(&mut self, draw: FillRef<'_>) {
         self.inner.fill(draw);
     }
@@ -618,6 +626,7 @@ fn command_transform_class(
         | ExtendedCommand::PushGroup(_)
         | ExtendedCommand::PopGroup => TransformClass::Affine,
         ExtendedCommand::Draw(id) => match scene.draw_op(*id) {
+            Draw::Retained(_) => TransformClass::Affine,
             Draw::Fill { .. } | Draw::Stroke { .. } => TransformClass::Affine,
             Draw::GlyphRun(_) | Draw::BlurredRoundedRect(_) => TransformClass::TranslateOnly,
         },

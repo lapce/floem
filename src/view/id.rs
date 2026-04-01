@@ -759,6 +759,7 @@ impl ViewId {
         if needs_box_tree_update {
             for child in self.children() {
                 child.request_box_tree_update_for_view();
+                child.request_paint();
             }
         }
         needs_box_tree_update

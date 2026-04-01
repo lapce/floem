@@ -18,7 +18,7 @@ files = { path = "../files/", optional = true, default-features = false }
 signpost = "*"
 
 [features]
-default = ["full", "skia-cpu" ]
+default = ["full", "skia" ]
 vello = ["floem/vello", "files?/vello"]
 vger = ["floem/vger"]
 skia = ["floem/active-skia"]

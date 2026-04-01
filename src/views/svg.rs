@@ -6,6 +6,7 @@ use peniko::{
     Brush, GradientKind, LinearGradientPosition,
     kurbo::{Affine, Point, Size},
 };
+use rustc_hash::FxHashMap;
 use svg_imaging::{ParseOptions, RenderOptions, SvgDocument};
 
 use crate::{
@@ -132,9 +133,62 @@ impl SvgLayoutData {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct SvgRetainedCacheKey {
+    svg: String,
+    css: Option<String>,
+    brush: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct SvgRetainedCacheKeyBase {
+    svg: String,
+    css: Option<String>,
+}
+
+thread_local! {
+    static SVG_RETAINED_CACHE: RefCell<FxHashMap<SvgRetainedCacheKey, imaging::record::Retained>> =
+        RefCell::new(FxHashMap::default());
+}
+
+fn cached_retained_draw(
+    key: &SvgRetainedCacheKey,
+    document: &SvgDocument,
+    brush: Option<&Brush>,
+) -> imaging::record::Retained {
+    SVG_RETAINED_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if let Some(retained) = cache.get(key) {
+            return retained.clone();
+        }
+
+        let retained = Painter::<imaging::record::Scene>::record_retained(|p| {
+            if let Some(brush) = brush {
+                p.with_masked_group(
+                    MaskMode::Alpha,
+                    |mask| {
+                        let _ = document.render(mask, &RenderOptions::default());
+                    },
+                    |painter| {
+                        painter.fill(document.size().to_rect(), brush).draw();
+                    },
+                );
+            } else {
+                let _ = document.render(p, &RenderOptions::default());
+            }
+        });
+        cache.insert(key.clone(), retained.clone());
+        dbg!(&key.svg);
+        retained
+    })
+}
+
 pub struct Svg {
     id: ViewId,
     svg_document: Option<SvgDocument>,
+    retained_draw: Option<imaging::record::Retained>,
+    retained_draw_brush_key: Option<String>,
+    retained_cache_key_base: SvgRetainedCacheKeyBase,
     svg_style: SvgStyle,
     svg_string: String,
     svg_css: Option<String>,
@@ -216,6 +270,12 @@ pub fn svg(svg_str_fn: impl Into<SvgStrFn> + 'static) -> Svg {
     let mut svg = Svg {
         id,
         svg_document: None,
+        retained_draw: None,
+        retained_draw_brush_key: None,
+        retained_cache_key_base: SvgRetainedCacheKeyBase {
+            svg: String::new(),
+            css: None,
+        },
         svg_style: Default::default(),
         svg_string: Default::default(),
         css_prop: None,
@@ -257,7 +317,20 @@ impl View for Svg {
 
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         let style = cx.style();
+        let previous_brush = self
+            .svg_style
+            .color_brush()
+            .map(|brush| brush_to_css_string(&brush));
         self.svg_style.read_style(cx, &style);
+        let current_brush = self
+            .svg_style
+            .color_brush()
+            .map(|brush| brush_to_css_string(&brush));
+        if previous_brush != current_brush {
+            self.retained_draw = None;
+            self.retained_draw_brush_key = None;
+            self.id.request_paint();
+        }
         if let Some(document) = &self.svg_document {
             let size = document.size();
             let aspect_ratio = (size.width / size.height) as f32;
@@ -286,6 +359,12 @@ impl View for Svg {
 
             self.svg_string = text.clone();
             self.svg_css = style.clone();
+            self.retained_cache_key_base = SvgRetainedCacheKeyBase {
+                svg: text.clone(),
+                css: style.clone(),
+            };
+            self.retained_draw = None;
+            self.retained_draw_brush_key = None;
 
             let svg_document = SvgDocument::from_str(
                 text.as_str(),
@@ -323,34 +402,38 @@ impl View for Svg {
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         if let Some(document) = self.svg_document.as_ref() {
-            let layout = self.id.get_layout().unwrap_or_default();
-            let rect = Size::new(layout.size.width as f64, layout.size.height as f64).to_rect();
             let size = document.size();
             if size.width <= 0.0 || size.height <= 0.0 {
                 return;
             }
 
-            let render_options = RenderOptions {
-                transform: Affine::translate((rect.x0, rect.y0))
-                    * Affine::scale_non_uniform(
-                        rect.width() / size.width,
-                        rect.height() / size.height,
-                    ),
-            };
-
-            if let Some(brush) = self.svg_style.color_brush() {
-                cx.painter.with_masked_group(
-                    MaskMode::Alpha,
-                    |mask| {
-                        let _ = document.render(mask, &render_options);
+            let layout = self.id.get_layout().unwrap_or_default();
+            let rect = Size::new(layout.size.width as f64, layout.size.height as f64).to_rect();
+            let transform = Affine::translate((rect.x0, rect.y0))
+                * Affine::scale_non_uniform(rect.width() / size.width, rect.height() / size.height);
+            let brush = self.svg_style.color_brush();
+            let brush_key = brush.as_ref().map(brush_to_css_string);
+            if self.retained_draw.is_none() || self.retained_draw_brush_key != brush_key {
+                self.retained_draw = Some(cached_retained_draw(
+                    &SvgRetainedCacheKey {
+                        svg: self.retained_cache_key_base.svg.clone(),
+                        css: self.retained_cache_key_base.css.clone(),
+                        brush: brush_key.clone(),
                     },
-                    |painter| {
-                        painter.fill(rect, &brush).draw();
-                    },
-                );
-            } else {
-                let _ = document.render(&mut cx.painter, &render_options);
+                    document,
+                    brush.as_ref(),
+                ));
+                self.retained_draw_brush_key = brush_key;
             }
+
+            let Some(retained_draw) = self.retained_draw.as_ref() else {
+                return;
+            };
+            cx.painter.draw_retained(
+                retained_draw.as_ref(),
+                transform,
+                imaging::Composite::default(),
+            );
         }
     }
 }

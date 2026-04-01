@@ -213,7 +213,7 @@ impl IntoView for Mask {
     fn into_intermediate(self) -> Self::Intermediate {
         stack_rows(vec![
             field_row("mode", format!("{:?}", self.mode)),
-            field_row("commands", self.scene.commands().len().to_string()),
+            field_row("retained", format!("{:?}", self.retained)),
         ])
     }
 }
@@ -302,6 +302,19 @@ impl IntoView for Draw {
 
     fn into_intermediate(self) -> Self::Intermediate {
         match self {
+            Draw::Retained(draw) => {
+                let mut rows = vec![
+                    field_row("kind", "retained"),
+                    field_row("retained", format!("{:?}", draw.retained)),
+                ];
+                if draw.transform != Affine::IDENTITY {
+                    rows.insert(1, field_value("transform", &draw.transform));
+                }
+                if !default_composite(draw.composite) {
+                    rows.push(section("Composite", draw.composite.into_any()));
+                }
+                stack_rows(rows)
+            }
             Draw::Fill {
                 transform,
                 fill_rule,

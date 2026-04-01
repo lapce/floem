@@ -7,7 +7,7 @@ use floem_renderer::{
 };
 use imaging::{
     BlurredRoundedRect, ClipRef, CustomPaintSink, FillRef, GlyphRunRef, GroupRef, PaintSink,
-    StrokeRef,
+    RetainedDrawRef, StrokeRef,
 };
 use peniko::{Blob, ImageAlphaType, ImageData, ImageFormat};
 
@@ -30,6 +30,10 @@ impl PaintSink for VelloCpuCanvas<'_> {
 
     fn pop_group(&mut self) {
         self.inner.pop_group();
+    }
+
+    fn retained(&mut self, draw: RetainedDrawRef<'_>) {
+        self.inner.retained(draw);
     }
 
     fn fill(&mut self, draw: FillRef<'_>) {
