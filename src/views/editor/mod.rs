@@ -387,6 +387,10 @@ impl Editor {
         });
     }
 
+    /// Registers cursor synchronization for `TextDocument` updates.
+    ///
+    /// Each editor owns its own cursor state, so shared or programmatic document edits must remap
+    /// that cursor through incoming deltas to keep it valid for the current buffer revision.
     fn register_doc_cursor_sync(&self) {
         let Some(doc) = self.try_text_doc_untracked() else {
             return;
@@ -408,6 +412,8 @@ impl Editor {
                 return;
             };
 
+            // `add_on_update` is append-only, so old listeners can remain after `update_doc`.
+            // Ignore updates from documents this editor no longer points at.
             if !Rc::ptr_eq(&current_doc, &synced_doc) {
                 return;
             }
