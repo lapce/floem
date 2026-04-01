@@ -3,8 +3,6 @@ resolver = "3"
 members = [
   "renderer",
   "vello",
-  "vello_hybrid",
-  "vello_cpu",
   "skia",
   "vger",
   "tiny_skia",
@@ -18,8 +16,6 @@ default-members = [
   ".",
   "renderer",
   "vello",
-  "vello_hybrid",
-  "vello_cpu",
   "skia",
   "vger",
   "tiny_skia",
@@ -100,11 +96,12 @@ strum_macros = { workspace = true, optional = true }
 paste = "1.0"
 floem_renderer = { path = "renderer", version = "0.2.0" }
 floem_vello_renderer = { path = "vello", version = "0.2.0", optional = true }
-floem_vello_hybrid_renderer = { path = "vello_hybrid", version = "0.2.0", optional = true }
-floem_vello_cpu_renderer = { path = "vello_cpu", version = "0.2.0", optional = true }
 floem_skia_renderer = { path = "skia", version = "0.2.0", optional = true }
 floem_vger_renderer = { path = "vger", version = "0.2.0", optional = true }
 floem_tiny_skia_renderer = { path = "tiny_skia", version = "0.2.0", optional = true }
+imaging_skia = { path = "../imaging/imaging_skia", optional = true }
+imaging_vello_cpu = { path = "../imaging/imaging_vello_cpu", optional = true }
+imaging_vello_hybrid = { path = "../imaging/imaging_vello_hybrid", optional = true }
 floem_reactive = { path = "reactive", version = "0.2.0" }
 floem-editor-core = { path = "editor-core", version = "0.2.0", optional = true }
 subduction_core = { git = "https://github.com/jrmoulton/subduction.git", branch = "bump-wgpu", package = "subduction_core", optional = true, features = ["std"] }
@@ -133,6 +130,7 @@ understory_event_state = { git = "https://github.com/jrmoulton/understory", rev 
 understory_index = { git = "https://github.com/jrmoulton/understory", rev = "2c2abb8c4bd9", package = "understory_index" }
 understory_focus = { git = "https://github.com/jrmoulton/understory", rev = "2c2abb8c4bd9", package = "understory_focus" }
 understory_virtual_list = { git = "https://github.com/jrmoulton/understory", rev = "2c2abb8c4bd9", package = "understory_virtual_list" }
+understory_view2d = { git = "https://github.com/jrmoulton/understory", rev = "2c2abb8c4bd9", package = "understory_view2d" }
 
 # understory_box_tree = { path = "../understory/understory_box_tree", package = "understory_box_tree" }
 # understory_event_state = { path = "../understory/understory_event_state", package = "understory_event_state" }
@@ -169,25 +167,16 @@ default = [
   "editor",
   "default-image-formats",
   "serde",
-  "skia",
-  "fallback-vello-cpu",
+  "vger",
+  "vello-cpu"
 ]
-active-vello = ["dep:floem_vello_renderer"]
-active-vger = ["dep:floem_vger_renderer"]
-active-vello-hybrid = ["dep:floem_vello_hybrid_renderer"]
-active-vello-cpu = ["dep:floem_vello_cpu_renderer"]
-active-skia = ["dep:floem_skia_renderer"]
-active-skia-cpu = ["dep:floem_skia_renderer"]
-active-tiny-skia = ["dep:floem_tiny_skia_renderer"]
-fallback-vello-cpu = ["dep:floem_vello_cpu_renderer"]
-fallback-tiny-skia = ["dep:floem_tiny_skia_renderer"]
-vello = ["active-vello"]
-vger = ["active-vger"]
-vello-hybrid = ["active-vello-hybrid"]
-vello-cpu = ["active-vello-cpu"]
-skia = ["active-skia"]
-skia-cpu = ["active-skia-cpu"]
-tiny-skia = ["active-tiny-skia"]
+vello = ["dep:floem_vello_renderer"]
+vger = ["dep:floem_vger_renderer"]
+vello-hybrid = ["dep:imaging_vello_hybrid"]
+vello-cpu = ["dep:imaging_vello_cpu"]
+skia = ["dep:floem_skia_renderer"]
+skia-cpu = ["dep:imaging_skia"]
+tiny-skia = ["dep:floem_tiny_skia_renderer"]
 serde = [
   "dep:serde",
   "winit/serde",

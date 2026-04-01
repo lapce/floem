@@ -10,13 +10,13 @@ pub mod display_list;
 pub mod renderer;
 
 pub use border_path_iter::{BorderPath, BorderPathEvent};
-pub use floem_renderer::SceneRenderer as Rasterizer;
+pub use floem_renderer::RenderCore as Rasterizer;
 
 use floem_renderer::{
-    DisplayCommandExt, SceneRenderer,
+    RenderCore,
     gpu_resources::{GpuResourceError, GpuResources},
 };
-use imaging::{CustomPaintSink, PaintSink, Painter};
+use imaging::{PaintSink, Painter};
 use peniko::kurbo::{Affine, Point, RoundedRect, Size};
 use rustc_hash::FxHashSet;
 use std::sync::Arc;
@@ -221,10 +221,10 @@ impl GlobalPaintCx<'_> {
     pub(crate) fn paint_with_traversal_into(
         &mut self,
         root_id: ViewId,
-        renderer: &mut dyn SceneRenderer,
+        renderer: &mut dyn RenderCore,
     ) {
         self.prepare_display_list(root_id);
-        renderer.with_custom_paint_sink(&mut |sink| {
+        renderer.render(&mut |sink| {
             Self::replay_display_list_to_sink_with_state(
                 self.window_state,
                 self.record_paint_order,
@@ -318,7 +318,7 @@ impl GlobalPaintCx<'_> {
     fn replay_display_list_to_sink_with_state(
         window_state: &mut WindowState,
         record_paint_order: bool,
-        sink: &mut dyn CustomPaintSink<DisplayCommandExt>,
+        sink: &mut dyn PaintSink,
         included_ids: Option<&FxHashSet<ElementId>>,
         target_origin: Point,
         render_size: Option<Size>,
@@ -403,7 +403,7 @@ impl GlobalPaintCx<'_> {
 
     fn replay_element_overflow_clip_to_sink_with_state(
         window_state: &mut WindowState,
-        sink: &mut dyn CustomPaintSink<DisplayCommandExt>,
+        sink: &mut dyn PaintSink,
         element_id: ElementId,
         target_origin: Point,
         render_size: Option<Size>,
@@ -438,7 +438,7 @@ impl GlobalPaintCx<'_> {
 
     fn replay_visual_node_to_sink_with_state(
         window_state: &mut WindowState,
-        sink: &mut dyn CustomPaintSink<DisplayCommandExt>,
+        sink: &mut dyn PaintSink,
         element_id: ElementId,
         is_post: bool,
         damage_rects: Option<&[peniko::kurbo::Rect]>,
@@ -485,7 +485,7 @@ impl GlobalPaintCx<'_> {
         let view_id = element_id.owning_id();
         let view = view_id.view();
         let view_state = view_id.state();
-        let mut scene = imaging::record::ExtendedScene::new();
+        let mut scene = imaging::record::Scene::new();
         let mut recorder = RecordingRenderer::new(&mut scene);
         let is_vger = false;
         let world_transform = self.element_base_transform(element_id);

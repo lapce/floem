@@ -1,9 +1,7 @@
-use floem_renderer::DisplayCommandExt;
 use imaging::{
     Composite, Filter,
     record::{
-        AppliedMask, Clip, Draw, ExtendedCommand, ExtendedScene, Geometry, Group, Mask,
-        ReplaySourceExt,
+        AppliedMask, Clip, Command, Draw, Geometry, Group, Mask, ReplaySource, Scene,
     },
 };
 use peniko::{
@@ -19,13 +17,12 @@ use crate::{
 };
 
 #[derive(Clone)]
-enum ResolvedExtendedCommand {
+enum ResolvedCommand {
     PushClip(Clip),
     PopClip,
     PushGroup(Group),
     PopGroup,
     Draw(Draw),
-    Custom(DisplayCommandExt),
 }
 
 fn format_float(value: f64) -> String {
@@ -411,69 +408,32 @@ impl IntoView for Draw {
     }
 }
 
-impl IntoView for DisplayCommandExt {
-    type V = AnyView;
-    type Intermediate = AnyView;
-
-    fn into_intermediate(self) -> Self::Intermediate {
-        match self {
-            DisplayCommandExt::DrawSvg {
-                svg,
-                rect,
-                transform,
-                brush,
-            } => {
-                let mut rows = vec![
-                    field_row("kind", "svg"),
-                    field_value("rect", &rect),
-                    field_row("cache key", format!("{} bytes", svg.hash.len())),
-                ];
-                if transform != Affine::IDENTITY {
-                    rows.insert(1, field_value("transform", &transform));
-                }
-                rows.push(field_view(
-                    "brush",
-                    brush
-                        .as_ref()
-                        .map(value_view)
-                        .unwrap_or_else(|| Label::new("none").into_any()),
-                ));
-                stack_rows(rows)
-            }
-        }
-    }
-}
-
-impl IntoView for ExtendedCommand {
+impl IntoView for Command {
     type V = AnyView;
     type Intermediate = AnyView;
 
     fn into_intermediate(self) -> Self::Intermediate {
         let rows = match self {
-            ExtendedCommand::PushClip(id) => vec![
+            Command::PushClip(id) => vec![
                 field_row("command", "push clip"),
                 field_row("clip", format!("{id:?}")),
             ],
-            ExtendedCommand::PopClip => vec![field_row("command", "pop clip")],
-            ExtendedCommand::PushGroup(id) => vec![
+            Command::PopClip => vec![field_row("command", "pop clip")],
+            Command::PushGroup(id) => vec![
                 field_row("command", "push group"),
                 field_row("group", format!("{id:?}")),
             ],
-            ExtendedCommand::PopGroup => vec![field_row("command", "pop group")],
-            ExtendedCommand::Draw(id) => vec![
+            Command::PopGroup => vec![field_row("command", "pop group")],
+            Command::Draw(id) => vec![
                 field_row("command", "draw"),
                 field_row("draw", format!("{id:?}")),
-            ],
-            ExtendedCommand::Custom(id) => vec![
-                field_row("command", "custom"),
-                field_row("custom", format!("{id:?}")),
             ],
         };
         stack_rows(rows)
     }
 }
 
-impl IntoView for ResolvedExtendedCommand {
+impl IntoView for ResolvedCommand {
     type V = AnyView;
     type Intermediate = AnyView;
 
@@ -484,7 +444,6 @@ impl IntoView for ResolvedExtendedCommand {
             Self::PushGroup(group) => command_card("Push Group", group.into_any()),
             Self::PopGroup => command_card("Pop Group", field_row("command", "pop group")),
             Self::Draw(draw) => command_card("Draw", draw.into_any()),
-            Self::Custom(command) => command_card("Custom", command.into_any()),
         }
     }
 }
@@ -499,35 +458,32 @@ fn command_card(title: impl Into<String>, body: AnyView) -> AnyView {
 }
 
 fn resolve_command(
-    scene: &ExtendedScene<DisplayCommandExt>,
-    command: &ExtendedCommand,
-) -> ResolvedExtendedCommand {
+    scene: &Scene,
+    command: &Command,
+) -> ResolvedCommand {
     match command {
-        ExtendedCommand::PushClip(id) => ResolvedExtendedCommand::PushClip(scene.clip(*id).clone()),
-        ExtendedCommand::PopClip => ResolvedExtendedCommand::PopClip,
-        ExtendedCommand::PushGroup(id) => {
-            ResolvedExtendedCommand::PushGroup(scene.group(*id).clone())
-        }
-        ExtendedCommand::PopGroup => ResolvedExtendedCommand::PopGroup,
-        ExtendedCommand::Draw(id) => ResolvedExtendedCommand::Draw(scene.draw_op(*id).clone()),
-        ExtendedCommand::Custom(id) => ResolvedExtendedCommand::Custom(scene.custom(*id).clone()),
+        Command::PushClip(id) => ResolvedCommand::PushClip(scene.clip(*id).clone()),
+        Command::PopClip => ResolvedCommand::PopClip,
+        Command::PushGroup(id) => ResolvedCommand::PushGroup(scene.group(*id).clone()),
+        Command::PopGroup => ResolvedCommand::PopGroup,
+        Command::Draw(id) => ResolvedCommand::Draw(scene.draw_op(*id).clone()),
     }
 }
 
-fn command_rows(scene: &ExtendedScene<DisplayCommandExt>) -> Vec<(usize, ResolvedExtendedCommand)> {
+fn command_rows(scene: &Scene) -> Vec<(usize, ResolvedCommand)> {
     let mut rows = Vec::new();
     let mut depth = 0usize;
     for command in scene.commands() {
         match command {
-            ExtendedCommand::PopClip | ExtendedCommand::PopGroup => {
+            Command::PopClip | Command::PopGroup => {
                 depth = depth.saturating_sub(1);
                 rows.push((depth, resolve_command(scene, command)));
             }
-            ExtendedCommand::PushClip(_) | ExtendedCommand::PushGroup(_) => {
+            Command::PushClip(_) | Command::PushGroup(_) => {
                 rows.push((depth, resolve_command(scene, command)));
                 depth += 1;
             }
-            ExtendedCommand::Draw(_) | ExtendedCommand::Custom(_) => {
+            Command::Draw(_) => {
                 rows.push((depth, resolve_command(scene, command)));
             }
         }
@@ -536,7 +492,7 @@ fn command_rows(scene: &ExtendedScene<DisplayCommandExt>) -> Vec<(usize, Resolve
 }
 
 pub(crate) fn scene_debug_view_with_size(
-    scene: ExtendedScene<DisplayCommandExt>,
+    scene: Scene,
     content_size: peniko::kurbo::Size,
 ) -> AnyView {
     let preview_scene = scene.clone();
@@ -545,7 +501,7 @@ pub(crate) fn scene_debug_view_with_size(
     let preview_height = content_size.height.max(1.0);
 
     let preview = canvas(move |cx, _size| {
-        preview_scene.replay_into_ext(cx.painter.sink_mut());
+        preview_scene.replay_into(cx.painter.sink_mut());
     })
     .style(move |s| s.width(preview_width).height(preview_height));
 
@@ -614,7 +570,7 @@ pub(crate) fn scene_debug_view_with_size(
     .into_any()
 }
 
-impl StylePropValue for ExtendedScene<DisplayCommandExt> {
+impl StylePropValue for Scene {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         Some(scene_debug_view_with_size(
             self.clone(),

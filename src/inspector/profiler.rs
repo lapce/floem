@@ -1,20 +1,25 @@
-use super::header;
+use super::{TimingKind, TimingReport, header};
 use crate::app::{AppUpdateEvent, add_app_update_event};
+use crate::context::VisualChanged;
 use crate::event::{EventPropagation, PointerScrollEventExt, listener};
+use crate::prelude::palette::css;
 use crate::style::CustomStylable;
 use crate::theme::StyleThemeExt;
-use crate::unit::UnitExt;
+use crate::ui_events::pointer::PointerGesture;
 use crate::view::IntoView;
 use crate::views::resizable::Resizable;
 use crate::views::{
     Button, Clip, Container, ContainerExt, Decorators, Label, Scroll, Stack, dyn_container, list,
 };
 use floem_reactive::{RwSignal, Scope, SignalGet, SignalUpdate};
+use peniko::Color;
+use std::cell::RefCell;
 use std::fmt::Display;
 use std::mem;
 use std::rc::Rc;
-use taffy::AlignItems;
+use taffy::Overflow;
 use taffy::style::FlexDirection;
+use understory_view2d::Viewport1D;
 use winit::window::WindowId;
 
 use crate::platform::{Duration, Instant};
@@ -23,12 +28,14 @@ use crate::platform::{Duration, Instant};
 pub struct ProfileEvent {
     pub start: Instant,
     pub end: Instant,
-    pub name: &'static str,
+    pub name: String,
+    pub depth: usize,
 }
 
 #[derive(Default)]
 pub struct ProfileFrame {
     pub events: Vec<ProfileEvent>,
+    pub timing: Option<TimingReport>,
 }
 
 #[derive(Default)]
@@ -48,6 +55,91 @@ struct ProfileFrameData {
     duration: Duration,
     sum: Duration,
     events: Vec<ProfileEvent>,
+    timing: Option<TimingReport>,
+}
+
+#[derive(Clone)]
+enum TimelineItemKind {
+    Event,
+    Timing(TimingKind),
+}
+
+#[derive(Clone)]
+struct TimelineItem {
+    label: String,
+    source: &'static str,
+    start: Duration,
+    duration: Duration,
+    depth: usize,
+    kind: TimelineItemKind,
+}
+
+fn timeline_item_color(kind: &TimelineItemKind) -> Color {
+    match kind {
+        TimelineItemKind::Event => css::STEEL_BLUE,
+        TimelineItemKind::Timing(TimingKind::Total) => css::SLATE_BLUE,
+        TimelineItemKind::Timing(TimingKind::Update) => css::STEEL_BLUE,
+        TimelineItemKind::Timing(TimingKind::Style) => css::SEA_GREEN,
+        TimelineItemKind::Timing(TimingKind::Layout) => css::GOLDENROD,
+        TimelineItemKind::Timing(TimingKind::BoxTree) => css::SANDY_BROWN,
+        TimelineItemKind::Timing(TimingKind::Paint) => css::CORAL,
+        TimelineItemKind::Timing(TimingKind::Present) => css::MEDIUM_ORCHID,
+        TimelineItemKind::Timing(TimingKind::Renderer) => css::DEEP_SKY_BLUE,
+    }
+}
+
+fn build_timeline_lanes(frame: &ProfileFrameData) -> Vec<Vec<TimelineItem>> {
+    let mut items = Vec::new();
+
+    if let Some(frame_start) = frame.start {
+        items.extend(frame.events.iter().map(|event| TimelineItem {
+            label: event.name.to_string(),
+            source: "Profiler Event",
+            start: event.start.saturating_duration_since(frame_start),
+            duration: event.end.saturating_duration_since(event.start),
+            depth: event.depth,
+            kind: TimelineItemKind::Event,
+        }));
+    }
+
+    if let Some(report) = &frame.timing {
+        items.extend(report.spans.iter().map(|span| TimelineItem {
+            label: span.label.to_string(),
+            source: "Timing Span",
+            start: span.start,
+            duration: span.duration,
+            depth: span.depth,
+            kind: TimelineItemKind::Timing(span.kind),
+        }));
+    }
+
+    items.sort_by(|a, b| {
+        a.start
+            .cmp(&b.start)
+            .then_with(|| b.duration.cmp(&a.duration))
+            .then_with(|| a.depth.cmp(&b.depth))
+            .then_with(|| a.label.cmp(&b.label))
+    });
+
+    let mut lane_ends: Vec<Duration> = Vec::new();
+    let mut lanes: Vec<Vec<TimelineItem>> = Vec::new();
+
+    for item in items {
+        let item_end = item.start.saturating_add(item.duration);
+        if let Some((lane_idx, lane_end)) = lane_ends
+            .iter_mut()
+            .enumerate()
+            .find(|(_, lane_end)| **lane_end <= item.start)
+        {
+            *lane_end = item_end;
+            lanes[lane_idx].push(item);
+        } else {
+            lane_ends.push(item_end);
+            lanes.push(vec![item]);
+        }
+    }
+
+    lanes
 }
 
 fn info(name: impl Display, value: String) -> impl IntoView {
@@ -91,6 +183,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
                 duration,
                 sum,
                 events: frame.events.clone(),
+                timing: frame.timing.clone(),
             })
         })
         .collect();
@@ -98,9 +191,6 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
     let frames: Rc<[_]> = frames.into();
 
     let selected_frame = RwSignal::new(None);
-
-    let zoom = RwSignal::new(1.0);
-
     let frame_views: Vec<_> = frames
         .iter()
         .cloned()
@@ -116,18 +206,22 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
         })
         .collect();
 
-    let hovered_event: RwSignal<Option<ProfileEvent>> = RwSignal::new(None);
+    let hovered_event: RwSignal<Option<TimelineItem>> = RwSignal::new(None);
 
     let event_tooltip = dyn_container(
         move || hovered_event.get(),
         move |hovered_event| {
             if let Some(event) = hovered_event {
-                let len = event
-                    .end
-                    .saturating_duration_since(event.start)
-                    .as_secs_f64();
+                let len = event.duration.as_secs_f64();
                 Stack::vertical((
-                    info("Name", event.name.to_string()).style(|s| s.width_full()),
+                    info("Name", event.label).style(|s| s.width_full()),
+                    info("Source", event.source.to_string()).style(|s| s.width_full()),
+                    info("Depth", event.depth.to_string()).style(|s| s.width_full()),
+                    info(
+                        "Start",
+                        format!("{:.4} ms", event.start.as_secs_f64() * 1000.0),
+                    )
+                    .style(|s| s.width_full()),
                     info("Time", format!("{:.4} ms", len * 1000.0)).style(|s| s.width_full()),
                 ))
                 .style(|s| s.width_full())
@@ -169,57 +263,147 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
         move || selected_frame.get(),
         move |selected_frame| {
             if let Some(frame) = selected_frame {
-                let list = frame.events.iter().map(|event| {
-                    let len = event
-                        .end
-                        .saturating_duration_since(event.start)
-                        .as_secs_f64();
-                    let left = event
-                        .start
-                        .saturating_duration_since(frame.start.unwrap())
-                        .as_secs_f64()
-                        / frame.duration.as_secs_f64();
-                    let width = len / frame.duration.as_secs_f64();
-                    let event_ = event.clone();
-                    Clip::new(
-                        Label::new(format!("{} ({:.4} ms)", event.name, len * 1000.0)).style(|s| {
-                            s.selectable(false)
-                                .padding(5.0)
-                                .text_clip()
-                                .align_self(AlignItems::Center)
-                        }),
-                    )
-                    .style(move |s| {
-                        s.min_width(0)
-                            .min_height(50.pt())
-                            .width_pct(width * 100.0)
-                            .absolute()
-                            .inset_left_pct(left * 100.0)
-                            .border(0.5)
-                            .border_radius(2.)
-                            .text_clip()
-                            .with_theme(|s, t| {
-                                s.border_color(t.border())
-                                    .background(t.primary_muted())
-                                    .hover(|s| s.background(t.def(|t| t.primary().with_alpha(0.5))))
-                            })
+                let lanes = Rc::new(build_timeline_lanes(&frame));
+                if lanes.is_empty() {
+                    Label::new("No frame events")
+                        .style(|s| s.padding(5.0))
+                        .into_any()
+                } else {
+                    let viewport = Rc::new(RefCell::new(Viewport1D::new(0.0..1.0)));
+                    let viewport_rev = RwSignal::new(0_u64);
+                    let viewport_initialized = RwSignal::new(false);
+                    {
+                        let mut viewport = viewport.borrow_mut();
+                        viewport.set_world_bounds(Some(
+                            0.0..frame.duration.as_secs_f64().max(f64::MIN_POSITIVE),
+                        ));
+                        viewport.set_zoom_limits(1e-6, 1e12);
+                    }
+
+                    let timeline_rows = dyn_container(move || viewport_rev.get(), {
+                        let lanes = lanes.clone();
+                        let viewport = viewport.clone();
+                        move |_| {
+                            let lane_rows = lanes.iter().enumerate().map(|(lane_idx, lane)| {
+                                let viewport = viewport.borrow();
+                                Clip::new(Stack::from_iter(lane.iter().map(|item| {
+                                    let item = item.clone();
+                                    let left = viewport.world_to_view_x(item.start.as_secs_f64());
+                                    let right = viewport.world_to_view_x(
+                                        item.start.as_secs_f64() + item.duration.as_secs_f64(),
+                                    );
+                                    let width = (right - left).abs().max(1.0);
+                                    let color = timeline_item_color(&item.kind);
+                                    let item_ = item.clone();
+                                    Clip::new(Label::new(item.label.clone()).style(move |s| {
+                                        s.selectable(false)
+                                            .padding_horiz(6.0)
+                                            .padding_vert(2.0)
+                                            .padding_left(6.0 + item.depth as f64 * 8.0)
+                                            .text_clip()
+                                            .min_width(0.0)
+                                            .font_size(11.0)
+                                    }))
+                                    .style(move |s| {
+                                        s.min_width(1.0)
+                                            .height(18.0)
+                                            .width(width)
+                                            .absolute()
+                                            .inset_left(left.min(right))
+                                            .border(0.5)
+                                            .border_radius(2.0)
+                                            .text_clip()
+                                            .background(color.with_alpha(0.7))
+                                            .hover(move |s| s.background(color.with_alpha(0.9)))
+                                            .with_theme(|s, t| s.border_color(t.border()))
+                                    })
+                                    .on_event_cont(listener::PointerEnter, move |_, _| {
+                                        hovered_event.set(Some(item_.clone()))
+                                    })
+                                    .debug_name(format!("Profiler Timeline Item Lane {lane_idx}"))
+                                })))
+                                .style(|s| {
+                                    s.height(18.0)
+                                        .width_full()
+                                        .border_radius(4.0)
+                                        .with_theme(|s, t| s.background(t.bg_elevated()))
+                                })
+                                .debug_name(format!("Profiler Timeline Lane {lane_idx}"))
+                            });
+
+                            Stack::vertical_from_iter(lane_rows)
+                                .style(|s| s.width_full().gap(4.0).padding(8.0))
+                                .into_any()
+                        }
                     })
-                    .on_event_cont(listener::PointerEnter, move |_, _| {
-                        hovered_event.set(Some(event_.clone()))
-                    })
-                });
-                Scroll::new(
-                    Stack::vertical_from_iter(list)
-                        .style(move |s| s.min_width_pct(zoom.get() * 100.0).height_full()),
-                )
-                .custom_style(|s| s.vertical_track_inset(5.).show_bars_when_idle(false))
-                .style(|s| s.height_full().min_width(0).flex_basis(0).flex_grow(1.0))
-                .on_event(listener::PointerWheel, move |_cx, se| {
-                    let delta = se.resolve_to_points(None, None);
-                    zoom.set(zoom.get() * (1.0 - delta.y / 400.0));
-                    EventPropagation::Stop
-                })
-                .into_any()
+                    .style(|s| s.width_full().min_width(0.0).flex_grow(1.0));
+
+                    Scroll::new(timeline_rows)
+                        .custom_style(|s| s.vertical_track_inset(5.).show_bars_when_idle(false))
+                        .style(|s| {
+                            s.height_full()
+                                .min_width(0)
+                                .flex_basis(0)
+                                .flex_grow(1.0)
+                                .overflow_x(Overflow::Clip)
+                                .overflow_y(Overflow::Scroll)
+                        })
+                        .on_event_stop(VisualChanged::listener(), {
+                            let viewport = viewport.clone();
+                            move |_cx, change| {
+                                let width = change.new_visual_aabb.width().max(1.0);
+                                let mut viewport = viewport.borrow_mut();
+                                viewport.set_view_span(0.0..width);
+                                if !viewport_initialized.get_untracked() {
+                                    viewport.fit_world();
+                                    viewport_initialized.set(true);
+                                }
+                                viewport_rev.update(|rev| *rev += 1);
+                            }
+                        })
+                        .on_event(listener::PointerWheel, {
+                            let viewport = viewport.clone();
+                            move |_cx, se| {
+                                let delta = se.resolve_to_points(None, None);
+                                let anchor_x = se.state.logical_point().x;
+                                let mut viewport = viewport.borrow_mut();
+                                let mut changed = false;
+
+                                if delta.x.abs() > f64::EPSILON {
+                                    viewport.pan_by_view(delta.x);
+                                    changed = true;
+                                }
+
+                                if delta.y.abs() > f64::EPSILON {
+                                    let factor = (1.0 - delta.y / 400.0).max(0.01);
+                                    viewport.zoom_about_view_point(anchor_x, factor);
+                                    changed = true;
+                                }
+
+                                if changed {
+                                    viewport_rev.update(|rev| *rev += 1);
+                                    EventPropagation::Stop
+                                } else {
+                                    EventPropagation::Continue
+                                }
+                            }
+                        })
+                        .on_event(listener::PinchGesture, {
+                            let viewport = viewport.clone();
+                            move |_cx, gesture| {
+                                let PointerGesture::Pinch(delta) = gesture.gesture else {
+                                    return EventPropagation::Continue;
+                                };
+                                let anchor_x = gesture.state.logical_point().x;
+                                let factor = (1.0 + f64::from(delta)).max(0.01);
+                                let mut viewport = viewport.borrow_mut();
+                                viewport.zoom_about_view_point(anchor_x, factor);
+                                viewport_rev.update(|rev| *rev += 1);
+                                EventPropagation::Stop
+                            }
+                        })
+                        .into_any()
+                }
             } else {
                 Label::new("No selected frame")
                     .style(|s| s.padding(5.0))

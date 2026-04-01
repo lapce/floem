@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use floem_reactive::Effect;
-use imaging::{MaskMode, Painter};
+use imaging::MaskMode;
 use peniko::{
     Brush, GradientKind, LinearGradientPosition,
     kurbo::{Affine, Point, Size},
@@ -162,7 +162,8 @@ fn cached_retained_draw(
             return retained.clone();
         }
 
-        let retained = Painter::<imaging::record::Scene>::record_retained(|p| {
+        let bounds = document.size().to_rect();
+        let retained = imaging::Retained::record(|p| {
             if let Some(brush) = brush {
                 p.with_masked_group(
                     MaskMode::Alpha,
@@ -170,15 +171,19 @@ fn cached_retained_draw(
                         let _ = document.render(mask, &RenderOptions::default());
                     },
                     |painter| {
-                        painter.fill(document.size().to_rect(), brush).draw();
+                        painter.fill(bounds, brush).draw();
                     },
                 );
             } else {
                 let _ = document.render(p, &RenderOptions::default());
             }
+        })
+        .with_bounds(bounds)
+        .with_cache_policy(imaging::RetainedCachePolicy {
+            image_transform: Some(imaging::RetainedTransformPolicy::Linear),
+            eviction: imaging::RetainedEvictionPolicy::UntilUnused,
         });
         cache.insert(key.clone(), retained.clone());
-        dbg!(&key.svg);
         retained
     })
 }

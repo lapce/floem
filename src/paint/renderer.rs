@@ -50,13 +50,10 @@
 use std::sync::Arc;
 
 use floem_renderer::gpu_resources::GpuResources;
-use floem_renderer::{
-    BeginFrame, CustomRenderer, DisplayCommandExt, RenderCore, RenderOutput, Renderer,
-    SceneRenderer,
-};
+use floem_renderer::{BeginFrame, RenderCore, RenderOutput, Renderer};
 use imaging::{
-    BlurredRoundedRect, ClipRef, CustomPaintSink, FillRef, GlyphRunRef, GroupRef, PaintSink,
-    RetainedDrawRef, StrokeRef,
+    BlurredRoundedRect, ClipRef, FillRef, GlyphRunRef, GroupRef, PaintSink, RetainedDrawRef,
+    StrokeRef,
 };
 use peniko::ImageData;
 use peniko::kurbo::Size;
@@ -65,22 +62,26 @@ use std::num::NonZeroU32;
 use wgpu::util::TextureBlitter;
 use winit::window::Window;
 
+use crate::platform::{Duration, Instant};
+
 pub type CpuTargetRenderFn = dyn for<'a> FnMut(
     BeginFrame,
     floem_renderer::CpuBufferTarget<'a>,
-    &mut dyn FnMut(&mut dyn SceneRenderer),
+    &mut dyn FnMut(&mut dyn RenderCore),
 ) -> Result<(), String>;
+pub type CpuTargetSupportFn =
+    dyn Fn(floem_renderer::CpuBufferTargetInfo) -> Result<(), String> + Send + Sync;
 
 pub type CpuRendererInstallFn =
     dyn Fn(CpuRendererInstallCx) -> Result<RendererType, String> + Send + Sync;
 pub type GpuRendererInstallFn =
     dyn for<'a> Fn(GpuRendererInstallCx<'a>) -> Result<RendererType, String> + Send + Sync;
 
-pub trait GpuCopyRenderer: Renderer<Target = wgpu::TextureView> + SceneRenderer {}
-impl<T> GpuCopyRenderer for T where T: Renderer<Target = wgpu::TextureView> + SceneRenderer {}
+pub trait GpuCopyRenderer: Renderer<Target = wgpu::TextureView> {}
+impl<T> GpuCopyRenderer for T where T: Renderer<Target = wgpu::TextureView> {}
 
-pub trait CpuCopyRenderer: Renderer<Target = ImageData> + SceneRenderer {}
-impl<T> CpuCopyRenderer for T where T: Renderer<Target = ImageData> + SceneRenderer {}
+pub trait CpuCopyRenderer: Renderer<Target = ImageData> {}
+impl<T> CpuCopyRenderer for T where T: Renderer<Target = ImageData> {}
 
 #[derive(Clone, Copy)]
 pub struct CpuRendererInstallCx {
@@ -149,6 +150,10 @@ impl RenderCore for NullRenderer {
     fn readback(&mut self) -> Option<RenderOutput> {
         None
     }
+
+    fn debug_info(&self) -> String {
+        "Uninitialized".to_string()
+    }
 }
 
 impl Renderer for NullRenderer {
@@ -188,23 +193,6 @@ impl PaintSink for NullRenderer {
     fn blurred_rounded_rect(&mut self, _draw: BlurredRoundedRect) {}
 }
 
-impl CustomPaintSink<DisplayCommandExt> for NullRenderer {
-    fn custom(&mut self, _command: &DisplayCommandExt) {}
-}
-
-impl CustomRenderer for NullRenderer {
-    fn with_custom_paint_sink(
-        &mut self,
-        f: &mut dyn FnMut(&mut dyn CustomPaintSink<DisplayCommandExt>),
-    ) {
-        f(self)
-    }
-
-    fn debug_info(&self) -> String {
-        "Uninitialized".to_string()
-    }
-}
-
 struct CpuWindowTarget<W> {
     #[allow(unused)]
     context: Context<W>,
@@ -222,20 +210,64 @@ struct GpuWindowTarget {
 }
 
 pub enum RendererType {
-    TargetCpu(Box<CpuTargetRenderFn>),
+    TargetCpu {
+        render: Box<CpuTargetRenderFn>,
+        supports: Box<CpuTargetSupportFn>,
+    },
     CopyGpu(Box<dyn GpuCopyRenderer>),
     CopyCpu(Box<dyn CpuCopyRenderer>),
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PaintTiming {
+    pub presented: bool,
+    pub total: Duration,
+    pub resize: Duration,
+    pub pre_present_notify: Duration,
+    pub prepare: Duration,
+    pub scene: Duration,
+    pub finalize: Duration,
+    pub read_output: Duration,
+    pub present: PresentTiming,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PresentTiming {
+    pub total: Duration,
+    pub acquire_surface: Duration,
+    pub compose: Duration,
+    pub submit: Duration,
+    pub present_call: Duration,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct CaptureTiming {
+    pub total: Duration,
+    pub resize: Duration,
+    pub pre_present_notify: Duration,
+    pub prepare: Duration,
+    pub scene: Duration,
+    pub finalize: Duration,
+    pub readback: Duration,
+    pub convert: Duration,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct CaptureOutput {
+    pub image: Option<ImageData>,
+    pub timing: CaptureTiming,
+}
+
 pub(crate) trait WindowRenderer {
     fn resize(&mut self, width: u32, height: u32);
-    fn render(&mut self, begin: BeginFrame, paint: &mut dyn FnMut(&mut dyn SceneRenderer));
+    fn render(&mut self, begin: BeginFrame, paint: &mut dyn FnMut(&mut dyn RenderCore))
+    -> PaintTiming;
     fn capture(
         &mut self,
         begin: BeginFrame,
-        paint: &mut dyn FnMut(&mut dyn SceneRenderer),
-    ) -> Option<ImageData>;
-    fn debug_info(&self) -> String;
+        paint: &mut dyn FnMut(&mut dyn RenderCore),
+    ) -> CaptureOutput;
+    fn debug_info(&mut self) -> String;
     fn gpu_surface(&self) -> Option<&wgpu::Surface<'static>> {
         None
     }
@@ -248,22 +280,27 @@ struct NullWindowBackend {
 impl WindowRenderer for NullWindowBackend {
     fn resize(&mut self, _width: u32, _height: u32) {}
 
-    fn render(&mut self, _begin: BeginFrame, paint: &mut dyn FnMut(&mut dyn SceneRenderer)) {
+    fn render(
+        &mut self,
+        _begin: BeginFrame,
+        paint: &mut dyn FnMut(&mut dyn RenderCore),
+    ) -> PaintTiming {
         paint(&mut self.renderer);
         self.renderer.finish();
+        PaintTiming::default()
     }
 
     fn capture(
         &mut self,
         _begin: BeginFrame,
-        paint: &mut dyn FnMut(&mut dyn SceneRenderer),
-    ) -> Option<ImageData> {
+        paint: &mut dyn FnMut(&mut dyn RenderCore),
+    ) -> CaptureOutput {
         paint(&mut self.renderer);
         self.renderer.finish();
-        None
+        CaptureOutput::default()
     }
 
-    fn debug_info(&self) -> String {
+    fn debug_info(&mut self) -> String {
         self.renderer.debug_info()
     }
 }
@@ -348,7 +385,7 @@ impl GpuWindowTarget {
         };
 
         let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST,
             format: texture_format,
             width,
             height,
@@ -380,11 +417,15 @@ impl GpuWindowTarget {
         }
     }
 
-    fn present(&mut self, output: &wgpu::TextureView) {
+    fn present(&mut self, output: &wgpu::TextureView) -> PresentTiming {
+        let start = Instant::now();
+        let acquire_start = start;
         let surface_texture = self
             .surface
             .get_current_texture()
             .expect("failed to acquire surface texture");
+        let acquire_surface = acquire_start.elapsed();
+        let compose_start = Instant::now();
         let output_view = surface_texture
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -393,10 +434,44 @@ impl GpuWindowTarget {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Floem Surface Blit"),
             });
-        self.blitter
-            .copy(&self.device, &mut encoder, output, &output_view);
+        let output_texture = output.texture();
+        let surface_copy_size = surface_texture.texture.size();
+        if output_texture.format() == surface_texture.texture.format()
+            && output_texture.size() == surface_copy_size
+        {
+            encoder.copy_texture_to_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: output_texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                wgpu::TexelCopyTextureInfo {
+                    texture: &surface_texture.texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                surface_copy_size,
+            );
+        } else {
+            self.blitter
+                .copy(&self.device, &mut encoder, output, &output_view);
+        }
+        let compose = compose_start.elapsed();
+        let submit_start = Instant::now();
         self.queue.submit([encoder.finish()]);
+        let submit = submit_start.elapsed();
+        let present_call_start = Instant::now();
         surface_texture.present();
+        let present_call = present_call_start.elapsed();
+        PresentTiming {
+            total: start.elapsed(),
+            acquire_surface,
+            compose,
+            submit,
+            present_call,
+        }
     }
 
     fn gpu_surface(&self) -> &wgpu::Surface<'static> {
@@ -453,11 +528,15 @@ where
             .expect("failed to resize surface");
     }
 
-    fn present(&mut self, image: &ImageData) {
+    fn present(&mut self, image: &ImageData) -> PresentTiming {
+        let start = Instant::now();
+        let acquire_start = start;
         let mut buffer = self
             .surface
             .buffer_mut()
             .expect("failed to get the surface buffer");
+        let acquire_surface = acquire_start.elapsed();
+        let compose_start = Instant::now();
         let width = image.width as usize;
         for y in 0..image.height as usize {
             let row_start = y * width;
@@ -467,9 +546,19 @@ where
                 *out_pixel = ((rgba[0] as u32) << 16) | ((rgba[1] as u32) << 8) | (rgba[2] as u32);
             }
         }
+        let compose = compose_start.elapsed();
+        let present_call_start = Instant::now();
         buffer
             .present()
             .expect("failed to present the surface buffer");
+        let present_call = present_call_start.elapsed();
+        PresentTiming {
+            total: start.elapsed(),
+            acquire_surface,
+            compose,
+            submit: Duration::ZERO,
+            present_call,
+        }
     }
 
     fn with_cpu_target(&mut self, f: &mut dyn FnMut(floem_renderer::CpuBufferTarget<'_>)) {
@@ -499,101 +588,132 @@ where
     }
 }
 
-#[cfg(feature = "active-vello-hybrid")]
+#[cfg(feature = "vello-hybrid")]
 impl WindowRenderer
-    for CpuDirectWindowRenderer<floem_vello_hybrid_renderer::VelloHybridTargetRenderer<'static>>
+    for CpuDirectWindowRenderer<imaging_vello_hybrid::VelloHybridTargetRenderer<'static>>
 {
     fn resize(&mut self, width: u32, height: u32) {
         self.target.resize(width, height);
     }
 
-    fn render(&mut self, begin: BeginFrame, paint: &mut dyn FnMut(&mut dyn SceneRenderer)) {
+    fn render(
+        &mut self,
+        begin: BeginFrame,
+        paint: &mut dyn FnMut(&mut dyn RenderCore),
+    ) -> PaintTiming {
+        use floem_renderer::TargetRenderer;
+        let start = Instant::now();
         self.target.with_cpu_target(&mut |target| {
             let mut renderer =
-                floem_vello_hybrid_renderer::VelloHybridTargetRenderer::create(begin, target)
+                imaging_vello_hybrid::VelloHybridTargetRenderer::create(begin, target)
                     .expect("failed to create cpu target renderer");
             paint(&mut renderer);
             renderer.finish();
         });
+        PaintTiming {
+            presented: true,
+            total: start.elapsed(),
+            scene: start.elapsed(),
+            ..Default::default()
+        }
     }
 
     fn capture(
         &mut self,
         _begin: BeginFrame,
-        _paint: &mut dyn FnMut(&mut dyn SceneRenderer),
-    ) -> Option<ImageData> {
-        None
+        _paint: &mut dyn FnMut(&mut dyn RenderCore),
+    ) -> CaptureOutput {
+        CaptureOutput::default()
     }
 
-    fn debug_info(&self) -> String {
+    fn debug_info(&mut self) -> String {
         "Vello Hybrid".to_string()
     }
 }
 
-#[cfg(feature = "active-vello-cpu")]
+#[cfg(feature = "vello-cpu")]
 impl WindowRenderer
-    for CpuDirectWindowRenderer<floem_vello_cpu_renderer::VelloCpuTargetRenderer<'static>>
+    for CpuDirectWindowRenderer<imaging_vello_cpu::VelloCpuTargetRenderer<'static>>
 {
     fn resize(&mut self, width: u32, height: u32) {
         self.target.resize(width, height);
     }
 
-    fn render(&mut self, begin: BeginFrame, paint: &mut dyn FnMut(&mut dyn SceneRenderer)) {
-        use floem_renderer::TargetRenderer;
-        self.target.with_cpu_target(&mut |target| {
-            let mut renderer =
-                floem_vello_cpu_renderer::VelloCpuTargetRenderer::create(begin, target)
-                    .expect("failed to create cpu target renderer");
-            paint(&mut renderer);
-            renderer.finish();
-        });
-    }
-
-    fn capture(
+    fn render(
         &mut self,
-        _begin: BeginFrame,
-        _paint: &mut dyn FnMut(&mut dyn SceneRenderer),
-    ) -> Option<ImageData> {
-        None
-    }
-
-    fn debug_info(&self) -> String {
-        "Vello CPU".to_string()
-    }
-}
-
-#[cfg(feature = "active-skia-cpu")]
-impl WindowRenderer
-    for CpuDirectWindowRenderer<floem_skia_renderer::SkiaCpuTargetRenderer<'static>>
-{
-    fn resize(&mut self, width: u32, height: u32) {
-        self.target.resize(width, height);
-    }
-
-    fn render(&mut self, begin: BeginFrame, paint: &mut dyn FnMut(&mut dyn SceneRenderer)) {
+        begin: BeginFrame,
+        paint: &mut dyn FnMut(&mut dyn RenderCore),
+    ) -> PaintTiming {
         use floem_renderer::TargetRenderer;
+        let start = Instant::now();
         self.target.with_cpu_target(&mut |target| {
-            let mut renderer = floem_skia_renderer::SkiaCpuTargetRenderer::create(begin, target)
+            let mut renderer = imaging_vello_cpu::VelloCpuTargetRenderer::create(begin, target)
                 .expect("failed to create cpu target renderer");
             paint(&mut renderer);
             renderer.finish();
         });
+        PaintTiming {
+            presented: true,
+            total: start.elapsed(),
+            scene: start.elapsed(),
+            ..Default::default()
+        }
     }
 
     fn capture(
         &mut self,
         _begin: BeginFrame,
-        _paint: &mut dyn FnMut(&mut dyn SceneRenderer),
-    ) -> Option<ImageData> {
-        None
+        _paint: &mut dyn FnMut(&mut dyn RenderCore),
+    ) -> CaptureOutput {
+        CaptureOutput::default()
     }
 
-    fn debug_info(&self) -> String {
+    fn debug_info(&mut self) -> String {
+        "Vello CPU".to_string()
+    }
+}
+
+#[cfg(feature = "skia-cpu")]
+impl WindowRenderer for CpuDirectWindowRenderer<imaging_skia::SkiaCpuTargetRenderer<'static>> {
+    fn resize(&mut self, width: u32, height: u32) {
+        self.target.resize(width, height);
+    }
+
+    fn render(
+        &mut self,
+        begin: BeginFrame,
+        paint: &mut dyn FnMut(&mut dyn RenderCore),
+    ) -> PaintTiming {
+        use floem_renderer::TargetRenderer;
+        let start = Instant::now();
+        self.target.with_cpu_target(&mut |target| {
+            let mut renderer = imaging_skia::SkiaCpuTargetRenderer::create(begin, target)
+                .expect("failed to create cpu target renderer");
+            paint(&mut renderer);
+            renderer.finish();
+        });
+        PaintTiming {
+            presented: true,
+            total: start.elapsed(),
+            scene: start.elapsed(),
+            ..Default::default()
+        }
+    }
+
+    fn capture(
+        &mut self,
+        _begin: BeginFrame,
+        _paint: &mut dyn FnMut(&mut dyn RenderCore),
+    ) -> CaptureOutput {
+        CaptureOutput::default()
+    }
+
+    fn debug_info(&mut self) -> String {
         "Skia CPU".to_string()
     }
 }
 
-#[cfg(feature = "active-tiny-skia")]
+#[cfg(feature = "tiny-skia")]
 impl WindowRenderer
     for CpuDirectWindowRenderer<floem_tiny_skia_renderer::TinySkiaTargetRenderer<'static>>
 {
@@ -601,8 +721,13 @@ impl WindowRenderer
         self.target.resize(width, height);
     }
 
-    fn render(&mut self, begin: BeginFrame, paint: &mut dyn FnMut(&mut dyn SceneRenderer)) {
+    fn render(
+        &mut self,
+        begin: BeginFrame,
+        paint: &mut dyn FnMut(&mut dyn RenderCore),
+    ) -> PaintTiming {
         use floem_renderer::TargetRenderer;
+        let start = Instant::now();
         self.target.with_cpu_target(&mut |target| {
             let mut renderer =
                 floem_tiny_skia_renderer::TinySkiaTargetRenderer::create(begin, target)
@@ -610,17 +735,23 @@ impl WindowRenderer
             paint(&mut renderer);
             renderer.finish();
         });
+        PaintTiming {
+            presented: true,
+            total: start.elapsed(),
+            scene: start.elapsed(),
+            ..Default::default()
+        }
     }
 
     fn capture(
         &mut self,
         _begin: BeginFrame,
-        _paint: &mut dyn FnMut(&mut dyn SceneRenderer),
-    ) -> Option<ImageData> {
-        None
+        _paint: &mut dyn FnMut(&mut dyn RenderCore),
+    ) -> CaptureOutput {
+        CaptureOutput::default()
     }
 
-    fn debug_info(&self) -> String {
+    fn debug_info(&mut self) -> String {
         "Tiny Skia".to_string()
     }
 }
@@ -630,27 +761,47 @@ impl WindowRenderer for TargetCpuWindowRenderer {
         self.target.resize(width, height);
     }
 
-    fn render(&mut self, begin: BeginFrame, paint: &mut dyn FnMut(&mut dyn SceneRenderer)) {
+    fn render(
+        &mut self,
+        begin: BeginFrame,
+        paint: &mut dyn FnMut(&mut dyn RenderCore),
+    ) -> PaintTiming {
+        let start = Instant::now();
         self.target.with_cpu_target(&mut |target| {
             (self.renderer)(begin, target, paint).expect("failed to render cpu target");
         });
+        PaintTiming {
+            presented: true,
+            total: start.elapsed(),
+            scene: start.elapsed(),
+            ..Default::default()
+        }
     }
 
     fn capture(
         &mut self,
         begin: BeginFrame,
-        paint: &mut dyn FnMut(&mut dyn SceneRenderer),
-    ) -> Option<ImageData> {
-        Some(self.capture.with_target(
+        paint: &mut dyn FnMut(&mut dyn RenderCore),
+    ) -> CaptureOutput {
+        let start = Instant::now();
+        let image = Some(self.capture.with_target(
             begin.size.width as u32,
             begin.size.height as u32,
             &mut |target| {
                 (self.renderer)(begin, target, paint).expect("failed to capture cpu target");
             },
-        ))
+        ));
+        CaptureOutput {
+            image,
+            timing: CaptureTiming {
+                total: start.elapsed(),
+                scene: start.elapsed(),
+                ..Default::default()
+            },
+        }
     }
 
-    fn debug_info(&self) -> String {
+    fn debug_info(&mut self) -> String {
         self.debug_name.to_string()
     }
 }
@@ -660,31 +811,78 @@ impl WindowRenderer for GpuCopyWindowRenderer {
         self.target.resize(width, height);
     }
 
-    fn render(&mut self, begin: BeginFrame, paint: &mut dyn FnMut(&mut dyn SceneRenderer)) {
+    fn render(
+        &mut self,
+        begin: BeginFrame,
+        paint: &mut dyn FnMut(&mut dyn RenderCore),
+    ) -> PaintTiming {
+        let total_start = Instant::now();
+        let prepare_start = total_start;
         self.renderer.set_size(begin);
         self.renderer.reset();
+        let prepare = prepare_start.elapsed();
+        let scene_start = Instant::now();
         paint(&mut *self.renderer);
+        let scene = scene_start.elapsed();
+        let finalize_start = Instant::now();
         self.renderer.finish();
-        if let Some(output) = self.renderer.read_target() {
-            self.target.present(&output);
+        let finalize = finalize_start.elapsed();
+        let read_output_start = Instant::now();
+        let output = self.renderer.read_target();
+        let read_output = read_output_start.elapsed();
+        let present = output
+            .as_ref()
+            .map(|output| self.target.present(output))
+            .unwrap_or_default();
+        PaintTiming {
+            presented: output.is_some(),
+            total: total_start.elapsed(),
+            prepare,
+            scene,
+            finalize,
+            read_output,
+            present,
+            ..Default::default()
         }
     }
 
     fn capture(
         &mut self,
         begin: BeginFrame,
-        paint: &mut dyn FnMut(&mut dyn SceneRenderer),
-    ) -> Option<ImageData> {
+        paint: &mut dyn FnMut(&mut dyn RenderCore),
+    ) -> CaptureOutput {
+        let total_start = Instant::now();
+        let prepare_start = total_start;
         self.renderer.set_size(begin);
         self.renderer.reset();
+        let prepare = prepare_start.elapsed();
+        let scene_start = Instant::now();
         paint(&mut *self.renderer);
+        let scene = scene_start.elapsed();
+        let finalize_start = Instant::now();
         self.renderer.finish();
-        self.renderer
-            .readback()
-            .and_then(|output| output.into_image_with(&self.target.device, &self.target.queue))
+        let finalize = finalize_start.elapsed();
+        let readback_start = Instant::now();
+        let output = self.renderer.readback();
+        let readback = readback_start.elapsed();
+        let convert_start = Instant::now();
+        let image = output.and_then(|output| output.into_image_with(&self.target.device, &self.target.queue));
+        let convert = convert_start.elapsed();
+        CaptureOutput {
+            image,
+            timing: CaptureTiming {
+                total: total_start.elapsed(),
+                prepare,
+                scene,
+                finalize,
+                readback,
+                convert,
+                ..Default::default()
+            },
+        }
     }
 
-    fn debug_info(&self) -> String {
+    fn debug_info(&mut self) -> String {
         self.renderer.debug_info()
     }
 
@@ -698,29 +896,74 @@ impl WindowRenderer for CpuCopyWindowRenderer {
         self.target.resize(width, height);
     }
 
-    fn render(&mut self, begin: BeginFrame, paint: &mut dyn FnMut(&mut dyn SceneRenderer)) {
+    fn render(
+        &mut self,
+        begin: BeginFrame,
+        paint: &mut dyn FnMut(&mut dyn RenderCore),
+    ) -> PaintTiming {
+        let total_start = Instant::now();
+        let prepare_start = total_start;
         self.renderer.set_size(begin);
         self.renderer.reset();
+        let prepare = prepare_start.elapsed();
+        let scene_start = Instant::now();
         paint(&mut *self.renderer);
+        let scene = scene_start.elapsed();
+        let finalize_start = Instant::now();
         self.renderer.finish();
-        if let Some(output) = self.renderer.read_target() {
-            self.target.present(&output);
+        let finalize = finalize_start.elapsed();
+        let read_output_start = Instant::now();
+        let output = self.renderer.read_target();
+        let read_output = read_output_start.elapsed();
+        let present = output
+            .as_ref()
+            .map(|output| self.target.present(output))
+            .unwrap_or_default();
+        PaintTiming {
+            presented: output.is_some(),
+            total: total_start.elapsed(),
+            prepare,
+            scene,
+            finalize,
+            read_output,
+            present,
+            ..Default::default()
         }
     }
 
     fn capture(
         &mut self,
         begin: BeginFrame,
-        paint: &mut dyn FnMut(&mut dyn SceneRenderer),
-    ) -> Option<ImageData> {
+        paint: &mut dyn FnMut(&mut dyn RenderCore),
+    ) -> CaptureOutput {
+        let total_start = Instant::now();
+        let prepare_start = total_start;
         self.renderer.set_size(begin);
         self.renderer.reset();
+        let prepare = prepare_start.elapsed();
+        let scene_start = Instant::now();
         paint(&mut *self.renderer);
+        let scene = scene_start.elapsed();
+        let finalize_start = Instant::now();
         self.renderer.finish();
-        self.renderer.read_target()
+        let finalize = finalize_start.elapsed();
+        let readback_start = Instant::now();
+        let image = self.renderer.read_target();
+        let readback = readback_start.elapsed();
+        CaptureOutput {
+            image,
+            timing: CaptureTiming {
+                total: total_start.elapsed(),
+                prepare,
+                scene,
+                finalize,
+                readback,
+                ..Default::default()
+            },
+        }
     }
 
-    fn debug_info(&self) -> String {
+    fn debug_info(&mut self) -> String {
         self.renderer.debug_info()
     }
 }
@@ -790,8 +1033,8 @@ fn create_window_backend(
     height: u32,
 ) -> Result<WindowBackend, String> {
     match renderer_type {
-        RendererType::TargetCpu(renderer) => Ok(Box::new(TargetCpuWindowRenderer {
-            renderer,
+        RendererType::TargetCpu { render, .. } => Ok(Box::new(TargetCpuWindowRenderer {
+            renderer: render,
             target: CpuWindowTarget::new(window, width, height)?,
             capture: CaptureBuffer {
                 data: Vec::new(),
@@ -833,6 +1076,12 @@ fn create_installed_renderer(
     let size = Size::new(size.width.max(1.0), size.height.max(1.0));
     let width = size.width as u32;
     let height = size.height as u32;
+    let cpu_target_info = floem_renderer::CpuBufferTargetInfo {
+        width,
+        height,
+        bytes_per_row: width as usize * 4,
+        format: floem_renderer::CpuBufferFormat::Bgra8Opaque,
+    };
     let cpu_cx = cpu_install_cx(size, scale, font_embolden);
     let texture_format = if allow_gpu {
         match (surface.as_ref(), gpu_resources) {
@@ -869,6 +1118,13 @@ fn create_installed_renderer(
                 continue;
             }
         };
+
+        if let RendererType::TargetCpu { supports, .. } = &renderer_type
+            && let Err(err) = supports(cpu_target_info)
+        {
+            errors.push(format!("{}: {err}", installer.name));
+            continue;
+        }
 
         let window_backend = match create_window_backend(
             installer.name,
@@ -942,7 +1198,7 @@ pub(crate) fn new_cpu(
 pub fn default_renderer_installers() -> Vec<RendererInstaller> {
     let mut installers = Vec::new();
 
-    #[cfg(feature = "active-vello")]
+    #[cfg(feature = "vello")]
     installers.push(RendererInstaller::gpu("Vello", |cx| {
         Ok(RendererType::CopyGpu(Box::new(
             floem_vello_renderer::VelloRenderer::new(
@@ -957,7 +1213,7 @@ pub fn default_renderer_installers() -> Vec<RendererInstaller> {
         )))
     }));
 
-    #[cfg(feature = "active-vger")]
+    #[cfg(feature = "vger")]
     installers.push(RendererInstaller::gpu("Vger", |cx| {
         Ok(RendererType::CopyGpu(Box::new(
             floem_vger_renderer::VgerRenderer::new(
@@ -972,7 +1228,7 @@ pub fn default_renderer_installers() -> Vec<RendererInstaller> {
         )))
     }));
 
-    #[cfg(feature = "active-skia")]
+    #[cfg(feature = "skia")]
     installers.push(RendererInstaller::gpu("Skia", |cx| {
         Ok(RendererType::CopyGpu(Box::new(
             floem_skia_renderer::SkiaRenderer::new(
@@ -987,67 +1243,73 @@ pub fn default_renderer_installers() -> Vec<RendererInstaller> {
         )))
     }));
 
-    #[cfg(feature = "active-vello-hybrid")]
+    #[cfg(feature = "vello-hybrid")]
     installers.push(RendererInstaller::cpu("Vello Hybrid", |_cx| {
-        Ok(RendererType::TargetCpu(Box::new(|begin, target, paint| {
-            use floem_renderer::TargetRenderer;
-            let mut renderer =
-                floem_vello_hybrid_renderer::VelloHybridTargetRenderer::create(begin, target)?;
-            paint(&mut renderer);
-            renderer.finish();
-            Ok(())
-        })))
+        Ok(RendererType::TargetCpu {
+            render: Box::new(|begin, target, paint| {
+                use floem_renderer::TargetRenderer;
+                let mut renderer =
+                    imaging_vello_hybrid::VelloHybridTargetRenderer::create(begin, target)?;
+                paint(&mut renderer);
+                renderer.finish();
+                Ok(())
+            }),
+            supports: Box::new(|target| {
+                <imaging_vello_hybrid::VelloHybridTargetRenderer<'_> as floem_renderer::TargetRenderer>::supports_cpu_buffer_target(&target)
+            }),
+        })
     }));
 
-    #[cfg(feature = "active-vello-cpu")]
+    #[cfg(feature = "vello-cpu")]
     installers.push(RendererInstaller::cpu("Vello CPU", |_cx| {
-        Ok(RendererType::TargetCpu(Box::new(|begin, target, paint| {
-            use floem_renderer::TargetRenderer;
-            let mut renderer =
-                floem_vello_cpu_renderer::VelloCpuTargetRenderer::create(begin, target)?;
-            paint(&mut renderer);
-            renderer.finish();
-            Ok(())
-        })))
+        Ok(RendererType::TargetCpu {
+            render: Box::new(|begin, target, paint| {
+                use floem_renderer::TargetRenderer;
+                let mut renderer = imaging_vello_cpu::VelloCpuTargetRenderer::create(begin, target)?;
+                paint(&mut renderer);
+                renderer.finish();
+                Ok(())
+            }),
+            supports: Box::new(|target| {
+                <imaging_vello_cpu::VelloCpuTargetRenderer<'_> as floem_renderer::TargetRenderer>::supports_cpu_buffer_target(&target)
+            }),
+        })
     }));
 
-    #[cfg(feature = "active-skia-cpu")]
+    #[cfg(feature = "skia-cpu")]
     installers.push(RendererInstaller::cpu("Skia CPU", |_cx| {
-        Ok(RendererType::TargetCpu(Box::new(|begin, target, paint| {
-            use floem_renderer::TargetRenderer;
-            let mut renderer = floem_skia_renderer::SkiaCpuTargetRenderer::create(begin, target)?;
-            paint(&mut renderer);
-            renderer.finish();
-            Ok(())
-        })))
+        Ok(RendererType::TargetCpu {
+            render: Box::new(|begin, target, paint| {
+                use floem_renderer::TargetRenderer;
+                let mut renderer = imaging_skia::SkiaCpuTargetRenderer::create(begin, target)?;
+                paint(&mut renderer);
+                renderer.finish();
+                Ok(())
+            }),
+            supports: Box::new(|target| {
+                <imaging_skia::SkiaCpuTargetRenderer<'_> as floem_renderer::TargetRenderer>::supports_cpu_buffer_target(&target)
+            }),
+        })
     }));
 
-    #[cfg(feature = "active-tiny-skia")]
+    #[cfg(feature = "tiny-skia")]
     installers.push(RendererInstaller::cpu("Tiny Skia", |_cx| {
-        Ok(RendererType::TargetCpu(Box::new(|begin, target, paint| {
-            use floem_renderer::TargetRenderer;
-            let mut renderer =
-                floem_tiny_skia_renderer::TinySkiaTargetRenderer::create(begin, target)?;
-            paint(&mut renderer);
-            renderer.finish();
-            Ok(())
-        })))
+        Ok(RendererType::TargetCpu {
+            render: Box::new(|begin, target, paint| {
+                use floem_renderer::TargetRenderer;
+                let mut renderer =
+                    floem_tiny_skia_renderer::TinySkiaTargetRenderer::create(begin, target)?;
+                paint(&mut renderer);
+                renderer.finish();
+                Ok(())
+            }),
+            supports: Box::new(|target| {
+                <floem_tiny_skia_renderer::TinySkiaTargetRenderer<'_> as floem_renderer::TargetRenderer>::supports_cpu_buffer_target(&target)
+            }),
+        })
     }));
 
-    #[cfg(feature = "fallback-vello-cpu")]
-    installers.push(RendererInstaller::cpu("Vello CPU Copy", |cx| {
-        Ok(RendererType::CopyCpu(Box::new(
-            floem_vello_cpu_renderer::VelloCpuRenderer::new(
-                cx.size.width.max(1.0) as u32,
-                cx.size.height.max(1.0) as u32,
-                cx.scale,
-                cx.font_embolden,
-            )
-            .map_err(|err| err.to_string())?,
-        )))
-    }));
-
-    #[cfg(feature = "fallback-tiny-skia")]
+    #[cfg(feature = "tiny-skia")]
     installers.push(RendererInstaller::cpu("Tiny Skia Copy", |cx| {
         Ok(RendererType::CopyCpu(Box::new(
             floem_tiny_skia_renderer::TinySkiaRenderer::new(
@@ -1057,6 +1319,17 @@ pub fn default_renderer_installers() -> Vec<RendererInstaller> {
                 cx.font_embolden,
             )
             .map_err(|err| err.to_string())?,
+        )))
+    }));
+
+    #[cfg(feature = "vello-cpu")]
+    installers.push(RendererInstaller::cpu("Vello CPU Copy", |cx| {
+        let width = u16::try_from(cx.size.width.max(1.0) as u32)
+            .map_err(|_| "width exceeds vello_cpu limit".to_string())?;
+        let height = u16::try_from(cx.size.height.max(1.0) as u32)
+            .map_err(|_| "height exceeds vello_cpu limit".to_string())?;
+        Ok(RendererType::CopyCpu(Box::new(
+            imaging_vello_cpu::VelloCpuRenderer::new(width, height),
         )))
     }));
 

@@ -51,7 +51,9 @@ use crate::{
         Event, GlobalEventCx, ImeEvent, WindowEvent, clear_hit_test_cache,
         dropped_file::FileDragEvent,
     },
-    inspector::{self, Capture, CaptureState, CapturedView, profiler::Profile},
+    inspector::{
+        self, Capture, CaptureState, CapturedView, TimingKind, TimingReport, profiler::Profile,
+    },
     message::{
         CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES, CURRENT_RUNNING_VIEW_HANDLE,
         DEFERRED_UPDATE_MESSAGES, UPDATE_MESSAGES, UpdateMessage,
@@ -94,6 +96,31 @@ pub(crate) struct WindowHandle {
     pub(crate) gpu_resources: Option<GpuResources>,
     last_presented_at: Instant,
     is_occluded: bool,
+    pending_timing: FrameTimingAccumulator,
+    last_timing_report: Option<TimingReport>,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct LayoutTiming {
+    total: Duration,
+    taffy: Duration,
+    box_tree_update: Duration,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct FrameTimingAccumulator {
+    style: Duration,
+    layout: Duration,
+    taffy: Duration,
+    box_tree_update: Duration,
+    box_tree_pending_updates: Duration,
+    box_tree_commit: Duration,
+}
+
+impl FrameTimingAccumulator {
+    fn total(&self) -> Duration {
+        self.style + self.layout + self.box_tree_pending_updates + self.box_tree_commit
+    }
 }
 
 impl Drop for WindowHandle {
@@ -105,6 +132,19 @@ impl Drop for WindowHandle {
 }
 
 impl WindowHandle {
+    pub(crate) fn take_profile_events(&mut self) -> Vec<crate::inspector::profiler::ProfileEvent> {
+        self.window_state
+            .profile_events
+            .drain(..)
+            .map(|event| crate::inspector::profiler::ProfileEvent {
+                start: event.start,
+                end: event.end,
+                name: event.name,
+                depth: event.depth,
+            })
+            .collect()
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         window: Box<dyn winit::window::Window>,
@@ -227,6 +267,8 @@ impl WindowHandle {
             gpu_resources,
             last_presented_at: Instant::now(),
             is_occluded: false,
+            pending_timing: FrameTimingAccumulator::default(),
+            last_timing_report: None,
         };
         if paint_state_initialized {
             window_handle.init_renderer();
@@ -394,6 +436,8 @@ impl WindowHandle {
             gpu_resources: None,
             last_presented_at: Instant::now(),
             is_occluded: false,
+            pending_timing: FrameTimingAccumulator::default(),
+            last_timing_report: None,
         };
 
         window_handle
@@ -624,7 +668,8 @@ impl WindowHandle {
         }
     }
 
-    fn style(&mut self) {
+    fn style(&mut self) -> Duration {
+        let start = Instant::now();
         // Loop until no more views need styling
         // This handles the case where styling a parent marks children dirty
         // (e.g., when inherited properties change)
@@ -646,37 +691,48 @@ impl WindowHandle {
         let root_element_id = self.window_state.root_view_id.get_element_id();
         let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::Style));
         GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
+        start.elapsed()
     }
 
-    fn layout(&mut self) -> Duration {
+    fn layout(&mut self) -> LayoutTiming {
         let start = Instant::now();
         self.window_state.compute_layout();
         let taffy_duration = start.elapsed();
 
         // Update box tree from layout after layout completes
+        let box_tree_start = Instant::now();
         self.window_state.update_box_tree_from_layout();
+        let box_tree_update = box_tree_start.elapsed();
 
         let root_element_id = self.window_state.root_view_id.get_element_id();
         let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::Layout));
         GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
 
-        taffy_duration
+        LayoutTiming {
+            total: start.elapsed(),
+            taffy: taffy_duration,
+            box_tree_update,
+        }
     }
 
-    fn update_box_tree_from_layout(&mut self) {
+    fn update_box_tree_from_layout(&mut self) -> Duration {
+        let start = Instant::now();
         self.window_state.update_box_tree_from_layout();
         let root_element_id = self.window_state.root_view_id.get_element_id();
         let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::BoxTreeUpdate));
         GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
+        start.elapsed()
     }
 
-    fn process_pending_box_tree_updates(&mut self) {
+    fn process_pending_box_tree_updates(&mut self) -> Duration {
+        let start = Instant::now();
         self.window_state.process_pending_box_tree_updates();
         let root_element_id = self.window_state.root_view_id.get_element_id();
         let event = Event::Window(WindowEvent::UpdatePhase(
             UpdatePhaseEvent::BoxTreePendingUpdates,
         ));
         GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
+        start.elapsed()
     }
 
     fn commit_box_tree(&mut self) -> Duration {
@@ -808,20 +864,184 @@ impl WindowHandle {
         }
     }
 
-    pub(crate) fn render_frame(&mut self) {
+    pub(crate) fn render_frame(&mut self) -> bool {
         let renderer_ready = matches!(self.paint_state, PaintState::Initialized { .. });
         if self.window_state.has_pending_render() && renderer_ready {
-            self.paint();
+            let paint = self.paint();
             self.window_state.clear_pending_damage();
-            self.last_presented_at = Instant::now();
+            let presented = paint.presented;
+            if presented {
+                self.last_presented_at = Instant::now();
+                let update = mem::take(&mut self.pending_timing);
+                self.last_timing_report =
+                    Some(Self::build_timing_report("Frame Cycle", update, paint));
+            }
+            return presented;
         }
+        false
     }
 
-    pub fn paint(&mut self) {
-        if !matches!(self.paint_state, PaintState::Initialized { .. }) {
-            return;
+    fn build_timing_report(
+        root_label: &'static str,
+        update: FrameTimingAccumulator,
+        paint: crate::paint::renderer::PaintTiming,
+    ) -> TimingReport {
+        let update_total = update.total();
+        let total = update_total + paint.total;
+        let mut timings = TimingReport::new(total);
+        timings.push_stat(root_label, total, TimingKind::Total);
+        if update_total > Duration::ZERO {
+            timings.push_stat("Update", update_total, TimingKind::Update);
+        }
+        if update.style > Duration::ZERO {
+            timings.push_stat("Style", update.style, TimingKind::Style);
+        }
+        if update.layout > Duration::ZERO {
+            timings.push_stat("Layout", update.layout, TimingKind::Layout);
+        }
+        timings.push_stat("Paint", paint.total, TimingKind::Paint);
+        if paint.present.total > Duration::ZERO {
+            timings.push_stat("Present", paint.present.total, TimingKind::Present);
         }
 
+        let mut cursor = Duration::ZERO;
+        timings.push_span(root_label, Duration::ZERO, total, 0, TimingKind::Total);
+        if update_total > Duration::ZERO {
+            timings.push_span("Update Pipeline", cursor, update_total, 1, TimingKind::Update);
+            if update.style > Duration::ZERO {
+                timings.push_span("Style", cursor, update.style, 2, TimingKind::Style);
+                cursor += update.style;
+            }
+            if update.layout > Duration::ZERO {
+                timings.push_span("Layout", cursor, update.layout, 2, TimingKind::Layout);
+                if update.taffy > Duration::ZERO {
+                    timings.push_span("Taffy", cursor, update.taffy, 3, TimingKind::Layout);
+                }
+                if update.box_tree_update > Duration::ZERO {
+                    timings.push_span(
+                        "BoxTreeUpdate",
+                        cursor + update.taffy,
+                        update.box_tree_update,
+                        3,
+                        TimingKind::BoxTree,
+                    );
+                }
+                cursor += update.layout;
+            }
+            if update.box_tree_pending_updates > Duration::ZERO {
+                timings.push_span(
+                    "BoxTreePendingUpdates",
+                    cursor,
+                    update.box_tree_pending_updates,
+                    2,
+                    TimingKind::BoxTree,
+                );
+                cursor += update.box_tree_pending_updates;
+            }
+            if update.box_tree_commit > Duration::ZERO {
+                timings.push_span(
+                    "BoxTreeCommit",
+                    cursor,
+                    update.box_tree_commit,
+                    2,
+                    TimingKind::BoxTree,
+                );
+                cursor += update.box_tree_commit;
+            }
+        }
+
+        timings.push_span("Paint", cursor, paint.total, 1, TimingKind::Paint);
+        if paint.resize > Duration::ZERO {
+            timings.push_span("Resize", cursor, paint.resize, 2, TimingKind::Renderer);
+        }
+        if paint.pre_present_notify > Duration::ZERO {
+            timings.push_span(
+                "PrePresentNotify",
+                cursor + paint.resize,
+                paint.pre_present_notify,
+                2,
+                TimingKind::Renderer,
+            );
+        }
+        let mut paint_cursor = cursor + paint.resize + paint.pre_present_notify;
+        if paint.prepare > Duration::ZERO {
+            timings.push_span("Prepare", paint_cursor, paint.prepare, 2, TimingKind::Renderer);
+            paint_cursor += paint.prepare;
+        }
+        if paint.scene > Duration::ZERO {
+            timings.push_span("Scene", paint_cursor, paint.scene, 2, TimingKind::Paint);
+            paint_cursor += paint.scene;
+        }
+        if paint.finalize > Duration::ZERO {
+            timings.push_span("Finish", paint_cursor, paint.finalize, 2, TimingKind::Renderer);
+            paint_cursor += paint.finalize;
+        }
+        if paint.read_output > Duration::ZERO {
+            timings.push_span(
+                "ReadTarget",
+                paint_cursor,
+                paint.read_output,
+                2,
+                TimingKind::Renderer,
+            );
+            paint_cursor += paint.read_output;
+        }
+        if paint.present.total > Duration::ZERO {
+            timings.push_span("Present", paint_cursor, paint.present.total, 2, TimingKind::Present);
+            if paint.present.acquire_surface > Duration::ZERO {
+                timings.push_span(
+                    "AcquireSurface",
+                    paint_cursor,
+                    paint.present.acquire_surface,
+                    3,
+                    TimingKind::Present,
+                );
+            }
+            if paint.present.compose > Duration::ZERO {
+                timings.push_span(
+                    "Compose",
+                    paint_cursor + paint.present.acquire_surface,
+                    paint.present.compose,
+                    3,
+                    TimingKind::Present,
+                );
+            }
+            if paint.present.submit > Duration::ZERO {
+                timings.push_span(
+                    "Submit",
+                    paint_cursor + paint.present.acquire_surface + paint.present.compose,
+                    paint.present.submit,
+                    3,
+                    TimingKind::Present,
+                );
+            }
+            if paint.present.present_call > Duration::ZERO {
+                timings.push_span(
+                    "PresentCall",
+                    paint_cursor
+                        + paint.present.acquire_surface
+                        + paint.present.compose
+                        + paint.present.submit,
+                    paint.present.present_call,
+                    3,
+                    TimingKind::Present,
+                );
+            }
+        }
+
+        timings
+    }
+
+    pub(crate) fn take_last_timing_report(&mut self) -> Option<TimingReport> {
+        self.last_timing_report.take()
+    }
+
+    pub fn paint(&mut self) -> crate::paint::renderer::PaintTiming {
+        if !matches!(self.paint_state, PaintState::Initialized { .. }) {
+            return crate::paint::renderer::PaintTiming::default();
+        }
+
+        let total_start = Instant::now();
         let frame_size = self.window_state.root_size * self.window_state.os_scale;
         let frame_size = Size::new(frame_size.width.max(1.0), frame_size.height.max(1.0));
         let begin = floem_renderer::BeginFrame {
@@ -829,11 +1049,15 @@ impl WindowHandle {
             scale: self.window_state.effective_scale(),
             font_embolden: self.font_embolden,
         };
+        let resize_start = Instant::now();
         self.paint_state
             .backend_mut()
             .resize(frame_size.width as u32, frame_size.height as u32);
+        let resize = resize_start.elapsed();
 
+        let notify_start = Instant::now();
         self.window.pre_present_notify();
+        let pre_present_notify = notify_start.elapsed();
 
         let background = if self.transparent {
             None
@@ -853,9 +1077,9 @@ impl WindowHandle {
             record_paint_order: crate::paint::is_paint_order_tracking_enabled(),
         };
 
-        self.paint_state.backend_mut().render(
+        let mut timing = self.paint_state.backend_mut().render(
             begin,
-            &mut |renderer: &mut dyn floem_renderer::SceneRenderer| {
+            &mut |renderer: &mut dyn floem_renderer::RenderCore| {
                 if let Some(color) = background.as_ref() {
                     renderer.render(&mut |sink| {
                         PaintSink::fill(sink, FillRef::new(frame_size.to_rect().expand(), color));
@@ -868,13 +1092,18 @@ impl WindowHandle {
         let root_element_id = cx.window_state.root_view_id.get_element_id();
         let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::PaintPresent));
         GlobalEventCx::new(cx.window_state, root_element_id, event).route_window_event();
+        timing.resize = resize;
+        timing.pre_present_notify = pre_present_notify;
+        timing.total = total_start.elapsed();
+        timing
     }
 
-    fn capture_image(&mut self) -> Option<peniko::ImageData> {
+    fn capture_image(&mut self) -> crate::paint::renderer::CaptureOutput {
         if !matches!(self.paint_state, PaintState::Initialized { .. }) {
-            return None;
+            return crate::paint::renderer::CaptureOutput::default();
         }
 
+        let total_start = Instant::now();
         let frame_size = self.window_state.root_size * self.window_state.os_scale;
         let frame_size = Size::new(frame_size.width.max(1.0), frame_size.height.max(1.0));
         let begin = floem_renderer::BeginFrame {
@@ -882,11 +1111,15 @@ impl WindowHandle {
             scale: self.window_state.effective_scale(),
             font_embolden: self.font_embolden,
         };
+        let resize_start = Instant::now();
         self.paint_state
             .backend_mut()
             .resize(frame_size.width as u32, frame_size.height as u32);
+        let resize = resize_start.elapsed();
 
+        let notify_start = Instant::now();
         self.window.pre_present_notify();
+        let pre_present_notify = notify_start.elapsed();
 
         let background = if self.transparent {
             None
@@ -906,9 +1139,9 @@ impl WindowHandle {
             record_paint_order: crate::paint::is_paint_order_tracking_enabled(),
         };
 
-        let image = self.paint_state.backend_mut().capture(
+        let mut output = self.paint_state.backend_mut().capture(
             begin,
-            &mut |renderer: &mut dyn floem_renderer::SceneRenderer| {
+            &mut |renderer: &mut dyn floem_renderer::RenderCore| {
                 if let Some(color) = background.as_ref() {
                     renderer.render(&mut |sink| {
                         PaintSink::fill(sink, FillRef::new(frame_size.to_rect().expand(), color));
@@ -921,7 +1154,10 @@ impl WindowHandle {
         let root_element_id = cx.window_state.root_view_id.get_element_id();
         let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::PaintPresent));
         GlobalEventCx::new(cx.window_state, root_element_id, event).route_window_event();
-        image
+        output.timing.resize = resize;
+        output.timing.pre_present_notify = pre_present_notify;
+        output.timing.total = total_start.elapsed();
+        output
     }
 
     pub(crate) fn capture(&mut self) -> Capture {
@@ -943,32 +1179,37 @@ impl WindowHandle {
             }
         }
 
-        let start = Instant::now();
-        self.style();
-        let post_style = Instant::now();
+        let style_duration = self.style();
 
         let taffy_root_node = self.id.state().borrow().layout_id;
-        let taffy_duration = self.layout();
-        let _box_tree_duration = self.commit_box_tree();
-        let post_layout = Instant::now();
-        let window = self.capture_image();
-        let end = Instant::now();
+        let layout_timing = self.layout();
+        let box_tree_duration = self.commit_box_tree();
+        let paint = self.paint();
+        let capture_output = self.capture_image();
+        let timings = Self::build_timing_report(
+            "Capture Cycle",
+            FrameTimingAccumulator {
+                style: style_duration,
+                layout: layout_timing.total,
+                taffy: layout_timing.taffy,
+                box_tree_update: layout_timing.box_tree_update,
+                box_tree_pending_updates: Duration::ZERO,
+                box_tree_commit: box_tree_duration,
+            },
+            paint,
+        );
         let window_size = self.window_state.root_size;
         let state = CaptureState::collect_from(self.id, &self.window_state);
 
         let capture = Capture {
-            start,
-            post_style,
-            post_layout,
-            end,
-            taffy_duration,
+            timings,
             taffy_node_count: self.id.taffy().borrow().total_node_count(),
             taffy_depth: get_taffy_depth(self.id.taffy(), taffy_root_node),
-            window,
+            window: capture_output.image,
             window_size,
             root: Rc::new(root),
             state,
-            renderer: self.paint_state.backend().debug_info(),
+            renderer: self.paint_state.backend_mut().debug_info(),
         };
         // Process any updates produced by capturing
         self.process_update();
@@ -1023,23 +1264,30 @@ impl WindowHandle {
                 }
 
                 if needs_style {
-                    self.style();
+                    let style = self.style();
+                    self.pending_timing.style += style;
                 }
 
                 if self.needs_layout() {
-                    self.layout();
+                    let layout = self.layout();
+                    self.pending_timing.layout += layout.total;
+                    self.pending_timing.taffy += layout.taffy;
+                    self.pending_timing.box_tree_update += layout.box_tree_update;
                 }
 
                 if self.needs_box_tree_update() {
-                    self.update_box_tree_from_layout();
+                    let box_tree_update = self.update_box_tree_from_layout();
+                    self.pending_timing.box_tree_update += box_tree_update;
                 }
 
                 if !self.window_state.views_needing_box_tree_update.is_empty() {
-                    self.process_pending_box_tree_updates();
+                    let pending_updates = self.process_pending_box_tree_updates();
+                    self.pending_timing.box_tree_pending_updates += pending_updates;
                 }
 
                 if self.needs_box_tree_commit() {
-                    self.commit_box_tree();
+                    let commit = self.commit_box_tree();
+                    self.pending_timing.box_tree_commit += commit;
                 }
 
                 iterations += 1;
@@ -1089,24 +1337,31 @@ impl WindowHandle {
                 }
 
                 if needs_style {
-                    self.style();
+                    let style = self.style();
+                    self.pending_timing.style += style;
                 }
 
                 if self.needs_layout() {
-                    self.layout();
+                    let layout = self.layout();
+                    self.pending_timing.layout += layout.total;
+                    self.pending_timing.taffy += layout.taffy;
+                    self.pending_timing.box_tree_update += layout.box_tree_update;
                 }
 
                 if self.needs_box_tree_update() {
-                    self.update_box_tree_from_layout();
+                    let box_tree_update = self.update_box_tree_from_layout();
+                    self.pending_timing.box_tree_update += box_tree_update;
                 }
 
                 // Process any pending individual box tree updates after layout
                 if !self.window_state.views_needing_box_tree_update.is_empty() {
-                    self.process_pending_box_tree_updates();
+                    let pending_updates = self.process_pending_box_tree_updates();
+                    self.pending_timing.box_tree_pending_updates += pending_updates;
                 }
 
                 if self.needs_box_tree_commit() {
-                    self.commit_box_tree();
+                    let commit = self.commit_box_tree();
+                    self.pending_timing.box_tree_commit += commit;
                 }
             }
             if !self.has_deferred_update_messages() {
@@ -1734,18 +1989,10 @@ impl WindowHandle {
 
     #[cfg(target_os = "macos")]
     pub(crate) fn set_presents_with_transaction(&mut self, value: bool) {
-        #[cfg(not(any(
-            feature = "active-vello",
-            feature = "active-vger",
-            feature = "active-skia"
-        )))]
+        #[cfg(not(any(feature = "vello", feature = "vger", feature = "skia")))]
         let _ = value;
 
-        #[cfg(any(
-            feature = "active-vello",
-            feature = "active-vger",
-            feature = "active-skia"
-        ))]
+        #[cfg(any(feature = "vello", feature = "vger", feature = "skia"))]
         {
             use wgpu::hal::api::Metal;
             let Some(surface) = self.paint_state.backend().gpu_surface() else {

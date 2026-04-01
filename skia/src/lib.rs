@@ -1,68 +1,10 @@
-mod cpu;
-
-pub use cpu::{SkiaCpuRenderer, SkiaCpuTargetRenderer};
-
 use anyhow::{Result, anyhow};
 use floem_renderer::{
-    BeginFrame, CustomRenderer, DisplayCommandExt, GpuTextureTarget, RenderCore, RenderOutput,
-    Renderer, TargetRenderer, gpu_resources::GpuResources,
+    BeginFrame, GpuTextureTarget, RenderCore, RenderOutput, Renderer, TargetRenderer,
+    gpu_resources::GpuResources,
 };
-use imaging::{
-    BlurredRoundedRect, ClipRef, CustomPaintSink, FillRef, GlyphRunRef, GroupRef, PaintSink,
-    RetainedDrawRef, StrokeRef,
-};
-use imaging_skia::SkCanvasSink;
+use imaging::PaintSink;
 use wgpu::TextureUsages;
-
-struct SkiaCanvas<'a, 'b> {
-    inner: &'a mut SkCanvasSink<'b>,
-}
-
-impl PaintSink for SkiaCanvas<'_, '_> {
-    fn push_clip(&mut self, clip: ClipRef<'_>) {
-        self.inner.push_clip(clip);
-    }
-
-    fn pop_clip(&mut self) {
-        self.inner.pop_clip();
-    }
-
-    fn push_group(&mut self, group: GroupRef<'_>) {
-        self.inner.push_group(group);
-    }
-
-    fn pop_group(&mut self) {
-        self.inner.pop_group();
-    }
-
-    fn retained(&mut self, draw: RetainedDrawRef<'_>) {
-        self.inner.retained(draw);
-    }
-
-    fn fill(&mut self, draw: FillRef<'_>) {
-        self.inner.fill(draw);
-    }
-
-    fn stroke(&mut self, draw: StrokeRef<'_>) {
-        self.inner.stroke(draw);
-    }
-
-    fn glyph_run(
-        &mut self,
-        draw: GlyphRunRef<'_>,
-        glyphs: &mut dyn Iterator<Item = imaging::record::Glyph>,
-    ) {
-        self.inner.glyph_run(draw, glyphs);
-    }
-
-    fn blurred_rounded_rect(&mut self, draw: BlurredRoundedRect) {
-        self.inner.blurred_rounded_rect(draw);
-    }
-}
-
-impl CustomPaintSink<DisplayCommandExt> for SkiaCanvas<'_, '_> {
-    fn custom(&mut self, _command: &DisplayCommandExt) {}
-}
 
 pub struct SkiaRenderer {
     device: wgpu::Device,
@@ -85,10 +27,6 @@ impl SkiaRenderer {
         Self::from_texture(device, queue, texture_format, texture).map_err(|err| anyhow!(err))
     }
 
-    pub fn debug_info(&self) -> String {
-        "name: Skia\ninfo: imaging_skia::SkiaRenderer".to_string()
-    }
-
     fn from_texture(
         device: wgpu::Device,
         queue: wgpu::Queue,
@@ -108,24 +46,15 @@ impl SkiaRenderer {
             inner,
         })
     }
-
-    fn with_canvas<R>(&mut self, f: &mut dyn FnMut(&mut SkiaCanvas<'_, '_>) -> R) -> R {
-        self.inner
-            .with_canvas_sink(|sink| {
-                let mut canvas = SkiaCanvas { inner: sink };
-                f(&mut canvas)
-            })
-            .expect("render into imaging_skia canvas sink")
-    }
 }
 
 impl RenderCore for SkiaRenderer {
     fn render(&mut self, f: &mut dyn FnMut(&mut dyn PaintSink)) {
-        self.with_canvas(&mut |canvas| f(canvas));
+        RenderCore::render(&mut self.inner, f);
     }
 
     fn finish(&mut self) {
-        let _ = self.inner.with_canvas_sink(|c| c.finish());
+        RenderCore::finish(&mut self.inner);
     }
 
     fn readback(&mut self) -> Option<RenderOutput> {
@@ -133,6 +62,10 @@ impl RenderCore for SkiaRenderer {
             .wgpu_texture_view()
             .cloned()
             .map(RenderOutput::GpuTexture)
+    }
+
+    fn debug_info(&self) -> String {
+        self.inner.debug_info()
     }
 }
 
@@ -183,19 +116,6 @@ impl TargetRenderer for SkiaRenderer {
         renderer.set_size(frame);
         renderer.reset();
         Ok(renderer)
-    }
-}
-
-impl CustomRenderer for SkiaRenderer {
-    fn with_custom_paint_sink(
-        &mut self,
-        f: &mut dyn FnMut(&mut dyn CustomPaintSink<DisplayCommandExt>),
-    ) {
-        self.with_canvas(&mut |canvas| f(canvas));
-    }
-
-    fn debug_info(&self) -> String {
-        Self::debug_info(self)
     }
 }
 

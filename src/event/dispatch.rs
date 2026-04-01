@@ -1,6 +1,6 @@
 //! Event dispatch logic for handling events through the view tree.
 
-use std::{rc::Rc, sync::LazyLock, time::Instant};
+use std::{rc::Rc, sync::LazyLock, time::Instant as StdInstant};
 
 use peniko::kurbo::{Affine, Point, Rect};
 use smallvec::SmallVec;
@@ -28,9 +28,10 @@ use crate::{
     style::{StyleSelector, StyleSelectors, recalc::StyleReason},
     view::{VIEW_STORAGE, View},
     window::WindowState,
+    platform::Instant,
 };
 
-static START_TIME: LazyLock<Instant> = LazyLock::new(Instant::now);
+static START_TIME: LazyLock<StdInstant> = LazyLock::new(StdInstant::now);
 
 /// A single step in a capture/target/bubble dispatch sequence.
 #[derive(Clone, Copy, Debug)]
@@ -517,6 +518,7 @@ pub(crate) struct RouteCx<'r, 'w> {
     /// Guard against double-finish (e.g. explicit call + drop).
     finished: bool,
     prevent_default: bool,
+    profile_event: Option<(Instant, String, usize)>,
 }
 
 // ============================================================================
@@ -565,6 +567,7 @@ impl<'r, 'w> RouteCx<'r, 'w> {
         };
 
         Self {
+            profile_event: gcx.window_state.begin_profile_event(format!("{event:?}")),
             gcx,
             event,
             hit_path,
@@ -587,6 +590,7 @@ impl<'r, 'w> RouteCx<'r, 'w> {
             .and_then(|point| hit_test(gcx.window_state.root_view_id, point));
 
         Self {
+            profile_event: gcx.window_state.begin_profile_event(format!("{event:?}")),
             gcx,
             event,
             hit_path,
@@ -607,6 +611,7 @@ impl<'r, 'w> RouteCx<'r, 'w> {
         let event = gcx.event.clone();
         let source = gcx.source;
         Self {
+            profile_event: gcx.window_state.begin_profile_event(format!("{event:?}")),
             gcx,
             event,
             hit_path: None,
@@ -1054,6 +1059,9 @@ impl RouteCx<'_, '_> {
         }
 
         self.flush_pending_events();
+        self.gcx
+            .window_state
+            .finish_profile_event(self.profile_event.take());
     }
 
     /// Route a synthetic event, carrying the current event as `triggered_by`.

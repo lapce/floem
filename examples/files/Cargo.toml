@@ -7,11 +7,11 @@ edition = "2021"
 floem = { path = "../..", default-features = false, features = [
   "editor",
   "default-image-formats",
-  "fallback-vello-cpu",
   "serde",
 ] }
 
 [features]
-default = []
+default = ["vello-cpu"]
+vello-cpu = ["floem/vello-cpu"]
 vello = ["floem/vello"]
 vello-hybrid = ["floem/vello-hybrid"]

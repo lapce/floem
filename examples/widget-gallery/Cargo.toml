@@ -7,7 +7,6 @@ edition = "2024"
 floem = { path = "../..", default-features = false, features = [
   "editor",
   "default-image-formats",
-  "fallback-vello-cpu",
   "serde",
   "subduction",
 ] }
@@ -21,7 +20,7 @@ signpost = "*"
 default = ["full", "skia" ]
 vello = ["floem/vello", "files?/vello"]
 vger = ["floem/vger"]
-skia = ["floem/active-skia"]
+skia = ["floem/skia"]
 skia-cpu = ["floem/skia-cpu"]
 vello-cpu = ["floem/vello-cpu"]
 tiny-skia = ["floem/tiny-skia"]

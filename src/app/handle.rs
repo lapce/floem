@@ -186,10 +186,18 @@ impl ApplicationHandle {
                     if let Some(handle) = handle {
                         if let Some(profile) = end_profile {
                             profile.set(handle.profile.take().map(|mut profile| {
-                                profile.next_frame();
+                                profile.current.events.extend(handle.take_profile_events());
+                                handle.window_state.profile_events_enabled = false;
+                                handle.window_state.profile_event_depth = 0;
+                                if profile.current.timing.is_some() {
+                                    profile.next_frame();
+                                }
                                 Rc::new(profile)
                             }));
                         } else {
+                            handle.window_state.profile_events_enabled = true;
+                            handle.window_state.profile_event_depth = 0;
+                            handle.window_state.profile_events.clear();
                             handle.profile = Some(Profile::default());
                         }
                     }
@@ -306,6 +314,8 @@ impl ApplicationHandle {
             None => {}
         }
 
+        let mut frame_presented = false;
+
         match event {
             WindowEvent::ActivationTokenDone { .. } => {}
             WindowEvent::SurfaceResized(size) => {
@@ -316,7 +326,7 @@ impl ApplicationHandle {
                 #[cfg(target_os = "macos")]
                 window_handle.set_presents_with_transaction(true);
 
-                window_handle.render_frame();
+                frame_presented = window_handle.render_frame();
 
                 #[cfg(target_os = "macos")]
                 window_handle.set_presents_with_transaction(false);
@@ -393,7 +403,7 @@ impl ApplicationHandle {
                 }
             }
             WindowEvent::RedrawRequested => {
-                window_handle.render_frame();
+                frame_presented = window_handle.render_frame();
             }
             WindowEvent::PanGesture { .. } => {}
             WindowEvent::DoubleTapGesture { .. } => {}
@@ -412,18 +422,28 @@ impl ApplicationHandle {
             }
         }
 
-        if let Some((name, start, new_frame)) = start {
+        if let Some((name, start, _new_frame)) = start {
             let end = Instant::now();
 
             if let Some(window_handle) = self.window_handles.get_mut(&window_id) {
+                let queued_events = window_handle.take_profile_events();
+                let timing = if frame_presented {
+                    window_handle.take_last_timing_report()
+                } else {
+                    None
+                };
                 let profile = window_handle.profile.as_mut().unwrap();
+                profile.current.events.extend(queued_events);
 
-                profile
-                    .current
-                    .events
-                    .push(ProfileEvent { start, end, name });
+                profile.current.events.push(ProfileEvent {
+                    start,
+                    end,
+                    name: name.to_string(),
+                    depth: 0,
+                });
 
-                if new_frame {
+                if frame_presented {
+                    profile.current.timing = timing;
                     profile.next_frame();
                 }
             }

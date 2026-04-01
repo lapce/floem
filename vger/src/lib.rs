@@ -4,16 +4,16 @@ use std::sync::Arc;
 use anyhow::Result;
 use floem_renderer::gpu_resources::GpuResources;
 use floem_renderer::{
-    BeginFrame, CustomRenderer, DisplayCommandExt, GpuTextureTarget, RenderCore, RenderOutput,
-    Renderer, TargetRenderer, tiny_skia,
+    BeginFrame, GpuTextureTarget, RenderCore, RenderOutput, Renderer, TargetRenderer,
 };
-use floem_vger_rs::{GlyphImage, Image, PaintIndex, PixelFormat, Vger};
+use floem_vger_rs::{GlyphImage, PaintIndex, Vger};
 use imaging::{
-    BlurredRoundedRect, ClipRef, CustomPaintSink, FillRef, GlyphRunRef, GroupRef, PaintSink,
-    StrokeRef, record::Glyph,
+    BlurredRoundedRect, ClipRef, FillRef, GlyphRunRef, GroupRef, PaintSink, RetainedDrawRef,
+    StrokeRef,
+    record::{Glyph, ReplaySource},
 };
 use peniko::kurbo::Stroke;
-use peniko::{Blob, Extend, ImageQuality, LinearGradientPosition};
+use peniko::{Blob, LinearGradientPosition};
 use peniko::{
     BrushRef, Color, GradientKind,
     kurbo::{Affine, Point, Rect, Shape},
@@ -45,7 +45,7 @@ struct ResolvedGlyph {
 
 pub struct VgerRenderer {
     device: Arc<Device>,
-    #[allow(unused)]
+    #[expect(unused)]
     queue: Arc<Queue>,
     vger: Vger,
     texture_format: TextureFormat,
@@ -94,7 +94,6 @@ impl VgerRenderer {
 
         let device = Arc::new(device);
         let queue = Arc::new(queue);
-
         let vger = floem_vger_rs::Vger::new(device.clone(), queue.clone(), texture_format);
 
         Ok(Self {
@@ -159,6 +158,14 @@ impl PaintSink for VgerRenderer {
 
     fn pop_group(&mut self) {}
 
+    fn retained(&mut self, draw: RetainedDrawRef<'_>) {
+        if !self.draw_retained_via_atlas(&draw) {
+            draw.retained
+                .scene
+                .replay_into_transformed(self, draw.transform);
+        }
+    }
+
     fn fill(&mut self, draw: FillRef<'_>) {
         self.set_transform(draw.transform);
         match draw.shape {
@@ -190,29 +197,6 @@ impl PaintSink for VgerRenderer {
             draw.color,
             draw.std_dev,
         );
-    }
-}
-
-impl CustomPaintSink<DisplayCommandExt> for VgerRenderer {
-    fn custom(&mut self, command: &DisplayCommandExt) {
-        match command {
-            DisplayCommandExt::DrawSvg {
-                svg,
-                rect,
-                transform,
-                brush,
-            } => {
-                self.set_transform(*transform);
-                self.draw_svg(
-                    floem_renderer::Svg {
-                        tree: svg.tree.as_ref(),
-                        hash: svg.hash.as_ref(),
-                    },
-                    *rect,
-                    brush.as_ref(),
-                );
-            }
-        }
     }
 }
 
@@ -294,20 +278,55 @@ impl TargetRenderer for VgerRenderer {
     }
 }
 
-impl CustomRenderer for VgerRenderer {
-    fn with_custom_paint_sink(
-        &mut self,
-        f: &mut dyn FnMut(&mut dyn CustomPaintSink<DisplayCommandExt>),
-    ) {
-        f(self)
-    }
-
-    fn debug_info(&self) -> String {
-        Self::debug_info(self)
-    }
-}
-
 impl VgerRenderer {
+    fn draw_retained_via_atlas(&mut self, draw: &RetainedDrawRef<'_>) -> bool {
+        let Some(_policy) = draw.retained.cache_policy.image_transform else {
+            return false;
+        };
+        let Some(bounds) = draw.retained.bounds else {
+            return false;
+        };
+        if bounds.is_zero_area() {
+            return true;
+        }
+
+        let coeffs = draw.transform.as_coeffs();
+        if coeffs[1] != 0.0 || coeffs[2] != 0.0 || coeffs[0] <= 0.0 || coeffs[3] <= 0.0 {
+            return false;
+        }
+
+        let device_rect = draw.transform.transform_rect_bbox(bounds);
+        if device_rect.is_zero_area() {
+            return true;
+        }
+
+        let width = device_rect.width().round().max(1.0);
+        let height = device_rect.height().round().max(1.0);
+        if width > u16::MAX as f64 || height > u16::MAX as f64 {
+            return false;
+        }
+
+        let width = width as u32;
+        let height = height as u32;
+        let hash = draw.retained.stable_id().to_le_bytes();
+        let scene = draw.retained.scene.clone();
+        let raster_transform = Affine::scale_non_uniform(
+            width as f64 / bounds.width(),
+            height as f64 / bounds.height(),
+        ) * Affine::translate((-bounds.x0, -bounds.y0));
+
+        self.vger.render_svg(
+            device_rect.x0.round() as f32,
+            device_rect.y0.round() as f32,
+            &hash,
+            width,
+            height,
+            move || rasterize_retained_rgba8(&scene, width, height, raster_transform),
+            None,
+        );
+        true
+    }
+
     fn device_transform(&self) -> Affine {
         self.transform
     }
@@ -487,6 +506,23 @@ impl VgerRenderer {
         self.texture = Some(texture);
         self.view = Some(view);
     }
+}
+
+fn rasterize_retained_rgba8(
+    scene: &imaging::record::Scene,
+    width: u32,
+    height: u32,
+    transform: Affine,
+) -> Vec<u8> {
+    if width > u16::MAX as u32 || height > u16::MAX as u32 {
+        return vec![0; width as usize * height as usize * 4];
+    }
+
+    let mut renderer = imaging_vello_cpu::VelloCpuRenderer::new(width as u16, height as u16);
+    scene.replay_into_transformed(&mut renderer, transform);
+    renderer
+        .read_rgba8()
+        .unwrap_or_else(|_| vec![0; width as usize * height as usize * 4])
 }
 
 impl VgerRenderer {
@@ -768,84 +804,6 @@ impl VgerRenderer {
         }
     }
 
-    pub fn draw_svg<'b>(
-        &mut self,
-        svg: floem_renderer::Svg<'b>,
-        rect: Rect,
-        brush: Option<impl Into<BrushRef<'b>>>,
-    ) {
-        let transform = self.device_transform().as_coeffs();
-        let (scale_x, scale_y, _) = self.scale_components();
-
-        let origin = rect.origin();
-        let transformed_x = transform[0] * origin.x + transform[2] * origin.y + transform[4];
-        let transformed_y = transform[1] * origin.x + transform[3] * origin.y + transform[5];
-
-        let x = transformed_x.round() as f32;
-        let y = transformed_y.round() as f32;
-
-        let width = (rect.width() * scale_x.abs()).round().max(1.0) as u32;
-        let height = (rect.height() * scale_y.abs()).round().max(1.0) as u32;
-
-        let brush = brush.map(Into::into);
-
-        if let Some(BrushRef::Image(image)) = brush {
-            let image = image.to_owned();
-            let mut svg_pixmap = tiny_skia::Pixmap::new(width, height).unwrap();
-            let svg_scale = (width as f32 / svg.tree.size().width())
-                .min(height as f32 / svg.tree.size().height());
-            let transform = tiny_skia::Transform::from_scale(svg_scale, svg_scale);
-            resvg::render(svg.tree, transform, &mut svg_pixmap.as_mut());
-
-            let Some(final_pixmap) = colorize_svg_pixmap(&svg_pixmap, &image) else {
-                return;
-            };
-
-            let mut hash = Vec::with_capacity(
-                svg.hash.len() + std::mem::size_of::<u64>() + std::mem::size_of::<u32>() * 2,
-            );
-            hash.extend_from_slice(svg.hash);
-            hash.extend_from_slice(&image.image.data.id().to_le_bytes());
-            hash.extend_from_slice(&width.to_le_bytes());
-            hash.extend_from_slice(&height.to_le_bytes());
-
-            self.vger
-                .render_image(x, y, &hash, width, height, || Image {
-                    width,
-                    height,
-                    data: final_pixmap.data().to_vec().into(),
-                    pixel_format: PixelFormat::Rgba,
-                });
-            return;
-        }
-
-        let paint = brush.and_then(|b| self.brush_to_paint(b));
-
-        self.vger.render_svg(
-            x,
-            y,
-            svg.hash,
-            width,
-            height,
-            || {
-                let mut img = tiny_skia::Pixmap::new(width, height).unwrap();
-
-                let svg_scale = (width as f32 / svg.tree.size().width())
-                    .min(height as f32 / svg.tree.size().height());
-
-                let final_scale_x = svg_scale;
-                let final_scale_y = svg_scale;
-
-                let transform = tiny_skia::Transform::from_scale(final_scale_x, final_scale_y);
-
-                resvg::render(svg.tree, transform, &mut img.as_mut());
-
-                img.take()
-            },
-            paint,
-        );
-    }
-
     pub fn set_transform(&mut self, transform: Affine) {
         self.transform = transform;
     }
@@ -884,7 +842,7 @@ impl VgerRenderer {
 
     pub fn pop_layer(&mut self) {}
 
-    pub fn debug_info(&self) -> String {
+    pub fn debug_info(&mut self) -> String {
         use std::fmt::Write;
 
         let mut out = String::new();
@@ -900,67 +858,6 @@ fn vger_color(color: Color) -> floem_vger_rs::Color {
         b: color.components[2],
         a: color.components[3],
     }
-}
-
-fn image_quality_to_filter_quality(quality: ImageQuality) -> tiny_skia::FilterQuality {
-    match quality {
-        ImageQuality::Low => tiny_skia::FilterQuality::Nearest,
-        ImageQuality::Medium | ImageQuality::High => tiny_skia::FilterQuality::Bilinear,
-    }
-}
-
-fn image_brush_spread_mode(image: &peniko::ImageBrush) -> tiny_skia::SpreadMode {
-    match if image.sampler.x_extend == image.sampler.y_extend {
-        image.sampler.x_extend
-    } else {
-        Extend::Pad
-    } {
-        Extend::Pad => tiny_skia::SpreadMode::Pad,
-        Extend::Repeat => tiny_skia::SpreadMode::Repeat,
-        Extend::Reflect => tiny_skia::SpreadMode::Reflect,
-    }
-}
-
-fn image_brush_pixmap(image: &peniko::ImageBrush) -> Option<tiny_skia::Pixmap> {
-    let mut pixmap = tiny_skia::Pixmap::new(image.image.width, image.image.height)?;
-    for (a, b) in pixmap
-        .pixels_mut()
-        .iter_mut()
-        .zip(image.image.data.data().chunks_exact(4))
-    {
-        *a = tiny_skia::Color::from_rgba8(b[0], b[1], b[2], b[3])
-            .premultiply()
-            .to_color_u8();
-    }
-    Some(pixmap)
-}
-
-fn colorize_svg_pixmap(
-    mask_pixmap: &tiny_skia::Pixmap,
-    image: &peniko::ImageBrush,
-) -> Option<tiny_skia::Pixmap> {
-    let image_pixmap = image_brush_pixmap(image)?;
-    let mut colored = tiny_skia::Pixmap::new(mask_pixmap.width(), mask_pixmap.height())?;
-    let rect = tiny_skia::Rect::from_xywh(
-        0.0,
-        0.0,
-        mask_pixmap.width() as f32,
-        mask_pixmap.height() as f32,
-    )?;
-    let paint = tiny_skia::Paint {
-        shader: tiny_skia::Pattern::new(
-            image_pixmap.as_ref(),
-            image_brush_spread_mode(image),
-            image_quality_to_filter_quality(image.sampler.quality),
-            image.sampler.alpha,
-            tiny_skia::Transform::identity(),
-        ),
-        ..Default::default()
-    };
-    colored.fill_rect(rect, &paint, tiny_skia::Transform::identity(), None);
-    let mask = tiny_skia::Mask::from_pixmap(mask_pixmap.as_ref(), tiny_skia::MaskType::Alpha);
-    colored.apply_mask(&mask);
-    Some(colored)
 }
 
 fn scaled_embolden_strength(font_embolden: f32, scale: f64) -> f32 {

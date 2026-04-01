@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc, time::Duration, time::Instant};
+use std::{cell::RefCell, collections::HashMap, rc::Rc, time::Duration, time::Instant};
 
 use floem::{
     ViewId,
@@ -25,6 +25,18 @@ use floem::{
 use palette::css;
 
 use crate::form::{form, form_item};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct CheckerboardCacheKey {
+    width_bits: u64,
+    height_bits: u64,
+}
+
+thread_local! {
+    static TRANSPARENCY_CHECKERBOARD_CACHE:
+        RefCell<HashMap<CheckerboardCacheKey, floem::imaging::record::Retained>> =
+            RefCell::new(HashMap::new());
+}
 
 pub fn canvas_view() -> impl IntoView {
     let rounded = RwSignal::new(true);
@@ -123,33 +135,131 @@ fn two_d_picker(color: RwSignal<Color>) -> impl IntoView {
 }
 
 fn draw_transparency_checkerboard(cx: &mut PaintCx, size: Size, clip_path: &impl Shape) {
+    let retained = cached_transparency_checkerboard(size);
     cx.painter.with_fill_clip(clip_path.to_path(0.1), |p| {
-        let cell_size = 8.0;
-        let dark_color = Brush::Solid(css::LIGHT_GRAY);
-        let light_color = Brush::Solid(css::WHITE);
-
-        let cols = (size.width / cell_size).ceil() as usize;
-        let rows = (size.height / cell_size).ceil() as usize;
-
-        for row in 0..rows {
-            for col in 0..cols {
-                let brush = if (row + col) % 2 == 0 {
-                    &dark_color
-                } else {
-                    &light_color
-                };
-
-                let rect = Rect::new(
-                    col as f64 * cell_size,
-                    row as f64 * cell_size,
-                    (col + 1) as f64 * cell_size,
-                    (row + 1) as f64 * cell_size,
-                );
-
-                p.fill(rect, brush).draw();
-            }
-        }
+        p.draw_retained(
+            retained.as_ref(),
+            floem::kurbo::Affine::IDENTITY,
+            floem::imaging::Composite::default(),
+        );
     });
+}
+
+fn size_cache_key(size: Size) -> CheckerboardCacheKey {
+    CheckerboardCacheKey {
+        width_bits: size.width.to_bits(),
+        height_bits: size.height.to_bits(),
+    }
+}
+
+fn cached_transparency_checkerboard(size: Size) -> floem::imaging::record::Retained {
+    let key = size_cache_key(size);
+
+    TRANSPARENCY_CHECKERBOARD_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if let Some(retained) = cache.get(&key) {
+            return retained.clone();
+        }
+
+        let retained = floem::imaging::Retained::record(|p| {
+            let cell_size = 8.0;
+            let dark_color = Brush::Solid(css::LIGHT_GRAY);
+            let light_color = Brush::Solid(css::WHITE);
+
+            let cols = (size.width / cell_size).ceil() as usize;
+            let rows = (size.height / cell_size).ceil() as usize;
+
+            for row in 0..rows {
+                for col in 0..cols {
+                    let brush = if (row + col) % 2 == 0 {
+                        &dark_color
+                    } else {
+                        &light_color
+                    };
+
+                    let rect = Rect::new(
+                        col as f64 * cell_size,
+                        row as f64 * cell_size,
+                        (col + 1) as f64 * cell_size,
+                        (row + 1) as f64 * cell_size,
+                    );
+
+                    p.fill(rect, brush).draw();
+                }
+            }
+        })
+        .with_bounds(Rect::ZERO.with_size(size))
+        .with_cache_policy(floem::imaging::RetainedCachePolicy {
+            image_transform: Some(floem::imaging::RetainedTransformPolicy::Linear),
+            eviction: floem::imaging::RetainedEvictionPolicy::UntilUnused,
+        });
+
+        cache.insert(key, retained.clone());
+        retained
+    })
+}
+
+fn build_sat_value_field(size: Size, hue: f32) -> floem::imaging::record::Retained {
+    let rect_path = Rect::ZERO.with_size(size).to_rounded_rect(8.);
+    floem::imaging::Retained::record(|p| {
+        let white = Brush::Solid(css::WHITE);
+        p.fill(rect_path, &white).draw();
+
+        let sat_gradient: Brush = Gradient::new_linear(Point::ZERO, Point::new(size.width, 0.0))
+            .with_stops([
+                (0.0, css::WHITE),
+                (1.0, AlphaColor::<Hsl>::new([hue, 100., 50., 1.]).convert()),
+            ])
+            .with_interpolation_cs(ColorSpaceTag::LinearSrgb)
+            .into();
+        p.fill(rect_path, &sat_gradient).draw();
+
+        let val_gradient: Brush = Gradient::new_linear(Point::ZERO, Point::new(0.0, size.height))
+            .with_stops([(0.0, Color::from_rgba8(0, 0, 0, 0)), (1.0, css::BLACK)])
+            .with_interpolation_cs(ColorSpaceTag::LinearSrgb)
+            .into();
+        let group = floem::imaging::GroupRef::new()
+            .with_clip(floem::imaging::ClipRef::fill(rect_path))
+            .with_composite(floem::imaging::Composite::new(
+                floem::peniko::BlendMode {
+                    mix: Mix::Multiply,
+                    compose: Compose::SrcOver,
+                },
+                1.0,
+            ));
+        p.with_group(group, |painter| {
+            painter.fill(rect_path, &val_gradient).draw();
+        });
+    })
+    .with_bounds(Rect::ZERO.with_size(size))
+    .with_cache_policy(floem::imaging::RetainedCachePolicy {
+        image_transform: Some(floem::imaging::RetainedTransformPolicy::Linear),
+        eviction: floem::imaging::RetainedEvictionPolicy::UntilUnused,
+    })
+}
+
+fn build_hue_picker_gradient(size: Size) -> floem::imaging::record::Retained {
+    let rect_path = Rect::ZERO.with_size(size).to_rounded_rect(8.);
+    floem::imaging::Retained::record(|p| {
+        let hue_gradient: Brush = Gradient::new_linear(
+            Point::new(0.0, size.height / 2.0),
+            Point::new(size.width, size.height / 2.0),
+        )
+        .with_stops([
+            (0.0, AlphaColor::<Hsl>::new([0.0, 100.0, 50.0, 1.0])),
+            (1.0, AlphaColor::<Hsl>::new([360.0, 100.0, 50.0, 1.0])),
+        ])
+        .with_hue_direction(floem::peniko::color::HueDirection::Longer)
+        .with_interpolation_cs(ColorSpaceTag::Hsl)
+        .into();
+
+        p.fill(rect_path, &hue_gradient).draw();
+    })
+    .with_bounds(Rect::ZERO.with_size(size))
+    .with_cache_policy(floem::imaging::RetainedCachePolicy {
+        image_transform: Some(floem::imaging::RetainedTransformPolicy::Linear),
+        eviction: floem::imaging::RetainedEvictionPolicy::UntilUnused,
+    })
 }
 
 pub struct SatValuePicker {
@@ -158,6 +268,8 @@ pub struct SatValuePicker {
     current_color: AlphaColor<Hwb>,
     on_change: Option<Box<dyn Fn(Color)>>,
     point: Point,
+    retained_draw: Option<floem::imaging::record::Retained>,
+    retained_draw_hue_bits: Option<u32>,
 }
 impl SatValuePicker {
     pub fn new(color: impl Fn() -> Color + 'static) -> Self {
@@ -170,6 +282,8 @@ impl SatValuePicker {
             current_color: color.convert(),
             on_change: None,
             point: Point::ZERO,
+            retained_draw: None,
+            retained_draw_hue_bits: None,
         }
     }
 
@@ -200,6 +314,7 @@ impl SatValuePicker {
 
     fn post_layout(&mut self, new_layout: &LayoutChanged) {
         self.size = new_layout.new_box.size();
+        self.retained_draw = None;
     }
 
     fn set_from_point(&mut self, point: Point) -> Color {
@@ -262,39 +377,20 @@ impl View for SatValuePicker {
         let size = self.size;
         let rect_path = Rect::ZERO.with_size(size).to_rounded_rect(8.);
         let hue = self.current_color.components[0];
+        let hue_bits = hue.to_bits();
 
-        // base
-        let white = Brush::Solid(css::WHITE);
-        cx.painter.fill(rect_path, &white).draw();
+        if self.retained_draw.is_none() || self.retained_draw_hue_bits != Some(hue_bits) {
+            self.retained_draw = Some(build_sat_value_field(size, hue));
+            self.retained_draw_hue_bits = Some(hue_bits);
+        }
 
-        // saturation gradient
-        let sat_gradient: Brush = Gradient::new_linear(Point::ZERO, Point::new(size.width, 0.0))
-            .with_stops([
-                (0.0, css::WHITE),
-                (1.0, AlphaColor::<Hsl>::new([hue, 100., 50., 1.]).convert()),
-            ])
-            .with_interpolation_cs(ColorSpaceTag::LinearSrgb)
-            .into();
-
-        cx.painter.fill(rect_path, &sat_gradient).draw();
-
-        // value gradient
-        let val_gradient: Brush = Gradient::new_linear(Point::ZERO, Point::new(0.0, size.height))
-            .with_stops([(0.0, Color::from_rgba8(0, 0, 0, 0)), (1.0, css::BLACK)])
-            .with_interpolation_cs(ColorSpaceTag::LinearSrgb)
-            .into();
-        let group = floem::imaging::GroupRef::new()
-            .with_clip(floem::imaging::ClipRef::fill(rect_path))
-            .with_composite(floem::imaging::Composite::new(
-                floem::peniko::BlendMode {
-                    mix: Mix::Multiply,
-                    compose: Compose::SrcOver,
-                },
-                1.0,
-            ));
-        cx.painter.with_group(group, |p| {
-            p.fill(rect_path, &val_gradient).draw();
-        });
+        if let Some(retained_draw) = self.retained_draw.as_ref() {
+            cx.painter.draw_retained(
+                retained_draw.as_ref(),
+                floem::kurbo::Affine::IDENTITY,
+                floem::imaging::Composite::default(),
+            );
+        }
 
         if size.width > 0.0 && size.height > 0.0 {
             // Larger indicator
@@ -324,6 +420,7 @@ pub struct HuePicker {
     size: Size,
     current_color: AlphaColor<Hsl>,
     on_change: Option<Box<dyn Fn(Color)>>,
+    retained_draw: Option<floem::imaging::record::Retained>,
 }
 
 impl HuePicker {
@@ -336,6 +433,7 @@ impl HuePicker {
             size: Size::ZERO,
             current_color: color.convert(),
             on_change: None,
+            retained_draw: None,
         }
     }
 
@@ -356,6 +454,7 @@ impl HuePicker {
 
     fn post_layout(&mut self, new_layout: &LayoutChanged) {
         self.size = new_layout.new_box.size();
+        self.retained_draw = None;
     }
 
     fn set_from_point(&mut self, point: Point) -> Color {
@@ -417,19 +516,18 @@ impl View for HuePicker {
     fn paint(&mut self, cx: &mut PaintCx) {
         let size = self.size;
         let rect_path = Rect::ZERO.with_size(size).to_rounded_rect(8.);
-        let hue_gradient: Brush = Gradient::new_linear(
-            Point::new(0.0, size.height / 2.0),
-            Point::new(size.width, size.height / 2.0),
-        )
-        .with_stops([
-            (0.0, AlphaColor::<Hsl>::new([0.0, 100.0, 50.0, 1.0])),
-            (1.0, AlphaColor::<Hsl>::new([360.0, 100.0, 50.0, 1.0])),
-        ])
-        .with_hue_direction(floem::peniko::color::HueDirection::Longer)
-        .with_interpolation_cs(ColorSpaceTag::Hsl)
-        .into();
 
-        cx.painter.fill(rect_path, &hue_gradient).draw();
+        if self.retained_draw.is_none() {
+            self.retained_draw = Some(build_hue_picker_gradient(size));
+        }
+
+        if let Some(retained_draw) = self.retained_draw.as_ref() {
+            cx.painter.draw_retained(
+                retained_draw.as_ref(),
+                floem::kurbo::Affine::IDENTITY,
+                floem::imaging::Composite::default(),
+            );
+        }
         if size.width > 0.0 {
             let hue = self.current_color.components[0];
             let x_pos = hue as f64 / 360. * size.width;

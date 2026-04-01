@@ -23,6 +23,7 @@ use crate::{
     action::add_update_message,
     context::FrameUpdate,
     event::{DragTracker, Event, WindowEvent, clear_hit_test_cache},
+    platform::Instant,
     layout::responsive::{GridBreakpoints, ScreenSizeBp},
     message::UpdateMessage,
     paint::PaintStats,
@@ -192,6 +193,17 @@ pub struct WindowState {
     /// These are processed after layout and before commit.
     pub(crate) views_needing_box_tree_update: FxHashSet<ViewId>,
     pub(crate) focus_nav_cache: FocusNavCache,
+    pub(crate) profile_events_enabled: bool,
+    pub(crate) profile_event_depth: usize,
+    pub(crate) profile_events: Vec<QueuedProfileEvent>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct QueuedProfileEvent {
+    pub start: Instant,
+    pub end: Instant,
+    pub name: String,
+    pub depth: usize,
 }
 
 impl WindowState {
@@ -257,7 +269,32 @@ impl WindowState {
             listeners: FxHashMap::default(),
             views_needing_box_tree_update: FxHashSet::default(),
             focus_nav_cache: FocusNavCache::default(),
+            profile_events_enabled: false,
+            profile_event_depth: 0,
+            profile_events: Vec::new(),
         }
+    }
+
+    pub(crate) fn begin_profile_event(&mut self, name: String) -> Option<(Instant, String, usize)> {
+        if !self.profile_events_enabled {
+            return None;
+        }
+        let depth = self.profile_event_depth;
+        self.profile_event_depth += 1;
+        Some((Instant::now(), name, depth))
+    }
+
+    pub(crate) fn finish_profile_event(&mut self, event: Option<(Instant, String, usize)>) {
+        let Some((start, name, depth)) = event else {
+            return;
+        };
+        self.profile_event_depth = self.profile_event_depth.saturating_sub(1);
+        self.profile_events.push(QueuedProfileEvent {
+            start,
+            end: Instant::now(),
+            name,
+            depth,
+        });
     }
 
     #[inline]
@@ -928,7 +965,7 @@ impl WindowState {
     /// correctness, or damage-driven cursor/hover updates.
     pub fn commit_box_tree(&mut self) {
         self.invalidate_focus_nav_cache();
-        if let Some(dragging) = &mut self.drag_tracker.active_drag
+        if let Some(dragging) = self.drag_tracker.active_drag.as_mut()
             && let Some(dragging_preview) = dragging.dragging_preview.clone()
         {
             let local_bounds = self
@@ -970,6 +1007,8 @@ impl WindowState {
             self.box_tree
                 .borrow_mut()
                 .set_world_position(dragging_preview.element_id.0, Some(new_point));
+            self.dirty_paint_elements
+                .insert(dragging_preview.element_id);
 
             // Schedule next animation frame if needed
             if dragging.should_schedule_animation_frame() {

@@ -2,9 +2,8 @@ mod data;
 pub(crate) mod profiler;
 mod view;
 use floem_reactive::{Effect, Scope};
-use floem_renderer::DisplayCommandExt;
 use floem_renderer::text::FontWeight;
-use imaging::record::{ExtendedScene, ReplaySourceExt};
+use imaging::record::{ReplaySource, Scene};
 use peniko::kurbo::{Rect, Size};
 use peniko::{
     Color,
@@ -17,7 +16,7 @@ use crate::{
     AnyView, Clipboard, ElementId, ViewId, WindowState,
     event::EventPropagation,
     inspector::data::CapturedDatas,
-    platform::{Duration, Instant},
+    platform::Duration,
     prelude::*,
     style::{
         BorderRadius, FontSizeCx, Length, LengthAuto, OverflowX, OverflowY, StrokeWrap, Style,
@@ -31,6 +30,7 @@ use taffy::{
     prelude::{Layout, auto, fr},
     style::FlexDirection,
 };
+use crate::views::TabSelectorClass;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum BoxModelRegion {
@@ -566,11 +566,7 @@ impl CapturedView {
 
 pub struct Capture {
     pub root: Rc<CapturedView>,
-    pub start: Instant,
-    pub post_style: Instant,
-    pub post_layout: Instant,
-    pub end: Instant,
-    pub taffy_duration: Duration,
+    pub timings: TimingReport,
     pub taffy_node_count: usize,
     pub taffy_depth: usize,
     /// Captured window image in render-target pixels, if the backend supports capture.
@@ -581,10 +577,80 @@ pub struct Capture {
     pub renderer: String,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TimingKind {
+    Total,
+    Update,
+    Style,
+    Layout,
+    BoxTree,
+    Paint,
+    Present,
+    Renderer,
+}
+
+#[derive(Clone, Debug)]
+pub struct TimingSpan {
+    pub label: &'static str,
+    pub start: Duration,
+    pub duration: Duration,
+    pub depth: usize,
+    pub kind: TimingKind,
+}
+
+#[derive(Clone, Debug)]
+pub struct TimingStat {
+    pub label: &'static str,
+    pub duration: Duration,
+    pub kind: TimingKind,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct TimingReport {
+    pub total: Duration,
+    pub stats: Vec<TimingStat>,
+    pub spans: Vec<TimingSpan>,
+}
+
+impl TimingReport {
+    pub fn new(total: Duration) -> Self {
+        Self {
+            total,
+            stats: Vec::new(),
+            spans: Vec::new(),
+        }
+    }
+
+    pub fn push_stat(&mut self, label: &'static str, duration: Duration, kind: TimingKind) {
+        self.stats.push(TimingStat {
+            label,
+            duration,
+            kind,
+        });
+    }
+
+    pub fn push_span(
+        &mut self,
+        label: &'static str,
+        start: Duration,
+        duration: Duration,
+        depth: usize,
+        kind: TimingKind,
+    ) {
+        self.spans.push(TimingSpan {
+            label,
+            start,
+            duration,
+            depth,
+            kind,
+        });
+    }
+}
+
 #[derive(Default)]
 pub struct CaptureState {
     computed_styles: HashMap<ViewId, Style>,
-    scenes: HashMap<ViewId, ExtendedScene<DisplayCommandExt>>,
+    scenes: HashMap<ViewId, Scene>,
 }
 
 impl CaptureState {
@@ -593,13 +659,13 @@ impl CaptureState {
             id: ViewId,
             window_state: &WindowState,
             computed_styles: &mut HashMap<ViewId, Style>,
-            scenes: &mut HashMap<ViewId, ExtendedScene<DisplayCommandExt>>,
+            scenes: &mut HashMap<ViewId, Scene>,
         ) {
             computed_styles.insert(id, id.state().borrow().computed_style.clone());
-            let mut scene = ExtendedScene::new();
+            let mut scene = Scene::new();
             if let Some(element) = window_state.display_list.element(id.get_element_id()) {
-                element.paint.scene.replay_into_ext(&mut scene);
-                element.post.scene.replay_into_ext(&mut scene);
+                element.paint.scene.replay_into(&mut scene);
+                element.post.scene.replay_into(&mut scene);
             }
             scenes.insert(id, scene);
             for child in id.children() {
@@ -679,6 +745,7 @@ pub(crate) fn header(label: impl Display) -> Label {
             .font_bold()
             .with_theme(|s, t| s.border_color(t.border()).color(t.primary()))
     })
+    .debug_name("Inspector Header")
 }
 
 fn info(name: impl Display, value: String) -> AnyView {
@@ -692,59 +759,373 @@ fn info_row(name: String, view: impl IntoView + 'static) -> impl View {
                 .with_theme(|s, t| s.color(t.text_muted()))
         })
         .container()
-        .style(|s| s.min_width(150.0).flex_direction(FlexDirection::RowReverse));
-    (name, view).h_stack()
+        .style(|s| s.min_width(150.0).flex_direction(FlexDirection::RowReverse))
+        .debug_name("Inspector Info Label");
+    (name, view).h_stack().debug_name("Inspector Info Row")
 }
 
-fn stats(capture: &Capture) -> impl IntoView + use<> {
-    let style_time = capture.post_style.saturating_duration_since(capture.start);
-    let layout_time = capture
-        .post_layout
-        .saturating_duration_since(capture.post_style);
-    let paint_time = capture.end.saturating_duration_since(capture.post_layout);
-    let style_time = info(
-        "Full Style Time",
-        format!("{:.4} ms", style_time.as_secs_f64() * 1000.0),
-    );
-    let layout_time = info(
-        "Full Layout Time",
-        format!("{:.4} ms", layout_time.as_secs_f64() * 1000.0),
-    );
-    let taffy_time = info(
-        "Taffy Time",
-        format!("{:.4} ms", capture.taffy_duration.as_secs_f64() * 1000.0),
-    );
-    let taffy_node_count = info("Taffy Node Count", capture.taffy_node_count.to_string());
-    let taffy_depth = info("Taffy Depth", capture.taffy_depth.to_string());
-    let paint_time = info(
-        "Paint Time",
-        format!("{:.4} ms", paint_time.as_secs_f64() * 1000.0),
-    );
-    let w = info("Window Width", format!("{}", capture.window_size.width));
-    let h = info("Window Height", format!("{}", capture.window_size.height));
-    Stack::vertical_from_iter(
-        [
-            style_time,
-            layout_time,
-            taffy_time,
-            taffy_node_count,
-            taffy_depth,
-            paint_time,
-            w,
-            h,
-        ]
-        .into_iter()
-        .enumerate()
-        .map(|(idx, v)| {
-            v.style(move |s| {
-                s.padding(3).with_theme(move |s, t| {
+fn format_duration_ms(duration: Duration) -> String {
+    format!("{:.4} ms", duration.as_secs_f64() * 1000.0)
+}
+
+fn timing_color(kind: TimingKind) -> Color {
+    match kind {
+        TimingKind::Total => css::SLATE_BLUE,
+        TimingKind::Update => css::STEEL_BLUE,
+        TimingKind::Style => css::SEA_GREEN,
+        TimingKind::Layout => css::GOLDENROD,
+        TimingKind::BoxTree => css::SANDY_BROWN,
+        TimingKind::Paint => css::CORAL,
+        TimingKind::Present => css::MEDIUM_ORCHID,
+        TimingKind::Renderer => css::DEEP_SKY_BLUE,
+    }
+}
+
+fn timing_summary(report: &TimingReport) -> impl View + use<> {
+    Stack::vertical_from_iter(report.stats.iter().enumerate().map(|(idx, stat)| {
+        let color = timing_color(stat.kind);
+        Stack::horizontal((
+            Stack::horizontal((
+                Stack::horizontal((
+                    ().style(move |s| s.size(10.0, 10.0).border_radius(999.0).background(color)),
+                    Label::new(stat.label),
+                ))
+                .style(|s| s.items_center().gap(8.0).min_width(0.0).flex_grow(1.0)),
+                Label::new(format_duration_ms(stat.duration))
+                    .style(|s| s.font_bold().min_width(96.0).justify_end()),
+            ))
+            .style(|s| {
+                s.padding_horiz(12.0)
+                    .padding_vert(8.0)
+                    .items_center()
+                    .gap(12.0)
+                    .max_width(520.0)
+                    .width_full()
+            }),
+            ().style(|s| s.flex_grow(1.0)),
+        ))
+        .style(move |s| {
+            s.width_full().with_theme(move |s, t| {
+                s.apply_if(idx.is_multiple_of(2), |s| s.background(t.bg_base()))
+                    .apply_if(!idx.is_multiple_of(2), |s| s.background(t.bg_elevated()))
+            })
+        })
+        .debug_name(format!("Timing Summary Row: {}", stat.label))
+    }))
+    .style(|s| s.width_full().gap(4.0))
+    .debug_name("Timing Summary")
+}
+
+fn timing_preview(report: &TimingReport) -> impl View + use<> {
+    let total_secs = report.total.as_secs_f64().max(f64::EPSILON);
+    Stack::vertical_from_iter(report.spans.iter().map(|span| {
+        let left = span.start.as_secs_f64() / total_secs * 100.0;
+        let width = (span.duration.as_secs_f64() / total_secs * 100.0).max(0.125);
+        let color = timing_color(span.kind);
+        let indent = 12.0 + span.depth as f64 * 16.0;
+        let row_height = 14.0;
+        Stack::horizontal((
+            Stack::horizontal((
+                ().style(move |s| s.size(8.0, 8.0).border_radius(999.0).background(color)),
+                Label::new(span.label).style(|s| s.text_ellipsis().min_width(0.0)),
+            ))
+            .style(move |s| {
+                s.items_center()
+                    .gap(8.0)
+                    .padding_left(indent)
+                    .min_width(220.0)
+                    .max_width(220.0)
+            }),
+            Stack::new((
+                ().style(|s| {
+                    s.absolute()
+                        .size_full()
+                        .border_radius(6.0)
+                        .with_theme(|s, t| s.background(t.bg_elevated()))
+                }),
+                ().style(move |s| {
+                    s.absolute()
+                        .inset_left_pct(left)
+                        .width_pct(width)
+                        .height(row_height)
+                        .border_radius(6.0)
+                        .background(color.with_alpha(0.75))
+                }),
+            ))
+            .style(move |s| s.height(row_height).flex_grow(1.0).min_width(280.0)),
+            Label::new(format_duration_ms(span.duration))
+                .style(|s| s.min_width(112.0).justify_end().font_bold()),
+        ))
+        .style(|s| s.items_center().gap(12.0))
+        .debug_name(format!("Timing Timeline Row: {}", span.label))
+    }))
+    .style(|s| s.gap(6.0))
+    .debug_name("Timing Timeline")
+}
+
+fn timing_details(report: &TimingReport) -> impl View + use<> {
+    Stack::vertical((
+        Stack::horizontal((
+            (Stack::horizontal((
+                Label::new("Span")
+                    .style(|s| s.min_width(0.0).flex_grow(1.0).font_bold()),
+                Label::new("Start")
+                    .style(|s| s.min_width(96.0).font_bold().justify_end()),
+                Label::new("Duration")
+                    .style(|s| s.min_width(96.0).font_bold().justify_end()),
+            ))
+            .style(|s| {
+                s.padding_horiz(12.0)
+                    .padding_vert(4.0)
+                    .items_center()
+                    .gap(12.0)
+                    .max_width(624.0)
+                    .width_full()
+            })),
+            ().style(|s| s.flex_grow(1.0)),
+        ))
+        .style(|s| {
+            s.width_full()
+                .with_theme(|s, t| s.background(t.bg_elevated()).color(t.text_muted()))
+        })
+        .debug_name("Timing Details Header"),
+        Stack::vertical_from_iter(report.spans.iter().enumerate().map(|(idx, span)| {
+            let dot = timing_color(span.kind);
+            let indent = 12.0 + span.depth as f64 * 16.0;
+            Stack::horizontal((
+                (Stack::horizontal((
+                    Stack::horizontal((
+                        ().style(move |s| s.size(8.0, 8.0).border_radius(999.0).background(dot)),
+                        Label::new(span.label).style(|s| s.text_ellipsis().min_width(0.0)),
+                    ))
+                    .style(move |s| {
+                        s.items_center()
+                            .gap(8.0)
+                            .padding_left(indent)
+                            .min_width(0.0)
+                            .flex_grow(1.0)
+                    }),
+                    Label::new(format_duration_ms(span.start)).style(|s| {
+                        s.min_width(96.0)
+                            .justify_end()
+                            .with_theme(|s, t| s.color(t.text_muted()))
+                    }),
+                    Label::new(format_duration_ms(span.duration))
+                        .style(|s| s.min_width(96.0).justify_end().font_bold()),
+                ))
+                .style(move |s| {
+                    s.padding_horiz(12.0)
+                        .padding_vert(4.0)
+                        .items_center()
+                        .gap(12.0)
+                        .max_width(624.0)
+                        .width_full()
+                })),
+                ().style(|s| s.flex_grow(1.0)),
+            ))
+            .style(move |s| {
+                s.width_full().with_theme(move |s, t| {
                     s.apply_if(idx.is_multiple_of(2), |s| s.background(t.bg_base()))
                         .apply_if(!idx.is_multiple_of(2), |s| s.background(t.bg_elevated()))
                 })
             })
-        }),
-    )
-    .style(|s| s.gap(5))
+            .debug_name(format!("Timing Details Row: {}", span.label))
+        }))
+        .style(|s| s.width_full().gap(4.0))
+        .debug_name("Timing Details Rows"),
+    ))
+    .style(|s| s.width_full().gap(4.0))
+    .debug_name("Timing Details")
+}
+
+fn timing_report_view(report: TimingReport) -> AnyView {
+    let overview_open = RwSignal::new(true);
+    let details_open = RwSignal::new(false);
+    let details_mode = RwSignal::new(0);
+    let overview_report = report.clone();
+    let details_report = report.clone();
+
+    Stack::vertical((
+        Stack::vertical((
+            {
+                let expanded = overview_open;
+                let chevron = move || {
+                    if expanded.get() {
+                        svg(
+                            r#"<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M4.427 6.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 6H4.604a.25.25 0 00-.177.427z"/></svg>"#,
+                        )
+                    } else {
+                        svg(
+                            r#"<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M6.427 4.427l3.396 3.396a.25.25 0 010 .354l-3.396 3.396A.25.25 0 016 11.396V4.604a.25.25 0 01.427-.177z"/></svg>"#,
+                        )
+                    }
+                    .style(|s| s.size_full().with_theme(|s, t| s.color(t.text())))
+                };
+                Button::new(
+                    Stack::horizontal((
+                        dyn_view(chevron).style(|s| s.size(16.0, 16.0)),
+                        Label::new("Overview").style(|s| s.font_bold()),
+                    ))
+                    .style(|s| s.items_center().gap(8.0)),
+                )
+                .style(|s| s.width_full().justify_start())
+                .action(move || overview_open.update(|value| *value = !*value))
+                .debug_name("Timing Overview Toggle")
+            },
+            dyn_container(
+                move || overview_open.get(),
+                move |is_open| {
+                    if is_open {
+                        timing_summary(&overview_report).into_any()
+                    } else {
+                        ().into_any()
+                    }
+                },
+            )
+            .debug_name("Timing Overview Content"),
+        ))
+        .style(|s| s.width_full().gap(8.0))
+        .debug_name("Timing Overview Section"),
+        Stack::vertical((
+            {
+                let expanded = details_open;
+                let chevron = move || {
+                    if expanded.get() {
+                        svg(
+                            r#"<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M4.427 6.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 6H4.604a.25.25 0 00-.177.427z"/></svg>"#,
+                        )
+                    } else {
+                        svg(
+                            r#"<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M6.427 4.427l3.396 3.396a.25.25 0 010 .354l-3.396 3.396A.25.25 0 016 11.396V4.604a.25.25 0 01.427-.177z"/></svg>"#,
+                        )
+                    }
+                    .style(|s| s.size_full().with_theme(|s, t| s.color(t.text())))
+                };
+                Button::new(
+                    Stack::horizontal((
+                        dyn_view(chevron).style(|s| s.size(16.0, 16.0)),
+                        Label::new("Details").style(|s| s.font_bold()),
+                    ))
+                    .style(|s| s.items_center().gap(8.0)),
+                )
+                .style(|s| s.width_full().justify_start())
+                .action(move || details_open.update(|value| *value = !*value))
+                .debug_name("Timing Details Toggle")
+            },
+            dyn_container(
+                move || details_open.get(),
+                move |is_open| {
+                    if is_open {
+                        Stack::vertical((
+                            Stack::horizontal((
+                                Label::new("Timeline")
+                                    .class(TabSelectorClass)
+                                    .style(move |s| s.set_selected(details_mode.get() == 0))
+                                    .action(move || details_mode.set(0))
+                                    .debug_name("Timing Details Timeline Tab"),
+                                Label::new("Table")
+                                    .class(TabSelectorClass)
+                                    .style(move |s| s.set_selected(details_mode.get() == 1))
+                                    .action(move || details_mode.set(1))
+                                    .debug_name("Timing Details Table Tab"),
+                            ))
+                            .style(|s| s.gap(8.0))
+                            .debug_name("Timing Details Mode Switch"),
+                            tab(
+                                move || Some(details_mode.get()),
+                                move || [0, 1],
+                                |it| *it,
+                                {
+                                    let details_report = details_report.clone();
+                                    move |it| match it {
+                                        0 => timing_preview(&details_report).into_any(),
+                                        1 => timing_details(&details_report).into_any(),
+                                        _ => panic!(),
+                                    }
+                                },
+                            )
+                            .style(|s| s.width_full())
+                            .debug_name("Timing Details Mode Content"),
+                        ))
+                        .style(|s| s.width_full().gap(8.0))
+                        .debug_name("Timing Details Content")
+                        .into_any()
+                    } else {
+                        ().into_any()
+                    }
+                },
+            )
+            .debug_name("Timing Details Expandable Content"),
+        ))
+        .style(|s| s.width_full().gap(8.0))
+        .debug_name("Timing Details Section"),
+    ))
+    .style(|s| s.width_full().gap(12.0))
+    .debug_name("Timing Report")
+    .into_any()
+}
+
+impl IntoView for TimingReport {
+    type V = AnyView;
+    type Intermediate = AnyView;
+
+    fn into_intermediate(self) -> Self::Intermediate {
+        timing_report_view(self)
+    }
+}
+
+fn stats(capture: &Capture) -> impl IntoView + use<> {
+    fn box_tree_count(view: &CapturedView) -> usize {
+        1 + view
+            .children
+            .iter()
+            .map(|child| box_tree_count(child))
+            .sum::<usize>()
+    }
+
+    fn box_tree_depth(view: &CapturedView) -> usize {
+        1 + view
+            .children
+            .iter()
+            .map(|child| box_tree_depth(child))
+            .max()
+            .unwrap_or(0)
+    }
+
+    let box_tree_node_count = box_tree_count(&capture.root);
+    let box_tree_depth = box_tree_depth(&capture.root);
+    let width_px = capture
+        .window
+        .as_ref()
+        .map(|image| image.width.to_string())
+        .unwrap_or_else(|| format!("{:.0}", capture.window_size.width.round()));
+    let height_px = capture
+        .window
+        .as_ref()
+        .map(|image| image.height.to_string())
+        .unwrap_or_else(|| format!("{:.0}", capture.window_size.height.round()));
+
+    Stack::vertical((
+        capture.timings.clone(),
+        header("Capture"),
+        Stack::vertical((
+            info("Renderer", capture.renderer.clone()),
+            info("Taffy Node Count", capture.taffy_node_count.to_string()),
+            info("Taffy Depth", capture.taffy_depth.to_string()),
+            info("BoxTree Node Count", box_tree_node_count.to_string()),
+            info("BoxTree Depth", box_tree_depth.to_string()),
+            info(
+                "Window Width",
+                format!("{:.1} pt / {} px", capture.window_size.width, width_px),
+            ),
+            info(
+                "Window Height",
+                format!("{:.1} pt / {} px", capture.window_size.height, height_px),
+            ),
+        ))
+        .style(|s| s.gap(4.0)),
+    ))
+    .style(|s| s.width_full().gap(8.0))
 }
 
 fn selected_view(
@@ -913,7 +1294,6 @@ fn selected_view(
                     let style = style.clone();
                     let direct_style = view.direct_style.clone();
                     let scene = scene.clone();
-                    let scene_size = scene_size;
                     move |it| match it {
                         0 => style
                             .debug_view(Some(&direct_style))

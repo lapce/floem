@@ -16,6 +16,7 @@ image = { workspace = true }
 resvg = { workspace = true }
 peniko = { workspace = true }
 imaging = { workspace = true }
+imaging_vello_cpu = { path = "../../imaging/imaging_vello_cpu" }
 wgpu = { workspace = true }
 parley = { workspace = true }
 swash = { workspace = true }

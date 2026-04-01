@@ -1,23 +1,18 @@
 //! Retained paint artifact storage and replay.
 //!
 //! The retained display list stores per-element paint and post-paint recordings as
-//! [`ExtendedScene`] values in local space. Retention happens at the element/stage
+//! [`Scene`] values in local space. Retention happens at the element/stage
 //! level: we rerecord only dirty elements and reuse unchanged retained scenes across
 //! transform changes when the recorded content allows it.
 
-use std::sync::Arc;
-
 use floem_renderer::text::GlyphRunRef;
-use floem_renderer::{DisplayCommandExt, OwnedSvg, Svg};
 use imaging::{
-    BlurredRoundedRect, ClipRef, CustomPaintSink, FillRef, GeometryRef, GroupRef, PaintSink,
+    BlurredRoundedRect, ClipRef, FillRef, GeometryRef, GroupRef, PaintSink,
     RetainedDrawRef, StrokeRef,
     record::{
-        Clip, Draw, ExtendedCommand, ExtendedScene, Geometry, Glyph as ImagingGlyph,
-        replay_ext_transformed,
+        Clip, Command, Draw, Geometry, Glyph as ImagingGlyph, Scene, replay_transformed,
     },
 };
-use peniko::BrushRef;
 use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Size};
 use rustc_hash::{FxHashMap, FxHashSet};
 use understory_box_tree::NodeFlags;
@@ -75,21 +70,21 @@ pub(crate) fn transform_diff_class(original: Affine, current: Affine) -> Transfo
 
 #[derive(Clone)]
 pub(crate) struct ElementStage {
-    pub scene: ExtendedScene<DisplayCommandExt>,
+    pub scene: Scene,
     pub transform_class: TransformClass,
 }
 
 impl Default for ElementStage {
     fn default() -> Self {
         Self {
-            scene: ExtendedScene::new(),
+            scene: Scene::new(),
             transform_class: TransformClass::Affine,
         }
     }
 }
 
 impl ElementStage {
-    pub(crate) fn set_scene(&mut self, scene: ExtendedScene<DisplayCommandExt>) {
+    pub(crate) fn set_scene(&mut self, scene: Scene) {
         self.transform_class = scene_transform_class(&scene);
         self.scene = scene;
     }
@@ -452,32 +447,12 @@ impl RetainedDisplayList {
 }
 
 pub struct RecordingRenderer<'a> {
-    scene: &'a mut ExtendedScene<DisplayCommandExt>,
+    scene: &'a mut Scene,
 }
 
 impl<'a> RecordingRenderer<'a> {
-    pub(crate) fn new(scene: &'a mut ExtendedScene<DisplayCommandExt>) -> Self {
+    pub(crate) fn new(scene: &'a mut Scene) -> Self {
         Self { scene }
-    }
-}
-
-impl RecordingRenderer<'_> {
-    pub fn draw_svg<'b>(
-        &mut self,
-        svg: Svg<'b>,
-        rect: Rect,
-        transform: Affine,
-        brush: Option<impl Into<BrushRef<'b>>>,
-    ) {
-        let _ = self.scene.custom_command(DisplayCommandExt::DrawSvg {
-            svg: OwnedSvg {
-                tree: Arc::new(svg.tree.clone()),
-                hash: Arc::from(svg.hash.to_vec()),
-            },
-            rect,
-            transform,
-            brush: brush.map(|brush| brush.into().to_owned()),
-        });
     }
 }
 
@@ -519,15 +494,9 @@ impl PaintSink for RecordingRenderer<'_> {
     }
 }
 
-impl CustomPaintSink<DisplayCommandExt> for RecordingRenderer<'_> {
-    fn custom(&mut self, command: &DisplayCommandExt) {
-        let _ = self.scene.custom_command(command.clone());
-    }
-}
-
 pub(crate) fn replay_stage(
     stage: &ElementStage,
-    sink: &mut dyn CustomPaintSink<DisplayCommandExt>,
+    sink: &mut dyn PaintSink,
     base_transform: Affine,
     render_size: Size,
     _local_damage: Option<&[Rect]>,
@@ -536,11 +505,11 @@ pub(crate) fn replay_stage(
         inner: sink,
         render_size,
     };
-    replay_ext_transformed(&stage.scene, &mut sink, base_transform);
+    replay_transformed(&stage.scene, &mut sink, base_transform);
 }
 
 pub(crate) fn replay_view_clip(
-    sink: &mut dyn CustomPaintSink<DisplayCommandExt>,
+    sink: &mut dyn PaintSink,
     clip: RoundedRect,
     base_transform: Affine,
     render_size: Size,
@@ -550,7 +519,7 @@ pub(crate) fn replay_view_clip(
 }
 
 struct SanitizingSink<'a> {
-    inner: &'a mut dyn CustomPaintSink<DisplayCommandExt>,
+    inner: &'a mut dyn PaintSink,
     render_size: Size,
 }
 
@@ -602,13 +571,7 @@ impl PaintSink for SanitizingSink<'_> {
     }
 }
 
-impl CustomPaintSink<DisplayCommandExt> for SanitizingSink<'_> {
-    fn custom(&mut self, command: &DisplayCommandExt) {
-        self.inner.custom(command);
-    }
-}
-
-fn scene_transform_class(scene: &ExtendedScene<DisplayCommandExt>) -> TransformClass {
+fn scene_transform_class(scene: &Scene) -> TransformClass {
     scene
         .commands()
         .iter()
@@ -617,21 +580,18 @@ fn scene_transform_class(scene: &ExtendedScene<DisplayCommandExt>) -> TransformC
 }
 
 fn command_transform_class(
-    scene: &ExtendedScene<DisplayCommandExt>,
-    command: &ExtendedCommand,
+    scene: &Scene,
+    command: &Command,
 ) -> TransformClass {
     match command {
-        ExtendedCommand::PushClip(_)
-        | ExtendedCommand::PopClip
-        | ExtendedCommand::PushGroup(_)
-        | ExtendedCommand::PopGroup => TransformClass::Affine,
-        ExtendedCommand::Draw(id) => match scene.draw_op(*id) {
+        Command::PushClip(_)
+        | Command::PopClip
+        | Command::PushGroup(_)
+        | Command::PopGroup => TransformClass::Affine,
+        Command::Draw(id) => match scene.draw_op(*id) {
             Draw::Retained(_) => TransformClass::Affine,
             Draw::Fill { .. } | Draw::Stroke { .. } => TransformClass::Affine,
             Draw::GlyphRun(_) | Draw::BlurredRoundedRect(_) => TransformClass::TranslateOnly,
-        },
-        ExtendedCommand::Custom(id) => match scene.custom(*id) {
-            DisplayCommandExt::DrawSvg { .. } => TransformClass::TranslateOnly,
         },
     }
 }
@@ -750,7 +710,7 @@ mod tests {
     fn stage_stores_scene_directly() {
         let rect = Rect::new(0.0, 0.0, 10.0, 10.0);
         let mut stage = ElementStage::default();
-        let mut scene = ExtendedScene::new();
+        let mut scene = Scene::new();
         let _ = scene.draw(fill_draw(rect, Affine::IDENTITY));
         let _ = scene.draw(Draw::Stroke {
             transform: Affine::IDENTITY,
@@ -770,7 +730,7 @@ mod tests {
     fn clip_commands_are_preserved_in_scene() {
         let rect = Rect::new(0.0, 0.0, 10.0, 10.0);
         let mut stage = ElementStage::default();
-        let mut scene = ExtendedScene::new();
+        let mut scene = Scene::new();
         let _ = scene.push_clip(Clip::Fill {
             transform: Affine::IDENTITY,
             shape: Geometry::Rect(rect),
@@ -786,7 +746,7 @@ mod tests {
     #[test]
     fn transformed_glyph_or_blur_downgrades_retention() {
         let mut stage = ElementStage::default();
-        let mut scene = ExtendedScene::new();
+        let mut scene = Scene::new();
         let _ = scene.draw(Draw::BlurredRoundedRect(imaging::BlurredRoundedRect {
             transform: Affine::IDENTITY,
             rect: Rect::new(0.0, 0.0, 10.0, 10.0),

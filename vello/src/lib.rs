@@ -1,132 +1,12 @@
-use std::sync::Arc;
-
 use anyhow::Result;
 use floem_renderer::gpu_resources::GpuResources;
-use floem_renderer::{
-    BeginFrame, CustomRenderer, DisplayCommandExt, RenderCore, RenderOutput, Renderer,
-};
-use imaging::record::{CustomCommand, ExtendedScene, Glyph as ImagingGlyph, replay_ext};
-use imaging::{
-    BlurredRoundedRect, ClipRef, CustomPaintSink, FillRef, GroupRef, PaintSink, StrokeRef,
-};
-use peniko::{
-    color::palette,
-    kurbo::{Affine, Rect},
-};
+use floem_renderer::{BeginFrame, RenderCore, RenderOutput, Renderer};
+use imaging::record::{Glyph as ImagingGlyph, ReplaySource, Scene as RecordingScene};
+use imaging::{BlurredRoundedRect, ClipRef, FillRef, GroupRef, PaintSink, RetainedDrawRef, StrokeRef};
+use peniko::color::palette;
+use peniko::kurbo::Rect;
 use vello::{AaConfig, RenderParams, RendererOptions, Scene};
 use wgpu::{Adapter, DeviceType, Queue, TextureAspect};
-
-#[derive(Clone)]
-enum VelloCommand {
-    DrawSvg {
-        svg: SvgCommand,
-        rect: Rect,
-        transform: Affine,
-        brush: Option<peniko::Brush>,
-    },
-}
-
-impl CustomCommand for VelloCommand {
-    fn prepend_transform(&self, prefix: Affine) -> Self {
-        match self {
-            Self::DrawSvg {
-                svg,
-                rect,
-                transform,
-                brush,
-            } => Self::DrawSvg {
-                svg: svg.clone(),
-                rect: *rect,
-                transform: prefix * *transform,
-                brush: brush.clone(),
-            },
-        }
-    }
-}
-
-#[derive(Clone)]
-struct SvgCommand {
-    hash: Arc<[u8]>,
-}
-
-#[derive(Default)]
-struct SvgCache {
-    entries: std::collections::HashMap<Vec<u8>, SvgCacheEntry>,
-}
-
-impl SvgCache {
-    fn touch(&mut self, svg: &SvgCommand) {
-        self.entries.entry(svg.hash.to_vec()).or_default();
-    }
-}
-
-#[derive(Default)]
-struct SvgCacheEntry {
-    #[allow(dead_code)]
-    alpha_mask_scene: AlphaMaskScene,
-}
-
-#[derive(Default)]
-struct AlphaMaskScene {
-    #[allow(dead_code)]
-    scene: Option<Scene>,
-}
-
-struct VelloSceneAdapter<'a, 'b> {
-    inner: &'a mut imaging_vello::VelloSceneSink<'b>,
-    svg_cache: &'a mut SvgCache,
-}
-
-impl PaintSink for VelloSceneAdapter<'_, '_> {
-    fn push_clip(&mut self, clip: ClipRef<'_>) {
-        self.inner.push_clip(clip);
-    }
-
-    fn pop_clip(&mut self) {
-        self.inner.pop_clip();
-    }
-
-    fn push_group(&mut self, group: GroupRef<'_>) {
-        self.inner.push_group(group);
-    }
-
-    fn pop_group(&mut self) {
-        self.inner.pop_group();
-    }
-
-    fn fill(&mut self, draw: FillRef<'_>) {
-        self.inner.fill(draw);
-    }
-
-    fn stroke(&mut self, draw: StrokeRef<'_>) {
-        self.inner.stroke(draw);
-    }
-
-    fn glyph_run(
-        &mut self,
-        draw: imaging::GlyphRunRef<'_>,
-        glyphs: &mut dyn Iterator<Item = ImagingGlyph>,
-    ) {
-        self.inner.glyph_run(draw, glyphs);
-    }
-
-    fn blurred_rounded_rect(&mut self, draw: BlurredRoundedRect) {
-        self.inner.blurred_rounded_rect(draw);
-    }
-}
-
-impl CustomPaintSink<VelloCommand> for VelloSceneAdapter<'_, '_> {
-    fn custom(&mut self, command: &VelloCommand) {
-        let VelloCommand::DrawSvg {
-            svg,
-            rect,
-            transform,
-            brush,
-        } = command;
-        self.svg_cache.touch(svg);
-        let _ = (rect, transform, brush);
-    }
-}
 
 pub struct VelloRenderer {
     device: wgpu::Device,
@@ -134,12 +14,11 @@ pub struct VelloRenderer {
     renderer: vello::Renderer,
     texture: Option<wgpu::Texture>,
     view: Option<wgpu::TextureView>,
-    scene: ExtendedScene<VelloCommand>,
+    scene: RecordingScene,
     size: (u32, u32),
     adapter: Adapter,
     #[allow(dead_code)]
     font_embolden: f32,
-    svg_cache: SvgCache,
     finished_output: Option<RenderOutput>,
 }
 
@@ -192,11 +71,10 @@ impl VelloRenderer {
             renderer,
             texture: None,
             view: None,
-            scene: ExtendedScene::new(),
+            scene: RecordingScene::new(),
             size: (width, height),
             adapter,
             font_embolden,
-            svg_cache: SvgCache::default(),
             finished_output: None,
         })
     }
@@ -208,7 +86,7 @@ impl VelloRenderer {
         }
         self.size = (width, height);
         self.font_embolden = font_embolden;
-        self.scene = ExtendedScene::new();
+        self.scene = RecordingScene::new();
         self.finished_output = None;
     }
 
@@ -216,13 +94,7 @@ impl VelloRenderer {
         let mut scene = Scene::new();
         let bounds = Rect::new(0.0, 0.0, width as f64, height as f64);
         let mut sink = imaging_vello::VelloSceneSink::new(&mut scene, bounds);
-        {
-            let mut adapter = VelloSceneAdapter {
-                inner: &mut sink,
-                svg_cache: &mut self.svg_cache,
-            };
-            replay_ext(&self.scene, &mut adapter);
-        }
+        self.scene.replay_into(&mut sink);
         sink.finish().map_err(|err| anyhow::anyhow!("{err:?}"))?;
         Ok(scene)
     }
@@ -245,7 +117,7 @@ impl VelloRenderer {
 }
 
 impl VelloRenderer {
-    pub fn debug_info(&self) -> String {
+    pub fn debug_info(&mut self) -> String {
         use std::fmt::Write;
 
         let mut out = String::new();
@@ -332,6 +204,10 @@ impl PaintSink for VelloRenderer {
         PaintSink::pop_group(&mut self.scene);
     }
 
+    fn retained(&mut self, draw: RetainedDrawRef<'_>) {
+        PaintSink::retained(&mut self.scene, draw);
+    }
+
     fn fill(&mut self, draw: FillRef<'_>) {
         PaintSink::fill(&mut self.scene, draw);
     }
@@ -350,31 +226,6 @@ impl PaintSink for VelloRenderer {
 
     fn blurred_rounded_rect(&mut self, draw: BlurredRoundedRect) {
         PaintSink::blurred_rounded_rect(&mut self.scene, draw);
-    }
-}
-
-impl CustomPaintSink<DisplayCommandExt> for VelloRenderer {
-    fn custom(&mut self, command: &DisplayCommandExt) {
-        match command {
-            DisplayCommandExt::DrawSvg {
-                svg,
-                rect,
-                transform,
-                brush,
-            } => {
-                CustomPaintSink::custom(
-                    &mut self.scene,
-                    &VelloCommand::DrawSvg {
-                        svg: SvgCommand {
-                            hash: svg.hash.clone(),
-                        },
-                        rect: *rect,
-                        transform: *transform,
-                        brush: brush.clone(),
-                    },
-                );
-            }
-        }
     }
 }
 
@@ -419,18 +270,5 @@ impl Renderer for VelloRenderer {
             RenderOutput::GpuTexture(texture) => Some(texture),
             RenderOutput::Image(_) => None,
         })
-    }
-}
-
-impl CustomRenderer for VelloRenderer {
-    fn with_custom_paint_sink(
-        &mut self,
-        f: &mut dyn FnMut(&mut dyn CustomPaintSink<DisplayCommandExt>),
-    ) {
-        f(self)
-    }
-
-    fn debug_info(&self) -> String {
-        Self::debug_info(self)
     }
 }
