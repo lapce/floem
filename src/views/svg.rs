@@ -1,12 +1,12 @@
 use std::{cell::RefCell, rc::Rc};
 
 use floem_reactive::Effect;
-use floem_renderer::usvg::{self, Tree};
+use imaging::{MaskMode, Painter};
 use peniko::{
     Brush, GradientKind, LinearGradientPosition,
     kurbo::{Affine, Point, Size},
 };
-use sha2::{Digest, Sha256};
+use svg_imaging::{ParseOptions, RenderOptions, SvgDocument};
 
 use crate::{
     prop, prop_extractor,
@@ -134,8 +134,7 @@ impl SvgLayoutData {
 
 pub struct Svg {
     id: ViewId,
-    svg_tree: Option<Tree>,
-    svg_hash: Option<Vec<u8>>,
+    svg_document: Option<SvgDocument>,
     svg_style: SvgStyle,
     svg_string: String,
     svg_css: Option<String>,
@@ -216,8 +215,7 @@ pub fn svg(svg_str_fn: impl Into<SvgStrFn> + 'static) -> Svg {
     let layout_data = Rc::new(RefCell::new(SvgLayoutData::new()));
     let mut svg = Svg {
         id,
-        svg_tree: None,
-        svg_hash: None,
+        svg_document: None,
         svg_style: Default::default(),
         svg_string: Default::default(),
         css_prop: None,
@@ -260,12 +258,11 @@ impl View for Svg {
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         let style = cx.style();
         self.svg_style.read_style(cx, &style);
-        if let Some(tree) = &self.svg_tree {
-            let size = tree.size();
-            let aspect_ratio = size.width() / size.height();
+        if let Some(document) = &self.svg_document {
+            let size = document.size();
+            let aspect_ratio = (size.width / size.height) as f32;
             if self.aspect_ratio != aspect_ratio {
                 self.aspect_ratio = aspect_ratio;
-                // self.id.request_style();
             }
         }
         if let Some(prop_reader) = &mut self.css_prop
@@ -290,9 +287,9 @@ impl View for Svg {
             self.svg_string = text.clone();
             self.svg_css = style.clone();
 
-            let svg_tree = Tree::from_str(
+            let svg_document = SvgDocument::from_str(
                 text.as_str(),
-                &usvg::Options {
+                &ParseOptions {
                     style_sheet: style,
                     ..Default::default()
                 },
@@ -300,29 +297,24 @@ impl View for Svg {
             .ok();
             {
                 let mut layout_data = self.layout_data.borrow_mut();
-                if let Some(tree) = svg_tree.as_ref() {
-                    let size = tree.size();
-                    layout_data.set_size(size.width(), size.height());
+                if let Some(document) = svg_document.as_ref() {
+                    let size = document.size();
+                    layout_data.set_size(size.width as f32, size.height as f32);
                 } else {
                     layout_data.set_size(0.0, 0.0);
                 }
             }
-            self.aspect_ratio = svg_tree.as_ref().map_or(f32::NAN, |tree| {
-                let size = tree.size();
-                let width = size.width();
-                let height = size.height();
+            self.aspect_ratio = svg_document.as_ref().map_or(f32::NAN, |document| {
+                let size = document.size();
+                let width = size.width as f32;
+                let height = size.height as f32;
                 if height == 0.0 {
                     f32::NAN
                 } else {
                     width / height
                 }
             });
-            self.svg_tree = svg_tree;
-
-            let mut hasher = Sha256::new();
-            hasher.update(text);
-            let hash = hasher.finalize().to_vec();
-            self.svg_hash = Some(hash);
+            self.svg_document = svg_document;
 
             self.id.request_layout();
             self.id.request_paint();
@@ -330,22 +322,43 @@ impl View for Svg {
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        if let Some(tree) = self.svg_tree.as_ref() {
-            let hash = self.svg_hash.as_ref().unwrap();
+        if let Some(document) = self.svg_document.as_ref() {
             let layout = self.id.get_layout().unwrap_or_default();
             let rect = Size::new(layout.size.width as f64, layout.size.height as f64).to_rect();
-            let color = if let Some(brush) = self.svg_style.svg_color() {
-                Some(brush)
-            } else {
-                self.svg_style.text_color().map(Brush::Solid)
+            let size = document.size();
+            if size.width <= 0.0 || size.height <= 0.0 {
+                return;
+            }
+
+            let render_options = RenderOptions {
+                transform: Affine::translate((rect.x0, rect.y0))
+                    * Affine::scale_non_uniform(
+                        rect.width() / size.width,
+                        rect.height() / size.height,
+                    ),
             };
-            cx.painter.sink_mut().draw_svg(
-                floem_renderer::Svg { tree, hash },
-                rect,
-                Affine::IDENTITY,
-                color.as_ref(),
-            );
+
+            if let Some(brush) = self.svg_style.color_brush() {
+                cx.painter.with_masked_group(
+                    MaskMode::Alpha,
+                    |mask| {
+                        let _ = document.render(mask, &render_options);
+                    },
+                    |painter| {
+                        painter.fill(rect, &brush).draw();
+                    },
+                );
+            } else {
+                let _ = document.render(&mut cx.painter, &render_options);
+            }
         }
+    }
+}
+
+impl SvgStyle {
+    fn color_brush(&self) -> Option<Brush> {
+        self.svg_color()
+            .or_else(|| self.text_color().map(Brush::Solid))
     }
 }
 

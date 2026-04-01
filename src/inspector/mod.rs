@@ -926,10 +926,7 @@ fn selected_view(
                                     .flex_grow(1.)
                             })
                             .into_any(),
-                        1 => scene_debug_view_with_size(
-                            scene.clone(),
-                            scene_size,
-                        )
+                        1 => scene_debug_view_with_size(scene.clone(), scene_size)
                             .style(|s| s.height_full().flex_grow(1.))
                             .scroll()
                             .style(|s| {

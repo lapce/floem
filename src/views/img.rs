@@ -1,6 +1,11 @@
 //! Module defining image view and its properties: style, position and fit.
 #![deny(missing_docs)]
-use std::{cell::RefCell, path::{Path, PathBuf}, rc::Rc, sync::Arc};
+use std::{
+    cell::RefCell,
+    path::{Path, PathBuf},
+    rc::Rc,
+    sync::Arc,
+};
 
 use floem_reactive::{ReadSignal, RwSignal, SignalWith, UpdaterEffect};
 use peniko::{Blob, Brush, ImageAlphaType, ImageData, kurbo::Rect};
@@ -204,7 +209,9 @@ where
     S: 'static,
 {
     fn into_img_reader(self) -> ImgReader {
-        ImgReader::Reactive(Rc::new(move || self.with(|value| value.clone().into_image_data())))
+        ImgReader::Reactive(Rc::new(move || {
+            self.with(|value| value.clone().into_image_data())
+        }))
     }
 }
 
@@ -215,7 +222,9 @@ where
     S: 'static,
 {
     fn into_img_reader(self) -> ImgReader {
-        ImgReader::Reactive(Rc::new(move || self.with(|value| value.clone().into_image_data())))
+        ImgReader::Reactive(Rc::new(move || {
+            self.with(|value| value.clone().into_image_data())
+        }))
     }
 }
 
@@ -328,17 +337,17 @@ impl Img {
             ImgReader::Static(image) => image,
             ImgReader::Reactive(reader) => {
                 let initial = reader();
-                UpdaterEffect::new(move || reader(), move |image| {
-                    id.update_state(image);
-                });
+                UpdaterEffect::new(
+                    move || reader(),
+                    move |image| {
+                        id.update_state(image);
+                    },
+                );
                 initial
             }
         };
 
-        let layout_data = Rc::new(RefCell::new(ImageLayoutData::new(
-            img.width,
-            img.height,
-        )));
+        let layout_data = Rc::new(RefCell::new(ImageLayoutData::new(img.width, img.height)));
 
         let mut img = Self {
             id,

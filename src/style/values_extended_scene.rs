@@ -141,10 +141,9 @@ impl IntoView for Filter {
 
     fn into_intermediate(self) -> Self::Intermediate {
         let rows = match self {
-            Filter::Flood { color } => vec![
-                field_row("kind", "flood"),
-                field_value("color", &color),
-            ],
+            Filter::Flood { color } => {
+                vec![field_row("kind", "flood"), field_value("color", &color)]
+            }
             Filter::Blur {
                 std_deviation_x,
                 std_deviation_y,
@@ -283,11 +282,11 @@ impl IntoView for Group {
             rows.push(section(
                 "Filters",
                 Stack::vertical_from_iter(self.filters.into_iter().map(|filter| {
-                    filter
-                        .into_any()
-                        .style(|s| s.padding(6.0).width_full().with_theme(|s, t| {
-                            s.background(t.bg_base())
-                        }))
+                    filter.into_any().style(|s| {
+                        s.padding(6.0)
+                            .width_full()
+                            .with_theme(|s, t| s.background(t.bg_base()))
+                    })
                 }))
                 .style(|s| s.width_full().gap(4.0))
                 .into_any(),
@@ -537,33 +536,31 @@ pub(crate) fn scene_debug_view_with_size(
     })
     .style(move |s| s.width(preview_width).height(preview_height));
 
-    let preview = preview
-        .container()
-        .style(|s| {
-            s.padding(16.0)
-                .background(css::WHITE)
-                .border(1.0)
-                .border_color(Color::from_rgba8(0, 0, 0, 24))
-                .border_radius(10.0)
-                .apply_box_shadows(vec![
-                    BoxShadow::new()
-                        .color(css::BLACK.multiply_alpha(0.3))
-                        .top_offset(-13.)
-                        .bottom_offset(0.4)
-                        .right_offset(-4.)
-                        .left_offset(-4.)
-                        .blur_radius(2.)
-                        .spread(1.),
-                    BoxShadow::new()
-                        .color(css::BLACK.multiply_alpha(0.3))
-                        .top_offset(-15.)
-                        .bottom_offset(4.)
-                        .right_offset(-6.)
-                        .left_offset(-6.)
-                        .blur_radius(5.)
-                        .spread(6.),
-                ])
-        });
+    let preview = preview.container().style(|s| {
+        s.padding(16.0)
+            .background(css::WHITE)
+            .border(1.0)
+            .border_color(Color::from_rgba8(0, 0, 0, 24))
+            .border_radius(10.0)
+            .apply_box_shadows(vec![
+                BoxShadow::new()
+                    .color(css::BLACK.multiply_alpha(0.3))
+                    .top_offset(-13.)
+                    .bottom_offset(0.4)
+                    .right_offset(-4.)
+                    .left_offset(-4.)
+                    .blur_radius(2.)
+                    .spread(1.),
+                BoxShadow::new()
+                    .color(css::BLACK.multiply_alpha(0.3))
+                    .top_offset(-15.)
+                    .bottom_offset(4.)
+                    .right_offset(-6.)
+                    .left_offset(-6.)
+                    .blur_radius(5.)
+                    .spread(6.),
+            ])
+    });
 
     let tree = if rows.is_empty() {
         Label::new("No retained commands")

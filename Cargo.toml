@@ -72,6 +72,7 @@ ui-events-winit = { path = "./ui-events-winit", package = "ui-events-floem-winit
 dpi = { version = "0.1.2", default-features = false }
 rustc-hash = "2.1"
 imaging = { path = "../imaging/imaging", package = "imaging" }
+svg_imaging = { path = "../imaging/svg_imaging", package = "svg_imaging" }
 
 [dependencies]
 slotmap = "1.0"
@@ -80,6 +81,7 @@ bitflags = "2.9"
 indexmap = "2"
 rustc-hash.workspace = true
 imaging.workspace = true
+svg_imaging.workspace = true
 smallvec = "1.15"
 educe = "0.6"
 taffy = { version = "0.9.2", features = ["grid"] }
@@ -228,6 +230,14 @@ subduction = ["dep:subduction_core", "dep:subduction_backend_wgpu"]
 criterion = { version = "0.8.1", features = ["html_reports"] }
 floem_renderer = { path = "renderer" }
 peniko = { workspace = true }
+
+# [patch.crates-io]
+# naga = { path = "../wgpu/naga" }
+# wgpu = { path = "../wgpu/wgpu" }
+# wgpu-core = { path = "../wgpu/wgpu-core" }
+# wgpu-hal = { path = "../wgpu/wgpu-hal" }
+# wgpu-macros = { path = "../wgpu/wgpu-macros" }
+# wgpu-types = { path = "../wgpu/wgpu-types" }
 
 [[bench]]
 name = "event_dispatch"

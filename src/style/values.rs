@@ -1035,9 +1035,7 @@ impl IntoView for Gradient {
             .style(|s| s.padding(20.0).gap(8.0).min_width(320.0))
         };
 
-        color
-            .tooltip(tooltip_view)
-            .into_any()
+        color.tooltip(tooltip_view).into_any()
     }
 }
 
@@ -1347,8 +1345,8 @@ impl IntoView for kurbo::Rect {
             coords.style(|s| s.gap(2).font_size(11.0)),
             wh.style(|s| s.gap(8).font_size(11.0)),
         ))
-            .style(|s| s.gap(4.0).items_start().min_width(0.0))
-            .into_any()
+        .style(|s| s.gap(4.0).items_start().min_width(0.0))
+        .into_any()
     }
 }
 
@@ -2304,7 +2302,7 @@ impl Style {
             tab_item("Classes", 2),
         )
             .h_stack()
-        .style(|s| s.with_theme(|s, t| s.background(t.bg_base())));
+            .style(|s| s.with_theme(|s, t| s.background(t.bg_base())));
         let direct_keys_for_body = direct_keys.clone();
         let style_for_body = style.clone();
         let style_for_selectors = style.clone();

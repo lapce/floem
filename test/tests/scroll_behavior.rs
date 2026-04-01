@@ -1146,6 +1146,7 @@ fn test_scroll_paints_partially_visible_after_scroll() {
     );
 }
 
+
 #[test]
 #[serial]
 fn test_scrolled_out_dirty_item_stays_out_of_paint_order() {
