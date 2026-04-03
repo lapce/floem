@@ -1,7 +1,7 @@
 use imaging::{
     Composite, Filter,
     record::{
-        AppliedMask, Clip, Command, Draw, Geometry, Group, Mask, ReplaySource, Scene,
+        AppliedMask, Clip, Command, Context, Draw, Geometry, Group, Mask, Scene, replay,
     },
 };
 use peniko::{
@@ -18,6 +18,8 @@ use crate::{
 
 #[derive(Clone)]
 enum ResolvedCommand {
+    PushContext(Context),
+    PopContext,
     PushClip(Clip),
     PopClip,
     PushGroup(Group),
@@ -210,8 +212,24 @@ impl IntoView for Mask {
     fn into_intermediate(self) -> Self::Intermediate {
         stack_rows(vec![
             field_row("mode", format!("{:?}", self.mode)),
-            field_row("retained", format!("{:?}", self.retained)),
+            field_row("scene commands", self.scene.commands().len().to_string()),
         ])
+    }
+}
+
+impl IntoView for Context {
+    type V = AnyView;
+    type Intermediate = AnyView;
+
+    fn into_intermediate(self) -> Self::Intermediate {
+        let mut rows = vec![field_row("label", format!("{:?}", self.label))];
+        if let Some(source) = self.source {
+            rows.push(field_row(
+                "source",
+                format!("{:?}:{}:{}", source.file, source.line, source.column),
+            ));
+        }
+        stack_rows(rows)
     }
 }
 
@@ -299,19 +317,6 @@ impl IntoView for Draw {
 
     fn into_intermediate(self) -> Self::Intermediate {
         match self {
-            Draw::Retained(draw) => {
-                let mut rows = vec![
-                    field_row("kind", "retained"),
-                    field_row("retained", format!("{:?}", draw.retained)),
-                ];
-                if draw.transform != Affine::IDENTITY {
-                    rows.insert(1, field_value("transform", &draw.transform));
-                }
-                if !default_composite(draw.composite) {
-                    rows.push(section("Composite", draw.composite.into_any()));
-                }
-                stack_rows(rows)
-            }
             Draw::Fill {
                 transform,
                 fill_rule,
@@ -414,6 +419,11 @@ impl IntoView for Command {
 
     fn into_intermediate(self) -> Self::Intermediate {
         let rows = match self {
+            Command::PushContext(id) => vec![
+                field_row("command", "push context"),
+                field_row("context", format!("{id:?}")),
+            ],
+            Command::PopContext => vec![field_row("command", "pop context")],
             Command::PushClip(id) => vec![
                 field_row("command", "push clip"),
                 field_row("clip", format!("{id:?}")),
@@ -439,6 +449,8 @@ impl IntoView for ResolvedCommand {
 
     fn into_intermediate(self) -> Self::Intermediate {
         match self {
+            Self::PushContext(context) => command_card("Push Context", context.into_any()),
+            Self::PopContext => command_card("Pop Context", field_row("command", "pop context")),
             Self::PushClip(clip) => command_card("Push Clip", clip.into_any()),
             Self::PopClip => command_card("Pop Clip", field_row("command", "pop clip")),
             Self::PushGroup(group) => command_card("Push Group", group.into_any()),
@@ -462,6 +474,8 @@ fn resolve_command(
     command: &Command,
 ) -> ResolvedCommand {
     match command {
+        Command::PushContext(id) => ResolvedCommand::PushContext(scene.context(*id).clone()),
+        Command::PopContext => ResolvedCommand::PopContext,
         Command::PushClip(id) => ResolvedCommand::PushClip(scene.clip(*id).clone()),
         Command::PopClip => ResolvedCommand::PopClip,
         Command::PushGroup(id) => ResolvedCommand::PushGroup(scene.group(*id).clone()),
@@ -475,11 +489,11 @@ fn command_rows(scene: &Scene) -> Vec<(usize, ResolvedCommand)> {
     let mut depth = 0usize;
     for command in scene.commands() {
         match command {
-            Command::PopClip | Command::PopGroup => {
+            Command::PopContext | Command::PopClip | Command::PopGroup => {
                 depth = depth.saturating_sub(1);
                 rows.push((depth, resolve_command(scene, command)));
             }
-            Command::PushClip(_) | Command::PushGroup(_) => {
+            Command::PushContext(_) | Command::PushClip(_) | Command::PushGroup(_) => {
                 rows.push((depth, resolve_command(scene, command)));
                 depth += 1;
             }
@@ -501,7 +515,7 @@ pub(crate) fn scene_debug_view_with_size(
     let preview_height = content_size.height.max(1.0);
 
     let preview = canvas(move |cx, _size| {
-        preview_scene.replay_into(cx.painter.sink_mut());
+        replay(&preview_scene, cx.painter.sink_mut());
     })
     .style(move |s| s.width(preview_width).height(preview_height));
 

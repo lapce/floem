@@ -6,7 +6,7 @@ use std::{
     sync::LazyLock,
 };
 
-use floem_renderer::text::{AttrsList, GlyphRunRef, TextBrush};
+use crate::text::{AttrsList, GlyphRunRef, TextBrush};
 use imaging::{Composite, Painter, record::Glyph as ImagingGlyph};
 use parking_lot::Mutex;
 use parley::swash::{FontRef, scale::ScaleContext, zeno};
@@ -777,7 +777,12 @@ impl TextLayout {
         (min_y.is_finite() && max_y.is_finite()).then_some((min_y, max_y))
     }
 
-    pub fn draw_with_painter(&self, mut painter: Painter<'_>, origin: impl Into<Point>) {
+    pub fn draw_with_painter(
+        &self,
+        mut painter: Painter<'_>,
+        origin: impl Into<Point>,
+        font_embolden: peniko::kurbo::Vec2,
+    ) {
         let origin = origin.into();
         for line in self.layout.lines() {
             for item in line.items() {
@@ -797,7 +802,8 @@ impl TextLayout {
                     transform: Affine::IDENTITY,
                     glyph_transform,
                     font_size: run.font_size(),
-                    hint: false,
+                    font_embolden,
+                    hint: true,
                     normalized_coords: run.normalized_coords(),
                     style: &style,
                     brush: glyph_run.style().brush.0.into(),
@@ -824,6 +830,7 @@ impl TextLayout {
 
     /// Draws the layout into Floem's retained paint recorder.
     pub fn draw(&self, cx: &mut crate::paint::PaintCx<'_>, origin: impl Into<Point>) {
-        self.draw_with_painter(cx.dyn_painter(), origin);
+        let font_embolden = cx.font_embolden;
+        self.draw_with_painter(cx.dyn_painter(), origin, font_embolden);
     }
 }

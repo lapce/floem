@@ -1,9 +1,9 @@
 mod data;
 pub(crate) mod profiler;
 mod view;
+use crate::text::FontWeight;
 use floem_reactive::{Effect, Scope};
-use floem_renderer::text::FontWeight;
-use imaging::record::{ReplaySource, Scene};
+use imaging::record::{Scene, replay};
 use peniko::kurbo::{Rect, Size};
 use peniko::{
     Color,
@@ -26,11 +26,11 @@ use crate::{
 
 use std::{cell::Cell, collections::HashMap, fmt::Display, rc::Rc};
 
+use crate::views::TabSelectorClass;
 use taffy::{
     prelude::{Layout, auto, fr},
     style::FlexDirection,
 };
-use crate::views::TabSelectorClass;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum BoxModelRegion {
@@ -664,8 +664,8 @@ impl CaptureState {
             computed_styles.insert(id, id.state().borrow().computed_style.clone());
             let mut scene = Scene::new();
             if let Some(element) = window_state.display_list.element(id.get_element_id()) {
-                element.paint.scene.replay_into(&mut scene);
-                element.post.scene.replay_into(&mut scene);
+                replay(&element.paint.scene, &mut scene);
+                replay(&element.post.scene, &mut scene);
             }
             scenes.insert(id, scene);
             for child in id.children() {
@@ -737,15 +737,16 @@ fn add_event<T: View + 'static>(
 }
 
 pub(crate) fn header(label: impl Display) -> Label {
-    Label::new(label).style(|s| {
-        s.padding(5.0)
-            .width_full()
-            .height(27.0)
-            .border_bottom(1.)
-            .font_bold()
-            .with_theme(|s, t| s.border_color(t.border()).color(t.primary()))
-    })
-    .debug_name("Inspector Header")
+    Label::new(label)
+        .style(|s| {
+            s.padding(5.0)
+                .width_full()
+                .height(27.0)
+                .border_bottom(1.)
+                .font_bold()
+                .with_theme(|s, t| s.border_color(t.border()).color(t.primary()))
+        })
+        .debug_name("Inspector Header")
 }
 
 fn info(name: impl Display, value: String) -> AnyView {
@@ -867,12 +868,9 @@ fn timing_details(report: &TimingReport) -> impl View + use<> {
     Stack::vertical((
         Stack::horizontal((
             (Stack::horizontal((
-                Label::new("Span")
-                    .style(|s| s.min_width(0.0).flex_grow(1.0).font_bold()),
-                Label::new("Start")
-                    .style(|s| s.min_width(96.0).font_bold().justify_end()),
-                Label::new("Duration")
-                    .style(|s| s.min_width(96.0).font_bold().justify_end()),
+                Label::new("Span").style(|s| s.min_width(0.0).flex_grow(1.0).font_bold()),
+                Label::new("Start").style(|s| s.min_width(96.0).font_bold().justify_end()),
+                Label::new("Duration").style(|s| s.min_width(96.0).font_bold().justify_end()),
             ))
             .style(|s| {
                 s.padding_horiz(12.0)
@@ -939,7 +937,7 @@ fn timing_details(report: &TimingReport) -> impl View + use<> {
 }
 
 fn timing_report_view(report: TimingReport) -> AnyView {
-    let overview_open = RwSignal::new(true);
+    let overview_open = RwSignal::new(false);
     let details_open = RwSignal::new(false);
     let details_mode = RwSignal::new(0);
     let overview_report = report.clone();

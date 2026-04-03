@@ -19,9 +19,9 @@ use winit::window::{
     ImeCapabilities, ImeEnableRequest, ImeHint, ImePurpose, ImeRequest, ImeRequestData,
 };
 
+use crate::gpu_resources::GpuResources;
 use floem_reactive::{RwSignal, Scope, SignalGet, SignalUpdate};
-use floem_renderer::gpu_resources::GpuResources;
-use imaging::{FillRef, PaintSink};
+use imaging::{FillRef, PaintSink, Painter};
 use peniko::color::palette;
 use peniko::kurbo::{self, Point, Size};
 use winit::{
@@ -81,7 +81,6 @@ pub(crate) struct WindowHandle {
     size: RwSignal<Size>,
     default_theme: Option<Style>,
     pub(crate) profile: Option<Profile>,
-    font_embolden: f32,
     is_maximized: bool,
     pub(crate) transparent: bool,
     pub(crate) modifiers: Modifiers,
@@ -94,6 +93,13 @@ pub(crate) struct WindowHandle {
     pub(crate) window_menu: Option<MudaMenu>,
     pub(crate) event_reducer: WindowEventReducer,
     pub(crate) gpu_resources: Option<GpuResources>,
+    pub(crate) renderer_chooser: Arc<
+        dyn Fn(
+                crate::paint::renderer::NewRendererCx,
+            ) -> Box<dyn crate::paint::renderer::WindowRenderer>
+            + Send
+            + Sync,
+    >,
     last_presented_at: Instant,
     is_occluded: bool,
     pending_timing: FrameTimingAccumulator,
@@ -149,13 +155,18 @@ impl WindowHandle {
     pub(crate) fn new(
         window: Box<dyn winit::window::Window>,
         gpu_resources: Option<GpuResources>,
-        renderer_installers: &[crate::paint::renderer::RendererInstaller],
+        renderer_chooser: Arc<
+            dyn Fn(
+                    crate::paint::renderer::NewRendererCx,
+                ) -> Box<dyn crate::paint::renderer::WindowRenderer>
+                + Send
+                + Sync,
+        >,
         required_features: wgpu::Features,
         backends: Option<wgpu::Backends>,
         view_fn: impl FnOnce(winit::window::WindowId) -> Box<dyn View> + 'static,
         transparent: bool,
         apply_default_theme: bool,
-        font_embolden: f32,
     ) -> Self {
         let id = ViewId::new_root();
         let window_id = window.id();
@@ -195,44 +206,26 @@ impl WindowHandle {
         let window: Arc<dyn Window> = window.into();
         store_window_id_mapping(id, window_id, &window);
         let frame_size = size.get_untracked() * os_scale;
-        let has_cpu_installer = renderer_installers
-            .iter()
-            .any(|installer| !installer.requires_gpu());
-        let has_gpu_installer = renderer_installers
-            .iter()
-            .any(|installer| installer.requires_gpu());
-
-        let prefer_gpu_installers =
-            has_gpu_installer && !crate::paint::renderer::force_cpu_requested();
+        let prefer_gpu_installers = !crate::paint::renderer::force_cpu_requested();
 
         let paint_state = if let Some(resources) = gpu_resources.clone() {
             Self::new_gpu_backed_paint_state(
-                renderer_installers,
+                &renderer_chooser,
                 window.clone(),
                 resources,
                 transparent,
                 os_scale,
                 frame_size,
-                font_embolden,
             )
         } else if prefer_gpu_installers {
-            Self::new_pending_paint_state(
-                window.clone(),
-                frame_size,
-                font_embolden,
-                required_features,
-                backends,
-            )
-        } else if has_cpu_installer {
+            Self::new_pending_paint_state(window.clone(), frame_size, required_features, backends)
+        } else {
             Self::new_cpu_backed_paint_state(
-                renderer_installers,
+                &renderer_chooser,
                 window.clone(),
                 os_scale,
                 frame_size,
-                font_embolden,
             )
-        } else {
-            Self::new_uninitialized_paint_state()
         };
 
         let paint_state_initialized = matches!(paint_state, PaintState::Initialized { .. });
@@ -251,7 +244,6 @@ impl WindowHandle {
                 false => None,
             },
             window_state,
-            font_embolden,
             is_maximized,
             transparent,
             profile: None,
@@ -265,6 +257,7 @@ impl WindowHandle {
             window_menu: None,
             event_reducer: WindowEventReducer::default(),
             gpu_resources,
+            renderer_chooser,
             last_presented_at: Instant::now(),
             is_occluded: false,
             pending_timing: FrameTimingAccumulator::default(),
@@ -295,52 +288,55 @@ impl WindowHandle {
     }
 
     fn new_gpu_backed_paint_state(
-        renderer_installers: &[crate::paint::renderer::RendererInstaller],
+        renderer_chooser: &Arc<
+            dyn Fn(
+                    crate::paint::renderer::NewRendererCx,
+                ) -> Box<dyn crate::paint::renderer::WindowRenderer>
+                + Send
+                + Sync,
+        >,
         window: Arc<dyn Window>,
         gpu_resources: GpuResources,
         transparent: bool,
         os_scale: f64,
         size: Size,
-        font_embolden: f32,
     ) -> PaintState {
         let surface = gpu_resources
             .instance
             .create_surface(Arc::clone(&window))
             .expect("can create second window");
-        let backend = crate::paint::renderer::new(
-            renderer_installers,
+        let backend = crate::paint::renderer::NewRendererCx::build(
+            renderer_chooser,
             window,
-            gpu_resources,
-            surface,
+            Some(gpu_resources),
+            Some(surface),
             transparent,
             os_scale,
             size,
-            font_embolden,
         );
         PaintState::Initialized { backend }
     }
 
     fn new_cpu_backed_paint_state(
-        renderer_installers: &[crate::paint::renderer::RendererInstaller],
+        renderer_chooser: &Arc<
+            dyn Fn(
+                    crate::paint::renderer::NewRendererCx,
+                ) -> Box<dyn crate::paint::renderer::WindowRenderer>
+                + Send
+                + Sync,
+        >,
         window: Arc<dyn Window>,
         os_scale: f64,
         size: Size,
-        font_embolden: f32,
     ) -> PaintState {
-        let backend = crate::paint::renderer::new_cpu(
-            renderer_installers,
-            window,
-            os_scale,
-            size,
-            font_embolden,
-        );
+        let backend =
+            crate::paint::renderer::NewRendererCx::build_cpu(renderer_chooser, window, os_scale, size);
         PaintState::Initialized { backend }
     }
 
     fn new_pending_paint_state(
         window: Arc<dyn Window>,
         size: Size,
-        font_embolden: f32,
         required_features: wgpu::Features,
         backends: Option<wgpu::Backends>,
     ) -> PaintState {
@@ -352,13 +348,7 @@ impl WindowHandle {
             backends,
             window.clone(),
         );
-        PaintState::new_pending(window, gpu_resources_rx, size, font_embolden)
-    }
-
-    fn new_uninitialized_paint_state() -> PaintState {
-        PaintState::Initialized {
-            backend: crate::paint::renderer::uninitialized_backend(),
-        }
+        PaintState::new_pending(window, gpu_resources_rx, size)
     }
 
     /// Creates a headless WindowHandle for testing purposes.
@@ -420,7 +410,6 @@ impl WindowHandle {
             size,
             default_theme: Some(default_theme(window_state.light_dark_theme)),
             window_state,
-            font_embolden: 0.0,
             is_maximized,
             transparent: false,
             profile: None,
@@ -434,6 +423,7 @@ impl WindowHandle {
             window_menu: None,
             event_reducer: WindowEventReducer::default(),
             gpu_resources: None,
+            renderer_chooser: crate::paint::renderer::default_renderer(),
             last_presented_at: Instant::now(),
             is_occluded: false,
             pending_timing: FrameTimingAccumulator::default(),
@@ -907,7 +897,13 @@ impl WindowHandle {
         let mut cursor = Duration::ZERO;
         timings.push_span(root_label, Duration::ZERO, total, 0, TimingKind::Total);
         if update_total > Duration::ZERO {
-            timings.push_span("Update Pipeline", cursor, update_total, 1, TimingKind::Update);
+            timings.push_span(
+                "Update Pipeline",
+                cursor,
+                update_total,
+                1,
+                TimingKind::Update,
+            );
             if update.style > Duration::ZERO {
                 timings.push_span("Style", cursor, update.style, 2, TimingKind::Style);
                 cursor += update.style;
@@ -965,7 +961,13 @@ impl WindowHandle {
         }
         let mut paint_cursor = cursor + paint.resize + paint.pre_present_notify;
         if paint.prepare > Duration::ZERO {
-            timings.push_span("Prepare", paint_cursor, paint.prepare, 2, TimingKind::Renderer);
+            timings.push_span(
+                "Prepare",
+                paint_cursor,
+                paint.prepare,
+                2,
+                TimingKind::Renderer,
+            );
             paint_cursor += paint.prepare;
         }
         if paint.scene > Duration::ZERO {
@@ -973,7 +975,13 @@ impl WindowHandle {
             paint_cursor += paint.scene;
         }
         if paint.finalize > Duration::ZERO {
-            timings.push_span("Finish", paint_cursor, paint.finalize, 2, TimingKind::Renderer);
+            timings.push_span(
+                "Finish",
+                paint_cursor,
+                paint.finalize,
+                2,
+                TimingKind::Renderer,
+            );
             paint_cursor += paint.finalize;
         }
         if paint.read_output > Duration::ZERO {
@@ -987,7 +995,13 @@ impl WindowHandle {
             paint_cursor += paint.read_output;
         }
         if paint.present.total > Duration::ZERO {
-            timings.push_span("Present", paint_cursor, paint.present.total, 2, TimingKind::Present);
+            timings.push_span(
+                "Present",
+                paint_cursor,
+                paint.present.total,
+                2,
+                TimingKind::Present,
+            );
             if paint.present.acquire_surface > Duration::ZERO {
                 timings.push_span(
                     "AcquireSurface",
@@ -1044,11 +1058,6 @@ impl WindowHandle {
         let total_start = Instant::now();
         let frame_size = self.window_state.root_size * self.window_state.os_scale;
         let frame_size = Size::new(frame_size.width.max(1.0), frame_size.height.max(1.0));
-        let begin = floem_renderer::BeginFrame {
-            size: frame_size,
-            scale: self.window_state.effective_scale(),
-            font_embolden: self.font_embolden,
-        };
         let resize_start = Instant::now();
         self.paint_state
             .backend_mut()
@@ -1077,17 +1086,18 @@ impl WindowHandle {
             record_paint_order: crate::paint::is_paint_order_tracking_enabled(),
         };
 
-        let mut timing = self.paint_state.backend_mut().render(
-            begin,
-            &mut |renderer: &mut dyn floem_renderer::RenderCore| {
-                if let Some(color) = background.as_ref() {
-                    renderer.render(&mut |sink| {
-                        PaintSink::fill(sink, FillRef::new(frame_size.to_rect().expand(), color));
-                    });
-                }
-                cx.paint_with_traversal_into(self.id, renderer);
-            },
-        );
+        let mut source = |sink: &mut dyn imaging::PaintSink| {
+            if let Some(color) = background.as_ref() {
+                Painter::new(sink)
+                    .fill(frame_size.to_rect().expand(), color)
+                    .draw();
+            }
+            cx.paint_with_traversal_into(self.id, sink);
+        };
+        let mut timing = self
+            .paint_state
+            .backend_mut()
+            .render(frame_size, &mut source);
 
         let root_element_id = cx.window_state.root_view_id.get_element_id();
         let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::PaintPresent));
@@ -1106,11 +1116,6 @@ impl WindowHandle {
         let total_start = Instant::now();
         let frame_size = self.window_state.root_size * self.window_state.os_scale;
         let frame_size = Size::new(frame_size.width.max(1.0), frame_size.height.max(1.0));
-        let begin = floem_renderer::BeginFrame {
-            size: frame_size,
-            scale: self.window_state.effective_scale(),
-            font_embolden: self.font_embolden,
-        };
         let resize_start = Instant::now();
         self.paint_state
             .backend_mut()
@@ -1139,17 +1144,16 @@ impl WindowHandle {
             record_paint_order: crate::paint::is_paint_order_tracking_enabled(),
         };
 
-        let mut output = self.paint_state.backend_mut().capture(
-            begin,
-            &mut |renderer: &mut dyn floem_renderer::RenderCore| {
-                if let Some(color) = background.as_ref() {
-                    renderer.render(&mut |sink| {
-                        PaintSink::fill(sink, FillRef::new(frame_size.to_rect().expand(), color));
-                    });
-                }
-                cx.paint_with_traversal_into(self.id, renderer);
-            },
-        );
+        let mut source = |sink: &mut dyn imaging::PaintSink| {
+            if let Some(color) = background.as_ref() {
+                PaintSink::fill(sink, FillRef::new(frame_size.to_rect().expand(), color));
+            }
+            cx.paint_with_traversal_into(self.id, sink);
+        };
+        let mut output = self
+            .paint_state
+            .backend_mut()
+            .capture(frame_size, &mut source);
 
         let root_element_id = cx.window_state.root_view_id.get_element_id();
         let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::PaintPresent));
@@ -1527,7 +1531,12 @@ impl WindowHandle {
                     }
                     UpdateMessage::WindowScale(scale) => {
                         cx.window_state.user_scale = scale;
+                        let scale = cx.window_state.effective_scale();
+                        let root_view_id = cx.window_state.root_view_id;
+                        self.event(Event::Window(WindowEvent::ScaleChanged(scale)));
                         self.id.request_layout();
+                        self.window_state.request_paint(root_view_id);
+                        self.schedule_repaint();
                     }
                     UpdateMessage::ShowContextMenu { menu, pos } => {
                         let (menu, registry) = menu.build();
@@ -2192,5 +2201,33 @@ mod tests {
             window_handle.window_state.style_dirty.is_empty(),
             "unreachable style dirty entries should be drained"
         );
+    }
+
+    #[test]
+    fn test_user_window_scale_requests_paint_and_emits_scale_changed() {
+        let root_id = ViewId::new_root();
+        set_current_view(root_id);
+
+        let observed_scale = Rc::new(Cell::new(0.0));
+        let observed_scale_for_listener = observed_scale.clone();
+
+        let view = Empty::new().style(|s| s.size(100.0, 100.0)).on_event_cont(
+            listener::WindowScaleChanged,
+            move |_cx, scale| {
+                observed_scale_for_listener.set(*scale);
+            },
+        );
+
+        let mut window_handle =
+            WindowHandle::new_headless(root_id, view, Size::new(800.0, 600.0), 1.0);
+        window_handle.window_state.clear_pending_paint();
+
+        crate::action::set_window_scale(1.5);
+        window_handle.process_update_no_paint();
+
+        assert_eq!(window_handle.window_state.user_scale, 1.5);
+        assert_eq!(window_handle.window_state.effective_scale(), 1.5);
+        assert_eq!(observed_scale.get(), 1.5);
+        assert!(window_handle.window_state.has_pending_paint());
     }
 }

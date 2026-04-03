@@ -22,6 +22,8 @@ use floem::{
     style::{DirectTransition, Transition},
     ui_events::pointer::{PointerButtonEvent, PointerEvent},
 };
+use floem::imaging::Painter;
+use floem::imaging::record::Scene;
 use palette::css;
 
 use crate::form::{form, form_item};
@@ -34,7 +36,7 @@ struct CheckerboardCacheKey {
 
 thread_local! {
     static TRANSPARENCY_CHECKERBOARD_CACHE:
-        RefCell<HashMap<CheckerboardCacheKey, floem::imaging::record::Retained>> =
+        RefCell<HashMap<CheckerboardCacheKey, Rc<Scene>>> =
             RefCell::new(HashMap::new());
 }
 
@@ -135,13 +137,9 @@ fn two_d_picker(color: RwSignal<Color>) -> impl IntoView {
 }
 
 fn draw_transparency_checkerboard(cx: &mut PaintCx, size: Size, clip_path: &impl Shape) {
-    let retained = cached_transparency_checkerboard(size);
+    let scene = cached_transparency_checkerboard(size);
     cx.painter.with_fill_clip(clip_path.to_path(0.1), |p| {
-        p.draw_retained(
-            retained.as_ref(),
-            floem::kurbo::Affine::IDENTITY,
-            floem::imaging::Composite::default(),
-        );
+        p.replay(scene.as_ref());
     });
 }
 
@@ -152,16 +150,18 @@ fn size_cache_key(size: Size) -> CheckerboardCacheKey {
     }
 }
 
-fn cached_transparency_checkerboard(size: Size) -> floem::imaging::record::Retained {
+fn cached_transparency_checkerboard(size: Size) -> Rc<Scene> {
     let key = size_cache_key(size);
 
     TRANSPARENCY_CHECKERBOARD_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
-        if let Some(retained) = cache.get(&key) {
-            return retained.clone();
+        if let Some(scene) = cache.get(&key) {
+            return scene.clone();
         }
 
-        let retained = floem::imaging::Retained::record(|p| {
+        let mut scene = Scene::new();
+        let mut painter = Painter::new(&mut scene);
+        {
             let cell_size = 8.0;
             let dark_color = Brush::Solid(css::LIGHT_GRAY);
             let light_color = Brush::Solid(css::WHITE);
@@ -184,24 +184,22 @@ fn cached_transparency_checkerboard(size: Size) -> floem::imaging::record::Retai
                         (row + 1) as f64 * cell_size,
                     );
 
-                    p.fill(rect, brush).draw();
+                    painter.fill(rect, brush).draw();
                 }
             }
-        })
-        .with_bounds(Rect::ZERO.with_size(size))
-        .with_cache_policy(floem::imaging::RetainedCachePolicy {
-            image_transform: Some(floem::imaging::RetainedTransformPolicy::Linear),
-            eviction: floem::imaging::RetainedEvictionPolicy::UntilUnused,
-        });
+        }
+        let scene = Rc::new(scene);
 
-        cache.insert(key, retained.clone());
-        retained
+        cache.insert(key, scene.clone());
+        scene
     })
 }
 
-fn build_sat_value_field(size: Size, hue: f32) -> floem::imaging::record::Retained {
+fn build_sat_value_field(size: Size, hue: f32) -> Rc<Scene> {
     let rect_path = Rect::ZERO.with_size(size).to_rounded_rect(8.);
-    floem::imaging::Retained::record(|p| {
+    let mut scene = Scene::new();
+    let mut p = Painter::new(&mut scene);
+    {
         let white = Brush::Solid(css::WHITE);
         p.fill(rect_path, &white).draw();
 
@@ -230,17 +228,15 @@ fn build_sat_value_field(size: Size, hue: f32) -> floem::imaging::record::Retain
         p.with_group(group, |painter| {
             painter.fill(rect_path, &val_gradient).draw();
         });
-    })
-    .with_bounds(Rect::ZERO.with_size(size))
-    .with_cache_policy(floem::imaging::RetainedCachePolicy {
-        image_transform: Some(floem::imaging::RetainedTransformPolicy::Linear),
-        eviction: floem::imaging::RetainedEvictionPolicy::UntilUnused,
-    })
+    }
+    Rc::new(scene)
 }
 
-fn build_hue_picker_gradient(size: Size) -> floem::imaging::record::Retained {
+fn build_hue_picker_gradient(size: Size) -> Rc<Scene> {
     let rect_path = Rect::ZERO.with_size(size).to_rounded_rect(8.);
-    floem::imaging::Retained::record(|p| {
+    let mut scene = Scene::new();
+    let mut p = Painter::new(&mut scene);
+    {
         let hue_gradient: Brush = Gradient::new_linear(
             Point::new(0.0, size.height / 2.0),
             Point::new(size.width, size.height / 2.0),
@@ -254,12 +250,8 @@ fn build_hue_picker_gradient(size: Size) -> floem::imaging::record::Retained {
         .into();
 
         p.fill(rect_path, &hue_gradient).draw();
-    })
-    .with_bounds(Rect::ZERO.with_size(size))
-    .with_cache_policy(floem::imaging::RetainedCachePolicy {
-        image_transform: Some(floem::imaging::RetainedTransformPolicy::Linear),
-        eviction: floem::imaging::RetainedEvictionPolicy::UntilUnused,
-    })
+    }
+    Rc::new(scene)
 }
 
 pub struct SatValuePicker {
@@ -268,7 +260,7 @@ pub struct SatValuePicker {
     current_color: AlphaColor<Hwb>,
     on_change: Option<Box<dyn Fn(Color)>>,
     point: Point,
-    retained_draw: Option<floem::imaging::record::Retained>,
+    retained_draw: Option<Rc<Scene>>,
     retained_draw_hue_bits: Option<u32>,
 }
 impl SatValuePicker {
@@ -384,12 +376,8 @@ impl View for SatValuePicker {
             self.retained_draw_hue_bits = Some(hue_bits);
         }
 
-        if let Some(retained_draw) = self.retained_draw.as_ref() {
-            cx.painter.draw_retained(
-                retained_draw.as_ref(),
-                floem::kurbo::Affine::IDENTITY,
-                floem::imaging::Composite::default(),
-            );
+        if let Some(scene) = self.retained_draw.as_ref() {
+            cx.painter.replay(scene.as_ref());
         }
 
         if size.width > 0.0 && size.height > 0.0 {
@@ -420,7 +408,7 @@ pub struct HuePicker {
     size: Size,
     current_color: AlphaColor<Hsl>,
     on_change: Option<Box<dyn Fn(Color)>>,
-    retained_draw: Option<floem::imaging::record::Retained>,
+    retained_draw: Option<Rc<Scene>>,
 }
 
 impl HuePicker {
@@ -521,12 +509,8 @@ impl View for HuePicker {
             self.retained_draw = Some(build_hue_picker_gradient(size));
         }
 
-        if let Some(retained_draw) = self.retained_draw.as_ref() {
-            cx.painter.draw_retained(
-                retained_draw.as_ref(),
-                floem::kurbo::Affine::IDENTITY,
-                floem::imaging::Composite::default(),
-            );
+        if let Some(scene) = self.retained_draw.as_ref() {
+            cx.painter.replay(scene.as_ref());
         }
         if size.width > 0.0 {
             let hue = self.current_color.components[0];

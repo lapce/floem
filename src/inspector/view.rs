@@ -259,13 +259,7 @@ fn capture_view(
         move |it| {
             match it {
                 0 => selected_view(&capture_sig.get(), capture_view.selected).into_any(),
-                1 => Stack::vertical((
-                    header("Stats"),
-                    stats(&capture_sig.get()),
-                    header("Renderer"),
-                    Label::new(renderer.clone()).style(|s| s.padding(5.0)),
-                ))
-                .into_any(),
+                1 => Stack::vertical((header("Stats"), stats(&capture_sig.get()))).into_any(),
                 _ => panic!(),
             }
             .style(|s| s.min_size(0, 0.).flex_grow(1.))

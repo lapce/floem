@@ -1,11 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
-  "renderer",
-  "vello",
-  "skia",
   "vger",
-  "tiny_skia",
   "reactive",
   "editor-core",
   "examples/*",
@@ -14,11 +10,7 @@ members = [
 ]
 default-members = [
   ".",
-  "renderer",
-  "vello",
-  "skia",
   "vger",
-  "tiny_skia",
   "reactive",
   "editor-core",
   "ui-events-winit",
@@ -55,7 +47,7 @@ strum_macros = { version = "0.28" }
 # Image format features are defined via new features
 image = { version = "0.25", default-features = false }
 imbl = "7.0"
-resvg = { version = "0.46" }
+tiny-skia = { version = "0.11.4" }
 raw-window-handle = "0.6.0"
 unicode-segmentation = "1.10"
 wgpu = { version = "28.0" }
@@ -76,7 +68,7 @@ sha2 = "0.10"
 bitflags = "2.9"
 indexmap = "2"
 rustc-hash.workspace = true
-imaging.workspace = true
+imaging = { workspace = true, features = ["wgpu"] }
 svg_imaging.workspace = true
 smallvec = "1.15"
 educe = "0.6"
@@ -88,18 +80,17 @@ unicode-segmentation = { workspace = true }
 peniko = { workspace = true }
 imbl.workspace = true
 parley = { workspace = true }
+fontique = { workspace = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true }
 lapce-xi-rope = { workspace = true, optional = true }
 strum = { workspace = true, optional = true }
 strum_macros = { workspace = true, optional = true }
 paste = "1.0"
-floem_renderer = { path = "renderer", version = "0.2.0" }
-floem_vello_renderer = { path = "vello", version = "0.2.0", optional = true }
-floem_skia_renderer = { path = "skia", version = "0.2.0", optional = true }
 floem_vger_renderer = { path = "vger", version = "0.2.0", optional = true }
-floem_tiny_skia_renderer = { path = "tiny_skia", version = "0.2.0", optional = true }
-imaging_skia = { path = "../imaging/imaging_skia", optional = true }
+imaging_vello = { path = "../imaging/imaging_vello", optional = true }
+imaging_skia = { path = "../imaging/imaging_skia", optional = true, features = ["gpu"] }
+imaging_tiny_skia = { path = "../imaging/imaging_tiny_skia", optional = true }
 imaging_vello_cpu = { path = "../imaging/imaging_vello_cpu", optional = true }
 imaging_vello_hybrid = { path = "../imaging/imaging_vello_hybrid", optional = true }
 floem_reactive = { path = "reactive", version = "0.2.0" }
@@ -170,13 +161,13 @@ default = [
   "vger",
   "vello-cpu"
 ]
-vello = ["dep:floem_vello_renderer"]
+vello = ["dep:imaging_vello"]
 vger = ["dep:floem_vger_renderer"]
 vello-hybrid = ["dep:imaging_vello_hybrid"]
 vello-cpu = ["dep:imaging_vello_cpu"]
-skia = ["dep:floem_skia_renderer"]
+skia = ["dep:imaging_skia"]
 skia-cpu = ["dep:imaging_skia"]
-tiny-skia = ["dep:floem_tiny_skia_renderer"]
+tiny-skia = ["dep:imaging_tiny_skia"]
 serde = [
   "dep:serde",
   "winit/serde",
@@ -211,13 +202,12 @@ image-tiff = ["image/tiff"]
 image-webp = ["image/webp"]
 tokio = ["dep:tokio"]
 # rfd (file dialog) async runtime
-crossbeam = ["dep:crossbeam", "floem_renderer/crossbeam"]
+crossbeam = ["dep:crossbeam"]
 localization = ["dep:fluent-bundle", "dep:unic-langid", "dep:sys-locale", "dep:ouroboros"]
 subduction = ["dep:subduction_core", "dep:subduction_backend_wgpu"]
 
 [dev-dependencies]
 criterion = { version = "0.8.1", features = ["html_reports"] }
-floem_renderer = { path = "renderer" }
 peniko = { workspace = true }
 
 # [patch.crates-io]

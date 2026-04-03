@@ -15,7 +15,7 @@ use peniko::Color;
 /// # Example
 ///
 /// ```
-/// use floem_renderer::text::FamilyOwned;
+/// use floem::text::FamilyOwned;
 ///
 /// let families: Vec<FamilyOwned> = FamilyOwned::parse_list("'Fira Code', monospace").collect();
 /// assert_eq!(families, vec![
@@ -52,7 +52,7 @@ impl FamilyOwned {
     /// # Example
     ///
     /// ```
-    /// use floem_renderer::text::FamilyOwned;
+    /// use floem::text::FamilyOwned;
     ///
     /// let families: Vec<_> = FamilyOwned::parse_list("Arial, sans-serif").collect();
     /// assert_eq!(families, vec![
@@ -111,7 +111,7 @@ impl FamilyOwned {
 /// # Example
 ///
 /// ```
-/// use floem_renderer::text::{Attrs, LineHeightValue};
+/// use floem::text::{Attrs, LineHeightValue};
 ///
 /// // 1.5x the font size (e.g. 24px for a 16px font).
 /// let attrs = Attrs::new().line_height(LineHeightValue::Normal(1.5));
@@ -175,7 +175,7 @@ impl From<i32> for LineHeightValue {
 /// # Example
 ///
 /// ```
-/// use floem_renderer::text::{Attrs, FamilyOwned, FontWeight, LineHeightValue};
+/// use floem::text::{Attrs, FamilyOwned, FontWeight, LineHeightValue};
 /// use peniko::Color;
 ///
 /// let families = [FamilyOwned::Name("Inter".to_string()), FamilyOwned::SansSerif];
@@ -429,7 +429,7 @@ impl<'a> Attrs<'a> {
 /// # Example
 ///
 /// ```
-/// use floem_renderer::text::{Attrs, AttrsOwned, FamilyOwned, FontWeight};
+/// use floem::text::{Attrs, AttrsOwned, FamilyOwned, FontWeight};
 ///
 /// let families = [FamilyOwned::Monospace];
 /// let attrs = Attrs::new().family(&families).weight(FontWeight::BOLD);
@@ -502,7 +502,7 @@ impl AttrsOwned {
 /// # Example
 ///
 /// ```
-/// use floem_renderer::text::{Attrs, AttrsList, FontWeight};
+/// use floem::text::{Attrs, AttrsList, FontWeight};
 /// use peniko::Color;
 ///
 /// let mut attrs_list = AttrsList::new(Attrs::new().font_size(14.0));

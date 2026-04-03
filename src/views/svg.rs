@@ -2,11 +2,12 @@ use std::{cell::RefCell, rc::Rc};
 
 use floem_reactive::Effect;
 use imaging::MaskMode;
+use imaging::Painter;
+use imaging::record::{Scene, replay_transformed};
 use peniko::{
     Brush, GradientKind, LinearGradientPosition,
     kurbo::{Affine, Point, Size},
 };
-use rustc_hash::FxHashMap;
 use svg_imaging::{ParseOptions, RenderOptions, SvgDocument};
 
 use crate::{
@@ -133,67 +134,9 @@ impl SvgLayoutData {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct SvgRetainedCacheKey {
-    svg: String,
-    css: Option<String>,
-    brush: Option<String>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct SvgRetainedCacheKeyBase {
-    svg: String,
-    css: Option<String>,
-}
-
-thread_local! {
-    static SVG_RETAINED_CACHE: RefCell<FxHashMap<SvgRetainedCacheKey, imaging::record::Retained>> =
-        RefCell::new(FxHashMap::default());
-}
-
-fn cached_retained_draw(
-    key: &SvgRetainedCacheKey,
-    document: &SvgDocument,
-    brush: Option<&Brush>,
-) -> imaging::record::Retained {
-    SVG_RETAINED_CACHE.with(|cache| {
-        let mut cache = cache.borrow_mut();
-        if let Some(retained) = cache.get(key) {
-            return retained.clone();
-        }
-
-        let bounds = document.size().to_rect();
-        let retained = imaging::Retained::record(|p| {
-            if let Some(brush) = brush {
-                p.with_masked_group(
-                    MaskMode::Alpha,
-                    |mask| {
-                        let _ = document.render(mask, &RenderOptions::default());
-                    },
-                    |painter| {
-                        painter.fill(bounds, brush).draw();
-                    },
-                );
-            } else {
-                let _ = document.render(p, &RenderOptions::default());
-            }
-        })
-        .with_bounds(bounds)
-        .with_cache_policy(imaging::RetainedCachePolicy {
-            image_transform: Some(imaging::RetainedTransformPolicy::Linear),
-            eviction: imaging::RetainedEvictionPolicy::UntilUnused,
-        });
-        cache.insert(key.clone(), retained.clone());
-        retained
-    })
-}
-
 pub struct Svg {
     id: ViewId,
     svg_document: Option<SvgDocument>,
-    retained_draw: Option<imaging::record::Retained>,
-    retained_draw_brush_key: Option<String>,
-    retained_cache_key_base: SvgRetainedCacheKeyBase,
     svg_style: SvgStyle,
     svg_string: String,
     svg_css: Option<String>,
@@ -275,12 +218,6 @@ pub fn svg(svg_str_fn: impl Into<SvgStrFn> + 'static) -> Svg {
     let mut svg = Svg {
         id,
         svg_document: None,
-        retained_draw: None,
-        retained_draw_brush_key: None,
-        retained_cache_key_base: SvgRetainedCacheKeyBase {
-            svg: String::new(),
-            css: None,
-        },
         svg_style: Default::default(),
         svg_string: Default::default(),
         css_prop: None,
@@ -332,8 +269,6 @@ impl View for Svg {
             .color_brush()
             .map(|brush| brush_to_css_string(&brush));
         if previous_brush != current_brush {
-            self.retained_draw = None;
-            self.retained_draw_brush_key = None;
             self.id.request_paint();
         }
         if let Some(document) = &self.svg_document {
@@ -364,12 +299,6 @@ impl View for Svg {
 
             self.svg_string = text.clone();
             self.svg_css = style.clone();
-            self.retained_cache_key_base = SvgRetainedCacheKeyBase {
-                svg: text.clone(),
-                css: style.clone(),
-            };
-            self.retained_draw = None;
-            self.retained_draw_brush_key = None;
 
             let svg_document = SvgDocument::from_str(
                 text.as_str(),
@@ -417,28 +346,23 @@ impl View for Svg {
             let transform = Affine::translate((rect.x0, rect.y0))
                 * Affine::scale_non_uniform(rect.width() / size.width, rect.height() / size.height);
             let brush = self.svg_style.color_brush();
-            let brush_key = brush.as_ref().map(brush_to_css_string);
-            if self.retained_draw.is_none() || self.retained_draw_brush_key != brush_key {
-                self.retained_draw = Some(cached_retained_draw(
-                    &SvgRetainedCacheKey {
-                        svg: self.retained_cache_key_base.svg.clone(),
-                        css: self.retained_cache_key_base.css.clone(),
-                        brush: brush_key.clone(),
+            let mut scene = Scene::new();
+            let mut painter = Painter::new(&mut scene);
+            if let Some(brush) = brush.as_ref() {
+                let bounds = document.size().to_rect();
+                painter.with_masked_group(
+                    MaskMode::Alpha,
+                    |mask| {
+                        let _ = document.render(mask, &RenderOptions::default());
                     },
-                    document,
-                    brush.as_ref(),
-                ));
-                self.retained_draw_brush_key = brush_key;
+                    |painter| {
+                        painter.fill(bounds, brush).draw();
+                    },
+                );
+            } else {
+                let _ = document.render(&mut painter, &RenderOptions::default());
             }
-
-            let Some(retained_draw) = self.retained_draw.as_ref() else {
-                return;
-            };
-            cx.painter.draw_retained(
-                retained_draw.as_ref(),
-                transform,
-                imaging::Composite::default(),
-            );
+            replay_transformed(&scene, cx.painter.sink_mut(), transform);
         }
     }
 }

@@ -5,7 +5,7 @@ mod values_extended_scene;
 pub(crate) use values_extended_scene::scene_debug_view_with_size;
 
 use floem_reactive::{RwSignal, SignalGet, SignalUpdate as _};
-use floem_renderer::text::{FontWeight, LineHeightValue};
+use crate::text::{FontWeight, LineHeightValue};
 use peniko::color::{HueDirection, palette};
 use peniko::kurbo::{self, Affine, Point, Shape, Stroke, Vec2};
 use peniko::{
@@ -149,6 +149,14 @@ impl StylePropValue for usize {
 impl StylePropValue for f64 {
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         Some(*self * (1.0 - value) + *other * value)
+    }
+}
+impl StylePropValue for Vec2 {
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        Some(Vec2::new(
+            self.x * (1.0 - value) + other.x * value,
+            self.y * (1.0 - value) + other.y * value,
+        ))
     }
 }
 impl StylePropValue for Overflow {}

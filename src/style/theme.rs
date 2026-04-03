@@ -19,7 +19,6 @@ use crate::{
         slider::{SliderClass, SliderCustomExprStyle, SliderCustomStyle},
     },
 };
-use floem_renderer::text::FontWeight;
 use peniko::{Brush, Color, color::palette::css};
 use smallvec::smallvec;
 
@@ -289,7 +288,7 @@ impl StylePropValue for DesignSystem {
                 .style(|s| s.size(16.0, 16.0).padding(0.)),
             "Design System"
                 .to_string()
-                .style(|s| s.font_size(14.0).font_weight(FontWeight::SEMI_BOLD)),
+                .style(|s| s.font_size(14.0).font_weight(crate::text::FontWeight::SEMI_BOLD)),
         ))
         .action(move || {
             is_expanded.update(|v| *v = !*v);

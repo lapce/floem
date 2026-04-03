@@ -3,19 +3,13 @@
 //! This module contains the types used during the paint phase:
 //! - [`PaintCx`] - Context for painting views
 //! - [`PaintState`] - State for the renderer (pending or initialized)
-//! - [`Rasterizer`] - Backend rasterizer abstraction
 
 pub mod border_path_iter;
 pub mod display_list;
 pub mod renderer;
 
+use crate::gpu_resources::{GpuResourceError, GpuResources};
 pub use border_path_iter::{BorderPath, BorderPathEvent};
-pub use floem_renderer::RenderCore as Rasterizer;
-
-use floem_renderer::{
-    RenderCore,
-    gpu_resources::{GpuResourceError, GpuResources},
-};
 use imaging::{PaintSink, Painter};
 use peniko::kurbo::{Affine, Point, RoundedRect, Size};
 use rustc_hash::FxHashSet;
@@ -147,6 +141,7 @@ pub struct PaintCx<'a> {
     /// Optional clip for this visual node (from box tree)
     pub clip: Option<RoundedRect>,
     pub font_size_cx: FontSizeCx,
+    pub font_embolden: peniko::kurbo::Vec2,
 }
 
 pub trait PainterExt {
@@ -218,22 +213,16 @@ impl GlobalPaintCx<'_> {
         reusable_descendants
     }
 
-    pub(crate) fn paint_with_traversal_into(
-        &mut self,
-        root_id: ViewId,
-        renderer: &mut dyn RenderCore,
-    ) {
+    pub(crate) fn paint_with_traversal_into(&mut self, root_id: ViewId, sink: &mut dyn PaintSink) {
         self.prepare_display_list(root_id);
-        renderer.render(&mut |sink| {
-            Self::replay_display_list_to_sink_with_state(
-                self.window_state,
-                self.record_paint_order,
-                sink,
-                None,
-                Point::ZERO,
-                None,
-            );
-        });
+        Self::replay_display_list_to_sink_with_state(
+            self.window_state,
+            self.record_paint_order,
+            sink,
+            None,
+            Point::ZERO,
+            None,
+        );
     }
 
     pub(crate) fn prepare_display_list(&mut self, root_id: ViewId) {
@@ -502,6 +491,10 @@ impl GlobalPaintCx<'_> {
                 layout_rect_local,
                 clip: snapshot.clip,
                 font_size_cx,
+                font_embolden: view_state
+                    .borrow()
+                    .computed_style
+                    .get(crate::style::FontEmbolden),
             };
 
             if !is_post {
@@ -564,7 +557,6 @@ pub(crate) enum PaintState {
     PendingGpuResources {
         window: Arc<dyn Window>,
         rx: Receiver<Result<(GpuResources, wgpu::Surface<'static>), GpuResourceError>>,
-        font_embolden: f32,
         backend: renderer::WindowBackend,
     },
     /// The renderer is initialized and ready to paint.
@@ -576,12 +568,10 @@ impl PaintState {
         window: Arc<dyn Window>,
         rx: Receiver<Result<(GpuResources, wgpu::Surface<'static>), GpuResourceError>>,
         _size: Size,
-        font_embolden: f32,
     ) -> Self {
         Self::PendingGpuResources {
             window,
             rx,
-            font_embolden,
             backend: renderer::uninitialized_backend(),
         }
     }

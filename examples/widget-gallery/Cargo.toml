@@ -13,11 +13,9 @@ floem = { path = "../..", default-features = false, features = [
 strum = { workspace = true }
 files = { path = "../files/", optional = true, default-features = false }
 
-[target.'cfg(target_os = "macos")'.dependencies]
-signpost = "*"
 
 [features]
-default = ["full", "skia" ]
+default = ["full", "tiny-skia" ]
 vello = ["floem/vello", "files?/vello"]
 vger = ["floem/vger"]
 skia = ["floem/skia"]

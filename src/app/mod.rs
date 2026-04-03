@@ -5,6 +5,7 @@ pub(crate) mod handle;
 use std::{
     cell::RefCell,
     rc::Rc,
+    sync::Arc,
     sync::atomic::{AtomicBool, Ordering},
 };
 
@@ -48,7 +49,13 @@ pub struct AppConfig {
     pub(crate) wgpu_features: wgpu::Features,
     pub(crate) wgpu_backends: Option<wgpu::Backends>,
     pub(crate) global_theme_override: Option<Theme>,
-    pub(crate) renderer_installers: Vec<crate::paint::renderer::RendererInstaller>,
+    pub(crate) renderer_chooser: Arc<
+        dyn Fn(
+                crate::paint::renderer::NewRendererCx,
+            ) -> Box<dyn crate::paint::renderer::WindowRenderer>
+            + Send
+            + Sync,
+    >,
 }
 
 impl std::fmt::Debug for AppConfig {
@@ -58,7 +65,7 @@ impl std::fmt::Debug for AppConfig {
             .field("wgpu_features", &self.wgpu_features)
             .field("wgpu_backends", &self.wgpu_backends)
             .field("global_theme_override", &self.global_theme_override)
-            .field("renderer_installers_len", &self.renderer_installers.len())
+            .field("renderer_chooser", &"<closure>")
             .finish()
     }
 }
@@ -70,7 +77,7 @@ impl Default for AppConfig {
             wgpu_features: wgpu::Features::default(),
             wgpu_backends: None,
             global_theme_override: None,
-            renderer_installers: crate::paint::renderer::default_renderer_installers(),
+            renderer_chooser: crate::paint::renderer::default_renderer(),
         }
     }
 }
@@ -97,12 +104,21 @@ impl AppConfig {
         self
     }
 
+    /// Override the default renderer chooser for newly created windows.
+    ///
+    /// Individual windows can still override this with
+    /// [`crate::window::WindowConfig::renderer_chooser`].
     #[inline]
-    pub fn renderer_installers(
+    pub fn renderer_chooser(
         mut self,
-        renderer_installers: Vec<crate::paint::renderer::RendererInstaller>,
+        renderer_chooser: impl Fn(
+            crate::paint::renderer::NewRendererCx,
+        ) -> Box<dyn crate::paint::renderer::WindowRenderer>
+        + Send
+        + Sync
+        + 'static,
     ) -> Self {
-        self.renderer_installers = renderer_installers;
+        self.renderer_chooser = Arc::new(renderer_chooser);
         self
     }
 }

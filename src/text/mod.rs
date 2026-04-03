@@ -1,7 +1,7 @@
 //! Floem's high-level text API.
 //!
 //! This module exposes the text types used by Floem views and editor code:
-//! - styling attributes and font vocabulary re-exported from `floem_renderer::text`
+//! - styling attributes and font vocabulary defined here
 //! - Parley alignment, cursor, selection, and wrapping vocabulary used directly by Floem
 //! - [`TextLayout`], Floem's layout wrapper around Parley
 //! - [`TextLayoutState`], shared view state for overflow-aware text layout
@@ -11,18 +11,49 @@
 
 use std::ops::Range;
 
+mod attrs;
 mod layout;
 mod layout_state;
 
-pub use floem_renderer::text::{
-    Attrs, AttrsList, AttrsOwned, FamilyOwned, FontStyle, FontWeight, FontWidth, Glyph,
-    GlyphRunRef, LineHeightValue, NormalizedCoord,
-};
+pub use attrs::{Attrs, AttrsList, AttrsOwned, FamilyOwned, LineHeightValue};
+pub use fontique::{FontStyle, FontWeight, FontWidth};
+pub use imaging::{GlyphRunRef, NormalizedCoord};
 pub use layout::{FONT_CONTEXT, TextLayout, TextSelection};
 pub use layout_state::{TextLayoutState, TextOverflowChanged};
+pub use parley::layout::Glyph;
 pub use parley::Alignment;
 pub use parley::layout::{Affinity, Cursor, Selection};
 pub use parley::style::{OverflowWrap, TextWrapMode, WordBreakStrength};
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TextBrush(pub peniko::Color);
+
+impl Default for TextBrush {
+    fn default() -> Self {
+        TextBrush(peniko::Color::from_rgba8(0, 0, 0, 255))
+    }
+}
+
+impl From<peniko::Color> for TextBrush {
+    fn from(c: peniko::Color) -> Self {
+        TextBrush(c)
+    }
+}
+
+impl From<TextBrush> for peniko::Color {
+    fn from(b: TextBrush) -> Self {
+        b.0
+    }
+}
+
+pub trait GlyphDrawer {
+    fn draw_glyphs<'a>(
+        &mut self,
+        origin: peniko::kurbo::Point,
+        run: &GlyphRunRef<'a>,
+        glyphs: impl Iterator<Item = Glyph> + 'a,
+    );
+}
 
 /// Returns the byte ranges of the source text's logical paragraphs.
 ///

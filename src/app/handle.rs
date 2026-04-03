@@ -1,5 +1,5 @@
 use dpi::PhysicalPosition;
-use floem_renderer::gpu_resources::GpuResources;
+use crate::gpu_resources::GpuResources;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 use ui_events_winit::WindowEventTranslation;
@@ -96,20 +96,18 @@ impl ApplicationHandle {
                 if let PaintState::PendingGpuResources {
                     window,
                     rx,
-                    font_embolden,
                     backend: _,
                 } = &handle.paint_state
                 {
                     let (gpu_resources, surface) = rx.recv().unwrap().unwrap();
-                    let backend = crate::paint::renderer::new(
-                        &self.config.renderer_installers,
+                    let backend = crate::paint::renderer::NewRendererCx::build(
+                        &handle.renderer_chooser,
                         window.clone(),
-                        gpu_resources.clone(),
-                        surface,
+                        Some(gpu_resources.clone()),
+                        Some(surface),
                         handle.transparent,
                         handle.window_state.effective_scale(),
                         handle.window_state.root_size * handle.window_state.os_scale,
-                        *font_embolden,
                     );
                     self.gpu_resources = Some(gpu_resources);
                     handle.paint_state = PaintState::Initialized { backend };
@@ -479,9 +477,11 @@ impl ApplicationHandle {
             mac_os_config,
             win_os_config,
             web_config,
-            font_embolden,
+            renderer_chooser,
         }: WindowConfig,
     ) {
+        let renderer_chooser =
+            renderer_chooser.unwrap_or_else(|| self.config.renderer_chooser.clone());
         let logical_size = size.map(|size| LogicalSize::new(size.width, size.height));
         let logical_min_size = min_size.map(|size| LogicalSize::new(size.width, size.height));
         let logical_max_size = max_size.map(|size| LogicalSize::new(size.width, size.height));
@@ -658,13 +658,12 @@ impl ApplicationHandle {
         let window_handle = WindowHandle::new(
             window,
             self.gpu_resources.clone(),
-            &self.config.renderer_installers,
+            renderer_chooser,
             self.config.wgpu_features,
             self.config.wgpu_backends,
             view_fn,
             transparent,
             apply_default_theme,
-            font_embolden,
         );
         self.window_handles.insert(window_id, window_handle);
     }

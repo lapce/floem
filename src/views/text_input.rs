@@ -1495,6 +1495,7 @@ impl View for TextInput {
                     text_layout.draw_with_painter(
                         p.dyn_painter(),
                         Point::new(text_start_point.x - self.scroll_offset, text_start_point.y),
+                        cx.font_embolden,
                     );
                 });
 

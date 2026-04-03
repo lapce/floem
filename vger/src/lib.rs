@@ -1,16 +1,14 @@
 use std::cell::RefCell;
 use std::sync::Arc;
+use std::sync::mpsc;
 
 use anyhow::Result;
-use floem_renderer::gpu_resources::GpuResources;
-use floem_renderer::{
-    BeginFrame, GpuTextureTarget, RenderCore, RenderOutput, Renderer, TargetRenderer,
-};
 use floem_vger_rs::{GlyphImage, PaintIndex, Vger};
 use imaging::{
-    BlurredRoundedRect, ClipRef, FillRef, GlyphRunRef, GroupRef, PaintSink, RetainedDrawRef,
-    StrokeRef,
-    record::{Glyph, ReplaySource},
+    BlurredRoundedRect, ClipRef, FillRef, GlyphRunRef, GroupRef, ImageBufferTarget,
+    ImageRenderer, ImageRendererError, PaintSink, RenderSource, StrokeRef, TextureRenderer,
+    TextureRendererError, TextureViewTarget,
+    record::Glyph,
 };
 use peniko::kurbo::Stroke;
 use peniko::{Blob, LinearGradientPosition};
@@ -45,36 +43,25 @@ struct ResolvedGlyph {
 
 pub struct VgerRenderer {
     device: Arc<Device>,
-    #[expect(unused)]
     queue: Arc<Queue>,
     vger: Vger,
     texture_format: TextureFormat,
     texture: Option<wgpu::Texture>,
     view: Option<wgpu::TextureView>,
     size: (u32, u32),
-    scale: f64,
     transform: Affine,
     clip: Option<Rect>,
-    font_embolden: f32,
-    finished_output: Option<RenderOutput>,
 }
 
 impl VgerRenderer {
     pub fn new(
-        gpu_resources: GpuResources,
+        adapter: wgpu::Adapter,
+        device: wgpu::Device,
+        queue: wgpu::Queue,
         width: u32,
         height: u32,
         texture_format: TextureFormat,
-        scale: f64,
-        font_embolden: f32,
     ) -> Result<Self> {
-        let GpuResources {
-            adapter,
-            device,
-            queue,
-            ..
-        } = gpu_resources;
-
         if adapter.get_info().device_type == DeviceType::Cpu {
             return Err(anyhow::anyhow!("only cpu adapter found"));
         }
@@ -103,26 +90,20 @@ impl VgerRenderer {
             texture_format,
             texture: None,
             view: None,
-            scale,
             size: (width, height),
             transform: Affine::IDENTITY,
             clip: None,
-            font_embolden,
-            finished_output: None,
         })
     }
 
-    pub fn begin(&mut self, width: u32, height: u32, scale: f64, font_embolden: f32) {
+    pub fn begin(&mut self, width: u32, height: u32) {
         if self.size != (width, height) && self.texture.is_some() {
             self.texture = None;
             self.view = None;
         }
         self.size = (width, height);
-        self.scale = scale;
-        self.font_embolden = font_embolden;
         self.transform = Affine::IDENTITY;
         self.clip = None;
-        self.finished_output = None;
         self.vger.begin(self.size.0 as f32, self.size.1 as f32, 1.0);
     }
 }
@@ -158,14 +139,6 @@ impl PaintSink for VgerRenderer {
 
     fn pop_group(&mut self) {}
 
-    fn retained(&mut self, draw: RetainedDrawRef<'_>) {
-        if !self.draw_retained_via_atlas(&draw) {
-            draw.retained
-                .scene
-                .replay_into_transformed(self, draw.transform);
-        }
-    }
-
     fn fill(&mut self, draw: FillRef<'_>) {
         self.set_transform(draw.transform);
         match draw.shape {
@@ -200,133 +173,151 @@ impl PaintSink for VgerRenderer {
     }
 }
 
-impl RenderCore for VgerRenderer {
-    fn render(&mut self, f: &mut dyn FnMut(&mut dyn PaintSink)) {
-        f(self)
-    }
-
+impl VgerRenderer {
     fn finish(&mut self) {
-        self.finished_output = self
-            .render_to_texture_output()
-            .map(RenderOutput::GpuTexture);
-    }
-
-    fn readback(&mut self) -> Option<RenderOutput> {
-        self.finished_output.take().or_else(|| {
-            self.render_to_texture_output()
-                .map(RenderOutput::GpuTexture)
-        })
-    }
-}
-
-impl Renderer for VgerRenderer {
-    type Target = wgpu::TextureView;
-
-    fn set_size(&mut self, frame: BeginFrame) {
-        Self::begin(
-            self,
-            frame.size.width as u32,
-            frame.size.height as u32,
-            frame.scale,
-            frame.font_embolden,
-        );
-    }
-
-    fn reset(&mut self) {
-        self.finished_output = None;
-        self.clip = None;
-    }
-
-    fn read_target(&mut self) -> Option<Self::Target> {
-        self.finished_output.take().and_then(|output| match output {
-            RenderOutput::GpuTexture(texture) => Some(texture),
-            RenderOutput::Image(_) => None,
-        })
-    }
-}
-
-impl TargetRenderer for VgerRenderer {
-    type Target = GpuTextureTarget;
-
-    fn create(frame: BeginFrame, target: Self::Target) -> Result<Self, String> {
-        let device = Arc::new(target.device);
-        let queue = Arc::new(target.queue);
-        let texture_format = target.texture_view.texture().format();
-        let size = target.texture_view.texture().size();
-        let vger = floem_vger_rs::Vger::new(device.clone(), queue.clone(), texture_format);
-        let mut renderer = Self {
-            device,
-            queue,
-            vger,
-            texture_format,
-            texture: None,
-            view: Some(target.texture_view),
-            size: (size.width, size.height),
-            scale: frame.scale,
-            transform: Affine::IDENTITY,
-            clip: None,
-            font_embolden: frame.font_embolden,
-            finished_output: None,
-        };
-        renderer.begin(
-            frame.size.width as u32,
-            frame.size.height as u32,
-            frame.scale,
-            frame.font_embolden,
-        );
-        Ok(renderer)
+        let _ = self.render_to_texture_output();
     }
 }
 
 impl VgerRenderer {
-    fn draw_retained_via_atlas(&mut self, draw: &RetainedDrawRef<'_>) -> bool {
-        let Some(_policy) = draw.retained.cache_policy.image_transform else {
-            return false;
-        };
-        let Some(bounds) = draw.retained.bounds else {
-            return false;
-        };
-        if bounds.is_zero_area() {
-            return true;
+    fn set_target(
+        &mut self,
+        size: peniko::kurbo::Size,
+        target: TextureViewTarget,
+    ) -> Result<(), String> {
+        let texture_format = target.view.texture().format();
+        if self.texture_format != texture_format {
+            self.texture_format = texture_format;
+            self.vger =
+                floem_vger_rs::Vger::new(self.device.clone(), self.queue.clone(), texture_format);
         }
+        self.texture = None;
+        self.view = Some(target.view);
+        self.begin(size.width as u32, size.height as u32);
+        Ok(())
+    }
+}
 
-        let coeffs = draw.transform.as_coeffs();
-        if coeffs[1] != 0.0 || coeffs[2] != 0.0 || coeffs[0] <= 0.0 || coeffs[3] <= 0.0 {
-            return false;
-        }
+impl TextureRenderer for VgerRenderer {
+    type TextureTarget = TextureViewTarget;
 
-        let device_rect = draw.transform.transform_rect_bbox(bounds);
-        if device_rect.is_zero_area() {
-            return true;
-        }
+    fn render_source_to_texture(
+        &mut self,
+        source: &mut dyn RenderSource,
+        target: Self::TextureTarget,
+    ) -> Result<(), TextureRendererError> {
+        let size = peniko::kurbo::Size::new(target.width as f64, target.height as f64);
+        self.set_target(size, target)
+            .map_err(std::io::Error::other)
+            .map_err(TextureRendererError::backend)?;
+        source.paint_into(self);
+        self.finish();
+        Ok(())
+    }
+}
 
-        let width = device_rect.width().round().max(1.0);
-        let height = device_rect.height().round().max(1.0);
-        if width > u16::MAX as f64 || height > u16::MAX as f64 {
-            return false;
-        }
+impl ImageRenderer for VgerRenderer {
+    fn render_source_into(
+        &mut self,
+        source: &mut dyn RenderSource,
+        target: ImageBufferTarget<'_>,
+    ) -> Result<(), ImageRendererError> {
+        self.begin(target.width, target.height);
+        source.paint_into(self);
+        let view = self
+            .render_to_texture_output()
+            .ok_or_else(|| {
+                ImageRendererError::backend(std::io::Error::other(
+                    "vger backend did not produce a texture output",
+                ))
+            })?;
+        read_texture_into(
+            self.device.as_ref(),
+            self.queue.as_ref(),
+            view.texture(),
+            target.width,
+            target.height,
+            target.data,
+            target.bytes_per_row,
+        )
+        .map_err(|err| {
+            ImageRendererError::backend(std::io::Error::other(format!(
+                "vger backend failed to read rendered image: {err}"
+            )))
+        })
+    }
+}
 
-        let width = width as u32;
-        let height = height as u32;
-        let hash = draw.retained.stable_id().to_le_bytes();
-        let scene = draw.retained.scene.clone();
-        let raster_transform = Affine::scale_non_uniform(
-            width as f64 / bounds.width(),
-            height as f64 / bounds.height(),
-        ) * Affine::translate((-bounds.x0, -bounds.y0));
+fn read_texture_into(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    texture: &wgpu::Texture,
+    width: u32,
+    height: u32,
+    bytes: &mut [u8],
+    output_bytes_per_row: usize,
+) -> Result<(), &'static str> {
+    let width_bytes = width * 4;
+    let bytes_per_row = width_bytes.div_ceil(256) * 256;
+    let readback = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("floem_vger readback"),
+        size: u64::from(bytes_per_row) * u64::from(height),
+        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
 
-        self.vger.render_svg(
-            device_rect.x0.round() as f32,
-            device_rect.y0.round() as f32,
-            &hash,
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("floem_vger readback"),
+    });
+    encoder.copy_texture_to_buffer(
+        wgpu::TexelCopyTextureInfo {
+            texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        wgpu::TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(bytes_per_row),
+                rows_per_image: None,
+            },
+        },
+        wgpu::Extent3d {
             width,
             height,
-            move || rasterize_retained_rgba8(&scene, width, height, raster_transform),
-            None,
-        );
-        true
-    }
+            depth_or_array_layers: 1,
+        },
+    );
+    queue.submit([encoder.finish()]);
 
+    let slice = readback.slice(..);
+    let (tx, rx) = mpsc::channel();
+    slice.map_async(wgpu::MapMode::Read, move |result| {
+        let _ = tx.send(result);
+    });
+    device
+        .poll(wgpu::PollType::wait_indefinitely())
+        .map_err(|_| "wgpu device poll failed")?;
+    rx.recv()
+        .map_err(|_| "wgpu readback callback dropped")?
+        .map_err(|_| "wgpu readback buffer map failed")?;
+
+    let mapped = slice.get_mapped_range();
+    let width_bytes = width_bytes as usize;
+    for (row, out_row) in mapped
+        .chunks_exact(bytes_per_row as usize)
+        .zip(bytes.chunks_exact_mut(output_bytes_per_row))
+    {
+        out_row[..width_bytes].copy_from_slice(&row[..width_bytes]);
+    }
+    drop(mapped);
+    readback.unmap();
+    Ok(())
+}
+
+impl VgerRenderer {
     fn device_transform(&self) -> Affine {
         self.transform
     }
@@ -506,23 +497,6 @@ impl VgerRenderer {
         self.texture = Some(texture);
         self.view = Some(view);
     }
-}
-
-fn rasterize_retained_rgba8(
-    scene: &imaging::record::Scene,
-    width: u32,
-    height: u32,
-    transform: Affine,
-) -> Vec<u8> {
-    if width > u16::MAX as u32 || height > u16::MAX as u32 {
-        return vec![0; width as usize * height as usize * 4];
-    }
-
-    let mut renderer = imaging_vello_cpu::VelloCpuRenderer::new(width as u16, height as u16);
-    scene.replay_into_transformed(&mut renderer, transform);
-    renderer
-        .read_rgba8()
-        .unwrap_or_else(|_| vec![0; width as usize * height as usize * 4])
 }
 
 impl VgerRenderer {
@@ -723,7 +697,7 @@ impl VgerRenderer {
         let skew = run
             .glyph_transform
             .map(|transform| transform.as_coeffs()[0].atan().to_degrees() as f32);
-        let embolden = scaled_embolden_strength(self.font_embolden, scale);
+        let embolden = 0.0;
 
         // Match tiny-skia's split: raster glyphs in run-local space and keep a single
         // normalized transform for the whole run. `vger-rs` cannot consume this yet.
@@ -857,20 +831,5 @@ fn vger_color(color: Color) -> floem_vger_rs::Color {
         g: color.components[1],
         b: color.components[2],
         a: color.components[3],
-    }
-}
-
-fn scaled_embolden_strength(font_embolden: f32, scale: f64) -> f32 {
-    font_embolden * scale as f32
-}
-
-#[cfg(test)]
-mod tests {
-    use super::scaled_embolden_strength;
-
-    #[test]
-    fn embolden_strength_scales_with_raster_scale() {
-        assert!((scaled_embolden_strength(0.2, 1.5) - 0.3).abs() < f32::EPSILON);
-        assert_eq!(scaled_embolden_strength(0.2, 0.0), 0.0);
     }
 }

@@ -1,7 +1,7 @@
 use std::{any::Any, cell::RefCell, rc::Rc};
 
 use floem_reactive::Effect;
-use floem_renderer::text::{Attrs, AttrsList, AttrsOwned};
+use crate::text::{Attrs, AttrsList, AttrsOwned};
 use peniko::{Color, color::palette};
 use smallvec::{SmallVec, smallvec};
 use taffy::tree::NodeId;
@@ -165,29 +165,29 @@ impl<'a> RichSpan<'a> {
         self
     }
 
-    pub fn family(mut self, family: &'a [floem_renderer::text::FamilyOwned]) -> RichSpan<'a> {
+    pub fn family(mut self, family: &'a [crate::text::FamilyOwned]) -> RichSpan<'a> {
         self.attrs = self.attrs.family(family);
         self
     }
 
-    pub fn font_width(mut self, stretch: floem_renderer::text::FontWidth) -> RichSpan<'a> {
+    pub fn font_width(mut self, stretch: crate::text::FontWidth) -> RichSpan<'a> {
         self.attrs = self.attrs.font_width(stretch);
         self
     }
 
-    pub fn text_style(mut self, style: floem_renderer::text::FontStyle) -> RichSpan<'a> {
+    pub fn text_style(mut self, style: crate::text::FontStyle) -> RichSpan<'a> {
         self.attrs = self.attrs.font_style(style);
         self
     }
 
-    pub fn weight(mut self, weight: floem_renderer::text::FontWeight) -> RichSpan<'a> {
+    pub fn weight(mut self, weight: crate::text::FontWeight) -> RichSpan<'a> {
         self.attrs = self.attrs.weight(weight);
         self
     }
 
     pub fn line_height(
         mut self,
-        line_height: floem_renderer::text::LineHeightValue,
+        line_height: crate::text::LineHeightValue,
     ) -> RichSpan<'a> {
         self.attrs = self.attrs.line_height(line_height);
         self

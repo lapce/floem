@@ -127,7 +127,7 @@
 //!
 //! You can create custom extractors and embed them in your custom views so that you can get out any built in prop, or any of your custom props from the final combined style that is applied to your `View`.
 
-use floem_renderer::text::FontWeight as FontWeightProp;
+use crate::text::FontWeight as FontWeightProp;
 use peniko::color::palette;
 use peniko::kurbo::{self, Affine, RoundedRect, Stroke, Vec2};
 use peniko::{Brush, Color};
@@ -1916,6 +1916,15 @@ define_builtin_props!(
     ///
     /// This property is inherited by child views.
     FontSize font_size { nocb, tr }: f64 { inherited } = 14.,
+
+    /// Adjusts glyph emboldening for text content.
+    ///
+    /// This property is inherited by child views.
+    FontEmbolden font_embolden { nocb, tr }: Vec2 { inherited } = if cfg!(target_os = "macos") {
+        Vec2::new(0.1, 0.1)
+    } else {
+        Vec2::ZERO
+    },
 
     /// Sets the font family for text content.
     ///

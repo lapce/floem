@@ -24,27 +24,18 @@ pub struct GpuResources {
     /// The wgpu instance
     pub instance: wgpu::Instance,
 
-    /// The adapter that represents the GPU or a rendering backend. It provides information about
-    /// the capabilities of the hardware and is used to request a logical device (`wgpu::Device`).
+    /// The adapter that represents the GPU or a rendering backend.
     pub adapter: wgpu::Adapter,
 
-    /// The logical device that serves as an interface to the GPU. It is responsible for creating
-    /// resources such as buffers, textures, and pipelines, and manages the execution of commands.
-    /// The `device` provides a connection to the physical hardware represented by the `adapter`.
+    /// The logical device that serves as an interface to the GPU.
     pub device: wgpu::Device,
 
-    /// The command queue that manages the submission of command buffers to the GPU for execution.
-    /// It is used to send rendering and computation commands to the device. The `queue` ensures
-    /// that commands are executed in the correct order and manages synchronization.
+    /// The command queue that manages the submission of command buffers to the GPU.
     pub queue: wgpu::Queue,
 }
 
 impl GpuResources {
-    /// Request GPU resources
-    ///
-    /// # Parameters
-    /// - `on_result`: Function to notify upon completion or error.
-    /// - `window`: The window to associate with the created surface.
+    /// Request GPU resources.
     pub fn request<F: Fn(WindowId) + 'static>(
         on_result: F,
         required_features: wgpu::Features,
@@ -56,8 +47,6 @@ impl GpuResources {
             flags: InstanceFlags::from_env_or_default(),
             ..Default::default()
         });
-        // Channel passing to do async out-of-band within the winit event_loop since wasm can't
-        // execute futures with a return value
         let (tx, rx) = sync_channel(1);
 
         spawn({
@@ -134,10 +123,6 @@ impl std::fmt::Display for GpuResourceError {
 }
 
 /// Spawns a future for execution, adapting to the target environment.
-///
-/// On WASM (`wasm32`), it uses `wasm_bindgen_futures::spawn_local` to avoid blocking
-/// the main thread. On other targets, it uses `pollster::block_on` to synchronously
-/// wait for the future to complete.
 pub fn spawn<F>(future: F)
 where
     F: Future<Output = ()> + 'static,

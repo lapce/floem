@@ -13,13 +13,11 @@ package = "floem-vger"
 
 [dependencies]
 image = { workspace = true }
-resvg = { workspace = true }
 peniko = { workspace = true }
-imaging = { workspace = true }
+imaging = { workspace = true, features = ["wgpu"] }
 imaging_vello_cpu = { path = "../../imaging/imaging_vello_cpu" }
 wgpu = { workspace = true }
 parley = { workspace = true }
 swash = { workspace = true }
 
 anyhow = "1.0"
-floem_renderer = { path = "../renderer", version = "0.2.0" }

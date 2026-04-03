@@ -5,16 +5,14 @@
 //! level: we rerecord only dirty elements and reuse unchanged retained scenes across
 //! transform changes when the recorded content allows it.
 
-use floem_renderer::text::GlyphRunRef;
+use crate::text::GlyphRunRef;
 use imaging::{
-    BlurredRoundedRect, ClipRef, FillRef, GeometryRef, GroupRef, PaintSink,
-    RetainedDrawRef, StrokeRef,
-    record::{
-        Clip, Command, Draw, Geometry, Glyph as ImagingGlyph, Scene, replay_transformed,
-    },
+    BlurredRoundedRect, ClipRef, FillRef, GeometryRef, GroupRef, PaintSink, StrokeRef,
+    record::{Clip, Command, Draw, Geometry, Glyph as ImagingGlyph, Scene, replay_transformed},
 };
 use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Size};
 use rustc_hash::{FxHashMap, FxHashSet};
+use std::mem;
 use understory_box_tree::NodeFlags;
 
 use crate::{
@@ -123,53 +121,17 @@ pub(crate) struct DisplayListSync {
     pub newly_active_ids: FxHashSet<ElementId>,
 }
 
-const LARGE_CHILD_INDEX_THRESHOLD: usize = 10;
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct DisplayNodeSlot(usize);
 
 #[derive(Clone, Default)]
 struct ChildList {
     ordered: Vec<DisplayNodeSlot>,
-    direct_lookup: Option<FxHashMap<ElementId, DisplayNodeSlot>>,
 }
 
 impl ChildList {
-    fn new(children: Vec<DisplayNodeSlot>, nodes: &[Option<DisplayNode>]) -> Self {
-        let direct_lookup = (children.len() > LARGE_CHILD_INDEX_THRESHOLD).then(|| {
-            children
-                .iter()
-                .filter_map(|&slot| {
-                    let node = nodes.get(slot.0)?.as_ref()?;
-                    Some((node.element_id?, slot))
-                })
-                .collect()
-        });
-        Self {
-            ordered: children,
-            direct_lookup,
-        }
-    }
-
-    fn direct_child(
-        &self,
-        id: ElementId,
-        nodes: &[Option<DisplayNode>],
-    ) -> Option<DisplayNodeSlot> {
-        if let Some(slot) = self
-            .direct_lookup
-            .as_ref()
-            .and_then(|lookup| lookup.get(&id).copied())
-        {
-            return Some(slot);
-        }
-
-        self.ordered.iter().copied().find(|slot| {
-            nodes
-                .get(slot.0)
-                .and_then(Option::as_ref)
-                .is_some_and(|node| node.element_id == Some(id))
-        })
+    fn new(children: Vec<DisplayNodeSlot>, _nodes: &[Option<DisplayNode>]) -> Self {
+        Self { ordered: children }
     }
 }
 
@@ -186,6 +148,7 @@ pub struct RetainedDisplayList {
     roots: Vec<DisplayNodeSlot>,
     nodes: Vec<Option<DisplayNode>>,
     free_list: Vec<DisplayNodeSlot>,
+    slot_by_id: FxHashMap<ElementId, DisplayNodeSlot>,
     inactive_elements: FxHashMap<ElementId, ElementDisplayList>,
     active_count: usize,
 }
@@ -197,16 +160,7 @@ impl RetainedDisplayList {
         box_tree: &BoxTree,
         dragging_preview: Option<ElementId>,
     ) -> DisplayListSync {
-        let mut existing = FxHashMap::default();
-        for (index, node) in self.nodes.iter().enumerate() {
-            let Some(node) = node.as_ref() else {
-                continue;
-            };
-            let Some(element_id) = node.element_id else {
-                continue;
-            };
-            existing.insert(element_id, DisplayNodeSlot(index));
-        }
+        let mut existing = mem::take(&mut self.slot_by_id);
 
         let mut roots = Vec::new();
         let mut active_ids = FxHashSet::default();
@@ -367,6 +321,7 @@ impl RetainedDisplayList {
             if let Some(display) = inactive_display {
                 node.display = display;
             }
+            self.slot_by_id.insert(element_id, slot);
             active_ids.insert(element_id);
             if is_new {
                 newly_active_ids.insert(element_id);
@@ -390,25 +345,7 @@ impl RetainedDisplayList {
     }
 
     fn find_slot(&self, id: ElementId) -> Option<DisplayNodeSlot> {
-        self.roots
-            .iter()
-            .copied()
-            .find_map(|slot| self.find_slot_from(slot, id))
-    }
-
-    fn find_slot_from(&self, slot: DisplayNodeSlot, id: ElementId) -> Option<DisplayNodeSlot> {
-        let node = self.node(slot)?;
-        if node.element_id == Some(id) {
-            return Some(slot);
-        }
-        if let Some(child) = node.children.direct_child(id, &self.nodes) {
-            return Some(child);
-        }
-        node.children
-            .ordered
-            .iter()
-            .copied()
-            .find_map(|child| self.find_slot_from(child, id))
+        self.slot_by_id.get(&id).copied()
     }
 
     fn alloc_slot(&mut self, element_id: ElementId) -> DisplayNodeSlot {
@@ -430,6 +367,9 @@ impl RetainedDisplayList {
 
     fn free_slot(&mut self, slot: DisplayNodeSlot) {
         if let Some(node) = self.nodes.get_mut(slot.0).and_then(Option::take) {
+            if let Some(element_id) = node.element_id {
+                self.slot_by_id.remove(&element_id);
+            }
             if node.element_id.is_some() && self.active_count > 0 {
                 self.active_count -= 1;
             }
@@ -471,10 +411,6 @@ impl PaintSink for RecordingRenderer<'_> {
 
     fn pop_group(&mut self) {
         self.scene.pop_group();
-    }
-
-    fn retained(&mut self, draw: RetainedDrawRef<'_>) {
-        PaintSink::retained(self.scene, draw);
     }
 
     fn fill(&mut self, draw: FillRef<'_>) {
@@ -550,10 +486,6 @@ impl PaintSink for SanitizingSink<'_> {
         self.inner.pop_group();
     }
 
-    fn retained(&mut self, draw: RetainedDrawRef<'_>) {
-        self.inner.retained(draw);
-    }
-
     fn fill(&mut self, draw: FillRef<'_>) {
         self.inner.fill(draw);
     }
@@ -579,17 +511,13 @@ fn scene_transform_class(scene: &Scene) -> TransformClass {
         .fold(TransformClass::Exact, TransformClass::combine)
 }
 
-fn command_transform_class(
-    scene: &Scene,
-    command: &Command,
-) -> TransformClass {
+fn command_transform_class(scene: &Scene, command: &Command) -> TransformClass {
     match command {
-        Command::PushClip(_)
-        | Command::PopClip
-        | Command::PushGroup(_)
-        | Command::PopGroup => TransformClass::Affine,
+        Command::PushContext(_) | Command::PopContext => TransformClass::Exact,
+        Command::PushClip(_) | Command::PopClip | Command::PushGroup(_) | Command::PopGroup => {
+            TransformClass::Affine
+        }
         Command::Draw(id) => match scene.draw_op(*id) {
-            Draw::Retained(_) => TransformClass::Affine,
             Draw::Fill { .. } | Draw::Stroke { .. } => TransformClass::Affine,
             Draw::GlyphRun(_) | Draw::BlurredRoundedRect(_) => TransformClass::TranslateOnly,
         },

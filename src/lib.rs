@@ -234,11 +234,12 @@ pub mod receiver_signal {
     pub use stream_signal::*;
 }
 
+pub mod gpu_resources;
 pub use app::{AppConfig, AppEvent, Application, launch, quit_app, reopen};
 pub use box_tree::{BoxTree, ElementId, ElementMeta, FocusNavMeta};
 pub(crate) use box_tree::{bump_focus_nav_meta_revision, focus_nav_meta_revision};
 pub use floem_reactive as reactive;
-pub use floem_renderer::gpu_resources::GpuResources;
+pub use gpu_resources::GpuResources;
 pub use imbl;
 pub use layout::ScreenLayout;
 #[cfg(not(target_arch = "wasm32"))]

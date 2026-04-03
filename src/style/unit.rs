@@ -17,7 +17,7 @@
 #![allow(deprecated)]
 use std::{ops::Neg, time::Duration};
 
-pub use floem_renderer::text::LineHeightValue;
+pub use crate::text::LineHeightValue;
 use taffy::style::{Dimension, LengthPercentage, LengthPercentageAuto};
 
 /// An absolute length value in Floem layout points.

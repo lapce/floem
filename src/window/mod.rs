@@ -4,12 +4,15 @@ pub mod mock;
 pub(crate) mod state;
 pub(crate) mod tracking;
 
+use crate::paint::renderer::WindowRenderer;
+pub use crate::paint::renderer::{GpuRendererChooserCx, NewRendererCx};
 pub use id::{Urgency, WindowIdExt};
 pub use mock::MockWindow;
 pub use state::WindowState;
 
 use peniko::Color;
 use peniko::kurbo::{Point, Size};
+use std::sync::Arc;
 pub use winit::icon::{Icon, RgbaIcon};
 pub use winit::monitor::Fullscreen;
 pub use winit::window::ResizeDirection;
@@ -46,11 +49,12 @@ pub struct WindowConfig {
     /// Applies chosen theme or os theme, when `None` is provided.
     pub(crate) theme_override: Option<Theme>,
     pub(crate) apply_default_theme: bool,
-    pub(crate) font_embolden: f32,
     #[allow(dead_code)]
     pub(crate) mac_os_config: Option<MacOSWindowConfig>,
     pub(crate) win_os_config: Option<WinOSWindowConfig>,
     pub(crate) web_config: Option<WebWindowConfig>,
+    pub(crate) renderer_chooser:
+        Option<Arc<dyn Fn(NewRendererCx) -> Box<dyn WindowRenderer> + Send + Sync>>,
 }
 
 impl Default for WindowConfig {
@@ -75,10 +79,10 @@ impl Default for WindowConfig {
             window_level: WindowLevel::Normal,
             theme_override: None,
             apply_default_theme: true,
-            font_embolden: if cfg!(target_os = "macos") { 0.1 } else { 0. },
             mac_os_config: None,
             win_os_config: None,
             web_config: None,
+            renderer_chooser: None,
         }
     }
 }
@@ -224,12 +228,16 @@ impl WindowConfig {
         self
     }
 
-    /// Sets the amount by which fonts are emboldened.
+    /// Override the renderer chooser for this window only.
     ///
-    /// The default is 0.0 except for on macOS where the default is 0.2
+    /// This can be used to provide a custom per-window backend chooser instead of the
+    /// application-wide renderer chooser from [`crate::app::AppConfig::renderer_chooser`].
     #[inline]
-    pub fn font_embolden(mut self, font_embolden: f32) -> Self {
-        self.font_embolden = font_embolden;
+    pub fn renderer_chooser(
+        mut self,
+        renderer_chooser: impl Fn(NewRendererCx) -> Box<dyn WindowRenderer> + Send + Sync + 'static,
+    ) -> Self {
+        self.renderer_chooser = Some(Arc::new(renderer_chooser));
         self
     }
 
