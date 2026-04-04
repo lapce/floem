@@ -1903,4 +1903,37 @@ mod tests {
         editor.receive_char("x");
         assert_eq!(doc.text().to_string(), "x");
     }
+
+    #[test]
+    fn edit_single_from_restores_cursor_on_undo() {
+        let _root = TestRoot::new();
+        let cx = Scope::new();
+        let doc = Rc::new(TextDocument::new(cx, "Hello world"));
+        let style = Rc::new(SimpleStyling::new());
+        let editor = Editor::new(cx, doc.clone(), style, false);
+
+        editor.cursor.update(|cursor| {
+            cursor.set_offset(11, CursorAffinity::Backward, false, false);
+        });
+
+        doc.edit_single_from(
+            &editor,
+            Selection::region(0, doc.text().len(), CursorAffinity::Backward),
+            "",
+            EditType::Delete,
+        );
+
+        assert_eq!(doc.text().to_string(), "");
+        assert_eq!(editor.cursor.get_untracked().offset(), 0);
+
+        doc.run_command(
+            &editor,
+            &Command::Edit(EditCommand::Undo),
+            None,
+            Default::default(),
+        );
+
+        assert_eq!(doc.text().to_string(), "Hello world");
+        assert_eq!(editor.cursor.get_untracked().offset(), 11);
+    }
 }
