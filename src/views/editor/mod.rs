@@ -58,6 +58,7 @@ use self::{
     layout::TextLayoutLine,
     phantom_text::PhantomTextLine,
     text::{Document, Preedit, PreeditData, RenderWhitespace, Styling, WrapMethod},
+    text_document::TextDocument,
     view::{LineInfo, ScreenLines, ScreenLinesBase},
     visual_line::{
         ConfigId, FontSizeCacheId, LayoutEvent, LineFontSizeProvider, Lines, RVLine, ResolvedWrap,
@@ -309,6 +310,7 @@ impl Editor {
             floem_style_id: cx.create_rw_signal(0),
         };
 
+        ed.register_doc_cursor_sync();
         create_view_effects(ed.effects_cx.get(), &ed);
 
         ed
@@ -371,6 +373,7 @@ impl Editor {
             });
             self.lines.clear(0, None);
             self.doc.set(doc);
+            self.register_doc_cursor_sync();
             if let Some(styling) = styling {
                 self.style.set(styling);
             }
@@ -382,6 +385,51 @@ impl Editor {
             self.effects_cx.set(self.cx.get().create_child());
             create_view_effects(self.effects_cx.get(), self);
         });
+    }
+
+    /// Registers cursor synchronization for `TextDocument` updates.
+    ///
+    /// Each editor owns its own cursor state, so shared or programmatic document edits must remap
+    /// that cursor through incoming deltas to keep it valid for the current buffer revision.
+    fn register_doc_cursor_sync(&self) {
+        let Some(doc) = self.try_text_doc_untracked() else {
+            return;
+        };
+
+        let editor_id = self.id;
+        let doc_signal = self.doc;
+        let cursor = self.cursor;
+        let synced_doc = doc.clone();
+        doc.add_on_update(move |update| {
+            if update.editor.is_some_and(|editor| editor.id() == editor_id) {
+                return;
+            }
+
+            let Some(current_doc) = doc_signal
+                .try_get_untracked()
+                .and_then(downcast_text_document)
+            else {
+                return;
+            };
+
+            // `add_on_update` is append-only, so old listeners can remain after `update_doc`.
+            // Ignore updates from documents this editor no longer points at.
+            if !Rc::ptr_eq(&current_doc, &synced_doc) {
+                return;
+            }
+
+            cursor.try_update(|cursor| {
+                for delta in update.deltas() {
+                    cursor.apply_delta(delta);
+                }
+            });
+        });
+    }
+
+    fn try_text_doc_untracked(&self) -> Option<Rc<TextDocument>> {
+        self.doc
+            .try_get_untracked()
+            .and_then(downcast_text_document)
     }
 
     pub fn update_styling(&self, styling: Rc<dyn Styling>) {
@@ -1744,5 +1792,148 @@ impl CursorInfo {
         self.blink_timer.set(TimerToken::INVALID);
 
         self.blink();
+    }
+}
+
+fn downcast_text_document(doc: Rc<dyn Document>) -> Option<Rc<TextDocument>> {
+    (doc as Rc<dyn std::any::Any>).downcast().ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::rc::Rc;
+
+    use floem_editor_core::{
+        command::{EditCommand, MultiSelectionCommand},
+        cursor::CursorAffinity,
+        editor::EditType,
+        selection::Selection,
+    };
+    use floem_reactive::{Scope, SignalGet, SignalUpdate};
+
+    use crate::{
+        headless::TestRoot,
+        views::editor::{
+            command::Command,
+            text::{Document, SimpleStyling},
+            text_document::TextDocument,
+        },
+    };
+
+    use super::Editor;
+
+    fn make_shared_editors(text: &str) -> (Rc<TextDocument>, Editor, Editor) {
+        let _root = TestRoot::new();
+        let cx = Scope::new();
+        let doc = Rc::new(TextDocument::new(cx, text));
+        let style = Rc::new(SimpleStyling::new());
+        let primary = Editor::new(cx, doc.clone(), style.clone(), false);
+        let secondary = Editor::new(cx, doc.clone(), style, false);
+        (doc, primary, secondary)
+    }
+
+    #[test]
+    fn shared_editor_cursor_tracks_full_delete() {
+        let (doc, primary, secondary) = make_shared_editors("Hello world");
+
+        primary.cursor.update(|cursor| {
+            cursor.set_offset(11, CursorAffinity::Backward, false, false);
+        });
+
+        doc.run_command(
+            &secondary,
+            &Command::MultiSelection(MultiSelectionCommand::SelectAll),
+            None,
+            Default::default(),
+        );
+        doc.run_command(
+            &secondary,
+            &Command::Edit(EditCommand::DeleteForward),
+            None,
+            Default::default(),
+        );
+
+        assert_eq!(primary.cursor.get_untracked().offset(), 0);
+        assert_eq!(secondary.cursor.get_untracked().offset(), 0);
+
+        primary.receive_char("x");
+        assert_eq!(doc.text().to_string(), "x");
+    }
+
+    #[test]
+    fn shared_editor_cursor_tracks_multibyte_insert_without_double_transforming_origin() {
+        let (doc, primary, secondary) = make_shared_editors("a");
+
+        primary.cursor.update(|cursor| {
+            cursor.set_offset(1, CursorAffinity::Backward, false, false);
+        });
+        secondary.cursor.update(|cursor| {
+            cursor.set_offset(0, CursorAffinity::Backward, false, false);
+        });
+
+        secondary.receive_char("あ");
+
+        assert_eq!(secondary.cursor.get_untracked().offset(), "あ".len());
+        assert_eq!(primary.cursor.get_untracked().offset(), "あa".len());
+
+        primary.receive_char(" ");
+        assert_eq!(doc.text().to_string(), "あa ");
+    }
+
+    #[test]
+    fn external_edit_updates_existing_editor_cursor() {
+        let _root = TestRoot::new();
+        let cx = Scope::new();
+        let doc = Rc::new(TextDocument::new(cx, "Hello world"));
+        let style = Rc::new(SimpleStyling::new());
+        let editor = Editor::new(cx, doc.clone(), style, false);
+
+        editor.cursor.update(|cursor| {
+            cursor.set_offset(11, CursorAffinity::Backward, false, false);
+        });
+
+        doc.edit_single(
+            Selection::region(0, doc.text().len(), CursorAffinity::Backward),
+            "",
+            EditType::Delete,
+        );
+
+        assert_eq!(editor.cursor.get_untracked().offset(), 0);
+
+        editor.receive_char("x");
+        assert_eq!(doc.text().to_string(), "x");
+    }
+
+    #[test]
+    fn edit_single_from_restores_cursor_on_undo() {
+        let _root = TestRoot::new();
+        let cx = Scope::new();
+        let doc = Rc::new(TextDocument::new(cx, "Hello world"));
+        let style = Rc::new(SimpleStyling::new());
+        let editor = Editor::new(cx, doc.clone(), style, false);
+
+        editor.cursor.update(|cursor| {
+            cursor.set_offset(11, CursorAffinity::Backward, false, false);
+        });
+
+        doc.edit_single_from(
+            &editor,
+            Selection::region(0, doc.text().len(), CursorAffinity::Backward),
+            "",
+            EditType::Delete,
+        );
+
+        assert_eq!(doc.text().to_string(), "");
+        assert_eq!(editor.cursor.get_untracked().offset(), 0);
+
+        doc.run_command(
+            &editor,
+            &Command::Edit(EditCommand::Undo),
+            None,
+            Default::default(),
+        );
+
+        assert_eq!(doc.text().to_string(), "Hello world");
+        assert_eq!(editor.cursor.get_untracked().offset(), 11);
     }
 }

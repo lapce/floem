@@ -215,12 +215,14 @@ mod tests {
         .style(|s| s.size_full());
 
     let doc = editor.doc();
+    let clear_editor = editor.editor().clone();
 
     Stack::new((
         editor,
         Stack::new((
             Button::new("Clear").action(move || {
-                doc.edit_single(
+                doc.edit_single_from(
+                    &clear_editor,
                     Selection::region(0, doc.text().len(), CursorAffinity::Backward),
                     "",
                     EditType::DeleteSelection,
