@@ -319,7 +319,7 @@ impl ExprStyle {
     }
 
     fn merge(mut self, over: Style) -> Self {
-        self.style.apply_mut(over);
+        self.style.apply_mut(&over);
         self
     }
 
@@ -685,7 +685,7 @@ fn resolve_classes(
     for class in classes {
         if let Some(map) = class_context.get_nested_map(class.key) {
             let resolved = resolve_style(map.clone(), interact_state, screen_size_bp, selectors);
-            result.apply_mut(resolved);
+            result.apply_mut(&resolved);
         }
     }
 
@@ -735,8 +735,7 @@ fn resolve_selectors(
         if let Some(structural_rules) = extract_structural_selectors(&mut style) {
             for (selector, map) in structural_rules {
                 if selector.matches(interact_state.child_index, interact_state.sibling_count) {
-                    let map = map.as_ref().clone();
-                    style.apply_mut(map);
+                    style.apply_mut(map.as_ref());
                     changed = true;
                 }
             }
@@ -746,8 +745,7 @@ fn resolve_selectors(
         if let Some(responsive_rules) = extract_responsive_selectors(&mut style) {
             for (selector, map) in responsive_rules {
                 if selector.matches(interact_state.window_width) {
-                    let map = map.as_ref().clone();
-                    style.apply_mut(map);
+                    style.apply_mut(map.as_ref());
                     changed = true;
                 }
             }
@@ -756,7 +754,7 @@ fn resolve_selectors(
         // Helper to apply a nested map and collect any context mappings from it
         let apply_nested = |style: &mut Style, key: StyleKey| -> bool {
             if let Some(map) = style.get_nested_map(key) {
-                style.apply_mut(map);
+                style.apply_mut(&map);
                 style.remove_nested_map(key);
                 true
             } else {
@@ -1133,8 +1131,8 @@ impl Style {
     }
 
     pub fn apply_class<C: StyleClass>(mut self, _class: C) -> Style {
-        if let Some(map) = self.map.get(&C::key()) {
-            self.apply_mut(map.downcast_ref::<Style>().unwrap().clone());
+        if let Some(map) = self.map.get(&C::key()).cloned() {
+            self.apply_mut(map.downcast_ref::<Style>().unwrap());
         }
         self
     }
@@ -1142,13 +1140,15 @@ impl Style {
     pub fn apply_selectors(mut self, selectors: &[StyleSelector]) -> Style {
         for selector in selectors {
             if let Some(map) = self.get_nested_map(selector.to_key()) {
-                self.apply_mut(map.apply_selectors(selectors));
+                let resolved = map.apply_selectors(selectors);
+                self.apply_mut(&resolved);
             }
         }
         if self.get(Selected)
             && let Some(map) = self.get_nested_map(StyleSelector::Selected.to_key())
         {
-            self.apply_mut(map.apply_selectors(&[StyleSelector::Selected]));
+            let resolved = map.apply_selectors(&[StyleSelector::Selected]);
+            self.apply_mut(&resolved);
         }
         self
     }
@@ -1242,7 +1242,7 @@ impl Style {
         }
         let value = if let Some(current) = self.map_mut().remove(&key) {
             let mut current: Style = take_any(current);
-            current.apply_mut(map);
+            current.apply_mut(&map);
             Rc::new(current)
         } else {
             Rc::new(map)
@@ -1301,13 +1301,18 @@ impl Style {
                         }
 
                         let mut current: Style = take_any(existing_rc);
-                        current.apply_mut(v.downcast_ref::<Style>().unwrap().clone());
+                        current.apply_mut(v.downcast_ref::<Style>().unwrap());
                         self.map_mut().insert(*k, Rc::new(current));
                     } else {
                         self.map_mut().insert(*k, v.clone());
                     }
                 }
                 StyleKeyInfo::StructuralSelectors => {
+                    // Propagate nested selectors from structural rules
+                    let rules = &v.downcast_ref::<StructuralSelectors>().unwrap().0;
+                    for (_, nested) in rules {
+                        self.cached_selectors |= nested.cached_selectors;
+                    }
                     let merged = if let Some(current) = self.map_mut().remove(k) {
                         let new_rules = &v.downcast_ref::<StructuralSelectors>().unwrap().0;
                         let current: StructuralSelectors = take_any(current);
@@ -1366,7 +1371,7 @@ impl Style {
         }
     }
 
-    pub(crate) fn apply_mut(&mut self, over: Style) {
+    pub(crate) fn apply_mut(&mut self, over: &Style) {
         // FAST PATH: identical semantic payload identity
         if self.merge_id == over.merge_id {
             return;
@@ -1384,7 +1389,7 @@ impl Style {
     /// `StyleValue::Base` will leave the value as-is, whether falling back to the default
     /// or using the value in the `Style`.
     pub fn apply(mut self, over: Style) -> Style {
-        self.apply_mut(over);
+        self.apply_mut(&over);
         self
     }
 

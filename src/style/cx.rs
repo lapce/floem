@@ -359,7 +359,7 @@ impl<'a> StyleCx<'a> {
 
             // Compute the final style by merging inherited context with direct style
             let mut computed_style = self.inherited.clone();
-            computed_style.apply_mut(self.direct.clone());
+            computed_style.apply_mut(&self.direct);
             computed_style = computed_style.with_inherited_context(&self.inherited);
 
             // ─────────────────────────────────────────────────────────────────────

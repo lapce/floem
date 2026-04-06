@@ -279,7 +279,7 @@ impl StyleStack {
                 self.stack.stack[0].clone()
             } else {
                 let mut combined = self.cache[i - 1].clone();
-                combined.apply_mut(self.stack.stack[i].clone());
+                combined.apply_mut(&self.stack.stack[i]);
                 combined
             };
         }
