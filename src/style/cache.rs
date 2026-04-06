@@ -476,30 +476,26 @@ impl Style {
     pub fn content_hash(&self) -> u64 {
         use crate::style::props::StyleKeyInfo;
 
-        let mut hasher = FxHasher::default();
+        // Use XOR-based order-independent hashing to avoid Vec allocation + sort.
+        // Each entry is independently hashed and XOR'd into the accumulator.
+        // We mix in the entry count separately to distinguish e.g. {A} from {A, B}
+        // when their entry hashes happen to cancel.
+        let mut combined: u64 = 0;
+        let mut count_hasher = FxHasher::default();
+        self.map.len().hash(&mut count_hasher);
 
-        // Hash the number of entries
-        self.map.len().hash(&mut hasher);
+        for (key, value) in self.map.iter() {
+            let mut entry_hasher = FxHasher::default();
+            std::ptr::hash(key.info, &mut entry_hasher);
 
-        let mut entries: Vec<_> = self.map.iter().collect();
-        entries.sort_unstable_by_key(|(key, _)| key.info as *const _ as usize);
-
-        // Hash each key and value based on content
-        for (key, value) in entries {
-            // Hash the key's info pointer as identity
-            std::ptr::hash(key.info, &mut hasher);
-
-            // Hash value content based on key type
             match key.info {
                 StyleKeyInfo::Prop(prop_info) => {
-                    // Use the property's content_hash via hash_any
                     let value_hash = (prop_info.hash_any)(value.as_ref());
-                    value_hash.hash(&mut hasher);
+                    value_hash.hash(&mut entry_hasher);
                 }
                 StyleKeyInfo::Selector(_) | StyleKeyInfo::Class(_) => {
-                    // These contain nested Style maps - hash recursively
                     if let Some(nested_style) = value.downcast_ref::<Style>() {
-                        nested_style.content_hash().hash(&mut hasher);
+                        nested_style.content_hash().hash(&mut entry_hasher);
                     }
                 }
                 StyleKeyInfo::StructuralSelectors
@@ -507,14 +503,14 @@ impl Style {
                 | StyleKeyInfo::DeferredEffects
                 | StyleKeyInfo::DebugGroup(_)
                 | StyleKeyInfo::Transition => {
-                    // Context mappings and transitions use pointer hash for identity
-                    // since closures can't be meaningfully hashed
-                    std::ptr::hash(std::rc::Rc::as_ptr(value), &mut hasher);
+                    std::ptr::hash(std::rc::Rc::as_ptr(value), &mut entry_hasher);
                 }
             }
+
+            combined ^= entry_hasher.finish();
         }
 
-        hasher.finish()
+        combined ^ count_hasher.finish()
     }
 
     /// Check if the inherited properties of this style equal another's.
@@ -838,6 +834,18 @@ mod tests {
         assert_ne!(
             initial_hash, final_hash,
             "Class context hash should change after applying class maps"
+        );
+    }
+
+    #[test]
+    fn test_content_hash_is_order_independent() {
+        // Two styles with same properties added in different order
+        let s1 = Style::new().background(css::RED).color(css::BLUE);
+        let s2 = Style::new().color(css::BLUE).background(css::RED);
+        assert_eq!(
+            s1.content_hash(),
+            s2.content_hash(),
+            "Hash should be identical regardless of property insertion order"
         );
     }
 }
