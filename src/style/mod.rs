@@ -709,6 +709,15 @@ fn resolve_selectors(
 ) -> Style {
     *selectors |= style.selectors();
 
+    // Validate cached selectors in debug builds
+    #[cfg(debug_assertions)]
+    debug_assert!(
+        style.cached_selectors.contains(style.compute_selectors_slow()),
+        "cached_selectors {:?} missing bits from computed {:?}",
+        style.cached_selectors,
+        style.compute_selectors_slow()
+    );
+
     const MAX_DEPTH: u32 = 20;
     let mut depth = 0;
 
@@ -863,6 +872,10 @@ pub struct Style {
     /// This enables O(1) early-exit in `apply_only_inherited` for the common case
     /// where a view's style has no inherited properties.
     has_inherited: bool,
+    /// Cached bitmask of which selectors are present in this style (including nested).
+    /// Updated incrementally when selectors are added via `apply_iter`, `set_selector`, etc.
+    /// Enables O(1) checks in `resolve_selectors` to skip absent selectors.
+    cached_selectors: StyleSelectors,
     /// The effect context that was active when this style was created.
     /// This is restored when evaluating context mappings and selectors to ensure
     /// reactive dependencies are tracked correctly.
@@ -884,6 +897,7 @@ impl Style {
             inherited_context: None,
             has_class_maps: false,
             has_inherited: false,
+            cached_selectors: StyleSelectors::empty(),
             effect_context,
         }
     }
@@ -1082,6 +1096,12 @@ impl Style {
     }
 
     pub(crate) fn selectors(&self) -> StyleSelectors {
+        self.cached_selectors
+    }
+
+    /// Recompute selectors by traversing the map. Used for debug assertions.
+    #[cfg(debug_assertions)]
+    fn compute_selectors_slow(&self) -> StyleSelectors {
         let mut result = StyleSelectors::empty();
 
         for (k, v) in self.map.iter() {
@@ -1186,6 +1206,7 @@ impl Style {
     }
 
     fn set_structural_selector(&mut self, selector: StructuralSelector, map: Style) {
+        self.cached_selectors |= map.cached_selectors;
         let key = structural_selectors_key();
         let mut rules = self
             .map_mut()
@@ -1199,6 +1220,8 @@ impl Style {
     }
 
     fn set_responsive_selector(&mut self, selector: ResponsiveSelector, map: Style) {
+        self.cached_selectors |= StyleSelectors::RESPONSIVE;
+        self.cached_selectors |= map.cached_selectors;
         let key = responsive_selectors_key();
         let mut rules = self
             .map_mut()
@@ -1212,6 +1235,11 @@ impl Style {
     }
 
     fn set_map_selector(&mut self, key: StyleKey, map: Style) {
+        // Track selector presence
+        if let StyleKeyInfo::Selector(sel) = key.info {
+            self.cached_selectors |= *sel;
+            self.cached_selectors |= map.cached_selectors;
+        }
         let value = if let Some(current) = self.map_mut().remove(&key) {
             let mut current: Style = take_any(current);
             current.apply_mut(map);
@@ -1259,6 +1287,13 @@ impl Style {
                     if matches!(k.info, StyleKeyInfo::Class(..)) {
                         self.has_class_maps = true;
                     }
+                    // Track selectors for O(1) selector presence checks
+                    if let StyleKeyInfo::Selector(sel) = k.info {
+                        self.cached_selectors |= *sel;
+                        if let Some(nested) = v.downcast_ref::<Style>() {
+                            self.cached_selectors |= nested.cached_selectors;
+                        }
+                    }
                     if let Some(existing_rc) = self.map_mut().remove(k) {
                         if Rc::ptr_eq(&existing_rc, v) {
                             self.map_mut().insert(*k, existing_rc);
@@ -1285,6 +1320,12 @@ impl Style {
                     self.map_mut().insert(*k, merged);
                 }
                 StyleKeyInfo::ResponsiveSelectors => {
+                    self.cached_selectors |= StyleSelectors::RESPONSIVE;
+                    // Propagate nested selectors from responsive rules
+                    let rules = &v.downcast_ref::<ResponsiveSelectors>().unwrap().0;
+                    for (_, nested) in rules {
+                        self.cached_selectors |= nested.cached_selectors;
+                    }
                     let merged = if let Some(current) = self.map_mut().remove(k) {
                         let new_rules = &v.downcast_ref::<ResponsiveSelectors>().unwrap().0;
                         let current: ResponsiveSelectors = take_any(current);
