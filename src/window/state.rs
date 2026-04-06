@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap};
+use std::{cell::RefCell, collections::HashMap, time::Instant};
 
 use crate::{
     action::exec_after_animation_frame,
@@ -192,6 +192,9 @@ pub struct WindowState {
     /// These are processed after layout and before commit.
     pub(crate) views_needing_box_tree_update: FxHashSet<ViewId>,
     pub(crate) focus_nav_cache: FocusNavCache,
+    /// Timestamp captured once per frame, shared by all views during the style pass.
+    /// Avoids per-view `Instant::now()` syscalls.
+    pub(crate) frame_start: Instant,
 }
 
 impl WindowState {
@@ -253,6 +256,7 @@ impl WindowState {
             listeners: FxHashMap::default(),
             views_needing_box_tree_update: FxHashSet::default(),
             focus_nav_cache: FocusNavCache::default(),
+            frame_start: Instant::now(),
         }
     }
 

@@ -214,6 +214,7 @@ impl<'a> StyleCx<'a> {
         // Phase 2: Build interaction state for selector matching
         // ─────────────────────────────────────────────────────────────────────
         let view_interact_state = Self::get_interact_state(window_state, view_id);
+        let now = window_state.frame_start;
 
         Self {
             window_state,
@@ -221,7 +222,7 @@ impl<'a> StyleCx<'a> {
             inherited,
             class_context,
             direct: Default::default(),
-            now: Instant::now(),
+            now,
             view_interact_state,
             reason,
             targeted_elements,
