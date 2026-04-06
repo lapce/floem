@@ -222,6 +222,15 @@ impl Border {
 }
 
 impl StylePropValue for Border {
+    fn content_hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = rustc_hash::FxHasher::default();
+        self.left.content_hash().hash(&mut h);
+        self.top.content_hash().hash(&mut h);
+        self.right.content_hash().hash(&mut h);
+        self.bottom.content_hash().hash(&mut h);
+        h.finish()
+    }
     fn debug_view(&self) -> Option<Box<dyn View>> {
         let border = self.clone();
         let details_view = move || {
@@ -320,6 +329,15 @@ impl BorderColor {
 }
 
 impl StylePropValue for BorderColor {
+    fn content_hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = rustc_hash::FxHasher::default();
+        self.left.content_hash().hash(&mut h);
+        self.top.content_hash().hash(&mut h);
+        self.right.content_hash().hash(&mut h);
+        self.bottom.content_hash().hash(&mut h);
+        h.finish()
+    }
     fn debug_view(&self) -> Option<Box<dyn View>> {
         let border_color = self.clone();
         let details_view = move || {
@@ -450,6 +468,15 @@ impl BorderRadius {
 }
 
 impl StylePropValue for BorderRadius {
+    fn content_hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = rustc_hash::FxHasher::default();
+        self.top_left.content_hash().hash(&mut h);
+        self.top_right.content_hash().hash(&mut h);
+        self.bottom_left.content_hash().hash(&mut h);
+        self.bottom_right.content_hash().hash(&mut h);
+        h.finish()
+    }
     fn debug_view(&self) -> Option<Box<dyn View>> {
         let border_radius = *self;
         let details_view = move || {
@@ -547,6 +574,15 @@ impl Padding {
 }
 
 impl StylePropValue for Padding {
+    fn content_hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = rustc_hash::FxHasher::default();
+        self.left.content_hash().hash(&mut h);
+        self.top.content_hash().hash(&mut h);
+        self.right.content_hash().hash(&mut h);
+        self.bottom.content_hash().hash(&mut h);
+        h.finish()
+    }
     fn debug_view(&self) -> Option<Box<dyn View>> {
         let padding = *self;
         let details_view = move || {
@@ -644,6 +680,15 @@ impl Margin {
 }
 
 impl StylePropValue for Margin {
+    fn content_hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = rustc_hash::FxHasher::default();
+        self.left.content_hash().hash(&mut h);
+        self.top.content_hash().hash(&mut h);
+        self.right.content_hash().hash(&mut h);
+        self.bottom.content_hash().hash(&mut h);
+        h.finish()
+    }
     fn debug_view(&self) -> Option<Box<dyn View>> {
         let margin = *self;
         let details_view = move || {
@@ -682,11 +727,44 @@ impl StylePropValue for Margin {
 }
 
 // Simple StylePropValue implementations for enums
-impl StylePropValue for CursorStyle {}
-impl StylePropValue for TextOverflow {}
-impl StylePropValue for PointerEvents {}
+impl StylePropValue for CursorStyle {
+    fn content_hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = rustc_hash::FxHasher::default();
+        std::mem::discriminant(self).hash(&mut h);
+        h.finish()
+    }
+}
+impl StylePropValue for TextOverflow {
+    fn content_hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = rustc_hash::FxHasher::default();
+        std::mem::discriminant(self).hash(&mut h);
+        h.finish()
+    }
+}
+impl StylePropValue for PointerEvents {
+    fn content_hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = rustc_hash::FxHasher::default();
+        std::mem::discriminant(self).hash(&mut h);
+        h.finish()
+    }
+}
 
 impl StylePropValue for BoxShadow {
+    fn content_hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = rustc_hash::FxHasher::default();
+        self.blur_radius.content_hash().hash(&mut h);
+        self.color.content_hash().hash(&mut h);
+        self.spread.content_hash().hash(&mut h);
+        self.left_offset.content_hash().hash(&mut h);
+        self.right_offset.content_hash().hash(&mut h);
+        self.top_offset.content_hash().hash(&mut h);
+        self.bottom_offset.content_hash().hash(&mut h);
+        h.finish()
+    }
     fn debug_view(&self) -> Option<Box<dyn View>> {
         // Create a preview container that shows a visual representation of the shadow
         let shadow = *self;
@@ -873,4 +951,11 @@ impl Focus {
         matches!(self, Focus::None)
     }
 }
-impl StylePropValue for Focus {}
+impl StylePropValue for Focus {
+    fn content_hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = rustc_hash::FxHasher::default();
+        self.hash(&mut h);
+        h.finish()
+    }
+}
