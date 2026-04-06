@@ -24,11 +24,10 @@
 //! - Styles with container queries (future)
 //! - Styles that depend on element-specific attributes
 
-use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
-use rustc_hash::FxHasher;
+use rustc_hash::{FxHashMap, FxHasher};
 
 use super::Style;
 use crate::layout::responsive::ScreenSizeBp;
@@ -212,7 +211,7 @@ impl CacheBucket {
 /// on lookup to ensure correctness (matching Chromium's MatchedPropertiesCache).
 pub struct StyleCache {
     /// The cached style buckets, keyed by style hash.
-    cache: HashMap<StyleCacheKey, CacheBucket>,
+    cache: FxHashMap<StyleCacheKey, CacheBucket>,
     /// Virtual clock for LRU purposes.
     clock: u64,
     /// Total number of entries across all buckets.
@@ -239,7 +238,7 @@ impl StyleCache {
     /// Create a new empty style cache.
     pub fn new() -> Self {
         Self {
-            cache: HashMap::with_capacity(MAX_CACHE_BUCKETS),
+            cache: FxHashMap::with_capacity_and_hasher(MAX_CACHE_BUCKETS, Default::default()),
             clock: 0,
             total_entries: 0,
             stats: CacheStatsMut::default(),
