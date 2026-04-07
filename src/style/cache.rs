@@ -50,7 +50,8 @@ const PRUNE_TARGET: usize = 192;
 /// on lookup by comparing parent inherited styles.
 #[derive(Clone, Debug)]
 pub struct StyleCacheKey {
-    /// Hash of the input style's properties.
+    /// Content hash of the input style's properties.
+    /// Enables cross-view cache sharing for styles with identical content.
     style_hash: u64,
     /// Packed interaction state bits.
     interaction_bits: u16,
@@ -77,13 +78,32 @@ impl StyleCacheKey {
         classes: &[StyleClassRef],
         class_context: &Style,
     ) -> Self {
+        Self::new_from_hash(
+            style.content_hash(),
+            interact_state,
+            screen_size_bp,
+            classes,
+            class_context,
+        )
+    }
+
+    /// Create a cache key from a pre-computed content hash.
+    ///
+    /// This avoids needing a `&Style` reference, allowing the caller to
+    /// use a cached hash without cloning the full style.
+    pub fn new_from_hash(
+        style_hash: u64,
+        interact_state: &InteractionState,
+        screen_size_bp: ScreenSizeBp,
+        classes: &[StyleClassRef],
+        class_context: &Style,
+    ) -> Self {
         Self {
-            style_hash: style.content_hash(),
+            style_hash,
             interaction_bits: interact_state.to_bits(),
             screen_size: screen_size_bp,
             window_width_bits: interact_state.window_width.to_bits(),
             classes_hash: hash_classes(classes),
-            // O(1) pointer comparison instead of O(n) content_hash
             class_context_ptr: class_context.map_ptr(),
         }
     }

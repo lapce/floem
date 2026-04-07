@@ -221,6 +221,9 @@ pub struct StyleStack {
     /// Index of the first entry that needs recomputation.
     /// `dirty_from == stack.len()` means fully clean.
     dirty_from: usize,
+    /// Cached content hash of the top-of-stack style.
+    /// Computed during `style()` recomputation, avoids O(N) `content_hash()` per lookup.
+    cached_content_hash: u64,
 }
 
 impl Default for StyleStack {
@@ -229,6 +232,7 @@ impl Default for StyleStack {
             stack: Stack::default(),
             cache: SmallVec::new(),
             dirty_from: 0,
+            cached_content_hash: 0,
         }
     }
 }
@@ -264,6 +268,7 @@ impl StyleStack {
         if len == 0 {
             self.cache.clear();
             self.dirty_from = 0;
+            self.cached_content_hash = 0;
             return Style::new();
         }
 
@@ -285,7 +290,30 @@ impl StyleStack {
         }
 
         self.dirty_from = len;
+        // Cache the content hash while we have the computed style
+        self.cached_content_hash = self.cache[len - 1].content_hash();
         self.cache[len - 1].clone()
+    }
+
+    /// Ensure the style stack cache is up-to-date (recompute if dirty)
+    /// without returning a clone.
+    pub fn ensure_clean(&mut self) {
+        if self.dirty_from < self.stack.stack.len() {
+            let _ = self.style(); // recompute and discard the clone
+        }
+    }
+
+    /// The content hash of the top-of-stack style. Must call `ensure_clean()` first.
+    /// O(1) field read — the hash is computed during `style()` recomputation.
+    pub fn content_hash(&self) -> u64 {
+        self.cached_content_hash
+    }
+
+    /// Whether the top-of-stack style is cacheable (no structural selectors, no context values).
+    pub fn is_cacheable(&self) -> bool {
+        self.cache.last().map_or(false, |s| {
+            !s.map.is_empty() && !s.has_structural_selectors() && !s.has_context_values()
+        })
     }
 }
 
@@ -449,6 +477,19 @@ impl ViewState {
 
     pub(crate) fn style(&mut self) -> Style {
         self.style.style()
+    }
+
+    /// Get the content hash of the current style without cloning.
+    /// O(1) after the style stack is clean (hash is cached during recomputation).
+    pub(crate) fn style_content_hash(&mut self) -> u64 {
+        self.style.ensure_clean();
+        self.style.content_hash()
+    }
+
+    /// Check if the current style is cacheable without cloning.
+    pub(crate) fn style_is_cacheable(&mut self) -> bool {
+        self.style.ensure_clean();
+        self.style.is_cacheable()
     }
 
     pub fn cursor(&self) -> Option<CursorStyle> {

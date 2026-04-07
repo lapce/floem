@@ -284,17 +284,20 @@ impl<'a> StyleCx<'a> {
             self.reason.needs_resolve_nested_maps() || self.reason.needs_animation();
 
         if self.reason.needs_resolve_nested_maps() {
-            use super::cache::{StyleCache, StyleCacheKey};
+            use super::cache::StyleCacheKey;
 
-            // Get the base style for cache key computation.
-            // This requires a temporary borrow_mut because style() lazily recomputes.
-            let base_style = view_state.borrow_mut().style();
-            let cacheable = StyleCache::is_cacheable(&base_style)
-                && !self.class_context.has_structural_selectors();
+            // Get metadata without cloning the full style
+            let (style_hash, cacheable) = {
+                let mut vs = view_state.borrow_mut();
+                let style_hash = vs.style_content_hash();
+                let cacheable = vs.style_is_cacheable()
+                    && !self.class_context.has_structural_selectors();
+                (style_hash, cacheable)
+            };
 
             let cache_key = if cacheable {
-                Some(StyleCacheKey::new(
-                    &base_style,
+                Some(StyleCacheKey::new_from_hash(
+                    style_hash,
                     &self.view_interact_state,
                     self.window_state.screen_size_bp,
                     &classes,
@@ -303,14 +306,13 @@ impl<'a> StyleCx<'a> {
             } else {
                 None
             };
-            drop(base_style);
 
             let cache_hit = cache_key
                 .as_ref()
                 .and_then(|key| self.window_state.style_cache.get(key, &self.inherited));
 
             if let Some(hit) = cache_hit {
-                // Cache hit — restore all compute_combined() outputs
+                // Cache hit — restore all compute_combined() outputs, no Style clone needed
                 let mut vs = view_state.borrow_mut();
                 vs.combined_pre_animation_style = hit.combined_style.clone();
                 vs.combined_style = hit.combined_style;
@@ -320,7 +322,7 @@ impl<'a> StyleCx<'a> {
                 self.view_interact_state.is_selected |= hit.post_interact.selected;
                 self.view_interact_state.is_disabled |= hit.post_interact.disabled;
             } else {
-                // Cache miss — compute normally
+                // Cache miss — compute normally (style() clone happens inside compute_combined)
                 view_state.borrow_mut().compute_combined(
                     &mut self.view_interact_state,
                     self.window_state.screen_size_bp,
